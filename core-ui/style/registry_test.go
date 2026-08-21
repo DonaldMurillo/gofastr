@@ -33,7 +33,7 @@ func TestContributeOrderApplied(t *testing.T) {
 		ss.Rule(".x").Set("color", "red").End()
 	})
 	_ = Contribute(func(ss *StyleSheet) {
-		// later-registered rule overrides earlier one (cascade — last wins)
+		// later-registered rule overrides earlier one (cascade, last wins)
 		ss.Rule(".x").Set("color", "blue").End()
 	})
 
@@ -81,7 +81,7 @@ func TestApplyIsIdempotentPerSheet(t *testing.T) {
 
 	ss := NewStyleSheet(DefaultTheme())
 	Apply(ss)
-	Apply(ss) // calling again duplicates rules — documented behaviour
+	Apply(ss) // calling again duplicates rules, documented behaviour
 
 	css := ss.CSS()
 	if strings.Count(css, ".only-once") != 2 {

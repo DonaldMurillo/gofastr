@@ -166,7 +166,7 @@ func TestProjection_WithInclude(t *testing.T) {
 		if _, ok := got["comments"]; !ok {
 			t.Fatalf("comments should still be included alongside projection: %v", got)
 		}
-		// authorId was NOT requested — should not appear at the top level.
+		// authorId was NOT requested, should not appear at the top level.
 		if _, present := got["authorId"]; present {
 			t.Fatalf("authorId should be projected out, got %v", got)
 		}
@@ -184,7 +184,7 @@ func TestProjection_UnknownField_400(t *testing.T) {
 
 		resp := ta.Get("/posts?fields=bogus")
 		// The error body deliberately does NOT echo the user-supplied
-		// field name — leaking it would let a probe enumerate hidden
+		// field name, leaking it would let a probe enumerate hidden
 		// columns by reading the 400 message. Asserting the generic
 		// label keeps that contract pinned.
 		resp.AssertStatus(t, http.StatusBadRequest).

@@ -39,7 +39,7 @@ func TestAdmin_NonAdminUserForbidden(t *testing.T) {
 }
 
 // TestAdmin_RolelessUserForbidden confirms a user that can't prove a role
-// (no GetRoles) is denied — fail closed.
+// (no GetRoles) is denied, fail closed.
 func TestAdmin_RolelessUserForbidden(t *testing.T) {
 	h := mountAdminBare(t, Config{})
 	rr := adminReq(h, struct{}{})

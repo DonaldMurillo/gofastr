@@ -18,7 +18,7 @@ import (
 // construction.
 //
 // The table is created on first use with the supplied (or default)
-// name. Records older than TTL are removed lazily on Begin — at most
+// name. Records older than TTL are removed lazily on Begin, at most
 // once per minute per store instance, not on every request.
 //
 // Schema (all dialects):
@@ -134,7 +134,7 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 	return nil
 }
 
-// Begin implements IdempotencyStore. The implementation is robust to
+// Begin implements IdempotencyStore. The implementation is safe under
 // concurrent inserts: an `INSERT … ON CONFLICT DO NOTHING` either
 // claims the row (RowsAffected=1) or loses the race (RowsAffected=0),
 // in which case we re-read and report the winner's state instead of
@@ -166,13 +166,13 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	}
 	rows, _ := res.RowsAffected()
 	if rows >= 1 {
-		// Fresh claim — we own the row.
+		// Fresh claim: we own the row.
 		return nil, false, nil
 	}
 
 	// 2) Lost the race or there's an existing valid row. Read it.
 	// Filter expired rows out of the read so a TTL'd entry never
-	// replays — the reap is rate-limited and isn't authoritative.
+	// replays; the reap is rate-limited and isn't authoritative.
 	row := s.db.QueryRowContext(ctx,
 		fmt.Sprintf("SELECT fingerprint, status, headers, body FROM %s WHERE key = %s AND expires_at > %s",
 			s.table, s.placeholder(1), s.placeholder(2)),
@@ -186,11 +186,11 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		// Existing row was expired (or reaped between the failed insert
-		// and this read). Delete the stale row then retry the claim once —
+		// and this read). Delete the stale row then retry the claim once;
 		// the second insert wins now that the conflict is gone. The DELETE is
 		// expiry-gated so a concurrent re-claimer can never remove a FRESH
 		// claim another caller just inserted (which would let both run the
-		// handler — the double-execution idempotency exists to prevent). See
+		// handler, the double-execution idempotency exists to prevent). See
 		// TestIdemReclaimKeepsFreshRow.
 		if _, deleteErr := s.db.ExecContext(ctx,
 			fmt.Sprintf("DELETE FROM %s WHERE key = %s AND expires_at <= %s", s.table, s.placeholder(1), s.placeholder(2)),
@@ -208,7 +208,7 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 		if rows >= 1 {
 			return nil, false, nil
 		}
-		// Still racing — give up and report in-flight conservatively.
+		// Still racing; give up and report in-flight conservatively.
 		return nil, false, ErrInFlight
 	case err != nil:
 		return nil, false, err
@@ -276,7 +276,7 @@ func (s *SQLIdempotencyStore) placeholder(n int) string {
 	return "?"
 }
 
-// reservedSQLIdentsMW is the middleware package's copy — keeping the
+// reservedSQLIdentsMW is the middleware package's copy; keeping the
 // list local avoids cross-package dependency for a 12-entry guard.
 var reservedSQLIdentsMW = map[string]struct{}{
 	"select": {}, "insert": {}, "update": {}, "delete": {},

@@ -1,4 +1,4 @@
-// Package main is Meridian — the GoFastr flagship demo, and the
+// Package main is Meridian, the GoFastr flagship demo, and the
 // design-system completeness canary (CLAUDE.md hard rule 9).
 //
 // # Maintenance model: hand-maintained, blueprint-seeded
@@ -6,7 +6,7 @@
 // Meridian was SEEDED by `gofastr generate --from=gofastr.yml` and has
 // been hand-evolved ever since. It is NOT regenerable, and
 // `gofastr generate --from=gofastr.yml --force` must never be run here:
-// it would clobber hand-written surfaces the generator does not emit —
+// it would clobber hand-written surfaces the generator does not emit,
 // inkTheme, appIconPNG, the sdkdocs mount, ResourceConfig's ExtraActions
 // / WithIsland / TableHandler, the quick-add customer modal, and the
 // keyboard / visual / API-token test suites.
@@ -28,7 +28,7 @@
 //   - examples/meridian (this app) is the DESIGN-SYSTEM fixture. It
 //     proves that framework/ui + core-ui can carry a real product across
 //     marketing, app, auth, admin, and mobile in both color schemes,
-//     with zero bespoke CSS. Hand-editing it is the point — a surface
+//     with zero bespoke CSS. Hand-editing it is the point, a surface
 //     here that needs CSS the components don't provide is an upstream
 //     gap to fix, never a local patch.
 //
@@ -41,13 +41,13 @@
 // in-tree CLI, and compiles the result. The blueprint can therefore
 // never rot into something that no longer produces a buildable app,
 // even though that output no longer matches the files checked in here.
-// This is the gate meridian was missing — its absence is how #131's
+// This is the gate meridian was missing, its absence is how #131's
 // drift accumulated unnoticed.
 //
 // Backward (code → blueprint), by cmd/gofastr/pack_test.go: it runs
 // `gofastr pack` over THIS directory and asserts the recovered
 // declarations equal the parsed gofastr.yml. So the app's declarative
-// surfaces — entities, screens, nav, seed — must still match the
+// surfaces, entities, screens, nav, seed, must still match the
 // blueprint even though the hand-written Go around them does not.
 //
 // The two gates together say something precise: the blueprint and this

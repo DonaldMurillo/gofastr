@@ -17,7 +17,7 @@ import (
 // would leak a different framework version into the treatment) and records a
 // precise, non-deterministic funnel signal: the harness prompt names no
 // command, so any `gofastr dev` in the log was discovered from the generated
-// guidance alone. Transcript grepping cannot provide this signal — an agent
+// guidance alone. Transcript grepping cannot provide this signal, an agent
 // merely READING the guidance echoes the command into its transcript.
 func installCLIShim(dir, realBin, logPath string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -37,7 +37,7 @@ func installCLIShim(dir, realBin, logPath string) error {
 
 // cliInvocationStats reads a shim log and reports how many times the builder
 // invoked the gofastr CLI and whether any invocation was the dev server.
-// A missing log means zero invocations, not an error — the builder simply
+// A missing log means zero invocations, not an error, the builder simply
 // never reached for the CLI.
 func cliInvocationStats(logPath string) (calls int, usedDev bool) {
 	f, err := os.Open(logPath)

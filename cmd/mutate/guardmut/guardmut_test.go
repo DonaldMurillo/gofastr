@@ -127,7 +127,7 @@ func TestPrecedenceIsPreserved(t *testing.T) {
 	}
 }
 
-// The guards below were found by running this tool on itself — every one was a
+// The guards below were found by running this tool on itself; every one was a
 // branch no test distinguished. Keeping them honest is the point: a coverage
 // tool whose own guards are unexercised has no standing.
 
@@ -184,7 +184,7 @@ func TestFindSortsByLineThenKind(t *testing.T) {
 	}
 }
 
-// Apply must refuse a Guard whose offsets do not fit the source it is handed —
+// Apply must refuse a Guard whose offsets do not fit the source it is handed;
 // otherwise a stale Guard silently corrupts a file it was not measured against.
 func TestApplyRefusesOffsetsOutsideTheSource(t *testing.T) {
 	guards, err := Find("p.go", []byte(sample), Options{})

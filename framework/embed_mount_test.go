@@ -12,7 +12,7 @@ import (
 )
 
 // embedMountable is the shape App.Mount duck-types on to hand an embed host its
-// signing keys — the same seam SetFanout and SetSessionKey use.
+// signing keys, the same seam SetFanout and SetSessionKey use.
 type embedMountable struct{ host *embed.Host }
 
 func (m *embedMountable) Mount(*router.Router)   {}
@@ -49,7 +49,7 @@ func TestMountDerivesEmbedKeysFromTheAppSecret(t *testing.T) {
 }
 
 // An embed host with no app secret is a boot failure, not a warning. A nonce
-// that fails to verify is gone — single-use, one-minute life, already rendered
+// that fails to verify is gone, single-use, one-minute life, already rendered
 // into a page on someone else's site that the app cannot re-render. The
 // self-minted per-boot key that makes sessions survive a restart would make
 // every outstanding nonce die on one.
@@ -71,7 +71,7 @@ func TestMountPanicsOnAnEmbedHostWithoutASecret(t *testing.T) {
 }
 
 // A Mountable that exposes the seam but carries no host must not be treated as
-// an embed app — an ordinary UI host on an app with no secret still mounts.
+// an embed app, an ordinary UI host on an app with no secret still mounts.
 func TestMountIgnoresANilEmbedHost(t *testing.T) {
 	app := NewApp()
 	app.Mount(&embedMountable{host: nil})
@@ -102,7 +102,7 @@ func TestIdempotencyNamespaceSeparatesEmbedSubjects(t *testing.T) {
 	if alice == "anon" || bob == "anon" {
 		t.Errorf("a grant-bearing request was namespaced as %q", alice)
 	}
-	// An ordinary anonymous request is still "anon" — the change must not
+	// An ordinary anonymous request is still "anon", the change must not
 	// fragment the namespace for callers that legitimately share it.
 	if got := principalFor(""); got != "anon" {
 		t.Errorf("anonymous principal = %q, want anon", got)
@@ -116,7 +116,7 @@ func TestIdempotencyNamespaceSeparatesEmbedSubjects(t *testing.T) {
 // The same defect, one layer wider: the owner branch above is inert on the
 // default wiring (idempotency is installed by NewApp, so it runs outside the
 // auth middleware the app adds), which put every AUTHENTICATED SESSION in the
-// "anon" namespace too — not just embed requests.
+// "anon" namespace too, not just embed requests.
 func TestIdempotencyNamespaceSeparatesOrdinaryCallers(t *testing.T) {
 	with := func(mutate func(*http.Request)) string {
 		req := httptest.NewRequest(http.MethodPost, "/orders", nil)

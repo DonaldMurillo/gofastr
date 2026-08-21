@@ -10,7 +10,7 @@ import (
 
 // TestToolSchemasPopulated verifies the harness wires registered
 // tools onto Engine.Tools so the model knows it has capabilities.
-// (Without this the model says "I don't have tools" — the bug from
+// (Without this the model says "I don't have tools", the bug from
 // the user's screenshot.)
 func TestToolSchemasPopulated(t *testing.T) {
 	dir := t.TempDir()

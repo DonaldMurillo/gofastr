@@ -3,7 +3,7 @@ package main
 // Real end-to-end tests for `gofastr dev` hot reload. These spin up a
 // full subprocess (gofastr dev + child server), modify source files, and
 // assert the server automatically rebuilds and serves updated content.
-// Gated by -short (slow — needs Go compilation + network).
+// Gated by -short (slow, needs Go compilation + network).
 
 import (
 	"context"
@@ -220,7 +220,7 @@ func devE2EBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's;
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -458,7 +458,7 @@ func TestE2E_HotReload_BrowserAutoRefreshes(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Failure — dump diagnostics.
+	// Failure: dump diagnostics.
 	var finalTitle string
 	_ = chromedp.Run(ctx, chromedp.Text("h1", &finalTitle, chromedp.ByQuery))
 	t.Fatalf("browser never saw 'RELOADED_TITLE' after 45s. Final h1 = %q.\nDev output:\n%s",

@@ -25,7 +25,7 @@ CLI flags override config values where they overlap:
 - `--clean` and `--no-clean` override `codegen.clean`.
 
 `--from=<path>` selects blueprint mode instead. Blueprint generation is
-separate from this general codegen config — see [Blueprints](blueprints.md).
+separate from this general codegen config. See [Blueprints](blueprints.md).
 
 ## Config shape
 
@@ -52,7 +52,7 @@ contain parent traversal.
 
 Each generator names an `extension`, with one built-in exception: a
 generator entry named `sdk` (no `extension`) runs the built-in SDK
-generator — the same output as `gofastr generate sdk`; see the
+generator, the same output as `gofastr generate sdk`; see the
 [sdk](sdk.md) doc. Use optional `id` when running the same generator more
 than once:
 
@@ -91,8 +91,8 @@ A command extension is an arbitrary binary named by whichever
 contract:
 
 - **The environment is an allowlist, not an inheritance.** The child gets what a
-  build-time tool needs to run — `PATH`, `HOME`, a temp dir, locale, and the Go
-  toolchain variables — and nothing else. It does not see `GOFASTR_SECRET`,
+  build-time tool needs to run and nothing else: `PATH`, `HOME`, a temp dir,
+  locale, and the Go toolchain variables. It does not see `GOFASTR_SECRET`,
   `DATABASE_URL`, or cloud credentials. Pass project-specific values under the
   extension's `config:` key, which arrives on stdin with the rest of the
   request; do not expect an ambient environment variable to reach it.

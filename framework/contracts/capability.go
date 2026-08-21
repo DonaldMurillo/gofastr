@@ -8,7 +8,7 @@ import (
 
 // Capability is the area of the framework a rule speaks about. It is the
 // unit users filter by (`gofastr verify routing`) and the unit config
-// relaxes by, so the set is deliberately small and stable — a new
+// relaxes by, so the set is deliberately small and stable. A new
 // capability is an API change, a new rule inside one is not.
 type Capability string
 
@@ -16,7 +16,7 @@ const (
 	// CapMeta covers the contract system talking about itself:
 	// unparsable config, suppressions that no longer match anything.
 	CapMeta Capability = "meta"
-	// CapRouting covers the route table — duplicates, auth, reachability,
+	// CapRouting covers the route table: duplicates, auth, reachability,
 	// and registrations that bypass the framework's own helpers.
 	CapRouting Capability = "routing"
 	// CapTesting covers semantic coverage: which routes, permissions, and
@@ -31,13 +31,13 @@ const (
 	CapSecurity Capability = "security"
 	// CapPerformance covers work done per-request that belongs at init.
 	CapPerformance Capability = "performance"
-	// CapData covers the persistence layer — ignored writes, raw SQL.
+	// CapData covers the persistence layer: ignored writes, raw SQL.
 	CapData Capability = "data"
 	// CapEntities covers entity declarations and their exposure surface.
 	CapEntities Capability = "entities"
 	// CapPermissions covers who can reach what: owner scoping, RBAC.
 	CapPermissions Capability = "permissions"
-	// CapRendering covers the UI contract — one styling surface, no hard
+	// CapRendering covers the UI contract: one styling surface, no hard
 	// navigation, no bespoke event streams.
 	CapRendering Capability = "rendering"
 	// CapAI covers idiomatic-usage guidance: the hand-rolled shape an
@@ -45,7 +45,7 @@ const (
 	CapAI Capability = "ai"
 )
 
-// allCapabilities is the canonical order capabilities are reported in —
+// allCapabilities is the canonical order capabilities are reported in:
 // roughly "how early does getting this wrong hurt", not alphabetical.
 var allCapabilities = []Capability{
 	CapMeta,
@@ -102,8 +102,8 @@ func (c Capability) Title() string {
 }
 
 // ParseCapability resolves a user-typed capability name. It accepts the
-// canonical name plus the aliases people actually type — `a11y` for
-// accessibility, `sec` for security, `perf` for performance — because a
+// canonical name plus the aliases people actually type: `a11y` for
+// accessibility, `sec` for security, `perf` for performance, because a
 // CLI that rejects `gofastr verify a11y` after shipping `gofastr audit
 // a11y` for a year is just being rude.
 func ParseCapability(s string) (Capability, error) {
@@ -139,5 +139,5 @@ func ParseCapability(s string) (Capability, error) {
 		names = append(names, string(c))
 	}
 	sort.Strings(names)
-	return "", fmt.Errorf("unknown capability %q — known capabilities: %s", s, strings.Join(names, ", "))
+	return "", fmt.Errorf("unknown capability %q: known capabilities: %s", s, strings.Join(names, ", "))
 }

@@ -11,7 +11,7 @@ import (
 // TestHandler_RejectsBearerWhenNoTokenConfigured pins the core auth bug: the
 // old "presence-only" check accepted ANY non-empty Authorization header. With
 // no real credential configured, a bearer token MUST be rejected (fail closed),
-// not accepted on mere presence — otherwise an accidentally-unprotected mount
+// not accepted on mere presence, otherwise an accidentally-unprotected mount
 // is silently open to anyone who sends any header at all.
 func TestHandler_RejectsBearerWhenNoTokenConfigured(t *testing.T) {
 	h := Handler(errIndex{})
@@ -27,7 +27,7 @@ func TestHandler_RejectsBearerWhenNoTokenConfigured(t *testing.T) {
 }
 
 // TestHandler_NoConfigFailsClosedOnEveryRoute asserts that with no token and no
-// insecure opt-in, every route rejects an authenticated-looking request — the
+// insecure opt-in, every route rejects an authenticated-looking request, the
 // mount is never silently open. /stats and DELETE /doc have no body-shape gate,
 // so they reach the auth check directly.
 func TestHandler_NoConfigFailsClosedOnEveryRoute(t *testing.T) {
@@ -50,7 +50,7 @@ func TestHandler_NoConfigFailsClosedOnEveryRoute(t *testing.T) {
 }
 
 // TestHandler_WrongBearerTokenRejected verifies a configured token actually
-// verifies the credential — a non-matching bearer is rejected with 401.
+// verifies the credential, a non-matching bearer is rejected with 401.
 func TestHandler_WrongBearerTokenRejected(t *testing.T) {
 	h := Handler(errIndex{}, WithAuthToken("secret"))
 	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
@@ -88,7 +88,7 @@ func TestHandler_InsecureOptInServesWithoutToken(t *testing.T) {
 }
 
 // TestPlugin_UnconfiguredMountsFailClosed mounts the framework plugin with no
-// token configured and asserts the mounted routes reject an arbitrary bearer —
+// token configured and asserts the mounted routes reject an arbitrary bearer,
 // no silent open mount. (The plugin's mounted handler inherits Handler's
 // fail-closed policy.)
 func TestPlugin_UnconfiguredMountsFailClosed(t *testing.T) {

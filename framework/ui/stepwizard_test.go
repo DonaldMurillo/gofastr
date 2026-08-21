@@ -154,14 +154,14 @@ func TestStepWizardCurrentStepHasAriaCurrent(t *testing.T) {
 		t.Errorf("current step dot should have aria-current=step, got:\n%s", h)
 	}
 	// Ensure aria-current appears on the is-current dot, not the is-completed dot.
-	// Count occurrences — must be exactly 1.
+	// Count occurrences: must be exactly 1.
 	count := strings.Count(h, `aria-current="step"`)
 	if count != 1 {
 		t.Errorf("expected exactly 1 aria-current=step, got %d", count)
 	}
 }
 
-// StepWizard must validate Method — rejects non-GET/POST.
+// StepWizard must validate Method: rejects non-GET/POST.
 func TestStepWizardPanicOnInvalidMethod(t *testing.T) {
 	defer func() {
 		if recover() == nil {

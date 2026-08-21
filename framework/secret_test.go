@@ -126,7 +126,7 @@ func TestSessionKeysForMountDerivesPrevious(t *testing.T) {
 		t.Fatalf("previous keys = %v, want one 32-byte key", prevKeys)
 	}
 	// The previous-derived key must equal what the OLD secret alone would
-	// have produced — that is the whole point: a token minted before the
+	// have produced, that is the whole point: a token minted before the
 	// rotation was signed by deriveKey(prev, session-purpose).
 	wantPrev := deriveKey(prev, uihostSessionPurpose)
 	if !bytes.Equal(prevKeys[0], wantPrev) {
@@ -185,7 +185,7 @@ func TestSecretRotationExplicitOptionWinsOverEnv(t *testing.T) {
 
 // An embed host gets no per-boot fallback key. A session that fails to verify
 // is re-minted on the next render and nobody notices; an embed nonce that fails
-// to verify is gone — single-use, one-minute life, already rendered into a page
+// to verify is gone, single-use, one-minute life, already rendered into a page
 // on someone else's site that this app cannot re-render. So the secret is
 // required, and its absence is a boot failure rather than embeds that break on
 // every restart and on every second replica.
@@ -267,7 +267,7 @@ func TestExplicitSecretOptionIgnoresEnvPrevious(t *testing.T) {
 }
 
 // Every retired secret must be run through the SAME HKDF derivation as the
-// current one — handing a raw secret to a verifier as a key would both break
+// current one, handing a raw secret to a verifier as a key would both break
 // verification and use un-derived key material.
 func TestEmbedPreviousKeysForMount(t *testing.T) {
 	a := []byte("previous-secret-a-aaaaaaaaaaaaaaaaaaaa")

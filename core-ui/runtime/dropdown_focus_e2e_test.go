@@ -111,7 +111,7 @@ func TestDropdownEscapeRestoresPanelFocusWithoutStealingOtherDismissals(t *testi
 	if err := chromedp.Run(ctx,
 		// Reopen, move focus outside, and dismiss through SPA navigation.
 		chromedp.Click(`#trigger-one`, chromedp.ByID),
-		// window, not document — that is where nav.js dispatches the
+		// window, not document, that is where nav.js dispatches the
 		// real event (a document dispatch would never reach the
 		// module's window listener).
 		chromedp.Evaluate(`document.getElementById('outside').focus();

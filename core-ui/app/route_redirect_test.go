@@ -206,7 +206,7 @@ func TestRedirectTenHopChainResolves(t *testing.T) {
 }
 
 func TestRedirectParamRenameStillCollides(t *testing.T) {
-	// "/users/:id" and "/users/:slug" match the same URL set — renaming
+	// "/users/:id" and "/users/:slug" match the same URL set, renaming
 	// the param must not slip a redirect past the collision guard.
 	a := NewApp("t")
 	a.Register("/users/{id}", &basicComp{}, nil)
@@ -223,7 +223,7 @@ func TestRedirectParamRenameStillCollides(t *testing.T) {
 	}
 	// OVERLAPPING shapes collide too (Sol round-2): "/users/{slug}"
 	// matches every numeric id "/users/{id:int}" serves, and redirects
-	// run before screens — so this must panic, not silently shadow.
+	// run before screens, so this must panic, not silently shadow.
 	c := NewApp("t")
 	c.Register("/users/{id:int}", &basicComp{}, nil)
 	msg = panicMsg(t, func() { c.RedirectPattern("/users/{slug}", "/new/{slug}") })
@@ -257,7 +257,7 @@ func TestPatternRedirectOverExactScreen(t *testing.T) {
 	}
 
 	// The mirror case (dynamic screen under a pattern redirect) has always
-	// panicked — this pair is an omission, not a deliberate contract.
+	// panicked, this pair is an omission, not a deliberate contract.
 	c := NewApp("t")
 	c.RedirectPattern("/old/{id}", "/new/{id}")
 	msg = panicMsg(t, func() { c.Register("/old/{slug}", &basicComp{}, nil) })
@@ -341,7 +341,7 @@ func TestCatchAllVsCatchAllOverlap(t *testing.T) {
 }
 
 func TestUUIDDisjointConstraintsCoexist(t *testing.T) {
-	// uuid requires hyphens; int/alpha/alnum forbid them — disjoint, so
+	// uuid requires hyphens; int/alpha/alnum forbid them, disjoint, so
 	// a redirect over a uuid-constrained screen with an int pattern is legal.
 	a := NewApp("t")
 	a.Register("/r/{id:uuid}", &basicComp{}, nil)

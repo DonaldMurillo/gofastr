@@ -6,7 +6,7 @@ import "testing"
 // and noteOnlySlugs maps are readable through their accessors
 // (CodeSnippet, IsNoteOnly) and return the same values the old exported
 // maps did. Before the fix, request handlers read the raw exported maps
-// directly — a host mutating one after serving began would fatal-crash
+// directly: a host mutating one after serving began would fatal-crash
 // on concurrent map access. The maps are now unexported; these accessors
 // are the only read path.
 func TestAccessorsReturnRegisteredValues(t *testing.T) {

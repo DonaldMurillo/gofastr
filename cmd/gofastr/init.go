@@ -76,7 +76,7 @@ func runInit(args []string) {
 			// wire/alias spellings (sqlite3, postgresql) the framework already
 			// honors, and map them to the real driver name. Anything else used
 			// to fall through and silently scaffold SQLite (dbDriver set, dbURL
-			// left as a SQLite file) — a broken app that looked configured.
+			// left as a SQLite file): a broken app that looked configured.
 			switch strings.ToLower(strings.TrimSpace(strings.TrimPrefix(args[i], "--db="))) {
 			case "sqlite", "sqlite3":
 				dbDriver = "sqlite3"
@@ -137,8 +137,8 @@ func runInit(args []string) {
 # PORT is the listen address, not only a port number. The default below is
 # loopback-only, so nothing outside this machine can reach the dev server.
 #
-# A bare port ("8080") is also accepted — the shape platforms like Fly,
-# Render, and Heroku inject — but it binds ALL interfaces, which on a laptop
+# A bare port ("8080") is also accepted, the shape platforms like Fly,
+# Render, and Heroku inject, but it binds ALL interfaces, which on a laptop
 # means everyone on your network can reach the app. Keep the host prefix
 # locally; use the bare form only where you intend to serve publicly.
 PORT=localhost:8080
@@ -150,8 +150,8 @@ DATABASE_URL=%s
 # PORT is the listen address, not only a port number. The default below is
 # loopback-only, so nothing outside this machine can reach the dev server.
 #
-# A bare port ("8080") is also accepted — the shape platforms like Fly,
-# Render, and Heroku inject — but it binds ALL interfaces, which on a laptop
+# A bare port ("8080") is also accepted, the shape platforms like Fly,
+# Render, and Heroku inject, but it binds ALL interfaces, which on a laptop
 # means everyone on your network can reach the app. Keep the host prefix
 # locally; use the bare form only where you intend to serve publicly.
 PORT=localhost:8080
@@ -162,7 +162,7 @@ PORT=localhost:8080
 	// GOFASTR_SECRET, the session-signing key. Scaffolding it
 	// world-readable hands every local account the app's secrets.
 	//
-	// os.WriteFile applies its mode only when CREATING the file — on an
+	// os.WriteFile applies its mode only when CREATING the file; on an
 	// existing one it truncates and leaves the mode alone. `gofastr init .`
 	// runs in a directory that may already hold a 0644 .env, so the mode is
 	// set explicitly, and set BEFORE the write, so no secret is ever on disk
@@ -221,7 +221,7 @@ bin/
 		osExit(1)
 	}
 
-	// Write CLAUDE.md — thin entry point for Claude Code that points
+	// Write CLAUDE.md: thin entry point for Claude Code that points
 	// agents at the richer AGENTS.md and the gofastr-host skill.
 	if err := writeCLAUDEmd(name); err != nil {
 		fail("Failed to write CLAUDE.md: %v", err)
@@ -267,27 +267,27 @@ bin/
 	success("Created project %s in ./%s/", name, name)
 	fmt.Println()
 	fmt.Printf("  %s:\n", bold("App files"))
-	fmt.Println("    main.go              — Application entry point + UI host")
-	fmt.Println("    screens.go           — Sample UI page (HomeScreen) served at /")
+	fmt.Println("    main.go              : Application entry point + UI host")
+	fmt.Println("    screens.go           : Sample UI page (HomeScreen) served at /")
 	if !noEntity {
-		fmt.Println("    entities/entities.go — Sample entity (posts) served at /posts")
+		fmt.Println("    entities/entities.go : Sample entity (posts) served at /posts")
 	}
-	fmt.Println("    .env                 — Environment configuration")
-	fmt.Println("    gofastr.isolation.yml — Process-isolation configuration")
-	fmt.Println("    .gitignore           — Git ignore rules")
+	fmt.Println("    .env                 : Environment configuration")
+	fmt.Println("    gofastr.isolation.yml : Process-isolation configuration")
+	fmt.Println("    .gitignore           : Git ignore rules")
 	fmt.Println()
 	fmt.Printf("  %s (read by AI coding tools so they reach for framework primitives instead of reinventing):\n", bold("AI-agent onboarding"))
-	fmt.Println("    CLAUDE.md            — Claude Code entry point; links to AGENTS.md + skill")
-	fmt.Println("    AGENTS.md            — Top-level TOC; refresh with `gofastr agents sync`")
-	fmt.Println("    DESIGN.md            — App-owned product and composition direction")
-	fmt.Println("    agents/              — Auto-generated per-battery detail files linked from AGENTS.md")
-	fmt.Println("    .claude/skills/      — Claude Code skill (safe to delete if you only use Cursor/Aider)")
+	fmt.Println("    CLAUDE.md            : Claude Code entry point; links to AGENTS.md + skill")
+	fmt.Println("    AGENTS.md            : Top-level TOC; refresh with `gofastr agents sync`")
+	fmt.Println("    DESIGN.md            : App-owned product and composition direction")
+	fmt.Println("    agents/              : Auto-generated per-battery detail files linked from AGENTS.md")
+	fmt.Println("    .claude/skills/      : Claude Code skill (safe to delete if you only use Cursor/Aider)")
 	fmt.Println()
 	printInitNextSteps(name, noEntity)
 	info("Also try:")
-	info("    gofastr docs          — Browse/search framework docs (embedded in the binary)")
-	info("    gofastr theme init    — Scaffold a typed theme.go")
-	info("    gofastr build         — Build production binary")
+	info("    gofastr docs          : Browse/search framework docs (embedded in the binary)")
+	info("    gofastr theme init    : Scaffold a typed theme.go")
+	info("    gofastr build         : Build production binary")
 	fmt.Println()
 	if pinnedVersion != "" {
 		fmt.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
@@ -308,17 +308,17 @@ bin/
 func printInitNextSteps(name string, noEntity bool) {
 	fmt.Printf("  %s:\n", bold("Next steps"))
 	fmt.Printf("    cd %s\n", name)
-	fmt.Println("    go mod tidy          — Resolve dependencies")
-	fmt.Println("    gofastr dev          — Start development server with hot-reload")
+	fmt.Println("    go mod tidy          : Resolve dependencies")
+	fmt.Println("    gofastr dev          : Start development server with hot-reload")
 	if !noEntity {
-		fmt.Println("    Note: /posts CRUD needs a session by default — add Public: true (see")
+		fmt.Println("    Note: /posts CRUD needs a session by default. Add Public: true (see")
 		fmt.Println("    entities/entities.go) for anonymous access, or wire battery/auth.")
 	}
 	fmt.Println()
 }
 
 func printInitHelp() {
-	fmt.Println(`gofastr init — scaffold a new GoFastr project
+	fmt.Println(`gofastr init: scaffold a new GoFastr project
 
 Usage:
   gofastr init <name> [flags]
@@ -370,7 +370,7 @@ func normalizeFrameworkVersion(v string) string {
 func writeMainGo(name, modulePath string, noEntity bool, dbDriver, dbURL string) {
 	var content string
 	if noEntity {
-		content = fmt.Sprintf(`// Code generated by gofastr. Owned — safe to edit.
+		content = fmt.Sprintf(`// Code generated by gofastr. Owned: safe to edit.
 package main
 
 import (
@@ -393,7 +393,7 @@ func main() {
 	}
 
 	fwApp := framework.NewApp(
-		// WithConfig replaces the whole AppConfig, so it goes FIRST — a
+		// WithConfig replaces the whole AppConfig, so it goes FIRST: a
 		// granular option (framework.WithPublicOpenAPI(), WithAPIPrefix, …)
 		// added below this line takes effect; above it, WithConfig would
 		// discard it (the framework warns at boot if that happens).
@@ -410,7 +410,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Banner fires via OnReady — only after migrations, hooks, and the
+	// Banner fires via OnReady: only after migrations, hooks, and the
 	// port bind all succeeded.
 	fwApp.OnReady(func(boundAddr string) {
 		fmt.Printf("  %%s Server running at http://%%s\n", "✓", boundAddr)
@@ -436,7 +436,7 @@ func getEnv(key, fallback string) string {
 			migrateDialect = "migrate.DialectPostgres"
 			sqlDriver = "postgres"
 		}
-		content = fmt.Sprintf(`// Code generated by gofastr. Owned — safe to edit.
+		content = fmt.Sprintf(`// Code generated by gofastr. Owned: safe to edit.
 package main
 
 import (
@@ -461,7 +461,7 @@ import (
 
 func main() {
 	// Load .env BEFORE any getEnv read. framework.NewApp also loads it, but
-	// DATABASE_URL is consumed here — above NewApp — so without this the
+	// DATABASE_URL is consumed here, above NewApp, so without this the
 	// scaffolded .env was half-live: PORT applied, DATABASE_URL silently did
 	// not, and the app opened a different database than the file said.
 	//
@@ -486,7 +486,7 @@ func main() {
 	defer db.Close()
 
 	fwApp := framework.NewApp(
-		// WithConfig replaces the whole AppConfig, so it goes FIRST — a
+		// WithConfig replaces the whole AppConfig, so it goes FIRST: a
 		// granular option (framework.WithPublicOpenAPI(), WithAPIPrefix, …)
 		// added below this line takes effect; above it, WithConfig would
 		// discard it (the framework warns at boot if that happens).
@@ -494,7 +494,7 @@ func main() {
 		framework.WithDB(db),
 		// Mounts /mcp (POST JSON-RPC + GET SSE). Every entity with
 		// Exposure.MCP gets list/get/create/update/delete tools, and each tool
-		// call runs through this app's router — so an agent gets exactly the
+		// call runs through this app's router, so an agent gets exactly the
 		// permissions the calling session has, and an anonymous call answers
 		// with the same error the REST route would. That parity is the point:
 		// there is no second authorization path to keep in sync.
@@ -527,7 +527,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Banner fires via OnReady — only after migrations, hooks, and the
+	// Banner fires via OnReady: only after migrations, hooks, and the
 	// port bind all succeeded.
 	fwApp.OnReady(func(boundAddr string) {
 		fmt.Printf("  %%s Server running at http://%%s\n", "✓", boundAddr)
@@ -556,7 +556,7 @@ func getEnv(key, fallback string) string {
 //
 // The order is the point. os.WriteFile would truncate a pre-existing 0644
 // file and write the secrets into it while it is still world-readable, then
-// leave it that way — so the mode is fixed first, on the open handle, and
+// leave it that way, so the mode is fixed first, on the open handle, and
 // the write happens after.
 func writeEnvFile(path, content string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
@@ -578,7 +578,7 @@ func writeEnvFile(path, content string) error {
 }
 
 func writeIsolationConfig(name, _ string) {
-	// strategy: fields are intentionally omitted — the resolver currently
+	// strategy: fields are intentionally omitted; the resolver currently
 	// dispatches by driver, not by strategy name. Re-introduce them only
 	// when they actually toggle behavior.
 	content := `version: 1
@@ -599,7 +599,7 @@ isolation:
 }
 
 // writeScreensGo generates screens.go: the sample HomeScreen as owned package
-// main, beside main.go at the module root — no screens/ subpackage, matching
+// main, beside main.go at the module root, with no screens/ subpackage, matching
 // the scaffold-and-own flat layout in project-structure.md. The scaffold owns
 // no CSS or hand-rolled structural markup.
 func writeScreensGo(name string, noEntity bool) {
@@ -609,7 +609,7 @@ func writeScreensGo(name string, noEntity bool) {
 	if !noEntity {
 		entityHint = " The sample posts entity lives in entities/entities.go and serves at /posts."
 	}
-	content := fmt.Sprintf(`// Code generated by gofastr. Owned — safe to edit.
+	content := fmt.Sprintf(`// Code generated by gofastr. Owned: safe to edit.
 package main
 
 import (
@@ -654,7 +654,7 @@ func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 }
 
 func writeEntitiesGo(name string) {
-	const content = `// Code generated by gofastr. Owned — safe to edit.
+	const content = `// Code generated by gofastr. Owned: safe to edit.
 package entities
 
 import (
@@ -675,7 +675,7 @@ func RegisterAll(app *framework.App) {
 		// MCP: true registers posts_list/get/create/update/delete as MCP tools
 		// at /mcp (see framework.WithMCP in main.go). The tools reuse the CRUD
 		// handlers and this same Exposure, so they are gated exactly like the
-		// REST routes — an unauthenticated tools/call gets the same 401, never
+		// REST routes: an unauthenticated tools/call gets the same 401, never
 		// a bypass.
 		//
 		// Secure by default: CRUD requires a signed-in session. Add
@@ -689,7 +689,7 @@ func RegisterAll(app *framework.App) {
 //
 // This migration is deliberately redundant with the entity declaration above:
 // App.Start auto-migrates from EntityConfig, so adding a field to Fields is
-// enough for the column to appear on the next boot — you do NOT have to edit
+// enough for the column to appear on the next boot; you do NOT have to edit
 // this file to change the schema.
 //
 // It is scaffolded anyway because versioned migrations are what a real
@@ -753,58 +753,58 @@ func writeCLAUDEmd(dir string) error {
 
 // claudeMDContent returns the generated CLAUDE.md bytes for comparison.
 func claudeMDContent() []byte {
-	const content = `# CLAUDE.md — GoFastr host project
+	const content = `# CLAUDE.md: GoFastr host project
 
 This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framework.
 
 ## Start here
 
-- **[AGENTS.md](AGENTS.md)** — TOC of every framework primitive with trigger
+- **[AGENTS.md](AGENTS.md)**: TOC of every framework primitive with trigger
   phrases. When your task matches a row, open the linked detail file under
   ` + "`" + `agents/` + "`" + ` for the full shape/import/don't-reinvent breakdown.
-- **[DESIGN.md](DESIGN.md)** — app-owned product direction. Complete its user
+- **[DESIGN.md](DESIGN.md)**: app-owned product direction. Complete its user
   task, density, hierarchy, composition, and mobile decisions before choosing
   UI components.
 - **[.claude/skills/gofastr-host/SKILL.md](.claude/skills/gofastr-host/SKILL.md)**
-  — Auto-loaded skill that encodes the "reach for the battery first" rule and
+  : Auto-loaded skill that encodes the "reach for the battery first" rule and
   the import paths you need.
 
 ## Framework docs (embedded in the CLI)
 
 The ` + "`" + `gofastr` + "`" + ` binary ships with the full framework reference docs
-built in — no internet needed, always matches your installed version.
+built in: no internet needed, always matches your installed version.
 
-- ` + "`" + `gofastr docs` + "`" + `                — list every topic
-- ` + "`" + `gofastr docs <topic>` + "`" + `        — read a topic's full markdown
-- ` + "`" + `gofastr docs --grep <term>` + "`" + `  — search across every topic
-- ` + "`" + `gofastr docs ui-composition-recipes` + "`" + ` — choose a framework-native page composition
+- ` + "`" + `gofastr docs` + "`" + `               : list every topic
+- ` + "`" + `gofastr docs <topic>` + "`" + `       : read a topic's full markdown
+- ` + "`" + `gofastr docs --grep <term>` + "`" + ` : search across every topic
+- ` + "`" + `gofastr docs ui-composition-recipes` + "`" + `: choose a framework-native page composition
 
 ## Refreshing after a framework upgrade
 
-` + "`" + `gofastr agents sync` + "`" + ` — refreshes AGENTS.md and agents/ detail files.
+` + "`" + `gofastr agents sync` + "`" + `: refreshes AGENTS.md and agents/ detail files.
 
 ## Adding to this project
 
 - **Add an entity or screen**: write a partial ` + "`" + `gofastr.yml` + "`" + ` fragment
   and run ` + "`" + `gofastr generate --add --from=<fragment.yml>` + "`" + `. Additive
-  generation never overwrites your owned files — it writes the new file(s)
+  generation never overwrites your owned files: it writes the new file(s)
   and self-registers them via the existing seams. The quick-stub variants
   ` + "`" + `gofastr generate entity <name>` + "`" + ` and ` + "`" + `gofastr generate screen <name>` + "`" + `
   do the same with no yml.
 - **UI: prefer the typed ` + "`" + `core-ui/html` + "`" + ` config structs**
   (` + "`" + `html.Div(html.DivConfig{...})` + "`" + `, ` + "`" + `html.Heading(...)` + "`" + `, …) over raw
   ` + "`" + `render.Tag(...)` + "`" + ` calls. ` + "`" + `render.Tag` + "`" + ` is the escape hatch for
-  cases the typed vocab doesn't cover, not the default — see
+  cases the typed vocab doesn't cover, not the default. See
   ` + "`" + `gofastr docs ui-getting-started` + "`" + `.
 
 ## Quick reference
 
-- ` + "`" + `gofastr dev` + "`" + `          — dev server with hot-reload
-- ` + "`" + `gofastr build` + "`" + `        — production binary
-- ` + "`" + `gofastr docs` + "`" + `          — browse/search framework docs
-- ` + "`" + `gofastr agents sync` + "`" + `  — refresh AI-agent onboarding files
-- ` + "`" + `gofastr theme init` + "`" + `   — scaffold a typed theme.go
-- ` + "`" + `gofastr generate --add --from=<fragment.yml>` + "`" + ` — add entity/screen(s) to this project
+- ` + "`" + `gofastr dev` + "`" + `         : dev server with hot-reload
+- ` + "`" + `gofastr build` + "`" + `       : production binary
+- ` + "`" + `gofastr docs` + "`" + `         : browse/search framework docs
+- ` + "`" + `gofastr agents sync` + "`" + ` : refresh AI-agent onboarding files
+- ` + "`" + `gofastr theme init` + "`" + `  : scaffold a typed theme.go
+- ` + "`" + `gofastr generate --add --from=<fragment.yml>` + "`" + `: add entity/screen(s) to this project
 `
 	return []byte(content)
 }
@@ -881,33 +881,33 @@ capability upstream.
 // It does NOT touch Go source files, go.mod, or git.
 //
 // Behavior per file:
-//   - agents/*    — always overwritten (framework-owned)
-//   - .claude/skills/gofastr-host/* — always overwritten (framework-owned)
-//   - AGENTS.md   — uses sync logic (preserves user content outside markers)
-//   - CLAUDE.md   — overwrites if unmodified; prompts if user changed it
-//   - DESIGN.md   — created when missing, never overwrites app-owned direction
+//   - agents/*:   always overwritten (framework-owned)
+//   - .claude/skills/gofastr-host/*: always overwritten (framework-owned)
+//   - AGENTS.md:  uses sync logic (preserves user content outside markers)
+//   - CLAUDE.md:  overwrites if unmodified; prompts if user changed it
+//   - DESIGN.md:  created when missing, never overwrites app-owned direction
 func runReinit(dir string, force bool) {
 	fmt.Printf("\n  %s AI onboarding files in %s\n\n", bold("Refreshing"), bold(dir))
 
-	// 1. agents/ detail files — always overwrite.
+	// 1. agents/ detail files: always overwrite.
 	if err := writeAgentDetailFiles(dir); err != nil {
 		fail("Failed to refresh agents/ details: %v", err)
 		osExit(1)
 	}
 	info("  ✓ agents/ detail files refreshed")
 
-	// 2. .claude/skills/gofastr-host/ — always overwrite.
+	// 2. .claude/skills/gofastr-host/: always overwrite.
 	if err := writeHostSkill(dir); err != nil {
 		fail("Failed to refresh gofastr-host skill: %v", err)
 		osExit(1)
 	}
 	info("  ✓ .claude/skills/gofastr-host/SKILL.md refreshed")
 
-	// 3. AGENTS.md — sync (preserves user content outside markers).
+	// 3. AGENTS.md: sync (preserves user content outside markers).
 	agentsPath := filepath.Join(dir, "AGENTS.md")
 	existing, err := os.ReadFile(agentsPath)
 	if err != nil {
-		// Doesn't exist yet — write fresh.
+		// Doesn't exist yet: write fresh.
 		if err := os.WriteFile(agentsPath, buildAgentsMD(), 0o644); err != nil {
 			fail("Failed to write AGENTS.md: %v", err)
 			osExit(1)
@@ -932,11 +932,11 @@ func runReinit(dir string, force bool) {
 		}
 	}
 
-	// 4. CLAUDE.md — detect user modifications.
+	// 4. CLAUDE.md: detect user modifications.
 	claudePath := filepath.Join(dir, "CLAUDE.md")
 	existingClaude, err := os.ReadFile(claudePath)
 	if err != nil {
-		// Doesn't exist yet — write fresh.
+		// Doesn't exist yet: write fresh.
 		if err := os.WriteFile(claudePath, claudeMDContent(), 0o644); err != nil {
 			fail("Failed to write CLAUDE.md: %v", err)
 			osExit(1)
@@ -945,7 +945,7 @@ func runReinit(dir string, force bool) {
 	} else {
 		generated := claudeMDContent()
 		if bytes.Equal(normalizeMD(existingClaude), normalizeMD(generated)) {
-			// Unmodified — safe to overwrite.
+			// Unmodified: safe to overwrite.
 			if err := os.WriteFile(claudePath, generated, 0o644); err != nil {
 				fail("Failed to write CLAUDE.md: %v", err)
 				osExit(1)
@@ -956,9 +956,9 @@ func runReinit(dir string, force bool) {
 				fail("Failed to write CLAUDE.md: %v", err)
 				osExit(1)
 			}
-			warn("  ⚠ CLAUDE.md overwritten (--force) — your customizations were replaced")
+			warn("  ⚠ CLAUDE.md overwritten (--force): your customizations were replaced")
 		} else {
-			warn("  ⚠ CLAUDE.md has been modified — not overwriting")
+			warn("  ⚠ CLAUDE.md has been modified: not overwriting")
 			info("     To overwrite: gofastr init --reinit --force")
 			info("     To keep your version: no action needed")
 		}

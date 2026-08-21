@@ -9,7 +9,7 @@ import (
 
 // TestOAuthProtectedResource_OptionalFields pins that the RFC 9728 metadata
 // document at /.well-known/oauth-protected-resource reflects every optional
-// field a host configures — jwks_uri, resource_name, resource_documentation,
+// field a host configures, jwks_uri, resource_name, resource_documentation,
 // resource_policy_uri, resource_tos_uri, plus the authorization_servers and
 // scopes_supported lists. Each is emitted only when set, so a regression that
 // dropped one would silently publish an incomplete discovery doc that a client
@@ -92,7 +92,7 @@ func TestOAuthProtectedResource_BearerDefaultsToHeader(t *testing.T) {
 	if len(got) != 1 || got[0] != "header" {
 		t.Errorf("bearer_methods_supported = %v, want [header] (the RFC 6750 default)", got)
 	}
-	// Optional fields absent when unset — they must not appear as empty strings.
+	// Optional fields absent when unset, they must not appear as empty strings.
 	for _, key := range []string{"jwks_uri", "resource_name", "resource_documentation", "resource_policy_uri", "resource_tos_uri", "authorization_servers", "scopes_supported"} {
 		if _, present := doc[key]; present {
 			t.Errorf("unset optional field %q should be absent, got %v", key, doc[key])

@@ -2,7 +2,7 @@ package migrate
 
 import "github.com/DonaldMurillo/gofastr/framework/entity"
 
-// Routine is a database routine managed as a first-class migration object — a
+// Routine is a database routine managed as a first-class migration object: a
 // function, stored procedure, trigger, or view. Up is the idempotent
 // definition (CREATE OR REPLACE …); Down rolls it back (a DROP, or a CREATE OR
 // REPLACE of the previous body for true reversibility). The SQL is dialect-
@@ -10,18 +10,18 @@ import "github.com/DonaldMurillo/gofastr/framework/entity"
 //
 // AutoMigrate runs every routine's Up on boot (idempotent). GenerateMigration
 // tracks each routine by a checksum of its Up and emits a migration only when
-// the body changes — with a Down that restores the previous definition.
+// the body changes, with a Down that restores the previous definition.
 type Routine struct {
 	Name string // unique identifier used for change tracking
 	Up   string // CREATE OR REPLACE … (run verbatim, idempotent)
 	Down string // DROP … or CREATE OR REPLACE of the prior body
 
 	// Dialect scopes a routine to a single SQL dialect. The zero value (the
-	// empty string) means "runs on every detected dialect" — today's behavior.
+	// empty string) means "runs on every detected dialect", today's behavior.
 	// Set DialectPostgres for a Postgres stored proc that has no SQLite
 	// equivalent; set DialectSQLite for a SQLite-only trigger. During
 	// auto-migrate, routines whose Dialect does not match DetectDialect(db)
-	// are skipped — their Up never runs against the wrong engine. The skipped
+	// are skipped. Their Up never runs against the wrong engine. The skipped
 	// names are listed in one slog.Info per boot.
 	Dialect Dialect
 }
@@ -39,7 +39,7 @@ type Plan struct {
 // dialectString renders a Dialect for log output. Empty string ("all
 // dialects") surfaces as "all" so it reads cleanly in slog attributes rather
 // than as an empty quoted value. (Dialect is a type alias for coremig.Dialect,
-// so this is a free function rather than a method — methods can't be added in
+// so this is a free function rather than a method. Methods can't be added in
 // the aliasing package.)
 func dialectString(d Dialect) string {
 	if d == "" {

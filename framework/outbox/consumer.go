@@ -8,7 +8,7 @@ import (
 
 // Consume registers a durable consumer. Must be called before StartRelay.
 // name is a stable identity used to track per-consumer delivery across
-// restarts/replicas; (eventType, name) must be unique — registering the
+// restarts/replicas; (eventType, name) must be unique, registering the
 // same pair twice panics. handler is invoked with Event.ID set to the
 // outbox row id. Note Event.ID is shared across ALL consumers of that row,
 // so a handler that deduplicates must key on (name, Event.ID), never
@@ -23,7 +23,7 @@ import (
 // prompt, and idempotent (at-least-once delivery means a duplicate is
 // always possible after a crash or lease expiry). A handler that returns
 // an error or panics is retried with exponential backoff and eventually
-// dead-lettered — independently of its sibling consumers for the same
+// dead-lettered, independently of its sibling consumers for the same
 // event (sibling isolation).
 //
 // Re-adding a previously-removed consumer resumes delivery for events

@@ -47,7 +47,7 @@ func (f *fakeUserStore) CreateUser(ctx context.Context, email, hash string, role
 // dropped, context cancelled), the middleware logs a WARN line so the
 // operator can distinguish "users are logged out" from "auth DB is
 // dead." The middleware still falls through to anonymous (don't take
-// the whole app offline) — but the line in the log is the difference
+// the whole app offline), but the line in the log is the difference
 // between a 5-minute and a 50-minute incident response.
 func TestSessionMiddleware_LogsStoreError(t *testing.T) {
 	var sink bytes.Buffer
@@ -133,7 +133,7 @@ func TestSessionMiddleware_NotFoundIsNotLouder(t *testing.T) {
 
 // TestSessionMiddleware_PanicsOnNilUserStore pins the construction-time
 // guard. A SessionMiddleware against a misconfigured AuthManager (no
-// UserStore) is a no-op-with-logging — operators should hit the panic
+// UserStore) is a no-op-with-logging, operators should hit the panic
 // at startup, not discover the misconfig in production via missing
 // user sessions.
 func TestSessionMiddleware_PanicsOnNilUserStore(t *testing.T) {

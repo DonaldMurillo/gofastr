@@ -73,7 +73,7 @@ func TestMetricsHandlerCarriesNoStore(t *testing.T) {
 // headers are size-capped like every other request-derived log field.
 // Under Go's default ~1 MiB MaxHeaderBytes a single X-Forwarded-For /
 // X-Real-IP header can otherwise write a multi-MB log line per request,
-// fanned out to every file/webhook sink — the same disk/network
+// fanned out to every file/webhook sink, the same disk/network
 // amplification DoS the path/panic caps already guard against.
 func TestForwardedHeaderCapped(t *testing.T) {
 	huge := strings.Repeat("a", 64<<10) // 64 KiB

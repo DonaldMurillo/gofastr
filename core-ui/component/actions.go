@@ -11,8 +11,8 @@ type ActionDef struct {
 
 	// ClientJS is the JavaScript handler body. This is what gets compiled
 	// into the actions.js bundle. It receives a `params` object with:
-	//   params.value  — input value (for input/change events)
-	//   params.*      — any data-param-* attributes from the trigger element
+	//   params.value  : input value (for input/change events)
+	//   params.*      : any data-param-* attributes from the trigger element
 	//
 	// Available runtime helpers via `G` (window.__gofastr):
 	//   G.getState(key, default)   G.setState(key, value)
@@ -131,7 +131,7 @@ func ExtractActions(c Component) *ActionRegistry {
 	defer func() {
 		currentRegistry = prev
 		if r := recover(); r != nil {
-			// Actions() panicked — return empty registry, don't deadlock.
+			// Actions() panicked, return empty registry, don't deadlock.
 		}
 	}()
 

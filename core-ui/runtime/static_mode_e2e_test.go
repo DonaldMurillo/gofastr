@@ -15,7 +15,7 @@ import (
 // Static-export mode: when <html> carries data-fui-static (injected only
 // by framework/static.Builder), the runtime resolves server-backed
 // affordances against the static tree instead of the live server.
-// data-fui-open overlays still open — the static composition ships
+// data-fui-open overlays still open, the static composition ships
 // widgets-boot-static, which fetches the dumped /__gofastr/widgets.json
 // catalog the exporter writes, and the per-widget chrome HTML the
 // exporter dumps at /core-ui/widget/<name>/chrome. data-fui-rpc clicks
@@ -27,7 +27,7 @@ import (
 // startStaticModeServer serves the appropriate runtime composition plus a
 // page that optionally carries the static marker. When static=true the page
 // is served the `static` composition (kernel+rpc-stub+signals+nav+
-// widgets-boot-static) — the composition IS the static-mode switch now,
+// widgets-boot-static), the composition IS the static-mode switch now,
 // replacing the old runtime branch on <html data-fui-static>. When
 // static=false the page gets the `full` composition (the regression
 // guard). Counters record live widget, RPC-module, and dead RPC requests so
@@ -131,7 +131,7 @@ func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 }
 
 // TestStaticMode_LiveStillFiresRequests is the regression guard: the
-// guard must be a no-op on a live page (no marker) — the catalog fetch
+// guard must be a no-op on a live page (no marker), the catalog fetch
 // fires on boot and an RPC click still reaches the server.
 func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
 	base, widgetHits, moduleHits, rpcHits := startStaticModeServer(t, false)
@@ -159,7 +159,7 @@ func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
 }
 
 // TestStaticMode_RPCShowsNotice: on a static page, clicking a data-fui-rpc
-// control must NOT fail silently — it surfaces a "Needs the Go server" notice
+// control must NOT fail silently, it surfaces a "Needs the Go server" notice
 // so the user understands why the demo is dead and how to run it live. The
 // notice renders synchronously into #fui-nav-toast (the CSP-clean mini toast).
 func TestStaticMode_RPCShowsNotice(t *testing.T) {
@@ -197,7 +197,7 @@ func TestStaticMode_RPCShowsNotice(t *testing.T) {
 //
 // Against the regressed code (rpc-stub intercepts data-fui-open) the
 // chrome endpoint is never hit, so chromeHits stays at 0 and the test
-// fails on the chromedp.WaitVisible (no widget ever mounts) — exactly the
+// fails on the chromedp.WaitVisible (no widget ever mounts), exactly the
 // silent-failure mode the composition safety rule exists to prevent.
 func TestStaticMode_WidgetOpensFromStaticCatalog(t *testing.T) {
 	js, err := StaticJS()
@@ -224,7 +224,7 @@ func TestStaticMode_WidgetOpensFromStaticCatalog(t *testing.T) {
 		`}}]`
 
 	// Chrome HTML carries a unique marker the test can read out of the
-	// DOM — proving the runtime mounted the bytes it fetched (not just
+	// DOM, proving the runtime mounted the bytes it fetched (not just
 	// that the fetch landed server-side). The data-fui-widget attribute
 	// matches what mountWidget expects to find as the root.
 	const chromeMarker = "palette-chrome-mounted-xyz789"
@@ -251,7 +251,7 @@ func TestStaticMode_WidgetOpensFromStaticCatalog(t *testing.T) {
 	})
 	mux.HandleFunc("/core-ui/widget/palette/style.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
-		// Empty body — the test does not exercise CSS application.
+		// Empty body, the test does not exercise CSS application.
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

@@ -2,7 +2,7 @@
 
 Start here when you know the *job* and need the primitive: "how do I scope
 rows to a user", "where does auth come from", "how do I prove the API works".
-This page is a routing table, not a tutorial — one row per job, the symbols to
+This page is a routing table, not a tutorial: one row per job, the symbols to
 compose, and a command that proves it. Read the linked topic only once a row
 tells you which one you need.
 
@@ -21,12 +21,12 @@ import "github.com/DonaldMurillo/gofastr/core/schema"
 -->
 ```go
 app := framework.NewApp(
-    framework.WithDB(db),              // any *sql.DB — sqlite3 or postgres
+    framework.WithDB(db),              // any *sql.DB, sqlite3 or postgres
     framework.WithAPIPrefix("/api"),   // optional; routes AND openapi paths move
 )
 app.Entity("tickets", entity.EntityConfig{
     Table:      "tickets",
-    Scope:      &framework.ScopeConfig{OwnerField: "user_id"}, // per-user scoping — see the table
+    Scope:      &framework.ScopeConfig{OwnerField: "user_id"}, // per-user scoping. See the table.
     Fields: []schema.Field{
         {Name: "title", Type: schema.String, Required: true},
     },
@@ -52,10 +52,10 @@ curl localhost:8080/openapi.json | jq '.paths | keys'   # every mounted API path
 Every `/api/…` path below assumes `framework.WithAPIPrefix("/api")` from the
 snippet above. It is **optional**: without it, entities mount at the bare
 `/tickets`, and every command here works with the `/api` dropped. Reach for
-`curl localhost:8080/openapi.json | jq '.paths | keys'` when you are unsure —
-under either setting, a documented path is the path you request.
+`curl localhost:8080/openapi.json | jq '.paths | keys'` when you are unsure.
+Under either setting, a documented path is the path you request.
 
-**`/openapi.json` and `/api/llm.md` answer `401` by default** — the schema is
+**`/openapi.json` and `/api/llm.md` answer `401` by default.** The schema is
 a disclosure, so both are behind the auth gate until you pass
 `framework.WithPublicOpenAPI()`. That is not a bug to debug; the startup
 banner says so next to each URL. `/metrics` is likewise **not mounted** until
@@ -69,7 +69,7 @@ route, marks which need auth, and names the option that ungates them.
 | Job to be done | Compose | Prove it | Docs |
 |---|---|---|---|
 | CRUD over a table | `framework.App.Entity` with `entity.EntityConfig` | `curl localhost:8080/api/tickets` | [Entity declarations](entity-declarations.md) |
-| Scope rows to the signed-in user | `EntityConfig.Scope.OwnerField` — **not** a hand-written filter | `gofastr verify data` fails when an entity with user data lacks it | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
+| Scope rows to the signed-in user | `EntityConfig.Scope.OwnerField`, **not** a hand-written filter | `gofastr verify data` fails when an entity with user data lacks it | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
 | Login, signup, sessions, password reset | `battery/auth`: `auth.New`, `auth.SessionMiddleware` | `curl -i -X POST localhost:8080/auth/login -d '{...}'` → `Set-Cookie` | [Auth](auth.md) |
 | Roles and permissions | `access.NewRolePolicy`, `access.Middleware`, `access.Wildcard` | `gofastr verify permissions` | [Access control](access-control.md) |
 | Signed sessions across replicas | `framework.WithSecret` / `GOFASTR_SECRET`, `framework.WithSecretRotation` | restart the process; an existing cookie still authenticates | [Scaling](scaling.md), [Auth](auth.md) |
@@ -82,7 +82,7 @@ route, marks which need auth, and names the option that ungates them.
 | Send mail | `battery/email` | the SMTP backend logs the send; swap in a fake for tests | [Email](email.md) |
 | File and image uploads | `battery/storage`, `framework/imagefield` | `curl -F file=@x.png localhost:8080/api/posts` | [Storage](storage.md), [Uploads](uploads.md) |
 | Full-text and vector search | `battery/search`, `battery/semantic` | `curl 'localhost:8080/api/posts?q=term'` | [Search](search.md), [Semantic search](semantic-search.md) |
-| Multi-tenancy | `framework/tenant` — a declaration, not a WHERE clause | `gofastr verify data` | [Multi-tenant](multi-tenant.md) |
+| Multi-tenancy | `framework/tenant`, a declaration rather than a WHERE clause | `gofastr verify data` | [Multi-tenant](multi-tenant.md) |
 | Soft delete | `framework/softdelete` | `?trashed=true` returns the deleted rows | [Entity declarations](entity-declarations.md) |
 | Rate limiting | `framework/ratelimit` | replay a request past the limit → `429` | [Rate limit](rate-limit.md) |
 | An admin back-office | `battery/admin` | visit `/admin` | [Admin](admin.md) |
@@ -109,7 +109,7 @@ an app ends up with a bug the framework would have prevented:
 - **Reading topic docs before this page.** They are references, not
   orientation. Land on the row first, then open the one link it points at.
 - **Hand-writing a filter for per-user data.** `Scope.OwnerField` is enforced on
-  every generated surface — REST, batch, MCP, includes. A hand-written `WHERE`
+  every generated surface: REST, batch, MCP, includes. A hand-written `WHERE`
   covers the one handler you remembered. `gofastr verify data` flags the gap.
 - **Trusting `paths` in a stale mental model of the spec.** Under
   `framework.WithAPIPrefix` the OpenAPI path keys carry the prefix, so a
@@ -118,7 +118,7 @@ an app ends up with a bug the framework would have prevented:
 - **Adding an option before `framework.WithConfig`.** `WithConfig` replaces
   the whole `AppConfig` struct rather than merging into it, so any granular
   option placed *before* it is zeroed. Put granular options *after*
-  `WithConfig` — later options win. Two guards make the mistake hard to keep:
+  `WithConfig`, since later options win. Two guards make the mistake hard to keep:
   `gofastr init` scaffolds `WithConfig` as the *first* option (so pasting
   `framework.WithPublicOpenAPI()` anywhere below it works), and `NewApp` logs
   a warning naming each field an earlier option set that `WithConfig` zeroed
@@ -126,5 +126,5 @@ an app ends up with a bug the framework would have prevented:
   could not tell an explicit zero from an unset field, so `WithConfig` could
   never turn a boolean back off.
 - **Adding a route for in-page state.** Sorting and paginating are islands,
-  not routes. That is a UI question — see
+  not routes. That is a UI question. See
   [ui-capability-map.md](ui-capability-map.md).

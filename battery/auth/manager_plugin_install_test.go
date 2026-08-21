@@ -17,7 +17,7 @@ import (
 // Before any Use call: no "core" plugin and GET /auth/me is a 404 (the
 // router never had the route). After Use(NewCorePlugin()): the plugin is
 // registered and GET /auth/me is a 401 (the handler ran, found no
-// session) — i.e. the route exists.
+// session), i.e. the route exists.
 func TestNew_NoCoreRoutesUntilUse(t *testing.T) {
 	mgr := New(AuthConfig{DevMode: true})
 

@@ -7,7 +7,7 @@ import (
 
 // Linker + PasswordChecker + OAuthUserCreator extensions for the test-only
 // memoryUserStore defined in manager_test.go. Production code never sees
-// these methods — they exist so OAuth callback tests can use the same
+// these methods, they exist so OAuth callback tests can use the same
 // in-memory store the rest of the suite uses, without each test stubbing
 // the linker interface from scratch.
 //
@@ -103,7 +103,7 @@ func (s *memoryUserStore) ListAccounts(_ context.Context, userID string) ([]Acco
 		a.LinkedAt = &t
 		out = append(out, a)
 	}
-	// Stable order: by provider then providerID. Keep it simple — tests
+	// Stable order: by provider then providerID. Keep it simple, tests
 	// don't depend on the exact order, but a deterministic one makes
 	// assertions easier.
 	for i := 0; i < len(out); i++ {
@@ -134,7 +134,7 @@ func (s *memoryUserStore) UnlinkOAuth(_ context.Context, userID, provider string
 
 // HasPassword implements PasswordChecker. Tracks a per-user flag set by
 // CreateUser (true) and cleared by CreateUserNoPassword (false). Defaults
-// to true for users seeded before this file existed — matches the
+// to true for users seeded before this file existed, matches the
 // production EntityUserStore contract.
 func (s *memoryUserStore) HasPassword(_ context.Context, userID string) (bool, error) {
 	s.mu.Lock()
@@ -152,7 +152,7 @@ func (s *memoryUserStore) HasPassword(_ context.Context, userID string) (bool, e
 }
 
 // CreateUserNoPassword implements OAuthUserCreator. Marks the new user
-// passwordless so HasPassword reports false — the same contract
+// passwordless so HasPassword reports false, the same contract
 // EntityUserStore.CreateUserNoPassword upholds.
 func (s *memoryUserStore) CreateUserNoPassword(_ context.Context, email string, roles []string) (User, error) {
 	s.mu.Lock()

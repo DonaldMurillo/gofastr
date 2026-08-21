@@ -16,7 +16,7 @@ import (
 // dangerous in cursor *field names*, because a parser that sees "name"
 // and a downstream allow-list that sees "na​me" will disagree.
 // Applied to cursor FIELD names after decoding and to cursor direction
-// strings before they reach downstream consumers — never to cursor
+// strings before they reach downstream consumers, never to cursor
 // VALUES, which are bound SQL args and must round-trip byte-for-byte
 // (see DecodeCursor).
 func stripControls(s string) string {
@@ -39,7 +39,7 @@ func stripControls(s string) string {
 
 // isUnicodeInvisible reports whether r is a zero-width or bidi-control
 // codepoint that should never survive a cursor decode. Combining marks
-// and ordinary diacritics deliberately fall through — we only strip
+// and ordinary diacritics deliberately fall through, we only strip
 // the codepoints that have no visible glyph and exist purely to
 // rearrange or hide the surrounding text.
 func isUnicodeInvisible(r rune) bool {
@@ -114,8 +114,8 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 // OffsetForPage returns the row offset for a 1-based page number and a
 // page size, with the integer-overflow guard applied. A caller can
 // request a huge page number (e.g. math.MaxInt) whose (page-1)*limit
-// product wraps: to a negative offset — undefined in most SQL dialects
-// (Postgres rejects it outright) and treated as 0 by SQLite — or, for
+// product wraps: to a negative offset, undefined in most SQL dialects
+// (Postgres rejects it outright) and treated as 0 by SQLite, or, for
 // carefully chosen values, to a small POSITIVE offset that silently
 // serves the wrong window. page>=1 and limit>=1 required, so
 // (page-1)*limit overflows iff (page-1) > math.MaxInt/limit; compute
@@ -123,12 +123,12 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 // math.MinInt when limit==1. Overflow clamps to 0 (the first window),
 // matching ParsePagination's historical behaviour. Every offset-math
 // call site (buffered list, streaming list, admin table) must go
-// through this — never multiply a client-supplied page by hand.
+// through this, never multiply a client-supplied page by hand.
 func OffsetForPage(page, limit int) int {
 	// limit < 1 guards the MaxInt/limit division below (limit == 0 is an
 	// integer-division panic; negative limit is nonsense arithmetic).
 	// OffsetForPage is exported, so it protects its own inputs even though
-	// every in-repo caller floors its page size — ServeStreamingList, for
+	// every in-repo caller floors its page size. ServeStreamingList, for
 	// one, is also exported and takes an arbitrary limit.
 	if page < 2 || limit < 1 {
 		return 0
@@ -177,7 +177,7 @@ func EncodeCursor(field string, value any) string {
 // The field name is stripped of control / invisible codepoints: it flows
 // into SQL identifiers (ORDER BY) and allow-lists, where a smuggled
 // zero-width or bidi codepoint makes a parser and a downstream
-// allow-list disagree. The VALUE is returned verbatim — it is compared
+// allow-list disagree. The VALUE is returned verbatim, it is compared
 // against the database as a bound arg, never interpolated, so stripping
 // it would not harden anything while breaking the keyset contract: a
 // sort key containing e.g. U+200B must round-trip losslessly or paging
@@ -207,7 +207,7 @@ type multiCursorField struct {
 }
 
 // EncodeMultiCursor builds an opaque cursor from an ordered list of
-// (column, value) pairs. Used for composite cursor pagination — ORDER BY
+// (column, value) pairs. Used for composite cursor pagination. ORDER BY
 // composes the fields in the same order, and the WHERE clause becomes a
 // tuple comparison "(c1, c2, …) > ($1, $2, …)".
 func EncodeMultiCursor(fields []string, row map[string]any) string {
@@ -236,7 +236,7 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 		return nil, err
 	}
 	// Names reach ORDER BY / allow-lists, so they get the same
-	// control-byte scrub as DecodeCursor. Values are bound SQL args —
+	// control-byte scrub as DecodeCursor. Values are bound SQL args,
 	// kept verbatim so the tuple comparison resumes at the exact row
 	// (see DecodeCursor for the round-trip contract).
 	for i := range tok.Fields {

@@ -47,7 +47,7 @@ type UserFieldMap struct {
 	Roles        string // default: "roles"
 	// PasswordSet flags whether the user has a real password vs the
 	// placeholder hash used by OAuth / magic-link auto-create. Defaults
-	// to "password_set". The column is optional — if missing from the
+	// to "password_set". The column is optional, if missing from the
 	// physical table, HasPassword returns ErrPasswordSetNotTracked and
 	// AccountsPlugin falls back to the conservative links-only rule.
 	PasswordSet string // default: "password_set"
@@ -72,7 +72,7 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 	if len(fieldMap) > 0 {
 		fm = fieldMap[0]
 	}
-	// Validate all identifiers at construction time — fail fast.
+	// Validate all identifiers at construction time, fail fast.
 	query.MustIdent(table)
 	query.MustIdent(fm.ID)
 	query.MustIdent(fm.Email)
@@ -87,7 +87,7 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 }
 
 // EnsureSchema creates the user table if it does not already exist. The auth
-// battery owns its schema, so hosts never hand-roll the DDL — AuthManager.Init
+// battery owns its schema, so hosts never hand-roll the DDL, AuthManager.Init
 // calls this. Idempotent. Boolean columns use the native PostgreSQL BOOLEAN
 // type so CreateUser's Go bool bindings work on a fresh Postgres database.
 func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
@@ -115,7 +115,7 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	}
 	// The OAuth link table backs OAuthLinker / AccountLister / AccountUnlinker
 	// for this store. Creating it here (rather than in OAuth2Plugin.Init) means
-	// the schema is right even for hosts that never turn OAuth on — and that a
+	// the schema is right even for hosts that never turn OAuth on, and that a
 	// host that adds OAuth later doesn't need a separate migration step.
 	return s.EnsureOAuthLinksSchema(ctx)
 }
@@ -228,7 +228,7 @@ func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error)
 // ListUsers enumerates accounts ordered by the email column, returning
 // one page plus the total row count. Implements UserLister.
 //
-// Only id/email/roles are selected — never password_hash — so a paged
+// Only id/email/roles are selected, never password_hash, so a paged
 // listing never surfaces password material. Roles are parsed with the
 // store's existing parseRoles helper, matching FindByEmail/FindByID.
 // The caller (AuthManager.ListUsers) clamps opts, so Limit>=1 and
@@ -426,7 +426,7 @@ type UserFields []schema.Field
 // any additional fields the host wants to attach (typically domain
 // columns like username, disabled_at, or display_name).
 //
-// The returned slice is independent — repeated calls don't mutate the
+// The returned slice is independent, repeated calls don't mutate the
 // receiver or the canonical list.
 //
 // Example:
@@ -495,7 +495,7 @@ func (s *EntitySessionStore) qTable(stmt string) string {
 }
 
 // Create generates a random token, inserts a session row, and returns it.
-// Rejects ttl <= 0 — the caller must supply a positive lifetime.
+// Rejects ttl <= 0, the caller must supply a positive lifetime.
 func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time.Duration) (*Session, error) {
 	if ttl <= 0 {
 		return nil, fmt.Errorf("auth: EntitySessionStore.Create: ttl must be > 0 (got %v)", ttl)

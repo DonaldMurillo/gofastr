@@ -68,7 +68,7 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	}
 
 	// Create parent directories. Mode 0o700 keeps tenant upload trees
-	// from being enumerable by other local users on a shared host — see
+	// from being enumerable by other local users on a shared host. See
 	// TestLocalStorage_SaveRestrictsDirectoryPermissions for the threat
 	// model (local enumeration of unrelated tenants' upload paths).
 	dir := filepath.Dir(fullPath)
@@ -82,7 +82,7 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	// Mode 0o600 keeps uploaded files readable only by the process
 	// owner. The default umask leaves os.Create at 0o644, which on a
 	// shared multi-tenant node exposes every upload to unrelated local
-	// users — see TestLocalStorage_SaveRestrictsFilePermissions.
+	// users. See TestLocalStorage_SaveRestrictsFilePermissions.
 	f, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating file: %w", err)
@@ -143,7 +143,7 @@ func (s *LocalStorage) Delete(_ context.Context, key string) error {
 // Get opens the file at key from the local filesystem for reading.
 //
 // Returns [ErrNotFound] (wrapping [os.ErrNotExist]) when the key is
-// missing — callers can match on os.ErrNotExist or upload.ErrNotFound
+// missing. Callers can match on os.ErrNotExist or upload.ErrNotFound
 // without parsing the message. Other errors are returned with the
 // absolute filesystem path stripped, so a 500 propagated to an end
 // user doesn't disclose where the data lives.
@@ -152,7 +152,7 @@ func (s *LocalStorage) Get(_ context.Context, key string) (io.ReadCloser, error)
 }
 
 // GetRange implements [RangeGetter]. The local backend already opens an
-// *os.File, so seekability costs nothing here — Get simply discarded it
+// *os.File, so seekability costs nothing here: Get simply discarded it
 // through the io.ReadCloser return type. Key validation is the same code
 // path, not a parallel one.
 func (s *LocalStorage) GetRange(_ context.Context, key string) (io.ReadSeekCloser, error) {
@@ -198,7 +198,7 @@ func (s *LocalStorage) open(key string) (*os.File, error) {
 }
 
 // ErrNotFound is wrapped by Get when the requested key doesn't exist.
-// Callers can match on this or on errors.Is(err, os.ErrNotExist) — the
+// Callers can match on this or on errors.Is(err, os.ErrNotExist): the
 // returned error wraps both so existing code continues to work.
 var ErrNotFound = errNotFound{}
 
@@ -210,7 +210,7 @@ func (errNotFound) Unwrap() error { return os.ErrNotExist }
 // ErrInvalidKey is wrapped when a storage key is rejected by
 // sanitization (path traversal, empty key, or a path that escapes the
 // base directory). The detection lives in [sanitizeKey] and the
-// backend's escape check — callers (e.g. [ServeHandler]) classify the
+// backend's escape check: callers (e.g. [ServeHandler]) classify the
 // typed error rather than re-implement path validation.
 var ErrInvalidKey = errors.New("upload: invalid key")
 

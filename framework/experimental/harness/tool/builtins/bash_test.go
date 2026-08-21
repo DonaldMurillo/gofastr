@@ -72,7 +72,7 @@ func TestLeadingCommand(t *testing.T) {
 	cases := map[string]string{
 		"ls -la":            "ls",
 		"  cat file":        "cat",
-		"echo;hi":           "echo;hi", // not split on `;` — tokenize on whitespace only
+		"echo;hi":           "echo;hi", // not split on `;`, tokenize on whitespace only
 		";security delete":  "security",
 		"|secret-tool find": "secret-tool",
 		"(echo a)":          "echo",

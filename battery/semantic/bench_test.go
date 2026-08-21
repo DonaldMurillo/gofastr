@@ -8,7 +8,7 @@ import (
 )
 
 // ============================================================================
-// Tier 5 — battery/semantic: in-memory flat-cosine retrieval
+// Tier 5, battery/semantic: in-memory flat-cosine retrieval
 // ============================================================================
 //
 // The flat store is documented as brute-force O(corpus) at query time,

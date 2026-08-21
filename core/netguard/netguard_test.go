@@ -36,7 +36,7 @@ func TestIsInternal(t *testing.T) {
 		{"link-local v4 169.254.0.1", net.ParseIP("169.254.0.1"), true},
 		{"link-local v6 fe80::1", net.ParseIP("fe80::1"), true},
 
-		// cloud instance-metadata — inside link-local, but named
+		// cloud instance-metadata, inside link-local, but named
 		// separately so a loosened link-local rule cannot reach it.
 		{"cloud instance-metadata 169.254.169.254", net.ParseIP("169.254.169.254"), true},
 
@@ -63,7 +63,7 @@ func TestIsInternal(t *testing.T) {
 		{"public 1.1.1.1", net.ParseIP("1.1.1.1"), false},
 		{"public 2606:4700:4700::1111", net.ParseIP("2606:4700:4700::1111"), false},
 
-		// nil input — a caller with no address has nothing to vouch for.
+		// nil input: a caller with no address has nothing to vouch for.
 		{"nil address", nil, true},
 	}
 
@@ -144,7 +144,7 @@ func TestIsInternal(t *testing.T) {
 	// Hostnames are the caller's job, not this predicate's: net.ParseIP
 	// returns nil for any non-IP literal, and IsInternal(nil) is true.
 	// A caller that resolves hostnames itself and passes the result is
-	// the only safe pattern — passing a bare hostname would be swallowed
+	// the only safe pattern. Passing a bare hostname would be swallowed
 	// here as "nil" and silently blocked.
 	t.Run("hostname literals are not this predicate's concern", func(t *testing.T) {
 		if ip := net.ParseIP("example.com"); ip != nil {

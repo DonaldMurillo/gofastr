@@ -67,7 +67,7 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 
 // RedeemToken atomically consumes a token (single-use) via DELETE … RETURNING,
 // returning the associated email. Returns ErrTokenNotFound when the token is
-// unknown, already redeemed, or expired — the row is removed regardless so a
+// unknown, already redeemed, or expired, the row is removed regardless so a
 // known-but-expired token can never be reused.
 func (s *SQLMagicLinkTokenStore) RedeemToken(ctx context.Context, token string) (string, error) {
 	q := fmt.Sprintf(`DELETE FROM %s WHERE token = $1 RETURNING email, expires_at`, query.QuoteIdent(s.table))

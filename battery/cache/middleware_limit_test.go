@@ -35,7 +35,7 @@ func TestCacheMiddleware_OverCapStreamsAndDoesNotStore(t *testing.T) {
 		t.Errorf("X-Cache = %q, want MISS", got)
 	}
 
-	// Second request must hit the origin again — proof it was NOT cached.
+	// Second request must hit the origin again, proof it was NOT cached.
 	rr2 := httptest.NewRecorder()
 	h.ServeHTTP(rr2, httptest.NewRequest(http.MethodGet, "/big", nil))
 	if hits != 2 {

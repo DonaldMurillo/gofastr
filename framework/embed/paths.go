@@ -11,7 +11,7 @@ import (
 // which ones are structurally exempt.
 //
 // The two API endpoints sit OUTSIDE the /__gofastr/embed/{surface} space on
-// purpose — a surface named "exchange" would otherwise shadow the exchange
+// purpose. A surface named "exchange" would otherwise shadow the exchange
 // endpoint, and "which pattern wins" is not a question a security boundary
 // should depend on.
 const (
@@ -24,7 +24,7 @@ const (
 	SurfacePrefix = "/__gofastr/embed/"
 
 	// GrantHeader carries the frame's grant on every credentialed request. A
-	// header rather than a cookie, because a cookie would be ambient — and
+	// header rather than a cookie, because a cookie would be ambient, and
 	// ambient is exactly what an embedded surface must not have.
 	GrantHeader = "X-Gofastr-Embed"
 )
@@ -33,7 +33,7 @@ const (
 // target, and so must not be gated on a CSRF token.
 //
 // This is not a convenience exemption. Double-submit CSRF works by pairing a
-// cookie with a header, and no cookie is ever sent from inside an embed frame —
+// cookie with a header, and no cookie is ever sent from inside an embed frame.
 // SameSite is computed against the top-level browsing context, which is the
 // customer's site. An app that installs CSRF middleware would therefore 403
 // every exchange with "missing cookie" and the feature would be dead, in
@@ -43,7 +43,7 @@ const (
 // credential to abuse. The exchange consumes a single-use nonce the caller must
 // already possess; the refresh consumes a grant the caller must already
 // possess. A cross-site page that could forge the request still has neither, so
-// there is no confused deputy to exploit — which is the same reasoning behind
+// there is no confused deputy to exploit, which is the same reasoning behind
 // middleware.SkipBearerAuth.
 func CSRFExempt(r *http.Request) bool {
 	if r == nil || r.URL == nil {
@@ -53,7 +53,7 @@ func CSRFExempt(r *http.Request) bool {
 	// nothing ambient, so the double-submit check has nothing to protect. This
 	// is what lets an embedded surface's island RPCs reach ORDINARY app routes,
 	// which are not under the embed path space and would otherwise 403 with
-	// "missing cookie" — no cookie is ever sent from inside a frame.
+	// "missing cookie". No cookie is ever sent from inside a frame.
 	//
 	// Setting a custom header is not something a cross-site form or an <img>
 	// can do; a cross-origin fetch that tries is preflighted, and the app
@@ -69,7 +69,7 @@ func CSRFExempt(r *http.Request) bool {
 	// Match the CLEANED path. r.URL.Path is percent-decoded, so
 	// "/__gofastr/embed/%2e%2e/%2e%2e/admin/delete" arrives here as a traversal
 	// that has the embed prefix but does not name an embed route. The router
-	// redirects such paths today, so nothing is exploitable — but an exemption
+	// redirects such paths today, so nothing is exploitable, but an exemption
 	// whose safety depends on another package's redirect behaviour is one
 	// refactor away from being wrong.
 	clean := path.Clean(r.URL.Path)
@@ -79,8 +79,8 @@ func CSRFExempt(r *http.Request) bool {
 	}
 	// The surface space is exempt for SAFE methods only.
 	//
-	// The framework mounts exactly two routes under SurfacePrefix — the shell
-	// and the content endpoint — and both are r.Get (see
+	// The framework mounts exactly two routes under SurfacePrefix, the shell
+	// and the content endpoint, and both are r.Get (see
 	// framework/uihost/embed.go mountEmbed). A blanket prefix exemption
 	// therefore granted CSRF-free status to nothing that exists, and to every
 	// POST/PUT/PATCH/DELETE an app might later mount under the same prefix.

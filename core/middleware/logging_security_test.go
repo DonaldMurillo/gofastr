@@ -35,7 +35,7 @@ func TestSampledLogging_SanitizesMethod(t *testing.T) {
 			t.Fatalf("sampled logger emitted raw control bytes in method: %q", out)
 		}
 		// safeLogMethod percent-encodes the control bytes, so the method
-		// must land as GE%0d%0aT%1b] — NOT JSON-escaped \r\n (which a text
+		// must land as GE%0d%0aT%1b], NOT JSON-escaped \r\n (which a text
 		// grep / naive log shipper would still render as a fake line).
 		if !strings.Contains(out, "GE%0d%0aT%1b]") {
 			t.Fatalf("sampled logger did not percent-encode control bytes in method (safeLogMethod not applied): %q", out)
@@ -49,7 +49,7 @@ func TestSampledLogging_SanitizesMethod(t *testing.T) {
 }
 
 // TestLogging_SanitizesMethod ensures r.Method is percent-encoded the
-// same way the URL path already is — CRLF / ESC in a forged method
+// same way the URL path already is; CRLF / ESC in a forged method
 // would otherwise paint fake log lines or terminal-escape mischief
 // into operator tails.
 func TestLogging_SanitizesMethod(t *testing.T) {
@@ -107,8 +107,8 @@ func TestLogging_LongPathTruncated(t *testing.T) {
 
 	logOutput := buf.String()
 	// If the full path appears, the logging sink does not bound the path
-	// length — disk exhaustion via long URLs. (Recovery/timeout already
-	// truncated; logging did not — see TestLogSinksScrubAndBound.)
+	// length; disk exhaustion via long URLs. (Recovery/timeout already
+	// truncated; logging did not. See TestLogSinksScrubAndBound.)
 	if strings.Contains(logOutput, strings.Repeat("A", 10000)) {
 		t.Errorf("SECURITY: [logging] full 10KB path logged unbounded. Attack: disk exhaustion via long URLs.")
 	}
@@ -150,7 +150,7 @@ func (h *captureHandler) reset() {
 // property across EVERY sink that logs a request-derived value: control
 // bytes must be scrubbed (r.URL.Path is percent-DECODED, so %0d%0a is a real
 // CRLF) and the path must be length-bounded. Logging scrubbed but never
-// truncated; recovery/timeout truncated but never scrubbed — each sink held
+// truncated; recovery/timeout truncated but never scrubbed; each sink held
 // only one half. This loops the property × surface so a new sink can't drift
 // the same way.
 func TestLogSinksScrubAndBound(t *testing.T) {
@@ -226,7 +226,7 @@ func TestLogSinksScrubAndBound(t *testing.T) {
 // (0x00–0x1F) and DEL (0x7F) is percent-encoded by scrubControlBytes.
 // The fast-path probe is a ContainsAny allow-list over a byte set; if it
 // omits any byte the encoder loop would catch, a string carrying ONLY that
-// byte bypasses the encoder and is returned raw — so a lone SOH (0x01) or
+// byte bypasses the encoder and is returned raw, so a lone SOH (0x01) or
 // FS (0x1c) reached the log attribute verbatim. Property: no raw C0/DEL
 // byte survives scrubbing, for every byte in the range.
 func TestScrubControlBytes_FullC0Range(t *testing.T) {
@@ -244,7 +244,7 @@ func TestScrubControlBytes_FullC0Range(t *testing.T) {
 }
 
 // TestLogSinks_BoundMethod pins the third log-injection axis the path
-// already had: the HTTP method (attacker-controlled — net/http accepts any
+// already had: the HTTP method (attacker-controlled, net/http accepts any
 // RFC 7230 token) must be length-bounded in every request-log sink, or a
 // forged 10 KB method string lands in the log whole. Recovery/Logging both
 // logged it unbounded after the path got its cap.
@@ -297,9 +297,9 @@ func TestLogSinks_BoundMethod(t *testing.T) {
 
 // TestRecovery_EncodeBeforeTruncate pins the order: the panic value is
 // control-byte-encoded FIRST and only then length-bounded. The reverse
-// (truncate-then-encode) lets the encoded form blow past the cap — N bytes
+// (truncate-then-encode) lets the encoded form blow past the cap: N bytes
 // of \r truncate to N bytes, then each encodes to %0d (3 bytes), yielding
-// 3N bytes in the log — and can also split a %xx encoding at the cut. The
+// 3N bytes in the log, and can also split a %xx encoding at the cut. The
 // property: the logged "error" attribute never exceeds maxRecoveryPanicLen,
 // even when every byte expands on encoding.
 func TestRecovery_EncodeBeforeTruncate(t *testing.T) {
@@ -328,7 +328,7 @@ func TestRecovery_EncodeBeforeTruncate(t *testing.T) {
 // control-byte-encode FIRST and only then length-bound, but the sibling
 // slog.Error in timeout.go's late-panic watcher kept the reverse order
 // (truncate-then-encode): N bytes of \r truncate to N bytes, then each
-// encodes to %0d (3 bytes), yielding 3N bytes in the log — blowing past
+// encodes to %0d (3 bytes), yielding 3N bytes in the log, blowing past
 // maxRecoveryPanicLen. The property: the logged "error" attribute never
 // exceeds maxRecoveryPanicLen, even when every byte expands on encoding.
 func TestTimeout_EncodeBeforeTruncate(t *testing.T) {

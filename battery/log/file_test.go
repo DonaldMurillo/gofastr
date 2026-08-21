@@ -35,7 +35,7 @@ func TestFileSinkAppendsLines(t *testing.T) {
 func TestFileSinkRotatesOnSize(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
-	// 20-byte cap; each entry "X" + "\n" is 2 bytes — but writes go in
+	// 20-byte cap; each entry "X" + "\n" is 2 bytes, but writes go in
 	// blocks of ~22 bytes once we factor the JSON shape we'll use here.
 	s, err := FileSink(path, FileOpts{MaxSize: 20, MaxBackups: 3})
 	if err != nil {

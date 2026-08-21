@@ -84,7 +84,7 @@ func TestPageExternalizesDataBlocks(t *testing.T) {
 	if strings.Contains(page, `src="/__gofastr/actions.js"`) {
 		t.Error("whole-app actions.js still referenced on a live page")
 	}
-	// manifest.js must precede runtime.js — its globals are read at boot.
+	// manifest.js must precede runtime.js: its globals are read at boot.
 	if strings.Index(page, "/__gofastr/manifest.js") > strings.Index(page, "/__gofastr/runtime.js") {
 		t.Error("manifest.js must be injected before runtime.js")
 	}
@@ -131,7 +131,7 @@ func TestWidgetJSGatedAndVersioned(t *testing.T) {
 	}
 }
 
-// A prefetch presented with a dead session gets 204 and no mint — the
+// A prefetch presented with a dead session gets 204 and no mint. The
 // client never caches it, so the real click performs the rollover. A
 // prefetch that were served instead would let the click paint from the
 // cached entry with the stale token still in place.

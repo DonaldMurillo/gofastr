@@ -33,7 +33,7 @@ var ErrListUsersUnsupported = errors.New("auth: user store does not support list
 
 // ListUsers enumerates accounts through the configured UserStore when
 // it implements UserLister. It is the supported replacement for raw SQL
-// against the auth_users table. There is no HTTP route — call it from
+// against the auth_users table. There is no HTTP route, call it from
 // trusted server code (an admin handler, a back-office screen).
 //
 // opts is clamped: Limit<=0 becomes 50, values above 500 are capped at

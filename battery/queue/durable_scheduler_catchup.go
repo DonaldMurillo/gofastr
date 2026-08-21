@@ -66,7 +66,7 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 	} else {
 		// Cadence-change recovery: the stored cursor is not an occurrence of
 		// the current spec (typical after re-registering an existing schedule
-		// with a different cron, or after switching interval→cron — `ON
+		// with a different cron, or after switching interval→cron, `ON
 		// CONFLICT ... DO UPDATE` deliberately preserves the old next_run to
 		// fence concurrent claimants). Advance to the next valid occurrence
 		// strictly after the cursor instead of erroring: the caller persists
@@ -82,7 +82,7 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 }
 
 // tzName returns the IANA location name to persist for a schedule registered
-// in loc. Empty means "evaluate in UTC" — the column default, which keeps
+// in loc. Empty means "evaluate in UTC", the column default, which keeps
 // pre-existing rows backward-compatible with the original UTC-only behaviour.
 // A fixed offset zone (time.FixedZone) has no IANA name and cannot represent
 // DST transitions, so it collapses to the empty default rather than persisting
@@ -94,7 +94,7 @@ func tzName(loc *time.Location) string {
 	name := loc.String()
 	if name == "" || name == "Local" {
 		// "Local" round-trips through LoadLocation but resolves to
-		// whatever zone the READING process runs in — replica-dependent
+		// whatever zone the READING process runs in, replica-dependent
 		// evaluation. Persist the UTC default instead; a schedule that
 		// wants local-time semantics must register with a named IANA
 		// zone.

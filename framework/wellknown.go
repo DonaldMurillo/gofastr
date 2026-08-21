@@ -1,15 +1,15 @@
 package framework
 
-// wellknown.go — the agent-readiness well-known endpoints that the
+// wellknown.go: the agent-readiness well-known endpoints that the
 // isitagentready scanner scores. Each is auto-served when its precondition
 // holds, so a host that wires the basics scores without per-route work:
 //
-//   - /.well-known/api-catalog                 (RFC 9727 linkset+json) — when the app has an API (entities)
-//   - /.well-known/mcp/server-card.json        — when WithMCP exposes /mcp
+//   - /.well-known/api-catalog                 (RFC 9727 linkset+json): when the app has an API (entities)
+//   - /.well-known/mcp/server-card.json:         when WithMCP exposes /mcp
 //     (plus the /mcp/server-card alias and /.well-known/mcp/catalog.json,
 //     both also gated on WithMCP)
-//   - /.well-known/agent-skills/index.json     — opt-in (host declares skills)
-//   - /.well-known/oauth-authorization-server  (RFC 8414) — opt-in (host is an OAuth issuer)
+//   - /.well-known/agent-skills/index.json:      opt-in (host declares skills)
+//   - /.well-known/oauth-authorization-server  (RFC 8414): opt-in (host is an OAuth issuer)
 //
 // The scanner only requires a 200 at each path; we emit real, spec-shaped
 // bodies so the artifacts are useful, not just present.
@@ -25,7 +25,7 @@ import (
 // sitemap base to fall back on, so the request is the source of truth.
 //
 // X-Forwarded-Host is NOT honored. It is a plain request header, so any
-// client sets it — and the value ends up in the `Link: rel="service"`
+// client sets it, and the value ends up in the `Link: rel="service"`
 // header naming the MCP endpoint. Reflecting an arbitrary origin there,
 // with no Vary, is a cache-poisoning primitive that redirects a later
 // visitor's agent at an attacker's server. That is the same reasoning
@@ -36,7 +36,7 @@ import (
 // the request was actually addressed to, and varyWellKnown below keeps
 // caches from serving one caller's value to another.
 //
-// X-Forwarded-Proto IS honored — a TLS-terminating proxy is the normal
+// X-Forwarded-Proto IS honored, a TLS-terminating proxy is the normal
 // deployment, and the worst a forged value does is emit an https:// or
 // http:// prefix for the same host.
 func resolveWellKnownBase(r *http.Request) string {
@@ -114,7 +114,7 @@ func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
 	enc.Encode(a.buildMCPServerCard(r))
 }
 
-// handleMCPCatalog serves /.well-known/mcp/catalog.json — the spec-
+// handleMCPCatalog serves /.well-known/mcp/catalog.json, the spec-
 // recommended well-known that points at the server card.
 func (a *App) handleMCPCatalog(w http.ResponseWriter, r *http.Request) {
 	base := resolveWellKnownBase(r)

@@ -5,7 +5,7 @@ import "sync"
 // defaultBlurHashQuality is the JPEG quality BlurHashDataURL uses when
 // BlurHashRenderConfig.Quality is zero. A decoded blur is nothing but
 // low-frequency gradients, so quality below ~50 starts showing blocking
-// artifacts for no meaningful byte saving — measured across several
+// artifacts for no meaningful byte saving. Measured across several
 // hashes, q40 saved ~12 bytes on an ~880-byte payload.
 //
 // JPEG is the default format rather than PNG because its size is nearly
@@ -67,7 +67,7 @@ func BlurHashDataURL(hash string, cfg BlurHashRenderConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Only successful renders are cached — a malformed hash must not
+	// Only successful renders are cached. A malformed hash must not
 	// occupy a slot, or a hot bad row would evict good entries.
 	blurHashCache.put(k, durl)
 	return durl, nil
@@ -87,8 +87,8 @@ func SetBlurHashCacheSize(n int) { blurHashCache.resize(n) }
 func BlurHashCacheLen() int { return blurHashCache.len() }
 
 // blurHashKey identifies a rendered placeholder. Every field of
-// BlurHashRenderConfig that changes the output bytes participates —
-// omitting one would serve one variant's render for another's request.
+// BlurHashRenderConfig that changes the output bytes participates.
+// Omitting one would serve one variant's render for another's request.
 type blurHashKey struct {
 	hash    string
 	width   int

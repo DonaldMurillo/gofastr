@@ -15,14 +15,14 @@ import (
 // A user may link more than one OAuth provider (Google + GitHub + a corporate
 // OIDC), so links live in their own table keyed by (provider, provider_id)
 // rather than as columns on the users table. The table name is derived from
-// the configured user table via the "<table>_oauth_links" convention — hosts
+// the configured user table via the "<table>_oauth_links" convention, hosts
 // that pick a custom users table get a matching links table for free, and no
 // two EntityUserStore instances on the same DB collide on the link table.
 //
 // All four methods here are the durable implementations of the optional
 // interfaces declared in accounts.go (OAuthLinker, OAuthEnrichedLinker,
 // AccountLister, AccountUnlinker). EntityUserStore is now a linker by
-// default — production OAuth login requires it (see OAuth2Plugin.Init).
+// default, production OAuth login requires it (see OAuth2Plugin.Init).
 
 // oauthLinksTable returns the link-table name derived from the user table.
 func (s *EntityUserStore) oauthLinksTable() string {
@@ -55,7 +55,7 @@ func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
 	}
-	// user_id index powers ListAccounts / UnlinkOAuth — without it both
+	// user_id index powers ListAccounts / UnlinkOAuth, without it both
 	// degenerate to full scans of a table that grows with the user count.
 	idx := fmt.Sprintf(
 		"CREATE INDEX IF NOT EXISTS %s ON %s (%s)",
@@ -72,8 +72,8 @@ func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 // FindByOAuth returns the locally-linked user for a (provider, providerID)
 // pair, or ErrUserNotFound when no link exists. Implements OAuthLinker.
 //
-// The lookup is two-step — read the user_id from the link table, then read
-// the user — so the link table stays narrow and the user row stays the single
+// The lookup is two-step, read the user_id from the link table, then read
+// the user, so the link table stays narrow and the user row stays the single
 // source of truth for profile/roles. A link pointing at a since-deleted user
 // resolves to ErrUserNotFound (FindByID's sentinel).
 func (s *EntityUserStore) FindByOAuth(ctx context.Context, provider, providerID string) (User, error) {
@@ -99,14 +99,14 @@ func (s *EntityUserStore) FindByOAuth(ctx context.Context, provider, providerID 
 // the profile columns ONLY: the PRIMARY KEY is the serialization point, so
 // two concurrent first-logins for the same external identity cannot create
 // conflicting rows. The user_id of an existing binding is immutable from
-// this path — rebinding an identity to a different local account is an admin
+// this path, rebinding an identity to a different local account is an admin
 // operation, not an OAuth callback. Implements OAuthLinker.
 func (s *EntityUserStore) LinkOAuth(ctx context.Context, userID, provider, providerID string) error {
 	return s.linkOAuth(ctx, userID, provider, providerID, OAuthAccountProfile{})
 }
 
 // LinkOAuthEnriched is LinkOAuth plus the profile snapshot at link time.
-// Implements OAuthEnrichedLinker. The profile fields are informational — the
+// Implements OAuthEnrichedLinker. The profile fields are informational, the
 // authoritative identity is still the (provider, provider_id) pair. On a
 // pre-existing link the profile is refreshed in place (the email a user sees
 // in /auth/accounts should match what the IdP says now, not what it said at
@@ -169,7 +169,7 @@ func (s *EntityUserStore) ListAccounts(ctx context.Context, userID string) ([]Ac
 }
 
 // UnlinkOAuth removes every link for (userID, provider). Deleting an absent
-// link is not an error — the caller (AccountsPlugin) has already verified
+// link is not an error, the caller (AccountsPlugin) has already verified
 // the link exists and that removing it leaves the user with a login method.
 // Implements AccountUnlinker.
 func (s *EntityUserStore) UnlinkOAuth(ctx context.Context, userID, provider string) error {
@@ -191,7 +191,7 @@ func nullable(s string) any {
 }
 
 // countLinksForProvider is a test-accessible row count for a (provider,
-// provider_id) pair — used to pin the race-safety invariant: two concurrent
+// provider_id) pair, used to pin the race-safety invariant: two concurrent
 // LinkOAuth calls for the same pair yield exactly one row.
 func (s *EntityUserStore) countLinksForProvider(ctx context.Context, provider, providerID string) (int, error) {
 	var n int

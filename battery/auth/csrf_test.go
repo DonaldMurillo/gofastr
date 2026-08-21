@@ -66,7 +66,7 @@ func TestCSRF_POSTAcceptsFormBodyToken(t *testing.T) {
 		t.Fatal("no CSRF cookie from GET")
 	}
 
-	// 2. POST the same token in the form body — should pass.
+	// 2. POST the same token in the form body, should pass.
 	called := false
 	postHandler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -242,7 +242,7 @@ func TestCSRF_WithDevCSRFKey_StableAcrossInstantiation(t *testing.T) {
 func TestCSRF_WithCSRFSkipPaths_PinsPerRouteExemption(t *testing.T) {
 	mw := CSRF(WithCSRFSkipPaths("/webhooks/", "/health"))
 
-	// /webhooks/* — skipped.
+	// /webhooks/*: skipped.
 	rec := httptest.NewRecorder()
 	mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
@@ -251,7 +251,7 @@ func TestCSRF_WithCSRFSkipPaths_PinsPerRouteExemption(t *testing.T) {
 		t.Errorf("/webhooks/stripe POST: should bypass CSRF, got %d", rec.Code)
 	}
 
-	// /save — still enforced (no cookie → 403).
+	// /save: still enforced (no cookie → 403).
 	rec2 := httptest.NewRecorder()
 	mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
@@ -260,7 +260,7 @@ func TestCSRF_WithCSRFSkipPaths_PinsPerRouteExemption(t *testing.T) {
 		t.Errorf("/save POST: should still be enforced, got %d", rec2.Code)
 	}
 
-	// Bearer auth still skipped — the option layers on top of
+	// Bearer auth still skipped, the option layers on top of
 	// SkipBearerAuth, not in place of it.
 	bearerReq := httptest.NewRequest(http.MethodPost, "/api/items", strings.NewReader(`{}`))
 	bearerReq.Header.Set("Authorization", "Bearer xxx")

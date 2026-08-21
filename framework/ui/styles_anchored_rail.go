@@ -68,7 +68,7 @@ func anchoredRailCSS(t style.Theme) string {
 			"color", "{colors.text-subtle}",
 			"text-align", "right",
 		).End().
-		// Active state — scrollspy sets BOTH .is-active and aria-current.
+		// Active state: scrollspy sets BOTH .is-active and aria-current.
 		Rule(`.ui-anchored-rail__list a.is-active, .ui-anchored-rail__list a[aria-current="true"]`).
 		Set("color", "{colors.text}").End().
 		Rule(`.ui-anchored-rail__list a.is-active .ui-anchored-rail__eyebrow, .ui-anchored-rail__list a[aria-current="true"] .ui-anchored-rail__eyebrow`).

@@ -11,7 +11,7 @@
 //   - inline tables in an array: mcp_servers = [{...}, {...}]
 //
 // More complex TOML (deeply nested tables, table arrays with multiple
-// lines, datetime types) is intentionally rejected — keep the
+// lines, datetime types) is intentionally rejected, keep the
 // surface tight, fail loudly on overreach.
 package profile
 

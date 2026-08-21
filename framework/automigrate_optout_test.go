@@ -11,7 +11,7 @@ import (
 )
 
 // startAndStop boots the app on an ephemeral port, waits for OnReady,
-// and shuts it down — returning Start's error if it failed instead.
+// and shuts it down, returning Start's error if it failed instead.
 func startAndStop(t *testing.T, app *App) error {
 	t.Helper()
 	ready := make(chan struct{}, 1)

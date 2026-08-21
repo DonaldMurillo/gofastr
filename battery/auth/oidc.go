@@ -23,7 +23,7 @@ import (
 // and only third-party id_tokens are validated here against the IdP's published
 // asymmetric keys.
 //
-// id_token verification is the security core — see oidc_jwks.go. Signature
+// id_token verification is the security core. See oidc_jwks.go. Signature
 // algorithms are pinned to RS256/ES256; "none", HS256 and alg-confusion
 // attacks are rejected before any key lookup.
 
@@ -40,7 +40,7 @@ type OIDCClaimsMapping struct {
 	// OIDC Core §5.1. Some IdPs emit the value as the string "true"
 	// rather than a JSON bool; both shapes are accepted (the string is
 	// matched case-insensitively). When the claim is absent or unparseable,
-	// EmailVerified is set to false — an unverifiable email must never
+	// EmailVerified is set to false, an unverifiable email must never
 	// bind to an existing local account.
 	EmailVerifiedClaim string
 }
@@ -95,7 +95,7 @@ type OIDCProvider struct {
 }
 
 // NewOIDCProvider validates cfg and returns a provider WITHOUT performing any
-// network I/O — discovery runs lazily on first use.
+// network I/O, discovery runs lazily on first use.
 func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 	if cfg.Issuer == "" {
 		return nil, errors.New("oidc: Issuer is required")
@@ -107,7 +107,7 @@ func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 		// Confidential-client only. The secret is the sole protection on the
 		// code→token exchange (this provider sends no PKCE code_verifier). Do
 		// NOT relax this to support public/SPA clients without first adding a
-		// random per-request PKCE verifier bound via a cookie or store — a
+		// random per-request PKCE verifier bound via a cookie or store, a
 		// secret-less exchange with no verifier is unprotected.
 		return nil, errors.New("oidc: ClientSecret is required")
 	}
@@ -260,7 +260,7 @@ func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, erro
 // ─── OAuth2Provider interface ────────────────────────────────────────────────
 
 // AuthURL builds the authorization-endpoint redirect. No nonce is sent: this
-// is the confidential-client authorization-code flow — the code is single-use
+// is the confidential-client authorization-code flow, the code is single-use
 // and exchanged server-to-server with the client secret, and the OAuth2
 // plugin's HMAC state token already binds the callback to this redirect. A
 // nonce is only mandatory for the implicit/hybrid flow, where no server-side
@@ -330,7 +330,7 @@ func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2To
 	}
 	if body.IDToken == "" {
 		// scope includes openid, so an id_token is expected. Without it we
-		// cannot establish identity — refuse rather than trust the (unsigned)
+		// cannot establish identity, refuse rather than trust the (unsigned)
 		// access token alone.
 		return nil, errors.New("oidc: token response missing id_token")
 	}
@@ -414,7 +414,7 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 				if avatar == "" {
 					avatar = claimString(ui, p.cfg.Claims.AvatarClaim)
 				}
-				// A signature-bound id_token email_verified ALWAYS wins — never
+				// A signature-bound id_token email_verified ALWAYS wins, never
 				// overwrite a signed `false` with an unsigned userinfo `true`.
 				// Consult userinfo only when the id_token did NOT carry the claim.
 				if !verifiedPresent {
@@ -438,7 +438,7 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 
 // parseEmailVerified reads the configured EmailVerifiedClaim from a claim
 // map. Accepts a JSON bool, or the strings "true"/"false" (some IdPs emit
-// the value as a string). Anything else — including the claim's absence —
+// the value as a string). Anything else, including the claim's absence,
 // resolves to false. An unverifiable email must never bind to an account.
 // parseEmailVerifiedClaim reads the configured email_verified claim, returning
 // its boolean value AND whether the claim was PRESENT at all. Presence drives
@@ -462,7 +462,7 @@ func parseEmailVerifiedClaim(claims map[string]interface{}, claimName string) (v
 	case string:
 		return strings.EqualFold(v, "true"), true
 	}
-	// Present but an unrecognized type — treat as present + false: an
+	// Present but an unrecognized type, treat as present + false: an
 	// unparseable verification claim must never read as verified, and the
 	// signed token having carried *something* means we do not re-fetch.
 	return false, true
@@ -561,7 +561,7 @@ func claimString(claims map[string]interface{}, key string) string {
 // verifyClaims enforces the id_token claim checks (iss/aud/exp/iat/sub). It is
 // called by verifyIDToken AFTER the signature has been verified.
 func (p *OIDCProvider) verifyClaims(claims map[string]interface{}) error {
-	const leeway int64 = 60 // seconds — covers clock skew and IdP drift
+	const leeway int64 = 60 // seconds, covers clock skew and IdP drift
 	now := time.Now().Unix()
 
 	if normalizeIssuer(claimString(claims, "iss")) != normalizeIssuer(p.cfg.Issuer) {
@@ -582,7 +582,7 @@ func (p *OIDCProvider) verifyClaims(claims map[string]interface{}) error {
 	if !found {
 		return errors.New("oidc: id_token aud does not contain client_id")
 	}
-	// The authorized-party claim, when present, must name this client — OIDC
+	// The authorized-party claim, when present, must name this client, OIDC
 	// §3.1.3.7.3 states this unconditionally (not only for multi-audience
 	// tokens). A multi-audience token additionally MUST carry azp at all.
 	if azp := claimString(claims, "azp"); azp != "" {

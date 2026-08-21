@@ -17,8 +17,8 @@ import (
 //
 // Attack: dev mode implies mount + introspection + the control tools,
 // with no auth in front of them, and pins the transport to a loopback
-// *Host header*. That pin stops DNS rebinding — a browser cannot forge
-// Host — but it is a browser control, not a network control: any TCP
+// *Host header*. That pin stops DNS rebinding, a browser cannot forge
+// Host, but it is a browser control, not a network control: any TCP
 // client sets Host freely. Proof from the audit: an honest LAN Host got
 // 403, `Host: localhost` got a full tools/list plus app_module_disable
 // reaching its handler. `gofastr dev --addr 0.0.0.0:8080` on a shared
@@ -31,7 +31,7 @@ func TestDevMCPRefusesNonLoopbackBind(t *testing.T) {
 	loopback := []string{
 		"localhost:8080", "127.0.0.1:8080", "[::1]:8080",
 		"127.0.0.1:0",
-		// No address chosen at all — the server-side default is
+		// No address chosen at all, the server-side default is
 		// localhost:8080.
 		"",
 	}
@@ -90,7 +90,7 @@ func TestDevMCPRefusalMessageNamesTheFix(t *testing.T) {
 // mcp.Gated and auth.MCPUser/MCPRole exist but had zero production call
 // sites: every shipped tool was ungated. For the read-only introspection
 // tools that is a documented posture; for app_module_enable /
-// app_module_disable — which change what the running app serves — it
+// app_module_disable, which change what the running app serves, it
 // means a reachable /mcp is a control plane for whoever finds it.
 //
 // The dev loop is exempt: `gofastr dev` implies these tools with no auth
@@ -124,7 +124,7 @@ func TestControlToolsGatedInProduction(t *testing.T) {
 // the classifier tests above only exercise its inputs. This drives the
 // method: an exposed bind drops the dev-implied opt-in, a loopback bind
 // keeps it, the documented env escape hatch restores it, and an
-// EXPLICIT WithMCPControl is never touched — that is a deliberate
+// EXPLICIT WithMCPControl is never touched, that is a deliberate
 // production choice with its own gate, not the dev loop's convenience.
 func TestGuardDevMCPBindWithdrawsOnlyDevImplied(t *testing.T) {
 	devApp := func() *App {
@@ -163,7 +163,7 @@ func TestGuardDevMCPBindWithdrawsOnlyDevImplied(t *testing.T) {
 }
 
 // warnUnresolvableRelations is a boot diagnostic, so its value is that
-// it fires on the shape it exists for and stays quiet otherwise — a
+// it fires on the shape it exists for and stays quiet otherwise, a
 // warning on every healthy boot is a warning nobody reads.
 func TestWarnUnresolvableRelationsIsSelective(t *testing.T) {
 	var buf bytes.Buffer

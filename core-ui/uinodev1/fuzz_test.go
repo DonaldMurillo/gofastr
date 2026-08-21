@@ -7,7 +7,7 @@ import (
 // FuzzValidate is the design §10 gate-item-5 fuzz target. The property
 // invariant is: Validate MUST NEVER PANIC for any input, and any input
 // it accepts MUST be re-validatable without error after re-marshaling
-// to JSON. Inputs it rejects are fine — rejection is the safe path.
+// to JSON. Inputs it rejects are fine, rejection is the safe path.
 //
 // The seeds span the closed enum plus every adversarial shape so the
 // fuzzer starts from interesting frontier inputs.
@@ -41,11 +41,11 @@ func FuzzValidate(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		// Property 1: never panic. (The fuzz harness itself enforces this —
+		// Property 1: never panic. (The fuzz harness itself enforces this,
 		// a panic fails the fuzz run.)
 		tree, err := Validate(data, DefaultLimits())
 		if err != nil {
-			// Rejected — safe path. Nothing more to check.
+			// Rejected: safe path. Nothing more to check.
 			return
 		}
 		// Property 2: an accepted tree must have a non-nil root Props.
@@ -58,7 +58,7 @@ func FuzzValidate(f *testing.F) {
 		if tree.Root.Component == "" {
 			t.Fatalf("accepted tree has empty component: %q", data)
 		}
-		// Property 3: the closed enum is honored — the component must be
+		// Property 3: the closed enum is honored, the component must be
 		// in the dispatch table. (Defensive; Validate guarantees this.)
 		if _, ok := componentDecoders[tree.Root.Component]; !ok {
 			t.Fatalf("accepted tree has unknown component %q: %q", tree.Root.Component, data)

@@ -9,7 +9,7 @@ import (
 
 // A grant is delegated authority parked in a page the app does not control.
 // What it may reach is decided by the surface, not by whether the app author
-// remembered to gate a route — the framework mounts /mcp, {auth}/tokens and
+// remembered to gate a route: the framework mounts /mcp, {auth}/tokens and
 // /admin/* itself, so "the author will gate it" was never a property anyone
 // could hold.
 

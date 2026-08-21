@@ -4,18 +4,18 @@ package main
 // axe-core accessibility gate for the Meridian flagship app.
 //
 // Meridian is the design-system completeness canary (CLAUDE.md hard rule 9):
-// every surface — marketing, auth, app, admin — is scanned under BOTH color
+// every surface, marketing, auth, app, admin, is scanned under BOTH color
 // schemes, plus the first OPEN-WIDGET scan in the repo (the Quick-add modal
 // scanned in its open state). The reusable harness lives in internal/axetest;
 // this file owns only the page list, the allowlist, and the gate.
 //
-// Run ISOLATED — never parallel with other chromedp suites:
+// Run ISOLATED, never parallel with other chromedp suites:
 //
 //	go test ./examples/meridian/ -run TestAxeMeridian
 //
 // Unlike the site's component gallery, Meridian is a real app: gallery-style
 // allowlist justifications (heading skips from isolated components, duplicate
-// landmarks from stacked demos) do NOT apply — fix violations at the right
+// landmarks from stacked demos) do NOT apply, fix violations at the right
 // layer (framework/ui or core-ui upstream; or the screen if the app composed
 // wrong) and keep the allowlist for genuine false positives only.
 // =============================================================================
@@ -34,7 +34,7 @@ import (
 )
 
 // axeAllowlist names axe-core rule IDs deliberately skipped, with a
-// justification. Starts EMPTY — Meridian is a real app, so every violation is
+// justification. Starts EMPTY. Meridian is a real app, so every violation is
 // fixed at its source, not tolerated. Add an entry ONLY for a genuine false
 // positive or a documented framework-level design decision, and report it
 // prominently in the gate output + final report rather than burying it.
@@ -73,7 +73,7 @@ func axeFirstDetailID(t *testing.T, browser context.Context, base, listPath, bas
 		t.Fatalf("discover detail id on %s: %v", listPath, err)
 	}
 	if href == "" {
-		t.Fatalf("no detail link on %s under %s — is the entity seeded?", listPath, basePath)
+		t.Fatalf("no detail link on %s under %s: is the entity seeded?", listPath, basePath)
 	}
 	return strings.TrimPrefix(href, basePath+"/")
 }
@@ -81,7 +81,7 @@ func axeFirstDetailID(t *testing.T, browser context.Context, base, listPath, bas
 // axeAdminEntityTables discovers every entity exposed in the admin back-office
 // by scraping the entity-screen sidebar nav. The adminSidebar (an
 // interactive.SectionMenu) lists one link per exposed entity, built from the
-// same entitiesToExpose() that mounts the /admin/e/<table> routes — so this
+// same entitiesToExpose() that mounts the /admin/e/<table> routes, so this
 // derives the scan set from the running app's actual exposure rather than a
 // hand-maintained list: add an entity and its list/new screens are scanned
 // with no test edit. Must run AFTER e2eLogin (admin pages are auth-gated).
@@ -112,13 +112,13 @@ func axeAdminEntityTables(t *testing.T, browser context.Context, base string) []
 		t.Fatalf("parse admin entities %q: %v", raw, err)
 	}
 	if len(tables) == 0 {
-		t.Fatal("no admin entities discovered from /admin/e/customers sidebar — is AllEntities wired?")
+		t.Fatal("no admin entities discovered from /admin/e/customers sidebar: is AllEntities wired?")
 	}
 	return tables
 }
 
 // axeAdminRowID navigates to an admin entity list and returns the id of the
-// first row's View link — the last path segment of /admin/e/<table>/view/<id>.
+// first row's View link, the last path segment of /admin/e/<table>/view/<id>.
 // Used to scan a real seeded record's edit + view screens. (Distinct from
 // axeFirstDetailID: admin detail URLs carry an extra /view/ segment, so the
 // app-style TrimPrefix would yield "view/<id>" instead of "<id>".)
@@ -141,7 +141,7 @@ func axeAdminRowID(t *testing.T, browser context.Context, base, table string) st
 		t.Fatalf("discover admin row id on %s: %v", listPath, err)
 	}
 	if id == "" {
-		t.Fatalf("no admin view link on %s — is %s seeded?", listPath, table)
+		t.Fatalf("no admin view link on %s: is %s seeded?", listPath, table)
 	}
 	return id
 }
@@ -190,7 +190,7 @@ func axeScanPage(t *testing.T, browser context.Context, base, path, scheme strin
 }
 
 // TestAxeMeridianClean is the gate. It scans marketing, auth, app, and admin
-// pages under both color schemes, plus the open Quick-add modal — the first
+// pages under both color schemes, plus the open Quick-add modal, the first
 // open-widget axe coverage in the repo. Prints every violation before failing.
 func TestAxeMeridianClean(t *testing.T) {
 	if testing.Short() {
@@ -204,7 +204,7 @@ func TestAxeMeridianClean(t *testing.T) {
 
 	var failed bool
 
-	// Anonymous pages — scanned BEFORE login so guest-only routes (/login,
+	// Anonymous pages, scanned BEFORE login so guest-only routes (/login,
 	// /signup) aren't redirected to /app by guestPolicy. Marketing pages are
 	// public; auth pages are guest-only (an authenticated visitor is bounced
 	// to /app, so scanning them post-login would audit the dashboard instead).
@@ -225,7 +225,7 @@ func TestAxeMeridianClean(t *testing.T) {
 
 	// Log in once on a tab from THIS browser so the session cookie is set for
 	// every fresh tab the authenticated scans open. chromedp.Submit doesn't
-	// fire submit — e2eLogin clicks the button.
+	// fire submit, e2eLogin clicks the button.
 	loginCtx, loginCancel := axetest.NewTab(t, browser)
 	e2eLogin(t, loginCtx, base)
 	loginCancel()
@@ -260,7 +260,7 @@ func TestAxeMeridianClean(t *testing.T) {
 	for _, table := range adminTables {
 		adminPages = append(adminPages, "/admin/e/"+table, "/admin/e/"+table+"/new")
 	}
-	// customers edit + view — seeded data exists, so exercise the form +
+	// customers edit + view, seeded data exists, so exercise the form +
 	// read-only detail screens too. (The other entities' edit/view need a row
 	// we'd have to create; customers is the canonical seeded one.)
 	adminPages = append(adminPages,
@@ -276,7 +276,7 @@ func TestAxeMeridianClean(t *testing.T) {
 		}
 	}
 
-	// OPEN-WIDGET case — the first open-state axe scan in the repo. Opens the
+	// OPEN-WIDGET case, the first open-state axe scan in the repo. Opens the
 	// Quick-add customer modal (preset.Modal) and scans the open DOM in both
 	// schemes, so the modal's focus trap, backdrop, labels, and contrast are
 	// audited, not just the closed-page shell.
@@ -310,7 +310,7 @@ func TestAxeMeridianClean(t *testing.T) {
 	if failed {
 		t.Errorf("\nfix the violations at the right layer (framework/ui or core-ui " +
 			"upstream for component defects; the meridian screen for composition " +
-			"defects) OR add the rule id to axeAllowlist with a justification — " +
+			"defects) OR add the rule id to axeAllowlist with a justification, " +
 			"only for a genuine false positive.")
 	}
 }

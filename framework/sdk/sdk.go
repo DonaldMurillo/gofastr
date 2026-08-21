@@ -13,7 +13,7 @@
 package sdk
 
 // Artifact and manifest file names inside the dist directory. The names are
-// stable — regeneration overwrites in place — so download URLs never change;
+// stable, regeneration overwrites in place, so download URLs never change;
 // version and content hash travel in the manifest instead.
 const (
 	// ManifestFile is the machine-readable index of the dist directory.
@@ -23,7 +23,7 @@ const (
 	GoArtifact = "sdk-go.zip"
 	// JSArtifact is the JS SDK: one handrolled ESM file, importable
 	// directly from the served URL or dropped into a project. There is
-	// deliberately no npm packaging — publishing is the app owner's call.
+	// deliberately no npm packaging, publishing is the app owner's call.
 	JSArtifact = "client.js"
 	// JSTypesArtifact is the TypeScript declaration file matching
 	// JSArtifact.

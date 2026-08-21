@@ -21,7 +21,7 @@ var a11yRules = []string{
 
 // timeFixture is a minimal app file the a11y linter will look at: it
 // imports core-ui/html and calls html.Time with the given config body.
-// Time is chosen deliberately — the linter requires its Datetime field,
+// Time is chosen deliberately: the linter requires its Datetime field,
 // but Time has no entry in the analyzer's per-element rule map, so a
 // violation on it can only surface through the GOFASTR1206 fallback.
 func timeFixture(config string) string {

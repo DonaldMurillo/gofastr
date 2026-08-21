@@ -13,7 +13,7 @@ import (
 // TestTopLevelINListOverCapErrors pins that a top-level ?field_in= list
 // longer than MaxINListEntries is REJECTED with an error, not silently
 // truncated. Silent truncation (parts[:MaxINListEntries]) narrows the
-// predicate — every row past entry N drops out of the result set without
+// predicate, every row past entry N drops out of the result set without
 // the caller being told. The include-scoped sibling (parseScopedFilters)
 // errors on its cap for the same reason; the top-level path must match.
 func TestTopLevelINListOverCapErrors(t *testing.T) {

@@ -1,14 +1,14 @@
 // Package tabs provides a tabbed-content layout with zero JavaScript.
 //
 // Implementation: each tab is a <details> sharing a name= attribute
-// (so opening one closes the others — native exclusivity). CSS Grid
+// (so opening one closes the others, native exclusivity). CSS Grid
 // then arranges the summaries in row 1 and panels in row 2 spanning
 // the full width, producing the visual shape of a tab strip.
 //
 // Trade-off: assistive tech announces the widget as a disclosure, not
 // an ARIA tablist. We chose this over a JS-driven tablist because:
 //  1. Zero JavaScript, zero CSP complications.
-//  2. The disclosure pattern is honest about what's happening — there
+//  2. The disclosure pattern is honest about what's happening, there
 //     is no tab/panel separation, only "show one, hide others".
 //  3. Native keyboard support (Tab between summaries, Enter/Space
 //     activates, focus is automatic).
@@ -36,8 +36,8 @@ func styleFn(_ style.Theme) string { return buildCSS() }
 
 // Tab is one entry in a tabset.
 type Tab struct {
-	Label   string      // required — visible tab summary text
-	Content render.HTML // required — panel content
+	Label   string      // required, visible tab summary text
+	Content render.HTML // required, panel content
 	Open    bool        // initially active
 	ID      string
 }
@@ -56,7 +56,7 @@ type Config struct {
 // New renders a tabset.
 //
 // Output structure (panels live in a sibling container so the strip and
-// the panel area are separate flex children of `.tabs` — needed because
+// the panel area are separate flex children of `.tabs`, needed because
 // `display: contents` does not propagate flex `order` reliably in
 // Chrome, which broke the strip-then-panel layout when both lived
 // inside `<details>`):
@@ -71,7 +71,7 @@ type Config struct {
 //	</div>
 //
 // Panel visibility is driven by `:has(> details:nth-child(N)[open])`
-// rules in BaseCSS — pure CSS, no JS.
+// rules in BaseCSS, pure CSS, no JS.
 func New(cfg Config, tabs ...Tab) render.HTML {
 	if cfg.Name == "" {
 		panic("tabs: New requires Name")
@@ -80,7 +80,7 @@ func New(cfg Config, tabs ...Tab) render.HTML {
 		panic("tabs: New requires at least one Tab")
 	}
 	if len(tabs) > maxTabs {
-		panic(fmt.Sprintf("tabs: New supports at most %d tabs, got %d — the panel-visibility CSS is pre-generated per index (raise maxTabs in core-ui/patterns/tabs if you genuinely need more)", maxTabs, len(tabs)))
+		panic(fmt.Sprintf("tabs: New supports at most %d tabs, got %d. The panel-visibility CSS is pre-generated per index (raise maxTabs in core-ui/patterns/tabs if you genuinely need more)", maxTabs, len(tabs)))
 	}
 
 	cls := "tabs"

@@ -68,7 +68,7 @@ func TestToolPanicBecomesRPCError(t *testing.T) {
 				return
 			}
 
-			// The property: a panic must not unwind the caller — it must
+			// The property: a panic must not unwind the caller. It must
 			// come back as a JSON-RPC internal error.
 			if err == nil {
 				t.Fatalf("panic was not recovered; callTool returned nil error")

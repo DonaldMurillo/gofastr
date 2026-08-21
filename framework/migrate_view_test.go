@@ -156,7 +156,7 @@ func TestView_GenerateReversible(t *testing.T) {
 	})
 }
 
-// TestView_ORMReadOnly: App.View exposes the view as a read-only ORM entity —
+// TestView_ORMReadOnly: App.View exposes the view as a read-only ORM entity.
 // List works and returns the view's rows, while write routes are not mounted.
 func TestView_ORMReadOnly(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {

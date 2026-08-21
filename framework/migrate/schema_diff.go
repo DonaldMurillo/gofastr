@@ -18,7 +18,7 @@ import (
 // live DB schema and emits the ALTER TABLE statements that would bring the
 // DB in line. Today the diff covers ADD COLUMN (entity has a field the DB
 // doesn't) and DROP COLUMN (DB has a column the entity no longer declares).
-// Type changes are intentionally out of scope — SQLite's ALTER COLUMN
+// Type changes are intentionally out of scope: SQLite's ALTER COLUMN
 // support is too limited to do safely in-place, and Postgres type changes
 // often need data conversion which the diff can't infer.
 
@@ -35,7 +35,7 @@ type SchemaChange struct {
 	// safe inverse is known.
 	Down string
 
-	// Destructive marks a change that can lose data — a DROP COLUMN today
+	// Destructive marks a change that can lose data, a DROP COLUMN today
 	// (DROP TABLE in future). ApplySchemaDiff refuses to run destructive
 	// changes unless the caller opts in via ApplySchemaDiffWithOptions, so a
 	// routine boot-time convergence never silently deletes a column. This is
@@ -107,7 +107,7 @@ type ApplyOptions struct {
 
 // ApplySchemaDiff applies every change in sequence inside a single
 // transaction and returns the count applied. Aborts on first error, rolling
-// everything back. Destructive changes (DROP COLUMN/TABLE) are refused — use
+// everything back. Destructive changes (DROP COLUMN/TABLE) are refused. Use
 // ApplySchemaDiffWithOptions with AllowDestructive to opt in.
 func ApplySchemaDiff(ctx context.Context, db *sql.DB, changes []SchemaChange) (int, error) {
 	return ApplySchemaDiffWithOptions(ctx, db, changes, ApplyOptions{})
@@ -153,7 +153,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 	}
 
 	if len(live) == 0 {
-		// Table missing entirely — emit a CREATE TABLE via the same path
+		// Table missing entirely: emit a CREATE TABLE via the same path
 		// AutoMigrate uses, captured as SQL string.
 		ddl, err := buildCreateTableSQL(ent, all, dialect)
 		if err != nil {
@@ -193,10 +193,10 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		oldLow := strings.ToLower(oldName)
 		newLow := strings.ToLower(newName)
 		if _, oldLive := liveLower[oldLow]; !oldLive {
-			continue // old column already gone — nothing to rename
+			continue // old column already gone, nothing to rename
 		}
 		if _, newDeclared := declared[newLow]; !newDeclared {
-			continue // new name not declared — stale/mis-declared hint, skip
+			continue // new name not declared, stale/mis-declared hint, skip
 		}
 		qOld, err := query.SafeIdent(oldName)
 		if err != nil {
@@ -256,12 +256,12 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 	// TYPE CHANGE for declared-and-present columns whose type drifted. A type
 	// change can need a data-specific conversion (a Postgres USING clause; a
 	// SQLite table rebuild), so it is flagged Destructive and refused by
-	// default — surfaced for review, never silently applied. Types are
+	// default, surfaced for review, never silently applied. Types are
 	// normalized per dialect (see canonicalType) so PG information_schema
 	// names ("character varying", "timestamp with time zone") don't
 	for _, f := range ent.GetFields() {
 		if f.RawType != "" {
-			continue // operator-supplied raw type (domains, arrays, custom types) — not reliably diffable against the live DB type, which reports the underlying type
+			continue // operator-supplied raw type (domains, arrays, custom types), not reliably diffable against the live DB type, which reports the underlying type
 		}
 		nameLow := strings.ToLower(f.Name)
 		liveType, ok := liveLower[nameLow]
@@ -313,7 +313,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol)
 		// Inverse re-adds the column with the type it had in the previous
-		// snapshot. Reversible at the schema level — row data is not restored.
+		// snapshot. Reversible at the schema level: row data is not restored.
 		downType := live[name]
 		if downType == "" {
 			downType = "TEXT"
@@ -336,7 +336,7 @@ func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
 	// Key the tenant arm off TenantColumn(), not the literal "tenant_id".
 	// TenantField exists precisely so the column can be renamed, and
 	// tenant.WithMultiTenant sets it AFTER entity.Define has already
-	// injected the default-named field — so the entity declares
+	// injected the default-named field, so the entity declares
 	// "tenant_id" while CRUD reads and writes the renamed column, and
 	// the diff emitted a data-losing DROP COLUMN on the column the app
 	// actually uses. Protect both names: the configured one, and the
@@ -358,7 +358,7 @@ func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
 // strips parenthetical sizes ("VARCHAR(255)" → "varchar",
 // "DECIMAL(19,4)" → "decimal"), and maps the dialect-specific aliases
 // information_schema reports on Postgres to the canonical names SQLType
-// emits — without this, every PG VARCHAR/TIMESTAMPTZ/DECIMAL column would
+// emits. Without this, every PG VARCHAR/TIMESTAMPTZ/DECIMAL column would
 // false-positive as a type change.
 func canonicalType(s string, dialect Dialect) string {
 	t := strings.ToLower(strings.TrimSpace(s))
@@ -386,7 +386,7 @@ func canonicalType(s string, dialect Dialect) string {
 
 // typesEquivalent reports whether a declared type and a live-DB type are the
 // same after per-dialect canonicalization. Conservative by design: it only
-// asserts equality, never "close enough" — a real type change always differs
+// asserts equality, never "close enough". A real type change always differs
 // canonically, and a dialect-naming variant never does.
 func typesEquivalent(declared, live string, dialect Dialect) bool {
 	return canonicalType(declared, dialect) == canonicalType(live, dialect)
@@ -461,7 +461,7 @@ func ReadLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[s
 func readLiveColumnsSQLiteQ(ctx context.Context, q queryer, table string) (map[string]string, error) {
 	// PRAGMA can't be parameterised, so the identifier must be validated
 	// instead. The previous comment here claimed the table name "is taken
-	// from our own registry, not user input" — that is false: kiln's
+	// from our own registry, not user input". That is false: kiln's
 	// add_entity / update_entity ops accept a `table` override in their
 	// HTTP JSON payload and replay validates only the entity Name. This
 	// read also runs at AutoMigratePlanContext BEFORE any other SafeIdent
@@ -470,7 +470,7 @@ func readLiveColumnsSQLiteQ(ctx context.Context, q queryer, table string) (map[s
 	// tableExistsBulkSQLite parameterises, buildCreateTableSQL /
 	// diffEntityFromLive / migrateEntity all call SafeIdent); this was
 	// the lone exception, relying on database/sql executing a single
-	// statement — a driver property, not ours.
+	// statement, a driver property, not ours.
 	if _, err := query.SafeIdent(table); err != nil {
 		return nil, err
 	}
@@ -496,7 +496,7 @@ func readLiveColumnsSQLiteQ(ctx context.Context, q queryer, table string) (map[s
 }
 
 // buildCreateTableSQL renders the CREATE TABLE statement for an entity. This is
-// the SINGLE source of CREATE TABLE DDL — AutoMigrate (migrateEntity) and the
+// the SINGLE source of CREATE TABLE DDL: AutoMigrate (migrateEntity) and the
 // diff/generate paths both call it, so what gets generated is byte-identical to
 // what auto-migrate applies. Every identifier is validated and quoted.
 func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) (string, error) {
@@ -522,7 +522,7 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 // Identifiers are VALIDATED (SafeIdent rejects anything but [A-Za-z0-9_.]) but
 // NOT quoted, to match the runtime SQL the query builder / crud emit, which is
 // also unquoted. Quoting only the DDL would make Postgres preserve case in the
-// schema while the unquoted runtime folds it to lowercase — breaking any
+// schema while the unquoted runtime folds it to lowercase, breaking any
 // mixed-case identifier. Validation alone provides the injection safety.
 func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]string, error) {
 	var columns []string

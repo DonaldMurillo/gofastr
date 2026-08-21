@@ -7,7 +7,7 @@ import (
 
 // Style handles for the 10 layout / primitive components added in
 // the same commit. Each registers a scoped stylesheet that the SSR
-// host and runtime load on first appearance — except where
+// host and runtime load on first appearance, except where
 // LoadAlways is explicitly opted into for chrome that's on every
 // screen.
 
@@ -30,7 +30,7 @@ var (
 func layoutCSS(_ style.Theme) string {
 	// Layout primitives stack data-fui-comp="ui-layout" AND their own
 	// class on the SAME element (Stack, Cluster, Grid, … are sibling
-	// classes — not descendants). Selectors below combine the marker
+	// classes, not descendants). Selectors below combine the marker
 	// and class on the same element via `[data-fui-comp="ui-layout"].<class>`
 	// rather than the descendant `[data-fui-comp="ui-layout"] .<class>`.
 	return `[data-fui-comp="ui-layout"] {

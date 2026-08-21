@@ -226,7 +226,7 @@ type Relation struct {
 }
 
 // EntityEndpoint is a custom HTTP endpoint attached to an entity. Unlike
-// framework.Endpoint it carries no Go handler — the behavior is described
+// framework.Endpoint it carries no Go handler, the behavior is described
 // declaratively via Action.
 type EntityEndpoint struct {
 	Method      string `json:"method"`

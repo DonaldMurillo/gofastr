@@ -1,6 +1,6 @@
 app:
   name: ShopFront
-  # output_dir: this is a monorepo example — examples/ecommerce/ already hosts
+  # output_dir: this is a monorepo example; examples/ecommerce/ already hosts
   # a Go test package (doc.go + flagship_test.go), so the scaffolded app lives
   # in an owned `app/` subpackage rather than the module root. A standalone app
   # would omit this and scaffold straight into the root. Either way the output
@@ -16,7 +16,7 @@ app:
   # grantable to somebody. A generated app grants declared permissions to the
   # admin role and to nothing else, so an entity with `create: catalog:write`
   # and no admin is an entity nobody can write to. The back-office UI stays
-  # off — this block exists for the role, not for /admin.
+  # off. This block exists for the role, not for /admin.
   #
   # The password is read from ADMIN_SEED_PASSWORD at boot and only on a fresh
   # database; the value here lands in the generated (gitignored) .env.
@@ -41,7 +41,7 @@ entities:
     crud: true
     # Open demo storefront: the catalog is anonymously readable, which is
     # what a shop front is. Reads open with a blank `read:`; every write stays
-    # behind a real permission. `public: true` would open the writes too —
+    # behind a real permission. `public: true` would open the writes too:
     # anonymous DELETE on the catalog, which is not a tradeoff a storefront
     # example should be teaching.
     #
@@ -89,7 +89,7 @@ entities:
 
   - name: products
     crud: true
-    # Open demo storefront — see the note on `categories` above.
+    # Open demo storefront; see the note on `categories` above.
     access:
       read:
       create: catalog:write
@@ -175,7 +175,7 @@ entities:
     mcp: true
     # Orders hold customer PII (name, email, phone, addresses). owner_field
     # makes auto-CRUD and the MCP tools per-customer: anonymous callers get
-    # 401, and each logged-in customer only ever sees their own orders —
+    # 401, and each logged-in customer only ever sees their own orders:
     # the framework stamps user_id on create and scopes every read/write.
     owner_field: user_id
     cursor_field: id
@@ -247,7 +247,7 @@ entities:
   - name: order_items
     crud: true
     mcp: true
-    # Line items are the order's contents — a customer's purchase history.
+    # Line items are the order's contents, a customer's purchase history.
     # Scope them to the same owner so they can't be enumerated anonymously
     # or across customers via the sibling entity.
     owner_field: user_id
@@ -290,7 +290,7 @@ entities:
 
   - name: reviews
     crud: true
-    # Shown to every shopper — see the note on `categories` above. A review is
+    # Shown to every shopper; see the note on `categories` above. A review is
     # user-submitted content, so its delete is the admin permission too.
     access:
       read:
@@ -349,7 +349,7 @@ nav:
 screens:
   - name: home
     route: /
-    title: ShopFront — Home
+    title: "ShopFront: Home"
     description: E-commerce storefront homepage
     body:
       - type: heading

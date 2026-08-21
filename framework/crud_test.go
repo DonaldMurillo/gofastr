@@ -24,7 +24,7 @@ import (
 
 // authedTestUser stamps an authenticated caller into a raw *http.Request's
 // context for CrudHandler tests that call Create()/Update()/Delete()
-// directly (bypassing TestHarness/AsUser) — the "posts" entities in this
+// directly (bypassing TestHarness/AsUser), the "posts" entities in this
 // file have no OwnerField/Access/Public, so the secure-by-default session
 // gate (issue #65) requires a session for every write.
 func authedTestUser(req *http.Request) *http.Request {
@@ -186,7 +186,7 @@ func TestCrudApplySoftDeleteFilter(t *testing.T) {
 
 func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
 	// Anonymous callers must NOT be able to expose soft-deleted rows
-	// via ?trashed=true — that turned a "show recently-deleted" toggle
+	// via ?trashed=true, that turned a "show recently-deleted" toggle
 	// into an information-disclosure path on public list endpoints.
 	// The security contract (see softdelete_public_security_test.go)
 	// requires the filter to stay applied when no authenticated user
@@ -269,7 +269,7 @@ func TestCrudCreate_SkipsReadOnlyFields(t *testing.T) {
 
 	body := map[string]any{
 		"title":  "Hello",
-		"status": "published", // should be ignored — ReadOnly
+		"status": "published", // should be ignored: ReadOnly
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -313,7 +313,7 @@ func TestCrudCreate_SkipsHiddenFields(t *testing.T) {
 
 	body := map[string]any{
 		"title":         "Hello",
-		"internal_flag": "secret", // should be ignored — Hidden
+		"internal_flag": "secret", // should be ignored: Hidden
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -589,7 +589,7 @@ func TestSqlDefault_NonStringTypes(t *testing.T) {
 }
 
 // ============================================================================
-// Test: E2E — Soft-delete filtering in List/Get via real DB
+// Test: E2E. Soft-delete filtering in List/Get via real DB
 // ============================================================================
 
 func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
@@ -625,7 +625,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		ent := entity.Define("posts", entity.EntityConfig{Table: "posts", Scope: &entity.ScopeConfig{
 
 			// Public: this test asserts anonymous ?trashed=true still
-			// hides soft-deleted rows (a public list endpoint) — the
+			// hides soft-deleted rows (a public list endpoint), the
 			// secure-by-default session gate (issue #65) would otherwise
 			// 401 every request here before the soft-delete filter is
 			// even reached.
@@ -668,8 +668,8 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		resp = ta.Get("/posts/p2")
 		resp.AssertStatus(t, http.StatusNotFound)
 
-		// Anonymous ?trashed=true must NOT expose soft-deleted rows
-		// — see softdelete_public_security_test.go. The filter is
+		// Anonymous ?trashed=true must NOT expose soft-deleted rows.
+		// See softdelete_public_security_test.go. The filter is
 		// retained for unauthenticated callers regardless of the
 		// query param. Authenticated callers still see trashed (that
 		// path is covered by authenticated soft-delete tests).
@@ -683,7 +683,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 }
 
 // ============================================================================
-// Test: E2E — Read-only fields rejected in Create
+// Test: E2E. Read-only fields rejected in Create
 // ============================================================================
 
 func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
@@ -738,7 +738,7 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 }
 
 // ============================================================================
-// Test: E2E — Hook execution in real CRUD flow
+// Test: E2E. Hook execution in real CRUD flow
 // ============================================================================
 
 func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
@@ -819,7 +819,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 }
 
 // ============================================================================
-// Test: E2E — Multi-tenant scoping via real DB
+// Test: E2E. Multi-tenant scoping via real DB
 // ============================================================================
 
 func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
@@ -864,7 +864,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 
 		// Apply tenant middleware BEFORE registering routes
 		// (Router.wrap bakes in middleware at registration time).
-		// TenantMiddleware no longer trusts the raw header — it only
+		// TenantMiddleware no longer trusts the raw header, it only
 		// mirrors handler.GetTenant. Mirror X-Tenant-ID into that slot
 		// via a stub so the legacy header-is-tenant test contract still
 		// works.
@@ -877,7 +877,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
-		// List as tenant-a — should only see tenant-a's posts
+		// List as tenant-a, should only see tenant-a's posts
 		req := ta.Request(http.MethodGet, "/posts", nil)
 		req.WithHeader("X-Tenant-ID", "tenant-a")
 		resp := req.Execute()
@@ -894,7 +894,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 			t.Errorf("expected 'Tenant A Post', got %v", listResult.Data[0]["title"])
 		}
 
-		// Create as tenant-a — should inject tenant_id
+		// Create as tenant-a, should inject tenant_id
 		req2 := ta.Request(http.MethodPost, "/posts", strings.NewReader(`{"title":"New Post"}`))
 		req2.WithHeader("X-Tenant-ID", "tenant-a")
 		req2.WithHeader("Content-Type", "application/json")
@@ -915,7 +915,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 }
 
 // ============================================================================
-// Test: E2E — Delete with soft-delete uses timestamp, not raw NOW()
+// Test: E2E. Delete with soft-delete uses timestamp, not raw NOW()
 // ============================================================================
 
 func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {

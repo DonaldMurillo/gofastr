@@ -124,7 +124,7 @@ func TestAuthBypass_DefaultBruteForceLimiter(t *testing.T) {
 }
 
 // TestAuthBypass_AlgNoneJWTRejected verifies that a JWT with algorithm
-// "none" (or "None", "NONE") is rejected. Attack: CWE-327 — forging
+// "none" (or "None", "NONE") is rejected. Attack: CWE-327, forging
 // a JWT by setting the algorithm header to "none" to bypass signature
 // verification.
 func TestAuthBypass_AlgNoneJWTRejected(t *testing.T) {

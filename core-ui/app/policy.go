@@ -24,7 +24,7 @@ type RenderResult struct {
 	Title string
 	// Component is the loaded per-request instance the HTML was rendered
 	// from (post SetParams → DI → Load). Host layers use it to resolve
-	// per-instance metadata — SEO description, og tags — that the shared
+	// per-instance metadata, SEO description, og tags, that the shared
 	// registration instance cannot know for dynamic routes. Read-only;
 	// nil for Redirect/Block results.
 	Component component.Component
@@ -55,12 +55,12 @@ const (
 )
 
 // Decision is the outcome of Policy.Decide. Construct with the helper
-// functions (Allow, Redirect, RenderAlt, Block) — the struct shape is
+// functions (Allow, Redirect, RenderAlt, Block), the struct shape is
 // public only so hosts can inspect it.
 type Decision struct {
 	Kind       DecisionKind
 	URL        string                     // populated for DecisionRedirect
-	AltFactory func() component.Component // populated for DecisionRenderAlt — called PER REQUEST
+	AltFactory func() component.Component // populated for DecisionRenderAlt, called PER REQUEST
 	Status     int                        // populated for DecisionBlock
 	Message    string                     // optional, for DecisionBlock
 }
@@ -86,7 +86,7 @@ func (f PolicyFunc) Decide(ctx context.Context) Decision { return f(ctx) }
 
 // EffectivePolicies returns the full policy chain for s: walk parent
 // ScreenGroups outermost→innermost, then the screen's own policies.
-// Hosts rarely need to call this directly — use ResolvePolicy.
+// Hosts rarely need to call this directly, use ResolvePolicy.
 func EffectivePolicies(s *Screen) []Policy {
 	if s == nil {
 		return nil

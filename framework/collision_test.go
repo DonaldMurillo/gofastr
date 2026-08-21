@@ -20,7 +20,7 @@ func (m screenRouteMountable) RoutePatterns() []string { return m.patterns }
 // TestEntityScreenCollisionMsg asserts that registering an entity whose
 // CRUD mount path collides with an existing screen/route produces an
 // actionable diagnostic that names the entity, the colliding path, and a
-// fix — not the opaque "/foods/llm.md conflicts with pattern" mux panic.
+// fix, not the opaque "/foods/llm.md conflicts with pattern" mux panic.
 func TestEntityScreenCollisionMsg(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {

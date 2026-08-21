@@ -19,7 +19,7 @@ import (
 // PieSlice is one slice of the pie.
 type PieSlice struct {
 	// Label is the accessible label for the slice (required when
-	// LabelledBy is set on the chart — used as <title> for AT).
+	// LabelledBy is set on the chart, used as <title> for AT).
 	Label string
 	// Value is the slice value (≥0). Slices with Value=0 are skipped.
 	Value float64
@@ -64,7 +64,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		total += s.Value
 	}
 	if total == 0 {
-		// Every slice is zero — nothing to draw, but a legitimate empty state.
+		// Every slice is zero: nothing to draw, but a legitimate empty state.
 		return chartEmpty(cfg.Size, cfg.LabelledBy, cfg.Class, "No data yet")
 	}
 

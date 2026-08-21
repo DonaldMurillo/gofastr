@@ -1,11 +1,11 @@
 // =============================================================================
-// docs_catalog.go — the docs section's single source of truth.
+// docs_catalog.go, the docs section's single source of truth.
 //
 // Every entry maps a curated card (title + one-line description) to a REAL
 // embedded framework doc (framework/docs/content/<slug>.md). The index page
 // (/docs/) renders the catalog as a grid of links; each link resolves to
 // /docs/<slug>, a DocPageScreen that renders the embedded markdown through
-// framework/ui.Markdown. There are no dead cards and no 404 doc pages — the
+// framework/ui.Markdown. There are no dead cards and no 404 doc pages, the
 // catalog and the registered routes are generated from the same slice.
 //
 // To add a doc: drop the .md under framework/docs/content/, add one line
@@ -45,20 +45,20 @@ type docIntent struct {
 }
 
 // docIntents is the curated catalog. Each Slug below corresponds to a file
-// in framework/docs/content/ — verified at startup by registerDocPages.
+// in framework/docs/content/, verified at startup by registerDocPages.
 var docIntents = []docIntent{
 	{
 		Num: "00", Slug: "start", Title: "Start here",
-		Lede: "What GoFastr is, how a project is laid out, and a map of every feature — the newcomer narrative before the per-feature references.",
+		Lede: "What GoFastr is, how a project is laid out, and a map of every feature, the newcomer narrative before the per-feature references.",
 		Path: []string{"Overview", "Tutorial: blueprint app", "Project structure"},
 		Docs: []docEntry{
-			{"backend-capability-map", "Backend capability map", "One row per job — scope rows to a user, add auth, run background work — with the symbols to compose and a command that proves it."},
+			{"backend-capability-map", "Backend capability map", "One row per job: scope rows to a user, add auth, run background work. Each row gives the symbols to compose and a command that proves the result."},
 			{"overview", "Overview", "What the framework is, the two layers, and a linked map of every capability."},
-			{"cli", "The gofastr CLI", "Every subcommand mapped to its doc — init, dev, migrate, generate, audit, upgrade."},
+			{"cli", "The gofastr CLI", "Every subcommand mapped to its doc: init, dev, migrate, generate, audit, upgrade."},
 			{"tutorial-blueprint-app", "Tutorial: blueprint app", "The optional blueprint scaffolder end to end: one gofastr.yml becomes a UI + API you own, in about twenty minutes."},
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
-			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release — plus gofastr upgrade, the guided helper."},
+			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release, plus gofastr upgrade, the guided helper."},
 			{"stability", "API stability", "Compatibility windows, deprecation rules, and the public v1 promise."},
 		},
 	},
@@ -67,29 +67,29 @@ var docIntents = []docIntent{
 		Lede: "Declare entities, fields, relations. The framework generates schema, CRUD, validators, and code.",
 		Path: []string{"Entity declarations", "Filter DSL", "Cursor pagination"},
 		Docs: []docEntry{
-			{"entity-declarations", "Entity declarations", "JSON or Go — both produce the same tables, routes, and tools."},
+			{"entity-declarations", "Entity declarations", "JSON or Go. Both produce the same tables, routes, and tools."},
 			{"query-dsl", "Filter DSL", "?status=published&views_gte=10&sort=-created_at parses to a typed Where."},
 			{"cursor-pagination", "Cursor pagination", "Keyset by EntityConfig.CursorField. Opt in by sending ?cursor=."},
 			{"includes", "Eager loading", "?include=author.profile flattens the N+1."},
 			{"hooks-and-transactions", "Hooks & transactions", "BeforeCreate / AfterUpdate hooks share the parent tx."},
-			{"migrations", "Migrations", "Versioned, ordered, reversible — versus the auto-migrate dev mode."},
+			{"migrations", "Migrations", "Versioned, ordered, reversible, versus the auto-migrate dev mode."},
 			{"multi-tenant", "Multi-tenant scope", "tenant_id column + automatic filter from request context."},
-			{"codegen", "Code generation", "What lands on disk under gen/ — and how to read it."},
-			{"app-cli", "Ship your API as a CLI", "gofastr generate cli — a branded terminal client for your customers, with scoped API-token auth."},
-			{"sdk", "Ship your API as SDKs", "gofastr generate sdk — a downloadable Go module + JS/TS client, hosted by the app behind a live docs site."},
+			{"codegen", "Code generation", "What lands on disk under gen/, and how to read it."},
+			{"app-cli", "Ship your API as a CLI", "gofastr generate cli: a branded terminal client for your customers, with scoped API-token auth."},
+			{"sdk", "Ship your API as SDKs", "gofastr generate sdk: a downloadable Go module + JS/TS client, hosted by the app behind a live docs site."},
 		},
 	},
 	{
 		Num: "02", Slug: "serving", Title: "Serving HTTP",
-		Lede: "Routes, middleware, sessions, auth, idempotency, security headers — everything between the wire and your handler.",
+		Lede: "Routes, middleware, sessions, auth, idempotency, security headers: everything between the wire and your handler.",
 		Path: []string{"Auth", "Access control", "Security defaults"},
 		Docs: []docEntry{
 			{"access-control", "Access control", "RolePolicy, RequirePermission, custom Policy implementations."},
-			{"auth", "Auth", "Login, OAuth, magic-link, 2FA, password reset — each a plugin."},
+			{"auth", "Auth", "Login, OAuth, magic-link, 2FA, password reset, each a plugin."},
 			{"idempotency", "Idempotency", "An Idempotency-Key header replays mutations safely."},
 			{"api-versioning", "API prefix & versioning", "Mount the API under a prefix and evolve it across versions."},
 			{"cache", "Cache", "Memoize expensive reads with a pluggable backend and TTLs."},
-			{"security", "Security defaults", "CSP, CSRF, rate limit, headers — all on by default."},
+			{"security", "Security defaults", "CSP, CSRF, rate limit, headers: all on by default."},
 			{"rate-limit", "Rate limiting", "Throttle any route with the sliding-window limiter the auth flows use."},
 			{"health-checks", "Health checks", "/healthz + /readyz with plugin checks."},
 			{"webhooks", "Webhooks", "Signed outbound delivery with retry-with-backoff."},
@@ -104,8 +104,8 @@ var docIntents = []docIntent{
 		Lede: "Start from a product job, then choose the state boundary, server-rendered islands, primitives, runtime, and theme.",
 		Path: []string{"UI capability map", "Getting started (UI)", "Composition recipes"},
 		Docs: []docEntry{
-			{"ui-capability-map", "UI capability map", "Live dashboards, optimistic boards, master/detail, reactive state, static export, and SPA integration — mapped to proof and delivery semantics."},
-			{"live-dashboards", "Live dashboards", "Compose SSE island push, store.Computed, a bounded feed, and the connection-health banner — and the boundaries that decide when each is the right shape."},
+			{"ui-capability-map", "UI capability map", "Live dashboards, optimistic boards, master/detail, reactive state, static export, and SPA integration, mapped to proof and delivery semantics."},
+			{"live-dashboards", "Live dashboards", "Compose SSE island push, store.Computed, a bounded feed, and the connection-health banner, and the boundaries that decide when each is the right shape."},
 			{"ui-getting-started", "Getting started (UI)", "The path: scaffold → theme → screen → custom component."},
 			{"ui-composition-recipes", "Composition recipes", "Choose a page shape before composing framework-owned primitives."},
 			{"ui-wiring", "Wiring UI into an app", "framework.App + core-ui app + uihost, end to end in one annotated main.go."},
@@ -117,15 +117,15 @@ var docIntents = []docIntent{
 			{"image", "Image pipeline", "Pure-Go resize + WebP lossless encode."},
 			{"runtime-minification", "Runtime modules", "Carved per-feature so pages without X don't ship X's JS."},
 			{"print", "Print documents", "Server-rendered print-friendly documents + PDF."},
-			{"dev-livereload", "Dev livereload", "SSE-driven reload while you edit — zero config."},
+			{"dev-livereload", "Dev livereload", "SSE-driven reload while you edit. Zero config."},
 			{"static-export", "Static-site export", "Render the whole app to static HTML + assets for apex or project-path hosting."},
 			{"pwa", "PWA", "uihost.WithPWA: installable manifest, versioned offline shell, and a safe service worker."},
 			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},
 			{"accessibility", "Accessibility", "Built-in ARIA guarantees, the guided audit command, and the build gate."},
 			{"strict-mode", "Strict mode", "WithStrict: missing SEO and missing per-screen axe tests fail boot instead of shipping."},
-			{"reactivity", "Reactivity model", "The four-rung ladder — client signals, RPC, polling, SSE push — and the stateless-interactive-layer contract."},
+			{"reactivity", "Reactivity model", "The four-rung ladder of client signals, RPC, polling, and SSE push, plus the stateless-interactive-layer contract."},
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions, polling."},
-			{"optimistic-ui", "Optimistic UI", "The mutation lifecycle, rollback vs authoritative refresh, and seven composed recipes — toggle, inline edit, create, delete, kanban, group mutex, and slow/failure."},
+			{"optimistic-ui", "Optimistic UI", "The mutation lifecycle, rollback vs authoritative refresh, and seven composed recipes: toggle, inline edit, create, delete, kanban, group mutex, and slow/failure."},
 			{"pane-host", "Pane host", "Master-detail split-pane layout that collapses to an overlay drawer on narrow screens."},
 			{"embed", "Embeddable surfaces", "Hand a screen to a website you don't control: single-use handshake nonce, exact origin allowlist, a frame runtime with no SPA navigation."},
 			{"plugin-platform", "Plugin platform", "Host third-party JS plugins in a sandboxed opaque-origin iframe with a capability-gated postMessage protocol."},
@@ -142,7 +142,7 @@ var docIntents = []docIntent{
 		Docs: []docEntry{
 			{"audit-log", "Audit log", "WithAuditLog writes a row for every Create/Update/Delete."},
 			{"data-export", "Data export & import", "Dump every entity's rows to a portable archive and restore it with validation."},
-			{"presence", "Presence", "Live 'who's here' rosters over the SSE lane — server-derived identity, single-replica."},
+			{"presence", "Presence", "Live 'who's here' rosters over the SSE lane: server-derived identity, single-replica."},
 			{"isolation", "Isolation", "Linked git worktrees get isolated local DBs."},
 			{"testkit", "Testkit", "Public helpers for host apps that need an isolated Postgres in integration tests."},
 			{"factories", "Factories", "Rails-style fixtures for tests."},
@@ -161,9 +161,9 @@ var docIntents = []docIntent{
 		Path: []string{"Agent-readiness", "Contracts", "Kiln overview", "Semantic search", "Agent notes"},
 		Docs: []docEntry{
 			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
-			{"contracts", "Contracts", "gofastr verify — one pipeline of rules with IDs, reasons, and fixes, plus semantic coverage and machine-readable diagnostics."},
-			{"kiln", "Kiln overview", "Experimental — the agent-driven build-mode binary."},
-			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine — no API key."},
+			{"contracts", "Contracts", "gofastr verify: one pipeline of rules with IDs, reasons, and fixes, plus semantic coverage and machine-readable diagnostics."},
+			{"kiln", "Kiln overview", "Experimental: the agent-driven build-mode binary."},
+			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine. No API key."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},
 			{"blueprints", "Blueprints", "Reusable bundles of entities + screens an agent can apply."},
 		},
@@ -189,7 +189,7 @@ var docIntents = []docIntent{
 	},
 	{
 		Num: "07", Slug: "reference", Title: "Reference & internals",
-		Lede: "Performance numbers and the deeper design + tooling docs — surfaced so nothing is hidden.",
+		Lede: "Performance numbers and the deeper design + tooling docs, surfaced so nothing is hidden.",
 		Path: []string{"Benchmarks", "Performance results"},
 		Docs: []docEntry{
 			{"benchmarks", "Benchmarks", "What's measured, how, and the methodology behind the numbers."},
@@ -200,7 +200,7 @@ var docIntents = []docIntent{
 	},
 }
 
-// docCount is the total number of individual doc pages in the catalog —
+// docCount is the total number of individual doc pages in the catalog,
 // used by the index header so the headline number can't drift from the
 // content again.
 func docCount() int {
@@ -235,7 +235,7 @@ func flatDocs() []docEntry {
 
 // allDocsSection renders the flat A–Z reference: every embedded doc, sorted by
 // name (docs.List already sorts), each linked to /docs/<slug>. This is the
-// "nothing is hidden" index — it lists docs whether or not they're featured in
+// "nothing is hidden" index, it lists docs whether or not they're featured in
 // one of the reading intents above. README (the docs folder's own index) is
 // skipped since it isn't a page. Used at the bottom of /docs/.
 func allDocsSection() render.HTML {
@@ -270,7 +270,7 @@ func allDocsSection() render.HTML {
 }
 
 // =============================================================================
-// /docs/<slug> — a single doc page rendered from embedded markdown.
+// /docs/<slug>, a single doc page rendered from embedded markdown.
 // =============================================================================
 
 type DocPageScreen struct{ Entry docEntry }
@@ -292,7 +292,7 @@ func (s *DocPageScreen) SetParams(p map[string]string) {
 }
 
 // Load rejects unknown doc slugs so handlePage serves the site's 404
-// (NotFoundScreen) — the same UX the per-slug loop produced by simply
+// (NotFoundScreen), the same UX the per-slug loop produced by simply
 // not registering unknown paths.
 func (s *DocPageScreen) Load(ctx context.Context) error {
 	if _, _, ok := findDocEntry(s.Entry.Slug); !ok {
@@ -302,8 +302,8 @@ func (s *DocPageScreen) Load(ctx context.Context) error {
 }
 
 // StaticPaths enumerates every catalog doc so static export, sitemap,
-// llm.md, and the strict coverage gate keep producing one page per doc
-// — the same URL set the per-slug registration loop emitted.
+// llm.md, and the strict coverage gate keep producing one page per doc,
+// the same URL set the per-slug registration loop emitted.
 func (s *DocPageScreen) StaticPaths(ctx context.Context) []map[string]string {
 	out := make([]map[string]string, 0, len(flatDocs()))
 	for _, e := range flatDocs() {
@@ -341,9 +341,9 @@ func docCatalogSidebar(active string) render.HTML {
 	return interactive.SectionMenu(docsSectionMenuConfig(active))
 }
 
-// docsSectionMenuConfig is the single source of truth for the docs nav —
+// docsSectionMenuConfig is the single source of truth for the docs nav,
 // shared by the per-page inline rail (with the active slug) and the mounted
-// mobile drawer (active="" — the runtime stamps aria-current client-side).
+// mobile drawer (active="", the runtime stamps aria-current client-side).
 func docsSectionMenuConfig(active string) interactive.SectionMenuConfig {
 	groups := make([]interactive.SectionGroup, 0, len(docIntents))
 	for _, it := range docIntents {

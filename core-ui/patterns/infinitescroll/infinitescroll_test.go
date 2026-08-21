@@ -9,7 +9,7 @@ import (
 )
 
 // stubTheme is a zero-value placeholder for styleFn invocations in
-// tests — styleFn currently reads from CSS custom properties so the
+// tests, styleFn currently reads from CSS custom properties so the
 // theme parameter is unused.
 type stubTheme = style.Theme
 
@@ -112,7 +112,7 @@ func TestStyleScopedToComponent(t *testing.T) {
 			t.Errorf("styleFn missing %q", w)
 		}
 	}
-	// No unscoped selectors — every rule must be inside a
+	// No unscoped selectors, every rule must be inside a
 	// [data-fui-comp="infinitescroll"] scope (or a @keyframes / @media
 	// block, both of which the scanner permits).
 	for _, leak := range []string{"\n.infinitescroll {", "\n.infinitescroll[", "\n.infinitescroll__"} {
@@ -139,7 +139,7 @@ func TestNoscriptFallsBackToGetForCSRF(t *testing.T) {
 	}))
 	// The noscript form cannot carry a CSRF token (no JS to read the
 	// meta tag), so a POST here is a guaranteed 403 under auth.CSRF.
-	// It falls back to GET instead — the handler reads
+	// It falls back to GET instead, the handler reads
 	// r.FormValue("cursor"), which covers query params, so the
 	// one-handler contract with the JS POST path still holds.
 	if !strings.Contains(h, `method="get"`) {

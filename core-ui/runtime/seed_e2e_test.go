@@ -15,7 +15,7 @@ import (
 // gofastr-signals JSON island in <head>. The runtime must read it on
 // boot and seed __gofastr._signals BEFORE any interaction, so a pure
 // presentational consumer (or any getSignal reader) sees the
-// server-provided value on first paint — not undefined.
+// server-provided value on first paint, not undefined.
 func startSeedE2EServer(t *testing.T, seedJSON string) string {
 	t.Helper()
 	js, err := RuntimeJS()
@@ -65,7 +65,7 @@ func newSeedBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -148,7 +148,7 @@ func TestSeed_NoBlockLeavesSignalsEmpty(t *testing.T) {
 }
 
 // TestSeed_MalformedBlockIsIgnored ensures a corrupt seed island never
-// breaks boot — the runtime swallows the parse error and continues.
+// breaks boot, the runtime swallows the parse error and continues.
 func TestSeed_MalformedBlockIsIgnored(t *testing.T) {
 	base := startSeedE2EServer(t, `{not valid json`)
 	ctx := newSeedBrowserCtx(t)

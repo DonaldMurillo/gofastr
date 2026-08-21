@@ -77,7 +77,7 @@ func TestDBQueue_NackBackoffCapped(t *testing.T) {
 	}
 }
 
-// q-1: Without WithBackoff, the default behaviour is preserved — a Nack with
+// q-1: Without WithBackoff, the default behaviour is preserved, a Nack with
 // retries remaining makes the job immediately eligible again.
 func TestDBQueue_NackNoBackoffByDefault(t *testing.T) {
 	_, q := openDBQueueOpts(t, WithWorkers(0))

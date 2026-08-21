@@ -47,7 +47,7 @@ func backofficeBrowser(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -92,7 +92,7 @@ func rowCount(ctx context.Context) (int, error) {
 }
 
 // waitHydrated blocks until runtime.js has installed its global click/submit
-// dispatcher — clicking a data-fui-rpc button before that is a no-op.
+// dispatcher, clicking a data-fui-rpc button before that is a no-op.
 func waitHydrated(t *testing.T, ctx context.Context) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -121,15 +121,15 @@ func TestBackofficeE2E_DeleteFlow(t *testing.T) {
 	}
 
 	// Capture the first row's id. The list is paginated, so a delete refills the
-	// page from later rows — assert the SPECIFIC row disappears, not that the
+	// page from later rows, assert the SPECIFIC row disappears, not that the
 	// total row count drops.
 	var rowID string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('tbody tr')?.id || ''`, &rowID)); err != nil || rowID == "" {
 		t.Fatalf("no first row id to delete (id=%q err=%v)", rowID, err)
 	}
 
-	// Click that row's Delete. data-fui-confirm calls window.confirm — stub it to
-	// accept — then the runtime DELETEs and the island swaps in the fresh table.
+	// Click that row's Delete. data-fui-confirm calls window.confirm, stub it to
+	// accept, then the runtime DELETEs and the island swaps in the fresh table.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.confirm = () => true; true`, nil),
 		chromedp.Click(`tbody tr:first-child button[data-fui-rpc^="/admin/e/products/_delete/"]`, chromedp.ByQuery),
@@ -170,7 +170,7 @@ func TestBackofficeE2E_CreateFlow(t *testing.T) {
 		t.Fatalf("create flow: %v", err)
 	}
 
-	// The list is paginated, so the new row may be on a later page — find it via
+	// The list is paginated, so the new row may be on a later page, find it via
 	// search (also exercises the search path) rather than assuming page 1.
 	var body string
 	if err := chromedp.Run(ctx,

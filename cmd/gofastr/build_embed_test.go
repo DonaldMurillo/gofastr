@@ -14,7 +14,7 @@ func embedGateModule(t *testing.T) (dir, output string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Track the repo's own `go` directive rather than hardcoding one — this
+	// Track the repo's own `go` directive rather than hardcoding one. This
 	// module replaces gofastr with the checkout, and Go refuses to build a
 	// module whose directive is below a dependency's.
 	goVersion, err := repoGoVersion(repoRoot)

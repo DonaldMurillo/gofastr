@@ -3,7 +3,7 @@ name: adversarial-tests
 description: How to run (or commission) an adversarial security-test pass against this codebase without producing 3000 lines of repetitive matrix tests. Auto-loads when the user mentions "red tests", "adversarial tests", "security test pass", "find security gaps", or is about to spawn a sub-agent to author *_security_test.go files. Encodes the "property × surface, not case × file" rule, the naming + triage policy, and a ready-to-paste prompt template for the next pass.
 ---
 
-# Adversarial test pass — how to commission one without drowning
+# Adversarial test pass: how to commission one without drowning
 
 The previous adversarial pass authored 32 `_red_test.go` files / ~3000
 lines, of which **~10 were genuinely unique bugs** and **~17 were
@@ -52,9 +52,9 @@ properties across *every* call site, not for "more cases":
 | Property | Common surfaces | Reference fix |
 |---|---|---|
 | URL scheme allow-list (surface-specific: anchors may allow http(s) / relative / fragment / mailto / tel; head/media/header use narrower policies) | any field that flows to `<a href>`, `<img src>`, `<form action>`, `<link href>`, `Link:` response header, OpenAPI `servers[].url`, SEO meta tags, Image/File entity fields | `framework/ui/safety.go::safeURL`, `framework/uihost/uihost.go::isSafeHeadURL`, `framework/crud/crud_upload.go::isSafeMediaURL`, `framework/experimental/apiversions/version.go::safeReplacementURL` |
-| C0 / DEL sanitation on outbound strings (protocol-specific, NOT uniform — SSE `scrubSSEDataLines` strips CR+NUL only to preserve LF framing; `safeLogMethod`/`safeLogPath` fast-path returns clean input unchanged) | response header values (`Content-Type`, `Access-Control-*`, `Link:`), log attribute values (`method`, `path`), SSE field bodies, DSL opaque literals, route-group prefix | `core/handler/respond.go::sanitizeHeaderValue`, `core/middleware/cors.go::stripCtrlBytes`, `core/middleware/logging.go::safeLogMethod` (test the fast-path too), `core/stream/sse.go::scrubSSEDataLines`, `framework/dsl/dsl.go::stripDSLControlBytes` |
-| Strict JSON top-level parsing (reject duplicate / case-folded / unknown keys) — no-op for non-struct-pointer destinations and non-object bodies | every `Bind` consumer decoding a top-level JSON object into a struct pointer | `core/handler/bind.go::validateBodyKeys` |
-| Fail-closed scoping (multi-tenant + owner-required) on in-process paths | every CRUD method that touches DB state (not just the HTTP path — middleware doesn't protect in-process callers) | `framework/crud/owner.go::requireOwnerContext` + `framework/crud/owner.go::requireTenantContext` + every method in `framework/crud/crud_api.go` |
+| C0 / DEL sanitation on outbound strings (protocol-specific, NOT uniform: SSE `scrubSSEDataLines` strips CR+NUL only to preserve LF framing; `safeLogMethod`/`safeLogPath` fast-path returns clean input unchanged) | response header values (`Content-Type`, `Access-Control-*`, `Link:`), log attribute values (`method`, `path`), SSE field bodies, DSL opaque literals, route-group prefix | `core/handler/respond.go::sanitizeHeaderValue`, `core/middleware/cors.go::stripCtrlBytes`, `core/middleware/logging.go::safeLogMethod` (test the fast-path too), `core/stream/sse.go::scrubSSEDataLines`, `framework/dsl/dsl.go::stripDSLControlBytes` |
+| Strict JSON top-level parsing (reject duplicate / case-folded / unknown keys); no-op for non-struct-pointer destinations and non-object bodies | every `Bind` consumer decoding a top-level JSON object into a struct pointer | `core/handler/bind.go::validateBodyKeys` |
+| Fail-closed scoping (multi-tenant + owner-required) on in-process paths | every CRUD method that touches DB state (not just the HTTP path; middleware doesn't protect in-process callers) | `framework/crud/owner.go::requireOwnerContext` + `framework/crud/owner.go::requireTenantContext` + every method in `framework/crud/crud_api.go` |
 | Forensic completeness on rollback / soft-delete | batch envelope, upsert ON CONFLICT, audit hook | `framework/crud/crud_batch.go::scrubRolledBackData`, `framework/crud/crud_upsert.go::errSoftDeletedResurrection` |
 | Panic isolation at extension points | every place a third-party callback runs (hooks, plugins, custom handlers) | `framework/hook/hook.go::runHookSafely` |
 
@@ -80,7 +80,7 @@ For every adversarial test the agent proposes:
    request-borne input. Tests that treat developer input as attacker
    input are wrong-layer → delete.
 5. **Cap case count at ~5 per property.** 1 happy path + 3-4 distinct
-   attack shapes (e.g. CR, LF, NUL, DEL — not 60 random control
+   attack shapes (e.g. CR, LF, NUL, DEL, not 60 random control
    bytes). If you need 60 to feel covered, you're confusing
    *coverage* with *count*.
 
@@ -101,22 +101,22 @@ The policy:
 
 Every test the pass *deletes* or *weakens* (rather than fixing
 production for) records its *why* in exactly two places: the commit
-message that deletes/weakens it, and — when a surviving sibling test
-carries the contract — a short comment on that sibling naming what it
+message that deletes/weakens it, and, when a surviving sibling test
+carries the contract, a short comment on that sibling naming what it
 supersedes. No separate ledger file: the pinning `*_security_test.go`
 IS the record, and `git log -p` is the audit trail. A permanently
-`t.Skip`ped test is never acceptable — delete it and leave a comment
+`t.Skip`ped test is never acceptable. Delete it and leave a comment
 where the contract is actually tested.
 
 ## Not-yet-audited surfaces (as of 2026-07-25)
 
 The 2026-07-25 pass fixed 30 findings and published its own coverage
-gaps. These are **never-looked, not clean** — no pass has run all four
+gaps. These are **never-looked, not clean**: no pass has run all four
 signals over them, so the clean-gate above has nothing to say about
 them. Start the next pass here rather than re-sweeping what is already
 pinned.
 
-- **Auth:** `battery/auth/oidc.go` + `oidc_jwks.go` (1000+ lines — JWKS
+- **Auth:** `battery/auth/oidc.go` + `oidc_jwks.go` (1000+ lines: JWKS
   fetch, `iss`/`aud`, nonce, `email_verified`; oidc allows `http` for a
   localhost issuer, so check a host that merely *resolves* to loopback),
   `entity_oauth_links.go`, `oauth_token_store.go`, `battery/admin`
@@ -126,7 +126,7 @@ pinned.
   tx.go,hook,typed_hooks}`, `framework/{db,pagination,datexport}`,
   `core/schema` beyond the Pattern note, `crud_batch/stream/events`. The
   `sqlite/**` engine has ~25 unverified recon candidates on the
-  fileformat/varint readers — robustness bugs only unless the engine is
+  fileformat/varint readers; robustness bugs only unless the engine is
   pointed at an untrusted `.db` (kiln/harness session stores), where
   `-fuzz` is the right tool.
 - **Agent surface:** `framework/experimental`,
@@ -144,7 +144,7 @@ pinned.
   `core/handler/{bind,respond,context}` deep pass, `battery/queue`
   scheduler.
 
-Surfaces that pass CLEARED the same day — do not re-derive: kiln journal
+Surfaces that pass CLEARED the same day, so do not re-derive them: kiln journal
 replay, `core/markdown` XSS, the service worker's `fetch(originalRequest)`
 (the shape the 2026 Angular-SW CVE class needs you to get wrong),
 sandbox `_other.go` failing closed, `QuoteIdent`/`SafeIdent`, webhook
@@ -161,7 +161,7 @@ agent's brief (edit the scope line):
 ```
 You are running an adversarial security test pass against the
 GoFastr codebase. Read
-`.claude/skills/adversarial-tests/SKILL.md` first — it
+`.claude/skills/adversarial-tests/SKILL.md` first; it
 encodes the policy you must follow. Prior keep/flip/delete decisions
 live in git history and in comments beside the surviving tests.
 
@@ -171,7 +171,7 @@ touched on this branch">
 Rules:
 - Organize by **property × surface**, NOT case × file. For each
   security property you find, scan EVERY surface where it applies
-  and assert at each one — not 60 cases at one surface.
+  and assert at each one, not 60 cases at one surface.
 - Cap case count at ~5 per property: one happy path + three or four
   distinct attack shapes covering the threat class. No 60-row
   matrices.
@@ -186,7 +186,7 @@ Rules:
   contract until the user explicitly flips it.
 - Tests that treat developer-supplied input (OpenAPI path keys,
   server URLs from host app config, etc.) as attacker input are
-  wrong-layer — do not author them.
+  wrong-layer; do not author them.
 - For every test that the pass deletes or weakens, put the *why* in
   the commit message and a short comment beside the surviving sibling
   test. Never leave a permanently-skipped test.
@@ -197,7 +197,7 @@ For each finding, produce:
 - The production fix (or `weaken` / `delete` decision)
 - The new short test name
 
-Pre-existing properties to extend coverage on (don't re-derive — pin
+Pre-existing properties to extend coverage on (don't re-derive; pin
 to known surfaces only). See the table in
 `.claude/skills/adversarial-tests/SKILL.md` for symbol references:
 - URL scheme allow-list
@@ -219,9 +219,9 @@ Hard NO:
 Two ways:
 
 1. Paste the prompt block above into a sub-agent task (this is the
-   common case — adversarial passes are heavy enough to warrant their
+   common case; adversarial passes are heavy enough to warrant their
    own agent context).
-2. Drive the pass yourself by following the rules in this file — the
+2. Drive the pass yourself by following the rules in this file. The
    prompt block IS the policy, just internalized.
 
 After the pass: run `./scripts/test-all.sh` and confirm exit 0;
@@ -232,7 +232,7 @@ keep/flip/delete rationale.
 ## Two-pass protocol (MANDATORY)
 
 A security pass is run by **two passes with different jobs**, never one.
-This is not optional — a single-pass audit does not get to mark
+This is not optional: a single-pass audit does not get to mark
 anything clean.
 
 **Both profiles run on Opus 5.** Recon used to run on Haiku; that was
@@ -251,12 +251,12 @@ breadth pass whose silence means nothing cannot be half of a clean-gate.
 jobs; one agent doing both drops coverage the moment a thread gets
 interesting. The split is job, not capability.
 
-**Honest limit — this got worse, not better.** With both halves on the
+**Honest limit: this got worse, not better.** With both halves on the
 same model, the two passes share a lineage *and* a tier: their blind
 spots now overlap almost completely. Agreement between them is weak
 evidence, and one confirming the other is **not** independent
 verification. Say so out loud rather than banking it. The diversity
-that does not come from a model is therefore load-bearing — it is now
+that does not come from a model is therefore load-bearing; it is now
 the *only* diversity in the pass:
 
 - **Web search** (`sec-auditor` job 1) injects vuln classes from the
@@ -264,22 +264,22 @@ the *only* diversity in the pass:
   recall. Anchor every pass to current CWE Top 25 / OWASP ASVS / recent
   Go + primitive-specific advisories, and turn the result into a
   checklist delta both profiles sweep.
-- **Deterministic tools** — `go vet` and `govulncheck` (both
-  first-party Go-team; no third-party analyzers) — are the one second
+- **Deterministic tools**: `go vet` and `govulncheck` (both
+  first-party Go-team; no third-party analyzers) are the one second
   opinion that shares no blind spot with any LLM. `govulncheck` is a
   separate install (`golang.org/x/vuln/cmd/govulncheck`); run it via
   `make vulncheck`, which fails closed with the install command if
   the binary is missing.
 
-- **Proof** — a failing test, a `curl`, a real browser. Evidence is not
+- **Proof**: a failing test, a `curl`, a real browser. Evidence is not
   a second opinion, it is the end of the argument. Prefer it to every
   model judgment, including your own.
 
 **The clean-gate (the non-optional invariant):** a surface is
-**CLEARED** only when ALL of these are dry/clean on it — the deep pass,
-the breadth pass, `go vet`, `govulncheck`. One signal's silence never
+**CLEARED** only when the deep pass, the breadth pass, `go vet`, and
+`govulncheck` are ALL dry/clean on it. One signal's silence never
 clears a surface. A category nobody ran all four against is
-"never-looked", not "clean" — track the difference, and publish the
+"never-looked", not "clean". Track the difference, and publish the
 not-looked list alongside the findings.
 
 **Cross-verify both directions:** recon finds → auditor refutes (kills
@@ -288,6 +288,6 @@ tools where analyzable (catches over-reads). A same-model re-derivation
 is a sanity check, never a promotion.
 
 Spawn the two profiles with the Agent tool (`subagent_type: sec-recon`
-/ `sec-auditor` — the `model:` is pinned in each profile's frontmatter)
+/ `sec-auditor`; the `model:` is pinned in each profile's frontmatter)
 or drive them as stages of a Workflow. When running several scopes at
 once, give each its own scope boundary so the passes don't collide.

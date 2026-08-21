@@ -22,7 +22,7 @@ import (
 //
 //   - Authorization and X-Harness-Token headers are stripped from any
 //     user-supplied URL (a malicious URL containing `?api_key=…` is
-//     still possible — that's a separate user-data exfil hazard the
+//     still possible, that's a separate user-data exfil hazard the
 //     redaction middleware addresses on the response side).
 //   - Refuses non-http(s) schemes (no file://, no gopher://).
 //   - Hard 10s timeout, 5 MiB response cap.
@@ -62,11 +62,11 @@ type webFetchArgs struct {
 
 const (
 	webFetchTimeout = 10 * time.Second
-	webFetchMaxBody = 5 << 20 // 5 MiB — raw download cap (DoS guard)
+	webFetchMaxBody = 5 << 20 // 5 MiB, raw download cap (DoS guard)
 	// webFetchModelMaxBody is how much we surface to the LLM. 5 MiB
 	// of HTML would silently blow past most model context windows
 	// (GLM-5.1: 128K tokens ≈ 500 KiB), and the model returns an
-	// empty response when overflowed — exactly the bug from
+	// empty response when overflowed, exactly the bug from
 	// sess_01KSC4S1D. 32 KiB is enough text for the model to
 	// understand a page; users can inspect the full body via the
 	// session log.
@@ -114,7 +114,7 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 	if client == nil {
 		client = &http.Client{Timeout: webFetchTimeout}
 	}
-	// Re-validate every redirect target. We never relax this — a vetted
+	// Re-validate every redirect target. We never relax this, a vetted
 	// public URL must not be able to 302 us into the metadata service or
 	// loopback, even when the test injects AllowPrivateHosts on the
 	// initial hop. We copy the client so we don't mutate a shared one.
@@ -123,7 +123,7 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 	// the host string and a *separate* resolution; the dialer re-resolves,
 	// so a DNS-rebinding host (public at preflight, internal at dial) would
 	// otherwise reach the internal IP. Reject the ACTUAL connected IP at
-	// connect time — this closes rebinding on the initial fetch and every
+	// connect time, this closes rebinding on the initial fetch and every
 	// redirect hop. Only installed when the client carries no custom
 	// transport (tests that inject httptest.Client keep their transport).
 	if safeClient.Transport == nil {
@@ -175,7 +175,7 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 	header := fmt.Sprintf("HTTP %d %s\n", resp.StatusCode, resp.Status)
 	suffix := ""
 	if fullLen > webFetchModelMaxBody {
-		suffix = fmt.Sprintf("\n\n[... truncated %d more bytes of body — total %d. Increase webFetchModelMaxBody if needed.]",
+		suffix = fmt.Sprintf("\n\n[... truncated %d more bytes of body, total %d. Increase webFetchModelMaxBody if needed.]",
 			fullLen-webFetchModelMaxBody, fullLen)
 	}
 	if resp.StatusCode >= 400 {
@@ -196,7 +196,7 @@ func ssrfDialControl(_, address string, _ syscall.RawConn) error {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		// Should not happen — Control receives an already-resolved
+		// Should not happen. Control receives an already-resolved
 		// numeric address. Fail closed.
 		return fmt.Errorf("unresolved dial address %q", address)
 	}
@@ -245,7 +245,7 @@ func assertPublicHost(host string) error {
 }
 
 // isInternalIP defers to the shared predicate so this surface and
-// battery/webhook can never disagree about what "internal" means — the
+// battery/webhook can never disagree about what "internal" means, the
 // drift between two hand-maintained copies is what let a CGNAT target
 // through on the webhook side.
 func isInternalIP(ip net.IP) bool {

@@ -1,7 +1,7 @@
 package main
 
 // =============================================================================
-// Theme — v2 design tokens expressed as a typed style.Theme so the rest of
+// Theme, v2 design tokens expressed as a typed style.Theme so the rest of
 // the framework's pipeline (StyleSheet token resolution, framework/ui
 // component CSS, the color-scheme bootstrap, the catalog endpoint) all see
 // the same source of truth.
@@ -13,7 +13,7 @@ package main
 //
 // Tokens with no canonical slot in style.ColorSet (line-faint, accent-2,
 // accent-dim, the syntax-highlight palette, the higher spacing steps) are
-// added as extra :root rules in createStyleSheet — they're still defined
+// added as extra :root rules in createStyleSheet, they're still defined
 // once, still referenced everywhere via var(--…), still typed at point of
 // authoring.
 // =============================================================================
@@ -42,9 +42,9 @@ func createTheme() style.Theme {
 		// Picked so the page reads as a dev tool that isn't another red/blue site.
 		Primary:   "oklch(0.82 0.155 78)", // --accent
 		PrimaryFg: "oklch(0.14 0.005 75)", // --on-accent  (text on amber)
-		Accent:    "oklch(0.82 0.155 78)", // same — single accent
+		Accent:    "oklch(0.82 0.155 78)", // same, single accent
 
-		// Code-block surface — uses the bg-3 chip so code reads as inset.
+		// Code-block surface, uses the bg-3 chip so code reads as inset.
 		CodeSurface: "oklch(0.21 0.007 75)",
 		CodeText:    "oklch(0.96 0.006 80)",
 		CodeBorder:  "oklch(0.28 0.006 75)",
@@ -57,13 +57,13 @@ func createTheme() style.Theme {
 		FontHeading: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
 		FontMono:    "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace",
 
-		// Radii — v2 uses 4/6/10 in tightening order.
+		// Radii, v2 uses 4/6/10 in tightening order.
 		RadiusSm: 4,
 		RadiusMd: 6,
 		RadiusLg: 10,
 	})
 
-	// Spacing — v2 ladder is 4/8/12/16/24/32/48 mapped to XS..XXXL.
+	// Spacing, v2 ladder is 4/8/12/16/24/32/48 mapped to XS..XXXL.
 	// Larger steps (64/96/128) get added as raw :root vars in the stylesheet
 	// since there's no canonical slot above XXXL.
 	t.Spacing.XS = style.Spacing{Name: "xs", Value: 4}

@@ -73,7 +73,7 @@ func assertBodyCannotInject(t *testing.T, name string, email Email) {
 		}
 		b := messageBoundary(t, msg)
 		// If the real boundary equals the predictable historic constant,
-		// the body could forge it — injection succeeds.
+		// the body could forge it, injection succeeds.
 		if b == "gofastr-boundary-12345" {
 			t.Fatalf("SECURITY: [email] boundary is the predictable fixed constant — body can forge it")
 		}

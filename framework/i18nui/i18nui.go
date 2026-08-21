@@ -437,7 +437,7 @@ func resolve(ctx context.Context, key Key) string {
 // returned, or the bare key string when no default exists (so missing
 // keys surface visibly rather than as empty strings).
 //
-// Callers without a ctx in scope can pass context.Background() — the
+// Callers without a ctx in scope can pass context.Background(), the
 // English defaults still apply.
 func T(ctx context.Context, key Key) string {
 	return resolve(ctx, key)
@@ -448,7 +448,7 @@ func T(ctx context.Context, key Key) string {
 // hit or English default), so the same {name} tokens work in app
 // catalogs and in the built-in defaults. Unknown placeholders are left
 // as-is (matching TranslateValidation). A translator miss falls through
-// to Defaults — the same miss-fallback as T.
+// to Defaults, the same miss-fallback as T.
 //
 // Example: i18nui.TVars(ctx, i18nui.KeyTableSortBy, map[string]string{"column": "name"})
 // → "Sort by name" (or the catalog's "ui.table.sortBy" for the locale).

@@ -148,7 +148,7 @@ func TestFrameDiscriminationMethods(t *testing.T) {
 	}
 }
 
-// TestFrameLargeIDRoundTrips verifies ids above uint32 work — the protocol is
+// TestFrameLargeIDRoundTrips verifies ids above uint32 work; the protocol is
 // uint64 and IDs accumulate over a long-lived connection.
 func TestFrameLargeIDRoundTrips(t *testing.T) {
 	const big = uint64(1)<<40 + 7

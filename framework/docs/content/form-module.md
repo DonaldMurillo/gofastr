@@ -1,17 +1,17 @@
-# Form Module
+# Form module
 
 Form components for GoFastr: HTML primitives, framework UI components, form patterns, validation, and accessibility.
 
 ## Components
 
-### HTML Primitives (`core-ui/html`)
+### HTML primitives (`core-ui/html`)
 
 | Component | Function | Description |
 |-----------|----------|-------------|
 | Checkbox | `html.Checkbox(CheckboxConfig)` | Native `<input type="checkbox">` with label |
 | Radio | `html.Radio(RadioConfig)` | Native `<input type="radio">` with label |
 
-### Framework UI Components (`framework/ui`)
+### Framework UI components (`framework/ui`)
 
 | Component | Function | Self-labeled | Runtime JS |
 |-----------|----------|:---:|:---:|
@@ -32,7 +32,7 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 **Self-labeled** = component renders its own `<label>`. Don't wrap in `FormField`.
 **Runtime JS** = requires a runtime module (auto-registered).
 
-### Form Containers
+### Form containers
 
 | Component | Function | Purpose |
 |-----------|----------|---------|
@@ -81,9 +81,9 @@ ui.ValidationSummary(ui.ValidationSummaryConfig{
 })
 ```
 
-## Form Patterns
+## Form patterns
 
-### Conditional Fields
+### Conditional fields
 
 Show/hide fields based on another field's value. Runtime JS listens for `change`/`input` on the parent form and toggles `hidden`+`aria-hidden`.
 
@@ -101,9 +101,9 @@ ui.ConditionalField(ui.ConditionalFieldConfig{
 })
 ```
 
-### Step Wizard
+### Step wizard
 
-Multi-step form with progress indicator. Pure server-driven — each Continue/Back click is a form POST.
+Multi-step form with progress indicator. Pure server-driven: each Continue/Back click is a form POST.
 
 ```go
 ui.StepWizard(ui.StepWizardConfig{
@@ -116,7 +116,7 @@ ui.StepWizard(ui.StepWizardConfig{
 })
 ```
 
-### Form Repeater
+### Form repeater
 
 Dynamic repeating field groups. Server-driven add/remove via `name_add`/`name_remove` POST fields.
 
@@ -139,7 +139,7 @@ All components pass **axe-core 4.10** with zero violations:
 - **Roles**: Proper ARIA roles (`role="alert"`, `role="list"`, `role="listitem"`, etc.)
 - **Hidden state**: Conditional fields use `hidden` + `aria-hidden="true"` when inactive
 
-## Runtime JS Modules
+## Runtime JS modules
 
 | Module | File | Purpose |
 |--------|------|---------|
@@ -147,9 +147,9 @@ All components pass **axe-core 4.10** with zero violations:
 | searchinput | `core-ui/runtime/src/searchinput.js` | Clear button + auto-show/hide |
 | conditionalfield | `core-ui/runtime/src/conditionalfield.js` | Show/hide based on parent field value |
 
-## Demo Page
+## Demo page
 
-`/components/forms` — demo page showing every form component with live examples, validation round-trip, and accessible markup.
+`/components/forms` is a demo page showing every form component with live examples, validation round-trip, and accessible markup.
 
 ## Common mistakes
 
@@ -169,7 +169,7 @@ All components pass **axe-core 4.10** with zero violations:
   error to silently not render next to the intended field.
 - **Expecting `ConditionalField` to hide server-side.** The visibility
   toggle runs in the browser. On first load, `ConditionalField` renders
-  with the `hidden` attribute when the condition is false — but the
+  with the `hidden` attribute when the condition is false, but the
   _server_ does not skip the field from the HTML. Server-side logic
   must independently ignore values from hidden fields.
 - **Relying on `StepWizard` to prevent multi-step submission.** Each
@@ -177,7 +177,7 @@ All components pass **axe-core 4.10** with zero violations:
   disable earlier-step fields. Validate each step's data on the server
   for the relevant step before advancing.
 
-## E2E Test Coverage
+## E2E test coverage
 
 7 dedicated tests in `examples/site/e2e_form_module_test.go`:
 

@@ -80,7 +80,7 @@ func TestModal_BodyXSS(t *testing.T) {
 }
 
 // TestModal_ActionURLXSS verifies that an RPC path containing javascript:
-// is rendered safely — it goes into data-fui-rpc (not href), so it can't
+// is rendered safely: it goes into data-fui-rpc (not href), so it can't
 // navigate. The value is attr-escaped by render.Attr().
 func TestModal_ActionURLXSS(t *testing.T) {
 	t.Parallel()
@@ -209,7 +209,7 @@ func TestDrawer_ClassInjection(t *testing.T) {
 		},
 	}))
 	// The label is text-escaped via render.Escape (5-char: <>&"').
-	// " and ' become &quot;/&#39; in the text node — inert there, and
+	// " and ' become &quot;/&#39; in the text node, inert there, and
 	// the payload cannot leave the <span class="ui-sidebar__label">.
 	if !strings.Contains(h, `ui-sidebar__label`) {
 		t.Errorf("SECURITY: [drawer-class-injection] expected label span, got: %s", h)
@@ -218,7 +218,7 @@ func TestDrawer_ClassInjection(t *testing.T) {
 }
 
 // TestModal_EmptyBodyHandled verifies that ConfirmAction panics when body
-// is empty — preventing a modal with missing safety information.
+// is empty, preventing a modal with missing safety information.
 func TestModal_EmptyBodyHandled(t *testing.T) {
 	t.Parallel()
 	defer func() {
@@ -232,7 +232,7 @@ func TestModal_EmptyBodyHandled(t *testing.T) {
 		Name:         "test-modal-empty",
 		TriggerLabel: "Open",
 		Title:        "Title",
-		Body:         "", // empty body — must panic
+		Body:         "", // empty body: must panic
 		RPCPath:      "/test",
 	})
 }
@@ -259,7 +259,7 @@ func TestDropdown_ItemsXSS(t *testing.T) {
 
 // TestDropdown_ItemValueXSS verifies that href values containing
 // javascript: are attr-escaped. NOTE: render.Escape escapes <>&"' but NOT
-// URL schemes — javascript: contains no escapable chars so it passes
+// URL schemes, javascript: contains no escapable chars so it passes
 // through. This is a FINDING: the framework doesn't sanitize URI schemes.
 func TestDropdown_ItemValueXSS(t *testing.T) {
 	t.Parallel()
@@ -280,7 +280,7 @@ func TestDropdown_ItemValueXSS(t *testing.T) {
 }
 
 // TestDropdown_ClassInjection verifies that menu PanelClass cannot
-// break out of the class attribute — render.Escape escapes " to &quot;.
+// break out of the class attribute. render.Escape escapes " to &quot;.
 func TestDropdown_ClassInjection(t *testing.T) {
 	t.Parallel()
 	h := string(Menu(MenuConfig{
@@ -289,7 +289,7 @@ func TestDropdown_ClassInjection(t *testing.T) {
 		Items:      []MenuItem{{Label: "Safe"}},
 	}))
 	// PanelClass is concatenated directly into the HTML string (not escaped).
-	// This is a real vulnerability — \" in PanelClass can break out of the
+	// This is a real vulnerability. \" in PanelClass can break out of the
 	// class attribute into a new attribute context.
 	// The \" onclick=\"alert(1)\" payload creates a real onclick attribute.
 	mustNotContainRaw(t, h, "<script>", "dropdown-class-injection")
@@ -327,7 +327,7 @@ func TestMenu_ItemsHrefXSS(t *testing.T) {
 			{Label: "Data", Href: `data:text/html,<script>alert(1)</script>`},
 		},
 	}))
-	// javascript: passes through render.Escape — FINDING
+	// javascript: passes through render.Escape: FINDING
 	if strings.Contains(h, `javascript:alert`) {
 		t.Errorf("SECURITY: [menu-href-xss] javascript: URI in menu href not sanitized")
 	}
@@ -350,7 +350,7 @@ func TestMenu_ClassInjection(t *testing.T) {
 		Items:        []MenuItem{{Label: "Safe"}},
 	}))
 	// TriggerClass is concatenated directly into the HTML string without escaping.
-	// This is a real vulnerability — \"><script>\" breaks out of the class attribute.
+	// This is a real vulnerability. \"><script>\" breaks out of the class attribute.
 	if strings.Contains(h, "<script>") {
 		t.Errorf("SECURITY: [menu-class-injection] TriggerClass concatenated without escaping — XSS via class breakout")
 	} else {
@@ -362,7 +362,7 @@ func TestMenu_ClassInjection(t *testing.T) {
 // rendered trigger doesn't leak XSS payloads via render.Text().
 func TestCommandPalette_ItemsXSS(t *testing.T) {
 	t.Parallel()
-	// CommandPalette doesn't accept Items — it uses RPC. Test via
+	// CommandPalette doesn't accept Items. It uses RPC. Test via
 	// TriggerLabel which is rendered in the trigger button.
 	trigger := render.Tag("button", map[string]string{
 		"type":       "button",

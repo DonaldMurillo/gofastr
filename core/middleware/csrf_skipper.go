@@ -16,7 +16,7 @@ import (
 //	    Skip:      middleware.SkipAny(middleware.SkipBearerAuth(), skipper.Skip),
 //	})
 //
-// Adding paths after the middleware is constructed is safe — Skip
+// Adding paths after the middleware is constructed is safe; Skip
 // reads under an RWMutex, so plugins / OnStart hooks can register
 // per-route exemptions late and the next request honors them. This is
 // the per-route-skip surface called out in V3 #9: hosts list their
@@ -25,7 +25,7 @@ import (
 //
 // Path prefix matching is literal string-prefix (no globbing). A
 // trailing "/" pins the prefix to a directory; without it a registered
-// "/api" also skips "/apis/v1/...". Be deliberate — and prefer the
+// "/api" also skips "/apis/v1/...". Be deliberate, and prefer the
 // trailing-slash form unless you specifically want the broader match.
 type CSRFSkipper struct {
 	mu       sync.RWMutex
@@ -53,13 +53,13 @@ func (s *CSRFSkipper) Add(prefixes ...string) {
 // prefix. Use as CSRFConfig.Skip directly when no other predicates
 // apply, or compose with SkipAny.
 //
-// SECURITY: the comparison is against r.URL.EscapedPath() — the path AS
-// SENT — not the percent-decoded r.URL.Path. An exemption decision has
+// SECURITY: the comparison is against r.URL.EscapedPath(), the path AS
+// SENT, not the percent-decoded r.URL.Path. An exemption decision has
 // to be made on the same bytes the router matched, and those differ:
 // Go's mux matches on decoded segments but does not redirect when %2F
 // or %2E leave the raw and decoded forms different. Matching the
 // decoded path let "POST /api%2f..%2f..%2fadmin/wipe" present
-// "/api/../../admin/wipe" here — inheriting the "/api/" exemption —
+// "/api/../../admin/wipe" here, inheriting the "/api/" exemption,
 // while the mux dispatched whatever wildcard route actually matched.
 // Comparing the escaped form fails closed: an encoded separator no
 // longer reads as a directory boundary, so the request keeps its CSRF

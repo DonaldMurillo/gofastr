@@ -42,7 +42,7 @@ func ruleBlock(css, sel string) string {
 
 // A centered widget using header/body/footer slots must read as ONE
 // dialog: defaultSkeleton wraps all slots in a single .fui-panel and
-// the CSS paints that panel — three separately-painted sibling cards
+// the CSS paints that panel, three separately-painted sibling cards
 // is the defect this guards against.
 func TestCenterMultiSlotOnePanel(t *testing.T) {
 	def := preset.Modal("multi-slot-probe").
@@ -99,7 +99,7 @@ func TestCenterPanelPaintsSurface(t *testing.T) {
 }
 
 // A preset.BottomSheet's root must paint the sheet panel: surface
-// background, shadow, rounded top corners, height cap + scroll —
+// background, shadow, rounded top corners, height cap + scroll,
 // same disease as the centered modal, fixed on the container like
 // drawers.
 func TestBottomSheetPaintsPanel(t *testing.T) {

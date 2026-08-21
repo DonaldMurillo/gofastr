@@ -118,8 +118,8 @@ func TestBlueprintKeepsLegacyRelationTarget(t *testing.T) {
 // live credentials in a world-readable file.
 //
 // Freeze wrote the world's App.Auth.JWTSecret and App.Admin.SeedPassword
-// verbatim into gofastr.yml, and dropped world.json — the whole IR,
-// including those same values — at mode 0644. The v0.11.0 secrets-to-env
+// verbatim into gofastr.yml, and dropped world.json, the whole IR,
+// including those same values, at mode 0644. The v0.11.0 secrets-to-env
 // work covered the generated app; the kiln freeze path is its
 // unconverted sibling.
 //

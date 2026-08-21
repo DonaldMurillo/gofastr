@@ -1,12 +1,12 @@
-# Live Presence
+# Live presence
 
 Presence tracks **who is currently connected** to a given topic on the
-server, so a page can show a live roster of its viewers — the avatar
+server, so a page can show a live roster of its viewers: the avatar
 stack with green/away dots, the "3 people editing" indicator, the
 who's-online sidebar.
 
 The roster is **aggregated across replicas**: when a `core/fanout.Fanout`
-is attached (`framework.WithFanout` — the same seam island push and entity
+is attached (`framework.WithFanout`, the same seam island push and entity
 events use), each replica broadcasts its local roster per topic over a
 dedicated presence lane, and `PresenceRoster` returns the merged union.
 Without a fanout it degrades to exactly the single-replica roster (no
@@ -20,10 +20,10 @@ goroutines, no behavior change). See "Cross-replica aggregation" below.
 
 The `{userID, displayName}` in a roster entry come exclusively from the
 request context's authenticated user, resolved at SSE-connect time via
-`island.PresenceIdentityFromContext(ctx)` — a READ of the
+`island.PresenceIdentityFromContext(ctx)`: a READ of the
 `handler.GetUser(ctx)` value that battery/auth's `SessionMiddleware`
 (or JWT `RequireAuth`) seeds. A client may **name a topic** (the
-`?presence=` query param — it is untrusted and bounded) but may **never
+`?presence=` query param, it is untrusted and bounded) but may **never
 claim an identity**. There is no `?user=` or `?name=` parameter; any
 such value is ignored.
 
@@ -36,7 +36,7 @@ and verifies the roster still shows the ctx user).
 **Anonymous (unauthenticated) connections** are tracked with a
 server-derived *pseudo-identity* synthesized from the session id
 (`anon:<session>` / `Guest <tail>`), so presence is useful on apps
-without auth. The pseudo-identity is deterministic per session — two
+without auth. The pseudo-identity is deterministic per session: two
 tabs of the same browser (same session cookie) share one pseudo-identity
 and show as one viewer (correct: same person). Two browsers get two
 sessions and two viewers.
@@ -54,10 +54,10 @@ sessions and two viewers.
    topic for the lifetime of the SSE stream.
 4. On join/leave the manager fires `SetOnPresenceChange`'s callback. The host
    wires that callback to re-render the roster island and push it to
-   every session on the topic via the existing `PushUpdate` lane — no
+   every session on the topic via the existing `PushUpdate` lane; no
    new transport.
 5. On disconnect (including the ref-counted last-tab case), the
-   connection's contribution is removed and the roster updates — no
+   connection's contribution is removed and the roster updates; no
    ghost presence.
 
 ### Topic bounds (invariant #2)
@@ -75,7 +75,7 @@ attribute injection.
 ### Topic authorization (invariant #3)
 
 Bounding a topic string is not the same as *authorizing* it. A client may
-name **any** topic within the bounds — including one it should not see. Since
+name **any** topic within the bounds, including one it should not see. Since
 a roster can contain emails (the display name), an ungated private topic
 (`org:42:admins`) is a roster-disclosure vector to anyone who can guess it.
 
@@ -88,18 +88,18 @@ mgr.SetAuthorizeTopic(func(ctx context.Context, topic string) bool {
         return true
     }
     // Private topics: check the request's authenticated user against the
-    // topic's ACL. ctx is the SSE request context — read the trusted user
+    // topic's ACL. ctx is the SSE request context; read the trusted user
     // with island.PresenceIdentityFromContext(ctx) or handler.GetUser(ctx).
     return userMayViewTopic(ctx, topic)
 })
 ```
 
 The hook runs once per requested topic at SSE-connect time, **before** any
-subscription or roster emission — an unauthorized topic is dropped, so the
+subscription or roster emission: an unauthorized topic is dropped, so the
 viewer never receives the roster or join/leave events for it. Rejection is
 **silent** (the topic is simply not joined): there is no distinguishable
 error, so the gate is not a private-topic existence oracle. A **nil** hook
-(the default) authorizes every topic — presence stays public unless you opt
+(the default) authorizes every topic; presence stays public unless you opt
 in, so existing apps are unaffected. Keep an ergonomic public path (e.g. a
 `public:` prefix) so only genuinely private topics pay the check.
 
@@ -137,13 +137,13 @@ mgr.SetOnPresenceChange(func(topic string) {
 ```
 
 `PresenceJoin`/`PresenceHandle.Leave` are called automatically by
-`ServeSSEWithPresence` — you do not call them directly unless you're
+`ServeSSEWithPresence`; you do not call them directly unless you're
 building a custom transport.
 
 ### No generic HTTP roster endpoint (by design)
 
 There is deliberately **no** framework endpoint that returns a topic's
-roster over HTTP. A roster is "who is viewing topic X" — exposing it on an
+roster over HTTP. A roster is "who is viewing topic X": exposing it on an
 ungated URL would leak identities (emails) to anyone who can guess a topic
 string. The framework can't know your per-topic authorization, so the
 roster stays an **in-process** primitive (`Manager.PresenceRoster`) plus
@@ -166,12 +166,12 @@ html.Div(html.DivConfig{
 ```
 
 2. Wire `SetOnPresenceChange` (once, at startup) to push the re-rendered
-   roster to every session on the topic — see the API example above.
+   roster to every session on the topic; see the API example above.
 
 3. Link the page with the topic: `<a href="/my-page?presence=my-topic">`.
    The SSE meta tag picks it up automatically.
 
-That's it — no client-side JavaScript. The existing `sse.js` module
+That's it: no client-side JavaScript. The existing `sse.js` module
 delivers the roster island updates; the runtime swaps the slot's
 innerHTML.
 
@@ -184,24 +184,24 @@ innerHTML.
 renders a `ui.AvatarGroup` with `AvatarOnline` status dots.
 
 **To see two viewers:** open that URL in two browsers (or one normal +
-one private window — they get distinct sessions). Each appears in the
+one private window; they get distinct sessions). Each appears in the
 other's roster within a second; close one and its avatar drops.
 
 Two tabs of the *same* browser share one session and show as a single
-viewer — that's correct (same person).
+viewer; that's correct (same person).
 
 ---
 ## Cross-replica aggregation
 
 With a fanout attached, the roster is the **merged union** of every
-replica's connections — no under-counting. You get this automatically from
+replica's connections; no under-counting. You get this automatically from
 `framework.WithFanout` (it wires the UI host's island manager, which owns
 presence); there is no separate presence wiring to do.
 
 **How it converges** (`core-ui/island/presence_fanout.go`):
 
 - Each replica broadcasts its **full local roster** per active topic on a
-  dedicated presence lane (`gofastr.presence`) — a separate fanout topic
+  dedicated presence lane (`gofastr.presence`), a separate fanout topic
   from island invalidations, both lossy best-effort.
 - A remote-roster table keyed by `(replicaID, topic)` holds each peer's
   contribution with a **TTL of ~45s** (3× the 15s heartbeat). `PresenceRoster`
@@ -209,7 +209,7 @@ presence); there is no separate presence wiring to do.
   dedup.
 - A **periodic 15s heartbeat** rebroadcasts every topic's full roster, so a
   dropped announcement heals on the next beat. A **crashed replica** stops
-  heartbeating and its members vanish from peers within the TTL — no
+  heartbeating and its members vanish from peers within the TTL; no
   explicit goodbye needed. A **graceful stop** (`SetFanout`'s returned
   `stop`, called by app `Shutdown`) publishes an empty roster first, so a
   rolling restart converges promptly.
@@ -218,7 +218,7 @@ presence); there is no separate presence wiring to do.
   update live (island push already crosses replicas).
 
 **Identity safety is unchanged.** Announcements carry only the same
-server-derived `{UserID, DisplayName}` the local roster exposes — never a
+server-derived `{UserID, DisplayName}` the local roster exposes, never a
 session id, IP, or anything not already visible in `PresenceRoster` output.
 There is still no HTTP roster endpoint.
 
@@ -242,15 +242,15 @@ where it sits in the ladder.
 ## Common mistakes
 
 - **Trusting a client-supplied name.** Identity is server-derived from the
-  request-context user — never from a query param or body. A client may
+  request-context user, never from a query param or body. A client may
   name a *topic* but can never claim another user's identity in the roster.
 - **Exposing the roster on an ungated URL.** There is deliberately no
-  framework HTTP roster endpoint — "who is viewing X" leaks identities.
+  framework HTTP roster endpoint: "who is viewing X" leaks identities.
   Build your own roster route behind your app's per-topic authorization.
 - **Expecting instant cross-replica convergence.** A remote member can take
   up to one heartbeat (~15s) to appear after a dropped announcement, and up
   to the TTL (~45s) to disappear after a replica crash. This is by design
-  (lossy, self-healing); wire `WithFanout` for aggregation — without it the
+  (lossy, self-healing); wire `WithFanout` for aggregation; without it the
   roster stays single-replica.
 - **Re-threading presence on SPA navigation.** The SSE topic is set from
   the page's `?presence=` on initial load; a client-side nav to a presence

@@ -1,4 +1,4 @@
-// GoFastr runtime module — Combobox
+// GoFastr runtime module, Combobox
 //
 // Wires WAI-ARIA Combobox 1.2 keyboard + pointer behavior for any
 // [role="combobox"] input paired with a [role="listbox"] via
@@ -7,13 +7,13 @@
 // interactive layer.
 //
 // Keyboard:
-//   ArrowDown — open + highlight first option (or move highlight down)
-//   ArrowUp   — open + highlight last option (or move highlight up)
-//   Home / End — first / last option
-//   Enter     — pick highlighted (sets input.value to data-value or
+//   ArrowDown : open + highlight first option (or move highlight down)
+//   ArrowUp   : open + highlight last option (or move highlight up)
+//   Home / End: first / last option
+//   Enter     : pick highlighted (sets input.value to data-value or
 //               textContent, closes listbox)
-//   Escape    — close listbox; on a second Esc with text, clears input
-//   Tab       — close listbox + let Tab move focus naturally
+//   Escape    : close listbox; on a second Esc with text, clears input
+//   Tab       : close listbox + let Tab move focus naturally
 //
 // Pointer:
 //   Click an option to pick it. Click outside to close.
@@ -61,7 +61,7 @@
     input.value = val;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     closeListbox(input, lb);
-    // Honor data-fui-push-state on the option — selecting a result
+    // Honor data-fui-push-state on the option, selecting a result
     // in a search/palette pattern is almost always meant to navigate.
     // The server side hands the option a path via this attribute;
     // we route it through the SPA navigator (or fall back to a hard
@@ -197,7 +197,7 @@
 
   // Static-option filtering: a combobox whose listbox carries
   // data-fui-static-options renders every option inline (no RPC round-trip).
-  // Filter them client-side on input — hide non-matches, show all when the
+  // Filter them client-side on input, hide non-matches, show all when the
   // query clears. This is how a docs/nav palette works on a serverless
   // export where no search endpoint exists.
   document.addEventListener('input', (e) => {

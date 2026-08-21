@@ -4,7 +4,7 @@
 // instead of maintaining copies.
 package fuzzy
 
-// Levenshtein returns the edit distance between a and b — the minimum number
+// Levenshtein returns the edit distance between a and b: the minimum number
 // of single-character insertions, deletions, or substitutions to turn one
 // into the other. Inputs are compared bytewise; for ASCII identifiers
 // (command names, field names) that is equivalent to rune distance.

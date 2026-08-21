@@ -51,7 +51,7 @@ type NotificationBellConfig struct {
 	// e.g. "Notifications").
 	Label string
 	// UnreadCount renders as a badge on the bell. Hidden when 0
-	// (unless SignalUnread is set — then the badge always renders
+	// (unless SignalUnread is set, then the badge always renders
 	// and the signal drives its visibility / text).
 	UnreadCount int
 	// Items are the entries rendered inside the popover. ≥1 recommended;
@@ -121,7 +121,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 		btnAttrs[k] = v
 	}
 
-	// Badge — server-rendered count + optional signal-bound override.
+	// Badge: server-rendered count + optional signal-bound override.
 	badgeAttrs := html.Attrs{"class": "ui-notification-bell__badge", "aria-hidden": "true"}
 	var badgeChild render.HTML
 	if cfg.SignalUnread != "" {
@@ -142,7 +142,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 				ExtraAttrs: badgeAttrs,
 			}, badgeChild))
 	}
-	// SR-only count announcement — read by assistive tech when focus
+	// SR-only count announcement: read by assistive tech when focus
 	// lands on the bell.
 	if cfg.UnreadCount > 0 || cfg.SignalUnread != "" {
 		btnAttrs["aria-describedby"] = cfg.Name + "-count"
@@ -252,7 +252,7 @@ func renderBellRow(it NotificationItem) render.HTML {
 	}
 	var inner render.HTML
 	if it.Href != "" {
-		// Items are data-driven (live notification feeds) — drop unsafe
+		// Items are data-driven (live notification feeds). Drop unsafe
 		// href schemes per the framework/ui/safety.go allow-list and
 		// degrade to an inert "#" rather than a live javascript: link.
 		href := urlsafe.CleanAnchor(it.Href)
@@ -271,7 +271,7 @@ func renderBellRow(it NotificationItem) render.HTML {
 }
 
 // whenStringSpan returns an empty render.HTML when s is empty, or a
-// span containing s otherwise — keeps the row-header layout uniform.
+// span containing s otherwise, keeping the row-header layout uniform.
 func whenStringSpan(s, cls string) render.HTML {
 	if s == "" {
 		return render.HTML("")

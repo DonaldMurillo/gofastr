@@ -53,7 +53,7 @@ func runLogin(args []string) int {
 	} else {
 		// No termios in the stdlib, so interactive input echoes; warn and
 		// point at the pipe-friendly path.
-		fmt.Fprintf(os.Stderr, "Paste an API token minted in the app (input will echo — prefer --with-token via a pipe): ")
+		fmt.Fprintf(os.Stderr, "Paste an API token minted in the app (input will echo; prefer --with-token via a pipe): ")
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil && line == "" {
 			fmt.Fprintln(os.Stderr, err)
@@ -71,7 +71,7 @@ func runLogin(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("Logged in to %s — config stored at %s\n", cfg.URL, path)
+	fmt.Printf("Logged in to %s; config stored at %s\n", cfg.URL, path)
 	return 0
 }
 
@@ -91,6 +91,6 @@ func runLogout(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Println("Logged out — stored token removed. Revoke it in the app to invalidate it server-side.")
+	fmt.Println("Logged out; stored token removed. Revoke it in the app to invalidate it server-side.")
 	return 0
 }

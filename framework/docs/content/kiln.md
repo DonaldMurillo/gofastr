@@ -1,8 +1,8 @@
-# Kiln — agent-driven build mode
+# Kiln: agent-driven build mode
 
 > **Experimental.** Kiln is a separate binary for shaping a GoFastr app live.
 > When you graduate, it writes the same `gofastr.yml` blueprint the generator
-> already reads — a scaffolder, not the thing you ship. The generated Go code
+> already reads: a scaffolder, not the thing you ship. The generated Go code
 > is what you keep; it's the source of truth, not the blueprint.
 
 Kiln gives an agent a small, journaled application IR. Each accepted edit is
@@ -63,11 +63,11 @@ Kiln's tools, not by editing the repository.
 Read and configuration:
 
 - `world_get`
-- `set_app_config` — current blueprint app config; HTTP calls use
+- `set_app_config`: current blueprint app config; HTTP calls use
   `{"config":{...}}`, a non-empty `config.name` is required, and an
   omitted/empty API prefix resolves to `api`
-- `set_theme` — semantic light theme token overrides
-- `set_scaffold` — navigation plus owned-Go endpoint, middleware, plugin, and
+- `set_theme`: semantic light theme token overrides
+- `set_scaffold`: navigation plus owned-Go endpoint, middleware, plugin, and
   helper stubs
 
 Entities and data:
@@ -96,7 +96,7 @@ Those rules are enforced during **replay**, not only at the tool call. The
 journal is the authorization record, so a destructive entry carries the
 `plan_id` that authorized it and replay re-checks that the plan exists, was
 approved, lists that exact target, and has not already been spent on it.
-Consumption is derived from the log too — it used to live in a per-process
+Consumption is derived from the log too. It used to live in a per-process
 map that replay never rebuilt, so a restart re-armed every spent approval.
 The `multi_tenant` refusal runs on the same path.
 
@@ -104,7 +104,7 @@ This matters because the journal is replayed at boot and by `kiln freeze`,
 which turns the replayed world into a blueprint. A hand-authored
 `.kiln.session.jsonl` used to install world state the tool API refuses. It
 needs a local filesystem write, so it is an integrity property rather than a
-remote one — but a guard only one of two readers applies is not a guard.
+remote one, but a guard only one of two readers applies is not a guard.
 
 ## Current world contract
 
@@ -185,9 +185,9 @@ go test ./...
 
 Freeze writes exactly:
 
-- `build/gofastr.yml` — deterministic current blueprint, ready for the
+- `build/gofastr.yml`: deterministic current blueprint, ready for the
   one-shot generator;
-- `build/world.json` — lossless authoring snapshot.
+- `build/world.json`: lossless authoring snapshot.
 
 Declarative Kiln hook/route actions remain exact in `world.json`. Where the
 current blueprint requires a Go function, freeze emits an owned-Go handler
@@ -199,7 +199,7 @@ owned-Go handler stubs after generation. The removed pre-v0.1 `entities/*.json`
 format is not emitted.
 
 Freeze fails loudly, naming the offending key, when world data cannot
-round-trip through the blueprint's YAML subset — a seed row whose every value
+round-trip through the blueprint's YAML subset: a seed row whose every value
 is a nested object, or a props/row key containing a colon, comment marker, or
 brackets. Reshape the data (or drop the row) and re-run; a freeze that
 succeeded is guaranteed to re-parse into the same values.

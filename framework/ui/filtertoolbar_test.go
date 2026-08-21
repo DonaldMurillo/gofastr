@@ -216,7 +216,7 @@ func TestFilterToolbarPanics(t *testing.T) {
 }
 
 // TestFilterToolbarSearchOnly proves the toolbar is valid with only a
-// search field (no facets) — a common minimal list-screen filter.
+// search field (no facets), a common minimal list-screen filter.
 func TestFilterToolbarSearchOnly(t *testing.T) {
 	out := string(FilterToolbar(FilterToolbarConfig{
 		Action: "/q",

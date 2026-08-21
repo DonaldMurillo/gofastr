@@ -1,4 +1,4 @@
-// GoFastr runtime module — Toasts
+// GoFastr runtime module, Toasts
 //
 // Toast stack runtime:
 //   - __gofastr.toast(cfg|string) JS API to fire toasts at runtime.
@@ -24,12 +24,12 @@
   /** Wire freshly-swapped toast items inside `root`: schedule auto
       dismiss via data-fui-toast-ttl-ms, pause on hover/focus, resume
       on leave, click-to-dismiss via [data-fui-toast-dismiss]. The
-      same toast HTML re-rendered should NOT reset existing timers
-      — we key by toast id and skip already-known ones. */
+      same toast HTML re-rendered should NOT reset existing timers,
+      we key by toast id and skip already-known ones. */
   NS._initToasts = function (root) {
     const items = root.querySelectorAll('[data-fui-toast-id]');
     // Track which ids are present in the current DOM. Anything in
-    // _toastTimers but absent here was dismissed — cancel its timer.
+    // _toastTimers but absent here was dismissed, cancel its timer.
     const present = {};
     items.forEach((item) => {
       const id = item.getAttribute('data-fui-toast-id');
@@ -103,7 +103,7 @@
       container = document.querySelector('[data-fui-toast-stack]');
     }
     if (!container) {
-      // Body singleton (doc.MANIFEST: fui-toast-stack-auto) — created at
+      // Body singleton (doc.MANIFEST: fui-toast-stack-auto), created at
       // most once and re-attached by the SPA full-shell swap. Distinct
       // from core's unstyled fui-toast-fallback container, which exists
       // only for the "toasts module failed to load" path.
@@ -175,7 +175,7 @@
 
   // Wire any SSR-inlined toast stacks that already exist in the DOM.
   // The framework's ToastStack preset renders a container div with
-  // [data-fui-toast-stack="<name>"] — when those exist at module-load
+  // [data-fui-toast-stack="<name>"], when those exist at module-load
   // time we want their items wired immediately. (Empty stacks no-op.)
   const _rescan = (root) => {
     const scope = root && root.querySelectorAll ? root : document;
@@ -186,7 +186,7 @@
   // Core dispatches `gofastr:navigate` after every SPA-nav swap; loaded
   // modules re-init against the fresh DOM via this scanner registry.
   // Without this, SSR-inlined toast stacks rendered onto the new page
-  // would never get their TTL timers armed — _initToasts ran exactly
+  // would never get their TTL timers armed, _initToasts ran exactly
   // once at module load, before that DOM existed.
   ((NS._moduleScanners ||= {})).toasts = _rescan;
 

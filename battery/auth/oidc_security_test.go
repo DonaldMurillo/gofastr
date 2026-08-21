@@ -68,7 +68,7 @@ func TestOIDCSec_AlgHS256(t *testing.T) {
 	mustFailExchange(t, p)
 }
 
-// TestOIDCSec_AlgLowercase: "rs256" is not "RS256" — exact match only.
+// TestOIDCSec_AlgLowercase: "rs256" is not "RS256", exact match only.
 func TestOIDCSec_AlgLowercase(t *testing.T) {
 	f := newFakeIdP(t)
 	f.header = map[string]interface{}{"alg": "rs256"} // validly RS256-signed below
@@ -178,7 +178,7 @@ func TestOIDCSec_AudArrayNoAzp(t *testing.T) {
 }
 
 // TestOIDCSec_SingleAudBadAzp: a single-audience token whose azp names a
-// different client is rejected — the azp check is unconditional (OIDC
+// different client is rejected, the azp check is unconditional (OIDC
 // §3.1.3.7.3), not multi-audience-only.
 func TestOIDCSec_SingleAudBadAzp(t *testing.T) {
 	f := newFakeIdP(t)
@@ -281,7 +281,7 @@ func TestOIDCSec_UnknownKidRotationSpent(t *testing.T) {
 }
 
 // TestOIDCSec_EncUseKeyRejected: a JWK marked use:"enc" must not verify
-// signatures, even when it is the very key the token was signed with — an
+// signatures, even when it is the very key the token was signed with, an
 // encryption key repurposed for signing is outside its certified use.
 func TestOIDCSec_EncUseKeyRejected(t *testing.T) {
 	f := newFakeIdP(t)
@@ -295,7 +295,7 @@ func TestOIDCSec_EncUseKeyRejected(t *testing.T) {
 }
 
 // TestOIDCSec_JWKAlgMismatchRejected: a JWK that declares alg PS256 must not
-// verify an RS256 token — the key's own alg binding wins.
+// verify an RS256 token, the key's own alg binding wins.
 func TestOIDCSec_JWKAlgMismatchRejected(t *testing.T) {
 	f := newFakeIdP(t)
 	f.jwksFn = func(int) []map[string]interface{} {

@@ -370,7 +370,7 @@ func fmtAtoi(s string) (int, error) {
 // ----- RPC handlers --------------------------------------------------------
 
 // handleRBACGrant grants a permission to a role via GrantStore.Grant. The
-// role and permission are user-supplied strings — GrantStore binds them as
+// role and permission are user-supplied strings. GrantStore binds them as
 // $n parameters, never interpolating them into SQL. Writes an audit row.
 func (b *Battery) handleRBACGrant(w http.ResponseWriter, r *http.Request) {
 	if b.cfg.GrantStore == nil {
@@ -385,7 +385,7 @@ func (b *Battery) handleRBACGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := b.cfg.GrantStore.Grant(r.Context(), role, access.Permission(perm)); err != nil {
 		// A strict-mode unknown capability is the admin's typo, not a
-		// server fault — surface the reason instead of a generic 500.
+		// server fault, surface the reason instead of a generic 500.
 		var unknown *access.UnknownCapabilityError
 		if errors.As(err, &unknown) {
 			http.Error(w, unknown.Error(), http.StatusBadRequest)
@@ -426,7 +426,7 @@ func (b *Battery) handleRBACRevoke(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRBACAssign replaces a user's roles via AuthManager.SetUserRoles.
-// The roles are OPERATOR input from the admin screen — never request data
+// The roles are OPERATOR input from the admin screen, never request data
 // sourced from the user being edited. Writes an audit row.
 func (b *Battery) handleRBACAssign(w http.ResponseWriter, r *http.Request) {
 	if b.cfg.Auth == nil {
@@ -469,8 +469,8 @@ func (b *Battery) effectiveDB() *sql.DB {
 // appendAudit writes a security/compliance audit row and surfaces a write
 // failure via the configured logger instead of discarding it. The mutation
 // that triggered the row has ALREADY committed by the time this runs (a grant
-// was applied, a module enabled) — there is nothing to roll back and the
-// client already got its answer — so failing the request would mislead the
+// was applied, a module enabled), there is nothing to roll back and the
+// client already got its answer, so failing the request would mislead the
 // operator into believing the action did not take effect. But an unrecorded
 // mutation is a silent security gap, so the failed write MUST be logged.
 func (b *Battery) appendAudit(ctx context.Context, entity, op, recordID, actorID string, diff map[string]any) {

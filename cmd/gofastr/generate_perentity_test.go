@@ -51,7 +51,7 @@ func TestRenderPerEntityFileLayout(t *testing.T) {
 			}
 		}
 	}
-	// The seam carries no entity name — adding an entity never edits it.
+	// The seam carries no entity name, so adding an entity never edits it.
 	for _, ent := range []string{`"alpha"`, `"beta"`, `"gamma"`} {
 		if strings.Contains(byName["register.go"], ent) {
 			t.Fatalf("register.go must not name entity %s:\n%s", ent, byName["register.go"])
@@ -182,7 +182,7 @@ func TestRenderPerEntityFilesCompile(t *testing.T) {
 
 // TestPackRoundTripPerEntityFiles is the additive-generation + pack invariant:
 // packing a freshly generated (per-entity) app recovers the exact declaration
-// set in authored order — even when file-name (lexical) order differs from
+// set in authored order, even when file-name (lexical) order differs from
 // declaration order.
 func TestPackRoundTripPerEntityFiles(t *testing.T) {
 	crud := true

@@ -20,7 +20,7 @@ func (s stubDeriver) DeriveImage(ctx context.Context, store upload.Storage, data
 // WithImagePipeline sets the app-wide deriver; WithImagePipelineFor overrides
 // it per (entity, field), because one config cannot describe both an avatar
 // and a hero cover. A nil per-field deriver opts that field out entirely
-// without disturbing the app-wide default — so "absent" and "explicitly none"
+// without disturbing the app-wide default, so "absent" and "explicitly none"
 // have to stay distinguishable.
 func TestWithImagePipeline_AppWideAndPerFieldOverride(t *testing.T) {
 	appWide := stubDeriver{id: "app-wide"}
@@ -53,7 +53,7 @@ func TestWithImagePipeline_AppWideAndPerFieldOverride(t *testing.T) {
 		t.Errorf("avatar deriver = %q, want %q", got.(stubDeriver).id, "avatars")
 	}
 
-	// The opt-out must be PRESENT and nil — an absent key would fall back to
+	// The opt-out must be PRESENT and nil, an absent key would fall back to
 	// the app-wide deriver, which is the opposite of opting out.
 	banner, present := fields["banner"]
 	if !present {

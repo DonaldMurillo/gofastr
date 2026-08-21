@@ -13,7 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// Architecture contract tests — these lock the "minimal-register +
+// Architecture contract tests, these lock the "minimal-register +
 // lazy-fetch + hydrate" pattern in place. Every widget primitive that
 // ships in the framework must obey these rules; every change to the
 // widget runtime / registry must not break them. Failing any of
@@ -32,7 +32,7 @@ import (
 //   2. Chrome HTML is reachable at the per-widget /chrome endpoint,
 //      ready for lazy fetch on first open.
 //   3. The /chrome endpoint renders the same HTML the framework's
-//      SSR layer would inline — single source of truth.
+//      SSR layer would inline, single source of truth.
 //   4. Registry metadata exposes deeplink fields (key, value, params)
 //      so the runtime can dispatch boot-time deep-link sync without
 //      knowing about the widget at build time.
@@ -45,7 +45,7 @@ func (c chromeStub) Render() render.HTML { return render.HTML(c.html) }
 
 var _ component.Component = chromeStub{}
 
-// CONTRACT 1a: Registry payload contains metadata only — chrome HTML
+// CONTRACT 1a: Registry payload contains metadata only, chrome HTML
 // must NEVER appear in the /__gofastr/widgets JSON.
 func TestArchContract_RegistryHasNoChromeHTML(t *testing.T) {
 	def := widget.New("arch-chrome-test").
@@ -218,7 +218,7 @@ func TestArchContract_RegistryExposesDeepLinkMetadata(t *testing.T) {
 	}
 }
 
-// CONTRACT 5: Hidden widgets DO appear in the registry — the runtime
+// CONTRACT 5: Hidden widgets DO appear in the registry, the runtime
 // needs to know they exist so it can lazy-fetch them on click.
 // Visibility is a render-time decision (uihost SSR-inline path), not
 // a registry filter.
@@ -244,7 +244,7 @@ func TestArchContract_HiddenWidgetsStillRegistered(t *testing.T) {
 	}
 }
 
-// CONTRACT 6: AllForSSR returns the live registry — used by the SSR
+// CONTRACT 6: AllForSSR returns the live registry, used by the SSR
 // host to inline visible widgets into page responses.
 func TestArchContract_AllForSSRReturnsRegisteredWidgets(t *testing.T) {
 	def := widget.New("arch-all-for-ssr").
@@ -266,7 +266,7 @@ func TestArchContract_AllForSSRReturnsRegisteredWidgets(t *testing.T) {
 	}
 }
 
-// CONTRACT 8: Per-page scoping — a widget with no Routes declared
+// CONTRACT 8: Per-page scoping, a widget with no Routes declared
 // is available on every path; widgets with Routes are visible only
 // on paths their matchers accept. Apps relying on .Pages() /
 // .PagesPrefix() / .PagesMatch() expect both the catalog endpoint
@@ -403,7 +403,7 @@ func contains(defs []*widget.Definition, name string) bool {
 }
 
 // CONTRACT 7: RenderChrome produces identical HTML to what the
-// chrome endpoint serves — single source of truth, so SSR-inlined
+// chrome endpoint serves, single source of truth, so SSR-inlined
 // and lazy-fetched widgets are byte-for-byte the same.
 func TestArchContract_RenderChromeMatchesChromeEndpoint(t *testing.T) {
 	def := widget.New("arch-render-eq").

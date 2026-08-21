@@ -35,7 +35,7 @@ type Variant struct {
 // render or with a battery/storage backend to persist.
 type VariantSet struct {
 	// Variants is the ordered list of outputs to produce. Empty means
-	// "no encoded variants — just the placeholder and/or hash".
+	// "no encoded variants, just the placeholder and/or hash".
 	Variants []Variant
 
 	// Placeholder, if non-nil, produces a base64 data: URL LQIP.
@@ -53,14 +53,14 @@ type VariantSet struct {
 	// source. The default (false) clamps every variant's effective
 	// width to min(Variant.Width, source width). Without the clamp a
 	// 16×16 source with Variant{Width: 2048} would silently produce a
-	// 2048×2048 pixel-multiplied-garbage output — almost never what a
+	// 2048×2048 pixel-multiplied-garbage output, almost never what a
 	// caller wants.
 	AllowUpscale bool
 
 	// RejectAnimated returns ErrAnimatedSource when the source's
 	// Metadata.FrameCount is > 1 (today: animated GIFs). Use this on
 	// upload pipelines where the silent first-frame-flatten behavior
-	// of the default decoder would be a surprise — e.g. avatar
+	// of the default decoder would be a surprise, e.g. avatar
 	// uploads, profile photos. Default (false) preserves the legacy
 	// "first frame wins" behavior.
 	RejectAnimated bool
@@ -98,7 +98,7 @@ type VariantOutput struct {
 }
 
 // VariantResult is the typed result of Process. Fields are populated
-// only when requested by VariantSet — Placeholder is empty when
+// only when requested by VariantSet. Placeholder is empty when
 // VariantSet.Placeholder is nil, BlurHash is empty when both BlurHash
 // component counts are zero.
 type VariantResult struct {
@@ -119,7 +119,7 @@ type VariantResult struct {
 }
 
 // Process produces every variant + placeholder + hash declared by the
-// set. The first error halts processing — callers wanting per-variant
+// set. The first error halts processing. Callers wanting per-variant
 // resilience can call Process repeatedly with single-element sets.
 func (s VariantSet) Process(src *Image) (VariantResult, error) {
 	if src == nil {
@@ -229,7 +229,7 @@ type StreamResult struct {
 // VariantSink is the callback ProcessTo invokes once per variant.
 // Implementations must read r before returning; the framework reuses
 // the underlying buffer on the next variant and the reader handed in
-// is one-shot — it returns ErrReaderClosed on any access after the
+// is one-shot. It returns ErrReaderClosed on any access after the
 // sink returns. Returning an error stops emission and propagates out
 // of ProcessTo.
 type VariantSink func(h VariantHeader, r io.Reader) error
@@ -259,7 +259,7 @@ func (o *oneShotReader) Read(p []byte) (int, error) {
 // WriteTo delegates to the wrapped reader's WriteTo if it has one.
 // io.Copy queries this interface and uses it as the fast path; the
 // underlying *bytes.Buffer implements it natively. Without exposing
-// it here, io.Copy would fall back to a 32 KB Read loop — turning
+// it here, io.Copy would fall back to a 32 KB Read loop, turning
 // storage.Save(ctx, key, r) (used by every backend in battery/storage)
 // into a needlessly slow path.
 func (o *oneShotReader) WriteTo(w io.Writer) (int64, error) {
@@ -275,7 +275,7 @@ func (o *oneShotReader) WriteTo(w io.Writer) (int64, error) {
 func (o *oneShotReader) close() { o.closed = true }
 
 // ProcessTo is the streaming variant of Process. Only one variant
-// lives in memory at a time — once the sink returns, the buffer is
+// lives in memory at a time. Once the sink returns, the buffer is
 // released and the next variant is encoded. Wire the sink directly
 // to a storage backend (e.g., core/upload.Storage.Save) to avoid
 // holding all variants resident.
@@ -342,7 +342,7 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		// Drop the scaled intermediate so the GC can reclaim the
 		// resize-output buffer before we allocate the next one. Without
 		// this, each iteration retains a fresh image.RGBA and the
-		// peak heap grows with variant count — the doc's "only one
+		// peak heap grows with variant count. The doc's "only one
 		// variant lives in memory at a time" promise breaks.
 		scaled = nil
 		enc = nil

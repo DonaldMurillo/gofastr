@@ -49,7 +49,7 @@ func TestAcceptLanguageBounded(t *testing.T) {
 	}
 }
 
-// TestAcceptLangWorkIsBounded pins the WORK, not just the result size.
+// TestAcceptLangWorkIsBounded pins the WORK, not only the result size.
 // TestAcceptLanguageBounded above caps len(out) at 32, but the cap was
 // consulted only after strings.Split had already materialised the whole
 // comma-separated slice: a ~600KB header still allocated ~3.2MB and
@@ -93,9 +93,9 @@ func TestAcceptLangWorkIsBounded(t *testing.T) {
 }
 
 // TestNegotiatedTagIsBounded asserts the property sanitizeTag
-// already states for cookies — "resolver values are attacker-controlled,
-// so they are length- and character-bounded before any matching" — holds
-// at EVERY source Negotiate accepts, not just the resolver.
+// already states for cookies, "resolver values are attacker-controlled,
+// so they are length- and character-bounded before any matching," holds
+// at EVERY source Negotiate accepts, not only the resolver.
 //
 // X-Locale is equally attacker-controlled and wins OUTRIGHT, yet only
 // got lower-case+trim; and with a nil Translator the entire raw

@@ -21,7 +21,7 @@ func (a *articleTestComp) ScreenArticle() ArticleMeta {
 }
 
 // A ScreenArticle screen renders its content inside an <article> element,
-// nested within the layout's <main> landmark — the structure Safari Reader
+// nested within the layout's <main> landmark, the structure Safari Reader
 // and Firefox Reader View detect as an article.
 func TestScreenArticleWrapsContentInArticle(t *testing.T) {
 	a := NewApp("ArticleApp")
@@ -52,7 +52,7 @@ func TestScreenArticleWrapsContentInArticle(t *testing.T) {
 	}
 }
 
-// A plain screen (no ScreenArticle) is NOT wrapped in <article> — the
+// A plain screen (no ScreenArticle) is NOT wrapped in <article>, the
 // feature is opt-in.
 func TestNonArticleScreenHasNoArticleWrapper(t *testing.T) {
 	a := NewApp("PlainApp")
@@ -89,7 +89,7 @@ func TestScreenArticleNoLayoutStillWrapsInsideMain(t *testing.T) {
 	}
 }
 
-// AsArticle() turns a plain screen into an article at registration — no
+// AsArticle() turns a plain screen into an article at registration, no
 // interface, no metadata. The framework wraps its content in <article>.
 func TestAsArticleOptionWrapsContent(t *testing.T) {
 	a := NewApp("AsArticleApp")

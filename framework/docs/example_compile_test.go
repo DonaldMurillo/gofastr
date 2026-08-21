@@ -21,7 +21,7 @@ var packageClause = regexp.MustCompile(`(?m)^package\s+\w+`)
 //
 // Most fenced blocks are deliberate fragments (three lines of a struct
 // literal), so compilation is opt-in per block. Mark a block by putting a
-// directive comment immediately above its fence — HTML comments do not render:
+// directive comment immediately above its fence. HTML comments do not render:
 //
 //	<!-- gofastr:compile
 //	import "database/sql"
@@ -78,12 +78,12 @@ func splitImports(src string) (imports, rest string) {
 				strings.Join(lines[i+1:], "\n")
 		}
 	}
-	return "", src // unterminated — let the compiler complain
+	return "", src // unterminated. Let the compiler complain
 }
 
 func assemble(directive, code string) string {
 	// A snippet that carries its own `package` clause is a complete Go
-	// file (docs sometimes show the whole file — package, imports, decls).
+	// file (docs sometimes show the whole file: package, imports, decls).
 	// It is emitted verbatim: the directive contributes nothing, because
 	// its imports and decls would have to merge inside the snippet's own
 	// declarations. A `package main` file with no main function (the doc

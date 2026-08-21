@@ -12,7 +12,7 @@ import (
 func TestRowMapPoolDropsHugeMap(t *testing.T) {
 	// Stage a slice with one giant row, run it through the normal
 	// borrow/return cycle, and assert the pool's high-water-mark stays
-	// bounded — pulling N small maps in a row must never surface the
+	// bounded, pulling N small maps in a row must never surface the
 	// pathological one.
 	s := borrowRowSlice()
 	huge := make(map[string]any, maxPooledMapEntries+100)
@@ -256,7 +256,7 @@ func TestScanRowsPooled_NoAliasingAcrossRows(t *testing.T) {
 		}
 	}
 
-	// Drive the pool through two full cycles — by now any aliasing bug
+	// Drive the pool through two full cycles, by now any aliasing bug
 	// would also surface as a stale value leaking into a fresh scan.
 	rows2, err := db.Query("SELECT id, name FROM t ORDER BY id")
 	if err != nil {

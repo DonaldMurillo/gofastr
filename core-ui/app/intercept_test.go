@@ -83,7 +83,7 @@ func TestInterceptForOnlyMatchesDeclaredOrigin(t *testing.T) {
 	}
 }
 
-// The overlay is a different WRAPPER around the same render — same
+// The overlay is a different WRAPPER around the same render, same
 // params, same Load, same content. If those diverged, a shared link and
 // an intercepted click would show different things.
 func TestOverlayRenderMatchesCanonicalContent(t *testing.T) {
@@ -105,7 +105,7 @@ func TestOverlayRenderMatchesCanonicalContent(t *testing.T) {
 			t.Errorf("render lost its params/content: %s", got)
 		}
 	}
-	// A page partial is deliberately UNWRAPPED — the runtime swaps it
+	// A page partial is deliberately UNWRAPPED, the runtime swaps it
 	// into the <main> that is already on the page. The overlay is the
 	// same content plus drawer scaffolding, which is the entire
 	// difference between the two renders.
@@ -118,7 +118,7 @@ func TestOverlayRenderMatchesCanonicalContent(t *testing.T) {
 	if !strings.Contains(string(overlay.HTML), `aria-label="Product"`) {
 		t.Errorf("overlay drawer is unlabelled: %s", overlay.HTML)
 	}
-	// The title travels either way — the overlay needs it for its label.
+	// The title travels either way, the overlay needs it for its label.
 	if page.Title != "Product" || overlay.Title != "Product" {
 		t.Errorf("titles = %q / %q, want both %q", page.Title, overlay.Title, "Product")
 	}

@@ -53,7 +53,7 @@ type fragmentDef struct {
 
 // fragments is the declared fragment set from the runtime-composer spec.
 // These are the names the attribute map and the composition table (full /
-// static / embed) may use — nothing else.
+// static / embed) may use, nothing else.
 //
 // sse owns zero data-fui-* attributes: it is triggered by the privileged
 // <meta name="gofastr-sse"> marker rather than by a DOM attribute. boot-embed
@@ -74,7 +74,7 @@ var fragments = map[string]fragmentDef{
 	"nav":          {name: "nav", class: bootClass, deps: []string{"kernel", "signals"}},
 	"widgets-boot": {name: "widgets-boot", class: bootClass, deps: []string{"kernel"}},
 	// widgets-boot-static is the static-mode counterpart of widgets-boot
-	// (MUTUALLY EXCLUSIVE — never compose both). It owns NO data-fui-*
+	// (MUTUALLY EXCLUSIVE, never compose both). It owns NO data-fui-*
 	// attributes of its own: it cross-references data-fui-open /
 	// data-fui-toast / data-fui-deeplink, whose owner stays widgets-boot
 	// (the gate treats cross-references as non-transferable, and
@@ -91,7 +91,7 @@ var fragments = map[string]fragmentDef{
 //
 // Ownership rule (applied to every attribute, including the ~55 that appear
 // in BOTH runtime.js and a src/*.js module): the owner is the fragment (or
-// module) whose code implements the attribute's handler — the function that
+// module) whose code implements the attribute's handler, the function that
 // runs when the attribute is present. A cross-reference from another
 // fragment or module does NOT transfer ownership. Concretely:
 //
@@ -112,7 +112,7 @@ var fragments = map[string]fragmentDef{
 //     self-heal, per the spec's class definition.
 //
 // Attributes whose behavior lives in an on-demand src/*.js module are NOT
-// here — see moduleAttrs. Together the two tables assign every data-fui-*
+// here. See moduleAttrs. Together the two tables assign every data-fui-*
 // attribute in the runtime sources to exactly one owner; attrdoc_test.go
 // asserts the assignment is complete and drift-free.
 var fragmentAttrs = map[string][]string{
@@ -170,22 +170,22 @@ var fragmentAttrs = map[string][]string{
 // Every entry is markerClass: the kernel's _scanForModules demand-loads the
 // module when it sees the module's primary marker (the scanner table near
 // the bottom of runtime.js is the authoritative marker→module map), and
-// companion attributes ride along. A module not listed here still loads —
+// companion attributes ride along. A module not listed here still loads,
 // this is the attribute-ownership map, not the module registry.
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment — see fragments note); formrepeater, passwordinput, and
+// fragment. See fragments note); formrepeater, passwordinput, and
 // searchinput (triggered by data-fui-comp="ui-<name>" CSS markers, which
 // kernel owns, and otherwise driven by rpc/signals); widgetfocus and
 // widgetlinks (triggered by internal JS markers, not data-fui-* at all);
-// preload (manifest-triggered like intercept — boot loads it when any
-// route declares a preload mode — and it reads route data, not markers);
+// preload (manifest-triggered like intercept, boot loads it when any
+// route declares a preload mode, and it reads route data, not markers);
 // actionloader (triggered by the __gofastr_actions manifest global and
 // keyed on data-component/data-widget, which widgets owns).
 //
 // Ownership for an attribute referenced by several module files is resolved
-// to the module that implements the behavior — determined by the scanner
+// to the module that implements the behavior, determined by the scanner
 // table's primary marker, then by the single module that references a
 // companion attribute. The one non-obvious case: the seven general-purpose
 // form helpers (charcount-source, clear-on-esc, disable-when-invalid,
@@ -453,7 +453,7 @@ const (
 // asserts that never happens for any attribute in the runtime sources.
 //
 // For a module-owned attribute the returned name is the bare module name
-// (e.g. "poll"), not a prefixed token — callers that need to distinguish
+// (e.g. "poll"), not a prefixed token, callers that need to distinguish
 // the namespace use the kind.
 func attrOwner(attr string) (kind ownerKind, name string) {
 	for frag, attrs := range fragmentAttrs {

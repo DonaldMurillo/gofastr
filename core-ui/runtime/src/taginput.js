@@ -1,4 +1,4 @@
-// TagInput runtime module — commit / remove tags as the user types.
+// TagInput runtime module, commit / remove tags as the user types.
 //
 // On the text input:
 //   - Enter or comma → commit current value as a tag
@@ -21,7 +21,7 @@
     return input.getAttribute('data-fui-tag-input');
   }
 
-  // fieldId returns the text input's data-fui-tag-input-id — the stable
+  // fieldId returns the text input's data-fui-tag-input-id, the stable
   // field id mirrored onto each chip's remove button so removal can
   // return focus to the field by id, independent of DOM position.
   function fieldId(input) {
@@ -78,7 +78,7 @@
   // Same-tick submit guard. When Enter in a tag input triggers the
   // browser's implicit form submission (which preventDefault on
   // keydown doesn't always block in Chromium for single-input forms),
-  // we want to swallow ONLY that immediate, racing submit — never a
+  // we want to swallow ONLY that immediate, racing submit, never a
   // legitimate submit a few moments later from a real Save click.
   //
   // Record a high-resolution timestamp on every tag-input Enter/comma;

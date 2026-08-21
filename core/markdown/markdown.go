@@ -37,7 +37,7 @@ func RenderHTML(input string) render.HTML {
 
 // maxBlockquoteDepth bounds blockquote nesting. Each level re-parses the
 // remaining inner text, so unbounded nesting is O(n^2) on a single line of
-// "> > > … x" — a CPU-DoS amplifier on any user-submitted markdown. Past
+// "> > > … x", a CPU-DoS amplifier on any user-submitted markdown. Past
 // the cap we stop recursing and emit the remaining text verbatim (escaped).
 const maxBlockquoteDepth = 32
 

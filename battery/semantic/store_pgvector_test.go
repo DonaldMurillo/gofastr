@@ -19,7 +19,7 @@ import (
 // pgvector integration tests. A live Postgres-with-pgvector comes from
 // $TEST_POSTGRES_DSN if set, otherwise an ephemeral testcontainer built from
 // pgvector/pgvector:pg16 (which ships the vector type). If neither is
-// reachable the suite skips — it never fails for lack of a database, the same
+// reachable the suite skips, it never fails for lack of a database, the same
 // convention as battery/search/postgres_test.go.
 //
 // Each test gets its own throwaway schema on the shared instance so they run
@@ -455,6 +455,6 @@ func cloneChunks(in []Chunk) []Chunk {
 // service both run pgvector/pgvector:pg16 for exactly that reason, so one
 // TEST_POSTGRES_DSN serves this suite and the plain-Postgres ones alike. A DSN
 // pointing at a stock postgres image reaches CREATE EXTENSION and fails there
-// rather than skipping — which is the honest outcome, since the database was
+// rather than skipping, which is the honest outcome, since the database was
 // supplied but cannot do the job.
 var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts pgvector/pgvector:pg16")

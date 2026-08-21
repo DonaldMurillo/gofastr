@@ -54,7 +54,7 @@ func TestMultiVersionMigrate_UnionAddsV2Column(t *testing.T) {
 
 // TestMultiVersionMigrate_ConflictingColumnType proves Rule 2: two versions
 // declaring the same column with incompatible physical definitions panic at
-// registration — not at migrate time — with a message naming the entity,
+// registration, not at migrate time, with a message naming the entity,
 // the table, the column, and both versions.
 func TestMultiVersionMigrate_ConflictingColumnType(t *testing.T) {
 	defer func() {
@@ -121,8 +121,8 @@ func TestMultiVersionMigrate_ConflictingNullability(t *testing.T) {
 }
 
 // TestMultiVersionMigrate_WireOnlyDifferencesRegisterFine proves that
-// differences in Hidden, WireName, and field ordering are NOT conflicts —
-// they are wire-level concerns that never reach the DDL. Both versions
+// differences in Hidden, WireName, and field ordering are NOT conflicts.
+// They are wire-level concerns that never reach the DDL. Both versions
 // register without error and the shared table is migrated once.
 func TestMultiVersionMigrate_WireOnlyDifferencesRegisterFine(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
@@ -165,7 +165,7 @@ func TestMultiVersionMigrate_WireOnlyDifferencesRegisterFine(t *testing.T) {
 }
 
 // TestMultiVersionMigrate_MigratesTableOnce proves the shared table is
-// migrated exactly once — not once per version. We register two versions
+// migrated exactly once, not once per version. We register two versions
 // and confirm auto-migrate does not error on a duplicate CREATE TABLE or
 // duplicate ADD COLUMN (which would happen if each version were migrated
 // independently against the same table).
@@ -196,7 +196,7 @@ func TestMultiVersionMigrate_MigratesTableOnce(t *testing.T) {
 
 // TestMultiVersionConflict_VersionedVsUnversioned proves the conflict check
 // also fires when one version is registered via App.Entity (Version == "")
-// and another via GroupEntity — both share the table when the name matches.
+// and another via GroupEntity, both share the table when the name matches.
 func TestMultiVersionConflict_VersionedVsUnversioned(t *testing.T) {
 	defer func() {
 		r := recover()

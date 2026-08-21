@@ -12,7 +12,7 @@ import (
 // The deadline is the absolute cap on a credential's life, fixed when the nonce
 // is exchanged and carried unchanged across every later refresh. Refreshing near
 // the deadline with a TTL wider than the remaining window would otherwise mint a
-// grant whose Expires is a full TTL past the deadline — and VerifyGrant checks
+// grant whose Expires is a full TTL past the deadline, and VerifyGrant checks
 // only Expires, so the credential would outlive its absolute cap. This is the
 // load-bearing clamp on the otherwise-immortal refresh path.
 func TestMintGrantClampsExpiryToDeadline(t *testing.T) {
@@ -50,7 +50,7 @@ func TestMintGrantClampsExpiryToDeadline(t *testing.T) {
 //
 // In a correctly-clamped grant Expires <= Deadline, so a lapsed Deadline always
 // coincides with a lapsed Expires and VerifyGrant refuses first. The state
-// below — future Expires, past Deadline — is exactly what a removed or buggy
+// below, future Expires and past Deadline, is exactly what a removed or buggy
 // expiry clamp produces, and Refresh is the backstop that keeps such a grant
 // from being rolled forward instead of refused. Deleting the ErrGrantExhausted
 // guard makes Refresh return a refreshed credential for a grant that should be

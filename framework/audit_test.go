@@ -21,7 +21,7 @@ func auditApp(t *testing.T, db *sql.DB, actor string) *App {
 
 		// Public: these tests exercise the audit trail's anonymous-actor
 		// path (TestAudit_AnonymousActor posts with no session and
-		// expects a NULL actor_id) — the secure-by-default session gate
+		// expects a NULL actor_id), the secure-by-default session gate
 			// (issue #65) would otherwise 401 every request in this suite.
 	}, Table: "posts", Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true},
@@ -80,7 +80,7 @@ func readAuditRows(t *testing.T, db *sql.DB) []map[string]any {
 }
 
 // ============================================================================
-// Create — AfterCreate hook fires once with op=create and the new row in diff.
+// Create: AfterCreate hook fires once with op=create and the new row in diff.
 // ============================================================================
 
 func TestAudit_CreateFiresOnce(t *testing.T) {
@@ -118,7 +118,7 @@ func TestAudit_CreateFiresOnce(t *testing.T) {
 }
 
 // ============================================================================
-// Update — AfterUpdate produces op=update with the new state.
+// Update: AfterUpdate produces op=update with the new state.
 // ============================================================================
 
 func TestAudit_UpdateCapturesNewState(t *testing.T) {
@@ -158,7 +158,7 @@ func TestAudit_UpdateCapturesNewState(t *testing.T) {
 }
 
 // ============================================================================
-// Delete — AfterDelete writes op=delete with the deleted id; diff is null.
+// Delete: AfterDelete writes op=delete with the deleted id; diff is null.
 // ============================================================================
 
 func TestAudit_DeleteRecordsID(t *testing.T) {
@@ -202,7 +202,7 @@ func TestAudit_DeleteRecordsID(t *testing.T) {
 }
 
 // ============================================================================
-// Anonymous actor — Actor func returning "" yields actor_id NULL (not "").
+// Anonymous actor: Actor func returning "" yields actor_id NULL (not "").
 // ============================================================================
 
 func TestAudit_AnonymousActor(t *testing.T) {
@@ -223,7 +223,7 @@ func TestAudit_AnonymousActor(t *testing.T) {
 }
 
 // ============================================================================
-// Entities filter — only the named entity is audited.
+// Entities filter: only the named entity is audited.
 // ============================================================================
 
 func TestAudit_EntityFilter(t *testing.T) {

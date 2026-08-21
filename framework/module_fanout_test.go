@@ -13,7 +13,7 @@ import (
 
 func TestModuleFanoutPropagation(t *testing.T) {
 	// Shared DB so both replicas' module stores see the same persisted state.
-	// After M2, the fanout message is a refresh SIGNAL — the receiving
+	// After M2, the fanout message is a refresh SIGNAL, the receiving
 	// replica re-reads from its store, so the store must be shared.
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {

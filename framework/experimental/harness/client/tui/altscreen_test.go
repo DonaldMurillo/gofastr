@@ -8,7 +8,7 @@ import (
 
 // TestAltScreenEnablesAltScrollNotMouseTracking: when the TUI enters
 // the alt screen, it should NOT enable SGR mouse tracking
-// (?1000h / ?1006h) — that mode steals terminal text selection
+// (?1000h / ?1006h), that mode steals terminal text selection
 // because every click/drag becomes an app-bound CSI event. Instead,
 // it should enable ?1007h "alternate scroll" which converts wheel
 // events to Up/Down arrow keys. The TUI's existing arrow handler
@@ -35,7 +35,7 @@ func TestAltScreenEnablesAltScrollNotMouseTracking(t *testing.T) {
 }
 
 // TestExitAltScreenDisablesAltScroll: leaving the alt screen must
-// restore the user's terminal — disable alt-scroll cleanly so the
+// restore the user's terminal, disable alt-scroll cleanly so the
 // next shell session isn't stuck in a weird state.
 func TestExitAltScreenDisablesAltScroll(t *testing.T) {
 	buf := &bytes.Buffer{}

@@ -310,7 +310,7 @@ func TestDisableStopsRecordingButKeepsData(t *testing.T) {
 
 func TestDefaultDirWalksToTheModuleRoot(t *testing.T) {
 	// Writer and reader must resolve the same directory even when their
-	// working directories differ — a test binary in ./sub and a server at
+	// working directories differ, a test binary in ./sub and a server at
 	// the root both have to land on the root.
 	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
 	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")

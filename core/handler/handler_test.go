@@ -295,7 +295,7 @@ func TestErrorResponseCorrectStatus(t *testing.T) {
 		},
 		{
 			// Plain (non-*Error) errors are treated as internal failures
-			// and rendered with a generic message — see WriteError's
+			// and rendered with a generic message. See WriteError's
 			// doc comment. The inner message is intentionally NOT
 			// exposed; wrap explicitly with Errorf/WrapError to control
 			// what reaches the client.

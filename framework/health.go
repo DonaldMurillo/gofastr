@@ -11,7 +11,7 @@ import (
 
 // ReadinessCheck is a named probe run by GET /readyz. Implementations
 // must be fast (sub-second), idempotent, and safe to invoke concurrently.
-// Return a non-nil error to mark the app "not ready" — clients (load
+// Return a non-nil error to mark the app "not ready", clients (load
 // balancers, k8s, Fly health checks) treat a 503 from /readyz as a
 // signal to stop routing traffic.
 type ReadinessCheck struct {
@@ -25,7 +25,7 @@ type ReadinessCheck struct {
 // RegisterReadinessChecks before health endpoints mount.
 //
 // The method is deliberately named RegisterReadinessChecks (plural) to
-// avoid colliding with App.RegisterReadiness(name, fn) — the two are
+// avoid colliding with App.RegisterReadiness(name, fn), the two are
 // different surfaces, and embedding *App into a battery would otherwise
 // produce an ambiguous selector.
 type ReadinessRegistrar interface {
@@ -74,7 +74,7 @@ func WithVerboseReadiness() AppOption {
 }
 
 // RegisterReadiness adds a readiness check. Names are not required to be
-// unique — duplicates surface in the /readyz response as repeated rows,
+// unique, duplicates surface in the /readyz response as repeated rows,
 // which is occasionally useful (the same backend probed at two layers).
 //
 // Pass a timeout on the context if your check could hang; /readyz also

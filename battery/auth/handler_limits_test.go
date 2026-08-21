@@ -20,7 +20,7 @@ import (
 // into RAM by encoding/json. With the limit, the decoder returns an error
 // and the handler responds 4xx (typically 400 or 413).
 
-const oversizedFieldBytes = 5 * 1024 * 1024 // 5 MB — well over the 1 MB cap
+const oversizedFieldBytes = 5 * 1024 * 1024 // 5 MB, well over the 1 MB cap
 
 func makeOversizedBody(field string) []byte {
 	huge := strings.Repeat("A", oversizedFieldBytes)

@@ -67,7 +67,7 @@ func TestSSEBrokerFanoutCrossDelivery(t *testing.T) {
 }
 
 // TestSSEBrokerFanoutOwnNodeNoDup: a subscriber on broker A receives an event
-// published on A exactly once — A does not echo its own publish back from the
+// published on A exactly once; A does not echo its own publish back from the
 // fanout.
 func TestSSEBrokerFanoutOwnNodeNoDup(t *testing.T) {
 	f := fanout.NewInProcess()

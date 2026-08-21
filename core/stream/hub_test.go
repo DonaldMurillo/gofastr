@@ -164,7 +164,7 @@ func TestHubBroadcastDropsOnFullBuffer(t *testing.T) {
 		closed:     make(chan struct{}),
 		config:     WSConfig{},
 	}
-	// Don't start writePump — so buffer fills up
+	// Don't start writePump, so buffer fills up
 
 	hub.Register(conn)
 	time.Sleep(50 * time.Millisecond)
@@ -173,7 +173,7 @@ func TestHubBroadcastDropsOnFullBuffer(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		hub.Broadcast([]byte("msg"))
 	}
-	// Should not block — messages are dropped for this conn
+	// Should not block: messages are dropped for this conn
 
 	conn.Close()
 }

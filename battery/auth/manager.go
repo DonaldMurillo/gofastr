@@ -27,7 +27,7 @@ type AuthConfig struct {
 	// idiom. Tokens signed by any key here still validate; the operator drops
 	// them once old tokens have expired (one token TTL). New tokens are always
 	// signed with JWTSecret. Production mode still requires a non-empty
-	// JWTSecret — a previous-only configuration is rejected at Init.
+	// JWTSecret, a previous-only configuration is rejected at Init.
 	JWTPreviousSecrets []string
 
 	// JWTExpiry is the duration for which JWT tokens are valid.
@@ -67,7 +67,7 @@ type AuthConfig struct {
 
 	// LoginRateLimit, when non-nil, applies a per-IP rate limit to
 	// /auth/login. nil means unlimited (which you almost never want
-	// in production — set defaults if unsure).
+	// in production, set defaults if unsure).
 	LoginRateLimit *RateLimiterConfig
 
 	// LoginRateLimitPerAccount, when non-nil, applies a per-account
@@ -78,7 +78,7 @@ type AuthConfig struct {
 	LoginRateLimitPerAccount *RateLimiterConfig
 
 	// RegisterRateLimit applies a per-IP rate limit to /auth/register.
-	// Defaults to 10/min with a 15-minute block when nil — unthrottled
+	// Defaults to 10/min with a 15-minute block when nil, unthrottled
 	// registration is account-table flooding and, once an EmailSender
 	// is wired, an email-bombing primitive. To disable, pass a config
 	// with a huge MaxAttempts.
@@ -87,15 +87,15 @@ type AuthConfig struct {
 	// DevMode loosens the cookie defaults for local HTTP development.
 	// When true: SessionSecure=false, SessionCookie="session_id".
 	// When false (production default): SessionSecure=true, cookie name
-	// "__Host-session" — the prefix forces browsers to reject the cookie
+	// "__Host-session", the prefix forces browsers to reject the cookie
 	// unless Path=/, Secure, no Domain, blocking subdomain cookie
 	// injection.
 	DevMode bool
 
 	// AllowInMemoryStores acknowledges a deliberate single-node
 	// deployment. Without it, production mode (DevMode=false) REFUSES to
-	// boot when sessions live in the default in-memory store — they
-	// don't survive restarts and never resolve on a second replica — and
+	// boot when sessions live in the default in-memory store, they
+	// don't survive restarts and never resolve on a second replica, and
 	// likewise REFUSES to boot when 2FA state does, since a restart
 	// silently reverting enrolled accounts to password-only auth is a
 	// security downgrade, not a scaling nuisance. With the flag set, both
@@ -106,7 +106,7 @@ type AuthConfig struct {
 	AllowInMemoryStores bool
 
 	// DefaultRoles are the server-assigned roles stamped onto every
-	// newly created account — register, magic-link auto-create, and
+	// newly created account, register, magic-link auto-create, and
 	// OAuth auto-create all draw from it. When empty (the default),
 	// ["user"] is used.
 	//
@@ -122,7 +122,7 @@ type AuthConfig struct {
 	// OAuth link and login, magic-link request and consume. The events
 	// land in the same audit_log table as the CRUD hooks (via
 	// NewSQLAuditSink) so an operator has one trail for "who did what".
-	// nil disables auditing entirely — emit calls are no-ops. Wire it
+	// nil disables auditing entirely, emit calls are no-ops. Wire it
 	// with auth.NewSQLAuditSink(db, "") for the one-line default.
 	AuditSink AuditSink
 }
@@ -149,7 +149,7 @@ func (c *AuthConfig) defaults() {
 	}
 	// Default brute-force throttles. These run in BOTH DevMode and
 	// production because credential-stuffing is a network attack, not
-	// a config-mode attack — leaving /auth/login un-throttled in dev
+	// a config-mode attack, leaving /auth/login un-throttled in dev
 	// has been the source of every "we wrote a test and it found 22
 	// vulns" story since 2016. Apps that really want unlimited login
 	// throughput can pass a custom config with a huge MaxAttempts.
@@ -180,7 +180,7 @@ func (c *AuthConfig) defaults() {
 		}
 		// In dev with no explicit JWTSecret, mint a random per-process
 		// secret so the boilerplate doesn't ship a literal "change-me"
-		// string. Sessions invalidate on restart — set JWTSecret if you
+		// string. Sessions invalidate on restart, set JWTSecret if you
 		// need stable dev tokens across restarts.
 		if c.JWTSecret == "" {
 			secret, err := randomDevJWTSecret()
@@ -200,12 +200,12 @@ func (c *AuthConfig) defaults() {
 	c.SessionSecure = true
 	// No signing key in production is a fatal misconfiguration: an empty
 	// HMAC secret yields forgeable JWTs and sessions that don't survive
-	// a restart. Init fails closed on it (see AuthManager.Init) — DevMode
+	// a restart. Init fails closed on it (see AuthManager.Init). DevMode
 	// mints a per-process secret; production must supply one explicitly.
 }
 
 // randomDevJWTSecret returns 32 cryptographically-random bytes encoded
-// as URL-safe base64 — enough entropy for the HMAC-SHA256 signing
+// as URL-safe base64, enough entropy for the HMAC-SHA256 signing
 // path NewJWTAuth uses. Only called when DevMode is on and no
 // JWTSecret was supplied.
 func randomDevJWTSecret() (string, error) {
@@ -235,7 +235,7 @@ type UserStore interface {
 
 	// UpdateRoles replaces the roles for an existing user. Returns
 	// ErrUserNotFound if the user does not exist. The roles slice is
-	// OPERATOR input (from an admin screen), never request data — the
+	// OPERATOR input (from an admin screen), never request data, the
 	// same security posture as AuthConfig.DefaultRoles.
 	UpdateRoles(ctx context.Context, userID string, roles []string) error
 }
@@ -301,7 +301,7 @@ type AuthManager struct {
 	plugins map[string]AuthPlugin
 	order   []string
 
-	// Shared state — available to all plugins via AuthManager accessors.
+	// Shared state, available to all plugins via AuthManager accessors.
 	userStore    UserStore
 	sessionStore SessionStore
 	jwtAuth      *JWTAuth
@@ -314,7 +314,7 @@ type AuthManager struct {
 //
 // New does NOT install any auth plugin: AuthManager starts with an empty
 // plugin set, and no auth routes are registered until plugins are added
-// with Use. Install the plugins you need, in order — the core plugin
+// with Use. Install the plugins you need, in order, the core plugin
 // (email/password + sessions + JWT) is the usual starting point:
 //
 //	mgr := auth.New(auth.AuthConfig{JWTSecret: "..."})
@@ -426,7 +426,7 @@ func (m *AuthManager) SetSessionStore(store SessionStore) {
 
 // SetUserRoles replaces the roles for an existing user via the configured
 // UserStore. It is the supported server-side entry point for operator-driven
-// role assignment (e.g. the admin back-office). There is no HTTP route —
+// role assignment (e.g. the admin back-office). There is no HTTP route,
 // call it from trusted server code. The roles are OPERATOR input, never
 // request data: the caller is responsible for sourcing them from an
 // admin-gated screen, not from a client-supplied body.
@@ -435,14 +435,14 @@ func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []s
 }
 
 // refuseInMemorySessionStore is the production gate on single-node session
-// state. Init runs it twice — before and after plugin init — because a
+// state. Init runs it twice, before and after plugin init, because a
 // plugin can swap the store out from under the first check.
 func (m *AuthManager) refuseInMemorySessionStore() error {
 	if m.config.DevMode || m.config.AllowInMemoryStores {
 		return nil
 	}
 	if _, ok := m.sessionStore.(*MemorySessionStore); ok {
-		return fmt.Errorf("auth: production mode refuses to boot on the default in-memory session store — sessions won't survive a restart and won't resolve on a second replica; set AuthConfig.AllowInMemoryStores: true to acknowledge a single-node deployment, or use NewEntitySessionStore(db, ...) (or another durable SessionStore)")
+		return fmt.Errorf("auth: production mode refuses to boot on the default in-memory session store: sessions won't survive a restart and won't resolve on a second replica; set AuthConfig.AllowInMemoryStores: true to acknowledge a single-node deployment, or use NewEntitySessionStore(db, ...) (or another durable SessionStore)")
 	}
 	return nil
 }
@@ -476,16 +476,16 @@ func (m *AuthManager) Name() string { return "auth" }
 func (m *AuthManager) Init(app *framework.App) error {
 	// Fail closed in production: an empty JWTSecret with DevMode=false
 	// yields forgeable, restart-unstable JWTs. Refuse to boot rather than
-	// warn — DevMode mints its own per-process secret, so it's exempt.
+	// warn. DevMode mints its own per-process secret, so it's exempt.
 	if !m.config.DevMode && m.config.JWTSecret == "" {
-		return fmt.Errorf("auth: production mode requires AuthConfig.JWTSecret — set it from your secret store, or set DevMode: true for local development")
+		return fmt.Errorf("auth: production mode requires AuthConfig.JWTSecret: set it from your secret store, or set DevMode: true for local development")
 	}
 
 	// Single-node session state in production is the silent multi-replica
 	// failure: the second replica never resolves the first one's cookies,
 	// and nothing survives a restart. A warn-only Init lets a broken
-	// deployment boot undiscovered, so — matching the in-memory 2FA store
-	// policy — production REFUSES to boot on the default in-memory session
+	// deployment boot undiscovered, so, matching the in-memory 2FA store
+	// policy, production REFUSES to boot on the default in-memory session
 	// store unless the host explicitly opts in via AllowInMemoryStores.
 	if err := m.refuseInMemorySessionStore(); err != nil {
 		return err

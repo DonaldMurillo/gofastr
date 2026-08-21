@@ -47,7 +47,7 @@ type SQLiteFTSConfig struct {
 
 // fieldKeyRe bounds a FieldEquals key before it is interpolated into a
 // json_extract JSON path. Only ASCII letters, digits, and underscore
-// survive — no quotes, dots, semicolons, or anything that could break out
+// survive, no quotes, dots, semicolons, or anything that could break out
 // of the JSON path. The value itself is always parameterised.
 var fieldKeyRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
@@ -76,7 +76,7 @@ func NewSQLiteFTS(db *sql.DB, cfg SQLiteFTSConfig) (*SQLiteFTS, error) {
 }
 
 // EnsureSchema creates the FTS5 virtual table if it does not already exist.
-// Idempotent — safe to call on every boot.
+// Idempotent: safe to call on every boot.
 //
 // If the SQLite driver lacks FTS5 support (mattn/go-sqlite3 compiled
 // without the sqlite_fts5 build tag), the error is translated into an
@@ -89,7 +89,7 @@ func (s *SQLiteFTS) EnsureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, createTable); err != nil {
 		if strings.Contains(err.Error(), fts5MissingSubstr) {
 			return fmt.Errorf(
-				"search: FTS5 is not available in this SQLite build — "+
+				"search: FTS5 is not available in this SQLite build: "+
 					"rebuild with the build tag 'sqlite_fts5' "+
 					"(e.g. go build -tags sqlite_fts5): %w", err,
 			)
@@ -101,7 +101,7 @@ func (s *SQLiteFTS) EnsureSchema(ctx context.Context) error {
 
 // Index inserts or replaces a document. FTS5 has no upsert, so Index
 // DELETEs the existing row by id and INSERTs the new one in a single
-// transaction — re-indexing the same id replaces in place with no duplicate
+// transaction, re-indexing the same id replaces in place with no duplicate
 // rows.
 func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
 	// Fields are stored as a JSON text object. An empty/nil field map is
@@ -155,7 +155,7 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
 	// query matches every document (score 0, Type/FieldEquals filters still
 	// applied), while a query whose terms all sanitize away (pure
-	// punctuation) matches nothing — the same split Memory gets from
+	// punctuation) matches nothing, the same split Memory gets from
 	// normalizeTerms + its score==0 skip.
 	if len(strings.Fields(q.Text)) == 0 {
 		return s.searchAll(ctx, q)
@@ -209,7 +209,7 @@ ORDER BY bm25(%s) ASC, id ASC%s`,
 }
 
 // searchAll is the empty-query path: every document (score 0) that passes
-// the Type/FieldEquals filters, ordered by id for a stable page walk —
+// the Type/FieldEquals filters, ordered by id for a stable page walk,
 // the same result Memory produces when normalizeTerms yields no terms.
 func (s *SQLiteFTS) searchAll(ctx context.Context, q Query) ([]Result, error) {
 	args := []any{}
@@ -287,13 +287,13 @@ func (s *SQLiteFTS) appendFilters(where *strings.Builder, args []any, q Query) (
 //   - Split on whitespace.
 //   - From each term, keep only letters, digits, underscore, and hyphen
 //     ([\pL\pN_-]); everything else is dropped (this strips every FTS5
-//     operator — AND, OR, NOT, NEAR — column filters, parens, quotes, and
+//     operator, AND, OR, NOT, NEAR, column filters, parens, quotes, and
 //     SQL metacharacters).
 //   - Lowercase and trim leading/trailing '-'/'_' so a term can never be
 //     pure punctuation.
 //   - Drop empties.
 //   - Dedupe (case-insensitive after lowercasing) and cap at maxQueryTerms so
-//     an attacker-controlled query cannot amplify cost — the same bound
+//     an attacker-controlled query cannot amplify cost, the same bound
 //     Memory and Postgres apply.
 //   - If nothing survives, return "" (caller short-circuits to empty results).
 //   - Double-quote each survivor (neutralises any residual FTS5 operators).

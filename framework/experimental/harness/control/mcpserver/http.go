@@ -68,7 +68,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if sessID == "" {
 		sessID = string(ids.NewSessionID())
 	}
-	// Cache-Control: no-store on every response — these are session-bound
+	// Cache-Control: no-store on every response, these are session-bound
 	// JSON-RPC / SSE responses, never cacheable by intermediaries.
 	w.Header().Set("Cache-Control", "no-store")
 	switch r.Method {
@@ -177,7 +177,7 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 		return
 	}
 	// Reuse Server's stdio handler via an in-memory io pair. Build a
-	// fresh Server pointer rather than copying the parent by value —
+	// fresh Server pointer rather than copying the parent by value:
 	// the parent embeds a sync.Mutex that must not be copied (go vet:
 	// "assignment copies lock value").
 	in := bytes.NewReader(append(bytes.TrimSpace(raw), '\n'))
@@ -228,7 +228,7 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 		flusher.Flush()
 	}
 	// Park until ctx done; mcpserver currently doesn't publish
-	// notifications to the HTTP GET stream itself — the resource
+	// notifications to the HTTP GET stream itself, the resource
 	// subscriptions land that way in a follow-up. For v0.1 we keep
 	// the stream open as a keep-alive heartbeat every 15s.
 	ticker := keepaliveTicker()

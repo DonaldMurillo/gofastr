@@ -208,7 +208,7 @@ func TestPG_MixedCaseTableNameWithGroups(t *testing.T) {
 	if err := m.Register(migrate.Migration{Version: 1, Name: "core", Up: "CREATE TABLE mc_core (id INT)", Down: "DROP TABLE mc_core"}); err != nil {
 		t.Fatal(err)
 	}
-	// Apply default only — creates the legacy table "MyMigrations".
+	// Apply default only. Creates the legacy table "MyMigrations".
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("Up default: %v", err)
 	}
@@ -240,8 +240,8 @@ func TestPG_SiblingSchemaDoesNotFalsePositive(t *testing.T) {
 	// CREATE SCHEMA is database-scoped, not scoped to the per-test schema
 	// pgtest.DB hands back, so a fixed name leaks into the shared server and
 	// collides with the next run. That was invisible while every test process
-	// got its own ephemeral container; against one long-lived Postgres — the
-	// CI service, or a local `make postgres-up` — the second run fails with
+	// got its own ephemeral container; against one long-lived Postgres, the
+	// CI service or a local `make postgres-up`, the second run fails with
 	// `schema "zz_sibling" already exists`. CI's coverage-floors step re-runs
 	// this package in the same job, so the collision is guaranteed, not racy.
 	sibling := fmt.Sprintf("zz_sibling_%d", os.Getpid())
@@ -251,7 +251,7 @@ func TestPG_SiblingSchemaDoesNotFalsePositive(t *testing.T) {
 	t.Cleanup(func() {
 		// Bounded and reported, not best-effort. A silently failed DROP leaks
 		// the schema, and a leaked schema is exactly the collision this whole
-		// change fixes — it would come back on the next run with no clue where
+		// change fixes. It would come back on the next run with no clue where
 		// it came from. An unbounded Exec could also block on lock contention
 		// and hang the suite, which matters now that every test process shares
 		// one server. Same shape as testdb.Open's own schema cleanup.

@@ -12,7 +12,7 @@ import (
 // along into the log.
 //
 // The missing-'=' branch quoted the whole raw line. The realistic shape is
-// a secret typed with a space or a missing equals — exactly the line whose
+// a secret typed with a space or a missing equals, exactly the line whose
 // value must not reach stderr.
 func TestParseErrorDoesNotEchoValue(t *testing.T) {
 	cases := []struct {

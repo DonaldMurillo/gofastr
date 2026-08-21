@@ -158,7 +158,7 @@ func TestTranslateOutboundAssistantToolUse(t *testing.T) {
 
 // TestTranslateOutboundAssistantOnlyToolCalls covers the bug where
 // an assistant message with tool_calls but no text emitted
-// `"content": ""` on the wire — some OpenAI-compatible providers
+// `"content": ""` on the wire, some OpenAI-compatible providers
 // (notably ZAI GLM) silently returned an empty next-turn response
 // when they saw an empty string instead of an omitted/null content.
 // Regression for the broken-session bug in sess_01KSC42A5VY*.

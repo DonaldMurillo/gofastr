@@ -143,7 +143,7 @@ func TestE2E_NumberInput_MinusClampsToMin(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/numberinput"),
 		pageReady(),
-		// qty: Min=0, Value=1 — click − 3x should clamp at 0
+		// qty: Min=0, Value=1, click − 3x should clamp at 0
 		chromedp.Evaluate(`(function(){
 			const btn = document.querySelector('[data-fui-number-for="qty"][data-fui-number-step="-1"]');
 			if (!btn) return;

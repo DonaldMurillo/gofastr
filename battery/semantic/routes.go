@@ -25,8 +25,8 @@ const maxRequestBody = 1 << 20 // 1 MiB
 //   - Every route requires a valid bearer token. Configure it with
 //     [WithAuthToken] (or [Plugin.WithAuthToken]); clients must send
 //     "Authorization: Bearer <token>", verified in constant time. When no
-//     token is configured the handler fails CLOSED — every request is
-//     rejected — so an accidentally-unprotected mount cannot expose the
+//     token is configured the handler fails CLOSED, every request is
+//     rejected, so an accidentally-unprotected mount cannot expose the
 //     index. [WithInsecureDisabledAuth] opts out of auth for local dev only.
 //   - POST routes require Content-Type: application/json (415 otherwise).
 //   - Request bodies are capped at 1 MiB (413 otherwise).
@@ -121,7 +121,7 @@ func WithAuthToken(token string) HandlerOption {
 
 // WithInsecureDisabledAuth turns authentication OFF entirely. It is the only
 // way to serve the handler without a configured token and is intended for
-// local development only — never use it in production. Prefer [WithAuthToken].
+// local development only, never use it in production. Prefer [WithAuthToken].
 func WithInsecureDisabledAuth() HandlerOption {
 	return func(c *handlerConfig) { c.insecure = true }
 }

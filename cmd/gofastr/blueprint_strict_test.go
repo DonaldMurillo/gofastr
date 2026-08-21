@@ -38,7 +38,7 @@ func TestBlueprintSiteDescriptionDerivesFromEntities(t *testing.T) {
 		},
 	}
 	got := renderBlueprintMain(bp)
-	if !strings.Contains(got, `uihost.WithDescription("Demo — manage products and orders.")`) {
+	if !strings.Contains(got, `uihost.WithDescription("Demo: manage products and orders.")`) {
 		t.Fatalf("derived description missing; main.go was:\n%s", sectionAround(got, "WithDescription"))
 	}
 }

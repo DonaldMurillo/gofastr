@@ -130,7 +130,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		mux:      h.Mux,
 		session:  sess,
 	}
-	// Use a fresh background context for the goroutine — the
+	// Use a fresh background context for the goroutine, the
 	// handler returns immediately after Hijack, which would cancel
 	// r.Context() and kill the connection.
 	go wsConn.run(context.Background())
@@ -152,7 +152,7 @@ func (h *Handler) hostOK(r *http.Request) bool {
 //
 // An originless request (curl, the CLI client, a Unix-socket caller)
 // passes: only browsers set Origin, so its absence can't prove an
-// attack. A browser-set Origin must be explicitly allow-listed —
+// attack. A browser-set Origin must be explicitly allow-listed:
 // an empty AllowedOrigins denies rather than admits, matching the
 // convention core/middleware/cors.go already states ("empty
 // AllowedOrigins means deny-all (not allow-all)"). The inverse
@@ -221,7 +221,7 @@ func (c *Conn) run(parentCtx context.Context) {
 	// response already went out in ServeHTTP, so a command frame may
 	// be buffered and ready the moment readFrame runs; if that
 	// command were dispatched before the subscription registered, the
-	// turn's events would broadcast to zero subscribers and be lost —
+	// turn's events would broadcast to zero subscribers and be lost:
 	// Bus.broadcast delivers only to current subscribers and the live
 	// path has no replay. Subscribing synchronously here makes
 	// subscribe-before-dispatch a guarantee instead of a scheduling
@@ -285,7 +285,7 @@ func (c *Conn) handleText(ctx context.Context, payload []byte) {
 }
 
 // eventPump forwards bus events to the client. The subscription is
-// created synchronously by run() before the read loop starts — see
+// created synchronously by run() before the read loop starts. See
 // the ordering comment there; do not move the Subscribe call in here.
 func (c *Conn) eventPump(ctx context.Context, ch <-chan control.EventEnvelope) {
 	if ch == nil {

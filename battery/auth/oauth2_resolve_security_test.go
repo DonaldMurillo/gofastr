@@ -18,13 +18,13 @@ import (
 //	(b) verified email + password  → errOAuthEmailCollision (refuse)
 //	(c) verified email + pwless    → AUTO-LINK + login
 //	(d) UNVERIFIED email + passwd  → NO MATCH; the unique-email constraint
-//	                                  then refuses the fresh-create too —
+//	                                  then refuses the fresh-create too,
 //	                                  the attacker's callback fails closed
 //	                                  either way, and the victim's account
 //	                                  is never linked.
 //	(e) no match at all            → create + link
 //
-// (d) is the core takeover regression — an attacker who controls an
+// (d) is the core takeover regression, an attacker who controls an
 // unverified IdP email must NOT bind to a victim's existing account. Each
 // test pins one arm of the table so a regression is unambiguous.
 
@@ -88,7 +88,7 @@ func TestResolveOAuth_ExistingLink_LogsIn(t *testing.T) {
 // TestResolveOAuth_VerifiedEmailAndPassword_Refuses: case (b). An existing
 // PASSWORD account + a verified-email match MUST be refused with
 // errOAuthEmailCollision. The user must log in with their password and
-// link the provider from /auth/accounts — never a silent bind.
+// link the provider from /auth/accounts, never a silent bind.
 func TestResolveOAuth_VerifiedEmailAndPassword_Refuses(t *testing.T) {
 	store := newMemoryUserStore()
 	ctx := context.Background()
@@ -138,7 +138,7 @@ func TestResolveOAuth_VerifiedEmailAndPasswordless_AutoLinks(t *testing.T) {
 	if got.GetID() != existing.GetID() {
 		t.Fatalf("returned user %q; want existing %q", got.GetID(), existing.GetID())
 	}
-	// The auto-link must actually persist — a subsequent callback for the
+	// The auto-link must actually persist, a subsequent callback for the
 	// same (provider, id) returns the same user via the link table.
 	got2, linked2, err := plugin.resolveOAuthUser(ctx, store, info)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestResolveOAuth_VerifiedEmailAndPasswordless_AutoLinks(t *testing.T) {
 // TestResolveOAuth_UnverifiedEmail_DoesNotMatchPasswordAccount: case (d).
 // The CORE takeover regression. An attacker who controls an UNVERIFIED IdP
 // email for "victim@example.com" must NOT bind to (or log in as) the
-// existing password account. The callback falls through to step 3 — but
+// existing password account. The callback falls through to step 3, but
 // step 3 tries to create a NEW user with the same email, which the
 // user-unique constraint correctly rejects. The attacker's callback fails
 // closed either way; the load-bearing assertions are that the victim's
@@ -177,14 +177,14 @@ func TestResolveOAuth_UnverifiedEmail_DoesNotMatchPasswordAccount(t *testing.T) 
 		ID:            "attacker-id",
 		Email:         "victim@example.com",
 		Provider:      "google",
-		EmailVerified: false, // THE takeover signal — must not bind.
+		EmailVerified: false, // THE takeover signal, must not bind.
 	}
 	_, _, err = plugin.resolveOAuthUser(ctx, store, info)
 	if err == nil {
 		t.Fatal("unverified-email path against an existing password account must NOT succeed")
 	}
 	// The error can be ErrEmailTaken (the unique-email constraint fires
-	// when step 3 tries to create with the victim's address — the correct,
+	// when step 3 tries to create with the victim's address, the correct,
 	// takeover-blocking outcome) or errOAuthLookupFailed. What it MUST NOT
 	// be is errOAuthEmailCollision (only VERIFIED emails may collide) or nil.
 	if errors.Is(err, errOAuthEmailCollision) {
@@ -208,7 +208,7 @@ func TestResolveOAuth_UnverifiedEmail_DoesNotMatchPasswordAccount(t *testing.T) 
 
 // TestResolveOAuth_UnverifiedEmail_NoExistingAccount_CreatesFresh: when the
 // unverified email matches NO existing account, the callback creates a new
-// user — that path is the legitimate "first login" case for an IdP that
+// user, that path is the legitimate "first login" case for an IdP that
 // doesn't assert verification. The new account is distinct from any future
 // account that might later register the same email with a password.
 func TestResolveOAuth_UnverifiedEmail_NoExistingAccount_CreatesFresh(t *testing.T) {
@@ -266,16 +266,16 @@ func TestResolveOAuth_NoMatch_CreatesAndLinks(t *testing.T) {
 
 // TestResolveOAuth_NoLinker_FailsClosed: a store that does NOT implement
 // OAuthLinker must NEVER fall back to email-trust. resolveOAuthUser returns
-// errOAuthNoLinker — production Init fails closed before this is reachable,
+// errOAuthNoLinker, production Init fails closed before this is reachable,
 // but the function itself is the last line of defense. Init is bypassed
-// here (this test exercises the runtime guarantee, not the boot-time one
-// — TestOAuth2Plugin_Init_FailsClosedWithoutLinker covers the Init path).
+// here (this test exercises the runtime guarantee, not the boot-time one.
+// TestOAuth2Plugin_Init_FailsClosedWithoutLinker covers the Init path).
 func TestResolveOAuth_NoLinker_FailsClosed(t *testing.T) {
 	store := &staticUserStore{
 		byID: map[string]User{"u-1": &BasicUser{ID: "u-1", Email: "x@x.com", Roles: []string{"user"}}},
 	}
 	plugin := NewOAuth2Plugin(OAuth2Config{StateSecret: "test"})
-	// No Init — we are testing the runtime contract directly.
+	// No Init, we are testing the runtime contract directly.
 
 	info := &OAuth2UserInfo{ID: "g-1", Email: "x@x.com", Provider: "google", EmailVerified: true}
 	_, _, err := plugin.resolveOAuthUser(context.Background(), store, info)
@@ -287,7 +287,7 @@ func TestResolveOAuth_NoLinker_FailsClosed(t *testing.T) {
 // TestResolveOAuth_LookupError_FailsClosed: a transient error from
 // FindByOAuth or FindByEmail must surface as errOAuthLookupFailed, never
 // be conflated with "not found" and trigger an auto-create. This is the
-// same invariant the magic-link DBError test pins — never silently
+// same invariant the magic-link DBError test pins, never silently
 // auto-create on an error you can't classify.
 func TestResolveOAuth_LookupError_FailsClosed(t *testing.T) {
 	store := &flakyUserStore{err: errors.New("connection refused")}
@@ -302,7 +302,7 @@ func TestResolveOAuth_LookupError_FailsClosed(t *testing.T) {
 
 // TestResolveOAuth_HasPasswordError_FailsClosed: when EmailVerified is
 // true and FindByEmail returns a user, a HasPassword error must fail
-// closed — never default to "auto-link" when we can't tell password from
+// closed, never default to "auto-link" when we can't tell password from
 // passwordless.
 func TestResolveOAuth_HasPasswordError_FailsClosed(t *testing.T) {
 	store := &erroringPasswordCheckerStore{
@@ -415,7 +415,7 @@ func TestResolveOAuth_ConcurrentSameIdentityProducesOneLink(t *testing.T) {
 
 	// Every goroutine either succeeded or hit a benign create error from
 	// the email-unique constraint (in-memory store returns ErrEmailTaken
-	// on a dup, which surfaces as a plain error — not as errOAuthEmailCollision).
+	// on a dup, which surfaces as a plain error, not as errOAuthEmailCollision).
 	// The link table must end up with exactly one row.
 	var firstSuccessID string
 	for _, r := range results {
@@ -429,7 +429,7 @@ func TestResolveOAuth_ConcurrentSameIdentityProducesOneLink(t *testing.T) {
 		t.Fatalf("at least one goroutine must succeed; all %d errored: %+v", N, results)
 	}
 	// FindByOAuth returns the single authoritative winner. The in-memory
-	// store's LinkOAuth is "first writer wins" — exactly one (provider,
+	// store's LinkOAuth is "first writer wins", exactly one (provider,
 	// provider_id) binding exists.
 	got, err := store.FindByOAuth(ctx, "google", "g-race")
 	if err != nil {

@@ -53,7 +53,7 @@ type Store interface {
 	// tool returns. fsync for mutating tools.
 	RecordToolOutcome(ctx context.Context, outcome ToolOutcome) error
 
-	// OrphanIntents returns intent rows with no matching outcome —
+	// OrphanIntents returns intent rows with no matching outcome,
 	// used on resume to surface tool calls that started before a
 	// crash and need user disposition.
 	OrphanIntents(ctx context.Context, session ids.SessionID) ([]ToolIntent, error)

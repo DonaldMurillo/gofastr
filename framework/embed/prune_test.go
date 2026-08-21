@@ -11,7 +11,7 @@ import (
 // Burn refuses a claim whose deadline has passed, using the calling replica's
 // clock; Prune deletes using its own. Two replicas whose clocks disagree can
 // therefore race: a fast pruner on replica A deletes a row a clock-skewed
-// verifier on replica B still needs — which un-burns the nonce and lets a
+// verifier on replica B still needs, which un-burns the nonce and lets a
 // second grant be minted from it, defeating the single-use guarantee across
 // replicas. The grace margin is what closes that race, so shrinking it to zero
 // must turn a row that should survive into one that gets deleted.
@@ -20,12 +20,12 @@ func TestSQLBurnStorePruneKeepsRowsInsideTheGraceWindow(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	// A row whose retention deadline passed one minute ago — inside the
+	// A row whose retention deadline passed one minute ago, inside the
 	// default 5-minute grace. A clock-skewed verifier may still need it.
 	if _, _, err := s.Burn(ctx, "within-grace", "g1", now.Add(-time.Minute)); err != nil {
 		t.Fatalf("Burn within-grace: %v", err)
 	}
-	// A row six minutes past its deadline — past the grace, safe to delete.
+	// A row six minutes past its deadline, past the grace, safe to delete.
 	if _, _, err := s.Burn(ctx, "past-grace", "g2", now.Add(-6*time.Minute)); err != nil {
 		t.Fatalf("Burn past-grace: %v", err)
 	}

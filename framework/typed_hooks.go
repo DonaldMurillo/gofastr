@@ -50,7 +50,7 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 // Mutations are reflected back into the response body: the hook payload is
 // the live result map the crud layer serialises into the HTTP response, so
 // clearing a field here (e.g. redacting a secret) changes what the caller
-// reads. The stored row is unaffected — Create has already committed it.
+// reads. The stored row is unaffected. Create has already committed it.
 func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		var v T
@@ -68,7 +68,7 @@ func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, va
 	})
 }
 
-// OnBeforeUpdate registers a typed BeforeUpdate hook. *T is sparse — it
+// OnBeforeUpdate registers a typed BeforeUpdate hook. *T is sparse, it
 // holds whatever the caller sent, not the full row.
 func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.BeforeUpdate, func(ctx context.Context, data any) error {
@@ -142,7 +142,7 @@ func OnBeforeList(app *App, name string, fn func(ctx context.Context, p *hook.Li
 }
 
 // OnAfterList registers a typed AfterList hook. The callback receives
-// the *hook.ListPayload with Results populated — mutate the slice in
+// the *hook.ListPayload with Results populated, mutate the slice in
 // place to redact / drop rows.
 func OnAfterList(app *App, name string, fn func(ctx context.Context, p *hook.ListPayload) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterList, func(ctx context.Context, data any) error {
@@ -168,7 +168,7 @@ func OnBeforeGet(app *App, name string, fn func(ctx context.Context, p *hook.Get
 }
 
 // OnAfterGet registers a typed AfterGet hook. The callback receives
-// *hook.GetPayload with Result populated — mutate the map in place to
+// *hook.GetPayload with Result populated, mutate the map in place to
 // redact fields before the response is serialised.
 func OnAfterGet(app *App, name string, fn func(ctx context.Context, p *hook.GetPayload) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
@@ -193,7 +193,7 @@ func unmarshalHookPayload(data any, dest any) error {
 		}
 		return json.Unmarshal(b, dest)
 	}
-	// Non-map payload (e.g. delete passes a string id) — round-trip through
+	// Non-map payload (e.g. delete passes a string id), round-trip through
 	// JSON so callers can use *string or even custom typed wrappers.
 	b, err := json.Marshal(data)
 	if err != nil {
@@ -205,14 +205,14 @@ func unmarshalHookPayload(data any, dest any) error {
 // mergeStructIntoMap reflects struct mutations from the typed Before-hook
 // callback back into the snake-cased payload map. It diffs the pre-hook
 // struct (`before`) against the post-hook struct (`after`) and writes back
-// ONLY the fields the hook actually changed — including changes TO a zero
+// ONLY the fields the hook actually changed, including changes TO a zero
 // value (false, 0, "").
 //
 // Why not just marshal `after`: generated structs tag every field
 // `,omitempty` (cmd/gofastr/generate.go), so json.Marshal silently drops a
 // field a defensive hook forced to its zero value. Relying on that
 // marshalling makes a hook that does `value.IsAdmin = false` (to override
-// attacker-supplied is_admin=true) a no-op — the client's value survives
+// attacker-supplied is_admin=true) a no-op, the client's value survives
 // into the SET clause. The diff is computed via reflection on the struct
 // fields so a forced-zero override lands in dest, while untouched fields on
 // a sparse BeforeUpdate body are left alone (we don't add fields the hook
@@ -237,7 +237,7 @@ func mergeStructIntoMap(before, after any, dest map[string]any) error {
 		oldVal := bv.Field(i).Interface()
 		newVal := av.Field(i).Interface()
 		if reflect.DeepEqual(oldVal, newVal) {
-			continue // hook left this field untouched — don't widen the body
+			continue // hook left this field untouched, don't widen the body
 		}
 		// Round-trip the new value through JSON so it matches the shape the
 		// untyped path expects (numbers as float64, time as RFC3339, etc.).

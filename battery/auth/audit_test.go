@@ -17,7 +17,7 @@ import (
 )
 
 // recordingSink is a thread-safe AuditSink that captures every event for
-// assertions. It is the test double for the SQL sink — the SQL sink itself
+// assertions. It is the test double for the SQL sink, the SQL sink itself
 // is exercised separately against an in-memory SQLite DB.
 type recordingSink struct {
 	mu     sync.Mutex
@@ -403,7 +403,7 @@ func TestAudit_PasswordResetFlow(t *testing.T) {
 	if ev := f.rec.findByKind("password.reset_completed"); ev == nil || ev.UserID != "u-reset" {
 		t.Errorf("reset_completed missing/wrong: %+v", f.rec.findByKind("password.reset_completed"))
 	}
-	// Session revocation on reset — the memory store implements SessionUserPurger.
+	// Session revocation on reset, the memory store implements SessionUserPurger.
 	rev := f.rec.findByKind("session.revoked")
 	if rev == nil {
 		t.Fatalf("no session.revoked from reset; got %v", f.rec.kinds())
@@ -449,7 +449,7 @@ func TestAudit_MagicLinkFlow(t *testing.T) {
 // ─── nil sink ──────────────────────────────────────────────────────────
 
 func TestAudit_NilSinkNoPanic(t *testing.T) {
-	// AuthConfig.AuditSink left nil — flows must work unchanged.
+	// AuthConfig.AuditSink left nil, flows must work unchanged.
 	store := newUserStoreWithPassword()
 	mgr := New(AuthConfig{
 		JWTSecret: "test-secret", SessionTTL: time.Hour,

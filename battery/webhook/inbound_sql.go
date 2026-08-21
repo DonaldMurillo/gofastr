@@ -98,7 +98,7 @@ func (s *SQLInboundStore) ensureTable() error {
 			received_at %s NOT NULL,
 			updated_at  %s NOT NULL
 		)`, s.table, blob, ts, ts),
-		// Lookup indexes — no unique constraint (see type doc).
+		// Lookup indexes, no unique constraint (see type doc).
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_dedupe_idx ON %s (source, dedupe_key)",
 			s.table, s.table),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_status_idx ON %s (status)",
@@ -196,7 +196,7 @@ func (s *SQLInboundStore) ListEnvelopes(ctx context.Context, status string, limi
 //
 // As noted on the type, there is no unique constraint, so two concurrent
 // requests with the same key can both pass this check before either
-// inserts — the same check-then-insert race as the memory store. A unique
+// inserts, the same check-then-insert race as the memory store. A unique
 // index would close it but can't be expressed portably across sqlite and
 // postgres without dialect branches; callers that need strict exactly-once
 // should serialize at the source or accept the duplicate-suppression done

@@ -48,7 +48,7 @@ type Notification struct {
 }
 
 // Recipient is the destination set. Channels are responsible for
-// reading the fields they care about — UserID is canonical, the rest
+// reading the fields they care about. UserID is canonical, the rest
 // are channel-specific addresses.
 type Recipient struct {
 	UserID  string
@@ -56,7 +56,7 @@ type Recipient struct {
 	Phone   string
 	Webhook string
 	// PushTokens is the optional list of device tokens for push
-	// channels — kept as a slice rather than a single field because
+	// channels, kept as a slice rather than a single field because
 	// users frequently have multiple devices.
 	PushTokens []string
 }
@@ -67,7 +67,7 @@ type Rendered struct {
 	TextBody string
 	HTMLBody string
 	// Extra carries channel-specific extras the templater wants the
-	// channel to see — e.g. an attachment list, a SMS short-link, a
+	// channel to see, e.g. an attachment list, a SMS short-link, a
 	// webhook payload override.
 	Extra map[string]any
 }
@@ -81,7 +81,7 @@ type Channel interface {
 
 // Templater renders a Notification + channel name into a Rendered
 // payload. Implementations should be deterministic over the
-// (notifType, channel, data) inputs — caching is the caller's choice.
+// (notifType, channel, data) inputs, caching is the caller's choice.
 type Templater interface {
 	Render(ctx context.Context, notifType, channel string, data map[string]any) (Rendered, error)
 }
@@ -264,7 +264,7 @@ func (n *Notifier) Channels() []string {
 //   - "push"    when len(To.PushTokens) > 0
 //   - "log" / "inapp" always
 //
-// Channels with names not in this list are skipped — register a
+// Channels with names not in this list are skipped, register a
 // custom router via WithRouter to support more.
 func DefaultRouter(_ string, to Recipient, channels []string) []string {
 	var out []string
@@ -332,7 +332,7 @@ func (m *MapTemplater) Set(notifType, channel string, t Template) {
 // The rendered Subject is stripped of CR / LF / NUL so a user-controlled
 // {{placeholder}} can't inject header continuations when downstream
 // transports (SMTP, push providers) treat Subject as a header value.
-// TextBody / HTMLBody are not modified — those are payload bytes and
+// TextBody / HTMLBody are not modified, those are payload bytes and
 // any HTML safety is the rendering layer's job.
 func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data map[string]any) (Rendered, error) {
 	m.mu.RLock()
@@ -378,7 +378,7 @@ const MaxInterpolatedOutputBytes = 1 << 20
 // inline so this package has no dependency on core/i18n). Unknown
 // placeholders are left intact for visibility during development.
 //
-// Output is hard-capped at MaxInterpolatedOutputBytes — a giant
+// Output is hard-capped at MaxInterpolatedOutputBytes, a giant
 // placeholder value would otherwise produce an unbounded string and
 // pin the rendering goroutine. The cap is far above any legitimate
 // notification size, so triggering it indicates abuse.
@@ -428,7 +428,7 @@ func interpolate(s string, params map[string]any) string {
 
 // ----- bundled LoggerChannel -----------------------------------------------
 
-// LoggerChannel writes notifications to a *log.Logger — useful for
+// LoggerChannel writes notifications to a *log.Logger, useful for
 // development and CI. Always applies (DefaultRouter routes "log" or
 // "inapp" unconditionally).
 type LoggerChannel struct {

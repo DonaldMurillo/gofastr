@@ -11,7 +11,7 @@ import (
 var collapsibleStyle = registry.RegisterStyle("fui-collapsible", collapsibleCSS)
 
 func collapsibleCSS(_ style.Theme) string {
-	// Token chain: --fui-* (the interactive set's host override bridge —
+	// Token chain: --fui-* (the interactive set's host override bridge,
 	// see TestFuiBridgeChainsToColorTokens) wins when a host sets it, then
 	// the canonical adaptive --color-* theme, then the light literal.
 	return `[data-fui-comp="fui-collapsible"]{border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:var(--radii-md,.5rem);background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));overflow:hidden}` +
@@ -29,10 +29,10 @@ func collapsibleCSS(_ style.Theme) string {
 // Uses the native <details> element with data-fui-disclosure for
 // keyboard support (Escape to close, aria-expanded mirroring).
 type CollapsibleConfig struct {
-	Summary string // required — the always-visible header
-	Open    bool   // optional — start expanded (default: collapsed)
-	Class   string // optional — additional CSS classes
-	ID      string // optional — element id
+	Summary string // required:  the always-visible header
+	Open    bool   // optional:  start expanded (default: collapsed)
+	Class   string // optional:  additional CSS classes
+	ID      string // optional:  element id
 }
 
 // Collapsible renders a <details> element with a clickable summary.

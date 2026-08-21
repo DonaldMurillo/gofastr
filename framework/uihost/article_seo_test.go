@@ -88,7 +88,7 @@ func TestScreenArticleDoesNotDuplicateSchema(t *testing.T) {
 	}
 }
 
-// Explicit ScreenSEO OG values are preserved — the article synthesis only
+// Explicit ScreenSEO OG values are preserved. The article synthesis only
 // fills empty fields (Type stays "website", Title stays custom).
 type articleWithOGComp struct{}
 
@@ -121,10 +121,10 @@ func TestScreenArticlePreservesExplicitOG(t *testing.T) {
 	}
 }
 
-// asArticlePlainComp is a NORMAL screen — just a title and a description,
+// asArticlePlainComp is a NORMAL screen, just a title and a description,
 // no article interface. Registered with app.AsArticle(), it becomes an
 // article whose JSON-LD headline + og:title come from ScreenTitle and whose
-// description comes from ScreenDescription. This is the seamless path: no
+// description comes from ScreenDescription. This path needs no
 // article-specific data anywhere.
 type asArticlePlainComp struct{}
 

@@ -168,7 +168,7 @@ func TestFanoutEnabledChecksLevel(t *testing.T) {
 }
 
 // TestFanoutStderrFallbackOnSinkError verifies that a failing sink does
-// not silently drop entries — operators see at least one path.
+// not silently drop entries, operators see at least one path.
 func TestFanoutStderrFallbackOnSinkError(t *testing.T) {
 	sink := failingSink{err: errors.New("disk on fire")}
 	h := newFanoutHandler([]Sink{sink}, nil)

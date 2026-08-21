@@ -3,7 +3,7 @@ package uinodev1
 // Limits are the whole-tree fail-closed caps (design §9). All caps are
 // enforced BEFORE the validator walks the tree (for input bytes) and
 // DURING the walk (for depth / nodes / children / per-prop strings /
-// total text). On any overflow, Validate rejects the whole tree — it
+// total text). On any overflow, Validate rejects the whole tree, it
 // never truncates.
 //
 // The zero-value Limits uses [DefaultLimits] for every field that is

@@ -10,7 +10,7 @@ import (
 )
 
 // The rail must scroll on its own. Without it the document grows to the length
-// of the rail's contents and the pane scrolls off the screen — which is exactly
+// of the rail's contents and the pane scrolls off the screen, which is exactly
 // what the theme editor looked like before this component existed: a 2300px
 // page beside a preview nobody could see.
 func TestWorkbenchRailScrollsIndependently(t *testing.T) {
@@ -42,7 +42,7 @@ func TestWorkbenchPaneFillsAnIframe(t *testing.T) {
 }
 
 // The rail width is configurable, and must arrive as a custom property rather
-// than an inline width — a strict-CSP host rejects style attributes the design
+// than an inline width: a strict-CSP host rejects style attributes the design
 // system did not account for.
 func TestWorkbenchRailWidthIsACustomProperty(t *testing.T) {
 	out := string(Workbench(WorkbenchConfig{

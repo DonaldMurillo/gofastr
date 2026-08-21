@@ -13,7 +13,7 @@ import (
 // Property: panic isolation at extension points. A panicking subscriber
 // callback is third-party code running on a goroutine the framework owns
 // (SubscriberQueue); an unrecovered panic there terminates the whole
-// process — the same class framework/hook guards with runHookSafely.
+// process, the same class framework/hook guards with runHookSafely.
 //
 // Surfaces routed through core/fanout.SubscriberQueue (all share this
 // primitive, so the property is proven once at the primitive and once
@@ -26,7 +26,7 @@ import (
 // Proven by re-exec: the child process subscribes a callback that panics on
 // the first payload, publishes two payloads, and must exit 0. Today the
 // first panic kills the child (unrecovered goroutine panic), so the parent
-// observes a crash exit — the failing assertion.
+// observes a crash exit: the failing assertion.
 
 const panicChildEnv = "GOFASTR_TEST_FANOUT_PANIC_CHILD"
 

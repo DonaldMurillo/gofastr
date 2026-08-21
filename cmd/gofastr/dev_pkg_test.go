@@ -21,8 +21,8 @@ func devPkgWrite(t *testing.T, path, body string) {
 	}
 }
 
-// devPkgModule creates a module whose main package lives under cmd/app/ — the
-// layout every non-scaffold app uses — with internal/ code the command depends
+// devPkgModule creates a module whose main package lives under cmd/app/, the
+// layout every non-scaffold app uses, with internal/ code the command depends
 // on. The command writes a marker into its working directory so tests can
 // assert where it actually ran.
 func devPkgModule(t *testing.T) string {
@@ -39,7 +39,7 @@ func devPkgModule(t *testing.T) string {
 
 // A cmd/-layout app must build via --pkg while the server's cwd stays at the
 // project root. Before --pkg existed, the only way to build such an app was
-// --dir ./cmd/app, which moved cwd too — so relative paths (sqlite db_url,
+// --dir ./cmd/app, which moved cwd too, so relative paths (sqlite db_url,
 // static dirs) resolved against cmd/app/ and silently used the wrong files.
 func TestBuildAndServeWithPkgKeepsProjectRootAsCwd(t *testing.T) {
 	dir := devPkgModule(t)

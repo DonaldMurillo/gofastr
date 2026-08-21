@@ -1,11 +1,11 @@
-// UI e2e tests — these drive a real (headless) browser against a real
+// UI e2e tests. These drive a real (headless) browser against a real
 // framework.App with auth, OwnerField scoping, SessionMiddleware, and
 // CSRF middleware all wired in. Run with `go test -run TestUIE2E ./framework/`.
 //
 // Coverage rationale: the backend tests in framework/crud/, battery/auth/,
 // and core/middleware/ cover correctness of individual pieces. These
 // browser-level tests prove the pieces compose end-to-end the way a
-// user actually exercises them — form submit → cookie set → redirect
+// user actually exercises them, form submit → cookie set → redirect
 // followed → next page sees the user in context → scoped CRUD returns
 // only owned rows. The four scenarios below are the ones a security
 // auditor will re-prove first; failure here means a real-world bypass.
@@ -112,7 +112,7 @@ func setupUIE2EApp(t *testing.T) *uiE2EApp {
 	sm := auth.SessionMiddleware(mgr)
 	app.Use(func(next http.Handler) http.Handler { return sm(next) })
 
-	// Login HTML page (form-encoded — must trigger the runtime's
+	// Login HTML page (form-encoded, must trigger the runtime's
 	// form interceptor → 303 → Location follow).
 	app.Router().Get("/login", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		errMsg := r.URL.Query().Get("error")
@@ -262,8 +262,8 @@ func newE2EChrome(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
-	// passing a timeout context here would make the browser die when that
+	// browser context so the browser's lifetime is the browser context's.
+	// Passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
 	go func() { started <- chromedp.Run(browser) }()
@@ -341,7 +341,7 @@ func TestUIE2E_OwnerScope_CrossUserIsolation(t *testing.T) {
 		t.Errorf("CROSS-USER LEAK in browser: bob's dashboard shows alice's log: %q", bobLogText)
 	}
 	if bobLogText != "" && !strings.HasPrefix(strings.TrimSpace(bobLogText), "") {
-		// Empty is fine — bob has no logs yet. Just guard the assertion above.
+		// Empty is fine, bob has no logs yet. Just guard the assertion above.
 	}
 }
 
@@ -394,7 +394,7 @@ func awaitPromise(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
 // waitURLContains polls the browser's current URL up to 5 seconds,
 // returning success the moment it contains the given substring.
 // Avoids the race between a runtime-driven location.assign and any
-// subsequent WaitVisible — chromedp's WaitVisible doesn't always
+// subsequent WaitVisible, chromedp's WaitVisible doesn't always
 // notice the renavigation.
 func waitURLContains(needle string) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
@@ -477,7 +477,7 @@ func TestUIE2E_AuthForm_LoginFailureShowsError(t *testing.T) {
 	}
 
 	ctx := newE2EChrome(t)
-	// Direct fetch — same as the runtime's form interceptor would do
+	// Direct fetch, same as the runtime's form interceptor would do
 	// internally, but we capture the redirect URL explicitly. This
 	// proves the SERVER side (writeFormAuthError + safeReferer +
 	// loginHandler form path) works end-to-end through a real browser
@@ -544,7 +544,7 @@ func TestUIE2E_AuthForm_BackslashRedirectBlocked(t *testing.T) {
 		chromedp.SendKeys(`#email`, "victim@example.com", chromedp.ByID),
 		chromedp.SendKeys(`#password`, "hunter22", chromedp.ByID),
 		chromedp.Click(`#submit`, chromedp.ByID),
-		// Wait for navigation away from /login — the redirect should
+		// Wait for navigation away from /login, the redirect should
 		// land on "/", not on the attacker URL. Sleep is a backstop;
 		// the URL check below is what proves the outcome.
 		chromedp.Sleep(800*time.Millisecond),
@@ -553,7 +553,7 @@ func TestUIE2E_AuthForm_BackslashRedirectBlocked(t *testing.T) {
 		t.Fatalf("login: %v", err)
 	}
 
-	// Parse the URL to check the HOST — "evil.example" appearing in
+	// Parse the URL to check the HOST, "evil.example" appearing in
 	// the query string of a same-origin URL is fine (that's the
 	// original ?next= parameter still attached to /login). The bypass
 	// would be the HOST being different from the test server's host.
@@ -604,7 +604,7 @@ func TestUIE2E_CSRF_FormHiddenFieldRoundtrip(t *testing.T) {
 		fmt.Fprint(w, `<html><body><h1 id="csrf-ok">accepted</h1></body></html>`)
 	}))
 
-	// Path 1: legitimate submit with the hidden field — must land on /csrf-ok.
+	// Path 1: legitimate submit with the hidden field, must land on /csrf-ok.
 	ctx := newE2EChrome(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(fx.URL()+"/csrf-form"),
@@ -615,7 +615,7 @@ func TestUIE2E_CSRF_FormHiddenFieldRoundtrip(t *testing.T) {
 		t.Fatalf("legitimate CSRF form submit failed: %v", err)
 	}
 
-	// Path 2: strip the hidden field, submit again — must 403.
+	// Path 2: strip the hidden field, submit again, must 403.
 	var status int
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(fx.URL()+"/csrf-form"),
@@ -646,4 +646,4 @@ func TestUIE2E_CSRF_FormHiddenFieldRoundtrip(t *testing.T) {
 // ---- shared mutex prevents two chromedp tests trashing the same DB ----
 var uie2eMu sync.Mutex
 
-func init() { _ = &uie2eMu } // suppress unused warning until tests below grow (take addr — copying a Mutex is a vet warning)
+func init() { _ = &uie2eMu } // suppress unused warning until tests below grow (take addr, copying a Mutex is a vet warning)

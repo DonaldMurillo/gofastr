@@ -323,7 +323,7 @@ func TestCoord_PG_SetRoleEscalationFails(t *testing.T) {
 		MigrationGroup: "demo",
 	}
 	c, _ := NewMigrationCoordinator(store, adminDB, WithCoordinatorAdminDSN(adminDSN))
-	// SET ROLE postgres from the module role must fail (not a member) — the
+	// SET ROLE postgres from the module role must fail (not a member), the
 	// authenticate-as property (design §7 point 2). RESET ROLE is a no-op.
 	err := c.Apply(context.Background(), desc, []ApprovedMigration{
 		{Version: 1, Name: "escalate", Up: "SET ROLE postgres; CREATE TABLE public.evil2 (id int)"},

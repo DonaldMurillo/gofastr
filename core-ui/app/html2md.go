@@ -1,8 +1,8 @@
 // check-csp:ignore-file
 // This file builds regex patterns that match (and strip) <script> and
 // <style> blocks from rendered HTML before converting it to Markdown
-// for /llm.md. The patterns never emit script tags — they only consume
-// them — but the literal `<script` substring trips the no-inline-script
+// for /llm.md. The patterns never emit script tags, they only consume
+// them, but the literal `<script` substring trips the no-inline-script
 // linter. The directive exempts this file from that check.
 package app
 
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// Pre-compiled regexes — compiled once, reused per request.
+// Pre-compiled regexes, compiled once, reused per request.
 var (
 	reScript    = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
 	reStyle     = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
@@ -101,7 +101,7 @@ func htmlToMarkdown(h string) string {
 	// Table handling
 	s = convertTables(s)
 
-	// Ordered lists: track ol/li — must run before generic <li> replacement
+	// Ordered lists: track ol/li, must run before generic <li> replacement
 	s = reOlBlock.ReplaceAllStringFunc(s, func(match string) string {
 		inner := reOlInner.ReplaceAllStringFunc(
 			reOlTag.ReplaceAllString(match, ""),
@@ -131,7 +131,7 @@ func htmlToMarkdown(h string) string {
 	// Strip all remaining tags
 	s = reAnyTag.ReplaceAllString(s, "")
 
-	// Decode HTML entities (covers named + numeric — much more complete
+	// Decode HTML entities (covers named + numeric, much more complete
 	// than listing a handful of replacements).
 	s = html.UnescapeString(s)
 

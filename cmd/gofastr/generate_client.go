@@ -7,7 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// renderClient builds gen/client/client.go — a standalone Go client for
+// renderClient builds gen/client/client.go, a standalone Go client for
 // hitting the CRUD HTTP surface of every generated entity.
 //
 // The output is a separate package ("client") with its own copies of the
@@ -23,9 +23,9 @@ import (
 //   - PatchPost(ctx, id, body PostInput) (Post, error)
 //   - DeletePost(ctx, id) error
 //   - BatchCreatePost / BatchUpdatePost / BatchDeletePost (the _batch routes)
-//   - WatchPost(ctx, fn) — blocking SSE loop over GET {path}/_events
+//   - WatchPost(ctx, fn): blocking SSE loop over GET {path}/_events
 //
-// PostInput is the create/update/patch payload — same shape minus the ID — so
+// PostInput is the create/update/patch payload, same shape minus the ID, so
 // callers don't construct a zero-id Post.
 func renderClient(decls []framework.EntityDeclaration) string {
 	var sb strings.Builder
@@ -45,7 +45,7 @@ import (
 )
 
 // Client is a typed HTTP client targeting the gofastr server's CRUD routes.
-// Pass any *http.Client (httptest, retryable wrapper, etc.) — Client never
+// Pass any *http.Client (httptest, retryable wrapper, etc.): Client never
 // closes it.
 //
 // Token, when set, is sent as "Authorization: Bearer <Token>" on every
@@ -132,7 +132,7 @@ func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, ou
 // Do is the raw escape hatch under the typed methods: it sends method+path
 // with an optional JSON body and decodes the 2xx response into out, applying
 // the same base URL, auth header, and error handling. Reach for it when the
-// typed surface doesn't fit — custom endpoints, or presence-faithful bodies
+// typed surface doesn't fit: custom endpoints, or presence-faithful bodies
 // built as map[string]any (a typed Input's json:",omitempty" drops explicit
 // zero values; a map keeps them).
 func (c *Client) Do(ctx context.Context, method, path string, body, out any) error {
@@ -141,7 +141,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 
 // BatchResult is one entry in a _batch response, in input order. Exactly one
 // of Data, Error, or Skipped is populated. When a later item failed, earlier
-// successes still carry Data — but Committed=false on the envelope means
+// successes still carry Data, but Committed=false on the envelope means
 // nothing was persisted (the whole batch runs in one transaction).
 type BatchResult struct {
 	Index   int                 ` + "`json:\"index\"`" + `
@@ -159,7 +159,7 @@ type BatchResponse struct {
 
 // doBatch sends a _batch request. The server answers 200 (committed) or 400
 // (rolled back) with the same envelope, so a 400 with a decodable body is a
-// result, not an error — callers inspect Committed and per-item Error fields.
+// result, not an error: callers inspect Committed and per-item Error fields.
 func (c *Client) doBatch(ctx context.Context, method, path string, body any) (BatchResponse, error) {
 	var out BatchResponse
 	err := c.doJSON(ctx, method, path, body, &out)
@@ -238,7 +238,7 @@ func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string
 
 // goPatchPointerTypeForField returns the PATCH payload field type: a pointer
 // to the base Go type. Pointer + json:",omitempty" is the canonical Go idiom
-// for presence-aware PATCH bodies — a nil pointer is omitted (field untouched),
+// for presence-aware PATCH bodies: a nil pointer is omitted (field untouched),
 // while a non-nil pointer to a zero value (&false, ptr(0), &"") is kept and
 // sets the field. A value-typed field with omitempty cannot express "set to
 // zero", so the PATCH path gets its own pointer-based <Entity>Patch struct.
@@ -261,7 +261,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 
 	// Output struct (Post). Hidden fields are skipped everywhere below: the
 	// server never puts them on the wire, and the client also ships inside
-	// the downloadable SDK — emitting hidden column names there would leak
+	// the downloadable SDK. Emitting hidden column names there would leak
 	// schema the API deliberately conceals.
 	sb.WriteString(fmt.Sprintf("type %s struct {\n", struct_))
 	sb.WriteString("\tID string `json:\"id\"`\n")
@@ -275,7 +275,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 			toCamelJSON(field.Name)))
 	}
 	sb.WriteString("}\n\n")
-	// Input struct (PostInput) — same shape minus the ID. We intentionally
+	// Input struct (PostInput): same shape minus the ID. We intentionally
 	// drop ID even on update: the server uses the URL path parameter for
 	// addressing, and including it in the body invites mismatch bugs.
 	sb.WriteString(fmt.Sprintf("type %sInput struct {\n", struct_))
@@ -289,9 +289,9 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 			toCamelJSON(field.Name)))
 	}
 	sb.WriteString("}\n\n")
-	// Patch struct (<Entity>Patch) — pointer fields. This is the PATCH
+	// Patch struct (<Entity>Patch): pointer fields. This is the PATCH
 	// payload, distinct from the value-typed Input: nil omits a field
-	// (leave it untouched), while a non-nil pointer sets it — including to
+	// (leave it untouched), while a non-nil pointer sets it, including to
 	// a zero value (false, 0, ""), which a value-typed field tagged
 	// json:",omitempty" cannot represent. The server's PATCH applies only
 	// to fields present in the JSON body, so this is the faithful mapping.
@@ -307,7 +307,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	}
 	sb.WriteString("}\n\n")
 
-	// List response envelope — mirrors framework.ListResponse but typed.
+	// List response envelope: mirrors framework.ListResponse but typed.
 	sb.WriteString(fmt.Sprintf("type %sListResponse struct {\n", struct_))
 	sb.WriteString(fmt.Sprintf("\tData       []%s `json:\"data\"`\n", struct_))
 	sb.WriteString("\tTotal      int `json:\"total\"`\n")
@@ -371,7 +371,7 @@ func (c *Client) Update%s(ctx context.Context, id string, body %sInput) (%s, err
 	// Patch
 	sb.WriteString(fmt.Sprintf(`// Patch%s updates exactly the fields whose pointers in body are non-nil.
 // A nil field is omitted (the server leaves it untouched); a non-nil pointer
-// sets the field — including to a zero value (false, 0, ""), which a value
+// sets the field, including to a zero value (false, 0, ""), which a value
 // payload cannot express. Pass an empty %sPatch to no-op.
 func (c *Client) Patch%s(ctx context.Context, id string, body %sPatch) (%s, error) {
 	var out %s
@@ -391,7 +391,7 @@ func (c *Client) Delete%s(ctx context.Context, id string) error {
 
 `, struct_, struct_, table))
 
-	// BatchPatch struct (<Entity>BatchPatch) — one _batch update item: the
+	// BatchPatch struct (<Entity>BatchPatch), one _batch update item: the
 	// target id plus the same presence-aware pointer fields as <Entity>Patch.
 	sb.WriteString(fmt.Sprintf("type %sBatchPatch struct {\n", struct_))
 	sb.WriteString("\tID string `json:\"id\"`\n")
@@ -408,7 +408,7 @@ func (c *Client) Delete%s(ctx context.Context, id string) error {
 
 	// Batch create / update / delete
 	sb.WriteString(fmt.Sprintf(`// BatchCreate%s creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// Inspect Committed and the per-item Results: a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreate%s(ctx context.Context, items []%sInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/%s/_batch", map[string]any{"items": items})

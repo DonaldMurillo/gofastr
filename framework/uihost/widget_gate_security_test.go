@@ -10,7 +10,7 @@ import (
 )
 
 // widget.Definition.RequireSession fails closed when no host installed a
-// session predicate, so uihost must install one at mount time —
+// session predicate, so uihost must install one at mount time;
 // otherwise the gate can only ever say no and the knob is unusable.
 //
 // This pins the wiring, not the gate itself (core-ui/widget owns that).

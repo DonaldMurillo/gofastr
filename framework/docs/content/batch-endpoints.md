@@ -31,7 +31,7 @@ the whole transaction.
 - The first per-item failure populates `error` (and optionally
   `fields` for validation failures) on that index. Later indices are
   marked `"skipped": true`.
-- On `committed: false` no result carries `data` — errors and
+- On `committed: false` no result carries `data`. Errors and
   `fields` remain.
 
 ## Limits
@@ -46,7 +46,8 @@ the whole transaction.
 - **Hooks run inside the transaction.** `BeforeCreate`, `AfterUpdate`,
   etc. fire per item. A hook error rolls back the whole batch.
 - **Events fire only on commit.** `entity.created` etc. fire after a
-  successful commit, in input order, one per item — never on rollback.
+  successful commit, in input order, one per item. They never fire on
+  rollback.
 - **No partial success.** If you need "skip failures and keep the
   rest", make `MaxBatchSize` individual calls instead.
 
@@ -79,7 +80,7 @@ curl -X DELETE http://localhost:8080/posts/_batch \
   `committed` before you trust `results[*].data`.
 - **Counting on event ordering across batches.** Within a batch,
   events fire in input order. Across overlapping batches, order
-  depends on transaction commit order — don't count on it.
+  depends on transaction commit order, so don't count on it.
 - **Sending more than 100 items.** Split it client-side.
 - **Mixing batch and per-item requests in a saga.** Mixing makes
   rollback semantics ambiguous. Pick one.

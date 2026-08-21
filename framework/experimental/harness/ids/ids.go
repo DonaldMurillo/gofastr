@@ -3,7 +3,7 @@
 // ULID-derived with a typed prefix so a string can be inspected
 // without context.
 //
-// Formats (normative — see docs/harness-architecture.md § Glossary):
+// Formats (normative. See docs/harness-architecture.md § Glossary):
 //
 //	SessionID    sess_<ULID>   one per EngineRun
 //	LogID        log_<ULID>    persistence-layer ID
@@ -19,7 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/internal/ulid"
 )
 
-// Prefix constants — keep in lockstep with the doc.
+// Prefix constants, keep in lockstep with the doc.
 const (
 	PrefixSession = "sess"
 	PrefixLog     = "log"

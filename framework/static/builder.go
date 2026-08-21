@@ -43,7 +43,7 @@ type Builder struct {
 	// Logger receives one line per produced or copied file. Nil disables it.
 	Logger func(format string, args ...any)
 	// ExtraDirs maps URL mount paths to filesystems whose files are
-	// copied into the export under that path — e.g.
+	// copied into the export under that path, e.g.
 	// {"/docs/api/sdk": os.DirFS("gen/sdk/dist")} so the SDK artifacts a
 	// live sdkdocs.Mount serves also ship in the static tree. Files the
 	// build (or the user static dir) already produced win: extra files
@@ -86,7 +86,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			if err != nil {
 				var blocked *uihost.PolicyBlockedError
 				if errors.As(err, &blocked) {
-					slog.Warn("static: skipped gated screen — policy refused the static render; the route stays reachable via the live server. Use a policy that RenderAlts (e.g. a login prompt) to keep the page in the export.",
+					slog.Warn("static: skipped gated screen: policy refused the static render; the route stays reachable via the live server. Use a policy that RenderAlts (e.g. a login prompt) to keep the page in the export.",
 						"path", p, "decision", blocked.Decision)
 					continue
 				}
@@ -115,7 +115,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, fmt.Errorf("static: write _headers: %w", err)
 	}
 
-	// LLM documentation — per-page llm.md and top-level index.
+	// LLM documentation: per-page llm.md and top-level index.
 	if !b.Host.App.NoLLMMD {
 		for _, route := range b.Host.App.Routes() {
 			if route.RedirectTo != "" {
@@ -134,7 +134,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			}
 			for _, p := range paths {
 				// Per-URL doc: a dynamic route expands to N pages, each
-				// with its own loaded title + content — the pattern-level
+				// with its own loaded title + content. The pattern-level
 				// ScreenLLMMD would stamp every page with one generic doc
 				// (a placeholder, for ScreenLoader screens). Fall back to
 				// the pattern doc if the concrete path doesn't resolve.
@@ -149,7 +149,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 					// NO policy evaluation, so falling back to it would
 					// write a gated screen's content to disk ungated.
 					md = coreapp.ScreenLLMMDWithheld(screen)
-					slog.Warn("static: expanded llm.md path does not resolve — writing withheld doc; check StaticPaths values against the route's constraints",
+					slog.Warn("static: expanded llm.md path does not resolve: writing withheld doc; check StaticPaths values against the route's constraints",
 						"route", route.Path, "path", p)
 				}
 				dst := filepath.Join(b.OutDir, pathToLLMFile(p))
@@ -174,7 +174,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		b.log("wrote llm-pages.md index")
 	}
 
-	// SEO surface — sitemap.xml and robots.txt, mirroring the live
+	// SEO surface: sitemap.xml and robots.txt, mirroring the live
 	// WithSitemap/WithRobots handlers so a static deploy keeps the same
 	// crawler contract as the live server. Same bytes as the HTTP
 	// handlers (single source: UIHost.SitemapXML / UIHost.RobotsTXT),
@@ -185,7 +185,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, err
 	}
 
-	// Generated app icons (uihost.WithAppIcon) — the /__gofastr/icons/
+	// Generated app icons (uihost.WithAppIcon): the /__gofastr/icons/
 	// PNGs plus the /favicon.ico alias, so a static deploy ships the
 	// same icon surface the live server serves. User-supplied files in
 	// the static source win, matching the SEO/PWA precedence.
@@ -193,7 +193,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, err
 	}
 
-	// /__gofastr/* assets — runtime, compiled actions, theme CSS, custom
+	// /__gofastr/* assets: runtime, compiled actions, theme CSS, custom
 	// CSS, route graph script. The injected <link>/<script src> tags in
 	// the rendered HTML reference these paths, so SSG output is broken
 	// without them.
@@ -222,7 +222,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 	// Route graph + component catalog ship INLINE in each rendered
 	// HTML page as <script type="application/json"> blocks. No
-	// separate .js files are emitted — the SSG output is fully
+	// separate .js files are emitted. The SSG output is fully
 	// self-contained per page, no extra round-trips required.
 	// Per-component CSS still ships as standalone files because the
 	// runtime fetches them on demand.
@@ -233,7 +233,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// <script src="/__gofastr/runtime/<name>.js?v=<hash>"> on demand for each
 	// feature module (themeswitch, shortcut, copy, widgets, sse, toasts, …).
 	// A static host ignores the ?v= query and resolves the file by path, so
-	// every module must exist on disk query-free — otherwise the dynamic
+	// every module must exist on disk query-free. Otherwise the dynamic
 	// load 404s and the feature silently dies. (This is the regression the
 	// wget crawl hit: it baked ?v= into the filename and 404'd every module.)
 	for _, name := range runtime.ModuleNames() {
@@ -252,10 +252,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		b.log("wrote %s", a.urlPath)
 	}
 
-	// Widget catalog + chrome + CSS — dumped as query-free files so the
+	// Widget catalog + chrome + CSS: dumped as query-free files so the
 	// runtime's data-fui-open overlays resolve against the static tree
 	// instead of 404'ing against the live widget endpoints. Recorded in
-	// res.Assets so the full-site worker precaches them — overlays must
+	// res.Assets so the full-site worker precaches them. Overlays must
 	// keep opening offline.
 	if err := b.dumpWidgetAssets(&res); err != nil {
 		return res, err
@@ -265,7 +265,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// atomically; user static-dir files below are precached best-effort.
 	frameworkAssetCount := len(res.Assets)
 
-	// Static assets — either filesystem dir or embedded FS.
+	// Static assets: either filesystem dir or embedded FS.
 	if dir := b.Host.StaticDir(); dir != "" {
 		if err := copyDir(dir, b.OutDir, &res, b.log); err != nil {
 			return res, err
@@ -283,7 +283,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, err
 	}
 
-	// PWA surface — manifest, service worker, registration script, and
+	// PWA surface: manifest, service worker, registration script, and
 	// offline fallback, mirroring the live WithPWA routes. Runs LAST so
 	// the full-site worker can precache the complete export (pages,
 	// runtime assets, AND the static dir copied above) and fingerprint
@@ -324,7 +324,7 @@ func (b *Builder) log(format string, args ...any) {
 // their screen, ask for StaticPaths, and substitute each param map. A
 // dynamic route whose screen does not implement StaticPathsProvider (or
 // returns zero paths) is skipped at build time, but the builder now warns
-// — naming the route and the fix — instead of failing silently. The route
+// naming the route and the fix, instead of failing silently. The route
 // remains reachable via SSR if the server is running.
 func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]string, error) {
 	if !strings.Contains(pattern, ":") {
@@ -332,18 +332,18 @@ func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]strin
 	}
 	screen, ok := app.Router.ScreenByPattern(pattern)
 	if !ok {
-		// Pattern is registered but unresolvable — odd, skip safely.
+		// Pattern is registered but unresolvable. Odd, skip safely.
 		return nil, nil
 	}
 	provider, hasPaths := screen.Component.(coreapp.StaticPathsProvider)
 	if !hasPaths {
-		slog.Warn("static: dynamic route has no StaticPaths — skipping; implement StaticPaths on the screen to export its pages",
+		slog.Warn("static: dynamic route has no StaticPaths: skipping; implement StaticPaths on the screen to export its pages",
 			"route", pattern)
 		return nil, nil
 	}
 	paths := provider.StaticPaths(ctx)
 	if len(paths) == 0 {
-		slog.Warn("static: dynamic route's StaticPaths returned no paths — skipping; return at least one concrete path to export its pages",
+		slog.Warn("static: dynamic route's StaticPaths returned no paths: skipping; return at least one concrete path to export its pages",
 			"route", pattern)
 		return nil, nil
 	}
@@ -352,8 +352,8 @@ func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]strin
 
 // expandParams substitutes each StaticPaths param map into the route pattern.
 // It fails closed: any param value that would let the generated URL escape its
-// route segment — a path separator, an "." / ".." traversal component, a NUL,
-// or an empty value — aborts the whole build rather than silently writing a
+// route segment, a path separator, an "." / ".." traversal component, a NUL,
+// or an empty value, aborts the whole build rather than silently writing a
 // file outside OutDir.
 func expandParams(_ context.Context, pattern string, sets []map[string]string) ([]string, error) {
 	var out []string
@@ -434,7 +434,7 @@ func validateCatchAllValue(key, v string) error {
 // applyStaticMode post-processes a rendered page for the serverless
 // static export. It does two things:
 //
-//  1. Stamps <html> with data-fui-static — the runtime's static-mode
+//  1. Stamps <html> with data-fui-static: the runtime's static-mode
 //     switch. When present, the runtime skips the widget catalog fetch,
 //     no-ops data-fui-rpc dispatch, and short-circuits data-fui-open,
 //     so a click on a dead demo does not fire a request that 404s
@@ -451,7 +451,7 @@ func (b *Builder) applyStaticMode(page string) string {
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
 		Title:       "Static preview",
-		Body:        "This is a read-only export. Run the app locally for full interactivity — live search, demos, and server-driven islands need the Go server.",
+		Body:        "This is a read-only export. Run the app locally for full interactivity: live search, demos, and server-driven islands need the Go server.",
 		Variant:     ui.BannerInfo,
 		Dismissible: true,
 		DismissID:   "gofastr-static-preview",
@@ -466,7 +466,7 @@ func (b *Builder) applyStaticMode(page string) string {
 	return page
 }
 
-// stampStatic marks <html> with data-fui-static — the runtime's
+// stampStatic marks <html> with data-fui-static: the runtime's
 // static-mode switch. The first "<html" in the document is always the
 // real root element (it precedes any body content); the marker is
 // value-agnostic, so a bare boolean attribute suffices.
@@ -482,8 +482,8 @@ func stampStatic(page string) string {
 // NOT protocol-relative ("//"). data-fui-push-state is included so combobox/
 // palette selection targets get base-prefixed on subpath deploys (otherwise
 // selecting a command navigates to the apex path and 404s). The leading
-// ([\s]) anchor ensures only real attributes match — never "data-src" /
-// "srcset" — and code samples are safe because core/markdown escapes quotes
+// ([\s]) anchor ensures only real attributes match, never "data-src" /
+// "srcset", and code samples are safe because core/markdown escapes quotes
 // inside <code> to &quot; (so the ="… pattern never appears in rendered code
 // text). Group 3 is the first path byte, re-emitted so the prefix is inserted
 // after the leading slash.
@@ -503,7 +503,7 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 	page = baseAttrURL.ReplaceAllString(page, "${1}${2}=\""+b.BasePath+"/${3}")
 	// 2. Inline JSON values: the component catalog seeds
 	// "stylePath":"/__gofastr/comp/<name>.css" entries the runtime
-	// lazy-loads at runtime — those aren't attributes, so the regex
+	// lazy-loads at runtime. Those aren't attributes, so the regex
 	// above misses them. Prefix every quoted root-absolute /__gofastr/
 	// path. Safe vs code samples: core/markdown escapes quotes in
 	// <code> to &quot;, so the literal "/__gofastr/ (real double-quote
@@ -515,7 +515,7 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 // dumpWidgetAssets writes the widget catalog JSON and each widget's chrome
 // HTML + CSS as query-free static files. Hidden click-to-open widgets
 // (command palette, section-menu drawers, modals) are not SSR-inlined, so
-// the runtime fetches their chrome from cfg.chromePath on open — which 404s
+// the runtime fetches their chrome from cfg.chromePath on open, which 404s
 // on a serverless host. Dumping the same bytes as files lets openWidget
 // resolve against the static tree, so every data-fui-open overlay works.
 func (b *Builder) dumpWidgetAssets(res *Result) error {
@@ -523,7 +523,7 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 	if len(defs) == 0 {
 		return nil
 	}
-	// Catalog JSON — canonical shape from ServeWidgetList (no page filter =
+	// Catalog JSON: canonical shape from ServeWidgetList (no page filter =
 	// every widget). chromePath/stylePath are root-absolute /core-ui/widget/…
 	// values the runtime fetches at open time; prefix them for a subpath deploy.
 	rec := httptest.NewRecorder()
@@ -650,7 +650,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// The offline page is rendered basePath-neutral by the host; its
 	// asset links get the same base rewrite as every exported page. It
 	// also gets the data-fui-static stamp so the runtime's static-mode
-	// guards apply, but not the "run locally" banner — an offline
+	// guards apply, but not the "run locally" banner. An offline
 	// fallback is not a demo page.
 	offline := b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML()))
 	files := []struct {
@@ -668,7 +668,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 		// the build, a manifest/worker shipped in the app's static dir
 		// landed after (and therefore over) the generated one. Preserve
 		// that precedence by never clobbering a file the static SOURCE
-		// provides (the source, not OutDir — a previous build's leftovers
+		// provides (the source, not OutDir: a previous build's leftovers
 		// in a reused OutDir must not suppress regeneration).
 		if b.staticSourceHas(f.relFile) {
 			b.log("kept user-supplied %s", f.urlPath)
@@ -688,7 +688,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 }
 
 // staticSourceHas reports whether the host's static asset source (dir or
-// embedded FS) provides rel — meaning the user shipped their own copy.
+// embedded FS) provides rel, meaning the user shipped their own copy.
 func (b *Builder) staticSourceHas(rel string) bool {
 	if dir := b.Host.StaticDir(); dir != "" {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err == nil {
@@ -707,7 +707,7 @@ func (b *Builder) staticSourceHas(rel string) bool {
 
 // hashExportTree fingerprints every file already written to outDir
 // (deterministic sorted walk over relative path + streamed bytes). The
-// PWA outputs themselves are excluded — they are (re)generated after
+// PWA outputs themselves are excluded: they are (re)generated after
 // this hash, and a reused OutDir still holds the PREVIOUS build's
 // copies; hashing those would make every rebuild byte-different even
 // with identical content. A content-only redeploy therefore changes
@@ -752,7 +752,7 @@ func hashExportTree(outDir string) (string, error) {
 }
 
 // writeRawAsset writes body to the OutDir path derived from urlPath WITHOUT
-// the runtime-JS base bake — callers that need base rewriting apply the
+// the runtime-JS base bake. Callers that need base rewriting apply the
 // appropriate rewriter (rewriteBaseURLs for HTML, manual prefixing for JSON)
 // before calling. Guards path containment via ensureContained.
 func (b *Builder) writeRawAsset(urlPath string, body []byte) error {
@@ -925,9 +925,9 @@ func copyFS(fsys fs.FS, dst string, res *Result, log func(string, ...any)) error
 // staticExportCSP is the Content-Security-Policy a static export carries
 // with it.
 //
-// Every browser gadget the runtime can be pushed into — an injected
+// Every browser gadget the runtime can be pushed into, an injected
 // data-behavior <script src>, a signal-driven URL attribute, a fetch
-// aimed off-origin — is mitigated in production by the default
+// aimed off-origin, is mitigated in production by the default
 // `default-src 'self'` that core/middleware.SecurityHeaders sets as a
 // response HEADER. A static export is a directory of files: S3, GitHub
 // Pages and friends set no such header, so the export was the one
@@ -959,7 +959,7 @@ func applyStaticCSP(page string) string {
 
 // writeHeadersFile emits a Netlify / Cloudflare Pages `_headers` file so
 // the policy arrives as a REAL header on hosts that read one. Both ship
-// because neither alone covers the field — but they do NOT cover the same
+// because neither alone covers the field, but they do NOT cover the same
 // directives: per CSP L3 §3.1 a <meta>-delivered policy ignores
 // frame-ancestors (as well as report-uri and sandbox), so the meta covers
 // the fetch directives everywhere while the clickjacking guard lands only

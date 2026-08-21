@@ -11,7 +11,7 @@ import (
 // batch-create handler. Without it, an anonymous attacker hitting
 // /api/logs/_batch can flood the DB with rows owned by no one
 // (extractor returns nothing → InjectOwner stamps nothing → NULL
-// user_id), or — worse — exploit a hook that synthesises an owner
+// user_id), or, worse, exploit a hook that synthesises an owner
 // elsewhere. Either way, anonymous writes on an OwnerField entity
 // must 401 before the JSON decode.
 func TestBatchCreate_AnonymousIsRejected(t *testing.T) {

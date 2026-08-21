@@ -29,7 +29,7 @@ func TestToSnakeCase(t *testing.T) {
 		{"BlogPOST", "blog_post"},
 		{"ParseURL", "parse_url"},
 
-		// Leading + interior acronyms — the converged contract.
+		// Leading + interior acronyms: the converged contract.
 		// Old toSnakeCase: "httpserver" / "apikey"; old camelToSnake:
 		// "h_t_t_p_server" / "a_p_i_key".
 		{"HTTPServer", "http_server"},
@@ -43,7 +43,7 @@ func TestToSnakeCase(t *testing.T) {
 		{"HTTP2", "http2"},
 		{"SHA256Sum", "sha256_sum"},
 
-		// Adjacent acronym runs are one token — "HTTPURL" cannot be
+		// Adjacent acronym runs are one token: "HTTPURL" cannot be
 		// split without a dictionary, and the historic generate
 		// converter produced the same value here.
 		{"ParseHTTPURL", "parse_httpurl"},
@@ -99,7 +99,7 @@ func TestToCamelCase(t *testing.T) {
 
 // TestToCamelJSONCases pins toCamelJSON (Pascal→lowerCamel for JSON
 // tags). It composes toCamelCase, so CamelCase input passes through
-// unsplit — that is the long-standing contract.
+// unsplit. That is the long-standing contract.
 func TestToCamelJSONCases(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"", ""},

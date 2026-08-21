@@ -30,7 +30,7 @@ func (r *recordQueue) count() int {
 	return len(r.jobs)
 }
 
-// A Cron schedule must enqueue exactly when its next tick arrives — driven
+// A Cron schedule must enqueue exactly when its next tick arrives, driven
 // deterministically off a fixed base time, no wall-clock sleeps.
 func TestSchedulerCronFiresAtNextTick(t *testing.T) {
 	rq := &recordQueue{}
@@ -42,25 +42,25 @@ func TestSchedulerCronFiresAtNextTick(t *testing.T) {
 		t.Fatalf("RegisterAt: %v", err)
 	}
 
-	// Before 02:00 — must not fire.
+	// Before 02:00, must not fire.
 	sched.dispatchDue(context.Background(), time.Date(2026, 6, 8, 1, 59, 0, 0, time.UTC))
 	if got := rq.count(); got != 0 {
 		t.Fatalf("fired early: got %d enqueues, want 0", got)
 	}
 
-	// At 02:00 — must fire exactly once.
+	// At 02:00, must fire exactly once.
 	sched.dispatchDue(context.Background(), time.Date(2026, 6, 8, 2, 0, 0, 0, time.UTC))
 	if got := rq.count(); got != 1 {
 		t.Fatalf("at next tick: got %d enqueues, want 1", got)
 	}
 
-	// Same day, after fire — must not double-fire; next run rolled to tomorrow.
+	// Same day, after fire, must not double-fire; next run rolled to tomorrow.
 	sched.dispatchDue(context.Background(), time.Date(2026, 6, 8, 23, 0, 0, 0, time.UTC))
 	if got := rq.count(); got != 1 {
 		t.Fatalf("double fired: got %d enqueues, want 1", got)
 	}
 
-	// Tomorrow 02:00 — fires again.
+	// Tomorrow 02:00, fires again.
 	sched.dispatchDue(context.Background(), time.Date(2026, 6, 9, 2, 0, 0, 0, time.UTC))
 	if got := rq.count(); got != 2 {
 		t.Fatalf("next day: got %d enqueues, want 2", got)

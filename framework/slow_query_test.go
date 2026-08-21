@@ -43,7 +43,7 @@ func newSlowQueryHarness(t *testing.T, db *sql.DB, threshold time.Duration) *slo
 
 func TestSlowQuery_BelowThreshold_NotLogged(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		h := newSlowQueryHarness(t, db, 5*time.Second) // huge — never trips
+		h := newSlowQueryHarness(t, db, 5*time.Second) // huge: never trips
 		_, err := h.wrapper.ExecContext(context.Background(), "INSERT INTO rows(id, n) VALUES ($1, $2)", "r1", 1)
 		if err != nil {
 			t.Fatalf("exec: %v", err)
@@ -100,9 +100,9 @@ func TestSlowQuery_ZeroThreshold_NoLogging(t *testing.T) {
 }
 
 // ============================================================================
-// The wrapper is a drop-in DBExecutor — feed it to a CrudHandler.
+// The wrapper is a drop-in DBExecutor, feed it to a CrudHandler.
 // List goes through the wrapper directly (no tx). Mutations open a tx via
-// the wrapper's BeginTx, then run their queries on the raw *sql.Tx — those
+// the wrapper's BeginTx, then run their queries on the raw *sql.Tx, those
 // escape the slow-query wrapper today (documented limitation).
 // ============================================================================
 

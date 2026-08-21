@@ -105,7 +105,7 @@ func TestBeforeGetHookCanFilter(t *testing.T) {
 		if p.ID != "n1" {
 			t.Errorf("BeforeGet ID=%q, want n1", p.ID)
 		}
-		// Scope to bob only — alice's row should 404.
+		// Scope to bob only, alice's row should 404.
 		p.AddWhere("owner = $1", "bob")
 		return nil
 	})
@@ -124,7 +124,7 @@ func TestBeforeGetHookCanFilter(t *testing.T) {
 }
 
 // TestUpdate_RejectsPresentEmptyRequired pins the data-corruption check at
-// the CRUD handler level — even with ValidatePartial, sending an explicit
+// the CRUD handler level, even with ValidatePartial, sending an explicit
 // empty-string for a Required field must fail validation, NOT silently
 // blank the column.
 func TestUpdate_RejectsPresentEmptyRequired(t *testing.T) {

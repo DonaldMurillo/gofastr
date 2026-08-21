@@ -186,7 +186,7 @@ func TestCRUDApi_ListAll_FilterSortLimit(t *testing.T) {
 			t.Fatalf("expected 2 rows after limit, got %d", len(got))
 		}
 		// "alpha" sorts first; "bravo" doesn't contain 'a'... wait it does.
-		// alpha, bravo, charlie, delta — 'a' present in alpha, bravo, charlie, delta? a in delta? d-e-l-t-a yes.
+		// alpha, bravo, charlie, delta, 'a' present in alpha, bravo, charlie, delta? a in delta? d-e-l-t-a yes.
 		// All four contain an 'a'. After title ASC limit 2: alpha, bravo.
 		if got[0]["title"] != "alpha" || got[1]["title"] != "bravo" {
 			t.Fatalf("unexpected ordering: %+v", got)

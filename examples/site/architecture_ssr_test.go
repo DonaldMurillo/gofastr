@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// SSR-layer architecture contract — these lock the "inline only when
+// SSR-layer architecture contract, these lock the "inline only when
 // visible at first paint" rule that the uihost applies on every page
 // response. Hidden click-to-open widgets must NOT appear in the
 // rendered HTML; deep-link-matched widgets MUST appear unhidden;
@@ -16,8 +16,8 @@ import (
 // search-engine indexing, screen-reader landmark navigation, or
 // no-JS rendering rely on this contract holding.
 
-// archStartServer brings up the live site backed by setupServer()
-// — exactly the binary served at :8083. Returns the base URL.
+// archStartServer brings up the live site backed by setupServer(),
+// exactly the binary served at :8083. Returns the base URL.
 func archStartServer(t *testing.T) string {
 	t.Helper()
 	fwApp := newTestApp(t)
@@ -45,7 +45,7 @@ func TestArchSSR_HiddenWidgetNotInlined(t *testing.T) {
 	base := archStartServer(t)
 	page := archFetch(t, base, "/components/modal")
 
-	// site-demo-modal is registered Hidden — must not appear in the bare page.
+	// site-demo-modal is registered Hidden, must not appear in the bare page.
 	if strings.Contains(page, `data-fui-widget="site-demo-modal"`) {
 		t.Error("contract violation: hidden widget 'site-demo-modal' must NOT be inlined into the page response; runtime fetches chrome lazily")
 	}
@@ -55,7 +55,7 @@ func TestArchSSR_HiddenWidgetNotInlined(t *testing.T) {
 }
 
 // CONTRACT: A deep-link-matched widget IS inlined into the page
-// response with its content visible — search engines and screen
+// response with its content visible, search engines and screen
 // readers see the modal as part of the document, no JS required to
 // reveal it. Hydration on this element is a no-op DOM-wise.
 func TestArchSSR_DeepLinkWidgetInlined(t *testing.T) {
@@ -76,7 +76,7 @@ func TestArchSSR_DeepLinkWidgetInlined(t *testing.T) {
 
 // CONTRACT: A non-hidden auto-mount widget (toast stack, banner,
 // persistent panel) IS inlined on every page so it's present
-// immediately on first paint — no flicker, no per-page chrome fetch.
+// immediately on first paint: no flicker, no per-page chrome fetch.
 func TestArchSSR_AutoMountWidgetInlined(t *testing.T) {
 	base := archStartServer(t)
 	// site-toasts is registered without .Hidden() in main.go so it
@@ -91,7 +91,7 @@ func TestArchSSR_AutoMountWidgetInlined(t *testing.T) {
 
 // CONTRACT: The deep-link-matched widget is open (no `hidden` attr),
 // not just present. Closed-but-inlined would be a confusing state
-// — view-source would show structure not visible in the browser.
+// View-source would show structure not visible in the browser.
 func TestArchSSR_DeepLinkWidgetIsOpen(t *testing.T) {
 	base := archStartServer(t)
 	page := archFetch(t, base, "/components/modal?modal=user-edit&user_id=42")
@@ -112,7 +112,7 @@ func TestArchSSR_DeepLinkWidgetIsOpen(t *testing.T) {
 }
 
 // CONTRACT: The bare `/components/modal` URL (no deep-link match)
-// has no hidden overlay widgets inlined. They are fetched lazily —
+// has no hidden overlay widgets inlined. They are fetched lazily,
 // apps must rely on the chrome endpoint rather than assume the
 // elements exist at page-load time.
 func TestArchSSR_BareURLHasNoHiddenWidgets(t *testing.T) {
@@ -156,7 +156,7 @@ func TestArchSSR_ScopedWidgetsAbsentFromOtherPages(t *testing.T) {
 		t.Error("scoped widget site-demo-drawer leaked onto /components/modal SSR")
 	}
 
-	// site-toasts is global — appears on every page.
+	// site-toasts is global, appears on every page.
 	for _, page := range []string{"/", "/get-started", "/components/modal", "/components/drawer"} {
 		body := archFetch(t, base, page)
 		if !strings.Contains(body, `data-fui-widget="site-toasts"`) {
@@ -181,7 +181,7 @@ func TestArchSSR_InlineLocationIsBeforeBodyClose(t *testing.T) {
 	if widgetIdx > bodyClose {
 		t.Error("contract violation: widget inlined AFTER </body>")
 	}
-	// The widget should be in the last 10% of the body — close to
+	// The widget should be in the last 10% of the body, close to
 	// </body> means "between </main> and </body>", not mid-content.
 	if widgetIdx < bodyClose-len(page)/10 {
 		// Loose heuristic; primarily a sanity check that we're not

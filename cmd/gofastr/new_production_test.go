@@ -20,7 +20,7 @@ func TestNewHandlerGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated: %v", err)
 	}
-	want := `// Ping handler — scaffolded by gofastr new handler.
+	want := `// Ping handler: scaffolded by gofastr new handler.
 package main
 
 import (
@@ -40,7 +40,7 @@ func Ping(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestNewRouteGolden(t *testing.T) {
-	// Route generation prints a snippet — assert the snippet text.
+	// Route generation prints a snippet; assert the snippet text.
 	got := routeSnippet("GET", "/items", "ItemHandler")
 	want := `app.Router().Handle("GET", "/items", ItemHandler)`
 	if got != want {
@@ -143,7 +143,7 @@ func TestNewCLIGeneratedHandlerBuilds(t *testing.T) {
 		t.Fatalf("handler not scaffolded: %v", err)
 	}
 
-	// `new entity` was removed — it must exit non-zero without scaffolding.
+	// `new entity` was removed. It must exit non-zero without scaffolding.
 	ent := exec.Command(bin, "new", "entity", "User", "name:string")
 	ent.Dir = dir
 	if out, err := ent.CombinedOutput(); err == nil || !strings.Contains(string(out), "removed") {

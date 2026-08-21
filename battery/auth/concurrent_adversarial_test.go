@@ -117,7 +117,7 @@ func TestConcurrent_VerifyEmailTokenIsSingleUse(t *testing.T) {
 // TestConcurrent_ResetPasswordTokenIsSingleUse pins the same atomicity
 // for PasswordResetPlugin: only one of N parallel reset attempts with
 // the same token must succeed. Otherwise the second redeem would set
-// the password to something the attacker controls — racey takeover.
+// the password to something the attacker controls, racey takeover.
 func TestConcurrent_ResetPasswordTokenIsSingleUse(t *testing.T) {
 	plug := NewPasswordResetPlugin(PasswordResetConfig{
 		BaseURL: "http://test",
@@ -248,8 +248,8 @@ func TestCancelledContext_PasswordReset_PartialFailureSurfaces(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancel
 
-	// The adversarialStore SetPassword doesn't honour ctx — it locks the
-	// mutex unconditionally — so this test documents current behavior:
+	// The adversarialStore SetPassword doesn't honour ctx, it locks the
+	// mutex unconditionally, so this test documents current behavior:
 	// the operation completes regardless. If a future store grows
 	// context-aware behavior, this assertion should flip to expect ctx.Err().
 	if err := store.SetPassword(ctx, "u-bob", "new-hash"); err != nil {

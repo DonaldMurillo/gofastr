@@ -63,7 +63,7 @@ func TestRelationFieldKnownEntityOK(t *testing.T) {
 }
 
 // --- Bug 3: the generated main must not print a success banner before
-// framework start — migrate failures would print "Server starting" then
+// framework start; migrate failures would print "Server starting" then
 // exit 1. The banner belongs in an OnReady hook fired after the port bound.
 
 func TestMainBannerAfterBind(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 )
 
 // maxModuleNameLen caps Plugin / Battery names. Above this length the
-// Register call rejects the registration — names appear in error
+// Register call rejects the registration, names appear in error
 // messages and structured log entries, so unbounded values become
 // log-volume amplification.
 const maxModuleNameLen = 128
@@ -33,20 +33,20 @@ func validModuleName(name string) error {
 	return nil
 }
 
-// Plugin is the interface for lightweight GoFastr extensions — anything
+// Plugin is the interface for lightweight GoFastr extensions, anything
 // that needs to register routes, middleware, hooks, or MCP tools but
 // has no dependency on other modules and no structured start/stop
 // lifecycle of its own.
 //
 // Plugins have a single integration point: Init(app). From there a plugin
-// does everything it needs by calling into the App — register routes via
+// does everything it needs by calling into the App, register routes via
 // app.Router, add middleware via app.Use, swap the logger via
 // app.SetLogger, register MCP tools via app.MCP, attach hooks via
 // app.HookRegistry(name).RegisterHook(...), and so on.
 //
 // There are no optional interfaces. The router resolves middleware
 // late-bound, so middleware added from Init wraps routes registered
-// before the plugin loaded — there is no ordering footgun to dodge.
+// before the plugin loaded, there is no ordering footgun to dodge.
 //
 // When to pick Plugin vs Battery
 //
@@ -105,9 +105,9 @@ func (pm *PluginManager) Register(plugin Plugin) error {
 
 // InitAll initializes all plugins in registration order.
 //
-// Wraps each Init in a deferred recover so a panic — most commonly
+// Wraps each Init in a deferred recover so a panic, most commonly
 // `http: multiple registrations for ...` from a duplicate route
-// pattern — gets tagged with the offending plugin's name. Without
+// pattern, gets tagged with the offending plugin's name. Without
 // this the panic surfaces deep in ServeMux with no context about
 // which plugin registered the conflicting route.
 //
@@ -138,7 +138,7 @@ func initPluginSafe(name string, plugin Plugin, app *App) (err error) {
 			// secret into every operator log via this error string.
 			// Operators wanting the full panic value can set
 			// GOTRACEBACK=all and read the stack.
-			err = fmt.Errorf("plugin %q init panicked (panic type %T) — set GOTRACEBACK=all for details", name, v)
+			err = fmt.Errorf("plugin %q init panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
 		}
 	}()
 	if e := plugin.Init(app); e != nil {

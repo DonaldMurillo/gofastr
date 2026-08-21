@@ -54,7 +54,7 @@ func auditLint(root string) ([]LintFinding, error) {
 		if err != nil {
 			return err
 		}
-		// Generated files (DO NOT EDIT header) get skipped — the
+		// Generated files (DO NOT EDIT header) get skipped. The
 		// developer can't fix findings there, only the generator can.
 		if isGeneratedFile(body) {
 			return nil
@@ -69,7 +69,7 @@ func auditLint(root string) ([]LintFinding, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Blueprint rule — unscoped PII (CLAUDE.md hard rule #6) in a
+	// Blueprint rule: unscoped PII (CLAUDE.md hard rule #6) in a
 	// conventional gofastr.yml/.yaml/.json at the audited root.
 	all = append(all, lintBlueprintPIIRoot(root)...)
 	sort.Slice(all, func(i, j int) bool {
@@ -109,13 +109,13 @@ func lintFile(rel string, body []byte) []LintFinding {
 	out = append(out, ruleRenderHTMLConcat(rel, body)...)
 	out = append(out, ruleSQLConcatUserInput(rel, body)...)
 	// Go-declared entities are linted with the same unscoped-PII rule as
-	// the blueprint path (CLAUDE.md hard rule #6) — it's the same defect.
+	// the blueprint path (CLAUDE.md hard rule #6), it's the same defect.
 	out = append(out, lintGoSourcePII(rel, body)...)
 	return out
 }
 
 // ----------------------------------------------------------------------------
-// Rule 1 — ignored db.Exec / tx.Exec result without best-effort annotation.
+// Rule 1: ignored db.Exec / tx.Exec result without best-effort annotation.
 // ----------------------------------------------------------------------------
 
 var reIgnoredExec = regexp.MustCompile(`(?:^|[\s;{])_,\s*_\s*=\s*\S+\.Exec(?:Context)?\b`)
@@ -155,7 +155,7 @@ func ruleIgnoredExec(rel string, body []byte) []LintFinding {
 				File:    rel,
 				Line:    lineNum,
 				Rule:    "ignored-exec",
-				Message: "ignored Exec result without `// best-effort: …` annotation — wrap or fail loud",
+				Message: "ignored Exec result without `// best-effort: …` annotation: wrap or fail loud",
 				Snippet: strings.TrimSpace(line),
 			})
 		}
@@ -168,11 +168,11 @@ func ruleIgnoredExec(rel string, body []byte) []LintFinding {
 }
 
 // ----------------------------------------------------------------------------
-// Rule 2 — <form method="POST"> in source without enough CSRFInputFromCtx
+// Rule 2: <form method="POST"> in source without enough CSRFInputFromCtx
 // call sites to cover every form. Counts forms vs call sites instead of
 // doing a file-level grep so a single CSRF wiring doesn't appear to
 // protect five different forms in the same file. Also ignores
-// CSRFInputFromCtx mentions inside comments — strings.Contains can't
+// CSRFInputFromCtx mentions inside comments. Strings.Contains can't
 // distinguish prose from code.
 // ----------------------------------------------------------------------------
 
@@ -190,7 +190,7 @@ func ruleFormWithoutCSRF(rel string, body []byte) []LintFinding {
 	// Strip line + block comments before counting CSRF call sites and raw
 	// _csrf fields so a "// TODO: wire CSRFInputFromCtx" or a commented
 	// name="_csrf" doesn't count as protection. The csrf-exempt:
-	// annotation is counted on the RAW body — it lives in a comment by
+	// annotation is counted on the RAW body, it lives in a comment by
 	// design.
 	stripped := stripGoComments(body)
 	csrfCalls := len(reCSRFCallNon.FindAllIndex(stripped, -1)) +
@@ -206,7 +206,7 @@ func ruleFormWithoutCSRF(rel string, body []byte) []LintFinding {
 	if len(formLines) <= csrfCalls {
 		return nil
 	}
-	// Report the surplus forms — first N where N = forms − csrfCalls.
+	// Report the surplus forms: first N where N = forms − csrfCalls.
 	// Don't try to guess which specific form lacks coverage; that
 	// requires real parsing. Flagging the file accurately is enough.
 	deficit := len(formLines) - csrfCalls
@@ -218,7 +218,7 @@ func ruleFormWithoutCSRF(rel string, body []byte) []LintFinding {
 			File:    rel,
 			Line:    ln + 1,
 			Rule:    "form-without-csrf",
-			Message: fmt.Sprintf("<form method=\"POST\"> count (%d) exceeds CSRFInputFromCtx call count (%d) — every POST form needs a CSRF input", len(formLines), csrfCalls),
+			Message: fmt.Sprintf("<form method=\"POST\"> count (%d) exceeds CSRFInputFromCtx call count (%d): every POST form needs a CSRF input", len(formLines), csrfCalls),
 			Snippet: strings.TrimSpace(lines[ln]),
 		})
 	}
@@ -227,7 +227,7 @@ func ruleFormWithoutCSRF(rel string, body []byte) []LintFinding {
 
 // stripGoComments removes // line comments and /* … */ block comments
 // so CSRF / lint annotations inside prose don't fool downstream regexes.
-// Doesn't honor string literals — close enough for the kinds of files
+// Doesn't honor string literals, close enough for the kinds of files
 // the lint pass cares about.
 var (
 	reLineComment  = regexp.MustCompile(`//[^\n]*`)
@@ -240,7 +240,7 @@ func stripGoComments(body []byte) []byte {
 }
 
 // ----------------------------------------------------------------------------
-// Rule 3 — render.HTML(...) with `+` concat (likely interpolating user input).
+// Rule 3: render.HTML(...) with `+` concat (likely interpolating user input).
 // ----------------------------------------------------------------------------
 
 var reRenderHTMLConcat = regexp.MustCompile(`render\.HTML\([^)]*\+[^)]*\)`)
@@ -262,7 +262,7 @@ func ruleRenderHTMLConcat(rel string, body []byte) []LintFinding {
 				File:    rel,
 				Line:    i + 1,
 				Rule:    "render-html-concat",
-				Message: "render.HTML with `+` concat raises XSS risk — use render.Text for untrusted strings, or annotate `// safe-html: <why>`",
+				Message: "render.HTML with `+` concat raises XSS risk: use render.Text for untrusted strings, or annotate `// safe-html: <why>`",
 				Snippet: strings.TrimSpace(line),
 			})
 		}
@@ -271,27 +271,27 @@ func ruleRenderHTMLConcat(rel string, body []byte) []LintFinding {
 }
 
 // ----------------------------------------------------------------------------
-// Rule 4 — SQL string-concat with user input. Three sub-patterns, all
+// Rule 4: SQL string-concat with user input. Three sub-patterns, all
 // heuristic; every match is suppressible with `// safe-sql:` on the line.
 //   (a) literal SQL keyword + `+ ident`
 //       e.g. db.Query("SELECT * WHERE name='" + name + "'")
 //   (b) fmt.Sprintf wrapping a SQL keyword with a `%s`/`%v` directive
 //       e.g. fmt.Sprintf("SELECT * WHERE name=%s", userInput)
 //   (c) query-builder methods (.Where / .Having / .OrderBy) called
-//       with a `+`-concat argument — flagged regardless of keyword
+//       with a `+`-concat argument, flagged regardless of keyword
 //       in the literal, because qb.Where("user_id = " + id) is the
 //       canonical SQLi anti-pattern from AI-generated code.
 // ----------------------------------------------------------------------------
 
 var (
 	// The INSERT anchor accepts SQLite's INSERT OR IGNORE/REPLACE INTO
-	// and MySQL's INSERT IGNORE INTO — all real statement forms.
+	// and MySQL's INSERT IGNORE INTO, all real statement forms.
 	reSQLConcatLiteral = regexp.MustCompile(`(?i)"[^"]*\b(?:SELECT\s|INSERT\s+(?:(?:OR\s+\w+|IGNORE)\s+)?INTO\s|UPDATE\s|DELETE\s+FROM\s)[^"]*"\s*\+\s*\w+`)
 	reSQLSprintf       = regexp.MustCompile(`(?i)fmt\.S?(?:print|printf)\(\s*"[^"]*\b(?:SELECT\s|INSERT\s+(?:(?:OR\s+\w+|IGNORE)\s+)?INTO\s|UPDATE\s|DELETE\s+FROM\s|WHERE\s|HAVING\s)[^"]*%[sv]`)
 	reSQLBuilderConcat = regexp.MustCompile(`\.(?:Where|Having|OrderBy|GroupBy)\(\s*"[^"]*"\s*\+\s*\w+`)
 	// Quote-adjacent interpolation: the variable or format directive sits
 	// inside SQL single-quotes ('" + name, '%s'). That is a VALUE
-	// position — dynamic identifiers are never quoted — so it is
+	// position, dynamic identifiers are never quoted, so it is
 	// suspicious regardless of the variable's name.
 	reSQLQuotedInterp = regexp.MustCompile(`'"\s*\+\s*\w+|'%[sv]|%[sv]'`)
 )
@@ -331,7 +331,7 @@ func ruleSQLConcatUserInput(rel string, body []byte) []LintFinding {
 			File:    rel,
 			Line:    i + 1,
 			Rule:    "sql-concat-user-input",
-			Message: "string-concat into a SQL statement looks like user-input interpolation — use $N / ? placeholders, or annotate `// safe-sql: <why>`",
+			Message: "string-concat into a SQL statement looks like user-input interpolation: use $N / ? placeholders, or annotate `// safe-sql: <why>`",
 			Snippet: strings.TrimSpace(line),
 		})
 	}
@@ -339,7 +339,7 @@ func ruleSQLConcatUserInput(rel string, body []byte) []LintFinding {
 }
 
 // ----------------------------------------------------------------------------
-// Rule 5 — t.Skip in test files without allow-skip annotation.
+// Rule 5: t.Skip in test files without allow-skip annotation.
 // ----------------------------------------------------------------------------
 
 func ruleTestSkip(rel string, body []byte) []LintFinding {
@@ -445,7 +445,7 @@ func ruleTestSkip(rel string, body []byte) []LintFinding {
 			File:    rel,
 			Line:    i + 1,
 			Rule:    "test-skip",
-			Message: "t.Skip in tests hides missing coverage — hard-fail instead, or annotate `// allow-skip: <why>`",
+			Message: "t.Skip in tests hides missing coverage: hard-fail instead, or annotate `// allow-skip: <why>`",
 			Snippet: strings.TrimSpace(line),
 		})
 	}

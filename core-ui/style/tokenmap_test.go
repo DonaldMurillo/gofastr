@@ -17,7 +17,7 @@ import (
 // Properties under test:
 //
 //   - Round-trip: ApplyTokens(t, ThemeToTokens(t)) preserves ThemeHash(t)
-//     (identical emitted CSS) — over style.DefaultTheme() AND the canonical
+//     (identical emitted CSS), over style.DefaultTheme() AND the canonical
 //     framework theme (which carries a populated DarkColors map).
 //   - Determinism: ThemeToTokens is a pure function.
 //   - Type validation: every token type accepts a valid value and rejects
@@ -73,7 +73,7 @@ func TestThemeToTokens_Deterministic(t *testing.T) {
 func TestThemeToTokens_KeysMatchCSSVarNames(t *testing.T) {
 	base := style.DefaultTheme()
 	tokens := style.ThemeToTokens(base)
-	// Spot-check one key per category — the key is the CSS custom-property
+	// Spot-check one key per category, the key is the CSS custom-property
 	// identifier without the leading "--", exactly what the :root block emits.
 	for _, key := range []string{
 		"color-primary", "color-code-surface",
@@ -113,7 +113,7 @@ func TestThemeToTokens_DarkColorsKeyScheme(t *testing.T) {
 		t.Errorf("light and dark primary collapsed to one value %q — dark. prefix not distinct",
 			tokens["color-primary"])
 	}
-	// No typed-token key contains a "." — the dark. prefix is unambiguous.
+	// No typed-token key contains a ".", the dark. prefix is unambiguous.
 	for k := range tokens {
 		if strings.HasPrefix(k, "dark.") {
 			continue

@@ -48,7 +48,7 @@ func originSourceFixture(t *testing.T, src fembed.OriginSource) embedFixture {
 }
 
 // With an OriginSource configured, the shell serves ONLY the customer named in
-// the request — not the whole allowlist. That is the per-customer model: each
+// the request, not the whole allowlist. That is the per-customer model: each
 // response leaks one customer's origins instead of every customer's.
 func TestEmbedShellServesPerCustomerOrigins(t *testing.T) {
 	src := &perCustomerSource{byCustomer: map[string][]string{
@@ -89,7 +89,7 @@ func TestEmbedShellServesPerCustomerOrigins(t *testing.T) {
 // today's whole-list-on-every-response), and STILL cannot obtain a usable
 // grant for the surface from an origin that is not allowed. The per-customer
 // shell leak grants no framing: the browser enforces against the real ancestor
-// chain, and a grant stays bound to the origin it was minted for — which the
+// chain, and a grant stays bound to the origin it was minted for, which the
 // static grant path refuses to widen.
 func TestEmbedShellPerCustomerLeakGrantsNoFraming(t *testing.T) {
 	src := &perCustomerSource{byCustomer: map[string][]string{
@@ -133,7 +133,7 @@ func TestEmbedShellFailsClosedOnUnknownCustomer(t *testing.T) {
 
 // An app that opts into a source commits to sending a customer id on every
 // shell request. An empty value, and an absent one, are both a misconfigured
-// snippet — and the safe answer in both is no framing.
+// snippet, and the safe answer in both is no framing.
 func TestEmbedShellFailsClosedOnEmptyOrAbsentCustomerID(t *testing.T) {
 	src := &perCustomerSource{byCustomer: map[string][]string{"acme": {"https://acme.com"}}}
 	f := originSourceFixture(t, src)
@@ -151,7 +151,7 @@ func TestEmbedShellFailsClosedOnEmptyOrAbsentCustomerID(t *testing.T) {
 }
 
 // A source that errors must fail closed. A broken lookup must never fall back
-// to "allow" — that would turn a DB outage into every surface framed by anyone.
+// to "allow". That would turn a DB outage into every surface framed by anyone.
 func TestEmbedShellFailsClosedOnSourceError(t *testing.T) {
 	src := &perCustomerSource{
 		byCustomer: map[string][]string{"acme": {"https://acme.com"}},
@@ -182,7 +182,7 @@ func TestEmbedShellStaticOriginsWhenNoSource(t *testing.T) {
 	}
 }
 
-// Allows answers the grant path's question — allowed for ANY customer.
+// Allows answers the grant path's question: allowed for ANY customer.
 func (s *perCustomerSource) Allows(_ context.Context, _, origin string) (bool, error) {
 	if s.err != nil && s.fails == "*" {
 		return false, s.err

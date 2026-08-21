@@ -55,7 +55,7 @@ func TestCounterMissingSignalName(t *testing.T) {
 }
 
 // TestCounterRegistersCSS guards that Counter ships its own scoped CSS
-// via the registry (otherwise the buttons render unstyled — the marker
+// via the registry (otherwise the buttons render unstyled: the marker
 // is present but no style is registered under that name).
 func TestCounterRegistersCSS(t *testing.T) {
 	css := counterStyle.Entry().CSSFor(style.Theme{})

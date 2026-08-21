@@ -22,7 +22,7 @@ import (
 // accept ? placeholders and requires explicit time.Time bindings).
 //
 // Postgres comes from $TEST_POSTGRES_DSN if set; otherwise an ephemeral
-// testcontainer. If neither is reachable the subtest skips — it does
+// testcontainer. If neither is reachable the subtest skips, it does
 // not fail (same convention as framework/auth/dialect_test.go).
 
 var (
@@ -210,7 +210,7 @@ func TestEntitySessionStore_Postgres_TwoFARoundTrip(t *testing.T) {
 // TestEntitySessionStore_Postgres_ExpiryAndCleanup exercises the expired-
 // row path on PG, where time comparisons use TIMESTAMPTZ semantics rather
 // than SQLite's permissive string compare. The Cleanup query binds
-// time.Now() directly — this verifies lib/pq accepts the time.Time bind
+// time.Now() directly, this verifies lib/pq accepts the time.Time bind
 // and the DELETE drops only the expired row.
 func TestEntitySessionStore_Postgres_ExpiryAndCleanup(t *testing.T) {
 	db := openPGForBattery(t)
@@ -223,7 +223,7 @@ func TestEntitySessionStore_Postgres_ExpiryAndCleanup(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	expired := now.Add(-time.Hour)
-	// Mirror EntitySessionStore.Create — Postgres requires the id PK to
+	// Mirror EntitySessionStore.Create. Postgres requires the id PK to
 	// be supplied since AutoUUID columns are NOT NULL with no DEFAULT.
 	q := store.qTable("INSERT INTO %s (id, token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)")
 	if _, err := db.ExecContext(ctx, q, generateUserID(), tok, "user-expired", now, expired); err != nil {
@@ -347,6 +347,6 @@ func TestSessionStorePGLegacyBools(t *testing.T) {
 
 // errNoPG is what the auth Postgres suite reports when no server is supplied.
 // The testcontainers fallback that used to sit here was removed so the Docker
-// client stack stays out of every consumer's module graph — see cmd/repolint's
+// client stack stays out of every consumer's module graph. See cmd/repolint's
 // test-only-dep-in-consumer-graph rule.
 var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts one")

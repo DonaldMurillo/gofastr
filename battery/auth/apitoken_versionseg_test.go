@@ -3,7 +3,7 @@ package auth
 import "testing"
 
 // A version-like path segment is skipped only when a real resource segment
-// follows it. A table genuinely named "v1"/"v2" must still require a scope —
+// follows it. A table genuinely named "v1"/"v2" must still require a scope,
 // skipping the last segment leaves resource empty, and the empty case falls
 // through unchecked, which would be an authorization bypass.
 func TestAPIScopes_VersionSegmentNeverSwallowsResource(t *testing.T) {

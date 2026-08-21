@@ -9,8 +9,8 @@ import (
 // TestMCPAppConfigReflectsRunningServerTimeouts pins the second half of
 // effectiveServerTimeoutsMs: once App.Start has built the http.Server, the
 // app_config introspection tool must report the deadlines the LIVE server
-// actually uses — defaults plus HTTPServerTimeouts overrides and
-// DisableRequestTimeout zeroing — not the pre-start default constants the
+// actually uses, defaults plus HTTPServerTimeouts overrides and
+// DisableRequestTimeout zeroing, not the pre-start default constants the
 // pre-Start path falls back to. An operator asking "why did my handler get
 // cut?" via MCP gets the resolved values, not guesses.
 func TestMCPAppConfigReflectsRunningServerTimeouts(t *testing.T) {

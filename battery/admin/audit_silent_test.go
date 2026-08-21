@@ -24,7 +24,7 @@ func capturingLogger(buf *bytes.Buffer) *slog.Logger {
 
 // TestRBAC_GrantAuditFailureLogged pins the audit-fire-and-forget fix: when
 // the audit-row INSERT fails AFTER the grant already took effect, the failure
-// must reach the log — a silent success here is a security gap (the mutation
+// must reach the log, a silent success here is a security gap (the mutation
 // is durable but unrecorded). The grant itself must still succeed.
 func TestRBAC_GrantAuditFailureLogged(t *testing.T) {
 	b, h, policy, _, _, _ := rbacTestEnv(t)
@@ -50,7 +50,7 @@ func TestRBAC_GrantAuditFailureLogged(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("grant got %d, want 303; body=%s", rr.Code, rr.Body.String())
 	}
-	// The mutation MUST still take effect — failing the audit row does not roll
+	// The mutation MUST still take effect, failing the audit row does not roll
 	// back the grant.
 	if !access.Can(c, "posts:write") {
 		t.Fatal("expected grant to apply even when audit write fails")

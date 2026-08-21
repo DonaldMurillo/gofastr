@@ -353,7 +353,7 @@ func TestVisual_PanelChromeStyling(t *testing.T) {
 		chromedp.EmulateViewport(1280, 800),
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-widget`, chromedp.ByQuery),
-		// Panel always opens immediately under the new framework — the
+		// Panel always opens immediately under the new framework, the
 		// legacy FAB-toggle no longer exists. Just confirm the panel is
 		// rendered with the expected open state.
 		chromedp.Evaluate(`document.querySelector(".kiln-panel").classList.contains("kiln-open")`, &panelOpen),

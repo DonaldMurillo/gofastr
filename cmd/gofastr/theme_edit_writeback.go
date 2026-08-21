@@ -15,14 +15,14 @@ import (
 )
 
 // emitThemeGoSource renders t as a complete, gofmt'd theme.go source file
-// the user owns forever — the same shape `gofastr theme init` writes, but
+// the user owns forever, the same shape `gofastr theme init` writes, but
 // with the edited values.
 //
 // # Security: every string value is emitted with %q
 //
 // Theme values are free-form CSS: oklch() expressions, font stacks with
 // embedded quotes, shadow lists. A raw backtick literal has no escape
-// mechanism, so a single backtick in a value closes it — the same class
+// mechanism, so a single backtick in a value closes it: the same class
 // of injection blueprint_emitter_injection_test.go pins for the IR
 // emitters. %q produces a Go double-quoted literal that escapes every
 // breaking byte (backtick, quote, newline, backslash), so no theme
@@ -32,7 +32,7 @@ import (
 //
 // Names are intentionally omitted from every token field: the file ends
 // with `func init() { style.AutoFillNames(&App) }`, which derives every
-// Name from the Go struct-field path — the same contract `gofastr theme
+// Name from the Go struct-field path, the same contract `gofastr theme
 // init` ships. Emitting Names here would only duplicate what AutoFillNames
 // already produces and give a malicious value one more surface to reach.
 func emitThemeGoSource(t style.Theme, pkgName string) ([]byte, error) {
@@ -57,14 +57,14 @@ func emitThemeGoSource(t style.Theme, pkgName string) ([]byte, error) {
 	b.WriteString("var App = style.Theme{\n")
 	fmt.Fprintf(&b, "\tName: %q,\n", t.Name)
 
-	// DarkColors — sorted for byte-stable output.
+	// DarkColors: sorted for byte-stable output.
 	b.WriteString("\tDarkColors: map[string]string{\n")
 	for _, k := range sortedStringKeys(t.DarkColors) {
 		fmt.Fprintf(&b, "\t\t%q: %q,\n", k, t.DarkColors[k])
 	}
 	b.WriteString("\t},\n")
 
-	// DarkCode — only emitted when non-empty (the optional code palette).
+	// DarkCode: only emitted when non-empty (the optional code palette).
 	if len(t.DarkCode) > 0 {
 		b.WriteString("\tDarkCode: map[string]string{\n")
 		for _, k := range sortedStringKeys(t.DarkCode) {
@@ -342,7 +342,7 @@ func packageNameForPath(p string) string {
 // The package clause is the ONE string in the emitted file that does not go
 // through %q, because it is an identifier rather than a literal. A directory
 // called "design-system" therefore produced `package design-system`, which does
-// not parse — so Write failed on every attempt with a 500 carrying the whole
+// not parse, so Write failed on every attempt with a 500 carrying the whole
 // generated file, and nothing was ever written. Same for a leading digit, a
 // dot, or a Go keyword.
 func sanitizePackageName(name string) string {

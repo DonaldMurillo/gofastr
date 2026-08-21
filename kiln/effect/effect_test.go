@@ -55,7 +55,7 @@ func TestSetFieldFromExpression(t *testing.T) {
 
 func TestSetFieldLiteralWhenNotExpression(t *testing.T) {
 	// Plain string that doesn't parse as an expression: treat as literal.
-	// We force literal via a leading backtick — see Run/setField docs.
+	// We force literal via a leading backtick. See Run/setField docs.
 	data := map[string]any{}
 	scope := effect.Scope{Entity: data}
 	if err := effect.Run(context.Background(),

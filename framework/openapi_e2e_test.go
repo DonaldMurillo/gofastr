@@ -304,7 +304,7 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	doc := buildDocAsAny(spec)
 	paths := doc["paths"].(map[string]any)
 
-	// GET /posts/{id} — 200 response should reference posts schema
+	// GET /posts/{id}: 200 response should reference posts schema
 	detailPath := getNestedMap(paths, "/posts/{id}")
 	detailGet := getNestedMap(detailPath, "get")
 	responses := getNestedMap(detailGet, "responses")
@@ -315,7 +315,7 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	dataRef := getNestedMap(getNestedMap(schemaRef, "properties"), "data")
 	assertEqual(t, "get 200 data schema ref", "#/components/schemas/posts", dataRef["$ref"])
 
-	// POST /posts — 201 response should reference posts schema
+	// POST /posts: 201 response should reference posts schema
 	listPath := getNestedMap(paths, "/posts")
 	postOp := getNestedMap(listPath, "post")
 	createResponses := getNestedMap(postOp, "responses")
@@ -326,7 +326,7 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	createDataRef := getNestedMap(getNestedMap(createSchemaRef, "properties"), "data")
 	assertEqual(t, "create 201 data schema ref", "#/components/schemas/posts", createDataRef["$ref"])
 
-	// PATCH /posts/{id} — sparse update shares the single-record envelope.
+	// PATCH /posts/{id}: sparse update shares the single-record envelope.
 	patchOp := getNestedMap(detailPath, "patch")
 	patchResponses := getNestedMap(patchOp, "responses")
 	patch200 := getNestedMap(patchResponses, "200")
@@ -343,7 +343,7 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 		t.Fatal("PATCH request schema must not require omitted fields")
 	}
 
-	// List 200 is now oneOf [ListResponse, CursorPage] — verify ListResponse
+	// List 200 is now oneOf [ListResponse, CursorPage], verify ListResponse
 	// is one of the variants.
 	listGet := getNestedMap(listPath, "get")
 	listResponses := getNestedMap(listGet, "responses")
@@ -383,7 +383,7 @@ func TestE2E_OpenAPI_ServeSpecViaHTTP(t *testing.T) {
 	spec := EntityOpenAPI(app.Registry, "Blog API", "2.0.0")
 	// E2E test exercises the spec body without authenticating, so use
 	// the explicit public variant (openapi.Handler 401s anonymous
-	// callers — see exposure_security_test.go).
+	// callers. See exposure_security_test.go).
 	app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
 
 	ta := TestHarness(t, app)
@@ -496,7 +496,7 @@ func TestE2E_OpenAPI_FilterParameters(t *testing.T) {
 		}
 	}
 
-	// Filter params — now documented as <field>, <field>_gt, <field>_gte, etc.
+	// Filter params, now documented as <field>, <field>_gt, <field>_gte, etc.
 	for _, name := range []string{"id", "id_gt", "id_lt", "title", "title_like", "views", "views_gte", "published"} {
 		if _, ok := paramMap[name]; !ok {
 			t.Errorf("missing filter param %q", name)
@@ -538,7 +538,7 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	resp.AssertStatus(t, http.StatusOK)
 	resp.AssertBodyContains(t, "Blog")
 
-	// UI page — the embedded HTML page now points at OpenAPI viewers
+	// UI page, the embedded HTML page now points at OpenAPI viewers
 	// rather than vendoring swagger-ui (see core/openapi/handler.go
 	// removing the CDN reference). Assert against the new copy.
 	resp = ta.Get("/api/docs/")

@@ -11,7 +11,7 @@ import (
 //
 // Themed loading-state preset over `core-ui/patterns/skeleton`. The
 // underlying skeleton primitive emits `aria-hidden="true"`, so these
-// compositions inherit the same visual-only semantics — assistive tech
+// compositions inherit the same visual-only semantics: assistive tech
 // announces the surrounding container's loading state, not the
 // skeleton shapes.
 
@@ -61,7 +61,7 @@ func SkeletonCard(cfg SkeletonCardConfig) render.HTML {
 
 // SkeletonRowConfig configures a SkeletonRow.
 type SkeletonRowConfig struct {
-	// HideChevron drops the trailing chevron skeleton — use for plain
+	// HideChevron drops the trailing chevron skeleton: use for plain
 	// label/value rows that aren't drill-down navigable.
 	HideChevron bool
 	ID          string

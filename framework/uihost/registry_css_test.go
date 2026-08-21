@@ -119,8 +119,8 @@ func TestComponentCSS_MultipleComponentsBundleLink(t *testing.T) {
 }
 
 func TestComponentCSS_EagerLinkEvenWithoutRender(t *testing.T) {
-	// Register an entry the page does NOT render, but mark LoadAlways
-	// — the SSR host must still emit its <link>.
+	// Register an entry the page does NOT render, but mark LoadAlways.
+	// The SSR host must still emit its <link>.
 	st := registerTestStyle(t, "always", registry.WithLoad(registry.LoadAlways))
 	// Use the default test host whose home page does NOT render this style.
 	ds := newTestUIHost()
@@ -211,7 +211,7 @@ func TestComponentCSS_CatalogShipsViaManifestJS(t *testing.T) {
 	if !strings.Contains(manifest, `"loadMode":"auto"`) {
 		t.Errorf("default loadMode should be auto: %s", truncate(manifest, 800))
 	}
-	// Old endpoint is removed entirely — should 404, not be registered.
+	// Old endpoint is removed entirely: should 404, not be registered.
 	req = httptest.NewRequest("GET", "/__gofastr/catalog.js", nil)
 	w = httptest.NewRecorder()
 	ds.ServeHTTP(w, req)

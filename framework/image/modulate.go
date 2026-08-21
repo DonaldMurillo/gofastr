@@ -30,7 +30,7 @@ func Float64(v float64) *float64 { return &v }
 // Modulate returns a new *Image with brightness and saturation applied.
 // A Modulation with both fields nil leaves the source unchanged.
 //
-// NaN values are treated as nil (no change for that channel) — they
+// NaN values are treated as nil (no change for that channel). They
 // usually indicate a config-parsing bug (e.g., int(NaN)=0 or a JSON
 // null surfacing as NaN). +Inf/-Inf clamp via the channel limits as
 // you'd expect: +Inf brightness → 255, -Inf → 0.
@@ -56,7 +56,7 @@ func (i *Image) Modulate(m Modulation) *Image {
 
 	// Fast paths for the two image types the framework actually uses.
 	// Going through image.Image.At allocates a color.Color interface
-	// per pixel — 16k allocs on a 128² image. Reading the underlying
+	// per pixel, 16k allocs on a 128² image. Reading the underlying
 	// Pix slice directly is zero-alloc.
 	switch src := i.img.(type) {
 	case *stdimage.NRGBA:
@@ -176,7 +176,7 @@ func applyModulation(r, g, b uint8, brightness, saturation float64) (uint8, uint
 	fg := float64(g) * brightness
 	fb := float64(b) * brightness
 	if saturation != 1 {
-		// Rec. 601 luma weights — same coefficients sharp/Bun use.
+		// Rec. 601 luma weights, same coefficients sharp/Bun use.
 		gray := 0.299*fr + 0.587*fg + 0.114*fb
 		fr = gray + (fr-gray)*saturation
 		fg = gray + (fg-gray)*saturation
@@ -188,7 +188,7 @@ func applyModulation(r, g, b uint8, brightness, saturation float64) (uint8, uint
 func clamp8(v float64) uint8 {
 	// NaN comparisons return false in both directions, so the
 	// v<0 / v>255 guards fall through and uint8(NaN) is platform-
-	// defined (typically 0). Treat NaN as 0 explicitly — it usually
+	// defined (typically 0). Treat NaN as 0 explicitly. It usually
 	// indicates a 0×Inf intermediate from a config-bug brightness/
 	// saturation pair, and silent black is the least surprising
 	// outcome.

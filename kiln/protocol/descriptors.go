@@ -139,7 +139,7 @@ var descriptors = map[string]Descriptor{
 		Name: "update_page_element",
 		Description: "Patch one element inside a page tree without re-sending the whole page. " +
 			"Address the element by its stable _id (read it from /kiln/world/pages.<path>). " +
-			"Non-destructive — page edits don't lose persisted data, no plan required. " +
+			"Non-destructive: page edits don't lose persisted data, no plan required. " +
 			"patch.op selects the operation: set_props (merge), replace_props, replace_subtree, " +
 			"remove, insert_before, insert_after, append_child. " +
 			"Pass if_match=<page.version> for optimistic concurrency; mismatch returns a conflict so you can refetch.",
@@ -215,7 +215,7 @@ var descriptors = map[string]Descriptor{
 	},
 	"reject_plan": {
 		Name:        "reject_plan",
-		Description: "Reject a proposed plan. Rejected plans cannot later be approved — propose a new one. Typically invoked by the panel on user click.",
+		Description: "Reject a proposed plan. Rejected plans cannot later be approved: propose a new one. Typically invoked by the panel on user click.",
 		Schema: object(map[string]any{
 			"plan_id": str(""),
 			"reason":  str("optional explanation"),
@@ -228,7 +228,7 @@ var descriptors = map[string]Descriptor{
 	},
 	"reset_session": {
 		Name:        "reset_session",
-		Description: "Wipe the entire journal and reload to an empty world. Used by the panel's Reset button. Destructive in scope but does not require a plan — it's a user-initiated start-over.",
+		Description: "Wipe the entire journal and reload to an empty world. Used by the panel's Reset button. Destructive in scope but does not require a plan: it's a user-initiated start-over.",
 		Destructive: true,
 		Schema:      object(nil, nil),
 	},

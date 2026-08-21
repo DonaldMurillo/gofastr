@@ -53,7 +53,7 @@ func TestMCPToolsRegistered(t *testing.T) {
 }
 
 // TestMCPToolsDisabledWhenNotEnabled pins that the default Config{}
-// does NOT register the MCP tools — opt-in only.
+// does NOT register the MCP tools, opt-in only.
 func TestMCPToolsDisabledWhenNotEnabled(t *testing.T) {
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "mcpoff"}))
 	app.RegisterPlugin(log.New(log.Config{Sinks: []log.Sink{&memSink{}}}))
@@ -69,7 +69,7 @@ func TestMCPToolsDisabledWhenNotEnabled(t *testing.T) {
 }
 
 // TestMCPMutationGated pins that log_set_level is only registered when
-// Config.AllowMCPMutation is true — the default is read-only-safe.
+// Config.AllowMCPMutation is true, the default is read-only-safe.
 func TestMCPMutationGated(t *testing.T) {
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "mcpro"}))
 	app.RegisterPlugin(log.New(log.Config{
@@ -166,7 +166,7 @@ func TestMCPSetLevelMutatesThreshold(t *testing.T) {
 	app.Logger().Debug("invisible-at-info")
 
 	// Switch to DEBUG via the tool. log_set_level mutates the running app,
-	// so it runs behind an authenticated-caller gate — the tool call carries
+	// so it runs behind an authenticated-caller gate, the tool call carries
 	// the identity the route middleware would have resolved.
 	ctx := handler.SetUser(context.Background(), "u1")
 	result, err := app.MCP.CallTool(ctx, "log_set_level", map[string]any{"level": "DEBUG"})
@@ -204,7 +204,7 @@ func TestMCPSetLevelMutatesThreshold(t *testing.T) {
 }
 
 // TestMCPFilterReturnsNewestMatches pins that log_filter, like
-// log_recent, returns the MOST RECENT matches up to limit — not the
+// log_recent, returns the MOST RECENT matches up to limit, not the
 // oldest. (Catches the chronology-direction bug.)
 func TestMCPFilterReturnsNewestMatches(t *testing.T) {
 	app := newMCPApp(t)
@@ -273,7 +273,7 @@ func TestMCPLimitClampedToRingCap(t *testing.T) {
 	}
 	entries := result.(map[string]any)["entries"].([]map[string]any)
 	// We don't care how many entries came back (depends on ring + lifecycle
-	// events) — only that the call didn't blow up and the count is
+	// events), only that the call didn't blow up and the count is
 	// bounded by the ring cap.
 	if len(entries) > 64 {
 		t.Fatalf("entries=%d exceeds ring cap 64 — clamp failed", len(entries))

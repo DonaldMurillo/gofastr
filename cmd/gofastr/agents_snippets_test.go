@@ -13,15 +13,15 @@ import (
 // block from every agents.md and validates two classes of reference
 // against the battery's source:
 //
-//  1. Package-direct (`auth.New`, `email.LoadFromDir`) — must be an
+//  1. Package-direct (`auth.New`, `email.LoadFromDir`): must be an
 //     exported identifier of the battery.
 //  2. Instance-method (`q.RegisterHandler` where
-//     `q, err := queue.NewDBQueue(...)`) — must be a method on the
+//     `q, err := queue.NewDBQueue(...)`): must be a method on the
 //     constructor's return type. Distinguishes `q.Register` from
 //     `q.RegisterHandler` even when `Register` exists as a method on
 //     a DIFFERENT type in the same package (e.g. ScheduleBuilder).
 //
-// Heuristic, not full type-checking — but covers the four failure
+// Heuristic, not full type-checking, but covers the four failure
 // modes that motivated the test (queue.Register, webhook.Start(ctx),
 // email.LoadFromDir signature, auth.NewAuthManager) without dragging
 // in golang.org/x/tools/go/packages.
@@ -67,7 +67,7 @@ func TestAgentsMDSnippetsReferenceRealSymbols(t *testing.T) {
 					}
 					continue
 				}
-				// Instance-method ref — resolve constructor → type, then
+				// Instance-method ref: resolve constructor → type, then
 				// check method against that type's method set.
 				typeName, ok := api.CtorReturn[r.ReceiverType]
 				if !ok {
@@ -127,7 +127,7 @@ func extractGoBlocks(md []byte) []string {
 // extractSnippetRefs finds package-direct + instance-method references
 // in block. For instance-method refs, the binding's receiver type is
 // resolved via the snippet's constructor call (e.g. `q := queue.NewX(...)`
-// binds `q` to whatever `NewX` returns — looked up by the caller via
+// binds `q` to whatever `NewX` returns, looked up by the caller via
 // loadPackageAPI).
 func extractSnippetRefs(block, batteryName string) []snippetRef {
 	var out []snippetRef
@@ -219,7 +219,7 @@ func loadPackageAPI(t *testing.T, dir string) packageAPI {
 			api.Exports[name] = true
 			// Record the constructor's return type so a binding like
 			// `idx := embed.Open(...)` resolves to its method set. Not
-			// limited to New* — any exported func returning a LOCAL exported
+			// limited to New*. Any exported func returning a LOCAL exported
 			// type counts (e.g. Open returning the Index interface). Returns
 			// of error/builtins/other-package types are skipped.
 			if rt := stripPointer(firstType(ret)); isLocalExportedType(rt) {
@@ -228,7 +228,7 @@ func loadPackageAPI(t *testing.T, dir string) packageAPI {
 		}
 		// Methods: record under the receiver type, and ALSO add to
 		// Exports so package-direct lookups like `auth.HashPassword`
-		// (which is a func, not a method) still work — the method
+		// (which is a func, not a method) still work. The method
 		// declarations don't overlap with funcs anyway.
 		for _, m := range reMethodWithReceiver.FindAllStringSubmatch(text, -1) {
 			recv, method := stripPointer(m[1]), m[2]
@@ -237,7 +237,7 @@ func loadPackageAPI(t *testing.T, dir string) packageAPI {
 			}
 			api.TypeMethods[recv][method] = true
 		}
-		// Struct fields: `type X struct { ... }` — exported field names,
+		// Struct fields: `type X struct { ... }`. Exported field names,
 		// including comma-grouped declarations (`Host, Port string`).
 		for _, m := range reStructDecl.FindAllStringSubmatch(text, -1) {
 			name, body := m[1], m[2]
@@ -298,23 +298,23 @@ func firstType(s string) string {
 }
 
 var (
-	// `func Name(...)` — package-level functions (no receiver).
+	// `func Name(...)`: package-level functions (no receiver).
 	reFuncDecl = regexp.MustCompile(`(?m)^func\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
-	// `func Name(args) ReturnType {` — captures name + return for ctor map.
+	// `func Name(args) ReturnType {`: captures name + return for ctor map.
 	// Greedy non-newline match keeps us within the signature line.
 	reFuncDeclWithReturn = regexp.MustCompile(`(?m)^func\s+([A-Z][A-Za-z0-9_]*)\s*\([^)]*\)\s*([^{]+)\{`)
-	// `func (r *Type) Method(...)` — captures receiver type + method.
+	// `func (r *Type) Method(...)`: captures receiver type + method.
 	reMethodWithReceiver = regexp.MustCompile(`(?m)^func\s+\([A-Za-z_]+\s+\*?([A-Z][A-Za-z0-9_]*)\)\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
 	// Also keep the simpler method regex for callers that don't need receiver info.
 	reMethodDecl   = regexp.MustCompile(`(?m)^func\s+\([^)]+\)\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
 	reTypeDecl     = regexp.MustCompile(`(?m)^type\s+([A-Z][A-Za-z0-9_]*)\s+\S`)
 	reConstVarDecl = regexp.MustCompile(`(?m)^(?:const|var)\s+([A-Z][A-Za-z0-9_]*)\s+`)
-	// `type X interface { ... }` — captures the name + body (up to the
+	// `type X interface { ... }`: captures the name + body (up to the
 	// closing brace at column 0) so interface method sets are introspectable.
 	reInterfaceDecl = regexp.MustCompile(`(?sm)^type\s+([A-Z][A-Za-z0-9_]*)\s+interface\s*\{(.*?)\n\}`)
 	// A method line inside an interface body: `Method(...)`.
 	reInterfaceMethod = regexp.MustCompile(`(?m)^\s*([A-Z][A-Za-z0-9_]*)\s*\(`)
-	// `type X struct { ... }` — name + body up to the closing brace at
+	// `type X struct { ... }`: name + body up to the closing brace at
 	// column 0, mirroring reInterfaceDecl.
 	reStructDecl = regexp.MustCompile(`(?sm)^type\s+([A-Z][A-Za-z0-9_]*)\s+struct\s*\{(.*?)\n\}`)
 	// A field line inside a struct body: exported name(s), optionally

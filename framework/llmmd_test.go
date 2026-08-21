@@ -14,7 +14,7 @@ import (
 )
 
 // ============================================================================
-// EntityLLMMD generates comprehensive markdown for an entity
+// EntityLLMMD generates the full markdown for an entity
 // ============================================================================
 
 func TestEntityLLMMD_BasicEntity(t *testing.T) {
@@ -241,7 +241,7 @@ func TestLLMMDHandler_HTTP(t *testing.T) {
 		},
 	})
 
-	// LLMMDHandler now requires an authenticated context — see
+	// LLMMDHandler now requires an authenticated context. See
 	// exposure_security_test.go::TestEntityLLMMDHandler_RequiresAuth.
 	// Inject a user so the legacy 200 path still has coverage.
 	h := crud.LLMMDHandler(ent)
@@ -288,7 +288,7 @@ func TestRegisterCrudRoutesFunc_NoLLMMD(t *testing.T) {
 	req := httptest.NewRequest("GET", "/items/llm.md", nil)
 	mux.ServeHTTP(rec, req)
 
-	// Should get 404 or method not allowed — not 200 with markdown
+	// Should get 404 or method not allowed, not 200 with markdown
 	if rec.Code == 200 {
 		t.Error("expected /items/llm.md to NOT be registered with NoLLMMD=true")
 	}
@@ -301,7 +301,7 @@ func TestRegistryLLMMDHandler_HTTP(t *testing.T) {
 		},
 	)
 
-	// RegistryLLMMDHandler now requires an authenticated context — see
+	// RegistryLLMMDHandler now requires an authenticated context. See
 	// exposure_security_test.go::TestRegistryLLMMDHandler_RequiresAuth.
 	h := crud.RegistryLLMMDHandler(reg, "Test")
 	req := httptest.NewRequest("GET", "/llm.md", nil)

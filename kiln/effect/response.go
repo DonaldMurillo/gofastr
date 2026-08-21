@@ -37,7 +37,7 @@ func Resolve(ctx context.Context, a world.Action, scope Scope) (Response, error)
 // validStatus reports whether code is inside the range net/http's
 // WriteHeader accepts. Anything else panics there, and the kiln route path
 // installs raw http.HandlerFuncs (render.applyRoutes) whose panic recovery
-// is an opt-in middleware the world has to declare — so the panic is
+// is an opt-in middleware the world has to declare, so the panic is
 // uncontained by default. 0 is excluded here and normalized to 200 by
 // WriteTo, matching net/http's own "no explicit status" behavior.
 func validStatus(code int) bool { return code >= 100 && code <= 999 }
@@ -88,7 +88,7 @@ func resolveJSON(a world.Action, s Scope) (Response, error) {
 		}
 		// The status is an expression evaluated per request against the
 		// route scope, so its value is attacker-influenced even for a
-		// benign IR — `len(ctx.path)` against a 3-character path yields 3,
+		// benign IR, `len(ctx.path)` against a 3-character path yields 3,
 		// and WriteHeader(3) panics. Reject here, before the value can
 		// reach net/http.
 		if !validStatus(resp.Status) {
@@ -111,8 +111,8 @@ func resolveJSON(a world.Action, s Scope) (Response, error) {
 }
 
 // toInt narrows a scalar to int. A bare int(f) on a float64 is undefined in
-// Go when f is NaN, ±Inf, or outside int's range — 1e30 produced
-// 9223372036854775807 here — so the float case checks round-trippability
+// Go when f is NaN, ±Inf, or outside int's range, 1e30 produced
+// 9223372036854775807 here, so the float case checks round-trippability
 // instead of trusting the conversion.
 func toInt(v any) (int, bool) {
 	switch n := v.(type) {

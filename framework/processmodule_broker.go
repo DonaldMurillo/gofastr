@@ -61,7 +61,7 @@ type Broker struct {
 
 	// --- Delegation handle table (design §5): in-memory, replica-local. ---
 	// The handle round-trips only within one replica over stdio; an unknown
-	// handle denies. No HMAC, no signed token — an exfiltrated handle is
+	// handle denies. No HMAC, no signed token, an exfiltrated handle is
 	// meaningless on another replica.
 	mu      sync.Mutex
 	handles map[string]delegationEntry
@@ -93,7 +93,7 @@ type BrokerOption func(*Broker)
 // WithBrokerPolicy installs the app-wide RolePolicy so an ambient (caller-less)
 // reverse call can resolve the module's synthetic `module/<name>` role against
 // its operator-approved grants. Optional: when nil, ambient re-dispatch is
-// anonymous and fails closed on any RBAC-gated entity (still safe — the
+// anonymous and fails closed on any RBAC-gated entity (still safe, the
 // owner/tenant gates refuse regardless).
 func WithBrokerPolicy(p *access.RolePolicy) BrokerOption {
 	return func(b *Broker) { b.policy = p }
@@ -118,7 +118,7 @@ func WithBrokerClock(now func() time.Time) BrokerOption {
 
 // NewBroker constructs a capability broker. router/entities/events may be nil;
 // a nil dependency makes the corresponding reverse surface deny (fail-closed)
-// rather than silently succeed — the supervisor's [NopBroker] is the all-deny
+// rather than silently succeed, the supervisor's [NopBroker] is the all-deny
 // degenerate case. apiPrefix is the app's API prefix ("" or "/api") used to
 // build entity CRUD re-dispatch paths.
 func NewBroker(router http.Handler, entities entity.Registry, events *event.EventBus, apiPrefix string, opts ...BrokerOption) *Broker {
@@ -165,14 +165,14 @@ func mustHandle(p *moduleproto.Peer, method string, h moduleproto.Handler) {
 // host.* calls so the broker can re-attach THIS request's caller context to
 // the CRUD re-dispatch. release() MUST be called when the parent call returns
 // (including buffered-503 crash paths) so the in-memory table does not leak.
-// A nil r is the ambient (caller-less) path — MintDelegation is still legal
+// A nil r is the ambient (caller-less) path. MintDelegation is still legal
 // but returns an empty handle the broker treats as ambient.
 func (b *Broker) MintDelegation(r *http.Request, parentCallID uint64) (string, func()) {
 	handle, err := randomHandle()
 	if err != nil {
 		// Entropy failure is fatal: rand.Read failing means the handle would
 		// be the identical all-zero string for every call, and the handle IS
-		// the delegation credential. Fail loud — mirrors
+		// the delegation credential. Fail loud, mirrors
 		// battery/auth/apitoken.go ("Entropy failure is fatal"). The panic
 		// is contained by the host's recovery middleware (→ 503/500); no
 		// handle is minted, so no delegation occurs.
@@ -302,7 +302,7 @@ func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, ca
 //  1. module-grant pre-filter: [access.ScopeMatch](view.Grants, <entity>:<verb>);
 //  2. CrossOwnerRead carve-out, module-grant half (belt-and-suspenders): the
 //     install-time carve-out already removed these from view.Grants, so a
-//     present non-grantable scope means tampering — deny;
+//     present non-grantable scope means tampering: deny;
 //  3. delegation resolve: look up the handle (ambient when empty), denying on
 //     unknown/expired/released;
 //  4. CrossOwnerRead carve-out, delegated-caller half (belt-and-suspenders):
@@ -316,7 +316,7 @@ func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, ca
 // re-dispatch context with the caller's identity re-attached.
 func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleGrantView, caller moduleproto.CallerRef) (*entity.Entity, context.Context, error) {
 	// Trust boundary: a child cannot name an arbitrary resource. The resource
-	// is the entity it asked for, resolved through the HOST's registry — a
+	// is the entity it asked for, resolved through the HOST's registry, a
 	// name the registry does not know is denied, never silently empty.
 	ent := b.lookupEntity(entityName)
 	if ent == nil {
@@ -345,7 +345,7 @@ func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleG
 		return nil, nil, err
 	}
 
-	// (4) CrossOwnerRead delegated-caller half — belt-and-suspenders. The
+	// (4) CrossOwnerRead delegated-caller half, belt-and-suspenders. The
 	// root-cause guarantee is the brokeredCall marker resolveCaller stamps on
 	// the re-dispatch context: crossOwnerReadGranted returns false for it, so
 	// owner scoping holds by construction regardless of the re-resolved
@@ -569,7 +569,7 @@ func (b *Broker) eventHandler(view ModuleGrantView) moduleproto.Handler {
 // ----- helpers -----
 
 // lookupEntity resolves an entity name through the host registry. Returns nil
-// for an unknown name or a nil registry — both deny (fail-closed).
+// for an unknown name or a nil registry, both deny (fail-closed).
 func (b *Broker) lookupEntity(name string) *entity.Entity {
 	if b.entities == nil || name == "" {
 		return nil
@@ -611,7 +611,7 @@ func snapshotRequest(entry delegationEntry) *http.Request {
 // entityQuerySuffix expands the structured query params into the CRUD list
 // query string the filter/sort/select/limit/offset DSL expects. p.Filter MUST
 // be allow-listed by the caller (dispatchEntity runs it through sanitizeFilter)
-// before reaching here — expandRaw forwards every key verbatim, so an
+// before reaching here, expandRaw forwards every key verbatim, so an
 // unfiltered filter would let a child inject control keys (include/trashed/…).
 func entityQuerySuffix(p moduleproto.EntityQueryParams) string {
 	q := url.Values{}
@@ -639,7 +639,7 @@ func entityQuerySuffix(p moduleproto.EntityQueryParams) string {
 
 // expandRaw sets one query param per top-level key of a JSON object filter.
 // Non-object filters are ignored (the host's filter DSL is a flat map). It is
-// an UNFILTERED primitive — every key is forwarded verbatim — so the caller
+// an UNFILTERED primitive, every key is forwarded verbatim, so the caller
 // MUST allow-list first (see sanitizeFilter, which mirrors the crud/mcp.go
 // listTool field allow-list). Do NOT call expandRaw on an untrusted filter.
 func expandRaw(q url.Values, raw json.RawMessage) {
@@ -656,7 +656,7 @@ func expandRaw(q url.Values, raw json.RawMessage) {
 }
 
 // sanitizeFilter reduces a child-supplied filter object to the keys that name
-// a declared, non-Hidden, non-NoQuery field of ent — optionally suffixed with
+// a declared, non-Hidden, non-NoQuery field of ent, optionally suffixed with
 // a comparison operator the filter DSL recognizes (_gt/_gte/_lt/_lte/_like/_in).
 // Control keys (include/trashed/where/limit/sort/fields/q/…), Hidden/NoQuery
 // field names, and undeclared names are dropped so they can never reach the
@@ -805,7 +805,7 @@ func mapSearchResult(res any) any {
 }
 
 // mapRedispatchErr converts a CRUD chokepoint failure into a wire error. A
-// 401/403 from the re-dispatch is the caller-authority half failing — surface
+// 401/403 from the re-dispatch is the caller-authority half failing, surface
 // it as a capability denial so the adversarial property ("caller lacks the
 // perm → 403 from the re-dispatch") is observable as a denial.
 func mapRedispatchErr(err error) error {

@@ -1,7 +1,7 @@
 package main
 
 // =============================================================================
-// /components — the showcase screens.
+// /components, the showcase screens.
 //
 // The catalog itself (the 141 entries, the code snippets, the note-only
 // set, the demo support code for the three stateful demos) now lives in
@@ -20,7 +20,7 @@ package main
 //     demoState and pass it to gallery's lock-free render helpers. The
 //     gallery's own Demo closures render the SEED view; these render the
 //     LIVE view for the visitor.
-//   - ComponentsIndexScreen and ComponentShowcaseScreen — the two screens
+//   - ComponentsIndexScreen and ComponentShowcaseScreen, the two screens
 //     registered in main.go.
 //
 // This is a pure move: no behavior, no markup, no styling changed. The
@@ -65,7 +65,7 @@ var (
 )
 
 // groupCatalog, demoSectionMenuConfig, and componentGroup live in
-// components_sidebar.go — they share the SectionMenu builder with the
+// components_sidebar.go, they share the SectionMenu builder with the
 // sidebar render. They are thin re-exports of gallery.Grouped(),
 // gallery.DemoSectionMenuConfig(), and gallery.Group respectively.
 // columnByID looks up a column in this session's board by container id.
@@ -91,7 +91,7 @@ func resetOptimisticNotes() { resetDemoSessions() }
 // The three stateful demos build their full markup via gallery's
 // parameterized render helpers, passing the visitor's session data in.
 // gallery's own catalog closures call the same helpers with the seed data
-// (no request) — that's what a theme previewer / static export sees.
+// (no request), that's what a theme previewer / static export sees.
 
 // kanbanDemo renders the sortable-kanban demo for the ctx's session.
 func kanbanDemo(ctx context.Context) render.HTML {
@@ -122,7 +122,7 @@ func optimisticDeleteDemo(ctx context.Context) render.HTML {
 }
 
 // =============================================================================
-// /components/  — the index page listing every catalog entry as a card,
+// /components/, the index page listing every catalog entry as a card,
 // grouped by category. Re-uses .docs / .doc.. grid from the concepts page.
 // =============================================================================
 
@@ -136,7 +136,7 @@ func (s *ComponentsIndexScreen) ScreenType() app.ScreenType { return app.ScreenP
 
 func (s *ComponentsIndexScreen) Render() render.HTML {
 	// The inner /components/* layout supplies the sidebar (ComponentsSidebar
-	// component) — this screen is just the overview content cell. Grouped
+	// component), this screen is just the overview content cell. Grouped
 	// card grid, no rail (the sidebar is the persistent nav).
 	groups := groupCatalog()
 
@@ -148,7 +148,7 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 			render.Text("."),
 		),
 		html.Paragraph(html.TextConfig{Class: "components-overview__lede"},
-			render.Text("One page per constructor. Use the sidebar to jump between them — it tracks the page you're on."),
+			render.Text("One page per constructor. Use the sidebar to jump between them; it tracks the page you're on."),
 		),
 	)
 
@@ -187,7 +187,7 @@ func twoDigit(n int) string {
 }
 
 // =============================================================================
-// /components/{slug} — single-component showcase page.
+// /components/{slug}, single-component showcase page.
 // =============================================================================
 
 // ComponentShowcaseScreen implements RenderCtx so the three stateful demos
@@ -195,7 +195,7 @@ func twoDigit(n int) string {
 // in ctx and a reload reflects their own state. It ALSO keeps an explicit
 // Render() that delegates to RenderCtx with a background context: SSR and
 // static export prefer RenderCtx, but the llm.md generator
-// (core-ui/app/llmmd.go) calls Component.Render() directly — without this the
+// (core-ui/app/llmmd.go) calls Component.Render() directly, without this the
 // seed-rendering fallback would be an empty component.ContextOnly stub and
 // every /components/*/llm.md page would go blank.
 type ComponentShowcaseScreen struct {
@@ -250,7 +250,7 @@ func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 		),
 		html.Div(html.DivConfig{Class: "doc-head__meta"},
 			tagAccent(s.Entry.Category),
-			// Real source package, linked to its API docs — this is
+			// Real source package, linked to its API docs, this is
 			// the per-component "usage/reference" the page otherwise
 			// lacked. (Was hardcoded "framework/ui" for everything.)
 			html.LinkHTML(html.LinkHTMLConfig{
@@ -275,7 +275,7 @@ func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 		// are labeled "Live"; ones that show an explanatory note (need
 		// per-page wiring) are labeled "Note" so the box is honest.
 		s.demoStage(ctx),
-		// Example code — the Go that produced the live demo above.
+		// Example code, the Go that produced the live demo above.
 		s.usage(),
 	)
 }

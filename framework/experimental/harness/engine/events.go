@@ -20,7 +20,7 @@ import (
 // transport-specific bookkeeping.
 //
 // Subscribers receive a buffered channel; slow subscribers risk
-// dropped events. The Bus does NOT persist — see session.Store for the
+// dropped events. The Bus does NOT persist. See session.Store for the
 // durable log.
 type Bus struct {
 	session ids.SessionID
@@ -54,7 +54,7 @@ func (b *Bus) Session() ids.SessionID { return b.session }
 //
 // Buffer is sized to absorb short bursts without blocking the engine.
 // Subscribers that fall behind have their stale events dropped to
-// preserve liveness — see § Per-transport rules → Backpressure for
+// preserve liveness. See § Per-transport rules → Backpressure for
 // the policy.
 func (b *Bus) Subscribe(ctx context.Context) <-chan control.EventEnvelope {
 	sub := &subscription{ch: make(chan control.EventEnvelope, 256)}
@@ -128,7 +128,7 @@ func (b *Bus) Close() {
 }
 
 func (b *Bus) broadcast(env control.EventEnvelope) {
-	// Hold RLock through the send loop — the per-sub close
+	// Hold RLock through the send loop, the per-sub close
 	// goroutine takes WLock to delete + close, so it can't race a
 	// send-on-closed panic. Sends are non-blocking (select default
 	// drops) so holding the lock isn't a liveness problem.

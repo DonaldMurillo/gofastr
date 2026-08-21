@@ -30,8 +30,8 @@ type HookFunc func(ctx context.Context, data any) error
 // HookRegistry stores lifecycle hooks grouped by hook type.
 //
 // Registration is normally a setup-time activity, but two things read a
-// registry on the request path — the CRUD handler's own hook lookups, and
-// ?include= resolving a CHILD entity's registry — while kiln's build-mode
+// registry on the request path, the CRUD handler's own hook lookups, and
+// ?include= resolving a CHILD entity's registry, while kiln's build-mode
 // runtime registers hooks against a live server. An unguarded map would make
 // that pairing a concurrent read/write, which is an unrecoverable runtime
 // throw rather than a panic a hook recover() could catch.
@@ -60,7 +60,7 @@ func (hr *HookRegistry) RegisterHook(hookType HookType, fn HookFunc) {
 
 // ExecuteHooks runs all registered hooks for the given type in registration
 // order. It stops on the first error and returns it. A panic inside a hook
-// is caught and surfaced as an error — without recovery a single buggy or
+// is caught and surfaced as an error, without recovery a single buggy or
 // third-party hook would tear down the entire request goroutine.
 func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, data any) error {
 	// Snapshot under the lock, then run unlocked: a hook may register another

@@ -159,7 +159,7 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 }
 
 // Build produces the final parameterized SQL and argument slice.
-// It does not mutate the QueryBuilder — safe to call multiple times.
+// It does not mutate the QueryBuilder: safe to call multiple times.
 func (qb *QueryBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
@@ -167,7 +167,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	args := make([]any, len(qb.args))
 	copy(args, qb.args)
 
-	// SELECT columns — each variadic column is sanitized to drop
+	// SELECT columns: each variadic column is sanitized to drop
 	// SQL meta-sequences. Column slots only ever hold dotted idents
 	// or "*" in practice; sanitizeColumn also collapses whitespace so
 	// a payload that smuggles a sub-SELECT can't survive verbatim.
@@ -211,7 +211,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 			// framework-injected AND scopes via SQL precedence (which
 			// would let `tenant_id = X AND visibility = 'pub' OR
 			// author_id = Y AND owner_id = Z` group as `(... AND pub)
-			// OR (...AND Z)` — bypassing tenant scope on the OR
+			// OR (...AND Z)`, bypassing tenant scope on the OR
 			// branch). Wrapping each condition makes the AND/OR tree
 			// reflect the caller's intent.
 			condition := renumberPlaceholders(w.condition, paramIdx)
@@ -222,7 +222,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 		}
 	}
 
-	// ORDER BY — column gets fragment sanitisation, direction is
+	// ORDER BY: column gets fragment sanitisation, direction is
 	// hard-clamped to ASC/DESC/empty so a CRLF / DROP smuggle in the
 	// direction slot can't appear in the emitted SQL.
 	if len(qb.orderBy) > 0 {
@@ -261,7 +261,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 // Semantics are POSITIONAL by encounter, not value-mapping: the first
 // placeholder token found becomes $startIdx, the next $startIdx+1, and so
 // on, regardless of the original digits. This is the contract the whole
-// fragment-composition model depends on — And/Or/Not (framework/entity's
+// fragment-composition model depends on: And/Or/Not (framework/entity's
 // Condition), the DSL, and nested-filter EXISTS subqueries each emit their
 // own args numbered from $1, and Build concatenates the arg slices in the
 // same order it renumbers. A composed "(name = $1 OR name = $1)" with two
@@ -272,7 +272,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 // Quote-aware: a $N inside a single-quoted SQL string literal is data, not
 // a placeholder, and is left untouched (a doubled ” is an escaped quote
 // that does not close the literal). This is the one behavior the older
-// positional renumberer got wrong — it rewrote digits inside literals.
+// positional renumberer got wrong: it rewrote digits inside literals.
 func renumberPlaceholders(condition string, startIdx int) string {
 	var sb strings.Builder
 	next := startIdx
@@ -283,7 +283,7 @@ func renumberPlaceholders(condition string, startIdx int) string {
 		case c == '\'':
 			// A string literal is data: copy it byte for byte, including
 			// any $N inside it. E'…' honours backslash escapes, so \' does
-			// NOT end that literal — reading it as a terminator used to
+			// NOT end that literal, reading it as a terminator used to
 			// drop the lexer out of the string early and renumber the rest
 			// of it.
 			i = copyStringLiteral(&sb, condition, i)
@@ -319,7 +319,7 @@ func renumberPlaceholders(condition string, startIdx int) string {
 			sb.WriteString(condition[i:j])
 			i = j
 		case c == '$':
-			// $tag$…$tag$ (and bare $$…$$) is a dollar-quoted literal —
+			// $tag$…$tag$ (and bare $$…$$) is a dollar-quoted literal,
 			// also data. Its body regularly contains $1-looking text.
 			if body, ok := dollarQuoteEnd(condition, i); ok {
 				sb.WriteString(condition[i:body])
@@ -392,7 +392,7 @@ func copyStringLiteral(sb *strings.Builder, s string, i int) int {
 // literal runs to the end of the string.
 func dollarQuoteEnd(s string, i int) (int, bool) {
 	j := i + 1
-	// $1 is a placeholder, never a tag — tags cannot start with a digit.
+	// $1 is a placeholder, never a tag: tags cannot start with a digit.
 	if j < len(s) && isASCIIDigit(s[j]) {
 		return 0, false
 	}

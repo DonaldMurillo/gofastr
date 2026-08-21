@@ -196,7 +196,7 @@ func TestStatusEndpointFieldsParam(t *testing.T) {
 		t.Errorf("last_user should not appear when not requested: %v", got)
 	}
 
-	// world only — heavy field, opt-in.
+	// world only, heavy field, opt-in.
 	req = httptest.NewRequest(http.MethodGet, "/kiln/status?fields=world", nil)
 	rec = httptest.NewRecorder()
 	l.ServeHTTP(rec, req)
@@ -262,14 +262,14 @@ func TestToolDispatchUnknownTool(t *testing.T) {
 // Every descriptor must be reachable via the HTTP /kiln/tool/{name}
 // surface. The two dispatch tables (kiln/agent/loop.go for in-process
 // + MCP, kiln/chat/server.go for HTTP) are easy to update out of step
-// — this test pins the invariant: if you add a descriptor, you also
+// This test pins the invariant: if you add a descriptor, you also
 // have to wire HTTP, otherwise the tool surface published in /kiln/world
 // claims a tool that callers can't actually invoke from curl.
 func TestEveryDescriptorReachableViaHTTP(t *testing.T) {
 	l, tools := setup(t)
 	for _, d := range tools.List() {
 		t.Run(d.Name, func(t *testing.T) {
-			// Send `{}` — most tools fail validation, which is fine. We
+			// Send `{}`, most tools fail validation, which is fine. We
 			// only care that the dispatcher recognized the tool name
 			// and got far enough to invoke it. Status 400 with body
 			// "unknown tool" is the failure mode this guards against.
@@ -363,14 +363,14 @@ func TestSSEMountedOnAux(t *testing.T) {
 // /kiln/world marshals sess.World wholesale, and the world carries
 // App.Auth.JWTSecret and App.Admin.SeedPassword. The chat panel links
 // the endpoint from every page, so a session-forging secret and an
-// admin password sat one click away in a tab — the same class as the
+// admin password sat one click away in a tab, the same class as the
 // v0.11.0 secrets-to-env fix, on a sibling that was missed.
 func TestWorldDumpRedactsSecrets(t *testing.T) {
 	l, tools := setup(t)
 	tools.AddEntity(t.Context(), protocol.AddEntityArgs{
 		Entity: &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}},
 	})
-	// Set the credential-bearing config directly on the live world —
+	// Set the credential-bearing config directly on the live world,
 	// this is the state a `kiln` session reaches after configuring auth.
 	l.ReadSession(func(sess *journal.Session) {
 		sess.World.App.Auth.Enabled = true
@@ -392,7 +392,7 @@ func TestWorldDumpRedactsSecrets(t *testing.T) {
 			t.Errorf("SECURITY: [disclosure] /kiln/world served %s verbatim", secret)
 		}
 	}
-	// Non-secret configuration must survive — a redaction that blanks
+	// Non-secret configuration must survive, a redaction that blanks
 	// the whole section makes the endpoint useless for its actual job.
 	if !strings.Contains(body, "admin@example.com") {
 		t.Errorf("redaction removed non-secret config too: %s", body)

@@ -15,9 +15,9 @@ import (
 )
 
 // testPrincipal is the Principal every fixture below wires. Idempotency
-// no-ops without one — caching into a namespace shared by every caller
+// no-ops without one; caching into a namespace shared by every caller
 // would replay one user's response body to another
-// (TestIdempotencyRequiresPrincipal) — so a test that omits it exercises
+// (TestIdempotencyRequiresPrincipal). So a test that omits it exercises
 // the no-op, not the middleware.
 func testPrincipal(r *http.Request) string {
 	if c := r.Header.Get("X-Caller"); c != "" {
@@ -304,7 +304,7 @@ func TestMemoryStore_TTLExpiry(t *testing.T) {
 func TestIdempotency_ReplayDoesNotOverwriteUpstreamHeaders(t *testing.T) {
 	// Upstream middleware writes a per-request header (mimics RequestID).
 	// On replay, that header should reflect the CURRENT request, not the
-	// original one — the cache only stores headers the handler set.
+	// original one; the cache only stores headers the handler set.
 	reqID := int32(0)
 	upstream := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -386,10 +386,10 @@ func (f failingStore) Finish(_ context.Context, _, _ string, _ *IdempotentRespon
 //
 // Attack: Principal defaulted to nil, making the storage key
 // "\x00"+key for every caller. Two users who pick the same
-// Idempotency-Key value — a UUID collision is unlikely, but a client
-// library using a request-scoped counter, a retry helper hashing the
-// payload, or a hand-written "order-1" are not — land on the same entry,
-// and the second is served the FIRST user's cached response body. The
+// Idempotency-Key value land on the same entry. A UUID collision is
+// unlikely, but a client library using a request-scoped counter, a
+// retry helper hashing the payload, or a hand-written "order-1" are not.
+// The second is served the FIRST user's cached response body. The
 // rest of this file already fails closed (FailOpen defaults false,
 // credential headers are stripped from replays); this default was the
 // odd one out.

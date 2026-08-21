@@ -58,8 +58,8 @@ type FormConfig struct {
 
 	// Ctx, when non-nil, lets Form auto-stamp the hidden CSRF input
 	// (the framework's "_csrf" field) on unsafe-method submits. It
-	// reads middleware.TokenFromContext(Ctx) — i.e. the token the CSRF
-	// middleware stashes on every request — so callers do not have to
+	// reads middleware.TokenFromContext(Ctx), i.e. the token the CSRF
+	// middleware stashes on every request, so callers do not have to
 	// remember `render.HTML(csrfInput(ctx))` as the first child of
 	// every form. Nil-safe: a form rendered without Ctx omits the
 	// hidden input (matches pre-v3 behavior so existing tests and
@@ -68,7 +68,7 @@ type FormConfig struct {
 
 	ID    string
 	Class string
-	// ExtraAttrs are passed through to the <form> element — e.g. the
+	// ExtraAttrs are passed through to the <form> element, e.g. the
 	// data-fui-rpc-* attributes that turn the form into an island that
 	// submits JSON to a CRUD endpoint.
 	ExtraAttrs html.Attrs
@@ -106,7 +106,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	// Auto-embed the hidden CSRF input on unsafe-method submits when a
 	// request ctx is available. POST is the only unsafe method Form
 	// accepts (panic above), so the check is simply "POST + ctx + token
-	// on ctx". GET forms get nothing — they aren't behind CSRF.
+	// on ctx". GET forms get nothing. They aren't behind CSRF.
 	if method == "POST" && cfg.Ctx != nil {
 		if tok := middleware.TokenFromContext(cfg.Ctx); tok != "" {
 			children = append(children, csrfHiddenInput(tok))
@@ -147,7 +147,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 
 	action := urlsafe.CleanAnchor(cfg.Action)
 	if action == "" {
-		// A form pointed at a dangerous URL is worse than a no-op — the
+		// A form pointed at a dangerous URL is worse than a no-op. The
 		// user clicks submit and credentials flow somewhere unexpected.
 		// Refuse to render the action and let the surrounding page
 		// surface the failure when the form goes nowhere.
@@ -166,8 +166,8 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 // csrfFormField is the hidden-input name Form emits when Ctx carries a
 // CSRF token. It matches the framework's default (battery/auth.CSRFFormField
 // + middleware.CSRFConfig.FormField when unset). Hosts that override the
-// form field name in their CSRF config should NOT use Form's auto-embed
-// — render their own hidden input via auth.CSRFInputFromCtx instead.
+// form field name in their CSRF config should NOT use Form's auto-embed.
+// Render their own hidden input via auth.CSRFInputFromCtx instead.
 const csrfFormField = "_csrf"
 
 // csrfHiddenInput renders the same markup as battery/auth.CSRFInputFromCtx
@@ -194,7 +194,7 @@ func FormFieldFor(errs FieldErrors, name string, cfg FormFieldConfig) render.HTM
 // ─── ValidationSummary ───────────────────────────────────────────────
 //
 // Inline summary of all form validation errors rendered as a danger
-// callout with links to each erroneous field. Pure SSR — no runtime JS.
+// callout with links to each erroneous field. Pure SSR, no runtime JS.
 
 // ValidationSummaryConfig configures a ValidationSummary.
 type ValidationSummaryConfig struct {

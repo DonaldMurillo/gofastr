@@ -131,7 +131,7 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 			if title == "" {
 				title = "(untitled)"
 			}
-			fmt.Fprintf(w, "  + %s — %q [root kind: %s]\n", page.Path, title, page.Tree.Kind)
+			fmt.Fprintf(w, "  + %s: %q [root kind: %s]\n", page.Path, title, page.Tree.Kind)
 		}
 	}
 
@@ -139,7 +139,7 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 	if len(world.Hooks) > 0 {
 		fmt.Fprintf(w, "\nhooks (%d):\n", len(world.Hooks))
 		for _, h := range world.Hooks {
-			fmt.Fprintf(w, "  + %s on %s/%s — %s\n", h.ID, h.Entity, h.When, h.Action.Kind)
+			fmt.Fprintf(w, "  + %s on %s/%s: %s\n", h.ID, h.Entity, h.When, h.Action.Kind)
 		}
 	}
 
@@ -147,7 +147,7 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 	if len(world.Routes) > 0 {
 		fmt.Fprintf(w, "\nroutes (%d):\n", len(world.Routes))
 		for _, r := range world.Routes {
-			fmt.Fprintf(w, "  + %s %s — %s\n", r.Method, r.Path, r.Action.Kind)
+			fmt.Fprintf(w, "  + %s %s: %s\n", r.Method, r.Path, r.Action.Kind)
 		}
 	}
 
@@ -159,7 +159,7 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 		}
 	}
 
-	// Plans (informational — not part of the produced source, but
+	// Plans (informational; not part of the produced source, but
 	// useful for "did the user actually approve all the destructive
 	// ops?" review).
 	if len(sess.Plans) > 0 {
@@ -187,7 +187,7 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 
 	if len(world.Entities) == 0 && len(world.Pages) == 0 &&
 		len(world.Hooks) == 0 && len(world.Routes) == 0 && len(world.Seeds) == 0 {
-		fmt.Fprintf(w, "\n(empty world — journal has no world edits)\n")
+		fmt.Fprintf(w, "\n(empty world: journal has no world edits)\n")
 	}
 }
 

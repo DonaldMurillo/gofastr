@@ -27,7 +27,7 @@ type cssRule struct {
 // outerParent returns the outermost at-rule wrapper, or "" if none.
 // Used by the coalescing emitter to group adjacent same-query rules
 // into a single @media/@container block. The name makes it explicit
-// that only the outermost wrapper is returned — len(r.parents) may
+// that only the outermost wrapper is returned, len(r.parents) may
 // be >1 for nested Media/Container.
 func (r *cssRule) outerParent() string {
 	if len(r.parents) == 0 {
@@ -67,7 +67,7 @@ func (ss *StyleSheet) Set(props ...string) *StyleSheet {
 		panic("stylesheet: Set called before any Rule(); call .Rule(\"…\") first")
 	}
 	if len(props)%2 != 0 {
-		panic(fmt.Sprintf("stylesheet: Set on %q expects pairs of prop, value; got %d args (odd) — last arg %q has no value",
+		panic(fmt.Sprintf("stylesheet: Set on %q expects pairs of prop, value; got %d args (odd). Last arg %q has no value",
 			ss.during.selector, len(props), props[len(props)-1]))
 	}
 	for i := 0; i < len(props); i += 2 {
@@ -90,13 +90,13 @@ func (ss *StyleSheet) Transition(transitions ...string) *StyleSheet {
 }
 
 // Pseudo adds a pseudo-class/element rule nested under the current selector.
-// Args alternate prop, value, … (odd count panics — see Set).
+// Args alternate prop, value, … (odd count panics. See Set).
 func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 	if ss.during == nil {
 		panic("stylesheet: Pseudo(" + pseudo + ") called before any Rule(); call .Rule(\"…\") first")
 	}
 	if len(props)%2 != 0 {
-		panic(fmt.Sprintf("stylesheet: Pseudo(%q) expects pairs of prop, value; got %d args (odd) — last arg %q has no value",
+		panic(fmt.Sprintf("stylesheet: Pseudo(%q) expects pairs of prop, value; got %d args (odd). Last arg %q has no value",
 			pseudo, len(props), props[len(props)-1]))
 	}
 	child := cssRule{selector: ss.during.selector + pseudo}
@@ -109,13 +109,13 @@ func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 }
 
 // Child adds a descendant selector rule under the current rule.
-// Args alternate prop, value, … (odd count panics — see Set).
+// Args alternate prop, value, … (odd count panics. See Set).
 func (ss *StyleSheet) Child(descendant string, props ...string) *StyleSheet {
 	if ss.during == nil {
 		panic("stylesheet: Child(" + descendant + ") called before any Rule(); call .Rule(\"…\") first")
 	}
 	if len(props)%2 != 0 {
-		panic(fmt.Sprintf("stylesheet: Child(%q) expects pairs of prop, value; got %d args (odd) — last arg %q has no value",
+		panic(fmt.Sprintf("stylesheet: Child(%q) expects pairs of prop, value; got %d args (odd). Last arg %q has no value",
 			descendant, len(props), props[len(props)-1]))
 	}
 	child := cssRule{selector: ss.during.selector + " " + descendant}
@@ -232,7 +232,7 @@ func (ss *StyleSheet) CSS() string {
 				fmt.Fprintf(&b, "%s {\n", top)
 				atParent = top
 			}
-			ss.writeRuleInner(&b, r, 1) // skip the outermost — we just emitted it
+			ss.writeRuleInner(&b, r, 1) // skip the outermost, we just emitted it
 			continue
 		}
 		if atParent != "" {
@@ -258,7 +258,7 @@ func (ss *StyleSheet) writeRule(b *strings.Builder, r cssRule) {
 // start=0 means "open every wrapper"; start=1 means "the outermost
 // is already open, skip it".
 func (ss *StyleSheet) writeRuleInner(b *strings.Builder, r cssRule, start int) {
-	// @keyframes — special handling. Always the outermost wrapper.
+	// @keyframes: special handling. Always the outermost wrapper.
 	if start == 0 && len(r.parents) > 0 && strings.HasPrefix(r.parents[0], "@keyframes") {
 		fmt.Fprintf(b, "%s {\n", r.parents[0])
 		for _, child := range r.children {
@@ -298,7 +298,7 @@ func (ss *StyleSheet) writeRuleInner(b *strings.Builder, r cssRule, start int) {
 			ss.writeRuleInner(b, child, 1)
 			continue
 		}
-		// Non-media child after an open @media block — close the
+		// Non-media child after an open @media block, close the
 		// at-rule first so this child doesn't get nested inside it.
 		if atParent != "" {
 			b.WriteString("}\n")

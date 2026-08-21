@@ -23,7 +23,7 @@ type Query struct {
 	Limit  int
 	Offset int
 	// FieldEquals restricts results to documents whose Fields contain every
-	// given key with exactly the given value. This is the scope hook —
+	// given key with exactly the given value. This is the scope hook,
 	// callers put tenant/owner/permission columns in Document.Fields at index
 	// time and filter here, in-query, instead of post-filtering.
 	//

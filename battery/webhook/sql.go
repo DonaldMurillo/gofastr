@@ -67,7 +67,7 @@ func WithSQLDeliveriesTable(name string) SQLOption {
 // Use [NewAESGCMSecretCodec] to wrap a 16/24/32-byte key. Callers that
 // genuinely want plaintext storage (DB encrypted at rest, threat model
 // excludes a DB-snapshot attacker) must use [WithSQLAllowPlaintext]
-// explicitly — there is no plaintext default.
+// explicitly, there is no plaintext default.
 func WithSQLSecretCodec(c SecretCodec) SQLOption {
 	return func(s *SQLStore) {
 		if c != nil {
@@ -96,7 +96,7 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 		subTable: "webhook_subscribers",
 		delTable: "webhook_deliveries",
 		dialect:  "sqlite",
-		// codec deliberately nil — callers must choose explicitly
+		// codec deliberately nil, callers must choose explicitly
 		// (WithSQLSecretCodec for AES-GCM, or WithSQLAllowPlaintext
 		// to acknowledge plaintext storage).
 	}
@@ -104,7 +104,7 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 		opt(s)
 	}
 	if s.codec == nil {
-		return nil, errors.New("webhook: NewSQLStore requires WithSQLSecretCodec(...) or WithSQLAllowPlaintext() — refusing to silently store subscriber secrets in cleartext")
+		return nil, errors.New("webhook: NewSQLStore requires WithSQLSecretCodec(...) or WithSQLAllowPlaintext(): refusing to silently store subscriber secrets in cleartext")
 	}
 	if !safeIdent(s.subTable) || !safeIdent(s.delTable) {
 		return nil, errors.New("webhook: unsafe table name")
@@ -299,7 +299,7 @@ func (s *SQLStore) ListDeadDeliveries(ctx context.Context, limit int) ([]Deliver
 
 // ResetDelivery implements [ReplayableStore]: returns a dead delivery to
 // pending (attempts + error cleared, due now). The `AND status = dead` clause
-// makes it idempotent — resetting a non-dead/unknown delivery matches no row
+// makes it idempotent, resetting a non-dead/unknown delivery matches no row
 // and is a no-op, so it can never resurrect an in-flight or delivered one.
 func (s *SQLStore) ResetDelivery(ctx context.Context, id string) error {
 	now := time.Now().UTC()

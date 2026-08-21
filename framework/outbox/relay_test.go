@@ -214,7 +214,7 @@ func TestRelay_NudgeFasterThanPoll(t *testing.T) {
 
 	select {
 	case <-got:
-		// Delivered well before the 1h poll interval — Nudge worked.
+		// Delivered well before the 1h poll interval. Nudge worked.
 	case <-time.After(3 * time.Second):
 		t.Fatal("Nudge did not wake the relay within 3s (poll interval is 1h)")
 	}
@@ -248,7 +248,7 @@ func TestClaim_DeliveryExclusivity(t *testing.T) {
 		t.Fatalf("claim1 got %d deliveries, want 1", len(batch1))
 	}
 
-	// The delivery is now leased — a second claim must not see it.
+	// The delivery is now leased, a second claim must not see it.
 	batch2, err := o.claimDeliveries(ctx)
 	if err != nil {
 		t.Fatalf("claim2: %v", err)
@@ -302,7 +302,7 @@ func TestClaim_DeliveryLeaseExpiry(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// stop() returns promptly even while a backlog keeps every pump full —
+// stop() returns promptly even while a backlog keeps every pump full,
 // the loop must honour stop between pumps, not only when idle.
 // ---------------------------------------------------------------------------
 
@@ -352,7 +352,7 @@ func TestRelay_DrainsFullBatch(t *testing.T) {
 		return nil
 	})
 
-	// Enqueue more rows than one batch — the relay must keep pumping.
+	// Enqueue more rows than one batch, the relay must keep pumping.
 	for i := 0; i < 5; i++ {
 		tx, _ := db.BeginTx(ctx, nil)
 		o.Append(ctx, tx, "bulk", map[string]any{"i": i})

@@ -43,7 +43,7 @@ func (s Source) Tools(ctx context.Context) ([]tool.Tool, error) {
 	}
 	out := make([]tool.Tool, 0, len(all))
 	for _, t := range all {
-		// ToolSearch is ALWAYS available — it's the model's escape
+		// ToolSearch is ALWAYS available, it's the model's escape
 		// hatch when the pack filter omits something it needs.
 		if allowed[t.Name()] || t.Name() == "ToolSearch" {
 			out = append(out, t)

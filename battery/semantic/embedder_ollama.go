@@ -33,7 +33,7 @@ import (
 // Failure modes:
 //
 //   - Server unreachable → [Embed] returns the underlying network
-//     error. Callers should not blindly retry — a missing daemon is a
+//     error. Callers should not blindly retry, a missing daemon is a
 //     configuration problem, not a transient one.
 //   - Model not pulled → Ollama responds 404 with a clear message; we
 //     surface it verbatim so users see "pull <model> first".
@@ -72,7 +72,7 @@ type OllamaConfig struct {
 }
 
 // NewOllamaEmbedder constructs an Ollama-backed embedder. It does not
-// make any network calls until [Embed] is invoked — failures during
+// make any network calls until [Embed] is invoked, failures during
 // boot are deferred to first use so misconfigurations can be retried
 // without restarting the app.
 func NewOllamaEmbedder(cfg OllamaConfig) *OllamaEmbedder {
@@ -98,7 +98,7 @@ func NewOllamaEmbedder(cfg OllamaConfig) *OllamaEmbedder {
 	return e
 }
 
-// Name returns "ollama:<model>" — the snapshot fingerprint baked into
+// Name returns "ollama:<model>", the snapshot fingerprint baked into
 // persisted indexes uses this string, so changing models triggers a
 // loud [ModelMismatchError] on reload.
 func (e *OllamaEmbedder) Name() string { return "ollama:" + e.model }

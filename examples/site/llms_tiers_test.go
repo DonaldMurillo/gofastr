@@ -2,7 +2,7 @@ package main
 
 // Parity gates for the tiered llms.txt surface: the index lists every
 // embedded doc, every indexed URL serves the real markdown, and the full
-// tier carries the whole corpus. One app boot per test — the per-request
+// tier carries the whole corpus. One app boot per test, the per-request
 // serve() helper would boot the site once per doc.
 
 import (

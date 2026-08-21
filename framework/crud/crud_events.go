@@ -33,11 +33,11 @@ const (
 	eventKeyOwnerID = "ownerId"
 )
 
-// EventOutbox is the transactional-outbox surface CRUD needs — satisfied by
+// EventOutbox is the transactional-outbox surface CRUD needs, satisfied by
 // *outbox.Outbox (framework/outbox). An interface rather than the concrete
 // type so crud carries no outbox import and tests can record staging calls.
 type EventOutbox interface {
-	// Append writes an event row using the passed executor — inside a CRUD
+	// Append writes an event row using the passed executor, inside a CRUD
 	// transaction that is the *sql.Tx, so the row commits or rolls back
 	// with the business write.
 	Append(ctx context.Context, ex DBExecutor, eventType string, data any) (string, error)
@@ -85,7 +85,7 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 
 // StageEvent durably stages an entity lifecycle event when an outbox is
 // configured. It MUST be called from inside the operation's transaction
-// (ch.DB is the tx-scoped executor there — doCreate/doUpdate/doDelete and
+// (ch.DB is the tx-scoped executor there, doCreate/doUpdate/doDelete and
 // the upsert closure call it), so the event row commits or rolls back with
 // the write. No-op without an outbox: the live-bus EmitEvent covers that
 // mode post-commit.
@@ -102,7 +102,7 @@ func (ch *CrudHandler) StageEvent(ctx context.Context, eventType string, record 
 //
 //   - Real-time lane: the live bus is notified always (best-effort, async),
 //     feeding SSE EventStream and ephemeral On/Subscribe handlers. Lossy by
-//     design — a crash here drops the in-memory signal, but the durable lane
+//     design, a crash here drops the in-memory signal, but the durable lane
 //     still guarantees delivery.
 //   - Durable lane: when an outbox is configured, the row staged in-tx by
 //     StageEvent is delivered to declared consumers by the relay. The relay
@@ -127,7 +127,7 @@ func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record a
 //	data:  {<full Event JSON>}
 //
 // Disconnects from the client unsubscribe automatically. A backpressure
-// buffer of 32 is enforced — if the client cannot keep up, events are
+// buffer of 32 is enforced, if the client cannot keep up, events are
 // dropped rather than blocking emitters.
 func (ch *CrudHandler) EventStream() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +138,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// Real-time event streams are authenticated regardless of
 		// whether the entity declares OwnerField. An anonymous SSE
 		// subscriber would otherwise scrape every row update on the
-		// server in real time — turning a "public list endpoint" into
+		// server in real time, turning a "public list endpoint" into
 		// a live feed of all writes. RequireOwner only fires for
 		// OwnerField entities; we also enforce a baseline auth check
 		// here for entities without one.
@@ -150,7 +150,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// requireAuthenticated gate: a declared Access block with a blank
 		// Read permission means "public static reads", but that must not
 		// extend to a live feed of every write (see the comment above).
-		// Only Public — the full, deliberate opt-out — makes the stream
+		// Only Public, the full, deliberate opt-out, makes the stream
 		// anonymous; OwnerField entities are already authenticated via
 		// RequireOwner.
 		if ch.Entity.Config.Scope.OwnerField == "" && !ch.Entity.Config.Exposure.Public {
@@ -165,7 +165,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		if !ch.RequireTenant(w, r) {
 			return
 		}
-		// The live feed is a READ surface — it streams every create/update/
+		// The live feed is a READ surface, it streams every create/update/
 		// delete. Gate it with the same Access.Read permission as List/Get,
 		// or an authenticated user lacking docs:read could subscribe here for
 		// a real-time read of all writes despite 403 on the static endpoints.
@@ -247,7 +247,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 //
 // Deliberately tolerant of shape: a delete stages a primary-key-only stub,
 // which a redaction hook written for full rows may not expect. A hook error
-// leaves the record out rather than publishing it raw — the subscriber still
+// leaves the record out rather than publishing it raw, the subscriber still
 // learns something changed and can re-read through the API.
 func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.Event {
 	if ch.Hooks == nil || len(ch.Hooks.HooksFor(hook.AfterGet)) == 0 {
@@ -270,7 +270,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 
 	// Deep enough to isolate subscribers. EmitAsync hands every handler the
 	// SAME event value, so each SSE stream redacts its own copy of the top
-	// level — but a shallow copy leaves nested maps and slices shared, and two
+	// level, but a shallow copy leaves nested maps and slices shared, and two
 	// subscribers masking inside one is a concurrent map write. Driver values
 	// are scalars after convertValue, so a nested container only exists when a
 	// write hook injected one; copy it anyway rather than depend on that.
@@ -280,7 +280,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 		id = fmt.Sprint(v)
 	}
 	// The only caller passes the SSE handler's request, so r is non-nil in
-	// production — but a nil here would panic inside the delivery goroutine
+	// production, but a nil here would panic inside the delivery goroutine
 	// and kill the stream, which is a poor trade for one comparison.
 	hctx := context.Background()
 	if r != nil {
@@ -294,7 +294,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 
 	// Copy the envelope so the redacted view never reaches another
 	// subscriber's copy or the durable outbox row. The owner and tenant
-	// stamps are carried over untouched — they decide delivery, not content.
+	// stamps are carried over untouched, they decide delivery, not content.
 	out := make(map[string]any, len(data))
 	for k, v := range data {
 		out[k] = v
@@ -323,14 +323,14 @@ func deepCopyRecord(row map[string]any) map[string]any {
 // covers the shapes whoever wrote it thought of. A first version listed three,
 // which left []byte, []string, map[string]string, [][]map[string]any and
 // anything else sharing storage with the record already handed to the event
-// goroutine — so a hook masking inside one wrote through into the bus, and two
+// goroutine, so a hook masking inside one wrote through into the bus, and two
 // SSE subscribers masking concurrently raced on it. That race is "concurrent
 // map writes", a runtime throw no recover() catches. Hence the reflective
 // fallback: unknown container, still copied.
 //
 // Structs are deliberately NOT traversed, and neither is a pointer TO one.
-// Copying an arbitrary struct means copying whatever it embeds — a mutex, a
-// file handle, a driver connection — and this package cannot know which of
+// Copying an arbitrary struct means copying whatever it embeds, a mutex, a
+// file handle, a driver connection, and this package cannot know which of
 // those a host's hook put in the record. Scalars need no copy.
 //
 // That rationale covers opaque shapes; it does not cover a pointer to a plain
@@ -339,7 +339,7 @@ func deepCopyRecord(row map[string]any) map[string]any {
 // reproduced the exact bug the reflective fallback was added for: a redaction
 // hook mutating the response copy wrote through into the record already handed
 // to the event goroutine, so two subscribers masking concurrently raced on one
-// map — "concurrent map writes", a runtime throw no recover() catches. So
+// map, "concurrent map writes", a runtime throw no recover() catches. So
 // deepCopyReflect DOES traverse a pointer whose element is a map, slice or
 // array: it copies the pointee and allocates a fresh pointer to it. Every
 // other pointer element kind (struct above all, but also chan/func/unsafe)
@@ -372,15 +372,15 @@ func deepCopyValue(v any) any {
 }
 
 // deepCopyReflect handles the container shapes the type switch above does not
-// name. It copies maps, slices and arrays element-wise — plus pointers TO
-// those three, which alias the record just as directly — and returns anything
+// name. It copies maps, slices and arrays element-wise, plus pointers TO
+// those three, which alias the record just as directly, and returns anything
 // else unchanged.
 func deepCopyReflect(v any) any {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
 	case reflect.Pointer:
 		// A pointer to a container is still the record's data. A pointer to a
-		// struct (or anything else) is not something this package can clone —
+		// struct (or anything else) is not something this package can clone,
 		// see deepCopyValue's comment.
 		if rv.IsNil() {
 			return v

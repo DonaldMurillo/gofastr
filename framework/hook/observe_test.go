@@ -72,7 +72,7 @@ func TestObserverFiresOnlyForRegisteredHooks(t *testing.T) {
 }
 
 func TestObserverFiresEvenWhenTheHookFails(t *testing.T) {
-	// The hook ran — that is what coverage records. Whether it returned
+	// The hook ran, that is what coverage records. Whether it returned
 	// an error is the test's business, not the manifest's.
 	t.Cleanup(func() { SetObserver(nil) })
 	fired := 0

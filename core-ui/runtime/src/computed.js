@@ -1,13 +1,13 @@
-// Computed runtime module — client-side derived signals (core-ui/store).
+// Computed runtime module, client-side derived signals (core-ui/store).
 //
 // An element carries:
-//   data-fui-computed="<reducerName>"   — host-registered reducer fn
-//   data-fui-computed-deps="a,b"        — dependency signal names
-//   data-fui-signal="<name>"            — this computed's own signal name
+//   data-fui-computed="<reducerName>"   : host-registered reducer fn
+//   data-fui-computed-deps="a,b"        : dependency signal names
+//   data-fui-signal="<name>"            : this computed's own signal name
 //
 // On wire, the module subscribes to each dependency signal. When any
 // dependency changes, it runs the reducer over the current dep values
-// and broadcasts the result via setSignal(ownName, …) — which fans out
+// and broadcasts the result via setSignal(ownName, …), which fans out
 // to every consumer of the computed signal. No eval: the reducer is a
 // real JS function the host registers on window.__gofastr._reducers by
 // name (CSP-safe).
@@ -112,7 +112,7 @@
   // alone leaks the recompute closure. A MutationObserver catches the
   // detach: teardownDetached is idempotent (it only reclaims nodes no
   // longer isConnected), so running it on any childList change is safe
-  // and cheap — the wired set is tiny.
+  // and cheap, the wired set is tiny.
   if (typeof MutationObserver === 'function') {
     new MutationObserver(() => { teardownDetached(); })
       .observe(document, { childList: true, subtree: true });

@@ -102,7 +102,7 @@ func TestSearchInputWithActionWrapsForm(t *testing.T) {
 }
 
 // A-1: Clear button must be keyboard-reachable (WCAG 2.1.1).
-// tabindex="-1" removes it from tab order — keyboard users can never activate it.
+// tabindex="-1" removes it from tab order. Keyboard users can never activate it.
 func TestSearchInputClearButtonKeyboardReachable(t *testing.T) {
 	h := string(SearchInput(SearchInputConfig{Name: "q", ID: "q"}))
 	if strings.Contains(h, `tabindex="-1"`) {
@@ -119,7 +119,7 @@ func TestSearchInputCustomMethod(t *testing.T) {
 	}
 }
 
-// K-1: SearchInput must validate Method — same as D-1 for Form.
+// K-1: SearchInput must validate Method, same as D-1 for Form.
 func TestSearchInputPanicOnInvalidMethod(t *testing.T) {
 	defer func() {
 		if recover() == nil {

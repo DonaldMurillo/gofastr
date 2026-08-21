@@ -15,7 +15,7 @@ import (
 // NOTE: several slugs are note-only in site (combobox, multiselect,
 // confirmaction, sortablelist, infinitescroll, gallery, lightbox,
 // commandpalette, globalsearch, notificationbell, datatable, scrollspy,
-// pipelineimage, conditionalfield, formrepeater, repeater) — those
+// pipelineimage, conditionalfield, formrepeater, repeater), those
 // are only tested for page-loads or dropped entirely.
 //
 // Tests that would exactly duplicate existing tests in e2e_test.go are
@@ -96,7 +96,7 @@ func TestE2E_NewComponents_SegmentedControlRole(t *testing.T) {
 	}
 }
 
-// confirmaction is note-only in site — just assert page loads.
+// confirmaction is note-only in site, just assert page loads.
 func TestE2E_NewComponents_ConfirmActionPageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -121,7 +121,7 @@ func TestE2E_NewComponents_FilterChipBarToolbarRole(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/filterchipbar"),
 		pageReady(),
-		// Site demo has 2 chips (Open + Mine) — no toolbar wrapper id
+		// Site demo has 2 chips (Open + Mine), no toolbar wrapper id
 		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-filter-bar"] .ui-tag').length`, &chipCount),
 	)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestE2E_NewComponents_FilterChipBarToolbarRole(t *testing.T) {
 	}
 }
 
-// infinitescroll is note-only — just page loads.
+// infinitescroll is note-only, just page loads.
 func TestE2E_NewComponents_InfiniteScrollPageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -150,7 +150,7 @@ func TestE2E_NewComponents_InfiniteScrollPageLoads(t *testing.T) {
 	}
 }
 
-// combobox is note-only — just page loads.
+// combobox is note-only, just page loads.
 func TestE2E_NewComponents_ComboboxPageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -272,7 +272,7 @@ func TestE2E_NewComponents_ColorPickerNativeInput(t *testing.T) {
 	}
 }
 
-// commandpalette is note-only — just page loads.
+// commandpalette is note-only, just page loads.
 func TestE2E_NewComponents_CommandPalettePageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -506,7 +506,7 @@ func TestE2E_TOC_PageLoads(t *testing.T) {
 	}
 }
 
-// gallery is note-only — page loads assertion.
+// gallery is note-only, page loads assertion.
 func TestE2E_Gallery_PageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -524,7 +524,7 @@ func TestE2E_Gallery_PageLoads(t *testing.T) {
 	}
 }
 
-// lightbox is note-only — page loads assertion.
+// lightbox is note-only, page loads assertion.
 func TestE2E_Lightbox_PageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -542,7 +542,7 @@ func TestE2E_Lightbox_PageLoads(t *testing.T) {
 	}
 }
 
-// notificationbell is note-only — page loads assertion.
+// notificationbell is note-only, page loads assertion.
 func TestE2E_NotificationBell_PageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -560,7 +560,7 @@ func TestE2E_NotificationBell_PageLoads(t *testing.T) {
 	}
 }
 
-// sortablelist is note-only — page loads assertion.
+// sortablelist is note-only, page loads assertion.
 func TestE2E_SortableList_PageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
@@ -578,7 +578,7 @@ func TestE2E_SortableList_PageLoads(t *testing.T) {
 	}
 }
 
-// globalsearch is note-only — page loads assertion.
+// globalsearch is note-only, page loads assertion.
 func TestE2E_GlobalSearch_PageLoads(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)

@@ -79,7 +79,7 @@ func TestSiteHeaderBrandDefaultsLoseToConsumerCSS(t *testing.T) {
 	css := siteHeaderCSS(style.Theme{})
 	// Slot layout keeps normal specificity (framework-owned, must survive a
 	// host's generic `a` reset); visual identity lives in a :where() rule at
-	// zero specificity so ANY consumer selector overrides it — the Brand
+	// zero specificity so ANY consumer selector overrides it. The Brand
 	// slot contract is "consumer owns visual identity".
 	i := strings.Index(css, `:where([data-fui-comp="ui-site-header"] .ui-site-header__brand a) {`)
 	if i < 0 {
@@ -110,7 +110,7 @@ func TestSiteHeaderBrandDefaultsLoseToConsumerCSS(t *testing.T) {
 
 func TestSiteHeaderDesktopNavOmitsExternalAttrs(t *testing.T) {
 	// External flag should only affect the mobile drawer copy, not
-	// the desktop bar — keeps "primary" links semantically internal.
+	// the desktop bar, keeps "primary" links semantically internal.
 	h := string(SiteHeader(SiteHeaderConfig{
 		Brand: render.Raw(`<a>x</a>`),
 		NavItems: []SiteHeaderLink{
@@ -136,7 +136,7 @@ func TestSiteHeaderEmitsBothMenuAndCloseIcons(t *testing.T) {
 	if !strings.Contains(h, "ui-site-header__icon--close") {
 		t.Errorf("missing close icon (open-state visual):\n%s", h)
 	}
-	// Both are aria-hidden (decorative) — the summary's aria-label
+	// Both are aria-hidden (decorative). The summary's aria-label
 	// carries the AT name.
 	if strings.Count(h, `aria-hidden="true"`) < 2 {
 		t.Errorf("both SVG icons must be aria-hidden — let the summary aria-label own the AT name:\n%s", h)
@@ -159,7 +159,7 @@ func TestSiteHeaderMatchPrefixAppliesToBothDesktopAndMobile(t *testing.T) {
 		Brand:    render.Raw(`<a>x</a>`),
 		NavItems: []SiteHeaderLink{{Label: "Docs", Href: "/docs/", MatchPrefix: true}},
 	}))
-	// data-fui-match-prefix must appear at least twice — once on the
+	// data-fui-match-prefix must appear at least twice: once on the
 	// desktop nav copy, once on the mobile drawer copy. Otherwise
 	// active-route highlighting only works on one viewport.
 	if strings.Count(h, `data-fui-match-prefix=""`) < 2 {

@@ -30,7 +30,7 @@ func runValidate(args []string) {
 		osExit(1)
 		return
 	}
-	// Module consistency is anchored at the blueprint's own directory — the
+	// Module consistency is anchored at the blueprint's own directory: the
 	// blueprint conventionally sits at the project root next to go.mod.
 	anchor := path
 	if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() {
@@ -70,7 +70,7 @@ func runValidate(args []string) {
 }
 
 func printValidateHelp() {
-	fmt.Println(`gofastr validate — validate a blueprint without writing files
+	fmt.Println(`gofastr validate: validate a blueprint without writing files
 
 Usage:
   gofastr validate <blueprint.yml|blueprint-dir>
@@ -121,7 +121,7 @@ func resolveBlueprintModule(bp *Blueprint, anchorDir string) error {
 		return nil
 	}
 	if declared != expected {
-		return fmt.Errorf("blueprint: app.module is %q but the enclosing go.mod (%s) makes this directory %q — set `module: %s` (or remove module: to derive it automatically)", declared, filepath.Join(moduleRoot, "go.mod"), expected, expected)
+		return fmt.Errorf("blueprint: app.module is %q but the enclosing go.mod (%s) makes this directory %q. Set `module: %s` (or remove module: to derive it automatically)", declared, filepath.Join(moduleRoot, "go.mod"), expected, expected)
 	}
 	return nil
 }

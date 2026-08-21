@@ -50,7 +50,7 @@ type InboundEnvelope struct {
 }
 
 // InboundStore persists inbound envelopes. Implementations return (nil, nil)
-// from GetEnvelope for an unknown ID — matching the outbound Store.GetSubscriber
+// from GetEnvelope for an unknown ID, matching the outbound Store.GetSubscriber
 // convention so callers can branch on a nil pointer without inspecting an error.
 type InboundStore interface {
 	AddEnvelope(ctx context.Context, e InboundEnvelope) error
@@ -63,7 +63,7 @@ type InboundStore interface {
 }
 
 // InboundVerifier authenticates a request. Return a non-nil error to reject
-// with 401. Implementations MUST be constant-time on secrets — the built-in
+// with 401. Implementations MUST be constant-time on secrets, the built-in
 // TimestampedVerifier and HMACSHA256Verifier use hmac.Equal.
 type InboundVerifier func(r *http.Request, body []byte) error
 
@@ -88,7 +88,7 @@ func TimestampedVerifier(secret string, tolerance time.Duration) InboundVerifier
 // "<prefix><hex-hmac-sha256-of-body>" (e.g. header "X-Hub-Signature-256",
 // prefix "sha256="). Comparison is hmac.Equal.
 //
-// NOTE: the body alone is signed — there is no timestamp binding, so this
+// NOTE: the body alone is signed, there is no timestamp binding, so this
 // offers no replay defense. Use TimestampedVerifier when the sender supports
 // it. A missing header also rejects (returns errVerifyFailed).
 func HMACSHA256Verifier(header, prefix, secret string) InboundVerifier {
@@ -213,7 +213,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		// Persist the verified envelope (allowlisted headers only). With a
 		// queue wired the dedupe key is deliberately NOT stored yet: it is
 		// registered only after the enqueue succeeds, so an envelope that
-		// never reached the queue can never dedupe-ack the sender's retry —
+		// never reached the queue can never dedupe-ack the sender's retry,
 		// even if every cleanup step below fails. Without a queue,
 		// persistence IS durable acceptance, so the key is stored up front.
 		env := InboundEnvelope{
@@ -256,10 +256,10 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
-			// The event is durably queued — register the dedupe key so the
+			// The event is durably queued, register the dedupe key so the
 			// sender's redeliveries are acked from here on. If this update
 			// fails, a retry re-ingests a duplicate (at-least-once, same as
-			// the documented check-then-insert race) — benign, but log it.
+			// the documented check-then-insert race), benign, but log it.
 			if dedupeKey != "" {
 				env.DedupeKey = dedupeKey
 				env.UpdatedAt = time.Now().UTC()
@@ -311,11 +311,11 @@ type inboundJobPayload struct {
 //     queue's retry/backoff machinery can reschedule it
 //
 // A job whose payload won't decode or whose envelope is missing returns an
-// error (non-retryable data corruption — the queue will retry per its own
+// error (non-retryable data corruption, the queue will retry per its own
 // dead-letter policy).
 //
 // The optional ProcessInboundOption lets you inject a logger for warnings
-// the handler can't surface to the caller — chiefly a failed-state
+// the handler can't surface to the caller, chiefly a failed-state
 // UpdateEnvelope after the business handler already errored. The handler's
 // error is still returned so the queue retries; the lost state write is
 // logged so it can't vanish silently. See WithProcessInboundLogger.
@@ -361,7 +361,7 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 				// The business handler already failed; the queue retries because
 				// we return err below. But if THIS write is lost the envelope is
 				// stranded "processing" with no LastError and a stale attempt
-				// count — invisible without a log line. Don't swallow it.
+				// count, invisible without a log line. Don't swallow it.
 				logf("webhook: envelope %s: mark failed after handler error lost (state left stale; queue retries): %v", env.ID, uerr)
 			}
 			return err

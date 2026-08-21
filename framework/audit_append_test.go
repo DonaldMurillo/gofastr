@@ -101,7 +101,7 @@ func TestAppendAuditEvent_SanitisesTextColumns(t *testing.T) {
 	}
 	r := rows[0]
 	// Each TEXT column must match what sanitizeAuditField produces from the
-	// raw input — control bytes dropped, the remaining text verbatim.
+	// raw input, control bytes dropped, the remaining text verbatim.
 	// "auth\nX" → "authX" (newline gone, X stays).
 	wantEntity := sanitizeAuditField("auth\nX")
 	wantOp := sanitizeAuditField("login.failed\nX")

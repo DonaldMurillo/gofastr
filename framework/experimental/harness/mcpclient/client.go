@@ -51,7 +51,7 @@ type Client struct {
 // binary is checked against the hash and refused on mismatch.
 //
 // The child receives ONLY a minimal allowlisted environment (PATH, HOME,
-// TMPDIR, plus the platform basics needed to exec) — NOT the host's full
+// TMPDIR, plus the platform basics needed to exec). NOT the host's full
 // os.Environ(). This prevents host secrets (JWT_SECRET, DB DSN, OAuth
 // keys, …) from leaking into every spawned MCP server. Callers that need
 // more must use SpawnWithConfig.
@@ -69,7 +69,7 @@ func Spawn(ctx context.Context, cmd string, args []string, expectedSHA256 string
 //   - InheritEnv: names of host env vars to copy through verbatim (value taken
 //     from os.Getenv at spawn time). Use this when a tool needs a host var by
 //     name (e.g. an API key the operator intentionally exposes to that one
-//     child). Every name is a deliberate allow decision — do not list secrets
+//     child). Every name is a deliberate allow decision, do not list secrets
 //     here unless the child is meant to see them.
 type SpawnConfig struct {
 	Env        []string // extra "KEY=VALUE" entries; override allowlist on collision
@@ -92,8 +92,8 @@ func SpawnWithConfig(ctx context.Context, cmd string, args []string, expectedSHA
 	c := exec.CommandContext(ctx, cmd, args...)
 	// Baseline hygiene (design §6): scrub the host environment. A nil Env
 	// would hand the child every host secret via os.Environ(); instead we
-	// build an explicit minimal set. This is NOT a security sandbox — an
-	// unconfined child can still open/connect/dial — but it removes the
+	// build an explicit minimal set. This is NOT a security sandbox, an
+	// unconfined child can still open/connect/dial, but it removes the
 	// handed-to-you secrets.
 	c.Env = buildChildEnv(cfg)
 	stdin, err := c.StdinPipe()
@@ -311,7 +311,7 @@ func (c *Client) readLoop() {
 			continue
 		}
 		if r.ID == 0 {
-			// Notification — v0.1 doesn't subscribe to any.
+			// Notification, v0.1 doesn't subscribe to any.
 			continue
 		}
 		c.mu.Lock()

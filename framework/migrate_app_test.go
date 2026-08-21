@@ -14,7 +14,7 @@ import (
 )
 
 // TestApp_TableRegistersForMigration: App.Table puts a raw table into the
-// registry so the normal migrate path creates it — no CRUD routes involved.
+// registry so the normal migrate path creates it, no CRUD routes involved.
 func TestApp_TableRegistersForMigration(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db))
@@ -66,8 +66,8 @@ func TestApp_RoutineMigratesViaPlan(t *testing.T) {
 }
 
 // TestApp_MigrationPlanExposesRegistry: app.MigrationPlan() returns the exact
-// Plan App.Start auto-migrates from — the registry plus every Routine/View
-// registered — so the host-binary generate path (migrate.GenerateMigrationFile)
+// Plan App.Start auto-migrates from, the registry plus every Routine/View
+// registered, so the host-binary generate path (migrate.GenerateMigrationFile)
 // diffs the same compiled schema boot applies. DB-free: it is a pure accessor.
 func TestApp_MigrationPlanExposesRegistry(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())

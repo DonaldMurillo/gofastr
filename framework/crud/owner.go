@@ -51,7 +51,7 @@ func (ch *CrudHandler) permissionForOp(op crudOp) string {
 // Prefer CanReadScoped, or CanReadRecordScoped for a single record. Those are
 // what framework/ui/resource gates on, including its island handler. CanRead
 // survives there only as the compatibility fallback for a custom DataSource
-// written before CanReadScoped existed — load-bearing, not dead. Reach for it
+// written before CanReadScoped existed, load-bearing, not dead. Reach for it
 // directly only when you specifically want the RBAC question in isolation.
 func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 	perm := ch.permissionForOp(opRead)
@@ -84,7 +84,7 @@ func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 // no Access, and no Public requires a session for every operation, and that
 // rule lives in requireAuthenticated rather than in Access. A surface that
 // gated on CanRead alone therefore served every row of a default-posture
-// entity to anonymous callers while GET /api/<entity> answered 401 — which is
+// entity to anonymous callers while GET /api/<entity> answered 401, which is
 // exactly what generated list screens did.
 //
 // Use this from any surface that renders the same rows outside the CRUD routes
@@ -98,7 +98,7 @@ func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
 //
 // The difference matters only when a resource-aware Decider is installed
 // (access.WithDecider): the decider is asked about access.Ref{Type, ID}, so it
-// can allow the listing and deny an individual row — "member may read project
+// can allow the listing and deny an individual row, "member may read project
 // 42" is the whole point of that seam. The HTTP read-one route already passes
 // r.PathValue("id") into the check; a screen rendering the same record with the
 // collection-level predicate would show a row the API refuses by id.
@@ -111,7 +111,7 @@ func (ch *CrudHandler) CanReadRecordScoped(ctx context.Context, id string) bool 
 
 func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool {
 	cfg := ch.Entity.Config
-	// Baseline session requirement — the boolean mirror of requireAuthenticated.
+	// Baseline session requirement, the boolean mirror of requireAuthenticated.
 	if cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public {
 		if _, ok := handler.GetUser(ctx); !ok {
 			return false
@@ -143,7 +143,7 @@ func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool 
 // Owner and tenant are deliberately excluded. They scope WHICH rows a caller
 // sees, and the eager loaders already apply them per node
 // (applyRelatedOwnerScope / applyRelatedTenantScope), so a missing owner or
-// tenant yields zero rows rather than a refusal — the framework's existing,
+// tenant yields zero rows rather than a refusal, the framework's existing,
 // tested fail-closed behavior. Folding them in here would convert that
 // filtering into a 403 and change the answer for callers who are legitimately
 // scoped to nothing.
@@ -151,7 +151,7 @@ func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool 
 // Use this ONLY where the row scoping is provably applied separately. Today
 // that is exactly one caller: the include gate, whose eager loaders call
 // applyRelatedOwnerScope and applyRelatedTenantScope per node. Nested filters
-// looked like the same case and are not — their EXISTS subquery emits no owner
+// looked like the same case and are not, their EXISTS subquery emits no owner
 // or tenant predicate, so choosing this gate there left a live count oracle
 // over rows the target's own route refuses. If you are reaching for this
 // predicate, first find the code that applies owner and tenant for your path;
@@ -173,7 +173,7 @@ func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
 //
 // The check goes through access.CanResource so a resource-aware Decider
 // installed in ctx (via access.WithDecider / access.DeciderMiddleware) is
-// consulted before the role policy — the issue #80 seam for per-resource
+// consulted before the role policy, the issue #80 seam for per-resource
 // authority ("member may edit project 42"). recordID is the path id for
 // item-scoped ops (read-one/update/delete) and "" for collection-level ops
 // (list/create/batch/the SSE feed); with no decider configured, CanResource
@@ -203,14 +203,14 @@ func tenantIDFromCtx(ctx context.Context) string {
 var errOwnerRequired = errors.New("owner context required for owner-scoped entity")
 
 // errTenantRequired signals an in-process CRUD call against a
-// MultiTenant entity with no tenant id in the context. Fails closed —
+// MultiTenant entity with no tenant id in the context. Fails closed,
 // the HTTP layer normally refuses these requests at middleware, but
 // in-process callers (typed repos, jobs, scripts) bypass that path.
 var errTenantRequired = errors.New("tenant context required for multi-tenant entity")
 
 // brokeredCallKey marks a context as a process-module broker re-dispatch.
 // A module never brokers data in a cross-owner frame (design #37 §5), so a
-// brokered call must never exercise CrossOwnerRead — even when the
+// brokered call must never exercise CrossOwnerRead, even when the
 // re-resolved caller legitimately holds it in their own session. The
 // unexported key type means no HTTP-derived context can carry it: it is set
 // ONLY by the broker (framework/processmodule_broker.go resolveCaller) via
@@ -236,8 +236,8 @@ func IsBrokeredCall(ctx context.Context) bool {
 // crossOwnerReadGranted reports whether the request context holds the
 // entity's declared CrossOwnerRead permission. Returns false when the
 // entity does not opt in (empty permission), when access.Can denies
-// (including the fail-closed "no policy in context" case), and — the F3
-// root-cause fix — unconditionally when the call was brokered through a
+// (including the fail-closed "no policy in context" case), and, the F3
+// root-cause fix, unconditionally when the call was brokered through a
 // process module, so a delegated caller who holds CrossOwnerRead cannot
 // exercise it through a module. READ-ONLY by construction: only
 // ApplyOwnerScope / ApplyOwnerScopeCount consult it.
@@ -251,7 +251,7 @@ func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
 
 // ApplyOwnerScope adds an `<owner_field> = ?` predicate to a SELECT query
 // when the entity declares OwnerField and the request context carries an
-// owner id (registered via framework/owner.SetExtractor — typically by
+// owner id (registered via framework/owner.SetExtractor, typically by
 // battery/auth's init()). No-op when either condition is missing.
 //
 // Uses PostgreSQL-style $N placeholders, matching ApplyTenantScope.
@@ -345,7 +345,7 @@ func (ch *CrudHandler) InjectOwner(data map[string]any, ctx context.Context) {
 // RequireOwner returns the current owner id when the entity declares
 // OwnerField. ok=true means: either no owner is required (entity has no
 // OwnerField), or an owner was extracted. ok=false means: the entity
-// requires an owner but none is available — the caller MUST refuse the
+// requires an owner but none is available, the caller MUST refuse the
 // request. Writes 401 to w and returns ok=false in that case so handlers
 // can `if _, ok := ch.RequireOwner(w, r); !ok { return }`.
 //
@@ -369,18 +369,18 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 // requireAuthenticated is the secure-by-default gate that closes the
 // anonymous-CRUD hole tracked in issue #65: RequireOwner only fires for
 // OwnerField entities and requirePermission only fires when the entity
-// opts into an Access block — an entity declaring NEITHER got zero
+// opts into an Access block, an entity declaring NEITHER got zero
 // enforcement, so a plain blueprint entity's List/Get/Create/Update/Delete
 // were all reachable by an anonymous caller (POST returning 201 and
 // persisting the row). Unless an explicit mechanism already governs the
-// entity (OwnerField or a declared Access block — either "takes over as
-// today") or the entity opts all the way out (Config.Public — a
+// entity (OwnerField or a declared Access block, either "takes over as
+// today") or the entity opts all the way out (Config.Public, a
 // deliberate "yes, this is a public form/feed" declaration, e.g. a public
 // contact form or a blog's comments), an authenticated session is
 // required for every operation.
 //
 // Mirrors the "baseline auth check" EventStream has carried since the SSE
-// fix (see EventStream in crud_events.go) — same core/handler.GetUser
+// fix (see EventStream in crud_events.go), same core/handler.GetUser
 // signal, generalized to every CRUD entrypoint instead of just the SSE
 // feed.
 func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Request, op crudOp) bool {
@@ -419,7 +419,7 @@ func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op c
 // RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.
 // ok=true means: either the entity is not MultiTenant, or a tenant id is
 // present in the request context. ok=false means the entity is MultiTenant but
-// the request carries no tenant id — the caller MUST refuse the request. Writes
+// the request carries no tenant id, the caller MUST refuse the request. Writes
 // 401 to w and returns ok=false in that case so handlers can
 // `if !ch.RequireTenant(w, r) { return }`.
 //

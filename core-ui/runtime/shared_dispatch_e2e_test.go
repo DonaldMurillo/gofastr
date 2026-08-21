@@ -15,7 +15,7 @@ import (
 // widget-scoped RPC path must honor every primitive the global
 // dispatchRPC does, because both now call ONE implementation exposed
 // on window.__gofastr.dispatchRPC. The widget path historically
-// forked and drifted — data-fui-confirm was silently ignored (a
+// forked and drifted, data-fui-confirm was silently ignored (a
 // destructive delete in a drawer fired unconfirmed) and a GET-method
 // form serialized a JSON body, which fetch(GET, body) rejects.
 
@@ -109,7 +109,7 @@ func TestWidgetRPC_ConfirmHonored(t *testing.T) {
 // form RPC MUST encode its fields as the query string. Before the
 // shared-dispatch fix the widget path serialized a JSON body for every
 // method, and fetch(GET, body) throws "Request with GET/HEAD method
-// cannot have body" — so the server was never reached.
+// cannot have body", so the server was never reached.
 func TestWidgetRPC_GetFormEncodesToQuery(t *testing.T) {
 	var mu sync.Mutex
 	var gotMethod, gotQuery string

@@ -7,13 +7,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
-// DerivedVariant is one stored rendition of an uploaded image — a single
+// DerivedVariant is one stored rendition of an uploaded image, a single
 // width/format pair produced alongside the original.
 //
 // The JSON tags here are snake_case on purpose: this struct is persisted
 // verbatim into the entity's `<field>_variants` schema.JSON column, so the
 // tags are a stored database format following the snake_case column
-// convention — not an API response shape. Renaming them would orphan every
+// convention, not an API response shape. Renaming them would orphan every
 // existing row's variants.
 type DerivedVariant struct {
 	// StorageRef is the storage backend key the rendition was saved under.
@@ -46,7 +46,7 @@ type ImageDerivatives struct {
 }
 
 // Validate enforces the same invariants on derived references that
-// FileField.Validate enforces on the primary file — they reach the same
+// FileField.Validate enforces on the primary file, they reach the same
 // sinks (an <img src>, a storage delete) and arrive from the same
 // untrusted places once persisted and read back.
 func (d *ImageDerivatives) Validate() error {
@@ -82,7 +82,7 @@ func (d *ImageDerivatives) Validate() error {
 		return fmt.Errorf("%w: blurhash is %d bytes (max %d)",
 			ErrFileFieldOversize, len(d.BlurHash), MaxFileFieldStringBytes)
 	}
-	// An LQIP is an inline raster data: URI and nothing else — that is what
+	// An LQIP is an inline raster data: URI and nothing else, that is what
 	// image.Placeholder produces and the only thing the render sink
 	// (framework/ui.placeholderUsable) will paint. Gating this on
 	// isUnsafeURLScheme, as this once did, only ran the allow-list for
@@ -108,12 +108,12 @@ func (d *ImageDerivatives) Validate() error {
 // applications that ask for it pay for the pipeline.
 //
 // Scope note: this is the framework's only per-field transform seam, and it
-// is deliberately image-shaped — it runs on write, for schema.Image fields,
+// is deliberately image-shaped, it runs on write, for schema.Image fields,
 // and its output goes to sibling columns. The general version (write and read
 // transforms for any field, composed per field) is being designed in
 // https://github.com/DonaldMurillo/gofastr/issues/144. If that lands, this
 // interface is a candidate to become one instance of it rather than its own
-// mechanism; until then, resist growing it sideways into a general hook —
+// mechanism; until then, resist growing it sideways into a general hook,
 // widening this interface to cover non-image fields would prejudge the
 // harder half of that design (read transforms versus filter/sort/search).
 type ImageDeriver interface {

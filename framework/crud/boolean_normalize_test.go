@@ -19,10 +19,10 @@ func identityKey(s string) string { return s }
 //   - numeric inputs (int / int32 / int64 / float64) use truthiness: any
 //     value != 0 is true, so 2, -3, 2.5 all become true;
 //   - textual inputs ([]byte / string) accept ONLY "true" (case-insensitive,
-//     surrounding whitespace trimmed) or "1" — so "2", "yes", "0" are false.
+//     surrounding whitespace trimmed) or "1", so "2", "yes", "0" are false.
 //
 // That means convertDatabaseValue(int64(2), true) != convertDatabaseValue("2", true).
-// The asymmetry is preserved here as current behaviour, not endorsed — see the
+// The asymmetry is preserved here as current behaviour, not endorsed. See the
 // note in the final report. Do not "fix" it in a coverage test.
 func TestConvertDatabaseValueBooleanTrue(t *testing.T) {
 	cases := []struct {
@@ -102,7 +102,7 @@ func TestConvertDatabaseValueBooleanFalseDelegates(t *testing.T) {
 // TestBoolColumnsNilAndMismatchedFields covers the early-out guards in
 // (*CrudHandler).boolColumns: a nil receiver, a receiver with no Entity, and a
 // column list whose names do not map to any declared Bool field all yield an
-// all-false slice — so those columns are never misread as booleans.
+// all-false slice, so those columns are never misread as booleans.
 func TestBoolColumnsNilAndMismatchedFields(t *testing.T) {
 	var nilHandler *CrudHandler
 	if got := nilHandler.boolColumns([]string{"a", "b"}); !reflect.DeepEqual(got, []bool{false, false}) {
@@ -137,7 +137,7 @@ func TestEntityBoolColumnsNilEntity(t *testing.T) {
 // TestDatabaseBoolColumnsMatchesBoolDbType drives the database-side detector
 // with a live result set so the match logic runs against real DatabaseTypeName
 // values. A column declared BOOLEAN matches ("BOOL" substring, case-insensitive);
-// plain INTEGER and REAL do not — ordinary integer columns holding 0/1 must NOT
+// plain INTEGER and REAL do not, ordinary integer columns holding 0/1 must NOT
 // be turned into booleans. n larger than the column count leaves the tail false.
 func TestDatabaseBoolColumnsMatchesBoolDbType(t *testing.T) {
 	db := openBooleanReadDB(t)
@@ -164,7 +164,7 @@ func TestDatabaseBoolColumnsMatchesBoolDbType(t *testing.T) {
 
 // TestDatabaseBoolColumnsClosedRowsAllFalse pins the fail-closed behaviour:
 // once the rows are closed, ColumnTypes() errors, and databaseBoolColumns must
-// return an all-false slice rather than panicking or guessing — no column gets
+// return an all-false slice rather than panicking or guessing, no column gets
 // falsely normalized as a boolean when its type information is unavailable.
 func TestDatabaseBoolColumnsClosedRowsAllFalse(t *testing.T) {
 	db := openBooleanReadDB(t)
@@ -284,7 +284,7 @@ func TestScanRowWithBoolColumnsNormalizes(t *testing.T) {
 
 // TestScanRowsWithKeysForEntityPropagatesScanError pins the error-propagation
 // contract documented on scanRowsWithKeysForEntity: a failure mid-scan must
-// surface to the caller as (nil, err) — it must never return a partial result
+// surface to the caller as (nil, err), it must never return a partial result
 // set as if it succeeded. Scanning into []any cannot normally fail, so the only
 // deterministic trigger is a column/destination arity mismatch (two destinations
 // for a single-column query). This is a contract test of the error path, not a

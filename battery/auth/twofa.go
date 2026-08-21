@@ -223,7 +223,7 @@ func (p *TwoFAPlugin) Name() string { return "twofa" }
 //
 // Init fails closed when DevMode=false and no durable store is
 // configured: in-memory 2FA state in production is worse than a scaling
-// gap — a restart wipes enrollment, silently reverting every 2FA account
+// gap, a restart wipes enrollment, silently reverting every 2FA account
 // to password-only auth. A security control that quietly stops applying
 // is not a warning-grade condition, so the app refuses to boot unless
 // the host acknowledges a deliberate single-node deployment via
@@ -235,12 +235,12 @@ func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 	} else {
 		cfg := mgr.Config()
 		if !cfg.DevMode && !cfg.AllowInMemoryStores {
-			return fmt.Errorf("auth: production mode refuses the in-memory 2FA store — a restart wipes enrollment, silently reverting every 2FA account to password-only auth; set TwoFAConfig.Store (e.g. auth.NewEntityTwoFAStore(db, \"auth_twofa\")), or set AuthConfig.AllowInMemoryStores: true to acknowledge a deliberate single-node deployment")
+			return fmt.Errorf("auth: production mode refuses the in-memory 2FA store: a restart wipes enrollment, silently reverting every 2FA account to password-only auth; set TwoFAConfig.Store (e.g. auth.NewEntityTwoFAStore(db, \"auth_twofa\")), or set AuthConfig.AllowInMemoryStores: true to acknowledge a deliberate single-node deployment")
 		}
 		p.store = NewMemoryTwoFAStore()
 		if !cfg.DevMode {
 			// Acknowledged single-node: still leave a trace in the log.
-			slog.Default().Warn("auth: production mode is running on the in-memory 2FA store (acknowledged via AllowInMemoryStores) — a restart wipes enrollment, reverting 2FA accounts to password-only auth")
+			slog.Default().Warn("auth: production mode is running on the in-memory 2FA store (acknowledged via AllowInMemoryStores): a restart wipes enrollment, reverting 2FA accounts to password-only auth")
 		}
 	}
 	// The battery owns its table: create it if absent so hosts never
@@ -269,7 +269,7 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 
 // getSessionUser extracts the user ID from the session cookie. It also
 // reports whether the session is still in the PendingTwoFactor (pre-step-up)
-// state — callers that mutate the second factor MUST refuse pending sessions
+// state, callers that mutate the second factor MUST refuse pending sessions
 // (see requireStepUpUser). A pending session proves only the password.
 func (p *TwoFAPlugin) getSessionUser(r *http.Request) (userID string, pending bool, err error) {
 	sess, err := p.sessionFrom(r)
@@ -295,7 +295,7 @@ func (p *TwoFAPlugin) sessionFrom(r *http.Request) (*Session, error) {
 
 // requireStepUpUser resolves the session user and refuses any session that
 // is still PendingTwoFactor. Used by every 2FA self-service handler except
-// challengeHandler — a pending session (password only) must not be able to
+// challengeHandler, a pending session (password only) must not be able to
 // disable, re-enroll, verify, or refresh backup codes, which would defeat
 // 2FA with the password alone. Writes the 401/403 response and returns ok=false
 // when the caller must abort.
@@ -309,15 +309,15 @@ func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) 
 		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
 		return "", false
 	}
-	// Positive check, not just the absence of the pending flag. A session
+	// Positive check, not only the absence of the pending flag. A session
 	// minted BEFORE the user enrolled carries PendingTwoFactor=false
 	// forever, so the negative test alone left it "stepped up" for its
-	// whole lifetime — able to disable a factor it never proved. Only a
+	// whole lifetime, able to disable a factor it never proved. Only a
 	// session that actually passed the challenge (or the enrolling
 	// session, which verifyHandler marks) may mutate the factor.
 	state, err := p.store.GetTwoFA(r.Context(), sess.UserID)
 	if err != nil {
-		// Unreadable 2FA state is refused, never assumed absent —
+		// Unreadable 2FA state is refused, never assumed absent,
 		// assuming it would hand exactly the bypass back.
 		writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
 		return "", false
@@ -446,7 +446,7 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	// The caller just proved the factor with a live TOTP code, so mark
 	// this session verified. Without it, requireStepUpUser's positive
 	// check would lock the enrolling user out of their own 2FA settings
-	// until they logged in again — the session that did the enrolling
+	// until they logged in again, the session that did the enrolling
 	// would have Enabled=true and TwoFactorVerified=false.
 	if marker, ok := p.mgr.SessionStore().(SessionTwoFAMarker); ok {
 		if sess, err := p.sessionFrom(r); err == nil {
@@ -478,7 +478,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// challengeHandler is the ONLY endpoint a PendingTwoFactor session may
-	// reach — it is how the session completes step-up. Hence it uses the raw
+	// reach, it is how the session completes step-up. Hence it uses the raw
 	// getSessionUser (pending is allowed here) rather than requireStepUpUser.
 	userID, _, err := p.getSessionUser(r)
 	if err != nil {
@@ -579,7 +579,7 @@ func (p *TwoFAPlugin) markSessionTwoFA(r *http.Request) {
 //   - Returns 403 in all other cases (enrolled but not verified, or no session).
 //
 // Install this on every route that requires step-up authentication. Note
-// that it relies on the SessionStore implementing SessionTwoFAMarker —
+// that it relies on the SessionStore implementing SessionTwoFAMarker,
 // otherwise RequireTwoFA fails closed (always 403 for enrolled users).
 func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -600,12 +600,12 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 				writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
 				return
 			}
-			// Not enrolled — bypass.
+			// Not enrolled, bypass.
 			if state == nil || !state.Enabled {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Enrolled — must have verified for this session.
+			// Enrolled, must have verified for this session.
 			if !sess.TwoFactorVerified {
 				writeAuthError(w, http.StatusForbidden, "two-factor verification required")
 				return
@@ -680,7 +680,7 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 
 // GenerateSecret creates a cryptographically random 20-byte secret and
 // returns it as a base32-encoded string (no padding). Panics if crypto/rand
-// fails — entropy starvation makes the rest of the auth system unsound.
+// fails, entropy starvation makes the rest of the auth system unsound.
 func GenerateSecret() string {
 	secret := make([]byte, 20)
 	if _, err := rand.Read(secret); err != nil {

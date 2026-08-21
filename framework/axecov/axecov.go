@@ -46,7 +46,7 @@ var mu sync.Mutex
 
 // Record merges one scanned page into dir's manifest, creating the
 // manifest (and .gofastr/) on first use. path may be a full URL or a
-// bare path — the query string and fragment are stripped, because
+// bare path, the query string and fragment are stripped, because
 // coverage is per screen, not per parameter combination.
 func Record(dir, path, scheme string) error {
 	p := normalizePath(path)
@@ -86,7 +86,7 @@ func Record(dir, path, scheme string) error {
 }
 
 // Read loads dir's manifest. A missing manifest returns an error
-// satisfying errors.Is(err, fs.ErrNotExist) — callers decide whether
+// satisfying errors.Is(err, fs.ErrNotExist), callers decide whether
 // absence is fatal (strict dev) or fine (production).
 func Read(dir string) (*Manifest, error) {
 	mu.Lock()
@@ -133,8 +133,8 @@ func normalizePath(raw string) string {
 // test package dir and the server working directory differ (the
 // `gofastr dev --dir <root> --pkg ./cmd/app` layout):
 //
-//  1. GOFASTR_AXE_COVERAGE_DIR, when set — the explicit override.
-//  2. The nearest ancestor containing go.work — Go's own workspace
+//  1. GOFASTR_AXE_COVERAGE_DIR, when set: the explicit override.
+//  2. The nearest ancestor containing go.work: Go's own workspace
 //     rule. A test binary in a workspace's nested module
 //     (/repo/apps/shop) and a dev server at the workspace root
 //     (/repo) both find /repo/go.work, so they resolve the same
@@ -143,11 +143,11 @@ func normalizePath(raw string) string {
 //  4. Else the working directory itself.
 //
 // Known limitation: several apps sharing one module (or workspace)
-// share one manifest, and coverage is keyed by route path — two strict
+// share one manifest, and coverage is keyed by route path, two strict
 // apps with the same route ("/", "/login") can satisfy each other's
 // check. Set GOFASTR_AXE_COVERAGE_DIR per app (both when running its
-// tests and its server) when that matters; single-app modules — every
-// generated app — are unaffected.
+// tests and its server) when that matters; single-app modules, every
+// generated app, are unaffected.
 func DefaultDir() string {
 	if v := os.Getenv("GOFASTR_AXE_COVERAGE_DIR"); v != "" {
 		return v

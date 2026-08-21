@@ -137,7 +137,7 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	// Shared framework runtime — single URL across all widgets.
+	// Shared framework runtime: single URL across all widgets.
 	resp, err := http.Get(srv.URL + "/__gofastr/runtime.js")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("runtime status: %v code=%d", err, resp.StatusCode)
@@ -149,13 +149,13 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 		}
 	}
 
-	// Widget discovery list — runtime fetches this on init.
+	// Widget discovery list: runtime fetches this on init.
 	resp, err = http.Get(srv.URL + "/__gofastr/widgets")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("widget-list status: %v code=%d", err, resp.StatusCode)
 	}
 	body := readAll(t, resp)
-	// The registry is metadata-only — chrome HTML lives at chromePath.
+	// The registry is metadata-only, chrome HTML lives at chromePath.
 	for _, want := range []string{
 		`"name":"kiln-test"`,
 		`"chromePath":"/core-ui/widget/kiln-test/chrome"`,
@@ -169,7 +169,7 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 		t.Error("chrome HTML should NOT be inlined in the registry — fetch via chromePath")
 	}
 
-	// Chrome endpoint — runtime fetches lazily on first mount.
+	// Chrome endpoint: runtime fetches lazily on first mount.
 	resp, err = http.Get(srv.URL + "/core-ui/widget/kiln-test/chrome")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("chrome status: %v code=%d", err, resp.StatusCode)
@@ -187,7 +187,7 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 		t.Fatalf("style status: %v code=%d", err, resp.StatusCode)
 	}
 	style := readAll(t, resp)
-	// Widget CSS no longer prepends its own :root block — that was
+	// Widget CSS no longer prepends its own :root block, that was
 	// clobbering host-set theme variables (see server.go comment).
 	// app.css owns the :root floor now.
 	for _, want := range []string{".fui-widget", ".fui-pos-bottom-right"} {

@@ -11,8 +11,8 @@ import (
 
 // TestGroupSlashlessIndexNavPreservesShell covers the trailing-slash
 // matching half of #89: a group index registered at the slashless path
-// (/studio) must resolve to the same manifest entry — and therefore the
-// same layout chain — as its slashed siblings, so its first sibling nav
+// (/studio) must resolve to the same manifest entry, and therefore the
+// same layout chain, as its slashed siblings, so its first sibling nav
 // swaps at the shared group layer instead of rebuilding the shell.
 func TestGroupSlashlessIndexNavPreservesShell(t *testing.T) {
 	js, err := RuntimeJS()
@@ -85,7 +85,7 @@ func TestGroupSlashlessIndexNavPreservesShell(t *testing.T) {
 // TestCrossLayoutNavCopiesSSEMeta pins the #112 rollover-recovery half
 // that lives on the cross-chain branch: a chain-changing navigation
 // full-fetches the destination, and the freshly fetched head's
-// gofastr-sse meta (rendered under the CURRENT session — re-minted if
+// gofastr-sse meta (rendered under the CURRENT session, re-minted if
 // the old token died) must be copied onto the live document's meta.
 // Without the copy, a server restart leaves the SSE reconnect loop
 // pinned to the dead stream id until a hard reload.

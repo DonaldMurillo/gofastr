@@ -43,7 +43,7 @@ type SSEBroker struct {
 	// fanout, when non-nil, mirrors Publish to other replicas and
 	// re-delivers theirs locally. nodeID drops own-node echoes. fanoutSend
 	// is the non-blocking enqueue into the publish queue
-	// (fanout.PublishQueue) — Publish is called from request/emit paths and
+	// (fanout.PublishQueue); Publish is called from request/emit paths and
 	// must never wait on the backend's network/DB round-trip. Guarded by
 	// the fanout being attached once at construction and torn down by
 	// Close; reads happen only on the Publish path (mu-free after attach).
@@ -109,7 +109,7 @@ type SSEBrokerConfig struct {
 	//
 	// deliver() walks subscribers sequentially on the publisher's
 	// goroutine, so a block-mode subscriber that stops reading stalls
-	// every other subscriber AND whatever called Publish — usually a
+	// every other subscriber AND whatever called Publish, usually a
 	// request handler. On a public endpoint that is an unauthenticated
 	// denial of service, so the choice belongs to the developer who
 	// knows whether the endpoint is trusted, not to the caller.
@@ -126,14 +126,14 @@ type SSEBrokerConfig struct {
 	// same caller".
 	//
 	// Set this to something the caller cannot choose and another caller
-	// cannot guess — a session user id is the usual answer.
+	// cannot guess: a session user id is the usual answer.
 	//
 	// Left nil, the broker never evicts. The old default keyed on
 	// RemoteAddr's host, which is honest only on a direct connection:
 	// behind nginx, an ALB, Cloudflare or a k8s ingress, every request's
 	// TCP peer is the proxy, so all subscribers collapsed to one
 	// principal and `?subscriber_id=<victim>` dropped the victim's
-	// stream — repeatably. Nothing is lost by not evicting: subscriber
+	// stream, repeatably. Nothing is lost by not evicting: subscriber
 	// ids address nothing (deliver() broadcasts), and a dropped
 	// connection already unregisters itself.
 	Principal func(*http.Request) string
@@ -144,7 +144,7 @@ type SSEBrokerConfig struct {
 	// A client whose previous connection is half-open (mobile handoff, laptop
 	// sleep, an LB idle-kill the server has not noticed) still holds a seat
 	// until HeartbeatInterval's next write fails and the stream unregisters
-	// itself. That heartbeat is what reclaims the seat — for every client,
+	// itself. That heartbeat is what reclaims the seat: for every client,
 	// including the ones that send no subscriber_id, which is all of the
 	// framework's own. A reserved slot keyed on the requested id was tried
 	// and removed: nothing in the client runtime sends an id, so it could
@@ -414,7 +414,7 @@ func (b *SSEBroker) Publish(name, data string, id ...string) {
 // deliverLocal sends a locally-originated event to every local subscriber
 // with the broker's drop-oldest / block semantics: a slow=block subscriber
 // backpressures this call (block-mode backpressure is a LOCAL Publish
-// contract — the local emitter chose to publish and can be stalled).
+// contract; the local emitter chose to publish and can be stalled).
 func (b *SSEBroker) deliverLocal(name, data, eventID string) {
 	b.deliver(name, data, eventID, false)
 }
@@ -446,8 +446,8 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 	for _, sub := range subs {
 		if !fromFanout && sub.slowMode == sseSlowBlock {
 			// Bounded: an unbounded send lets one stalled subscriber
-			// wedge deliver() — and therefore every other subscriber
-			// and the calling handler — for as long as it likes.
+			// wedge deliver(), and therefore every other subscriber
+			// and the calling handler, for as long as it likes.
 			timer := time.NewTimer(b.blockTimeout())
 			select {
 			case sub.ch <- evt:
@@ -460,7 +460,7 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 		select {
 		case sub.ch <- evt:
 		default:
-			// Buffer full — drop oldest and try again
+			// Buffer full: drop oldest and try again
 			select {
 			case <-sub.ch:
 			default:
@@ -468,14 +468,14 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 			select {
 			case sub.ch <- evt:
 			default:
-				// Still full after drain — drop entirely
+				// Still full after drain: drop entirely
 			}
 		}
 	}
 }
 
 // publishFanout mirrors the event to other replicas via the attached fanout,
-// if any. Best-effort; no-op without a fanout. The enqueue never blocks —
+// if any. Best-effort; no-op without a fanout. The enqueue never blocks:
 // Publish runs on request/emit goroutines and a stalled backend must not
 // stall them (see fanout.PublishQueue).
 func (b *SSEBroker) publishFanout(name, data, eventID string) {
@@ -492,7 +492,7 @@ func (b *SSEBroker) publishFanout(name, data, eventID string) {
 // Close tears down the broker's fanout participation entirely: the receive
 // subscription is cancelled and subsequent Publish calls stop crossing
 // replicas. It is a no-op when no fanout is attached. The broker has no other
-// goroutines to stop — its subscribers live and die with their HTTP request
+// goroutines to stop; its subscribers live and die with their HTTP request
 // contexts. Safe to call multiple times.
 func (b *SSEBroker) Close() {
 	b.fanoutOnce.Do(func() {
@@ -505,7 +505,7 @@ func (b *SSEBroker) Close() {
 
 // parseSlowMode reads the client's requested slow-consumer mode. The
 // request may only select block mode when the host opted in via
-// SSEBrokerConfig.AllowClientSlowMode — see that field for why.
+// SSEBrokerConfig.AllowClientSlowMode. See that field for why.
 func (b *SSEBroker) parseSlowMode(r *http.Request) sseSlowMode {
 	if !b.allowClientSlowMode {
 		return sseSlowDropOldest

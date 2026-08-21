@@ -7,7 +7,7 @@ import (
 )
 
 // TestAuthErasersRegistered verifies the auth-owned tables are registered for
-// data erasure when this package is imported — the erase-plane mirror of
+// data erasure when this package is imported, the erase-plane mirror of
 // TestAuthExportersRegistered.
 func TestAuthErasersRegistered(t *testing.T) {
 	want := map[string]bool{"auth_users": false, "auth_sessions": false}
@@ -36,7 +36,7 @@ func TestAuthErasersRegistered(t *testing.T) {
 }
 
 // Every auth table that holds per-user state must be reachable by
-// App.EraseUserData. A table left unregistered survives an erasure —
+// App.EraseUserData. A table left unregistered survives an erasure,
 // 2FA secrets and OAuth links are credential material, not metadata.
 func TestAuthErasersCoverCredentialTables(t *testing.T) {
 	want := map[string]string{

@@ -222,7 +222,7 @@ entities:
 		},
 		{
 			// "2fa_tokens" camel-cases to "2faTokens", which is not a valid
-			// Go identifier — the generated package would not compile.
+			// Go identifier; the generated package would not compile.
 			name: "bad entity identifier",
 			yml: `
 entities:
@@ -820,7 +820,7 @@ func TestAuthDevModeFalseHonored(t *testing.T) {
 	}
 	assertContains(t, got, "DevMode: false")
 	// The prod-mode branch is not covered by the flagship build (which
-	// uses the dev default) — prove it still renders valid Go.
+	// uses the dev default). Prove it still renders valid Go.
 	fset := token.NewFileSet()
 	if _, err := parser.ParseFile(fset, "app.go", got, parser.AllErrors); err != nil {
 		t.Fatalf("app.go is not valid Go: %v\n%s", err, got)
@@ -890,7 +890,7 @@ entities:
 
 func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
 	dir := t.TempDir()
-	// Run from the blueprint's own directory — generating from the repo cwd
+	// Run from the blueprint's own directory; generating from the repo cwd
 	// would (correctly) trip the app.module vs enclosing-go.mod check.
 	covT_chdir(t, dir)
 	path := filepath.Join(dir, "gofastr.yml")
@@ -943,7 +943,7 @@ endpoints:
 `)
 	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from="+filepath.Join(dir, "bad.yml"), "--dry-run", "--json")
 	cmd.Dir = repoRoot
-	// Inherit the parent test's GOCACHE — overriding with a fresh
+	// Inherit the parent test's GOCACHE; overriding with a fresh
 	// cache here races against the outer `go test ./...` parallel
 	// build of the same module and transiently mis-resolves the 10
 	// battery imports in cmd/gofastr/agents.go during vet's
@@ -985,7 +985,7 @@ app:
 `)
 	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from="+filepath.Join(dir, "gofastr.yml"), "--out=..", "--dry-run", "--json")
 	cmd.Dir = repoRoot
-	// Inherit parent GOCACHE — see the matching note in
+	// Inherit parent GOCACHE. See the matching note in
 	// TestGenerateFromBlueprintDryRunJSONReportsValidationErrors.
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -1141,7 +1141,7 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 
 	// LLM markdown (the fixture enables app.llm_md): the index lists the
 	// screens and every screen llm.md link it emits resolves. The /api/llm.md
-	// prose pointer is skipped — it belongs to the entity API surface, not
+	// prose pointer is skipped; it belongs to the entity API surface, not
 	// the screen inventory.
 	idxResp, err := http.Get(baseURL + "/llm-pages.md")
 	if err != nil {
@@ -1212,7 +1212,7 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 
 	// /openapi.json is auth-gated by default (security hardening).
 	// A blueprint app that doesn't wire auth gets 401 from an anonymous
-	// fetch — that's the expected contract. The path-shape assertion
+	// fetch; that's the expected contract. The path-shape assertion
 	// the test really cares about (posts routes appearing in the spec)
 	// is covered by `framework/openapi_e2e_test.go`'s spec-handler
 	// tests, which authenticate via context.
@@ -1345,7 +1345,7 @@ func runBrowserUIE2E(t *testing.T, baseURL, wantEntityTitle string) {
 	defer browserCancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's;
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -1374,7 +1374,7 @@ func runBrowserUIE2E(t *testing.T, baseURL, wantEntityTitle string) {
 		chromedp.Evaluate(`!!document.querySelector('[data-island="live_status"]')`, &hasIsland),
 		chromedp.Evaluate(`!!document.querySelector('[data-widget="save_button"]')`, &hasWidget),
 		// The entity_list is server-rendered into a ui.DataTable on first paint
-		// (no client fetch / refresh button) — the CRUD rows are already in the DOM.
+		// (no client fetch / refresh button); the CRUD rows are already in the DOM.
 		chromedp.WaitVisible(`[data-fui-comp="ui-data-table"]`, chromedp.ByQuery),
 		chromedp.Text(`[data-action-result]`, &before, chromedp.ByQuery),
 		chromedp.Click(`#save-action`, chromedp.ByID),

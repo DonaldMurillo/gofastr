@@ -14,7 +14,7 @@ import (
 
 // testPresenceUser is a uihost-test-local double for battery/auth's User.
 // It satisfies island's presenceUser interface (GetID + GetEmail) via
-// structural typing — PresenceIdentityFromContext type-asserts the ctx
+// structural typing: PresenceIdentityFromContext type-asserts the ctx
 // value, exactly as it would a real auth user. No battery/auth import.
 type testPresenceUser struct{ id, email string }
 
@@ -36,7 +36,7 @@ func pollUntil(t *testing.T, cond func() bool, timeout time.Duration, msg string
 	t.Fatalf("timed out waiting: %s", msg)
 }
 
-// TestHandleSSEPresenceAuthedUserRecords — handleSSE resolves the identity
+// TestHandleSSEPresenceAuthedUserRecords: handleSSE resolves the identity
 // from the request CONTEXT (handler.SetUser) and records it on the topic.
 // A fake ?user=attacker query param is IGNORED: the roster shows the ctx
 // user, proving identity is server-derived (security invariant #1).
@@ -82,7 +82,7 @@ func TestHandleSSEPresenceAuthedUserRecords(t *testing.T) {
 	}, time.Second, "roster must empty after disconnect")
 }
 
-// TestHandleSSEPresenceAnonymousNoCrash — an unauthenticated SSE connection
+// TestHandleSSEPresenceAnonymousNoCrash: an unauthenticated SSE connection
 // with a presence topic does not crash; it registers a pseudo-identity.
 func TestHandleSSEPresenceAnonymousNoCrash(t *testing.T) {
 	ds := newTestUIHost()
@@ -109,7 +109,7 @@ func TestHandleSSEPresenceAnonymousNoCrash(t *testing.T) {
 	<-done
 }
 
-// TestHandleSSEPresenceNoTopicNoPresence — a connection without ?presence=
+// TestHandleSSEPresenceNoTopicNoPresence: a connection without ?presence=
 // joins no topic; the SSE stream still works (backward compatible).
 func TestHandleSSEPresenceNoTopicNoPresence(t *testing.T) {
 	ds := newTestUIHost()
@@ -138,7 +138,7 @@ func TestHandleSSEPresenceNoTopicNoPresence(t *testing.T) {
 	<-done
 }
 
-// TestInjectChromePresenceMetaTag — the SSE meta tag includes &presence=
+// TestInjectChromePresenceMetaTag: the SSE meta tag includes &presence=
 // (url-escaped) when a presenceTopic is threaded, so the client's
 // EventSource connection joins the named topic. This is the meta-tag
 // threading verified end-to-end through injectChrome.
@@ -153,7 +153,7 @@ func TestInjectChromePresenceMetaTag(t *testing.T) {
 	}
 }
 
-// TestInjectChromeNoPresenceMetaTag — without a presence topic, the meta
+// TestInjectChromeNoPresenceMetaTag: without a presence topic, the meta
 // tag is the plain session URL (backward compatible).
 func TestInjectChromeNoPresenceMetaTag(t *testing.T) {
 	ds := newTestUIHost()

@@ -3,7 +3,7 @@
 // can't access package-private helpers.
 //
 // Live in framework/internal/ so battery tests and downstream consumers
-// can't depend on it — these helpers are tied to gofastr's test fixtures
+// can't depend on it, these helpers are tied to gofastr's test fixtures
 // and shouldn't leak into product code.
 package testdb
 
@@ -28,9 +28,9 @@ import (
 // Postgres connection resolution
 //
 // Order:
-//  1. TEST_POSTGRES_DSN env var — CI's postgres service sets it; locally
+//  1. TEST_POSTGRES_DSN env var: CI's postgres service sets it; locally
 //     `make postgres-up` starts the docker-compose service.
-//  2. t.Skip — unset; SQLite-only. This package always skips; the fail-closed
+//  2. t.Skip: unset; SQLite-only. This package always skips; the fail-closed
 //     canary for a broken CI Postgres lives in internal/pgtest, which
 //     escalates to t.Fatal under PGTEST_REQUIRED/GITHUB_ACTIONS. One loud
 //     canary is enough, and it fires on the same missing env var.
@@ -39,8 +39,8 @@ import (
 //
 // A testcontainers-go branch used to sit between the two, spawning
 // postgres:16-alpine on demand. It cost every downstream application the
-// Docker client stack in its module graph — a require in this module's go.mod
-// is inherited by everything that imports the framework — for a convenience
+// Docker client stack in its module graph, a require in this module's go.mod
+// is inherited by everything that imports the framework, for a convenience
 // only this repo's own tests used. See cmd/repolint's
 // test-only-dep-in-consumer-graph rule, which now keeps it out.
 
@@ -55,7 +55,7 @@ var (
 // errNoPostgres names the two ways to supply a server rather than reporting a
 // bare absence.
 var errNoPostgres = errors.New(
-	"TEST_POSTGRES_DSN is not set — start one with `make postgres-up` (docker compose) " +
+	"TEST_POSTGRES_DSN is not set: start one with `make postgres-up` (docker compose) " +
 		"or point at an existing server, e.g. " +
 		"TEST_POSTGRES_DSN='postgres://test:test@localhost:5432/framework_test?sslmode=disable'")
 
@@ -157,7 +157,7 @@ var schemaCounter atomic.Uint64
 // The pid is load-bearing, not decoration. The counter alone is process-local,
 // which was sufficient only while every test process got its own ephemeral
 // container: `go test -p 2` runs packages as separate processes, and against
-// one shared Postgres — the CI service, or a local `make postgres-up` — two of
+// one shared Postgres, the CI service, or a local `make postgres-up`, two of
 // them reach `t_<sametest>_1` and the second fails to create its schema.
 // internal/pgtest has always included the pid for this reason.
 func NewSchemaName(t *testing.T) string {

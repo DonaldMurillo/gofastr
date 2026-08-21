@@ -13,7 +13,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// These tests pin the durable OAuth link store added to EntityUserStore —
+// These tests pin the durable OAuth link store added to EntityUserStore,
 // the surface that makes the OAuth2 callback safe in production. Without a
 // linker, the callback falls back to email-only matching and an IdP that
 // emits an unverified email can sign in as an existing local account. The
@@ -33,7 +33,7 @@ type oauthLinkFixture struct {
 
 // newOAuthLinkFixture opens a fresh in-memory SQLite DB with the users table
 // already created (so NewEntityUserStore.EnsureSchema only has to add the
-// oauth_links table — exercising exactly the migration path a host hits on
+// oauth_links table, exercising exactly the migration path a host hits on
 // upgrade).
 func newOAuthLinkFixture(t *testing.T) *oauthLinkFixture {
 	t.Helper()
@@ -79,7 +79,7 @@ func TestEntityOAuthLinks_TableProvisioned(t *testing.T) {
 	if !strings.EqualFold(kind, "table") {
 		t.Fatalf("sqlite_master type = %q, want table", kind)
 	}
-	// The PK is the serialization point — confirm provider and provider_id
+	// The PK is the serialization point, confirm provider and provider_id
 	// are both in it. pragma_index_list formatting varies across SQLite
 	// builds, so we go straight to table_info and read pkOrd per column.
 	cols, err := f.db.Query("PRAGMA table_info(users_oauth_links)")
@@ -120,7 +120,7 @@ func TestEntityOAuthLinks_TableProvisioned(t *testing.T) {
 }
 
 // TestEntityOAuthLinks_FindByOAuthNotFound: a clean store returns
-// ErrUserNotFound — never nil — so resolveOAuthUser proceeds to step 2/3
+// ErrUserNotFound, never nil, so resolveOAuthUser proceeds to step 2/3
 // instead of crashing on a nil User.
 func TestEntityOAuthLinks_FindByOAuthNotFound(t *testing.T) {
 	f := newOAuthLinkFixture(t)
@@ -188,7 +188,7 @@ func TestEntityOAuthLinks_LinkIsIdempotent(t *testing.T) {
 }
 
 // TestEntityOAuthLinks_LinkDoesNotReassignOwner: the user_id of an existing
-// binding is immutable from LinkOAuth — a second callback for the same
+// binding is immutable from LinkOAuth, a second callback for the same
 // external identity under a DIFFERENT local user must NOT flip the binding.
 // Otherwise a single (provider, provider_id) could be used to walk through
 // local accounts.
@@ -217,7 +217,7 @@ func TestEntityOAuthLinks_LinkDoesNotReassignOwner(t *testing.T) {
 // TestEntityOAuthLinks_ConcurrentSamePairProducesOneRow: two goroutines
 // racing to link the SAME (provider, provider_id) at first-login time must
 // produce exactly one row and one winning user_id. This is the
-// race-safety guarantee the brief calls out — the PK upsert is what enforces
+// race-safety guarantee the brief calls out, the PK upsert is what enforces
 // it; this test would catch a regression to plain INSERT (which would error
 // or create duplicates).
 func TestEntityOAuthLinks_ConcurrentSamePairProducesOneRow(t *testing.T) {
@@ -248,7 +248,7 @@ func TestEntityOAuthLinks_ConcurrentSamePairProducesOneRow(t *testing.T) {
 		t.Fatalf("after %d concurrent LinkOAuth for the same (provider, provider_id), got %d rows; want 1",
 			N, n)
 	}
-	// FindByOAuth returns SOME user from the contender set — the winner is
+	// FindByOAuth returns SOME user from the contender set, the winner is
 	// whatever the upsert picked first. The invariant is "exactly one",
 	// not "a specific one".
 	got, err := f.store.FindByOAuth(f.ctx, "github", "gh-777")
@@ -290,7 +290,7 @@ func TestEntityOAuthLinks_EnrichedStoresProfile(t *testing.T) {
 }
 
 // TestEntityOAuthLinks_EnrichedRefreshesProfile: a second enriched link on
-// the same (provider, provider_id) refreshes the profile in place — the
+// the same (provider, provider_id) refreshes the profile in place, the
 // email shown in /auth/accounts matches what the IdP says now, not what it
 // said at first link.
 func TestEntityOAuthLinks_EnrichedRefreshesProfile(t *testing.T) {
@@ -318,7 +318,7 @@ func TestEntityOAuthLinks_EnrichedRefreshesProfile(t *testing.T) {
 }
 
 // TestEntityOAuthLinks_MultipleProvidersForOneUser: a user can link more
-// than one provider — this is the reason links are a separate table and not
+// than one provider, this is the reason links are a separate table and not
 // columns on the users table. ListAccounts returns all of them.
 func TestEntityOAuthLinks_MultipleProvidersForOneUser(t *testing.T) {
 	f := newOAuthLinkFixture(t)
@@ -351,7 +351,7 @@ func TestEntityOAuthLinks_MultipleProvidersForOneUser(t *testing.T) {
 }
 
 // TestEntityOAuthLinks_UnlinkRemovesProvider: UnlinkOAuth deletes by
-// (user_id, provider), not by provider_id — so a user with two accounts at
+// (user_id, provider), not by provider_id, so a user with two accounts at
 // the same provider (unusual but possible) loses both, matching the
 // AccountsPlugin contract.
 func TestEntityOAuthLinks_UnlinkRemovesProvider(t *testing.T) {
@@ -407,7 +407,7 @@ func TestEntityOAuthLinks_LinkOAuthRejectsEmpty(t *testing.T) {
 }
 
 // TestEntityOAuthLinks_CustomTableNameDerives: a host that names its users
-// table differently gets a matching "<table>_oauth_links" — two
+// table differently gets a matching "<table>_oauth_links", two
 // EntityUserStore instances on the same DB don't collide.
 func TestEntityOAuthLinks_CustomTableNameDerives(t *testing.T) {
 	db := setupTestDB(t)

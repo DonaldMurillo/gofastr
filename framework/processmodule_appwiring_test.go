@@ -12,7 +12,7 @@ import (
 // wiring on the framework spine: RegisterProcessModule (first-call lazy
 // construction of the store + broker + supervisor + tool registry + coordinator
 // adapter), ProcessModules, and NewModuleMigrationCoordinator. It stops at
-// registration — spawning a child is exercised by the supervisor/gate suites;
+// registration, spawning a child is exercised by the supervisor/gate suites;
 // here the point is that the App entry points construct and wire correctly.
 func TestApp_RegisterProcessModuleWiring(t *testing.T) {
 	db := newStoreDB(t)
@@ -58,7 +58,7 @@ func TestApp_RegisterProcessModuleWiring(t *testing.T) {
 	}
 
 	// The in-process ModuleManager's List merges the supervisor's operator
-	// introspection (design §8) via the coordinator adapter — a registered
+	// introspection (design §8) via the coordinator adapter, a registered
 	// process module appears with its ProcessState populated.
 	var seen bool
 	for _, mi := range app.modules.List() {
@@ -149,7 +149,7 @@ func TestModuleManager_RemoteToggleForwardsReconcile(t *testing.T) {
 	coord := &recordingCoordinator{}
 	mm.SetProcessCoordinator(coord)
 
-	// A toggle re-published by THIS node is ignored (no reconcile) — the
+	// A toggle re-published by THIS node is ignored (no reconcile), the
 	// own-publish guard prevents a self-triggered reconcile loop.
 	mm.handleRemoteToggle(buildTogglePayload(mm.nodeID, "m1", false))
 	if len(coord.reconciled) != 0 {
@@ -166,7 +166,7 @@ func TestModuleManager_RemoteToggleForwardsReconcile(t *testing.T) {
 
 	// List with a coordinator attached but Info reporting ok=false (m1 is an
 	// in-process module, not one this supervisor runs) must leave the
-	// process-only fields zero — the additive-introspection contract.
+	// process-only fields zero, the additive-introspection contract.
 	for _, mi := range mm.List() {
 		if mi.Name == "m1" && mi.ProcessState != "" {
 			t.Errorf("in-process module m1 got a ProcessState %q from a non-owning coordinator", mi.ProcessState)
@@ -177,7 +177,7 @@ func TestModuleManager_RemoteToggleForwardsReconcile(t *testing.T) {
 // TestModuleManager_RemoteToggleStoreErrorFailsOpen covers the fanout-refresh
 // fail-open branch: if the authoritative store can't be re-read when a remote
 // toggle arrives, the manager keeps its current cache (logs a WARN) and does
-// NOT forward a reconcile — an unreadable store must not flap the cache off a
+// NOT forward a reconcile, an unreadable store must not flap the cache off a
 // lossy signal.
 func TestModuleManager_RemoteToggleStoreErrorFailsOpen(t *testing.T) {
 	mm := NewModuleManager(nil, nil)

@@ -75,7 +75,7 @@ func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	// Fallback for clients without Fetch Metadata: compare Origin host.
-	// Absent or opaque ("null") Origin can't prove an attack — allow.
+	// Absent or opaque ("null") Origin can't prove an attack, allow.
 	if o := r.Header.Get("Origin"); o != "" && o != "null" {
 		if h := parseOriginHost(o); h != "" && !strings.EqualFold(h, r.Host) {
 			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)

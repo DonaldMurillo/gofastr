@@ -82,8 +82,8 @@ func injectMarker(html, name string) (render.HTML, error) {
 	}
 
 	attr := sep + `data-fui-comp="` + name + `"`
-	// Preserve a trailing space before `/>` if the source had one
-	// — `<br />` should stay `<br data-fui-comp="…" />`, not collapse
+	// Preserve a trailing space before `/>` if the source had one,
+	// `<br />` should stay `<br data-fui-comp="…" />`, not collapse
 	// to `<br data-fui-comp="…"/>`. We detect this by checking the
 	// character we're about to splice before.
 	if selfClose && insertAt > 0 && html[insertAt-1] == ' ' {

@@ -14,7 +14,7 @@ func boolPtr(b bool) *bool { return &b }
 
 // An entity that opted out of auto-CRUD must not appear in the spec. The
 // router refuses every generated path for it (404), so advertising them
-// documents an API the server does not have — and a generated SDK ships
+// documents an API the server does not have, and a generated SDK ships
 // methods that cannot work. Entities usually opt out because their rows
 // are sensitive or their invariants belong to a server-side workflow, so
 // this is the worst place for the spec to over-promise.
@@ -45,7 +45,7 @@ func TestCRUDDisabledEntityEmitsNoPaths(t *testing.T) {
 	}
 }
 
-// A nil CRUD pointer means "auto" — the router enables CRUD for it, so the
+// A nil CRUD pointer means "auto", the router enables CRUD for it, so the
 // spec must too. Only an explicit false opts out.
 func TestNilCRUDStillEmitsPaths(t *testing.T) {
 	auto := entity.Define("posts", entity.EntityConfig{
@@ -66,7 +66,7 @@ func TestNilCRUDStillEmitsPaths(t *testing.T) {
 
 // The opt-out hides the paths, not the type. A CRUD-disabled entity is
 // still reachable through hand-written Endpoints that speak its shape, so
-// the schema component stays — dropping it would leave those endpoints
+// the schema component stays, dropping it would leave those endpoints
 // referencing a component the spec never defines.
 func TestCRUDDisabledEntityKeepsSchema(t *testing.T) {
 	off := entity.Define("secrets", entity.EntityConfig{
@@ -92,7 +92,7 @@ func TestCRUDDisabledEntityKeepsSchema(t *testing.T) {
 // the case most likely to carry them: opting out of generated CRUD is how
 // an app says "reach this through the endpoints I declared". Dropping
 // them re-creates the very spec/server mismatch this file exists to close,
-// pointing the other way — a live route the spec never mentions.
+// pointing the other way, a live route the spec never mentions.
 func TestCRUDDisabledEntityKeepsEndpoints(t *testing.T) {
 	off := entity.Define("secrets", entity.EntityConfig{
 		Table:    "secrets",

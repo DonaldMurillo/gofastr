@@ -19,7 +19,7 @@ type Analyzer struct {
 	// Doc is one line describing what the analyzer looks at.
 	Doc string
 	// Rules are the IDs this analyzer may emit. [Run] rejects a
-	// diagnostic naming any other rule — an analyzer cannot smuggle in an
+	// diagnostic naming any other rule. An analyzer cannot smuggle in an
 	// undocumented finding, which is what keeps the catalog honest.
 	Rules []string
 	// Run inspects the pass. Returning an error aborts only this
@@ -47,7 +47,7 @@ var (
 )
 
 // Register adds analyzers to the process-wide set. Panics on a duplicate
-// name or a rule the catalog does not know — both are wiring errors that
+// name or a rule the catalog does not know. Both are wiring errors that
 // belong at init, not in a user's terminal.
 func Register(as ...*Analyzer) {
 	analyzerMu.Lock()
@@ -144,11 +144,11 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	// Analyzers self-register from an init() in
 	// framework/contracts/analyzers, so a binary that never imports that
 	// package has an empty registry. Running zero analyzers produces zero
-	// diagnostics, which is indistinguishable from a clean tree — the
+	// diagnostics, which is indistinguishable from a clean tree. The
 	// worst possible failure for a tool whose whole job is saying "this
 	// is fine". Refuse instead.
 	if len(Analyzers()) == 0 {
-		return nil, fmt.Errorf(`contracts: no analyzers registered — import _ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers" in the binary that calls Run`)
+		return nil, fmt.Errorf(`contracts: no analyzers registered: import _ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers" in the binary that calls Run`)
 	}
 	selected := make([]*Analyzer, 0)
 	for _, a := range Analyzers() {
@@ -163,7 +163,7 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 		}
 		for _, name := range opts.Analyzers {
 			if !known[name] {
-				return nil, fmt.Errorf("unknown analyzer %q — run `gofastr verify --list` to see the catalog", name)
+				return nil, fmt.Errorf("unknown analyzer %q: run `gofastr verify --list` to see the catalog", name)
 			}
 		}
 	}
@@ -190,7 +190,7 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	raw = append(raw, sup.issues...)
 
 	// active decides which rules this run actually evaluated. A stale
-	// suppression is only reportable for a rule that ran — otherwise
+	// suppression is only reportable for a rule that ran. Otherwise
 	// `gofastr verify routing` would flag every accessibility suppression
 	// in the tree as dead.
 	active := func(r Rule) bool {
@@ -228,7 +228,7 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 			// NOT filtered by the current fail floor: the baseline being
 			// applied may have been recorded under a different one (a
 			// --strict lane records warn entries a non-strict run still
-			// applies), and a slot is a slot — an unclaimed one absorbs
+			// applies), and a slot is a slot. An unclaimed one absorbs
 			// the next new finding whatever severity it carries. Claims
 			// for rules the baseline never recorded are simply no-ops.
 			report.noteSuppressed(rule.ID, d.File)
@@ -250,8 +250,8 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 
 	// Stale suppressions are computed after the filtering loop, when every
 	// directive that matched something has been marked used. Their
-	// findings then go through the SAME contract as every other finding —
-	// exemptions apply, and a `//gofastr:allow(GOFASTR0002)` waives one.
+	// findings then go through the SAME contract as every other finding.
+	// Exemptions apply, and a `//gofastr:allow(GOFASTR0002)` waives one.
 	// Skipping those checks made the meta rule the one rule in the
 	// catalog that could not be waived locally, with the waiver itself
 	// reported stale. Two passes because consuming a waiver marks that
@@ -259,8 +259,8 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	// now-used waivers from the candidate set, and the second pass emits
 	// what survives.
 	//
-	// Consumption is deliberately eager — before the staleReportable
-	// check — so a waiver is marked used even on a capability-narrowed
+	// Consumption is deliberately eager, before the staleReportable
+	// check, so a waiver is marked used even on a capability-narrowed
 	// run where its stale finding would not have been reportable. The
 	// cost is a Suppressed counter that can include those waivers; the
 	// alternative leaves the waiver unused and reports IT stale on the

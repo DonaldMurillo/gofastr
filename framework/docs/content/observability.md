@@ -23,11 +23,14 @@ app := framework.NewApp(
 
 `WithMetrics()`:
 
-- adds the metrics middleware to the default chain — it records per-route
+- adds the metrics middleware to the default chain; it records per-route
   request counts, status classes, and latency histograms;
 - mounts a Prometheus text-format endpoint at **`/metrics`**.
 
-The `/metrics` endpoint is **unauthenticated by design** — scrape it from
+The `/metrics` endpoint is **unauthenticated by design**. Scrape it from
+inside the cluster and keep it off the public network; see the
+[deploy checklist](deploy.md).
+
 ### What is recorded
 
 HTTP metrics (always present with `WithMetrics()`):
@@ -70,7 +73,7 @@ label-cardinality attacks from attacker-controlled
 ### How subsystem metrics register
 
 Every subsystem writes to the **same** `*middleware.Metrics` store that serves
-`/metrics`, via a *collector* — a `func(io.Writer)` that emits Prometheus
+`/metrics`, via a *collector*: a `func(io.Writer)` that emits Prometheus
 text lines (HELP/TYPE/samples) and runs once per scrape, in name order, after
 the HTTP metrics. Batteries and libraries reach the store through the App:
 
@@ -90,13 +93,13 @@ way inside `app.Metrics()`. Library-owned surfaces register when you wire
 them, because the framework does not construct them for you:
 
 ```go
-// battery/queue — DBQueue/MemoryQueue implement the Browsable interface.
+// battery/queue: DBQueue/MemoryQueue implement the Browsable interface.
 app.Metrics().RegisterCollector("queue:ingest", queue.MetricsCollector(q, "ingest"))
 
-// battery/webhook — the Manager counts deliveries and failures.
+// battery/webhook: the Manager counts deliveries and failures.
 app.Metrics().RegisterCollector("webhook", mgr.MetricsCollector())
 
-// framework/slowquery — a SlowQueryLogger you wrapped around *sql.DB.
+// framework/slowquery: a SlowQueryLogger you wrapped around *sql.DB.
 app.Metrics().RegisterCollector("slow_queries", slowquery.MetricsCollector(slowDB))
 ```
 
@@ -107,7 +110,7 @@ nothing for that scrape rather than break `/metrics`.
 ### Custom middleware chain
 
 If you use `WithoutDefaultMiddleware()` to build your own chain, wire the
-primitives manually — `WithMetrics` panics when combined with
+primitives manually; `WithMetrics` panics when combined with
 `WithoutDefaultMiddleware`:
 
 ```go
@@ -132,7 +135,7 @@ app := framework.NewApp(framework.WithTracing())
 
 `WithTracing()` runs every request inside a span carrying method, route,
 and status attributes, and propagates incoming trace context. Spans
-**no-op until you install a TracerProvider** — so it's safe to leave on in
+**no-op until you install a TracerProvider**, so it's safe to leave on in
 all environments:
 
 ```go
@@ -262,7 +265,7 @@ probes (and a DB readiness check when a DB is configured). See
   created but dropped immediately. You must call `otel.SetTracerProvider(tp)`
   with an exporter-backed provider before traces land anywhere.
 - **Adding `WithTracing()` after `WithoutDefaultMiddleware()`.** Same
-  problem as `WithMetrics` — it panics. Use `framework.Tracing()` in your
+  problem as `WithMetrics`: it panics. Use `framework.Tracing()` in your
   own chain.
 
 ## Deploying with observability

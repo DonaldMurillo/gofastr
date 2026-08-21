@@ -26,7 +26,7 @@ const (
 )
 
 // ScreenTitler is an optional interface for components that declare their
-// own page title. The returned string is the page-specific portion — the
+// own page title. The returned string is the page-specific portion, the
 // framework appends the app name from AppConfig.Name to produce the full
 // <title>. For example, ScreenTitle() returning "Dashboard" with
 // AppConfig.Name "MyApp" produces <title>Dashboard — MyApp</title>.
@@ -42,7 +42,7 @@ type ScreenDescriber interface {
 
 // ScreenTyper is an optional interface for components that declare their
 // screen type. If not implemented, the screen defaults to ScreenPage.
-// Most screens can omit this — only implement it for drawers, sheets, or dialogs.
+// Most screens can omit this, only implement it for drawers, sheets, or dialogs.
 type ScreenTyper interface {
 	ScreenType() ScreenType
 }
@@ -51,7 +51,7 @@ type ScreenTyper interface {
 // ScreenDescriber, and ScreenTyper. Components can implement the full
 // interface, or implement just the individual interfaces they need.
 // For example, a component that only needs ScreenTitle can implement
-// ScreenTitler alone — ScreenType defaults to ScreenPage and description
+// ScreenTitler alone, ScreenType defaults to ScreenPage and description
 // defaults to empty.
 //
 // The builder methods (WithTitle, WithDescription, WithScreenType) still
@@ -82,7 +82,7 @@ type ScreenActions interface {
 // ScreenLoader is an optional interface for screens that need to fetch data
 // before rendering. Load runs AFTER route params have been injected and AFTER
 // DI services are wired, but BEFORE Render. Mutating fields on the screen is
-// the expected pattern — those fields are then read by Render.
+// the expected pattern, those fields are then read by Render.
 //
 // The same Load runs for both SSR (per-request) and SSG (at build time), so
 // implementations should be deterministic given the same context inputs.
@@ -179,8 +179,8 @@ func NewScreen(path string, comp component.Component) *Screen {
 //
 // It is the contract an embed surface carries: framework/embed.Surface holds
 // the screen rather than a path string, so the link from a surface to the
-// component tree it renders is a Go value — followable by a human, a static
-// analyzer, and the boot-time server-action walk — instead of a string the
+// component tree it renders is a Go value, followable by a human, a static
+// analyzer, and the boot-time server-action walk, instead of a string the
 // framework has to resolve against a route table. Named for the route it
 // occupies, not as a field accessor.
 func (s *Screen) RoutePath() string { return s.Path }
@@ -209,7 +209,7 @@ func (s *Screen) WithPolicy(p Policy) *Screen {
 }
 
 // PolicyChain returns a copy of the screen's own policy chain (does
-// not include inherited group policies — use EffectivePolicies for the
+// not include inherited group policies, use EffectivePolicies for the
 // full walk). Returns nil when no policies are attached.
 func (s *Screen) PolicyChain() []Policy {
 	if len(s.policies) == 0 {
@@ -292,7 +292,7 @@ func (s *Screen) newInstance() component.Component {
 }
 
 // Render renders the screen's component with appropriate ARIA landmarks.
-// Equivalent to RenderCtx(context.Background()) — use RenderCtx when a
+// Equivalent to RenderCtx(context.Background()), use RenderCtx when a
 // request context is available so ContextComponent screens receive it.
 func (s *Screen) Render() render.HTML {
 	return s.RenderCtx(context.Background())
@@ -362,7 +362,7 @@ func (t ScreenType) String() string {
 
 // ValidateScreenOutput checks a screen's rendered output for common mistakes
 // and returns a slice of warning strings. An empty slice means no issues.
-// This is intended for dev-mode linting — it does not affect production
+// This is intended for dev-mode linting, it does not affect production
 // rendering.
 //
 // Currently checks:
@@ -378,7 +378,7 @@ func ValidateScreenOutput(screen *Screen, output string) []string {
 	if screen.Type == ScreenPage {
 		if strings.Contains(output, "<main") {
 			warnings = append(warnings,
-				fmt.Sprintf("screen %q: component output contains <main> but the framework already wraps ScreenPage in <main> — this creates nested <main> elements (invalid HTML). Return the content without the <main> wrapper.",
+				fmt.Sprintf("screen %q: component output contains <main> but the framework already wraps ScreenPage in <main>. This creates nested <main> elements (invalid HTML). Return the content without the <main> wrapper.",
 					screen.Path))
 		}
 	}

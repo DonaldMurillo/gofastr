@@ -19,7 +19,7 @@ import (
 
 // deepCopyRecord is what keeps one holder of an event record from writing into
 // another's. A copy that stops at the top level is indistinguishable from a
-// correct one until a hook masks something NESTED — which is how a shallow
+// correct one until a hook masks something NESTED, which is how a shallow
 // version shipped and reached the event bus through a shared sub-map.
 
 func TestDeepCopyRebuildsEveryNestedContainer(t *testing.T) {
@@ -56,14 +56,14 @@ func TestDeepCopyRebuildsEveryNestedContainer(t *testing.T) {
 
 // A scalar must come back EQUAL, not merely non-nil. The first version of this
 // asserted `got == nil && v != nil`, which is unsatisfiable for every input it
-// listed — returning a constant from the default branch left it green.
+// listed, returning a constant from the default branch left it green.
 func TestDeepCopyValuePassesScalarsThrough(t *testing.T) {
 	for _, v := range []any{nil, 1, "s", 2.5, true, int64(7), time.Unix(0, 0).UTC()} {
 		if got := deepCopyValue(v); got != v {
 			t.Errorf("deepCopyValue(%#v) = %#v, want the same value", v, got)
 		}
 	}
-	// []byte is a slice, so it is COPIED rather than passed through — equal
+	// []byte is a slice, so it is COPIED rather than passed through, equal
 	// contents, different backing array.
 	b := []byte("secret")
 	got, ok := deepCopyValue(b).([]byte)
@@ -95,7 +95,7 @@ func TestRedactEventRecordIsolatesEachSubscriber(t *testing.T) {
 		if !ok || p.Result == nil {
 			return nil
 		}
-		// Masks a NESTED field — the case a shallow copy fails.
+		// Masks a NESTED field, the case a shallow copy fails.
 		if prof, ok := p.Result["profile"].(map[string]any); ok {
 			prof["ssn"] = "***-**-****"
 		}
@@ -129,7 +129,7 @@ func TestRedactEventRecordIsolatesEachSubscriber(t *testing.T) {
 		}
 	}
 
-	// The source record — the bus's copy, and the outbox's — is untouched.
+	// The source record, the bus's copy, and the outbox's, is untouched.
 	if got := record["profile"].(map[string]any)["ssn"]; got != "111-22-3333" {
 		t.Errorf("the redaction reached the source record: ssn=%v", got)
 	}
@@ -153,7 +153,7 @@ func TestRedactEventRecordOmitsTheRecordOnHookError(t *testing.T) {
 	out := ch.redactEventRecord(httptest.NewRequest(http.MethodGet, "/rows/_events", nil), ev)
 	data, _ := out.Data.(map[string]any)
 	// The key is present holding a nil map, which marshals to "record": null.
-	// Compare the map, not the any — a nil map boxed in an interface is not
+	// Compare the map, not the any, a nil map boxed in an interface is not
 	// itself nil.
 	rec, _ := data["record"].(map[string]any)
 	if rec != nil {
@@ -198,7 +198,7 @@ func TestRedactEventRecordSurvivesANilRequest(t *testing.T) {
 // full row destroyed the payload once already.
 func TestRedactEventRecordPassesDeleteStubsThrough(t *testing.T) {
 	// A registry with a mutating AfterGet, or redactEventRecord returns at its
-	// first line and the EntityDeleted branch is never reached — which is what
+	// first line and the EntityDeleted branch is never reached, which is what
 	// the first version of this test did.
 	reg := hook.NewHookRegistry()
 	reg.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
@@ -225,7 +225,7 @@ func TestRedactEventRecordPassesDeleteStubsThrough(t *testing.T) {
 }
 
 // The type switch names the shapes the framework itself produces. The shapes
-// that matter are the ones an application's write hook injects — and a
+// that matter are the ones an application's write hook injects, and a
 // hand-written switch only covers what its author thought of. Each entry here
 // was verified to be SHARED (not copied) by the first version.
 func TestDeepCopyRebuildsUnnamedContainerShapes(t *testing.T) {
@@ -316,7 +316,7 @@ func TestDeepCopyReflectCoversArraysAndNilElements(t *testing.T) {
 	if cp["withNil"].([]any)[0] != nil {
 		t.Errorf("a nil element did not survive: %#v", cp["withNil"])
 	}
-	// A pointer to a STRUCT is deliberately not traversed — cloning an
+	// A pointer to a STRUCT is deliberately not traversed, cloning an
 	// arbitrary struct means cloning whatever it embeds (a mutex, a file
 	// handle, a driver connection).
 	if cp["structptr"] != src["structptr"] {
@@ -327,7 +327,7 @@ func TestDeepCopyReflectCoversArraysAndNilElements(t *testing.T) {
 // A pointer to a plain CONTAINER is not covered by the struct rationale above:
 // it is the record's own data one indirection out, and leaving it aliased put
 // the response-hook copy and the record already handed to the event goroutine
-// back on the same map — the concurrent-map-writes throw the reflective
+// back on the same map, the concurrent-map-writes throw the reflective
 // fallback exists to prevent.
 func TestDeepCopyCopiesPointerContainers(t *testing.T) {
 	nested := map[string]any{"secret": "stored"}
@@ -352,7 +352,7 @@ func TestDeepCopyCopiesPointerContainers(t *testing.T) {
 }
 
 // deepCopyReflectValue's Interface arm: reached only for an interface-typed
-// element inside a REFLECTIVELY copied container — map[string][]any, or a
+// element inside a REFLECTIVELY copied container, map[string][]any, or a
 // named map type. The typed fast paths cover map[string]any and []any
 // directly, so nothing in the suite exercised this, and it is the same
 // write-through class one container deeper.
@@ -378,7 +378,7 @@ func TestDeepCopyReflectDescendsIntoInterfaceElements(t *testing.T) {
 // The pointer arm traverses only pointers to containers, and only when
 // there is something to traverse. These are the refusals: a nil pointer
 // has no pointee, and a pointer to a struct is deliberately left aliased
-// (cloning an arbitrary struct means cloning whatever it embeds — a
+// (cloning an arbitrary struct means cloning whatever it embeds, a
 // mutex, a file handle, a driver connection).
 func TestDeepCopyRefusesUncopyablePointers(t *testing.T) {
 	type opaque struct{ N int }
@@ -488,7 +488,7 @@ func (f *fakeOutbox) Append(_ context.Context, _ DBExecutor, eventType string, _
 func (f *fakeOutbox) Nudge() { f.nudged++ }
 
 // With an outbox configured, StageEvent writes through it and EmitEvent
-// nudges the relay — the two halves of "the write committed, go deliver".
+// nudges the relay, the two halves of "the write committed, go deliver".
 func TestStageEventWritesToOutbox(t *testing.T) {
 	fo := &fakeOutbox{}
 	// eventData needs a real entity behind it, so build a real handler.

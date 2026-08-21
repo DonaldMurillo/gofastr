@@ -11,7 +11,7 @@ import (
 // TestTypedHook_AfterCreateErrorPropagates is the AfterCreate mirror of the
 // existing BeforeCreate rollback test. A typed AfterCreate hook returning an
 // error must surface that error to the caller (the row is already committed,
-// but the response must not read as success) — the crud layer wraps and
+// but the response must not read as success), the crud layer wraps and
 // returns it (crud_ops.go doCreate → ExecuteHooks(AfterCreate) → return).
 // Without this, a typed AfterCreate hook that rejects (e.g. post-commit
 // validation) would silently succeed from the caller's perspective.

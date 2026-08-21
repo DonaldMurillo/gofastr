@@ -37,7 +37,7 @@ func (recordingProvider) TokenCount(_ context.Context, _ string, _ []provider.Me
 // TestSpawnEventsDoNotLeakToParentBus: sub-agent's intermediate
 // events (thinking, tool calls, text deltas) must NOT appear on the
 // parent's event bus. Otherwise the user's chat fills up with the
-// sub-agent's verbose internal reasoning — exactly the "dumped in
+// sub-agent's verbose internal reasoning, exactly the "dumped in
 // main chat" complaint about sess_01KSE3JKR…. CC's Task tool hides
 // sub-agent internals; only the final summary surfaces via the
 // ToolResult on the Agent tool call.
@@ -46,7 +46,7 @@ func (recordingProvider) TokenCount(_ context.Context, _ string, _ []provider.Me
 // the parent bus should have received NO TextDelta or ThinkingDelta
 // or ToolCallStarted events from the sub-agent loop.
 func TestSpawnEventsDoNotLeakToParentBus(t *testing.T) {
-	// Provider emits text + a tool call + more text — would be noisy
+	// Provider emits text + a tool call + more text, would be noisy
 	// in the main chat if it leaked.
 	prov := &recordingProvider{events: []provider.StreamEvent{
 		{Kind: provider.KindThinkingDelta, Thinking: []byte(`"reasoning..."`)},
@@ -95,7 +95,7 @@ func TestSpawnEventsDoNotLeakToParentBus(t *testing.T) {
 // fires 30+ WebFetches per sub-agent (sess_01KSE3JKR…).
 //
 // Asserts the FIRST request sent to the provider includes a system
-// message containing the focus directive — the parent passes "" as
+// message containing the focus directive, the parent passes "" as
 // systemHint, so the engine must inject one itself.
 func TestSpawnPrependsFocusHint(t *testing.T) {
 	prov := &recordingProvider{events: []provider.StreamEvent{
@@ -167,7 +167,7 @@ func TestSubAgentMaxIterationsIsTighter(t *testing.T) {
 // that ALWAYS returns tool_use; the sub-agent must TERMINATE in
 // bounded time (proves the iteration cap fires). Since sub-agent
 // events are now on a private bus and don't leak to the parent, we
-// can't count tool calls — instead we count how many times the
+// can't count tool calls, instead we count how many times the
 // scripted provider was hit (== inner loop iterations).
 func TestSpawnEnforcesTighterCap(t *testing.T) {
 	infinite := []provider.StreamEvent{
@@ -213,7 +213,7 @@ func TestSpawnEnforcesTighterCap(t *testing.T) {
 		prov.idx, elapsed, SubAgentMaxIterations)
 }
 
-// readOnlySource exposes a single Read tool for the cap test — we
+// readOnlySource exposes a single Read tool for the cap test, we
 // just need ANY tool that succeeds so the loop progresses.
 type readOnlySource struct{}
 
@@ -234,7 +234,7 @@ func (noopReadTool) Run(_ context.Context, _ tool.ToolCall, _ tool.EventSink) (*
 	}, nil
 }
 
-// scriptedSpawnProvider local clone — defined here to avoid coupling
+// scriptedSpawnProvider local clone, defined here to avoid coupling
 // to the e2e_capabilities_test.go variant.
 type scriptedSpawnProvider struct {
 	scripts [][]provider.StreamEvent
@@ -266,7 +266,7 @@ func (*scriptedSpawnProvider) TokenCount(_ context.Context, _ string, _ []provid
 // TestSpawnStripsMetaToolsFromSubAgent: when Engine.Spawn runs a
 // sub-agent, the sub-engine's outbound Request must NOT advertise
 // TaskList or Agent. Sub-agents should not re-plan the parent's
-// task list or recursively spawn further sub-agents — that's the
+// task list or recursively spawn further sub-agents, that's the
 // cascade that ran sess_01KSDZK5… to 70+ tool calls (16 TaskList
 // updates from inside sub-agents + 10 chained Agent spawns).
 //
@@ -281,7 +281,7 @@ func TestSpawnStripsMetaToolsFromSubAgent(t *testing.T) {
 	defer bus.Close()
 	d := NewDispatcher(bus, tool.NewRegistry())
 	e := NewEngine(session, bus, prov, "m", d)
-	// Parent advertises ALL the meta tools — sub-agent should NOT
+	// Parent advertises ALL the meta tools, sub-agent should NOT
 	// see them in its outbound Request.
 	e.Tools = []provider.ToolSchema{
 		{Name: "Read"},

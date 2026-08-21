@@ -1,6 +1,6 @@
 // Package analyzers holds every detector behind `gofastr verify`.
 //
-// The rules themselves — IDs, severities, the Why and the Fix — live in
+// The rules themselves, IDs, severities, the Why and the Fix, live in
 // [github.com/DonaldMurillo/gofastr/framework/contracts]. This package
 // only finds the code. That split is deliberate: the catalog has to be
 // readable and serveable (over MCP, in docs) without dragging in a Go
@@ -46,9 +46,9 @@ func importAliases(f *ast.File) map[string]string {
 }
 
 // rendersUI reports whether any app file in the module imports a UI
-// package (core-ui or framework/ui). Rules whose premise is a browser —
-// scroll position, focus, history — use this to stay silent on headless
-// modules, where the same route shapes are ordinary REST.
+// package (core-ui or framework/ui). Rules whose premise is a browser,
+// such as scroll position, focus, or history, use this to stay silent
+// on headless modules, where the same route shapes are ordinary REST.
 func rendersUI(p *contracts.Pass) bool {
 	const key = "analyzers.rendersui"
 	return p.Memo(key, func() any {
@@ -93,7 +93,7 @@ func importsAny(f *ast.File, suffixes ...string) bool {
 
 // stringLit returns the value of a string-literal expression, resolving
 // concatenations of literals ("/api" + "/v1"). Anything with a non-literal
-// operand returns ok=false — guessing at a runtime-computed path would
+// operand returns ok=false. Guessing at a runtime-computed path would
 // produce findings nobody can act on.
 func stringLit(e ast.Expr) (string, bool) {
 	switch v := e.(type) {
@@ -158,7 +158,7 @@ func qualifiedCall(n ast.Node, aliases map[string]string, pkgSuffix, funcName st
 }
 
 // exprText renders an expression back to source-ish text for evidence
-// fields. Not valid Go for every node — it is a label, not a rewrite.
+// fields. Not valid Go for every node. It is a label, not a rewrite.
 func exprText(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -181,7 +181,7 @@ func exprText(e ast.Expr) string {
 }
 
 // isRequestHandler reports whether a function's signature makes it a
-// request handler — the `(http.ResponseWriter, *http.Request)` shape, or
+// request handler: the `(http.ResponseWriter, *http.Request)` shape, or
 // a closure returning one. Used by the performance rules, which only care
 // about work that happens per-request.
 func isRequestHandler(fn *ast.FuncType) bool {
@@ -262,8 +262,8 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 
 // stripComments removes // line and /* */ block comments so a rule
 // counting call sites is not fooled by prose. It does not honour string
-// literals containing "//" — acceptable, because every consumer here is
-// counting occurrences, not parsing.
+// literals containing "//", which is acceptable because every consumer
+// here is counting occurrences, not parsing.
 func stripComments(src string) string {
 	var b strings.Builder
 	b.Grow(len(src))

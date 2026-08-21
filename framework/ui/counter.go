@@ -24,7 +24,7 @@ func counterCSS(_ style.Theme) string {
 }
 
 // CounterConfig configures a client-side counter with increment/decrement buttons.
-// The counter is purely local — no RPC calls. It uses the signal system for state.
+// The counter is purely local, no RPC calls. It uses the signal system for state.
 type CounterConfig struct {
 	// SignalName is the signal that holds the count value. Required
 	// unless Slice is set.

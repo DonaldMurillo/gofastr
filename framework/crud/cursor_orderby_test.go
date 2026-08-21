@@ -37,7 +37,7 @@ func (e *sqlCaptureExecutor) ExecContext(ctx context.Context, q string, a ...any
 }
 
 // dataQueryWithOrderBy returns the first captured query that carries an
-// ORDER BY clause — the cursor data query. Cursor mode emits no count
+// ORDER BY clause, the cursor data query. Cursor mode emits no count
 // query, so this is unambiguous when no includes are requested.
 func (e *sqlCaptureExecutor) dataQueryWithOrderBy(t *testing.T) string {
 	t.Helper()

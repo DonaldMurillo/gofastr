@@ -129,7 +129,7 @@ func TestTypedQuery_DeleteAllScopesByOwner(t *testing.T) {
 func TestTypedQuery_AdminCallerWithoutOwnerSeesAll(t *testing.T) {
 	// Typed queries are server-side; absent owner in ctx, no scope is
 	// applied. This is the deliberate carve-out for admin/background
-	// callers — the HTTP path fails closed (see owner_test.go), but Go
+	// callers, the HTTP path fails closed (see owner_test.go), but Go
 	// callers can opt out of scoping by simply not providing an owner.
 	installOwnerExtractor(t)
 	ch, db := setupOwnerScopedHandler(t)
@@ -154,7 +154,7 @@ func TestTypedQuery_FirstScopesByOwner(t *testing.T) {
 	seedRow(t, db, "log-a1", "alice", "alice's row")
 	seedRow(t, db, "log-b1", "bob", "bob's row")
 
-	// Bob calls First — must see only bob's row, never alice's.
+	// Bob calls First, must see only bob's row, never alice's.
 	q := NewTypedQuery[typedLog](ch)
 	out, err := q.First(ctxAs("bob"))
 	if err != nil {
@@ -171,7 +171,7 @@ func TestTypedQuery_ExistsScopesByOwner(t *testing.T) {
 	ch, db := setupOwnerScopedHandler(t)
 	seedRow(t, db, "log-b1", "bob", "bob's row")
 
-	// Alice calls Exists with no row of her own — must report false.
+	// Alice calls Exists with no row of her own, must report false.
 	q := NewTypedQuery[typedLog](ch)
 	exists, err := q.Exists(ctxAs("alice"))
 	if err != nil {

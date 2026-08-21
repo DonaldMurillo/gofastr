@@ -16,7 +16,7 @@ func TestRequiresLabel(t *testing.T) {
 
 // TestRenderEmptyItemsOK: a Kanban column with zero items renders a
 // valid, accessible, sortable <ol> wrapper with no <li> children
-// instead of panicking (issue #82 — empty containers are legal).
+// instead of panicking (issue #82, empty containers are legal).
 func TestRenderEmptyItemsOK(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {

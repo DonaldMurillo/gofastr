@@ -327,7 +327,7 @@ func TestTypedHelpersEscapeAttrs(t *testing.T) {
 	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	page := rec.Body.String()
 
-	// The raw <script> tag must NOT appear in output — it must be escaped
+	// The raw <script> tag must NOT appear in output. It must be escaped
 	assertNotContains(t, page, `<script>alert("xss")</script>`)
 	// The escaped form should be in the content attribute
 	assertContains(t, page, `&lt;script&gt;`)

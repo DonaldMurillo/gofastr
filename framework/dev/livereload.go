@@ -33,7 +33,7 @@ var heartbeatInterval = 25 * time.Second
 //   - GOFASTR_ENV looking like a non-dev environment → always off
 //     (case-insensitive: production, prod, live, staging).
 //   - GOFASTR_DEV must be set to a strconv.ParseBool truthy value
-//     (1, t, T, TRUE, true, True) — typically by `gofastr dev`.
+//     (1, t, T, TRUE, true, True), typically by `gofastr dev`.
 //     Unparseable / falsy values keep livereload off so a stray
 //     GOFASTR_DEV="false" or ="no" never trips it on.
 //   - GOFASTR_DEV_LIVERELOAD set to a falsy ParseBool value → opt-out
@@ -81,7 +81,7 @@ func isNonDevEnv(v string) bool {
 
 // envBool reports whether the named env var is set to a ParseBool-true
 // value. Anything else (unset, empty, "false", "no", garbage) is false.
-// Deliberately strict — dev-mode features must not turn on by accident
+// Deliberately strict: dev-mode features must not turn on by accident
 // in production-leaning environments.
 func envBool(key string) bool {
 	v := os.Getenv(key)
@@ -101,7 +101,7 @@ var (
 )
 
 // RegisterLiveReload installs the SSE endpoint and client script on r.
-// Idempotent — safe to call multiple times on the same router. If the
+// Idempotent: safe to call multiple times on the same router. If the
 // router already has either pattern registered (e.g. the host wired a
 // hand-rolled livereload before upgrading), the call is a no-op so the
 // upgrade path doesn't panic on http.ServeMux duplicate-pattern.
@@ -117,7 +117,7 @@ func RegisterLiveReload(r *router.Router) {
 	registered[r] = true
 	registeredMu.Unlock()
 
-	// Pre-existing routes win — leave the host's own implementation
+	// Pre-existing routes win. Leave the host's own implementation
 	// alone. http.ServeMux panics on duplicate pattern registration,
 	// so this guard converts the panic into a quiet skip.
 	for _, rt := range r.Routes() {
@@ -181,7 +181,7 @@ func MaybeRegisterLiveReload(r *router.Router) {
 }
 
 // SetHeartbeatIntervalForTest swaps the SSE heartbeat interval and
-// returns a restore function. For tests only — production callers must
+// returns a restore function. For tests only. Production callers must
 // use the default. Pass *testing.T to make the intent unambiguous.
 func SetHeartbeatIntervalForTest(_ interface{ Helper() }, d time.Duration) func() {
 	prev := heartbeatInterval
@@ -189,7 +189,7 @@ func SetHeartbeatIntervalForTest(_ interface{ Helper() }, d time.Duration) func(
 	return func() { heartbeatInterval = prev }
 }
 
-// liveReloadJS — SSE-based change detection.
+// liveReloadJS: SSE-based change detection.
 //
 // The browser opens a single EventSource. The server sends a "ready" event
 // with a build ID (unique per server process). On reconnection (server

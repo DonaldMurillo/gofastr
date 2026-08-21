@@ -9,7 +9,7 @@ import (
 )
 
 // nakedComp renders fixed HTML and intentionally does NOT implement
-// ParamSetter — used to exercise the fail-loud registration guard.
+// ParamSetter, used to exercise the fail-loud registration guard.
 type nakedComp struct{}
 
 func (nakedComp) Render() render.HTML { return render.HTML("<p>naked</p>") }
@@ -39,7 +39,7 @@ func panicMsg(t *testing.T, fn func()) string {
 
 // Slice 1: registering a dynamic route whose component lacks SetParams
 // must panic at registration (boot-time only), naming the path and the
-// concrete component type — params would otherwise be silently dropped.
+// concrete component type, params would otherwise be silently dropped.
 func TestGuardDynamicNoSetParamsPanics(t *testing.T) {
 	r := NewRouter()
 	msg := panicMsg(t, func() {

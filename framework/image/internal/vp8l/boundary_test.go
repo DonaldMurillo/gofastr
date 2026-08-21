@@ -4,7 +4,7 @@ import "testing"
 
 // TestR4_DistanceSymbol_AllValues sweeps every legal distance value
 // (1..2^20) and asserts the prefix-code symbol stays within the
-// 40-symbol alphabet. Property test rather than spot-check — covers
+// 40-symbol alphabet. Property test rather than spot-check. Covers
 // every distinct symbol partition the lz77Symbol algorithm produces.
 func TestDistanceSymbol_AllValues(t *testing.T) {
 	for v := uint32(1); v <= (1 << 20); v++ {
@@ -47,7 +47,7 @@ func TestLengthSymbol_AllValues(t *testing.T) {
 }
 
 // TestR4_DistanceSymbol_InverseProperty asserts lz77Symbol's output
-// can be inverted by the spec's lz77Param formula — i.e. encode then
+// can be inverted by the spec's lz77Param formula, i.e. encode then
 // decode reproduces the input. Catches off-by-one shifts in the
 // symbol-to-value math.
 func TestDistanceSymbol_InverseProperty(t *testing.T) {
@@ -63,7 +63,7 @@ func TestDistanceSymbol_InverseProperty(t *testing.T) {
 }
 
 // lz77Param mirrors the decoder's formula at golang.org/x/image/vp8l.
-// Local copy keeps this test self-contained — it's the inverse of
+// Local copy keeps this test self-contained. It's the inverse of
 // our lz77Symbol and the property test above asserts they match for
 // every value across the partitioning boundaries.
 func lz77Param(symbol, extra uint32) uint32 {

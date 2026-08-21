@@ -232,7 +232,7 @@ func TestPWAPrecacheDropsSensitive(t *testing.T) {
 		"/static/ok.png",
 	}}))
 	body := pwaGet(t, ds, "/service-worker.js").Body.String()
-	// Parse the PRECACHE array out of the worker source — the deny
+	// Parse the PRECACHE array out of the worker source: the deny
 	// list legitimately repeats the sensitive paths, so asserting on
 	// the whole body would be meaningless.
 	i := strings.Index(body, "var PRECACHE = ")
@@ -381,7 +381,7 @@ func pwaSWPrecache(t *testing.T, sw string) []string {
 
 var pwaStyleSeq atomic.Int64
 
-// newPWAStyles registers n unique component styles (NOT LoadAlways —
+// newPWAStyles registers n unique component styles (NOT LoadAlways;
 // the process-global registry has no reset, and eager styles would
 // leak into every other test's CSS bundle; unique names per test run,
 // same convention as framework/static's registry tests).
@@ -399,7 +399,7 @@ func newPWAStyles(t *testing.T, n int) []*registry.Style {
 	return styles
 }
 
-// styledOfflineComp renders two styled components — enough to trigger
+// styledOfflineComp renders two styled components, enough to trigger
 // bundling on the offline page under the old bundle=true chrome.
 type styledOfflineComp struct{ styles []*registry.Style }
 
@@ -412,7 +412,7 @@ func (c styledOfflineComp) Render() render.HTML {
 }
 
 // TestPWAOfflineNoBundleCSS: the offline page must link per-component
-// CSS directly, never the query-parameterized bundle endpoint — the
+// CSS directly, never the query-parameterized bundle endpoint. The
 // bundle URL depends on the page's component set, poisons the cache
 // for every other page's bundle request, and does not exist at all in
 // static exports.
@@ -438,7 +438,7 @@ func TestPWAOfflineNoBundleCSS(t *testing.T) {
 	}
 }
 
-// TestPWAServiceWorkerExactMatching: no ignoreSearch — matching a
+// TestPWAServiceWorkerExactMatching: no ignoreSearch. Matching a
 // content-addressed URL against a different version's body serves
 // stale code; split-module precache entries must instead carry their
 // real ?v=<hash> so exact matching works offline.
@@ -468,7 +468,7 @@ func TestPWAServiceWorkerExactMatching(t *testing.T) {
 }
 
 // TestPWAServiceWorkerRewrapsPrecache: install must store re-wrapped
-// responses (cache.put + new Response), not cache.addAll — a static
+// responses (cache.put + new Response), not cache.addAll: a static
 // host answers the extension-less offline URL with a 301, and a cached
 // redirected response is rejected for navigation fetches.
 func TestPWAServiceWorkerRewrapsPrecache(t *testing.T) {
@@ -488,7 +488,7 @@ func TestPWAServiceWorkerRewrapsPrecache(t *testing.T) {
 }
 
 // TestPWAVersionTracksAssetBytes: replacing a precached static asset
-// in place (same path, new bytes — e.g. swapping the placeholder icons
+// in place (same path, new bytes, e.g. swapping the placeholder icons
 // for real branding) must rotate the cache version.
 func TestPWAVersionTracksAssetBytes(t *testing.T) {
 	build := func(iconBytes []byte) string {
@@ -577,7 +577,7 @@ func TestPWANoHeadTagsWithoutOption(t *testing.T) {
 // Static exports are a closed, immutable page set: the static worker
 // precaches the WHOLE site at install and serves navigations cache-first,
 // so an installed PWA works fully offline. The version must track exported
-// CONTENT (not just the path list) or a redeploy with edited pages would
+// CONTENT (not only the path list) or a redeploy with edited pages would
 // never rotate the cache.
 func TestStaticServiceWorkerPrecachesWholeSite(t *testing.T) {
 	a := app.NewApp("x")
@@ -753,7 +753,7 @@ func TestPWAPrefixNotPrefixOfSibling(t *testing.T) {
 }
 
 // TestPWAStaticPrefixNotPrefixOfSibling: the same prefix-isolation
-// property for static exports — the canonical target is several
+// property for static exports: the canonical target is several
 // sibling static sites under one user.github.io origin. Covers the
 // prefix-of-prefix case ("/gofastr" vs "/gofastr-docs") AND the
 // identical-slug case ("/a/b" vs "/ab", both slugging to "ab"). All
@@ -791,13 +791,13 @@ func TestPWAStaticPrefixNotPrefixOfSibling(t *testing.T) {
 
 // TestPWAMigrationReapsOnlyOwnOldCache: a deploy of the new worker
 // leaves the old-format own cache ("gofastr-pwa-<slug>-<hex-version>")
-// orphaned — activate's new delete-prefix no longer matches it. The
+// orphaned: activate's new delete-prefix no longer matches it. The
 // migration guard deletes such a cache only when it starts with this
 // worker's OLD_PREFIX AND the remainder is pure hex (the old version
 // was exactly 12 lowercase hex chars). The hex-remainder test is what
 // keeps a sibling ("Acme Docs" → "...acme-docs-<hex>") safe: its
 // remainder carries non-hex. The identical-slug case (static "/a/b"
-// vs "/ab") slugged identically and cannot be migrated apart — those
+// vs "/ab") slugged identically and cannot be migrated apart. Those
 // caches were already mutually wiping before the hash existed.
 func TestPWAMigrationReapsOnlyOwnOldCache(t *testing.T) {
 	sw := pwaLiveWorker(t, "Acme")
@@ -812,7 +812,7 @@ func TestPWAMigrationReapsOnlyOwnOldCache(t *testing.T) {
 		t.Errorf("migration guard (OLD_PREFIX + all-hex remainder check) missing from worker:\n%s", sw)
 	}
 	// Mirror the worker's migration predicate exactly, then prove it
-	// reaps only this app's own old cache — never a sibling's, and never
+	// reaps only this app's own old cache, never a sibling's, and never
 	// the new-format cache.
 	migrate := func(cacheName string) bool {
 		return strings.HasPrefix(cacheName, oldPrefix) && pwaHexRe.MatchString(cacheName[len(oldPrefix):])

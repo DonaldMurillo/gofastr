@@ -13,7 +13,7 @@ import (
 )
 
 // CapabilitySummary is the per-capability tally shown in the report
-// footer — the "which area of this app is drifting" view.
+// footer, the "which area of this app is drifting" view.
 type CapabilitySummary struct {
 	Capability Capability `json:"capability"`
 	Errors     int        `json:"errors"`
@@ -25,8 +25,8 @@ type CapabilitySummary struct {
 func (c CapabilitySummary) Total() int { return c.Errors + c.Warnings + c.Infos }
 
 // VetResult records what the `go vet` stage did. It is set by the CLI,
-// not by [Run] — vet is a pipeline stage around the analyzers rather than
-// one of them — but it rides on the report because the report is what
+// not by [Run], vet is a pipeline stage around the analyzers rather than
+// one of them, but it rides on the report because the report is what
 // gets serialised, and a consumer that cannot tell whether the code even
 // compiles is reading the analyzers' findings without their precondition.
 type VetResult struct {
@@ -43,7 +43,7 @@ type VetResult struct {
 
 // MarshalJSON omits the verdict when the stage never ran. A skipped
 // stage serialising `"passed": false` is "we did not check" reading as
-// "it failed" — a consumer keying on vet.passed alone would fail every
+// "it failed": a consumer keying on vet.passed alone would fail every
 // --no-vet run. The plain omitempty cannot express this (it would also
 // drop a genuine ran-and-failed false), so the shaping is explicit.
 func (v *VetResult) MarshalJSON() ([]byte, error) {
@@ -83,18 +83,18 @@ type Report struct {
 	// directive. Reported so a clean run still admits what it skipped.
 	Suppressed int `json:"suppressed"`
 	// suppressedAt keys the suppressed *gating* findings by rule then
-	// file. [Report.ApplyBaseline] needs the identities, not just the
+	// file. [Report.ApplyBaseline] needs the identities, not merely the
 	// count: a suppressed finding still occupies its baseline slot, and
 	// without knowing where the suppressions landed, adding an allow
 	// directive to baselined debt would free that slot to absorb the next
-	// NEW finding of the rule in the file — growth hidden behind a
+	// NEW finding of the rule in the file, growth hidden behind a
 	// balanced count. Unexported: the JSON document already admits the
 	// total via Suppressed, and narrowed copies drop it with the other
 	// run-wide counters.
 	suppressedAt map[string]map[string]int
 	// baselineApplied makes [Report.ApplyBaseline] one-shot; see there.
 	baselineApplied bool
-	// Baselined counts findings absorbed by a recorded baseline —
+	// Baselined counts findings absorbed by a recorded baseline:
 	// pre-existing debt the project agreed to carry.
 	Baselined int `json:"baselined,omitempty"`
 	// BaselineFixed counts (rule, file) buckets whose baseline allowance
@@ -102,7 +102,7 @@ type Report struct {
 	// down and should be re-recorded so the baseline keeps shrinking.
 	BaselineFixed int `json:"baselineFixed,omitempty"`
 	// Notices are human-facing remarks the CLI would otherwise print to
-	// stdout — "this rule has no autofix", "not a git repository". In text
+	// stdout: "this rule has no autofix", "not a git repository". In text
 	// mode they are printed; in JSON they belong here, because anything
 	// printed alongside the document corrupts it, and dropping them
 	// silently would lose the run's own account of what it did.
@@ -118,7 +118,7 @@ type Report struct {
 	// in files this change did not touch. Reported so a narrowed run
 	// never reads as a whole-repository all-clear.
 	OutsideChange int `json:"outsideChange,omitempty"`
-	// Errors are analyzer failures — a broken analyzer, not a broken app.
+	// Errors are analyzer failures: a broken analyzer, not a broken app.
 	Errors []string `json:"analyzerErrors,omitempty"`
 	// Timings is per-analyzer wall time, slowest first.
 	Timings []AnalyzerTiming `json:"timings,omitempty"`
@@ -230,7 +230,7 @@ func (r *Report) Fixable() []Diagnostic {
 
 // Only returns a shallow copy of the report holding just the diagnostics
 // for the given rules, accepted as IDs or slugs. It exists so a caller can
-// fix one rule at a time — Apply writes every fix in the report, which is
+// fix one rule at a time: Apply writes every fix in the report, which is
 // the wrong granularity when an agent has decided to accept one rule's
 // edits and review another's by hand.
 //
@@ -245,8 +245,8 @@ func (r *Report) Only(rules ...string) *Report {
 			want[rule.ID] = true
 			continue
 		}
-		// Unknown: match nothing rather than everything — the safe
-		// default for a fixer — but never silently. A typo'd name
+		// Unknown: match nothing rather than everything, the safe
+		// default for a fixer, but never silently. A typo'd name
 		// narrowing to an empty, passing scope is the library-caller
 		// trap; recording it as an analyzer error keeps the "a check
 		// that could not execute has proven nothing" contract.
@@ -255,7 +255,7 @@ func (r *Report) Only(rules ...string) *Report {
 	out := narrowedShell(r)
 	for _, name := range unknown {
 		out.Errors = append(out.Errors,
-			fmt.Sprintf("narrowed to unknown rule %q — nothing matched; run `gofastr verify --list` for the catalog", name))
+			fmt.Sprintf("narrowed to unknown rule %q: nothing matched; run `gofastr verify --list` for the catalog", name))
 	}
 	for _, d := range r.Diagnostics {
 		if want[d.RuleID] {
@@ -275,7 +275,7 @@ func (r *Report) Only(rules ...string) *Report {
 // DIAGNOSTICS. Analyzer errors, unparsed files, relaxations, the vet
 // stage and the capability filter all describe what this run did and did
 // not manage to check, and they stay true however the findings are
-// filtered — dropping Errors made `--rule` exit 0 after an analyzer
+// filtered. Dropping Errors made `--rule` exit 0 after an analyzer
 // panicked, which is precisely the "a check that could not execute has
 // proven nothing" case [Report.Passed] exists to catch.
 //
@@ -298,7 +298,7 @@ func narrowedShell(r *Report) *Report {
 	out.Relaxations = append(out.Relaxations, r.Relaxations...)
 	out.Timings = append(out.Timings, r.Timings...)
 	// The one-shot marker travels too: a narrowed copy of a report whose
-	// baseline was already applied must not accept a second application —
+	// baseline was already applied must not accept a second application:
 	// the copy has no suppression identities, so it would re-absorb.
 	out.baselineApplied = r.baselineApplied
 	return out
@@ -341,7 +341,7 @@ func containedPath(root, rel string) (string, error) {
 // diagnostics it resolved.
 //
 // Edits are byte offsets captured when the file was read, so Apply
-// re-reads each file and refuses to write when an edit no longer fits —
+// re-reads each file and refuses to write when an edit no longer fits:
 // out-of-range offsets always, and for edits that record their expected
 // text (TextEdit.Old), any file whose content at those offsets changed
 // since analysis. A stale offset silently applied is a corrupted source
@@ -362,7 +362,7 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 		// filepath.Join cleans `..` segments away, so a diagnostic whose
 		// File escaped the root would be written to silently. Every path
 		// here comes from the pass's own walk today, but this is the one
-		// function in the package that writes to disk — and since
+		// function in the package that writes to disk, and since
 		// contracts_fix exposes it over MCP, containment is checked here
 		// rather than trusted from the caller.
 		abs, err := containedPath(r.Root, rel)
@@ -378,10 +378,10 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 		for _, d := range byFile[rel] {
 			for _, e := range d.Fix.Edits {
 				if e.Start < 0 || e.End < e.Start || e.End > len(body) {
-					return applied, fmt.Errorf("apply fixes to %s: edit is out of range — the file changed since analysis, re-run verify", rel)
+					return applied, fmt.Errorf("apply fixes to %s: edit is out of range: the file changed since analysis, re-run verify", rel)
 				}
 				if e.Old != "" && string(body[e.Start:e.End]) != e.Old {
-					return applied, fmt.Errorf("apply fixes to %s: the text at %d–%d is not what the analyzer saw — the file changed since analysis, re-run verify", rel, e.Start, e.End)
+					return applied, fmt.Errorf("apply fixes to %s: the text at %d–%d is not what the analyzer saw: the file changed since analysis, re-run verify", rel, e.Start, e.End)
 				}
 				edits = append(edits, e)
 			}
@@ -394,7 +394,7 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 		out := body
 		for _, e := range edits {
 			if e.End > prevStart {
-				return applied, fmt.Errorf("apply fixes to %s: two fixes overlap — apply one at a time", rel)
+				return applied, fmt.Errorf("apply fixes to %s: two fixes overlap: apply one at a time", rel)
 			}
 			merged := make([]byte, 0, len(out)-(e.End-e.Start)+len(e.New))
 			merged = append(merged, out[:e.Start]...)
@@ -405,7 +405,7 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 		}
 		// Re-format Go output. This is what lets a fix insert fields into
 		// a composite literal without having to reproduce the surrounding
-		// indentation exactly — the edit only has to be *correct*, not
+		// indentation exactly, the edit only has to be *correct*, not
 		// pretty.
 		if strings.HasSuffix(rel, ".go") {
 			if formatted, ferr := format.Source(out); ferr == nil {
@@ -421,12 +421,12 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 			} else if _, origErr := format.Source(body); origErr == nil {
 				// The input parsed and the edited result does not: the
 				// edit is what broke it, which means it landed somewhere
-				// it did not belong — an Old span short enough to match a
+				// it did not belong: an Old span short enough to match a
 				// coincidental byte (a brace, say) passes the content
 				// check and still writes into the wrong construct after
 				// the file moved underneath the report. Refuse; writing
 				// known-invalid Go and reporting success is corruption.
-				return applied, fmt.Errorf("apply fixes to %s: the edit produces Go that no longer parses — the file changed since analysis, re-run verify", rel)
+				return applied, fmt.Errorf("apply fixes to %s: the edit produces Go that no longer parses: the file changed since analysis, re-run verify", rel)
 			}
 			// An input that was ALREADY unparsable keeps the raw edit:
 			// the tree may be mid-refactor, and silently discarding the

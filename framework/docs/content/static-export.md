@@ -14,8 +14,8 @@ command palette, copy buttons, and widgets.
 
 ## Exporting
 
-`framework.App.ExportStatic(ctx, dir, basePath)` drives the app in-process
-— no port, no crawl — enumerates every declared route, renders each
+`framework.App.ExportStatic(ctx, dir, basePath)` drives the app in-process,
+with no port and no crawl: it enumerates every declared route, renders each
 through the SSG-aware render path, and dumps all `/__gofastr` assets with
 **query-free filenames**. `basePath` is the URL subpath for a project-site
 deploy (`"/gofastr"`); pass `""` for an apex deploy.
@@ -41,13 +41,13 @@ go build -o site ./examples/site/
 
 - One `index.html` per route (`/` → `index.html`, `/about` →
   `about/index.html`, `/products/:slug` → `products/<slug>/index.html`).
-- `/__gofastr/runtime.js` — the runtime core.
-- `/__gofastr/color-scheme.js` — the FOUC-prevention bootstrap loaded
+- `/__gofastr/runtime.js`: the runtime core.
+- `/__gofastr/color-scheme.js`: the FOUC-prevention bootstrap loaded
   synchronously at the top of `<head>`. Without it `themeswitch.js`
   early-returns and the theme toggle is dead.
-- `/__gofastr/runtime/<name>.js` — each split runtime module
+- `/__gofastr/runtime/<name>.js`: each split runtime module
   (`themeswitch`, `copy`, `widgets`, `toasts`, …), one file per module.
-- `/__gofastr/app.css` and `/__gofastr/comp/<name>.css` — global and
+- `/__gofastr/app.css` and `/__gofastr/comp/<name>.css`: global and
   per-component stylesheets.
 - Per-route `llm.md` (unless `NoLLMMD` is set).
 - With `uihost.WithSitemap` / `uihost.WithRobots`: `sitemap.xml` and
@@ -57,7 +57,7 @@ go build -o site ./examples/site/
   derived `Sitemap:` line in robots.txt include the subpath. A
   `sitemap.xml` or `robots.txt` in the app's static dir wins over the
   generated one. Note that on a subpath deploy (e.g. a GitHub Pages
-  *project* site) crawlers only honor a robots.txt at the origin root —
+  *project* site) crawlers only honor a robots.txt at the origin root;
   the file is still emitted for apex/custom-domain deploys.
 - With [`uihost.WithPWA`](pwa.md): `manifest.webmanifest`,
   `service-worker.js`, `__gofastr/pwa/register.js`, and
@@ -68,11 +68,11 @@ go build -o site ./examples/site/
 
   A static export gets the **full-site worker**, not the live app's
   conservative one: the exported page set is closed and immutable, so
-  the worker precaches the whole site at install — every page, every
+  the worker precaches the whole site at install: every page, every
   framework asset (widget chrome, `llm.md`, component stylesheets under
-  their versioned `?v=` URLs), the shell — and serves navigations
+  their versioned `?v=` URLs), the shell. It serves navigations
   cache-first, tolerating static hosts' trailing-slash redirects. A
-  visitor who lands once has the entire site cached — install the PWA
+  visitor who lands once has the entire site cached; install the PWA
   and every page works offline, including pages never visited. User
   static-dir files are precached best-effort so one un-servable file
   cannot brick the install. The worker's cache version fingerprints the
@@ -111,11 +111,11 @@ func (s *DocScreen) StaticPaths(ctx context.Context) []map[string]string {
 Routes whose screen doesn't implement `StaticPathsProvider` (or returns an
 empty slice) are **skipped** at build time, but the builder now logs a
 `WARN` naming the route pattern and the fix (implement `StaticPaths`) rather
-than dropping it silently — the missing pages are a build-time signal, not a
+than dropping it silently; the missing pages are a build-time signal, not a
 silent gap. The route is still reachable via SSR if the server is running.
 
 A screen whose policy **Redirects** or **Blocks** (the two non-`Allow`
-decisions) is skipped too — there is no request or session at build time, so
+decisions) is skipped too: there is no request or session at build time, so
 a redirect to `/login` or a hard 403 has nothing to render. The builder logs
 a `WARN` naming the route and the policy decision and continues; the page is
 simply absent from the export, and the route stays reachable via SSR on the
@@ -159,7 +159,7 @@ in the normal server-backed app.
     # from https://<user>.github.io/gofastr/, so assets/nav/runtime-constructed
     # URLs must resolve under the /gofastr mount path. Omit for an apex deploy.
     ./site --export _site --export-base /gofastr
-    touch _site/.nojekyll   # __gofastr/ starts with _ — Jekyll would drop it
+    touch _site/.nojekyll   # __gofastr/ starts with _; Jekyll would drop it
 - name: Upload Pages artifact
   uses: actions/upload-pages-artifact@v3
   with:
@@ -170,7 +170,7 @@ in the normal server-backed app.
 
 An apex deploy (`https://<user>.github.io/` or a custom domain) serves the
 artifact at the host root, so the framework's root-absolute `/__gofastr/…`
-URLs work as-is — omit `--export-base`.
+URLs work as-is; omit `--export-base`.
 
 A GitHub Pages **project** site (`https://<user>.github.io/<repo>/`) serves
 the artifact under a subpath. Pass `--export-base /<repo>` and the builder:
@@ -182,7 +182,7 @@ the artifact under a subpath. Pass `--export-base /<repo>` and the builder:
   URLs in JS).
 
 External links (`https://…`), protocol-relative (`//host`), fragments (`#…`),
-and relative URLs are left untouched. Code samples are safe — `core/markdown`
+and relative URLs are left untouched. Code samples are safe: `core/markdown`
 escapes quotes inside `<code>` to `&quot;`, so the attribute/JSON patterns
 only match real markup.
 
@@ -191,11 +191,11 @@ only match real markup.
 - **Crawling instead of exporting.** A `wget --mirror` of a running server
   is the trap this feature replaces. The cache-bust `?v=<hash>` query
   lands in the on-disk filename (`themeswitch.js?v=…`), the static host
-  strips the query, looks for bare `themeswitch.js`, and 404s — so zero
+  strips the query, looks for bare `themeswitch.js`, and 404s, so zero
   modules load and all client interactivity silently dies. Always use
   `ExportStatic`.
 - **Forgetting a `StaticPathsProvider` on a dynamic route.** A
-  `/posts/:slug` route with no provider emits nothing — the build logs a
+  `/posts/:slug` route with no provider emits nothing; the build logs a
   `WARN` and skips it. Implement `StaticPaths(ctx)` returning one param map
   per concrete URL.
 - **Expecting server-backed islands to work.** RPC round-trips, the
@@ -204,7 +204,7 @@ only match real markup.
   host the binary instead of exporting.
 - **Deleting the run-locally banner.** It's the honest signal that a dead
   button is disabled-by-design, not broken. Keep it (or replace it with
-  your own notice) — don't ship a static export where clicks silently do
+  your own notice); don't ship a static export where clicks silently do
   nothing with no explanation.
 - **Letting `__gofastr/` be dropped by Jekyll.** GitHub Pages runs Jekyll
   by default, which ignores `_`-prefixed directories. `touch _site/.nojekyll`

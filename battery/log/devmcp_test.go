@@ -6,7 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// In the dev loop the debug tools auto-enable on a ZERO Config — the
+// In the dev loop the debug tools auto-enable on a ZERO Config, the
 // generated apps rely on this ("livereload for agents"). Outside dev
 // the explicit fields stay the only path.
 func TestDevLoopAutoEnablesMCPTools(t *testing.T) {

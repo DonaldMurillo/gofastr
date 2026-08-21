@@ -3,7 +3,7 @@ package urlsafe
 import "testing"
 
 // This package is the single enforcement point for every surface that renders
-// a caller-supplied URL — framework/ui's anchors and images, uihost's head
+// a caller-supplied URL, framework/ui's anchors and images, uihost's head
 // tags, crud's stored media paths, apiversions' deprecation hints, and three
 // core-ui/patterns builders. A hole here is a hole in all of them, so the
 // table is deliberately exhaustive rather than illustrative.

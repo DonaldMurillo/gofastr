@@ -241,7 +241,7 @@ func TestVariantSetProcessToStopsOnSinkError(t *testing.T) {
 // TestProcessToReleasesIntermediatesBetweenVariants pins the streaming
 // memory promise. Before the fix, scaled *Image references survived
 // each loop iteration until ProcessTo returned, so the peak resident
-// memory was sum-of-all-resized-buffers — the same as Process. After
+// memory was sum-of-all-resized-buffers, the same as Process. After
 // the fix, each iteration drops its reference so the GC can reclaim
 // the previous variant's working buffer.
 // TestVariantSetRejectAnimated pins the API for the avatar upload
@@ -293,7 +293,7 @@ func TestVariantSetRejectAnimated(t *testing.T) {
 // TestBlurHashParityAcrossPaths pins that VariantSet.Process and
 // direct img.BlurHash on the same source produce identical hashes.
 // Previously VariantSet pre-resized to 32 px (round-1) and BlurHash
-// auto-resized to 64 px (round-3) — two resize stages produced
+// auto-resized to 64 px (round-3). Two resize stages produced
 // different output. Drop the pre-resize; BlurHash owns the dwn-scale.
 // TestVariantSetRejectsExcessiveVariants pins the round-4 DoS defence:
 // an attacker-controlled set of 10k variants must error fast (before
@@ -335,7 +335,7 @@ func TestProcessToReleasesIntermediatesBetweenVariants(t *testing.T) {
 	}
 	src := FromImage(gradient(1024, 1024), FormatPNG)
 
-	// First pass: one variant — baseline retained size.
+	// First pass: one variant, baseline retained size.
 	runtime.GC()
 	var b1 runtime.MemStats
 	runtime.ReadMemStats(&b1)
@@ -349,7 +349,7 @@ func TestProcessToReleasesIntermediatesBetweenVariants(t *testing.T) {
 		t.Fatalf("ProcessTo single: %v", err)
 	}
 
-	// Second pass: 5 variants — peak retained should be roughly the
+	// Second pass: 5 variants. Peak retained should be roughly the
 	// same as one-variant if intermediates are released.
 	runtime.GC()
 	var beforeMulti, afterMulti runtime.MemStats
@@ -458,7 +458,7 @@ func TestProcessToSinkReaderInvalidAfterReturn(t *testing.T) {
 		if stashed == nil {
 			stashed = r
 		}
-		// Don't drain — just return.
+		// Don't drain, just return.
 		return nil
 	})
 	if err != nil {
@@ -466,7 +466,7 @@ func TestProcessToSinkReaderInvalidAfterReturn(t *testing.T) {
 	}
 	// Reading the stashed reader after ProcessTo returned must NOT
 	// yield the next variant's bytes. It should error (one-shot) or
-	// return EOF cleanly with empty data — never a different variant.
+	// return EOF cleanly with empty data, never a different variant.
 	if stashed == nil {
 		t.Fatal("did not capture sink reader")
 	}
@@ -478,7 +478,7 @@ func TestProcessToSinkReaderInvalidAfterReturn(t *testing.T) {
 
 // TestVariantSetDoesNotUpscaleByDefault asserts that a 16×16 source
 // with a Variant requesting Width: 2048 produces output capped at
-// the source's width — silent 100× upscaling is a foot-gun, not a
+// the source's width. Silent 100× upscaling is a foot-gun, not a
 // feature. Opt back in via VariantSet.AllowUpscale.
 func TestVariantSetDoesNotUpscaleByDefault(t *testing.T) {
 	src := FromImage(solidRGBA(16, 16, color.RGBA{R: 10, G: 20, B: 30, A: 255}), FormatPNG)

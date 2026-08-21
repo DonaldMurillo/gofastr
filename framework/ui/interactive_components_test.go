@@ -44,7 +44,7 @@ func TestTabsWrapperHasSignalAttr(t *testing.T) {
 	mustContain(t, html, `data-fui-signal-attr="data-active"`)
 	mustContain(t, html, `data-active="0"`)
 
-	// The content wrapper must NOT carry the signal binding — if it did,
+	// The content wrapper must NOT carry the signal binding. If it did,
 	// the binding couldn't reach the sibling nav buttons.
 	if !strings.Contains(string(html), `<div class="fui-tabs-content">`) {
 		t.Errorf("content wrapper should be bare (no signal binding), got:\n%s", html)
@@ -88,7 +88,7 @@ func TestTabsFirstButtonActive(t *testing.T) {
 		t.Errorf("expected 1 aria-selected=\"true\", got %d", count)
 	}
 
-	// Regression: no always-on static active class — that was the bug
+	// Regression: no always-on static active class. That was the bug
 	// that froze the highlight on tab 0 after switching.
 	if strings.Contains(string(html), `fui-tab--active`) {
 		t.Errorf("static fui-tab--active class would freeze the highlight; active state must be data-driven:\n%s", html)

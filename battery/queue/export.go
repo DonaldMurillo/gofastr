@@ -4,7 +4,7 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 
 // The queue battery owns a physical table that lives OUTSIDE the framework
 // entity registry (it is created with raw DDL in db.go). Registering it here
-// from init() — mirroring framework/agentsinv — means any app that imports
+// from init(), mirroring framework/agentsinv, means any app that imports
 // battery/queue has its queue_jobs table included in App.ExportData, so a data
 // dump/restore is complete. The framework centralizes all raw read/write
 // behind one SafeIdent-guarded path; this registration is purely declarative.

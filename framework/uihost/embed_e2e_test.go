@@ -20,7 +20,7 @@ import (
 
 // tallEmbedComp renders content taller than the loader's initial 150px frame,
 // so a height change in the parent is unambiguous evidence that the content
-// arrived, hydrated and laid out — not just that a request returned 200.
+// arrived, hydrated and laid out, not only that a request returned 200.
 type tallEmbedComp struct{}
 
 func (c *tallEmbedComp) Render() render.HTML { return c.RenderCtx(context.Background()) }
@@ -33,7 +33,7 @@ func (c *tallEmbedComp) RenderCtx(ctx context.Context) render.HTML {
 	var b strings.Builder
 	b.WriteString(`<p id="viewer">viewer:` + viewer + `</p>`)
 	// A poll island. poll is a DEMAND-LOADED module that builds its own fetch
-	// headers — the class of request that carried no identity at all until the
+	// headers: the class of request that carried no identity at all until the
 	// frame started attaching the grant to every same-origin fetch. Polls fire
 	// on a timer, so this needs no click and works across the origin boundary
 	// where chromedp cannot reach into the frame.
@@ -58,9 +58,9 @@ func handlerUser(ctx context.Context) (string, bool) {
 // the frame completes the postMessage handshake, exchanges its nonce, fetches
 // the surface as the granted subject, injects it, and reports its height back.
 //
-// It is a two-origin test on purpose. Everything interesting about this feature
-// — the cookie that is not sent, frame-ancestors, the postMessage targetOrigin,
-// CORP on the loader — is invisible when both pages share an origin.
+// It is a two-origin test on purpose. Everything interesting about this feature,
+// the cookie that is not sent, frame-ancestors, the postMessage targetOrigin,
+// CORP on the loader, is invisible when both pages share an origin.
 func TestEmbedEndToEndInABrowser(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser test")
@@ -151,7 +151,7 @@ func TestEmbedEndToEndInABrowser(t *testing.T) {
 		// The handshake is: frame says ready → parent hands the nonce → frame
 		// exchanges it → frame fetches content → frame reports height.
 		// Wait on the frame EXISTING and reporting any height at all. The
-		// later assertions are what judge the value — an earlier version
+		// later assertions are what judge the value. An earlier version
 		// polled for "height > 200" and then asserted "height > 200", so a
 		// genuine failure aborted in Run and the assertion was unreachable.
 		chromedp.Poll(`(() => {
@@ -193,7 +193,7 @@ func TestEmbedEndToEndInABrowser(t *testing.T) {
 	// so a shorter window observes nothing and proves nothing.
 	//
 	// Every request the frame makes has to carry
-	// the grant, not just the ones rpc.js builds: a poll, a toggle, an
+	// the grant, not only the ones rpc.js builds: a poll, a toggle, an
 	// optimistic action and an infinite scroll each assemble their own headers,
 	// and inside a frame there is no cookie to fall back on. An anonymous poll
 	// silently replaces authenticated content with a logged-out render.
@@ -211,7 +211,7 @@ func TestEmbedEndToEndInABrowser(t *testing.T) {
 
 // TestEmbedRefusesToRenderUnframed is the other half: opening the embed URL
 // directly is not a way to view the surface. There is no parent to hand over a
-// nonce, so nothing renders — and the page says so rather than spinning.
+// nonce, so nothing renders, and the page says so rather than spinning.
 func TestEmbedRefusesToRenderUnframed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser test")
@@ -250,8 +250,8 @@ func newEmbedBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
-	// passing a timeout context here would make the browser die when that
+	// browser context so the browser's lifetime is the browser context's.
+	// Passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
 	go func() { started <- chromedp.Run(browserCtx) }()

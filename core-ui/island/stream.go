@@ -45,7 +45,7 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 
 	// Gate the requested topics through AuthorizeTopic (nil hook = all
 	// allowed) BEFORE anything is subscribed. Running the app-supplied hook
-	// here — before ConnectSession — means a panicking hook cannot leak a
+	// here, before ConnectSession, means a panicking hook cannot leak a
 	// subscription (there is none yet); net/http recovers the request and
 	// nothing needs teardown. An unauthorized topic never yields a
 	// subscription or a roster entry. The request context carries the
@@ -53,7 +53,7 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	topics = m.filterAuthorizedTopics(r.Context(), topics)
 
 	// Subscribe BEFORE flushing headers. Flushing headers (the "connected"
-	// comment below) unblocks the HTTP client — its Do() returns — so a
+	// comment below) unblocks the HTTP client, its Do() returns, so a
 	// client that pushes immediately on connect would otherwise win the
 	// race against this subscription and have its update silently dropped
 	// by Push (which no-ops while no stream entry exists yet). Subscribing
@@ -94,13 +94,13 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 
 	// A long-lived SSE stream must satisfy three constraints at once (issue #159):
 	//
-	//  1. It must outlive middleware.Timeout's request deadline — a context
+	//  1. It must outlive middleware.Timeout's request deadline, a context
 	//     derived via context.WithTimeout(r.Context(), d) sits on the request
 	//     and would otherwise cut a live stream at d (the original bug).
 	//  2. It must keep writing on an idle connection so proxies and load
 	//     balancers don't idle-kill a live stream (the heartbeat).
 	//  3. It must be reclaimed if the peer vanishes in a way the server cannot
-	//     promptly observe — a stranded stream whose heartbeat writes keep
+	//     promptly observe, a stranded stream whose heartbeat writes keep
 	//     succeeding into the kernel buffer would otherwise hold a socket
 	//     forever, exhausting the browser's per-origin connection pool (the
 	//     #158 regression).
@@ -111,14 +111,14 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	//
 	//   - the request-context deadline is distinguished from a real disconnect:
 	//     DeadlineExceeded is middleware.Timeout firing on a still-connected
-	//     client (ignored — let the bound decide lifetime); context.Canceled is
+	//     client (ignored, let the bound decide lifetime); context.Canceled is
 	//     a genuine peer disconnect (unwind immediately);
 	//   - a heartbeat ticker writes a keepalive comment so a live stream is
 	//     never idle and a half-closed peer eventually surfaces as a write
 	//     error;
 	//   - a bounded-lifetime timer closes any stream after a fixed duration
-	//     regardless of write success — the safety net for a stranded stream.
-	//     The bound exceeds the heartbeat; EventSource reconnects seamlessly.
+	//     regardless of write success, the safety net for a stranded stream.
+	//     The bound exceeds the heartbeat; EventSource reconnects automatically.
 	reqCtx := r.Context()
 	streamCtx, streamCancel := context.WithCancel(context.Background())
 	defer streamCancel()

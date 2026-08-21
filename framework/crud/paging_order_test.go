@@ -61,7 +61,7 @@ func TestBackwardPageIsAscending(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("backward page len=%d data=%v", len(got), back.Data)
 	}
-	// Must be ascending (1,2), matching forward-page ordering — not (2,1).
+	// Must be ascending (1,2), matching forward-page ordering, not (2,1).
 	if got[0] > got[1] {
 		t.Errorf("backward page reverse-ordered: %v (want ascending)", got)
 	}
@@ -87,7 +87,7 @@ func seqOf(rows []map[string]any) []int {
 }
 
 // TestStreamPageTwoSkipsFirstPage asserts the streaming list path honours
-// ?page=2 — it must skip the first page rather than re-stream page 1.
+// ?page=2, it must skip the first page rather than re-stream page 1.
 func TestStreamPageTwoSkipsFirstPage(t *testing.T) {
 	ch, _ := covItems(t, func(c *entity.EntityConfig) {
 		if c.Pagination == nil {

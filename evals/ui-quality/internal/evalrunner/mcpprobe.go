@@ -15,7 +15,7 @@ import (
 // introspection set survived the builder (app_routes as the sentinel),
 // and whether the dev-gated log tools leaked into this prod-style boot.
 // A candidate without /mcp (endpoint removed, non-JSON reply) reports
-// zero tools — that's the signal, not an error.
+// zero tools. That's the signal, not an error.
 func probeCandidateMCP(ctx context.Context, baseURL string) (tools int, introspection, logToolsProd bool) {
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

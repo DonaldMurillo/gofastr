@@ -2,7 +2,7 @@
 
 The runtime ships client-side interactive behavior through `data-fui-*`
 attributes on regular HTML elements. No JavaScript is required from the
-application author — the runtime's click delegation, IntersectionObserver,
+application author. The runtime's click delegation, IntersectionObserver,
 and module system handle everything.
 
 This doc catalogs every interactive pattern the framework provides, grouped
@@ -10,8 +10,8 @@ by whether the behavior is **client-only** (no server round-trip) or
 **RPC-backed** (fires a fetch, updates the page).
 
 Writing the `data-fui-*` attributes by hand instead of using a wrapper
-helper? Jump to [Writing a hand-written island, end to end](#writing-a-hand-written-island-end-to-end)
-— it walks a complete example and calls out the four things that trip up
+helper? Jump to [Writing a hand-written island, end to end](#writing-a-hand-written-island-end-to-end).
+It walks a complete example and calls out the four things that trip up
 almost everyone the first time (endpoint registration, the `name`→JSON-key
 rule, select triggers, and the two route-param syntaxes).
 
@@ -29,7 +29,7 @@ provides three mutation primitives triggered by click:
 | Attribute | Effect |
 |---|---|
 | `data-fui-signal-set="name:value"` | Sets signal `name` to `value` |
-| `data-fui-signal-inc="name"` | Increments signal `name` by 1 — or use `"name:delta"` for another step |
+| `data-fui-signal-inc="name"` | Increments signal `name` by 1, or use `"name:delta"` for another step |
 | `data-fui-signal-toggle="name"` | Flips signal `name` between `"true"` and `"false"` |
 
 Any element carrying a `data-fui-signal` attribute renders the current
@@ -52,7 +52,7 @@ non-unit increments.
 sets the signal to the tab's index; CSS attribute selectors show/hide
 the matching panel. No JavaScript beyond the runtime's click delegation.
 
-### Toggle Switch
+### Toggle switch
 
 `framework/ui.SignalToggle` renders a `role=switch` with
 `aria-checked` bound to a boolean signal. Clicking toggles the signal
@@ -86,7 +86,7 @@ content. Triggered by the `data-fui-autogrow` attribute.
 ### Toast notifications
 
 `core-ui/widget/preset.ToastStack` renders a slide-in notification
-stack. The runtime module (`toasts.js`) is pure client-side — toasts
+stack. The runtime module (`toasts.js`) is pure client-side. Toasts
 auto-dismiss with a TTL, pause on hover/focus, and can be dismissed
 by clicking the close button.
 
@@ -150,10 +150,10 @@ Uses the `optimisticaction.js` runtime module.
 
 `framework/ui.ToggleAction` renders a three-state button
 (idle → pending → committed) for binary server-backed state the user
-flips in place — Follow/Following, plan pickers, watch/unwatch.
+flips in place: Follow/Following, plan pickers, watch/unwatch.
 Clicking an idle button optimistically shows the committed label,
 POSTs `Endpoint` (or `Method`), and rolls back on non-2xx. With
-`AllowUntoggle: true` a second click reverts it — hitting
+`AllowUntoggle: true` a second click reverts it, hitting
 `UntoggleEndpoint` when set, otherwise flipping locally with no
 request. Buttons sharing a `Group` form a client-side mutex:
 committing one reverts the previously-committed sibling (no extra
@@ -185,7 +185,7 @@ to close it. The actual save uses `interactive.OnSubmit`.
 ### Navigate (button → server → SPA page change)
 
 `interactive.OnClick` with a `Navigate` effect replaces the page
-content via the runtime's SPA navigation — no full browser reload.
+content via the runtime's SPA navigation, with no full browser reload.
 The navigation bypasses the screen cache, so the destination always
 shows post-mutation state.
 
@@ -210,8 +210,8 @@ never re-renders the visible page. Selector rules and scope are in
 ### Confirm (pre-flight confirmation dialog)
 
 `Action.WithConfirm(message)` gates the action behind a **pre-flight**
-`window.confirm` dialog. The gate runs *before* the request is dispatched —
-cancelling aborts it, so the RPC never fires. Use for destructive actions
+`window.confirm` dialog. The gate runs *before* the request is dispatched.
+Cancelling aborts it, so the RPC never fires. Use for destructive actions
 (delete, revoke, bulk operations).
 
 ```go
@@ -233,7 +233,7 @@ the opt-in upgrade.
 ### AfterText (one-shot button label swap on success)
 
 `interactive.AfterText(text)` replaces the trigger element's text content
-with `text` after a 2xx response. One-shot — re-clicks are idempotent. Pair
+with `text` after a 2xx response. One-shot: re-clicks are idempotent. Pair
 with `AfterDisable` for "Saved ✓" feedback.
 
 ```go
@@ -295,8 +295,8 @@ Attribute injected: `data-fui-push-state="path"`.
 ## Polling patterns
 
 Polling is passive freshness without a held connection. The runtime
-re-fetches a region on a Go-duration interval and swaps the body —
-the same code path an RPC signal swap uses.
+re-fetches a region on a Go-duration interval and swaps the body,
+using the same code path an RPC signal swap uses.
 
 ### Page-level polling
 
@@ -317,7 +317,7 @@ Two attributes on the region you want to refresh:
 - Any replica can answer the fetch from the DB. No fanout, no held
   connection.
 
-Use a read endpoint — a poll fires on a timer, so a write endpoint
+Use a read endpoint. A poll fires on a timer, so a write endpoint
 would write on every tab on every interval.
 
 ### Widget-level polling
@@ -329,21 +329,21 @@ signals. See [Widgets](widgets.md) → Polling.
 ### When to pick polling
 
 Polling is the recommended tier for a surface that needs to stay
-fresh on a cadence — a counter, a status pill, a dashboard. Reserve
+fresh on a cadence: a counter, a status pill, a dashboard. Reserve
 SSE push for semantics that need the connection: presence,
 collaborative editing, sub-second updates. See
 [Reactivity model](reactivity.md) for the full ladder.
 
 ---
 
-## Sortable List (single + kanban)
+## Sortable list (single + kanban)
 
 `core-ui/patterns/sortablelist` renders a reorderable `<ol>` with HTML5
 drag-and-drop plus a keyboard fallback (Space to grab, Arrow keys to
 move, Space to drop, Esc to cancel). After a successful reorder the
 runtime POSTs the new key sequence to `RPCPath` as form-encoded
 `order=<comma-sep-keys>`. A non-2xx response reverts the DOM. The
-`Items` slice may be empty — an empty column renders a valid, sortable
+`Items` slice may be empty. An empty column renders a valid, sortable
 `<ol>` wrapper with no `<li>` children and remains a drop target
 (empty Kanban columns, issue #82). `RenderItems` with no items returns
 an empty fragment, so an authoritative conflict-reconciliation
@@ -369,7 +369,7 @@ Render one list per column, all sharing the same `Group` (the board id),
 each with a unique `Container` (the column id the server writes to).
 Lists with the same non-empty `Group` allow drag and keyboard moves
 between them; lists with no group (or different groups) stay isolated.
-A column may start empty (`Items: nil`) — it still renders the
+A column may start empty (`Items: nil`). It still renders the
 sortable wrapper and accepts drops.
 
 ```go
@@ -415,7 +415,7 @@ path** instead of a blanket rollback:
    read, the body MUST parse as a problem-detail object
    `{"error":{"code":"…","message":"…"}}`, and `error.message` (which
    must be a string) is capped at ~300 characters. Anything malformed,
-   oversized, non-JSON, or unreadable — including an empty body —
+   oversized, non-JSON, or unreadable, including an empty body,
    falls back to the generic copy (today's behavior, backward
    compatible).
 2. When a valid message is present, it is shown through the polite
@@ -424,7 +424,7 @@ path** instead of a blanket rollback:
    wired.
 3. If `ConflictRPC` is set, the runtime then GET-fetches it and
    replaces the destination list's `innerHTML` with the response
-   (server-rendered reconciliation — an empty response reconciles the
+   (server-rendered reconciliation: an empty response reconciles the
    column to zero items, #82). The source list is restored from its
    snapshot. If `ConflictRPC` is absent, the runtime falls back to
    rollback + a `console.warn`.
@@ -433,8 +433,8 @@ path** instead of a blanket rollback:
 {"error": {"code": "transition_blocked", "message": "Cannot move ORB-12 to Done because ORB-9 is incomplete."}}
 ```
 
-Without `Version`, `409` is treated like any other non-2xx (rollback) —
-back-compat. A polite `aria-live` region announces grab, move (position
+Without `Version`, `409` is treated like any other non-2xx (rollback),
+for back-compat. A polite `aria-live` region announces grab, move (position
 + column), drop-commit success, and rollback/conflict (with the
 server's message when available) for screen-reader users.
 ---
@@ -442,27 +442,27 @@ server's message when available) for screen-reader users.
 ## Writing a hand-written island, end to end
 
 The wrapper helpers above cover the common cases, but sometimes you write the
-`data-fui-*` attributes by hand — a bespoke widget, a generated screen, a
+`data-fui-*` attributes by hand: a bespoke widget, a generated screen, a
 one-off control. The runtime is happy to drive raw attributes, but four
 things trip up almost everyone the first time. This section walks a complete
 example and calls each one out.
 
 The example: a product list with a category `<select>` that swaps the list
-via an RPC (an in-page state change — an island, **not** a route).
+via an RPC (an in-page state change: an island, **not** a route).
 
 ### 1. Register the endpoint yourself
 
 `data-fui-rpc` is just a string the runtime POSTs to. **Nothing registers
 that route for you.** The auto-wiring you may have seen belongs to
 `widget.Mount` / `widget.MountBuilder`, which register a widget's
-`/style.css`, `/state`, and `/chrome` routes — a *hand-written* `data-fui-rpc`
+`/style.css`, `/state`, and `/chrome` routes. A *hand-written* `data-fui-rpc`
 path has no widget behind it, so you add the handler on the app router:
 
 ```go
 app.Router().Post("/islands/products/filter", http.HandlerFunc(filterProducts))
 ```
 
-Forget this and the click fires a request that 404s — with no compile error
+Forget this and the click fires a request that 404s, with no compile error
 and nothing in the page to hint at the missing route. If a `data-fui-rpc`
 button "does nothing", check the server log for a 404 first.
 
@@ -502,15 +502,15 @@ in a browser, not just the endpoint in isolation.
 
 There is deliberately **no `data-fui-rpc-trigger="change"`.** Selects,
 checkboxes, and radios all emit an `input` event on commit in every modern
-browser, so `data-fui-rpc-trigger="input"` already fires for them — wrap the
+browser, so `data-fui-rpc-trigger="input"` already fires for them. Wrap the
 control in a `<form data-fui-rpc … data-fui-rpc-trigger="input">` (as above)
 and you're done. Adding a second `change` trigger would be redundant behavior
 for a control the `input` trigger already covers, and the core runtime is
 gzip-budget-locked, so the framework does not ship one.
 
 For a `<select>` the `input`/`change` distinction doesn't matter (both fire
-once, on selection), so set a small debounce — `data-fui-rpc-debounce-ms="1"`
-— to fire promptly instead of waiting out the 250 ms default meant for
+once, on selection), so set a small debounce, `data-fui-rpc-debounce-ms="1"`,
+to fire promptly instead of waiting out the 250 ms default meant for
 keystroke typeahead. This recipe is covered end-to-end by
 `TestInputTrigger_SelectFiresRPC` in `core-ui/runtime`.
 
@@ -530,18 +530,18 @@ app.Router().Post("/islands/products/{id}/filter", http.HandlerFunc(filterProduc
 // read it with r.PathValue("id")
 ```
 
-…while a page route may use either form — they match identically:
+…while a page route may use either form, and they match identically:
 
 ```go
 app.Register("/products/:id", &ProductScreen{}, layout)     // colon form
-app.Register("/products/{id}", &ProductScreen{}, layout)    // brace form — same route
+app.Register("/products/{id}", &ProductScreen{}, layout)    // brace form, same route
 // param arrives via ParamSetter.SetParams either way
 ```
 
 The screen router normalizes `{id}` to `:id` at registration so every
 downstream consumer (resolve, the route manifest, `llm.md`) sees one
 shape. The HTTP router is Go 1.22's `ServeMux` and accepts **only**
-`{id}` — a `:id` segment on an `app.Router().Post(...)` path simply
+`{id}`. A `:id` segment on an `app.Router().Post(...)` path simply
 never matches (no error, just a 404). When an RPC route "isn't hit",
 check that it uses `{id}`, not `:id`.
 
@@ -549,15 +549,15 @@ check that it uses `{id}`, not `:id`.
 
 ## Themed confirmation (`ui.ConfirmAction`)
 
-`Action.WithConfirm` (above) uses native `window.confirm` — fine for
-admin/internal tools, but unthemed and unautomatable. For a destructive
+`Action.WithConfirm` (above) uses native `window.confirm`, fine for
+admin/internal tools but unthemed and unautomatable. For a destructive
 action in an app your users interact with directly, `framework/ui.ConfirmAction` renders a
 design-system **alertdialog** instead: a modal that matches your theme
-(light + dark, via tokens — zero bespoke CSS), traps focus, closes on Escape,
+(light + dark, via tokens, zero bespoke CSS), traps focus, closes on Escape,
 and is drivable by tests.
 
 It's the same island contract you already know, composed from two existing
-primitives — the trigger carries `data-fui-open` (open the modal), and the
+primitives: the trigger carries `data-fui-open` (open the modal), and the
 modal's Confirm button carries the real `data-fui-rpc`. Cancel just closes;
 only Confirm dispatches. No new runtime attributes, no core JS.
 
@@ -582,17 +582,17 @@ app.Router().Post("/users/42/delete", http.HandlerFunc(deleteUser))
 ```
 
 Cancel is the initially-focused button by default (safer for destructive
-flows — a stray Enter can't fire the action); set
+flows: a stray Enter can't fire the action); set
 `AutofocusConfirm: true` for benign "Apply changes?" confirmations. The
 returned pair is deliberately two values: the trigger renders inline, the
-modal mounts once — forgetting the `widget.Mount` is the usual "the dialog
+modal mounts once. Forgetting the `widget.Mount` is the usual "the dialog
 never opens" cause.
 
 ---
 
 ## Presence rosters (who is here)
 
-`ui.Avatar` and `ui.AvatarGroup` can show a **presence dot** — the
+`ui.Avatar` and `ui.AvatarGroup` can show a **presence dot**, the
 visual half of "who is viewing this". Set `AvatarConfig.Status` to
 `ui.AvatarOnline`, `AvatarAway`, `AvatarBusy`, or `AvatarOffline`; the
 dot colors come from the status tokens, so a themed app recolors them
@@ -612,7 +612,7 @@ ui.AvatarGroup(ui.AvatarGroupConfig{
 })
 ```
 
-To make the roster **live**, feed the group's HTML through a signal —
+To make the roster **live**, feed the group's HTML through a signal,
 the same pattern NotificationBell uses: render the `AvatarGroup` inside
 a `data-fui-signal="…"` `data-fui-signal-mode="html"` region and push
 new HTML when the roster changes (via an RPC response signal or an
@@ -621,10 +621,10 @@ island re-render). The status values are just data you supply.
 > **Presence *transport* is app-owned today.** The framework gives you
 > the roster **rendering** (the status dot) and the live-region
 > **plumbing** (signals + SSE), but it does not yet track *who* holds
-> an open connection to a given entity. Deriving the live roster —
-> binding the authenticated user to their SSE connection, observing
-> connect/disconnect, and aggregating that across replicas — is work an
-> app wires itself for now. Adding this to the framework is tracked in
+> an open connection to a given entity. Deriving the live roster is
+> work an app wires itself for now: binding the authenticated user to
+> their SSE connection, observing connect/disconnect, and aggregating
+> that across replicas. Adding this to the framework is tracked in
 > issue #47.
 
 ## Complex interactive components
@@ -660,7 +660,7 @@ own runtime modules for client-side behavior.
 
 An `Action` is built with the method constructors (`Post`, `Get`, `Put`,
 `Delete`, `Patch`) and refined with chained methods (`.OnSuccess(...)`,
-`.WithConfirm(...)`) — its fields are unexported, so there is no struct
+`.WithConfirm(...)`). Its fields are unexported, so there is no struct
 literal.
 
 ```go
@@ -700,7 +700,7 @@ interactive.OnClick(btn,
 `.Attrs()` returns the `data-fui-*` attributes an `Action` would inject, as a
 `map[string]string`. Use it to merge RPC wiring into an existing attribute map
 (a `render.Tag`/`ExtraAttrs` map) so the renderer's sorted output stays
-byte-identical — prefer it over the `OnClick`/`OnSubmit` wrappers whenever the
+byte-identical. Prefer it over the `OnClick`/`OnSubmit` wrappers whenever the
 element already carries other attributes, since the wrappers splice at the
 tag's first `>` and can reorder attributes relative to a sorted map.
 
@@ -765,23 +765,23 @@ listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
 - [UI capability map](ui-capability-map.md) starts from optimistic UI, live dashboard, mutation, rollback, and reconciliation jobs.
 - [Optimistic UI](optimistic-ui.md) for the mutation lifecycle contract,
   rollback vs authoritative refresh, and the seven composed recipes.
-- [`docs/ui-new-components.md`](ui-new-components.md) — full component catalog.
-- [`docs/widgets.md`](widgets.md) — widget framework (Modal, Drawer, Popover mounts).
-- [runtime-contract](runtime-contract.md) — the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
-- [`docs/ui-getting-started.md`](ui-getting-started.md) — first-time UI setup.
+- [`docs/ui-new-components.md`](ui-new-components.md): full component catalog.
+- [`docs/widgets.md`](widgets.md): widget framework (Modal, Drawer, Popover mounts).
+- [runtime-contract](runtime-contract.md): the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
+- [`docs/ui-getting-started.md`](ui-getting-started.md): first-time UI setup.
 
 ## Common mistakes
 
 - **Assuming a hand-written `data-fui-rpc` route is auto-registered.**
   Only `widget.Mount` wires routes automatically (for a widget's own
   style/state/chrome). A raw `data-fui-rpc="/x"` you write by hand needs
-  its own `app.Router().Post("/x", …)` — otherwise the click 404s silently.
+  its own `app.Router().Post("/x", …)`. Otherwise the click 404s silently.
   See [Writing a hand-written island, end to end](#writing-a-hand-written-island-end-to-end).
 - **Decoding the RPC body by the input's `id`.** The runtime keys the JSON
   body off each control's **`name`**, not its `id`. `curl` testing hides the
   mismatch; only a real browser exposes it. Same section, rule 2.
 - **Turning in-page state changes into routes.** Sort, paginate,
-  expand, tab-switch — these are islands (RPC swaps one fragment), not
+  expand, tab-switch: these are islands (RPC swaps one fragment), not
   navigations. Adding a route (or `location.href = …`) for them is the
   architecture's named failure mode #1.
 - **Re-implementing pagination/sort/filter math in JS.** The server
@@ -793,11 +793,11 @@ listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
   and `"false"`, and `data-fui-signal-inc` parses-then-stringifies.
   Compare against string values (in CSS attribute selectors too), not
   booleans or numbers.
-- **Using SSE to deliver an action's response.** SSE is push-only —
-  background events for *other* clients. The result of a user action
+- **Using SSE to deliver an action's response.** SSE is push-only.
+  It carries background events for *other* clients. The result of a user action
   arrives in the RPC response itself (`data-fui-rpc-signal`, island
   swap), never via the event stream.
 - **Inventing a new `data-fui-*` attribute without updating the
   contract.** Every attribute the runtime reads must land in
-  `core-ui/ARCHITECTURE.md` and the runtime test suite — undocumented
+  `core-ui/ARCHITECTURE.md` and the runtime test suite. Undocumented
   attributes are drift the next author can't discover.

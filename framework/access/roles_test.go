@@ -7,7 +7,7 @@ import (
 )
 
 // TestGetRoles_RoundTrips confirms GetRoles reads back the roles stored
-// by WithRoles — the reader half that unblocks role-based UI branching.
+// by WithRoles, the reader half that unblocks role-based UI branching.
 func TestGetRoles_RoundTrips(t *testing.T) {
 	ctx := WithRoles(context.Background(), []string{"editor", "admin"})
 	got := GetRoles(ctx)

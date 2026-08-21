@@ -1,9 +1,9 @@
-# Performance results — historical snapshot, 2026-07-18 (v0.26.0)
+# Performance results: historical snapshot, 2026-07-18 (v0.26.0)
 
 > **Historical snapshot, kept intact.** These numbers were captured at
 > **v0.26.0** on **2026-07-18** and are preserved here as a reference
 > point. The framework has shipped many releases since; current numbers
-> will differ — re-run the named benchmark before quoting any figure.
+> will differ; re-run the named benchmark before quoting any figure.
 > Treat the data below as a point-in-time witness, not the present state.
 
 Each section names the benchmark that produced the numbers, so a future
@@ -29,21 +29,21 @@ go test ./framework/ -run=^$ -bench=<pattern> \
 - with-default-chain 3.9 µs/op, 47 allocs; without-default-chain 0.19 µs/op,
   5 allocs; raw-router 0.17 µs/op, 4 allocs.
 - The full default chain costs ~23× a raw route. (The historic 200×
-  regression — 268 µs — stays gone.)
+  regression, 268 µs, stays gone.)
 
 ### Streaming vs buffered list at volume
 - Benchmark: `BenchmarkT9_StreamingVsBuffered_RealVolume`
 - Postgres, 5000 rows: buffered-paginated 46.7 ms/op; streaming-single
-  11.5 ms/op — a **4.1× streaming win**. SQLite is too fast to show the
+  11.5 ms/op: a **4.1× streaming win**. SQLite is too fast to show the
   gap clearly (15.7 vs 13.9 ms).
 
-### FilteredList vs hand-rolled net/http — overhead reduction (2026-07-18)
+### FilteredList vs hand-rolled net/http: overhead reduction (2026-07-18)
 - Benchmarks: `BenchmarkT7_FilteredList_GoFastr` vs
   `BenchmarkT7_FilteredList_NetHTTP`.
 - **Fixture-fix caveat (commit-window):** generated CRUD required a
   session by default since commit `4758c4a0`, but the
-  `setupBlogDomain` fixture had no `OwnerField`/`Access`/`Config.Public`
-  — anonymous bench requests 401'd before reaching the List body. The
+  `setupBlogDomain` fixture had no `OwnerField`/`Access`/`Config.Public`,
+  so anonymous bench requests 401'd before reaching the List body. The
   bench harness now injects a user via `handler.SetUser(req.Context(),
   …)`, mirroring production auth middleware, so the numbers below reflect
   the REAL List path. The pre-fix 176 µs / 2442 allocs figure measured
@@ -71,7 +71,7 @@ go test ./framework/ -run=^$ -bench=<pattern> \
   declare-once surface still pays for case conversion, projection, and
   include-tree resolution that the hand-rolled handler skips. The next
   lever is item 5 of the brief (caching static per-entity work behind
-  registration) — gated on a sanitize-still-rejects regression test.
+  registration), gated on a sanitize-still-rejects regression test.
 
 ### JSON case conversion
 - Benchmark: `BenchmarkJSONCasing`
@@ -88,7 +88,7 @@ go test ./framework/ -run=^$ -bench=<pattern> \
 - Benchmark: `BenchmarkAutoMigrate_Idempotent`
 - Postgres N=50: 3.7 ms / 5387 allocs; SQLite N=50: 472 µs / 6397 allocs.
 - Context: boot auto-migrate converges columns (additive `ADD COLUMN`),
-  not just table existence — one bulk `information_schema.columns` query
+  not just table existence: one bulk `information_schema.columns` query
   plus an in-memory per-entity diff. That trade roughly doubled the
   re-run cost versus the existence-only path, and buys "add a field,
   reboot, it works" without a `migrate generate` + `migrate up` step.
@@ -129,7 +129,7 @@ go test ./framework/ -run=^$ -bench=<pattern> \
 ### Island RPC tail latency
 - Benchmark: `BenchmarkT9_IslandRPC_Concurrency` (fixed worker counts)
 - workers=64: p50 12 µs, p90 37 µs, p99 **5.2 ms**, p999 14 ms,
-  95 allocs/op — p99 below the 10 ms target.
+  95 allocs/op; p99 below the 10 ms target.
 
 ---
 
@@ -137,7 +137,7 @@ go test ./framework/ -run=^$ -bench=<pattern> \
 
 - SQLite in-memory tiers measure framework overhead; Postgres tiers
   measure the realistic end-to-end path (network + real planner). A
-  claim about Postgres behavior needs Postgres evidence — don't
+  claim about Postgres behavior needs Postgres evidence; don't
   extrapolate from the SQLite tier.
 - `-benchtime=100ms -count=1` is a smoke-grade capture for tracking
   order-of-magnitude and alloc counts, not publication-grade statistics.

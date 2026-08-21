@@ -1,11 +1,11 @@
 #!/bin/sh
-# GoFastr pre-push hook — safety net behind pre-commit.
+# GoFastr pre-push hook: safety net behind pre-commit.
 #
 # Re-runs the deterministic CI test sweep when a commit skipped it
 # (GOFASTR_SKIP_COMMIT_TESTS=1 or --no-verify), then module integrity and
 # govulncheck. The old `go test -race ./...` is gone: it took half an
 # hour and swept the packages CI deliberately excludes as flaky-by-design
-# (core-ui/runtime, core-ui/widget, examples/site) — use `make test-race`
+# (core-ui/runtime, core-ui/widget, examples/site), use `make test-race`
 # for a deliberate race pass.
 #
 # Enable once per clone: make hooks
@@ -25,7 +25,7 @@ fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
 # Git feeds ref updates on stdin: "<local ref> <local sha> <remote ref>
 # <remote sha>" per line, with an all-zero local sha for a deletion. A
 # push that ONLY deletes remote branches ships no code, so there is
-# nothing for the gate to test — skip it. Any line with a real local
+# nothing for the gate to test, skip it. Any line with a real local
 # sha keeps the full gate.
 ZERO=0000000000000000000000000000000000000000
 only_deletions=""

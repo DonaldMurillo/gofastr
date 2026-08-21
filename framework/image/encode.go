@@ -19,7 +19,7 @@ import (
 // chosen output format and any per-format options. Call Bytes, Write,
 // Base64, or DataURL to materialise the encoded image. Repeat calls
 // against the same Encoder reuse the first encode's bytes instead of
-// re-running the codec — even across multiple goroutines.
+// re-running the codec, even across multiple goroutines.
 //
 // Note: the cache is keyed by *Encoder identity, not by source pixels.
 // Mutating the underlying image.Image via Image.GoImage() after the
@@ -225,7 +225,7 @@ func (i *Image) TIFF(opts ...TIFFOptions) *Encoder {
 // WebPOptions configures WebP encoding. The zero value selects
 // lossless (VP8L), the only mode currently implemented.
 type WebPOptions struct {
-	// Lossy requests VP8 lossy WebP. Not implemented — setting this
+	// Lossy requests VP8 lossy WebP. Not implemented. Setting this
 	// to true returns ErrFormatUnsupported on terminal calls. The
 	// zero value (false) selects lossless.
 	Lossy bool

@@ -4,7 +4,7 @@ Local semantic-search battery for GoFastr.
 
 ```go
 idx, _ := semantic.Open(semantic.Options{
-    // Real semantic — recommended once Ollama is running locally:
+    // Real semantic, recommended once Ollama is running locally:
     Embedder: semantic.NewOllamaEmbedder(semantic.OllamaConfig{
         Model: "nomic-embed-text",            // ollama pull nomic-embed-text
     }),
@@ -35,7 +35,7 @@ hits, _ := idx.Query(ctx, semantic.Query{
 | `store_flat.go` | `FlatStore`: in-memory `[]Chunk`, brute-force cosine, doc-scoped removal. Targets ~100k chunks at 384 dims (~150MB). |
 | `chunker.go` | `FixedWindow`: language-agnostic rune-window chunker with overlap. Default. |
 | `chunker_lang.go` | `LangAware`: Go AST-aware + Markdown heading-aware; falls back to `FixedWindow` per-section when chunks exceed `MaxRunes`. |
-| `stub_embedder.go` | `StubEmbedder`: deterministic FNV-hashed bag-of-words. Test and offline-dev only — **not** a real model. |
+| `stub_embedder.go` | `StubEmbedder`: deterministic FNV-hashed bag-of-words. Test and offline-dev only, **not** a real model. |
 | `embedder_ollama.go` | `OllamaEmbedder`: HTTP client against Ollama-compatible `/api/embed`. Real semantic embeddings, no CGO, no bundled model. Recommended production default. |
 | `hybrid.go` | `MemoryKeyword`: in-process BM25-flavoured keyword backend. `fuseRRF` reciprocal-rank fusion. |
 | `hybrid_search.go` | `WrapSearchBackend`: adapter from `battery/search.Backend` into `KeywordBackend`. |
@@ -63,13 +63,13 @@ Query.Text
                                                                 └── strip Vec → caller
 ```
 
-The pipeline is opt-in: a default `Query{Text: "x"}` runs pure vector retrieval. Setting `Hybrid` enables fusion; `MMRLambda` enables diversity; `Rerank` requires `Options.Reranker` to be set (otherwise the call errors — silent quality regressions are not allowed).
+The pipeline is opt-in: a default `Query{Text: "x"}` runs pure vector retrieval. Setting `Hybrid` enables fusion; `MMRLambda` enables diversity; `Rerank` requires `Options.Reranker` to be set (otherwise the call errors, because silent quality regressions are not allowed).
 
 ## Persistence
 
 When `Options.Path` is set, every mutation appends to `<path>/store.wal` and reads back on `Open`. Every `Options.SnapshotEvery` mutations (default 1000) or on `Index.Snapshot()`, the full state is written atomically to `<path>/store.snap` and the WAL is truncated.
 
-The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on load returns `*ModelMismatchError` and refuses to load — mixing vectors from different models silently destroys retrieval quality.
+The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on load returns `*ModelMismatchError` and refuses to load. Mixing vectors from different models silently destroys retrieval quality.
 
 ## Watcher
 
@@ -145,11 +145,11 @@ make ollama-down      # stop the container
 
 | Milestone | Status |
 | --- | --- |
-| M1 — package skeleton, types, stub embedder, flat store, chunker | ✅ |
-| M1.5 — real semantic embedder (Ollama-compatible HTTP) | ✅ |
-| M2 — gob snapshot + WAL, plugin + HTTP routes | ✅ |
-| M3 — hybrid retrieval, filters, MMR, rerank hook | ✅ |
-| M4 — polling watcher, `gofastr semantic` CLI | ✅ |
-| M5 — Kiln context hook, lang-aware chunker, example app, benches, docs | ✅ |
+| M1: package skeleton, types, stub embedder, flat store, chunker | ✅ |
+| M1.5: real semantic embedder (Ollama-compatible HTTP) | ✅ |
+| M2: gob snapshot + WAL, plugin + HTTP routes | ✅ |
+| M3: hybrid retrieval, filters, MMR, rerank hook | ✅ |
+| M4: polling watcher, `gofastr semantic` CLI | ✅ |
+| M5: Kiln context hook, lang-aware chunker, example app, benches, docs | ✅ |
 
-The default production embedder is `OllamaEmbedder`. Users who want a different model wire any `Embedder` implementation (OpenAI Embeddings API, a private microservice, etc.) — the interface is three methods and the rest of the package is embedder-agnostic.
+The default production embedder is `OllamaEmbedder`. Users who want a different model wire any `Embedder` implementation (OpenAI Embeddings API, a private microservice, etc.). The interface is three methods and the rest of the package is embedder-agnostic.

@@ -1,27 +1,27 @@
 package main
 
 // =============================================================================
-// Home — top-level outline (matches pages/home-v2.html in the design bundle):
+// Home, top-level outline (matches pages/home-v2.html in the design bundle):
 //
 //   HERO        version tag · h1 with amber span · 2 ledes · 2 CTAs · install
 //               RHS: code block (blog/main.go, hand-tokenized in code_block.go)
-//   §01         the numbers — countable claims, measured or test-gated
-//   §02         server-rendered UI — SSR/islands model | screen mock
-//   §03         explore grid — 6 route cards into the main areas of the site
-//   §04         built with gofastr — production app + the Meridian flagship
+//   §01         the numbers: countable claims, measured or test-gated
+//   §02         server-rendered UI: SSR/islands model | screen mock
+//   §03         explore grid, 6 route cards into the main areas of the site
+//   §04         built with gofastr, production app + the Meridian flagship
 //
-// Sections live inside <main> only — .nav and .foot are owned by the
+// Sections live inside <main> only, .nav and .foot are owned by the
 // HeaderComponent / FooterComponent. Built with core-ui/html primitives
 // (Heading, Link, UnorderedList, ListItem, DescriptionList…) so attribute
 // escaping and landmark roles come from typed builders. Page-local layout
 // classes (.hero__grid, .arch-card, .agents__split, etc.) are styled in
-// styles.go via the typed StyleSheet DSL — no raw CSS strings.
+// styles.go via the typed StyleSheet DSL, no raw CSS strings.
 //
 // Framework component fit-check: ui.Container / ui.Card / ui.Tag were
 // considered. Each ships its own visual chrome that diverges from the v2
 // tokens, so adopting them here would either fight the design or require
 // shadowing their CSS. The right time to extract is when a second consumer
-// needs the same pattern — the porting target then is framework/ui/SiteCard,
+// needs the same pattern, the porting target then is framework/ui/SiteCard,
 // framework/ui/AccentTag, etc.
 // =============================================================================
 
@@ -61,14 +61,14 @@ func (s *HomeScreen) Render() render.HTML {
 }
 
 // container is the site's max-width wrapper. Delegates to
-// ui.Container(ContainerWide) — the wide cap is overridden to 1240px
+// ui.Container(ContainerWide), the wide cap is overridden to 1240px
 // via the --ui-container-wide token in styles.go's tokens block.
 func container(children ...render.HTML) render.HTML {
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide}, children...)
 }
 
 // -----------------------------------------------------------------------------
-// HERO — two-col grid: copy on the left, code block on the right.
+// HERO: two-col grid, copy on the left, code block on the right.
 // -----------------------------------------------------------------------------
 
 func heroSection() render.HTML {
@@ -119,11 +119,11 @@ func heroSection() render.HTML {
 	)
 }
 
-// The three hero programs — core-only (stdlib primitives), framework +
+// The three hero programs: core-only (stdlib primitives), framework +
 // one entity, and the fuller "Donald's Way" (screens + SEO + MCP + auth).
 // All three are byte-identical to the README Quickstart programs, which
 // CI extracts, compiles, boots, and curls
-// (cmd/gofastr/readme_quickstart_test.go) — so the homepage never teaches
+// (cmd/gofastr/readme_quickstart_test.go), so the homepage never teaches
 // an API that doesn't exist or a program that doesn't run.
 // TestHeroTabsMatchReadmeQuickstart pins the identity.
 var heroCoreSrc = `package main
@@ -149,7 +149,7 @@ func main() {
 		return render.Tag("h1", nil, render.Text("Hello from core."))
 	}))
 
-	// A typed JSON route — the adapter binds input and serializes output.
+	// A typed JSON route: the adapter binds input and serializes output.
 	r.Get("/api/ping", handler.HandlerAdapter(func(ctx context.Context, _ struct{}) (Pong, error) {
 		return Pong{Status: "ok"}, nil
 	}))
@@ -181,7 +181,7 @@ func main() {
 		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
 	})
 
-	log.Fatal(app.Start(":8080")) // GET/POST /posts, /openapi.json, MCP — all live
+	log.Fatal(app.Start(":8080")) // GET/POST /posts, /openapi.json, MCP: all live
 }`
 
 var heroDonaldSrc = `package main
@@ -261,15 +261,15 @@ func heroCodeTabs() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §01 — The numbers. A strip of countable claims, each one either measured by
+// §01: The numbers. A strip of countable claims, each one either measured by
 // this running binary (runtime size, doc count) or pinned by a test in the
-// repo (numbers_gate_test.go). No adjectives — a skeptical reader can verify
+// repo (numbers_gate_test.go). No adjectives, a skeptical reader can verify
 // every value.
 // -----------------------------------------------------------------------------
 
 // measuredRuntimeGz is the gzipped size of the core client runtime,
 // measured at first render from the same embedded source this site
-// serves — e.g. "12.0 KB". DefaultCompression matches the size-budget
+// serves, e.g. "12.0 KB". DefaultCompression matches the size-budget
 // test (core-ui/runtime/budget_test.go), so the page and the gate report
 // the same number.
 var runtimeGzBytes = sync.OnceValue(func() int {
@@ -293,7 +293,7 @@ var runtimeGzBytes = sync.OnceValue(func() int {
 
 // The byte count is kept separate from its rendering because the two levels
 // this could be measured at differ by only 30 bytes, and both round to
-// "12.0 KB" — so a parity test written against the STRING cannot tell them
+// "12.0 KB", so a parity test written against the STRING cannot tell them
 // apart. numbers_gate_test.go compares runtimeGzBytes directly.
 var measuredRuntimeGz = sync.OnceValue(func() string {
 	n := runtimeGzBytes()
@@ -352,7 +352,7 @@ func numbersSection() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §02 — Server-rendered UI. Most Go frameworks stop at the API; GoFastr renders
+// §02: Server-rendered UI. Most Go frameworks stop at the API; GoFastr renders
 // the pages too, on the server, with a small JS runtime that hydrates in place
 // and turns in-page changes into island calls. The screen mock shows the shape;
 // the left column explains the model. Blueprint is a one-line aside, not the
@@ -386,7 +386,7 @@ func realAppSection() render.HTML {
 
 // screenMock is a static, faithful preview of a server-rendered list screen
 // (Meridian's /customers): a page header plus a server-rendered data table with
-// formatted cells and status badges. It is not wired to live data — it shows
+// formatted cells and status badges. It is not wired to live data, it shows
 // the SHAPE of a server-rendered screen, so the homepage can demonstrate "a
 // real screen" without standing up the entity + RPC a live DataTable island
 // requires.
@@ -438,7 +438,7 @@ func screenMock() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §03 — Explore the framework. A routing grid into the main areas: core
+// §03: Explore the framework. A routing grid into the main areas: core
 // primitives, composed patterns, the agentic/AI surface, the interactivity
 // model, the code generator, and the example apps. Each card links to a real
 // route on the site.
@@ -488,7 +488,7 @@ func exploreSection() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §04 — Built with GoFastr. Real apps running on the framework: a production
+// §04: Built with GoFastr. Real apps running on the framework: a production
 // tool (external) and the generated flagship. Proof it ships real software,
 // not just demos. Reuses the .ex-card / .ex__grid classes from the explore grid.
 // -----------------------------------------------------------------------------
@@ -529,7 +529,7 @@ func builtWithSection() render.HTML {
 // Shared section helpers.
 // -----------------------------------------------------------------------------
 
-// sectionHead — h2 + lede paragraph, two-column at desktop, stacked at mobile
+// sectionHead: h2 + lede paragraph, two-column at desktop, stacked at mobile
 // (the responsive collapse lives in styles.go's @media block).
 func sectionHead(title string, lede render.HTML) render.HTML {
 	return html.Header(html.HeaderConfig{Class: "section__head"},
@@ -538,7 +538,7 @@ func sectionHead(title string, lede render.HTML) render.HTML {
 	)
 }
 
-// sectionWrap — site adapter over ui.Section. The framework component owns
+// sectionWrap, site adapter over ui.Section. The framework component owns
 // the <section> landmark, the decorative numeric eyebrow, and the
 // scroll-margin that keeps an anchored section clear of the sticky header;
 // the site only supplies the eyebrow text, accessible name, the v2 framing

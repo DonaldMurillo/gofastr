@@ -22,8 +22,8 @@ func loadBPWithEntity(t *testing.T, entityYAML string) (Blueprint, error) {
 // TestRenamesDecodeFromYAML: a rename declared in blueprint YAML reaches
 // EntityConfig.Renames, so the schema diff can emit RENAME COLUMN instead of a
 // data-losing drop+add. Renames were Go-declaration-only, which left the
-// blueprint workflow — the only input the standalone migration generator reads
-// — unable to express the difference.
+// blueprint workflow, the only input the standalone migration generator reads,
+// unable to express the difference.
 func TestRenamesDecodeFromYAML(t *testing.T) {
 	bp, err := loadBPWithEntity(t, `  - name: posts
     table: posts
@@ -49,7 +49,7 @@ func TestRenamesDecodeFromYAML(t *testing.T) {
 }
 
 // TestRenamesRejectUnsafeIdentifier: both sides of a rename become column names
-// in emitted ALTER TABLE DDL, so they must be safe identifiers — a blueprint is
+// in emitted ALTER TABLE DDL, so they must be safe identifiers: a blueprint is
 // agent-transcribed text, not developer-authored SQL.
 func TestRenamesRejectUnsafeIdentifier(t *testing.T) {
 	for _, bad := range []string{
@@ -69,7 +69,7 @@ func TestRenamesRejectUnsafeIdentifier(t *testing.T) {
 			continue
 		}
 		// Must be rejected as an unsafe column name, not merely as an
-		// unrecognised key — otherwise this passes before the feature exists.
+		// unrecognised key. Otherwise this passes before the feature exists.
 		if !strings.Contains(err.Error(), "not a safe column name") {
 			t.Errorf("rename %s rejected for the wrong reason: %v", strings.TrimSpace(bad), err)
 		}
@@ -96,7 +96,7 @@ func TestRenamesTargetMustBeDeclared(t *testing.T) {
 }
 
 // TestAuthFooterHrefRejectedAtValidate: ui.Link degrades an unsafe footer href
-// to a dead link at render time, which is safe but silent — the author gets a
+// to a dead link at render time, which is safe but silent. The author gets a
 // broken link instead of an error. Every sibling problem in validateBlueprint
 // (theme values, relation names, screen layouts) fails the generate, so this
 // one does too. It shares urlsafe.Anchor with the renderer, so validate and

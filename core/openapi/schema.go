@@ -76,7 +76,7 @@ func FieldToSchema(field schema.Field) map[string]any {
 		prop["format"] = "date"
 
 	case schema.JSON:
-		// Accept any JSON value — no type constraint.
+		// Accept any JSON value, no type constraint.
 
 	case schema.Relation:
 		if field.Many {

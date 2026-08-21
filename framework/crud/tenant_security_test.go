@@ -57,7 +57,7 @@ func TestTenant_SpoofedHeaderIgnored(t *testing.T) {
 // TestTenant_MissingTenantOnCreateHandled verifies that creating a
 // record on a MultiTenant entity without a tenant in the request
 // context is REJECTED. Attack: bypassing tenant scoping by omitting
-// the tenant header on create — an orphan row owned by no tenant
+// the tenant header on create, an orphan row owned by no tenant
 // can later be read by an attacker who passes the matching empty
 // tenant ID through the filter middleware.
 func TestTenant_MissingTenantOnCreateHandled(t *testing.T) {
@@ -80,7 +80,7 @@ func TestTenant_MissingTenantOnCreateHandled(t *testing.T) {
 		Body:   `{"name":"orphan record"}`,
 		UserID: "alice",
 	})
-	// No tenant.SetTenantID — tenant is empty
+	// No tenant.SetTenantID, tenant is empty
 	rr := httptest.NewRecorder()
 	ch.Create()(rr, req)
 
@@ -105,7 +105,7 @@ func TestTenant_CrossTenantBatchDeleteRejected(t *testing.T) {
 		{"id": "item-B1", "tenant_id": "tenant-B", "user_id": "alice", "name": "B data"},
 	})
 
-	// Delete as tenant-A — should not affect tenant-B's records
+	// Delete as tenant-A, should not affect tenant-B's records
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodDelete,
 		Path:   "/items/item-B1",
@@ -183,10 +183,10 @@ const tenantItemsDDL = `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT,
 // unauthenticated request, or any code path that simply forgot to set the
 // tenant context, read across every tenant. The in-process CRUD API
 // (crud_api.go) already failed closed here; the HTTP path now matches via the
-// RequireTenant gate (BREAKING — see CHANGELOG / multi-tenant.md).
+// RequireTenant gate (BREAKING, see CHANGELOG / multi-tenant.md).
 //
 // Deliberate cross-tenant access (admin tooling) is still possible, but must
-// opt in explicitly server-side via tenant.AllowCrossTenant — see
+// opt in explicitly server-side via tenant.AllowCrossTenant, see
 // TestTenant_CrossTenantOptInAllowsAccess.
 func TestTenant_ListWithoutContextIsRejected(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, tenantItemsConfig(), tenantItemsDDL)

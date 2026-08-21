@@ -264,7 +264,7 @@ func TestCrossChainNavSwapsShell(t *testing.T) {
 	}
 }
 
-// A concrete URL of a dynamic route must resolve to the route's chain —
+// A concrete URL of a dynamic route must resolve to the route's chain,
 // previously the literal-path manifest lookup returned nothing, so the
 // nav was treated as cross-layout and rebuilt the shell.
 func TestDynamicRouteResolvesChain(t *testing.T) {
@@ -331,8 +331,8 @@ func TestCachedRevisitReplaysAtLayer(t *testing.T) {
 	}
 }
 
-// Leaving a layout chain for a layout-less page must drop the old shell
-// — a partial swap into <main> would keep the site chrome around the
+// Leaving a layout chain for a layout-less page must drop the old shell,
+// a partial swap into <main> would keep the site chrome around the
 // plain page's content.
 func TestChainToPlainPageDropsShell(t *testing.T) {
 	site := newChainSite(t)

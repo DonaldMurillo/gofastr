@@ -1,6 +1,6 @@
 package tui
 
-// Snapshot harness — drives the TUI through realistic conversation
+// Snapshot harness, drives the TUI through realistic conversation
 // flows in-process, captures the rendered frame as plain text (ANSI
 // stripped), and writes it to testdata/snapshots/*.txt so we can
 // verify the layout without a real terminal in the loop.
@@ -40,7 +40,7 @@ const snapshotDir = "testdata/snapshots"
 // escapes used by the modal overlay) into a 2D grid of size
 // tui.width × tui.height. Each row is right-trimmed of trailing
 // spaces; the rows are joined with \r\n. This is a minimal VT
-// emulator — enough to capture our own draw output, not a full
+// emulator, enough to capture our own draw output, not a full
 // xterm-compatible terminal.
 func renderFrame(t *testing.T, tui *TUI) string {
 	t.Helper()
@@ -155,7 +155,7 @@ func writeSnapshot(t *testing.T, name, frame string) {
 	}
 	existing, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		// First run — write the file so the next run can compare.
+		// First run, write the file so the next run can compare.
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatalf("write initial snapshot: %v", err)
 		}
@@ -470,7 +470,7 @@ func TestEnterCompletesWhenPopupAmbiguous(t *testing.T) {
 	if string(tui.input) != "/clear " {
 		t.Errorf("Enter on /c => %q, want /clear ", string(tui.input))
 	}
-	// Scrollback should NOT contain a "→ /c" submission — Enter was
+	// Scrollback should NOT contain a "→ /c" submission. Enter was
 	// intercepted by the popup.
 	for _, line := range tui.scrollback {
 		if strings.Contains(line, "→ /c") {
@@ -481,19 +481,19 @@ func TestEnterCompletesWhenPopupAmbiguous(t *testing.T) {
 
 // TestEnterAfterCompletionSubmits: once the popup is dismissed (by
 // a prior completion landing on `/help `), the next Enter must
-// submit normally — the autocomplete hijack must not be sticky.
+// submit normally, the autocomplete hijack must not be sticky.
 // We use /help because it opens a modal on dispatch (rather than
 // wiping scrollback like /clear), so the submission line stays
 // visible for inspection.
 func TestEnterAfterCompletionSubmits(t *testing.T) {
 	tui := newSnapshotTUI()
 	tui.input = []rune("/hel") // unique prefix → completes to /help
-	// First Enter — completes.
+	// First Enter, completes.
 	tui.handleKey([]byte{0x0d})
 	if string(tui.input) != "/help " {
 		t.Fatalf("first Enter didn't complete: %q", string(tui.input))
 	}
-	// Second Enter — should submit. /help opens a modal, so we check
+	// Second Enter, should submit. /help opens a modal, so we check
 	// that the modal is now active AND the submission line landed in
 	// scrollback.
 	tui.handleKey([]byte{0x0d})
@@ -573,7 +573,7 @@ func TestTurnStartedFromOtherClientRenders(t *testing.T) {
 }
 
 // TestTurnStartedFromSelfIsSkipped: when TurnStarted's originator
-// matches the TUI's ClientID, we must NOT render — submit() already
+// matches the TUI's ClientID, we must NOT render, submit() already
 // echoed the line locally and we'd double-print otherwise.
 func TestTurnStartedFromSelfIsSkipped(t *testing.T) {
 	tui := newSnapshotTUI()
@@ -598,7 +598,7 @@ func TestTurnStartedFromSelfIsSkipped(t *testing.T) {
 func TestSlashWebShowsUrlAndToken(t *testing.T) {
 	tui := newSnapshotTUI()
 	tui.WebURL = "http://127.0.0.1:18424"
-	tui.WebToken = "eyJ2ZXIiOjEsImp0aSI6IkFCQyJ9.signature-bytes"
+	tui.WebToken = "eyJ2ZXIiOjEsImp0aSI6IkFCQyJ9.signature-bytes" // not-a-secret: dummy token, payload is {"ver":1,"jti":"ABC"}
 	tui.dispatchLocalSlash("/web")
 	if tui.modal == nil {
 		t.Fatal("/web did not open a modal")
@@ -634,7 +634,7 @@ func TestSlashWebWithoutUrlShowsHelp(t *testing.T) {
 }
 
 // TestEnterOnNonSlashSubmitsImmediately: regular text input still
-// submits on first Enter — the popup hijack is slash-only.
+// submits on first Enter, the popup hijack is slash-only.
 func TestEnterOnNonSlashSubmitsImmediately(t *testing.T) {
 	tui := newSnapshotTUI()
 	tui.input = []rune("hello world")
@@ -837,7 +837,7 @@ func TestMultilineInput_CtrlJInsertsNewline(t *testing.T) {
 }
 
 // TestMultilineInput_EnterStillSubmits: regular CR (0x0d) Enter
-// still submits — only LF (Ctrl-J) is the newline insert.
+// still submits, only LF (Ctrl-J) is the newline insert.
 func TestMultilineInput_EnterStillSubmits(t *testing.T) {
 	tui := newSnapshotTUI()
 	tui.input = []rune("hello")
@@ -873,11 +873,11 @@ func TestTurnStartedShowsSpinnerRow(t *testing.T) {
 	tui := newSnapshotTUI()
 	// Other-originator path so we don't suppress (own-input has a
 	// separate flow). For self-originated turns, the spinner shows
-	// for the parent's own turn — let's test that one.
+	// for the parent's own turn, let's test that one.
 	tui.ClientID = ids.NewClientID()
 	tui.input = []rune("hello")
 	tui.submit()
-	// Now simulate a TurnStarted from "self" — submit() already
+	// Now simulate a TurnStarted from "self", submit() already
 	// echoed the user line; the engine would publish TurnStarted
 	// next. The TUI should show a spinner row.
 	env, _ := control.EncodeEvent(1, control.TurnStarted{
@@ -940,7 +940,7 @@ func TestSlash_Cost_OpensModal(t *testing.T) {
 	}
 }
 
-// TestSlash_Health_OpensModal: /health shows subsystem status — for
+// TestSlash_Health_OpensModal: /health shows subsystem status, for
 // the TUI we mostly care that it dispatches and renders something
 // (the real REST handler does the deep check; this is the UI hook).
 func TestSlash_Health_OpensModal(t *testing.T) {
@@ -971,7 +971,7 @@ func TestSlash_Model_NoArg_ShowsCurrent(t *testing.T) {
 }
 
 // TestSlash_Compact_EmitsScrollbackHint: /compact is best-effort
-// client side — it adds a scrollback hint and (when wired) issues
+// client side, it adds a scrollback hint and (when wired) issues
 // a CustomCommand. We just verify it's handled and the user gets
 // feedback.
 func TestSlash_Compact_DispatchesLocally(t *testing.T) {
@@ -980,7 +980,7 @@ func TestSlash_Compact_DispatchesLocally(t *testing.T) {
 	if !handled {
 		t.Fatal("/compact not handled")
 	}
-	// Either the scrollback gets a hint or a modal opens — both fine.
+	// Either the scrollback gets a hint or a modal opens, both fine.
 	if tui.modal == nil && len(tui.scrollback) == 0 {
 		t.Errorf("/compact produced no visible feedback")
 	}
@@ -992,7 +992,7 @@ func TestSlash_Compact_DispatchesLocally(t *testing.T) {
 // without going through a real LLM.
 func TestSlashTasksShowsPlanInModal(t *testing.T) {
 	tui := newSnapshotTUI()
-	// Seed a plan directly via the tool — same path the LLM would use.
+	// Seed a plan directly via the tool, same path the LLM would use.
 	tl := builtins.TaskList{}
 	raw, _ := json.Marshal(map[string]any{"tasks": []builtins.TaskItem{
 		{Content: "audit imports", Status: "completed"},

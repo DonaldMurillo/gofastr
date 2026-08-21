@@ -52,7 +52,7 @@ type APIToken struct {
 }
 
 // APITokenStore persists API tokens. Implementations store ONLY the
-// sha256 hash of the plaintext — never the plaintext itself.
+// sha256 hash of the plaintext, never the plaintext itself.
 type APITokenStore interface {
 	Create(ctx context.Context, t APIToken, sha256Hash string) error
 	// FindByHash returns (nil, nil) for unknown hashes.
@@ -94,7 +94,7 @@ type TokenSpec struct {
 	TTL       time.Duration // 0 = no expiry
 
 	// Prefix overrides the plaintext marker for this token (default
-	// TokenPrefix, "gfsk_"). Hosts brand their credentials — a leaked token's
+	// TokenPrefix, "gfsk_"). Hosts brand their credentials, a leaked token's
 	// prefix then identifies WHICH product leaked it, and per-product secret
 	// scanners can grep for it. Must match tokenPrefixPattern (lowercase
 	// alnum, 2–16 chars, trailing underscore). Wire the SAME prefix into
@@ -184,7 +184,7 @@ func IssueToken(ctx context.Context, store APITokenStore, spec TokenSpec) (strin
 
 // NewServiceAccount builds a ServiceAccount with a fresh ID and CreatedAt,
 // ready for ServiceAccountStore.Create. Service-account management is
-// programmatic-only in v1 (no HTTP surface) — hosts call this then Create.
+// programmatic-only in v1 (no HTTP surface), hosts call this then Create.
 func NewServiceAccount(name string, roles []string) ServiceAccount {
 	return ServiceAccount{
 		ID:        generateAPITokenID(),
@@ -196,7 +196,7 @@ func NewServiceAccount(name string, roles []string) ServiceAccount {
 
 // serviceAccountUser adapts a ServiceAccount to the User interface so a
 // token-authenticated service account populates request context the same
-// way a session user does — GetRoles returns the account roles (feeding
+// way a session user does. GetRoles returns the account roles (feeding
 // RequireRole / access.Can unchanged); GetEmail returns "" (no mailbox).
 type serviceAccountUser struct {
 	sa *ServiceAccount
@@ -209,7 +209,7 @@ func (u *serviceAccountUser) GetRoles() []string { return u.sa.Roles }
 // ─── Token material ────────────────────────────────────────────────────────
 
 // generateAPITokenPlaintext returns TokenPrefix + 40 lowercase hex chars
-// (20 cryptographically-random bytes). Entropy failure is fatal — the auth
+// (20 cryptographically-random bytes). Entropy failure is fatal, the auth
 // system cannot remain sound without crypto/rand.
 func generateAPITokenPlaintext(prefix string) (string, error) {
 	b := make([]byte, tokenRandBytes)
@@ -230,7 +230,7 @@ func generateAPITokenID() string {
 }
 
 // sha256hex returns the lowercase hex sha256 of s. This is the ONLY form
-// of the token persisted or compared — hash-then-lookup gives uniform
+// of the token persisted or compared, hash-then-lookup gives uniform
 // timing and means no plaintext is ever string-compared.
 func sha256hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
@@ -260,8 +260,8 @@ func WithTokenScopes(ctx context.Context, scopes []string) context.Context {
 
 // WithTokenID stashes the authenticating token's ID in ctx. TokenMiddleware
 // calls this on success so hosts can attribute a request to the SPECIFIC
-// token — per-token metering, quotas, and audit trails need the token
-// identity, not just the owner (one owner can hold many tokens).
+// token, per-token metering, quotas, and audit trails need the token
+// identity, not only the owner (one owner can hold many tokens).
 func WithTokenID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, tokenIDKey{}, id)
 }
@@ -274,14 +274,14 @@ func TokenID(ctx context.Context) (string, bool) {
 }
 
 // TokenScopes returns (scopes, true) for any request whose authority is
-// SCOPED — an API token, or an embed grant. It returns (nil, false) for
+// SCOPED, an API token, or an embed grant. It returns (nil, false) for
 // sessions/JWT, which carry full user capability and are unrestricted by the
 // scope model.
 //
 // The embed case is not an afterthought; leaving it out was a hole. The embed
 // middleware deletes Authorization and X-API-Key, so TokenMiddleware never
 // runs and no token scopes are ever set. Every gate built on this function
-// then read "not scoped" as "session — full user capability", and a grant
+// then read "not scoped" as "session, full user capability", and a grant
 // minted for a read-only reporting surface passed RequireScope("orders:write")
 // and RequireAPIScopes on a DELETE. A grant carries Scopes in the same
 // resource:verb grammar, so the right answer was always to report them.
@@ -290,7 +290,7 @@ func TokenScopes(ctx context.Context) ([]string, bool) {
 		return s, true
 	}
 	if g, ok := embed.GrantFromContext(ctx); ok {
-		// A grant with no scopes is maximally restricted, not unrestricted —
+		// A grant with no scopes is maximally restricted, not unrestricted,
 		// the same reading an empty-scopes token gets.
 		return g.Scopes, true
 	}
@@ -309,7 +309,7 @@ func TokenScopes(ctx context.Context) ([]string, bool) {
 func HasScope(ctx context.Context, scope string) bool {
 	held, ok := TokenScopes(ctx)
 	if !ok {
-		return true // session/JWT — unscoped by design
+		return true // session/JWT: unscoped by design
 	}
 	return scopeMatches(held, scope)
 }

@@ -35,12 +35,12 @@ type CodeTabsConfig struct {
 	Class       string
 }
 
-// CodeTabs renders the same snippet in several languages behind a tab strip
-// — the "install this SDK in Go / TypeScript / curl" shape docs sites need.
+// CodeTabs renders the same snippet in several languages behind a tab strip,
+// the "install this SDK in Go / TypeScript / curl" shape docs sites need.
 // It is pure composition: patterns/tabs (zero-JS exclusive tabset) around
 // one syntax-highlighted CodeBlock (with copy button) per sample.
 //
-// Selection is per-tabset — the native <details name=> mechanism has no
+// Selection is per-tabset: the native <details name=> mechanism has no
 // page-wide state, so picking "TypeScript" in one group does not switch
 // sibling groups.
 func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {

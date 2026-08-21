@@ -459,7 +459,7 @@ func TestRunSeeds_CancelledLoopAndSeedNilSkip(t *testing.T) {
 	okSeed := func(context.Context, *sql.DB) error { return nil }
 
 	// errOnlyCtx never fires Done() (so the DB calls in ensure/read succeed) but
-	// reports a non-nil Err(), so the loop's explicit ctx.Err() check trips —
+	// reports a non-nil Err(), so the loop's explicit ctx.Err() check trips,
 	// exercising the "honour cancellation between seeds" branch deterministically.
 	db, m := mock(t)
 	expectSQLiteDialect(m)

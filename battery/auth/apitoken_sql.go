@@ -175,7 +175,7 @@ func (s *SQLAPITokenStore) TouchLastUsed(ctx context.Context, id string, at time
 	return err
 }
 
-// ListAll returns every token across all owners, newest first — the admin
+// ListAll returns every token across all owners, newest first, the admin
 // view. Deliberately NOT part of APITokenStore: the plugin's self-service
 // routes must never reach it; hosts wire it into their own admin-gated
 // surface from the concrete store.
@@ -197,7 +197,7 @@ func (s *SQLAPITokenStore) ListAll(ctx context.Context) ([]APIToken, error) {
 	return out, rows.Err()
 }
 
-// RevokeAny stamps RevokedAt regardless of owner — the admin action. Same
+// RevokeAny stamps RevokedAt regardless of owner, the admin action. Same
 // idempotency contract as Revoke; ErrTokenNotFound for unknown ids. Like
 // ListAll, it is host-wired only, never exposed via the plugin routes.
 func (s *SQLAPITokenStore) RevokeAny(ctx context.Context, id string) error {
@@ -347,7 +347,7 @@ type rowScanner interface {
 }
 
 // scanAPIToken reads the 10-column token projection. Nullable timestamps
-// are scanned as any and coerced — matching the battery's other stores,
+// are scanned as any and coerced, matching the battery's other stores,
 // which see time.Time on Postgres and string/[]byte on SQLite.
 func scanAPIToken(row rowScanner) (*APIToken, error) {
 	var t APIToken

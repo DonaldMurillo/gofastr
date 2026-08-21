@@ -24,7 +24,7 @@ type typedTNote struct {
 // finding: a typed-repo query on a MultiTenant entity with NO tenant in
 // context must fail closed (errTenantRequired), not silently span every
 // tenant. ApplyTenantScope no-ops on an empty tenant, so without an explicit
-// gate the typed query leaked all tenants' rows — the one in-process path the
+// gate the typed query leaked all tenants' rows, the one in-process path the
 // HTTP/crud_api gates missed.
 func TestTypedQuery_FindFailsClosedNoTenant(t *testing.T) {
 	ch, db := setupTenantScopedHandlerTQ(t)
@@ -97,7 +97,7 @@ func TestTypedQuery_FindCrossTenantOptIn(t *testing.T) {
 }
 
 // setupTenantScopedHandlerTQ builds a CrudHandler over an in-memory sqlite
-// tnotes table with MultiTenant on — local to the typed-query tenant tests.
+// tnotes table with MultiTenant on, local to the typed-query tenant tests.
 func setupTenantScopedHandlerTQ(t *testing.T) (*CrudHandler, *sql.DB) {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")

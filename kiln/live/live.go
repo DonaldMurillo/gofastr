@@ -45,7 +45,7 @@ func (l *Live) SetFallbackHTML(html string) {
 // SetFallbackFunc installs a per-request fallback renderer. Use when
 // the fallback HTML depends on request headers (e.g. host/port for
 // rendering correct curl examples). Mutually exclusive with
-// SetFallbackHTML — the most recent setter wins.
+// SetFallbackHTML, the most recent setter wins.
 func (l *Live) SetFallbackFunc(fn func(*http.Request) string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -90,7 +90,7 @@ func (l *Live) Aux() *router.Router { return l.aux }
 
 // Apply is the single funnel. It applies the entry to the in-memory session,
 // validates it by rebuilding the app, and ONLY THEN persists it to the
-// journal — so a poison entry that fails the rebuild never reaches the durable
+// journal, so a poison entry that fails the rebuild never reaches the durable
 // log (which would re-fail on every restart). On any failure the pre-entry
 // state is restored by replaying the (still-unchanged) journal.
 func (l *Live) Apply(e journal.Entry) error {
@@ -101,13 +101,13 @@ func (l *Live) Apply(e journal.Entry) error {
 	}
 	// Validate by rebuilding BEFORE the durable Append. If the entry can't be
 	// rebuilt, roll the in-memory session back to the journal (which does not
-	// yet contain e) and surface the error — nothing was persisted.
+	// yet contain e) and surface the error, nothing was persisted.
 	if err := l.rebuild(); err != nil {
 		l.restoreFromJournal()
 		return fmt.Errorf("kiln/live: rebuild: %w", err)
 	}
 	if _, err := l.journal.Append(e); err != nil {
-		// Rebuild succeeded but the durable write failed — the in-memory
+		// Rebuild succeeded but the durable write failed, the in-memory
 		// session is now ahead of the journal. Roll back so state never
 		// outlives the durable record.
 		l.restoreFromJournal()
@@ -138,7 +138,7 @@ func (l *Live) restoreFromJournal() {
 
 // Notify broadcasts a synthetic SSE Event without journaling. Use for
 // runtime lifecycle signals the panel needs to react to but that are
-// not part of world state — agent_turn_started, agent_turn_ended,
+// not part of world state: agent_turn_started, agent_turn_ended,
 // session_reset, etc. Safe to call concurrently.
 func (l *Live) Notify(kind, summary string) {
 	l.bus.Send(Event{Kind: kind, Summary: summary})
@@ -196,7 +196,7 @@ func (l *Live) rebuild() error {
 	}
 	// Mount OpenAPI + the API docs page after the registry is populated.
 	// Live bypasses framework.App.Start, which is where the framework would
-	// normally attach these — wire them here so they're always available.
+	// normally attach these, wire them here so they're always available.
 	if len(app.Registry.All()) > 0 {
 		appName := app.Config.Name
 		if appName == "" {
@@ -208,7 +208,7 @@ func (l *Live) rebuild() error {
 		// the auth chain the framework adds by default. PublicHandler
 		// serves the spec without the auth gate.
 		app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
-		// public=true to match the spec above — Live has no auth chain,
+		// public=true to match the spec above. Live has no auth chain,
 		// so a gated docs page here would 401 for everyone, always.
 		app.Router().Get("/api/docs/", openapi.DocsHandler(spec, "/api/docs", true))
 	}
@@ -221,7 +221,7 @@ func (l *Live) rebuild() error {
 // The lock is released when this returns, so the pointer is only safe
 // on goroutines that are serialized with Apply (the agent's tool
 // handlers, which read-then-Apply in sequence). Concurrent HTTP
-// readers (panels, status endpoints) race Apply through this pointer —
+// readers (panels, status endpoints) race Apply through this pointer,
 // they must use ReadSession instead.
 func (l *Live) Session() *journal.Session {
 	l.mu.RLock()
@@ -242,7 +242,7 @@ func (l *Live) ReadSession(fn func(*journal.Session)) {
 // App returns the current rebuilt framework.App. Callers can use this
 // to reach app.MCP (per-entity MCP tools auto-registered when an
 // entity has mcp:true) or app.Router() for advanced wiring. Note: the
-// pointer changes on every Apply rebuild — don't cache it.
+// pointer changes on every Apply rebuild, don't cache it.
 func (l *Live) App() *framework.App {
 	l.mu.RLock()
 	defer l.mu.RUnlock()

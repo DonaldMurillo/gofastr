@@ -19,9 +19,9 @@ import (
 )
 
 // ============================================================================
-// Tier 9 — streams, islands, UI host
+// Tier 9: streams, islands, UI host
 //
-// The framework's value proposition isn't just CRUD over JSON — it's the
+// The framework's value proposition isn't just CRUD over JSON, it's the
 // SSR-with-hydration UI runtime plus the SSE-and-island plumbing. These
 // benchmarks measure the parts of that surface that don't fit the
 // per-operation shape of Tiers 1-8.
@@ -32,7 +32,7 @@ import (
 // ============================================================================
 
 // ----------------------------------------------------------------------------
-// 9.1 — Real-volume streaming list (bypasses parsePagination's limit cap)
+// 9.1: Real-volume streaming list (bypasses parsePagination's limit cap)
 // ----------------------------------------------------------------------------
 
 // BenchmarkT9_StreamingListRealVolume calls ServeStreamingList directly so
@@ -88,7 +88,7 @@ func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 		ch.Registry = app.Registry
 
 		// For buffered we hit the public surface but cap at the legal max
-		// (100) and run multiple iterations to total 5000 rows — this is the
+		// (100) and run multiple iterations to total 5000 rows, this is the
 		// shape a client paginating through would naturally produce.
 		b.Run("buffered-paginated-5000", func(b *testing.B) {
 			b.ResetTimer()
@@ -123,7 +123,7 @@ func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 9.2 — SSE EventStream throughput end-to-end
+// 9.2: SSE EventStream throughput end-to-end
 // ----------------------------------------------------------------------------
 
 // BenchmarkT9_SSEEventStream subscribes to /posts/_events via the real
@@ -228,7 +228,7 @@ func (c *countingSSERecorder) Write(p []byte) (int, error) {
 	for _, b := range p {
 		if b == '\n' {
 			// crude: every 'data:' starts an event frame; let's count by
-			// frame separator "\n\n" instead — but a simpler heuristic is
+			// frame separator "\n\n" instead, but a simpler heuristic is
 			// "count occurrences of \"type\":\"entity.created\"". Just
 			// count "data: " line starts to approximate.
 		}
@@ -273,7 +273,7 @@ func indexByte(p []byte, c byte) int {
 }
 
 // ----------------------------------------------------------------------------
-// 9.3 — Island RPC round-trip
+// 9.3: Island RPC round-trip
 // ----------------------------------------------------------------------------
 
 // BenchmarkT9_IslandRPC measures the cost of one island RPC swap: an
@@ -405,7 +405,7 @@ func (a *appRouter) GetFunc(p string, f http.HandlerFunc)             { a.inner.
 func (a *appRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.inner.ServeHTTP(w, r) }
 
 // ----------------------------------------------------------------------------
-// 9.4 — UI host full page render through SSR
+// 9.4: UI host full page render through SSR
 // ----------------------------------------------------------------------------
 
 // BenchmarkT9_UIHostPageRender measures the cost of serving one full page

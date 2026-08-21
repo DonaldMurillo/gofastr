@@ -46,7 +46,7 @@ func (q *DBQueue) normalizeLegacyTimestamps(ctx context.Context) error {
 }
 
 // probeBindLayout detects the text layout the connected driver produces when a
-// time.Time is bound as a parameter — the format the queue's own predicates
+// time.Time is bound as a parameter, the format the queue's own predicates
 // compare against, and therefore the canonical target for normalization. The
 // pure driver binds RFC3339Nano; mattn/go-sqlite3 binds a space-separated
 // form. Rows already in the probed layout are canonical FOR THIS HOST and
@@ -329,7 +329,7 @@ func queueTimeSets(cols []queueTimeCol) ([]string, []any, error) {
 // want one code path). Errors are treated as "absent": ensureTable /
 // ensureTables has already run by the time normalization is reached, so a
 // real error here most likely means the table genuinely doesn't exist yet
-// (e.g., NewDBQueue before any DurableScheduler has been constructed — the
+// (e.g., NewDBQueue before any DurableScheduler has been constructed, the
 // scheduler tables are absent), and there is nothing to normalize.
 func (q *DBQueue) queueTableExists(ctx context.Context, quotedTable string) bool {
 	var n int

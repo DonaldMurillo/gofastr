@@ -99,15 +99,15 @@ func TestProcessFileField_RejectsHiddenActiveContent(t *testing.T) {
 }
 
 // TestProcessFileField_HardTokenRejected pins the polyglot defense. A HARD
-// active-content token — <script, <svg, <iframe, <html, <!doctype, <object,
-// <embed, <base — is rejected no matter where in the body it sits and no
+// active-content token, <script, <svg, <iframe, <html, <!doctype, <object,
+// <embed, <base, is rejected no matter where in the body it sits and no
 // matter what bytes lead the file. The earlier scan only looked inside the
 // 512-byte sniff window and skipped the token scan entirely for confirmed-
 // inert binaries (raster/PDF/font magic), so a payload past the window or
 // hidden behind valid image magic slipped through (the GIFAR polyglot
 // class). HARD tokens now scan the whole body; SOFT tokens (<img, <?xml,
 // <style, <link, javascript:) keep the old windowed, binary-skipped
-// behavior — they genuinely appear in image metadata — and their
+// behavior, they genuinely appear in image metadata, and their
 // acceptance is pinned by TestProcessFileField_AcceptsBinaryWithToken.
 func TestProcessFileField_HardTokenRejected(t *testing.T) {
 	t.Parallel()
@@ -133,7 +133,7 @@ func TestProcessFileField_HardTokenRejected(t *testing.T) {
 
 // TestProcessFileField_AcceptsBinaryWithToken pins the property that SOFT
 // active-content tokens (<img, <?xml, <style, <link, javascript:) embedded
-// in confirmed-inert binaries — raster images, PDF, fonts — are NOT
+// in confirmed-inert binaries, such as raster images, PDF, fonts, are NOT
 // rejected. Those tokens genuinely appear in EXIF/XMP/comment metadata and
 // PDF/font streams, so the scan checks the soft set only in the 512-byte
 // sniff window and skips it entirely for confirmed-inert binaries.
@@ -143,14 +143,14 @@ func TestProcessFileField_HardTokenRejected(t *testing.T) {
 // <img src=x>" was ACCEPTED. That is no longer the correct behavior:
 // <script is now a HARD token, scanned across the WHOLE body regardless of
 // magic bytes (see TestProcessFileField_HardTokenRejected), so a confirmed
-// binary carrying <script is rejected — closing the GIFAR polyglot hole
+// binary carrying <script is rejected, closing the GIFAR polyglot hole
 // where valid raster magic switched the token scan off. The property this
-// test was protecting — "don't false-positive on a token in image
-// metadata" — survives for the SOFT set, which is why it now uses soft
+// test was protecting. "don't false-positive on a token in image
+// metadata", survives for the SOFT set, which is why it now uses soft
 // tokens only. A plain raster with no token is included as a baseline.
 func TestProcessFileField_AcceptsBinaryWithToken(t *testing.T) {
 	t.Parallel()
-	// Soft tokens only — these are the ones the binary skip still covers.
+	// Soft tokens only, these are the ones the binary skip still covers.
 	token := []byte(`<?xml version="1.0"?> <style>.x{}</style> <link rel="x"> <img src="x"> javascript:foo()`)
 	cases := map[string][]byte{
 		// PNG magic + IDAT-ish bytes, with an embedded soft token (e.g. a
@@ -162,7 +162,7 @@ func TestProcessFileField_AcceptsBinaryWithToken(t *testing.T) {
 		"pdf": append([]byte("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n"), token...),
 		// GIF, token in a comment extension.
 		"gif": append([]byte("GIF89a"), token...),
-		// A plain raster with no token at all — baseline that a clean
+		// A plain raster with no token at all, baseline that a clean
 		// image passes the sniff and the binary skip unchanged.
 		"plain-png": append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 'I', 'H', 'D', 'R'}, bytes.Repeat([]byte{0x00}, 64)...),
 	}

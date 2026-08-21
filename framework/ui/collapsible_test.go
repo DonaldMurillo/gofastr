@@ -9,7 +9,7 @@ import (
 )
 
 // TestCollapsibleRegistersCSS guards that Collapsible ships its own
-// scoped CSS — it stamps data-fui-comp="fui-collapsible" but had no
+// scoped CSS. It stamps data-fui-comp="fui-collapsible" but had no
 // registered style, so the summary/content rendered unstyled.
 func TestCollapsibleRegistersCSS(t *testing.T) {
 	css := collapsibleStyle.Entry().CSSFor(style.Theme{})

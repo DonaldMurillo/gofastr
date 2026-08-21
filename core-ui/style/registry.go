@@ -4,15 +4,15 @@ import "sync"
 
 // Co-located scoped styles.
 //
-// The 3-file roundtrip pain — change a screen, edit the host's theme.go to
-// add a CSS rule, reload — is solved by letting screens/components declare
+// The 3-file roundtrip pain, change a screen, edit the host's theme.go to
+// add a CSS rule, reload, is solved by letting screens/components declare
 // their CSS next to the Go render code that uses it. Each declaration goes
 // through [Contribute]; the framework's uihost calls [Apply] itself while
-// assembling /__gofastr/app.css, so a bare Contribute just works — no
+// assembling /__gofastr/app.css, so a bare Contribute just works, no
 // WithCustomCSS hand-wiring. Custom hosts that build their own stylesheet
 // call [Apply] once during construction to fan contributions in.
 //
-// Final CSS is identical to a hand-authored theme.go — no nonces, no
+// Final CSS is identical to a hand-authored theme.go, no nonces, no
 // dev/prod divergence, no inline <style>. The strict CSP stays intact.
 //
 // Distinct from core-ui/registry.RegisterStyle: that surface registers a
@@ -34,7 +34,7 @@ import "sync"
 //
 // Trust model: the slice is a global registry. Any imported package can
 // add rules at init time, which is the SAME trust model as importing
-// Go code at all — a malicious dependency could equally run init() code
+// Go code at all, a malicious dependency could equally run init() code
 // or use stdlib to do worse. Vet dependencies; selectors are not
 // sanitised.
 
@@ -74,7 +74,7 @@ func ContributedCount() int {
 // The framework's uihost calls this against a fresh sheet each time it
 // assembles app.css; custom hosts call it once inside createStyleSheet.
 // Multiple calls are supported (e.g. when a host rebuilds the stylesheet
-// for theme switching) — each call re-applies the full registry to the
+// for theme switching), each call re-applies the full registry to the
 // supplied ss.
 func Apply(ss *StyleSheet) {
 	if ss == nil {
@@ -89,7 +89,7 @@ func Apply(ss *StyleSheet) {
 	}
 }
 
-// ResetRegistryForTest empties the registry. Test-only helper — production
+// ResetRegistryForTest empties the registry. Test-only helper, production
 // code never needs to call this.
 func ResetRegistryForTest() {
 	registryMu.Lock()

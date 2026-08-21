@@ -14,7 +14,7 @@ const legacyTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
 
 // legacyQueueDB creates the queue schema, seeds rows through rawInsert in
 // the legacy mattn space-separated text format (as an old binary would
-// have written them), then constructs a fresh DBQueue over the same DB —
+// have written them), then constructs a fresh DBQueue over the same DB,
 // the upgrade scenario a new binary sees at startup.
 func legacyQueueDB(t *testing.T, rawInsert func(t *testing.T, db *sql.DB)) *DBQueue {
 	t.Helper()
@@ -75,7 +75,7 @@ func TestLegacyFutureScheduledWaits(t *testing.T) {
 	}
 }
 
-// An expired legacy-format lease is still reclaimed — guards against
+// An expired legacy-format lease is still reclaimed, guards against
 // "fixing" the comparison by ignoring legacy rows.
 func TestLegacyExpiredLeaseReclaimed(t *testing.T) {
 	now := time.Now().UTC()

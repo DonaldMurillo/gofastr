@@ -10,7 +10,7 @@ import (
 
 // Normalization's idempotency check must be driver-aware: on a host whose
 // driver binds the space-separated format (mattn/go-sqlite3), rows in
-// that format ARE canonical — rewriting them on every relay start is
+// that format ARE canonical, rewriting them on every relay start is
 // wasted write churn on the whole table. legacyTimeSets therefore
 // compares against the layout the current driver binds, not a hardcoded
 // RFC3339Nano.
@@ -50,7 +50,7 @@ func TestLegacyTimeSetsDriverAwareIdempotency(t *testing.T) {
 // probeBindLayout detects which text layout the connected driver uses for
 // time.Time binds, and this pins it against the driver applications actually
 // ship. That driver binds the space-separated SQLite layout, because
-// sqlite/stdlib sets `_time_format=sqlite` on every DSN — mattn wrote that
+// sqlite/stdlib sets `_time_format=sqlite` on every DSN, mattn wrote that
 // format, and battery/auth's parseTimeFlex and this package's own layout probe
 // were written to read it.
 //

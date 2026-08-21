@@ -13,7 +13,7 @@ import (
 type CardVariant string
 
 const (
-	// CardElevated is the default — surface + shadow + radius.
+	// CardElevated is the default: surface + shadow + radius.
 	CardElevated CardVariant = ""
 	// CardOutlined draws a 1px border instead of a shadow.
 	CardOutlined CardVariant = "outlined"
@@ -28,7 +28,7 @@ type CardConfig struct {
 	// as the region name.
 	//
 	// The heading's id (and the section's aria-labelledby target) is
-	// derived from the heading text — "ui-card-" + slug(Heading) — so
+	// derived from the heading text, "ui-card-" + slug(Heading), so
 	// it is deterministic across re-renders. The trade-off, shared with
 	// html.Heading: two cards with EQUAL heading text on one page
 	// produce duplicate ids (the render function has no page-wide
@@ -49,7 +49,7 @@ type CardConfig struct {
 	Description string
 
 	// Header overrides the auto-rendered Heading/Description block.
-	// Use when the header needs more than a title — e.g. a row with an
+	// Use when the header needs more than a title, e.g. a row with an
 	// avatar and trailing actions.
 	Header render.HTML
 
@@ -77,7 +77,7 @@ type CardConfig struct {
 //     internal landmark still present for screen readers
 func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 	// Unknown variants panic like every other variant-taking component
-	// (registered custom variants pass — see RegisterCardVariant).
+	// (registered custom variants pass. See RegisterCardVariant).
 	// Card used to emit ui-card--<anything> silently; that let typos
 	// ship unstyled cards with no signal.
 	checkCardVariant(cfg.Variant)
@@ -122,9 +122,9 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 
 	// Linked variant: outer <a> wraps the whole card. The anchor's
 	// text content is what assistive tech announces, so an inner
-	// landmark would be redundant — keep the inner shell as a div.
+	// landmark would be redundant. Keep the inner shell as a div.
 	if cfg.Href != "" {
-		// Drop unsafe hrefs (javascript:, data:, control bytes, …) —
+		// Drop unsafe hrefs (javascript:, data:, control bytes, …):
 		// same allow-list as ui.Link; see framework/ui/safety.go. Card
 		// is a content-level component, so a rejected href degrades to
 		// an inert "#" rather than panicking.

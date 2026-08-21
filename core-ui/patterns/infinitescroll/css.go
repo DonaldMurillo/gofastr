@@ -9,7 +9,7 @@ import "github.com/DonaldMurillo/gofastr/core-ui/style"
 // --color-border, --duration-medium, etc) without forking the
 // component.
 //
-// The theme parameter is reserved for future use — currently every
+// The theme parameter is reserved for future use, currently every
 // value comes from CSS custom properties so a section-level theme
 // override (style.RegisterThemeOverride) reskins this component for
 // free.

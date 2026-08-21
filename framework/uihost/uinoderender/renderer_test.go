@@ -17,7 +17,7 @@ func mustContain(t *testing.T, got render.HTML, want string) {
 }
 
 // staticResolver returns a resolver that maps every ref to a fixed namespaced
-// URL — mirrors the shape the host's installed-route table produces.
+// URL; mirrors the shape the host's installed-route table produces.
 func staticResolver(url string) ActionResolver {
 	return func(ref string) (string, bool) {
 		if ref == "" {
@@ -103,7 +103,7 @@ func TestRenderSectionMapsToHtmlSection(t *testing.T) {
 func TestRenderSectionFallbackLabel(t *testing.T) {
 	r := New(nil)
 	// A section with no title must still get an a11y label (html.Section
-	// panics without one) — the host supplies "Section".
+	// panics without one); the host supplies "Section".
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompSection, Props: uinodev1.SectionProps{},
 	}))
@@ -268,7 +268,7 @@ func TestRenderDataTableMapsToPrimitive(t *testing.T) {
 
 func TestRenderDataTableEmptyColumns(t *testing.T) {
 	// The validator rejects empty columns, but the renderer must be
-	// panic-safe for a hand-built Tree too — empty columns render an
+	// panic-safe for a hand-built Tree too: empty columns render an
 	// empty-state, never a panic (datatable.go:154).
 	r := New(nil)
 	h, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
@@ -412,7 +412,7 @@ func TestRoundTripNoModuleAttrInOutput(t *testing.T) {
 		"onclick", // on* handlers
 		"onload",
 		"data-fui-", // the only legit data-fui-rpc comes from our resolver;
-		// presence of OTHER data-fui-* would be a forge — but our output
+		// presence of OTHER data-fui-* would be a forge, but our output
 		// legitimately has data-fui-comp (component markers) and the one
 		// data-fui-rpc we assigned. We assert the FORGED value is absent
 		// below instead.
@@ -432,7 +432,7 @@ func TestRoundTripNoModuleAttrInOutput(t *testing.T) {
 		t.Fatalf("the button's action_ref must resolve to the host URL:\n%s", out)
 	}
 	// No module-supplied id leaked (ids in output are host-derived from
-	// heading text via slugify — those are fine; assert no id="evil").
+	// heading text via slugify, those are fine; assert no id="evil").
 	if strings.Contains(out, `id="evil"`) {
 		t.Fatalf("module-supplied id leaked into output:\n%s", out)
 	}
@@ -464,7 +464,7 @@ func TestRenderAllComponentsNoPanic(t *testing.T) {
 			Items: []uinodev1.KeyValueItem{{Key: "K", Value: "V"}},
 		}),
 		node(uinodev1.CompStatCard, uinodev1.StatCardProps{Label: "L", Value: "V"}),
-		// Empty-columns data-table is the named panic hazard — must NOT panic.
+		// Empty-columns data-table is the named panic hazard; must NOT panic.
 		node(uinodev1.CompDataTable, uinodev1.DataTableProps{}),
 		node(uinodev1.CompDataTable, uinodev1.DataTableProps{
 			Columns: []uinodev1.DataColumn{{Key: "k", Label: "L"}},
@@ -478,7 +478,7 @@ func TestRenderAllComponentsNoPanic(t *testing.T) {
 		n := n
 		t.Run(string(n.Component)+"#"+itoa(i), func(t *testing.T) {
 			// If a framework/ui primitive panics on a minimal-but-valid
-			// node, this test fails — surfacing the bug rather than
+			// node, this test fails, surfacing the bug rather than
 			// masking it. The datatable empty-columns case is the
 			// specific hazard §9 names; the renderer guards it.
 			h, err := r.Render(tree(n))

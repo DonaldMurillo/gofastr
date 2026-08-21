@@ -10,7 +10,7 @@ import (
 // regressions at the source level (deterministic, no browser). Defense in
 // depth: the opaque-origin guarantee ALSO rides the server-emitted CSP
 // `sandbox allow-scripts` directive (TestAssetServerFramedIsolationDirectives),
-// which is behaviorally tested — so the boundary never rests on the JS alone.
+// which is behaviorally tested, so the boundary never rests on the JS alone.
 
 // (1) postMessage source validation: messages are accepted ONLY from a
 // mounted frame's contentWindow, and event.origin is deliberately NOT trusted
@@ -31,7 +31,7 @@ func TestBrokerJS_ValidatesMessageSource(t *testing.T) {
 
 // (2) The iframe sandbox attribute is set from the authoritative sandboxFor
 // (pinned separately in TestBrokerJS_SandboxForIsAuthoritative), which filters
-// through an allow-list — so allow-same-origin must appear NOWHERE in a
+// through an allow-list, so allow-same-origin must appear NOWHERE in a
 // grantable position. Under an allow-list "grantable" means a key in
 // ALLOWED_SANDBOX; prose mentioning the token is inert.
 func TestBrokerJS_NeverEmitsAllowSameOrigin(t *testing.T) {
@@ -51,7 +51,7 @@ func TestBrokerJS_NeverEmitsAllowSameOrigin(t *testing.T) {
 }
 
 // (3) The host→frame post uses targetOrigin "*" (correct for an opaque frame,
-// where a concrete targetOrigin would never match) — the source check, not an
+// where a concrete targetOrigin would never match), the source check, not an
 // origin string, is the gate. Pin the rationale so nobody "hardens" it into a
 // concrete origin that silently drops every message.
 func TestBrokerJS_PostsWithWildcardTargetOrigin(t *testing.T) {

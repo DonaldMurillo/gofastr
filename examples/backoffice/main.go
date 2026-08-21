@@ -2,7 +2,7 @@
 // admin rendered through a UI host: a few entities, a (demo-grade) login, and
 // admin.New(...) generating the whole back-office with defaults.
 //
-// The admin screens hydrate with runtime.js — the list is a DataTable island
+// The admin screens hydrate with runtime.js, the list is a DataTable island
 // (paginate without a reload), delete is a data-fui-confirm button, and forms
 // are server-rendered. There is no bespoke JavaScript anywhere in this app.
 //
@@ -42,7 +42,7 @@ func main() {
 	if p := os.Getenv("PORT"); p != "" {
 		addr = ":" + p
 	}
-	log.Printf("backoffice on %s — visit /login (any email), then /admin", addr)
+	log.Printf("backoffice on %s; visit /login (any email), then /admin", addr)
 	if err := http.ListenAndServe(addr, app.Router()); err != nil {
 		log.Fatal(err)
 	}
@@ -60,8 +60,8 @@ func setupApp(dsn string) *framework.App {
 
 	site := appui.NewApp("Backoffice")
 	site.WithTheme(createTheme())
-	// The public pages share the centered-container layout shell — the
-	// design system's editorial column — so the hero and auth card sit in
+	// The public pages share the centered-container layout shell, the
+	// design system's editorial column, so the hero and auth card sit in
 	// a comfortable measure without any page CSS.
 	public := appui.NewLayout("public").WithContainer()
 	site.Register("/", &homeScreen{}, public)
@@ -69,7 +69,7 @@ func setupApp(dsn string) *framework.App {
 
 	// Zero bespoke CSS: the uihost ships the base typography floor, the
 	// admin battery ships the whole back-office shell, and the public
-	// screens below compose framework/ui (Hero, AuthCard, Form) — all
+	// screens below compose framework/ui (Hero, AuthCard, Form), all
 	// recolored by the theme tokens set in createTheme.
 	host := uihost.New(site)
 	app := framework.NewUIHostApp(host,
@@ -84,7 +84,7 @@ func setupApp(dsn string) *framework.App {
 
 	registerEntities(app)
 
-	// Expose every CRUD entity as an admin screen — the explicit
+	// Expose every CRUD entity as an admin screen, the explicit
 	// whole-back-office opt-in (an empty Entities list exposes nothing).
 	app.RegisterBattery(admin.New(admin.Config{Title: "Backoffice", EntityListLimit: 8, AllEntities: true}))
 
@@ -129,7 +129,7 @@ func registerEntities(app *framework.App) {
 			entity.BelongsTo("supplier", "suppliers", "supplier_id"),
 		},
 	})
-	//gofastr:allow(GOFASTR1901) a back-office customer list is staff-wide by design — every signed-in user here IS staff, so there is no per-user row to scope to. An app where customers own their own record sets Scope.OwnerField instead.
+	//gofastr:allow(GOFASTR1901) a back-office customer list is staff-wide by design, every signed-in user here IS staff, so there is no per-user row to scope to. An app where customers own their own record sets Scope.OwnerField instead.
 	app.Entity("customers", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Max: f64(120)},
@@ -191,7 +191,7 @@ func (u *demoUser) GetID() string { return u.email }
 func (u *demoUser) GetRoles() []string { return []string{"admin"} }
 
 // demoSession reads the session cookie and puts a (non-nil) user on the
-// request context. NOT production auth — see the package doc.
+// request context. NOT production auth. See the package doc.
 func demoSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
@@ -207,7 +207,7 @@ func loginSubmit(w http.ResponseWriter, r *http.Request) {
 	if email == "" {
 		email = "admin@example.com"
 	}
-	//gofastr:allow(GOFASTR1404) demo signs in over plain http://localhost, where a Secure cookie is dropped by the browser and nobody could log in. A real deployment serves over TLS and sets it — see gofastr docs security.
+	//gofastr:allow(GOFASTR1404) demo signs in over plain http://localhost, where a Secure cookie is dropped by the browser and nobody could log in. A real deployment serves over TLS and sets it. See gofastr docs security.
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: email, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
@@ -219,7 +219,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// ----- public screens (home + sign-in) — composed entirely from
+// ----- public screens (home + sign-in), composed entirely from
 // framework/ui so they share the admin's tokens with zero bespoke CSS ------
 
 type homeScreen struct{ component.ContextOnly }
@@ -239,7 +239,7 @@ func (homeScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 // loginScreen is the demo sign-in, composed from ui.AuthCard + ui.Form +
-// ui.FormField — the same shapes a real battery/auth login screen uses.
+// ui.FormField, the same shapes a real battery/auth login screen uses.
 // POST still goes to the raw loginSubmit handler.
 type loginScreen struct{ component.ContextOnly }
 
@@ -256,6 +256,6 @@ func (loginScreen) RenderCtx(context.Context) render.HTML {
 				Input: html.Input(html.InputConfig{ID: "f-password", Name: "password", Type: "password", Value: "demo",
 					ExtraAttrs: html.Attrs{"autocomplete": "current-password"}})}),
 		),
-		Footer: ui.Muted(render.Text("Demo sign-in — any email works.")),
+		Footer: ui.Muted(render.Text("Demo sign-in: any email works.")),
 	})
 }

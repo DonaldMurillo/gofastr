@@ -150,7 +150,7 @@ func TestEncodeThreeColors(t *testing.T) {
 // the encoder panicked at dFreq[distSym]++ in lz77.go. The fix caps
 // matchDist in findMatch so distSym stays in [0, 40).
 // TestUniformImageShortCircuitsMultiPass asserts that a solid-color
-// image is encoded in a single pass — the multi-pass strategy gains
+// image is encoded in a single pass. The multi-pass strategy gains
 // nothing on inputs where every predictor mode produces the same
 // residual distribution (zero), so we save 4×CPU.
 func TestUniformImageShortCircuitsMultiPass(t *testing.T) {
@@ -190,7 +190,7 @@ func TestDistanceBoundary(t *testing.T) {
 			t.Errorf("matchDist=%d → distSym=%d, want <40", d, sym)
 		}
 	}
-	// One past the boundary must overflow — this confirms our cap is
+	// One past the boundary must overflow. This confirms our cap is
 	// EXACTLY right (not off by one in either direction).
 	if sym, _ := lz77Symbol(uint32((1<<20)-119) + 120); sym < 40 {
 		t.Errorf("matchDist=(1<<20)-119 should overflow distSym; got %d", sym)
@@ -198,7 +198,7 @@ func TestDistanceBoundary(t *testing.T) {
 }
 
 func TestEncodeLongDistanceBackrefDoesNotPanic(t *testing.T) {
-	const w, h = 1100, 1100 // 1.21M pixels — past the 2^20 boundary
+	const w, h = 1100, 1100 // 1.21M pixels, past the 2^20 boundary
 	src := image.NewNRGBA(image.Rect(0, 0, w, h))
 	// Fill with a slow gradient so LZ77 doesn't trivially short-match;
 	// it has to reach across the image for the planted signature.
@@ -210,7 +210,7 @@ func TestEncodeLongDistanceBackrefDoesNotPanic(t *testing.T) {
 		}
 	}
 	// Planted signature at offsets 0..3 and (w*h - 4)..(w*h - 1). The
-	// distance between them is w*h - 4 = 1,209,996 — past the 1,048,576
+	// distance between them is w*h - 4 = 1,209,996, past the 1,048,576
 	// limit of the 40-symbol distance alphabet.
 	sig := []color.NRGBA{
 		{R: 0xCA, G: 0xFE, B: 0xBA, A: 0xBE},
@@ -310,7 +310,7 @@ func TestCodeLengthsSatisfyKraft(t *testing.T) {
 }
 
 func TestCanonicalCodesMatchKraft(t *testing.T) {
-	// 4-symbol alphabet with lengths (1, 2, 3, 3) — classic Kraft-equality.
+	// 4-symbol alphabet with lengths (1, 2, 3, 3), classic Kraft-equality.
 	codes := canonicalCodes([]int{1, 2, 3, 3})
 	// Expected canonical (MSB-first):
 	//   symbol 0: 0

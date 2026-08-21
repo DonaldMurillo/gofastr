@@ -11,7 +11,7 @@ import (
 // documented STUB: it does not confine the child, and DeclaredProbes is
 // empty. HostSandboxBackend filters it to nil (Available()=false), so
 // NewSandboxRunner errors and the supervisor fail-closes every
-// TrustUntrusted module on Windows — never a silent downgrade to
+// TrustUntrusted module on Windows, never a silent downgrade to
 // TrustedProcessRunner.
 //
 // This is the honest v1 stance per design §6 + §11 risk 1: a real Windows
@@ -48,7 +48,7 @@ func (b *windowsStubBackend) MissingReason() string {
 // and untrusted fails closed.
 func (b *windowsStubBackend) DeclaredProbes() []ProbeID { return nil }
 
-// Wrap always errors — the stub refuses to spawn an untrusted child
+// Wrap always errors, the stub refuses to spawn an untrusted child
 // unconfined. This is the fail-closed seam.
 func (b *windowsStubBackend) Wrap(cmd *exec.Cmd, _ SandboxOpts) error {
 	return errors.New("windows sandbox backend is a v1 stub: refuses to wrap untrusted child (fail-closed)")

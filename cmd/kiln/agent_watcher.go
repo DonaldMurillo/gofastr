@@ -84,7 +84,7 @@ func formatTurnDuration(d time.Duration) string {
 // new one. The cancelled turn journals a synthetic "(superseded …)"
 // note so the panel's thinking indicator clears and the user sees what
 // happened. Anything the cancelled turn already wrote to the journal
-// stays — Kiln's world is append-only, so partial work persists.
+// stays; Kiln's world is append-only, so partial work persists.
 func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tools *protocol.Tools, store *AdapterStore, addr string) {
 	host := addr
 	if strings.HasPrefix(host, ":") {
@@ -157,7 +157,7 @@ func chatTextByEntryID(l *live.Live, id string) string {
 // before the selected agent sees it. If the user asked for something destructive
 // (delete, drop, wipe, rebuild, reset) we prepend a directive forcing
 // the agent through propose_plan + user approval first. This is a
-// pre-flight classifier — cheap, deterministic, no extra LLM call.
+// pre-flight classifier: cheap, deterministic, no extra LLM call.
 func destructiveIntent(text string) bool {
 	low := strings.ToLower(text)
 	for _, kw := range []string{
@@ -205,22 +205,22 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 
 	// Cancellation path: this turn was superseded. Render the right
 	// reason: a newer message vs. a runtime agent switch. Use a fresh
-	// context for the journal write — the original ctx is done.
+	// context for the journal write; the original ctx is done.
 	if ctx.Err() != nil {
 		cause := context.Cause(ctx)
 		var note string
 		switch cause {
 		case errAgentSwitched:
-			note = "(superseded by agent harness switch — partial work above is preserved)"
+			note = "(superseded by agent harness switch: partial work above is preserved)"
 			logger.Printf("agent: %v", cause)
 		case errSupersededByNewMessage:
-			note = "(superseded by newer message — partial work above is preserved)"
+			note = "(superseded by newer message: partial work above is preserved)"
 			logger.Printf("agent: %v", cause)
 		case errCancelledByUser:
-			note = "(cancelled by user — partial work above is preserved)"
+			note = "(cancelled by user: partial work above is preserved)"
 			logger.Printf("agent: %v", cause)
 		default:
-			note = "(turn cancelled — partial work above is preserved)"
+			note = "(turn cancelled: partial work above is preserved)"
 			logger.Printf("agent: cancelled (cause=%v)", cause)
 		}
 		_ = tools.Chat(context.Background(), protocol.ChatArgs{Role: "assistant", Text: note})

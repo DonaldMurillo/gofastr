@@ -103,8 +103,8 @@ func startGadgetServer(t *testing.T, widgets, body string) *gadgetServer {
 // Attack: hydrate() read data-behavior off any [data-widget] /
 // [data-component] element and appended <script src=that> with no
 // allow-list and no origin check, and setupMutationObserver rewired it
-// onto elements inserted by later island/SPA swaps. Attribute injection
-// — or an untrusted IR, before core-ui/noderender's allow-list — turned
+// onto elements inserted by later island/SPA swaps. Attribute injection,
+// or an untrusted IR, before core-ui/noderender's allow-list, turned
 // a hover or focus into arbitrary script execution. Cross-origin was
 // stopped only by CSP; a SAME-origin JS route executed under strict CSP.
 //
@@ -119,7 +119,7 @@ func TestBehaviorAttrRejectsForeignSrc(t *testing.T) {
 		chromedp.Navigate(g.Srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		// Insert the element AFTER boot: hydration listeners are wired by
-		// setupMutationObserver, so this is the reachable shape — markup
+		// setupMutationObserver, so this is the reachable shape, markup
 		// arriving from an island swap, an RPC innerHTML replacement, or
 		// an SPA page merge.
 		chromedp.Evaluate(`document.getElementById('host').innerHTML =
@@ -141,7 +141,7 @@ func TestBehaviorAttrRejectsForeignSrc(t *testing.T) {
 // interceptor's cross-origin test cannot be defeated by a
 // protocol-relative action.
 //
-// Attack: the guard was `action.match(/^https?:\/\//)` — bail out when
+// Attack: the guard was `action.match(/^https?:\/\//)`, bail out when
 // the action is absolute. `//evil.example/steal` starts with neither
 // `http` nor `https`, so it fell through to the fetch path and the form
 // body was posted cross-origin (stopped only by CSP connect-src).
@@ -174,7 +174,7 @@ func TestFormActionRejectsProtocolRelative(t *testing.T) {
 }
 
 // TestRuntimeFetchRefusesForeignOrigin pins that a DOM-attribute-supplied
-// RPC URL cannot point the runtime — and the CSRF token it attaches — at
+// RPC URL cannot point the runtime, and the CSRF token it attaches, at
 // another origin.
 //
 // Attack: dispatchRPC takes its URL from data-fui-rpc with no origin
@@ -248,7 +248,7 @@ func TestSetSignalRejectsProtoKey(t *testing.T) {
 // `?x=<payload>` into the DOM.
 func TestDeepLinkParamNeverReachesInnerHTML(t *testing.T) {
 	// hidden:true keeps the widget out of the boot auto-mount, so
-	// _syncDeepLinks is what opens it — that is the path that seeds
+	// _syncDeepLinks is what opens it, that is the path that seeds
 	// declared deep-link params straight from location.search.
 	catalog := `[{"hidden":true,"cfg":{"name":"dl","deepLinkParams":["x"],` +
 		`"deepLinkKey":"pane","deepLinkValue":"dl","chromePath":"/chrome/dl",` +
@@ -273,7 +273,7 @@ func TestDeepLinkParamNeverReachesInnerHTML(t *testing.T) {
 	if strings.Contains(sink, "<img") || pwned {
 		t.Errorf("SECURITY: [xss] a query-string-seeded signal was written as HTML (executed=%v): %s", pwned, sink)
 	}
-	// The value must still reach the node — escaped. Dropping it
+	// The value must still reach the node, escaped. Dropping it
 	// entirely would be a different bug.
 	if !strings.Contains(sink, "onerror") {
 		t.Errorf("deep-link value did not reach the node at all: %q", sink)

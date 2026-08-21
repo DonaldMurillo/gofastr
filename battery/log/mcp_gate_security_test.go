@@ -13,7 +13,7 @@ import (
 
 // log_set_level registers straight onto the MCP server, so no route
 // middleware ever runs for it. An unauthenticated caller could flip the app to
-// DEBUG — raising log volume and whatever DEBUG lines carry — or to ERROR to
+// DEBUG, raising log volume and whatever DEBUG lines carry, or to ERROR to
 // go quiet before doing something else.
 func TestSetLevelRefusesUnauthenticatedCaller(t *testing.T) {
 	app, p := newLogMCPApp(t)
@@ -26,7 +26,7 @@ func TestSetLevelRefusesUnauthenticatedCaller(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("SECURITY: [authz] log_set_level ran for an unauthenticated caller")
 	}
-	// The refusal must be the gate, not an incidental handler error — and
+	// The refusal must be the gate, not an incidental handler error, and
 	// the level must be untouched.
 	if !strings.Contains(resp.Error.Message, "authenticated caller") {
 		t.Errorf("refused for the wrong reason: %q", resp.Error.Message)
@@ -36,7 +36,7 @@ func TestSetLevelRefusesUnauthenticatedCaller(t *testing.T) {
 	}
 }
 
-// The schema is the disclosure, not just the call — a stranger should not
+// The schema is the disclosure, not only the call. A stranger should not
 // learn the app's log level is remotely settable.
 func TestSetLevelHiddenFromUnauthenticatedList(t *testing.T) {
 	app, _ := newLogMCPApp(t)
@@ -76,7 +76,7 @@ func TestDevImpliedSetLevelStaysUngated(t *testing.T) {
 	}
 }
 
-// An app that asked for mutation explicitly keeps the gate even under dev —
+// An app that asked for mutation explicitly keeps the gate even under dev,
 // the opt-out is "dev turned this on for me", not "dev is running".
 func TestExplicitMutationStaysGatedUnderDev(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "1")

@@ -26,12 +26,12 @@ func validUpgradeReq() *http.Request {
 // A proxy that doesn't recognise a request as an upgrade forwards it as
 // an ordinary request on a pooled backend connection and waits for an
 // ordinary response. If we hijack and emit frames anyway, those bytes
-// can surface as the response to a different user's queued request —
+// can surface as the response to a different user's queued request,
 // and the peer partly controls them, since ping payloads are echoed
 // verbatim. Every condition is therefore checked before the 101.
 //
 // httptest's recorder is not a Hijacker, so a handshake that passes
-// validation fails with a "hijacking" error — that is the success
+// validation fails with a "hijacking" error; that is the success
 // signal here.
 func TestUpgradeRejectsNonRFCHandshake(t *testing.T) {
 	t.Run("complete handshake reaches hijack", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestUpgradeRejectsNonRFCHandshake(t *testing.T) {
 // Property: a frame parser must implement the message state machine it
 // claims to. `fin` was previously read and then used only for the
 // control-frame check, so a TEXT frame with FIN=0 returned HALF A
-// MESSAGE to the application as if it were whole — and browsers
+// MESSAGE to the application as if it were whole, and browsers
 // fragment large sends, so this fired on legitimate traffic too.
 // ReadLimit is documented as a *message* bound, which only holds once
 // fragments accumulate.
@@ -85,7 +85,7 @@ func TestFragmentedMessageReassembly(t *testing.T) {
 }
 
 // A continuation with nothing to continue, and a reserved opcode, are
-// protocol errors — previously both were delivered to the application
+// protocol errors; previously both were delivered to the application
 // as ordinary data.
 func TestRejectsBareContinuationAndReservedOpcode(t *testing.T) {
 	t.Run("bare continuation", func(t *testing.T) {

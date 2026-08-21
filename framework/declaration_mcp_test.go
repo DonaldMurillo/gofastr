@@ -95,7 +95,7 @@ func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {
 
 // callMCPTool dispatches a tool call with an authenticated caller in
 // context: entity MCP tools inherit the same secure-by-default session
-// gate as REST (issue #65) — RegisterEntityMCPTools re-dispatches through
+// gate as REST (issue #65). RegisterEntityMCPTools re-dispatches through
 // the router, and requireAuthenticated needs core/handler.GetUser to
 // succeed. See TestMCPTools_AnonymousCallsRejected (framework/crud) for
 // the negative case.

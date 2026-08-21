@@ -10,7 +10,7 @@ import "time"
 // Exponential returns the delay before the next retry for the attempt
 // that just failed (attempts >= 1): base*2^(attempts-1), clamped to max
 // when max is positive. attempts <= 1 yields base. A zero base yields
-// zero — callers gate on base > 0 before applying backoff. Doubling
+// zero. Callers gate on base > 0 before applying backoff. Doubling
 // stops at the largest value whose next doubling could overflow int64,
 // so any attempt count is safe.
 func Exponential(base, max time.Duration, attempts int) time.Duration {

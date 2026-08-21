@@ -11,7 +11,7 @@ import (
 
 // TestBoolFilterValuesBindAsBools covers the query-string value-coercion
 // path for Bool fields. ?published=true used to bind the raw string
-// "true", which SQLite (INTEGER column vs TEXT operand) never matches —
+// "true", which SQLite (INTEGER column vs TEXT operand) never matches,
 // only ?published=1 worked. Parsing must coerce ParseBool-shaped values
 // on Bool fields so the binder receives a real boolean, which every
 // dialect maps correctly (PG native bool, SQLite 1/0).

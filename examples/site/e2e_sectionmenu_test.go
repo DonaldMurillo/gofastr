@@ -1,6 +1,6 @@
 package main
 
-// Browser-level e2e for the interactive SectionMenu — the unified docs +
+// Browser-level e2e for the interactive SectionMenu, the unified docs +
 // components navigation. The mobile sheet is the framework's preset.Drawer
 // widget, so these assert the real out-of-the-box behaviours the user asked
 // for: close-on-outside-click, scroll-lock, and NO layout shift on open.
@@ -71,7 +71,7 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('.fui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowOpen),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-backdrop="`+drawer+`"]')`, &backdropPresent),
-		// Close on OUTSIDE click — tap the exposed backdrop strip to the right
+		// Close on OUTSIDE click, tap the exposed backdrop strip to the right
 		// of the ~337px (90vw) drawer panel. Clicking the panel-covered centre
 		// would (correctly) NOT dismiss, so target the dim area at x≈365.
 		chromedp.MouseClickXY(365, 400),
@@ -104,7 +104,7 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 }
 
 // Mobile: a visible × button closes the drawer, and closing preserves the
-// page's scroll position (no jump — the two reported bugs).
+// page's scroll position (no jump, the two reported bugs).
 func TestE2E_SectionMenu_CloseButtonAndScrollPreserved(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -190,7 +190,7 @@ func TestE2E_SectionMenu_DrawerClosesOnNav(t *testing.T) {
 // Opening the ⌘K command palette on a scrolled docs page must NOT dislodge the
 // sticky nav rail. The reported bug: the scroll-lock set overflow:hidden on
 // <body>, which turns the body into a clipped scroll container and breaks the
-// rail's position:sticky — the whole side menu scrolls off-screen. The lock
+// rail's position:sticky, the whole side menu scrolls off-screen. The lock
 // must go on <html> so sticky descendants survive.
 func TestE2E_PaletteKeepsDocsRailVisible(t *testing.T) {
 	if testing.Short() {

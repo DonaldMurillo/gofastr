@@ -38,7 +38,7 @@ func TestPgVectorHostileTable(t *testing.T) {
 }
 
 // TestPgVectorFilterNoInjection: filter values containing SQL metacharacters
-// are bound as parameters and matched literally — they cannot break out of the
+// are bound as parameters and matched literally, they cannot break out of the
 // query, match everything, or error.
 func TestPgVectorFilterNoInjection(t *testing.T) {
 	s := newPgStore(t, 3)
@@ -61,7 +61,7 @@ func TestPgVectorFilterNoInjection(t *testing.T) {
 			t.Errorf("Candidates with hostile Source=%q errored: %v", val, err)
 			continue
 		}
-		// None of the payloads equal "real", so zero hits must come back —
+		// None of the payloads equal "real", so zero hits must come back,
 		// proving the value was treated as a literal, not as SQL.
 		if len(hits) != 0 {
 			t.Errorf("hostile Source=%q returned %d hits, want 0", val, len(hits))

@@ -7,7 +7,7 @@ import (
 
 // Property: an unconfigured guard must not mean "allow everything".
 //
-// core/middleware/cors.go states the framework-wide convention —
+// core/middleware/cors.go states the framework-wide convention:
 // "empty AllowedOrigins means deny-all (not allow-all)". ws.Handler
 // and rest.Server previously inverted it: a zero-value AllowedOrigins
 // admitted every browser Origin, and a zero-value AllowedHosts

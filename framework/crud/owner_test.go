@@ -119,7 +119,7 @@ func TestOwnerScope_GetByIdReturns404ForOtherUsersRow(t *testing.T) {
 	ch, db := setupOwnerScopedHandler(t)
 	seedRow(t, db, "log-a1", "alice", "alice secret")
 
-	// Bob requests Alice's row by id — must 404, not 200.
+	// Bob requests Alice's row by id, must 404, not 200.
 	req := httptest.NewRequest(http.MethodGet, "/api/logs/log-a1", nil)
 	req.SetPathValue("id", "log-a1")
 	req = withTestUser(req, "bob")
@@ -162,7 +162,7 @@ func TestOwnerScope_CreateAutoStampsOwner(t *testing.T) {
 }
 
 // setupHiddenOwnerHandler mirrors setupOwnerScopedHandler but marks the owner
-// column Hidden — the blueprint generator synthesizes the owner column this way
+// column Hidden, the blueprint generator synthesizes the owner column this way
 // so it never appears in generated forms/tables. The framework still manages it
 // (InjectOwner stamps it; ApplyOwnerScope filters on it), so it MUST be
 // persisted on create even though it's hidden from the API surface.
@@ -191,7 +191,7 @@ func setupHiddenOwnerHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 
 // Regression: a Hidden owner column must still be written on create. doCreate
 // skips ReadOnly/Hidden fields, but the owner column is framework-managed and
-// was silently dropped — leaving every row's owner blank, which made
+// was silently dropped, leaving every row's owner blank, which made
 // owner-scoping match nothing and a seeded admin's rows invisible.
 func TestOwnerScope_HiddenOwnerColumnPersistedOnCreate(t *testing.T) {
 	installOwnerExtractor(t)
@@ -416,7 +416,7 @@ func TestOwnerScope_AnonymousDeleteIsRejected(t *testing.T) {
 }
 
 func TestOwnerScope_NoExtractorRegisteredIsRejected(t *testing.T) {
-	// Clear the extractor — simulating an app that set OwnerField but
+	// Clear the extractor, simulating an app that set OwnerField but
 	// never wired auth. The handler must fail closed, not return every
 	// row. Properly restore on cleanup so subsequent tests (or
 	// shuffled-order runs) don't inherit a nil extractor.

@@ -25,7 +25,7 @@ func init() {
 // It stays completely silent when nothing is declared. That is the only
 // honest default: a layering the tool invented for someone else's package
 // tree would be wrong more often than right, and a wrong architecture
-// rule is worse than none — it trains people to ignore the analyzer.
+// rule is worse than none. It trains people to ignore the analyzer.
 func runArchitecture(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	arch := p.Config.Architecture
 	if !arch.Configured() {
@@ -78,13 +78,13 @@ func runArchitecture(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			}
 			toIdx, toName, toKnown := layerOf(target)
 			// Layers are ordered top-first, so a *lower* index is a higher
-			// layer. An import is upward — and forbidden — when the target
+			// layer. An import is upward, and forbidden, when the target
 			// sits at a smaller index than the importer.
 			if !toKnown || toIdx >= fromIdx {
 				continue
 			}
 			d := diag(p, contracts.RuleLayerViolation, f.Rel, imp.Pos(), fmt.Sprintf(
-				"%s (layer %q) imports %s (layer %q) — %q sits above %q",
+				"%s (layer %q) imports %s (layer %q): %q sits above %q",
 				f.Package, fromName, target, toName, toName, fromName))
 			d.Evidence = map[string]string{
 				"from": f.Package, "fromLayer": fromName,

@@ -95,8 +95,8 @@ func TestWSCloseHandshakeTimesOut(t *testing.T) {
 
 // Adversarial: the previous implementation scanned raw bytes from the
 // peer and matched on `b & 0x0F == 0x8`. ANY byte with low nibble 0x8
-// (0x08, 0x18, 0x28, 0x38, 0x48, …) — extremely common in binary
-// payloads, mask bytes, length octets — falsely matched as Close. The
+// (0x08, 0x18, 0x28, 0x38, 0x48, …), extremely common in binary
+// payloads, mask bytes, length octets, falsely matched as Close. The
 // fix must parse frames, not byte-grep the stream.
 func TestWSCloseHandshakeIgnoresFalsePositiveBytes(t *testing.T) {
 	srv, cli := newPipePair(t)
@@ -115,7 +115,7 @@ func TestWSCloseHandshakeIgnoresFalsePositiveBytes(t *testing.T) {
 		// Drain our outbound Close frame.
 		buf := make([]byte, 16)
 		_, _ = cli.Read(buf)
-		// Stream garbage bytes containing 0x18, 0x28, 0x38 — every one of
+		// Stream garbage bytes containing 0x18, 0x28, 0x38; every one of
 		// these has low nibble 0x8 but is NOT a Close frame opcode byte.
 		// The old impl would short-circuit on the first one.
 		_, _ = cli.Write([]byte{0x18, 0x28, 0x38, 0x48, 0x88, 0x98})
@@ -264,7 +264,7 @@ func TestWSProtocolFuzz(t *testing.T) {
 			name: "fin0-control-close",
 			frame: func() []byte {
 				mask := []byte{1, 2, 3, 4}
-				// FIN=0, opcode=Close — control frames MUST be FIN=1
+				// FIN=0, opcode=Close; control frames MUST be FIN=1
 				return append([]byte{0x00 | wsopcodeClose, 0x80 | 0}, mask...)
 			}(),
 		},
@@ -272,7 +272,7 @@ func TestWSProtocolFuzz(t *testing.T) {
 			name: "rsv-bits-set",
 			frame: func() []byte {
 				mask := []byte{1, 2, 3, 4}
-				// RSV1/2/3 = 1, opcode = text — must be rejected
+				// RSV1/2/3 = 1, opcode = text; must be rejected
 				return append([]byte{0x80 | 0x70 | wsopcodeText, 0x80 | 0}, mask...)
 			}(),
 		},

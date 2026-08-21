@@ -12,9 +12,9 @@ import (
 // PipelineSource is one entry in a typed responsive source set,
 // typically produced by framework/image.VariantSet.
 type PipelineSource struct {
-	URL   string // image URL — required
-	Width int    // intrinsic pixel width — required
-	Type  string // MIME type — required (e.g. "image/webp", "image/jpeg")
+	URL   string // image URL: required
+	Width int    // intrinsic pixel width: required
+	Type  string // MIME type: required (e.g. "image/webp", "image/jpeg")
 }
 
 // HeaderInfo is the subset of framework/image.VariantHeader that
@@ -24,7 +24,7 @@ type PipelineSource struct {
 // []VariantHeader with a one-line loop or by writing a typed
 // adapter helper in their own code.
 //
-// Note: Format from VariantHeader is intentionally omitted — MIME
+// Note: Format from VariantHeader is intentionally omitted. MIME
 // is the discriminator the <source type="..."> attribute actually
 // needs, and a parallel `Format string` field would drift in type
 // vs VariantHeader.Format (image.Format enum).
@@ -60,11 +60,11 @@ func PipelineSourcesFromHeaders(headers []HeaderInfo, urlFor func(name string) s
 // PipelineImageConfig configures a multi-format <picture> with an
 // optional placeholder (LQIP data URL or BlurHash string).
 type PipelineImageConfig struct {
-	// Fallback is the <img>'s src — required, used by browsers that
+	// Fallback is the <img>'s src: required, used by browsers that
 	// can't pick from Sources. Typically a mid-size JPEG / PNG.
 	Fallback string
 
-	// Alt — required for non-decorative images.
+	// Alt is required for non-decorative images.
 	Alt string
 
 	// Width and Height are the intrinsic dimensions of Fallback.
@@ -88,7 +88,7 @@ type PipelineImageConfig struct {
 	// visible before the real pixels arrive.
 	//
 	// Produce one with framework/image: BlurHashDataURL(hash, …) to render
-	// a stored BlurHash — the natural companion to VariantResult.BlurHash —
+	// a stored BlurHash, the natural companion to VariantResult.BlurHash,
 	// or pass VariantResult.Placeholder straight through for an LQIP.
 	// A bare BlurHash string is not accepted; it is not an image until it
 	// is decoded.
@@ -118,7 +118,7 @@ type PipelineImageConfig struct {
 // encoded as both modern (WebP) and legacy (JPEG/PNG) variants.
 func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	// Programmer errors (empty Fallback URL, missing Alt on a non-
-	// decorative image) still panic — these are bugs in the caller's
+	// decorative image) still panic. These are bugs in the caller's
 	// code, not data-shape issues. Missing intrinsic dimensions are
 	// a different story: user-generated content frequently lacks
 	// them (old DB rows, malformed uploads), and crashing the render
@@ -213,7 +213,7 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	picture := render.Tag("picture", nil, children...)
 
 	// The placeholder is emitted before the picture so the real image paints
-	// over it in DOM order — both are positioned, so tree order decides,
+	// over it in DOM order. Both are positioned, so tree order decides,
 	// with no z-index needed.
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
@@ -231,7 +231,7 @@ type pipelineGroup struct {
 // contain raw commas (presigned URLs, keys with comma-separated
 // segments) would otherwise be split into multiple malformed
 // candidates and the wrong (or no) image would be fetched.
-// A data: URI is the one shape whose first comma is structural — it
+// A data: URI is the one shape whose first comma is structural. It
 // separates the media type from the payload, so escaping it yields a
 // candidate no browser can decode. Every later comma belongs to the
 // percent-decoded payload and must be escaped: a trailing raw comma ends

@@ -46,7 +46,7 @@ across both providers.
 The harness exposes itself as an MCP server over stdio so any
 MCP-capable client can drive it. To wire it into Claude Code:
 
-### Step 1 — set the credstore passphrase + provider key
+### Step 1: set the credstore passphrase + provider key
 
 ```bash
 export GOFASTR_HARNESS_PASSPHRASE="$(openssl rand -hex 16)"
@@ -64,7 +64,7 @@ ZAI_API_KEY=zai_... GOFASTR_HARNESS_PASSPHRASE="$GOFASTR_HARNESS_PASSPHRASE" \
   gofastr harness --prompt "ping"
 ```
 
-### Step 2 — add the MCP server entry to Claude Code's config
+### Step 2: add the MCP server entry to Claude Code's config
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 (macOS) or `~/.config/Claude/claude_desktop_config.json` (Linux):
@@ -91,22 +91,22 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 Restart Claude Code. The harness should appear under the MCP server
 list in the model picker.
 
-### Step 3 — verify the integration from Claude Code
+### Step 3: verify the integration from Claude Code
 
 In a Claude Code conversation:
 
-1. **`tools/list` shape** — ask Claude Code to list MCP tools. You should
+1. **`tools/list` shape**: ask Claude Code to list MCP tools. You should
    see `gofastr-harness` exposing:
    - `harness.create_session`
    - `harness.list_sessions`
-   - `harness.run_agent_with_shell_access` — the honestly-named tool
+   - `harness.run_agent_with_shell_access`, the honestly-named tool
    - `harness.cancel_turn`, `harness.answer_permission`, `harness.set_model`
    - `harness.enter_plan_mode`, `harness.exit_plan_mode`
 
-2. **Resource listing** — ask for `resources/list`. URIs should appear
+2. **Resource listing**: ask for `resources/list`. URIs should appear
    under the `harness/v1://` scheme.
 
-3. **Run-agent smoke test** — in Claude Code, ask:
+3. **Run-agent smoke test**: in Claude Code, ask:
 
    > "Use the `gofastr-harness` MCP server to call `run_agent_with_shell_access`
    > with prompt 'Reply PONG' on the default session. Wait for the turn."
@@ -115,7 +115,7 @@ In a Claude Code conversation:
    one turn, and the result block contains "PONG" plus a `_meta` object
    with `cost`, `turns`, `toolCalls`.
 
-4. **Identity-class enforcement** — when the inner agent attempts a
+4. **Identity-class enforcement**: when the inner agent attempts a
    tool that triggers a `PermissionRequested`, the outer Claude Code's
    `harness.answer_permission` call should be **rejected** if it's
    issued from the same agent that originated the turn. This is hard
@@ -128,30 +128,30 @@ In a Claude Code conversation:
 gofastr harness --listen 127.0.0.1:8421 &
 
 # Token issuance requires the interactive confirmation channel (a code
-# printed to the harness TTY — see control/auth/issuance.go), so mint
+# printed to the harness TTY, see control/auth/issuance.go), so mint
 # the token from that interactive session, then connect with `websocat`
 # or a small WebSocket client:
 websocat -H 'X-Harness-Token: <token>' ws://127.0.0.1:8421/v1/ws?session=sess_...
 ```
 
-There is no headless token-file flag yet — fully non-interactive CI
+There is no headless token-file flag yet, so fully non-interactive CI
 setups must mint interactively once and reuse the token.
 
 ## 5. What this guide does NOT cover
 
-- **Copilot OAuth device flow** — requires interactive GitHub auth in a
+- **Copilot OAuth device flow**: requires interactive GitHub auth in a
   browser. The adapter is built and unit-tested against stubs; real
   validation needs a separate session.
-- **Multi-week chaos testing** — concurrency-heavy scenarios that
+- **Multi-week chaos testing**: concurrency-heavy scenarios that
   unit tests can't stress.
-- **Large-scale cost reconciliation** — the local ledger is in place;
+- **Large-scale cost reconciliation**: the local ledger is in place;
   reconciling against OpenRouter's `/credits` endpoint at month-end is
   an operations exercise, not a build verification.
 
 ## Common mistakes
 
 - **Dropping `-tags=e2e_real` from the command.** The real-provider
-  tests are behind that build tag — without it they aren't compiled at
+  tests are behind that build tag. Without it they aren't compiled at
   all, so `go test -run E2EReal` finds nothing and reports success
   having tested nothing.
 - **Reading a green CI run as provider coverage.** Each test skips
@@ -159,7 +159,7 @@ setups must mint interactively once and reuse the token.
   A run with no keys is all skips. Use `-v` and check for `SKIP` lines
   before trusting the result.
 - **Omitting `-count=1`.** A cached pass from a previous run can mask
-  a provider-side regression — the whole point of this suite is to hit
+  a provider-side regression. The whole point of this suite is to hit
   the real endpoint now.
 - **Assuming Copilot is covered.** The OAuth device flow needs
   interactive browser auth; the adapter is unit-tested against stubs

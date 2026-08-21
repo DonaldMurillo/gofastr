@@ -25,7 +25,7 @@ func assertNotContains(t *testing.T, got render.HTML, substr string) {
 }
 
 // ============================================================================
-// attrs.go — Helper functions
+// attrs.go: Helper functions
 // ============================================================================
 
 func TestMergeAttrs(t *testing.T) {
@@ -126,7 +126,7 @@ func TestAria(t *testing.T) {
 }
 
 // ============================================================================
-// roles.go — Constants
+// roles.go: Constants
 // ============================================================================
 
 func TestRoleConstants(t *testing.T) {
@@ -173,7 +173,7 @@ func TestRoleConstants(t *testing.T) {
 }
 
 // ============================================================================
-// text.go — Text elements
+// text.go: Text elements
 // ============================================================================
 
 func TestHeading(t *testing.T) {
@@ -198,7 +198,7 @@ func TestHeading(t *testing.T) {
 	})
 
 	t.Run("slug strips HTML entities from escaped text", func(t *testing.T) {
-		// render.Text escapes apostrophe to &#39; — slug must unescape
+		// render.Text escapes apostrophe to &#39;, slug must unescape
 		// before slugifying so we get "hi-im-donald" not "hi-i-39-m-donald".
 		h := Heading(HeadingConfig{Level: 2}, render.Text("Hi, I'm Donald"))
 		if strings.Contains(string(h), "-39-") {
@@ -339,7 +339,7 @@ func TestTime(t *testing.T) {
 }
 
 // ============================================================================
-// structure.go — Structural elements
+// structure.go: Structural elements
 // ============================================================================
 
 func TestDiv(t *testing.T) {
@@ -465,7 +465,7 @@ func TestSummary(t *testing.T) {
 }
 
 // ============================================================================
-// interactive.go — Interactive elements
+// interactive.go: Interactive elements
 // ============================================================================
 
 func TestButton(t *testing.T) {
@@ -479,7 +479,7 @@ func TestButton(t *testing.T) {
 
 	t.Run("empty label no aria-label panics", func(t *testing.T) {
 		// Contract: a button with no visible text and no accessible
-		// name is always a bug — icon-only buttons must supply an
+		// name is always a bug, icon-only buttons must supply an
 		// aria-label via ExtraAttrs.
 		defer func() {
 			if recover() == nil {
@@ -614,7 +614,7 @@ func TestTextAreaCols(t *testing.T) {
 }
 
 // TextArea content lives as a child text node, while Attrs sets element
-// attributes. The two can coexist without conflict — this test pins that
+// attributes. The two can coexist without conflict, this test pins that
 // behaviour so a regression that accidentally turns Content into an attr
 // (or has Attrs override the child text) gets caught.
 func TestTextAreaContentAndAttrsCoexist(t *testing.T) {
@@ -643,7 +643,7 @@ func TestLegend(t *testing.T) {
 }
 
 // ============================================================================
-// lists.go — List elements
+// lists.go: List elements
 // ============================================================================
 
 func TestOrderedList(t *testing.T) {
@@ -680,7 +680,7 @@ func TestDescriptionDetail(t *testing.T) {
 }
 
 // ============================================================================
-// table.go — Table elements
+// table.go: Table elements
 // ============================================================================
 
 func TestTable(t *testing.T) {
@@ -741,7 +741,7 @@ func TestTD(t *testing.T) {
 }
 
 // ============================================================================
-// media.go — Media and void elements
+// media.go: Media and void elements
 // ============================================================================
 
 func TestImage(t *testing.T) {
@@ -1030,8 +1030,8 @@ func TestOnClickInButton(t *testing.T) {
 func TestHeadingAutoIDDeterministic(t *testing.T) {
 	// Auto-generated heading ids are content-derived and deterministic:
 	// the same text always yields the same id (anchors survive re-render
-	// and SPA partial swaps). The flip side — equal heading text on one
-	// page produces duplicate ids — is documented on Heading; callers
+	// and SPA partial swaps). The flip side, equal heading text on one
+	// page produces duplicate ids, is documented on Heading; callers
 	// disambiguate via cfg.ID.
 	a := string(Heading(HeadingConfig{Level: 2}, render.Text("Overview")))
 	b := string(Heading(HeadingConfig{Level: 2}, render.Text("Overview")))

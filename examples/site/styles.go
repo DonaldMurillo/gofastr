@@ -3,7 +3,7 @@ package main
 // =============================================================================
 // Site stylesheet, built via the typed style.StyleSheet DSL so every value
 // flows through theme-token resolution. The previous draft of this file was
-// a raw CSS string — corrected here so:
+// a raw CSS string, corrected here so:
 //
 //   - {colors.primary}, {spacing.md}, {radii.md} etc. resolve to var(--…)
 //     names from the typed Theme rather than being inline literals
@@ -14,7 +14,7 @@ package main
 //     the catalog endpoint visibility into what's defined
 //
 // The CSS produced still matches pages/home-v2.html in the design bundle
-// 1:1 — the difference is HOW it's built, not what it renders.
+// 1:1. The difference is HOW it's built, not what it renders.
 // =============================================================================
 
 import (
@@ -65,7 +65,7 @@ func createStyleSheet(t style.Theme) string {
 
 // demoModalStyles backs the "RPC → Open Widget" demo modal so its markup uses
 // class names instead of inline style="…" attrs (strict-CSP strips inline
-// styles — see core-ui/check TestLintNoInlineStyles_RepoIsClean).
+// styles. See core-ui/check TestLintNoInlineStyles_RepoIsClean).
 func demoModalStyles(ss *style.StyleSheet) {
 	ss.Rule(".demo-modal-body").
 		Set("text-align", "center",
@@ -76,7 +76,7 @@ func demoModalStyles(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// :root — extra v2 tokens that don't map to canonical theme slots.
+// :root, extra v2 tokens that don't map to canonical theme slots.
 // Typed slots (colors.primary, spacing.md, etc.) are written for free by the
 // framework's app.css emit; we only add the deltas.
 // -----------------------------------------------------------------------------
@@ -84,22 +84,22 @@ func demoModalStyles(ss *style.StyleSheet) {
 func rootTokens(ss *style.StyleSheet) {
 	ss.Rule(":root").
 		Set(
-			// Surface ladder — bg-4 (hover) has no typed slot.
+			// Surface ladder, bg-4 (hover) has no typed slot.
 			"--bg-4", "oklch(0.255 0.008 75)",
 
-			// Lines — faint hairline + the framework strong border are
+			// Lines, faint hairline + the framework strong border are
 			// elsewhere; we add the muted hairline used between gen-rows.
 			"--line-faint", "oklch(0.22 0.005 75)",
 
-			// Text — fg-4 is the faintest "footnote" shade, no typed slot.
+			// Text, fg-4 is the faintest "footnote" shade, no typed slot.
 			// Bumped 0.42->0.62 so it clears WCAG AA (4.5:1) on the page's
-			// near-black surfaces — it backs doc-card meta, the site +
+			// near-black surfaces, it backs doc-card meta, the site +
 			// section-menu eyebrows, and gen-row numbers, all of which axe
 			// flagged at ~2.35:1. 0.62 reads ~4.9:1 on --bg, ~5.5:1 on the
 			// darkest hero panel.
 			"--fg-4", "oklch(0.62 0.010 65)",
 
-			// Accent variants — hover (-2) and low-emphasis backgrounds.
+			// Accent variants, hover (-2) and low-emphasis backgrounds.
 			"--accent-2", "oklch(0.74 0.165 75)",
 			"--accent-dim", "oklch(0.42 0.110 75)",
 
@@ -111,7 +111,7 @@ func rootTokens(ss *style.StyleSheet) {
 			"--tk-fn", "oklch(0.85 0.12 78)",
 			"--tk-str", "oklch(0.74 0.10 145)",
 			"--tk-num", "oklch(0.78 0.09 30)",
-			// Comments — bumped 0.48->0.62 so the italic // spans clear AA
+			// Comments, bumped 0.48->0.62 so the italic // spans clear AA
 			// (4.5:1) on the code-block surface; axe flagged them at 2.7:1.
 			"--tk-com", "oklch(0.62 0.008 75)",
 			"--tk-pn", "oklch(0.65 0.008 75)",
@@ -124,7 +124,7 @@ func rootTokens(ss *style.StyleSheet) {
 			"--s-9", "96px",
 			"--s-10", "128px",
 
-			// Font-size scale — v2 uses a custom ramp. The framework's
+			// Font-size scale, v2 uses a custom ramp. The framework's
 			// Typography set has different names (Sm/Md/Lg/…); we expose
 			// the v2 ramp directly so the design's clamp() ladders read
 			// the same as the prototype.
@@ -141,7 +141,7 @@ func rootTokens(ss *style.StyleSheet) {
 			// Framework component theming. core-ui/interactive + framework/ui
 			// components (Counter, Toggle, Collapsible, Tabs, Dropdown) are
 			// styled with --fui-* custom properties and fall back to LIGHT
-			// hardcoded colors when a host leaves them unset — which is why
+			// hardcoded colors when a host leaves them unset, which is why
 			// the dropdown menu rendered white on this dark theme. Aliasing
 			// them to the site's --color-* tokens (which flip with
 			// data-color-scheme) themes every framework component correctly
@@ -156,7 +156,7 @@ func rootTokens(ss *style.StyleSheet) {
 			// already reads ~9:1, so it aliases primary; the light block
 			// re-tones it darker (see below). Components that paint the
 			// accent as small text on tinted chips read this instead of
-			// raw --color-primary — the pricing-card badge stacks a 12%
+			// raw --color-primary, the pricing-card badge stacks a 12%
 			// primary tint on the featured card's own tint, where raw
 			// light-mode primary dips under 4.5:1.
 			"--color-primary-text", "var(--color-primary)",
@@ -165,7 +165,7 @@ func rootTokens(ss *style.StyleSheet) {
 			// Several framework components (SegmentedControl track,
 			// ShortcutHint key, AvatarGroup overflow chip) read
 			// --color-muted as a low-emphasis FILL and fall back to a LIGHT
-			// hardcoded grey when a host leaves it unset — which painted a
+			// hardcoded grey when a host leaves it unset, which painted a
 			// near-white chip on this dark theme (the dark --color-text on
 			// top then dropped to ~1:1). Alias it to the soft surface so the
 			// fill flips with the scheme and the muted/foreground text on it
@@ -202,7 +202,7 @@ func rootTokens(ss *style.StyleSheet) {
 	// works light-mode.
 	//
 	// Contrast targets (WCAG AA): 4.5:1 for normal text, 3:1 for
-	// large/UI. The amber accent must be retoned for text uses —
+	// large/UI. The amber accent must be retoned for text uses,
 	// oklch(0.82 0.155 78) reads cleanly on a warm-near-black surface
 	// (≈ 9:1) but collapses to ~1.45:1 on a warm-near-white surface.
 	// We define a darker amber-text token (`--color-primary-text`)
@@ -210,33 +210,33 @@ func rootTokens(ss *style.StyleSheet) {
 	// as the amber-fill color (CTAs / pulse / pill bg).
 	ss.Rule(`:root[data-color-scheme="light"]`).
 		Set(
-			// Surface ladder — invert oklch L from ~0.135–0.255 to ~0.99–0.93.
+			// Surface ladder, invert oklch L from ~0.135–0.255 to ~0.99–0.93.
 			"--color-background", "oklch(0.99 0.004 75)",
 			"--color-surface", "oklch(0.97 0.005 75)",
 			"--color-surface-soft", "oklch(0.94 0.006 75)",
 			"--bg-4", "oklch(0.90 0.007 75)",
-			// Borders — softer hairlines on the warm-white surfaces.
+			// Borders, softer hairlines on the warm-white surfaces.
 			"--color-border", "oklch(0.88 0.008 75)",
 			"--color-border-strong", "oklch(0.74 0.010 75)",
 			"--line-faint", "oklch(0.92 0.005 75)",
-			// Text ladder — warm-near-black at the top, two muted shades.
+			// Text ladder: warm-near-black at the top, two muted shades.
 			// All three pass WCAG AA against the warm-white surfaces:
 			//   text        L=0.18 vs bg L=0.99 → ≈ 14:1
 			//   text-muted  L=0.36 vs bg L=0.99 → ≈ 7.1:1
-			//   text-subtle L=0.44 vs bg L=0.99 → ≈ 5.0:1 (was 0.52 ≈ 3.9:1 — failed)
+			//   text-subtle L=0.44 vs bg L=0.99 → ≈ 5.0:1 (was 0.52 ≈ 3.9:1, failed)
 			"--color-text", "oklch(0.18 0.005 75)",
 			"--color-text-muted", "oklch(0.36 0.008 75)",
 			"--color-text-subtle", "oklch(0.44 0.010 70)",
-			// fg-4 is the faintest body shade — kept at AA-Large floor
-			// (was 0.62 ≈ 2.8:1, FAILED even 3:1). 0.50 ≈ 3.9:1 — passes
+			// fg-4 is the faintest body shade, kept at AA-Large floor
+			// (was 0.62 ≈ 2.8:1, FAILED even 3:1). 0.50 ≈ 3.9:1, passes
 			// AA-Large; do not use for body copy in this mode.
 			"--fg-4", "oklch(0.50 0.010 65)",
-			// Code surface — slightly elevated soft-warm panel; text
+			// Code surface, slightly elevated soft-warm panel; text
 			// stays near-black for legibility on the lighter chip.
 			"--color-code-surface", "oklch(0.95 0.006 75)",
 			"--color-code-text", "oklch(0.18 0.005 75)",
 			"--color-code-border", "oklch(0.88 0.008 75)",
-			// Syntax palette — desaturate/shift L down on light so
+			// Syntax palette, desaturate/shift L down on light so
 			// tokens read at AA against a near-white background.
 			//   was tk-fn 0.46 0.18 50 (neon-orange) → retoned olive.
 			//   was tk-str 0.44 0.15 145 (neon-green) → forest.
@@ -244,9 +244,9 @@ func rootTokens(ss *style.StyleSheet) {
 			"--tk-fn", "oklch(0.42 0.10 50)",
 			"--tk-str", "oklch(0.42 0.10 145)",
 			"--tk-num", "oklch(0.44 0.15 30)",
-			// Comments — 0.55 read 4.2:1 on the light code surface (axe
+			// Comments, 0.55 read 4.2:1 on the light code surface (axe
 			// color-contrast fail on Linux CI, which defaults to the light
-			// scheme). 0.50 reads ≈5.2:1 — AA with margin.
+			// scheme). 0.50 reads ≈5.2:1, AA with margin.
 			"--tk-com", "oklch(0.50 0.008 75)",
 			"--tk-pn", "oklch(0.42 0.008 75)",
 			"--tk-type", "oklch(0.38 0.10 220)",
@@ -256,11 +256,11 @@ func rootTokens(ss *style.StyleSheet) {
 			// white, so it's invisible as text and weak as a CTA fill.
 			// The accent is used as SMALL text everywhere (brand tag,
 			// .pkg/.path mono labels, dt eyebrows, links, card h4s), so
-			// AA-Large (3:1) is not enough — every use must clear 4.5:1.
+			// AA-Large (3:1) is not enough, every use must clear 4.5:1.
 			// The previous oklch(0.62 0.18 60) → #d16400 read 3.2–3.7:1
 			// on the warm-white surfaces and failed axe on Linux CI
 			// (which defaults to the light scheme). Re-tone to
-			// oklch(0.51 0.115 60) — a deeper amber in the same family
+			// oklch(0.51 0.115 60), a deeper amber in the same family
 			// that is INSIDE the sRGB gamut (no browser gamut-mapping
 			// skew) and clears AA with margin: ≈5.8:1 on bg, ≈5.5:1 on
 			// surface, ≈4.9:1 on the StatusPill accent chip (8% mix),
@@ -268,7 +268,7 @@ func rootTokens(ss *style.StyleSheet) {
 			"--color-primary", "oklch(0.51 0.115 60)",
 			"--color-primary-fg", "oklch(0.99 0.004 75)",
 			// Primary-as-text, retoned deeper still: it must clear 4.5:1
-			// on the WORST amber stack — the pricing badge's 12% tint on
+			// on the WORST amber stack, the pricing badge's 12% tint on
 			// the featured card's own primary tint (raw primary reads
 			// ~4.3:1 there and fails axe). 0.42 clears ≈6:1 on surface
 			// and ≈5:1 on the double-tinted chip.
@@ -276,7 +276,7 @@ func rootTokens(ss *style.StyleSheet) {
 			// Accent mirrors primary on this single-accent site. The
 			// typed theme sets it to the DARK amber; without this
 			// override .ex-row__src links etc. kept the bright
-			// oklch(0.82 0.155 78) in light mode — 1.7:1 on warm-white.
+			// oklch(0.82 0.155 78) in light mode, 1.7:1 on warm-white.
 			"--color-accent", "oklch(0.51 0.115 60)",
 			// Accent-dim (subtle underlines, low-emphasis bg) needs to
 			// stay visible on warm-white. Bump alpha + lower L slightly.
@@ -285,7 +285,7 @@ func rootTokens(ss *style.StyleSheet) {
 			// block above re-tones these BRIGHTER for the dark default (so
 			// status text reads on dark tinted chips); on the warm-white
 			// surfaces those bright variants would fail, so here we put
-			// back the framework defaults — which are tuned to clear
+			// back the framework defaults, which are tuned to clear
 			// 4.6:1 as label text on the components' own 15%-tinted
 			// chips (Badge/Tag/StatCard/ValidationSummary), the binding
 			// constraint axe checks. Keep in sync with
@@ -327,7 +327,7 @@ func resetAndType(ss *style.StyleSheet) {
 			// rubber-band scroll on iOS Safari when content runs wide.
 			"overflow-x", "hidden").End()
 
-	// Body — every value sourced from the typed theme. The framework's
+	// Body, every value sourced from the typed theme. The framework's
 	// default body rule sets font-family from its own token; we re-set
 	// to win the cascade (last rule wins on equal specificity).
 	ss.Rule("body").
@@ -336,7 +336,7 @@ func resetAndType(ss *style.StyleSheet) {
 			"line-height", "1.55",
 			"color", "{colors.text}",
 			"background", "{colors.background}").End()
-	// NOTE: do NOT add `overflow-x: hidden` here — it computes overflow-y to
+	// NOTE: do NOT add `overflow-x: hidden` here, it computes overflow-y to
 	// auto, turning <body> into a scroll container and silently breaking every
 	// position: sticky descendant (sidebars, TOC, step-rail, section-menu rail).
 	// The html-level overflow-x: hidden above is the horizontal-scroll guard;
@@ -345,7 +345,7 @@ func resetAndType(ss *style.StyleSheet) {
 	ss.Rule("::selection").
 		Set("background", "var(--accent-dim)", "color", "{colors.text}").End()
 
-	// Headings — semibold, tight tracking, sourced from the heading font.
+	// Headings: semibold, tight tracking, sourced from the heading font.
 	ss.Rule("h1, h2, h3, h4, h5").
 		Set("font-family", "{fonts.heading}",
 			"font-weight", "500",
@@ -368,7 +368,7 @@ func resetAndType(ss *style.StyleSheet) {
 			"font-size", "0.86em",
 			"color", "{colors.text}").End()
 
-	// Links pick up the primary token by default — page-local sections
+	// Links pick up the primary token by default, page-local sections
 	// can override (e.g. nav links are muted).
 	ss.Rule("a").
 		Set("color", "{colors.primary}").
@@ -383,7 +383,7 @@ func resetAndType(ss *style.StyleSheet) {
 	ss.Rule(".prose a:hover").
 		Set("text-decoration-color", "{colors.primary}", "opacity", "1").End()
 
-	// Layout helpers used inline. The .container-site class is gone —
+	// Layout helpers used inline. The .container-site class is gone,
 	// callers use ui.Container(ContainerWide) and the wide cap is
 	// themed via --ui-container-wide in tokens(). The framework
 	// component owns its own responsive padding.
@@ -407,16 +407,16 @@ func tagsAndButtons(ss *style.StyleSheet) {
 		Set("--ui-status-pill-accent-border", "var(--accent-dim)").End()
 
 	// Spacing utilities used in place of inline style="margin-bottom:…"
-	// attributes — strict CSP blocks inline styles, so every spacing tweak
+	// attributes. Strict CSP blocks inline styles, so every spacing tweak
 	// has to live in a class. Add more here if you need another step.
 	ss.Rule(".mb-md").Set("margin-bottom", "{spacing.md}").End()
 	ss.Rule(".mb-lg").Set("margin-bottom", "{spacing.lg}").End()
 
 	// (The site's old .btn / .btn--primary / .btn--ghost / .btn--lg rules were
-	// dead — every button in the markup is a framework ui.Button / ui.LinkButton,
+	// dead, every button in the markup is a framework ui.Button / ui.LinkButton,
 	// which ship their own CSS. Removed.)
 
-	// Focus ring — visible for keyboard nav, suppressed for pointer.
+	// Focus ring: visible for keyboard nav, suppressed for pointer.
 	ss.Rule(":focus-visible").
 		Set("outline", "2px solid {colors.primary}",
 			"outline-offset", "2px",
@@ -424,11 +424,11 @@ func tagsAndButtons(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .nav — fixed top bar. Layout-only styling; structure is in layout.go.
+// .nav, fixed top bar. Layout-only styling; structure is in layout.go.
 //
 // Position: fixed on the OUTER <header role="banner"> (the framework's
 // layout wrapper), not on .nav itself. position:sticky on .nav was a
-// no-op because .nav's parent <header> isn't a scrolling container —
+// no-op because .nav's parent <header> isn't a scrolling container,
 // sticky needs an ancestor that scrolls, and the scrolling viewport
 // is the document body, not the immediate parent. Fixed on the outer
 // <header> pins it across every screen + survives screen-group
@@ -436,7 +436,7 @@ func tagsAndButtons(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func siteNav(ss *style.StyleSheet) {
-	// Outer banner — the framework's layout wraps HeaderComponent in this.
+	// Outer banner, the framework's layout wraps HeaderComponent in this.
 	// z-index hardcoded because the {z-index.sticky} token wasn't
 	// resolving (left the literal in the CSS → invalid → auto → content
 	// scrolled over the header). 100 sits above the framework's default
@@ -447,7 +447,7 @@ func siteNav(ss *style.StyleSheet) {
 			"left", "0",
 			"right", "0",
 			"z-index", "100",
-			// Opaque background — the previous 88%/12% mix produced a
+			// Opaque background, the previous 88%/12% mix produced a
 			// see-through bar even with backdrop-filter:blur because
 			// nothing on this site has the visual density behind it
 			// for a blur to register against. Solid surface keeps the
@@ -465,7 +465,7 @@ func siteNav(ss *style.StyleSheet) {
 			"padding", "0 {spacing.xxl}",
 			"font-size", "var(--t-sm)").End()
 
-	// Brand — λ mark + lowercase wordmark + status capsule. Each part
+	// Brand, λ mark + lowercase wordmark + status capsule. Each part
 	// has its own selector so the rhythm is tunable: mark a touch
 	// brighter, wordmark heavier, status quieter.
 	ss.Rule(".site-brand").
@@ -477,7 +477,7 @@ func siteNav(ss *style.StyleSheet) {
 			"font-weight", "500",
 			"font-size", "15px",
 			"letter-spacing", "-0.01em").End()
-	// The mark is a typographic λ — sized + colored to feel like a
+	// The mark is a typographic λ, sized + colored to feel like a
 	// confident chip without resembling a logo placeholder. Mono
 	// fixes its width so it lines up with vertical text neighbours.
 	ss.Rule(".site-brand__mark").
@@ -496,7 +496,7 @@ func siteNav(ss *style.StyleSheet) {
 		Set("font-weight", "500",
 			"color", "{colors.text}",
 			"letter-spacing", "-0.012em").End()
-	// Status capsule — three child spans separated by 6px gap, mono.
+	// Status capsule: three child spans separated by 6px gap, mono.
 	// Visually subordinate to the wordmark, but together they read as
 	// the project's live tag.
 	ss.Rule(".site-brand__status").
@@ -522,7 +522,7 @@ func siteNav(ss *style.StyleSheet) {
 			"box-shadow", "0 0 0 0 color-mix(in oklch, {colors.primary} 60%, transparent)",
 			"animation", "nav-pulse 2.4s ease-out infinite").End()
 	ss.Rule(".site-brand__ver").Set("color", "{colors.text-subtle}").End()
-	// Respect reduced motion preference — pulse becomes a static dot
+	// Respect reduced motion preference, pulse becomes a static dot
 	// when the user has prefers-reduced-motion: reduce.
 	ss.Media("(prefers-reduced-motion: reduce)", func(inner *style.StyleSheet) {
 		inner.Rule(".site-brand__pulse").
@@ -536,7 +536,7 @@ func siteNav(ss *style.StyleSheet) {
 		style.Step("100%", "box-shadow", "0 0 0 0 color-mix(in oklch, {colors.primary} 0%, transparent)"),
 	)
 
-	// Nav links — minimal, with a subtle left-to-right underline reveal
+	// Nav links: minimal, with a subtle left-to-right underline reveal
 	// on hover/active so the relationship between hover and active is
 	// visible to keyboard users too.
 	ss.Rule(".ui-site-header__links").
@@ -564,7 +564,7 @@ func siteNav(ss *style.StyleSheet) {
 			"display", "flex",
 			"align-items", "center",
 			"gap", "{spacing.md}").End()
-	// Search pill — replaces the old "Search ⌘K" wireframe with a real
+	// Search pill, replaces the old "Search ⌘K" wireframe with a real
 	// dual-affordance control: left-aligned mono placeholder text +
 	// right-aligned kbd group. Width is fluid so the pill grows on
 	// hover (subtle invitation), and the placeholder rotates through
@@ -613,14 +613,14 @@ func siteNav(ss *style.StyleSheet) {
 	ss.Rule(".site-icon:hover").
 		Set("background", "{colors.surface-soft}", "color", "{colors.text}", "opacity", "1").End()
 
-	// Mobile drawer — hidden by default; the @media (max-width: 640px)
+	// Mobile drawer, hidden by default; the @media (max-width: 640px)
 	// block in responsive() flips display:block. Native <details>; the
 	// framework's runtime auto-closes on cross-page nav via
 	// data-fui-disclosure.
 	//
 	// Trigger is the trigram glyph: three stacked 1.5px bars built with
 	// CSS box-shadows on a single 22px square. When [open], the middle
-	// bar fades out and the outer two rotate into an ×. No SVG, no JS —
+	// bar fades out and the outer two rotate into an ×. No SVG, no JS,
 	// state flips via the parent's open attribute.
 	// .ui-site-header__mobile sits inside .ui-site-header__right at every viewport; no auto
 	// margin needed (the parent cluster owns the right-edge alignment).
@@ -642,7 +642,7 @@ func siteNav(ss *style.StyleSheet) {
 		Set("border-color", "{colors.border-strong}",
 			"background", "{colors.surface-soft}").End()
 	// Open-state: brighten the color so the X reads cleanly. We
-	// deliberately do NOT change the border color — the X icon swap
+	// deliberately do NOT change the border color, the X icon swap
 	// IS the state cue; a border tint added an outline that looked
 	// like a leftover focus ring.
 	ss.Rule(".ui-site-header__mobile[open] > summary").
@@ -651,7 +651,7 @@ func siteNav(ss *style.StyleSheet) {
 	// (SVG menu / SVG close, display-swapped by details[open]). No
 	// site-level overrides needed.
 	// Convert the framework's trigger-anchored popover into a
-	// viewport-anchored sheet — v2 prefers full-width drawers on
+	// viewport-anchored sheet, v2 prefers full-width drawers on
 	// phones so the right edge can't clip on narrow viewports.
 	// Done entirely via CSS vars exposed by ui.SiteHeader; no
 	// selector-stacking overrides needed.
@@ -665,7 +665,7 @@ func siteNav(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .foot — 5-col footer + bottom strip.
+// .foot, 5-col footer + bottom strip.
 // -----------------------------------------------------------------------------
 
 func siteFooter(ss *style.StyleSheet) {
@@ -731,7 +731,7 @@ func siteFooter(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .code — chrome around the hand-tokenized Go highlighter in code_block.go.
+// .code, chrome around the hand-tokenized Go highlighter in code_block.go.
 // The framework's ui.CodeBlock gives us an unhighlighted version; we need the
 // colored token spans for the hero so this stays hand-rolled. Lift into
 // framework/ui/CodeBlock the first time another page needs it.
@@ -750,7 +750,7 @@ func codeBlockStyles(ss *style.StyleSheet) {
 			"max-width", "100%",
 			"min-width", "0").End()
 
-	// Syntax tokens — color only, no italic except comments.
+	// Syntax tokens: color only, no italic except comments.
 	ss.Rule(".tk-kw").Set("color", "var(--tk-kw)").End()
 	ss.Rule(".tk-fn").Set("color", "var(--tk-fn)").End()
 	ss.Rule(".tk-str").Set("color", "var(--tk-str)").End()
@@ -761,7 +761,7 @@ func codeBlockStyles(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .section — vertical rhythm, the right-aligned section number, and the
+// .section: vertical rhythm, the right-aligned section number, and the
 // two-col head (h2 left, lede right).
 // -----------------------------------------------------------------------------
 
@@ -798,19 +798,19 @@ func sectionFraming(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .hero — two-col grid with the headline left, the code block right.
+// .hero: two-col grid with the headline left, the code block right.
 // -----------------------------------------------------------------------------
 
 func heroLayout(ss *style.StyleSheet) {
 	ss.Rule(".hero").
 		Set("padding", "var(--s-9) 0 var(--s-8)",
 			"border-bottom", "1px solid var(--line-faint)").End()
-	// .hero__grid is gone — ui.HeroSplit (framework) owns the 2-col
+	// .hero__grid is gone, ui.HeroSplit (framework) owns the 2-col
 	// layout + mobile collapse. The home hero adds a small top
 	// padding on the copy column to align with the code block.
 	ss.Rule(`.hero-home .ui-hero-split__copy`).
 		Set("padding-top", "{spacing.md}").End()
-	// Grid item escape — without min-width:0 the code block intrinsically
+	// Grid item escape, without min-width:0 the code block intrinsically
 	// pushes its column past the viewport on mobile and the page picks up
 	// horizontal scroll.
 	ss.Rule(".hero__code").Set("min-width", "0").End()
@@ -851,7 +851,7 @@ func heroLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .realapp__grid — the "one file, a real app" beat. Two columns: the blueprint
+// .realapp__grid: the "one file, a real app" beat. Two columns: the blueprint
 // on-ramp (code + generate terminal) on the left, a static rendered-screen
 // preview (screenMock) on the right. Collapses to one column at <=980px.
 // -----------------------------------------------------------------------------
@@ -870,7 +870,7 @@ func realAppLayout(ss *style.StyleSheet) {
 	ss.Rule(".realapp__hint a").
 		Set("text-decoration", "underline", "text-underline-offset", "2px").End()
 
-	// screenMock — a faithful "generated screen" preview (Meridian /customers).
+	// screenMock, a faithful "generated screen" preview (Meridian /customers).
 	ss.Rule(".screen-mock").
 		Set("border", "1px solid {colors.border}",
 			"border-radius", "10px",
@@ -912,7 +912,7 @@ func realAppLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .gen-list — release-notes-style row table.
+// .gen-list, release-notes-style row table.
 // -----------------------------------------------------------------------------
 
 func generatesLayout(ss *style.StyleSheet) {
@@ -952,7 +952,7 @@ func generatesLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .arch__grid — four columns of arch-cards, becomes 2-col at mobile breakpoint.
+// .arch__grid: four columns of arch-cards, becomes 2-col at mobile breakpoint.
 // -----------------------------------------------------------------------------
 
 func architectureLayout(ss *style.StyleSheet) {
@@ -994,7 +994,7 @@ func architectureLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .agents__split — two panes, framework left, Kiln right + terminal mock.
+// .agents__split: two panes, framework left, Kiln right + terminal mock.
 // -----------------------------------------------------------------------------
 
 func agentsLayout(ss *style.StyleSheet) {
@@ -1037,7 +1037,7 @@ func agentsLayout(ss *style.StyleSheet) {
 			"left", "2px",
 			"color", "{colors.primary}").End()
 
-	// Terminal mock — replicated in agents pane.
+	// Terminal mock, replicated in agents pane.
 	// The terminal mock (.term / .term__head / .term__body) is now
 	// ui.TerminalBlock, which ships its own CSS. The site only retunes the
 	// header rule + success colour to the v2 tokens via the component vars.
@@ -1047,7 +1047,7 @@ func agentsLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .num__grid — the countable-claims strip on the home page. Three columns of
+// .num__grid, the countable-claims strip on the home page. Three columns of
 // value / label / check-line cards.
 // -----------------------------------------------------------------------------
 
@@ -1076,7 +1076,7 @@ func numbersLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .ex__grid — three-col gallery of example cards.
+// .ex__grid, three-col gallery of example cards.
 // -----------------------------------------------------------------------------
 
 func examplesLayout(ss *style.StyleSheet) {
@@ -1111,7 +1111,7 @@ func examplesLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// .alpha__grid — two-col "state of the project" layout.
+// .alpha__grid, two-col "state of the project" layout.
 // -----------------------------------------------------------------------------
 
 func alphaLayout(ss *style.StyleSheet) {
@@ -1147,7 +1147,7 @@ func alphaLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// Responsive — three breakpoints:
+// Responsive, three breakpoints:
 //   < 640px   phone
 //   640-1024  tablet
 //   > 1024    desktop (default rules above)
@@ -1158,11 +1158,11 @@ func alphaLayout(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func responsive(ss *style.StyleSheet) {
-	// Sidebar layouts collapse at 900px — the same breakpoint at which
+	// Sidebar layouts collapse at 900px, the same breakpoint at which
 	// interactive.SectionMenu swaps its sticky rail for the mobile sheet, so
 	// the rail never renders full-width above the content.
 	ss.Media("(max-width: 900px)", func(inner *style.StyleSheet) {
-		// /components/* — drop the sticky 260px rail column; SectionMenu
+		// /components/*, drop the sticky 260px rail column; SectionMenu
 		// becomes a "Sections" trigger pill that opens the slide-in sheet.
 		inner.Rule(".layout-components > .layout-body").
 			Set("grid-template-columns", "1fr",
@@ -1193,12 +1193,12 @@ func responsive(ss *style.StyleSheet) {
 			Set("--ui-site-footer-grid-template", "1fr 1fr").End()
 	})
 
-	// Header nav — tablet collapse. This site runs a dense primary nav
+	// Header nav, tablet collapse. This site runs a dense primary nav
 	// (5 links) next to a wide search trigger, so ui.SiteHeader's default
 	// 720px collapse leaves the bar crowded through tablet width: the
 	// search trigger gets squeezed from ~288px down to ~209px (768–900px)
 	// and the row reads as busy / pushed. Drop into the framework's own
-	// hamburger drawer at 1120px instead — tablets and compact laptops get
+	// hamburger drawer at 1120px instead, tablets and compact laptops get
 	// brand + search + actions + drawer, and the search keeps full width.
 	// Selector specificity (attr + .site-header, 0,3,0) beats the
 	// component's own 0,2,0 collapse rules regardless of source order.
@@ -1209,14 +1209,14 @@ func responsive(ss *style.StyleSheet) {
 			Set("display", "block").End()
 	})
 
-	// Phone — collapse everything to one column, hide horizontal nav links
+	// Phone: collapse everything to one column, hide horizontal nav links
 	// (the mobile drawer in HeaderComponent's <details> takes over), shrink
 	// hero headlines, drop multi-col card grids to single-col.
 	ss.Media("(max-width: 640px)", func(inner *style.StyleSheet) {
-		// Nav at phone width — brand (λ + gofastr) on the left, four
+		// Nav at phone width: brand (λ + gofastr) on the left, four
 		// icon-sized controls tight on the right: search, trigram,
 		// theme, GitHub. NOTHING gets removed (search + GitHub were
-		// fully accessible on desktop, they stay so on phone) — they
+		// fully accessible on desktop, they stay so on phone), they
 		// just shed labels and tighten to a single 36px square apiece.
 		// The status capsule and desktop link bar do collapse since
 		// the links are mirrored in the drawer.
@@ -1225,7 +1225,7 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".site-brand__status").Set("display", "none").End()
 		// Search pill morphs into an icon button on phones: the placeholder
 		// text + ⌘K hint hide, the magnifier glyph shows. Touch targets are
-		// 44×44 (WCAG 2.5.5) — the header controls were 30–36px before.
+		// 44×44 (WCAG 2.5.5), the header controls were 30–36px before.
 		inner.Rule(".site-cmd").
 			Set("min-width", "44px",
 				"width", "44px",
@@ -1240,7 +1240,7 @@ func responsive(ss *style.StyleSheet) {
 			Set("display", "block").End()
 		// Icon buttons (theme toggle, GitHub) to 44×44. The hamburger
 		// (.ui-site-header__mobile-toggle) is sized by framework/ui's
-		// SiteHeader CSS — bumped to 44px there.
+		// SiteHeader CSS, bumped to 44px there.
 		inner.Rule(".site-icon").Set("width", "44px", "height", "44px").End()
 		inner.Rule(".ui-site-header").Set("padding", "0 {spacing.sm}", "gap", "{spacing.sm}").End()
 		inner.Rule(".ui-site-header__right").Set("gap", "4px").End()
@@ -1258,11 +1258,11 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".cx-stats").Set("grid-template-columns", "1fr", "gap", "{spacing.md}").End()
 		inner.Rule(".cx-body").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}", "padding", "{spacing.lg} 0").End()
 		inner.Rule(".intent-rail").Set("position", "static", "max-height", "none", "overflow", "visible").End()
-		// Doc page chrome that the 1024px rule already collapses — but
+		// Doc page chrome that the 1024px rule already collapses, but
 		// the docnav max-height needs a tighter bound on small phones.
 		inner.Rule(".docnav").Set("max-height", "240px", "overflow-y", "auto", "border-bottom", "1px solid var(--line-faint)", "padding-bottom", "{spacing.md}").End()
 		inner.Rule(".toc").Set("display", "none").End() // hide in-page TOC on phone (drawer would be better; cheap fix for now)
-		// Examples — three-column row → stacked.
+		// Examples, three-column row → stacked.
 		inner.Rule(".ex-row__grid").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}").End()
 		inner.Rule(".ex-row__num").Set("padding-top", "0").End()
 		// Kiln demo + timeline + caps + cli.
@@ -1273,7 +1273,7 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".ph-body").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}", "padding", "{spacing.xl} 0").End()
 		inner.Rule(".ph-toc").Set("position", "static").End()
 		inner.Rule(".roadmap__row").Set("grid-template-columns", "1fr", "gap", "4px").End()
-		// Pull quote pseudo-quote was overflowing — clip.
+		// Pull quote pseudo-quote was overflowing, clip.
 		inner.Rule(".pullquote::before").Set("left", "0").End()
 		// Doc footer prev/next stacks.
 		inner.Rule(".doc-foot__nav").Set("grid-template-columns", "1fr").End()
@@ -1282,7 +1282,7 @@ func responsive(ss *style.StyleSheet) {
 		// Cap hero headline sizes.
 		inner.Rule(".hero__title, .gs-hero h1, .cx-hero h1, .ex-hero h1, .k-hero h1, .ph-hero h1").
 			Set("font-size", "clamp(32px, 10vw, 44px)").End()
-		// Footer goes single column — drive ui.SiteFooter's vars so the
+		// Footer goes single column, drive ui.SiteFooter's vars so the
 		// component's own grid rule picks the collapse up.
 		inner.Rule(`[data-fui-comp="ui-site-footer"]`).
 			Set("--ui-site-footer-grid-template", "1fr",
@@ -1296,23 +1296,23 @@ func responsive(ss *style.StyleSheet) {
 		// Install commands stay on one line and pan horizontally on
 		// mobile. Wrapping a no-space command (go install …/cmd/gofastr)
 		// breaks it mid-token ("gofast r/cmd"), which is illegible and
-		// breaks copy-paste — horizontal scroll keeps the token intact.
+		// breaks copy-paste, horizontal scroll keeps the token intact.
 		inner.Rule(".hero__install").Set("white-space", "nowrap", "overflow-x", "auto").End()
 		inner.Rule(".k-hero__cli").Set("white-space", "nowrap", "overflow-x", "auto").End()
 		// Code blocks inside paragraphs that have long URLs (install
 		// commands, RPC paths) need to wrap rather than force a wide line.
 		inner.Rule(":not(pre) > code").Set("word-break", "break-word").End()
 		// ui.Container default padding (--spacing-md) is already the
-		// phone-tight value below 720px — no override needed here.
-		// Kiln demo body — single column.
+		// phone-tight value below 720px, no override needed here.
+		// Kiln demo body, single column.
 		inner.Rule(".k-demo__body").Set("grid-template-columns", "1fr", "min-height", "0").End()
 		inner.Rule(".caps__grid, .cli-block").Set("grid-template-columns", "1fr").End()
-		// 404 page — single column.
+		// 404 page, single column.
 		inner.Rule(".nf").Set("grid-template-columns", "1fr", "gap", "{spacing.xl}").End()
 		inner.Rule(".nf__num").Set("font-size", "clamp(80px, 20vw, 140px)").End()
-		// Components inner layout — sidebar is already stacked at tablet;
+		// Components inner layout, sidebar is already stacked at tablet;
 		// at phone its max-height tightens further.
-		// (was: max-height:200px — caused the drawer body to overflow
+		// (was: max-height:200px, caused the drawer body to overflow
 		// past the constrained nav box, pushing main into the same
 		// y-band as the drawer body. Removed; the drawer's own
 		// max-height on its body handles internal scroll.)

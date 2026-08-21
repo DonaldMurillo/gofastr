@@ -8,7 +8,7 @@ import (
 // The widget API carried dead surface: Bootstrap/BootstrapMode/BootstrapPath
 // (Mount never applied the documented default; the catalog never emitted them)
 // and RPCEndpoint.ResponseSignal (written by the RPCWithSignal builder, never
-// read — the runtime reads data-fui-rpc-signal off the DOM, not this field).
+// read, the runtime reads data-fui-rpc-signal off the DOM, not this field).
 // Zero-carryover policy: the symbols must be GONE, not deprecated. This test
 // fails (red) while any of them still exist and passes once they are deleted.
 // The BootstrapMode type + AutoScript/Embedded consts are deleted alongside

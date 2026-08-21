@@ -10,8 +10,8 @@
 // Rules are evaluated against an EvalContext that you build from the
 // request (user, tenant, env, attributes).
 //
-// Anything more elaborate — variants with weights, dependent flags,
-// scheduled ramps — should be a separate evaluator. This package's
+// Anything more elaborate, variants with weights, dependent flags,
+// scheduled ramps, should be a separate evaluator. This package's
 // only job is to make "is feature X on for this caller right now"
 // trivial to express in handler code.
 //
@@ -55,7 +55,7 @@ import (
 //
 // Envs restricts the flag to specific deployment environments. When
 // non-empty, the EvalContext's Env must match one of the listed values
-// or the flag evaluates to false — even for explicitly allow-listed
+// or the flag evaluates to false, even for explicitly allow-listed
 // users. When empty, no environment restriction applies. The match is
 // case-sensitive string equality.
 type Flag struct {
@@ -68,7 +68,7 @@ type Flag struct {
 }
 
 // EvalContext is the per-call subject identity used to evaluate a flag.
-// Build one from the request — typically the authenticated user id and
+// Build one from the request, typically the authenticated user id and
 // the resolved tenant id.
 //
 // The Env field is matched by string equality against any rule that
@@ -89,7 +89,7 @@ type EvalContext struct {
 // Store is the pluggable backend that holds flag definitions.
 // Implementations must be safe for concurrent use.
 //
-// Get returns (nil, nil) — not an error — when the key isn't defined.
+// Get returns (nil, nil), not an error, when the key isn't defined.
 // Evaluator treats that as "fall through to the supplied default."
 type Store interface {
 	Get(ctx context.Context, key string) (*Flag, error)
@@ -109,13 +109,13 @@ type Evaluator struct {
 	store Store
 	// salt is folded into the rollout bucket hash. A non-empty salt
 	// makes the bucket assignment unpredictable to an adversary who
-	// can only see flag keys — without it, a 1% rollout can be
+	// can only see flag keys. Without it, a 1% rollout can be
 	// brute-forced by trying ~100 distinct subject ids.
 	salt string
 }
 
 // NewEvaluator wraps a Store. Passing nil yields an evaluator that
-// answers every question with the caller's default — useful for tests
+// answers every question with the caller's default, useful for tests
 // that don't want to wire a store but still call featureflag.Bool.
 func NewEvaluator(s Store) *Evaluator {
 	return &Evaluator{store: s}
@@ -124,7 +124,7 @@ func NewEvaluator(s Store) *Evaluator {
 // NewEvaluatorWithSalt wraps a Store with a process-private salt mixed
 // into the rollout bucket hash. Set this when the rollout cohort needs
 // to be unpredictable to attackers (kill switches whose evasion would
-// re-enable a payments flow, etc.) — without a salt, FNV-1a buckets
+// re-enable a payments flow, etc.). Without a salt, FNV-1a buckets
 // are deterministic from public flag keys.
 //
 // The salt is process-private by convention; rotating it shuffles
@@ -137,7 +137,7 @@ func NewEvaluatorWithSalt(s Store, salt string) *Evaluator {
 // Missing keys, storage errors, and disabled flags all return false.
 //
 // The context's user / tenant lists are checked first, then the rollout
-// percentage. The decision is stable across processes — same key +
+// percentage. The decision is stable across processes: same key +
 // same subject id always hashes the same way.
 func (e *Evaluator) Bool(ctx context.Context, key string) bool {
 	if e == nil || e.store == nil {
@@ -151,7 +151,7 @@ func (e *Evaluator) Bool(ctx context.Context, key string) bool {
 }
 
 // evaluate applies the rule chain to an already-loaded flag. It performs
-// no store access, so callers control exactly how many fetches happen —
+// no store access, so callers control exactly how many fetches happen;
 // Bool and BoolDefault both fetch once and hand the result here. Keeping
 // the decision logic store-free closes the TOCTOU double-read window and
 // lets BoolDefault honour its fail-closed contract.
@@ -160,7 +160,7 @@ func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
 		return false
 	}
 	ec := FromContext(ctx)
-	// Env gate runs first — a flag restricted to staging must not be
+	// Env gate runs first: a flag restricted to staging must not be
 	// reachable from production, even for explicitly allow-listed users.
 	if len(f.Envs) > 0 && !containsString(f.Envs, ec.Env) {
 		return false
@@ -178,7 +178,7 @@ func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
 		return true
 	}
 	// Anonymous subjects (no UserID or TenantID) hash to a single
-	// constant bucket per flag — so a "50% rollout" would be 100% or
+	// constant bucket per flag, so a "50% rollout" would be 100% or
 	// 0% of anonymous traffic depending on the key's hash. Force off
 	// at any partial rollout to avoid that silent footgun. Apps that
 	// want anonymous traffic in a rollout should derive a stable
@@ -207,7 +207,7 @@ func (e *Evaluator) BoolDefault(ctx context.Context, key string, fallback bool) 
 	}
 	// Single guarded fetch: evaluating the flag we already loaded avoids
 	// a second, independent store.Get inside Bool. That second read could
-	// error (transient DB blip) and make Bool return false — fail open —
+	// error (transient DB blip) and make Bool return false, failing open,
 	// or observe a changed definition (TOCTOU). One read here keeps the
 	// fallback authoritative whenever the store can't give a clean answer.
 	f, err := e.store.Get(ctx, key)
@@ -234,7 +234,7 @@ func subjectID(ec EvalContext) string {
 
 // bucket returns an integer in [0, 100) for the (salt, key, subject)
 // tuple. FNV-1a is good enough for distribution and far cheaper than
-// crypto hashes — when adversary resistance matters, supply a non-
+// crypto hashes. When adversary resistance matters, supply a non-
 // empty salt at evaluator construction.
 func bucket(salt, key, subject string) int {
 	h := fnv.New32a()
@@ -357,9 +357,9 @@ func (m *MemoryStore) Delete(key string) error {
 }
 
 // All returns a snapshot of every defined flag, suitable for /admin
-// listings. The result is a copy — mutations don't affect the store.
+// listings. The result is a copy. Mutations don't affect the store.
 //
-// SECURITY: the snapshot includes each flag's full definition — the
+// SECURITY: the snapshot includes each flag's full definition; the
 // Users and Tenants allow-lists carry raw subject ids / emails. That is
 // PII, and the list of who is inside a gated cohort is itself a signal.
 // Gate this behind admin auth before rendering it; do not hand the

@@ -99,7 +99,7 @@ func TestSQLInbound_ClearedDedupeKeyPersists(t *testing.T) {
 	_ = s.AddEnvelope(ctx, sampleEnvelope("e-9"))
 
 	// The ingest handler clears the dedupe key when an enqueue failure
-	// strands an envelope — the SQL store must persist that, or the
+	// strands an envelope, the SQL store must persist that, or the
 	// sender's redelivery stays dedupe-blocked forever.
 	up, _ := s.GetEnvelope(ctx, "e-9")
 	up.Status = InboundStatusFailed
@@ -201,7 +201,7 @@ func TestSQLInbound_UnsafeTableRejected(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	defer db.Close()
-	// SQL injection attempt via table name — safeIdent must reject it.
+	// SQL injection attempt via table name, safeIdent must reject it.
 	if _, err := NewSQLInboundStore(db, WithInboundTable("t; DROP TABLE x")); err == nil {
 		t.Errorf("expected error for unsafe table name")
 	}

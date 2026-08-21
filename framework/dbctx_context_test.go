@@ -25,7 +25,7 @@ func TestWithDBContextNilDBIsNoOp(t *testing.T) {
 }
 
 // TestWithDBContextRoundTrips verifies the positive path: a real *sql.DB
-// stamped in is retrievable downstream — the package-portable alternative to a
+// stamped in is retrievable downstream, the package-portable alternative to a
 // global handle.
 func TestWithDBContextRoundTrips(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -44,7 +44,7 @@ func TestWithDBContextRoundTrips(t *testing.T) {
 // TestAppDBContextMiddlewarePassThroughWithoutDB: an app built without WithDB
 // returns a pass-through middleware (the bare next handler, unwrapped) so a
 // request never carries a nil DB in context. This is the default-middleware
-// opt-out path — apps that wire their own chain still get a safe no-op.
+// opt-out path, apps that wire their own chain still get a safe no-op.
 func TestAppDBContextMiddlewarePassThroughWithoutDB(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware()) // no WithDB
 	called := false

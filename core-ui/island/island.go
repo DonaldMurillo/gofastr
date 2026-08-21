@@ -27,11 +27,11 @@ func NewIsland(id string, comp component.Component) *Island {
 // Render renders the island's component wrapped in a data-island attribute.
 // Output: <div data-island="{id}">{component.Render()}</div>
 //
-// A nil Component renders as an empty island shell rather than panicking
-// — the wrapper element still ships so client-side runtime hydration can
+// A nil Component renders as an empty island shell rather than panicking,
+// the wrapper element still ships so client-side runtime hydration can
 // find it. A Component whose Render() panics is recovered, logged, and
-// surfaced to the client as an empty shell. The alternative — letting
-// the panic propagate up the HTTP handler stack — would crash the
+// surfaced to the client as an empty shell. The alternative, letting
+// the panic propagate up the HTTP handler stack, would crash the
 // goroutine and serve a 500 for any sibling component on the same page.
 func (is *Island) Render() (out render.HTML) {
 	if is == nil {

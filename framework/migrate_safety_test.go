@@ -60,7 +60,7 @@ func TestAutoMigrate_Atomic(t *testing.T) {
 }
 
 // TestAutoMigrate_Cancellable asserts AutoMigrateContext honours a cancelled
-// context instead of charging ahead — important so a shutdown mid-boot doesn't
+// context instead of charging ahead, important so a shutdown mid-boot doesn't
 // hang on a stuck migration.
 func TestAutoMigrate_Cancellable(t *testing.T) {
 	db := openTestDB(t, DialectSQLite)

@@ -8,7 +8,7 @@ import (
 
 // TestNominifyEnvGating pins the env contract: prod wins by default,
 // dev opts out, manual overrides trump env detection. Subtests can't
-// share the sync.Once cache — exercise the underlying decision via the
+// share the sync.Once cache, exercise the underlying decision via the
 // helpers directly.
 func TestNominifyEnvGating(t *testing.T) {
 	t.Setenv("RUNTIME_NOMINIFY", "")
@@ -55,7 +55,7 @@ func TestRuntimeJS(t *testing.T) {
 	}
 	// Check essential features are present. Anchors must be either
 	// identifiers/string-literals (preserved verbatim by the minifier)
-	// or use whitespace patterns the minifier produces — bare `foo:bar`
+	// or use whitespace patterns the minifier produces, bare `foo:bar`
 	// (no space after `:`) rather than `foo: bar`.
 	checks := []string{
 		"__gofastr",
@@ -365,7 +365,7 @@ func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
 		}
 	}
 	// Ceiling near the current minified size (same shape as menu/cop),
-	// not a goal — tighten down if the module shrinks.
+	// not a goal, tighten down if the module shrinks.
 	if size := ModuleSize("networkretrybanner"); size > 4000 {
 		t.Errorf("networkretrybanner module is %d bytes — budget is 4000", size)
 	}
@@ -541,7 +541,7 @@ func TestRuntimeModuleNames(t *testing.T) {
 	if len(names) == 0 {
 		t.Fatal("no runtime modules embedded")
 	}
-	// Sorted invariant — the HTTP server relies on it for stable URLs.
+	// Sorted invariant, the HTTP server relies on it for stable URLs.
 	for i := 1; i < len(names); i++ {
 		if names[i-1] >= names[i] {
 			t.Errorf("ModuleNames() not sorted at index %d: %v", i, names)
@@ -565,7 +565,7 @@ func TestRuntimeModuleRejectsBadName(t *testing.T) {
 //     examples/site/TestE2E_AnchorDownloadSkipsSPA (synthesizes a
 //     real click and asserts gofastr:navigate never fired).
 //   - data-kiln-tool scoping is verified end-to-end by
-//     kiln/integration/TestBrowser_ButtonToolCallFires — the test renders
+//     kiln/integration/TestBrowser_ButtonToolCallFires, the test renders
 //     a real kiln-app page and a non-kiln page with the same delegator
 //     payload and asserts only the trusted one fires.
 //   - findCommonScreenGroup deepest-match is verified by
@@ -590,7 +590,7 @@ func TestScrollspyCSSEscapeHandlesLeadingDigit(t *testing.T) {
 	}
 }
 
-// TestRuntimeNavigateRejectsUnsafeSchemes — security: when the SPA
+// TestRuntimeNavigateRejectsUnsafeSchemes: security: when the SPA
 // navigator is handed an attacker-controlled URL (via signal-bound
 // href or a combobox option's data-fui-push-state), it must refuse
 // javascript:/vbscript:/non-image data: schemes BEFORE calling
@@ -608,7 +608,7 @@ func TestRuntimeNavigateRejectsUnsafeSchemes(t *testing.T) {
 	// The navigate() body MUST gate the target before pushState. That
 	// gate is now _originOK, which subsumes the old _isUnsafeSignalUrl
 	// call: a javascript: / data: URL resolves to a null origin, so
-	// refusing anything not same-origin refuses those too — and also
+	// refusing anything not same-origin refuses those too, and also
 	// refuses a cross-origin target the scheme check accepted. Scan
 	// within ~800 chars of the signature so we don't accept a guard
 	// living anywhere else on the page.
@@ -625,7 +625,7 @@ func TestRuntimeNavigateRejectsUnsafeSchemes(t *testing.T) {
 	}
 }
 
-// TestRuntimeDisclosureAndEscapeRunInBothBranches — a11y: the Escape-
+// TestRuntimeDisclosureAndEscapeRunInBothBranches: a11y: the Escape-
 // to-close handler for <details data-fui-disclosure> and the
 // aria-expanded mirror were previously only attached inside the
 // `document.readyState === 'loading'` branch. If runtime.js loaded
@@ -674,7 +674,7 @@ func TestRuntimeDisclosureAndEscapeRunInBothBranches(t *testing.T) {
 	}
 }
 
-// TestRuntimeDisclosureFocusTrapWiring — disclosures opting in via
+// TestRuntimeDisclosureFocusTrapWiring: disclosures opting in via
 // data-fui-disclosure-trap (mobile drawers, full-sheet popovers) must
 // gain a focus-trap via `inert` on body siblings, with both the
 // on-open and on-close branches so the trap is symmetric.
@@ -715,7 +715,7 @@ func TestRuntimeDemandInteractionBridgeIsGeneric(t *testing.T) {
 	}
 }
 
-// TestComboboxPickOptionHonorsPushState — selecting a combobox option
+// TestComboboxPickOptionHonorsPushState: selecting a combobox option
 // carrying data-fui-push-state must navigate. The previous behavior
 // only set input.value + fired change, which left CommandPalette
 // completely non-functional (user could open + type + select, but
@@ -845,13 +845,13 @@ func TestRuntimeReducedMotionFlashSkip(t *testing.T) {
 
 // Hover/focus prefetch delegator and idle-fallback scheduler are
 // verified behaviorally by:
-//   - examples/site/TestE2E_HoverPrefetchLoadsModule — synthesizes
+//   - examples/site/TestE2E_HoverPrefetchLoadsModule: synthesizes
 //     pointerover on a data-fui-prefetch element and asserts the
 //     monkey-patched loadModule fired exactly once with the right name.
-//   - examples/site/TestE2E_IdleFallbackUsesRIC — stubs
+//   - examples/site/TestE2E_IdleFallbackUsesRIC: stubs
 //     requestIdleCallback=undefined and asserts the setTimeout fallback
 //     still loads the queued module.
-//   - examples/site/TestE2E_RuntimeSplit_HoverPrefetch — covers the
+//   - examples/site/TestE2E_RuntimeSplit_HoverPrefetch: covers the
 //     full network fetch path (a code-split module really lands).
 
 // TestWidget_InjectSignalAria_TextModeOnly guards F15: _injectSignalAria
@@ -904,7 +904,7 @@ func TestWidget_InjectSignalAria_TextModeOnly(t *testing.T) {
 
 // TestCarousel_TimerTeardownOnNav guards F16a: the carousel setInterval
 // must be cleared on gofastr:navigate so auto-rotate doesn't leak across
-// SPA navigation. The nav handler must call stop/clearInterval — not just
+// SPA navigation. The nav handler must call stop/clearInterval, not just
 // re-scan for new carousels.
 func TestCarousel_TimerTeardownOnNav(t *testing.T) {
 	src, ok := Module("carousel")

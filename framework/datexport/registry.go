@@ -1,5 +1,5 @@
 // Package datexport is a process-wide registry of data-bearing tables that
-// live OUTSIDE the framework entity registry — the physical tables a battery
+// live OUTSIDE the framework entity registry, the physical tables a battery
 // (auth sessions, the job queue, …) or an app creates with raw DDL.
 //
 // The framework's data export/import (App.ExportData / App.ImportData) walks
@@ -7,7 +7,7 @@
 // data-bearing module registers its tables from init() (mirroring
 // framework/agentsinv): importing the module == including its tables.
 //
-// Entries are declarative — {Name, Table, PrimaryKey, Columns} — so the
+// Entries are declarative, {Name, Table, PrimaryKey, Columns}, so the
 // framework can centralize all raw read/write behind one SafeIdent-guarded
 // code path (see framework/export_data.go). A registered table that is absent
 // from the live DB at export time is skipped with a note; an unregistered raw
@@ -15,7 +15,7 @@
 //
 // The same registry also carries the right-to-be-forgotten plane: a battery
 // registers DataErasers (App.EraseUserData) so an erasure reaches the same
-// tables an export does. Erasers are declarative too — {Table, Column, Mode} —
+// tables an export does. Erasers are declarative too, {Table, Column, Mode},
 // and ride the same SafeIdent-guarded code path (see framework/erase_data.go).
 package datexport
 
@@ -61,7 +61,7 @@ const (
 )
 
 // IdentityKind selects which principal an eraser matches against. The default
-// (zero value, IdentityUserID) matches the erased user's id — the original
+// (zero value, IdentityUserID) matches the erased user's id, the original
 // behavior every existing registration relies on. A non-default identity is
 // resolved ONCE at erase time via a registered [DataIdentityResolver], and the
 // resolved value is bound for the eraser's Column instead of the user id.
@@ -84,7 +84,7 @@ const (
 )
 
 // DataEraser declares the right-to-be-forgotten behavior for one physical
-// table that lives outside the entity registry — the erase-plane mirror of
+// table that lives outside the entity registry, the erase-plane mirror of
 // DataExporter. The framework's App.EraseUserData walks both the entity
 // registry (owner-scoped entities) AND these registered erasers, so an
 // erasure reaches the same tables an export does.
@@ -102,7 +102,7 @@ const (
 //   - Tombstone (EraseAnonymize only) is the replacement written to every
 //     ScrubColumn. Empty defaults to "[erased]".
 //   - Identity selects which principal Column is matched against. The default
-//     (IdentityUserID, the zero value) matches the erased user's id — the
+//     (IdentityUserID, the zero value) matches the erased user's id, the
 //     original behavior. A non-default Identity (e.g. IdentityEmail) is
 //     resolved once at erase time through the matching DataIdentityResolver,
 //     and the resolved value is bound for Column instead of the user id.
@@ -118,7 +118,7 @@ type DataEraser struct {
 }
 
 // DataIdentityResolver declares how the framework resolves a non-user-id
-// identity at erase time — declaratively, so the framework stays the single
+// identity at erase time, declaratively, so the framework stays the single
 // place raw SQL is built (decision E3). The framework runs, ONCE per erasure
 // and BEFORE the write transaction opens,
 //
@@ -129,7 +129,7 @@ type DataEraser struct {
 // SQL; the erased user id is a $n bound argument.
 //
 // battery/auth registers IdentityEmail against auth_users (id → email) so the
-// magic-link token table — keyed by email, not user id — becomes reachable by
+// magic-link token table, keyed by email and not user id, becomes reachable by
 // App.EraseUserData. A resolver whose Table is absent at erase time, or whose
 // SELECT finds no row (the user row is already gone on an idempotent re-run),
 // means the identity cannot be resolved: erasers declaring it are SKIPPED with
@@ -277,7 +277,7 @@ func UnregisterIdentityResolver(kind IdentityKind) bool {
 }
 
 // ResolveIdentity looks up the resolver declared for kind. The second return
-// is false when no resolver is registered — App.EraseUserData treats an eraser
+// is false when no resolver is registered. App.EraseUserData treats an eraser
 // that declares such an identity as a FAIL-LOUD misconfiguration (the erasure
 // would be incomplete).
 func ResolveIdentity(kind IdentityKind) (DataIdentityResolver, bool) {

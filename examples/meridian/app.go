@@ -108,7 +108,7 @@ func marketingFooter() render.HTML {
 	})
 }
 
-// appIconPNG generates Meridian's app-icon source at startup — a diagonal
+// appIconPNG generates Meridian's app-icon source at startup, a diagonal
 // indigo→teal gradient in the brand's primary/secondary hues.
 // uihost.WithAppIcon derives /favicon.ico, the sized PNGs, and the head
 // links from this one image, so no binary icon assets live in the repo.
@@ -130,18 +130,18 @@ func appTheme() style.Theme {
 	theme.Colors.Background.Value = "#F8F7F4"
 	theme.Colors.Border.Value = "#E7E5DF"
 	theme.Colors.BorderStrong.Value = "#33334A"
-	theme.Colors.Danger.Value = "#B91C1C" // 5.2:1 on its 15% tinted chip — was #B42318 (fails AA on badges)
+	theme.Colors.Danger.Value = "#B91C1C" // 5.2:1 on its 15% tinted chip, was #B42318 (fails AA on badges)
 	theme.Colors.Info.Value = "#1D4ED8"
 	theme.Colors.Primary.Value = "#4338CA"
 	theme.Colors.PrimaryFg.Value = "#FFFFFF"
 	theme.Colors.Secondary.Value = "#0E7C86"
-	theme.Colors.Success.Value = "#166534" // 5.6:1 on its 15% tinted chip — was #15803D (4.10:1, fails AA on badges)
+	theme.Colors.Success.Value = "#166534" // 5.6:1 on its 15% tinted chip, was #15803D (4.10:1, fails AA on badges)
 	theme.Colors.Surface.Value = "#FFFFFF"
 	theme.Colors.SurfaceSoft.Value = "#F2F1EC"
 	theme.Colors.Text.Value = "#1B1B2A"
 	theme.Colors.TextMuted.Value = "#65657A"
-	theme.Colors.TextSubtle.Value = "#6A6A72" // 4.7:1 on surface-soft — was #9A9AAB (2.3:1, fails AA on eyebrows/footer titles)
-	theme.Colors.Warning.Value = "#854D0E"    // 5.4:1 on its 15% tinted chip — was #B45309 (fails AA on badges)
+	theme.Colors.TextSubtle.Value = "#6A6A72" // 4.7:1 on surface-soft, was #9A9AAB (2.3:1, fails AA on eyebrows/footer titles)
+	theme.Colors.Warning.Value = "#854D0E"    // 5.4:1 on its 15% tinted chip, was #B45309 (fails AA on badges)
 	theme.Fonts.Body.Value = "'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 	theme.Fonts.Heading.Value = "'Bricolage Grotesque', 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 	theme.DarkColors = map[string]string{
@@ -159,13 +159,13 @@ func appTheme() style.Theme {
 		"surface-soft":  "#29262F",
 		"text":          "#ECEAF3",
 		"text-muted":    "#A29FB0",
-		"text-subtle":   "#9498AC", // 5.9:1 on dark surface — was #726F80 (3.8:1, fails AA on eyebrows/footer)
+		"text-subtle":   "#9498AC", // 5.9:1 on dark surface, was #726F80 (3.8:1, fails AA on eyebrows/footer)
 		"warning":       "#FBBF24",
 	}
 	return theme
 }
 
-// inkTheme is the app palette inverted to its dark values — registered as
+// inkTheme is the app palette inverted to its dark values, registered as
 // a section-level theme override (ui.Themed) so a marketing band renders
 // as dark "ink" in BOTH color schemes. The override re-declares every
 // token under a .fui-theme-<hash> class in app.css; components inside the
@@ -210,14 +210,14 @@ func customersList() ResourceConfig {
 		WithLimit(8).
 		WithCreate().
 		WithHeading("Customers").
-		WithEmpty("No customers yet — add your first to get started.").
+		WithEmpty("No customers yet. Add your first to get started.").
 		WithIsland("/api/tables/customers").WithIslandPolicy(authPolicy("/login", "")).
 		WithActions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Quick add", Variant: ui.ButtonSecondary}), "customer-quick-add"))
 }
 
 // quickAddCustomerModal is a plain preset.Modal: the centered slot paints
 // the default panel surface (background, border, radius, padding), so the
-// body ships zero chrome of its own — just a heading and a ui.Form. The
+// body ships zero chrome of its own, just a heading and a ui.Form. The
 // form RPCs the auto-CRUD endpoint; on success it closes the modal, resets
 // the fields, and SPA-navigates to the list so the new row appears.
 func quickAddCustomerModal() widget.Definition {
@@ -249,7 +249,7 @@ var fontFaceCSS = style.FontFaceCSS("",
 // Takes a context because the footer's auth action depends on the live
 // session: built once at registration, every visitor got a "Sign out" button
 // whether or not anyone was signed in. Same shape the blueprint generator
-// emits — meridian is hand-maintained, so it does not inherit that fix.
+// emits, meridian is hand-maintained, so it does not inherit that fix.
 func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 	cfg := ui.SidebarConfig{Title: "Meridian", Items: []ui.SidebarItem{
 		{Label: "Overview", Href: "/app"},
@@ -313,7 +313,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	// screen hit this and the runtime swaps just the table island.
 	fwApp.Router().HandleFunc("GET", "/api/tables/customers", customersList().TableHandler())
 	{
-		// WARNING: auth runs in DEV MODE — HTTP-friendly cookies (no
+		// WARNING: auth runs in DEV MODE: HTTP-friendly cookies (no
 		// Secure flag, plain session_id name) and a per-process JWT
 		// secret minted at startup. Do NOT deploy like this: set
 		// `dev_mode: false` and `jwt_secret` under app.auth in the
@@ -324,7 +324,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authMgr := auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
 		// Scoped API tokens (PATs): logged-in users mint them at
-		// POST /auth/tokens (session-only — a leaked token can't mint
+		// POST /auth/tokens (session-only, a leaked token can't mint
 		// siblings) and the generated CLI under cli/ sends them as
 		// Authorization: Bearer gfsk_… on every request.
 		apiTokens, err := auth.NewSQLAPITokenStore(db)
@@ -341,7 +341,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// Bootstrap admin account so the back-office is reachable on a
 		// fresh database. Created only when absent (idempotent). The
 		// password comes from ADMIN_SEED_PASSWORD (see the generated
-		// .env — gitignored, so a deploy must export the variable
+		// .env, gitignored, so a deploy must export the variable
 		// itself), never from committed source; without it no admin
 		// is seeded and the skip is logged loudly.
 		if seedPw := os.Getenv("ADMIN_SEED_PASSWORD"); seedPw != "" {
@@ -351,7 +351,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 				}
 			}
 		} else {
-			log.Printf("WARN: ADMIN_SEED_PASSWORD is not set — admin %q was NOT seeded; on a fresh database the back-office login will fail", "admin@meridian.dev")
+			log.Printf("WARN: ADMIN_SEED_PASSWORD is not set: admin %q was NOT seeded; on a fresh database the back-office login will fail", "admin@meridian.dev")
 		}
 		// Resolve the session cookie to a user on every request so
 		// owner/access-scoped CRUD sees the logged-in user. Without
@@ -361,7 +361,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// TokenMiddleware rides alongside: it only touches
 		// Authorization: Bearer gfsk_… credentials, so session and JWT
 		// requests pass through untouched. RequireAPIScopes then makes
-		// the minted scopes real — a ["customers:*"] token is 403'd off
+		// the minted scopes real, a ["customers:*"] token is 403'd off
 		// every other /api resource; sessions stay unscoped.
 		fwApp.Use(auth.TokenMiddleware(authCfg.UserStore, serviceAccounts, apiTokens))
 		fwApp.Use(auth.RequireAPIScopes("/api"))
@@ -376,10 +376,10 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// auth.CSRF is intentionally NOT mounted: this generated surface
 		// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s
 		// any unsafe-method request that doesn't echo the csrf cookie as
-		// an X-CSRF-Token header — which plain JSON/MCP clients don't.
+		// an X-CSRF-Token header, which plain JSON/MCP clients don't.
 		// Session cookies are SameSite=Strict, so cross-site form posts
 		// don't carry the session in modern browsers. If you add browser
-		// HTML forms, mount auth.CSRF — see `gofastr docs blueprints`
+		// HTML forms, mount auth.CSRF. See `gofastr docs blueprints`
 		// (Auth section) and `gofastr docs auth`.
 	}
 	_ = routerMounter{}

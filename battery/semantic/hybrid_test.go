@@ -8,7 +8,7 @@ import (
 )
 
 func TestHybridFallsBackWithoutKeyword(t *testing.T) {
-	// Hybrid=true with no KeywordBackend configured must still work —
+	// Hybrid=true with no KeywordBackend configured must still work,
 	// it silently degrades to vector-only.
 	ctx := context.Background()
 	idx, _ := Open(Options{Embedder: NewStubEmbedder(64)})
@@ -92,7 +92,7 @@ func TestMMRReducesNearDuplicates(t *testing.T) {
 	if !hasCache(mmrd) {
 		t.Fatalf("MMR didn't surface diverse content: %+v", mmrd)
 	}
-	// Loose assertion on plain — not asserting it omits caching docs,
+	// Loose assertion on plain, not asserting it omits caching docs,
 	// just confirming MMR's reason is propagated.
 	for _, h := range mmrd {
 		if h.Reason != "mmr" {
@@ -113,7 +113,7 @@ func TestRerankWithoutProviderErrors(t *testing.T) {
 
 type lengthReranker struct{}
 
-// Rerank scores by chunk text length descending — a deterministic stub
+// Rerank scores by chunk text length descending, a deterministic stub
 // useful only for verifying the reranker gets called and its output is
 // honored.
 func (lengthReranker) Rerank(_ context.Context, _ string, hits []Hit) ([]Hit, error) {

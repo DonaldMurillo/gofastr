@@ -2,7 +2,7 @@
 // rewrites them so they can never fire, or always fire.
 //
 // It exists because of a failure this repository kept repeating: a test that
-// names a guard, passes, and proves nothing — because the fixture it uses
+// names a guard, passes, and proves nothing, because the fixture it uses
 // satisfies TWO refusal conditions at once, so removing either one alone
 // leaves the test green. Seven such tests were found by hand across one
 // review cycle. No static check can see it: whether a fixture reaches a
@@ -16,7 +16,7 @@
 //	if cond {          →  if (cond) || true {      // guard always fires
 //
 // Every identifier in the condition is still referenced, so no local goes
-// unused and no import is orphaned — the mutated file compiles whenever the
+// unused and no import is orphaned; the mutated file compiles whenever the
 // original did. Hand-written mutations failed this way twice during the review
 // that motivated this tool, and a mutation that fails to compile (or fails to
 // apply) is indistinguishable from one the tests did not catch: both end the
@@ -40,7 +40,7 @@ const (
 	Never Kind = "never"
 	// Always makes the condition true: the guard refuses everything. A
 	// surviving Always mutant means no test proves the guard PERMITS
-	// anything — the missing allow-arm that lets a too-tight gate ship.
+	// anything, the missing allow-arm that lets a too-tight gate ship.
 	Always Kind = "always"
 )
 
@@ -82,7 +82,7 @@ func Find(file string, src []byte, opts Options) ([]Guard, error) {
 			return true
 		}
 		// The offsets come from parsing THIS src, so they are always inside it
-		// and always non-empty — a valid IfStmt cannot have an empty
+		// and always non-empty: a valid IfStmt cannot have an empty
 		// condition. A bounds check here would be unreachable, which this tool
 		// pointed out when run on itself. Apply() does check, because it can be
 		// handed a Guard measured against different source.
@@ -122,7 +122,7 @@ func isErrNil(cond ast.Expr) bool {
 }
 
 // Apply returns src with g's condition rewritten. The result is guaranteed to
-// differ from src — callers should verify that, because a mutation that did
+// differ from src; callers should verify that, because a mutation that did
 // not land looks exactly like one the tests failed to catch.
 func Apply(src []byte, g Guard) ([]byte, error) {
 	if g.end > len(src) || g.start >= g.end {

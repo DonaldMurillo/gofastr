@@ -5,8 +5,8 @@ package admin
 // RPC, no reload), delete is a `data-fui-confirm` + `data-fui-rpc` button, and
 // forms are server-rendered. Every read/write is an in-process call into the
 // entity's OWN CrudHandler with the caller's context forwarded, so validation,
-// owner/tenant scoping, hooks, and events all apply exactly as on the JSON API
-// — the admin never re-implements CRUD/pagination/filter logic.
+// owner/tenant scoping, hooks, and events all apply exactly as on the JSON API.
+// The admin never re-implements CRUD/pagination/filter logic.
 
 import (
 	"context"
@@ -39,7 +39,7 @@ import (
 // RPC/form/delete endpoints register on the framework router (gated by gate()).
 //
 // When no entities are exposable it is a no-op. When entities ARE requested but
-// no UI host is mounted it errors — the entity admin cannot work without one.
+// no UI host is mounted it errors, the entity admin cannot work without one.
 func (b *Battery) registerEntityAdmin() error {
 	if b.registry == nil || b.db == nil {
 		return nil
@@ -62,7 +62,7 @@ func (b *Battery) registerEntityAdmin() error {
 	// sticky nav rail of entity links) and gated by the policy chain so the
 	// host's render pipeline refuses unauthorized callers before Load runs.
 	// Standalone: the admin ships its OWN full shell, so the host App's default
-	// layout (often the app's own sidebar) must NOT wrap it — otherwise the
+	// layout (often the app's own sidebar) must NOT wrap it, otherwise the
 	// back-office renders a double sidebar.
 	layout := appui.NewLayout("admin").WithSidebar(b.adminSidebar(ents))
 	group := appui.NewScreenGroup(b.cfg.PathPrefix+"/e", layout, b.gatePolicy()).Standalone()
@@ -73,15 +73,15 @@ func (b *Battery) registerEntityAdmin() error {
 	b.screens.Router.ScreenGroup(group)
 
 	// Mount the mobile nav drawer ONCE (the framework's proven responsive-nav
-	// pattern — the same one the docs/components site uses): on < 900px the
+	// pattern, the same one the docs/components site uses): on < 900px the
 	// SectionMenu shows a trigger button that opens this slide-in sheet
-	// (backdrop, click-outside / Esc close, focus trap, scroll lock — all from
+	// (backdrop, click-outside / Esc close, focus trap, scroll lock, all from
 	// preset.Drawer, none re-implemented). On ≥ 900px it's a sticky rail.
 	widget.MountBuilder(b.router, interactive.SectionMenuDrawer(b.navConfig(ents)))
 	return nil
 }
 
-// adminSidebar builds the admin nav as an interactive.SectionMenu — a sticky
+// adminSidebar builds the admin nav as an interactive.SectionMenu, a sticky
 // rail on desktop, a mounted slide-in drawer on mobile. Theme-tokenized, so it
 // reads as part of the host app, not a bolted-on tool.
 func (b *Battery) adminSidebar(ents []*entity.Entity) component.Component {
@@ -152,7 +152,7 @@ func (b *Battery) registerEntityScreens(group *appui.ScreenGroup, ent *entity.En
 func (b *Battery) registerEntityRoutes(ent *entity.Entity) {
 	base := b.entityBase(ent)
 	// Mutation endpoints live on underscore paths distinct from the GET screen
-	// paths (/new, /edit/{id}) — a Go ServeMux pattern that matches a path on
+	// paths (/new, /edit/{id}), a Go ServeMux pattern that matches a path on
 	// the wrong method returns 405, which would otherwise shadow the screens
 	// served by the host's catch-all.
 	b.router.Get(base+"/_rows", b.gate(b.entityRows(ent)))
@@ -229,12 +229,12 @@ func (b *Battery) crudFor(ent *entity.Entity) (*crud.CrudHandler, error) {
 	// Start from App's canonical handler so audit/lifecycle hooks, events,
 	// storage, outbox, and registry wiring match the public JSON routes. A
 	// fresh crud.NewCrudHandler has Hooks=nil and silently bypasses all of it.
-	// CrudHandlerForEntity takes the entity directly — avoids the name-based
+	// CrudHandlerForEntity takes the entity directly, avoids the name-based
 	// Registry.Get lookup that fails for multi-version entities.
 	ch, err := b.app.CrudHandlerForEntity(ent)
 	if err != nil {
 		// A wiring failure (no DB, entity not the registered instance) is
-		// DETERMINISTIC — it fails the same way every request. Panicking per
+		// DETERMINISTIC, it fails the same way every request. Panicking per
 		// request (the old behaviour) just hands the noise to Recovery and
 		// logs a stack trace on every hit. Return the error and let each call
 		// site render its normal failure shape.
@@ -351,7 +351,7 @@ func listColumns(ent *entity.Entity) []string {
 	cols := []string{"id"}
 	for _, f := range ent.GetFields() {
 		// Skip the id (prepended), hidden fields, and the framework-managed
-		// timestamp columns — they clutter the grid and are rarely the thing
+		// timestamp columns, they clutter the grid and are rarely the thing
 		// you scan a list for.
 		if f.Hidden || f.Name == "id" || isTimestampCol(f.Name) {
 			continue
@@ -363,7 +363,7 @@ func listColumns(ent *entity.Entity) []string {
 
 // sortableColumns is listColumns minus the NoQuery fields. A NoQuery column
 // is shown in the grid (it is in the response, just masked) but the filter
-// parser rejects ?sort= on it with a 400 — so rendering its header as
+// parser rejects ?sort= on it with a 400, so rendering its header as
 // sortable would hand the user a link that breaks the whole list page.
 func sortableColumns(ent *entity.Entity) []string {
 	noQuery := noQueryColumns(ent)
@@ -398,8 +398,8 @@ func (b *Battery) listRows(ctx context.Context, ent *entity.Entity, query string
 	if err != nil {
 		return nil, 0, err
 	}
-	// Screen renders bypass b.gate, so inject the admin superuser policy here too
-	// — the admin reads every entity it manages, regardless of per-entity access RBAC.
+	// Screen renders bypass b.gate, so inject the admin superuser policy here too.
+	// The admin reads every entity it manages, regardless of per-entity access RBAC.
 	code, raw := callCrudCtx(adminSuperuserCtx(ctx), ch.List(), http.MethodGet, query, "", "")
 	if code != http.StatusOK {
 		return nil, 0, fmt.Errorf("list returned %d", code)
@@ -443,7 +443,7 @@ func (b *Battery) getRow(ctx context.Context, ent *entity.Entity, id string) (ma
 // Two failures meet on this form and only one fix clears both. Prefilling from
 // a hooked read (what the detail screen does) writes the MASK back over the
 // stored column, because the form posts every input on submit. Prefilling from
-// a raw read shows an admin a value the API masks — the disclosure this
+// a raw read shows an admin a value the API masks, the disclosure this
 // release exists to close, aimed at the one reader who can see every row.
 //
 // So: read twice, diff, and treat the columns that differ as write-only. The
@@ -504,7 +504,7 @@ func (b *Battery) maskedFields(ctx context.Context, ent *entity.Entity, id strin
 		// Diff the rows AFTER adminResponseRow, so the keys are the schema
 		// names editableFields yields. GetOne returns JSON casing, and keying
 		// this set on `cardNumber` while the form looks up `card_number` would
-		// mark nothing masked on exactly the multi-word columns — invisible in
+		// mark nothing masked on exactly the multi-word columns, invisible in
 		// any single-word test.
 		hookedRow := adminResponseRow(hooked, keys)
 		for k, v := range rawRow {
@@ -610,7 +610,7 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 }
 
 // entityDelete handles the DELETE RPC fired by the confirm button. It deletes
-// then returns the refreshed table fragment (200) — the delete button binds the
+// then returns the refreshed table fragment (200), the delete button binds the
 // list's island signal, so the runtime swaps the response in place. Returning
 // the fragment unconditionally (rather than a non-2xx on a scope miss) keeps the
 // signal value valid HTML; a row the caller can't delete simply isn't in their
@@ -625,10 +625,10 @@ func (b *Battery) entityDelete(ent *entity.Entity) http.HandlerFunc {
 		code, _ := callCrud(r, ch.Delete(), http.MethodDelete, "", r.PathValue("id"), "")
 		// The island-swap contract forces an HTML response (the runtime swaps
 		// whatever this returns into the list's signal node), so a failed
-		// delete can't become a non-2xx — that would blank the grid. But the
+		// delete can't become a non-2xx, that would blank the grid. But the
 		// result must not be discarded either: a genuine server error (5xx) is
 		// logged so it can't vanish silently. A 4xx (scope miss / not found)
-		// is the documented benign case — the row is simply absent from the
+		// is the documented benign case, the row is simply absent from the
 		// caller's re-rendered list.
 		if code >= http.StatusInternalServerError {
 			b.logger().Error("admin: delete failed",
@@ -665,7 +665,7 @@ func formToJSON(ent *entity.Entity, r *http.Request, masked map[string]bool) (st
 		raw := strings.TrimSpace(r.PostForm.Get(f.Name))
 		// A masked column renders empty and is write-only: blank means "leave
 		// the stored value alone". This has to run BEFORE the type switch,
-		// because schema.Bool emits unconditionally — an unchecked box is
+		// because schema.Bool emits unconditionally, an unchecked box is
 		// indistinguishable from an absent one, so a masked bool was written
 		// back as false on every save, silently flipping exactly the
 		// is_admin / is_active columns an app is most likely to mask.

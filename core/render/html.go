@@ -50,10 +50,10 @@ func Raw(s string) HTML {
 //
 // The key is validated against a strict allow-list (ASCII letters,
 // digits, `-`, `_`, `:`). Keys containing whitespace would let a
-// caller smuggle a second attribute — e.g. `src onerror` becomes a
+// caller smuggle a second attribute, e.g. `src onerror` becomes a
 // fresh `onerror=` attribute when concatenated into a tag. Keys
 // beginning with `on` (case-insensitive) are inline event handlers
-// and are never legitimately constructed via this builder — a host
+// and are never legitimately constructed via this builder. A host
 // that needs one should be writing handlers in runtime.js, not
 // injecting JS into the HTML. Both cases return the empty string so
 // the attribute is dropped from any tag that includes it.
@@ -68,8 +68,8 @@ func Attr(key, value string) string {
 // attribute name AND is not an inline event-handler (`on*`). The
 // allow-list mirrors the HTML5 attribute-name grammar restricted to
 // the characters that practically appear in this framework's UI
-// code (ASCII letters, digits, `-`, `_`, `:`). Anything else —
-// whitespace, quotes, slashes, control bytes — is rejected because
+// code (ASCII letters, digits, `-`, `_`, `:`). Anything else,
+// whitespace, quotes, slashes, control bytes, is rejected because
 // the only reason it would appear is an attempted breakout.
 func isSafeAttrKey(key string) bool {
 	if key == "" {
@@ -103,9 +103,9 @@ func isSafeAttrKey(key string) bool {
 //
 // The tag name is validated against a strict allow-list (ASCII letters,
 // digits and `-`). A name containing whitespace or other characters
-// would otherwise let a caller smuggle attributes — e.g. a name of
-// `div onclick="alert(1)"` would render as `<div onclick="alert(1)">`
-// — so any invalid name is replaced with a neutral `span`.
+// would otherwise let a caller smuggle attributes, e.g. a name of
+// `div onclick="alert(1)"` would render as `<div onclick="alert(1)">`,
+// so any invalid name is replaced with a neutral `span`.
 func Tag(name string, attrs map[string]string, children ...HTML) HTML {
 	safeName := safeTagName(name)
 	var b strings.Builder
@@ -127,7 +127,7 @@ func Tag(name string, attrs map[string]string, children ...HTML) HTML {
 
 // VoidTag builds a self-closing HTML element (e.g. <img>, <br>, <hr>,
 // <input>, <meta>, <link>). The tag is rendered without a closing tag.
-// The tag name is validated like Tag — see that doc for rationale.
+// The tag name is validated like Tag. See that doc for rationale.
 func VoidTag(name string, attrs map[string]string) HTML {
 	safeName := safeTagName(name)
 	var b strings.Builder
@@ -141,7 +141,7 @@ func VoidTag(name string, attrs map[string]string) HTML {
 
 // safeTagName returns name if it is a syntactically valid HTML tag name
 // (first char ASCII letter, remaining chars ASCII letters/digits/-).
-// Any other input — empty, whitespace-bearing, attribute-smuggling —
+// Any other input, empty, whitespace-bearing, attribute-smuggling,
 // is collapsed to "span", which is a neutral inline tag that can't
 // execute scripts or open a layout hole.
 func safeTagName(name string) string {
@@ -184,7 +184,7 @@ func Join(children ...HTML) HTML {
 //	    If(user.Admin, adminBadge()),
 //	)
 //
-// Both arguments evaluate eagerly — Go has no lazy semantics here. When
+// Both arguments evaluate eagerly. Go has no lazy semantics here. When
 // the truthy branch is expensive (database query, heavy allocation),
 // use [When] instead so the function only runs when cond is true.
 func If(cond bool, html HTML) HTML {
@@ -195,7 +195,7 @@ func If(cond bool, html HTML) HTML {
 }
 
 // When returns fn() when cond is true, otherwise an empty fragment.
-// Lazy variant of [If] that avoids constructing html when cond is false —
+// Lazy variant of [If] that avoids constructing html when cond is false,
 // preferred when the truthy branch is expensive.
 func When(cond bool, fn func() HTML) HTML {
 	if cond {

@@ -32,7 +32,7 @@ func pageOverflowHandler(t *testing.T) *CrudHandler {
 // POSITIVE wrong value: (2^62+1)*4 = 2^64+4 → 4. The request then
 // silently serves the page-2 window while labelling it page 2^62+2.
 // (The MaxInt64 flavor wraps NEGATIVE: SQLite treats a negative OFFSET
-// as 0 — masking the bug — while Postgres rejects it, turning the
+// as 0, masking the bug, while Postgres rejects it, turning the
 // request into a 500.)
 const hugePageWrapPositive = 4611686018427387906 // 2^62 + 2, wraps ×4
 

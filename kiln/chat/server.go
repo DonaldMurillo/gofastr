@@ -27,7 +27,7 @@ var hostHTML string
 
 // WidgetTag returns the script tag to embed the floating panel on a
 // page. Delegates to widget.RuntimeTag so the URL gets a content-hash
-// cache-bust query param — fresh build invalidates any cached runtime
+// cache-bust query param, fresh build invalidates any cached runtime
 // in the browser.
 func WidgetTag() string { return widget.RuntimeTag() }
 
@@ -54,7 +54,7 @@ func New(l *live.Live, t *protocol.Tools) *Server {
 //   - ops whose own kind already journals the meaningful state
 //     (chat, propose_plan, approve_plan, reject_plan)
 //   - meta-ops that mutate the journal itself (undo, reset_session)
-//     since wrapping them in a journal entry would be incoherent —
+//     since wrapping them in a journal entry would be incoherent,
 //     the wrapping entry races with the truncate they perform.
 var journaledTools = map[string]bool{
 	"set_app_config":      true,
@@ -76,7 +76,7 @@ var journaledTools = map[string]bool{
 }
 
 // Mount registers the panel routes onto r. The host fallback page is
-// NOT mounted here — kiln/render installs it as the rebuilt app's
+// NOT mounted here, kiln/render installs it as the rebuilt app's
 // NotFound handler so every URL not otherwise claimed shows the widget.
 func (s *Server) Mount(r *router.Router) {
 	r.Get("/kiln/chat/widget.css", http.HandlerFunc(s.serveWidgetCSS))
@@ -111,7 +111,7 @@ func HostHTML() string {
 
 // HostHTMLForRequest is HostHTML with __KILN_BASE__ substituted from
 // the actual incoming request's scheme + host. Lead text stays the
-// empty-world message — for world-aware lead use HostHTMLForLive.
+// empty-world message, for world-aware lead use HostHTMLForLive.
 func HostHTMLForRequest(r *http.Request) string {
 	return strings.NewReplacer(
 		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag()+`<script src="/.kiln/reload.js"></script>`,
@@ -126,7 +126,7 @@ func HostHTMLForRequest(r *http.Request) string {
 // what the agent has built without opening the panel.
 func HostHTMLForLive(l *live.Live) func(*http.Request) string {
 	return func(r *http.Request) string {
-		// leadForWorld reads sess.World (maps) — compute under the read
+		// leadForWorld reads sess.World (maps), compute under the read
 		// lock; only the rendered lead string escapes.
 		var lead string
 		l.ReadSession(func(sess *journal.Session) { lead = leadForWorld(sess.World) })
@@ -172,7 +172,7 @@ func leadForWorld(w *world.World) string {
 // string that gets substituted into the page. r.Host is safe by
 // comparison because the listener pins it (see rebind_security_test.go).
 //
-// The result is still escaped at the substitution site — the value lands
+// The result is still escaped at the substitution site, the value lands
 // in HTML, and this function should not be the only thing standing
 // between a header and the document.
 func baseFromRequest(r *http.Request) string {
@@ -197,7 +197,7 @@ func (s *Server) serveBaseCSS(w http.ResponseWriter, _ *http.Request) {
 
 // serveThemeCSS returns the kiln page theme stylesheet at /kiln/theme.css.
 // The CSS is built by core-ui/widget/theme.PageCSS over a Theme that
-// merges world.App.Theme overrides on top of the framework default —
+// merges world.App.Theme overrides on top of the framework default,
 // so a set_theme tool call re-skins every page without rewriting any
 // rule, and the same theme is reusable from any other host that
 // imports core-ui/widget/theme.
@@ -236,7 +236,7 @@ func (s *Server) serveThemeCSS(w http.ResponseWriter, _ *http.Request) {
 // Available fields: counts, last_user, last_assistant, pending_plans,
 // recent, world, plans, chat, app.
 func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
-	// Parse field selector. No session access here — keep it outside
+	// Parse field selector. No session access here, keep it outside
 	// the read lock so we hold the lock only for the session reads +
 	// the JSON marshal below.
 	want := map[string]bool{}
@@ -362,7 +362,7 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 	// slice, the sess.Plans map). Marshal to a buffer inside the read
 	// lock so a concurrent Live.Apply can't mutate the data mid-encode;
 	// write the bytes afterward. Pretty-printed for browser visitors so
-	// the IR is human-readable in a tab — the shape is identical, so
+	// the IR is human-readable in a tab, the shape is identical, so
 	// automated callers parsing JSON don't care about whitespace.
 	var buf bytes.Buffer
 	s.live.ReadSession(func(sess *journal.Session) {
@@ -462,7 +462,7 @@ func (s *Server) nextCallID() string {
 
 // applyEntry builds a journal Entry for the given kind/payload and feeds
 // it through the live mutator. The chat server uses this only for
-// envelope kinds (KindToolCall, KindToolResult) — the underlying tool
+// envelope kinds (KindToolCall, KindToolResult), the underlying tool
 // dispatch journals world_edit / plan_* entries through protocol.Tools.
 func (s *Server) applyEntry(kind journal.Kind, payload any) error {
 	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddInt64(&s.callCounter, 1))

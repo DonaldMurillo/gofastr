@@ -12,7 +12,7 @@ import (
 //
 // Styled wrapper around <input type="time">. Browser handles the
 // native time UI; we own the label, the 44px touch-target, and the
-// focus ring. Twin of ColorPicker — both wrap a native picker.
+// focus ring. Twin of ColorPicker, both wrap a native picker.
 
 // TimePickerConfig configures a TimePicker.
 type TimePickerConfig struct {

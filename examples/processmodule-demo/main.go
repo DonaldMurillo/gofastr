@@ -116,7 +116,7 @@ func envString(key, def string) string {
 // reverse host.entity.query calls. The peer's built-in module.cancel handler
 // is NOT overwritten here.
 func registerHandlers(peer *moduleproto.Peer) error {
-	// module.handshake — this IS the initialize (design §4.7 step 3). Echo the
+	// module.handshake: this IS the initialize (design §4.7 step 3). Echo the
 	// host's expected identity + surface digest exactly; a divergence is a
 	// terminal integrity fault on the host side.
 	if err := peer.Handle(moduleproto.MethodHandshake, func(_ context.Context, params json.RawMessage) (any, error) {
@@ -137,7 +137,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		return err
 	}
 
-	// module.ready — the warmup gate. The optional delay widens the
+	// module.ready: the warmup gate. The optional delay widens the
 	// enabled-but-not-Ready → 503 window so a test can observe it reliably.
 	if err := peer.Handle(moduleproto.MethodReady, func(context.Context, json.RawMessage) (any, error) {
 		if cfg.readyDelayMs > 0 {
@@ -148,14 +148,14 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		return err
 	}
 
-	// module.health — ongoing liveness ping.
+	// module.health, ongoing liveness ping.
 	if err := peer.Handle(moduleproto.MethodHealth, func(context.Context, json.RawMessage) (any, error) {
 		return moduleproto.HealthResult{OK: true, Inflight: 0}, nil
 	}); err != nil {
 		return err
 	}
 
-	// module.http — the proxied HTTP surface. DEMO_CRASH_ON matches a RouteID
+	// module.http: the proxied HTTP surface. DEMO_CRASH_ON matches a RouteID
 	// and os.Exit(1)s mid-call so the host observes an in-flight crash (the
 	// buffered-503 guarantee, design §8).
 	if err := peer.Handle(moduleproto.MethodHTTP, func(ctx context.Context, params json.RawMessage) (any, error) {
@@ -180,7 +180,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 				},
 			}, nil
 		case "tree":
-			// Same tree, json body kind — the proxy passes json through, so a
+			// Same tree, json body kind, the proxy passes json through, so a
 			// test can run the closed ui.node.v1 validator over the exact
 			// bytes the child would have rendered.
 			return moduleproto.HTTPResponseResult{
@@ -219,14 +219,14 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		return err
 	}
 
-	// module.drain — finish in-flight, report zero.
+	// module.drain: finish in-flight, report zero.
 	if err := peer.Handle(moduleproto.MethodDrain, func(context.Context, json.RawMessage) (any, error) {
 		return moduleproto.DrainResult{Inflight: 0}, nil
 	}); err != nil {
 		return err
 	}
 
-	// module.tool.list — the optional MCP tool surface. Byte-equality with
+	// module.tool.list: the optional MCP tool surface. Byte-equality with
 	// the descriptor digests is enforced by the host at handshake; the
 	// DEMO_EXTRA_TOOL knob adds an unapproved tool so that quarantine fires.
 	if err := peer.Handle(moduleproto.MethodToolList, func(context.Context, json.RawMessage) (any, error) {
@@ -235,7 +235,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 			tools = append(tools, moduleproto.Tool{
 				ID:          "rogue",
 				Name:        "module.demo.rogue",
-				Description: "not in the descriptor — must be rejected",
+				Description: "not in the descriptor; must be rejected",
 				InputSchema: json.RawMessage(`{"type":"object"}`),
 			})
 		}
@@ -244,7 +244,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		return err
 	}
 
-	// module.tool.call — invoke one tool. The ping tool makes a reverse
+	// module.tool.call: invoke one tool. The ping tool makes a reverse
 	// host.entity.query (proving the tool → broker path) and returns the row
 	// count as its result.
 	if err := peer.Handle(moduleproto.MethodToolCall, func(ctx context.Context, params json.RawMessage) (any, error) {

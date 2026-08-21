@@ -1,9 +1,9 @@
 package imagefield_test
 
 // End-to-end: a multipart POST through the real CRUD handler, with the real
-// image pipeline wired in. This is the only test that proves the whole claim
-// — "declaring a schema.Image field is what makes uploads produce renditions
-// and a BlurHash" — because it is the only one that exercises the upload
+// image pipeline wired in. This is the only test that proves the whole claim:
+// "declaring a schema.Image field is what makes uploads produce renditions
+// and a BlurHash", because it is the only one that exercises the upload
 // handler, the deriver, storage, and the sibling-column write together.
 //
 // crud is imported by the test binary only, so this does not add a
@@ -33,7 +33,7 @@ import (
 )
 
 // productsDDL declares the image column plus two of the three optional
-// sibling columns — cover_placeholder is deliberately absent so the test
+// sibling columns, cover_placeholder is deliberately absent so the test
 // also pins that a missing sibling is skipped rather than erroring.
 const productsDDL = `CREATE TABLE products (
 	id TEXT PRIMARY KEY,
@@ -136,7 +136,7 @@ func TestUploadPopulatesSiblingColumns(t *testing.T) {
 	if len(refs) != 2 {
 		t.Fatalf("stored %d variants, want 2: %s", len(refs), variants)
 	}
-	// Every reference must resolve to bytes actually on disk — a manifest
+	// Every reference must resolve to bytes actually on disk, a manifest
 	// pointing at missing files would render as broken images.
 	store := upload.NewLocalStorage(dir)
 	for _, ref := range refs {
@@ -150,7 +150,7 @@ func TestUploadPopulatesSiblingColumns(t *testing.T) {
 	}
 }
 
-// A missing sibling column must be skipped, not error — that is what makes
+// A missing sibling column must be skipped, not error, that is what makes
 // the feature additive: you adopt a column by adding it.
 func TestUploadSkipsUndeclaredSiblingColumns(t *testing.T) {
 	cfg := landscapeConfig()
@@ -214,7 +214,7 @@ func TestUploadRejectsNonImageOnImageField(t *testing.T) {
 	}
 }
 
-// A File field is any binary — a PDF, a CSV. Running the image pipeline over
+// A File field is any binary, a PDF, a CSV. Running the image pipeline over
 // it would fail every upload, so only schema.Image is wired.
 func TestUploadOnFileFieldSkipsPipeline(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")

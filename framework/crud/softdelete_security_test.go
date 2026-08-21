@@ -12,7 +12,7 @@ import (
 
 // TestSoftDelete_IncludeHidesDeletedRelatedRows pins that eager-loaded
 // (?include=) rows on a SoftDelete related entity hide rows whose
-// deleted_at is set — same as direct reads. Attack: a soft-deleted comment
+// deleted_at is set, same as direct reads. Attack: a soft-deleted comment
 // leaks through `/posts?include=comments` because the include loader never
 // appended `deleted_at IS NULL`.
 func TestSoftDelete_IncludeHidesDeletedRelatedRows(t *testing.T) {
@@ -98,7 +98,7 @@ func TestSoftDelete_UnauthenticatedTrashedListRejected(t *testing.T) {
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/tasks?trashed=true",
-		// No UserID — anonymous
+		// No UserID, anonymous
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)

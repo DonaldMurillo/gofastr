@@ -31,7 +31,7 @@ var (
 	ReviewsVerified   = framework.NewBoolColumn("verified")
 )
 
-// Reviews include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Reviews include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	ReviewsInclProduct = "product"
 )
@@ -58,7 +58,7 @@ func NewReviewsRepo(app *framework.App) *ReviewsRepo {
 	return &ReviewsRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *ReviewsRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -229,7 +229,7 @@ func OnReviewsUpdated(app *framework.App, fn func(ctx context.Context, row *Revi
 }
 
 // OnReviewsDeleted subscribes to entity.deleted events scoped to "reviews". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnReviewsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

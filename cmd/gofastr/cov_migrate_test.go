@@ -92,7 +92,7 @@ func TestMigrateHelperFlags(t *testing.T) {
 // TestDialectForDriverPureGoSQLite selects the SQLite dialect for BOTH the
 // mattn/go-sqlite3 driver name ("sqlite3") and the pure-Go engine name
 // ("sqlite"). Before the helper, only "sqlite3" matched and "sqlite" fell
-// through to the Postgres default — so a CLI build linking the pure-Go
+// through to the Postgres default, so a CLI build linking the pure-Go
 // driver ran Postgres-dialect SQL against a SQLite database.
 func TestDialectForDriverPureGoSQLite(t *testing.T) {
 	for _, d := range []string{"sqlite", "sqlite3"} {
@@ -226,7 +226,7 @@ func TestParseMigrateGenOptions(t *testing.T) {
 
 // The docs promise the 12-factor pattern: `export DATABASE_URL=…` must reach
 // `gofastr migrate` without a .env file. Precedence follows the framework's
-// dotenv rule — flag beats process env beats .env file.
+// dotenv rule: flag beats process env beats .env file.
 func TestGetMigrateDBURLFromProcessEnv(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
@@ -245,7 +245,7 @@ func TestGetMigrateDBURLFromProcessEnv(t *testing.T) {
 	}
 }
 
-// `gofastr migrate` used to read ".env" alone, ignoring .env.local — the
+// `gofastr migrate` used to read ".env" alone, ignoring .env.local, the
 // HIGHEST-precedence file and the documented place to point a checkout at a
 // local database. The CLI then migrated one database while the app it was
 // migrating for opened another, with both files sitting in the same directory

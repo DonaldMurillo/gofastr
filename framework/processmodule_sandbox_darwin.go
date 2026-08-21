@@ -16,11 +16,11 @@ import (
 // network allowances).
 //
 // Honest limits (design §6 macOS bullet + §11 risk 1):
-//   - sandbox-exec does NOT change uid — App Sandbox needs a signed .app
+//   - sandbox-exec does NOT change uid. App Sandbox needs a signed .app
 //     (inapplicable to a spawned CLI), and distinct-uid needs a service
 //     account. The P1 probe therefore reports BREACH on macOS (the child
 //     uid equals the host uid). "macOS may be trusted-tier-only for
-//     untrusted modules until a signed helper exists" — and the probe
+//     untrusted modules until a signed helper exists", and the probe
 //     FAILING P1 is the honest enforcement, not a hand-wave.
 //   - sandbox-exec is Apple-deprecated but remains present on every
 //     shipping macOS (verified: /usr/bin/sandbox-exec on this host).
@@ -28,7 +28,7 @@ import (
 // Net effect on a stock darwin host: the backend IS available and probes
 // P2–P5, P7 run; P1 reports BREACH (no uid isolation); P6 reports BREACH
 // (no cgroup/Job-Object limits). The backend therefore does NOT conform
-// and untrusted modules fail-closed on macOS — which is the design's
+// and untrusted modules fail-closed on macOS, which is the design's
 // documented v1 stance.
 
 // darwinSandboxBackend is the macOS SandboxBackend: sandbox-exec + a
@@ -58,9 +58,9 @@ func (b *darwinSandboxBackend) Available() bool       { return b != nil && b.ava
 func (b *darwinSandboxBackend) MissingReason() string { return b.missing }
 
 // DeclaredProbes is the honest ceiling for sandbox-exec on macOS. P1
-// (uid) is NOT declared — sandbox-exec cannot mint a distinct principal
-// without a signed helper — and the conformance suite records P1 as
-// BREACH. P6 (resource limits) is NOT declared — macOS has no cgroup
+// (uid) is NOT declared, sandbox-exec cannot mint a distinct principal
+// without a signed helper, and the conformance suite records P1 as
+// BREACH. P6 (resource limits) is NOT declared, macOS has no cgroup
 // equivalent reachable from sandbox-exec; Job Object limits are Windows-
 // only. Both omissions mean the backend cannot conform for untrusted on
 // a stock macOS host.
@@ -125,7 +125,7 @@ func (b *darwinSandboxBackend) Wrap(cmd *exec.Cmd, opts SandboxOpts) error {
 //	(deny file-write* (subpath "/etc" "/var" "/Users"))  ; host tree ro
 //	(deny network*)                             ; P4
 //
-// P1 cannot be enforced (uid unchanged) — that is the honest gap the
+// P1 cannot be enforced (uid unchanged), that is the honest gap the
 // probe reports. P5 is partial: the profile denies writes outside scratch
 // and denies reads of $HOME, but /etc/passwd remains readable (the Go
 // runtime needs name-service lookup). The probe treats any readable host
@@ -198,7 +198,7 @@ func generateDarwinProfile(childPath string, opts SandboxOpts) string {
 		b.WriteString(fmt.Sprintf("  (subpath %q)\n", dir))
 	}
 	b.WriteString(")\n")
-	// Deny $HOME reads (the actual secret surface — ~/.ssh, ~/.aws, etc.).
+	// Deny $HOME reads (the actual secret surface: ~/.ssh, ~/.aws, etc.).
 	if home := opts.homeDir(); home != "" {
 		b.WriteString(fmt.Sprintf("(deny file-read* (subpath %q))\n", home))
 	}
@@ -206,9 +206,9 @@ func generateDarwinProfile(childPath string, opts SandboxOpts) string {
 	b.WriteString("(deny network*)\n")
 	// Note: macOS has no single sandbox-exec directive for "no-new-privs"
 	// (process-setuid is NOT a valid sandbox-exec keyword on current
-	// macOS — it errors "unbound variable"). The setuid-up syscall
+	// macOS, it errors "unbound variable"). The setuid-up syscall
 	// failure the P7 probe body observes (syscall.Setuid(0) returns
-	// EPERM on a non-root child) is the enforcement signal — no profile
+	// EPERM on a non-root child) is the enforcement signal, no profile
 	// line needed.
 	return b.String()
 }

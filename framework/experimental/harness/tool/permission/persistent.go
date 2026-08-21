@@ -1,12 +1,12 @@
 package permission
 
-// Persistent permission rules — saved to disk so the user only has
+// Persistent permission rules, saved to disk so the user only has
 // to grant "Allow always" once. Loaded on Engine boot, written
 // atomically (write to tmp + rename) on every AddPersistentRule.
 //
 // File format: JSON wrapper { "version": 1, "rules": [...] }.
 // Version field lets us evolve the schema without breaking old files.
-// The on-disk path is set per-Engine via PersistencePath — the
+// The on-disk path is set per-Engine via PersistencePath, the
 // harness composition layer points it at
 // $XDG_CONFIG_HOME/gofastr/harness/permissions.json.
 
@@ -31,7 +31,7 @@ type persistentFile struct {
 const persistentSchemaVersion = 1
 
 // LoadPersistentRules reads the on-disk file into the engine's
-// persistent rule list. Missing file is NOT an error — first run.
+// persistent rule list. Missing file is NOT an error, first run.
 func (e *Engine) LoadPersistentRules() error {
 	if e.PersistencePath == "" {
 		return nil
@@ -54,7 +54,7 @@ func (e *Engine) LoadPersistentRules() error {
 }
 
 // AddPersistentRule appends a rule to the persistent list AND writes
-// the file atomically. Returns error if the disk write fails — the
+// the file atomically. Returns error if the disk write fails, the
 // in-memory list is still updated either way (best-effort durability).
 func (e *Engine) AddPersistentRule(r Rule) error {
 	e.mu.Lock()

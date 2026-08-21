@@ -113,9 +113,9 @@ func runInvoicesList(args []string) int {
 	if *outF == "table" {
 		printListTable([]string{"id", "customer_id", "number", "amount", "status", "issued_on", "due_on", "paid_on"}, []string{"id", "customerId", "number", "amount", "status", "issuedOn", "dueOn", "paidOn"}, resp.Data)
 		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows — next cursor: %s\n", len(resp.Data), resp.Cursor)
+			fmt.Printf("%d rows; next cursor: %s\n", len(resp.Data), resp.Cursor)
 		} else {
-			fmt.Printf("page %d/%d — %d total\n", resp.Page, resp.TotalPages, resp.Total)
+			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
 		}
 		return 0
 	}
@@ -336,7 +336,7 @@ func runInvoicesBatchUpdate(args []string) int {
 }
 
 // runInvoicesBatchDelete deletes the positional ids in one transaction. Ids may
-// appear before or after flags — flag.Parse stops at the first positional,
+// appear before or after flags, flag.Parse stops at the first positional,
 // so the trailing ones are collected from fs.Args().
 func runInvoicesBatchDelete(args []string) int {
 	var ids []string

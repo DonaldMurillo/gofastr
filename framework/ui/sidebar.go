@@ -18,7 +18,7 @@ import (
 //	SidebarPersistent: fixed-width column, always visible.
 //	SidebarCollapsible: column with a chevron that toggles a compact
 //	  rail; expanded/collapsed state persists in localStorage.
-//	SidebarOffCanvas: hidden by default — opens via the hamburger
+//	SidebarOffCanvas: hidden by default. Opens via the hamburger
 //	  trigger on every viewport (no inline column).
 //
 // On `< md` every variant collapses to a hamburger + drawer.
@@ -33,7 +33,7 @@ const (
 // checkSidebarVariant panics on a variant outside the built-in set.
 // Matches the Card/Button contract: every variant-taking component
 // validates at render so a typo'd variant is loud, not silently
-// unstyled. Empty is allowed (the documented default — Sidebar()
+// unstyled. Empty is allowed (the documented default: Sidebar()
 // normalizes it to SidebarPersistent).
 func checkSidebarVariant(v SidebarVariant) {
 	switch v {
@@ -41,11 +41,11 @@ func checkSidebarVariant(v SidebarVariant) {
 		return
 	}
 	panic("ui: Sidebar unknown Variant " + string(v) +
-		` — pick one of: "" (persistent), "collapsible", "off-canvas"`)
+		`. Pick one of: "" (persistent), "collapsible", "off-canvas"`)
 }
 
 // SidebarItem is one navigation entry. Children nest one level deep.
-// Deeper nesting is unsupported by design — sidebars should not be
+// Deeper nesting is unsupported by design. Sidebars should not be
 // trees.
 type SidebarItem struct {
 	Label    string
@@ -117,7 +117,7 @@ var sidebarStyle = registry.RegisterStyle("ui-sidebar", sidebarCSS,
 // caller via MountSidebar (once per app, at startup).
 //
 // Pair with core-ui/app/layout.Layout.WithSidebar to slot it into the
-// canonical chrome. Inline use is also fine — the component is
+// canonical chrome. Inline use is also fine. The component is
 // self-contained.
 func Sidebar(cfg SidebarConfig) component.Component {
 	if cfg.Variant == "" {
@@ -196,7 +196,7 @@ func (s sidebarComponent) Render() render.HTML { return s.render() }
 
 func (s sidebarComponent) render() render.HTML {
 	// Unknown variants panic like every other variant-taking component
-	// (Card, Button, Notification) — a typo'd variant used to render
+	// (Card, Button, Notification). A typo'd variant used to render
 	// an unstyled ui-sidebar--<anything> class silently. Empty is the
 	// documented default (Sidebar() normalizes it to persistent).
 	checkSidebarVariant(s.cfg.Variant)
@@ -204,7 +204,7 @@ func (s sidebarComponent) render() render.HTML {
 	var b strings.Builder
 	// A <div>, not <aside>: when slotted into a layout the layout wraps
 	// the sidebar in its own <nav aria-label="Sidebar"> landmark, so an
-	// <aside> here would nest complementary inside navigation — axe's
+	// <aside> here would nest complementary inside navigation. Axe's
 	// landmark-complementary-is-top-level rule fires on the double
 	// landmark. The layout's <nav> is the sole landmark; this element
 	// is the styled shell (display:contents, so it adds no box).
@@ -236,7 +236,7 @@ func (s sidebarComponent) render() render.HTML {
 	return sidebarStyle.WrapHTML(render.HTML(b.String()))
 }
 
-// SidebarBody renders the navigation content only — no sidebar shell,
+// SidebarBody renders the navigation content only: no sidebar shell,
 // no hamburger. Use it as the Slot content of a preset.Drawer widget
 // that mirrors the sidebar at narrow viewports.
 func SidebarBody(cfg SidebarConfig) render.HTML {
@@ -341,7 +341,7 @@ func sidebarFallbackIcon(label string) string {
 		render.Escape(initial) + `</span>`
 }
 
-// sidebarDrawerSlot renders the drawer's body — same content as the
+// sidebarDrawerSlot renders the drawer's body: same content as the
 // inline sidebar minus the hamburger button. Wraps in
 // data-fui-comp="ui-sidebar" so the sidebar stylesheet applies
 // inside the drawer too (the framework's per-component CSS scoping
@@ -383,7 +383,7 @@ func MountSidebar(r WidgetMounter, cfg SidebarConfig, pages ...string) widget.De
 	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
 		Slot("body", sidebarDrawerSlot{cfg: cfg})
-	// Optional page scoping — apps that only use the sidebar on a
+	// Optional page scoping: apps that only use the sidebar on a
 	// subset of routes can declare them explicitly; omitting `pages`
 	// keeps the drawer globally available.
 	if len(pages) > 0 {

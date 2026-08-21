@@ -55,7 +55,7 @@ func Render(cfg Config) render.HTML {
 	// Static options take precedence over the RPC path: render the full
 	// list inline (the combobox runtime module filters on input) and emit
 	// no data-fui-rpc, so no network round-trip fires. Use for small fixed
-	// command sets — e.g. a docs/nav palette on a static export.
+	// command sets, e.g. a docs/nav palette on a static export.
 	hasStatic := len(cfg.Options) > 0
 
 	// Input carries the ARIA + binding affordances; the FORM carries
@@ -63,7 +63,7 @@ func Render(cfg Config) render.HTML {
 	// document level on form[data-fui-rpc][data-fui-rpc-trigger="input"].
 	//
 	// SSR expanded state must match the listbox: static options render
-	// visible, so the input ships aria-expanded="true" — the runtime's
+	// visible, so the input ships aria-expanded="true", the runtime's
 	// Escape / outside-click dismissal is keyed on aria-expanded="true"
 	// and would otherwise be unable to close the visibly-open listbox
 	// until a keystroke re-synced the state.

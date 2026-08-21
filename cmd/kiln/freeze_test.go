@@ -58,9 +58,9 @@ func TestPrintFreezeDiffPopulated(t *testing.T) {
 		"entities (1):", "+ posts [2 fields] soft_delete mcp",
 		"- title : string (required)",
 		"- author_id : relation (→users)",
-		"pages (1):", `/dashboard — "Dashboard"`,
-		"hooks (1):", "audit on posts/after_create — emit_event",
-		"routes (1):", "GET /health — respond_json",
+		"pages (1):", `/dashboard: "Dashboard"`,
+		"hooks (1):", "audit on posts/after_create: emit_event",
+		"routes (1):", "GET /health: respond_json",
 		"seeds (1):", "+ posts [2 rows]",
 		"plans (1):", "p1 [approved]", "targets: 1",
 	} {

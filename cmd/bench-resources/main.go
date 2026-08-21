@@ -12,7 +12,7 @@
 //	go run ./cmd/bench-resources -apps=minimal,crud   # subset
 //
 // RAM-during-build is measured via the build subprocess's
-// syscall.Rusage.Maxrss; bytes on Darwin, kilobytes on Linux — both
+// syscall.Rusage.Maxrss; bytes on Darwin, kilobytes on Linux. Both
 // normalised to bytes here. Idle and loaded RAM come from `ps -o rss=`
 // against the running PID (kB on both Mac and Linux).
 package main

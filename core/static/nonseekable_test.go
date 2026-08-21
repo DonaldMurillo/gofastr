@@ -10,7 +10,7 @@ import (
 )
 
 // nonSeekableFS wraps an fs.FS so its files expose ONLY the fs.File
-// interface (Stat/Read/Close) — no io.Seeker. fs.FS makes no seek
+// interface (Stat/Read/Close), no io.Seeker. fs.FS makes no seek
 // promise, so this is a conforming filesystem, not a hostile one.
 type nonSeekableFS struct{ inner fs.FS }
 
@@ -29,7 +29,7 @@ func (n nonSeekableFS) Open(name string) (fs.File, error) {
 }
 
 // Hashing for the ETag consumes the file. When the handle cannot seek
-// back, the body must still be served in full — an empty body under a
+// back, the body must still be served in full. An empty body under a
 // correct Content-Length is a corrupt response, not a cache miss.
 func TestServesFullBodyFromNonSeekableFS(t *testing.T) {
 	const body = "complete body"
@@ -52,7 +52,7 @@ func TestServesFullBodyFromNonSeekableFS(t *testing.T) {
 }
 
 // The second request hits the digest cache, so no hashing read happens
-// and the seek is never needed — this must keep working too.
+// and the seek is never needed. This must keep working too.
 func TestNonSeekableFSSecondRequestOK(t *testing.T) {
 	const body = "cached body"
 	base := fstest.MapFS{"app.js": &fstest.MapFile{Data: []byte(body)}}

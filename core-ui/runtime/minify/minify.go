@@ -23,7 +23,7 @@
 //     trailing comma in an object literal / destructuring /
 //     import-specifier list (droppable; array-hole commas sit before
 //     `]`, which is never touched). Exception: a `;` whose previous
-//     token is `)` is never dropped — it may be an empty statement
+//     token is `)` is never dropped, it may be an empty statement
 //     serving as an if/while/for body (`if(x);}` → `if(x)}` is a
 //     SyntaxError), and a scanner can't tell that apart from `g();}`.
 //     The same rule keeps the do-while terminator (`do{}while(x);}`).
@@ -31,7 +31,7 @@
 // Out of scope (would be tier-3): identifier renaming, dead-code
 // elimination, constant folding, anything that requires a parser.
 //
-// The output is intentionally still valid, readable-ish JavaScript —
+// The output is intentionally still valid, readable-ish JavaScript,
 // it stays parseable by the browser without source maps and a developer
 // can still set breakpoints inside it.
 package minify
@@ -77,7 +77,7 @@ type minifier struct {
 	sawSpace   bool
 
 	// pending holds a deferred ';' or ',' (0 = none). The byte is
-	// written when the NEXT token arrives — unless that token starts
+	// written when the NEXT token arrives, unless that token starts
 	// with '}', in which case it's redundant and dropped. State
 	// (lastKind/lastByte) is updated at defer time, so separator and
 	// regex-vs-division decisions behave exactly as if it were written.
@@ -214,7 +214,7 @@ func (m *minifier) prevAllowsRegex() bool {
 }
 
 // endsExpr reports whether the last emitted token completes an
-// expression — which makes a following newline ASI-relevant when the
+// expression, which makes a following newline ASI-relevant when the
 // next token starts with an ambiguous prefix character.
 func (m *minifier) endsExpr() bool {
 	if m.lastWasIncDec {
@@ -270,7 +270,7 @@ func (m *minifier) emitSep(firstByte byte) {
 		m.sawSpace = false
 	}()
 	// Flush (or drop) a deferred ';'/',' now that the next token is
-	// known. Dropping before '}' is always safe in valid JS — see the
+	// known. Dropping before '}' is always safe in valid JS. See the
 	// package comment.
 	if m.pending != 0 {
 		if firstByte != '}' {
@@ -290,7 +290,7 @@ func (m *minifier) emitSep(firstByte byte) {
 		// identifier-start or digit MUST survive: dropping it either
 		// fuses tokens (`foo bar`, `1 2`) or yields a SyntaxError
 		// (`a++b`, `)b`). Covers postfix ++/-- ASI (`a++\nb`) and
-		// class-body element separation (`class A{x=1\ny=2}`) — a
+		// class-body element separation (`class A{x=1\ny=2}`), a
 		// space is NOT a valid separator in either position.
 		if m.endsExpr() && (isASIHazardPrefix(firstByte) || isIdentStart(firstByte) || isDigit(firstByte)) {
 			m.out.WriteByte('\n')
@@ -300,7 +300,7 @@ func (m *minifier) emitSep(firstByte byte) {
 	// Only insert a fusion-guard space when the original source had
 	// whitespace between these two tokens. Adjacent characters that
 	// were never separated cannot fuse into a different token by
-	// definition — and forcing a space there would break `i++` into
+	// definition, and forcing a space there would break `i++` into
 	// `i+ +`, regex flags into `/x/ g`, and so on.
 	if fusionRisk(m.lastByte, firstByte) && m.sawSpace {
 		m.out.WriteByte(' ')
@@ -314,7 +314,7 @@ func (m *minifier) emitIdent() {
 	}
 	ident := m.src[start:m.pos]
 	if ident == "const" && m.lastByte != '.' && m.nextStartsBinding() {
-		ident = "let" // see the package comment — safe for any working program
+		ident = "let" // see the package comment, safe for any working program
 	}
 	m.emitSep(ident[0])
 	m.out.WriteString(ident)
@@ -513,7 +513,7 @@ func (m *minifier) minifyTemplateExpr() {
 	// Restore the OUTSIDE state. From the template's POV, all that
 	// happened is we wrote one logical "expression block" between `${`
 	// and `}`. The next thing emitted will be more template text
-	// (verbatim) or the closing backtick — neither cares about prev-token
+	// (verbatim) or the closing backtick, neither cares about prev-token
 	// classification, so restoring saved is the correct stance.
 	pos := m.pos
 	out := m.out
@@ -538,7 +538,7 @@ func (m *minifier) emitRegex() {
 		}
 		if c == '\n' {
 			// A regex literal cannot contain a raw newline. We
-			// misclassified — fall back to emitting `/` as punct.
+			// misclassified, fall back to emitting `/` as punct.
 			m.pos = start
 			m.emitPunctChar('/')
 			return
@@ -593,7 +593,7 @@ func (m *minifier) emitPunctChar(c byte) {
 	if semiAfterParen {
 		// A `;` directly after `)` may be an empty statement serving
 		// as an if/while/for body: dropping it before `}` would turn
-		// `if(x);}` into `if(x)}` — a SyntaxError. A token scanner
+		// `if(x);}` into `if(x)}`, a SyntaxError. A token scanner
 		// can't tell that apart from a droppable `g();}` (both end
 		// `);}`), so a `;` after `)` is always written immediately,
 		// never deferred.

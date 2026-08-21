@@ -87,10 +87,10 @@ func mkEntity(name, version string, fields []schema.Field) *entity.Entity {
 	return e
 }
 
-// Sol review #1, part 2 — the value-disclosure oracle.
+// Sol review #1, part 2: the value-disclosure oracle.
 //
 // parseNestedFiltersValues used `if target, err := registry.Get(...); err == nil`,
-// which SKIPPED the whole Hidden-field check whenever resolution failed — and
+// which SKIPPED the whole Hidden-field check whenever resolution failed, and
 // resolution fails exactly when a name has several versions. Two versions of
 // "users" therefore disabled the check, letting ?author.password_hash_like=…
 // reach SQL and act as a substring oracle over a hidden column.
@@ -106,7 +106,7 @@ func TestNestedFilter_FailsClosedOnAmbiguousTarget(t *testing.T) {
 	}}
 
 	// posts is at /api/v3: there is no users@/api/v3 and no unversioned
-	// users, so ResolveTarget falls through to Get — which is ambiguous
+	// users, so ResolveTarget falls through to Get, which is ambiguous
 	// across v1/v2. That ambiguity is what used to disable the whole check.
 	posts := mkRelEntity("posts", "/api/v3", "users")
 
@@ -127,7 +127,7 @@ func TestNestedFilter_FailsClosedOnAmbiguousTarget(t *testing.T) {
 
 // Resolution must prefer the SOURCE's own version. registry.Get prefers the
 // UNVERSIONED entity, so a v1 request whose relation target also exists
-// unversioned would inherit the unversioned Hidden set — disclosing a column
+// unversioned would inherit the unversioned Hidden set, disclosing a column
 // v1 declares hidden.
 func TestResolveTarget_PrefersSourceVersionOverUnversioned(t *testing.T) {
 	exposed := []schema.Field{
@@ -167,7 +167,7 @@ func TestResolveTarget_PrefersSourceVersionOverUnversioned(t *testing.T) {
 	}
 }
 
-// An unversioned source still resolves the unversioned target — the historical
+// An unversioned source still resolves the unversioned target, the historical
 // single-version path must be untouched.
 func TestResolveTarget_UnversionedSourceUnchanged(t *testing.T) {
 	users := mkEntity("users", "", []schema.Field{{Name: "id", Type: schema.Int}})

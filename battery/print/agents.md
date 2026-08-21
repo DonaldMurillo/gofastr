@@ -19,7 +19,7 @@ pb := print.New(print.Config{
     PathPrefix:    "/print",                 // default
     AppCSSURL:     "/__gofastr/app.css",     // inherit host design tokens
     DefaultPage:   print.A4Portrait(print.MM(12)),
-    DefaultAccess: print.RequireAuth,        // safe default — see below
+    DefaultAccess: print.RequireAuth,        // safe default, see below
     // PDFRenderer: chromepdf.New(chromepdf.Options{}), // opt into PDF
 })
 
@@ -46,7 +46,7 @@ app.RegisterBattery(pb)
 - `GET {prefix}{Path}/pdf`   → PDF (501 if no `PDFRenderer` configured)
 - `GET {prefix}/__autoprint.js` → external auto-print script (shared)
 
-**Print a document from a host page** — a plain link, not an island:
+**Print a document from a host page** with a plain link, not an island:
 ```go
 pb.PrintLink("invoice", map[string]string{"id": inv.ID}, "Print invoice")
 // → <a href="/print/invoice/42" target="_blank" rel="noopener">Print invoice</a>
@@ -55,7 +55,7 @@ pb.PrintLink("invoice", map[string]string{"id": inv.ID}, "Print invoice")
 **Why a `Build` closure (not a registered component):** a battery cannot
 reach the UI app's DI container or render pipeline (`framework.App` holds
 no core-ui app). The host already holds its services, so `Build` reads
-route params, loads data, and returns the body component — which the
+route params, loads data, and returns the body component, which the
 battery renders panic-safely. Return `print.ErrNotFound` /
 `print.ErrForbidden` for clean 404/403 status pages (never a stack trace).
 
@@ -71,24 +71,24 @@ in-memory `data:` URL (no temp file) and honors the shell's CSS `@page`
 via `WithPreferCSSPageSize`. Containers usually need
 `Options{ExtraFlags: []string{"no-sandbox"}}`. For PDF token fidelity set
 `Config.BaseURL` to the app's canonical origin (used to make the app.css
-link absolute on the PDF path) — the battery never derives this from the
+link absolute on the PDF path). The battery never derives this from the
 request `Host` header (that would be an SSRF vector).
 
 **Component styles render in print:** the shell scans the body for
 `data-fui-comp` markers and inlines the scoped CSS for every registered
 `framework/ui`/`core-ui/patterns` component, so styled components print
-correctly. Interactivity (hydration/RPC) does NOT apply — print pages are
+correctly. Interactivity (hydration/RPC) does NOT apply. Print pages are
 inert.
 
-**Anti-patterns** — if you're about to write any of these, stop:
+**Anti-patterns.** If you're about to write any of these, stop:
 - A bespoke `http.HandlerFunc` that hand-writes `<!doctype html>` + print
-  CSS for one page — declare a `print.Document` instead.
+  CSS for one page. Declare a `print.Document` instead.
 - Re-implementing PDF generation in a handler, or pulling in a Go PDF
-  library — wire `chromepdf.New(...)` as the `PDFRenderer`.
-- Making "print" an in-page island/RPC or a SPA route swap — a print
+  library. Wire `chromepdf.New(...)` as the `PDFRenderer`.
+- Making "print" an in-page island/RPC or a SPA route swap. A print
   document is a legitimately separate, bookmarkable resource; link to it
   with `PrintLink` / `target="_blank"`.
-- Exposing an invoice/receipt route as `print.Public` "to keep it simple"
-  — that leaks per-user data. Keep `RequireAuth`/`RequireOwner`.
-- Linking `runtime.js` or app chrome into a print page — print docs are
+- Exposing an invoice/receipt route as `print.Public` "to keep it
+  simple". That leaks per-user data. Keep `RequireAuth`/`RequireOwner`.
+- Linking `runtime.js` or app chrome into a print page. Print docs are
   inert; the shell deliberately omits both.

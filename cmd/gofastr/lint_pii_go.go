@@ -8,16 +8,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// Go-source PII lint — the Go-declared counterpart of lintBlueprintPIIRoot.
+// Go-source PII lint: the Go-declared counterpart of lintBlueprintPIIRoot.
 // CLAUDE.md hard rule #6 is a property of the declared entity, not of the
 // authoring format: an `app.Entity("members", framework.EntityConfig{
 // Fields: []schema.Field{{Name: "email", Type: schema.String}}})` with
 // auto-CRUD on and no owner_field/multi_tenant/access exposes every row to
 // every OTHER authenticated user exactly as a blueprint entity would, so it
-// must surface the SAME rule "unscoped-pii" — it's the same defect class.
+// must surface the SAME rule "unscoped-pii"; it's the same defect class.
 //
 // The declaration is rebuilt from the AST via pack.go's entity-config
-// readers (packEntityDeclFromCall — the exact reverse `gofastr pack` uses to
+// readers (packEntityDeclFromCall, the exact reverse `gofastr pack` uses to
 // recover a blueprint), then judged through the identical exposure/scope/
 // field-name logic by wrapping it in a throwaway Blueprint and calling
 // lintUnscopedPII. One yardstick for both declaration styles.
@@ -25,13 +25,13 @@ import (
 // Limitation: only a literal `[]schema.Field{...}` is inspectable. When Fields
 // is supplied by a helper call (e.g. `Fields: auth.UserEntityFields()`), the
 // field list is not statically resolvable, so the lint sees no fields and emits
-// no finding — review such entities by hand (the helper may carry PII-shaped
+// no finding; review such entities by hand (the helper may carry PII-shaped
 // columns like email). This mirrors the blueprint lint, which only sees fields
 // declared in gofastr.yml.
 //
 // Like the pack reader this is best-effort over the AST: a config bound to a
 // variable before the call (`cfg := EntityConfig{...}; app.Entity(n, cfg)`)
-// has no composite literal to read and is silently skipped — the generator
+// has no composite literal to read and is silently skipped; the generator
 // and conventional hand-written registrations inline the literal, which is
 // the shape this lint targets.
 func lintGoSourcePII(rel string, body []byte) []LintFinding {
@@ -60,9 +60,9 @@ func lintGoSourcePII(rel string, body []byte) []LintFinding {
 }
 
 // goEntityCalls returns every `app.Entity(<name>, <config>)` call expression
-// in file. The receiver must be an identifier named "app" — the
+// in file. The receiver must be an identifier named "app", the
 // conventional host-app builder the generator and hand-written
-// registrations use — with exactly two arguments, so unrelated `.Entity(a,
+// registrations use, with exactly two arguments, so unrelated `.Entity(a,
 // b)` methods elsewhere in app code don't generate noise. Declaring the
 // entity through any other receiver is outside this lint's contract.
 func goEntityCalls(file *ast.File) []*ast.CallExpr {

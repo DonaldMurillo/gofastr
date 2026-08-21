@@ -9,7 +9,7 @@ import (
 
 // The text input is the source of truth, so it must carry the value VERBATIM.
 // A native colour input cannot represent "transparent", "inherit" or a var()
-// reference — it silently falls back to black — which is the whole reason this
+// reference: it silently falls back to black, which is the whole reason this
 // component exists alongside ColorPicker.
 func TestColorFieldTextInputHoldsTheRawValue(t *testing.T) {
 	for _, raw := range []string{"#4F46E5", "transparent", "var(--brand)", "rgb(1 2 3 / 50%)"} {
@@ -54,7 +54,7 @@ func TestColorFieldRequiresAnAccessibleSwatchName(t *testing.T) {
 
 // BOTH inputs must have an accessible name. Naming only the swatch shipped a
 // critical axe violation on every page that did not wrap the field in its own
-// <label for=…> — which the theme editor did, so the omission was invisible
+// <label for=…>, which the theme editor did, so the omission was invisible
 // until the component appeared standalone in the gallery.
 func TestColorFieldNamesBothInputs(t *testing.T) {
 	out := string(ColorField(ColorFieldConfig{
@@ -73,7 +73,7 @@ func TestColorFieldNamesBothInputs(t *testing.T) {
 }
 
 // A caller pointing the text input at its own visible label must not be
-// overridden — an aria-label would win over the <label> and announce the wrong
+// overridden. An aria-label would win over the <label> and announce the wrong
 // thing.
 func TestColorFieldDoesNotOverrideACallerSuppliedName(t *testing.T) {
 	out := string(ColorField(ColorFieldConfig{

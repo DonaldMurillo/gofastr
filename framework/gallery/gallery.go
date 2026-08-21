@@ -1,21 +1,21 @@
 // Package gallery ships the importable component catalog that powers the
 // /components showcase on the docs site (examples/site) and any other tool
 // that needs to render every design-system component against an arbitrary
-// theme — most notably the theme-configuration tool that will live inside
+// theme, most notably the theme-configuration tool that will live inside
 // the gofastr CLI binary (cmd/gofastr), which cannot import examples/.
 //
 // The catalog is the single source of truth for which components exist and
 // how each one renders with sensible default configuration. It is a
 // sibling of framework/sdkdocs: both compose framework/ui + core-ui/* into
 // a reusable, importable surface. Like sdkdocs, it is deliberately NOT
-// part of framework/uihost — uihost must never import framework/ui (its
+// part of framework/uihost: uihost must never import framework/ui (its
 // always-on styles would leak into every host's CSS bundle), and a gallery
 // of pre-canned demos is the opposite of a host's job.
 //
 // Layering: the package imports only framework/ui, core-ui/*, and
 // core/render. It does not import the framework root facade, framework/crud,
 // framework/entity, or anything higher up the L1–L5 diagram in
-// framework/ARCHITECTURE.md — so it introduces no cycle and is safely
+// framework/ARCHITECTURE.md, so it introduces no cycle and is safely
 // importable from cmd/gofastr, examples/site, and host apps alike.
 //
 // Three of the 141 entries (sortablelist, optimisticcreate, optimisticdelete)
@@ -42,13 +42,13 @@ type Entry struct {
 	// configured with sensible defaults so the page works without setup.
 	// Closures that need backend wiring (DataTable's RPC island,
 	// ConfirmAction's modal) render a smaller stand-alone variant or a
-	// static note — IsNoteOnly reports whether a slug renders an
+	// static note. IsNoteOnly reports whether a slug renders an
 	// explanatory note instead of a live instance (the set itself is
 	// private; that accessor is the only way in).
 	Demo func() render.HTML
 }
 
-// Group is a category-grouped slice of entries — the shape the index page
+// Group is a category-grouped slice of entries: the shape the index page
 // and the navigation sidebar iterate over. Groups are returned in catalog
 // (display) order.
 type Group struct {
@@ -108,7 +108,7 @@ func Grouped() []Group {
 }
 
 // Categories returns the distinct category names in display (catalog)
-// order — the names of Grouped().
+// order: the names of Grouped().
 func Categories() []string {
 	groups := Grouped()
 	out := make([]string, len(groups))
@@ -119,7 +119,7 @@ func Categories() []string {
 }
 
 // IsNoteOnly reports whether the slug's showcase renders an explanatory
-// note instead of a live demo — those components need per-page backend
+// note instead of a live demo. Those components need per-page backend
 // wiring (an RPC, a mounted widget, image sources) that a self-contained
 // demo cannot provide.
 func IsNoteOnly(slug string) bool { return noteOnlySlugs[slug] }

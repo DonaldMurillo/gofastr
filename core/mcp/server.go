@@ -17,12 +17,12 @@ import (
 // context (carrying auth/tenant info) and a map of parameters.
 //
 // The return value is normalized into the tools/call response by result type:
-//   - mcp.ToolResult — explicit content blocks and/or structuredContent
-//   - mcp.ImageResult — a single base64 image block (renders inline)
-//   - mcp.Content / []mcp.Content — one or more content blocks (build with
+//   - mcp.ToolResult: explicit content blocks and/or structuredContent
+//   - mcp.ImageResult: a single base64 image block (renders inline)
+//   - mcp.Content / []mcp.Content: one or more content blocks (build with
 //     TextContent / ImageContent / AudioContent / ResourceContent)
-//   - string — a single text block
-//   - anything else — JSON-marshaled into a text block (the legacy default)
+//   - string: a single text block
+//   - anything else: JSON-marshaled into a text block (the legacy default)
 //
 // A non-nil error is returned as a JSON-RPC error; report an in-band tool
 // failure with mcp.ToolResult{IsError: true} instead.
@@ -69,7 +69,7 @@ func WithToolMeta(meta map[string]any) ToolOption {
 // That second half is the point. [Gated] wraps a HANDLER, so it only ever
 // affected tools/call: an unauthenticated tools/list still returned the tool's
 // full inputSchema, which for entity CRUD tools is built from live entity
-// definitions — every entity name, every non-Hidden field, its type and its
+// definitions: every entity name, every non-Hidden field, its type and its
 // enum set. The call refused; the schema was already out.
 //
 // Prefer this over [Gated] for anything registered directly on the server.
@@ -112,7 +112,7 @@ type Server struct {
 	// resources/read. It is the switch for a host whose /mcp is private
 	// wholesale, as opposed to per-tool WithToolGate.
 	//
-	// initialize and ping are deliberately NOT covered — they carry only the
+	// initialize and ping are deliberately NOT covered. They carry only the
 	// protocol version, capability booleans and the server name, and a client
 	// that cannot complete the handshake cannot present credentials in a way
 	// any MCP client implements.
@@ -122,7 +122,7 @@ type Server struct {
 	// (the DNS-rebinding control). Empty = unpinned. See originOK.
 	allowedHosts []string
 	// allowedOrigins permits browser Origins that are not same-origin
-	// with the request — tunnels, split-origin dev clients.
+	// with the request: tunnels, split-origin dev clients.
 	allowedOrigins []string
 	// requireLoopbackHost restricts the transport to loopback Host
 	// authorities on any port. `gofastr dev` sets it because dev
@@ -246,7 +246,7 @@ func (s *Server) HasTool(name string) bool {
 // allows them. Tools owned by a disabled module are excluded. Handlers
 // are nilled out for safety.
 //
-// It does NOT apply per-tool caller gates ([WithToolGate]) — there is no
+// It does NOT apply per-tool caller gates ([WithToolGate]). There is no
 // caller to evaluate them against. It is a Go-API introspection call for
 // in-process code that already holds the server. Never serve its output to a
 // remote caller: use [Server.ListToolsFor] with the request context, which is
@@ -309,8 +309,8 @@ func (s *Server) listToolsUnfiltered() []Tool {
 // (tools/list, tools/call, resources/list, resources/read). Pass nil to clear
 // it. See the serverGate field for why initialize and ping stay open.
 //
-// Use it when the whole /mcp endpoint is private. For a mixed surface —
-// public read tools, gated mutating ones — attach per-tool gates with
+// Use it when the whole /mcp endpoint is private. For a mixed surface,
+// public read tools and gated mutating ones, attach per-tool gates with
 // [WithToolGate] instead, which also filters the listing per caller.
 func (s *Server) SetGate(gate func(ctx context.Context) error) {
 	s.mu.Lock()
@@ -336,7 +336,7 @@ func (s *Server) checkServerGate(ctx context.Context) error {
 //
 // It runs the tool's own gate ([WithToolGate]) against ctx, so an in-process
 // caller must carry the identity the gate expects. It does NOT run the
-// server-wide gate ([Server.SetGate]) — that one describes who may reach the
+// server-wide gate ([Server.SetGate]). That one describes who may reach the
 // /mcp ENDPOINT, and an in-process caller is not coming through it. Every
 // remote transport dispatches via HandleRequest, which does apply it.
 func (s *Server) CallTool(ctx context.Context, name string, params map[string]any) (any, error) {
@@ -355,7 +355,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 	// Call gate: framework code uses this to block tools owned by a
 	// disabled module. Read under RLock to avoid a data race with
-	// SetCallGate. The refusal message is deliberately generic — it
+	// SetCallGate. The refusal message is deliberately generic. It
 	// must not name the module or its disabled state.
 	s.mu.RLock()
 	gate := s.callGate

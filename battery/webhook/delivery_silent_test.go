@@ -16,7 +16,7 @@ import (
 )
 
 // errDeliveryUpdateStore delegates every Store method to *MemoryStore but
-// fails UpdateDelivery — the DB-pressure case where the worker can't record
+// fails UpdateDelivery, the DB-pressure case where the worker can't record
 // a delivery's new state. Everything else (claim, read) still works.
 type errDeliveryUpdateStore struct {
 	*MemoryStore
@@ -53,7 +53,7 @@ func (b *safeLogBuf) String() string {
 
 // TestManager_DeliveryUpdateFailureLogged pins fix #2 on the outbound
 // Manager: when the store can't persist a delivery's post-attempt state, the
-// failure must reach Options.Logger — otherwise a DB blip silently leaves the
+// failure must reach Options.Logger, otherwise a DB blip silently leaves the
 // row at its pre-attempt status and the next tick re-delivers (duplicate) with
 // zero signal. Pre-fix the five UpdateDelivery call sites discarded the error.
 func TestManager_DeliveryUpdateFailureLogged(t *testing.T) {
@@ -67,7 +67,7 @@ func TestManager_DeliveryUpdateFailureLogged(t *testing.T) {
 	mgr := New(store, Options{
 		MaxAttempts:          1,
 		Backoff:              []time.Duration{0},
-		PollInterval:         time.Hour, // don't race the worker — drive tick directly
+		PollInterval:         time.Hour, // don't race the worker, drive tick directly
 		AllowPrivateNetworks: true,
 		Logger:               log.logf,
 	})
@@ -124,7 +124,7 @@ func (s *failOnFailedEnvelopeStore) SeenDedupeKey(context.Context, string, strin
 
 // TestProcessInbound_FailedStateUpdateLogged pins fix #2 on the inbound side:
 // when the business handler errors AND the "failed"-state UpdateEnvelope is
-// lost, the loss must be observable — the envelope is stranded "processing"
+// lost, the loss must be observable, the envelope is stranded "processing"
 // with no LastError, invisible without a log. The handler's error is still
 // returned (queue retries) regardless.
 func TestProcessInbound_FailedStateUpdateLogged(t *testing.T) {

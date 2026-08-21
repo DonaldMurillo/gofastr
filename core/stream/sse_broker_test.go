@@ -42,7 +42,7 @@ func TestSSEBrokerPublishDeliversToSubscriber(t *testing.T) {
 	case <-done:
 		// subscriber exited (would happen if client disconnects in real use)
 	case <-time.After(2 * time.Second):
-		// subscriber still listening — that's fine, the publish went through
+		// subscriber still listening; that's fine, the publish went through
 	}
 
 	if broker.SubscriberCount() > 1 {
@@ -94,7 +94,7 @@ func TestSSEBrokerPublishToMultipleSubscribers(t *testing.T) {
 func TestSSEBrokerDropOnFullBuffer(t *testing.T) {
 	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 2})
 
-	// Subscriber that never reads — buffer fills immediately
+	// Subscriber that never reads: buffer fills immediately
 	go func() {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/events?buffer=2", nil)
@@ -103,7 +103,7 @@ func TestSSEBrokerDropOnFullBuffer(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	// Publish more than buffer can hold — should not block
+	// Publish more than buffer can hold; should not block
 	for i := 0; i < 10; i++ {
 		broker.Publish("burst", strings.Repeat("x", 100))
 	}
@@ -178,8 +178,8 @@ func TestSSEBrokerSlowBlockWaitsForBufferSpace(t *testing.T) {
 
 // Block mode is opt-in per broker. This test previously asserted that
 // ANY request could select it; that contract was withdrawn because a
-// block-mode subscriber stalls deliver() — and so every other
-// subscriber plus the calling handler — which made it an
+// block-mode subscriber stalls deliver(), and so every other
+// subscriber plus the calling handler, which made it an
 // unauthenticated DoS on a public endpoint. The request still chooses,
 // but only within a broker whose host enabled AllowClientSlowMode.
 func TestSSEBrokerSlowBlockParsedFromRequest(t *testing.T) {

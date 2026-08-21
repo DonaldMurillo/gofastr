@@ -53,7 +53,7 @@ func WithResourceMeta(meta map[string]any) ResourceOption {
 // WithResourceGate auth-gates a resource's contents: the gate runs before
 // resources/read invokes the contents func, receiving the read's context
 // (auth/tenant enriched, carrying the inbound request). A non-nil error
-// refuses the read. This is the resource-side analogue of mcp.Gated — use it
+// refuses the read. This is the resource-side analogue of mcp.Gated. Use it
 // to serve per-caller or sensitive data via a first-class gate instead of an
 // inline check. Resource metadata (uri/name) still appears in resources/list;
 // the gate protects the contents. battery/auth's auth.MCPUser() /
@@ -74,7 +74,7 @@ func WithResourceGate(gate func(ctx context.Context) error) ResourceOption {
 // auth.MCPUser / auth.MCPRole gate tool handlers, not resources/read). A
 // resource serving PUBLIC content (e.g. an MCP App's widget HTML) needs no
 // gating. To serve per-caller or sensitive data, self-gate inside the
-// contents func — it receives the auth/tenant-enriched request context, so it
+// contents func. It receives the auth/tenant-enriched request context, so it
 // can inspect the caller and return an error for unauthorized reads.
 func (s *Server) RegisterResource(uri, name, mimeType string, contents ResourceContentsFunc, opts ...ResourceOption) error {
 	if uri == "" {
@@ -135,7 +135,7 @@ type resourceContentItem struct {
 }
 
 // handleResourcesList returns all registered resources (without their
-// contents funcs — those run only on read).
+// contents funcs: those run only on read).
 func (s *Server) handleResourcesList(_ context.Context, req Request) Response {
 	s.mu.RLock()
 	list := make([]Resource, 0, len(s.resources))
@@ -147,7 +147,7 @@ func (s *Server) handleResourcesList(_ context.Context, req Request) Response {
 }
 
 // handleResourcesRead resolves a resource by uri and returns its contents.
-// Unknown uris are a not-found error (no filesystem access — a map lookup).
+// Unknown uris are a not-found error (no filesystem access: a map lookup).
 func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response {
 	if req.Params == nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing params")
@@ -200,7 +200,7 @@ func (s *Server) readResourceContents(ctx context.Context, res Resource) (out Re
 			err = &RPCError{Code: ErrInternalError, Message: "internal resource error"}
 		}
 	}()
-	// Auth gate (WithResourceGate) runs before the contents func — the
+	// Auth gate (WithResourceGate) runs before the contents func: the
 	// resource-side analogue of mcp.Gated. Inside the recover guard so a
 	// panicking gate becomes a well-formed error, not a transport crash. A
 	// refusal propagates the gate's error to the caller.

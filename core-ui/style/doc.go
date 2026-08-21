@@ -1,7 +1,7 @@
 // Package style provides the typed design system and CSS builders
 // for the GoFastr core-ui framework.
 //
-// # Theme — the typed design system
+// # Theme, the typed design system
 //
 // A Theme is a Go struct of typed token value types (Color, Spacing,
 // Radius, Font, etc.). Every primitive token is required; passing a
@@ -19,13 +19,13 @@
 //	style.AutoFillNames(&theme)
 //	theme.MustValidate()
 //
-// At render time tokens emit CSS-variable references — never literal
-// hex — so section-level theme overrides via the CSS cascade work:
+// At render time tokens emit CSS-variable references, never literal
+// hex, so section-level theme overrides via the CSS cascade work:
 //
 //	theme.App.Colors.Primary.CSS()    // → "var(--color-primary)"
 //	theme.App.Colors.Primary.Value    // → "#4F46E5"
 //
-// # ComponentSheet — auto-scoped per-component CSS
+// # ComponentSheet, auto-scoped per-component CSS
 //
 // NewComponentSheet(name, theme) returns a builder that prefixes every
 // rule with [data-fui-comp="<name>"] at Build() time. The framework
@@ -49,7 +49,7 @@
 //	        MustBuild()
 //	}
 //
-// # StyleSheet — the lower-level builder
+// # StyleSheet, the lower-level builder
 //
 // NewStyleSheet(theme) returns the global-style builder used by
 // theme.go and app-level CSS. Rule/Set/Pseudo/Child/Media/Container/
@@ -57,7 +57,7 @@
 // var(--color-primary). Odd-count Set args, Set-before-Rule, and
 // most other foot-guns panic with a useful message.
 //
-// # Section-level overrides — fui-theme-<hash>
+// # Section-level overrides, fui-theme-<hash>
 //
 // RegisterThemeOverride(theme, partial) returns a class name like
 // "fui-theme-a1b2c3d4" plus a CSS block that redeclares only the
@@ -90,7 +90,7 @@
 //	ZIndex:      Dropdown, Sticky, Modal, Popover, Toast
 //	Durations:   Fast, Normal, Slow             (time.Duration)
 //	Typography:  XS, SM, Base, LG, XL, XXL, XXXL  (font-size strings)
-//	Layout:      TouchTarget                    (Spacing — WCAG 2.5.5)
+//	Layout:      TouchTarget                    (Spacing, WCAG 2.5.5)
 //
 // E.g. Colors.PrimaryFg → CSS variable --color-primary-fg →
 // theme.App.Colors.PrimaryFg.CSS() → "var(--color-primary-fg)".

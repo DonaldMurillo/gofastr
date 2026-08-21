@@ -18,7 +18,7 @@ import (
 // process-isolated modules (design §8 "coordination substrate"). It persists
 // the authoritative desired state and a replica-liveness registry on top of
 // the same *sql.DB the app already uses, via an idempotent CREATE TABLE IF
-// NOT EXISTS schema (mirrors battery/auth's EnsureSchema pattern — NOT a
+// NOT EXISTS schema (mirrors battery/auth's EnsureSchema pattern, NOT a
 // #33 migrate group; this is host coordination state, not module-owned DDL).
 //
 // It works on SQLite and Postgres. DDL is chosen per-dialect at
@@ -31,7 +31,7 @@ import (
 // revoke that is a security hole, so process modules INVERT it: the
 // supervisor (above this store) holds a short-TTL state lease per replica; if
 // it cannot refresh [GetDesired] past the lease TTL it drains children and
-// serves 503/404. The lease policy lives in the supervisor, not here — this
+// serves 503/404. The lease policy lives in the supervisor, not here. This
 // store is just rows. The divergence is documented at
 // [ProcessModuleSupervisor.refreshDesired] and tested by the
 // "store_unreachable_drains" test.
@@ -50,7 +50,7 @@ type ProcessModuleStore interface {
 	EnsureSchema(ctx context.Context) error
 
 	// Install writes a new desired-state row for module. Returns
-	// [ErrModuleInstalled] if a row already exists — re-install is an
+	// [ErrModuleInstalled] if a row already exists, re-install is an
 	// explicit generation bump via [SetEffectiveGrants] /
 	// [BumpGeneration].
 	Install(ctx context.Context, d DesiredState) error
@@ -180,7 +180,7 @@ const (
 
 // EnsureSchema creates the desired-state and heartbeat tables idempotently.
 // DDL is dialect-aware (Postgres vs SQLite). The schema is intentionally
-// narrow: no module-owned DDL touches this store (design §7 — host
+// narrow: no module-owned DDL touches this store (design §7, host
 // coordination state, NOT module bookkeeping).
 func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 	if s.dialect == migrate.DialectPostgres {

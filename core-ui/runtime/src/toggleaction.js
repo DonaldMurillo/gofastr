@@ -1,15 +1,15 @@
-// ToggleAction runtime — the three-state cousin of optimisticaction.
+// ToggleAction runtime, the three-state cousin of optimisticaction.
 // optimisticaction commits once and stays committed; ToggleAction
 // supports two additional UX patterns that the existing widget
 // explicitly blocked (V3 #10):
 //
-//   1. data-fui-toggle-group="<key>"  — buttons sharing the same group
+//   1. data-fui-toggle-group="<key>"  : buttons sharing the same group
 //      key form a mutex. Committing one auto-revokes any sibling that
 //      was previously committed (no extra RPC, the server is the
 //      source of truth; the UI flips optimistically and a subsequent
 //      navigate refreshes from server state).
 //
-//   2. data-fui-toggle-allow-untoggle="true" — clicking an already-
+//   2. data-fui-toggle-allow-untoggle="true": clicking an already-
 //      committed button reverts it to idle. POSTs the untoggle
 //      endpoint (data-fui-toggle-untoggle-endpoint) if set, otherwise
 //      just flips locally. Without this, the button is sticky once
@@ -19,7 +19,7 @@
 // endpoint via data-fui-toggle-endpoint and (optionally) method via
 // data-fui-toggle-method (defaults POST). SSR ships the initial state
 // in data-state="idle|committed". The widget renders two child spans
-// (data-fui-toggle-idle / data-fui-toggle-committed) — the runtime
+// (data-fui-toggle-idle / data-fui-toggle-committed), the runtime
 // shows/hides via the [hidden] attribute, no inline CSS required.
 (() => {
   'use strict';
@@ -43,7 +43,7 @@
       btn.removeAttribute('aria-busy');
       btn.disabled = false;
     }
-    // aria-pressed mirrors the binary toggle state for AT users — the
+    // aria-pressed mirrors the binary toggle state for AT users, the
     // "committed" state IS the pressed-toggle convention.
     btn.setAttribute('aria-pressed', state === 'committed' ? 'true' : 'false');
   };
@@ -66,7 +66,7 @@
       credentials: 'same-origin',
       headers: csrfHeaders(),
     }).then((res) => {
-      // Toggles are mutations — honor X-Gofastr-Invalidate like rpc.js.
+      // Toggles are mutations, honor X-Gofastr-Invalidate like rpc.js.
       if (res.ok) window.__gofastr._inval?.(res);
       return res.ok;
     }, () => false);
@@ -101,7 +101,7 @@
       const method = btn.getAttribute('data-fui-toggle-method') || 'POST';
 
       if (state === 'committed') {
-        if (!allowUntoggle) return; // sticky — matches optimisticaction default
+        if (!allowUntoggle) return; // sticky: matches optimisticaction default
         setState(btn, 'pending');
         btn.dispatchEvent(new CustomEvent('toggle-action:untoggle', { bubbles: true }));
         fireAndForget(untoggleURL, method).then((ok) => {
@@ -110,7 +110,7 @@
         return;
       }
 
-      // state === 'idle' — commit, and revoke any sibling in the group.
+      // state === 'idle', commit, and revoke any sibling in the group.
       setState(btn, 'pending');
       revokeGroupSiblings(group, btn);
       btn.dispatchEvent(new CustomEvent('toggle-action:commit', { bubbles: true }));

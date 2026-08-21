@@ -111,7 +111,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 	}
 
 	// The wrapper is a <label> so the whole visual box (icon + padding, not just
-	// the input itself) is a click target that focuses the input — otherwise the
+	// the input itself) is a click target that focuses the input. Otherwise the
 	// hit area is smaller than it looks.
 	innerWrapper := render.Tag("label",
 		map[string]string{"class": cls, "for": cfg.ID},

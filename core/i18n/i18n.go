@@ -43,7 +43,7 @@ type Locale struct {
 	Tag string
 }
 
-// String renders the tag — useful in templates that already know they
+// String renders the tag, useful in templates that already know they
 // have a Locale.
 func (l Locale) String() string { return l.Tag }
 
@@ -56,7 +56,7 @@ type Message struct {
 
 // Catalog is the read-side interface for message lookups. A nil
 // Catalog (or one that always returns ok=false) makes the Translator
-// fall back to the bare key — useful while bootstrapping a new app.
+// fall back to the bare key, useful while bootstrapping a new app.
 type Catalog interface {
 	Get(locale, key string) (Message, bool)
 	Locales() []string
@@ -144,7 +144,7 @@ func (t *Translator) render(tag string, m Message, params map[string]any) string
 	if len(m.Plural) > 0 {
 		n, ok := extractCount(params)
 		if !ok {
-			// No count supplied — pick the "other" variant if present;
+			// No count supplied. Pick the "other" variant if present;
 			// otherwise fall through to interpolate whatever Text was.
 			if v, has := m.Plural["other"]; has {
 				return interpolate(v, params)
@@ -185,7 +185,7 @@ func englishPlural(n int) string {
 
 // ----- catalog implementations ---------------------------------------------
 
-// MapCatalog is the simplest in-memory Catalog — useful in tests and
+// MapCatalog is the simplest in-memory Catalog, useful in tests and
 // for embedding small string sets directly in code.
 type MapCatalog struct {
 	// mu guards Entries. Set is documented as a test convenience, but
@@ -405,7 +405,7 @@ type negotiateConfig struct {
 // The returned tag is matched against the catalog's locales (with the
 // same tag fallbacks as Accept-Language: "fr-ca" → "fr"). An unknown,
 // malformed, or over-long value falls through to the next source
-// rather than producing an unmatched locale — resolver values are
+// rather than producing an unmatched locale. Resolver values are
 // attacker-controlled (cookies), so they are length- and
 // character-bounded before any matching.
 func WithLocaleResolver(f func(*http.Request) (string, bool)) NegotiateOption {
@@ -444,8 +444,8 @@ const maxResolverTagLen = 35
 // BCP 47 subset (lowercase letters, digits, hyphen). Returns "" on
 // rejection so the caller falls through to the next source.
 //
-// EVERY externally-supplied tag goes through this — resolver values
-// (cookies), the X-Locale header, and Accept-Language entries — because
+// EVERY externally-supplied tag goes through this: resolver values
+// (cookies), the X-Locale header, and Accept-Language entries, because
 // each of them can become the Locale.Tag that a host's Catalog.Get
 // receives as a lookup key, and Catalog is a documented third-party
 // extension point. Bounding only the cookie left the two header
@@ -495,8 +495,8 @@ func matchCatalog(tag string, available map[string]struct{}) string {
 // that matches a catalog locale → fallback. Pass resolvers to add a
 // stored per-user locale (e.g. a cookie) that wins over the headers.
 //
-// If an `X-Locale` header is set, it wins outright over Accept-Language
-// — useful for tests and for apps that already do locale routing.
+// If an `X-Locale` header is set, it wins outright over Accept-Language,
+// useful for tests and for apps that already do locale routing.
 //
 // Locale negotiation falls through to the Translator's fallback when no
 // Accept-Language entry matches any catalog locale.
@@ -526,7 +526,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 	}
 	available := availableLocales(tr)
 
-	// 1. Custom resolver(s) — a stored per-user locale wins when it
+	// 1. Custom resolver(s): a stored per-user locale wins when it
 	//    matches the catalog; a garbage/unknown value falls through.
 	for _, res := range cfg.resolvers {
 		if res == nil {
@@ -541,7 +541,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 			continue
 		}
 		if tr == nil {
-			// No catalog to validate against — accept the resolver's
+			// No catalog to validate against. Accept the resolver's
 			// value, mirroring the raw Accept-Language behaviour below.
 			return Locale{Tag: tag}
 		}
@@ -550,7 +550,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 		}
 	}
 
-	// 2. X-Locale header — wins outright (backward-compatible), but is
+	// 2. X-Locale header: wins outright (backward-compatible), but is
 	//    bounded exactly like a resolver value first. X-Locale is just as
 	//    attacker-controlled as a cookie and it short-circuits every
 	//    later check, so an unbounded value here becomes the Locale.Tag
@@ -567,7 +567,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 	// 3. Accept-Language.
 	if tr == nil {
 		// No catalog to match against. Take the highest-quality entry
-		// that survives bounding — NOT the whole raw header, which used
+		// that survives bounding, NOT the whole raw header, which used
 		// to be handed back as a "tag" verbatim.
 		for _, want := range parseAcceptLanguage(r.Header.Get("Accept-Language")) {
 			if tag := sanitizeTag(want); tag != "" {
@@ -607,9 +607,9 @@ func parseAcceptLanguage(header string) []string {
 	// Capping len(out) alone was not enough. strings.Split materialises
 	// the ENTIRE comma-separated slice before the cap is ever consulted,
 	// so a ~600KB header still allocated ~3.2MB and ~500k strings per
-	// request — 12000x a normal header — and the inner ";" split was
+	// request, 12000x a normal header, and the inner ";" split was
 	// uncapped on top of that. Scan the header in place instead, and
-	// bound the number of segments EXAMINED, not just accepted.
+	// bound the number of segments EXAMINED, not only accepted.
 	const (
 		maxEntries  = 32
 		maxSegments = 512
@@ -725,8 +725,8 @@ func extractCount(p map[string]any) (int, bool) {
 }
 
 // interpolate replaces {{name}} tokens with stringified params. Names
-// are looked up case-sensitively. Unknown placeholders are left as-is
-// — easier to spot during development than silently empty.
+// are looked up case-sensitively. Unknown placeholders are left as-is,
+// easier to spot during development than silently empty.
 func interpolate(s string, params map[string]any) string {
 	if s == "" || len(params) == 0 || !strings.Contains(s, "{{") {
 		return s

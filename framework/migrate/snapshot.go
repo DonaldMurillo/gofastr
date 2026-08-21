@@ -29,14 +29,14 @@ type SchemaSnapshot struct {
 	Tables map[string]map[string]string `json:"tables"`
 	// TableDDL holds the full CREATE TABLE statement per table, so a dropped
 	// table's Down recreates it WITH all constraints (PK, NOT NULL, UNIQUE,
-	// FK, defaults) rather than a lossy column-list reconstruction. Optional —
+	// FK, defaults) rather than a lossy column-list reconstruction. Optional:
 	// snapshots written by an older gofastr fall back to recreateTableSQL.
 	TableDDL map[string]string     `json:"table_ddl,omitempty"`
 	Views    map[string]RoutineDef `json:"views,omitempty"`
 	Routines map[string]RoutineDef `json:"routines,omitempty"`
 }
 
-// RoutineDef is the snapshot record for a routine — its Up and Down bodies, so
+// RoutineDef is the snapshot record for a routine: its Up and Down bodies, so
 // a later generation can restore the previous definition on rollback.
 type RoutineDef struct {
 	Up   string `json:"up"`
@@ -44,7 +44,7 @@ type RoutineDef struct {
 }
 
 // SnapshotFromRegistry builds the desired-state snapshot from the registered
-// entities for the given dialect — the schema the entities describe right now.
+// entities for the given dialect, the schema the entities describe right now.
 func SnapshotFromRegistry(reg entity.Registry, dialect Dialect) SchemaSnapshot {
 	return SnapshotFromPlan(Plan{Registry: reg}, dialect)
 }
@@ -96,13 +96,13 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 // plus the new snapshot to persist. up is empty when there is nothing to do.
 //
 // Covered changes: create table, add column, drop column, and drop table (when
-// an entity is removed). Type changes are out of scope — same limitation as
+// an entity is removed). Type changes are out of scope, same limitation as
 // DiffSchema.
 func GenerateMigration(reg entity.Registry, prev SchemaSnapshot, dialect Dialect) (up, down string, next SchemaSnapshot, err error) {
 	return GeneratePlan(Plan{Registry: reg}, prev, dialect)
 }
 
-// GeneratePlan is GenerateMigration for a full Plan — it diffs both the tables
+// GeneratePlan is GenerateMigration for a full Plan: it diffs both the tables
 // (entities + raw Tables) and the routines against the snapshot, emitting one
 // reversible migration that covers everything. Routine bodies are compared
 // verbatim; a changed routine's Down restores the previous body, and a removed
@@ -165,7 +165,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 
 	// Views after table changes (they SELECT from those tables), then routines
 	// after views. The reverse-ordered Down therefore drops routines, then
-	// views, then tables — dependencies unwind cleanly.
+	// views, then tables. Dependencies unwind cleanly.
 	viewRoutines := make([]Routine, 0, len(plan.Views))
 	for _, v := range topoSortViews(plan.Views) {
 		viewRoutines = append(viewRoutines, v.routine(dialect))
@@ -252,7 +252,7 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChang
 		drop := strings.TrimSpace(prev[name].Down)
 		if drop == "" {
 			changes = append(changes, SchemaChange{
-				Summary: fmt.Sprintf("routine %s: drop SKIPPED — the routine declares no Down; "+
+				Summary: fmt.Sprintf("routine %s: drop SKIPPED: the routine declares no Down; "+
 					"add one (e.g. DROP FUNCTION ...) so the removal actually runs", name),
 				SQL:  "",
 				Down: prev[name].Up,
@@ -268,11 +268,11 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChang
 	return changes
 }
 
-// recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set —
+// recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set,
 // the FALLBACK Down for a dropped table when the snapshot predates TableDDL.
 // Constraints (PK/NOT NULL/UNIQUE/FK) are not recoverable from a column→type
 // map, so this is column-and-type only; the TableDDL path is faithful.
-// Identifiers are validated but UNQUOTED (via MustIdent) — the same convention
+// Identifiers are validated but UNQUOTED (via MustIdent), the same convention
 // as buildCreateTableSQL, so a mixed-case name folds to lowercase on Postgres
 // consistently with the original CREATE rather than being case-preserved by
 // quoting. Column order is sorted for deterministic output.
@@ -307,7 +307,7 @@ func RenderMigrationFile(version uint64, name, up, down string) string {
 	return b.String()
 }
 
-// LoadSnapshot reads a snapshot JSON file. A missing file is not an error — it
+// LoadSnapshot reads a snapshot JSON file. A missing file is not an error. It
 // returns an empty snapshot so the first generation emits a full create.
 func LoadSnapshot(path string) (SchemaSnapshot, error) {
 	data, err := os.ReadFile(path)
@@ -329,8 +329,8 @@ func LoadSnapshot(path string) (SchemaSnapshot, error) {
 
 // SaveSnapshot writes a snapshot JSON file (pretty-printed for clean diffs).
 func SaveSnapshot(path string, snap SchemaSnapshot) error {
-	// MarshalIndent cannot fail for a snapshot of string maps — no channels,
-	// funcs, or cycles — so the only real error here is the file write.
+	// MarshalIndent cannot fail for a snapshot of string maps: no channels,
+	// funcs, or cycles, so the only real error here is the file write.
 	data, _ := json.MarshalIndent(snap, "", "  ")
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }

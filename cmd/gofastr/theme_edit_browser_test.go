@@ -9,7 +9,7 @@ package main
 // Gated by -short, matching every other browser test in this package
 // (generate_sdkjs_browser_test.go, dev_e2e_test.go): `go test
 // ./cmd/gofastr/ -count=1` runs them; `-short` skips them. They never run
-// concurrently with another browser suite — Go runs a package's tests
+// concurrently with another browser suite: Go runs a package's tests
 // sequentially unless t.Parallel is called, and these never call it.
 
 import (
@@ -33,7 +33,7 @@ import (
 
 // newBrowserThemeServer stands up a themeEditServer behind an httptest.Server
 // whose Host/Origin guards are pinned to the real ephemeral authority the
-// browser will send — exactly what runThemeEdit does after net.Listen.
+// browser will send, exactly what runThemeEdit does after net.Listen.
 //
 // It mirrors runThemeEdit's host wiring, which newTestServer does NOT: the
 // contrast probes are only measurable once contrastProbeCSS is injected, and
@@ -135,7 +135,7 @@ func themeEditBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's;
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -157,7 +157,7 @@ func themeEditBrowserCtx(t *testing.T) context.Context {
 // ─── shared page-JS probes (evaluated inside the controls page) ────────────
 
 // tePreviewReadyJS is true once the preview iframe has loaded AND its
-// readiness sentinel probe reads literal black-on-white — the signal the
+// readiness sentinel probe reads literal black-on-white: the signal the
 // generated stylesheet has applied. Measuring before this point reads an
 // unstyled document and reports whatever the inheritance happened to leave.
 const tePreviewReadyJS = `(function () {
@@ -205,7 +205,7 @@ func tePreviewTokenJS(cssVar string) string {
 }
 
 // teTypeAndWriteJS types a value into a token AND clicks Write inside the
-// same round-trip, so the click lands inside the 300ms debounce window —
+// same round-trip, so the click lands inside the 300ms debounce window,
 // the exact race in which an unflushed Write emits a stale theme.
 func teTypeAndWriteJS(key, value string) string {
 	return fmt.Sprintf(`(function () {
@@ -329,7 +329,7 @@ func TestEditReachesPreview(t *testing.T) {
 // color-text to a low-contrast value against the default light surface and
 // assert the panel becomes visible and names the failing pair; then restore a
 // passing value and assert it clears. A check that cannot fail is the exact
-// defect class this surface shipped with — inline-styled probes that CSP
+// defect class this surface shipped with: inline-styled probes that CSP
 // dropped, every ratio ~20:1, "no issues" for every theme.
 func TestContrastPanelReportsFailure(t *testing.T) {
 	_, httpSrv := newBrowserThemeServer(t)
@@ -372,7 +372,7 @@ func TestContrastPanelReportsFailure(t *testing.T) {
 	}
 
 	// Restore a passing value; the text|surface finding must clear (the
-	// panel must not stay frozen on the old reading — the separate "panel
+	// panel must not stay frozen on the old reading, the separate "panel
 	// kept whatever it last showed" bug). Pre-existing dark findings may
 	// remain; only OUR finding is required to disappear.
 	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-text", original), nil)); err != nil {
@@ -426,7 +426,7 @@ func TestWriteIncludesLastEdit(t *testing.T) {
 //
 // Before the fix applyEdit resolved normally on a {error:...} response, so
 // flushPendingEdits resolved its queue regardless, and the Write handler
-// immediately POSTed /__theme/writeback — overwriting the file with the
+// immediately POSTed /__theme/writeback, overwriting the file with the
 // PREVIOUS theme while the control still showed the typed-but-rejected
 // value. Observed request order: ['/__theme/apply', '/__theme/writeback'].
 func TestWriteBlocksOnInvalidPendingEdit(t *testing.T) {
@@ -434,7 +434,7 @@ func TestWriteBlocksOnInvalidPendingEdit(t *testing.T) {
 	ctx := themeEditBrowserCtx(t)
 	navigateToEditor(t, ctx, httpSrv)
 
-	// Type an invalid value AND click Write in ONE round-trip — the click
+	// Type an invalid value AND click Write in ONE round-trip: the click
 	// lands inside the 300ms debounce window, exactly the race in which the
 	// old code certified the previous theme.
 	if err := chromedp.Run(ctx, chromedp.Evaluate(teTypeAndWriteJS("color-primary", "red;}"), nil)); err != nil {
@@ -456,21 +456,21 @@ func TestWriteBlocksOnInvalidPendingEdit(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// The status must NOT report a successful write — the apply was rejected
+	// The status must NOT report a successful write; the apply was rejected
 	// at the ApplyTokens boundary, so the write must be blocked.
 	if strings.Contains(status, "wrote") {
 		t.Fatalf("writeback succeeded despite a pending INVALID edit.\n"+
 			"applyEdit returned {error:...}; flushPendingEdits should have "+
 			"rejected, blocking the write. Status: %q", status)
 	}
-	// And the operator must be told WHICH token is invalid — a bare
+	// And the operator must be told WHICH token is invalid: a bare
 	// "validation failed" forces them to scan every control.
 	if !strings.Contains(status, "color-primary") {
 		t.Fatalf("status does not name the invalid token; the operator cannot "+
 			"tell which edit to fix. Status: %q", status)
 	}
 
-	// The write must be blocked entirely — no file on disk. With the bug the
+	// The write must be blocked entirely: no file on disk. With the bug the
 	// previous theme was written here; with the fix nothing reaches disk.
 	if _, err := os.Stat(srv.outPath); err == nil {
 		written, _ := os.ReadFile(srv.outPath)
@@ -489,7 +489,7 @@ func TestWriteBlocksOnInvalidPendingEdit(t *testing.T) {
 // measured and passed the OLD theme and never re-checked.
 func TestContrastCheckRunsAfterLateStylesheetLoad(t *testing.T) {
 	// Delay the variant CSS past the 1.5s fallback so the fallback MUST fire
-	// first. The late load then lands at ~2s — the only path that lets the
+	// first. The late load then lands at ~2s, the only path that lets the
 	// panel measure the new theme.
 	srv, httpSrv := newBrowserThemeServerWithDelayedVariantCSS(t, 2*time.Second)
 	_ = srv
@@ -518,7 +518,7 @@ func TestContrastCheckRunsAfterLateStylesheetLoad(t *testing.T) {
 	for time.Now().Before(deadline) {
 		reported := contrastText(t, ctx)
 		if contrastVisible(t, ctx) && strings.Contains(reported, "text|surface") && strings.Contains(reported, "light") {
-			return // pass — the late load re-ran the check and it measured the NEW theme
+			return // pass: the late load re-ran the check and it measured the NEW theme
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

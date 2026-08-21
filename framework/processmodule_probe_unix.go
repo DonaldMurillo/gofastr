@@ -15,9 +15,9 @@ import (
 )
 
 // This file provides the Unix (!windows) implementations of:
-//   - runProbeChildBody — the per-probe forbidden-action attempt the
+//   - runProbeChildBody: the per-probe forbidden-action attempt the
 //     conformance suite runs under the candidate backend.
-//   - hostUIDString — the host principal string P1 compares against.
+//   - hostUIDString: the host principal string P1 compares against.
 //
 // The bodies honor the §6 contract: each attempts the forbidden thing,
 // then prints exactly one result line per the probeOut* protocol. A clean
@@ -26,7 +26,7 @@ import (
 // (e.g. no /proc on this Unix) ⇒ UNREACHABLE.
 
 // runProbeChildBody executes the forbidden action for id and prints the
-// result line. The returned exit code is always 0 — the printed line is
+// result line. The returned exit code is always 0, the printed line is
 // the truth, the exit code is just hygiene (probeChildMaybeRun os.Exit's
 // on it regardless).
 func runProbeChildBody(id ProbeID) int {
@@ -51,7 +51,7 @@ func runProbeChildBody(id ProbeID) int {
 			return 0
 		}
 		// Signal-0 the host pid: success means we have permission to
-		// signal the host — a distinct sandbox principal could not.
+		// signal the host, a distinct sandbox principal could not.
 		var hp int
 		if _, err := fmt.Sscanf(hostPID, "%d", &hp); err == nil && hp > 0 {
 			if err := syscall.Kill(hp, 0); err == nil {
@@ -155,7 +155,7 @@ func runProbeChildBody(id ProbeID) int {
 				return 0
 			}
 		}
-		// Sanity: scratch MUST be writable — we don't want a PASS that
+		// Sanity: scratch MUST be writable, we don't want a PASS that
 		// is "everything is denied including the child's own work".
 		if scratch != "" {
 			probe := filepath.Join(scratch, ".probe-write")
@@ -201,7 +201,7 @@ func runProbeChildBody(id ProbeID) int {
 			return 0
 		}
 		// Linux: /proc/self/status NoNewPrivs line. Absent field on
-		// Darwin is not a breach — the setuid failure above is the
+		// Darwin is not a breach, the setuid failure above is the
 		// enforcement signal there.
 		if data, err := os.ReadFile("/proc/self/status"); err == nil {
 			if bytes.Contains(data, []byte("NoNewPrivs:\t0")) {
@@ -243,7 +243,7 @@ func forkBombCount(want int) int {
 		for i := started; i < end; i++ {
 			c := exec.Command("/bin/true")
 			if err := c.Start(); err != nil {
-				// Fork denied — cap likely fired. Stop; the cumulative
+				// Fork denied, cap likely fired. Stop; the cumulative
 				// count is what the caller compares.
 				return successes
 			}
@@ -258,7 +258,7 @@ func forkBombCount(want int) int {
 }
 
 // fdIsOpen reports whether fd is currently open in this process. Uses
-// fstat (portable across Unix syscall tables) rather than fcntl —
+// fstat (portable across Unix syscall tables) rather than fcntl.
 // syscall.FcntlFlock's return arity differs between Linux (uintptr,
 // error) and Darwin (error), and fstat's (error) signature is stable.
 // Returns false for a closed fd (EBADF).

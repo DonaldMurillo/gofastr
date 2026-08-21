@@ -13,7 +13,7 @@ import (
 // TestTextDeltaWithEmbeddedNewlines reproduces the screenshot bug:
 // a single TextDelta payload contained markdown structure with
 // embedded \n chars, which the old renderer concatenated into one
-// scrollback "line" and then wrote with %s\r\n — causing the
+// scrollback "line" and then wrote with %s\r\n, causing the
 // terminal cursor to wander columns.
 func TestTextDeltaWithEmbeddedNewlines(t *testing.T) {
 	tui := &TUI{Session: ids.NewSessionID(), out: &bytes.Buffer{}}
@@ -22,7 +22,7 @@ func TestTextDeltaWithEmbeddedNewlines(t *testing.T) {
 	}, tui.Session, ids.NewClientID(), time.Now())
 	tui.renderEvent(env)
 
-	// Every scrollback entry must be free of \n — that's the property
+	// Every scrollback entry must be free of \n, that's the property
 	// the renderer relies on for `%s\r\n` to behave.
 	for i, line := range tui.scrollback {
 		if strings.ContainsRune(line, '\n') {

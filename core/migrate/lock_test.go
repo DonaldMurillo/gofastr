@@ -126,7 +126,7 @@ func TestWithAdvisoryLock_PostgresRetriesUntilAcquired(t *testing.T) {
 }
 
 // TestWithAdvisoryLock_PostgresCtxCancelWhileWaiting asserts that a contended
-// lock returns promptly when ctx is cancelled, and fn never runs — the
+// lock returns promptly when ctx is cancelled, and fn never runs, the
 // deadlock-avoidance guarantee.
 func TestWithAdvisoryLock_PostgresCtxCancelWhileWaiting(t *testing.T) {
 	prev := lockPollInterval

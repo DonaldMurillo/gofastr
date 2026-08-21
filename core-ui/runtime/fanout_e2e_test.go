@@ -17,7 +17,7 @@ import (
 // presentational consumer client-side, with NO server round-trip per
 // consumer. We assert (a) both consumers reflect the new value, and
 // (b) the only dynamic request the click triggered was the single
-// producer RPC — every other path counter stays zero.
+// producer RPC, every other path counter stays zero.
 func TestFanout_ProducerUpdatesConsumersWithoutPerConsumerRequests(t *testing.T) {
 	js, err := RuntimeJS()
 	if err != nil {
@@ -40,7 +40,7 @@ func TestFanout_ProducerUpdatesConsumersWithoutPerConsumerRequests(t *testing.T)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			// Ignore browser-default noise (favicon, devtools probes) — we
+			// Ignore browser-default noise (favicon, devtools probes), we
 			// only care about app requests a consumer might trigger.
 			p := r.URL.Path
 			// Ignore browser-default noise: favicon, devtools probes,

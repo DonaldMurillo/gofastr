@@ -92,7 +92,7 @@ const MaxFilenameBytes = 255
 // maxMemory, so without this guard an attacker can ship a multi-MiB
 // filename (bounded only by the stdlib's 10 MiB per-header cap) that
 // amplifies into tens of MB of transient allocation and >100ms of CPU
-// per request — strings.Split on a ~9 MiB all-dots name produces a
+// per request: strings.Split on a ~9 MiB all-dots name produces a
 // ~9.4M-element slice. The bound is a generous multiple of
 // MaxFilenameBytes so legitimate names with escaped / multibyte
 // sequences survive untouched; the final MaxFilenameBytes cap still
@@ -112,8 +112,8 @@ func boundFilenameInput(name string) string {
 
 // SanitizeFilename removes path separators, null bytes, and other dangerous
 // characters from a filename to prevent path traversal attacks. It also
-// neutralises double-extension smuggling — e.g. `shell.php.jpg` becomes
-// `shell_php.jpg` — so a misconfigured web server can't be tricked into
+// neutralises double-extension smuggling, e.g. `shell.php.jpg` becomes
+// `shell_php.jpg`, so a misconfigured web server can't be tricked into
 // executing a hidden interior extension.
 //
 // Control bytes (CR, LF, TAB, anything < 0x20) are dropped so a logged
@@ -195,7 +195,7 @@ func SanitizeFilename(name string) string {
 	// Length cap. Keep the extension if there is one so the truncated
 	// name still round-trips through MIME detection. Truncation walks
 	// back to a UTF-8 rune boundary so the result is never invalid
-	// UTF-8 — an orphaned lead/continuation byte would corrupt the
+	// UTF-8: an orphaned lead/continuation byte would corrupt the
 	// storage key, utf8mb4 DB columns, and JSON consumers.
 	if len(name) > MaxFilenameBytes {
 		ext := filepath.Ext(name)
@@ -235,7 +235,7 @@ func truncateRunes(s string, maxBytes int) string {
 // U+2028 (LINE SEPARATOR), and U+2029 (PARAGRAPH SEPARATOR) are all
 // encoded entirely with bytes >= 0x80, so they survive a byte-only
 // scan yet are treated as line breaks by terminals, log processors,
-// and JavaScript/JSON tooling — the same newline-injection hazard the
+// and JavaScript/JSON tooling, the same newline-injection hazard the
 // ASCII filter defends against.
 func stripControlBytes(s string) string {
 	var b strings.Builder
@@ -322,7 +322,7 @@ var dangerousExecExts = map[string]bool{
 func neutraliseInteriorExecExts(name string) string {
 	parts := strings.Split(name, ".")
 	if len(parts) < 3 {
-		// No interior segment to worry about — either no extension or
+		// No interior segment to worry about, either no extension or
 		// exactly one (base.ext) which is the legitimate shape.
 		return name
 	}

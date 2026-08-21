@@ -17,9 +17,9 @@ var attrPattern = regexp.MustCompile(`data-fui-[a-z0-9-]+`)
 
 // privilegedAttrs are runtime-read attributes that do NOT carry the
 // data-fui- prefix, so attrPattern cannot see them. Every one of them
-// changes what code runs — data-behavior is a <script src> sink,
+// changes what code runs, data-behavior is a <script src> sink,
 // data-widget/data-component select hydration behaviour, data-bind
-// writes into the state store — which makes them exactly the set Hard
+// writes into the state store, which makes them exactly the set Hard
 // rule 5 exists for. Naming them explicitly keeps the parity gate from
 // being satisfied in letter and defeated in spirit; a plain widening to
 // data-[a-z0-9-]+ would instead drag in every presentational data-*
@@ -40,8 +40,8 @@ var privilegedAttrs = []string{
 //
 // frag/*.js is scanned SEPARATELY from runtime.js even though runtime.js is
 // composed from fragments. runtime.js is only the `full` composition, so an
-// attribute introduced by a fragment that composition omits — boot-embed,
-// rpc-stub, widgets-boot-static — appeared in no scanned file and was
+// attribute introduced by a fragment that composition omits, boot-embed,
+// rpc-stub, widgets-boot-static, appeared in no scanned file and was
 // invisible to the ownership and documentation gates below. Permanently: the
 // gate could never fail for it. data-fui-embed-state shipped that way.
 func runtimeJSAttrs(t *testing.T) []string {
@@ -148,7 +148,7 @@ func goInteractiveAttrs(t *testing.T) []string {
 // Block comments (/* … */) are left in place; they are rare in attribute
 // declarations and handling them correctly requires a full lexer. The
 // goal is only to exclude stale doc-comment references from the attribute
-// cross-check — false negatives (comment content included) are safe because
+// cross-check, false negatives (comment content included) are safe because
 // they just add extra names to the checked set.
 func stripGoLineComments(src string) string {
 	var out strings.Builder
@@ -194,7 +194,7 @@ func stripGoLineComments(src string) string {
 //
 // CSS-only attributes (comp markers, CSS-selector-only targets) that are never
 // read by JS logic are listed in cssOnlyAttrs and excluded from the check.
-// New CSS-only additions must be documented here — that's intentional friction
+// New CSS-only additions must be documented here, that's intentional friction
 // to keep the list honest.
 func TestGoInteractiveAttrsMatchRuntime(t *testing.T) {
 	// Attributes emitted by Go but never read by JS logic: they are CSS
@@ -204,7 +204,7 @@ func TestGoInteractiveAttrsMatchRuntime(t *testing.T) {
 		// Marks which styled component a DOM node belongs to.
 		// The runtime's CSS scanner reads data-fui-comp values (for loadComponentCSS),
 		// but the attribute itself is emitted by Go as a plain string label.
-		// It IS present in the JS (scanner reads it), so it passes the check —
+		// It IS present in the JS (scanner reads it), so it passes the check,
 		// listed here only for documentation.
 	}
 
@@ -233,7 +233,7 @@ func TestGoInteractiveAttrsMatchRuntime(t *testing.T) {
 
 // TestGoInteractiveAttrsMatchRuntime_FailsOnMismatch verifies the test
 // mechanism itself: it would catch a reintroduced name mismatch. This is a
-// positive test of the test's sensitivity — if it fails, the cross-check is
+// positive test of the test's sensitivity, if it fails, the cross-check is
 // broken.
 //
 // We don't actually reintroduce a mismatched name here (that would be
@@ -251,7 +251,7 @@ func TestGoInteractiveAttrs_F3NameAbsent(t *testing.T) {
 // TestRuntimeAttrsAreDocumented enforces hard rule 5: every data-fui-*
 // attribute the runtime JS references must appear in the core-ui/ARCHITECTURE.md
 // attribute table. This makes the doc the source of truth and fails the build
-// the moment a new runtime attribute ships without a doc entry — preventing the
+// the moment a new runtime attribute ships without a doc entry, preventing the
 // drift that previously left animate/dropdown/reveal/multiselect markers
 // undocumented.
 //
@@ -278,8 +278,8 @@ func TestRuntimeAttrsAreDocumented(t *testing.T) {
 // data-fui- prefix.
 //
 // The parity gate matched only `data-fui-*`, so the runtime's single
-// most privileged attribute — `data-behavior`, which becomes a
-// `<script src>` — appeared zero times in ARCHITECTURE.md and nobody
+// most privileged attribute, `data-behavior`, which becomes a
+// `<script src>`, appeared zero times in ARCHITECTURE.md and nobody
 // noticed. Same for data-widget / data-component / data-bind. The rule
 // was satisfied in letter and defeated in spirit.
 func TestPrivilegedAttrsAreDocumented(t *testing.T) {
@@ -329,7 +329,7 @@ func TestPrivilegedAttrsStillRead(t *testing.T) {
 // TestFragmentMapComplete is gate item 1: every data-fui-* attribute the
 // runtime JS references must have a declared owning fragment or module in
 // fragments.go. A new attribute that ships without an entry here fails the
-// build — which is the point: composition cannot serve an attribute whose
+// build, which is the point: composition cannot serve an attribute whose
 // owner it does not know, and the map is how it knows.
 func TestFragmentMapComplete(t *testing.T) {
 	var unowned []string
@@ -419,7 +419,7 @@ func TestFragmentNamesValid(t *testing.T) {
 // TestFragmentDepsAcyclic is gate item 4: the declared dependency edges
 // must form a DAG and every named dependency must resolve to a declared
 // fragment. Without this the composer's closure could recurse infinitely or
-// reference a fragment that does not exist — which is the failure mode that
+// reference a fragment that does not exist, which is the failure mode that
 // turns the map from a gate into mere documentation.
 func TestFragmentDepsAcyclic(t *testing.T) {
 	const (
@@ -493,7 +493,7 @@ func TestFragmentModulesValid(t *testing.T) {
 // runtime→doc, and only for attributes the runtime references). A data-fui-*
 // attribute documented in ARCHITECTURE.md must be backed by SOMETHING real:
 // either the runtime JS reads it, or Go source emits it as an HTML attribute.
-// An attribute that is documented but neither read nor emitted is stale doc —
+// An attribute that is documented but neither read nor emitted is stale doc,
 // the InlineEdit marker (documented for years, no component, no runtime
 // handler) fell through exactly this hole.
 //
@@ -547,8 +547,8 @@ func TestDocumentedAttrsHaveAnOwner(t *testing.T) {
 	}
 }
 
-// goEmittedAttrs scans the Go source that emits data-fui-* HTML attributes —
-// core-ui/{interactive,html,widget,app,patterns/**} and framework/ui — for
+// goEmittedAttrs scans the Go source that emits data-fui-* HTML attributes,
+// core-ui/{interactive,html,widget,app,patterns/**} and framework/ui, for
 // literal "data-fui-*" string constants, in non-comment, non-test source. It
 // generalizes goInteractiveAttrs (which covers core-ui/interactive alone) so
 // the doc→owner gate can see attributes emitted outside the interactive

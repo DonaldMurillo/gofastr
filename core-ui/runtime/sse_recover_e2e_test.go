@@ -16,7 +16,7 @@ import (
 // / expiry) must recover WITHOUT a navigation. An EventSource can't see
 // the 401 handleSSE returns, so after repeated reconnect failures the
 // module POSTs /__gofastr/session, rewrites the stream meta to the fresh
-// id, and reconnects — converging a purely idle tab.
+// id, and reconnects, converging a purely idle tab.
 func TestSSEIdleSessionRecovery(t *testing.T) {
 	var minted int32
 	mux := http.NewServeMux()

@@ -14,7 +14,7 @@ import (
 
 // SecurityEvent is one security-relevant auth occurrence: a login, a 2FA
 // lifecycle change, a password reset, an OAuth link, a magic-link issuance.
-// It is the unit the audit trail records for non-CRUD auth activity — the
+// It is the unit the audit trail records for non-CRUD auth activity, the
 // CRUD hooks already cover user/session row writes, so this struct carries
 // only the events those hooks can't see.
 type SecurityEvent struct {
@@ -23,7 +23,7 @@ type SecurityEvent struct {
 	// downstream consumers can match on a closed vocabulary.
 	Kind string
 
-	// UserID is the resolved principal. Empty when unknown — e.g. a failed
+	// UserID is the resolved principal. Empty when unknown, e.g. a failed
 	// login for a nonexistent account, or a password-reset request for an
 	// unregistered email. The SQL sink substitutes "-" so the NOT NULL
 	// record_id column still accepts the row.
@@ -36,7 +36,7 @@ type SecurityEvent struct {
 	Email string
 
 	// Remote is the client IP (host part of r.RemoteAddr). XFF is NOT
-	// trusted — see the auth threat-model doc. Empty when the request
+	// trusted. See the auth threat-model doc. Empty when the request
 	// carries no remote address.
 	Remote string
 
@@ -51,7 +51,7 @@ type SecurityEvent struct {
 
 // AuditSink receives security events. Implementations must be fast or buffer
 // internally; they are called on the request path. A nil sink disables
-// auditing entirely — AuthManager.emitSecurity no-ops.
+// auditing entirely. AuthManager.emitSecurity no-ops.
 //
 // The built-in NewSQLAuditSink writes one audit_log row per event via
 // framework.AppendAuditEvent, sharing the CRUD audit table and its
@@ -136,7 +136,7 @@ func NewSQLAuditSink(db *sql.DB, table string) (AuditSink, error) {
 }
 
 // SecurityEvent writes one audit_log row. A write failure is logged as a
-// WARN and swallowed — losing the audit row is preferable to failing the
+// WARN and swallowed, losing the audit row is preferable to failing the
 // auth operation it was recording (a reset that 500s because the audit
 // insert failed leaves the password unchanged AND the user locked out).
 func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {

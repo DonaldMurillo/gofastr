@@ -1,5 +1,5 @@
 // Seeded by `gofastr generate --from=gofastr.yml`, then hand-evolved.
-// Meridian is hand-maintained and NOT regenerable — see doc.go.
+// Meridian is hand-maintained and NOT regenerable. See doc.go.
 
 package main
 
@@ -97,7 +97,7 @@ func TestMeridianTokenAuth(t *testing.T) {
 	}
 
 	// A token scoped to customers must not satisfy other entity scopes'
-	// baseline auth differently than sessions — but anonymous must 401.
+	// baseline auth differently than sessions, but anonymous must 401.
 	req, _ := http.NewRequest("GET", base+"/api/customers", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

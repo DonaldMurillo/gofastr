@@ -181,7 +181,7 @@ func TestMCPRequiredTokenRejected(t *testing.T) {
 // TestMCPToolsListDispatchParity pins the truthfulness contract of
 // tools/list: every advertised tool must be dispatchable through
 // tools/call. A tool that only exists in the advertisement answers
-// JSON-RPC -32601 ("unknown tool") — a capability that does not exist.
+// JSON-RPC -32601 ("unknown tool"), a capability that does not exist.
 func TestMCPToolsListDispatchParity(t *testing.T) {
 	s, session, _ := newTestServer(t)
 

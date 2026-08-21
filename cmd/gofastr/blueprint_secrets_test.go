@@ -9,7 +9,7 @@ import (
 )
 
 // Secrets from the blueprint (JWT signing key, DB credentials, seed admin
-// password) must never land as literals in generated Go source — that
+// password) must never land as literals in generated Go source. That
 // source gets committed. They belong in the generated .env (gitignored via
 // the generated .gitignore); the code reads them through getEnv.
 func TestBlueprintNeverInlinesSecrets(t *testing.T) {
@@ -98,7 +98,7 @@ screens:
 	if !strings.Contains(mainGo, `getEnv("DATABASE_URL"`) {
 		t.Errorf("main.go missing getEnv(\"DATABASE_URL\"):\n%s", mainGo)
 	}
-	// .env must be loaded before openDB — NewApp's auto-load
+	// .env must be loaded before openDB. NewApp's auto-load
 	// happens after the DB has already been opened.
 	if !strings.Contains(mainGo, "dotenv.LoadAndApply") {
 		t.Errorf("main.go must load .env before opening the DB:\n%s", mainGo)
@@ -139,7 +139,7 @@ func fileNames(files []generatedFile) []string {
 }
 
 // DSNs the URL parser rejects and libpq-quoted passwords must still be
-// detected and fully redacted — both were paths for the credential to
+// detected and fully redacted. Both were paths for the credential to
 // land verbatim (or partially) in committed source.
 func TestDSNRedactionFailsClosed(t *testing.T) {
 	cases := map[string]struct{ dsn, redacted string }{
@@ -149,7 +149,7 @@ func TestDSNRedactionFailsClosed(t *testing.T) {
 			redacted: "postgres://app@db:5432/app",
 		},
 		"quoted kv password": {
-			dsn:      "host=db user=app password='se cret' dbname=x",
+			dsn:      "host=db user=app password='se cret' dbname=x", // not-a-secret: fixture exercising the DSN redactor
 			redacted: "host=db user=app dbname=x",
 		},
 		"plain kv password": {

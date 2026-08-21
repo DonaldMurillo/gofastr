@@ -1,7 +1,7 @@
 // Package nestedlist renders recursive <ul>/<ol> hierarchies with
 // optional native <details> collapse on branches. Use it for navigation
 // trees, settings menus, and multi-level outlines that don't need the
-// lazy-load / RPC machinery of the tree pattern. Pure render — no
+// lazy-load / RPC machinery of the tree pattern. Pure render, no
 // runtime module.
 package nestedlist
 
@@ -24,7 +24,7 @@ var Style = registry.RegisterStyle("nestedlist", styleFn)
 type Item struct {
 	// Label is the visible text. Required.
 	Label string
-	// Href turns a leaf node into a link. Branch nodes ignore Href —
+	// Href turns a leaf node into a link. Branch nodes ignore Href,
 	// their summary is non-navigable on purpose so the disclosure
 	// trigger isn't ambiguous.
 	Href string
@@ -100,7 +100,7 @@ func renderItem(ordered bool, it Item) render.HTML {
 		return render.Tag("li", liAttrs, body)
 	}
 
-	// Branch node — collapsible via native <details>.
+	// Branch node, collapsible via native <details>.
 	detailsAttrs := map[string]string{"class": "nested-list__branch"}
 	if it.Expanded {
 		detailsAttrs["open"] = ""

@@ -411,7 +411,7 @@ func TestCacheMiddleware_RequestNoStoreBypassesStoredVariant(t *testing.T) {
 
 // An embed grant is an app credential: framework/embed's middleware resolves it
 // into a user before the handler runs. It deliberately travels without a cookie
-// and without Authorization — that is the whole design — so a credential check
+// and without Authorization, that is the whole design, so a credential check
 // that looks only at those two saw an authenticated response as anonymous,
 // stored it under the shared method/host/path/query key, and served it to the
 // next grant holder as a HIT without the handler ever running.

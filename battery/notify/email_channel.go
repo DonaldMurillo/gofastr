@@ -53,7 +53,7 @@ func (c *EmailChannel) Name() string { return c.channel }
 // Recipient and from addresses are checked for the three shapes that
 // turn an address into a header-injection vector: CR, LF, NUL. They are
 // also screened for an "@" and rejected if they contain HTML tag
-// characters — a literal "<script>alert(1)</script>@evil.com" is never
+// characters, a literal "<script>alert(1)</script>@evil.com" is never
 // a legitimate address. The downstream SMTP sender re-checks at the
 // transport boundary, but rejecting early surfaces the bug nearer the
 // data source.
@@ -62,7 +62,7 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) err
 		return nil // router shouldn't have selected us, but guard anyway
 	}
 	// Rendered.Extra["from"] is rejected: a templated from override is a
-	// sender-spoofing vector — the channel's configured from-address is
+	// sender-spoofing vector, the channel's configured from-address is
 	// the only legitimate source.
 	if _, ok := r.Extra["from"]; ok {
 		return fmt.Errorf("%w: rendered 'from' override not allowed", ErrUnsafeHeader)
@@ -138,7 +138,7 @@ func validateCustomHeaders(h map[string]string) error {
 // assertSafeAddress applies a fast shape check that catches the
 // failure modes the downstream SMTP layer also enforces (CR / LF / NUL)
 // plus a few obviously-not-an-email shapes (HTML, missing @). It is
-// intentionally permissive otherwise — RFC 5321 addresses are richer
+// intentionally permissive otherwise. RFC 5321 addresses are richer
 // than any short regex can capture.
 func assertSafeAddress(field, addr string) error {
 	if strings.ContainsAny(addr, "\r\n\x00") {

@@ -7,7 +7,7 @@ import (
 )
 
 // agents.md is the agent-facing reference for this package. It once
-// advertised gallery.NoteOnlySlugs, which is not exported — only the
+// advertised gallery.NoteOnlySlugs, which is not exported. Only the
 // private noteOnlySlugs map and the IsNoteOnly accessor exist. The bullet
 // above it had the identical defect (CodeSnippets["button"]) and was fixed
 // without catching this one, so the claim is pinned.

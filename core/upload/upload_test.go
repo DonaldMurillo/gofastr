@@ -65,7 +65,7 @@ func TestUploadValidFileSucceeds(t *testing.T) {
 	// The key is no longer the bare client filename: two uploads of the
 	// same name must not overwrite each other, so the handler appends a
 	// unique timestamp/rand component (see UniqueFilename). Clients read
-	// the key from this response — they never derive it themselves.
+	// the key from this response. They never derive it themselves.
 	var meta Metadata
 	if err := json.Unmarshal(rr.Body.Bytes(), &meta); err != nil {
 		t.Fatalf("decode metadata: %v", err)
@@ -114,7 +114,7 @@ func TestRejectDisallowedMIME(t *testing.T) {
 
 	handler := Handler(cfg)
 
-	// Write a plain text file — not image/png
+	// Write a plain text file, not image/png
 	body, contentType := newMultipartBody(t, "test.txt", "plain text content")
 	req := httptest.NewRequest(http.MethodPost, "/upload", body)
 	req.Header.Set("Content-Type", contentType)
@@ -180,7 +180,7 @@ func TestPathTraversalSanitized(t *testing.T) {
 	// Ensure the file was NOT saved outside the storage dir
 	savedAs := SanitizeFilename("../../../etc/passwd")
 	if savedAs == "passwd" || savedAs == "etc_passwd" || strings.Contains(savedAs, "..") || strings.Contains(savedAs, "/") {
-		// OK — just make sure it's safe
+		// OK, just make sure it's safe
 		if strings.Contains(savedAs, "..") || strings.Contains(savedAs, "/") {
 			t.Fatalf("sanitized name is unsafe: %q", savedAs)
 		}

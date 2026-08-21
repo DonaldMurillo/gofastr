@@ -24,7 +24,7 @@ const (
 	// supervisor's configured *SandboxRunner iff that runner's backend
 	// passes the P1–P7 conformance probe on this host; otherwise
 	// Register fails with [UntrustedNoSandboxError] and the module
-	// never reaches Ready (fail-closed — never a silent downgrade to
+	// never reaches Ready (fail-closed, never a silent downgrade to
 	// TrustedProcessRunner).
 	TrustUntrusted TrustTier = iota
 
@@ -48,7 +48,7 @@ func (t TrustTier) String() string {
 
 // RouteDeclaration is one operator-approved HTTP route a process module
 // exposes. The descriptor is the source of truth (design §3 decision B); the
-// child cannot add, rename, or reshape routes at runtime — the handshake
+// child cannot add, rename, or reshape routes at runtime, the handshake
 // cross-checks surface_sha256, and the host proxies only RouteIDs present
 // here.
 type RouteDeclaration struct {
@@ -86,7 +86,7 @@ type ToolDigest struct {
 
 // ModuleLimits is the per-child resource envelope an operator may narrow from
 // the v1 defaults (design §4.4 / §8). The descriptor may LOWER a ceiling but
-// never RAISE it — a value of 0 means "host default applies"; a non-zero
+// never RAISE it, a value of 0 means "host default applies"; a non-zero
 // value greater than the host default is rejected at install time.
 type ModuleLimits struct {
 	// Deadline is the per-call ceiling for module.* requests. Default 10s;
@@ -103,7 +103,7 @@ type ModuleLimits struct {
 }
 
 // maxModuleCallDeadline is the v1 host ceiling on per-call deadlines. A
-// descriptor value above this is rejected at install — modules cannot widen
+// descriptor value above this is rejected at install, modules cannot widen
 // the host's call budget (design §8).
 const maxModuleCallDeadline = 10 * time.Second
 
@@ -165,7 +165,7 @@ type ProcessModuleDescriptor struct {
 
 // ApprovedGrants is the operator-approved subset of a descriptor's
 // RequestedGrants. It is a parameter to [ValidateProcessModuleDescriptor], not
-// a UI — this wave treats approval as an explicit set the caller supplies
+// a UI, this wave treats approval as an explicit set the caller supplies
 // (design §5: "approval is a parameter, not a UI").
 type ApprovedGrants []access.Permission
 
@@ -196,7 +196,7 @@ func descErr(field, rule, msg string) *DescriptorValidationError {
 const moduleIdentPattern = "^[A-Za-z][A-Za-z0-9_-]*$"
 
 // idPattern is the legal RouteDeclaration.ID / ToolDigest.ID class: letters,
-// digits, underscore, hyphen — no slashes/colons so it survives a URL or a
+// digits, underscore, hyphen, no slashes/colons so it survives a URL or a
 // method-qualified tool name unchanged.
 const idPattern = "^[A-Za-z][A-Za-z0-9_-]*$"
 
@@ -297,7 +297,7 @@ func ValidateProcessModuleDescriptor(d ProcessModuleDescriptor, approved Approve
 		}
 		// Carve-out FIRST (design §5): the non-grantable check must run
 		// before ValidScope because the carve-out's named tokens
-		// ("CrossOwnerRead", bare "*") are not resource:verb scopes —
+		// ("CrossOwnerRead", bare "*") are not resource:verb scopes.
 		// ValidScope would reject them as "scope" instead of naming the
 		// security-critical reason. Belt-and-suspenders on the broker
 		// path is the second layer.

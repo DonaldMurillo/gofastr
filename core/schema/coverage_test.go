@@ -216,7 +216,7 @@ func TestValidateDecimal(t *testing.T) {
 	if err := validateField(Field{Type: Decimal, Min: fp(0), Max: fp(100)}, "12.50"); err != nil {
 		t.Errorf("valid: %v", err)
 	}
-	// The regex (not the parser) is what fails non-finite literals closed —
+	// The regex (not the parser) is what fails non-finite literals closed.
 	// ParseFloat/big.Rat would otherwise accept these and let them slip past
 	// the Min/Max bounds. Guard the property explicitly.
 	for _, bad := range []string{"NaN", "nan", "Inf", "inf", "Infinity", "+Inf", "0x1p4"} {

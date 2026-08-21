@@ -1,4 +1,4 @@
-// GoFastr runtime module — FileUpload
+// GoFastr runtime module, FileUpload
 //
 // Wires every [data-fui-fileupload] zone in a subtree:
 //   - drag/drop forwards dropped File objects into the inner
@@ -79,7 +79,7 @@
       };
       const onLeave = (e) => {
         e.preventDefault();
-        // dragleave fires when moving to a child — guard via relatedTarget.
+        // dragleave fires when moving to a child, guard via relatedTarget.
         if (zone.contains(e.relatedTarget)) return;
         zone.classList.remove('is-dragover');
         wrapperFor(zone)?.classList.remove('is-dragover');
@@ -92,7 +92,7 @@
         if (!files || files.length === 0) return;
         if (input.disabled) return;
         // Assign via DataTransfer so the input's `files` becomes the
-        // dropped list — input.files is read-only except through a
+        // dropped list, input.files is read-only except through a
         // DataTransfer object.
         const dt = new DataTransfer();
         for (const f of files) {
@@ -113,17 +113,17 @@
   //   1. Expose the scanner on the global namespace so core's MutationObserver
   //      + SPA-nav handler can re-run it after DOM swaps.
   //   2. Run it immediately on whatever's already in the DOM (the module
-  //      loaded because a marker was detected — the module's first job is
+  //      loaded because a marker was detected, the module's first job is
   //      to wire that marker right now, not wait for the next event).
   window.__gofastr = window.__gofastr || {};
   window.__gofastr.scanFileUploads = wireFileUploads;
-  // Back-compat alias for the previous monolithic runtime — kept so
+  // Back-compat alias for the previous monolithic runtime, kept so
   // any external caller of the legacy name keeps working through the
   // transition.
   window.__fuiWireFileUploads = wireFileUploads;
   // Per-module rescan registered with core. Core dispatches
   // `gofastr:navigate` after every SPA-nav swap and iterates
-  // _moduleScanners — modules that need to wire new DOM (drop zones in
+  // _moduleScanners, modules that need to wire new DOM (drop zones in
   // a freshly-swapped page) re-run here. wireFileUploads is idempotent
   // via __fuiWired flag, so re-running on the same node is a no-op.
   ((window.__gofastr._moduleScanners ||= {})).fileupload = wireFileUploads;

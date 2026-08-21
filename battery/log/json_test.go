@@ -14,7 +14,7 @@ import (
 )
 
 // fanoutEntry encodes one record exactly the way fanoutHandler.Handle
-// does: a single slog JSON line with the trailing newline stripped —
+// does: a single slog JSON line with the trailing newline stripped,
 // the byte shape Sink.Write receives in production.
 func fanoutEntry(t *testing.T, msg string, args ...any) []byte {
 	t.Helper()

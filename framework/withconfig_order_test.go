@@ -8,7 +8,7 @@ import (
 )
 
 // WithConfig replaces the whole AppConfig, so a granular option placed before
-// it is silently discarded — the exact paste-point mistake the old `gofastr
+// it is silently discarded, the exact paste-point mistake the old `gofastr
 // init` scaffold invited (WithConfig last, so "next to WithDB" meant "before
 // WithConfig"). Replace semantics stay: a merge could not tell an explicit
 // zero from an unset field, and existing callers rely on WithConfig being

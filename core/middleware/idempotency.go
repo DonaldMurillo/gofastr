@@ -64,7 +64,7 @@ var (
 //
 // MaxBodyBytes caps how much of the request body is read for fingerprint
 // + replay capture. Defaults to 1 MiB. Larger requests bypass
-// idempotency to keep memory bounded — they receive a Vary header
+// idempotency to keep memory bounded; they receive a Vary header
 // indicating the bypass but otherwise proceed normally.
 //
 // MaxResponseBytes caps the size of the captured response body. When a
@@ -75,19 +75,19 @@ var (
 // PUT, PATCH, DELETE. GET/HEAD/OPTIONS always bypass.
 //
 // Required, if true, rejects unsafe writes that don't carry the header
-// (400). Default false — header is opt-in per request.
+// (400). Default false; header is opt-in per request.
 //
 // Principal extracts the authenticated subject (user/tenant id) from
 // each request. When set, the fingerprint is namespaced by the result
 // so two principals using the SAME Idempotency-Key value never see
-// each other's cached responses — closing a cross-tenant replay leak.
+// each other's cached responses, closing a cross-tenant replay leak.
 // Default: empty principal (no namespacing); apps SHOULD wire one.
 // FailOpen flips behaviour on store error: true falls through to the
 // handler (availability-first), false returns 503 to the client
-// (correctness-first). Default false — a broken store no longer
+// (correctness-first). Default false; a broken store no longer
 // silently allows duplicate writes.
 //
-// Logger records a Finish failure — a DB blip that strands the in-flight
+// Logger records a Finish failure: a DB blip that strands the in-flight
 // claim so later retries of the SAME request get 409 until the entry TTLs.
 // The client already received its response (Finish runs after the handler),
 // so the response is unaffected; this is an observability seam, not a
@@ -105,7 +105,7 @@ type IdempotencyConfig struct {
 }
 
 // headersStrippedFromReplay are response headers the middleware never
-// caches — they're per-request and/or per-identity and replaying them
+// caches: they're per-request and/or per-identity and replaying them
 // across requests would leak session/credential material.
 var headersStrippedFromReplay = map[string]struct{}{
 	"Set-Cookie":          {},
@@ -154,9 +154,9 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 	// Degrade to a no-op rather than cache into a shared namespace: a
 	// host that never wired a Principal then behaves exactly as if the
 	// middleware were absent, which is the safe reading of "not
-	// configured". Everything else in this file already fails closed —
+	// configured". Everything else in this file already fails closed:
 	// FailOpen defaults false, credential headers are stripped from
-	// replays — and this default was the odd one out.
+	// replays. This default was the odd one out.
 	if cfg.Principal == nil {
 		logSlogWarnDefault("middleware: Idempotency has no Principal function — replay caching is DISABLED. " +
 			"Set IdempotencyConfig.Principal (e.g. the authenticated user or tenant id) to enable it; " +
@@ -210,7 +210,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				principal = cfg.Principal(r)
 			}
 			fp := requestFingerprint(r, body, principal)
-			// Namespace the storage key by principal too — that defends
+			// Namespace the storage key by principal too; that defends
 			// even when the Principal function returns empty for some
 			// callers, by binding the key shard to "principal:key".
 			storeKey := principal + "\x00" + key
@@ -256,14 +256,14 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 
 			// Use a fresh context for the cleanup write so a client
 			// disconnect doesn't strand the claim in-flight until the
-			// 30-second TTL — that would block legitimate retries.
+			// 30-second TTL; that would block legitimate retries.
 			finishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			// Finish persists (or releases) the claim AFTER the handler has
 			// answered. A failure here strands the entry: the client already
 			// got its response, but the same Idempotency-Key now 409s on
 			// retry until the claim TTLs. The response is already sent, so the
-			// only correct action is to make the loss observable — silently
+			// only correct action is to make the loss observable; silently
 			// dropping it is the bug this fixes.
 			finish := func(resp *IdempotentResponse) {
 				if err := cfg.Store.Finish(finishCtx, storeKey, fp, resp); err != nil {
@@ -307,7 +307,7 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 
 // requestFingerprint hashes the parts of the request that define
 // "sameness" for idempotency: principal, method, path, query, content-
-// type, and the body. Headers other than Content-Type are excluded —
+// type, and the body. Headers other than Content-Type are excluded;
 // they vary with auth tokens, request IDs, etc., and aren't part of the
 // client's intent.
 //
@@ -511,8 +511,8 @@ func (s *memoryIdempotencyStore) Finish(_ context.Context, key, fingerprint stri
 	// Only the owner of the in-flight claim may mutate or release it. If the
 	// claim expired and was re-assigned to a different fingerprint while this
 	// handler was still running, Finish must be a no-op: writing would clobber
-	// the new owner's claim and replay this caller's response to them on retry
-	// — a cross-user disclosure. See TestIdemFinishOnlyWritesOwnClaim.
+	// the new owner's claim and replay this caller's response to them on retry,
+	// a cross-user disclosure. See TestIdemFinishOnlyWritesOwnClaim.
 	if e.fingerprint != fingerprint {
 		return nil
 	}

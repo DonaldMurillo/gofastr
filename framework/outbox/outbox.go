@@ -20,7 +20,7 @@ import (
 // just "pending" → "dispatched": a row is "pending" until the relay has
 // settled every per-consumer delivery (dispatched/dead/abandoned), then it
 // flips to "dispatched". The parent's attempts/last_error columns are
-// vestigial — per-attempt state lives in event_outbox_delivery (see
+// vestigial, per-attempt state lives in event_outbox_delivery (see
 // [Delivery]).
 type Row struct {
 	ID           string
@@ -72,7 +72,7 @@ type Outbox struct {
 
 	// nudge wakes the Relay immediately after a commit so delivery
 	// latency is not bound to PollInterval. Buffered cap 1: extra
-	// nudges coalesce — one wake per pump is enough.
+	// nudges coalesce, one wake per pump is enough.
 	nudge chan struct{}
 
 	// deliveryTable is the validated name of the child table holding
@@ -87,13 +87,13 @@ type Outbox struct {
 	consumers  map[string]map[string]event.EventHandler
 	consumerMu sync.RWMutex
 
-	// handlerGrace bounds how long a delivery may stay unhandled — no
-	// consumer handler on ANY replica — before it is abandoned (settled
+	// handlerGrace bounds how long a delivery may stay unhandled, no
+	// consumer handler on ANY replica, before it is abandoned (settled
 	// terminal). This is the time-based replacement for snapshot-driven
 	// retirement: a genuinely-removed consumer's deliveries age past the
 	// grace and abandon everywhere, while a newly-added consumer's fresh
 	// deliveries are younger than the grace, so a lagging replica that lacks
-	// the handler never abandons them — the up-to-date replica delivers them
+	// the handler never abandons them, the up-to-date replica delivers them
 	// first. MUST exceed the rolling-deploy overlap window. Default 15m.
 	handlerGrace time.Duration
 
@@ -150,7 +150,7 @@ func WithBatchSize(n int) Option {
 //
 // It therefore also bounds parent-completion latency: a fully-delivered parent
 // is not marked dispatched until it is older than the grace (delivery to
-// consumers is unaffected and prompt — only the parent bookkeeping/GC lags).
+// consumers is unaffected and prompt, only the parent bookkeeping/GC lags).
 //
 // The grace MUST comfortably exceed your rolling-deploy overlap window PLUS
 // worst-case clock skew between replicas (delivery/parent timestamps are
@@ -162,18 +162,18 @@ func WithHandlerGrace(d time.Duration) Option {
 
 // WithRetention enables automatic purge of fully-settled (dispatched) parent
 // rows and their deliveries once they are older than d. The relay runs the
-// purge as part of its poll cycle. Zero (the default) disables purging —
+// purge as part of its poll cycle. Zero (the default) disables purging,
 // rows are kept forever. Only dispatched parents are ever purged; pending or
 // dead/abandoned deliveries are never deleted out from under a consumer. A
 // parent that still carries a dead or abandoned delivery is retained
-// indefinitely until that delivery is replayed to completion — retention is
+// indefinitely until that delivery is replayed to completion, retention is
 // not a dead-letter TTL.
 func WithRetention(d time.Duration) Option {
 	return func(o *Outbox) { o.retention = d }
 }
 
 // New constructs an Outbox backed by db. It detects the dialect
-// (postgres or sqlite — mirroring battery/queue) and ensures the table
+// (postgres or sqlite, mirroring battery/queue) and ensures the table
 // and its (status, created_at) index exist.
 func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 	o := &Outbox{
@@ -194,7 +194,7 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 		opt(o)
 	}
 	// Validate the table name once at construction (identifier
-	// injection guard — table names can't be $1-parameterised).
+	// injection guard, table names can't be $1-parameterised).
 	if _, err := query.SafeIdent(o.table); err != nil {
 		return nil, fmt.Errorf("outbox: invalid table name %q: %w", o.table, err)
 	}
@@ -282,12 +282,12 @@ func (o *Outbox) ensureTable() error {
 
 // ensureDeliveryTable creates the per-consumer delivery child table and
 // its serving indexes. The parent's per-attempt columns (attempts,
-// last_error, next_attempt_at, claimed_until) are left in place —
+// last_error, next_attempt_at, claimed_until) are left in place,
 // vestigial now that state moved to the child, but dropping columns is
 // destructive. DDL mirrors the parent's dialect switch.
 func (o *Outbox) ensureDeliveryTable(tsType string) error {
 	// created_at is when the DELIVERY row was inserted (not when the event was
-	// staged — that's the parent's created_at). The abandonment grace is
+	// staged, that's the parent's created_at). The abandonment grace is
 	// measured from this so a freshly-expanded delivery for a newly-declared
 	// consumer is never abandoned by a lagging replica.
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -321,7 +321,7 @@ func (o *Outbox) ensureDeliveryTable(tsType string) error {
 	return err
 }
 
-// Append inserts a pending row using ex — callers hand in their *sql.Tx
+// Append inserts a pending row using ex, callers hand in their *sql.Tx
 // (it satisfies [db.Executor]) so the row commits or rolls back with the
 // business write. data is JSON-marshalled into Payload. Returns the new
 // row's ID, which becomes [event.Event].ID on delivery for consumer
@@ -422,7 +422,7 @@ func truncateError(err error) string {
 }
 
 // newID returns a fresh 32-char hex identifier. Panics on entropy
-// failure — an OS-level fault the Relay must not paper over by minting
+// failure, an OS-level fault the Relay must not paper over by minting
 // colliding all-zero IDs. Mirrors battery/webhook's newID without
 // importing battery code (framework packages may not import batteries).
 func newID() string {

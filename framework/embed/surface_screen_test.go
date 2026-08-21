@@ -6,7 +6,7 @@ import (
 )
 
 // testScreen is a minimal embed.Screen for tests in THIS package, which cannot
-// import core-ui/app — the layering rule this package exists under. *app.Screen
+// import core-ui/app: the layering rule this package exists under. *app.Screen
 // satisfies embed.Screen structurally in production code.
 type testScreen struct {
 	path string
@@ -70,7 +70,7 @@ func TestSurfaceCarriesAScreenNotAPath(t *testing.T) {
 }
 
 // The screen's route is normalized (trailing slash fixed) and the resolved path
-// is what MayReach compares against — unchanged from the old string-Path world.
+// is what MayReach compares against, unchanged from the old string-Path world.
 func TestSurfaceScreenRouteIsResolvedAndReachable(t *testing.T) {
 	h, err := New(Config{
 		Surfaces: []Surface{{

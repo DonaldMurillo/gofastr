@@ -14,7 +14,7 @@ import (
 )
 
 // MaxINListEntries bounds the number of values a single ?field_in=…
-// parameter can expand to — counting repeated occurrences of the
+// parameter can expand to, counting repeated occurrences of the
 // parameter as one list. Generous for legitimate use (most DBs cap
 // IN-lists at a few thousand parameters) but small enough that an
 // adversarial 10K-element list can't drive memory or statement-cache
@@ -25,7 +25,7 @@ const MaxINListEntries = 1000
 // SplitINValues expands every occurrence of a repeated _in parameter
 // into one flat, comma-split value list: ?tag_in=a&tag_in=b,c yields
 // [a b c]. Reading only values[0] silently narrowed the filter to the
-// first key's values — a client asking for a union got a subset with no
+// first key's values, a client asking for a union got a subset with no
 // error. Repeated keys and comma-separated values are treated as the
 // same list, so the cap (MaxINListEntries) can't be bypassed by
 // splitting one huge list across several occurrences either.
@@ -38,7 +38,7 @@ func SplitINValues(values []string) []string {
 // HTTP filter paths that enforce MaxINListEntries: it never materializes
 // more than max+1 entries. SplitINValues built the entire list before the
 // caller compared it against the cap, so one request carrying hundreds of
-// thousands of commas allocated that many strings just to earn a 400 —
+// thousands of commas allocated that many strings just to earn a 400,
 // repeated per request. Here the total is counted first (strings.Count,
 // no allocation) and the list is only built in full when it fits; an
 // over-cap input yields a max+1-entry prefix plus the exact total, which
@@ -61,7 +61,7 @@ outer:
 	for _, v := range values {
 		for {
 			// Check before appending so the slice never exceeds max+1
-			// entries — the no-comma tail append must respect the bound
+			// entries, the no-comma tail append must respect the bound
 			// just like the comma-split pieces.
 			if len(out) > max {
 				break outer
@@ -139,7 +139,7 @@ type ParsedFilter struct {
 	// happened to work), while every dialect binds a Go bool correctly
 	// (PG native boolean, SQLite 1/0). nil means "bind Value".
 	// Unexported on purpose: callers that construct ParsedFilter
-	// directly keep the legacy string-binding behavior — only
+	// directly keep the legacy string-binding behavior, only
 	// ParseFiltersValues knows the field's schema type.
 	typed any
 }
@@ -147,7 +147,7 @@ type ParsedFilter struct {
 // BindValue returns what a query binder should bind for this filter:
 // the schema-coerced value when the filter carries one (set by
 // ParseFiltersValues or Coerced), the raw string otherwise. Every
-// binder that applies a ParsedFilter to SQL must bind this, not Value —
+// binder that applies a ParsedFilter to SQL must bind this, not Value,
 // binding the raw string re-opens the SQLite Bool/TEXT affinity bug.
 func (f ParsedFilter) BindValue() any {
 	if f.typed != nil {
@@ -158,7 +158,7 @@ func (f ParsedFilter) BindValue() any {
 
 // boolTyped coerces raw for a Bool-typed column, returning nil when the
 // column is not Bool or raw is not a strconv.ParseBool spelling (the
-// binder then keeps the raw string — the pre-coercion behavior).
+// binder then keeps the raw string, the pre-coercion behavior).
 func boolTyped(isBool bool, raw string) any {
 	if !isBool {
 		return nil
@@ -183,7 +183,7 @@ func BoolBind(isBool bool, raw string) any {
 
 // Coerced returns a copy of f whose bind value is schema-coerced for
 // the field's type (booleans today). Callers that construct
-// ParsedFilter directly — facet UIs, scoped include filters — use this
+// ParsedFilter directly, facet UIs, scoped include filters, use this
 // so BindValue matches what ParseFiltersValues would have produced.
 func (f ParsedFilter) Coerced(t schema.FieldType) ParsedFilter {
 	f.typed = boolTyped(t == schema.Bool, f.Value)
@@ -220,7 +220,7 @@ type FilterOption func(*filterOpts)
 // Lenient restores the pre-strict behavior: an unknown top-level filter key
 // is silently dropped instead of returning an error. It exists as a
 // migration escape hatch for apps that historically relied on unrecognized
-// query params being ignored. Prefer the strict default — a dropped filter
+// query params being ignored. Prefer the strict default, a dropped filter
 // returns an UNFILTERED result set, which is a data-exposure and
 // broken-client hazard.
 func Lenient() FilterOption { return func(o *filterOpts) { o.lenient = true } }
@@ -255,7 +255,7 @@ type FilterSuffixOp struct {
 // be tested before their shorter prefixes (e.g. `_gte` before `_gt`,
 // otherwise `?score_gte=5` matches `_gt` and leaves an `e=` field-name
 // fragment). The table is a pure function of the operator set, so it is
-// hoisted to a package var — ParseFilters/ParseSort no longer rebuild it
+// hoisted to a package var. ParseFilters/ParseSort no longer rebuild it
 // per call.
 var FilterSuffixes = [...]FilterSuffixOp{
 	{"_gte", OpGte},
@@ -280,12 +280,12 @@ var FilterSuffixes = [...]FilterSuffixOp{
 // Only fields present in the schema are accepted. Hidden fields are
 // excluded from the allow-list (mirroring ParseSort): building a WHERE
 // predicate on a column the caller can't read turns row-count/result
-// changes into a value-disclosure oracle — an attacker could probe a
+// changes into a value-disclosure oracle, an attacker could probe a
 // Hidden column (e.g. a password hash) via ?password_hash_like=… and
 // exfiltrate it prefix by prefix. A Hidden field name is treated as
 // an unknown filter param and never produces a ParsedFilter.
 //
-// NoQuery fields are excluded too, and for the same oracle reason — a
+// NoQuery fields are excluded too, and for the same oracle reason, a
 // value masked on the way out (last-4, redacted by an AfterGet hook) is
 // still recoverable a character at a time if the stored column remains
 // filterable. They are rejected by name rather than as unknown: the field
@@ -294,7 +294,7 @@ var FilterSuffixes = [...]FilterSuffixOp{
 // STRICT by default: an unknown top-level filter key (a typo like
 // ?stauts=active, or a suffixed op on a non-field) returns a structured
 // error rather than being silently dropped. Dropping it would return an
-// UNFILTERED 200 — a broken client reads the whole table and an attacker's
+// UNFILTERED 200, a broken client reads the whole table and an attacker's
 // probe looks identical to the real query. Reserved list controls (sort,
 // page, cursor, …) and nested relation filters (dotted keys like
 // author.name, validated separately by parseNestedFilters) are skipped, not
@@ -321,7 +321,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	}
 
 	fieldSet := make(map[string]bool, len(fields))
-	// wireAlias maps a WireName override (and only the override — the
+	// wireAlias maps a WireName override (and only the override, the
 	// case-derived form is still matched via fieldSet) to the DB column
 	// name, so ?writer=123 resolves to column "author_id" when the field
 	// declares WireName:"writer". The ParsedFilter.Field is always the
@@ -330,7 +330,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	names := make([]string, 0, len(fields))
 	// NoQuery fields are tracked separately from the unknown-key path. They
 	// are visible in responses, so naming one back to the caller discloses
-	// nothing they can't already read — unlike a Hidden field, whose very
+	// nothing they can't already read, unlike a Hidden field, whose very
 	// existence has to stay indistinguishable from "no such column".
 	var noQuery map[string]bool
 	// boolField records Bool-typed columns so value coercion (true/false
@@ -346,7 +346,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			}
 			noQuery[f.Name] = true
 			// Under the wire key as well. It is deliberately NOT added to
-			// wireAlias — resolving an alias to its column happens before the
+			// wireAlias, resolving an alias to its column happens before the
 			// refusal is consulted, so registering it there would turn the
 			// name clients are actually told to send into a way around the
 			// guard. Tracking it here refuses it by the name they used.
@@ -365,7 +365,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 	}
 
-	// FilterSuffixes is package-level — see its declaration above.
+	// FilterSuffixes is package-level. See its declaration above.
 
 	var filters []ParsedFilter
 
@@ -373,7 +373,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// doesn't also match a field that was handled by a suffix.
 	consumed := make(map[string]bool)
 
-	// unknown records the first rejected key when strict — surfaced as a
+	// unknown records the first rejected key when strict, surfaced as a
 	// single structured error after the loop (query-map iteration order is
 	// non-deterministic, so report deterministically: the lexically
 	// smallest bad key, with a suggestion).
@@ -386,8 +386,8 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// overCapField/overCapCount record the lexically-smallest ?field_in= list
 	// that exceeds MaxINListEntries, surfaced as a single deterministic error
 	// after the loop for the same reason unknown/blocked are. Silent
-	// truncation (parts[:cap]) narrows the predicate — rows past entry N drop
-	// out of the result set without the caller knowing — so it fails closed,
+	// truncation (parts[:cap]) narrows the predicate, rows past entry N drop
+	// out of the result set without the caller knowing, so it fails closed,
 	// mirroring parseScopedFilters' cap on the include path.
 	overCapField := ""
 	overCapCount := 0
@@ -398,12 +398,12 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 		// Nested relation filters (author.name=…) are parsed and validated
 		// separately by parseNestedFilters (which enforces the same
-		// schema/Hidden allow-list) — skip dotted keys entirely here.
+		// schema/Hidden allow-list), skip dotted keys entirely here.
 		if strings.Contains(key, ".") {
 			continue
 		}
 
-		// A KNOWN field is matched FIRST — before the reserved-control skip —
+		// A KNOWN field is matched FIRST, before the reserved-control skip,
 		// so a column whose name collides with a control word (e.g. a field
 		// named "stream" or "q") is still filtered rather than silently
 		// swallowed, which would return an unfiltered result set.
@@ -462,7 +462,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 
 		// A plain known field name. When it was already consumed by a
-		// suffixed op on the same request, drop the redundant equals — but it
+		// suffixed op on the same request, drop the redundant equals, but it
 		// is still a KNOWN field, so it must never be reported as unknown.
 		if noQuery[key] {
 			if !o.lenient && (blocked == "" || key < blocked) {
@@ -485,7 +485,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 
 		// Not a field. A reserved list control or a host-declared extra
-		// param is consumed elsewhere on the request — skip it silently.
+		// param is consumed elsewhere on the request, skip it silently.
 		if reservedListParams[key] || o.allowed[key] {
 			continue
 		}
@@ -537,7 +537,7 @@ func unknownFilterError(key string, fieldNames []string) error {
 // nearestField returns the single closest field name to key within a small
 // edit distance, or "" when there is no close or unambiguous match. It also
 // strips a known operator suffix from key first, so ?scor_gt suggests
-// "score". Kept deliberately conservative — a wrong suggestion is worse than
+// "score". Kept deliberately conservative, a wrong suggestion is worse than
 // none.
 func nearestField(key string, fieldNames []string) string {
 	base := key
@@ -550,7 +550,7 @@ func nearestField(key string, fieldNames []string) string {
 	// The key arrives straight off the request URL (a query-param NAME,
 	// unauthenticated, no body). Levenshtein's cost is len(key) ×
 	// Σ len(fieldNames), so an attacker can push ~1 MiB of key at a 30-field
-	// entity for a per-GET CPU spike. A real field name is short — skip the
+	// entity for a per-GET CPU spike. A real field name is short, skip the
 	// suggestion entirely past a small bound and return the plain
 	// unknown-field error. (Build-time/argv callers in contracts and the CLI
 	// pass trusted, tiny identifiers and never hit this.)
@@ -585,9 +585,9 @@ func nearestField(key string, fieldNames []string) string {
 // Hidden fields are excluded from the allow-list: sorting by a hidden
 // column reveals row ordering by a value the caller can't read, which
 // is an information-disclosure path. NoQuery fields are excluded for the
-// same reason, but rejected by name — they appear in responses, so the
+// same reason, but rejected by name, they appear in responses, so the
 // caller already knows the column exists. Unknown fields fail closed with a
-// 400-shaped error rather than being silently ignored — silent drop
+// 400-shaped error rather than being silently ignored, silent drop
 // turns probe attempts into "the API works the same with or without
 // this param" oracles that mask broken client code.
 //
@@ -604,7 +604,7 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 	// A field's wire key is what clients are told to use, so it must sort as
 	// well as it filters. ParseFiltersValues and ?fields= projection already
 	// resolve WireName; without the same resolution here the wire contract
-	// splits by entry point — ?writer=x filters fine while ?sort=writer 400s.
+	// splits by entry point, ?writer=x filters fine while ?sort=writer 400s.
 	//
 	// Both the column name and the alias are accepted: the alias is what a
 	// versioned client sends, the column name is what existing unversioned
@@ -655,7 +655,7 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 		if s == "" {
 			continue
 		}
-		// Reject control bytes outright — they have no business in a
+		// Reject control bytes outright, they have no business in a
 		// SQL identifier, and silently dropping them masks broken or
 		// adversarial clients.
 		for i := 0; i < len(s); i++ {

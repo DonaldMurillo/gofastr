@@ -138,7 +138,7 @@ func TestCallGateGenericRefusalMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for gated tool")
 	}
-	// The message must be generic — no module name, no "disabled" state.
+	// The message must be generic: no module name, no "disabled" state.
 	msg := err.Error()
 	if msg != "tool unavailable" && !strings.Contains(msg, "tool unavailable") {
 		t.Fatalf("expected generic 'tool unavailable', got %q", msg)

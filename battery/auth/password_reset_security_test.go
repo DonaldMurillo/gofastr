@@ -152,7 +152,7 @@ func TestPasswordReset_TokenSurvivesBadPassword(t *testing.T) {
 		t.Fatalf("token was burned by the failed attempt; retry got %d (body=%s)", goodW.Code, goodW.Body.String())
 	}
 
-	// And only NOW is the token consumed — a third use must be rejected.
+	// And only NOW is the token consumed, a third use must be rejected.
 	replayW := reset("anotherpw12")
 	if replayW.Code == http.StatusOK {
 		t.Fatalf("token must be single-use; replay after success succeeded")

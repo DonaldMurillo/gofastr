@@ -1,4 +1,4 @@
-// Reveal runtime module — uses IntersectionObserver to animate elements
+// Reveal runtime module, uses IntersectionObserver to animate elements
 // into view when they scroll into the viewport. One-shot: once revealed,
 // the element stays visible.
 //

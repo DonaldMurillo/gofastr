@@ -14,7 +14,7 @@ import (
 // `data:text/html;base64,…` document with no resolver rules, no proxy
 // and no request interception. First-party components put caller strings
 // into URL attributes, so a PDF rendering a user-supplied avatar URL
-// fetched it from inside the trust boundary — and the response bytes are
+// fetched it from inside the trust boundary, and the response bytes are
 // rendered into the downloaded PDF, making it a readable exfil channel
 // for 169.254.169.254, loopback admin panels and RFC1918.
 func TestPDFRendererRefusesNetworkByDefault(t *testing.T) {
@@ -27,7 +27,7 @@ func TestPDFRendererRefusesNetworkByDefault(t *testing.T) {
 	}
 }
 
-// An explicit allow-list is the documented escape hatch — it must permit
+// An explicit allow-list is the documented escape hatch, it must permit
 // exactly the named hosts and nothing more.
 func TestPDFRendererAllowListIsExact(t *testing.T) {
 	rules := hostResolverRules([]string{"cdn.example.com", "  ", "assets.example.com"})

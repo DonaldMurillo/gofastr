@@ -11,7 +11,7 @@ import (
 )
 
 // writeContractFixture lays down a tree with one error-severity finding
-// (GOFASTR1002 — a `:id` route pattern).
+// (GOFASTR1002, a `:id` route pattern).
 func writeContractFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -45,7 +45,7 @@ func TestBuildContractsGateBlocksAnErrorFinding(t *testing.T) {
 // `gofastr verify --baseline-write` is the documented way to adopt
 // contracts on an existing app: accept what is there, fail on what is
 // added. The build gate has to honour the same file, or adopting the
-// baseline fixes `verify` and leaves `build` permanently red — and the
+// baseline fixes `verify` and leaves `build` permanently red, and the
 // only way out a user finds is --no-contracts, which turns everything off.
 func TestBuildContractsGateHonoursTheBaseline(t *testing.T) {
 	dir := writeContractFixture(t)

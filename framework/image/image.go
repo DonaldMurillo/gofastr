@@ -39,7 +39,7 @@ import (
 	"strings"
 )
 
-// DefaultMaxPixels caps decoded image area at 64 MP — an 8192×8192
+// DefaultMaxPixels caps decoded image area at 64 MP, an 8192×8192
 // square. Tightened from Bun.Image's 268 MP default after round-4
 // found a 45-byte PNG declaring 16383×16383 (~268 M pixels) passed
 // the guard and triggered ~1 GiB of stdimage allocation. Callers
@@ -89,13 +89,13 @@ func DecodeBytesWithConfig(data []byte, cfg Config) (*Image, error) {
 }
 
 // Open reads an image from a filesystem path. Rejects paths containing
-// ".." segments as a defense-in-depth measure — callers handling
+// ".." segments as a defense-in-depth measure. Callers handling
 // user-supplied paths must validate before this layer, but the
 // framework boundary catches the obvious traversal patterns rather
 // than blindly handing them to os.ReadFile.
 //
 // For paths rooted in an embed.FS or a constrained directory tree,
-// prefer OpenFS — fs.FS implementations reject traversal natively.
+// prefer OpenFS: fs.FS implementations reject traversal natively.
 func Open(path string) (*Image, error) {
 	if pathTraverses(path) {
 		return nil, fmt.Errorf("image: open %q: path contains traversal (..)", path)
@@ -151,7 +151,7 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 		return nil, ErrInvalidInput
 	}
 	// The stdlib codecs can panic (rather than error) on crafted
-	// geometry — e.g. image.NewGray panics with "huge or negative
+	// geometry, e.g. image.NewGray panics with "huge or negative
 	// dimensions" on an oversized raster. Fail closed: convert any
 	// panic from the decode path into a returned error so malformed
 	// input never crashes the caller's goroutine.
@@ -196,7 +196,7 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 // materialising any pixel buffer. It walks the GIF block structure
 // (Image Descriptors, Extensions, sub-block chains) and counts 0x2C
 // markers. The previous gif.DecodeAll approach allocated O(frames ×
-// pixels) — a 1024×1024×1000-frame GIF cost ~4 GB of heap before
+// pixels). A 1024×1024×1000-frame GIF cost ~4 GB of heap before
 // returning. The byte-walker is O(bytes) heap-free.
 func countGIFFrames(data []byte) int {
 	const (
@@ -282,7 +282,7 @@ func (i *Image) Bounds() stdimage.Rectangle { return i.img.Bounds() }
 // derive returns a new Image with the same metadata but a fresh underlying
 // image. Used by chain methods so transformations don't mutate the source.
 // Every metadata field that callers can observe via Metadata() must be
-// carried forward — historically `frames` was dropped here, which
+// carried forward. Historically `frames` was dropped here, which
 // silently neutralised VariantSet{RejectAnimated: true} after any chain
 // step (including the documented avatar recipe's AutoOrient).
 func (i *Image) derive(img stdimage.Image) *Image {

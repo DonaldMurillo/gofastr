@@ -9,7 +9,7 @@ import (
 
 // TestEmail_HeaderInjection verifies that buildMessage refuses to
 // serialise an Email whose header fields contain CR/LF. Attack: SMTP
-// header injection — a `To` value of `"x@y\r\nBcc: victim@e.com"`
+// header injection, a `To` value of `"x@y\r\nBcc: victim@e.com"`
 // would otherwise add a hidden Bcc to the outgoing message.
 func TestEmail_HeaderInjection(t *testing.T) {
 	cases := []struct {

@@ -16,7 +16,7 @@ type RateLimiterConfig = ratelimit.Config
 // RateLimiter wraps the general-purpose sliding-window limiter from
 // framework/ratelimit. It exists to preserve auth's own 429 response shape
 // (JSON envelope for API clients, 303 redirect for browser form posts) via the
-// package-local guard — the general middleware emits a plain text 429. For
+// package-local guard, the general middleware emits a plain text 429. For
 // non-auth routes prefer ratelimit.Limiter + ratelimit.Middleware directly.
 //
 // Allow / AllowContext are promoted from the embedded limiter, so direct
@@ -63,7 +63,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 // (magic-link send, password reset, 2FA challenge, email verification). It
 // records an attempt for the client IP and, when blocked, writes 429 +
 // Retry-After and returns false. The body uses writeAuthError (the canonical
-// JSON envelope) — NOT the form-redirect shape, which guardAuthLimit applies
+// JSON envelope), NOT the form-redirect shape, which guardAuthLimit applies
 // selectively for browser posts.
 func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 	allowed, retry := rl.AllowContext(r.Context(), rl.clientIP(r))

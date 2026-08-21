@@ -104,14 +104,14 @@ for admin listings, and is safe for concurrent use.
 
 Two stores are bundled:
 
-- `NewMemoryStore()` — in-process map.
-- `NewSQLStore(db, opts...)` — SQL-backed (sqlite + postgres),
+- `NewMemoryStore()`: in-process map.
+- `NewSQLStore(db, opts...)`: SQL-backed (sqlite + postgres),
   creates `feature_flags` on first use. Pass `WithSQLTable(...)` to
   override the table name, or `WithSQLDialect("postgres"|"sqlite")` to
   pin the dialect when the runtime probe is unreliable. Also implements
   `MutableStore` and `All(ctx)` for admin tooling.
 
-For Redis or other backends, wrap `featureflag.Store` — only `Get` is
+For Redis or other backends, wrap `featureflag.Store`. Only `Get` is
 required; add `MutableStore` for admin-edit support.
 
 ## Common mistakes
@@ -129,7 +129,7 @@ required; add `MutableStore` for admin-edit support.
   allow lists are great for beta testers; they're not how you maintain
   a permanent VIP segment.
 - **Don't treat a missing key as "off" for a kill switch.** A typo or
-  accidental delete returns `false` — for `if !IsEnabled(...) { dangerous() }`
+  accidental delete returns `false`, so for `if !IsEnabled(...) { dangerous() }`
   you'd silently enable the dangerous path. Use the explicit
   `Flags().BoolDefault(ctx, key, defaultIfMissing)` form to set the
   safe default per call site.

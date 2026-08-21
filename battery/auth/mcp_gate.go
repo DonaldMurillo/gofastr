@@ -18,15 +18,15 @@ import (
 // should carry, and no surface declares it.
 func embedGrantRefused(ctx context.Context) error {
 	if _, embedded := embed.GrantFromContext(ctx); embedded {
-		return errors.New("auth: this tool is not reachable from an embedded surface — an embed grant is a delegated, scoped credential, not an interactive session")
+		return errors.New("auth: this tool is not reachable from an embedded surface: an embed grant is a delegated, scoped credential, not an interactive session")
 	}
 	return nil
 }
 
 // MCPUser is an mcp.Gated precondition requiring an authenticated user
 // on the tool call's context. Works whenever the app's session/JWT
-// middleware runs globally (fwApp.Use(auth.SessionMiddleware(...)))
-// — the /mcp route sits on the same router, so the middleware resolves
+// middleware runs globally (fwApp.Use(auth.SessionMiddleware(...))).
+// The /mcp route sits on the same router, so the middleware resolves
 // the caller before the tool handler runs.
 //
 //	app.MCP.RegisterTool("reports_rebuild", desc, schema,
@@ -34,26 +34,26 @@ func embedGrantRefused(ctx context.Context) error {
 func MCPUser() func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		if GetCurrentUser(ctx) == nil {
-			return errors.New("auth: this tool requires an authenticated caller — send the session cookie or Authorization header on the /mcp request")
+			return errors.New("auth: this tool requires an authenticated caller: send the session cookie or Authorization header on the /mcp request")
 		}
 		return embedGrantRefused(ctx)
 	}
 }
 
 // MCPRole is an mcp.Gated precondition requiring an authenticated user
-// holding ANY of the given roles — the tool-handler analogue of
+// holding ANY of the given roles, the tool-handler analogue of
 // RequireRole.
 //
 //	app.MCP.RegisterTool("cache_flush", desc, schema,
 //	    mcp.Gated(auth.MCPRole("admin"), flushHandler))
 func MCPRole(roles ...string) func(ctx context.Context) error {
 	if len(roles) == 0 {
-		panic("auth.MCPRole: no roles given — use auth.MCPUser() to require just authentication")
+		panic("auth.MCPRole: no roles given: use auth.MCPUser() to require just authentication")
 	}
 	return func(ctx context.Context) error {
 		user := GetCurrentUser(ctx)
 		if user == nil {
-			return errors.New("auth: this tool requires an authenticated caller — send the session cookie or Authorization header on the /mcp request")
+			return errors.New("auth: this tool requires an authenticated caller: send the session cookie or Authorization header on the /mcp request")
 		}
 		if err := embedGrantRefused(ctx); err != nil {
 			return err

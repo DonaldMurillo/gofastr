@@ -1,24 +1,24 @@
 # Theming
 
 Every visual decision in the framework goes through one typed theme:
-`core-ui/style.Theme`. Components never hardcode colors or spacing —
+`core-ui/style.Theme`. Components never hardcode colors or spacing;
 they read CSS custom properties (`var(--color-primary)`,
 `var(--spacing-md)`, …), and the host writes the theme as a `:root`
 block at `/__gofastr/app.css`. Change a token value and every
-component, battery screen, and widget that reads it updates —
+component, battery screen, and widget that reads it updates;
 you never edit a component's CSS to re-skin an app.
 
 The sheet is composed once per process and content-addressed: pages
 link `/__gofastr/app.css?v=<fingerprint>` and the response is
 immutable for the life of the deploy. That means `style.Contribute`
 calls must land before the first page render (package init or before
-`Mount`) — a later contribution can't ship, and the host logs a
+`Mount`); a later contribution can't ship, and the host logs a
 warning when one arrives too late.
 
 ## The token catalog
 
 `style.Theme` is a struct made of typed token groups. Every field is
-required — `WithTheme` panics at startup and names any token you left
+required; `WithTheme` panics at startup and names any token you left
 out. Each group writes CSS variables with a fixed prefix:
 
 | Theme group | Emits | Examples |
@@ -32,9 +32,9 @@ out. Each group writes CSS variables with a fixed prefix:
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
-| `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational — media queries can't read vars) |
+| `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
 | `Layout` | `--spacing-touch-target` | the WCAG minimum tap-target size (44px); buttons and inputs use it for sizing |
-| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com` — the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
+| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
 
 Token names come from the Go field path, converted to kebab-case
 (`Colors.PrimaryFg` → `--color-primary-fg`). Set an explicit `Name` on
@@ -48,17 +48,17 @@ resolves to the variable: `{colors.primary}` → `var(--color-primary)`,
 Three entry points produce a `style.Theme` you pass to
 `site.WithTheme(...)`:
 
-- **`style.DefaultTheme()`** — the fully-populated, lower-level light
+- **`style.DefaultTheme()`**: the fully-populated, lower-level light
   baseline. It leaves `DarkColors` empty on purpose, for compatibility.
-- **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", DarkColors: map[string]string{"primary": "#5EEAD4"}})`**
-  — the adaptive theme fresh scaffolds start with. It ships complete,
+- **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", DarkColors: map[string]string{"primary": "#5EEAD4"}})`**:
+  the adaptive theme fresh scaffolds start with. It ships complete,
   contrast-safe light and dark palettes, plus a flat override struct for
   the tokens hosts change most often: the light palette, explicit dark
   token values, the three font stacks, and the radius scale. Light
   overrides are not copied into dark mode automatically, because
   contrast-safe values are usually different for dark. Any field you
   don't set keeps its default.
-- **`gofastr theme init`** — writes `theme/theme.go`, the full adaptive
+- **`gofastr theme init`**: writes `theme/theme.go`, the full adaptive
   default as a literal you own and can edit directly. Use this for apps
   that will keep changing their theme over time; edit `Colors` and
   `DarkColors` together.
@@ -68,16 +68,16 @@ in your own struct and add fields. Framework components only read the
 embedded built-in tokens; your own components can read the extra
 fields directly.
 
-Check the result at `/__gofastr/app.css` — your values should show up
+Check the result at `/__gofastr/app.css`; your values should show up
 as `:root` custom properties.
 
-## Editing live — `gofastr theme edit`
+## Editing live: `gofastr theme edit`
 
 `gofastr theme edit` boots a local theme configurator: a controls pane
 (generated from `ThemeToTokens`) on the left and a live component preview
 on the right. Changing a token value re-applies it through `ApplyTokens`,
 registers the result as a theme variant, and swaps the preview's
-`app.css?t=<key>` — the same path an embedded surface uses. No page
+`app.css?t=<key>`, the same path an embedded surface uses. No page
 reload: the browser re-resolves every `var(--*)` reference against the new
 `:root` values the moment the stylesheet link swaps.
 
@@ -101,8 +101,8 @@ session. That is why it refuses to overwrite an existing `--out` without
 `--force`. To try a change against an existing theme, point `--out` at a new
 path and copy across what you want.
 
-The preview renders the `framework/gallery` catalog — every design-system
-component against your theme — so you see the effect of a token change
+The preview renders the `framework/gallery` catalog, every design-system
+component against your theme, so you see the effect of a token change
 across buttons, badges, cards, inputs, and the status tones at once.
 
 **Contrast checking runs in the browser**, not in Go. `getComputedStyle`
@@ -126,13 +126,13 @@ directory name. The editor regenerates the file whole, so confirm before
 replacing hand-edited values.
 
 The tool binds loopback, pins the Host header (DNS-rebinding defence), and
-mints a per-process bearer token delivered in a `<meta>` tag — the same
+mints a per-process bearer token delivered in a `<meta>` tag, the same
 posture `gofastr harness --web` uses.
 
 ## Self-hosting web fonts
 
 Setting `Fonts.Body`/`Fonts.Heading` to a custom family only names the
-font — the browser still needs the actual font files, and **the
+font; the browser still needs the actual font files, and **the
 default CSP blocks CDN font URLs** (`default-src 'self'`; see
 [security](security.md) → "Content-Security-Policy"). A `@font-face`
 rule pointing at `rsms.me`, Google Fonts, or any other outside origin
@@ -172,10 +172,10 @@ Self-host the font instead:
 
 Same-origin URLs pass the default CSP with no changes needed. If you
 really need to load a font from a third party, you have to override
-`ContentSecurityPolicy` yourself — read the warning in
+`ContentSecurityPolicy` yourself; read the warning in
 [security](security.md) before you do.
 
-## Dark mode — `DarkColors` and `data-color-scheme`
+## Dark mode: `DarkColors` and `data-color-scheme`
 
 `Theme.DarkColors` is a map from color-token name to its dark value
 (`"background": "#15141B"`, …). `framework/ui/theme.Default()` and
@@ -186,7 +186,7 @@ When the map isn't empty, the generated CSS re-declares those tokens
 under `:root[data-color-scheme="dark"]`, plus a
 `prefers-color-scheme: dark` fallback that only applies while the user
 hasn't forced light mode. The **`data-color-scheme` attribute on
-`<html>` is the actual switch** — `ui.ThemeToggle` and the color-scheme
+`<html>` is the actual switch**: `ui.ThemeToggle` and the color-scheme
 bootstrap set it (and remember the choice), and any element reading a
 theme CSS variable picks up the new color the moment it flips.
 
@@ -207,7 +207,7 @@ Follow these rules:
    color-scheme state, so a partial palette can end up mixing dark
    browser link/control colors with light app colors.
 
-## Section-level overrides — `ui.Themed`
+## Section-level overrides: `ui.Themed`
 
 To re-skin one part of a page (a dark marketing band, a branded
 callout, per-tenant accents) without touching the rest of the page,
@@ -229,7 +229,7 @@ every component inside it reads `var(--color-…)` from that class
 instead of from `:root`. Registering the same theme twice returns the
 same handle, so its CSS only ships once.
 
-## Token map — `ThemeToTokens` / `ApplyTokens`
+## Token map: `ThemeToTokens` / `ApplyTokens`
 
 Two surfaces need to move tokens in and out of a `style.Theme` as a flat
 `map[string]string` instead of a typed struct:
@@ -243,7 +243,7 @@ Two surfaces need to move tokens in and out of a `style.Theme` as a flat
 `style.ThemeToTokens(t)` flattens a theme to a map keyed by the CSS
 custom-property identifier **without** the leading `--`:
 `"color-primary"`, `"spacing-md"`, `"duration-fast"`, `"tk-kw"`. The value
-is exactly what the `:root` block emits after the colon — `"#4F46E5"`,
+is exactly what the `:root` block emits after the colon: `"#4F46E5"`,
 `"8px"`, `"150ms"`. That key is chosen over a Go field-path key because it
 is what the CSS emits, what a UI control edits, and stable across struct
 reorganisations.
@@ -257,7 +257,7 @@ flattened under a `dark.` prefix to stay distinct:
 `style.ApplyTokens(base, tokens)` returns a copy of `base` with the
 supplied tokens applied. It **fails closed on every axis**:
 
-- An unknown key is an error — a typo in a theme file is reported, and an
+- An unknown key is an error: a typo in a theme file is reported, and an
   embed can't probe for which keys a host accepts.
 - A value must validate for its token's type. Colors accept a bounded
   grammar (hex, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `oklch()`/`oklab()`,
@@ -269,7 +269,7 @@ supplied tokens applied. It **fails closed on every axis**:
 
 A value like `red; --x:}body{display:none}` escapes its CSS declaration;
 CSS alone can then exfiltrate via attribute selectors and
-`background-image` URLs. `ApplyTokens` rejects it rather than sanitising —
+`background-image` URLs. `ApplyTokens` rejects it rather than sanitising:
 never strip, always reject.
 
 Round-trip is exact over `ThemeHash`:
@@ -311,17 +311,17 @@ hash := host.RegisterThemeVariant(brand) // framework/uihost.UIHost
   the bounded grammar and declaration-breaker rejection run.
 - **Expecting `ApplyTokens` to enforce semantic constraints.** It validates
   type and safety (parseable, not injecting); it does not run
-  `Theme.Validate()`. A spacing of `0px` parses fine but is a layout bug —
+  `Theme.Validate()`. A spacing of `0px` parses fine but is a layout bug;
   call `Theme.Validate()` on the result for the name/value sanity checks
   `WithTheme` runs at boot.
 - **Keying the map by Go field path.** `Colors.Primary` is not a valid key;
   `color-primary` is. Round-trip through `ThemeToTokens` once to see the
   exact key set a theme exposes.
 
-## Per-component knobs — the `--ui-*` variables
+## Per-component knobs: the `--ui-*` variables
 
 Some components expose dimensions or accents that aren't global
-tokens — a container's max width, a doc layout's rail width, a code
+tokens: a container's max width, a doc layout's rail width, a code
 block's scroll max height. These are exposed as
 `--ui-<component>-<knob>` variables with built-in fallbacks, so a host
 can override them from its own stylesheet without forking the
@@ -332,22 +332,22 @@ component:
 :root { --ui-container-wide: 1240px; }
 ```
 
-You can also scope them — set one inside a `ui.Themed` section, or on
+You can also scope them: set one inside a `ui.Themed` section, or on
 a specific wrapper class, to change a single instance. Each
 component's source lists its knobs next to the CSS that reads them
 (for example `ui.Container`: `--ui-container-default/narrow/wide`;
 `ui.DocLayout`: `--ui-doc-layout-rail/gap/max-width`; the layout
 shells: `--ui-layout-container-width/gutter/header-height`, read by
-`app.LayoutBaseCSS`) — grep `framework/ui` and `core-ui/app` for
+`app.LayoutBaseCSS`); grep `framework/ui` and `core-ui/app` for
 `--ui-` to see the full list.
 
 ## Why you can't just override component CSS
 
 Component stylesheets and your site CSS don't always load in the same
 order. At first paint, the host writes the page's component-CSS bundle
-first and `/__gofastr/app.css` after it. But if a component's CSS
-loads lazily, after hydration — because it first shows up in an island
-response, a widget, or an SPA navigation — its `<link>` gets appended
+first and `/__gofastr/app.css` after it. But a component's CSS can
+load lazily, after hydration, when it first shows up in an island
+response, a widget, or an SPA navigation; then its `<link>` gets appended
 to the end of `<head>`, after `app.css`. So a site rule with the same
 specificity as a component's internal rule (`.ui-button { background:
 … }`) wins on one page and silently loses on another, depending on how
@@ -355,7 +355,7 @@ that component's stylesheet arrived. Reaching for `!important` or a
 higher-specificity selector "fixes" it today and breaks again the next
 time the component changes.
 
-Don't restyle component internals directly. Use one of these instead —
+Don't restyle component internals directly. Use one of these instead;
 they work the same way no matter what order things loaded in:
 
 - **Token values** (this doc) for anything the palette or scale
@@ -363,7 +363,7 @@ they work the same way no matter what order things loaded in:
 - **`--ui-*` variables** for per-component knobs.
 - **Registered variants** (`ui.RegisterButtonVariant`,
   `RegisterCardVariant`, `RegisterStatusVariant`, …) for a new named
-  look — the variant CSS ships inside the component's own stylesheet
+  look; the variant CSS ships inside the component's own stylesheet
   and goes through the same render-time validation. See
   [ui-getting-started](ui-getting-started.md) § "Custom variants on
   framework components".

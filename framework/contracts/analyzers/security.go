@@ -25,7 +25,7 @@ func init() {
 	})
 	contracts.Register(&contracts.Analyzer{
 		Name:  "data",
-		Doc:   "Persistence-layer correctness — discarded write results.",
+		Doc:   "Persistence-layer correctness: discarded write results.",
 		Rules: []string{contracts.RuleIgnoredExec},
 		Run:   runData,
 	})
@@ -51,26 +51,26 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1401 — SQL built by concatenation.
+// GOFASTR1401: SQL built by concatenation.
 // ----------------------------------------------------------------------
 
 var (
 	// The INSERT anchor accepts SQLite's `INSERT OR IGNORE/REPLACE INTO`
-	// and MySQL's `INSERT IGNORE INTO` — all real statement forms.
+	// and MySQL's `INSERT IGNORE INTO`, all real statement forms.
 	sqlVerb            = `(?:SELECT\s|INSERT\s+(?:(?:OR\s+\w+|IGNORE)\s+)?INTO\s|UPDATE\s|DELETE\s+FROM\s)`
 	reSQLConcatLiteral = regexp.MustCompile(`(?i)"[^"]*\b` + sqlVerb + `[^"]*"\s*\+\s*\w+`)
 	reSQLSprintf       = regexp.MustCompile(`(?i)fmt\.S?(?:print|printf)\(\s*"[^"]*\b(?:` + sqlVerb + `|WHERE\s|HAVING\s)[^"]*%[sv]`)
 	reSQLBuilderConcat = regexp.MustCompile(`\.(?:Where|Having|OrderBy|GroupBy)\(\s*"[^"]*"\s*\+\s*\w+`)
 	// Quote-adjacent interpolation: the variable or directive sits inside
-	// SQL single-quotes. That is a VALUE position — a dynamic identifier
-	// is never quoted — so it is suspicious whatever the variable is named.
+	// SQL single-quotes. That is a VALUE position. A dynamic identifier
+	// is never quoted, so it is suspicious whatever the variable is named.
 	reSQLQuotedInterp = regexp.MustCompile(`'"\s*\+\s*\w+|'%[sv]|%[sv]'`)
 )
 
 // taintMarkers are substrings that advertise request-derived data. An
 // unquoted interpolation is only reported when one appears, because
 // dynamic table and column identifiers are legitimate and cannot use
-// placeholders — flagging every one of those would train people to
+// placeholders. Flagging every one of those would train people to
 // ignore the rule.
 var taintMarkers = []string{
 	"userinput", "user_input", "request.", "req.", "form.",
@@ -111,7 +111,7 @@ func ruleSQLConcat(p *contracts.Pass, rel, body string, lines []string) []contra
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1403 — render.HTML on a concatenation.
+// GOFASTR1403: render.HTML on a concatenation.
 // ----------------------------------------------------------------------
 
 var reRenderHTMLConcat = regexp.MustCompile(`render\.HTML\([^)]*\+[^)]*\)`)
@@ -127,7 +127,7 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 		}
 		out = append(out, contracts.Diagnostic{
 			RuleID: contracts.RuleHTMLConcat, File: rel, Line: i + 1,
-			Message: "render.HTML receives a concatenated string — the interpolated half is not escaped",
+			Message: "render.HTML receives a concatenated string: the interpolated half is not escaped",
 			Snippet: strings.TrimSpace(line),
 		})
 	}
@@ -135,7 +135,7 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1402 — POST form without a CSRF input.
+// GOFASTR1402: POST form without a CSRF input.
 // ----------------------------------------------------------------------
 
 var (
@@ -181,7 +181,7 @@ func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contrac
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1404 — http.Cookie without security attributes.
+// GOFASTR1404: http.Cookie without security attributes.
 // ----------------------------------------------------------------------
 
 func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
@@ -226,8 +226,8 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 			set[key.Name] = true
 		}
 		// A cookie carrying nothing has nothing to protect. The two shapes
-		// are an unset cookie and the standard deletion — empty value with
-		// a negative MaxAge — and reporting either is pure noise.
+		// are an unset cookie and the standard deletion, an empty value
+		// with a negative MaxAge. Reporting either is pure noise.
 		if !set["Value"] || (emptyValue && negativeMaxAge) {
 			return true
 		}
@@ -295,8 +295,8 @@ func cookieFix(p *contracts.Pass, rel string, lit *ast.CompositeLit, missing []s
 	if offset <= 0 {
 		return nil
 	}
-	// The edit consumes the literal's tail — from the end of its last
-	// element through the closing brace — and re-emits it around the
+	// The edit consumes the literal's tail, from the end of its last
+	// element through the closing brace, and re-emits it around the
 	// insertions. Same output as inserting before the brace, but it gives
 	// Apply's staleness check a span worth verifying: a lone "}" is the
 	// most common byte in Go source, so after a concurrent edit shifted
@@ -334,26 +334,26 @@ func hasTrailingComma(p *contracts.Pass, rel string, from, to token.Pos) bool {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1405 — secret assigned from a literal.
+// GOFASTR1405: secret assigned from a literal.
 // ----------------------------------------------------------------------
 
 var reSecretName = regexp.MustCompile(`(?i)(secret|password|passwd|api_?key|apikey|token|private_?key|credential|client_?secret)`)
 
 // secretPrefixes are vendor key formats. A literal starting with one is
-// reported whatever the variable is called — the shape *is* the evidence.
+// reported whatever the variable is called. The shape *is* the evidence.
 var secretPrefixes = []string{"sk_live_", "sk-live-", "sk-ant-", "ghp_", "gho_", "AKIA", "xoxb-", "xoxp-", "AIza"}
 
 // reIdentifierish matches a value that is a *name* rather than a secret:
 // a column ("password_hash"), an enum ("TokenExpired"), an i18n key
 // ("ui.auth.password"), an env var ("STRIPE_API_KEY"), a header. These
-// are what a name-only heuristic drowns in — every one of them lives in a
-// variable called something like `PasswordHash`, and none of them is a
-// credential.
+// are what a name-only heuristic drowns in. Every one of them lives in
+// a variable called something like `PasswordHash`, and none of them is
+// a credential.
 var reIdentifierish = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$`)
 
 // looksLikeCredential is the entropy gate. A real key is long and mixes
 // character classes; an identifier, a path, a sentence, or a format
-// string does not. Being strict here is the whole point — a secret
+// string does not. Being strict here is the whole point. A secret
 // detector that cries wolf is one people switch off, and then it catches
 // nothing at all.
 func looksLikeCredential(v string) bool {
@@ -424,7 +424,7 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 			fmt.Sprintf("%s is assigned a literal value", name))
 		d.Evidence = map[string]string{"name": name, "length": fmt.Sprint(len(lit))}
 		// The report must not print the secret back out into a terminal,
-		// a CI log, or a SARIF artifact — that would spread it further
+		// a CI log, or a SARIF artifact. That would spread it further
 		// than the commit already did.
 		d.Snippet, d.RedactSnippet = "", true
 		out = append(out, d)
@@ -458,7 +458,7 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1601 — discarded Exec result.
+// GOFASTR1601: discarded Exec result.
 // ----------------------------------------------------------------------
 
 var reIgnoredExec = regexp.MustCompile(`(?:^|[\s;{])_,\s*_\s*=\s*\S+\.Exec(?:Context)?\b`)

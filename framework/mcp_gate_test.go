@@ -10,7 +10,7 @@ import (
 )
 
 // The mutating control tools already refused an unauthenticated CALL, but
-// they still appeared in tools/list with their full input schema — mcp.Gated
+// they still appeared in tools/list with their full input schema, mcp.Gated
 // wraps handlers, and the listing never consulted it. An anonymous caller
 // learned that this app can be reconfigured over MCP and exactly how.
 func TestControlToolsHiddenFromUnauthenticatedList(t *testing.T) {
@@ -47,7 +47,7 @@ func TestWithMCPGateClosesDiscovery(t *testing.T) {
 
 // MCPRequireUser is the predicate the framework ships for direct-handler
 // tools. It must refuse a context with no resolved principal and accept one
-// that has one — a gate that accepted anonymous callers would be worse than
+// that has one, a gate that accepted anonymous callers would be worse than
 // no gate, because it reads as protection.
 func TestMCPRequireUserRefusesAnonymous(t *testing.T) {
 	if err := MCPRequireUser()(context.Background()); err == nil {

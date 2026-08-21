@@ -2,7 +2,7 @@ package main
 
 // Gate for the home page's "Numbers you can check" strip. The measured
 // values (runtime size, doc count) are computed from the same embedded
-// sources the site serves, so they can't drift — this file sanity-checks
+// sources the site serves, so they can't drift, this file sanity-checks
 // them and pins the values the page states as constants: 5 MCP tools per
 // entity and 0 npm packages in the repo.
 

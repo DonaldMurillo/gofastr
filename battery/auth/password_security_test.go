@@ -70,7 +70,7 @@ func TestPassword_DifferentHashesForSamePassword(t *testing.T) {
 }
 
 // TestPassword_EmptyPasswordRejected verifies that empty passwords are
-// rejected. Attack: creating an account with an empty password — every
+// rejected. Attack: creating an account with an empty password, every
 // later login attempt would then "match" the (empty) stored credential
 // and let the attacker in with a blank field.
 func TestPassword_EmptyPasswordRejected(t *testing.T) {
@@ -83,7 +83,7 @@ func TestPassword_EmptyPasswordRejected(t *testing.T) {
 // dedicated strength validator rejects passwords below the recommended
 // minimum. Attack: trivial brute-force on short passwords.
 //
-// We deliberately don't bake this length check into HashPassword —
+// We deliberately don't bake this length check into HashPassword,
 // hashing logic shouldn't dictate product policy for legitimate
 // short-string uses (PIN flows, recovery tokens). Registration and
 // password-change handlers MUST call ValidatePasswordStrength.
@@ -103,7 +103,7 @@ func TestPassword_ShortPasswordRejectedByStrengthCheck(t *testing.T) {
 // than bcrypt's 72-byte limit are pre-hashed with SHA-256 so the FULL
 // password participates in the comparison. Two long passwords that
 // share their first 72 bytes but differ later MUST hash and verify
-// independently — otherwise bcrypt's silent truncation lets one
+// independently, otherwise bcrypt's silent truncation lets one
 // "match" the other.
 func TestPassword_VeryLongPasswordHandled(t *testing.T) {
 	pwA := strings.Repeat("a", 72) + "AAAAA"
@@ -149,7 +149,7 @@ func TestTiming_PlaceholderHashExists(t *testing.T) {
 
 // TestPassword_TimingSafeCheck verifies that CheckPassword takes
 // roughly the same time for valid vs invalid hashes. This is a
-// statistical test — it verifies bcrypt timing is consistent.
+// statistical test, it verifies bcrypt timing is consistent.
 func TestPassword_TimingSafeCheck(t *testing.T) {
 	hash, _ := HashPassword("testpassword")
 

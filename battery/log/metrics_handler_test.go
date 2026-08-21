@@ -66,7 +66,7 @@ func TestMetricsHandlerExpositionFormat(t *testing.T) {
 }
 
 // TestMetricsHandlerReflectsCounters pins that the handler reads
-// fresh values on every scrape — not a snapshot taken at Init time.
+// fresh values on every scrape, not a snapshot taken at Init time.
 func TestMetricsHandlerReflectsCounters(t *testing.T) {
 	// Server returns 500 → webhook retries fail → gaveUp increments.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

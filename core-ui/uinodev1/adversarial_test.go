@@ -61,7 +61,7 @@ func TestValidateRejectsOnHandlerProps(t *testing.T) {
 }
 
 // TestValidateRejectsJavascriptURL proves the URL guard catches the most
-// dangerous scheme — javascript: — at the link.to prop.
+// dangerous scheme, javascript:, at the link.to prop.
 func TestValidateRejectsJavascriptURL(t *testing.T) {
 	cases := []string{
 		`{"component":"link","props":{"text":"x","to":"javascript:alert(1)"}}`,
@@ -81,7 +81,7 @@ func TestValidateRejectsJavascriptURL(t *testing.T) {
 
 // TestValidateRejectsDataSchemeURL covers the data: scheme (the one CSP
 // explicitly permits via img-src data:, which is why a semantic guard
-// is required and not CSP alone — design §9).
+// is required and not CSP alone, design §9).
 func TestValidateRejectsDataSchemeURL(t *testing.T) {
 	cases := []string{
 		`{"component":"link","props":{"text":"x","to":"data:text/html,<script>alert(1)</script>"}}`,
@@ -94,7 +94,7 @@ func TestValidateRejectsDataSchemeURL(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsSchemeRelativeURL covers "//host" — the off-origin
+// TestValidateRejectsSchemeRelativeURL covers "//host", the off-origin
 // scheme-relative form a naive "starts-with-/" check would miss.
 func TestValidateRejectsSchemeRelativeURL(t *testing.T) {
 	cases := []string{
@@ -169,7 +169,7 @@ func nestedJSON(depth int) string {
 
 // TestValidateRejectsNodeCountBomb proves MaxNodes+1 nodes reject.
 // DefaultMaxNodes is 500; 501 nodes reject. We use a balanced tree so
-// the per-node child cap (128) is not what fires first — 1 root with
+// the per-node child cap (128) is not what fires first, 1 root with
 // 4 stack children, each holding N leaf dividers. Total = 1 + 4 + 4N.
 //
 //	N=124 → 501 nodes (reject); N=123 → 497 nodes (accept).
@@ -275,7 +275,7 @@ func TestValidateRejectsTotalTextBomb(t *testing.T) {
 // TestValidateRejectsChildrenBomb proves the per-node child cap fires at
 // MaxChildrenPerNode+1. Default is 128; 129 children of one node reject.
 func TestValidateRejectsChildrenBomb(t *testing.T) {
-	// 129 children — but only if total nodes stays under MaxNodes=500.
+	// 129 children, but only if total nodes stays under MaxNodes=500.
 	// 129 < 500, so this isolates the children-per-node cap.
 	bomb := flatChildrenJSON(130) // root + 129 children = 130 nodes
 	if _, err := Validate([]byte(bomb), DefaultLimits()); err == nil {
@@ -366,7 +366,7 @@ func TestValidateRejectsDuplicateKeys(t *testing.T) {
 }
 
 // TestValidateRejectsSmuggledActions covers theBindings/Actions smuggling
-// at the node level — they are not in the shadow struct, so Disallow-
+// at the node level, they are not in the shadow struct, so Disallow-
 // UnknownFields rejects them.
 func TestValidateRejectsSmuggledActions(t *testing.T) {
 	cases := []string{
@@ -399,7 +399,7 @@ func TestValidateRejectsSmuggledBindings(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsTrailingJSON covers framing discipline — one object.
+// TestValidateRejectsTrailingJSON covers framing discipline, one object.
 func TestValidateRejectsTrailingJSON(t *testing.T) {
 	cases := []string{
 		`{"component":"divider"}{}`,
@@ -428,7 +428,7 @@ func TestValidateRejectsInputBytesCap(t *testing.T) {
 }
 
 // TestValidateRejectsImageBadScheme mirrors the link.to URL guard but on
-// the image.src prop — proves the host-relative guard covers media too
+// the image.src prop, proves the host-relative guard covers media too
 // (design §9 names image.src as a host-relative URL prop).
 func TestValidateRejectsImageBadScheme(t *testing.T) {
 	cases := []string{
@@ -453,7 +453,7 @@ func TestValidateRejectsImageBadScheme(t *testing.T) {
 }
 
 // TestValidateRejectsImageMissingFields proves image.src and image.alt
-// are both required (Alt non-empty — modules must describe images).
+// are both required (Alt non-empty, modules must describe images).
 func TestValidateRejectsImageMissingFields(t *testing.T) {
 	cases := []string{
 		`{"component":"image","props":{"alt":"x"}}`,               // missing src

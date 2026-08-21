@@ -6,11 +6,11 @@ GoFastr has two migration paths:
    `framework.AutoMigrate(db, app.Registry)` converges the database
    with the entity declarations: it creates missing tables (with
    indexes and foreign keys) **and adds missing columns to existing
-   tables** (`ALTER TABLE ADD COLUMN` — additive only: boot never drops,
+   tables** (`ALTER TABLE ADD COLUMN`, additive only: boot never drops,
    renames, or retypes). Type changes and renames are surfaced by the
-   declarative diff (`DiffSchema` / `migrate generate`) — type changes as
+   declarative diff (`DiffSchema` / `migrate generate`): type changes as
    destructive changes refused by default, renames as non-destructive
-   `RENAME COLUMN` when declared via `EntityConfig.Renames` — but
+   `RENAME COLUMN` when declared via `EntityConfig.Renames`. But
    auto-migrate on `App.Start` applies only the additive ones. Runs on
    `App.Start`. Best for development, and for apps that keep their schema
    in entity declarations rather than hand-written SQL.
@@ -21,11 +21,11 @@ GoFastr has two migration paths:
 Both are production-hardened (see [Production safety](#production-safety)):
 auto-migrate runs under an advisory lock inside a single transaction; the
 versioned runner adds checksums, dirty-state tracking, and a
-no-transaction escape hatch. The two paths are kept coherent — the
+no-transaction escape hatch. The two paths are kept coherent: the
 entity schema is the single source of DDL type mapping, so a table
 auto-migrate creates diffs clean against the same entity declaration.
 
-When an entity has multiple API versions registered (via route groups —
+When an entity has multiple API versions registered (via route groups,
 see [API prefix & versioning](api-versioning.md)), auto-migrate builds
 each table's schema from the **union of every version's declared
 columns**. A field only v2 declares is created at boot exactly as a new
@@ -75,14 +75,14 @@ DROP TABLE posts;
 ```
 
 Required directives: `Version` (positive integer) and `Up`. `Name`
-and `Down` are optional but `Down` is strongly recommended — without
+and `Down` are optional but `Down` is strongly recommended. Without
 it, `migrate down` fails for that version.
 
 ### Non-transactional migrations
 
-By default each migration runs inside a transaction. Statements that
-cannot run in a transaction — `CREATE INDEX CONCURRENTLY`, `VACUUM`,
-`CREATE DATABASE` on Postgres — need the `NoTransaction` directive:
+By default each migration runs inside a transaction. Some statements
+cannot run in a transaction: `CREATE INDEX CONCURRENTLY`, `VACUUM`,
+and `CREATE DATABASE` on Postgres. They need the `NoTransaction` directive:
 
 ```sql
 -- +migrate Version 7
@@ -118,7 +118,7 @@ CREATE TABLE articles (...);
 DROP TABLE articles;
 ```
 
-No directive means the **default group** — exactly today's behavior.
+No directive means the **default group**, exactly today's behavior.
 See "Migration groups" below for semantics.
 
 ## CLI
@@ -142,17 +142,17 @@ gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 
 Flags & inputs:
 
-- `--db-url=<dsn>` — required unless `DATABASE_URL` env var is set or
+- `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
   a `.env` file in the working directory contains `DATABASE_URL=...`.
-- `--driver=<name>` — defaults to `sqlite3`. Postgres or MySQL require
+- `--driver=<name>`: defaults to `sqlite3`. Postgres or MySQL require
   building a `gofastr` binary that blank-imports the matching driver.
-- `--create-db` (`up` only) — create the target database before applying
+- `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
   for fresh deploys where the database named in the DSN has not been created
   yet; a no-op when it already exists.
-- `--not-applied` (`force` only) — remove the version from the tracking
+- `--not-applied` (`force` only): remove the version from the tracking
   table (treat as pending) instead of marking it applied.
-- `--group=<name>` — scope `up`/`down`/`status` to one or more groups
+- `--group=<name>`: scope `up`/`down`/`status` to one or more groups
   (repeat the flag); a single `--group` on `force` targets that group's
   version. `--group=default` addresses the default (ungrouped) set.
   `generate --group=<name>` stamps the `Group` directive into the
@@ -182,32 +182,32 @@ stream instead of injecting into the app's flat list.
   `m.Up(ctx, "knowledge")` applies only that group's pending
   migrations. `Down`, `Status`, and the CLI's repeatable `--group`
   flag scope the same way. Enabling a feature later just runs its
-  pending group — under the same advisory lock as everything else, so
+  pending group, under the same advisory lock as everything else, so
   concurrent boots stay safe.
 - **Ordering.** Within a group, strictly by version. When one run
   applies several groups, migrations interleave in `(version, group)`
-  order — a deterministic tiebreak, **not** a dependency mechanism.
+  order, a deterministic tiebreak, **not** a dependency mechanism.
   Keep groups self-contained: a group must never depend on another
   group's schema, because the other group may not be enabled at all.
 - **Compatibility.** Apps that never declare a group are untouched:
   the runner emits the exact pre-group SQL and never alters the
   tracking table. The first time a non-default group is in play, the
   tracking table gains a `group_name` column and its primary key is
-  upgraded in place to `(group_name, version)` — atomic on Postgres,
+  upgraded in place to `(group_name, version)`: atomic on Postgres,
   a transactional table rebuild on SQLite; existing rows all belong
   to the default group, so the upgrade cannot conflict.
 - **Integrity.** Checksums, drift detection, and `force` all key on
   `(group, version)`. A dirty migration in the default group or any
   registered group blocks all operations; the error names the group.
   A *named* group with no registered migrations at all is a disabled
-  module: its applied rows are that module's property — shown by
+  module: its applied rows are that module's property, shown by
   `status`, but never compared, blocked on, rolled back, or dropped.
   (`force --group=<name>` remains the reconciliation escape hatch for
   a disabled module's rows.) The default group is never treated as a
-  module — an applied default-group row with no matching registration
+  module. An applied default-group row with no matching registration
   is drift and errors, exactly as before groups existed.
-- **Addressing the default group.** In selections — `--group` on the
-  CLI, group args in Go — the name `default` addresses the default
+- **Addressing the default group.** In selections, `--group` on the
+  CLI or group args in Go, the name `default` addresses the default
   group (`m.Up(ctx, "default")`). It is reserved: `Register` rejects
   a group literally named "default".
 
@@ -215,7 +215,7 @@ stream instead of injecting into the app's flat list.
 
 Boot auto-migrate is fine for development, but production change
 management wants **reviewable, version-controlled, reversible**
-increments — not implicit applies. `migrate generate` produces them
+increments, not implicit applies. `migrate generate` produces them
 *offline* (no database needed):
 
 ```bash
@@ -238,13 +238,13 @@ ALTER TABLE "posts" DROP COLUMN "published";
 
 > **Scope.** The standalone `gofastr migrate generate` CLI reads schema
 > **only from the `--from=<blueprint.yml>` blueprint's entities** (see
-> [blueprints](blueprints.md)) — the pre-graduation bootstrap path. It does
-> **not** see anything registered in Go — neither `app.Entity(...)` entities
+> [blueprints](blueprints.md)). That is the pre-graduation bootstrap path. It does
+> **not** see anything registered in Go: neither `app.Entity(...)` entities
 > nor `App.View` / `App.Routine` / `App.Table`. For Go-defined schema, use
 > auto-migrate (`App.Start` applies it on boot), or emit versioned migrations
 > **from your own app's binary** via the supported
 > `migrate.GenerateMigrationFile` entrypoint (the binary has its entities
-> compiled in and diffs them against the committed snapshot — see
+> compiled in and diffs them against the committed snapshot, as described in
 > [Generating from a host binary](#generating-from-a-host-binary-owned-go-path)
 > below). For finer control, the lower-level
 > `migrate.GeneratePlan(plan, snapshot, dialect)` returns the Up/Down SQL and
@@ -260,17 +260,17 @@ It then updates the snapshot. The typical loop:
    checksummed runner.
 
 What it generates: `CREATE TABLE` (new entity), `ADD COLUMN` (new
-field), `DROP COLUMN` (removed field — the `Down` re-adds the column but
+field), `DROP COLUMN` (removed field, whose `Down` re-adds the column but
 does not restore row data), and `DROP TABLE`
 (removed entity). The forward DDL is built by the same code path as
 auto-migrate, so a generated migration matches what auto-migrate would
 have applied. A new **required** field with **no default** is added
-*nullable* — a `NOT NULL` `ADD COLUMN` with nothing to fill existing
+*nullable*: a `NOT NULL` `ADD COLUMN` with nothing to fill existing
 rows fails on a populated table, so the constraint is deferred (the
 change summary notes this); backfill the rows and tighten it in a later
 migration. A required field that has a default keeps `NOT NULL`, since
 every existing row gets the default. Type changes are DETECTED and surfaced
-as destructive changes (refused unless `AllowDestructive` is set) — they
+as destructive changes (refused unless `AllowDestructive` is set). They
 often need a data-specific `USING` conversion on Postgres or a table rebuild
 on SQLite, so review and hand-tighten the generated SQL. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
@@ -295,17 +295,17 @@ diff would otherwise see both columns. Both sides are checked as column
 identifiers at validate time.
 
 Type-change detection catches the type *class* (e.g. TEXT→INTEGER) but NOT
-size/precision changes — `VARCHAR(50)→VARCHAR(100)` and `DECIMAL(10,2)→(19,4)`
+size/precision changes: `VARCHAR(50)→VARCHAR(100)` and `DECIMAL(10,2)→(19,4)`
 are normalized away, so express those as a hand-written migration. Columns
 declared with `RawType` (Postgres domains, arrays, custom types) are skipped:
 the live DB reports the underlying type, which never matches the raw type, so
 they would otherwise false-positive every diff. And an existing Postgres table
 whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY`
-(no sequence) is not auto-upgraded to `SERIAL` — bring it up with a one-time
+(no sequence) is not auto-upgraded to `SERIAL`. Bring it up with a one-time
 `ALTER`/rebuild if you adopt `auto_generate: increment` on Postgres.
 
 The snapshot is offline
-state — pick `--driver` to match your production engine so the emitted types are
+state. Pick `--driver` to match your production engine so the emitted types are
 right.
 
 Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
@@ -314,13 +314,13 @@ Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
 
 ## Generating from a host binary (owned-Go path)
 
-Once an app graduates from the blueprint, its schema lives in **owned Go** —
+Once an app graduates from the blueprint, its schema lives in **owned Go**:
 `app.Entity(...)`, `App.Table`, `App.View`, `App.Routine` registrations the
 `gofastr migrate generate` CLI cannot see. `migrate.GenerateMigrationFile` is
 the supported entrypoint for that case: it diffs a full migration Plan (the
 registry + views + routines a host binary has compiled in) against the
 committed snapshot and writes the next numbered migration file, updating the
-snapshot — the same loop the blueprint CLI runs, byte-for-byte (same
+snapshot. It is the same loop the blueprint CLI runs, byte-for-byte (same
 `NNNN_<slug>.sql` naming, same `-- +migrate` directives, same
 `schema.snapshot.json`), because both paths share `GeneratePlan` +
 `RenderMigrationFile` + `SaveSnapshot`.
@@ -328,7 +328,7 @@ snapshot — the same loop the blueprint CLI runs, byte-for-byte (same
 A host app binary has no built-in subcommand dispatcher (it is a flat
 `main()` that wires the app and calls `Start()`), so the supported surface is
 this one call plus a thin `main()` guard. Wire a `migrate generate` verb
-yourself — typically by inspecting `os.Args` before `app.Start()`:
+yourself, typically by inspecting `os.Args` before `app.Start()`:
 
 <!-- gofastr:compile
 import "fmt"
@@ -343,7 +343,7 @@ func main() {
     app := buildApp() // your *framework.App with entities/tables/views/routines registered
 
     // `myapp migrate generate <name>` emits a versioned migration from the
-    // compiled registry, then exits — no server, no DB touched.
+    // compiled registry, then exits. No server, no DB touched.
     if len(os.Args) >= 4 && os.Args[1] == "migrate" && os.Args[2] == "generate" {
         name := os.Args[3]
         plan := app.MigrationPlan() // registry + views + routines, same as Start applies
@@ -368,16 +368,16 @@ means the schema already matches the snapshot (nothing written). Pass
 `MigrationFileOptions.Group` to stamp a `-- +migrate Group <name>` directive,
 matching the CLI's `--group`. Renames declared via `EntityConfig.Renames`
 flow through as a non-destructive `RENAME COLUMN` (not a drop+add), exactly as
-they do from the blueprint path. Generation is deterministic — the same Plan
+they do from the blueprint path. Generation is deterministic: the same Plan
 always produces byte-identical files, so diffs and checksums stay stable.
 
 ## Non-entity tables (raw tables)
 
-Not every table wants the entity machinery — no auto-CRUD, no HTTP routes, no
+Not every table wants the entity machinery: no auto-CRUD, no HTTP routes, no
 validation, no auto-injected `id`/timestamps/`tenant_id`. Join tables,
 analytics roll-ups, tables owned by a stored procedure, or just a preference
 not to declare entities. `migrate.Table` is a raw schema declaration that
-migrates, diffs, and generates **alongside** entities in the same registry —
+migrates, diffs, and generates **alongside** entities in the same registry,
 including foreign keys that cross between an entity and a raw table.
 
 <!-- gofastr:compile
@@ -399,7 +399,7 @@ app.Table(migrate.Table{
 })
 ```
 
-Only the columns you declare are emitted — nothing is injected. A foreign key
+Only the columns you declare are emitted. Nothing is injected. A foreign key
 references the target table's primary key (the target may be an entity or
 another raw table). Single-column or no primary key are supported; composite
 primary keys are not yet (use a unique index). `RawType` on a column overrides
@@ -459,7 +459,7 @@ The filename grammar:
 | `<name>.sqlite.down.sql`     | Down body for the SQLite-only routine.                      |
 
 Routine Name = file base name. A name must not have both a plain Up and a
-dialect-suffixed Up, and must not have two dialect suffixes — both are
+dialect-suffixed Up, and must not have two dialect suffixes. Both are
 ambiguous authoring errors that fail loudly at registration. Empty
 files, missing directories, and Down-without-Up files are likewise errors
 (the framework screams rather than silently no-op'ing, the same posture as a
@@ -469,7 +469,7 @@ ignored, so a `README.md` next to the routines is fine.
 ### Dialect scoping
 
 `Routine.Dialect` scopes a routine to a single SQL dialect. The zero value
-(the empty string) means "runs on every detected dialect" — today's behavior.
+(the empty string) means "runs on every detected dialect", today's behavior.
 Set `DialectPostgres` for a Postgres stored proc that has no SQLite equivalent
 (typical when developing against SQLite locally but deploying to Postgres);
 `DialectSQLite` for a SQLite-only trigger. During auto-migrate, routines whose
@@ -480,7 +480,7 @@ a single boot-time log line:
 INFO migrate: skipping routines declared for a different dialect declared=postgres running=sqlite3 routines=compute_totals,refresh_mv count=2
 ```
 
-Skipped routines are NOT removed from the plan — a future dialect switch (or
+Skipped routines are NOT removed from the plan. A future dialect switch (or
 running the same binary against Postgres) will pick them up. `View` does not
 take a `Dialect` tag: its `render()` already emits the right DDL per engine
 (`CREATE OR REPLACE VIEW` on Postgres, `DROP IF EXISTS` + `CREATE` on SQLite,
@@ -501,11 +501,11 @@ writes one row per applied routine inside the SAME transaction as the apply:
 The ledger is **reporting, not gating**: every matching routine's `Up` STILL
 runs every boot (idempotent, self-healing against DB-side drift). The
 checksum is how the `app_routines` MCP tool (see the Agent-ready doc) tells
-you "the registered body drifted since the last boot that recorded this row"
-— it does not skip application.
+you "the registered body drifted since the last boot that recorded this row".
+It does not skip application.
 
 When a routine is removed from code, its ledger row is NOT dropped (additive-
-only — boot never auto-drops). Instead, you see a loud `WARN` naming the
+only: boot never auto-drops). Instead, you see a loud `WARN` naming the
 orphaned routine and pointing at the cure:
 
 ```
@@ -521,18 +521,18 @@ At the end of every boot, a one-line summary captures the apply outcome:
 INFO migrate: routine apply summary applied=7 changed=2 first_time=1 skipped=1 orphaned=0
 ```
 
-- `applied` — routines whose `Up` ran this boot (every matching routine).
-- `changed` — applied routines whose checksum differs from the previous boot.
-- `first_time` — applied routines seeing their first-ever ledger row.
-- `skipped` — routines skipped for dialect mismatch this boot.
-- `orphaned` — ledger rows whose name is no longer registered (the WARNed set).
+- `applied`: routines whose `Up` ran this boot (every matching routine).
+- `changed`: applied routines whose checksum differs from the previous boot.
+- `first_time`: applied routines seeing their first-ever ledger row.
+- `skipped`: routines skipped for dialect mismatch this boot.
+- `orphaned`: ledger rows whose name is no longer registered (the WARNed set).
 
 ### Generating versioned migrations
 
 `App.Start` runs every routine's `Up` on boot (after tables) via the plan it
 builds from `App.Table` / `App.Routine` / `App.View` / `App.RoutinesFS`. To
 capture routine/view changes as **versioned** migrations instead, use the
-programmatic generator — the file-based `migrate generate` CLI does not see
+programmatic generator, since the file-based `migrate generate` CLI does not see
 Go-registered routines/views (see the Scope note above):
 
 ```go
@@ -577,7 +577,7 @@ $$ LANGUAGE plpgsql;
 ```
 
 ```sql
--- db/routines/stamp_audit_trg.pg.sql (trigger half — depends on stamp_audit())
+-- db/routines/stamp_audit_trg.pg.sql (trigger half, depends on stamp_audit())
 CREATE OR REPLACE TRIGGER stamp_audit_trg
   BEFORE UPDATE ON ledger
   FOR EACH ROW EXECUTE FUNCTION stamp_audit();
@@ -587,7 +587,7 @@ Files are applied in name-sorted order; name them so a function precedes any
 trigger or caller that depends on it (`stamp_audit` before
 `stamp_audit_trg`).
 
-A stored procedure is the same shape — call it from hooks, repos, or handlers
+A stored procedure is the same shape. Call it from hooks, repos, or handlers
 via `app.DB`:
 
 ```sql
@@ -617,14 +617,14 @@ if err := app.DB.QueryRowContext(ctx, "SELECT debits, credits FROM compute_total
 ```
 
 In tests, point a fresh Postgres DB at the same `db/routines` directory via
-`App.RoutinesFS` — the routines land in one transaction with the schema, and
+`App.RoutinesFS`. The routines land in one transaction with the schema, and
 the `app_routines` tool will report each one as `ledger_state=present`
 once boot completes.
 
 ## Views (virtual tables built from entities)
 
 A `migrate.View` is a read model defined by a SELECT over your entity
-tables — a "virtual table constructed from other entities". It belongs to
+tables, a "virtual table constructed from other entities". It belongs to
 both stories: it's created on boot after its source tables (and tracked
 reversibly by `migrate generate`), and when it declares `Columns` it's
 also exposed through the ORM as a **read-only** entity.
@@ -644,17 +644,17 @@ app.View(migrate.View{
 ```
 
 - **Migration**: emitted after all tables (and ordered among views by
-  `DependsOn`). Idempotent — `CREATE OR REPLACE VIEW` on Postgres, `DROP …
+  `DependsOn`). Idempotent: `CREATE OR REPLACE VIEW` on Postgres, `DROP …
   IF EXISTS` + `CREATE` on SQLite/materialized. `migrate generate` tracks
   the definition by checksum and writes a reversible migration when it
   changes (the `Down` restores the previous definition / drops a new one).
 - **ORM**: with `Columns` declared, `GET /active_users` and
   `GET /active_users/{id}` are mounted (plus the query layer); no write
-  routes. Without `Columns`, the view is migration-only — query it with
+  routes. Without `Columns`, the view is migration-only. Query it with
   raw SQL.
 - The view's ORM entity is `Unmanaged`: the migration system emits no
   table DDL for it (the view DDL handles its existence). `Unmanaged` is a
-  general `EntityConfig` flag — use it for any externally-created table
+  general `EntityConfig` flag. Use it for any externally-created table
   (FTS virtual tables, legacy tables) you want to query through the ORM
   without auto-migrate touching its schema.
 
@@ -680,7 +680,7 @@ created, err := migrate.EnsureDatabase("postgres", dsn)
 
 On Postgres it connects to the maintenance `postgres` database and issues
 `CREATE DATABASE` when the target is absent (the role needs `CREATEDB`). On
-SQLite it's a no-op — the file is created when the runner opens it. It tolerates
+SQLite it's a no-op: the file is created when the runner opens it. It tolerates
 a still-starting database with a short connection retry.
 
 ## Programmatic API
@@ -712,17 +712,17 @@ st, _ := m.Status(ctx)   // st.Applied[i].Checksum, .Dirty are populated
 Use `RegisterFromReader` to load directive-formatted SQL from any
 `io.Reader`, including embedded files. Set `Migration.NoTransaction`
 (or the `-- +migrate NoTransaction` directive) to run a migration
-outside a transaction. Checksums and dirty-state tracking are automatic
-— no API to opt in.
+outside a transaction. Checksums and dirty-state tracking are automatic,
+with no API to opt in.
 
 ## Dialects
 
-- `DialectPostgres` (default) — uses `NOW()` and `$1, $2, …`
+- `DialectPostgres` (default): uses `NOW()` and `$1, $2, …`
   placeholders.
-- `DialectSQLite` — uses `CURRENT_TIMESTAMP` and `?` placeholders.
+- `DialectSQLite`: uses `CURRENT_TIMESTAMP` and `?` placeholders.
 
 Dialect affects only the tracking-table queries and timestamp default.
-Your migration `Up`/`Down` SQL is passed verbatim to the driver — keep
+Your migration `Up`/`Down` SQL is passed verbatim to the driver. Keep
 it dialect-portable, or split into two registrations.
 
 ## Tracking table
@@ -741,9 +741,9 @@ Created lazily on first `Up`/`Down`/`Status` call. The `checksum` and
 `dirty` columns are backfilled automatically onto tables created by an
 older GoFastr, so upgrading needs no manual fix. When migration groups are in
 use, the table additionally gains `group_name TEXT NOT NULL DEFAULT ''`
-and the primary key becomes `(group_name, version)` — upgraded in
+and the primary key becomes `(group_name, version)`, upgraded in
 place the first time a non-default group is applied. Never edit the
-table by hand — use `migrate force` to reconcile state instead.
+table by hand. Use `migrate force` to reconcile state instead.
 
 ## Auto-migrate path
 
@@ -760,8 +760,8 @@ SQLite when the engine answers but is not Postgres) and emits
 safe to re-run.
 
 Dialect detection **fails closed**. If the `SELECT version()` probe cannot
-reach the database after its retries — a bad or unreachable DSN, a connection
-reset, a pooler in statement mode — `AutoMigrate`, `MigrateEntity`,
+reach the database after its retries, whether from a bad or unreachable DSN,
+a connection reset, or a pooler in statement mode, then `AutoMigrate`, `MigrateEntity`,
 `DiffSchema`, and `RunSeeds` return an error naming the probe failure and
 pointing at the database connection instead of guessing SQLite. The detected
 dialect decides whether the cross-replica advisory lock is taken at all and
@@ -773,16 +773,16 @@ routine-only Postgres app. The boot error looks like:
 migrate: dialect probe failed after 3 attempts: <cause> (check the database connection / DATABASE_URL)
 ```
 
-Remedy: check `DATABASE_URL` — for SQLite the file path must exist and be
-writable; for Postgres the host, port, and credentials must be reachable —
-then re-boot. An engine that genuinely lacks `version()` (SQLite's
+Remedy: check `DATABASE_URL` and re-boot. For SQLite the file path must exist
+and be writable; for Postgres the host, port, and credentials must be
+reachable. An engine that genuinely lacks `version()` (SQLite's
 `no such function: version`) is the deterministic, non-transient case: it
 resolves to SQLite without retrying and without erroring.
 
 It creates tables, indexes, and foreign keys, and **adds missing
 columns to existing tables** (`ALTER TABLE ADD COLUMN`, built by the
 same schema-diff path as `migrate generate`, so boot and a versioned
-migration can never disagree) — all to make the database match the
+migration can never disagree), all to make the database match the
 registered entities,
 **inside one transaction and under an advisory lock** (see
 [Production safety](#production-safety)). A new **required** field
@@ -798,18 +798,18 @@ DDL, so a new field and its index land in one boot. It will **not**:
 Framework-managed columns are created for you: `created_at` /
 `updated_at` (when `Timestamps` is on), `deleted_at` (when `SoftDelete`
 is on), and `tenant_id` (when `MultiTenant` is on). You do not declare
-these as fields — the framework injects them and auto-migrate creates
+these as fields. The framework injects them and auto-migrate creates
 them, so a multi-tenant entity's table always has the `tenant_id`
 column its writes scope by.
 
 For destructive changes (drops, renames, type changes), use `gofastr
-migrate generate <name>` to emit a reviewable versioned migration — a
+migrate generate <name>` to emit a reviewable versioned migration, where a
 removed field generates a `DROP COLUMN` whose `Down` re-adds the column
-but does not restore row data — then `gofastr migrate up`, or write a
+but does not restore row data, then `gofastr migrate up`, or write a
 numbered SQL file by hand and stop using auto-migrate for that table.
 
-`AutoMigrateContext(ctx, db, registry)` is the context-aware variant —
-boot uses it so a shutdown signal cancels a migration that's waiting on
+`AutoMigrateContext(ctx, db, registry)` is the context-aware variant.
+Boot uses it so a shutdown signal cancels a migration that's waiting on
 the advisory lock instead of hanging.
 
 ### Running both paths (and turning boot-time DDL off)
@@ -817,7 +817,7 @@ the advisory lock instead of hanging.
 A generated app runs both paths on boot, and that layering is
 intentional, not an accident: auto-migrate converges the schema with the
 entity declarations (additive DDL only), while the versioned runner
-applies everything the declarations can't express — backfills,
+applies everything the declarations can't express: backfills,
 constraint tightening, destructive changes. They can't disagree on DDL
 because both derive column types from the same entity schema.
 
@@ -838,20 +838,20 @@ app := framework.NewApp(
 ```
 
 then fold entity drift into the versioned files as part of your release
-step — `gofastr migrate generate <name>` emits the drift as a reviewable
+step: `gofastr migrate generate <name>` emits the drift as a reviewable
 numbered migration, `gofastr migrate up` applies it, `gofastr migrate
 status` shows what's pending. Entity seeds still run at Start (idempotent data, not
 schema); a seeded entity whose table is missing fails Start fast instead
 of the app serving against an unmigrated database. Seeds acquire a DISTINCT
 Postgres advisory lock from migrations, so N replicas booting at once
-serialize their seed phase too — the `_gofastr_seeded` ledger then makes
+serialize their seed phase too. The `_gofastr_seeded` ledger then makes
 each entity's Seed run once globally. (Exception: a `MaxOpenConns(1)`
 Postgres pool can't hold the lock without deadlocking the seed body, so it
-skips the lock with a WARN and is not coordinated across replicas — keep
+skips the lock with a WARN and is not coordinated across replicas, so keep
 the pool above 1 connection.)
 
 `WithoutAutoMigrate` suppresses **entity** DDL. A few framework-owned
-bookkeeping tables are still created on demand regardless — the seed
+bookkeeping tables are still created on demand regardless: the seed
 ledger (`_gofastr_seeded`), and, when you enable `WithOutbox`, the outbox
 table (`event_outbox`), which is ensured when the outbox is constructed
 at `NewApp` time. These aren't entity schema and aren't emitted by
@@ -866,7 +866,7 @@ silently skip them.
 
 `AutoUUID` columns emit `DEFAULT gen_random_uuid()` on Postgres so raw
 SQL `INSERT`s that omit the id column don't crash with a NOT NULL
-violation. SQLite has no built-in UUID generator — the column stays
+violation. SQLite has no built-in UUID generator, so the column stays
 app-managed there (the framework's auto-CRUD layer and
 `EntitySessionStore` already supply the value at insert time). If you
 write raw `INSERT` statements against SQLite, you're responsible for
@@ -903,7 +903,7 @@ that compiles in tests will fail in prod. The framework's
   Write a new migration instead.
 - **Non-idempotent `Up`.** Transactional migrations roll back cleanly
   on failure (both SQLite and Postgres have transactional DDL). Only
-  `NoTransaction` migrations can leave a partial schema — and those are
+  `NoTransaction` migrations can leave a partial schema, and those are
   recorded dirty so the next run refuses until you run `migrate force`.
 
 ## Production safety
@@ -911,14 +911,14 @@ that compiles in tests will fail in prod. The framework's
 The migration system is meant for production use, not just local
 development convenience. What it guarantees:
 
-- **Advisory locking.** Every migration run — auto-migrate on boot and
-  the versioned `Up`/`Down`/`Force` — is serialized by a Postgres
+- **Advisory locking.** Every migration run, auto-migrate on boot and
+  the versioned `Up`/`Down`/`Force`, is serialized by a Postgres
   advisory lock (`pg_advisory_lock`, keyed on a fixed constant). Boot N
   replicas at once and only one migrates at a time; the others wait.
   The lock is acquired by polling `pg_try_advisory_lock` so a cancelled
   context (shutdown) returns promptly instead of hanging on a stuck
-  holder. SQLite takes no lock — it serializes writers at the file
-  level — but the same code path runs so behavior is uniform.
+  holder. SQLite takes no lock, since it serializes writers at the file
+  level, but the same code path runs so behavior is uniform.
 - **Atomicity.** Auto-migrate runs all of its DDL in a single
   transaction; if entity *K* fails, entities *1..K-1* roll back too, so
   a botched boot never leaves a half-created schema. Versioned
@@ -940,7 +940,7 @@ development convenience. What it guarantees:
 - **Baseline / recovery.** `migrate force <V>` (programmatically
   `Migrator.Force(ctx, version, applied)`) marks a version applied
   without running it (adopt an existing database) or removes it (treat
-  as pending) — and clears any dirty flag either way.
+  as pending), and clears any dirty flag either way.
 
 This is the same feature set as other established migrators
 (golang-migrate, goose, Atlas): versioned up/down, advisory locking,
@@ -954,7 +954,7 @@ GoFastr supports both SQLite and Postgres. Their concurrency characteristics dif
 
 ### SQLite
 
-SQLite serialises writes — only one writer at a time. Under high concurrency (64+ goroutines), `CREATE` p99 can climb to 112 ms with only 10 writes completing out of 5000+ ops in mixed read/write workloads.
+SQLite serialises writes: only one writer at a time. Under high concurrency (64+ goroutines), `CREATE` p99 can climb to 112 ms with only 10 writes completing out of 5000+ ops in mixed read/write workloads.
 
 **Production guidance:**
 - Set `MaxOpenConns(1)` on the `*sql.DB` for SQLite workloads (the framework does this automatically in test helpers).
@@ -975,6 +975,6 @@ import _ "modernc.org/sqlite"
 
 Trade-offs:
 - Binary is ~4 MB smaller, build uses ~440 MB less RAM.
-- No cgo toolchain dependency — works in `GOOS=js` and scratch containers.
+- No cgo toolchain dependency: works in `GOOS=js` and scratch containers.
 - Query performance is a few percent slower than cgo SQLite.
-- Fully compatible with the GoFastr migration and query layers — no code changes required.
+- Fully compatible with the GoFastr migration and query layers, with no code changes required.

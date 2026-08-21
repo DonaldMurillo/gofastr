@@ -1,4 +1,4 @@
-// Package theme provides the framework's default page theme — the
+// Package theme provides the framework's default page theme, the
 // visual identity for any app built via core-ui (or its consumers
 // like kiln). Hosts get token-driven palette/spacing/typography out
 // of the box, plus utility classes (kiln-section, kiln-card,
@@ -6,7 +6,7 @@
 // tokens.
 //
 // A host can override individual tokens by passing a custom Theme
-// to PageTheme — every utility class re-resolves to the new value,
+// to PageTheme, every utility class re-resolves to the new value,
 // so a single token swap re-skins the whole app.
 package theme
 

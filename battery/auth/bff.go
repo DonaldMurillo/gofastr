@@ -23,7 +23,7 @@ type BFFPostureConfig struct {
 // the API prefix must match the exact allowlist. API tokens with the gfsk_
 // prefix remain available for non-browser automation; bearer JWTs are rejected
 // on the BFF API surface. When no WithAPIPrefix is configured, entity CRUD
-// mounts at the bare root, so the guard covers the entire app — list the
+// mounts at the bare root, so the guard covers the entire app, list the
 // app's own origin in AllowedOrigins in that case, or set an API prefix.
 //
 // This option lives in battery/auth (rather than framework) because it needs an
@@ -95,7 +95,7 @@ func validateBFFOrigins(values []string) map[string]struct{} {
 }
 
 func normalizeBFFPrefix(prefix string) string {
-	// No APIPrefix means entity CRUD mounts at the bare root — there is
+	// No APIPrefix means entity CRUD mounts at the bare root, there is
 	// no delimited API surface, so the guard covers the WHOLE app.
 	// Fail-closed: requests without an Origin (top-level navigations)
 	// still pass, but any Origin-carrying or bearer-JWT request answers

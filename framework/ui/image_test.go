@@ -78,7 +78,7 @@ func TestOptimizedImageAspectAndFitClasses(t *testing.T) {
 }
 
 func TestOptimizedImageDecorativeAllowsEmptyAlt(t *testing.T) {
-	// Opt-in via class hook — should not panic.
+	// Opt-in via class hook: should not panic.
 	h := OptimizedImage(OptimizedImageConfig{
 		Src: "/a.png", Alt: "", Width: 1, Height: 1, Class: "ui-image--decorative",
 	})

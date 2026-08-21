@@ -17,7 +17,7 @@ func TestGroupRouterRaceFreeInit(t *testing.T) {
 	g := routegroup.New(r, "/api")
 
 	// Barrier so every goroutine starts the registration at the same
-	// instant — without this, sequential scheduler quanta let the for-
+	// instant, without this, sequential scheduler quanta let the for-
 	// loop launch finish before the first goroutine even contends.
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -125,7 +125,7 @@ func TestGroupAccess(t *testing.T) {
 	g := routegroup.New(r, "/admin", routegroup.WithAccess(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
-			// Don't call next — simulate denied access
+			// Don't call next, simulate denied access
 		})
 	}))
 
@@ -143,7 +143,7 @@ func TestGroupAccess(t *testing.T) {
 }
 
 func TestNestedAccessBothEnforced(t *testing.T) {
-	// Happy path — both access checks run.
+	// Happy path, both access checks run.
 	t.Run("both allow", func(t *testing.T) {
 		r := router.New()
 		var outerCalled, innerCalled int
@@ -175,14 +175,14 @@ func TestNestedAccessBothEnforced(t *testing.T) {
 		}
 	})
 
-	// Outer denies — inner check must never run, handler must never run.
+	// Outer denies, inner check must never run, handler must never run.
 	t.Run("outer denies", func(t *testing.T) {
 		r := router.New()
 		var innerCalled, handlerCalled int
 		outer := routegroup.New(r, "/api", routegroup.WithAccess(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusForbidden)
-				// do NOT call next — outer denial blocks the chain
+				// do NOT call next, outer denial blocks the chain
 			})
 		}))
 		inner := outer.Group("/admin", routegroup.WithAccess(func(next http.Handler) http.Handler {
@@ -211,7 +211,7 @@ func TestNestedAccessBothEnforced(t *testing.T) {
 		}
 	})
 
-	// Inner denies — outer ran, handler must never run.
+	// Inner denies, outer ran, handler must never run.
 	t.Run("inner denies", func(t *testing.T) {
 		r := router.New()
 		var outerCalled, handlerCalled int
@@ -388,7 +388,7 @@ func TestGroupDoesNotAffectOtherRoutes(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// Root-level route — NOT in the group
+	// Root-level route. NOT in the group
 	r.Get("/health", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

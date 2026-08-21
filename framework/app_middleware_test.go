@@ -11,14 +11,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// Tests in this file pin the SHAPE of App's middleware chain — what
+// Tests in this file pin the SHAPE of App's middleware chain, what
 // defaults are present, how Use composes with them, and how the
 // chain wraps explicit routes / Mountables / NotFound. Logger and
 // plugin-lifecycle behaviour live in their own files (app_logger_test.go,
 // plugin_lifecycle_test.go).
 
 // TestDefaultMiddlewareWrapsExplicitRoutes pins the bug fixed in
-// "fix(framework,router): apply default middleware in NewApp;..." —
+// "fix(framework,router): apply default middleware in NewApp;...":
 // router.Router wraps handlers at registration time, so default
 // middleware must be committed in NewApp BEFORE any user route is
 // added. If applyDefaultMiddleware ever drifts back into Start, this
@@ -108,7 +108,7 @@ func TestWithoutDefaultMiddlewareSuppressesChain(t *testing.T) {
 	}
 }
 
-// TestUseDoesNotDisableDefaults pins that App.Use is additive — calling
+// TestUseDoesNotDisableDefaults pins that App.Use is additive, calling
 // Use does not silently strip the default middleware chain (which was
 // the old behavior and a real footgun).
 func TestUseDoesNotDisableDefaults(t *testing.T) {

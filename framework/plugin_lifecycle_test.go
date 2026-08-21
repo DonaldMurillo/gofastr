@@ -21,7 +21,7 @@ func (p *countingPlugin) Init(_ *App) error { p.count++; return nil }
 
 // stampPlugin tags every response with X-Plugin-Stamp from Init by
 // calling app.Use. Used to prove that a plugin's middleware wraps
-// routes registered BEFORE the plugin was even registered — the
+// routes registered BEFORE the plugin was even registered, the
 // router-late-binding contract.
 type stampPlugin struct {
 	name string
@@ -105,7 +105,7 @@ func TestLatePluginWrapsExistingRoutes(t *testing.T) {
 }
 
 // TestHarnessAutoInitsPlugins pins the contract that TestHarness wires
-// plugins automatically — without it, RegisterPlugin'd state silently
+// plugins automatically, without it, RegisterPlugin'd state silently
 // doesn't apply under the harness and tests pass for the wrong reason.
 func TestHarnessAutoInitsPlugins(t *testing.T) {
 	app := NewApp()

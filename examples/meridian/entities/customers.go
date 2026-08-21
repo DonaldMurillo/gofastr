@@ -51,7 +51,7 @@ func NewCustomersRepo(app *framework.App) *CustomersRepo {
 	return &CustomersRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler, useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *CustomersRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -222,7 +222,7 @@ func OnCustomersUpdated(app *framework.App, fn func(ctx context.Context, row *Cu
 }
 
 // OnCustomersDeleted subscribes to entity.deleted events scoped to "customers". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only, by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnCustomersDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

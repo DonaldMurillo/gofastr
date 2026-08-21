@@ -11,7 +11,7 @@ import (
 // Cookie arrives as SEVERAL header fields in ordinary deployments: a proxy
 // prepends its own and forwards the browser's as a second. Header.Get returns
 // only the first, so two users authenticating from their distinct later fields
-// shared one idempotency namespace — and the second caller received the first's
+// shared one idempotency namespace, and the second caller received the first's
 // stored response while its own handler never ran.
 func TestCredentialFingerprintReadsEveryCookieField(t *testing.T) {
 	alice := httptest.NewRequest(http.MethodPost, "/orders", nil)

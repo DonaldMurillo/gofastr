@@ -27,16 +27,16 @@ func init() {
 
 // Telling a stylesheet apart from ordinary code is most of this rule's
 // work, and the obvious pattern does not do it. Matching any `selector {
-// name: value; }` flags Go and TypeScript wholesale — `{name: rel("x"),
+// name: value; }` flags Go and TypeScript wholesale. `{name: rel("x"),
 // content: string(data)}` is a Go composite literal, and Go struct fields
 // collide with CSS property names constantly (content, src, top, width,
 // color, gap, transform).
 //
 // Two signals survive that collision, because neither can occur in Go:
 //
-//   - a hyphenated property (`font-family`, `border-radius`, `z-index`) —
+//   - a hyphenated property (`font-family`, `border-radius`, `z-index`):
 //     Go identifiers cannot contain a hyphen;
-//   - a CSS-shaped *value* — a number with a unit, a hex colour, or a
+//   - a CSS-shaped *value*: a number with a unit, a hex colour, or a
 //     custom-property reference.
 //
 // Plus at-rules and `<style>`, which are unambiguous on their own.
@@ -70,7 +70,7 @@ var (
 // not enough for two reasons found against this repository:
 //
 //   - `\bwidth` matches inside `max-width`, so the design system's own
-//     `ss.Media("(max-width: 900px)", …)` read as bespoke CSS — the API
+//     `ss.Media("(max-width: 900px)", …)` read as bespoke CSS: the API
 //     you are supposed to use, reported as the thing to stop doing;
 //   - a hyphen is a word boundary, so every hyphenated property's tail
 //     was a match for its own shorter cousin.
@@ -82,9 +82,9 @@ var (
 	reCSSHyphenRule = regexp.MustCompile(`(?i)` + notPropChar + `(?:` + cssHyphenProps + `)\s*:\s*[^;{}]+[;}]`)
 	// Single-word properties are matched case-SENSITIVELY, lowercase
 	// only. CSS is written lowercase; Go struct fields are capitalised.
-	// Without this, `&t.Colors.Background: "#15141B"` — a theme token
-	// assignment, the exact thing this rule exists to encourage — was
-	// reported as a stylesheet.
+	// Without this, `&t.Colors.Background: "#15141B"` was reported as a
+	// stylesheet. That is a theme token assignment, the exact thing this
+	// rule exists to encourage.
 	reCSSValueRule = regexp.MustCompile(notPropChar + `(?:` + cssPlainProps + `)\s*:\s*[^;{}]*` + cssValueShape)
 	reCSSAtRule    = regexp.MustCompile(`(?i)@(?:font-face|media|keyframes|supports|layer)\b`)
 	// A `<style>` block opened inside a string.
@@ -93,9 +93,9 @@ var (
 	//
 	// The preceding-context group is OPTIONAL. notPropChar exists to stop
 	// `width` matching inside `max-width`, but it needs a character to
-	// consume — and the first declaration in an attribute has none, since
+	// consume, and the first declaration in an attribute has none, since
 	// the opening quote is already matched. Requiring it made
-	// `style="margin-top: 12px"` — by far the most common shape — invisible
+	// `style="margin-top: 12px"`, by far the most common shape, invisible
 	// while `style="color: red; margin-top: 12px"` was caught.
 	inlineStyleLead   = `(?:[^"']*` + notPropChar + `)?`
 	reInlineStyleAttr = regexp.MustCompile(`(?i)style\s*=\s*\\?["']\s*(?:` +
@@ -125,7 +125,7 @@ var designSystemPrefixes = []string{
 
 // devOnlyPrefixes are the surfaces exempt from the single-SSE-bus and
 // hard-navigation rules. Dev tooling ships its own livereload stream and
-// reloads the page on purpose — that is its entire job — and none of it
+// reloads the page on purpose, that is its entire job, and none of it
 // runs in production. This is the exception class CLAUDE.md already
 // carves out for livereload, applied here rather than left to every
 // project's config.
@@ -140,11 +140,11 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 		lines := strings.Split(string(body), "\n")
 		// Scan with comments removed, report snippets from the original.
-		// Every one of these constructs lives in a string literal — CSS
-		// emitted into a template, a location assignment in a script
-		// bundle — so a comment mentioning `@font-face` or `<style>` is
-		// prose about the code, never the code. stripComments preserves
-		// line numbering, so the two stay aligned.
+		// Every one of these constructs lives in a string literal, such
+		// as CSS emitted into a template or a location assignment in a
+		// script bundle, so a comment mentioning `@font-face` or
+		// `<style>` is prose about the code, never the code.
+		// stripComments preserves line numbering, so the two stay aligned.
 		scan := strings.Split(stripComments(string(body)), "\n")
 		ownsStyling := hasPrefixAny(f.Rel, designSystemPrefixes)
 		devSurface := hasPrefixAny(f.Rel, devOnlyPrefixes)
@@ -154,7 +154,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 
 			// Cheap pre-filter. Every pattern below needs at least one of
 			// these bytes, and the overwhelming majority of lines in a Go
-			// repository contain none of them — this analyzer was three
+			// repository contain none of them. This analyzer was three
 			// times slower than any other, and the dev loop re-runs it on
 			// every save. Each guard is a strict superset of what its
 			// regex can match, so the finding set is unchanged:
@@ -184,7 +184,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 				if reInlineStyleAttr.MatchString(line) {
 					out = append(out, contracts.Diagnostic{
 						RuleID: contracts.RuleInlineStyle, File: f.Rel, Line: lineNo,
-						Message: "inline style attribute — it outranks every stylesheet rule and is blocked under a strict CSP",
+						Message: "inline style attribute: it outranks every stylesheet rule and is blocked under a strict CSP",
 						Snippet: strings.TrimSpace(lines[i]),
 					})
 				}
@@ -193,7 +193,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			if !devSurface && reHardNav.MatchString(line) {
 				out = append(out, contracts.Diagnostic{
 					RuleID: contracts.RuleHardNavigation, File: f.Rel, Line: lineNo,
-					Message: "full page load used to navigate — scroll position, focus, and every open island are discarded",
+					Message: "full page load used to navigate: scroll position, focus, and every open island are discarded",
 					Snippet: strings.TrimSpace(lines[i]),
 				})
 			}
@@ -201,7 +201,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			if !devSurface && reEventSource.MatchString(line) {
 				out = append(out, contracts.Diagnostic{
 					RuleID: contracts.RuleBespokeEventSource, File: f.Rel, Line: lineNo,
-					Message: "bespoke EventSource — server pushes belong on the shared /__gofastr/sse bus",
+					Message: "bespoke EventSource: server pushes belong on the shared /__gofastr/sse bus",
 					Snippet: strings.TrimSpace(lines[i]),
 				})
 			}
@@ -227,7 +227,7 @@ func hasPrefixAny(rel string, prefixes []string) bool {
 //
 // It scans the pass's own files with the pass's own cached AST, rather
 // than calling the recursive variant: that walked the tree, re-read every
-// file, and re-parsed it — all three of which had just happened — for
+// file, and re-parsed it, all three of which had just happened, for
 // about 200ms on this repository, on every save in the dev loop.
 func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
@@ -255,7 +255,7 @@ func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 				// Deliberately not spelling the tag out: this file would
 				// then trip its own rule, and a detector that has to be
 				// exempted from itself is one more thing to explain.
-				Message: "script element with an inline body — a strict CSP refuses to execute it, so the page ships and the script silently never runs",
+				Message: "script element with an inline body: a strict CSP refuses to execute it, so the page ships and the script silently never runs",
 				Snippet: p.Line(f.Rel, v.Line),
 			})
 		}

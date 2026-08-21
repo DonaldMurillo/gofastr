@@ -109,8 +109,8 @@ func TestCORS_WildcardStripsCredentialsHeader(t *testing.T) {
 
 // Every other ResponseWriter wrapper in this package forwards Flusher and
 // Hijacker (metrics, logging, tracing and timeout each have a test pinning
-// it). CORS's stripCredsWriter — installed on every non-preflight request
-// when AllowedOrigins is ["*"] — did not, so behind a wildcard CORS policy
+// it). CORS's stripCredsWriter, installed on every non-preflight request
+// when AllowedOrigins is ["*"], did not, so behind a wildcard CORS policy
 // the SSE bus lost its Flusher and the WebSocket upgrade lost its Hijacker.
 // The framework's SSE constructor type-asserts http.Flusher, so this is a
 // hard failure, not degraded buffering.

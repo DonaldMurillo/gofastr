@@ -13,7 +13,7 @@ import (
 // 2FA marker methods mutate in place under the lock. Before the fix, Get
 // returned the stored pointer after releasing RLock while
 // MarkTwoFactorVerified / MarkPendingTwoFactor flipped fields on that same
-// object under Lock — a -race run with concurrent Get + both markers
+// object under Lock, a -race run with concurrent Get + both markers
 // reports three data races. This contract test reproduces it under the
 // race detector.
 func TestMemSession_GetVsMarkersNoRace(t *testing.T) {

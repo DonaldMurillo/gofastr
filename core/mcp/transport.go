@@ -90,7 +90,7 @@ func errorAsMaxBytes(err error, target **http.MaxBytesError) bool {
 //
 //   - Origin: a browser sets it on every cross-origin fetch. If it is
 //     present and names a different authority than the request itself,
-//     this is a cross-site call and is refused. Absent Origin passes —
+//     this is a cross-site call and is refused. Absent Origin passes:
 //     curl, stdio bridges and native MCP clients never send one, and
 //     its absence cannot prove an attack.
 //   - Host: the anti-DNS-rebinding control. Origin alone cannot stop
@@ -98,7 +98,7 @@ func errorAsMaxBytes(err error, target **http.MaxBytesError) bool {
 //     same-origin with the listener. Comparing Host against the
 //     authority the server was told to expect breaks the chain, since
 //     a rebound request still carries the attacker's own name. Hosts
-//     are only pinned when the embedder calls SetAllowedHosts — an
+//     are only pinned when the embedder calls SetAllowedHosts: an
 //     unpinned server can't know its own public name, so it stays
 //     permissive rather than breaking ordinary deployments.
 //
@@ -133,7 +133,7 @@ func (s *Server) originOK(r *http.Request) bool {
 }
 
 // originAllowListed reports whether origin was explicitly permitted via
-// SetAllowedOrigins — the escape hatch for tunnels (ngrok, Codespaces)
+// SetAllowedOrigins: the escape hatch for tunnels (ngrok, Codespaces)
 // and browser clients served from a different authority.
 func (s *Server) originAllowListed(origin string) bool {
 	s.mu.RLock()
@@ -161,11 +161,11 @@ func (s *Server) SetAllowedHosts(hosts []string) {
 // local development: dev implies the mutating control tools, so a
 // rebound Host must not reach the dispatcher.
 //
-// SCOPE — this is a browser control, not a network control. It stops DNS
+// SCOPE: this is a browser control, not a network control. It stops DNS
 // rebinding because a browser cannot forge Host. It does nothing against
 // a direct TCP client, which sets Host to whatever it likes: a listener
 // on a routable interface stays reachable by anyone who can open a
-// socket to it. Pair the pin with a loopback BIND — the framework does
+// socket to it. Pair the pin with a loopback BIND. The framework does
 // this in guardDevMCPBind, which withholds the dev-implied control tools
 // when the listen address is not loopback.
 func (s *Server) SetRequireLoopbackHost(v bool) {
@@ -192,7 +192,7 @@ func isLoopbackAuthority(authority string) bool {
 }
 
 // SetAllowedOrigins permits browser Origins that are not same-origin
-// with the request — tunnels and split-origin dev clients.
+// with the request: tunnels and split-origin dev clients.
 func (s *Server) SetAllowedOrigins(origins []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -336,7 +336,7 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Same gate as ssePostHandler. This handler used to discard the
 	// request entirely, so the origin/Host check simply did not run on
-	// the GET half of the pair — a guard hole rather than a disclosure
+	// the GET half of the pair, a guard hole rather than a disclosure
 	// today (the event below is static), but the next thing streamed
 	// from here would be a cross-origin read.
 	if !s.originOK(r) {
@@ -393,7 +393,7 @@ func RequestFromContext(ctx context.Context) (*http.Request, bool) {
 //     every '\n'-delimited line of the payload becomes its own `data:`
 //     line, and a single trailing blank line dispatches the event. A
 //     spec consumer re-joins the `data:` lines with '\n', so the payload
-//     round-trips byte-for-byte — including newlines and any
+//     round-trips byte-for-byte, including newlines and any
 //     "event:"/"id:"/"retry:"/"data:" substrings, which are DATA here
 //     (they appear only after a `data: ` prefix) and therefore cannot
 //     start a new field line or a second event frame. The previous
@@ -413,7 +413,7 @@ func StreamSSE(w io.Writer, event, data string) {
 	fmt.Fprint(w, "\n")
 }
 
-// stripSSEField truncates at the first CR/LF/NUL — those bytes
+// stripSSEField truncates at the first CR/LF/NUL: those bytes
 // terminate an SSE field line and would let a caller-supplied
 // value inject forged directives below it.
 func stripSSEField(s string) string {

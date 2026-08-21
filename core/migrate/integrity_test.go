@@ -40,7 +40,7 @@ func TestChecksum_DriftDetected(t *testing.T) {
 		t.Fatalf("Up: %v", err)
 	}
 
-	// Same version, different Up SQL — simulates an edited migration file.
+	// Same version, different Up SQL. Simulates an edited migration file.
 	m2 := New(db, WithDialect(DialectSQLite))
 	m2.Register(Migration{Version: 1, Name: "create", Up: "CREATE TABLE t1 (id INTEGER, extra INTEGER)", Down: "DROP TABLE t1"})
 	err := m2.Up(ctx)
@@ -137,7 +137,7 @@ func TestNoTransaction_FailureLeavesDirtyAndBlocks(t *testing.T) {
 	}
 }
 
-// TestForce_Baseline marks a version applied without running its Up — the
+// TestForce_Baseline marks a version applied without running its Up, the
 // adopt-an-existing-database path.
 func TestForce_Baseline(t *testing.T) {
 	m, db := newSQLiteMigrator(t)

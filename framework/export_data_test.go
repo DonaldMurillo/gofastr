@@ -31,7 +31,7 @@ func openSQLiteMem(t *testing.T) *sql.DB {
 }
 
 // newExportTestApp builds an App with two entities exercising owner scoping,
-// soft delete, a hidden column, multi-tenancy, and a plain entity — then
+// soft delete, a hidden column, multi-tenancy, and a plain entity, then
 // AutoMigrates. The caller seeds rows.
 func newExportTestApp(t *testing.T) (*App, *sql.DB) {
 	t.Helper()
@@ -326,7 +326,7 @@ func TestImportRejectsSQLMetacharacters(t *testing.T) {
 	}
 
 	// Case 2: a hostile table name in the manifest entry. It won't match the
-	// live table, so it is rejected at the provenance check — never interpolated.
+	// live table, so it is rejected at the provenance check, never interpolated.
 	man2 := readManifest(t, dir)
 	man2.Entities = append(man2.Entities, manifestEntry{
 		Name: "hostile", Source: "entity", Table: "t; DROP TABLE tags; --",
@@ -419,7 +419,7 @@ func TestExportSkipsAbsentRegisteredTable(t *testing.T) {
 // unsafe table or column name even if a caller bypassed staged validation.
 // Identifiers are validated with query.MustIdent at this boundary, so an
 // unsafe name is a fail-fast PANIC (it can never arrive from a validated
-// registry/archive) — never a silently-interpolated injection.
+// registry/archive), never a silently-interpolated injection.
 func TestRawWriteAllRejectsUnsafeIdent(t *testing.T) {
 	db := openSQLiteMem(t)
 	defer db.Close()
@@ -491,7 +491,7 @@ func mustReadFile(t *testing.T, p string) []byte {
 
 // TestExportPagedRoundTrip forces keyset paging (page size 1) so the
 // multi-page read loop + WHERE pk > $1 continuation are exercised, and
-// asserts the round-trip stays faithful — no rows lost or duplicated at
+// asserts the round-trip stays faithful, no rows lost or duplicated at
 // page boundaries.
 func TestExportPagedRoundTrip(t *testing.T) {
 	app, db := newExportTestApp(t)

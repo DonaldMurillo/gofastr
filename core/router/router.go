@@ -25,7 +25,7 @@ type Middleware = middleware.Middleware
 // which natively supports method matching and path parameter capture.
 //
 // The middleware chain is resolved per request and protected by an
-// RWMutex. Concurrent Use() and ServeHTTP() are safe — useful when
+// RWMutex. Concurrent Use() and ServeHTTP() are safe, useful when
 // plugins / batteries / OnStart hooks contribute middleware while
 // requests are already flowing.
 type Router struct {
@@ -67,7 +67,7 @@ type Router struct {
 
 	// routeGate, when set on the ROOT router, is checked in
 	// cachedRoute.ServeHTTP BEFORE the middleware chain runs. Returning
-	// false produces a plain 404 — used by the framework to gate routes
+	// false produces a plain 404, used by the framework to gate routes
 	// owned by a disabled module. The argument is the "METHOD /path"
 	// key so two modules owning different methods on the same path are
 	// gated independently. Read under r.mu. Nil = no gate. Stored on
@@ -76,13 +76,13 @@ type Router struct {
 
 	// serveHook, when set on the ROOT router, is called for every request
 	// that matches a route, with the route's method and registered
-	// pattern — not the request path, so "/users/42" reports as
+	// pattern, not the request path, so "/users/42" reports as
 	// "/users/{id}". Framework test tooling uses it to record which
 	// routes a test run actually exercised (framework/semcov).
 	//
 	// It fires AFTER the route gate and BEFORE the middleware chain, so a
 	// gated route is not recorded as reached and a route rejected later
-	// by auth still is — reaching a route and being refused by it is
+	// by auth still is, reaching a route and being refused by it is
 	// exactly the thing worth proving a test did.
 	//
 	// Read under r.mu on the request path. Nil = no-op, which is the
@@ -123,9 +123,9 @@ func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	route := &cachedRoute{raw: handler, router: r, method: method, pattern: fullPath}
 	// net/http's ServeMux panics with a terse "conflicts with pattern" message
 	// when two registrations want the same path. That's a common, confusing
-	// failure — e.g. an auto-generated CRUD route and a page/screen both want
+	// failure, e.g. an auto-generated CRUD route and a page/screen both want
 	// "/posts". Re-frame it with the colliding pattern and the usual fix so the
-	// author isn't left decoding a mux internal. (Generic on purpose — this is
+	// author isn't left decoding a mux internal. (Generic on purpose: this is
 	// the framework-agnostic core layer.)
 	func() {
 		defer func() {
@@ -165,7 +165,7 @@ func (r *Router) SetRegisterHook(fn func(method, pattern string)) {
 // every matched route. The argument is the "METHOD /path" key (e.g.
 // "GET /users/{id}") so two modules owning different methods on the
 // same path are gated independently. Returning false produces a plain
-// 404 (not 403 — a disabled module's existence must not leak). The gate
+// 404 (not 403: a disabled module's existence must not leak). The gate
 // is also consulted on the 405 path to exclude gated methods from the
 // Allow header. Framework code uses it to gate routes owned by a
 // disabled module. Pass nil to clear. Must be called on the root router;
@@ -181,7 +181,7 @@ func (r *Router) SetRouteGate(fn func(pattern string) bool) {
 // "/users/{id}") rather than the concrete request path. It runs after the
 // route gate and before the middleware chain.
 //
-// Test tooling uses it to record semantic coverage — which routes a suite
+// Test tooling uses it to record semantic coverage: which routes a suite
 // genuinely reached through the real router. Pass nil to clear. Must be
 // called on the root router; setting on a child forwards to root.
 func (r *Router) SetServeHook(fn func(method, pattern string)) {
@@ -221,19 +221,19 @@ func (r *Router) Patch(pattern string, handler http.Handler) {
 // SECURITY: the returned value is truncated at the first byte that
 // could not have arrived through normal path routing:
 //
-//   - CR, LF or NUL — so a payload can't be smuggled into downstream
+//   - CR, LF or NUL, so a payload can't be smuggled into downstream
 //     headers, log lines, SSE frames, or query strings.
-//   - "/" in a single-segment {name} — the mux matches one segment, so
+//   - "/" in a single-segment {name}: the mux matches one segment, so
 //     a separator can only have arrived percent-encoded as %2F.
 //   - a ".." path segment, in single-segment AND catch-all {name...}
-//     form — the mux cleans dot segments out of the request path and
+//     form: the mux cleans dot segments out of the request path and
 //     redirects, so a ".." that survives into a value likewise only
 //     arrives %2E-encoded.
 //
 // A catch-all {name...} still spans segments: "a/b/c" is returned
 // intact. That's the one form allowed to contain "/".
 //
-// This bounds — but does not replace — validation at the sink. A value
+// This bounds, but does not replace, validation at the sink. A value
 // that is safe as a header byte-string is not automatically safe as a
 // filesystem path, an object-store key, or a map lookup; sinks still
 // own their own allow-listing.
@@ -275,7 +275,7 @@ func Params(r *http.Request) map[string]string {
 			// Go's ServeMux stores a catch-all {name...} under the bare
 			// "name" key, and {$} is the end-of-path anchor, not a param.
 			// Normalise the extracted token so PathValue resolves and the
-			// map exposes the param under its plain name — otherwise a
+			// map exposes the param under its plain name. Otherwise a
 			// catch-all value is silently dropped and callers driving
 			// auth/path logic off Params() fail open.
 			catchAll := strings.HasSuffix(name, "...")
@@ -294,7 +294,7 @@ func Params(r *http.Request) map[string]string {
 // sanitizePathParam truncates s at the first byte a path parameter must
 // never carry. See [Param] for the full contract.
 //
-// catchAll relaxes the "/" rule only — a {name...} wildcard is defined
+// catchAll relaxes the "/" rule only: a {name...} wildcard is defined
 // to span segments. The dot-segment rule applies to both forms: Go's
 // mux resolves "." and ".." out of the request path (redirecting when
 // it must), so a surviving ".." segment is always percent-encoded
@@ -313,7 +313,7 @@ func sanitizePathParam(s string, catchAll bool) string {
 	return s
 }
 
-// isDotDotSegment reports whether a ".." path segment starts at i —
+// isDotDotSegment reports whether a ".." path segment starts at i:
 // that is, s[i:i+2] == ".." and it is bounded by "/" or the ends of the
 // string on both sides. "..." and "a..b" are ordinary characters and
 // are left alone.
@@ -336,7 +336,7 @@ func isDotDotSegment(s string, i int) bool {
 //
 // SECURITY: the returned slice includes EVERY registered pattern,
 // including admin-only paths. Don't expose this output to anonymous
-// callers as-is — wrap it in an auth gate, or use [RoutesFiltered]
+// callers as-is. Wrap it in an auth gate, or use [RoutesFiltered]
 // to drop patterns that match a deny predicate.
 func (r *Router) Routes() []RegisteredRoute {
 	r.root.mu.RLock()
@@ -358,7 +358,7 @@ func (r *Router) Routes() []RegisteredRoute {
 //	        strings.HasPrefix(rt.Pattern, "/internal/")
 //	})
 //
-// hide may be nil — that case returns every route (equivalent to
+// hide may be nil. That case returns every route (equivalent to
 // [Routes]).
 func (r *Router) RoutesFiltered(hide func(RegisteredRoute) bool) []RegisteredRoute {
 	all := r.Routes()
@@ -406,7 +406,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	// Recorded after the gate — a gated route was not reached — and
+	// Recorded after the gate, a gated route was not reached, and
 	// before the chain, so a request the middleware later rejects still
 	// counts as having exercised this route.
 	if served != nil {
@@ -430,14 +430,14 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	composed.ServeHTTP(w, req)
 }
 
-// Prefix returns the router's full path prefix — the composition of every
+// Prefix returns the router's full path prefix: the composition of every
 // enclosing Group's prefix. Registrars that need to address a sub-router's
 // routes by URL (the entity MCP tools re-dispatch through the router) must
 // use this, not the innermost segment.
 func (r *Router) Prefix() string { return r.prefix }
 
 // Group creates a sub-router with the given path prefix and optional middleware.
-// The sub-router inherits its parent's middleware chain — resolved at
+// The sub-router inherits its parent's middleware chain, resolved at
 // request time, so middleware added to the parent after Group still
 // participates. NotFound is resolved up the parent chain at request
 // time as well; a sub-router has no notFound of its own unless one is
@@ -478,7 +478,7 @@ func (r *Router) effectiveNotFound() http.Handler {
 // NotFound sets a custom handler for 404 (Not Found) responses.
 // The router's middleware chain wraps the handler at request time, so 404
 // responses go through the same recovery, logging, security headers, etc.
-// as matched routes — and middleware added after NotFound still applies.
+// as matched routes, and middleware added after NotFound still applies.
 //
 // Internally wrapped in a cachedRoute so the chain composition is
 // memoised between Use bumps.
@@ -513,7 +513,7 @@ func (r *Router) effectiveMethodNotAllowed() http.Handler {
 //
 // The router's middleware chain wraps the handler at request time, so
 // 405 responses go through the same recovery, logging, security
-// headers, etc. as matched routes — and middleware added after
+// headers, etc. as matched routes, and middleware added after
 // MethodNotAllowed still applies. Mirrors [NotFound] exactly, including
 // the cachedRoute memoisation.
 func (r *Router) MethodNotAllowed(handler http.Handler) {
@@ -550,7 +550,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		// 405 branches below both honour. Two consequences, both real:
 		//
 		//   - The gate's documented contract is "returning false produces
-		//     a plain 404 — a disabled module's existence must not leak".
+		//     a plain 404: a disabled module's existence must not leak".
 		//     A 307 here is exactly that leak, and Go's redirect preserves
 		//     method and body, so it answers POSTs too.
 		//   - No security headers, recovery, timeout, request-ID/logging,
@@ -562,7 +562,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			r.wrap(h).ServeHTTP(w, req)
 			return
 		}
-		// Gated target — fall through to the unmatched path so the reply
+		// Gated target: fall through to the unmatched path so the reply
 		// is byte-identical to a genuine 404.
 	}
 
@@ -576,15 +576,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		allowed := r.allowedMethods(req)
 		if len(allowed) > 0 {
 			// Set the RFC-compliant Allow header (filtered to exclude
-			// gated methods) BEFORE dispatching, so the handler — custom
-			// or default — inherits it without recomputing the set.
+			// gated methods) BEFORE dispatching, so the handler, custom
+			// or default, inherits it without recomputing the set.
 			w.Header().Set("Allow", strings.Join(allowed, ", "))
 			if mna := r.effectiveMethodNotAllowed(); mna != nil {
 				mna.ServeHTTP(w, req)
 				return
 			}
 			// The default 405 runs through the middleware chain just like
-			// a custom handler (cachedRoute) would — CORS middleware must
+			// a custom handler (cachedRoute) would. CORS middleware must
 			// see preflights whose path has no OPTIONS route. Cold path,
 			// so the per-request wrap is fine.
 			r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -622,9 +622,9 @@ func (r *Router) gateAllows(key string) bool {
 // allowedMethods returns the set of HTTP methods registered for the
 // request's path, EXCLUDING methods whose route is gated-off. An empty
 // result means the path either doesn't exist or all its methods are
-// gated — in both cases a 404 is appropriate. A non-empty result means
+// gated. In both cases a 404 is appropriate. A non-empty result means
 // the path exists under some non-gated method but the request's own
-// method isn't one of them — a 405 with the filtered Allow header.
+// method isn't one of them: a 405 with the filtered Allow header.
 //
 // This runs only on the cold 404/405 fallback path, never on a matched
 // route, so the per-call mux build is not on the request hot path.
@@ -641,7 +641,7 @@ func (r *Router) allowedMethods(req *http.Request) []string {
 		return nil // path doesn't match any registered route
 	}
 
-	// Gate-filter only the handful of methods on the matched pattern —
+	// Gate-filter only the handful of methods on the matched pattern,
 	// NOT every route in the table. An empty result means the path
 	// exists but every method on it is gated off, which is a 404 by
 	// design (advertising Allow for a method that answers 404 would be
@@ -660,7 +660,7 @@ func (r *Router) allowedMethods(req *http.Request) []string {
 // pattern→methods index, rebuilding only when new routes have been
 // registered since the last build.
 //
-// This used to be rebuilt from scratch on EVERY unmatched request —
+// This used to be rebuilt from scratch on EVERY unmatched request:
 // cloning the request and re-parsing plus tree-inserting every
 // registered pattern. Against 300 routes that measured ~205us and 3704
 // allocations versus 170ns for a matched request: a ~1200x
@@ -712,7 +712,7 @@ func (r *Router) probe() (*http.ServeMux, map[string][]string) {
 // Use adds middleware to the router. Middleware is applied in the order
 // they are added: the first middleware is the outermost wrapper.
 //
-// Safe to call concurrently with in-flight ServeHTTP — the mutation is
+// Safe to call concurrently with in-flight ServeHTTP. The mutation is
 // guarded by an RWMutex. Bumps the root chain-version so every cached
 // per-route handler in the tree recomposes on the next request.
 func (r *Router) Use(mw ...Middleware) {

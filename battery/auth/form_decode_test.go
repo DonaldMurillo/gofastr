@@ -28,7 +28,7 @@ func TestSuccessRedirect_RejectsBackslashBypass(t *testing.T) {
 		{"data URL", `data:text/html,<script>`},
 		{"control character", "/normal\x00/evil"},
 		{"CRLF injection", "/normal\r\nLocation: https://evil"},
-		// URL-encoded variants — browsers decode percent-escapes before
+		// URL-encoded variants, browsers decode percent-escapes before
 		// resolving the URL, so encoded backslash is exactly as
 		// dangerous as literal backslash.
 		{"url-encoded backslash", "/%5Cevil.example/path"},

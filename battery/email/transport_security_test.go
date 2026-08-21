@@ -135,7 +135,7 @@ func TestSMTP_NoCleartextWhenSTARTTLSUnavailable(t *testing.T) {
 
 // A server that accepts the dial and then never sends the 220 greeting
 // must not wedge the worker: the connection deadline covers the whole
-// SMTP exchange, not just the connect.
+// SMTP exchange, not only the connect.
 func TestSMTP_StalledServerDoesNotWedge(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

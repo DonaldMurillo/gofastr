@@ -12,7 +12,7 @@ import (
 // Example is a bad/good pair shown under a rule. Both halves are
 // required: "don't do this" without "do this instead" is the failure mode
 // that makes linters feel adversarial, and it is exactly the half an
-// agent needs in order to produce a fix on the first attempt.
+// agent needs to produce a fix on the first attempt.
 type Example struct {
 	// Caption is the one-line framing ("a POST route with no access
 	// declaration"). Optional.
@@ -31,11 +31,11 @@ type Example struct {
 // [RegisterRules] enforces that. A rule with an empty Fix is a rule that
 // will be suppressed rather than fixed.
 type Rule struct {
-	// ID is the stable identifier — "GOFASTR1002". Assigned from the
+	// ID is the stable identifier, "GOFASTR1002". Assigned from the
 	// capability's number block (see catalog.go) and never reused, so a
 	// suppression written today keeps meaning the same thing.
 	ID string `json:"id"`
-	// Slug is the human-readable name — "routing/missing-auth". Accepted
+	// Slug is the human-readable name, "routing/missing-auth". Accepted
 	// anywhere an ID is, because `//gofastr:allow(routing/missing-auth)`
 	// reads better in a diff than a number.
 	Slug string `json:"slug"`
@@ -48,7 +48,7 @@ type Rule struct {
 	Severity Severity `json:"severity"`
 	// Summary is one sentence stating what was detected.
 	Summary string `json:"summary"`
-	// Why explains the consequence — what breaks, for whom, when. This is
+	// Why explains the consequence: what breaks, for whom, when. This is
 	// the field that turns a lint error into a lesson.
 	Why string `json:"why"`
 	// Fix is the concrete remedy, in imperative voice, naming the exact
@@ -79,7 +79,7 @@ func (r Rule) DocURL() string {
 	return docBaseURL + r.Doc
 }
 
-// DocCommand is the offline equivalent of DocURL — the docs are embedded
+// DocCommand is the offline equivalent of DocURL: the docs are embedded
 // in the binary, so an agent with no network still has the full text.
 func (r Rule) DocCommand() string {
 	if r.Doc == "" {
@@ -94,7 +94,7 @@ var (
 	rulesBySlug = map[string]string{} // slug → ID
 
 	// An ID is an uppercase prefix plus a number: GOFASTR1002, ACME101.
-	// The prefix is the namespace — GOFASTR belongs to the built-in
+	// The prefix is the namespace: GOFASTR belongs to the built-in
 	// catalog and its per-capability number blocks; a project registering
 	// its own rules picks its own prefix, which is what makes a custom ID
 	// unable to collide with a future catalog entry.
@@ -140,7 +140,7 @@ func validateRule(r Rule) error {
 	}
 	// Block discipline is a GOFASTR-namespace rule: the catalog assigns
 	// each capability a number range so IDs stay stable and greppable.
-	// It applies to GOFASTR + digits EXACTLY — a prefix that merely
+	// It applies to GOFASTR + digits EXACTLY: a prefix that merely
 	// starts with the letters (GOFASTRA123) is somebody's custom prefix,
 	// and routing it here panicked a host app at init with a message
 	// about numbers.
@@ -152,7 +152,7 @@ func validateRule(r Rule) error {
 		}
 	}
 	if r.Severity == SeverityOff {
-		return fmt.Errorf("rule %s: a rule may not declare severity off — omit it from the catalog instead", r.ID)
+		return fmt.Errorf("rule %s: a rule may not declare severity off: omit it from the catalog instead", r.ID)
 	}
 	for field, val := range map[string]string{
 		"Title": r.Title, "Summary": r.Summary, "Why": r.Why, "Fix": r.Fix, "Doc": r.Doc,
@@ -166,7 +166,7 @@ func validateRule(r Rule) error {
 	// was a worse answer from `--explain` and `contracts_explain` than the
 	// same rule with three lines of before/after. Required, not encouraged.
 	if len(r.Examples) == 0 {
-		return fmt.Errorf("rule %s: at least one bad/good Example is required — a rule the reader cannot see is a rule they will not apply", r.ID)
+		return fmt.Errorf("rule %s: at least one bad/good Example is required: a rule the reader cannot see is a rule they will not apply", r.ID)
 	}
 	for i, ex := range r.Examples {
 		if strings.TrimSpace(ex.Bad) == "" || strings.TrimSpace(ex.Good) == "" {
@@ -194,7 +194,7 @@ func lookupRuleLocked(idOrSlug string) (Rule, bool) {
 	return Rule{}, false
 }
 
-// AllRules returns the whole catalog sorted by capability order then ID —
+// AllRules returns the whole catalog sorted by capability order then ID:
 // the order `gofastr verify --list` prints and the MCP catalog returns.
 func AllRules() []Rule {
 	ruleMu.RLock()
@@ -231,7 +231,7 @@ func sortRules(rs []Rule) {
 }
 
 // SuggestRules returns catalog entries whose ID or slug is close to the
-// given string — the "did you mean" behind an unknown-rule config error.
+// given string, the "did you mean" behind an unknown-rule config error.
 func SuggestRules(idOrSlug string) []string {
 	needle := strings.ToLower(strings.TrimSpace(idOrSlug))
 	if needle == "" {
@@ -251,7 +251,7 @@ func SuggestRules(idOrSlug string) []string {
 	// edit distance so the one case with no partial-word to match on still
 	// gets an answer.
 	if len(out) == 0 {
-		// Already ranked by distance — do NOT re-sort alphabetically, or
+		// Already ranked by distance. Do NOT re-sort alphabetically, or
 		// a close match can be pushed past the cap by distant ones.
 		out = suggestByDistance(needle)
 	} else {

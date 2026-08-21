@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	// Load .env before anything reads the environment — the DB (and
+	// Load .env before anything reads the environment, the DB (and
 	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
 	// would run. Existing process env always wins over the files.
 	_ = dotenv.LoadAndApply(".env.local", ".env")
@@ -45,7 +45,7 @@ func main() {
 		// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);
 		// WithMCPIntrospection adds read-only orientation tools
 		// (app_routes, app_readiness, framework_docs_search, …). The
-		// introspection tools reveal the app's shape — remove the option
+		// introspection tools reveal the app's shape, remove the option
 		// if /mcp is reachable by untrusted callers in production.
 		// Under `gofastr dev` the framework additionally auto-enables the
 		// mutating control tools + log debug tools (opt-out:
@@ -62,7 +62,7 @@ func main() {
 	// sink, access log, panic recovery, colorized dev console. Under
 	// `gofastr dev` its MCP debug tools (log_recent, log_filter,
 	// log_metrics, log_set_level) auto-register so a connected agent
-	// can read recent requests and errors; they stay OFF outside dev —
+	// can read recent requests and errors; they stay OFF outside dev,
 	// access logs carry client IPs. Set EnableMCP: true here only when
 	// a production /mcp is reachable solely by trusted callers.
 	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
@@ -92,7 +92,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Banner fires via OnReady — only after auto-migrate, hooks, and the
+	// Banner fires via OnReady, only after auto-migrate, hooks, and the
 	// port bind all succeeded. Printing before Start would announce a
 	// server that may never come up.
 	fwApp.OnReady(func(boundAddr string) {
@@ -130,7 +130,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// appIconPNG generates the app's icon source at startup — a diagonal
+// appIconPNG generates the app's icon source at startup, a diagonal
 // gradient in the blueprint's primary color. uihost.WithAppIcon derives
 // /favicon.ico, the sized PNGs, and the head links from this one image.
 // Have a real logo? Embed it and return those bytes instead:

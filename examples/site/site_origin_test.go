@@ -15,7 +15,7 @@ import (
 // internally consistent with the wrong host, so every assertion passed while
 // every emitted URL 404'd for a real crawler.
 //
-// The deployment's true origin is expressed in .github/workflows/pages.yml —
+// The deployment's true origin is expressed in .github/workflows/pages.yml.
 // GitHub Pages serves this repo at a project URL, and the export step passes
 // the matching `--export-base <path>`. These two must agree; when they don't,
 // the site advertises URLs that resolve to nothing.
@@ -50,7 +50,7 @@ func TestSiteOriginMatchesDeployedBase(t *testing.T) {
 }
 
 // The reconciliation above constrains only the PATH. Without this, any host
-// serving the right sub-path passed — the origin could point at a domain the
+// serving the right sub-path passed, the origin could point at a domain the
 // project does not control and nothing would notice.
 func TestSiteOriginHostMatchesTheDeployment(t *testing.T) {
 	u, err := url.Parse(siteOrigin)
@@ -81,7 +81,7 @@ func TestSiteOriginIsNotAPlaceholder(t *testing.T) {
 // commandLinesOnly strips YAML comment lines so the reconciliation reads the
 // workflow's actual command and not the prose above it. pages.yml explains
 // --export-base in a comment BEFORE invoking it, and matching the first
-// occurrence validated the explanation — the command could change underneath
+// occurrence validated the explanation, the command could change underneath
 // and this test would still pass.
 func commandLinesOnly(b []byte) []byte {
 	var out []byte

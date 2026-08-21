@@ -59,7 +59,7 @@ func nestedInList(t *testing.T, ch *CrudHandler, query string) ListResponse {
 }
 
 // TestNestedRepeatedInKeysUnion: every occurrence of a repeated
-// ?rel.field_in= key must contribute values — the same union contract the
+// ?rel.field_in= key must contribute values, the same union contract the
 // flat path has. Reading only values[0] narrowed ?author.name_in=alice&
 // ?author.name_in=bob to alice alone, silently dropping bob's posts.
 func TestNestedRepeatedInKeysUnion(t *testing.T) {
@@ -85,7 +85,7 @@ func TestNestedRepeatedInKeysUnion(t *testing.T) {
 // TestNestedInListOverCapErrors: a nested ?rel.field_in= list must obey
 // the same 1000-entry cap (and error shape) as the flat ?field_in= path.
 // Without it, one request drives 1100+ bind parameters through the EXISTS
-// subquery — uncapped memory/CPU per request, exactly what the flat cap
+// subquery, uncapped memory/CPU per request, exactly what the flat cap
 // exists to prevent.
 func TestNestedInListOverCapErrors(t *testing.T) {
 	ch := nestedInHandler(t)

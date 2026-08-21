@@ -30,8 +30,8 @@ func Redirect(url string) app.Decision {
 }
 
 // RenderAlt returns a Decision that renders an alt component in place
-// of the screen's own. factory MUST return a FRESH instance per call
-// — the framework invokes it once per request and the returned
+// of the screen's own. factory MUST return a FRESH instance per call,
+// the framework invokes it once per request and the returned
 // component is then mutated by SetParams / Inject / Load under the
 // screen lock. Sharing a singleton is a cross-user data leak.
 func RenderAlt(factory func() component.Component) app.Decision {

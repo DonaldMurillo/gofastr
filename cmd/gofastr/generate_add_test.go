@@ -241,7 +241,7 @@ func TestAddFragmentOrderContinuity(t *testing.T) {
 	appBefore := readFile(t, dir, "app.go")
 	registerBefore := readFile(t, dir, "entities/register.go")
 	clientBefore := readFile(t, dir, "entities/client/client.go")
-	// Add a fragment yml (1 new entity: comments) — NOT tied to the base yml.
+	// Add a fragment yml (1 new entity: comments), NOT tied to the base yml.
 	frag := filepath.Join(dir, "fragment.yml")
 	os.WriteFile(frag, []byte(addFragmentBlueprint()), 0o644)
 	covT_capStdout(t, func() {
@@ -482,7 +482,7 @@ func TestAddScreenFragmentWritesPerScreenFile(t *testing.T) {
 	if !strings.Contains(contact, "screenRegistrar{order: 1, fn: mountContactScreen}") {
 		t.Errorf("contact screen must continue order after the base (order 1):\n%s", contact)
 	}
-	// Existing files byte-identical — additive never edits them.
+	// Existing files byte-identical: additive never edits them.
 	if readFile(t, dir, "app.go") != appBefore {
 		t.Error("app.go changed during --add of a screen")
 	}
@@ -534,7 +534,7 @@ func TestAddEntityFragmentEmitsCrudScreenFile(t *testing.T) {
 	if !fileExists(dir, "entities/reviews.go") {
 		t.Error("entities/reviews.go not written")
 	}
-	// The union compiles — the added crud file + entity self-register cleanly.
+	// The union compiles: the added crud file + entity self-register cleanly.
 	cmd := exec.Command("go", "build", "-mod=mod", "./...")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -580,7 +580,7 @@ func TestAddEntityFragmentPreservesResourceSeam(t *testing.T) {
 // ---- Test 12: screens-only fragment may reference EXISTING project entities ----
 
 // addScreenOverExistingEntityFragment references the base project's "posts"
-// entity without redeclaring it — the flagship additive use case.
+// entity without redeclaring it, the flagship additive use case.
 func addScreenOverExistingEntityFragment() string {
 	return `screens:
   - name: archive
@@ -619,7 +619,7 @@ func TestAddScreenOverExistingEntity(t *testing.T) {
 
 // ---- Test 13: screen order continuity without any entities ----
 
-// addScreensOnlyBase has screens but ZERO entities — screen offsets must not
+// addScreensOnlyBase has screens but ZERO entities; screen offsets must not
 // depend on the entity offset being non-zero.
 func addScreensOnlyBase(module string) string {
 	return fmt.Sprintf(`app:
@@ -652,7 +652,7 @@ func TestAddScreenOrderNoEntities(t *testing.T) {
 // ---- Test 14: seams + call sites are ALWAYS emitted (additive-ready) ----
 
 // A project generated without entities (or screens) must still carry the
-// entity (or screen) seam AND its call site in the owned shell — otherwise a
+// entity (or screen) seam AND its call site in the owned shell; otherwise a
 // later `--add`/scaffold writes files that compile but never register/mount.
 
 func TestEntitySeamAlwaysEmitted(t *testing.T) {
@@ -762,7 +762,7 @@ func TestAddScreenRouteCollisionRefused(t *testing.T) {
 }
 
 // A fragment screen colliding with a SYNTHESIZED CRUD form route (/new,
-// /{id}/edit) must also be refused — those routes are mounted by the
+// /{id}/edit) must also be refused: those routes are mounted by the
 // generated crud screen file but dropped by packReadScreens, so the guard
 // must scan the real Register calls, not the recovered authored screens.
 func addSynthRouteBase(module string) string {
@@ -815,7 +815,7 @@ func TestAddScreenCollidesWithSynthesizedRoute(t *testing.T) {
 }
 
 // Re-adding the SAME screen (same name + route) must be an idempotent skip,
-// not a hard route-collision error — matching entity redeclaration semantics.
+// not a hard route-collision error, matching entity redeclaration semantics.
 func TestAddSameScreenIsIdempotent(t *testing.T) {
 	dir, bp := addSetup(t, addScreenBaseBlueprint("example.com/addtest"))
 	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp}) })
@@ -845,7 +845,7 @@ func TestAddSameScreenIsIdempotent(t *testing.T) {
 
 func addCaseVariantEntityFragment() string {
 	// The base declares "posts"; this fragment re-declares it as "Posts".
-	// Same file (entities/posts.go), same Go type — a redeclaration, not a
+	// Same file (entities/posts.go), same Go type: a redeclaration, not a
 	// new entity. It must be reported as skipped, never silently dropped.
 	return `entities:
   - name: Posts
@@ -873,7 +873,7 @@ func TestAddEntityCaseVariantIsRedeclaration(t *testing.T) {
 	if !strings.Contains(out, "posts.go") || !strings.Contains(out, "skipped") {
 		t.Errorf("case-variant redeclaration should be reported skipped:\n%s", out)
 	}
-	// The entities dir holds exactly one entity .go file (posts.go) — no
+	// The entities dir holds exactly one entity .go file (posts.go); no
 	// second file for the case variant. (Can't assert on "Posts.go" directly:
 	// macOS's case-insensitive FS aliases it to posts.go.)
 	ents, _ := os.ReadDir(filepath.Join(dir, "entities"))
@@ -886,7 +886,7 @@ func TestAddEntityCaseVariantIsRedeclaration(t *testing.T) {
 	if goFiles != 1 {
 		t.Errorf("want exactly 1 entity file after case-variant add, got %d", goFiles)
 	}
-	// The project must still compile — no second Posts type was emitted.
+	// The project must still compile; no second Posts type was emitted.
 	cmd := exec.Command("go", "build", "-mod=mod", "./...")
 	cmd.Dir = dir
 	if o, err := cmd.CombinedOutput(); err != nil {
@@ -898,7 +898,7 @@ func TestAddEntityCaseVariantIsRedeclaration(t *testing.T) {
 
 // legacyAggregatedScreensGo is the old layout: all screen structs in one
 // screens.go. A per-screen file added next to it self-registers against a
-// seam that doesn't exist there, so the project stops compiling — refuse.
+// seam that doesn't exist there, so the project stops compiling; refuse.
 const legacyAggregatedScreensGo = `package main
 
 import (

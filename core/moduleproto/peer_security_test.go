@@ -21,7 +21,7 @@ import (
 // TestNotifyFloodBoundedByServeCap pins the serve cap on the NOTIFICATION
 // branch. dispatch used to `go p.serveNotification(f)` with no cap at all,
 // and it spawned BEFORE the handler lookup, so even a stream of frames
-// naming methods nobody registered cost one goroutine each — exactly the
+// naming methods nobody registered cost one goroutine each, exactly the
 // threat WithMaxServeInflight's own doc describes.
 func TestNotifyFloodBoundedByServeCap(t *testing.T) {
 	connX, connY := net.Pipe()
@@ -60,7 +60,7 @@ func TestNotifyFloodBoundedByServeCap(t *testing.T) {
 	}
 	waitFor(t, func() bool { return running.Load() == 4 })
 
-	// Everything past the cap — registered method or not — must be dropped,
+	// Everything past the cap, registered method or not, must be dropped,
 	// not queued onto a fresh goroutine each.
 	for i := 0; i < 400; i++ {
 		if err := flooder.Notify(context.Background(), "block", nil); err != nil {
@@ -80,7 +80,7 @@ func TestNotifyFloodBoundedByServeCap(t *testing.T) {
 // TestDuplicateInboundIDsStayCancelable pins that two concurrently served
 // requests sharing one id are BOTH reachable by Close. The cancel registry
 // was keyed by id alone, so the second registration clobbered the first and
-// the first handler's deferred delete then removed the second — leaving a
+// first handler's deferred delete then removed the second, leaving a
 // live handler that neither module.cancel nor Peer.Close could reach.
 func TestDuplicateInboundIDsStayCancelable(t *testing.T) {
 	connX, connY := net.Pipe()
@@ -100,7 +100,7 @@ func TestDuplicateInboundIDsStayCancelable(t *testing.T) {
 	}
 	served.Start()
 
-	// Two requests, same id — a counterparty is free to reuse ids.
+	// Two requests, same id: a counterparty is free to reuse ids.
 	raw := NewCodecOnly(connY)
 	id := uint64(1)
 	for i := 0; i < 2; i++ {

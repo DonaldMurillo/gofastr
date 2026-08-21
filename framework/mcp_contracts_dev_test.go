@@ -23,7 +23,7 @@ func TestContractDevToolsAreAbsentOutsideDevLoop(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 	names := toolNames(t, app, context.Background())
-	// The read-only catalog still ships — that is the point of the split.
+	// The read-only catalog still ships. That is the point of the split.
 	if !hasTool(names, "contracts_list") {
 		t.Error("contracts_list should be registered by explicit introspection")
 	}
@@ -271,7 +271,7 @@ func TestContractsVerifyAdmitsWhatItCouldNotCheck(t *testing.T) {
 }
 
 // rogueOnce registers an analyzer that errors iff the analysed tree
-// contains rogue_marker.go — conditioned on the marker so every other
+// contains rogue_marker.go, conditioned on the marker so every other
 // test in this package sees it as inert. It declares (and never emits) an
 // existing rule because Register refuses an analyzer with none.
 var rogueOnce sync.Once
@@ -350,7 +350,7 @@ func TestContractDevToolRegistrationSurfacesCollisions(t *testing.T) {
 
 // The secret rule redacts its snippet so a report never prints the
 // credential back out. contracts_verify sends its findings over the wire,
-// where that matters more, not less — assert the value never appears.
+// where that matters more, not less, assert the value never appears.
 func TestContractsVerifyNeverEchoesADetectedSecret(t *testing.T) {
 	const secret = "sk-live-9f3c2a1b8e7d6c5f4a3b2c1d"
 	writeTreeAndChdir(t, map[string]string{
@@ -555,11 +555,11 @@ func main() {
 }
 
 // A mistyped rule ID should not send an agent to list the whole catalog
-// to find the one character it got wrong — contracts_explain already
+// to find the one character it got wrong, contracts_explain already
 // suggests, and the fix tool has to match.
 // The MCP sibling of the CLI's partial-write admission: contracts_fix
 // writes file by file, and an error after the first write must name what
-// already changed — the agent's next read of the tree will not match its
+// already changed, the agent's next read of the tree will not match its
 // last one.
 func TestContractsFixAdmitsPartialWritesOnFailure(t *testing.T) {
 	dir := writeTreeAndChdir(t, map[string]string{

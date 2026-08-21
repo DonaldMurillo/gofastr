@@ -44,7 +44,7 @@ func TestCountRendersStack(t *testing.T) {
 	if !strings.Contains(h, "skeleton-stack") {
 		t.Errorf("expected skeleton-stack, got: %s", h)
 	}
-	// Count distinct <div> elements (each starts with `<div`) — the
+	// Count distinct <div> elements (each starts with `<div`), the
 	// .skeleton-line--short modifier on the last line makes a naive
 	// substring count of "skeleton-line" double-match it.
 	if strings.Count(h, "<div") != 4 { // 1 wrapper + 3 lines

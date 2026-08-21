@@ -8,18 +8,18 @@ Want to validate GoFastr in a real non-author application? Use the
 [external pilot checklist](docs/pilot-program.md) so the result produces
 comparable evidence for the v1 adoption gate.
 
-Security bugs: see [SECURITY.md](SECURITY.md) — do not open a public issue.
+Security bugs: see [SECURITY.md](SECURITY.md). Do not open a public issue.
 
 ## Prerequisites (the honest list)
 
 - **Go 1.26+** (`go.mod` says `go 1.26.6`).
-- **Docker** — the Postgres suites need a server. `make postgres-up` starts
+- **Docker**: the Postgres suites need a server. `make postgres-up` starts
   the `postgres` service from `docker-compose.yml` (pgvector/pgvector:pg16,
   which also covers `battery/semantic`), and `make test-pg` starts it and runs
   against it. Without one, the Postgres halves of the dual-dialect subtests
   skip; SQLite still runs. (Alternative: point `TEST_POSTGRES_DSN` at any
-  Postgres and use `make test-pg-env` — no Docker needed.)
-- **Chrome/Chromium** — the chromedp end-to-end suites (`examples/site`,
+  Postgres and use `make test-pg-env`, no Docker needed.)
+- **Chrome/Chromium**: the chromedp end-to-end suites (`examples/site`,
   `core-ui/runtime`, `kiln/integration`) drive a real browser.
 
 ## Building
@@ -39,7 +39,7 @@ The dev loop (`./scripts/dev-watch.sh`, port `:8082`) writes binaries to
 find . -maxdepth 3 -type f -size +500k ! -path "./.git/*" ! -path "./dist/*" ! -name "*.go" ! -name "*.md"
 ```
 
-Anything that prints is a stray binary — move it to `dist/` or delete it.
+Anything that prints is a stray binary: move it to `dist/` or delete it.
 
 ## Testing
 
@@ -62,7 +62,7 @@ Some suites are reliable alone but flake when sharing a `go test` run:
 - `examples/site` chromedp e2e and the axe accessibility gate
   (`TestAxe_AllPagesAreClean`) must run **isolated**, e.g.
   `go test ./examples/site/ -run TestAxe_AllPagesAreClean`.
-- `core-ui/runtime` and `core-ui/widget` flake under parallel load — rerun
+- `core-ui/runtime` and `core-ui/widget` flake under parallel load. Rerun
   them isolated before concluding you broke something.
 
 `test-all.sh` caps package parallelism at 2 for the same reason (ephemeral
@@ -86,13 +86,13 @@ more than a local tweak.
 
 Conventional-ish, matching the existing log and `CHANGELOG.md`
 (Keep a Changelog): `feat(scope): …`, `fix: …`, `docs: …`, `chore: …`, with
-`!` for breaking changes (e.g. `feat(cli)!: …`). One theme per commit — no
+`!` for breaking changes (e.g. `feat(cli)!: …`). One theme per commit, no
 mega-commits.
 
 ## Where to start reading
 
-- `CLAUDE.md` — repo working agreements (humans benefit too).
-- `core-ui/ARCHITECTURE.md` — mandatory before any UI/runtime work.
-- `framework/ARCHITECTURE.md` — mandatory before touching `framework/` layout.
-- `framework/docs/content/*.md` — the user-facing docs, embedded into the
+- `CLAUDE.md`: repo working agreements (humans benefit too).
+- `core-ui/ARCHITECTURE.md`: mandatory before any UI/runtime work.
+- `framework/ARCHITECTURE.md`: mandatory before touching `framework/` layout.
+- `framework/docs/content/*.md`: the user-facing docs, embedded into the
   `gofastr` binary; docs ship in the same commit as the code they describe.

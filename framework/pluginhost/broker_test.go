@@ -52,7 +52,7 @@ func TestRegisterBrokerRoute_Idempotent(t *testing.T) {
 	}
 }
 
-// A non-framed FS-served asset must NOT get the framing/CORP/CSP relaxation —
+// A non-framed FS-served asset must NOT get the framing/CORP/CSP relaxation,
 // only framed plugin-frame assets do.
 func TestAssetServer_NonFramedFSAssetHasNoRelaxation(t *testing.T) {
 	fsys := fstest.MapFS{

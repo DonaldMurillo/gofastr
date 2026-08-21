@@ -7,7 +7,7 @@ import (
 
 // TestHrefSchemeAllowlist asserts a leaf Node.Href carrying a
 // script-executing or origin-ambiguous scheme never reaches the
-// anchor href — the node degrades to a plain <span> label instead.
+// anchor href, the node degrades to a plain <span> label instead.
 func TestHrefSchemeAllowlist(t *testing.T) {
 	safe := []string{
 		"/docs/page",

@@ -8,7 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 )
 
-// Version info — overridden via -ldflags at build time.
+// Version info: overridden via -ldflags at build time.
 var (
 	version   = "dev"
 	commit    = "none"
@@ -17,14 +17,14 @@ var (
 
 // osExit is an indirection over os.Exit so tests can observe the exit
 // code of CLI entry points without terminating the test binary. In
-// production it is os.Exit verbatim — behavior is identical. Tests swap
+// production it is os.Exit verbatim. Behavior is identical. Tests swap
 // it (and restore via the helper) to capture the requested exit status.
 var osExit = os.Exit
 
 // stdoutIsTTY is true when os.Stdout is connected to a terminal. ANSI
 // color helpers below return their input unchanged when this is false,
 // so `gofastr docs | less` or `gofastr docs > out.txt` don't get
-// littered with escape sequences. Evaluated once at startup —
+// littered with escape sequences. Evaluated once at startup;
 // re-opening stdout post-init doesn't re-detect.
 var stdoutIsTTY = func() bool {
 	fi, err := os.Stdout.Stat()
@@ -82,7 +82,7 @@ func info(format string, args ...interface{}) {
 	fmt.Printf("  %s %s\n", yellow("→"), fmt.Sprintf(format, args...))
 }
 
-// infoString is info's message formatted for a caller-owned writer —
+// infoString is info's message formatted for a caller-owned writer:
 // for goroutines that must not read the os.Stdout global (see dev.go's
 // crash watcher).
 func infoString(format string, args ...interface{}) string {
@@ -95,7 +95,7 @@ func warn(format string, args ...interface{}) {
 
 func printHelp() {
 	fmt.Printf(`
-%s — GoFastr CLI %s
+%s: GoFastr CLI %s
 
 %s:
   gofastr <command> [arguments]
@@ -134,8 +134,8 @@ func printHelp() {
                        against the project root
   migrate (m) [up|down|status|generate|force]  Run database migrations
   test (t)              Run project tests
-  semantic <sub>        Local semantic index (index/watch/query/stats/clear) — experimental
-  harness               Start the AI agent harness (interactive loop / TUI) — experimental
+  semantic <sub>        Local semantic index (index/watch/query/stats/clear): experimental
+  harness               Start the AI agent harness (interactive loop / TUI): experimental
     mcp                 Launch harness as a stdio MCP server for IDE integration
     creds [add|list|delete]  Manage encrypted API-key credentials
   agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files

@@ -17,7 +17,7 @@
 //     via window.__gofastr.toast({...}). Loads the toasts module on
 //     demand if it isn't already present.
 //
-// No server round-trip — clipboard write is client-only.
+// No server round-trip, clipboard write is client-only.
 
 (function () {
   'use strict';
@@ -53,7 +53,7 @@
         if (window.__gofastr && window.__gofastr.toast) {
           window.__gofastr.toast(cfg);
         } else if (window.__gofastr && window.__gofastr.loadModule) {
-          // Toast stack might not be loaded yet — load on demand.
+          // Toast stack might not be loaded yet, load on demand.
           window.__gofastr.loadModule('toasts').then(() => {
             if (window.__gofastr.toast) window.__gofastr.toast(cfg);
           }).catch(() => {});
@@ -73,7 +73,7 @@
         document.execCommand('copy');
         ta.remove();
         success();
-      } catch (_) { /* deliberately silent — copy is best-effort */ }
+      } catch (_) { /* deliberately silent, copy is best-effort */ }
     }
   });
 

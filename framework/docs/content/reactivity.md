@@ -8,7 +8,7 @@ reach for the next one only when the lower one cannot do the job.
 |---|---|---|
 | **Client signal** | A string value held in the runtime signal store, mutated by `data-fui-signal-set/inc/toggle`. No server. | UI-only state. Tabs, toggles, theme, an open/closed panel. |
 | **RPC** | A `fetch` to a server handler. The server reads from the DB and returns HTML or a value; the runtime swaps the region or sets a signal. | Anything the user triggered. The default for data. |
-| **Polling** | The runtime re-fetches a region on an interval. | Passive freshness — a counter, a status, a dashboard — without holding a connection. |
+| **Polling** | The runtime re-fetches a region on an interval. | Passive freshness for a counter, a status, or a dashboard, without holding a connection. |
 | **SSE push** | One long-lived `/__gofastr/sse` connection per page. The server pushes when state changes. | Semantics that need the connection: presence, collaborative editing, sub-second internal dashboards. |
 
 ## The four rungs, in order
@@ -36,23 +36,23 @@ A user click or submit fires a `fetch` to a server handler. The handler reads
 from the DB, renders fresh HTML (or returns a value), and the runtime swaps the
 region or writes the value into a signal.
 
-- Stateless. Any replica can answer — there is no in-process session object
+- Stateless. Any replica can answer; there is no in-process session object
   tied to the connection.
 - Authoritative. The HTTP response is the source of truth for the mutation;
   the runtime reconciles against it.
 - Covers every user-initiated data change: paginate, filter, create, update,
   delete, optimistic toggles with rollback.
 
-A mutation can also stale screens the user is *not* on — a create stales
+A mutation can also stale screens the user is *not* on: a create stales
 every cached page of the list, an admin action stales `/pricing`. Name
 them on the response with `ui.InvalidateScreens(w, "/orders")` and the
 runtime drops those entries from its per-tab screen cache, so back-nav
 re-fetches instead of showing the pre-mutation copy. This rides the
-initiating RPC's response — it is part of this rung, not a fifth one. It
+initiating RPC's response; it is part of this rung, not a fifth one. It
 only reaches the tab that made the request; other tabs that need the
 fresh value are the polling rung's job, and SSE is never a
 cache-invalidation transport. For the *current* screen, use
-`data-fui-rpc-navigate` (or return island HTML) — eviction alone never
+`data-fui-rpc-navigate` (or return island HTML); eviction alone never
 re-renders anything.
 
 See [Interactive patterns](interactive-patterns.md) for the full attribute
@@ -61,7 +61,7 @@ vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.
 ### 3. Polling
 
 Polling re-fetches on an interval without holding a connection. It gives you
-freshness for passive surfaces — a status pill, a counter, a dashboard — with
+freshness for passive surfaces, a status pill, a counter, a dashboard, with
 no fanout, no shared infrastructure, and no held connection.
 
 **Page level.** Add two attributes to the region you want to refresh:
@@ -103,8 +103,8 @@ not need `WithFanout`, you do not need sticky routing, and the page works the
 same way on a single replica as it does behind a load balancer. For dashboards,
 counters, and statuses this is the recommended tier.
 
-**Stopping a poll (terminal state).** A poll whose job is done — a
-job-status pill that reached `completed`, a batch that finished — should
+**Stopping a poll (terminal state).** A poll whose job is done, whether a
+job-status pill that reached `completed` or a batch that finished, should
 not keep hitting the server forever. The server ends the cadence by
 setting `X-Gofastr-Poll-Stop: 1` (truthy: `1`/`true`/`yes`/`on`) on the
 terminal poll response. The runtime applies the response body (or, for
@@ -112,7 +112,7 @@ a widget, the final signal snapshot) and then tears down the timer, so
 no further fetches land. The header is opt-in: a handler that forgets
 it keeps polling, so a still-live poll cannot be terminated by
 accident. For `Builder.Poll` widgets, declare the terminal condition
-with `Builder.PollTerminal(func() bool)` — the `/state` handler emits
+with `Builder.PollTerminal(func() bool)`; the `/state` handler emits
 the header automatically once the predicate returns true. A poll whose
 region is swapped out entirely (an island swap that replaces the
 `data-fui-poll` element, or a replacement carrying
@@ -124,7 +124,7 @@ marker also ends the poll.
 The single `/__gofastr/sse` bus. One long-lived connection per page; the server
 pushes frames when state changes.
 
-SSE earns its cost when the product semantics need the connection — when the
+SSE earns its cost when the product semantics need the connection: when the
 fact "this client is connected" is itself part of the truth (presence, the
 collaborative roster), or when updates land faster than a poll cycle could
 sensibly reflect (sub-second internal dashboards).
@@ -140,12 +140,12 @@ sensibly reflect (sub-second internal dashboards).
   subscription does) flips the timeout writer into streaming mode so its 504
   can no longer fire; the stream loop then ignores the request context's
   `DeadlineExceeded` (middleware.Timeout firing on a still-connected
-  subscriber — the original bug) while still unwinding promptly on a real
+  subscriber, the original bug) while still unwinding promptly on a real
   `context.Canceled` (client disconnect). A heartbeat (default 15s,
   `island.WithSSEHeartbeat`) writes keepalive comments so proxies and load
   balancers don't idle-kill a live stream, and a bounded stream lifetime
   (default 5m, `island.WithSSEStreamBound`) reclaims a stream stranded by a
-  peer the server can't observe as gone — even when its heartbeat writes
+  peer the server can't observe as gone, even when its heartbeat writes
   keep succeeding into the kernel buffer. The connection's read/write
   deadlines are NOT cleared (the reverted 217e8d06 did, which broke
   net/http's close-notify and stranded streams instead). See issue #159.
@@ -164,7 +164,7 @@ Three questions, in order:
 
 1. **Did the user trigger it?** Use an RPC. The server renders from the DB and
    the runtime swaps the region or sets a signal.
-2. **Is it passive freshness — the server's current value, on a cadence, with
+2. **Is it passive freshness: the server's current value, on a cadence, with
    no held connection?** Poll. Any replica serves the fetch.
 3. **Does the product need to know who is connected right now, or push under a
    second?** Use SSE. Wire `WithFanout` if you run more than one replica.
@@ -179,7 +179,7 @@ State lives in two places: the database (durable truth) and the client signal
 store (UI state). It does not live in server RAM tied to a connection.
 
 The interactive layer is stateless. Any replica can serve any RPC, any poll
-fetch, and any SSE subscribe — the request reads from shared state (the DB, or
+fetch, and any SSE subscribe; the request reads from shared state (the DB, or
 a shared store like Redis) and renders the response. There is no in-process
 widget or island object the next request depends on.
 
@@ -206,7 +206,7 @@ issued by one replica verifies on every other replica that shares the secret.
   secret at startup. Sessions work, but they roll over on restart because the
   next boot mints a new one. Zero config; the trade-off is that after a deploy
   each open page transparently re-mints its UI session (this is the
-  SSE/interaction transport session, not `battery/auth` login state — nobody is
+  SSE/interaction transport session, not `battery/auth` login state; nobody is
   logged out). Recovery needs no user action: a page re-mints on its next render
   or navigation, and a purely idle tab re-mints from the SSE module itself
   (`POST /__gofastr/session`) once its stream reconnect starts failing.
@@ -216,7 +216,7 @@ issued by one replica verifies on every other replica that shares the secret.
   - the `GOFASTR_SECRET` environment variable.
 - **Fanout without a configured secret fails at boot.** A multi-replica
   deployment that wired `WithFanout` but forgot the secret refuses to start,
-  with an error naming both. This is deliberate — silent token mismatch in
+  with an error naming both. This is deliberate: silent token mismatch in
   production is worse than a loud boot failure.
 
 Sticky sessions are not part of the contract. A token is portable; route the
@@ -224,16 +224,16 @@ request to whichever replica the load balancer picks.
 
 ## See also
 
-- [Interactive patterns](interactive-patterns.md) — the full `data-fui-*`
+- [Interactive patterns](interactive-patterns.md): the full `data-fui-*`
   vocabulary, including the RPC and signal primitives summarized above.
-- [Widgets](widgets.md) — `Builder.Poll` and the widget builder.
-- [Presence](presence.md) — the canonical SSE push case.
-- [Live dashboards](live-dashboards.md) — choosing between polling and SSE for
+- [Widgets](widgets.md): `Builder.Poll` and the widget builder.
+- [Presence](presence.md): the canonical SSE push case.
+- [Live dashboards](live-dashboards.md): choosing between polling and SSE for
   a live surface.
-- [Events and SSE](events.md) — the broker contract and the durable outbox.
-- [Scaling](scaling.md) — multi-replica delivery, `WithFanout`, and the
+- [Events and SSE](events.md): the broker contract and the durable outbox.
+- [Scaling](scaling.md): multi-replica delivery, `WithFanout`, and the
   session-token checklist.
-- [Runtime contract](runtime-contract.md) — the SSR / hydration / island / SSE
+- [Runtime contract](runtime-contract.md): the SSR / hydration / island / SSE
   boundary and the `data-fui-*` attribute reference.
 
 ## Common mistakes

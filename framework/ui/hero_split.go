@@ -1,6 +1,6 @@
 package ui
 
-// HeroSplit — two-column hero section. Copy on one side, media on the
+// HeroSplit: two-column hero section. Copy on one side, media on the
 // other. The shape recurs across docs/marketing surfaces: a code block
 // next to the pitch, a stat band next to a docs intro, a screenshot
 // next to a feature description. The framework owns the grid + the
@@ -14,12 +14,12 @@ import (
 )
 
 // HeroSplitRatio picks the column ratio. The three values cover the
-// shapes that actually show up — pages that want something else
+// shapes that actually show up. Pages that want something else
 // should write a one-off and not abuse the enum.
 type HeroSplitRatio string
 
 const (
-	// HeroSplitEqual is 1:1 — balanced two-column hero.
+	// HeroSplitEqual is 1:1, balanced two-column hero.
 	HeroSplitEqual HeroSplitRatio = ""
 	// HeroSplitCopyWide gives the copy column more room (1.4:1).
 	// Use when the right slot is a compact stat band or icon grid.
@@ -30,7 +30,7 @@ const (
 )
 
 // HeroSplitConfig configures a HeroSplit. Copy and Media are both
-// slots — the framework does not assume their contents. Pair with
+// slots. The framework does not assume their contents. Pair with
 // ui.Container if you want a max-width wrapper around the hero.
 type HeroSplitConfig struct {
 	// Copy is the left column body (title, lede, CTAs).
@@ -54,7 +54,7 @@ func HeroSplit(cfg HeroSplitConfig) render.HTML {
 	case HeroSplitEqual, HeroSplitCopyWide, HeroSplitMediaWide:
 	default:
 		panic("ui: HeroSplit unknown Ratio " + string(cfg.Ratio) +
-			` — pick one of: "" (equal), "copy", "media"`)
+			`. Pick one of: "" (equal), "copy", "media"`)
 	}
 	cls := "ui-hero-split"
 	if cfg.Ratio != HeroSplitEqual {

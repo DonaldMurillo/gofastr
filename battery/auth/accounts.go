@@ -11,7 +11,7 @@ import (
 
 // Account represents one linked OAuth provider for a user. The optional
 // profile fields are populated when the store implements
-// OAuthEnrichedLinker — useful for rendering "you're connected to
+// OAuthEnrichedLinker, useful for rendering "you're connected to
 // Google as alice@example.com (Alice, 📸)" in a settings UI. Stores
 // that only implement OAuthLinker continue to return the minimum
 // (Provider + ProviderID), the rest stay empty.
@@ -179,7 +179,7 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	remainingLinks := len(accts) - count
 
-	hasPassword := false // unknown — treated as false unless store opts in
+	hasPassword := false // unknown, treated as false unless store opts in
 	if checker, ok := p.mgr.UserStore().(PasswordChecker); ok {
 		hp, herr := checker.HasPassword(r.Context(), userID)
 		if herr != nil {
@@ -191,7 +191,7 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 
 	if remainingLinks <= 0 && !hasPassword {
 		writeAuthError(w, http.StatusConflict,
-			"cannot unlink the last login method — set a password first or link another provider")
+			"cannot unlink the last login method: set a password first or link another provider")
 		return
 	}
 

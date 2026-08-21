@@ -76,7 +76,7 @@ func architectureDocTable(t *testing.T) map[string][]string {
 // global document state: the frozen DOC_MANIFEST in runtime.js and the
 // "Global document state" table in core-ui/ARCHITECTURE.md must list
 // exactly the same html attributes, body classes, and body singleton
-// ids — in both directions.
+// ids, in both directions.
 func TestDocManifestMatchesArchitectureTable(t *testing.T) {
 	js := docManifest(t)
 	md := architectureDocTable(t)

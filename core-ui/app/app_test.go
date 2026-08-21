@@ -76,7 +76,7 @@ func TestNewDrawer(t *testing.T) {
 		t.Errorf("expected ScreenDrawer, got %v", s.Type)
 	}
 
-	// Drawer renders bare content — runtime adds structural wrapping
+	// Drawer renders bare content, runtime adds structural wrapping
 	html := string(s.Render())
 	if !strings.Contains(html, "<nav>Menu</nav>") {
 		t.Errorf("expected bare content in drawer, got: %s", html)
@@ -94,7 +94,7 @@ func TestNewSheet(t *testing.T) {
 		t.Errorf("expected ScreenSheet, got %v", s.Type)
 	}
 
-	// Sheet renders bare content — runtime adds structural wrapping
+	// Sheet renders bare content, runtime adds structural wrapping
 	html := string(s.Render())
 	if !strings.Contains(html, "<p>Sheet content</p>") {
 		t.Errorf("expected bare content in sheet, got: %s", html)
@@ -111,7 +111,7 @@ func TestNewDialog(t *testing.T) {
 		t.Errorf("expected ScreenDialog, got %v", s.Type)
 	}
 
-	// Dialog renders bare content — runtime adds structural wrapping
+	// Dialog renders bare content, runtime adds structural wrapping
 	html := string(s.Render())
 	if !strings.Contains(html, "<p>Dialog content</p>") {
 		t.Errorf("expected bare content in dialog, got: %s", html)
@@ -488,7 +488,7 @@ func TestStandaloneGroupSkipsDefaultLayout(t *testing.T) {
 	admin.Screen(NewScreen("customers", &stubComponent{html: render.Raw("<p>Customers</p>")}), nil)
 	a.Router.ScreenGroup(admin)
 
-	// Normal group (no Standalone) — should still nest in the default layout.
+	// Normal group (no Standalone), should still nest in the default layout.
 	plain := NewScreenGroup("/dash", NewLayout("dash"))
 	plain.Screen(NewScreen("home", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
 	a.Router.ScreenGroup(plain)
@@ -634,7 +634,7 @@ func TestRouteParamsNotMutatedOnSecondResolve(t *testing.T) {
 // --- F14: {param} brace syntax must be accepted alongside :param ---
 // core-ui screen routes historically use ":param"; the blueprint / REST
 // routers and entity docs use "{param}". A screen registered with the
-// brace form must still match (issue #71) — previously it landed in the
+// brace form must still match (issue #71), previously it landed in the
 // exact-match map and silently 404'd.
 func TestRouterAcceptsBraceParamSyntax(t *testing.T) {
 	r := NewRouter()

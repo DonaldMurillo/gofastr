@@ -55,7 +55,7 @@ func TestRenderLandingEscapesUserContent(t *testing.T) {
 }
 
 // TestRenderChatHasInteractiveControls: the chat page must include
-// every major feature surface — scrollback, input, sidebar, status
+// every major feature surface: scrollback, input, sidebar, status
 // bar slots, permission modal, embedded auth, SSE wiring.
 func TestRenderChatHasInteractiveControls(t *testing.T) {
 	out := string(renderChat("127.0.0.1:18424",
@@ -141,7 +141,7 @@ func TestChatJSHasWebFeatures(t *testing.T) {
 // input but never showed the response.
 func TestChatJSRegistersEventListeners(t *testing.T) {
 	out := string(renderChat("h", "sess_x", "tok"))
-	// Must explicitly listen for these — anything missing means
+	// Must explicitly listen for these: anything missing means
 	// the browser will swallow that event silently.
 	for _, kind := range []string{
 		"TextDelta", "ThinkingDelta",
@@ -249,7 +249,7 @@ func TestChatHasTaskPanel(t *testing.T) {
 // inside the Go raw-string `const chatJS = ` got literally doubled
 // because Go raw strings pass `\\` through as two chars. The browser
 // then sees `/\\s\\S/` in a regex literal, which matches a literal
-// backslash followed by s/S — not whitespace. Result: every regex
+// backslash followed by s/S rather than whitespace. Result: every regex
 // (markdown, diff parser, line splits) silently fails and the chat
 // UI looks dead.
 //
@@ -276,7 +276,7 @@ func TestChatJSDoesNotOverEscape(t *testing.T) {
 		t.Errorf("over-escaped regex literal in served JS — Go raw strings pass `\\\\` through as two chars; use single `\\` for JS regexes.\nContext: …%s…",
 			out[start:end])
 	}
-	// String-form: split('\\n') / split('\\r') etc. — these turn into
+	// String-form: split('\\n') / split('\\r') etc.; these turn into
 	// literal "\n" two-char delimiters in JS, not newline splits.
 	badInString := regexp.MustCompile(`split\(\s*'\\\\[nrt]\s*'\s*\)`)
 	if loc := badInString.FindStringIndex(out); loc != nil {
@@ -289,14 +289,14 @@ func TestChatJSDoesNotOverEscape(t *testing.T) {
 
 // TestChatJSParsesAsValidJS runs node on the served JS body to catch
 // syntax errors before they reach the browser. Skipped if node isn't
-// installed locally — the string-pattern checks above provide the
+// installed locally; the string-pattern checks above provide the
 // always-on guard.
 func TestChatJSParsesAsValidJS(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node not available; relying on TestChatJSDoesNotOverEscape")
 	}
 	// The serving page wraps the JS in an IIFE that touches document/
-	// EventSource/etc. Node doesn't have those globals — but it can
+	// EventSource/etc. Node doesn't have those globals, but it can
 	// still PARSE the file for syntax errors. We use `--check` to
 	// validate without executing.
 	cmd := exec.Command("node", "--check", "-")

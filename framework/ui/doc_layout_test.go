@@ -77,7 +77,7 @@ func TestDocLayoutCSSCollapsesOnMobile(t *testing.T) {
 	if mq < 0 {
 		t.Fatal("DocLayout CSS missing its mobile breakpoint")
 	}
-	// On mobile the grid must collapse to block — a grid track resolves to
+	// On mobile the grid must collapse to block. A grid track resolves to
 	// the content's min-content and overflows narrow viewports otherwise.
 	if !strings.Contains(css[mq:], "display: block") {
 		t.Fatal("DocLayout must collapse to display:block on mobile")

@@ -325,7 +325,7 @@ func TestSplitHelpers(t *testing.T) {
 // deleted rows, or validate a scoped filter's field. Every include is
 // refused. This replaces the old flat-fallback behaviour, where a
 // dot-free include was served as a bare `SELECT *` on the relation's
-// target table — the same shape that leaked an unregistered auth table's
+// target table, the same shape that leaked an unregistered auth table's
 // password_hash (TestIncludeUnregisteredTargetFails).
 func TestIncludeNoRegistryRefused(t *testing.T) {
 	ch, _, _ := covRelWorld(t)

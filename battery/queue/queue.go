@@ -23,10 +23,10 @@ type Job struct {
 	ScheduledAt  time.Time       `json:"scheduled_at"`
 
 	// ClaimToken is minted by Dequeue per claim and identifies THAT claim,
-	// not just the job. Backends that lease work to possibly-stale workers
+	// not only the job. Backends that lease work to possibly-stale workers
 	// (RedisQueue) verify it on Ack/Nack: a completion presented for a claim
-	// that is no longer current — e.g. a worker whose visibility timeout
-	// expired and whose job was re-claimed by another worker — is a fenced
+	// that is no longer current, e.g. a worker whose visibility timeout
+	// expired and whose job was re-claimed by another worker, is a fenced
 	// no-op instead of mutating the current claimant's lease. Empty for jobs
 	// that have never been claimed (and on backends without lease fencing).
 	ClaimToken string `json:"claim_token,omitempty"`
@@ -57,7 +57,7 @@ type Queue interface {
 // are status names ("pending", "running", "failed", "dead").
 type JobStats map[string]int
 
-// Browsable is the optional read-only inspection interface — implemented
+// Browsable is the optional read-only inspection interface, implemented
 // by DBQueue so admin tooling can list and aggregate jobs without
 // guessing at the underlying schema. Memory and Redis queues may
 // implement it later; admin code that depends on it should type-assert.
@@ -66,12 +66,12 @@ type Browsable interface {
 	// empty status to return all jobs regardless of state. Jobs are
 	// ordered newest-first by created_at.
 	ListJobs(ctx context.Context, status string, limit int) ([]Job, error)
-	// Stats returns counts grouped by status. Cheap by design — admin
+	// Stats returns counts grouped by status. Cheap by design, admin
 	// dashboards may poll it.
 	Stats(ctx context.Context) (JobStats, error)
 }
 
-// Replayable is the optional capability for re-queuing a dead-lettered job —
+// Replayable is the optional capability for re-queuing a dead-lettered job,
 // implemented by DBQueue (the durable backend). Admin tooling type-asserts for
 // it and only offers a "replay" action when the backend supports it. Memory and
 // Redis queues don't implement it yet (memory drops dead jobs; redis's

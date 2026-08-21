@@ -81,7 +81,7 @@ func TestCreate_ReadOnlyFieldIgnored(t *testing.T) {
 	ch.Create()(rr, req)
 	if rr.Code == http.StatusCreated {
 		// A correctly-ignored read-only field leaves the column NULL, so
-		// scan into a nullable type — a hard error here is test-integrity.
+		// scan into a nullable type, a hard error here is test-integrity.
 		var role sql.NullString
 		if err := db.QueryRow("SELECT role FROM accounts LIMIT 1").Scan(&role); err != nil {
 			t.Fatalf("read role after create: %v", err)
@@ -910,7 +910,7 @@ func TestMCP_ListToolOmitsHiddenFieldFilters(t *testing.T) {
 
 	handler := ch.listTool(rec)
 	_, _ = handler(context.Background(), map[string]any{
-		"name":               "visible",     // visible field — allowed
+		"name":               "visible",     // visible field, allowed
 		"password_hash":      "$2a$10$abc",  // hidden eq probe
 		"password_hash_like": "$2a$10$abc%", // hidden LIKE probe
 	})

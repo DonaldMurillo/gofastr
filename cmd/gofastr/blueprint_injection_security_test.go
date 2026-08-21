@@ -32,13 +32,13 @@ func bpWithField(name string) Blueprint {
 // emitted into.
 //
 // The e2e emitters used a backtick raw literal, which has NO escape
-// mechanism — an enum value or field name containing a backtick closed
+// mechanism: an enum value or field name containing a backtick closed
 // it and the remainder became real Go source in the generated
 // e2e_test.go. `format.Source` did not catch it because the injected
 // code is valid Go, so it ran at `go test` time with nobody reading the
 // generated file. The blueprint is normally developer-authored, but the
 // documented workflow has an AGENT authoring gofastr.yml from
-// natural-language requirements — enum values and field names are
+// natural-language requirements: enum values and field names are
 // exactly what gets transcribed.
 func TestBlueprintSpecCannotEscapeGoLiteral(t *testing.T) {
 	if err := validateBlueprint(bpWithEnum("open`+PWN()+`")); err == nil {
@@ -88,8 +88,8 @@ func TestFontFamilyCannotInjectCSS(t *testing.T) {
 
 // Property: CLI text formatting never slices a string mid-rune.
 //
-// Not an attacker surface — `gofastr docs --grep <term>` takes the
-// operator's own argv against embedded first-party markdown — but the
+// Not an attacker surface: `gofastr docs --grep <term>` takes the
+// operator's own argv against embedded first-party markdown, but the
 // failure mode was a hard panic of the shipped binary on ordinary Unicode
 // input, so the invariant is worth pinning where the code lives.
 

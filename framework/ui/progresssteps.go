@@ -81,7 +81,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	case ProgressStepsHorizontal, ProgressStepsVertical:
 	default:
 		panic("ui: ProgressSteps unknown Orientation " + string(cfg.Orientation) +
-			` — pick one of: "" (horizontal), vertical`)
+			`. Pick one of: "" (horizontal), vertical`)
 	}
 	ctx := cfg.Ctx
 	if ctx == nil {
@@ -115,7 +115,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		case ProgressStepUpcoming, ProgressStepCurrent, ProgressStepComplete:
 		default:
 			panic("ui: ProgressSteps step unknown Status " + string(s.Status) +
-				` — pick one of: "" (upcoming), current, complete`)
+				`. Pick one of: "" (upcoming), current, complete`)
 		}
 		liCls := "ui-progress-steps__item"
 		if s.Status != ProgressStepUpcoming {

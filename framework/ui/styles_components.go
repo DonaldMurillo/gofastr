@@ -12,7 +12,7 @@ import (
 // the outermost tag, and the runtime auto-loads the sheet on first
 // appearance.
 //
-// LoadAuto is the default — load when the marker first hits the DOM.
+// LoadAuto is the default: load when the marker first hits the DOM.
 // PageHeader uses LoadAlways (separate file) because it's on every
 // screen. Anything that would benefit from idle prefetch should use
 // registry.WithLoad(registry.LoadPrewarm).
@@ -42,7 +42,7 @@ var (
 
 // buttonCSS is the base .ui-button styling that several call sites
 // (including html.Button users with class="ui-button") expect. It is
-// LoadAlways because buttons are everywhere — paying the eager link
+// LoadAlways because buttons are everywhere. Paying the eager link
 // avoids the "looks like a native browser button on first paint"
 // failure mode.
 //
@@ -50,7 +50,7 @@ var (
 // applied to <button> tags rendered through core-ui/html (which
 // doesn't go through Style.WrapHTML). The scope still applies to
 // any element with both data-fui-comp="ui-button" AND class="ui-
-// button" — and via the html selector under the scope we cover the
+// button", and via the html selector under the scope we cover the
 // plain class usage too.
 func buttonCSS(t style.Theme) string {
 	return `[data-fui-comp="ui-button"], .ui-button {

@@ -5,8 +5,8 @@ import "testing"
 // TestBuildSandboxGateBlocksUiGoViolations pins that the build/dev gate
 // enforces the .ui.go hydration sandbox (check.LintFile: no goroutines,
 // channels, or forbidden imports). LintFile/LintPackage implemented the
-// sandbox but had ZERO non-test callers — `gofastr build` and `gofastr dev`
-// ran only LintA11yFile, which explicitly skips the sandbox rules — so a
+// sandbox but had ZERO non-test callers: `gofastr build` and `gofastr dev`
+// ran only LintA11yFile, which explicitly skips the sandbox rules, so a
 // .ui.go file with `go func(){}()` + `import "os"` shipped unchecked.
 func TestBuildSandboxGateBlocksUiGoViolations(t *testing.T) {
 	root := writeA11yTree(t, map[string]string{

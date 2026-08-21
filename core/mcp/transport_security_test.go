@@ -162,8 +162,8 @@ func TestStreamSSE_StripsInjectedEventNUL(t *testing.T) {
 // TestStreamSSE_DataCannotInjectSecondEvent verifies that a payload shaped
 // like a forged SSE frame is delivered as DATA, not parsed as a second
 // event. With spec multi-line `data:` framing, every line of the payload
-// is re-prefixed with "data: " — so "event: forged" survives only as the
-// *content* of a data line — and exactly one event is dispatched, carrying
+// is re-prefixed with "data: ", so "event: forged" survives only as the
+// *content* of a data line, and exactly one event is dispatched, carrying
 // the original payload byte-for-byte. (Previously this asserted a brittle
 // substring absence that the correct framing now legitimately produces.)
 func TestStreamSSE_DataCannotInjectSecondEvent(t *testing.T) {

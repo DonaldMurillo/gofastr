@@ -21,7 +21,7 @@ type Layout struct {
 	Footer component.Component
 	// Container, when true, constrains the whole layout (header + content +
 	// footer) to a centered max-width column with comfortable gutters and
-	// vertical rhythm — the calm editorial shape for marketing/content pages.
+	// vertical rhythm, the calm editorial shape for marketing/content pages.
 	// Width is themeable via --ui-layout-container-width. Off by default.
 	Container bool
 }
@@ -72,7 +72,7 @@ func (l *Layout) WrapCtx(ctx context.Context, content render.HTML) render.HTML {
 	return l.wrap(ctx, content, true)
 }
 
-// WrapNested renders the layout as an INNER shell — one composed inside
+// WrapNested renders the layout as an INNER shell, one composed inside
 // another layout's <main> (e.g. a screen-group layout nested in the app's
 // default layout). It contributes its sidebar + content region but NOT a
 // <main> landmark, so the page keeps exactly one <main id="main-content">
@@ -91,7 +91,7 @@ func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) 
 }
 
 // selfKey is the layer key a layout carries when it is wrapped directly
-// (Wrap/WrapCtx/WrapNested*) rather than through a resolved chain — the
+// (Wrap/WrapCtx/WrapNested*) rather than through a resolved chain, the
 // plain-layer form of LayoutLayer.Key.
 func (l *Layout) selfKey() string {
 	if l == nil || l.Name == "" {
@@ -103,7 +103,7 @@ func (l *Layout) selfKey() string {
 // wrapLayer renders one level of a layout chain. outermost decides <main>
 // ownership (the page has exactly one <main id="main-content">, owned by
 // layer 0). key is the layer identity emitted as data-fui-layout-key on
-// the wrapper and data-fui-layout-slot on the content cell — the markers
+// the wrapper and data-fui-layout-slot on the content cell, the markers
 // the runtime walks to find the deepest layer shared with a navigation
 // target and to address the swap target without structural heuristics.
 func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost bool, key string) render.HTML {
@@ -149,7 +149,7 @@ func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost b
 
 	var wrapperChildren []render.HTML
 
-	// Header (optional). Banner=true — the page-wide banner role lives
+	// Header (optional). Banner=true, the page-wide banner role lives
 	// here; the component supplies inner content only.
 	if l.Header != nil {
 		inner, _ := component.SafeRenderCtx(ctx, l.Header)
@@ -160,7 +160,7 @@ func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost b
 	// Body.
 	wrapperChildren = append(wrapperChildren, body)
 
-	// Footer (optional). ContentInfo=true — page-wide footer role.
+	// Footer (optional). ContentInfo=true, page-wide footer role.
 	if l.Footer != nil {
 		inner, _ := component.SafeRenderCtx(ctx, l.Footer)
 		footer := html.Footer(html.FooterConfig{ContentInfo: true}, inner)
@@ -168,8 +168,8 @@ func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost b
 	}
 
 	// Wrapper div. Modifier classes let the shared layout CSS (app.LayoutBaseCSS)
-	// style the shape generically — `layout--contained` for the centered column,
-	// `layout--has-sidebar` for the padded sidebar shell — so consumers never
+	// style the shape generically, `layout--contained` for the centered column,
+	// `layout--has-sidebar` for the padded sidebar shell, so consumers never
 	// hand-roll per-layout-name CSS.
 	cls := "layout-" + l.Name
 	if l.Container {

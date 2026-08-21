@@ -2,7 +2,7 @@ package tui
 
 import "strings"
 
-// ANSI palette. Kept dim and neutral — the goal is visual hierarchy,
+// ANSI palette. Kept dim and neutral, the goal is visual hierarchy,
 // not decoration. Reset must always close a style; we avoid nesting.
 const (
 	ansiReset = "\x1b[0m"
@@ -14,7 +14,7 @@ const (
 	// Bold for input prompt and timestamps.
 	ansiBold = "\x1b[1m"
 
-	// Marker colors — applied only to the leading marker glyph,
+	// Marker colors, applied only to the leading marker glyph,
 	// content after stays default-color so the user's terminal
 	// theme drives readability.
 	ansiBlue   = "\x1b[34m" // → user
@@ -43,7 +43,7 @@ func gutter() string {
 // of our known marker glyphs, wraps the marker in the matching ANSI
 // color. The content after the marker is left untouched so the user's
 // terminal theme drives readability. We deliberately avoid emoji
-// (color-presentation Unicode) — only plain text-presentation glyphs
+// (color-presentation Unicode), only plain text-presentation glyphs
 // are used so the TUI feels system-grade, not chat-grade.
 func colorizeMarker(line string) string {
 	switch {
@@ -52,7 +52,7 @@ func colorizeMarker(line string) string {
 	case startsWithRune(line, '←'):
 		return ansiCyan + "←" + ansiReset + line[len("←"):]
 	case startsWithRune(line, '…'):
-		// dim the whole thinking line — content is auxiliary
+		// dim the whole thinking line, content is auxiliary
 		return ansiDim + line + ansiReset
 	case startsWithRune(line, '●'):
 		return ansiYellow + "●" + ansiReset + line[len("●"):]

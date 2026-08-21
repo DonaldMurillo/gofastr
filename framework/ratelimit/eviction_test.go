@@ -38,7 +38,7 @@ func TestLimiter_BoundedUnderKeyFlood(t *testing.T) {
 }
 
 // Idle states (block elapsed, attempts aged out of the window) must be
-// reclaimed rather than pinned forever — one-shot probes shouldn't leak.
+// reclaimed rather than pinned forever, one-shot probes shouldn't leak.
 func TestLimiter_EvictsIdleStates(t *testing.T) {
 	rl := NewLimiter(Config{
 		MaxAttempts:   3,
@@ -65,7 +65,7 @@ func TestLimiter_EvictsIdleStates(t *testing.T) {
 }
 
 // An active block must still be honoured even while the limiter is shedding
-// idle keys — eviction must not become a block-bypass primitive.
+// idle keys, eviction must not become a block-bypass primitive.
 func TestLimiter_BlockSurvivesEviction(t *testing.T) {
 	rl := NewLimiter(Config{
 		MaxAttempts:   2,

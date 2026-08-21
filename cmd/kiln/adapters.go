@@ -9,7 +9,7 @@ import (
 
 // kilnSkillPath returns the absolute path to the kiln skill installed
 // by installSkill(). Used by adapters that don't auto-discover skills
-// from ~/.claude/skills/ (pi, codex) — they need an explicit flag
+// from ~/.claude/skills/ (pi, codex). They need an explicit flag
 // pointing at the skill file.
 func kilnSkillPath() string {
 	home, err := os.UserHomeDir()
@@ -24,7 +24,7 @@ func kilnSkillPath() string {
 }
 
 // kilnContractPreamble is the system-level "you are inside kiln" framing
-// every adapter ships with the user's prompt. The world IR is the app —
+// every adapter ships with the user's prompt. The world IR is the app.
 // editing files on disk is meaningless and explicitly forbidden. Without
 // this, claude/codex spawned in the user's cwd see a real Go repo and
 // fall back to Read/Edit/Write on those files instead of dispatching
@@ -35,7 +35,7 @@ const kilnContractPreamble = `You are running inside the Kiln runtime.
 Kiln's world IR is the only source of truth for the app being built.
 There is no on-disk codebase to read, edit, or compile. Any files you
 see on the local filesystem are unrelated to this session and reading
-or modifying them does NOTHING — the user is watching the live world,
+or modifying them does NOTHING: the user is watching the live world,
 not the disk.
 
 The ONLY way to inspect or change the app is HTTP against $KILN_URL:
@@ -47,7 +47,7 @@ The ONLY way to inspect or change the app is HTTP against $KILN_URL:
 Do NOT use Read, Write, Edit, or Glob/Grep. Do NOT cd, git, install
 packages, or write source files. The Bash tool exists solely so you
 can curl the kiln HTTP API. If you find yourself reaching for a file
-tool, you are off-script — go back to curl.
+tool, you are off-script: go back to curl.
 
 The available tools are documented in the kiln skill. Read it before
 acting.`
@@ -77,7 +77,7 @@ func kilnSystemPrompt() string {
 //
 // Auth is the user's responsibility: each CLI manages its own login
 // (e.g. `claude` reads ~/.claude/.credentials.json). Kiln does not
-// touch credentials — it just spawns the binary.
+// touch credentials. It just spawns the binary.
 type Adapter struct {
 	Name      string
 	Display   string // human-readable description for the startup banner
@@ -123,7 +123,7 @@ var adapters = map[string]Adapter{
 		Detect:  func() bool { _, err := exec.LookPath("claude"); return err == nil },
 		BuildArgs: func(text string) []string {
 			// --dangerously-skip-permissions is required for non-interactive
-			// runs — without it claude --print hangs at the first Bash
+			// runs. Without it claude --print hangs at the first Bash
 			// tool-use waiting for a permission prompt that nobody can answer.
 			//
 			// --allowedTools Bash strips Read/Write/Edit/Glob/Grep so claude
@@ -133,7 +133,7 @@ var adapters = map[string]Adapter{
 			// --append-system-prompt installs the kiln contract + skill at
 			// the system level, so it outranks claude's default tool autonomy.
 			// Without this, claude in --print mode auto-discovers the skill
-			// at best advisorily — the model is still free to ignore it. As
+			// at best advisorily. The model is still free to ignore it. As
 			// a system prompt the contract is non-negotiable.
 			return []string{
 				"claude", "--print", "--dangerously-skip-permissions",
@@ -145,14 +145,14 @@ var adapters = map[string]Adapter{
 	},
 	"pi": {
 		Name:    "pi",
-		Display: "pi -p --provider zai --model glm-5.1 --tools bash --skill <kiln SKILL.md>  (Pi coding agent — kiln contract + skill, runs in /tmp/kiln-pi/)",
+		Display: "pi -p --provider zai --model glm-5.1 --tools bash --skill <kiln SKILL.md>  (Pi coding agent: kiln contract + skill, runs in /tmp/kiln-pi/)",
 		Dir:     filepath.Join(os.TempDir(), "kiln-pi"),
 		Detect:  func() bool { _, err := exec.LookPath("pi"); return err == nil },
 		BuildArgs: func(text string) []string {
 			argv := []string{"pi", "-p", "--provider", "zai", "--model", "glm-5.1",
-				// Restrict pi to bash only — it dispatches kiln tools
+				// Restrict pi to bash only: it dispatches kiln tools
 				// via curl. The kiln world is the only source of truth
-				// and is reachable solely via $KILN_URL HTTP — bash is
+				// and is reachable solely via $KILN_URL HTTP, so bash is
 				// sufficient. Without this, pi's Read tool reaches for
 				// cwd files instead of the world IR.
 				"--tools", "bash"}
@@ -222,7 +222,7 @@ func resolveAdapter(value string) (Adapter, bool) {
 		return Adapter{}, false
 	}
 	// If the freeform spawn matches a built-in adapter's exact argv
-	// prefix, return that named adapter — not a "custom" one. The gear
+	// prefix, return that named adapter, not a "custom" one. The gear
 	// modal keys its "current" radio off the adapter name; classifying
 	// "pi -p --provider zai --model glm-5.1" as custom would leave the
 	// user staring at an all-unselected list even though their --agent

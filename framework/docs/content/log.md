@@ -21,12 +21,12 @@ During `Init` the plugin calls `app.SetLogger(p.Logger())`. The framework's
 default `middleware.Logging` (which uses `App.Logger` per request) and any
 code calling `app.Logger()` directly then flow through this plugin's sinks
 without rewiring `slog.Default` and without touching the stdlib `log`
-package. The swap is scoped to one App — multiple Apps in the same
+package. The swap is scoped to one App. Multiple Apps in the same
 process don't collide.
 
 ## Quickstart
 
-Zero-config — default file sink, all middleware on:
+Zero-config: default file sink, all middleware on:
 
 ```go
 app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "myapp"}))
@@ -64,7 +64,7 @@ logp.Logger().Info("worker.tick", "queue", "ingest")
 
 `PluginGetAs` does the lookup and the type assertion in one call and
 returns an error (never a usable zero value) when the plugin is absent
-or isn't a `*log.Plugin` — see [plugins](plugins.md) → Typed lookups.
+or isn't a `*log.Plugin`. See [plugins](plugins.md) → Typed lookups.
 
 ## Real-time debugging via MCP
 
@@ -79,16 +79,16 @@ running app live:
 |-----------------|------------------------------------------------------------------------------------------------------|
 | `log_recent`    | Last N entries from the ring, optional level filter.                                                 |
 | `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level`. `historical=true` tails the file sink for entries evicted from the ring. |
-| `log_metrics`   | Current counter snapshot — same data as `Plugin.Metrics()`.                                          |
+| `log_metrics`   | Current counter snapshot, the same data as `Plugin.Metrics()`.                                          |
 | `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterward). Only registered when `AllowMCPMutation` is set. |
 
-Opt-in because these tools reveal a lot about the running app —
-weigh the disclosure before enabling on a production MCP server
+Opt-in because these tools reveal a lot about the running app.
+Weigh the disclosure before enabling on a production MCP server
 exposed to untrusted callers.
 
 **In the dev loop the tools auto-enable.** Under `gofastr dev`
 (`GOFASTR_DEV`; opt-out `GOFASTR_DEV_MCP=0`) the plugin turns on
-`EnableMCP` and `AllowMCPMutation` regardless of Config — the local
+`EnableMCP` and `AllowMCPMutation` regardless of Config. The local
 dev `/mcp` is trusted, and an agent driving the dev loop needs the
 debug tools without wiring. The explicit fields below remain the only
 path for production processes:
@@ -101,7 +101,7 @@ app.RegisterPlugin(log.New(log.Config{
 ```
 
 Pair with `framework.WithMCPIntrospection()` so an agent can also ask
-the app about its routes / plugins / batteries / config / readiness — see
+the app about its routes / plugins / batteries / config / readiness. See
 `framework/mcp_introspection.go`.
 
 ## Metrics
@@ -139,7 +139,7 @@ prefix you use for ops endpoints.
 The plugin installs a panic-recovery middleware that catches handler panics,
 returns 500, and reports each one through an **ErrorReporter**. The default
 reporter writes the existing `http.panic` log line through the configured
-sinks — zero behaviour change when you do nothing. Supply a reporter to also
+sinks, with zero behaviour change when you do nothing. Supply a reporter to also
 forward panics (and any error app code reports) to an external collector:
 
 ```go
@@ -153,7 +153,7 @@ app.RegisterPlugin(log.New(log.Config{
 
 `HTTPErrorReporter` POSTs a JSON report (`time`, `msg`, `error`, `stack`,
 `method`, `path`, `route`, `request_id`) to a URL, reusing the plugin's
-webhook-sink machinery — bounded async queue, exponential backoff on 5xx /
+webhook-sink machinery: bounded async queue, exponential backoff on 5xx /
 transport errors, drop-oldest under backpressure. No vendor SDK. Point it at
 a generic JSON collector, or a small Slack adapter that maps the report to
 an incoming-webhook payload.
@@ -189,14 +189,14 @@ The reporter is closed on app shutdown when it implements `io.Closer`
 > events, and the App's logger swapped so framework middleware writes
 > through the same sinks. The framework's router late-binds its
 > middleware chain, so this plugin's contributions wrap routes
-> registered before it loaded — no ordering footguns.
+> registered before it loaded, with no ordering footguns.
 
 ## Sinks
 
 ### `FileSink(path, opts)` and `DefaultFileSink(appName, opts)`
 
-- Buffered writes flushed after every entry (durability over throughput
-  — server logs are read live during debugging).
+- Buffered writes flushed after every entry (durability over throughput:
+  server logs are read live during debugging).
 - Size-based rotation: when an entry would push the file past
   `MaxSize`, the active file is renamed to `<path>.1`, existing
   backups shift up (`.1` → `.2`, …), and anything past `MaxBackups`
@@ -209,7 +209,7 @@ POSTs a JSON envelope `{"entries":[<entry>, <entry>, ...]}` to `url`.
 
 - Batching: flush on `BatchSize` (default 50) **or** `BatchInterval`
   (default 1s), whichever first.
-- Bounded queue (default 1000 entries). When full, drop-oldest — the
+- Bounded queue (default 1000 entries). When full, drop-oldest: the
   webhook sink will **never** block the request path.
 - Retry with exponential backoff on 5xx / transport errors, up to
   `MaxRetries` (default 3). 4xx is treated as a hard failure (the
@@ -223,8 +223,8 @@ POSTs a JSON envelope `{"entries":[<entry>, <entry>, ...]}` to `url`.
 Writes each entry as one JSON object per line to `opts.Writer`
 (`os.Stdout` when nil). This is the pattern container platforms expect:
 the app logs to stdout, Docker / Kubernetes / Cloud Run captures the
-stream and ships it. No log file to mount, no rotation to configure —
-the platform owns retention.
+stream and ships it. No log file to mount, no rotation to configure.
+The platform owns retention.
 
 - Entries pass through byte-for-byte: the fanout already encoded them
   with slog's JSON handler (`time`, `level`, `msg`, attrs), so key
@@ -233,14 +233,14 @@ the platform owns retention.
   never observes a torn line under load. Writes are mutex-serialized,
   consistent with the other sinks.
 - `Close` marks the sink closed (later writes return `ErrSinkClosed`)
-  but never closes the writer — stdout is process-owned.
+  but never closes the writer, because stdout is process-owned.
 
 Container wiring:
 
 ```go
 app.RegisterPlugin(log.New(log.Config{
     Sinks: []log.Sink{
-        log.JSONSink(log.JSONOpts{}), // stdout — the platform ships it
+        log.JSONSink(log.JSONOpts{}), // stdout, the platform ships it
     },
 }))
 ```
@@ -285,7 +285,7 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
 ## Common mistakes
 
 - **Pointing a sink at a high-volume webhook synchronously.** The
-  webhook sink is already async and bounded — never wrap it in your own
+  webhook sink is already async and bounded. Never wrap it in your own
   blocking adapter, and don't set `QueueSize` so high that a downstream
   outage causes unbounded memory growth.
 - **Setting `DisableReplaceDefault` and then wondering where slow-query
@@ -295,7 +295,7 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
   explicitly.
 - **Treating the access middleware as a request log of last resort.**
   It logs once per request *after* the response is sent. Handlers that
-  hang forever never emit an access entry — pair with a timeout
+  hang forever never emit an access entry. Pair with a timeout
   middleware (`middleware.Timeout`) if you need bounded coverage.
 - **Setting `MaxSize` very low to "test rotation in production."**
   Rotation occurs synchronously on the calling write; tiny caps turn
@@ -307,7 +307,7 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
 - **Expecting one access entry per request.** With default middleware
   on, the framework emits a minimal `request` entry from
   `middleware.LoggingFn(app.Logger)` and this plugin emits a richer
-  `http.access` entry from its own access middleware — both flow
+  `http.access` entry from its own access middleware, and both flow
   through the same sinks. Either pass `framework.WithoutDefaultMiddleware()`
   and wire the rest of the chain manually, or filter on `msg` in the
   consumer.

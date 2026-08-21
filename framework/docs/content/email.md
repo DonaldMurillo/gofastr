@@ -1,7 +1,7 @@
 # Email
 
 `battery/email` sends transactional email over SMTP and renders it from
-templates. It is a plain library — there is no `framework.WithEmail`. You
+templates. It is a plain library. There is no `framework.WithEmail`. You
 construct a `Sender` and call `Send` from wherever a message needs to go
 out: a hook, a queue worker, or a handler.
 
@@ -58,7 +58,7 @@ err := sender.Send(ctx, email.Email{
 | `UseTLS`         | `bool`           | Implicit TLS (e.g. port 465). False (default) attempts         |
 |                  |                  | STARTTLS on the cleartext connection.                          |
 | `AllowCleartext` | `bool`           | Send unencrypted when neither implicit TLS nor STARTTLS is     |
-|                  |                  | available. Default false — `Send` fails closed instead of      |
+|                  |                  | available. Default false: `Send` fails closed instead of       |
 |                  |                  | leaking the message and recipient list.                        |
 | `DialTimeout`    | `time.Duration`  | TCP+TLS connect budget. Zero = 10s. The same budget is set as  |
 |                  |                  | the connection's I/O deadline, so a host that accepts the dial |
@@ -109,7 +109,7 @@ sender.Send(ctx, msg)
 
 `Execute` renders the subject and text body with `text/template` and the
 HTML body with `html/template`, so HTML escaping applies only to the HTML
-part. `From` and `To` are the caller's job — they vary per recipient,
+part. `From` and `To` are the caller's job. They vary per recipient,
 not per template.
 
 `LoadFromDir` pairs `welcome.txt` + `welcome.html` into one template
@@ -119,7 +119,7 @@ same against an `fs.FS`, so an embedded template tree works.
 
 ## Common mistakes
 
-- **Leaving `AllowCleartext` off and pointing at a host that strips STARTTLS.** That is the intended failure — the message does not go out in plaintext. Fix the relay (use a TLS-capable host, or port 465 with `UseTLS`), not the flag.
+- **Leaving `AllowCleartext` off and pointing at a host that strips STARTTLS.** That is the intended failure: the message does not go out in plaintext. Fix the relay (use a TLS-capable host, or port 465 with `UseTLS`), not the flag.
 - **Letting recipient input reach `Email` unvalidated.** The sender rejects CR/LF/NUL in headers and fails loudly rather than smuggling a `Bcc`, but a malformed address still wastes a send attempt. Validate addresses before they reach `Email.To`.
 - **Using `LogSender` in production by accident.** It never sends; email looks fine in dev and silently does nothing in prod. Build the sender from an env flag instead of hardcoding `NewLogSender()`.
 - **Forgetting `From` / `To` after `Execute`.** `Execute` fills the subject and bodies only; an `Email` with no recipients is a no-op `Send`.

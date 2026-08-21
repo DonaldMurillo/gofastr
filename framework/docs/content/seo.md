@@ -1,7 +1,7 @@
-# SEO — meta tags, Open Graph, JSON-LD, sitemap, robots, icons
+# SEO: meta tags, Open Graph, JSON-LD, sitemap, robots, icons
 
-Everything a crawler or social preview reads — meta tags, Open Graph,
-JSON-LD, sitemap, robots.txt — comes from a typed option or a small
+Everything a crawler or social preview reads, whether meta tags, Open
+Graph, JSON-LD, sitemap, or robots.txt, comes from a typed option or a small
 interface on a screen component, not a hand-written `<head>` string.
 Every emitted value is HTML-escaped, and URL fields are scheme-checked
 (http(s)/relative only), so a user-supplied title or URL can't inject
@@ -9,8 +9,8 @@ markup.
 
 Two declaration levels compose:
 
-- **Sitewide defaults** — `uihost` options passed to `uihost.New`.
-- **Per-screen values** — optional interfaces on the screen component.
+- **Sitewide defaults**: `uihost` options passed to `uihost.New`.
+- **Per-screen values**: optional interfaces on the screen component.
   Per-screen tags are injected *before* the sitewide ones, so
   first-match crawlers (Open Graph scrapers) see the specific value.
 
@@ -33,7 +33,7 @@ host := uihost.New(site,
 | `WithDescription` | `<meta name="description">` |
 | `WithOpenGraph(OG{…})` | `og:title/description/image/url/type` metas |
 | `WithTwitterCard(TwitterCard{…})` | `twitter:card/title/description/image/site` metas |
-| `WithCanonicalURL` | `<link rel="canonical">` — usually wrong sitewide; prefer the per-screen interface |
+| `WithCanonicalURL` | `<link rel="canonical">`, usually wrong sitewide; prefer the per-screen interface |
 | `WithRobotsMeta` | `<meta name="robots">` on every page (e.g. `"noindex"` for staging) |
 | `WithSitemap(SitemapConfig{…})` | the `/sitemap.xml` endpoint (see below) |
 | `WithRobots(RobotsConfig{…})` | the `/robots.txt` endpoint (see below) |
@@ -53,14 +53,14 @@ func (s *PostScreen) ScreenRobots() string      { return "noindex" } // drafts, 
 func (s *PostScreen) ScreenHreflangs() []uihost.HreflangLink {
     return []uihost.HreflangLink{{Lang: "en", URL: "…"}, {Lang: "x-default", URL: "…"}}
 }
-func (s *PostScreen) ScreenSchema() []seo.Thing { // core-ui/seo — typed JSON-LD
+func (s *PostScreen) ScreenSchema() []seo.Thing { // core-ui/seo: typed JSON-LD
     a := seo.NewArticle()
     a.Headline = s.post.Title
     return []seo.Thing{a}
 }
 ```
 
-Or declare everything at once with the bundle — its non-empty fields
+Or declare everything at once with the bundle; its non-empty fields
 override the per-concern interfaces:
 
 ```go
@@ -75,10 +75,10 @@ func (s *PostScreen) ScreenSEO() uihost.SEO {
 }
 ```
 
-`core-ui/seo` ships typed Schema.org builders — `NewArticle`,
+`core-ui/seo` ships typed Schema.org builders: `NewArticle`,
 `NewBreadcrumbList`, `NewFAQPage`, `NewOrganization`, `NewPerson`,
-`NewWebSite` (with SearchAction), `NewWebPage`, `NewProduct`/`Offer` —
-rendered as `<script type="application/ld+json">` with `</`
+`NewWebSite` (with SearchAction), `NewWebPage`, `NewProduct`/`Offer`.
+Each is rendered as `<script type="application/ld+json">` with `</`
 neutralized so content can't break out of the script block.
 
 ## Browser Reader Mode
@@ -86,23 +86,23 @@ neutralized so content can't break out of the script block.
 Safari Reader, Firefox Reader View, and Edge Immersive Reader each show a
 reader button only when they're confident a page *is* an article. That
 confidence comes from three signals the page emits: a semantic `<article>`
-element wrapping the content (the dominant signal — Safari Reader and
+element wrapping the content (the dominant signal: Safari Reader and
 Firefox's Readability engine scan the DOM for it), an `Article` JSON-LD
 block (which Safari Reader reads to populate its title/byline/date), and
 `og:type=article`.
 
 ### Turn any screen into an article: `app.AsArticle()`
 
-The seamless path. Add one option to a screen's registration and the
+The zero-config path. Add one option to a screen's registration and the
 framework emits all three signals, deriving the headline and description
-from the screen's own `ScreenTitle` / `ScreenDescription` — no
+from the screen's own `ScreenTitle` / `ScreenDescription`; no
 article-specific data anywhere:
 
 ```go
 // Any normal screen + one option = reader-ready.
 site.Register("/posts/:slug", &PostScreen{}, layout, app.AsArticle())
 
-// PostScreen is an ordinary screen — title + prose, nothing more.
+// PostScreen is an ordinary screen: title + prose, nothing more.
 type PostScreen struct{ post Post }
 func (s *PostScreen) ScreenTitle() string { return s.post.Title }
 func (s *PostScreen) Render() render.HTML { /* the post body */ }
@@ -118,11 +118,10 @@ title, then the prose; keep nav and chrome in the layout (outside the
 ### Richer reader views: the `ScreenArticle` interface
 
 `AsArticle()` carries no byline or date. To give the browser structured
-metadata — so every reader view shows a consistent byline, date, and cover
-image whatever the prose — implement `ScreenArticle` on the component. Its
+metadata, implement `ScreenArticle` on the component. Every reader view
+then shows a consistent byline, date, and cover image whatever the prose. Its
 fields fill what the screen's title can't, and it also marks the screen as
 an article (the option isn't needed when the interface is implemented):
-
 ```go
 func (s *PostScreen) ScreenArticle() app.ArticleMeta {
     return app.ArticleMeta{
@@ -133,7 +132,7 @@ func (s *PostScreen) ScreenArticle() app.ArticleMeta {
 }
 ```
 
-In both forms only gaps are filled — an explicit `ScreenSchema` Article or
+In both forms only gaps are filled: an explicit `ScreenSchema` Article or
 `ScreenSEO` OG value wins over the derived/synthesized one, so richer
 declarations aren't duplicated.
 
@@ -158,7 +157,7 @@ admin/internal prefixes with `ExcludePaths`.
 `WithRobots` serves `/robots.txt` and derives the `Sitemap:` line from
 the sitemap's `BaseURL` when `SitemapURL` is unset. With
 `WithAgentReady`, AI crawler user-agents get explicit allow/deny groups
-and a `Content-Signal` directive — see [Agent-ready](/docs/agent-ready).
+and a `Content-Signal` directive; see [Agent-ready](/docs/agent-ready).
 
 Both endpoints are **also written as files by static export**
 (`app --export`, `ExportStatic`): same bytes as the live handlers, with
@@ -171,7 +170,7 @@ URL. See [Static-site export](/docs/static-export).
 sources are center-cropped) and derives everything at startup:
 
 - 32/180/192/512px PNGs served under `/__gofastr/icons/`,
-- `/favicon.ico` (the 32px PNG — resolved by Content-Type),
+- `/favicon.ico` (the 32px PNG, resolved by Content-Type),
 - `<link rel="icon">` (32 + 192) and `<link rel="apple-touch-icon">` (180),
 - the 192/512 manifest icons when `WithPWA` is on and `PWAConfig.Icons`
   is empty (explicit icons always win),
@@ -206,7 +205,7 @@ from data). The app name is appended: `Pricing — Freightline`.
 
 ## Enforcing all of this
 
-None of the surfaces above error when missing — SEO emission is
+None of the surfaces above error when missing: SEO emission is
 silently skipped for anything you didn't declare. `uihost.WithStrict()`
 flips that for apps that want the launch bar enforced: boot fails
 listing every page screen without a title/description and any missing
@@ -216,20 +215,20 @@ site-level surface (description, icon, sitemap, robots). See
 ## Common mistakes
 
 - **Sitewide `WithCanonicalURL`.** A fixed canonical on every page
-  declares the homepage canonical for the whole site — search engines
+  declares the homepage canonical for the whole site; search engines
   drop everything else. Use per-screen `ScreenCanonical` and leave the
   global option out unless the app really is one page.
 - **Forgetting `StaticPathsProvider` on dynamic routes.** `/posts/:slug`
-  silently disappears from the sitemap (and static export) without it —
+  silently disappears from the sitemap (and static export) without it;
   the sitemap can't guess your slugs.
 - **Setting `SEO.Robots` and expecting `WithRobotsMeta` to be replaced.**
   The per-screen tag is emitted *in addition to* the global one;
   crawlers apply the most restrictive combination. Drop the global
   option in production instead of overriding it per screen.
 - **Hand-writing JSON-LD strings via `WithHeadHTML`.** Use
-  `core-ui/seo` — the typed builders escape `</` so content can't
+  `core-ui/seo`; the typed builders escape `</` so content can't
   terminate the script block, and the per-screen `ScreenSchema` hook
   places them correctly.
 - **Declaring `PWAConfig.Icons` AND expecting `WithAppIcon` to fill
-  gaps.** Explicit icons win wholesale — the generated 192/512 pair is
+  gaps.** Explicit icons win wholesale; the generated 192/512 pair is
   injected only when the manifest declares none.

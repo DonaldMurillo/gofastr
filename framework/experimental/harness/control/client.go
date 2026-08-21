@@ -11,7 +11,7 @@ import (
 // to route commands and events. Every transport (inproc, rest, ws,
 // mcpserver) provides a Client implementation.
 //
-// Per hard rule 7, the engine sees only this interface — it never
+// Per hard rule 7, the engine sees only this interface, it never
 // inspects how a client is wired.
 type Client interface {
 	// ID returns the client's stable identifier for the lifetime of
@@ -34,7 +34,7 @@ type Client interface {
 	Send(ctx context.Context, cmd Command) error
 
 	// Close detaches the client. Detach is non-destructive at the
-	// engine level — see § Multi-client semantics.
+	// engine level. See § Multi-client semantics.
 	Close() error
 }
 

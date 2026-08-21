@@ -16,7 +16,7 @@ import (
 // The design (§6 baseline hygiene) requires an own process group for BOTH
 // runners; SandboxRunner will tighten it further via per-OS backends. The
 // build-tag split is !windows vs windows (mirroring
-// framework/experimental/harness/hook/procgroup_{unix,windows}.go) — Darwin is Unix and
+// framework/experimental/harness/hook/procgroup_{unix,windows}.go). Darwin is Unix and
 // has Setpgid, so it stays on this side.
 func setChildProcessGroup(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {

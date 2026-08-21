@@ -1,8 +1,8 @@
 package main
 
 // End-to-end MCP-readiness gate for the blueprint surface: a generated app
-// must expose the full agent-facing MCP contract, not just entity CRUD
-// tools. The framework is AI-first — an agent pointed at a generated app
+// must expose the full agent-facing MCP contract rather than only entity
+// CRUD tools. The framework is AI-first: an agent pointed at a generated app
 // must be able to discover the server (server card), stream it (GET /mcp),
 // and orient inside it (the WithMCPIntrospection tool set: app_routes,
 // framework_docs_search, …), exactly like examples/site. Gated by -short.
@@ -101,7 +101,7 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 		// The control loop (WithMCPControl): runtime state mutation,
 		// dev-gated like the log tools.
 		"app_module_enable", "app_module_disable",
-		// Dev implies entity data tools for EVERY CRUD entity — users has
+		// Dev implies entity data tools for EVERY CRUD entity: users has
 		// no `mcp: true` in the blueprint, dev serves its tools anyway.
 		"users_list", "users_create", "users_update",
 	} {
@@ -113,7 +113,7 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 		t.FailNow()
 	}
 
-	// Contract 2: the Streamable HTTP transport is complete — GET /mcp
+	// Contract 2: the Streamable HTTP transport is complete; GET /mcp
 	// answers the SSE stream, not 405.
 	req, _ := http.NewRequest(http.MethodGet, base+"/mcp", nil)
 	req.Header.Set("Accept", "text/event-stream")
@@ -126,11 +126,11 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 		}
 		_ = resp.Body.Close()
 	} else if !strings.Contains(err.Error(), "context deadline exceeded") {
-		// A live SSE stream may outlast the probe window — that's a pass.
+		// A live SSE stream may outlast the probe window; that's a pass.
 		t.Errorf("GET /mcp: %v", err)
 	}
 
-	// Contract 3: agent discovery — the MCP server card well-knowns serve.
+	// Contract 3: agent discovery. The MCP server card well-knowns serve.
 	for _, path := range []string{
 		"/mcp/server-card",
 		"/.well-known/mcp/server-card.json",
@@ -156,7 +156,7 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 		t.Error("app_routes returned zero routes on a serving app")
 	}
 
-	// Contract 5: the debug loop closes — the page hits above are already
+	// Contract 5: the debug loop closes. The page hits above are already
 	// in the ring, so log_recent returns real entries.
 	var recent struct {
 		Entries []map[string]any `json:"entries"`
@@ -167,7 +167,7 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 	}
 
 	// Contract 6 (fail-closed): WITHOUT the dev env the log tools must not
-	// register — access logs carry client IPs and paths, so an untrusted
+	// register: access logs carry client IPs and paths, so an untrusted
 	// production /mcp never exposes them by default.
 	cancel()
 	_ = killTestProcessTree(app)
@@ -199,7 +199,7 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 	for _, banned := range []string{
 		"log_recent", "log_filter", "log_metrics", "log_set_level",
 		"app_module_enable", "app_module_disable",
-		// users has no `mcp: true` — its data tools are dev-implied only.
+		// users has no `mcp: true`; its data tools are dev-implied only.
 		"users_list", "users_create",
 	} {
 		if prodTools[banned] {

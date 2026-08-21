@@ -6,9 +6,9 @@
   // Auto-discover registered widgets. The framework runtime is loaded
   // once per page (via /__gofastr/runtime.js); each Mount(r, def) on
   // the server registers in a process-global map; this fetch picks the
-  // list up and mounts every widget. 404 means no widgets registered
-  // — silently skip (the runtime works for plain pages too).
-  // Per-page scoped widget discovery — apps that constrain widgets
+  // list up and mounts every widget. 404 means no widgets registered,
+  // silently skip (the runtime works for plain pages too).
+  // Per-page scoped widget discovery, apps that constrain widgets
   // to specific routes via .Pages / .PagesPrefix / .PagesMatch get
   // a filtered catalog. Widgets with no Routes declared appear on
   // every page (the backwards-compatible default).
@@ -26,8 +26,8 @@
 
   // Widget catalog fetch. The live endpoint is session-gated and per-page
   // scoped (?page= filters widgets to the current route). A serverless
-  // export never composes widgets-boot — the `static` composition omits it
-  // and rpc-stub intercepts data-fui-open clicks — so this fetch only ever
+  // export never composes widgets-boot, the `static` composition omits it
+  // and rpc-stub intercepts data-fui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
   fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
@@ -35,7 +35,7 @@
     .then(async (list) => {
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime now ships as a split module. Make sure it's
-      // loaded before iterating mounts — covers the case where no
+      // loaded before iterating mounts, covers the case where no
       // [data-fui-widget] marker is present in initial HTML (the
       // marker scanner wouldn't have fired) but server-side
       // registration says there are widgets to mount.
@@ -63,14 +63,14 @@
           window.__gofastr._mountByName(item.cfg.name);
         }
         // Open any widget whose deep link matches the current URL. Pure
-        // post-hydration — there's a single-frame window where the page
+        // post-hydration, there's a single-frame window where the page
         // paints without the modal. SSR pre-rendering is a future
         // optimization; correctness (refresh / share / back-button) is
         // already covered by this open-on-boot pass.
         window.__gofastr._syncDeepLinks();
 
         // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise — resolve so queued clicks unblock now
+        // awaiting this Promise, resolve so queued clicks unblock now
         // that the catalog is populated.
         _wcr();
       };
@@ -82,8 +82,8 @@
   // The data-fui-open click handler, data-fui-toast click handler, and
   // popstate listener used to live inside the /__gofastr/widgets
   // catalog fetch's .then() callback. That meant on a slow network the
-  // very first click on an open trigger had no handler to receive it
-  // — the catalog hadn't returned yet, so the .then() hadn't run.
+  // very first click on an open trigger had no handler to receive it,
+  // the catalog hadn't returned yet, so the .then() hadn't run.
   //
   // We install them here at boot, before the catalog fetch. Each
   // handler awaits loadModule('widgets') (via the openWidget stub on

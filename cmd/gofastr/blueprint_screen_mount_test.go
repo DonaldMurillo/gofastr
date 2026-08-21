@@ -7,7 +7,7 @@ import (
 
 // Screens mounted through app.NewScreen (the auth-gated and guest-policy
 // paths in blueprintScreenMountStmt) do NOT get the component probed for
-// ScreenDescriber the way site.Register does — uihost strict mode reads
+// ScreenDescriber the way site.Register does: uihost strict mode reads
 // the Screen struct's Description field. A blueprint screen that declares
 // a description must therefore chain WithDescription at the mount, or the
 // generated app panics at boot: `screen "/app": no description`. This is

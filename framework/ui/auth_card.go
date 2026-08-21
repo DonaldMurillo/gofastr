@@ -1,6 +1,6 @@
 package ui
 
-// AuthCard — a centered, narrow card for auth surfaces (sign in, create
+// AuthCard is a centered, narrow card for auth surfaces (sign in, create
 // account, reset password). It owns the centering, the constrained measure,
 // the surface/border/shadow, and the title + footer-link slots, so auth
 // screens compose a ui.Form into Body without shipping any layout CSS.
@@ -16,10 +16,10 @@ import (
 type AuthCardConfig struct {
 	// Title is the card heading (e.g. "Sign in to Acme").
 	Title string
-	// Alert is an optional message shown above the body — typically a
+	// Alert is an optional message shown above the body, typically a
 	// failed-login notice. Empty renders nothing.
 	Alert render.HTML
-	// Body is the card contents — typically a ui.Form.
+	// Body is the card contents, typically a ui.Form.
 	Body render.HTML
 	// Footer is an optional row below the body, e.g. a "Create an
 	// account" link.

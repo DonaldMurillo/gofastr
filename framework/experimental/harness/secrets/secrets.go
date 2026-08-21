@@ -7,7 +7,7 @@
 // .harness-secrets/env, so it works whether tests run from the
 // module root or from a subpackage.
 //
-// Env vars already set in the process take priority — the file is a
+// Env vars already set in the process take priority, the file is a
 // fallback, not an override.
 package secrets
 

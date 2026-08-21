@@ -14,7 +14,7 @@ import (
 // schema.Field flag has to be named explicitly in renderFieldLiteral, so a new
 // one that nobody adds there is accepted in the blueprint, validated, and then
 // quietly discarded. For NoQuery that would generate an app whose masked
-// column is still filterable — the declaration promises a protection the
+// column is still filterable: the declaration promises a protection the
 // generated code does not have.
 func TestNoQueryReachesGeneratedField(t *testing.T) {
 	literal, err := renderFieldLiteral(framework.FieldDeclaration{
@@ -68,7 +68,7 @@ entities:
 	}
 }
 
-// TestNoQueryAcceptedInBlueprint pins that the key is in the field allow-list —
+// TestNoQueryAcceptedInBlueprint pins that the key is in the field allow-list:
 // rejectUnknownKeys fails closed, so an unlisted key is a hard error rather
 // than a silent ignore.
 func TestNoQueryAcceptedInBlueprint(t *testing.T) {
@@ -87,7 +87,7 @@ entities:
 		t.Fatalf("no_query must be an accepted field key: %v", err)
 	}
 	// Find the field first. A loop that only asserts "if f.Name == number"
-	// passes when the decoder drops the field — which loses the column and its
+	// passes when the decoder drops the field, which loses the column and its
 	// protection together.
 	var found *framework.FieldDeclaration
 	for i := range bp.Entities {
@@ -107,7 +107,7 @@ entities:
 
 // TestNoQuerySurvivesPackRoundTrip covers the other half of the silent-drop
 // class. pack.go's own header states the invariant that both the decoder and
-// the serializer must learn every new construct — but the round-trip test
+// the serializer must learn every new construct, but the round-trip test
 // compares fixtures, and no fixture uses no_query, so an omission here is
 // vacuously "covered". Losing the flag on a pack/regenerate cycle turns a
 // masked column back into a filterable one.
@@ -270,7 +270,7 @@ screens:
 
 // TestStatCardNoQueryFilterRejected covers the nested-source path. The
 // stat_card filter lives in source.filter, not in the block's own props, and
-// the first version of this guard read the wrong map — so it validated
+// the first version of this guard read the wrong map, so it validated
 // nothing. statValue splits the string into a raw ParsedFilter and hands it
 // to CountAll, bypassing the filter parser, so a masked column there makes
 // the rendered count a one-bit oracle.
@@ -326,7 +326,7 @@ screens:
 }
 
 // The facet guard reaches ListAll with a hand-built ParsedFilter, bypassing
-// the HTTP filter parser. The error must name no_query specifically — without
+// the HTTP filter parser. The error must name no_query specifically; without
 // the guard, validation falls through to the unrelated "only enum, bool, and
 // relation columns can be faceted" type error, which sends an author looking
 // in the wrong place.

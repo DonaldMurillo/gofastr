@@ -1,6 +1,6 @@
 # Job queue (`battery/queue`)
 
-`battery/queue` is a pluggable job queue with three backends — in-memory,
+`battery/queue` is a pluggable job queue with three backends: in-memory,
 SQL (SQLite + Postgres), and Redis. It handles enqueue, dequeue, retry
 with optional exponential backoff, dead-letter capture, inspection, and
 replay, and pairs with a `Scheduler` for recurring jobs.
@@ -25,7 +25,7 @@ when you need durability and multi-replica safety (Postgres `FOR UPDATE
 SKIP LOCKED`). Use `RedisQueue` when you already run Redis and want the
 visibility-timeout model.
 
-## Quickstart — MemoryQueue
+## Quickstart: MemoryQueue
 
 ```go
 import "github.com/DonaldMurillo/gofastr/battery/queue"
@@ -45,7 +45,7 @@ _ = q.Enqueue(ctx, queue.Job{
 })
 ```
 
-## Quickstart — DBQueue
+## Quickstart: DBQueue
 
 ```go
 db, _ := sql.Open("postgres", dsn)
@@ -72,10 +72,10 @@ defer q.Close()
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
 exist. Pass `WithTable("my_jobs")` to use a custom table name.
 
-## Quickstart — RedisQueue
+## Quickstart: RedisQueue
 
 ```go
-// client implements queue.RedisClient — wrap go-redis, redigo, etc.
+// client implements queue.RedisClient; wrap go-redis, redigo, etc.
 q := queue.NewRedisQueue(client, "myapp:jobs")
 q.SetVisibilityTimeout(30 * time.Second)
 
@@ -100,7 +100,7 @@ for {
 }
 ```
 
-`RedisQueue` does not include a built-in worker loop — you drive
+`RedisQueue` does not include a built-in worker loop; you drive
 Dequeue/Ack/Nack yourself, or integrate with a third-party pool. Call
 `Start` to enable the auto-reclaim ticker (see "Crash safety" below).
 
@@ -114,7 +114,7 @@ import "time"
 type Job struct {
     ID          string          // auto-filled by Enqueue if empty
     OccurrenceID string          // stable durable-schedule tick identity; empty for ordinary jobs
-    Type        string          // required — selects the handler
+    Type        string          // required: selects the handler
     Payload     json.RawMessage // arbitrary JSON for the handler
     Priority    int             // higher = dequeued first (DBQueue + MemoryQueue)
     Lane        string          // capacity-reservation lane; "" = default (see Lanes)
@@ -138,8 +138,8 @@ which workers can claim the job. It solves a problem priority cannot.
 
 `Priority` chooses among *pending* jobs when a worker frees up. It cannot
 preempt a running handler. So if a bulk backfill saturates every shared
-worker with long-running jobs, an urgent job — even at the highest priority
-— just sits in the queue: no worker is free to consult the priority order.
+worker with long-running jobs, an urgent job, even at the highest priority,
+just sits in the queue: no worker is free to consult the priority order.
 Priority helps pick the next job; lanes guarantee there is always a worker
 whose entire budget is reserved for the jobs that matter.
 
@@ -152,7 +152,7 @@ whose entire budget is reserved for the jobs that matter.
 
 ```go
 q, _ := queue.NewDBQueue(db,
-    queue.WithWorkers(4),                  // shared pool — claims any lane
+    queue.WithWorkers(4),                  // shared pool: claims any lane
     queue.WithDBLaneWorkers("high", 2),    // 2 workers reserved for the "high" lane
 )
 q.Start(ctx)
@@ -166,7 +166,7 @@ _ = q.Enqueue(ctx, queue.Job{Type: "send-alert", Lane: "high"})
 Multiple calls for different lanes each add their own workers; multiple
 calls for the same lane sum. Pass a non-empty lane and `n > 0` (both panic
 otherwise). Lease reclaim, backoff, the gate, and handler-timeout behaviour
-all apply identically to lane workers — they run the same claim loop with an
+all apply identically to lane workers; they run the same claim loop with an
 extra `AND lane = ?` filter.
 
 ### RedisQueue
@@ -210,7 +210,7 @@ job (never silently dropped):
 
 `MemoryQueue` and `DBQueue` log every handler failure at WARN and every
 dead-letter at ERROR (via `slog.Default()`, or a custom logger passed as
-`WithLogger` / `WithDBLogger`) — failures are no longer silent. (`RedisQueue`
+`WithLogger` / `WithDBLogger`); failures are no longer silent. (`RedisQueue`
 has no built-in worker loop, so it logs nothing itself; whatever drives
 Dequeue/Ack/Nack owns its own logging.)
 
@@ -284,12 +284,12 @@ fmt.Printf("reclaimed %d jobs\n", n)
 ```go
 sched := queue.NewInMemoryScheduler(q) // NewScheduler remains a compatible alias
 
-// Fixed interval — fires every 5 minutes.
+// Fixed interval: fires every 5 minutes.
 sched.Every(5 * time.Minute).
     Job("send-digest", json.RawMessage(`{}`)).
     Register()
 
-// Cron expression — fires every day at 02:00.
+// Cron expression: fires every day at 02:00.
 if err := sched.Cron("0 2 * * *").
     Job("nightly-rollup", nil).
     Register(); err != nil {
@@ -301,14 +301,14 @@ go sched.Start(ctx) // blocks until ctx is cancelled
 
 ```go
 // Lane / Priority / MaxAttempts on a schedule are carried verbatim into
-// every Job the scheduler fires — set them to tag the fired job's lane
+// every Job the scheduler fires; set them to tag the fired job's lane
 // (matching lane workers and any shared catch-all worker can claim it),
 // to jump the dequeue order, or to bound retries per occurrence.
 sched.Every(15 * time.Minute).
     Job("bulk-reindex", nil).
     Lane("bulk").         // bulk-lane AND shared workers can claim this
     Priority(-5).         // lower priority than ad-hoc work
-    MaxAttempts(1).       // one shot — never retry a partial reindex
+    MaxAttempts(1).       // one shot: never retry a partial reindex
     Register()
 ```
 
@@ -317,7 +317,7 @@ sched.Every(15 * time.Minute).
 defaults: empty lane, priority 0, and `MaxAttempts` resolved to 3 at
 enqueue time. They are carried unchanged into every `Job` the schedule
 fires. `Lane("bulk")` makes the fired job claimable by bulk-lane workers
-AND by any shared/catch-all worker — tagging a lane alone does NOT keep
+AND by any shared/catch-all worker; tagging a lane alone does NOT keep
 bulk work off interactive workers; to do that, dedicate workers to an
 interactive lane (so there is no shared pool draining bulk) instead of
 relying on the tag (see [Lanes](#lanes)). `Priority(n)` nudges dequeue
@@ -325,14 +325,14 @@ order among pending work, and `MaxAttempts(k)` bounds how many times a
 single occurrence may retry before dead-lettering.
 
 `Every(d)` schedules fire on a fixed interval; `Cron(spec)` schedules
-fire when the cron expression's next time arrives — use it for
+fire when the cron expression's next time arrives; use it for
 time-of-day work like "every day at 02:00" that an interval cannot
 express. The spec is parsed by [`framework/cron`](cron.md) (`cron.Parse`),
 so the queue does not carry a second cron parser; it accepts the same
 5-field syntax and `@shortcuts` (e.g. `@daily`). The two kinds coexist
 in one scheduler.
 
-`Register()` returns an `error` only when a `Cron` spec is invalid —
+`Register()` returns an `error` only when a `Cron` spec is invalid;
 `Every` schedules never error, so existing callers that ignore the
 return value are unaffected. `RegisterAt(base)` is the deterministic
 variant: it anchors the first run to `base` instead of `time.Now()`,
@@ -341,7 +341,7 @@ which is handy for tests and replayed fixtures.
 When the scheduler runs, the wake interval is the smallest of the
 interval schedules and one minute (cron resolution); a cron-only
 scheduler wakes once per minute. **Jobs registered after `Start`
-still fire** — the loop re-reads the schedule set each tick and a
+still fire**; the loop re-reads the schedule set each tick and a
 `Register` nudges it to re-arm immediately, so the natural "start
 subsystems, then register jobs" wiring works (it previously snapshotted
 once at `Start` and dropped everything registered later).
@@ -411,10 +411,10 @@ if err := durable.Every("nightly-bulk-reindex", 24*time.Hour).
 
 The options columns (`lane`, `priority`, `max_attempts`) are added to an
 existing `scheduler_schedules` table by an idempotent migration during
-`NewDurableScheduler` — no manual schema work is required on upgrade.
+`NewDurableScheduler`; no manual schema work is required on upgrade.
 
 Cron field evaluation follows the location of the registration anchor.
-`Register()` anchors in UTC, so `"0 2 * * *"` fires at 02:00 UTC — the
+`Register()` anchors in UTC, so `"0 2 * * *"` fires at 02:00 UTC, the
 behavior schedules have always had. To evaluate a spec in a zone's
 wall-clock time (including across DST shifts), register with `RegisterAt`
 and a time in a named IANA zone:
@@ -431,11 +431,11 @@ if err := durable.Cron("nightly-rollup", "0 2 * * *").
 The zone name persists with the schedule (a `tz` column added by the same
 idempotent migration as the options columns). UTC, fixed-offset zones
 (`time.FixedZone`), and `time.Local` store the empty default and evaluate
-in UTC — `time.Local` would resolve to a different zone on every replica.
+in UTC; `time.Local` would resolve to a different zone on every replica.
 The in-memory `Scheduler` differs here: it has no persistence, so its cron
 specs evaluate against the process clock in the process's local zone.
 Moving a schedule from `Scheduler` to `DurableScheduler.Register()` on a
-non-UTC host shifts its fire time to the UTC wall clock — pass the
+non-UTC host shifts its fire time to the UTC wall clock; pass the
 intended zone via `RegisterAt` to keep local-time semantics.
 Re-registering a schedule with a different cadence keeps the stored
 watermark and self-heals: evaluation advances to the next valid occurrence
@@ -480,7 +480,7 @@ audit or reconciliation process.
 `RunOnce(ctx, now)` exposes deterministic/manual evaluation;
 `Start(ctx)` heartbeats and evaluates until cancellation.
 
-**Handler timeout.** By default a DBQueue handler runs unbounded — a
+**Handler timeout.** By default a DBQueue handler runs unbounded: a
 black-holed dependency (an SMTP host that never answers, a hung HTTP
 call) wedges the worker forever, and with the default single worker
 that stalls the whole queue. Pass `WithDBHandlerTimeout(d)` to cancel
@@ -488,7 +488,7 @@ the handler's context at the deadline. The bundled SMTP sender
 (`battery/email`) also bounds its own dial at 10s (`SMTPConfig.
 DialTimeout`), so it can't hang even without a handler timeout.
 
-Multiple queues can be passed to `NewScheduler` — the job is enqueued
+Multiple queues can be passed to `NewScheduler`; the job is enqueued
 onto all of them. Enqueue errors are logged via `slog.Default()`.
 `NewSchedulerWithLogger` lets you supply a custom `*slog.Logger`.
 
@@ -509,7 +509,7 @@ q.RegisterHandler("resize-image", func(ctx context.Context, job queue.Job) error
 })
 ```
 
-A handler panic is recovered and treated as an error — the job follows the
+A handler panic is recovered and treated as an error; the job follows the
 normal retry path and the worker goroutine is respawned, so a poison
 message cannot drain the worker pool.
 
@@ -555,13 +555,13 @@ queue.ErrRedisEmpty  // RedisClient.RPop: the list is empty (adapters MUST
 - **Not calling `q.Start(ctx, interval)` on RedisQueue.** Without it,
   crashed-worker jobs strand in the processing hash indefinitely.
 - **Closing MemoryQueue before workers drain.** `Close` waits for
-  in-flight handlers to finish — call it after all producers are done.
+  in-flight handlers to finish; call it after all producers are done.
 - **Replaying a job that is still pending.** `Replay` only touches
-  terminal (`failed`) entries — replaying a pending job is a no-op.
+  terminal (`failed`) entries; replaying a pending job is a no-op.
 - **Running the in-memory Scheduler on every replica.** Multiple replicas can
   fire the same tick. Pin that mode to one process, or use `DurableScheduler`
   with `DBQueue` for fenced, transactionally deduplicated occurrences.
 - **Ignoring `Nack` errors.** A `Nack` failure means the job stays in
   the processing hash (Redis) or claimed state (DB) and will be
-  auto-reclaimed later — but log the error so you can spot connection
+  auto-reclaimed later, but log the error so you can spot connection
   issues early.

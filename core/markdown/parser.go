@@ -69,7 +69,7 @@ func (p *parser) atBlockquote() bool {
 	// Use space-only trimming to match renderBlockquote's line consumer.
 	// TrimSpace here would classify e.g. "\f>" as a blockquote while the
 	// consumer (HasPrefix on a space-trimmed line) refuses to strip it,
-	// leaving the parser unable to advance — an infinite-loop DoS.
+	// leaving the parser unable to advance, an infinite-loop DoS.
 	trimmed := strings.TrimLeft(p.line(), " ")
 	return strings.HasPrefix(trimmed, "> ") || trimmed == ">"
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // versionedTestRegistry is a slice-backed entity.Registry that can hold
-// multiple versions of the same name — something the map-backed
+// multiple versions of the same name, something the map-backed
 // fakeRegistry in sdk_test.go cannot do.
 type versionedTestRegistry struct{ ents []*entity.Entity }
 
@@ -33,7 +33,7 @@ func (r *versionedTestRegistry) Get(name string) (*entity.Entity, error) {
 // TestRegistryNamedConfigsResolvesVersionedEntity pins that a name
 // registered under multiple API versions is NOT silently dropped. Before
 // the fix, RegistryNamedConfigs called reg.Get(name), which returns an
-// ambiguity error for multi-version names, and the error was swallowed —
+// ambiguity error for multi-version names, and the error was swallowed,
 // so a versioned entity looked identical to a deleted one and the live
 // hash reported false drift.
 func TestRegistryNamedConfigsResolvesVersionedEntity(t *testing.T) {
@@ -85,7 +85,7 @@ func TestSchemaHashCollapsesIdenticalVersions(t *testing.T) {
 	}
 }
 
-// Versions that expose DIFFERENT shapes must still signal drift — that is
+// Versions that expose DIFFERENT shapes must still signal drift, that is
 // the case the check exists for, and collapsing identical ones must not
 // swallow it.
 func TestSchemaHashKeepsDivergentVersions(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 
 // ArticleMeta describes a screen's content as an article for a browser's
 // built-in Reader Mode (Safari Reader, Firefox Reader View). It is optional
-// enrichment — the headline and description fall back to the screen's own
+// enrichment, the headline and description fall back to the screen's own
 // ScreenTitle / ScreenDescription, so a screen needs none of these fields to
 // be reader-ready. Implement ScreenArticle only to add what the screen's
 // title/description can't carry: a byline, a publication date, a cover image.
@@ -34,8 +34,8 @@ type ArticleMeta struct {
 
 // ScreenArticle optionally enriches an article screen with metadata the
 // screen's own title/description can't carry (byline, date, cover image). On
-// its own it also marks the screen as an article. For the common case —
-// turning a normal screen into a reader-ready article with no extra data —
+// its own it also marks the screen as an article. For the common case,
+// turning a normal screen into a reader-ready article with no extra data,
 // prefer the AsArticle registration option; implement this interface only to
 // add the richer fields.
 type ScreenArticle interface {
@@ -51,7 +51,7 @@ type ScreenArticle interface {
 //	site.Register("/post", &PostScreen{}, layout, app.AsArticle())
 //
 // For a richer reader view (byline, date, cover image), also implement the
-// ScreenArticle interface — its fields fill what AsArticle can't infer.
+// ScreenArticle interface, its fields fill what AsArticle can't infer.
 func AsArticle() ScreenOption {
 	return func(s *Screen) { s.Article = true }
 }
@@ -67,7 +67,7 @@ func isArticle(screen *Screen, comp component.Component) bool {
 }
 
 // wrapArticle wraps content in an <article> element when the screen is an
-// article — the semantic tag Safari Reader and Firefox Reader View key on to
+// article, the semantic tag Safari Reader and Firefox Reader View key on to
 // detect article content. Non-article screens pass through unchanged.
 func wrapArticle(screen *Screen, comp component.Component, content render.HTML) render.HTML {
 	if isArticle(screen, comp) {

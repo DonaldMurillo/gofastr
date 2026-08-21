@@ -33,7 +33,7 @@ The pilot is successful only when all of these are recorded in a tracking issue:
 - The owner completes one GoFastr minor-version upgrade using the documented
   upgrade path.
 - Blocking defects, workarounds, time-to-first-deploy, and owner feedback are
-  captured—even when the result is negative.
+  captured, even when the result is negative.
 
 ## Feedback record
 

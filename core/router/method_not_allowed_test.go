@@ -18,7 +18,7 @@ func TestMethodNotAllowedCustomHandler(t *testing.T) {
 	}))
 	r.MethodNotAllowed(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Custom-405", "yes")
-		w.WriteHeader(http.StatusTeapot) // 418 — unmistakable
+		w.WriteHeader(http.StatusTeapot) // 418: unmistakable
 	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/items", nil)
@@ -77,7 +77,7 @@ func TestMethodNotAllowedDefaultIsBare405(t *testing.T) {
 
 // TestGatedMethodsStillReturn404 is the security regression guard: a
 // path whose only method is gated (disabled-module) must still return
-// 404 — indistinguishable from a non-existent path — even when a
+// 404, indistinguishable from a non-existent path, even when a
 // MethodNotAllowed handler is installed. Without this, a disabled
 // module's existence would leak through the custom 405 page.
 func TestGatedMethodsStillReturn404(t *testing.T) {
@@ -131,7 +131,7 @@ func TestMethodNotAllowedSeesLateMiddleware(t *testing.T) {
 
 // TestDefaultFallbacksRunMiddleware verifies the DEFAULT 405/404
 // responses (no custom handler installed) still pass through the
-// middleware chain — CORS preflights on method-mismatched paths are the
+// middleware chain. CORS preflights on method-mismatched paths are the
 // canonical consumer.
 func TestDefaultFallbacksRunMiddleware(t *testing.T) {
 	r := New()

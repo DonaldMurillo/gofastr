@@ -67,7 +67,7 @@ func TestGalleryLightboxModeEmitsTriggerAttrs(t *testing.T) {
 	if !strings.Contains(h, "data-fui-deeplink=") {
 		t.Errorf("Lightbox mode should add data-fui-deeplink:\n%s", h)
 	}
-	// %20-encoding (NOT '+') — runtime decoder is decodeURIComponent.
+	// %20-encoding (NOT '+'): runtime decoder is decodeURIComponent.
 	if !strings.Contains(h, "caption=First") {
 		t.Errorf("deeplink should carry caption:\n%s", h)
 	}

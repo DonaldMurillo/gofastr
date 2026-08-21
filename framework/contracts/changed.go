@@ -13,7 +13,7 @@ import (
 //
 // Why this exists: verify is all-or-nothing otherwise. A pre-commit hook,
 // a dev-loop rebuild, and a PR review all want the same narrower
-// question — "what did *this change* break" — and answering it by reading
+// question, "what did *this change* break", and answering it by reading
 // a 200-line whole-repo report is answering a different question.
 //
 // The analysis itself still runs over the whole tree, and must: the route
@@ -23,7 +23,7 @@ import (
 // analysed too.
 //
 // ref may be a branch, a commit, or "" for the working tree against HEAD.
-// A repository-less directory returns (nil, nil) — not an error, because
+// A repository-less directory returns (nil, nil), not an error, because
 // "not in git" is a legitimate state and the caller should simply not
 // narrow.
 func ChangedFiles(root, ref string) (map[string]bool, error) {
@@ -48,8 +48,8 @@ func ChangedFiles(root, ref string) (map[string]bool, error) {
 
 	// `git diff --name-only` reports paths relative to the REPOSITORY
 	// root, while diagnostics are relative to the analysed root. When the
-	// two differ — an app inside a monorepo, `--root examples/site`, or
-	// the dev watcher in any subdirectory — every tracked path failed to
+	// two differ, an app inside a monorepo, `--root examples/site`, or
+	// the dev watcher in any subdirectory, every tracked path failed to
 	// match and RestrictTo dropped it as "outside the change". The file
 	// just edited was the one silently withheld, while untracked files
 	// (which git reports relative to the cwd) still matched, so the run
@@ -78,14 +78,14 @@ func ChangedFiles(root, ref string) (map[string]bool, error) {
 	for _, line := range strings.Split(out, "\n") {
 		add(line, rel)
 	}
-	// Untracked files are part of "what I changed" too — a brand new file
+	// Untracked files are part of "what I changed" too: a brand new file
 	// full of findings is exactly what a pre-commit check should catch,
 	// and `git diff` never lists it.
 	if ref == "" {
 		untracked, err := gitOutput(root, "ls-files", "--others", "--exclude-standard")
 		if err == nil {
 			// `ls-files` runs with cwd set to root, so its output is
-			// already root-relative — no prefix to strip.
+			// already root-relative, no prefix to strip.
 			for _, line := range strings.Split(untracked, "\n") {
 				add(line, "")
 			}
@@ -95,7 +95,7 @@ func ChangedFiles(root, ref string) (map[string]bool, error) {
 }
 
 // mergeBase resolves the fork point with ref, so a long-lived branch is
-// compared against where it diverged rather than against the tip — which
+// compared against where it diverged rather than against the tip, which
 // would otherwise report every finding in everyone else's commits as
 // something this branch changed.
 func mergeBase(root, ref string) (string, error) {
@@ -130,8 +130,8 @@ func gitOutput(root string, args ...string) (string, error) {
 // RestrictTo drops every diagnostic outside the given file set and
 // returns how many it removed.
 //
-// Diagnostics with no file — the ones about the project as a whole, like
-// a missing coverage manifest — are dropped too. They are not about the
+// Diagnostics with no file, the ones about the project as a whole, like
+// a missing coverage manifest, are dropped too. They are not about the
 // change under review, and surfacing them on every narrowed run is the
 // noise that makes people stop reading.
 func (r *Report) RestrictTo(files map[string]bool) int {
@@ -182,7 +182,7 @@ func repoRelativePrefix(root string) (string, error) {
 	}
 	// Resolve symlinks on both sides: on macOS /tmp is a symlink to
 	// /private/tmp, and git reports the resolved form while filepath.Abs
-	// does not — leaving a prefix that never matches.
+	// does not, leaving a prefix that never matches.
 	if resolved, linkErr := filepath.EvalSymlinks(abs); linkErr == nil {
 		abs = resolved
 	}

@@ -32,7 +32,7 @@ func runAuditA11y(args []string) {
 		fmt.Println("how to fix each finding. The same check runs in `gofastr build`.")
 		fmt.Println()
 		fmt.Println("Runtime mode (--url): runs the vendored axe-core engine via headless")
-		fmt.Println("Chrome against the running app — contrast, focus, landmarks, ARIA —")
+		fmt.Println("Chrome against the running app, checking contrast, focus, landmarks, and ARIA")
 		fmt.Println("under BOTH color schemes. Pages come from the app's /sitemap.xml")
 		fmt.Println("(uihost.WithSitemap) unless --pages is given. Pass --email and")
 		fmt.Println("--password to submit the app's /login form before discovery/auditing.")
@@ -176,7 +176,7 @@ func auditA11y(root string) ([]A11yFinding, error) {
 			return err
 		}
 		// Generated files are the generator's responsibility, not the
-		// developer's — same policy as `gofastr audit lint`.
+		// developer's. Same policy as `gofastr audit lint`.
 		if isGeneratedFile(body) {
 			return nil
 		}
@@ -222,22 +222,22 @@ func a11yElementFromMessage(msg string) string {
 }
 
 // a11yGuidance maps an element name to the one-paragraph fix hint shown
-// under each finding. The goal is to teach the rule, not just flag it.
+// under each finding. The goal is to teach the rule rather than merely flag it.
 var a11yGuidance = map[string]string{
 	"Image":    `every image needs Alt. Informative image → describe what it shows ("Team photo at launch"). Decorative image → explicit empty Alt: "" so screen readers skip it. Never omit the field.`,
 	"Button":   `a button needs an accessible name. Visible text → Label carries it; icon-only button → Label describes the action ("Close dialog", "Copy code").`,
-	"Link":     `links need a destination (Href) and text a screen reader can announce (Text). "Click here" fails out of context — name the target ("View pricing").`,
+	"Link":     `links need a destination (Href) and text a screen reader can announce (Text). "Click here" fails out of context: name the target ("View pricing").`,
 	"LinkHTML": `links need a destination (Href) and announceable Content. Avoid bare icons without a text alternative.`,
 	"Nav":      `multiple <nav> landmarks are indistinguishable without names. Set Label ("Main", "Footer") or LabelledBy pointing at a heading id.`,
-	"Section":  `a <section> only becomes a labelled landmark with an accessible name. Set Label or LabelledBy — or use a plain Div if it isn't a landmark.`,
+	"Section":  `a <section> only becomes a labelled landmark with an accessible name. Set Label or LabelledBy, or use a plain Div if it isn't a landmark.`,
 	"Aside":    `complementary landmarks need names when a page has more than one. Set Label or LabelledBy.`,
 	"Group":    `a Group must declare its Role (e.g. "group", "radiogroup", "toolbar") so assistive tech knows what it groups.`,
-	"Form":     `declare Method explicitly — GET for reads (shareable URLs), POST for writes (CSRF-protected by the framework).`,
+	"Form":     `declare Method explicitly: GET for reads (shareable URLs), POST for writes (CSRF-protected by the framework).`,
 	"Input":    `inputs need Type (drives mobile keyboards + validation) and Name (form submission). Pair with html.Label via For.`,
 	"Label":    `a label must reference its control: For = the input's id, Text = the visible caption. Placeholder text is not a label.`,
 	"Select":   `selects need Name for form submission. Pair with html.Label via For.`,
 	"TextArea": `textareas need Name for form submission. Pair with html.Label via For.`,
-	"FieldSet": `a fieldset needs a Legend — it's announced as the group name for every control inside (essential for radio groups).`,
+	"FieldSet": `a fieldset needs a Legend: it's announced as the group name for every control inside (essential for radio groups).`,
 	"Heading":  `headings need an explicit Level. Don't pick by font size: levels form the page outline screen-reader users navigate by (one h1, no skipped levels).`,
 	"Abbr":     `an abbreviation needs Title with the expansion ("WCAG" → "Web Content Accessibility Guidelines").`,
 	"Time":     `set Datetime to the machine-readable value (RFC 3339) so tools can parse what the visible text says.`,
@@ -255,7 +255,7 @@ func formatA11yReport(findings []A11yFinding) string {
 		files[f.File] = true
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Accessibility lint — %d issue(s) in %d file(s)\n\n", len(findings), len(files))
+	fmt.Fprintf(&b, "Accessibility lint: %d issue(s) in %d file(s)\n\n", len(findings), len(files))
 	for _, f := range findings {
 		fmt.Fprintf(&b, "%s:%d: %s\n", f.File, f.Line, f.Message)
 		if hint, ok := a11yGuidance[f.Element]; ok {
@@ -264,8 +264,8 @@ func formatA11yReport(findings []A11yFinding) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("These rules are the static floor (WCAG name/role/value basics the\n")
-	b.WriteString("type system can see). For the full runtime audit — contrast, focus,\n")
-	b.WriteString("landmarks, tap targets — run against a live server:\n")
+	b.WriteString("type system can see). For the full runtime audit of contrast, focus,\n")
+	b.WriteString("landmarks, and tap targets, run against a live server:\n")
 	b.WriteString("    gofastr audit a11y --url http://localhost:8080\n")
 	return b.String()
 }

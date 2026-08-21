@@ -54,7 +54,7 @@ func runPerformance(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 // regexpInFunc reports regexp compilation anywhere inside a function
 // body. Package-level `var re = regexp.MustCompile(...)` runs once and is
 // the shape being asked for, so it is invisible to this walk by
-// construction — only FuncDecl and FuncLit bodies are visited.
+// construction. Only FuncDecl and FuncLit bodies are visited.
 func regexpInFunc(p *contracts.Pass, rel string, file *ast.File, aliases map[string]string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	visitFuncBodies(file, func(body *ast.BlockStmt, _ *ast.FuncType) {
@@ -92,7 +92,7 @@ func regexpInFunc(p *contracts.Pass, rel string, file *ast.File, aliases map[str
 //	for _, ddl := range schema { db.Exec(ctx, ddl) }        // fine
 //	for _, o := range orders   { db.Query(ctx, q, o.ID) }   // N+1
 //
-// In the first the loop variable *is* the statement — a batch of DDL run
+// In the first the loop variable *is* the statement, a batch of DDL run
 // once at startup, which is exactly how you are supposed to write it. In
 // the second the statement is fixed and the variable is a parameter. So
 // the rule requires a literal SQL string in the call (proving the

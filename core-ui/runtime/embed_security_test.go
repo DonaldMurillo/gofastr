@@ -133,7 +133,7 @@ var sandboxTokenRe = regexp.MustCompile(`setAttribute\('sandbox',\s*'([^']*)'\)`
 
 // The presence gate above pins the exact sandbox string, but it reads the whole
 // file, so it can only catch a token being REMOVED. The risk here is the
-// opposite: a token being ADDED. Top navigation is the one that matters — with
+// opposite: a token being ADDED. Top navigation is the one that matters, with
 // it, an embeddable screen containing <a target="_top"> replaces the CUSTOMER's
 // page, which is the failure the sandbox was introduced to stop.
 func TestSandboxNeverGrantsTopNavigation(t *testing.T) {

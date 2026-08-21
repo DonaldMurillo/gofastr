@@ -30,7 +30,7 @@ func TestParseGenerateOptionsFlags(t *testing.T) {
 	}
 }
 
-// The space form `--from f.yml` must work too — silently ignoring it
+// The space form `--from f.yml` must work too. Silently ignoring it
 // yields a misleading "Nothing to generate".
 func TestFromFlagSpaceForm(t *testing.T) {
 	opts := parseGenerateOptions([]string{"--from", "f.yml", "--dry-run"})

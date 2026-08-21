@@ -35,15 +35,15 @@ type MagicLinkConfig struct {
 	EmailSender MagicLinkEmailSender
 
 	// TokenStore persists pending tokens. Defaults to an in-memory store,
-	// which does NOT survive restarts or scale across replicas — set a
+	// which does NOT survive restarts or scale across replicas, set a
 	// durable store (e.g. NewSQLMagicLinkTokenStore(db)) in production.
 	TokenStore MagicLinkTokenStore
 
 	// BodyTemplate, when non-nil, transforms the magic-link URL into
 	// the full email body before EmailSender.SendMagicLink is called.
 	// nil means "send the URL as the entire body" (historical behavior).
-	// Note: MagicLinkEmailSender's interface still takes (to, link)
-	// — implementations decide whether to wrap the link in HTML; this
+	// Note: MagicLinkEmailSender's interface still takes (to, link).
+	// Implementations decide whether to wrap the link in HTML; this
 	// hook is the bridge for ones that just blast the body verbatim.
 	BodyTemplate func(url string) string
 
@@ -63,7 +63,7 @@ type MagicLinkConfig struct {
 	// follows a magic link. Return the full HTML document; the plugin
 	// serves it as-is.
 	//
-	// nil ships an unstyled, semantic fallback — correct but plain. A
+	// nil ships an unstyled, semantic fallback, correct but plain. A
 	// UIHost app should supply one built from framework/ui (ui.AuthCard)
 	// so the screen matches the rest of the app; the battery does not
 	// import the design system itself, because API-only apps use auth
@@ -75,7 +75,7 @@ type MagicLinkConfig struct {
 
 	// DevMode permits the plugin to operate without an EmailSender by
 	// logging the magic-link URL to stdout. Without this flag, a nil
-	// EmailSender causes /auth/magic-link/send to return 503 — refusing
+	// EmailSender causes /auth/magic-link/send to return 503, refusing
 	// to silently log live tokens to production logs (which would let
 	// anyone with log read access take over arbitrary accounts).
 	DevMode bool
@@ -112,7 +112,7 @@ type MagicLinkTokenStore interface {
 //
 // The confirmation page needs it: following a magic link renders "sign
 // in as x@y?" before anything is redeemed, and naming the account is the
-// whole point — it is how a victim recognises that the link they were
+// whole point, it is how a victim recognises that the link they were
 // sent belongs to someone else. A store that does not implement this
 // still gets a confirmation step, just an unnamed one.
 type MagicLinkTokenPeeker interface {
@@ -168,7 +168,7 @@ func (m *MemoryMagicLinkTokenStore) RedeemToken(_ context.Context, token string)
 	if !ok {
 		return "", ErrTokenNotFound
 	}
-	// Always delete — single-use regardless of expiry
+	// Always delete, single-use regardless of expiry
 	delete(m.tokens, token)
 
 	if time.Now().After(entry.expiresAt) {
@@ -295,13 +295,13 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	case p.config.DevMode:
 		// Dev mode opt-in: log the link instead of sending. NEVER do this
-		// in production — anyone with log read access could grab the
+		// in production, anyone with log read access could grab the
 		// token and take over the account.
 		// Hash the sensitive bits so the log is greppable for debugging
 		// but doesn't expose the live token or full email to anyone with
 		// log read access.
 		// SECURITY: do not log the live magic-link URL. The URL embeds the
-		// raw token, which is a takeover credential — anyone with read
+		// raw token, which is a takeover credential, anyone with read
 		// access to dev logs could replay it. email_hash + token_hash give
 		// enough signal to correlate with the rendered email body.
 		slog.Info("magic-link dev",
@@ -310,7 +310,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 			"token_hash", hashedIdentifier(token))
 	default:
 		// Fail-closed. The operator forgot to wire EmailSender and didn't
-		// opt into DevMode — better a 503 than silently leaking tokens.
+		// opt into DevMode, better a 503 than silently leaking tokens.
 		writeAuthError(w, http.StatusServiceUnavailable, "magic link delivery not configured")
 		return
 	}
@@ -347,7 +347,7 @@ type ConfirmPageData struct {
 	//
 	// A custom ConfirmPage MUST render this inside its form. It exists
 	// because ConfirmPageData carries no request and no context, so a
-	// custom page had no way to reach CSRFInputHTML — which meant that
+	// custom page had no way to reach CSRFInputHTML, which meant that
 	// with auth.CSRF() mounted (WithBFFPosture does this app-wide), the
 	// only button on the confirmation page returned 403, and passwordless
 	// sign-in was unreachable.
@@ -358,7 +358,7 @@ type ConfirmPageData struct {
 //
 // It renders a confirmation screen and DOES NOT sign anyone in. The link
 // is itself the credential, so an attacker can request one for their own
-// account and get a victim to open it — a GET that minted a session put
+// account and get a victim to open it, a GET that minted a session put
 // the victim's browser into the attacker's account silently, and
 // everything they did next landed there. A GET is also invisible to
 // rejectCrossSiteForm.
@@ -436,7 +436,7 @@ func defaultConfirmPage(d ConfirmPageData) []byte {
 <main>
 <h1>Confirm sign-in</h1>
 <p>Continue to sign in as <strong>` + who + `</strong>?</p>
-<p>If you did not request this link, close this page — someone else may be trying to sign you into their account.</p>
+<p>If you did not request this link, close this page: someone else may be trying to sign you into their account.</p>
 <form method="post" action="` + html.EscapeString(d.Action) + `">
 <input type="hidden" name="token" value="` + html.EscapeString(d.Token) + `">
 ` + string(d.CSRFField) + `
@@ -484,14 +484,14 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	user, _, findErr := userStore.FindByEmail(r.Context(), email)
 	if findErr != nil && !errors.Is(findErr, ErrUserNotFound) {
 		// Any non-NotFound error is a transport / DB failure. We must
-		// NOT silently auto-create a user — that would mask the failure
+		// NOT silently auto-create a user, that would mask the failure
 		// AND let an attacker provoke account creation by tripping a
 		// transient lookup error.
 		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
 		return
 	}
 	if findErr != nil {
-		// User doesn't exist — auto-create. Prefer the OAuthUserCreator
+		// User doesn't exist, auto-create. Prefer the OAuthUserCreator
 		// path so password_set=false is recorded for the unlink guard;
 		// fall back to CreateUser+placeholder for stores that don't opt
 		// in. Either way, magic-link users never authenticate via

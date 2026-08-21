@@ -30,7 +30,7 @@ func TestUpgradeAppliesWriteTimeoutDefault(t *testing.T) {
 	// kept as-is, writeFrame skips the deadline entirely and a blocked
 	// peer pins the writer. Drive the contract through a real conn next.
 	_, _ = Upgrade(w, r, WSConfig{})
-	// The behavioral assertion is below — this test just guards against
+	// The behavioral assertion is below; this test just guards against
 	// regression at the surface level.
 }
 
@@ -93,7 +93,7 @@ func TestNegativeReadIdleDisablesKeepalive(t *testing.T) {
 	}
 	conn.startKeepalive() // should be a no-op
 
-	// Drain anything the keepalive writes for 200ms — if a Ping fires
+	// Drain anything the keepalive writes for 200ms; if a Ping fires
 	// we'll see it on the peer side.
 	gotPing := make(chan struct{}, 1)
 	go func() {
@@ -108,7 +108,7 @@ func TestNegativeReadIdleDisablesKeepalive(t *testing.T) {
 	case <-gotPing:
 		t.Fatal("ReadIdleTimeout=-1 should disable keepalive, but a Ping was emitted")
 	case <-time.After(200 * time.Millisecond):
-		// success — no Ping observed
+		// success: no Ping observed
 	}
 	conn.Close()
 }
@@ -247,7 +247,7 @@ var echo1002 = []byte{0x03, 0xEA}
 // 6455 §7.4.1 reserves 1005/1006/1015 (MUST NOT appear in a Close
 // frame) and 1004; codes below 1000 are outside the code space. If the
 // peer sends any of these, our echo Close frame must carry 1002, not
-// the reserved code — otherwise a strict peer answers 1002 and a clean
+// the reserved code, otherwise a strict peer answers 1002 and a clean
 // close turns abnormal.
 func TestCloseEchoSanitizesReserved(t *testing.T) {
 	cases := []struct {
@@ -286,8 +286,8 @@ func TestOneByteCloseBodyEchoes1002(t *testing.T) {
 }
 
 // Item 1i (no-regression): a bodyless peer Close means "no status"
-// (1005) and must echo as a bodyless Close — a 2-byte header with no
-// payload — never a frame carrying a reserved code. (The 1001→1001
+// (1005) and must echo as a bodyless Close, a 2-byte header with no
+// payload, never a frame carrying a reserved code. (The 1001→1001
 // regression is already pinned by TestCloseEchoesPeerStatus above.)
 func TestBodylessCloseEchoesBodyless(t *testing.T) {
 	frame := driveCloseEcho(t, nil)
@@ -307,7 +307,7 @@ func TestBroadcastSkipsDeadConn(t *testing.T) {
 	// the conn's sendBuffer should not accumulate broadcasts.
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, 1), // small buffer — would fill
+		sendBuffer: make(chan []byte, 1), // small buffer: would fill
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -366,7 +366,7 @@ func TestOnCloseRaceFiresOnce(t *testing.T) {
 			t.Fatalf("trial %d: OnClose fired %d times, want ≤1", trial, got)
 		}
 		// We don't insist on ==1 because the cb may have raced AFTER
-		// the snapshot — in which case it won't fire at all, which is
+		// the snapshot, in which case it won't fire at all, which is
 		// the documented "registered after Close" contract.
 	}
 }

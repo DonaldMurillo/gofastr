@@ -215,7 +215,7 @@ func TestStyleSheetSetEmitsVarRefs(t *testing.T) {
 
 func TestThemeAutoFillsTokenNames(t *testing.T) {
 	// Authors should be able to declare typed tokens with just a
-	// Value — the Name auto-derives from the struct-field path in
+	// Value, the Name auto-derives from the struct-field path in
 	// kebab-case. AutoFillNames walks the theme and assigns names
 	// to any token with an empty Name. After autofill, the theme
 	// passes Validate.
@@ -374,7 +374,7 @@ func TestThemeValidate_RejectsMissingValue(t *testing.T) {
 
 func TestThemeValidate_RejectsZeroNumericValues(t *testing.T) {
 	// A populated Name but a zero Value on numeric token types
-	// silently emits `--spacing-md: 0px` etc. and breaks layout —
+	// silently emits `--spacing-md: 0px` etc. and breaks layout,
 	// exactly what Validate was added to prevent.
 	cases := []struct {
 		name  string
@@ -399,7 +399,7 @@ func TestThemeValidate_RejectsZeroNumericValues(t *testing.T) {
 
 // "none" / "0" radii are a real use case (sharp corners).
 // Validate must accept Radius{Name: "none", Value: 0} when the Name
-// is "none" — the special sentinel that documents intent.
+// is "none", the special sentinel that documents intent.
 func TestThemeValidate_AllowsNoneRadius(t *testing.T) {
 	th := DefaultTheme()
 	// none already exists; just confirm the default theme passes.

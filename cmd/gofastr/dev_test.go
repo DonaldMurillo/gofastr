@@ -59,7 +59,7 @@ func TestInitDropsAIAgentFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Build the binary inside the gofastr module (where go.mod lives),
-	// then invoke it from the tempdir — `go run` from outside any
+	// then invoke it from the tempdir; `go run` from outside any
 	// module fails to resolve cmd/gofastr's imports.
 	binDir := t.TempDir()
 	binPath := testExecutablePath(filepath.Join(binDir, "gofastr"))
@@ -98,7 +98,7 @@ func TestInitDropsAIAgentFiles(t *testing.T) {
 		t.Error("init wrote AGENTS.md without the TOC header — regression to old inline shape")
 	}
 
-	// A detail file must carry the AUTO-GENERATED sentinel — proves
+	// A detail file must carry the AUTO-GENERATED sentinel. That proves
 	// writeAgentDetailFiles ran with the right header.
 	detail, _ := os.ReadFile(filepath.Join(work, "smoke", "agents", "framework.md"))
 	if !strings.HasPrefix(string(detail), "<!-- AUTO-GENERATED") {
@@ -239,7 +239,7 @@ func TestParseDevFlagsAcceptsEqualsAndSpaceForms(t *testing.T) {
 }
 
 // The generated gofastr.yml must not advertise strategy values that the
-// isolation resolver doesn't consult — a reader who edits "strategy: path"
+// isolation resolver doesn't consult. A reader who edits "strategy: path"
 // to "strategy: foo" expects to see behavior change, and nothing happens.
 // Drop the decorative field rather than mislead.
 func TestInitIsolationConfigOmitsDecorativeStrategy(t *testing.T) {
@@ -302,7 +302,7 @@ func TestBuildDevChildEnvOverridesParentDisable(t *testing.T) {
 		t.Fatalf("first GOFASTR_DEV entry = %q, want 1; got env:\n%v", first, out)
 	}
 
-	// No leftover GOFASTR_DEV=0 anywhere — duplicates confuse audit
+	// No leftover GOFASTR_DEV=0 anywhere. Duplicates confuse audit
 	// tools and depend on platform semantics.
 	count := 0
 	for _, kv := range out {
@@ -335,7 +335,7 @@ func devEnvMap(env []string) map[string]string {
 }
 
 // buildDevChildEnv must inject PORT=<addr> so the generated scaffold's
-// getEnv("PORT", …) binds the address `gofastr dev --addr` resolved —
+// getEnv("PORT", …) binds the address `gofastr dev --addr` resolved,
 // instead of silently falling back to the committed .env default (the
 // scaffold never parses argv, so --addr alone reaches nothing). A PORT
 // already exported in the parent shell must be overridden; dedup to a
@@ -371,7 +371,7 @@ func TestBuildDevChildEnvInjectsResolvedPort(t *testing.T) {
 	}
 }
 
-// With no resolved addr, buildDevChildEnv must leave PORT alone — it must
+// With no resolved addr, buildDevChildEnv must leave PORT alone. It must
 // not fabricate PORT= and clobber an operator's own export.
 func TestBuildDevChildEnvNoAddrLeavesPortUntouched(t *testing.T) {
 	parent := []string{"PORT=localhost:8080", "HOME=/tmp"}

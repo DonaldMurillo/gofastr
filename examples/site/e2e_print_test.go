@@ -11,7 +11,7 @@ import (
 // TestE2EPrintRendersChromeFree drives a real browser to a public print
 // document and asserts it renders the body content WITHOUT any host chrome:
 // no nav, no runtime.js, body.print-doc, and an @page rule present. This is
-// the whole point of the battery — a clean, inert, print-friendly page.
+// the whole point of the battery: a clean, inert, print-friendly page.
 func TestE2EPrintRendersChromeFree(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)

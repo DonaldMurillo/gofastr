@@ -11,7 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// NamedConfig pairs an entity name with its config — the generation-side
+// NamedConfig pairs an entity name with its config, the generation-side
 // input to SchemaHash (declarations converted via EntityDeclaration.Config()
 // carry no Name of their own).
 type NamedConfig struct {
@@ -26,7 +26,7 @@ type NamedConfig struct {
 	// the group prefix as Version, so any app using a route group reported
 	// drift that regenerating could never clear, and a permanently-on
 	// drift signal is one nobody reads. The hash answers "does the
-	// generated SDK reflect the live schema?" — where a thing is mounted
+	// generated SDK reflect the live schema?", where a thing is mounted
 	// is routing, not schema. Two versions whose schemas genuinely differ
 	// still hash differently, because both projections are included.
 	Version string
@@ -66,7 +66,7 @@ func SchemaHash(named []NamedConfig) string {
 		To       string   `json:"to,omitempty"`
 		Many     bool     `json:"many,omitempty"`
 		// WireName is part of the hash because it changes the client-facing
-		// JSON key — a version that renames a field produces a different
+		// JSON key, a version that renames a field produces a different
 		// SDK surface and must signal drift.
 		WireName string `json:"wireName,omitempty"`
 	}
@@ -147,14 +147,14 @@ func SchemaHash(named []NamedConfig) string {
 
 		entities = append(entities, he)
 	}
-	// Sort and collapse on the entity's CANONICAL JSON — the same encoding the
+	// Sort and collapse on the entity's CANONICAL JSON, the same encoding the
 	// digest is taken over.
 	//
 	// This used to use fmt.Sprint, which is not an injective encoding: %v
 	// renders []string{"draft ready"} and []string{"draft","ready"} both as
 	// [draft ready]. Enum Values are in the projection (they change the
 	// generated client's constants) and registry.columnSchemaEqual does not
-	// compare them, so two versions may legally declare different enum sets —
+	// compare them, so two versions may legally declare different enum sets,
 	// and a real divergence collapsed silently. It also made the digest
 	// depend on input order, since the secondary sort key could not separate
 	// the entries it could not tell apart.
@@ -218,11 +218,11 @@ func SchemaHash(named []NamedConfig) string {
 //
 // The previous implementation called reg.Get(name), which returns an
 // ambiguity error when a name has several versions and none is
-// unversioned — and the error path silently skipped the entity, making a
+// unversioned, and the error path silently skipped the entity, making a
 // versioned entity look identical to a deleted one. That produced false
 // drift: the live hash omitted the entity and never matched the manifest.
 // Scanning AllSorted() and grouping by name avoids the ambiguity error
-// entirely. Unknown names (no version registered) are still skipped — a
+// entirely. Unknown names (no version registered) are still skipped, a
 // genuinely deleted entity changes the hash by omission, which is the
 // drift signal wanted.
 func RegistryNamedConfigs(reg entity.Registry, names []string) []NamedConfig {

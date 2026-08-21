@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// No-var JS lint — bans the legacy `var` keyword from the runtime
+// No-var JS lint, bans the legacy `var` keyword from the runtime
 // modules. We're an ES2020+ codebase (see runtime.js banner); `var`
 // brings hoisting and function-scoped surprises that `let` / `const`
 // don't. The check is intentionally narrow:
@@ -18,7 +18,7 @@ import (
 //     a string literal, a // line comment, or a /* */ block comment.
 //
 // A file can opt out via the `//check-novar:ignore-file` directive
-// (kept for emergency only — the codebase has zero exemptions today).
+// (kept for emergency only, the codebase has zero exemptions today).
 //
 // Run from a test:
 //
@@ -100,7 +100,7 @@ func scanJSFileForVar(path string, result *Result) error {
 		line++
 		if containsVarKeyword(scanner.Text()) {
 			result.add(path, line,
-				"`var` not allowed in JS runtime modules — use `const` or `let` (ES2020+ codebase contract). "+
+				"`var` not allowed in JS runtime modules. Use `const` or `let` (ES2020+ codebase contract). "+
 					"Hoisting and function-scope semantics of `var` create surprises `let`/`const` don't.")
 		}
 	}
@@ -134,7 +134,7 @@ func containsVarKeyword(line string) bool {
 }
 
 // isJSIdentChar reports whether c can be part of a JS identifier
-// (alpha-numeric, underscore, or dollar — ASCII-only for the lint;
+// (alpha-numeric, underscore, or dollar, ASCII-only for the lint;
 // unicode identifiers are vanishingly rare in our runtime and would
 // false-positive only by matching `varX` where X is a non-ASCII letter).
 func isJSIdentChar(c byte) bool {
@@ -185,7 +185,7 @@ func stripJSCommentsAndStrings(src string) string {
 			}
 			continue
 		}
-		// String literal (single, double, backtick) — handle escapes.
+		// String literal (single, double, backtick), handle escapes.
 		if c == '\'' || c == '"' || c == '`' {
 			quote := c
 			out = append(out, ' ') // replace opening quote

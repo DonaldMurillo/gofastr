@@ -4,7 +4,7 @@ package crud
 // rest of this package's matrix runs on in-memory SQLite; these tests prove
 // the same generated SQL ($N placeholders, ON CONFLICT, keyset cursors,
 // tx rollback, scope predicates) executes against a live Postgres with the
-// values actually coming back out. One focused suite — representative paths
+// values actually coming back out. One focused suite, representative paths
 // only, no duplication of the SQLite matrix.
 //
 // Skips automatically when Postgres is unreachable (see internal/pgtest).
@@ -29,7 +29,7 @@ import (
 
 // pgCrudSetup provisions a schema-scoped live-Postgres database (skipping
 // when none is reachable), runs the DDL, and returns a snake-cased
-// CrudHandler over the entity — the PG mirror of setupSecurityTestHandler.
+// CrudHandler over the entity, the PG mirror of setupSecurityTestHandler.
 func pgCrudSetup(t *testing.T, cfg entity.EntityConfig, ddl string) (*CrudHandler, *sql.DB) {
 	t.Helper()
 	db := pgtest.DB(t)
@@ -119,7 +119,7 @@ func TestPG_ListFilters(t *testing.T) {
 	ch, db := pgCrudSetup(t, pgBooksCfg("pgf_books"), pgBooksDDL("pgf_books"))
 	seedBooks(t, db, "pgf_books")
 
-	// String equality — and the NULL-genre row (b3) must NOT match:
+	// String equality, and the NULL-genre row (b3) must NOT match:
 	// `genre = 'tech'` is NULL-false in real PG three-valued logic.
 	got := listIDs(t, ch, "/pgf_books?genre=tech&sort=id")
 	if want := []string{"b1", "b4"}; fmt.Sprint(got) != fmt.Sprint(want) {
@@ -228,7 +228,7 @@ func TestPG_BatchRollback(t *testing.T) {
 	}.WithTimestamps(false),
 		`CREATE TABLE pgb_tasks (id TEXT PRIMARY KEY, title TEXT)`)
 
-	// Second item fails Required validation — the whole real-PG
+	// Second item fails Required validation, the whole real-PG
 	// transaction must roll back, including the already-inserted first.
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodPost,
@@ -351,7 +351,7 @@ func TestPG_SoftDelete(t *testing.T) {
 		t.Fatalf("DELETE = %d, want 204; body=%s", rr.Code, rr.Body.String())
 	}
 
-	// List must filter the trashed row out — but the row itself must
+	// List must filter the trashed row out, but the row itself must
 	// survive in the table with deleted_at stamped (soft, not hard).
 	if got := listIDs(t, ch, "/pgd_docs"); fmt.Sprint(got) != fmt.Sprint([]string{"d1"}) {
 		t.Errorf("list after soft delete → %v, want [d1]", got)
@@ -416,7 +416,7 @@ func TestPG_OwnerTenantFailClosed(t *testing.T) {
 }
 
 // TestPG_SearchFields exercises ?q= free-text search against real
-// Postgres LOWER() — proving the LOWER(col) LIKE $N ESCAPE pattern
+// Postgres LOWER(), proving the LOWER(col) LIKE $N ESCAPE pattern
 // works on PG's locale-aware LOWER (vs SQLite's ASCII-only). The
 // pgBooksCfg entity is reused but with SearchFields on title+genre.
 func TestPG_SearchFields(t *testing.T) {
@@ -452,7 +452,7 @@ func TestPG_SearchFields(t *testing.T) {
 
 // TestAutoTimestampRoundTripsMicrosecPG proves the microsecond AutoTimestamp
 // survives a write→read round-trip on a real Postgres TIMESTAMPTZ column to
-// the microsecond — Postgres's storage precision, which is why the format
+// the microsecond. Postgres's storage precision, which is why the format
 // is .999999 and not nanosecond (finer would truncate lossy). Skips when
 // Postgres is unreachable (pgtest.DB).
 func TestAutoTimestampRoundTripsMicrosecPG(t *testing.T) {
@@ -493,7 +493,7 @@ func TestAutoTimestampRoundTripsMicrosecPG(t *testing.T) {
 
 // TestPG_AutoIncrementSerial proves a Postgres SERIAL primary key is assigned
 // by the sequence: the framework omits the column from INSERT and RETURNING
-// reads back the sequence value. Two creates must yield 1 then 2 — a plain
+// reads back the sequence value. Two creates must yield 1 then 2, a plain
 // INTEGER PRIMARY KEY (no sequence) would never increment, and sending a 0
 // placeholder would collide.
 func TestPG_AutoIncrementSerial(t *testing.T) {

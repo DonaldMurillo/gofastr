@@ -8,7 +8,7 @@ import (
 )
 
 // driveToFailure enqueues a job with MaxAttempts=1, dequeues it (so it is
-// tracked in the in-flight set), then Nacks it — exhausting its single attempt
+// tracked in the in-flight set), then Nacks it, exhausting its single attempt
 // and pushing it into the terminal dead-letter store. Returns the job ID.
 func driveToFailure(t *testing.T, q *MemoryQueue) string {
 	t.Helper()

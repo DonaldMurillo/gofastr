@@ -16,7 +16,7 @@ import (
 
 // setupSQLite builds an in-memory SQLite DB with the auth users table.
 // Uses the canonical "auth_users" table name (matching the convention
-// in blueprint.go and all examples) — NOT "users". The table name is
+// in blueprint.go and all examples), NOT "users". The table name is
 // host-configurable via auth.NewEntityUserStore, so tests must exercise
 // the real convention to catch the exact bug that was masked by a
 // hardcoded "users" default.
@@ -447,7 +447,7 @@ func TestAdminStep_EnvVars(t *testing.T) {
 
 // TestRender_PageContainsComponents verifies the wizard renders
 // framework/ui components (AuthCard, ProgressSteps, Form) with their
-// data-fui-comp markers — no bespoke CSS.
+// data-fui-comp markers, no bespoke CSS.
 func TestRender_PageContainsComponents(t *testing.T) {
 	done := false
 	r := New(Config{
@@ -479,7 +479,7 @@ func TestRender_PageContainsComponents(t *testing.T) {
 
 // TestAdminStep_CustomTableName verifies AdminStep works with a
 // non-default users table name. This is the regression test for the
-// bug where AdminStep hardcoded SELECT 1 FROM users — the canonical
+// bug where AdminStep hardcoded SELECT 1 FROM users, the canonical
 // convention is auth.NewEntityUserStore(db, "auth_users") and the
 // table name is host-configurable, so any custom name must work.
 func TestAdminStep_CustomTableName(t *testing.T) {
@@ -529,7 +529,7 @@ func TestAdminStep_CustomTableName(t *testing.T) {
 		t.Fatalf("AdminStep.Run: %v", err)
 	}
 
-	// After: Complete flips — the custom table was queried, not "users".
+	// After: Complete flips, the custom table was queried, not "users".
 	done, err = completeFn(ctx)
 	if err != nil {
 		t.Fatalf("completeFn after: %v", err)
@@ -553,7 +553,7 @@ func TestAdminStep_EmptyTablePanics(t *testing.T) {
 
 // A final step whose Run succeeds but whose Complete predicate stays false
 // (e.g. AdminStep probing a different table than the store writes to) must
-// NOT render the "Setup Complete" page and must NOT fire the swap — that
+// NOT render the "Setup Complete" page and must NOT fire the swap, that
 // would show "your application is ready" over a permanently-503 app.
 func TestSwap_CompleteStuckFalseIsHonest(t *testing.T) {
 	var swapped int32
@@ -584,7 +584,7 @@ func TestSwap_CompleteStuckFalseIsHonest(t *testing.T) {
 // shown, and once the predicate heals the flow finishes without a restart.
 //
 // It must ALSO be fail-closed. A probe error means "unknown", not "not
-// done", so the step does not run while the probe is erroring — this test
+// done", so the step does not run while the probe is erroring, this test
 // previously relied on it running anyway and healing into completion, which
 // would re-run admin creation on a boot where setup was already complete but
 // the probe was failing. Recovery is now: heal, re-submit, complete.

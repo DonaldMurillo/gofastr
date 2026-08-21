@@ -9,7 +9,7 @@ import (
 
 // FixedWindow is a language-agnostic chunker that splits text into
 // fixed-size rune windows with overlap. It does not look at token
-// boundaries — that's the embedder's concern — so chunks are always
+// boundaries, that's the embedder's concern, so chunks are always
 // reproducible from byte offsets alone.
 type FixedWindow struct {
 	Size    int // window size, in runes

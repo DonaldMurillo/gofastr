@@ -66,7 +66,7 @@ func WithLaneWorkers(lane string, n int) MemoryQueueOption {
 
 // MemoryQueue is an in-memory queue backed by a goroutine pool. Pending jobs
 // live in a priority heap (Priority DESC, enqueue-order ASC tiebreak) so
-// higher-priority jobs are always taken first — priority is honoured, not
+// higher-priority jobs are always taken first, priority is honoured, not
 // ignored.
 type MemoryQueue struct {
 	workers        int
@@ -297,7 +297,7 @@ func (q *MemoryQueue) processJob(job Job) {
 	q.mu.RUnlock()
 
 	if !ok {
-		// No handler registered — nothing to do.
+		// No handler registered, nothing to do.
 		return
 	}
 
@@ -336,7 +336,7 @@ func (q *MemoryQueue) processJob(job Job) {
 				q.retainDead(job)
 			}
 		} else {
-			// Retries exhausted — retain as terminally-failed for inspection
+			// Retries exhausted, retain as terminally-failed for inspection
 			// and replay instead of dropping it.
 			q.logger.Error("queue: job dead-lettered",
 				"job_id", job.ID,
@@ -486,12 +486,12 @@ func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
 func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
 	stored, ok := q.takeInflight(job.ID)
 	if !ok {
-		// Unknown job (auto-pool retry, or already acked) — nothing to requeue.
+		// Unknown job (auto-pool retry, or already acked), nothing to requeue.
 		return nil
 	}
 	stored.Attempts++
 	if stored.MaxAttempts > 0 && stored.Attempts >= stored.MaxAttempts {
-		// Retries exhausted — retain as terminally-failed (inspectable via
+		// Retries exhausted, retain as terminally-failed (inspectable via
 		// ListJobs/Stats and re-queuable via Replay) rather than dropping it.
 		q.retainDead(stored)
 		return nil
@@ -531,7 +531,7 @@ func (q *MemoryQueue) retainDead(job Job) {
 // ListJobs implements [Browsable] for the in-memory backend. The only state it
 // can enumerate is the retained dead-letter set, so it returns those jobs for
 // status "failed" (or an empty/"all" status), newest-first, and nothing for any
-// other status — pending/claimed jobs live transiently on the pending heap.
+// other status, pending/claimed jobs live transiently on the pending heap.
 // limit <= 0 defaults to 100.
 func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit int) ([]Job, error) {
 	if status != "" && status != "failed" {
@@ -579,7 +579,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	}
 	if idx == -1 {
 		q.deadMu.Unlock()
-		return nil // unknown / non-failed id — no-op
+		return nil // unknown / non-failed id, no-op
 	}
 	job := q.dead[idx]
 	q.dead = append(q.dead[:idx], q.dead[idx+1:]...)

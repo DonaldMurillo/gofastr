@@ -17,7 +17,7 @@ import (
 
 // This file adds unit coverage for the PURE request-shaping / result-mapping
 // helpers in processmodule_broker.go. None of these tests spawn a child,
-// touch Postgres, or perform any OS-specific syscall — they exercise the
+// touch Postgres, or perform any OS-specific syscall, they exercise the
 // exported/unexported helpers directly.
 
 // ---- sortParam / selectParam ----
@@ -338,7 +338,7 @@ func TestEntityOp_verbMapping(t *testing.T) {
 // This used to round-trip a Subject. It cannot any more: an inbound reverse
 // call carries [moduleproto.CallerRef], which has only Delegation, so there is
 // no child-supplied subject for the broker to read even by mistake. Delegation
-// is the sole authority on this direction — see TestInboundCallerCarriesNoSubject.
+// is the sole authority on this direction. See TestInboundCallerCarriesNoSubject.
 func TestParseEntityCall_queryShape(t *testing.T) {
 	params, _ := json.Marshal(moduleproto.EntityQueryParams{
 		Entity: "articles",

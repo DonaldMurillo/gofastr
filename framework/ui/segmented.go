@@ -13,13 +13,13 @@ import (
 // background indicator. Built on native <input type="radio"> so:
 //
 //   - Keyboard nav (Tab, Arrow keys, Space/Enter) works out of the
-//     box — no custom JS for navigation.
+//     box. No custom JS for navigation.
 //   - Form submissions submit the selected value as the radio group's
 //     value, no client-side bookkeeping.
 //   - Screen readers announce "radio group", current option, position
 //     in set, all via native ARIA.
 //
-// The visual sliding indicator is CSS-only (uses :has() — supported
+// The visual sliding indicator is CSS-only (uses :has(), supported
 // in all evergreen browsers as of 2024). On older engines the
 // indicator stays static; the control remains fully functional.
 //
@@ -58,7 +58,7 @@ type SegmentedControlConfig struct {
 	// RPCPath, when set, attaches data-fui-rpc to each radio so a change
 	// POSTs to the server carrying the selected segment's name=value. The
 	// runtime serializes the form the radio belongs to (node.form), so place
-	// the SegmentedControl inside a <form> for the selection to round-trip —
+	// the SegmentedControl inside a <form> for the selection to round-trip:
 	// a radio with no enclosing form posts an empty body and the handler
 	// cannot see which segment was chosen. An explicit data-fui-rpc-body on a
 	// radio still wins over form serialization. Method is POST.
@@ -155,7 +155,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	return segmentedStyle.WrapHTML(render.Tag("div", flattenAttrs(wrapAttrs), items...))
 }
 
-// itoaSmall converts a non-negative int to its decimal string —
+// itoaSmall converts a non-negative int to its decimal string,
 // used for small bounded values (Options index, count). Avoids
 // importing strconv for one int.
 func itoaSmall(n int) string {
@@ -178,7 +178,7 @@ func segmentedCSS(_ style.Theme) string {
 	// Equal-width columns via CSS Grid (grid-auto-columns: 1fr). The
 	// sliding indicator is sized to one column via the data-count
 	// attribute on the wrapper, then translated by translateX(100% *
-	// position) — math works because every column is the same width.
+	// position). Math works because every column is the same width.
 	return `[data-fui-comp="ui-segmented"] {
   position: relative;
   display: inline-grid;

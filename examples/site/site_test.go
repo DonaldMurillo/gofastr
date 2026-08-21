@@ -88,7 +88,7 @@ func TestSessionCookieIsBrowserUsableOverLocalhost(t *testing.T) {
 	// net/http cookiejar (unlike a browser) will happily send a Secure
 	// cookie over http://127.0.0.1, so a round-trip test passes even with
 	// the bug. A real browser drops the Secure/__Host- cookie over plain
-	// http://localhost — which was the 401-storm cause — so the guard is
+	// http://localhost, which was the 401-storm cause, so the guard is
 	// "loopback http must mint a non-Secure, non-__Host- cookie".
 	rec := serve(t, http.MethodGet, "/")
 	set := rec.Header().Get("Set-Cookie")
@@ -124,7 +124,7 @@ func TestEveryDocSlugMapsToEmbeddedDoc(t *testing.T) {
 // TestEveryEmbeddedDocIsInCatalog is the reverse of the check above: the
 // /docs/ "Every doc · A–Z" section links every embedded doc to /docs/<slug>,
 // but only catalog (docIntents) slugs get a registered route. An embedded doc
-// missing from the catalog therefore renders a live A–Z link to a 404 — the
+// missing from the catalog therefore renders a live A–Z link to a 404, the
 // exact drift that shipped agent-ready.md without a /docs/agent-ready page.
 func TestEveryEmbeddedDocIsInCatalog(t *testing.T) {
 	topics, err := docs.List()
@@ -202,11 +202,11 @@ func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 			t.Errorf("/examples missing source link for %q", slug)
 		}
 	}
-	// The copy count derives from exRowItems — this pins the row set itself.
+	// The copy count derives from exRowItems, this pins the row set itself.
 	if got := len(exRowItems()); got != len(slugs) {
 		t.Errorf("exRowItems has %d rows, test expects %d — update both", got, len(slugs))
 	}
-	// The framework has no app.Serve — every snippet shows the real app.Start.
+	// The framework has no app.Serve, every snippet shows the real app.Start.
 	if strings.Contains(html, ">Serve<") {
 		t.Error("/examples shows the nonexistent app.Serve — the API is app.Start")
 	}
@@ -337,7 +337,7 @@ func TestWizardsCategoryHoldsOnlyWizards(t *testing.T) {
 
 func TestCodeBlockHasFunctionalCopyButton(t *testing.T) {
 	// The chrome + copy button now come from the framework's ui.CodeBlock; the
-	// behaviour is unchanged — a real <button> that targets this block's own
+	// behaviour is unchanged, a real <button> that targets this block's own
 	// <pre> via data-fui-copy-text-from.
 	out := string(codeBlock("x.go", []render.HTML{ln(kw("package"), render.Text(" main"))}))
 	m := regexp.MustCompile(`data-fui-copy-text-from="#(ui-code-block-\d+)"`).FindStringSubmatch(out)

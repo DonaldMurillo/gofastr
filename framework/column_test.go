@@ -75,7 +75,7 @@ func seedColumnTestRows(t *testing.T, db *sql.DB) {
 	}
 }
 
-// "Generated"-style column constants — one of each numeric/bool/temporal type.
+// "Generated"-style column constants, one of each numeric/bool/temporal type.
 var (
 	colName     = entity.NewStringColumn("name")
 	colScore    = entity.NewIntColumn("score")
@@ -152,7 +152,7 @@ func TestColumn_Float_Methods(t *testing.T) {
 }
 
 // ============================================================================
-// BoolColumn coverage — including dialect-specific bool storage
+// BoolColumn coverage, including dialect-specific bool storage
 // ============================================================================
 
 func TestColumn_Bool_Methods(t *testing.T) {
@@ -177,7 +177,7 @@ func TestColumn_Bool_Methods(t *testing.T) {
 }
 
 // ============================================================================
-// TimestampColumn coverage — both engines accept RFC3339 strings against a
+// TimestampColumn coverage, both engines accept RFC3339 strings against a
 // TEXT column. Real apps would use TIMESTAMPTZ + time.Time, but the type
 // system here doesn't care.
 // ============================================================================
@@ -256,19 +256,19 @@ func TestColumn_AndOrNot(t *testing.T) {
 			return out
 		}
 
-		// (name=alice OR name=dave) — heterogeneous values
+		// (name=alice OR name=dave): heterogeneous values
 		got := find(entity.Or(colName.Eq("alice"), colName.Eq("dave")))
 		if len(got) != 2 || got[0].Name != "alice" || got[1].Name != "dave" {
 			t.Fatalf("Or: %+v", got)
 		}
 
-		// And(score>=20, active) — both conjuncts must hold
+		// And(score>=20, active): both conjuncts must hold
 		got = find(entity.And(colScore.Gte(20), colActive.IsTrue()))
 		if len(got) != 1 || got[0].Name != "carol" {
 			t.Fatalf("And: %+v", got)
 		}
 
-		// Or(And(a, b), And(c, d)) — nested
+		// Or(And(a, b), And(c, d)): nested
 		got = find(entity.Or(
 			entity.And(colScore.Lt(15), colActive.IsTrue()),  // alice (10, true)
 			entity.And(colScore.Gt(35), colActive.IsFalse()), // dave (40, false)
@@ -277,7 +277,7 @@ func TestColumn_AndOrNot(t *testing.T) {
 			t.Fatalf("nested Or(And, And): %+v", got)
 		}
 
-		// Not — invert "active"
+		// Not: invert "active"
 		got = find(entity.Not(colActive.IsTrue()))
 		if len(got) != 2 {
 			t.Fatalf("Not: %+v", got)

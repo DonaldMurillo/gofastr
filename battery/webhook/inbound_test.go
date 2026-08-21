@@ -459,7 +459,7 @@ func TestIngest_RedeliveryAfterEnqueueFailure(t *testing.T) {
 	}
 }
 
-// failingUpdateStore wraps an InboundStore so UpdateEnvelope always errors —
+// failingUpdateStore wraps an InboundStore so UpdateEnvelope always errors,
 // the DB-pressure-during-queue-outage coincidence where the enqueue-failure
 // cleanup itself cannot land.
 type failingUpdateStore struct {
@@ -673,7 +673,7 @@ func TestProcessInbound_MissingEnvelope(t *testing.T) {
 
 // TestProcessInbound_AgainstRealQueue wires ProcessInbound into a live
 // MemoryQueue to confirm the adapter works end-to-end through Enqueue →
-// worker → handler, not just via a direct call.
+// worker → handler, not only via a direct call.
 func TestProcessInbound_AgainstRealQueue(t *testing.T) {
 	store := NewMemoryInboundStore()
 	env := InboundEnvelope{

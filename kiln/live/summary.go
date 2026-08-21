@@ -11,7 +11,7 @@ import (
 // row alongside the op name (e.g. "✦ add_entity name=posts fields=3"),
 // so users see what changed without expanding raw JSON.
 //
-// Returns "" for kinds/ops with no useful one-liner — the widget just
+// Returns "" for kinds/ops with no useful one-liner, the widget just
 // shows the bare op name in that case.
 func summarizeEntry(e journal.Entry) string {
 	if e.Kind != journal.KindWorldEdit {

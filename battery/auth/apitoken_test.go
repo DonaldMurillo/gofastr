@@ -119,7 +119,7 @@ func TestIssueToken_ValidatesSpec(t *testing.T) {
 
 // TestIssueToken_WildcardScopesIssuable guards the matcher/issuer contract:
 // HasScope documents "*:*" as grant-all and "*:read" as read-across-all, and
-// scopeMatches supports them — so IssueToken MUST accept them. A regex that
+// scopeMatches supports them, so IssueToken MUST accept them. A regex that
 // forbids "*" in the resource half would make those scopes unmintable, i.e.
 // a documented, matcher-tested feature reachable only by bypassing IssueToken.
 func TestIssueToken_WildcardScopesIssuable(t *testing.T) {
@@ -367,7 +367,7 @@ func TestRequireScope_SessionPasses(t *testing.T) {
 // A token-authenticated caller must NOT reach the token-management surface:
 // otherwise a leaked scoped (or empty-scoped) token could mint a *:* token
 // for the same owner, defeating the scope model. The endpoints are
-// session-only — TokenMiddleware marks token requests via ctx scopes, so the
+// session-only. TokenMiddleware marks token requests via ctx scopes, so the
 // handler distinguishes them from real sessions even though both set a ctx
 // user.
 func TestTokensPlugin_RejectsTokenAuthCaller(t *testing.T) {
@@ -432,7 +432,7 @@ func TestTokensPlugin_CreateListRevoke(t *testing.T) {
 
 	alice := &BasicUser{ID: "alice", Email: "alice@example.com", Roles: []string{"user"}}
 
-	// CREATE — owner forced from the session user; body owner_* ignored.
+	// CREATE: owner forced from the session user; body owner_* ignored.
 	createBody := `{"name":"ci","scopes":["posts:read"],"ttl_seconds":3600,"owner_kind":"service","owner_id":"evil"}`
 	req := bearerRequestWithJSON("POST", "/auth/tokens", createBody)
 	req = req.WithContext(handler.SetUser(req.Context(), alice))
@@ -459,7 +459,7 @@ func TestTokensPlugin_CreateListRevoke(t *testing.T) {
 		t.Error("expected expiresAt set from ttl_seconds")
 	}
 
-	// LIST — shows prefix, never the plaintext.
+	// LIST: shows prefix, never the plaintext.
 	listReq := bearerRequestWithJSON("GET", "/auth/tokens", "")
 	listReq = listReq.WithContext(handler.SetUser(listReq.Context(), alice))
 	listRec := httptest.NewRecorder()
@@ -491,7 +491,7 @@ func TestTokensPlugin_CreateListRevoke(t *testing.T) {
 	}
 	verify(created.Token, false)
 
-	// REVOKE — owner-scoped; then the token stops working.
+	// REVOKE: owner-scoped; then the token stops working.
 	delReq := httptest.NewRequest("DELETE", "/auth/tokens/"+created.ID, nil)
 	delReq.SetPathValue("id", created.ID)
 	delReq = delReq.WithContext(handler.SetUser(delReq.Context(), alice))

@@ -17,7 +17,7 @@ import (
 // ----- response body size limit ----------------------------------------------
 
 func TestAttempt_LimitsResponseBodyRead(t *testing.T) {
-	// Subscriber returns way more bytes than the manager should pull —
+	// Subscriber returns way more bytes than the manager should pull,
 	// we must cap the read so a malicious receiver can't exhaust RAM.
 	const huge = 4 << 20 // 4 MiB > default 64 KiB cap
 	junk := make([]byte, huge)
@@ -61,12 +61,12 @@ func TestSignWithTimestamp_RejectsReplay(t *testing.T) {
 	old := time.Now().Add(-10 * time.Minute).Unix()
 
 	header := SignWithTimestamp(secret, old, body)
-	// Within tolerance — must verify when the timestamp matches what
+	// Within tolerance, must verify when the timestamp matches what
 	// we present to VerifyTimestamp.
 	if !VerifyTimestamped(secret, header, body, time.Hour) {
 		t.Fatalf("VerifyTimestamped within tolerance should succeed")
 	}
-	// Beyond tolerance — must reject even though the HMAC bytes match.
+	// Beyond tolerance, must reject even though the HMAC bytes match.
 	if VerifyTimestamped(secret, header, body, 1*time.Minute) {
 		t.Fatalf("VerifyTimestamped must reject replay outside tolerance")
 	}
@@ -90,7 +90,7 @@ func TestSignWithTimestamp_RejectsTamperedTimestamp(t *testing.T) {
 
 // VerifyTimestamped must reject when tolerance <= 0. Otherwise the
 // caller silently skips the replay check and a year-old signature still
-// verifies — defeating the whole point of binding the timestamp.
+// verifies, defeating the whole point of binding the timestamp.
 func TestVerifyTimestamped_RejectsNonPositiveTolerance(t *testing.T) {
 	secret := "k"
 	body := []byte("x")
@@ -114,7 +114,7 @@ func TestVerifyTimestamped_RejectsExtremeTimestamps(t *testing.T) {
 	body := []byte("x")
 
 	// Build a signature with a MaxInt64 timestamp; an attacker could
-	// craft this without knowing the secret? No — the HMAC binds the
+	// craft this without knowing the secret? No, the HMAC binds the
 	// timestamp. But the test pins that the verifier rejects, even if
 	// the HMAC matches its (also-bogus) signed payload.
 	maxTs := int64(math.MaxInt64)
@@ -131,7 +131,7 @@ func TestVerifyTimestamped_RejectsExtremeTimestamps(t *testing.T) {
 }
 
 // VerifyTimestamped must reject empty secret. Otherwise a misconfigured
-// receiver accepts unsigned messages — exactly the worst-case auth bug.
+// receiver accepts unsigned messages, exactly the worst-case auth bug.
 func TestVerifyTimestamped_RejectsEmptySecret(t *testing.T) {
 	body := []byte("x")
 	sig := SignWithTimestamp("anything", time.Now().Unix(), body)
@@ -233,7 +233,7 @@ func TestStop_CancelsInflightHTTPRequest(t *testing.T) {
 // ----- newID panics on entropy failure (defensive) --------------------------
 
 // We can't easily inject a rand failure in unit tests; instead assert the
-// invariant that newID never returns the all-zero ID — which would be the
+// invariant that newID never returns the all-zero ID, which would be the
 // observable symptom of an unchecked rand.Read error.
 func TestNewID_NotAllZero(t *testing.T) {
 	for i := 0; i < 200; i++ {

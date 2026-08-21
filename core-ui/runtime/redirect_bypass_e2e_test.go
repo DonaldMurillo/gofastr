@@ -14,7 +14,7 @@ import (
 // A post-mutation navigation (data-fui-rpc-navigate) calls
 // loadPage(path, {bypassCache:true}). When the server answers that
 // fetch with X-Gofastr-Location, the recursive loadPage for the
-// redirect target must KEEP bypassing the screen cache — otherwise the
+// redirect target must KEEP bypassing the screen cache, otherwise the
 // redirect destination is served from a stale cached copy even though
 // the RPC just mutated the state it displays.
 func TestRedirectNavBypassesStaleCache(t *testing.T) {
@@ -30,7 +30,7 @@ func TestRedirectNavBypassesStaleCache(t *testing.T) {
 		w.Write([]byte(js))
 	})
 	handleRuntimeModules(t, mux)
-	// /stale — content version bumps on every fetch. First visit
+	// /stale, content version bumps on every fetch. First visit
 	// caches v1; the post-mutation redirect must show v2, not v1.
 	mux.HandleFunc("/stale", func(w http.ResponseWriter, r *http.Request) {
 		n := staleN.Add(1)
@@ -38,7 +38,7 @@ func TestRedirectNavBypassesStaleCache(t *testing.T) {
 		w.Header().Set("X-Gofastr-Partial", "true")
 		fmt.Fprintf(w, `<h1 id="v">v%d</h1><a id="home" href="/">home</a>`, n)
 	})
-	// /redir — server policy redirect: 200 + X-Gofastr-Location.
+	// /redir, server policy redirect: 200 + X-Gofastr-Location.
 	mux.HandleFunc("/redir", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Gofastr-Location", "/stale")
 		w.Header().Set("X-Gofastr-Partial", "true")

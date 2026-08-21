@@ -194,7 +194,7 @@ func makeSlowScript() []provider.StreamEvent {
 	// the provider still streaming).
 	return []provider.StreamEvent{
 		{Kind: provider.KindTextDelta, Text: "slow"},
-		// no Stop — the channel close at the end of fakeProvider.Chat
+		// no Stop, the channel close at the end of fakeProvider.Chat
 		// will end the stream after the test's first call returns
 		// from CollectStream. The race window is fine for this test.
 		{Kind: provider.KindStop, FinishReason: "stop"},

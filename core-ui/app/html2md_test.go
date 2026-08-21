@@ -6,7 +6,7 @@ import (
 )
 
 // ============================================================================
-// htmlToMarkdown — comprehensive tests
+// htmlToMarkdown: thorough tests
 // ============================================================================
 
 func TestHTML2MD_Headings(t *testing.T) {
@@ -254,7 +254,7 @@ func TestHTML2MD_ItalicDoesNotMatchImg(t *testing.T) {
 }
 
 func TestHTML2MD_BoldDoesNotMatchBody(t *testing.T) {
-	// <body>...</body> — the <b[^>]*> matches opening, </b> would NOT match </body>
+	// <body>...</body>, the <b[^>]*> matches opening, </b> would NOT match </body>
 	// so this is actually safe. But be explicit.
 	html := "<body><p>Hello</p></body>"
 	got := htmlToMarkdown(html)

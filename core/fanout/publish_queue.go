@@ -18,7 +18,7 @@ const publishTimeout = 5 * time.Second
 //
 // send enqueues into a bounded, drop-oldest queue drained by one dedicated
 // goroutine that publishes each payload under a fixed per-publish deadline;
-// it never blocks and never returns an error — publish failures are logged
+// it never blocks and never returns an error. Publish failures are logged
 // at Debug (lossy lane: the durable path is the outbox's job). After stop,
 // send is a silent no-op; stop is prompt and safe to call multiple times.
 //

@@ -1,5 +1,5 @@
-// Package sdkdocs serves a public SDK documentation site for a GoFastr app
-// — install guides, a live per-entity API reference, auth and error guides —
+// Package sdkdocs serves a public SDK documentation site for a GoFastr app:
+// install guides, a live per-entity API reference, auth and error guides,
 // plus download routes for the pregenerated SDK artifacts that
 // `gofastr generate sdk` emits (see framework/sdk for the shared contract).
 //
@@ -46,7 +46,7 @@ type Config struct {
 	BasePath string
 
 	// Registry is the live entity registry (pass fwApp.Registry).
-	// Required — reference pages render from it per request.
+	// Required, reference pages render from it per request.
 	Registry entity.Registry
 
 	// Artifacts holds the pregenerated dist directory from
@@ -71,7 +71,7 @@ type Config struct {
 	// Entities is an explicit allow-list of entity names (or tables) to
 	// document. Nil documents Public entities only; IncludeGated
 	// documents everything registered. Entities outside the included set
-	// 404 on their reference URL and never appear in the nav — the site
+	// 404 on their reference URL and never appear in the nav, the site
 	// must not leak the existence of gated schema.
 	Entities     []string
 	IncludeGated bool
@@ -82,7 +82,7 @@ type Config struct {
 	// auth.TokensPlugin + TokenMiddleware).
 	HasAPITokens bool
 
-	// Policy, when set, gates every docs screen AND artifact download —
+	// Policy, when set, gates every docs screen AND artifact download,
 	// for internal/partner deployments. Nil = public site.
 	Policy app.Policy
 }
@@ -100,7 +100,7 @@ type site struct {
 
 // Mount registers the docs screens on the core-ui app and the artifact
 // routes on the router. Call it during wiring, alongside (before or after)
-// fwApp.Mount(host) — screens resolve per request, so ordering only affects
+// fwApp.Mount(host), screens resolve per request, so ordering only affects
 // llm.md indexing.
 func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 	if coreApp == nil || r == nil {
@@ -136,13 +136,13 @@ func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 			WithTitle(cfg.AppName + " SDKs").
 			WithDescription("Client SDKs and API reference for " + cfg.AppName),
 		app.NewScreen(base+"/auth", &authScreen{site: s}).
-			WithTitle("API authentication — " + cfg.AppName).
+			WithTitle("API authentication: " + cfg.AppName).
 			WithDescription("Bearer-token authentication for the " + cfg.AppName + " API"),
 		app.NewScreen(base+"/errors", &errorsScreen{site: s}).
-			WithTitle("API errors — " + cfg.AppName).
+			WithTitle("API errors: " + cfg.AppName).
 			WithDescription("Error envelope and status codes for the " + cfg.AppName + " API"),
 		app.NewScreen(base+"/entities/:name", &entityScreen{site: s}).
-			WithTitle("API reference — " + cfg.AppName).
+			WithTitle("API reference: " + cfg.AppName).
 			WithDescription("Entity API reference for " + cfg.AppName).
 			WithPolicy(s.entityVisibilityPolicy()),
 	}
@@ -198,7 +198,7 @@ func nameMatches(e *entity.Entity, names []string) bool {
 }
 
 // lookup resolves a reference-URL segment (entity table or name) within the
-// included set only — excluded entities are indistinguishable from
+// included set only, excluded entities are indistinguishable from
 // nonexistent ones.
 func (s *site) lookup(segment string) (*entity.Entity, bool) {
 	segment = strings.ToLower(segment)
@@ -211,7 +211,7 @@ func (s *site) lookup(segment string) (*entity.Entity, bool) {
 }
 
 // entityVisibilityPolicy 404s reference URLs whose entity is not in the
-// included set — a gated entity's page must be indistinguishable from a
+// included set, a gated entity's page must be indistinguishable from a
 // nonexistent one. It reads the segment from the request URL because
 // policies run before route params are injected. With no request in
 // context (SSG / direct RenderPage) it allows: static builds only
@@ -242,12 +242,12 @@ func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 		}
 		mf, err := sdk.ReadManifest(s.cfg.Artifacts)
 		if err != nil {
-			// No manifest AND no artifacts = nothing generated yet — the
+			// No manifest AND no artifacts = nothing generated yet, the
 			// "not published" state, not a provenance problem.
 			if !anyArtifactPresent(s.cfg.Artifacts) {
 				return
 			}
-			slog.Warn("sdkdocs: artifacts present but manifest unreadable — treating downloads as unknown provenance", "err", err)
+			slog.Warn("sdkdocs: artifacts present but manifest unreadable: treating downloads as unknown provenance", "err", err)
 			s.provenance = true
 			return
 		}
@@ -259,7 +259,7 @@ func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 		live := sdk.SchemaHash(sdk.RegistryNamedConfigs(s.cfg.Registry, mf.Entities))
 		if live != mf.SchemaHash {
 			s.drift = true
-			slog.Warn("sdkdocs: SDK artifacts were generated from an older schema — re-run `gofastr generate sdk`",
+			slog.Warn("sdkdocs: SDK artifacts were generated from an older schema: re-run `gofastr generate sdk`",
 				"manifest", mf.SchemaHash, "live", live)
 		}
 	})
@@ -306,12 +306,12 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			}
 		}
 		if s.cfg.Artifacts == nil {
-			http.Error(w, "SDK artifacts are not generated yet — run `gofastr generate sdk` and point sdkdocs.Config.Artifacts at gen/sdk/dist", http.StatusNotFound)
+			http.Error(w, "SDK artifacts are not generated yet: run `gofastr generate sdk` and point sdkdocs.Config.Artifacts at gen/sdk/dist", http.StatusNotFound)
 			return
 		}
 		data, err := fs.ReadFile(s.cfg.Artifacts, file)
 		if err != nil {
-			http.Error(w, "SDK artifact missing — re-run `gofastr generate sdk`", http.StatusNotFound)
+			http.Error(w, "SDK artifact missing: re-run `gofastr generate sdk`", http.StatusNotFound)
 			return
 		}
 

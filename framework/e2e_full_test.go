@@ -40,7 +40,7 @@ import (
 //   → subscribe SSE + trigger event → logout
 //
 // Each step is a subtest so failures isolate. Runs on both SQLite and
-// Postgres via forEachDialect — proves the pieces compose under real
+// Postgres via forEachDialect, proves the pieces compose under real
 // network conditions, not just direct ServeHTTP.
 
 // e2eApp wires every relevant feature into one app.
@@ -215,7 +215,7 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     userStore,
-		// httptest serves over plain HTTP — DevMode keeps the cookie
+		// httptest serves over plain HTTP. DevMode keeps the cookie
 		// readable (no __Host- prefix) and Secure=false.
 		DevMode: true,
 	})
@@ -224,7 +224,7 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 		t.Fatalf("auth init: %v", err)
 	}
 	// Session middleware resolves the logged-in user from the session
-	// cookie and stashes them on the request context — required for
+	// cookie and stashes them on the request context, required for
 	// SSE auth gating (see crud_events.go) now that the framework
 	// refuses anonymous _events subscribers even on entities without
 	// OwnerField. Mount before RegisterRoutes / Entity routes so it
@@ -244,7 +244,7 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 }
 
 // doRequest sends req through the env's client + cookie jar, captures + returns
-// the body. Caller is responsible for closing nothing — buffered.
+// the body. Caller is responsible for closing nothing, buffered.
 func (e *e2eEnv) doRequest(t *testing.T, req *http.Request) (int, http.Header, []byte) {
 	t.Helper()
 	resp, err := e.client.Do(req)
@@ -303,7 +303,7 @@ func TestE2E_Full(t *testing.T) {
 			// GET seeds the csrf_token cookie.
 			req, _ := http.NewRequest("GET", env.server.URL+"/posts", nil)
 			if code, _, _ := env.doRequest(t, req); code != http.StatusUnauthorized && code != http.StatusOK {
-				// Either is fine — depends on whether the route requires auth
+				// Either is fine, depends on whether the route requires auth
 				// (we haven't added that yet). The point is the GET succeeds at
 				// the CSRF layer and seeds the cookie.
 			}

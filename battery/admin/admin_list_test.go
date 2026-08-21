@@ -2,7 +2,7 @@ package admin
 
 // Tests for the entity list's data-grid capabilities: column sorting and a
 // search box. Both must be server-side (the CrudHandler does the SQL) and
-// island-swapped through the /_rows endpoint — no client-side sort/filter math
+// island-swapped through the /_rows endpoint, no client-side sort/filter math
 // (per the framework's hard rules).
 
 import (

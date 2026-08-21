@@ -63,7 +63,7 @@ func TestSSGEmitsCatalogAndPerComponentCSS(t *testing.T) {
 	}
 
 	// 2. Rendered HTML embeds the catalog inline as JSON (no separate
-	//    catalog.js file gets written anymore — the SSG output is
+	//    catalog.js file gets written anymore. The SSG output is
 	//    fully self-contained per page).
 	indexPath := filepath.Join(out, "index.html")
 	idx, err := os.ReadFile(indexPath)
@@ -88,7 +88,7 @@ func TestSSGEmitsCatalogAndPerComponentCSS(t *testing.T) {
 	}
 
 	// 4. Rendered HTML still references the per-component file directly
-	//    (NOT the dynamic comp-bundle.css?names=… URL — static hosts
+	//    (NOT the dynamic comp-bundle.css?names=… URL: static hosts
 	//    don't serve query-paramed files).
 	if strings.Contains(string(idx), "/__gofastr/comp-bundle.css") {
 		t.Error("SSG output must not reference the bundle endpoint (query-paramed URLs don't serve from static hosts)")

@@ -20,7 +20,7 @@ import (
 //
 // Chromium applies host-resolver-rules inside the HostResolver. A URL whose
 // host is already an IP address never reaches the resolver, so the MAP rule
-// may not apply — which would make the allow-list a hostname-only gate and
+// may not apply, which would make the allow-list a hostname-only gate and
 // leave 127.0.0.1 / 169.254.169.254 reachable from a rendered document.
 func TestResolverRulesBlockIPLiteral(t *testing.T) {
 	// A loopback server standing in for any internal-only address.
@@ -61,7 +61,7 @@ func TestResolverRulesBlockIPLiteral(t *testing.T) {
 	defer cancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)

@@ -146,8 +146,8 @@ func TestEntityTwoFA_CorruptCodesRowErrors(t *testing.T) {
 	}
 }
 
-// Robustness: ConsumeBackupCode's CAS is on the integer version column,
-// NOT the backup_codes bytes — so a row stored with semantically-equal but
+// Edge case: ConsumeBackupCode's CAS is on the integer version column,
+// NOT the backup_codes bytes, so a row stored with semantically-equal but
 // non-canonical JSON (pretty-printed, extra whitespace, e.g. from an admin
 // edit) is still consumed correctly. (Earlier the byte-CAS wedged such a
 // row's consumption closed until a rewrite; the version CAS removes that.)
@@ -180,8 +180,8 @@ func TestEntityTwoFA_NonCanonicalJSONStillConsumes(t *testing.T) {
 
 // ABA regression: ConsumeBackupCode's CAS must not let a stale enrolment
 // resurrect itself over a fresh one. version is NOT monotonic across a
-// row's lifetime — DeleteTwoFA drops the row and SetTwoFA's INSERT arm
-// recreates it at version 0 — so a CAS on version alone is ABA-vulnerable:
+// row's lifetime. DeleteTwoFA drops the row and SetTwoFA's INSERT arm
+// recreates it at version 0, so a CAS on version alone is ABA-vulnerable:
 // a consume that read the OLD codes, racing a disable-and-re-enrol (delete
 // + insert, version back to 0), would pass its CAS against the NEW row and
 // clobber the freshly issued code list. The CAS also predicates on the raw
@@ -249,7 +249,7 @@ func TestEntityTwoFA_ReenrolKeepsNewCodes(t *testing.T) {
 }
 
 // Regression (A-F1): EnsureSchema must self-heal a table created before the
-// version column existed — CREATE TABLE IF NOT EXISTS no-ops on it, so the
+// version column existed. CREATE TABLE IF NOT EXISTS no-ops on it, so the
 // column would be missing and every 2FA op would error.
 func TestEntityTwoFA_EnsureSchemaAddsVersionToOldTable(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")

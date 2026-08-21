@@ -19,7 +19,7 @@ import (
 
 // The storefront's catalog reads open and gates every write behind a
 // permission, and a generated app grants permissions to the admin role alone.
-// A self-registered shopper can therefore browse but not write — which is the
+// A self-registered shopper can therefore browse but not write, which is the
 // posture the blueprint declares, so the write half of the thesis check signs
 // in as the seeded admin. These two values mirror `admin:` in gofastr.yml.
 const (
@@ -34,13 +34,13 @@ const (
 func startShopfront(t *testing.T) string {
 	t.Helper()
 
-	// Regenerate from the blueprint with the current CLI source — this
+	// Regenerate from the blueprint with the current CLI source, this
 	// exercises the full declaration → code pipeline against the in-tree
 	// generator. It emits into a gitignored scratch package rather than over
 	// the committed app/ (#176): running the suite used to rewrite tracked
 	// files, which dirtied the tree before a commit and silently reverted if
 	// anyone ran `git checkout -- examples/`. Same arrangement meridian's
-	// blueprint gate already uses, and for the same reason — the scratch
+	// blueprint gate already uses, and for the same reason, the scratch
 	// package lives INSIDE the repo module so the generated code's
 	// self-imports resolve with no go.mod, replace directive, or network
 	// fetch.
@@ -81,8 +81,8 @@ func startShopfront(t *testing.T) string {
 }
 
 // TestFlagship_AllSurfacesFromBlueprint builds and runs the generated
-// storefront binary and asserts that every surface the thesis promises —
-// REST CRUD, OpenAPI, the MCP tool surface, and the server-rendered UI —
+// storefront binary and asserts that every surface the thesis promises.
+// REST CRUD, OpenAPI, the MCP tool surface, and the server-rendered UI,
 // is live, all from the single gofastr.yml blueprint with zero hand-written
 // application code. This is the proof-of-thesis check.
 func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
@@ -153,8 +153,8 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 	}
 }
 
-// TestOrdersOwnerScoped asserts the orders entity — which carries customer
-// PII (name, email, phone, addresses) — is owner-scoped: anonymous REST and
+// TestOrdersOwnerScoped asserts the orders entity, which carries customer
+// PII (name, email, phone, addresses), is owner-scoped: anonymous REST and
 // MCP access is refused outright, while a logged-in customer can create and
 // read their own orders. This is the CLAUDE.md hard-rule-6 check; the
 // blueprint previously shipped with auth disabled and orders wide open.
@@ -175,7 +175,7 @@ func TestOrdersOwnerScoped(t *testing.T) {
 		t.Errorf("anonymous POST /orders = %d, want 401/403; body=%.300s", code, body)
 	}
 
-	// Anonymous order_items access is rejected too — items are the order's
+	// Anonymous order_items access is rejected too, items are the order's
 	// contents (purchase history), the obvious sibling leak.
 	if code := httpStatus(t, base+"/api/order_items"); code != http.StatusUnauthorized && code != http.StatusForbidden {
 		t.Errorf("anonymous GET /order_items = %d, want 401/403", code)
@@ -203,7 +203,7 @@ func TestOrdersOwnerScoped(t *testing.T) {
 		t.Errorf("owner GET /orders = %d, want 200 listing order %s; body=%.300s", code, orderID, list)
 	}
 
-	// A second customer must not see the first customer's order — neither
+	// A second customer must not see the first customer's order, neither
 	// in the list nor by direct id fetch.
 	other := authedClient(t, base, "grace@shop.example", "0ther-passphrase")
 	if code, list := request(t, other, "GET", base+"/api/orders", ""); code != http.StatusOK {
@@ -215,7 +215,7 @@ func TestOrdersOwnerScoped(t *testing.T) {
 		t.Errorf("second user read another customer's order by id; body=%.300s", leak)
 	}
 
-	// Anonymous MCP tool calls against orders are rejected — the per-entity
+	// Anonymous MCP tool calls against orders are rejected, the per-entity
 	// MCP tools re-dispatch through the same fail-closed CRUD pipeline.
 	resp := httpPost(t, base+"/mcp",
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"orders_list","arguments":{}}}`)
@@ -404,7 +404,7 @@ func routeSetDifference(left, right map[string]struct{}) []string {
 }
 
 // request performs an HTTP call and returns status + body without failing
-// the test on 4xx/5xx — callers assert on the status themselves.
+// the test on 4xx/5xx, callers assert on the status themselves.
 func request(t *testing.T, client *http.Client, method, url, body string) (int, string) {
 	t.Helper()
 	var reader io.Reader

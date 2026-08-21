@@ -20,7 +20,7 @@ import (
 // (multi-field) cursor with tuple comparison.
 //
 // Composite cursors should end in a guaranteed-unique tiebreak column
-// (typically the primary key) so paging never stalls on ties — the
+// (typically the primary key) so paging never stalls on ties, the
 // framework appends PrimaryKey automatically if it isn't already listed.
 func (ch *CrudHandler) cursorFields() []string {
 	if len(ch.Entity.Config.Pagination.CursorFields) > 0 {
@@ -45,7 +45,7 @@ func (ch *CrudHandler) cursorFields() []string {
 
 // serveCursorList handles a cursor-paginated List request. It uses keyset
 // pagination on the entity's cursor field(s) and emits a CursorPage envelope.
-// The total count is intentionally omitted — cursor pagination's appeal is
+// The total count is intentionally omitted, cursor pagination's appeal is
 // avoiding count's table scan.
 //
 // Single-field cursor: WHERE field > $1 ORDER BY field.
@@ -160,7 +160,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 
 	// AfterList, on the same terms as the offset path. Without this, adding
 	// ?cursor= to any request skipped a redaction hook entirely and wrote the
-	// stored value straight to the wire — direct disclosure, not an oracle.
+	// stored value straight to the wire, direct disclosure, not an oracle.
 	// It runs AFTER buildCursorPage on purpose: the continue-cursor has to be
 	// derived from the stored keyset values, so a hook that masks the keyset
 	// column must not be allowed to corrupt paging.
@@ -186,14 +186,14 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 // decodeCursorAny accepts either the single-field cursor or the
 // multi-field encoding and returns a map keyed by the DB column name.
 // For the single-field form the value lands under the first entry in
-// `fields`. Both encodings are first-class — single-field is the
+// `fields`. Both encodings are first-class, single-field is the
 // compact shape for entities cursored by one column; multi-field is
 // for composite cursors.
 //
 // The decoded field names MUST exact-match the expected `fields` set
 // (same length, same names, no duplicates). A cursor with mis-cased,
 // whitespace-padded, or punctuation-altered names would otherwise feed
-// arbitrary column tokens into the keyset WHERE clause — either a
+// arbitrary column tokens into the keyset WHERE clause, either a
 // query error at best, or silent state confusion across cursor revisions.
 func decodeCursorAny(cursor string, fields []string) (map[string]string, error) {
 	out := map[string]string{}
@@ -255,7 +255,7 @@ func buildCursorPage(data []map[string]any, fields []string, convertKey func(str
 		}
 		return page
 	}
-	// Composite — build a map keyed by DB column name for EncodeMultiCursor.
+	// Composite, build a map keyed by DB column name for EncodeMultiCursor.
 	dbRow := map[string]any{}
 	for _, f := range fields {
 		if v, ok := last[convertKey(f)]; ok {

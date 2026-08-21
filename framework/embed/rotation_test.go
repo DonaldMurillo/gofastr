@@ -7,8 +7,8 @@ import (
 
 // A grant minted under the previous app secret keeps verifying during the
 // rotation drain window. Without this, rotating GOFASTR_SECRET breaks every
-// live embedded frame immediately — the mass-invalidation that rotation
-// support exists to prevent — and refresh cannot migrate the grant to the
+// live embedded frame immediately, the mass-invalidation that rotation
+// support exists to prevent, and refresh cannot migrate the grant to the
 // new key because the first verification already rejected it.
 func TestHost_VerifiesGrantFromPreviousKey(t *testing.T) {
 	oldKey := []byte("old-grant-key-aaaaaaaaaaaaaaaaaaaaaaaa")

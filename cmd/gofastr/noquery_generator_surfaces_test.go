@@ -54,7 +54,7 @@ func TestSDKJSFieldConstantsOmitNoQueryFields(t *testing.T) {
 	var js, dts strings.Builder
 	writeJSEntity(&js, &dts, decl, model)
 	got := js.String()
-	// Keys are QUOTED in the emitted .js — see TestClientJSQuotesEmittedNames in
+	// Keys are QUOTED in the emitted .js. See TestClientJSQuotesEmittedNames in
 	// emitter_output_context_security_test.go. The property this test owns
 	// (NoQuery fields never reach the filter-key constant) is unchanged; only the
 	// matcher moved, because an unquoted key was a JS-injection position and
@@ -179,7 +179,7 @@ func TestGeneratedNoQueryResourceBehavior(t *testing.T) {
 	// Public: this fixture is about column rendering, not authorization. Screen
 	// renders now run the entity's full read posture (resource.Config.canRead),
 	// and auto-CRUD requires a session for an entity declaring no
-	// OwnerField/Access/Public — so a background context would be refused, and
+	// OwnerField/Access/Public, so a background context would be refused, and
 	// the table under test would never render.
 	ent := entity.Define("cards", entity.EntityConfig{
 		Fields: []schema.Field{

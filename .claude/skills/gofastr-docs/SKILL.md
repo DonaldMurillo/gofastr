@@ -1,15 +1,15 @@
 ---
 name: gofastr-docs
-description: Auto-loads when adding, changing, or removing any GoFastr feature or exported API. Encodes the doc topology (README + ARCHITECTURE + framework/docs/content/*.md) and the change→doc mapping. Docs are embedded in the gofastr binary at build time — `gofastr docs` browses them and the MCP `framework_docs_*` tools expose them to agents. Triggers on edits to framework/*.go, core/, battery/, cmd/, kiln/, core-ui/ — and on phrases like "add", "implement", "build", "refactor", "rename", "remove", "deprecate", "new feature", "new endpoint", "new field type", "API change", "expose", "wire up". Goal: docs ship in the same commit as the code, not "later".
+description: Auto-loads when adding, changing, or removing any GoFastr feature or exported API. Encodes the doc topology (README + ARCHITECTURE + framework/docs/content/*.md) and the change→doc mapping. Docs are embedded in the gofastr binary at build time; `gofastr docs` browses them and the MCP `framework_docs_*` tools expose them to agents. Triggers on edits to framework/*.go, core/, battery/, cmd/, kiln/, core-ui/, and on phrases like "add", "implement", "build", "refactor", "rename", "remove", "deprecate", "new feature", "new endpoint", "new field type", "API change", "expose", "wire up". Goal: docs ship in the same commit as the code, not "later".
 ---
 
-# GoFastr docs — load this before changing the public surface
+# GoFastr docs: load this before changing the public surface
 
 If you are about to add, rename, remove, or refactor anything that an
 external user (or a future Claude) would discover from the docs, this
 skill applies. Docs are part of the change, not a follow-up.
 
-## Doc topology — know what lives where
+## Doc topology: know what lives where
 
 | File | Role | Update when |
 |------|------|-------------|
@@ -22,11 +22,11 @@ skill applies. Docs are part of the change, not a follow-up.
 | `framework/docs/content/security.md` | Default middleware stack + security headers. | New default middleware, header change, new policy primitive. |
 | `framework/docs/content/widgets.md` | `core-ui/widget` builder API. | New widget, new preset, new theme hook. |
 | `framework/docs/content/reactivity.md` | The reactivity ladder (client signals → RPC → poll → SSE push) + the stateless-interactive-layer contract. | Any change to signals, polling, the SSE bus, session tokens, `WithSecret`, or which rung a surface should use. |
-| `framework/docs/content/contracts.md` | `gofastr verify` — the rule catalog, capabilities, config/suppression, baselines, semantic coverage, and the machine-readable output. | A rule is added/renamed/retired, a capability changes, a `verify` flag or exit code changes, the JSON/SARIF shape changes, or a contract MCP tool is added. |
-| `examples/site/docs_catalog.go` | The public docs site's curated catalog. Every embedded topic must appear here or `/docs/<slug>` 404s. | **Any** new file in `framework/docs/content/` — there is a test for this, and it is the one people forget. |
+| `framework/docs/content/contracts.md` | `gofastr verify`: the rule catalog, capabilities, config/suppression, baselines, semantic coverage, and the machine-readable output. | A rule is added/renamed/retired, a capability changes, a `verify` flag or exit code changes, the JSON/SARIF shape changes, or a contract MCP tool is added. |
+| `examples/site/docs_catalog.go` | The public docs site's curated catalog. Every embedded topic must appear here or `/docs/<slug>` 404s. | **Any** new file in `framework/docs/content/`; there is a test for this, and it is the one people forget. |
 | `examples/*/README.md` | Per-example walkthrough. | When the example's behaviour or wiring changes. |
 
-There is no `docs/api-reference/` — the public API is documented via
+There is no `docs/api-reference/`. The public API is documented via
 README's "Surfaces" table + per-feature reference page + the
 `framework/doc.go` package doc. Keep these consistent.
 
@@ -45,9 +45,9 @@ was needed.
   `framework/docs/content/entity-declarations.md`
 
 **You added a new entity field type** (e.g. `schema.JSON`, `schema.Money`):
-- `framework/docs/content/entity-declarations.md` — field type table
+- `framework/docs/content/entity-declarations.md`: field type table
 - README "Declare an entity" example if it changes the canonical shape
-- `framework/entity/column.go` column constructors — same PR
+- `framework/entity/column.go` column constructors, same PR
 
 **You added a new auto-generated route or endpoint pattern**
 (e.g. `_batch`, `_events`, `_search`):
@@ -64,16 +64,16 @@ was needed.
 
 **You changed the query DSL grammar or operator set:**
 - `framework/docs/content/query-dsl.md`
-- `framework/dsl/dsl.go` parser table — same PR
+- `framework/dsl/dsl.go` parser table, same PR
 
 **You added a contract rule, or changed `gofastr verify`:**
-- `framework/contracts/catalog.go` — the rule is data; ID, Why, Fix, and a
+- `framework/contracts/catalog.go`: the rule is data; ID, Why, Fix, and a
   bad/good example pair are all required, and a malformed entry panics at
   init rather than shipping half-documented
-- `framework/docs/content/contracts.md` — the capability table and any
+- `framework/docs/content/contracts.md`: the capability table and any
   behaviour a reader would be surprised by
 - An analyzer claiming a rule that is not in the catalog panics at init.
-  The reverse — a catalog rule no analyzer emits — is caught by
+  The reverse, a catalog rule no analyzer emits, is caught by
   `TestEveryCatalogRuleHasAnAnalyzer` in the analyzers package (it has to
   live there: the catalog deliberately does not import its analyzers, so
   the same test in `framework/contracts` could only ever skip)
@@ -83,20 +83,20 @@ was needed.
   `examplesNeedingMoreContext` WITH the reason
 - `README.md` and `CHANGELOG.md` quote the rule count.
   `TestAdvertisedRuleCountMatchesTheCatalog` fails the build until they
-  match — adding a rule is a three-file change, not one
+  match; adding a rule is a three-file change, not one
 
 **You added ANY file to `framework/docs/content/`:**
-- `examples/site/docs_catalog.go` — add the slug to an intent group, or
+- `examples/site/docs_catalog.go`: add the slug to an intent group, or
   the site's A–Z index links a page that 404s. `TestEveryEmbeddedDocIsInCatalog`
   catches it, but only in the slow `examples/site` suite, so it is easy to
   miss locally
 
 **You changed migration directives or the migrate CLI:**
 - `framework/docs/content/migrations.md`
-- `cmd/gofastr/migrate_cmd.go` (+ `migrate_generate.go`) — same PR
+- `cmd/gofastr/migrate_cmd.go` (+ `migrate_generate.go`), same PR
 
 **You changed `core-ui/` or `framework/uihost/`:**
-- `core-ui/ARCHITECTURE.md` — this is mandatory; the doc is the contract
+- `core-ui/ARCHITECTURE.md`: this is mandatory; the doc is the contract
 - If you added a new `data-fui-*` attribute: update the runtime test
   suite as well (rule from `CLAUDE.md`)
 
@@ -112,7 +112,7 @@ was needed.
 **You ran an architecture review / security review:**
 - Findings become fixes with pinning tests in the same pass; the
   keep/flip/delete rationale goes in the commit message and a comment
-  beside the surviving test. No review-log or ledger files — git
+  beside the surviving test. No review-log or ledger files; git
   history is the record.
 
 **You removed or renamed an exported symbol:**
@@ -122,25 +122,25 @@ was needed.
 
 **You landed a BREAKING change / you're cutting a release:**
 - CHANGELOG.md entry (BREAKING items called out explicitly)
-- `cmd/gofastr/upgrades.yml` — every release PR bumps `through`; a
+- `cmd/gofastr/upgrades.yml`: every release PR bumps `through`; a
   release with BREAKING or migration-relevant changes also adds its
   entry (one-line guidance, optional `detect` regex; this parser has
   no block scalars). `TestUpgradeRegistryThroughMatchesChangelog`
   gates it against the CHANGELOG's latest heading.
-- SECURITY.md "Supported versions" — the latest-minor line
+- SECURITY.md "Supported versions": the latest-minor line
 - If the release adds host-facing surface (a new battery, uihost
   option, or CLI capability a host-app agent should reach for):
   `.claude/skills/gofastr-host/SKILL.md` recipe table + trigger
   phrases, then copy to `cmd/gofastr/embedded/gofastr-host-skill.md`
   (`TestEmbeddedHostSkillMatchesRepo` pins the sync)
-- **Publish the GitHub Release — a pushed tag is NOT a release.** After
+- **Publish the GitHub Release: a pushed tag is NOT a release.** After
   the PR merges, tag the merge commit AND run
   `gh release create vX.Y.Z --title "…" --notes-file <the CHANGELOG
   section>`. `git push origin vX.Y.Z` only creates a tag object; the
   repo's Releases page (and anyone watching for releases) shows nothing
-  until the Release object exists. The release is not "done" at the tag
-  — it's done when `gh release view vX.Y.Z` succeeds and it reads
-  `Latest`. (v0.27.0 and v0.28.0 are tag-only for exactly this reason —
+  until the Release object exists. The release is not "done" at the
+  tag; it's done when `gh release view vX.Y.Z` succeeds and it reads
+  `Latest`. (v0.27.0 and v0.28.0 are tag-only for exactly this reason;
   backfill them if the Releases page needs to be complete.)
 
 ## Hard rules
@@ -172,7 +172,7 @@ was needed.
    it into the README and delete the stub.
 
 7. **Don't claim coverage you can't show.** "Production-ready" /
-   "battle-tested" / "fully-featured" — never. State what the code
+   "battle-tested" / "fully-featured": never. State what the code
    does, in present tense, with no marketing.
 
 ## When you are unsure whether a doc needs updating
@@ -190,14 +190,14 @@ Run this mental check:
 ## Anti-patterns observed in this repo (don't repeat them)
 
 - **Stub doc disease.** `framework/docs/content/search.md`, `framework/docs/content/security.md`,
-  `framework/docs/content/migrations.md`, `framework/docs/content/query-dsl.md` were each ~20 lines —
+  `framework/docs/content/migrations.md`, `framework/docs/content/query-dsl.md` were each ~20 lines:
   enough to be discoverable but not enough to answer real questions.
   Fix: expand or delete; don't leave half-done.
 - **Surfaces drift.** README's "Surfaces" table listed batch endpoints
   and SSE streams that had no reference page anywhere. If the README
   advertises it, `docs/` should cover it.
 - **Roadmap drift.** Forward-looking work lives in `ROADMAP.md`.
-  Keep it accurate — when an item ships, delete it from the roadmap
+  Keep it accurate: when an item ships, delete it from the roadmap
   and move per-feature truth into `docs/<feature>.md`.
 
 ## Definition of done for a doc-touching PR

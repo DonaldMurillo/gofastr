@@ -12,7 +12,7 @@ import (
 // importing battery/auth MUST register an owner extractor in
 // framework/owner that returns the current user's GetID() value. Without
 // this test, every owner-scope test in framework/crud uses its own
-// in-test extractor (installOwnerExtractor) — a regression that changes
+// in-test extractor (installOwnerExtractor), a regression that changes
 // the extractor to return the wrong field (e.g. SessionID instead of
 // ID) would silently break OwnerField scoping in every production app
 // while every unit test continues to pass.
@@ -40,7 +40,7 @@ func TestAuthInitRegistersOwnerExtractor(t *testing.T) {
 
 // TestAuthExtractorIgnoresUnknownCtxType confirms the extractor
 // gracefully reports "no owner" when ctx contains something that
-// isn't an auth.User — e.g. a raw map placed by a custom middleware.
+// isn't an auth.User, e.g. a raw map placed by a custom middleware.
 func TestAuthExtractorIgnoresUnknownCtxType(t *testing.T) {
 	ctx := handler.SetUser(context.Background(), map[string]string{"id": "fake"})
 	_, ok := owner.Get(ctx)
@@ -49,7 +49,7 @@ func TestAuthExtractorIgnoresUnknownCtxType(t *testing.T) {
 	}
 }
 
-// TestAuthExtractorRefusesEmptyID — a User implementation that returns
+// TestAuthExtractorRefusesEmptyID, a User implementation that returns
 // "" from GetID() must NOT count as a valid owner. Otherwise an
 // attacker-controlled user model returning "" leaks all "" rows in the
 // DB (or breaks the scope query entirely).

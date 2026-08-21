@@ -27,7 +27,7 @@ func readLiveColumnsBulkPostgres(ctx context.Context, db *sql.DB, tables []strin
 	// AutoMigrate emits CREATE TABLE with UNQUOTED identifiers, so Postgres
 	// folds a mixed-case table name to lowercase in information_schema. Match
 	// case-insensitively and key the result by the ORIGINAL requested name so
-	// the caller's result[ent.GetTable()] lookup hits — same convention as
+	// the caller's result[ent.GetTable()] lookup hits, same convention as
 	// TableExistsBulk. Without this, a table like "MixedAccount" reads as
 	// "doesn't exist" on every boot.
 	placeholders := make([]string, len(tables))

@@ -20,7 +20,7 @@ import (
 // a request that has a valid mgrA cookie BUT NO mgrB cookie must NOT
 // carry mgrA's user identity into mgrB's handler. Without the fix,
 // the inner middleware's anonymous branch leaves whatever user the
-// outer set in ctx — so mgrB's OwnerField CRUD scopes mgrA's user id
+// outer set in ctx, so mgrB's OwnerField CRUD scopes mgrA's user id
 // against mgrB's data, leaking rows cross-tenant.
 //
 // The fix: every anonymous fall-through branch in SessionMiddleware

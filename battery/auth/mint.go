@@ -15,8 +15,8 @@ import (
 var ErrTwoFactorEnforcement = errors.New("auth: two-factor enforcement unavailable")
 
 // MintSession creates a session for userID and applies the second-factor
-// pending mark. Every login path — password, magic link, OAuth callback,
-// and any host-added plugin — must go through here rather than calling
+// pending mark. Every login path, password, magic link, OAuth callback,
+// and any host-added plugin, must go through here rather than calling
 // SessionStore().Create directly, so a new path cannot silently skip the
 // factor by construction.
 //
@@ -37,7 +37,7 @@ func (m *AuthManager) MintSession(ctx context.Context, userID string, ttl time.D
 
 // markPendingIfTwoFactorEnabled queries any registered TwoFactorChecker
 // plugins and, if any reports the user has 2FA enabled, marks the new
-// session as pending — a default-deny posture so missing the
+// session as pending, a default-deny posture so missing the
 // /2fa/challenge call doesn't leave the session fully privileged.
 //
 // It lives on the manager, not on CorePlugin, because EVERY path that

@@ -14,7 +14,7 @@ func TestLineChartEmptyRendersEmptyState(t *testing.T) {
 }
 
 func TestLineChartSeriesRequiresName(t *testing.T) {
-	// A missing series name is a programmer error — still a panic.
+	// A missing series name is a programmer error: still a panic.
 	defer func() {
 		if recover() == nil {
 			t.Fatal("LineSeries without Name should panic")
@@ -24,7 +24,7 @@ func TestLineChartSeriesRequiresName(t *testing.T) {
 }
 
 func TestLineChartTooFewPointsRendersEmptyState(t *testing.T) {
-	// A series with <2 points can't draw a trend yet — empty state, no crash.
+	// A series with <2 points can't draw a trend yet: empty state, no crash.
 	h := string(LineChart(LineChartConfig{Series: []LineSeries{
 		{Name: "S", Values: []float64{1}},
 	}}))

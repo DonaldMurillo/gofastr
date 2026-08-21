@@ -134,7 +134,7 @@ func TestSSRF_AllowPrivateStillEnforcesScheme(t *testing.T) {
 }
 
 // TestSSRF_DialTimeRejectsInternalIP verifies the delivery client refuses
-// connections whose RESOLVED address is internal — closing the DNS
+// connections whose RESOLVED address is internal, closing the DNS
 // rebinding / TOCTOU window where a host validates public at Subscribe()
 // then re-points DNS to 169.254.169.254 / 127.0.0.1 / RFC1918 before the
 // worker dials. Registration-time validation alone cannot catch this.
@@ -225,7 +225,7 @@ func TestSSRF_DialTimeHonorsAllowPrivate(t *testing.T) {
 // IPv4-mapped IPv6 before range-checking; the webhook predicate did
 // neither. net.IP.IsPrivate() does not cover 100.64/10, and CGNAT is
 // exactly where a cloud provider's internal services and a customer's
-// own LAN live behind NAT — so a subscriber URL pointed there was
+// own LAN live behind NAT, so a subscriber URL pointed there was
 // accepted and delivered to, with the signed payload.
 //
 // The property is "one predicate decides what 'internal' means", so the
@@ -243,7 +243,7 @@ func TestWebhookRejectsCGNATTarget(t *testing.T) {
 			t.Errorf("SECURITY: [ssrf] webhook accepted the internal target %q — the predicate is narrower than framework/experimental/harness's", raw)
 		}
 	}
-	// 100.128.0.0 is the first address ABOVE the /10 — a public address
+	// 100.128.0.0 is the first address ABOVE the /10, a public address
 	// that must not be caught by an over-broad mask.
 	if err := validateSubscriberURL("http://100.128.0.1/hook", false); err != nil {
 		t.Errorf("webhook rejected the public address just above the CGNAT block: %v", err)

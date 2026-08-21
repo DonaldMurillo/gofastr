@@ -13,8 +13,8 @@ import (
 )
 
 // Hammer an endpoint from a single IP and assert 429 takes over after the
-// configured threshold. The endpoint's own status (200/401) doesn't matter
-// — what matters is that beyond MaxAttempts the limiter short-circuits.
+// configured threshold. The endpoint's own status (200/401) doesn't matter.
+// What matters is that beyond MaxAttempts the limiter short-circuits.
 
 func hammer(t *testing.T, r *router.Router, method, path string, body []byte, ip string, want429AfterN int) {
 	t.Helper()
@@ -190,13 +190,13 @@ func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		// Different RemoteAddr each call — simulates IP rotation.
+		// Different RemoteAddr each call, simulates IP rotation.
 		req.RemoteAddr = fmt.Sprintf("10.0.0.%d:9999", i+1)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
-		// Attempts 1..3 should be 401 (wrong password). The 4th — the
-		// MaxAttempts+1 — must be 429 from the per-account limiter.
+		// Attempts 1..3 should be 401 (wrong password). The 4th, the
+		// MaxAttempts+1, must be 429 from the per-account limiter.
 		if i >= 3 && w.Code != http.StatusTooManyRequests {
 			t.Fatalf("attempt %d to victim@example.com from rotating IP must 429; got %d (body=%s)",
 				i+1, w.Code, w.Body.String())
@@ -205,7 +205,7 @@ func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 }
 
 // TestRateLimit_PerAccount_DifferentEmailsNotBlocked pins the scoping:
-// hammering one email must not penalise a different email — the keys
+// hammering one email must not penalise a different email, the keys
 // are independent. Otherwise an attacker could DoS legitimate users by
 // burning through the per-account budget on their own account.
 func TestRateLimit_PerAccount_DifferentEmailsNotBlocked(t *testing.T) {
@@ -237,7 +237,7 @@ func TestRateLimit_PerAccount_DifferentEmailsNotBlocked(t *testing.T) {
 		r.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
-	// Different email — must not be blocked.
+	// Different email, must not be blocked.
 	bodyOther, _ := json.Marshal(map[string]string{"email": "other@example.com", "password": "wrong"})
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(bodyOther))
 	req.Header.Set("Content-Type", "application/json")
@@ -252,7 +252,7 @@ func TestRateLimit_PerAccount_DifferentEmailsNotBlocked(t *testing.T) {
 func TestRateLimit_TrustForwardedFor_OptIn(t *testing.T) {
 	// When the operator explicitly opts in (TrustForwardedFor=true),
 	// XFF is honoured and rotating it bypasses the per-IP limiter as
-	// before — this is the legitimate case (you sit behind a trusted
+	// before, this is the legitimate case (you sit behind a trusted
 	// proxy). Pin the opt-in semantics.
 	cfg := RateLimiterConfig{
 		MaxAttempts:       2,
@@ -285,7 +285,7 @@ func TestRateLimit_TrustForwardedFor_OptIn(t *testing.T) {
 // screenshot / verification tooling that hammers /auth/login from one
 // IP (localhost) must not trip the per-IP login limiter when the app
 // runs in DevMode. Production (DevMode=false) keeps the limiter
-// fail-closed — see TestRateLimit_Login. The per-ACCOUNT limiter is
+// fail-closed. See TestRateLimit_Login. The per-ACCOUNT limiter is
 // deliberately NOT relaxed in DevMode: it guards brute-force even in
 // dev, pinned by TestAuthBypass_BruteForceNoLockout.
 func TestRateLimit_DevModeRelaxesPerIPLogin(t *testing.T) {
@@ -322,7 +322,7 @@ func TestRateLimit_DevModeRelaxesPerIPLogin(t *testing.T) {
 		})
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.RemoteAddr = "127.0.0.1:1234" // same IP — local tooling
+		req.RemoteAddr = "127.0.0.1:1234" // same IP, local tooling
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 

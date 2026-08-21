@@ -127,7 +127,7 @@ func TestManagerUnsubscribe(t *testing.T) {
 	case <-ch:
 		t.Error("data channel should not receive after unsubscribe")
 	default:
-		// correct — no data sent because stream was removed
+		// correct: no data sent because stream was removed
 	}
 }
 
@@ -159,7 +159,7 @@ func TestServeSSE(t *testing.T) {
 		t.Errorf("expected Content-Type text/event-stream, got %q", ct)
 	}
 
-	// Push an update — should arrive on the SSE stream.
+	// Push an update, should arrive on the SSE stream.
 	mgr.PushUpdate(IslandUpdate{IslandID: "sse-1", HTML: "<p>sse-content</p>"}, "sess-sse")
 
 	// Read response body in a goroutine, looping until we get island data.

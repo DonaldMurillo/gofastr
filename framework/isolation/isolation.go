@@ -118,7 +118,7 @@ func Resolve(projectDir string) (*Runtime, error) {
 	}, nil
 }
 
-// normalizeBarePort turns a bare numeric port ("8088") into ":8088" — the form
+// normalizeBarePort turns a bare numeric port ("8088") into ":8088", the form
 // http.Server.Addr expects. Anything already carrying a colon (":8080",
 // "localhost:8080", "[::1]:80") or empty is returned unchanged.
 func normalizeBarePort(addr string) string {
@@ -521,7 +521,7 @@ func (r *Runtime) recordPort(base, mapped int) {
 }
 
 // isResolvedPort reports whether port is already the mapped form for some
-// base — used by Addr to short-circuit when a child process is handed an
+// base, used by Addr to short-circuit when a child process is handed an
 // already-offset port and re-resolving would double-offset.
 func (r *Runtime) isResolvedPort(port int) bool {
 	if os.Getenv(envApplied) == "1" {
@@ -547,7 +547,7 @@ func (r *Runtime) isResolvedPort(port int) bool {
 }
 
 // envAppliedPort reads the parent-process port mapping from env (set by
-// Env() in the parent). Always process-wide — that's the inheritance hook.
+// Env() in the parent). Always process-wide, that's the inheritance hook.
 func envAppliedPort(base string) (int, bool) {
 	if os.Getenv(envApplied) != "1" {
 		return 0, false
@@ -671,7 +671,7 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 		return u.String(), nil
 	}
 	// Postgres silently truncates identifiers at NAMEDATALEN-1 (63 bytes by
-	// default). Trim the base name so the suffix survives — two worktrees
+	// default). Trim the base name so the suffix survives, two worktrees
 	// must not collide on a truncated form.
 	const pgMaxIdentifier = 63
 	if len(db)+len(suffix) > pgMaxIdentifier {

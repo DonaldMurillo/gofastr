@@ -1,20 +1,20 @@
-# Upgrading — move an app to a newer GoFastr release
+# Upgrading: move an app to a newer GoFastr release
 
 Two things version independently: the **Go module dependency** your app
 builds against, and the **`gofastr` CLI** installed with `go install`.
-Updating `go.mod` does NOT update the CLI binary — keep them on the same
+Updating `go.mod` does NOT update the CLI binary; keep them on the same
 release. Every command below uses `vX.Y.Z` as a placeholder; substitute
 the release you're upgrading to.
 
 ## The guided path: `gofastr upgrade`
 
-The CLI embeds a migration registry — one entry per release that
+The CLI embeds a migration registry: one entry per release that
 carried breaking or migration-relevant changes, maintained alongside
 the changelog. `gofastr upgrade` reads your `go.mod`, resolves the
 target release, and shows exactly what you'll cross on the way:
 
 ```bash
-# Install the TARGET release's CLI first — an older binary's registry
+# Install the TARGET release's CLI first; an older binary's registry
 # can't know about releases that came after it:
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 
@@ -25,7 +25,7 @@ gofastr upgrade --apply        # also run go get / tidy / build / test
 
 The plan lists each in-between release's notes (BREAKING entries called
 out clearly), and where a change has a known code signature, the report
-points at the affected `file:line` in *your* project — the same guided
+points at the affected `file:line` in *your* project: the same guided
 style as `gofastr audit a11y`. `--apply` then runs the mechanical
 steps and stops at the first failure so you fix with the notes in hand.
 
@@ -37,7 +37,7 @@ steps and stops at the first failure so you fix with the notes in hand.
    go list -m -versions github.com/DonaldMurillo/gofastr
    ```
 
-2. **Read the release notes** for the release you chose — breaking
+2. **Read the release notes** for the release you chose; breaking
    changes, migrations, and deprecations are called out per release:
    <https://github.com/DonaldMurillo/gofastr/releases> (the same
    content ships in `CHANGELOG.md`). Do this *before* touching
@@ -79,7 +79,7 @@ steps and stops at the first failure so you fix with the notes in hand.
 
 For the CLI, `gofastr --help` is the smoke test that the new binary is
 on your PATH. Don't treat `gofastr version` as proof of the installed
-tag — `go install` builds don't always carry injected version metadata.
+tag: `go install` builds don't always carry injected version metadata.
 
 ## Common mistakes
 
@@ -99,5 +99,5 @@ tag — `go install` builds don't always carry injected version metadata.
   a newer GoFastr than you requested (minimal version selection).
   Step 7 tells you what you're actually running.
 - **Committing `go.sum` churn blind.** The diff should contain the
-  gofastr bump and its transitive updates — anything else deserves a
+  gofastr bump and its transitive updates; anything else deserves a
   look before it lands.

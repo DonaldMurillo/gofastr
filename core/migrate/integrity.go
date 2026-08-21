@@ -21,7 +21,7 @@ var ErrDirty = errors.New("migrate: database is in a dirty state from a failed m
 
 // ChecksumMismatchError is returned by Up when an already-applied migration's
 // recorded checksum no longer matches the registered migration's Up SQL. That
-// means the migration file was edited after it was applied — a drift the
+// means the migration file was edited after it was applied, a drift the
 // runner refuses to paper over, because the live schema no longer matches what
 // the (edited) file says it should be.
 type ChecksumMismatchError struct {
@@ -98,8 +98,8 @@ func isDuplicateColumn(err error) bool {
 // a no-op when the key is already composite (a fresh group-aware table).
 //
 // The upgrade is always safe for a legacy table: every existing row is
-// default-group (group_name=”) with a unique version — the old single-column
-// PK guaranteed that — so no existing row can violate the new composite key.
+// default-group (group_name=”) with a unique version. The old single-column
+// PK guaranteed that, so no existing row can violate the new composite key.
 // A cross-group version collision is only possible on a FUTURE insert, which
 // the composite key then correctly admits (different group_name).
 func (m *Migrator) ensureCompositeKey(ctx context.Context, x connish, tbl string) error {
@@ -128,7 +128,7 @@ func (m *Migrator) primaryKeyColumns(ctx context.Context, x connish, tbl string)
 	var rows *sql.Rows
 	var err error
 	if m.dialect == DialectPostgres {
-		// Pass the quoted identifier string (tbl) to $1::regclass — not the
+		// Pass the quoted identifier string (tbl) to $1::regclass, not the
 		// raw m.tableName. regclass folds an unquoted string to lowercase,
 		// which breaks mixed-case (or dotted) WithTableName values. The
 		// quoted form ('"MyMigrations"'::regclass) preserves case.
@@ -157,11 +157,11 @@ func (m *Migrator) primaryKeyColumns(ctx context.Context, x connish, tbl string)
 }
 func (m *Migrator) upgradePKPostgres(ctx context.Context, x connish, tbl string) error {
 	var cname string
-	// Pass the quoted identifier (tbl) — see primaryKeyColumns for rationale.
+	// Pass the quoted identifier (tbl). See primaryKeyColumns for rationale.
 	q := `SELECT conname FROM pg_constraint WHERE conrelid = ` + m.placeholder(1) + `::regclass AND contype = 'p'`
 	if err := x.QueryRowContext(ctx, q, tbl).Scan(&cname); err != nil {
 		if err == sql.ErrNoRows {
-			return nil // no PK at all — nothing to upgrade
+			return nil // no PK at all. Nothing to upgrade
 		}
 		return fmt.Errorf("migrate: find primary-key constraint: %w", err)
 	}
@@ -178,7 +178,7 @@ func (m *Migrator) upgradePKPostgres(ctx context.Context, x connish, tbl string)
 }
 
 // rebuildTableSQLite upgrades the key by creating a new composite-PK table,
-// copying the rows, and renaming — all inside one transaction so a failure
+// copying the rows, and renaming, all inside one transaction so a failure
 // rolls back atomically. SQLite cannot ALTER a primary key in place.
 func (m *Migrator) rebuildTableSQLite(ctx context.Context, x connish, tbl string) error {
 	baseName := strings.Trim(tbl, `"`)

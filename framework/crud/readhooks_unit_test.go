@@ -15,7 +15,7 @@ import (
 
 // In-package tests for the include fold and the read-hook plumbing. The router
 // tests in framework/ prove the wiring; these reach the shapes a router cannot
-// easily produce — a []any attachment, a nil row, a hook that returns a
+// easily produce, a []any attachment, a nil row, a hook that returns a
 // projection, the same child map attached to two parents.
 
 func rhEntity(t *testing.T, name string, rels ...entity.Relation) *entity.Entity {
@@ -61,7 +61,7 @@ func TestReattachInPlaceIsANoOp(t *testing.T) {
 	}
 }
 
-// A hook that returns a projection — a fresh map with a subset of keys — must
+// A hook that returns a projection, a fresh map with a subset of keys, must
 // have its contents folded INTO the attached map, since the parents reference
 // that map and replacing the slice would leave them pointing at pre-hook rows.
 func TestReattachFoldsProjectionIntoAttachedRow(t *testing.T) {
@@ -121,7 +121,7 @@ func TestReattachFoldsReorderedProjections(t *testing.T) {
 	b := map[string]any{"id": "b", "secret": "S2"}
 	c := map[string]any{"id": "c", "secret": "S3"}
 	orig := []map[string]any{a, b, c}
-	// Redact by projection AND sort — both documented, together.
+	// Redact by projection AND sort, both documented, together.
 	returned := []map[string]any{
 		{"id": "c", "secret": "****"},
 		{"id": "b", "secret": "****"},
@@ -135,7 +135,7 @@ func TestReattachFoldsReorderedProjections(t *testing.T) {
 			t.Errorf("row %v was not redacted: %#v", row["id"], row)
 		}
 	}
-	// Each row kept its own identity — no duplication, no cross-attribution.
+	// Each row kept its own identity, no duplication, no cross-attribution.
 	for i, want := range []string{"a", "b", "c"} {
 		if orig[i]["id"] != want {
 			t.Fatalf("row %d = %v, want %q; the fold mis-attributed a record: %#v",
@@ -281,7 +281,7 @@ func maskingRegistry(seen *int) *hook.HookRegistry {
 	return reg
 }
 
-// The attachment can be a single object, a []map[string]any, or a []any —
+// The attachment can be a single object, a []map[string]any, or a []any,
 // anything the type switch misses passes through raw, which is the whole bug
 // class.
 func TestApplyChildReadHooksCoversEveryAttachmentShape(t *testing.T) {
@@ -321,8 +321,8 @@ func TestApplyChildReadHooksCoversEveryAttachmentShape(t *testing.T) {
 }
 
 // nil and empty attachments must not invoke the hook or panic. Counting ROWS
-// cannot show this — an invocation with an empty Results slice leaves a
-// per-row counter at zero — so count invocations.
+// cannot show this, an invocation with an empty Results slice leaves a
+// per-row counter at zero, so count invocations.
 func TestApplyChildReadHooksSkipsEmptyAttachments(t *testing.T) {
 	child := rhEntity(t, "kids")
 	rel := entity.HasMany("kids", "kids", "parent_id")
@@ -387,7 +387,7 @@ func TestApplyChildReadHooksDedupesSharedRow(t *testing.T) {
 	}
 }
 
-// Without the opt-in on the context nothing runs — the in-process API returns
+// Without the opt-in on the context nothing runs, the in-process API returns
 // stored values, includes included, or code that wrote an included row back
 // would persist the mask.
 func TestApplyChildReadHooksNeedsTheOptIn(t *testing.T) {
@@ -407,7 +407,7 @@ func TestApplyChildReadHooksNeedsTheOptIn(t *testing.T) {
 }
 
 // A to-one relation serialises as one object, so it also runs the child's
-// AfterGet — the hook its own GET /child/{id} route runs.
+// AfterGet, the hook its own GET /child/{id} route runs.
 func TestApplyChildReadHooksRunsAfterGetOnToOne(t *testing.T) {
 	child := rhEntity(t, "author")
 	parent := rhEntity(t, "posts")
@@ -542,7 +542,7 @@ func TestApplyChildReadHooksHandlesMissingRegistry(t *testing.T) {
 
 // Every read-hook test in the repo used a single-word relation name, so the
 // key conversion at the include seam (order_items -> orderItems) was
-// unguarded — the same casing-blindness that hid a bug in the admin form one
+// unguarded, the same casing-blindness that hid a bug in the admin form one
 // package over. With the wrong key the child rows are never found and the
 // hook silently runs over nothing.
 func TestApplyChildReadHooksConvertsMultiWordRelationName(t *testing.T) {
@@ -580,7 +580,7 @@ func TestApplyChildReadHooksConvertsMultiWordRelationName(t *testing.T) {
 }
 
 // Rows without the primary-key column cannot be matched, so a REPLACEMENT is
-// refused — but an in-place edit still folds, since identity is enough there.
+// refused, but an in-place edit still folds, since identity is enough there.
 func TestReattachWithoutAPrimaryKeyColumn(t *testing.T) {
 	a := map[string]any{"label": "x"}
 	orig := []map[string]any{a}
@@ -608,7 +608,7 @@ func TestReattachWithEmptyPKKey(t *testing.T) {
 // The fold classifies every element before mutating any, so a payload that is
 // going to be refused is left exactly as it was. Without it a valid
 // replacement followed by a refused one would have been applied and then
-// abandoned — the callers discard the rows on error today, so the damage is
+// abandoned, the callers discard the rows on error today, so the damage is
 // contained, but the invariant is what makes that containment unnecessary.
 func TestReattachDoesNotMutateBeforeARefusal(t *testing.T) {
 	a := map[string]any{"id": "a", "secret": "S1"}

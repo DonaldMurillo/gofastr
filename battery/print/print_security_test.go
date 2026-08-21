@@ -40,7 +40,7 @@ func TestSecComponentEscapedBodySafe(t *testing.T) {
 
 // TestSecRawBodyIsTrustBoundary pins the battery's actual contract: it
 // writes the component's render.HTML VERBATIM (no escaping). Escaping the
-// body is the component's job — unlike Title, which the battery escapes
+// body is the component's job, unlike Title, which the battery escapes
 // (see TestTitleEscaped). This documents the trust boundary so a host
 // doesn't assume the battery will sanitize raw HTML for it.
 func TestSecRawBodyIsTrustBoundary(t *testing.T) {
@@ -90,7 +90,7 @@ func TestSecCSPInlineStyleNotScript(t *testing.T) {
 // Attack: chromepdf base64s the shelled print HTML into a
 // `data:text/html;base64,…` URL and navigates headless Chrome to it.
 // printCSP was applied only as an HTTP *response header* on the print
-// routes, and a `data:` document has no headers — so on the PDF path the
+// routes, and a `data:` document has no headers, so on the PDF path the
 // CSP had exactly zero effect. First-party components put caller strings
 // into URL attributes (ui.Avatar{Src} and friends), so a receipt PDF
 // rendering a user-stored avatar URL fetches whatever it names, and the
@@ -98,7 +98,7 @@ func TestSecCSPInlineStyleNotScript(t *testing.T) {
 // channel for 169.254.169.254, loopback admin panels, and RFC1918.
 //
 // The document therefore has to carry its own policy. The browser half of
-// the block — Chrome refusing to resolve anything at all — is pinned by
+// the block, Chrome refusing to resolve anything at all, is pinned by
 // the chromium-tagged test in battery/print/chromepdf.
 func TestPDFBlocksInternalSubresource(t *testing.T) {
 	out := renderShell(shellInput{Title: "receipt", BaseCSS: "x", PageCSS: "y"})
@@ -113,7 +113,7 @@ func TestPDFBlocksInternalSubresource(t *testing.T) {
 	}
 	// default-src 'self' is what makes an absolute cross-origin
 	// subresource unreachable. On a data: URL the document origin is
-	// opaque, so 'self' matches nothing — which is the intent.
+	// opaque, so 'self' matches nothing, which is the intent.
 	if !strings.Contains(printCSP, "default-src 'self'") {
 		t.Errorf("print CSP no longer restricts default-src: %q", printCSP)
 	}

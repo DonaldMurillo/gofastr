@@ -14,25 +14,25 @@ type SecurityHeadersConfig struct {
 	PermissionsPolicy     string
 
 	// CrossOriginResourcePolicy controls the Cross-Origin-Resource-Policy
-	// header. Defaults to "same-origin" — Spectre-style cross-origin
+	// header. Defaults to "same-origin"; Spectre-style cross-origin
 	// reads of this resource are blocked. Set to "cross-origin" to opt
 	// out for CDN-style assets.
 	CrossOriginResourcePolicy string
 
 	// CrossOriginOpenerPolicy controls the Cross-Origin-Opener-Policy
-	// header. Defaults to "same-origin" — the document gets a fresh
+	// header. Defaults to "same-origin"; the document gets a fresh
 	// browsing context group, blocking cross-origin window references
 	// and the broader XS-Leaks class. Set to "unsafe-none" to opt out
 	// when you intentionally interact with cross-origin windows.
 	CrossOriginOpenerPolicy string
 
 	// HSTSMaxAge sets the Strict-Transport-Security max-age. Zero
-	// (default) emits ONE YEAR (31536000) — HSTS-by-default matches the
+	// (default) emits ONE YEAR (31536000); HSTS-by-default matches the
 	// rest of the header set; forgetting it used to be the #1 production
 	// gap. Set -1 to disable the header entirely. The header is only
 	// emitted when the request is actually HTTPS: direct TLS, an
 	// X-Forwarded-Proto: https from a TLS-terminating proxy, or
-	// Secure: true — plain-HTTP local dev never sees it.
+	// Secure: true; plain-HTTP local dev never sees it.
 	HSTSMaxAge     int
 	HSTSIncludeSub bool
 	HSTSPreload    bool
@@ -55,7 +55,7 @@ type SecurityHeadersConfig struct {
 // does NOT cover them: CSP never let form-action fall back, and
 // object-src's fallback was dropped in CSP3. Both are load-bearing here,
 // since this policy is the single mitigation standing behind the browser
-// runtime's gadget surface — without form-action an injected <form>
+// runtime's gadget surface. Without form-action an injected <form>
 // posts the page's data to any origin, and without object-src
 // <object>/<embed> is a script-execution path a framework-rendered page
 // never needs.
@@ -102,10 +102,10 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 			h.Set("Cross-Origin-Opener-Policy", coop)
 			h.Set("X-XSS-Protection", "0") // disabled per modern guidance (CSP supersedes it)
 
-			// HSTS — only emit over HTTPS: direct TLS, a TLS-terminating
+			// HSTS. Only emit over HTTPS: direct TLS, a TLS-terminating
 			// proxy's X-Forwarded-Proto, or an explicit Secure: true.
 			// (A client spoofing X-Forwarded-Proto only affects its own
-			// response — HSTS binds per received response.)
+			// response; HSTS binds per received response.)
 			secure := cfg.Secure
 			if !secure && r.TLS != nil {
 				secure = true // auto-detect TLS

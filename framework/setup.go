@@ -19,7 +19,7 @@ import (
 //     When true (and GOFASTR_SETUP != "off"), Start enters setup mode.
 //  2. CanRunHeadless distinguishes the two skins. When true every required
 //     field resolves from the environment and RunSteps executes inline
-//     before the port binds — no wizard is ever served.
+//     before the port binds, no wizard is ever served.
 //  3. When CanRunHeadless is false the interactive skin is served: Handler
 //     returns the wizard surface and swap is invoked once the final step
 //     succeeds, atomically switching to the real app handler and starting
@@ -51,7 +51,7 @@ type SetupRunner interface {
 // WithSetup wires a first-run setup runner. When the runner reports
 // incomplete setup at boot, Start either runs the steps headlessly (env
 // provides every required value) or serves an interactive wizard until
-// setup finishes — then atomically swaps to the real app router.
+// setup finishes, then atomically swaps to the real app router.
 //
 // Overrides via the GOFASTR_SETUP env var:
 //
@@ -68,7 +68,7 @@ func WithSetup(r SetupRunner) AppOption {
 }
 
 // SetSetup wires a first-run setup runner after the App exists, and is
-// otherwise identical to [WithSetup] — the runner is read at Start, never
+// otherwise identical to [WithSetup], the runner is read at Start, never
 // during NewApp, so wiring it later changes nothing about boot.
 //
 // It exists because some steps need the app they run against:
@@ -97,9 +97,9 @@ func (a *App) SetSetup(r SetupRunner) *App {
 type setupEnvMode int
 
 const (
-	setupAuto  setupEnvMode = iota // GOFASTR_SETUP unset or empty — check Incomplete
-	setupOff                       // "off" — never enter setup mode
-	setupForce                     // "force" — enter setup even if Complete
+	setupAuto  setupEnvMode = iota // GOFASTR_SETUP unset or empty: check Incomplete
+	setupOff                       // "off": never enter setup mode
+	setupForce                     // "force": enter setup even if Complete
 )
 
 // resolveSetupEnv parses the GOFASTR_SETUP env var, mirroring role.go's

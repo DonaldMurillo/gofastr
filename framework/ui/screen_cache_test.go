@@ -24,7 +24,7 @@ func TestInvalidateScreensAccumulates(t *testing.T) {
 }
 
 func TestInvalidateScreensCommaInQuery(t *testing.T) {
-	// Commas are legal in query values — the JSON array must carry them
+	// Commas are legal in query values: the JSON array must carry them
 	// intact (this is why the header is not comma-separated).
 	w := httptest.NewRecorder()
 	InvalidateScreens(w, "/search?q=red,blue")
@@ -64,7 +64,7 @@ func TestInvalidateScreensNoValidPathsNoHeader(t *testing.T) {
 }
 
 func TestInvalidateScreensReplacesMalformedExisting(t *testing.T) {
-	// A manually written malformed value must not poison accumulation —
+	// A manually written malformed value must not poison accumulation:
 	// the helper replaces it with a valid list.
 	w := httptest.NewRecorder()
 	w.Header().Set("X-Gofastr-Invalidate", "not-json")

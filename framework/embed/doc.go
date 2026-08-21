@@ -21,7 +21,7 @@
 //
 // Identity can therefore only arrive explicitly, which makes CSRF against embed
 // routes structurally impossible. Embed routes go further and REJECT cookies
-// rather than merely not requiring them — a route that honours a cookie when one
+// rather than merely not requiring them, a route that honours a cookie when one
 // happens to be present would hand a signed-in user's full session to a third
 // party's frame.
 //
@@ -31,7 +31,7 @@
 //
 // The app author mints a nonce server-side for one specific viewer
 // ([Host.MintNonce]) and renders it into the embed snippet. The nonce is an
-// HMAC over (surface, subject, scopes, origin, nonce id, expiry) — nothing is
+// HMAC over (surface, subject, scopes, origin, nonce id, expiry). Nothing is
 // stored at mint time, so minting scales like signing.
 //
 // Only the exchange touches a store: the nonce id is INSERTed against a unique
@@ -41,7 +41,7 @@
 //
 // Single use exists to make a SHARED token impossible. The predictable customer
 // failure with a time-window token is hardcoding one into a page template, so
-// every visitor arrives as the same identity — and nothing about a TTL prevents
+// every visitor arrives as the same identity, and nothing about a TTL prevents
 // that. Replay defence comes along for free.
 //
 // A browser has several ways to fire the exchange twice (the customer's page
@@ -52,7 +52,7 @@
 //
 // # Origins
 //
-// Exact origins only, no wildcards — every subdomain is listed separately.
+// Exact origins only, no wildcards. Every subdomain is listed separately.
 // Origins are compared NORMALIZED, not as strings: https://acme.com,
 // https://acme.com/, https://acme.com:443 and https://ACME.com are one origin
 // and four strings, and a customer's trailing slash would otherwise silently
@@ -62,7 +62,7 @@
 // directive, which lists every allowed origin. It has to list them all: no
 // Origin header is sent on a navigation GET, so at the moment the header is
 // written the server does not know who is framing it. Listing ten origins does
-// not let an eleventh frame the page — the browser enforces against the real
+// not let an eleventh frame the page. The browser enforces against the real
 // ancestor chain. The only cost is that the allowlist is public to anyone who
 // fetches the embed URL.
 //

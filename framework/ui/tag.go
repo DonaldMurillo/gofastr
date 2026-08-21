@@ -12,7 +12,7 @@ import (
 
 // ─── Tag / Chip ─────────────────────────────────────────────────────
 //
-// An interactive pill — distinct from StatusBadge in that a Tag can be
+// An interactive pill, distinct from StatusBadge in that a Tag can be
 // removed (a small × button) and can carry an Href to act as a filter
 // link. Use for filter-chip lists, multi-select selections, applied
 // search filters.
@@ -51,7 +51,7 @@ type TagConfig struct {
 	Class string
 }
 
-// Tag renders a small pill — optionally linked (filter chip), optionally
+// Tag renders a small pill: optionally linked (filter chip), optionally
 // removable (dismiss button). Pure server-rendered; dismiss is wired
 // through standard `data-fui-rpc` semantics so the application picks
 // the response side-effect.
@@ -95,7 +95,7 @@ func Tag(cfg TagConfig) render.HTML {
 		for k, val := range cfg.DismissAttrs {
 			attrs[k] = val
 		}
-		// SVG × icon — kept aria-hidden so the aria-label is the
+		// SVG × icon: kept aria-hidden so the aria-label is the
 		// single announced name.
 		body = append(body, render.Tag("button", flattenAttrs(attrs),
 			html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
@@ -103,7 +103,7 @@ func Tag(cfg TagConfig) render.HTML {
 	}
 
 	if cfg.Href != "" {
-		// Drop unsafe hrefs (javascript:, data:, control bytes, …) —
+		// Drop unsafe hrefs (javascript:, data:, control bytes, …):
 		// same allow-list as ui.Link; see framework/ui/safety.go. Tag
 		// is a content-level component, so a rejected href degrades to
 		// an inert "#" rather than panicking.

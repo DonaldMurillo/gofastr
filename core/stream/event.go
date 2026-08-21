@@ -35,7 +35,7 @@ type Event struct {
 //   - "data:" for the payload (multi-line data splits on \n)
 //   - terminated by a blank line ("\n\n")
 //
-// ID and custom event names are truncated at the first CR/LF/NUL — those
+// ID and custom event names are truncated at the first CR/LF/NUL; those
 // bytes terminate an SSE field and would let a caller-supplied value
 // inject forged directives ("event: forged", "data: pwned"…) below it.
 // Multi-line data is split on '\n' and each line is re-prefixed with
@@ -68,7 +68,7 @@ func Encode(e Event) string {
 		// W3C spec: omit event field → defaults to "message"
 	}
 
-	// data field — split on newlines per spec; strip CR/NUL per line so
+	// data field: split on newlines per spec; strip CR/NUL per line so
 	// no caller-supplied bytes can re-introduce a field boundary inside
 	// a single emitted line.
 	data := strings.ReplaceAll(e.Data, "\r", "")

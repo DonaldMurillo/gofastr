@@ -38,7 +38,7 @@ type Storage interface {
 `Save` writes the contents of `r` under `key`; `Get` returns a reader;
 `Delete` removes the object; `Exists` reports presence. Keys are opaque
 strings the upload layer assigns. A backend rejects a key that escapes
-its namespace (path traversal, empty key) with an error — it does not
+its namespace (path traversal, empty key) with an error; it does not
 rewrite the key.
 
 ## Local backend
@@ -75,7 +75,7 @@ store := storage.NewS3Storage("my-bucket", "us-east-1",
 ```
 
 `NewS3Storage(bucket, region, opts...)` returns an `S3Storage`. It talks
-to S3-compatible stores through a minimal `S3Client` interface — the AWS
+to S3-compatible stores through a minimal `S3Client` interface: the AWS
 SDK is not imported for you; pass a client via `WithS3Client`, or set a
 custom endpoint with `WithS3Endpoint`. Without a client,
 `Save` / `Get` / `Delete` / `Exists` cannot run; the constructor does
@@ -84,7 +84,7 @@ not dial.
 For direct browser uploads and downloads, pass a `Presigner` via
 `WithPresigner`. `PresignedGetURL` and `PresignedPutURL` then mint
 time-limited URLs that route traffic around the app entirely.
-`S3Storage` does not implement `RangeGetter` — a network backend would
+`S3Storage` does not implement `RangeGetter`: a network backend would
 have to buffer the whole object to `Seek`; presigned URLs are the
 intended path for large transfers.
 

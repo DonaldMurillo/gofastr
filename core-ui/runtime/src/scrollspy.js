@@ -1,4 +1,4 @@
-// ScrollSpy runtime module — for every [data-fui-scrollspy] wrapper,
+// ScrollSpy runtime module, for every [data-fui-scrollspy] wrapper,
 // walk the contained anchors, map href="#id" → target element under
 // the observed region, and use IntersectionObserver to set
 // aria-current + .is-active on the anchor whose target is in the
@@ -86,7 +86,7 @@
     observers.set(wrap, observer);
     activeWraps.add(wrap);
 
-    // Bootstrap an initial active anchor — if the user lands on the
+    // Bootstrap an initial active anchor, if the user lands on the
     // page before any target has crossed into the upper 30% (e.g. all
     // sections start below a tall page header), the IO never fires
     // and no anchor would be highlighted. Pick the first target whose
@@ -106,7 +106,7 @@
     });
   };
 
-  // Tiny CSS.escape polyfill — id may contain odd chars or start
+  // Tiny CSS.escape polyfill, id may contain odd chars or start
   // with a digit. Per CSS spec, an identifier starting with a digit
   // must escape that digit as `\3<digit><space>` so the selector
   // parses. Modern browsers ship CSS.escape; the fallback covers

@@ -19,7 +19,7 @@ import (
 var errBoom = errors.New("boom")
 
 // fakeModuleController is a canned processModuleController for tests. It
-// never spawns a child process — it records the calls and returns whatever
+// never spawns a child process, it records the calls and returns whatever
 // the test scripted. The real *framework.ProcessModuleSupervisor satisfies
 // the same interface.
 type fakeModuleController struct {
@@ -99,7 +99,7 @@ func moduleInfo(name string, state framework.ProcessState, opts ...func(*framewo
 // ----- list rendering ------------------------------------------------------
 
 // TestModules_ListRendersEveryState pins that the list screen renders every
-// introspection field and — critically — that the 404-vs-503 distinction is
+// introspection field and, critically, that the 404-vs-503 distinction is
 // visible in copy (a disabled module reads differently from a crashed one),
 // with circuit-open and lease-failing shown prominently.
 func TestModules_ListRendersEveryState(t *testing.T) {
@@ -185,7 +185,7 @@ func TestModules_AnonymousDenied(t *testing.T) {
 }
 
 // TestModules_NilControllerNotMounted pins that a nil ProcessModules config
-// leaves the screen unmounted — the route 404s rather than panicking.
+// leaves the screen unmounted, the route 404s rather than panicking.
 func TestModules_NilControllerNotMounted(t *testing.T) {
 	db := newDB(t)
 	b := New(Config{DB: db})
@@ -297,7 +297,7 @@ func TestModules_RevokeCallsControllerAndAudit(t *testing.T) {
 }
 
 // TestModules_ControllerErrorShowsMessage pins the generated-app rule: a
-// controller error surfaces as a flash message on the list page — never a
+// controller error surfaces as a flash message on the list page, never a
 // raw 500 or JSON leak. The POST redirects (303) to the list with ?err=.
 func TestModules_ControllerErrorShowsMessage(t *testing.T) {
 	fake := &fakeModuleController{
@@ -358,7 +358,7 @@ func TestModules_UnknownModuleShowsError(t *testing.T) {
 }
 
 // TestModules_MissingNameIsBounced pins that a POST with no module name does
-// not reach the controller — it bounces back with a validation flash.
+// not reach the controller, it bounces back with a validation flash.
 func TestModules_MissingNameIsBounced(t *testing.T) {
 	fake := &fakeModuleController{list: []framework.ProcessModuleInfo{moduleInfo("billing", framework.StateReady)}}
 	_, h, _ := moduleTestEnv(t, fake)

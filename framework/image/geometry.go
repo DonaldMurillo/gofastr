@@ -186,7 +186,7 @@ func (i *Image) Flop() *Image {
 // AutoOrient applies the EXIF orientation tag from decode time, if
 // any, and clears it. Safe to call when no orientation is known. On
 // the no-op path (orient ≤ 1, or no EXIF metadata) the returned
-// *Image shares the underlying image.Image with the receiver — if a
+// *Image shares the underlying image.Image with the receiver. If a
 // caller plans to mutate via GoImage(), they should clone first.
 //
 // EXIF tag values:

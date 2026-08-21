@@ -9,7 +9,7 @@
 // not-yet-built) and § Lifecycle / boot for what is and is not wired.
 //
 // What New() does NOT do (owned by the CLI subcommand or a later
-// phase): it runs no TOFU ack gate on context or skill files — their
+// phase): it runs no TOFU ack gate on context or skill files, their
 // SHA-256 hashes are computed and stored but never compared against an
 // approval store; it does not spawn MCP servers (the mcpclient package
 // exists but is not wired into New); and it does not start the control
@@ -146,7 +146,7 @@ func New(cfg Config) (*Harness, error) {
 		h.Logger.Warn("skill load partial failure", "err", err.Error())
 	}
 
-	// (5) Tool registry — built-ins first; MCP servers spawned by
+	// (5) Tool registry, built-ins first; MCP servers spawned by
 	// composition wiring after credstore + helper come up.
 	h.Tools = tool.NewRegistry()
 	if err := h.Tools.Register(context.Background(), builtins.Source{
@@ -158,7 +158,7 @@ func New(cfg Config) (*Harness, error) {
 	// (5) Permission engine. v0.1 ships an empty profile-level rule
 	// list; permissions = "preset/<name>.toml" referenced in the
 	// profile is not loaded yet (separate file format on the
-	// roadmap). PersistencePath enables the "Allow always" flow —
+	// roadmap). PersistencePath enables the "Allow always" flow:
 	// rules survive harness restarts via
 	// $XDG_CONFIG/gofastr/harness/permissions.json.
 	h.Perms = permission.New(nil)
@@ -372,7 +372,7 @@ func defaultSkillPaths(cfg Config) []string {
 }
 
 // deriveCredstoreKey picks between MachineKey (CI) and a passphrase.
-// If neither is set, return an error — the caller must pick.
+// If neither is set, return an error, the caller must pick.
 func deriveCredstoreKey(cfg Config) ([]byte, error) {
 	if len(cfg.MachineKey) == 32 {
 		return cfg.MachineKey, nil

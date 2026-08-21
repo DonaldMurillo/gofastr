@@ -13,7 +13,7 @@ import (
 
 // seedBlogDB creates the blog test schema (users, profiles, posts, comments,
 // tags, post_tags) on the given db and inserts fixture rows. Both dialects
-// accept this DDL — TEXT PRIMARY KEY and $N placeholders are portable.
+// accept this DDL. TEXT PRIMARY KEY and $N placeholders are portable.
 func seedBlogDB(t *testing.T, db *sql.DB) {
 	t.Helper()
 	stmts := []string{
@@ -326,7 +326,7 @@ func TestInclude_AbsentLeavesResponseUnchanged(t *testing.T) {
 }
 
 // ============================================================================
-// Test: Nested includes — ?include=author.profile loads two levels deep
+// Test: Nested includes. ?include=author.profile loads two levels deep
 // ============================================================================
 
 func TestInclude_Nested_AuthorProfile(t *testing.T) {
@@ -360,7 +360,7 @@ func TestInclude_Nested_AuthorProfile(t *testing.T) {
 }
 
 // ============================================================================
-// Test: Nested includes alongside flat ones — ?include=author.profile,comments
+// Test: Nested includes alongside flat ones. ?include=author.profile,comments
 // ============================================================================
 
 func TestInclude_Nested_Mixed(t *testing.T) {
@@ -438,7 +438,7 @@ func TestInclude_Nested_OnList(t *testing.T) {
 }
 
 // ============================================================================
-// Test: scoped include — ?include=comments(body_like=nice) attaches only the
+// Test: scoped include. ?include=comments(body_like=nice) attaches only the
 // matching subset. `_like` is a literal substring at every depth, so the
 // caller writes the text, not a pattern.
 // ============================================================================
@@ -473,7 +473,7 @@ func TestInclude_Scoped_FilterChildren(t *testing.T) {
 }
 
 // ============================================================================
-// Test: scoped include composes with the regular include list — comments
+// Test: scoped include composes with the regular include list, comments
 // filtered, author unfiltered.
 // ============================================================================
 

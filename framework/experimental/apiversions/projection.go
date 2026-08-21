@@ -49,10 +49,10 @@ func (ps *ProjectionSet) For(version string) *Projection {
 
 // ApplyToEntityConfig returns a modified EntityConfig with fields' visibility
 // and wire names adjusted according to the projection for the given version.
-// Does not mutate the original, and crucially does NOT change the field set
+// Does not mutate the original, and does NOT change the field set
 // or the DB column names: Exclude hides a field (Hidden=true), Include hides
 // everything not allow-listed, and Rename sets the wire-name override
-// (WireName) — the underlying table schema is identical across versions so
+// (WireName), the underlying table schema is identical across versions so
 // two versions of one entity can share one table safely.
 func ApplyToEntityConfig(base entity.EntityConfig, ps *ProjectionSet, version string) entity.EntityConfig {
 	p := ps.For(version)

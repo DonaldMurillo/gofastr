@@ -78,7 +78,7 @@ func TestUIHost_ServerActionRejectsOversizeBody(t *testing.T) {
 func TestUIHost_RemovedSignalEndpointReturns404(t *testing.T) {
 	// The /__gofastr/signal/{id} surface has been removed (dead server-side
 	// signal map + island re-render path with no production callers). A POST
-	// to any path under it must be a plain 404 — no handler, no method-only
+	// to any path under it must be a plain 404: no handler, no method-only
 	// 405, no auth challenge, no body parsing.
 	ds := newTestUIHost()
 

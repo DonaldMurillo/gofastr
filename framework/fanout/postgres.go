@@ -25,7 +25,7 @@ const (
 	// We inline when the marshaled wrapper is at most this size (margin for
 	// framing/escapes); anything larger goes through the fallback table.
 	pgInlineThreshold = 7000
-	// pgPurgeAge: fallback rows are purged once they are older than this —
+	// pgPurgeAge: fallback rows are purged once they are older than this,
 	// long enough that a briefly-disconnected receiver can still SELECT them,
 	// short enough that the table stays bounded.
 	pgPurgeAge = 2 * time.Minute
@@ -45,7 +45,7 @@ const (
 
 // pgInlineMsg is the NOTIFY payload for an inline message: the topic travels
 // alongside the payload so the dispatcher can route it without a channel per
-// topic. Payload is a string (payloads are JSON envelopes — valid UTF-8).
+// topic. Payload is a string (payloads are JSON envelopes, valid UTF-8).
 type pgInlineMsg struct {
 	Topic   string `json:"t"`
 	Payload string `json:"p"`
@@ -154,7 +154,7 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 	}
 	// Postgres identifiers are capped at 63 bytes (NAMEDATALEN-1). CREATE
 	// TABLE silently truncates a longer name while pg_notify errors on the
-	// full-length channel — every Publish would fail at runtime. Fail at
+	// full-length channel, every Publish would fail at runtime. Fail at
 	// construction instead.
 	if len(p.table) > 63 {
 		return nil, fmt.Errorf("fanout: table name %q is %d bytes; Postgres caps identifiers (and NOTIFY channels) at 63", p.table, len(p.table))
@@ -254,7 +254,7 @@ func (p *PostgresFanout) publishViaTable(ctx context.Context, wrapped string) er
 		wrapped).Scan(&id); err != nil {
 		return fmt.Errorf("fanout: insert fallback row: %w", err)
 	}
-	// Purge opportunistically (throttled) — keeps the table bounded without a
+	// Purge opportunistically (throttled), keeps the table bounded without a
 	// dedicated admin goroutine.
 	p.maybePurge(ctx)
 	if _, err := p.db.ExecContext(ctx, `SELECT pg_notify($1, $2)`, p.channel,
@@ -277,8 +277,8 @@ func (p *PostgresFanout) maybePurge(ctx context.Context) {
 	if _, err := p.db.ExecContext(ctx, fmt.Sprintf(
 		`DELETE FROM %s WHERE created_at < now() - $1::interval`, p.qt()),
 		pgPurgeAgeSQL); err != nil {
-		// Best-effort housekeeping: the next publish retries it. Debug-level
-		// — a failing purge is a symptom of the same DB trouble the publish
+		// Best-effort housekeeping: the next publish retries it. Debug-level,
+		// a failing purge is a symptom of the same DB trouble the publish
 		// itself will surface loudly.
 		slog.Default().Debug("fanout: purge of expired fallback rows failed", "table", p.table, "err", err)
 	}
@@ -374,7 +374,7 @@ func (p *PostgresFanout) deliver(topic string, payload []byte) {
 
 // Subscribe registers fn for topic. fn is wrapped in a per-subscriber bounded
 // queue (cfanout.SubscriberQueue) so it runs on a dedicated goroutine with
-// drop-oldest overflow — honoring the [cfanout.Fanout] contract that a slow
+// drop-oldest overflow, honoring the [cfanout.Fanout] contract that a slow
 // subscriber is dropped, not backpressured, and never stalls other topics.
 // The returned cancel unregisters fn and stops the goroutine; safe to call
 // multiple times.
@@ -438,7 +438,7 @@ func (p *PostgresFanout) onListenerEvent(ev pq.ListenerEventType, err error) {
 }
 
 // Close tears down the listener, the dispatch goroutine, and every
-// subscriber queue — including those whose cancel func the caller dropped,
+// subscriber queue, including those whose cancel func the caller dropped,
 // which would otherwise park their goroutines forever. Subscribe refuses new
 // registrations after Close (it checks closed under the same mu, so no
 // subscriber can slip in between the stop sweep and the flag).

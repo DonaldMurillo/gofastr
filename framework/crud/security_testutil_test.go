@@ -32,7 +32,7 @@ type RequestOpts struct {
 // statements. The database is closed via t.Cleanup.
 //
 // MaxOpenConns is pinned to 1 because go-sqlite3's `:memory:` mode gives
-// every pool connection its own private database — concurrent CRUD
+// every pool connection its own private database, concurrent CRUD
 // handlers and direct test queries would otherwise see different
 // tables. The race-condition tests in particular need a shared view of
 // the data.
@@ -55,7 +55,7 @@ func setupDB(t *testing.T, ddl ...string) *sql.DB {
 
 // setupSecurityTestHandler creates a CrudHandler over an in-memory SQLite
 // database with the given entity configuration and DDL. The owner
-// extractor is wired automatically — without it, requests carrying a
+// extractor is wired automatically, without it, requests carrying a
 // testUser in the context would still look unauthenticated to the CRUD
 // layer and short-circuit with 401 long before the per-row owner check
 // (the original test-harness bug that masked these IDOR tests as
@@ -164,7 +164,7 @@ func assertHeaderAbsent(t *testing.T, rr *httptest.ResponseRecorder, name, categ
 
 // securityOwnerExtractorOnce installs the test owner extractor exactly
 // once for the lifetime of the test binary. Per-test install/restore
-// raced under t.Parallel — a teardown from one test would reset the
+// raced under t.Parallel, a teardown from one test would reset the
 // extractor while another parallel test was still mid-request, surfacing
 // as a spurious 401. The extractor itself is pure (no shared state with
 // individual tests) so a process-lifetime install is safe.

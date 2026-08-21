@@ -13,19 +13,19 @@ import (
 )
 
 // ============================================================================
-// Tier 8 — operational (cold start, sustained memory)
+// Tier 8: operational (cold start, sustained memory)
 //
 // These benchmarks answer "how much does the framework cost just to exist"
 // (cold start) and "how much memory does it hold under sustained load"
 // (steady-state heap).
 //
-// Both are 'property' style — reported via custom metrics rather than the
+// Both are 'property' style, reported via custom metrics rather than the
 // usual ns/op + B/op channels. They run with -benchtime=1x so the figures
 // reported are per-iteration values, not means.
 // ============================================================================
 
 // ----------------------------------------------------------------------------
-// 8.1 — Cold start: NewApp to first request served
+// 8.1. Cold start: NewApp to first request served
 // ----------------------------------------------------------------------------
 
 // BenchmarkT8_ColdStart_Minimal times the smallest meaningful path: open
@@ -103,11 +103,11 @@ func BenchmarkT8_ColdStart_TenEntities(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 8.2 — Sustained memory: heap after N requests
+// 8.2. Sustained memory: heap after N requests
 // ----------------------------------------------------------------------------
 
 // BenchmarkT8_HeapAfterLoad reports the steady-state heap after a fixed
-// workload. Run with -benchtime=1x — each iteration runs the full load
+// workload. Run with -benchtime=1x, each iteration runs the full load
 // loop and then reads runtime.MemStats. Reported via b.ReportMetric:
 //
 //   - heap_alloc_bytes   live heap after the load
@@ -153,7 +153,7 @@ func BenchmarkT8_HeapAfterLoad(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 8.3 — Goroutine count under sustained load
+// 8.3: Goroutine count under sustained load
 // ----------------------------------------------------------------------------
 
 // BenchmarkT8_GoroutinesAfterLoad ensures a fixed workload doesn't leak

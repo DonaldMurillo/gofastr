@@ -8,7 +8,7 @@ import (
 
 // RingSink is an in-memory Sink that keeps the most recent N log
 // entries in a fixed-size circular buffer. It's the backing store for
-// the log MCP tools — agents query it via log_recent / log_filter for
+// the log MCP tools, agents query it via log_recent / log_filter for
 // fast, structured live debugging.
 //
 // Concurrency: safe for concurrent Write and Snapshot. Snapshot returns
@@ -39,7 +39,7 @@ func NewRingSink(cap int) *RingSink {
 }
 
 // Write stores a copy of the entry in the ring. Returns ErrSinkClosed
-// after Close has run — consistent with the other sinks so the fanout's
+// after Close has run, consistent with the other sinks so the fanout's
 // post-Stop drop counter advances correctly.
 func (r *RingSink) Write(entry []byte) error {
 	r.mu.Lock()
@@ -95,7 +95,7 @@ func (r *RingSink) Snapshot() [][]byte {
 
 // SnapshotDecoded is a convenience wrapper that unmarshals each ring
 // entry to a map[string]any. Returned in chronological order. Entries
-// that fail to decode are skipped (defensive — the fanout writes valid
+// that fail to decode are skipped (defensive, the fanout writes valid
 // JSON, but custom sinks composed into a RingSink might not).
 func (r *RingSink) SnapshotDecoded() []map[string]any {
 	raw := r.Snapshot()

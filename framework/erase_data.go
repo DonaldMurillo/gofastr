@@ -14,7 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// Data erasure — the right-to-be-forgotten half of the data lifecycle.
+// Data erasure: the right-to-be-forgotten half of the data lifecycle.
 //
 // EraseUserData mirrors ExportData's two-plane design: the entity registry
 // (owner-scoped entities) PLUS the datexport registry (battery-declared
@@ -25,13 +25,13 @@ import (
 // # Semantics (design decision E1)
 //
 // Erasure means erasure. The entity plane HARD-deletes every row owned by the
-// user — including soft-deleted rows. A raw DELETE bypasses the deleted_at
+// user, including soft-deleted rows. A raw DELETE bypasses the deleted_at
 // filter, so a row the user previously "deleted" is now actually expunged.
 // There is no soft-delete respect, no tombstone, and no undo.
 //
 // # Audit retention (design decision E2)
 //
-// The audit_log table is RETAINED — it is the compliance record of who did
+// The audit_log table is RETAINED, it is the compliance record of who did
 // what. Instead of deleting rows, the built-in audit plane anonymizes the
 // actor_id of every row the erased user acted from (actor_id = userID →
 // "[erased]"). record_id is left intact: it is heterogeneous (a resource id
@@ -203,7 +203,7 @@ func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Diale
 		}
 		r, ok := datexport.ResolveIdentity(e.Identity)
 		if !ok {
-			return nil, nil, fmt.Errorf("framework: erase %q declares identity %d but no resolver is registered — erasure would be incomplete", e.Name, e.Identity)
+			return nil, nil, fmt.Errorf("framework: erase %q declares identity %d but no resolver is registered: erasure would be incomplete", e.Name, e.Identity)
 		}
 		val, found, rerr := a.resolveIdentityValue(ctx, dialect, userID, r)
 		if rerr != nil {
@@ -218,7 +218,7 @@ func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Diale
 	return resolved, skipped, nil
 }
 
-// resolveIdentityValue runs the declarative resolver —
+// resolveIdentityValue runs the declarative resolver:
 //
 //	SELECT ValueColumn FROM Table WHERE IDColumn = userID
 //
@@ -227,7 +227,7 @@ func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Diale
 // may have renamed the user table, mirroring how an absent eraser table is
 // skipped. Table/IDColumn/ValueColumn are MustIdent-guarded (decision E3); the
 // user id is a $n bound argument. A NULL or blank value is treated as
-// unresolvable (the eraser is skipped) — an empty identity cannot usefully
+// unresolvable (the eraser is skipped), an empty identity cannot usefully
 // match rows.
 func (a *App) resolveIdentityValue(ctx context.Context, dialect migrate.Dialect, userID string, r datexport.DataIdentityResolver) (string, bool, error) {
 	exists, err := tableExists(ctx, a.DB, r.Table, dialect)
@@ -258,7 +258,7 @@ func (a *App) resolveIdentityValue(ctx context.Context, dialect migrate.Dialect,
 // collectEraseEntitySources enumerates every owner-scoped PHYSICAL table in
 // the entity registry, deduped by table (mirroring collectSources' table
 // collapse). Each yields {name, table, owner column}. Entities without an
-// OwnerField are skipped — they hold no per-user data. Version-union comes
+// OwnerField are skipped, they hold no per-user data. Version-union comes
 // from migrate.UnionEntities, so two versions of one name produce one source
 // for their shared table (same contract as export).
 func (a *App) collectEraseEntitySources() []eraseEntitySource {
@@ -311,7 +311,7 @@ func orderChildrenFirst(tables []string, merged map[string]*entity.Entity, names
 	for _, t := range tables {
 		erasable[t] = true
 	}
-	// parents[child] = the tables that child references via BelongsTo — the
+	// parents[child] = the tables that child references via BelongsTo, the
 	// child holds the FK column (RelManyToOne, i.e. BelongsTo), so it must
 	// be deleted first.
 	parents := map[string][]string{}
@@ -377,7 +377,7 @@ func childrenOf(parent string, parents map[string][]string) []string {
 // does not deadlock (the tx would otherwise hold the only connection while
 // the probe waited for one). Erasers arrive already identity-resolved (see
 // resolveEraserIdentities): each carries the value its match column is bound
-// against — the user id, or a resolved identity like email.
+// against, the user id, or a resolved identity like email.
 func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID string, cfg eraseConfig, ents []eraseEntitySource, erasers []resolvedEraser) (EraseReport, error) {
 	report := EraseReport{DryRun: false}
 
@@ -559,7 +559,7 @@ func eraseDelete(ctx context.Context, tx *sql.Tx, table, col, userID string) (in
 
 // eraseAnonymize runs the UPDATE declared by a registered DataEraser: every
 // ScrubColumn AND the match Column are set to tombstone on rows where
-// Column = userID. The match column is scrubbed too — it IS the user-id
+// Column = userID. The match column is scrubbed too, it IS the user-id
 // reference being cut, and including it makes the UPDATE idempotent by count:
 // once the match column holds the tombstone, a re-run matches zero rows
 // (matching the DELETE plane's natural idempotency). Returns the number of
@@ -617,7 +617,7 @@ func eraseCount(ctx context.Context, db *sql.DB, table, col, userID string) (int
 // requireColumn fails when table has no column named col. SQLite reads a
 // double-quoted unknown identifier as a STRING LITERAL, so
 // `DELETE FROM "t" WHERE "owner_id" = $1` against a table with no owner_id
-// deletes nothing and reports success — an erasure that silently erases
+// deletes nothing and reports success, an erasure that silently erases
 // nothing is the one outcome a right-to-be-forgotten primitive must never
 // produce. Postgres rejects the unknown column itself; this makes both
 // engines behave the same way.
@@ -627,12 +627,12 @@ func requireColumn(ctx context.Context, db *sql.DB, table, col string, dialect m
 		return fmt.Errorf("read columns of %q: %w", table, err)
 	}
 	if len(live) == 0 {
-		return nil // table absent or unreadable — the caller's existence probe owns that case
+		return nil // table absent or unreadable, the caller's existence probe owns that case
 	}
 	for name := range live {
 		if strings.EqualFold(name, col) {
 			return nil
 		}
 	}
-	return fmt.Errorf("table %q has no column %q — erasure would silently match nothing", table, col)
+	return fmt.Errorf("table %q has no column %q: erasure would silently match nothing", table, col)
 }

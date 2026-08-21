@@ -18,7 +18,7 @@ import (
 //
 // This is not hypothetical developer input. The documented workflow has an
 // AGENT authoring gofastr.yml from natural-language requirements, so every
-// label, title and route in the spec is transcribed text — and `gofastr
+// label, title and route in the spec is transcribed text, and `gofastr
 // generate` writes Go the developer then builds and runs.
 //
 // The sweep drives real payloads through every IR field the emitters read and
@@ -42,7 +42,7 @@ func TestBlueprintEmittersRejectOrNeutralizeLiteralBreakers(t *testing.T) {
 		for _, tc := range blueprintPayloadSites(payload) {
 			t.Run(tc.site+"/"+label, func(t *testing.T) {
 				if err := validateBlueprint(tc.bp); err != nil {
-					return // rejected at the boundary — the documented fix
+					return // rejected at the boundary, the documented fix
 				}
 				files, err := renderBlueprintFiles(tc.bp)
 				if err != nil {
@@ -63,7 +63,7 @@ func TestBlueprintEmittersRejectOrNeutralizeLiteralBreakers(t *testing.T) {
 //
 // Parsing is the decisive check: an injected `func PWN()` is perfectly valid
 // Go, so "does it compile" would pass it. The question is whether the marker
-// appears as an IDENTIFIER — inside a string literal it is just the label the
+// appears as an IDENTIFIER. Inside a string literal it is just the label the
 // spec asked for.
 func assertPayloadStayedData(t *testing.T, site, name, src string) {
 	t.Helper()

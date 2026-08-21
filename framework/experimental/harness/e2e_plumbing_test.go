@@ -1,6 +1,6 @@
 //go:build e2e_real
 
-// e2e plumbing tests — exercise the real components (SQLite, WS,
+// e2e plumbing tests, exercise the real components (SQLite, WS,
 // MCP subprocess, encryption, traces, export bundles, hooks) without
 // touching the LLM. These are cheap to run repeatedly.
 //
@@ -422,7 +422,7 @@ func TestE2EPlumbing_WS_RoundTrip(t *testing.T) {
 	}
 	defer conn.Close()
 
-	handshake := "GET /?session=" + string(sess) + "&token=" + tok + " HTTP/1.1\r\n" +
+	handshake := "GET /?session=" + string(sess) + "&token=" + tok + " HTTP/1.1\r\n" + // not-a-secret: test-local session/token vars
 		"Host: " + host + "\r\n" +
 		"Upgrade: websocket\r\nConnection: Upgrade\r\n" +
 		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
@@ -895,6 +895,6 @@ func errorsAs(err error, target any) bool {
 	// Reflect-free fast path: just check the dynamic type.
 	type teller interface{ Error() string }
 	_ = teller(err)
-	// Defer to stdlib errors.As — re-import to keep this honest.
+	// Defer to stdlib errors.As, re-import to keep this honest.
 	return errorsAsImpl(err, target)
 }

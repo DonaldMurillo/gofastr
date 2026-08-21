@@ -13,12 +13,12 @@ import (
 // ThemeToTokens flattens t into a map keyed by the CSS custom-property
 // identifier WITHOUT the leading "--": "color-primary", "spacing-md",
 // "duration-fast", "tk-kw". The value is exactly what CSSCustomProperties
-// emits after the colon — "#4F46E5", "8px", "150ms", "var(--color-code-text)".
+// emits after the colon, "#4F46E5", "8px", "150ms", "var(--color-code-text)".
 //
 // That key is chosen deliberately over one derived from the Go field path:
 // it is (1) exactly what the :root CSS emits, (2) exactly what a theme-
 // configurator UI control edits, and (3) stable across Go struct
-// reorganisations — a field renamed or reordered changes no key, so a theme
+// reorganisations, a field renamed or reordered changes no key, so a theme
 // file or an embed payload keeps addressing the same token.
 //
 // The typed-token portion goes through the SAME reflection walk as
@@ -30,8 +30,8 @@ import (
 // DarkColors / DarkCode are map[string]string, deliberately skipped by the
 // typed token walk (see Theme.DarkColors). They are flattened under the
 // "dark." prefix because the light and dark values for one token SHARE the
-// CSS custom-property name — --color-primary is declared in :root and
-// re-declared in the dark-scheme block — so without a prefix the two would
+// CSS custom-property name, --color-primary is declared in :root and
+// re-declared in the dark-scheme block, so without a prefix the two would
 // collide in the map. The scheme:
 //
 //	DarkColors["primary"]      → "dark.color-primary"
@@ -50,7 +50,7 @@ func ThemeToTokens(t Theme) map[string]string {
 	}
 	// Dark entries are inserted in sorted name order. A map is unordered,
 	// but a stable insertion order keeps debug dumps readable and makes any
-	// future ordered-emit trivial — the round-trip property does not depend
+	// future ordered-emit trivial, the round-trip property does not depend
 	// on it (ThemeHash is computed from the byte-stable CSS, not the map).
 	for _, name := range sortedStringKeys(t.DarkColors) {
 		out["dark.color-"+name] = t.DarkColors[name]
@@ -79,7 +79,7 @@ func ThemeToTokens(t Theme) map[string]string {
 // its declaration, and CSS alone can exfiltrate via attribute selectors and
 // background-image URLs. Colors therefore accept ONLY the bounded grammar
 // (hex, rgb()/rgba(), hsl()/hsla(), oklch()/oklab(), color-mix(),
-// var(--…), and the CSS named colors) and reject everything else — never
+// var(--…), and the CSS named colors) and reject everything else, never
 // sanitise by stripping, always reject.
 //
 // On any error ApplyTokens returns the zero Theme and a non-nil error
@@ -91,7 +91,7 @@ func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 	result := base
 	// Deep-copy the dark maps. Without this, writing result.DarkColors
 	// would mutate base's map (maps are reference types) and leak one
-	// caller's overrides into the base theme — which is process-global and
+	// caller's overrides into the base theme, which is process-global and
 	// shared across concurrent requests in the theme-variant host.
 	result.DarkColors = copyStringMap(base.DarkColors)
 	result.DarkCode = copyStringMap(base.DarkCode)
@@ -130,7 +130,7 @@ func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 			}
 			continue
 		}
-		return Theme{}, fmt.Errorf("theme: unknown token %q — not a key this theme exposes (see ThemeToTokens)", k)
+		return Theme{}, fmt.Errorf("theme: unknown token %q, not a key this theme exposes (see ThemeToTokens)", k)
 	}
 	return result, nil
 }
@@ -269,7 +269,7 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 		if !f.CanInterface() {
 			continue
 		}
-		// Skip the bookkeeping `Name string` on Theme itself — it is not a
+		// Skip the bookkeeping `Name string` on Theme itself, it is not a
 		// token and carries no CSS-var key.
 		if v.Type().Field(i).Name == "Name" && f.Kind() == reflect.String {
 			continue
@@ -327,9 +327,9 @@ func nonEmptyStringField(v reflect.Value, name string) (string, bool) {
 // name AFTER the "dark." prefix ("color-primary" / "tk-kw"). A dark override
 // may target any token that has a light counterpart (so the re-declaration
 // overrides something real) OR an entry already present in the dark map
-// (so a host can mutate an existing override whose light token is absent —
+// (so a host can mutate an existing override whose light token is absent,
 // e.g. a code-only DarkCode on a theme without a typed Code group). The
-// value must pass the same Color grammar as a light Color — it reaches CSS
+// value must pass the same Color grammar as a light Color, it reaches CSS
 // as "--color-<name>: <value>" inside the dark-scheme block.
 func applyDark(key, value string, lightColors, lightCode map[string]bool, darkColors, darkCode *map[string]string) error {
 	if name, ok := strings.CutPrefix(key, "color-"); ok {
@@ -400,7 +400,7 @@ func sortedStringKeys(m map[string]string) []string {
 // custom properties accept nearly arbitrary text: ";" ends the declaration,
 // "}" closes the :root block, and a single one of either is behind every
 // theme-value injection. Rejecting this set is the universal security
-// boundary for every value that reaches CSS — color or otherwise.
+// boundary for every value that reaches CSS, color or otherwise.
 //
 // "url(" is rejected even inside otherwise-valid values because CSS loads
 // remote resources from url() (a data-exfiltration channel that needs no
@@ -418,7 +418,7 @@ var cssDeclBreakers = []string{
 
 // validateFreeFormCSS is the type check for free-form string tokens (Font,
 // Shadow, Easing, FontSize, CodeColor): reject any value carrying a
-// declaration-breaking sequence. Quotes and commas are allowed — font stacks
+// declaration-breaking sequence. Quotes and commas are allowed, font stacks
 // and shadow/cubic-bezier expressions need them. An empty value is rejected
 // too: clearing a token silently is how a theme ends up with a missing
 // --color-* and broken inheritance.
@@ -436,7 +436,7 @@ func validateFreeFormCSS(v string) error {
 // the universal declaration-breaker rejection (every value reaching CSS must
 // pass it), then requires the value to be one of: a hex literal
 // (#RGB / #RGBA / #RRGGBB / #RRGGBBAA), a call to one of the accepted color
-// functions, var(--…), or a CSS named color. Anything else is rejected —
+// functions, var(--…), or a CSS named color. Anything else is rejected,
 // Color values are the classic injection vector and a loose grammar is the
 // hole.
 func validateColorValue(v string) error {
@@ -447,7 +447,7 @@ func validateColorValue(v string) error {
 		return fmt.Errorf("color value contains forbidden sequence %q (declaration-breaking)", p)
 	}
 	if !isValidColor(v) {
-		return fmt.Errorf("not a recognized color — accept hex (#RRGGBB), rgb()/rgba(), hsl()/hsla(), oklch()/oklab(), color-mix(), var(--…), or a named color")
+		return fmt.Errorf("not a recognized color. Accept hex (#RRGGBB), rgb()/rgba(), hsl()/hsla(), oklch()/oklab(), color-mix(), var(--…), or a named color")
 	}
 	return nil
 }
@@ -467,7 +467,7 @@ func validateColorValue(v string) error {
 // declaration" (cssDeclBreakers) and "what is a color" (isValidColor) must
 // have exactly ONE definition, and it belongs here, beside the token types
 // that own the CSS output. A second copy in the generator is a second thing to
-// forget to harden — that duplication was already made and unwound once on
+// forget to harden, that duplication was already made and unwound once on
 // this branch.
 //
 // Free-form string tokens (Font, Shadow, Easing) have a looser grammar; they
@@ -480,7 +480,7 @@ func ValidateColorValue(v string) error { return validateColorValue(v) }
 //
 // The comparison is CASE-INSENSITIVE. CSS function names are case-insensitive,
 // so a case-sensitive check would reject "url(" while accepting "Url(" and
-// "URL(" — a boundary that reads as airtight and is trivially stepped around.
+// "URL(", a boundary that reads as airtight and is trivially stepped around.
 // The punctuation breakers are unaffected by folding; only the function-name
 // entries need it, and folding everything keeps the rule single-branched.
 func findDeclBreaker(v string) string {
@@ -518,7 +518,7 @@ var allowedCSSFuncs = map[string]bool{
 	"calc": true, "clamp": true, "min": true, "max": true,
 }
 
-// cssFuncCall matches an identifier immediately followed by "(" — a function
+// cssFuncCall matches an identifier immediately followed by "(", a function
 // invocation. Leading "-" is included so vendor-prefixed forms
 // (-webkit-image-set) are seen and rejected rather than skipped.
 var cssFuncCall = regexp.MustCompile(`(?i)(-?[a-z][a-z0-9-]*)\s*\(`)
@@ -535,7 +535,7 @@ func onlyAllowedFuncs(v string) bool {
 }
 
 // closesAtEnd reports whether the parenthesis opened at index open has its
-// matching close as the FINAL character of v — i.e. v is ONE function call and
+// matching close as the FINAL character of v, i.e. v is ONE function call and
 // not a call followed by more content.
 //
 // Without this, "rgb(0 0 0) URL(https://attacker/x)" passes a
@@ -621,7 +621,7 @@ func balancedParens(s string) bool {
 }
 
 // parseIntPx parses an integer pixel value like "8px" / "-4px". The "px"
-// suffix is required — it is what the :root emitter writes and what
+// suffix is required, it is what the :root emitter writes and what
 // ThemeToTokens therefore carries, so accepting a bare integer here would
 // let a value silently change meaning when the key prefix is wrong (a "8"
 // intended for spacing landing on a z-index slot).
@@ -641,7 +641,7 @@ func parseIntPx(s string) (int, error) {
 // a z-index slot.
 func parseIntUnitless(s string) (int, error) {
 	if strings.HasSuffix(s, "px") {
-		return 0, fmt.Errorf("z-index is a unitless integer (got %q — did you mean a spacing token?)", s)
+		return 0, fmt.Errorf("z-index is a unitless integer (got %q; did you mean a spacing token?)", s)
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {

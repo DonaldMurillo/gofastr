@@ -16,7 +16,7 @@ func replaceField(query, from, to string) string {
 }
 
 // sameErrorShape reports whether two error strings are identical once the
-// two field names are normalized away — i.e. they differ ONLY by the field
+// two field names are normalized away, i.e. they differ ONLY by the field
 // name substituted in. Divergence beyond the name would leak hidden-vs-absent.
 func sameErrorShape(hiddenMsg, absentMsg, hiddenName, absentName string) bool {
 	norm := func(s, name string) string { return strings.ReplaceAll(s, name, "FIELD") }
@@ -26,11 +26,11 @@ func sameErrorShape(hiddenMsg, absentMsg, hiddenName, absentName string) bool {
 // TestFilter_HiddenFieldNoPredicate verifies a Hidden field can never be
 // used as a WHERE predicate over the HTTP List surface. Otherwise an
 // attacker probes prefixes via ?password_hash_like=... and observes
-// row-count/result changes to exfiltrate a Hidden column — a value
+// row-count/result changes to exfiltrate a Hidden column, a value
 // oracle. Mirrors ParseSort's existing Hidden exclusion.
 //
 // Under strict parsing a hidden-field key is REJECTED (not silently
-// dropped), which strengthens the invariant — no predicate is built AND
+// dropped), which strengthens the invariant, no predicate is built AND
 // the request fails closed. The rejection must be NON-LEAKY: a hidden field
 // and a truly-nonexistent field must produce the identical error shape, so
 // the error cannot be used to distinguish "hidden" from "absent".

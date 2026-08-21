@@ -49,7 +49,7 @@ func isSafeServerURL(u string) bool {
 	if u == "" {
 		return false
 	}
-	// Relative URLs (path-only) are fine — they inherit the docs origin.
+	// Relative URLs (path-only) are fine. They inherit the docs origin.
 	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") {
 		return true
 	}
@@ -65,11 +65,11 @@ func isSafeServerURL(u string) bool {
 			}
 		}
 		if c == '/' || c == '?' || c == '#' {
-			// No scheme delimiter before path-ish char — treat as relative.
+			// No scheme delimiter before path-ish char. Treat as relative.
 			return true
 		}
 	}
-	// No colon at all — treat as a relative path.
+	// No colon at all. Treat as a relative path.
 	return true
 }
 

@@ -1,6 +1,6 @@
 // Live agent tests: spawn a real `kiln serve --agent omp`
 // subprocess and drive build prompts end-to-end. These tests verify
-// "the agent can actually build X" — not "the IR shape works in
+// "the agent can actually build X", not "the IR shape works in
 // isolation". They use OMP with GLM-5.2 and consume provider credits,
 // and are SLOW (30-180s per prompt), so they're gated by KILN_LIVE=1
 // and skip otherwise.
@@ -128,7 +128,7 @@ func (s *liveServer) Stop() {
 }
 
 // chatRetry runs a chat prompt and retries with a correction when the
-// supplied check fails. A live model is non-deterministic — sometimes it
+// supplied check fails. A live model is non-deterministic, sometimes it
 // describes the change in prose without actually making the tool
 // call. The corrective second prompt feeds the failure back so the agent
 // can self-fix rather than blindly retrying.
@@ -470,7 +470,7 @@ func TestLive_PageWithForm(t *testing.T) {
 	}
 }
 
-// TestLive_FullStackBlog: composite scenario — entities + hook +
+// TestLive_FullStackBlog: composite scenario, entities + hook +
 // route + page wired together. This is the load-bearing demo of "the
 // agent can build a real app from one sentence per surface".
 func TestLive_FullStackBlog(t *testing.T) {
@@ -825,13 +825,13 @@ func convertWorldDumpForFreeze(w worldDump) worldDump { return w }
 
 // TestLive_MultiTurnConversation: the real-user flow. A connected
 // session where each prompt builds on the prior turn's world state.
-// Every turn must EXTEND, not RESET — the agent must read /kiln/world
+// Every turn must EXTEND, not RESET, the agent must read /kiln/world
 // (or rely on its turn being applied to a non-empty world). After
 // each turn we assert all earlier features still work AND the new
 // one is wired correctly.
 //
 // This is the test I should have written first. Single-shot prompts
-// don't prove "the agent can build an app" — they prove "the agent
+// don't prove "the agent can build an app", they prove "the agent
 // can build a piece in isolation". A real session is iterative.
 func TestLive_MultiTurnConversation(t *testing.T) {
 	liveCheck(t)
@@ -915,7 +915,7 @@ func TestLive_MultiTurnConversation(t *testing.T) {
 			return strings.Contains(body, `"id":"title_required"`)
 		},
 	)
-	// Try to insert a row with empty title — hook should reject.
+	// Try to insert a row with empty title, hook should reject.
 	bad, _ := json.Marshal(map[string]any{"title": "", "body": "x"})
 	resp, _ := httpPost(t, srv.URL+"/api/posts", bad)
 	if !strings.Contains(resp, "title required") {
@@ -1010,7 +1010,7 @@ func TestLive_SeedRowsVisible(t *testing.T) {
 // TestLive_AfterCreateAuditFires: agent registers an after_create
 // audit hook. After a row is inserted, the audit channel records it.
 // We can't read the audit destination directly (it lives in process
-// memory), so we verify the row still posts cleanly — the hook
+// memory), so we verify the row still posts cleanly, the hook
 // firing means it didn't error out.
 func TestLive_AfterCreateAuditFires(t *testing.T) {
 	liveCheck(t)
@@ -1035,7 +1035,7 @@ func TestLive_AfterCreateAuditFires(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /events: %v", err)
 	}
-	// Hook fires on after_create — if it errored, the response would
+	// Hook fires on after_create, if it errored, the response would
 	// reflect that. A successful insert means the audit hook ran cleanly.
 	if !strings.Contains(resp, "first") {
 		t.Errorf("after_create audit hook may have blocked insert: %.300s", resp)
@@ -1096,7 +1096,7 @@ func TestLive_RelationField(t *testing.T) {
 }
 
 // TestLive_PageElementsVariety: agent builds a page using a wide
-// range of element kinds — nav, list, table, image. Verify each
+// range of element kinds: nav, list, table, image. Verify each
 // shows up in the rendered HTML.
 func TestLive_PageElementsVariety(t *testing.T) {
 	liveCheck(t)

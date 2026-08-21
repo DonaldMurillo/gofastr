@@ -8,7 +8,7 @@ package main
 // tests extract the actual fences from README.md and
 // framework/docs/content/tutorial-blueprint-app.md and execute them, so
 // any edit that breaks a quickstart fails CI loudly. The extraction is
-// anchored on purpose — if a section heading, the `# gofastr.yml` yaml
+// anchored on purpose. If a section heading, the `# gofastr.yml` yaml
 // block, or the documented command sequence moves or changes shape, the
 // gate fails and the doc must be fixed to stay runnable (not the other
 // way around).
@@ -28,8 +28,8 @@ import (
 	"time"
 )
 
-// The blueprint quickstart lives in the tutorial doc, not the README —
-// the README points at the CLI and the tutorial carries the executable
+// The blueprint quickstart lives in the tutorial doc, not the README.
+// The README points at the CLI and the tutorial carries the executable
 // path. The gate follows the content: it extracts the tutorial's own
 // fences and runs them.
 const blueprintTutorialPath = "framework/docs/content/tutorial-blueprint-app.md"
@@ -37,7 +37,7 @@ const blueprintTutorialPath = "framework/docs/content/tutorial-blueprint-app.md"
 const readmeBlueprintHeading = "## 1. Blueprint → running app"
 
 // mcpTrueRe matches the entity-config `MCP:  true,` line without pinning the
-// exact gofmt column alignment — `MCP:` followed by ≥1 whitespace then `true`.
+// exact gofmt column alignment: `MCP:` followed by ≥1 whitespace then `true`.
 // A future struct key that lengthens the column must not break this guard.
 var mcpTrueRe = regexp.MustCompile(`MCP:\s+true`)
 
@@ -210,7 +210,7 @@ func TestReadmeBlueprintRelationsResolve(t *testing.T) {
 }
 
 // Drift gate (c): the tutorial blueprint must pass the repo's own
-// validator end to end — full blueprint validation (loadBlueprint) plus
+// validator end to end: full blueprint validation (loadBlueprint) plus
 // the unscoped-PII lint that `gofastr validate` enforces. The tutorial
 // can never again ship a quickstart that the validator rejects.
 func TestReadmeBlueprintPassesValidator(t *testing.T) {
@@ -439,7 +439,7 @@ func TestReadmeCoreQuickstartRuns(t *testing.T) {
 // server-rendered screen serves HTML at /, the OwnerField entity
 // answers anonymous API reads with 401, the auth battery's routes are
 // mounted (login answers 400 on an empty body, NOT 404), and the MCP
-// endpoint lists the entity tools — the four claims the section makes.
+// endpoint lists the entity tools, the four claims the section makes.
 func TestReadmeDonaldsWayQuickstartRuns(t *testing.T) {
 	src := readmeProgram(t, readmeDonaldsWayHeading)
 	if !strings.Contains(src, "OwnerField") {
@@ -497,15 +497,15 @@ func TestReadmeDonaldsWayQuickstartRuns(t *testing.T) {
 // address for a free port (the one transform, mirroring the go.mod injection
 // the blueprint gate does), compiles it against the working tree, boots it,
 // and asserts the runtime claims the README's comments make:
-//   - GET /posts == 200 (anonymous read) — Public: true opts out of
+//   - GET /posts == 200 (anonymous read): Public: true opts out of
 //     secure-by-default (crud requireAuthenticated) so the documented
 //     "complete server" does not 401.
-//   - POST /posts == 201 (anonymous write) — Public: true's comment promises
+//   - POST /posts == 201 (anonymous write): Public: true's comment promises
 //     read AND write; this catches a regression where read is open but create
 //     silently still requires a session.
 //   - POST /mcp initialize returns a JSON-RPC result AND tools/list contains
-//     posts_list + posts_create — WithMCP() mounts /mcp AND MCP:true on the
-//     entity actually registered its CRUD tools (not just an empty /mcp).
+//     posts_list + posts_create: WithMCP() mounts /mcp AND MCP:true on the
+//     entity actually registered its CRUD tools rather than leaving /mcp empty.
 //
 // This gate exists because those claims silently drifted from the code
 // (issue #65 secure-by-default and the WithMCP requirement) while the snippet
@@ -528,7 +528,7 @@ func TestReadmeGoQuickstartRuns(t *testing.T) {
 
 	baseURL, output := buildAndBootReadmeProgram(t, src, "readme.example/smallest", "readme-smallest-app", "/posts")
 
-	// Anonymous READ — the documented "complete server" is reachable, and
+	// Anonymous READ: the documented "complete server" is reachable, and
 	// Public: true opts out of secure-by-default so it does not 401.
 	getResp, err := http.Get(baseURL + "/posts")
 	if err != nil {
@@ -539,7 +539,7 @@ func TestReadmeGoQuickstartRuns(t *testing.T) {
 		t.Fatalf("GET /posts = %d, want 200 (Public opt-out missing?)\n%s", getResp.StatusCode, output.String())
 	}
 
-	// Anonymous WRITE — Public: true's comment promises read AND write, so a
+	// Anonymous WRITE: Public: true's comment promises read AND write, so a
 	// POST must persist. Catches the regression where read is open but create
 	// silently still requires a session (the secure-by-default default).
 	postResp, err := http.Post(baseURL+"/posts", "application/json", strings.NewReader(`{"title":"gate"}`))
@@ -553,11 +553,12 @@ func TestReadmeGoQuickstartRuns(t *testing.T) {
 
 	// MCP is live AND carries the entity CRUD tools the snippet promises
 	// (posts_list/get/create/update/delete). The Streamable HTTP transport is
-	// stateless JSON-RPC over POST — no Mcp-Session-Id threading needed — so
+	// stateless JSON-RPC over POST, with no Mcp-Session-Id threading needed, so
 	// initialize then tools/list can be called directly. Asserting the tool
-	// names are present (not just that /mcp != 404) catches a regression where
-	// WithMCP() still mounts /mcp but MCP:true was dropped from the entity (or
-	// tool registration failed past boot), leaving an empty tool set.
+	// names are present, rather than only that /mcp != 404, catches a
+	// regression where WithMCP() still mounts /mcp but MCP:true was dropped
+	// from the entity (or tool registration failed past boot), leaving an
+	// empty tool set.
 	client := &http.Client{Timeout: 5 * time.Second}
 	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"readme-gate","version":"0"}}}`
 	initResp, err := client.Post(baseURL+"/mcp", "application/json", strings.NewReader(initReq))

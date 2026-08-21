@@ -67,7 +67,7 @@ func mountAdmin(t *testing.T, cfg Config) http.Handler {
 	})
 }
 
-// mountAdminBare mounts the admin pages without injecting a user — use
+// mountAdminBare mounts the admin pages without injecting a user, use
 // for the auth-bypass security tests which assert that anonymous
 // callers get 401.
 func mountAdminBare(t *testing.T, cfg Config) http.Handler {

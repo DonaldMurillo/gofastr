@@ -9,8 +9,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Custom variants register at package init — before any component sheet
-// is built — exactly as a real app does. These vars stand in for a host
+// Custom variants register at package init, before any component sheet
+// is built, exactly as a real app does. These vars stand in for a host
 // app's `var Brand = ui.RegisterButtonVariant(...)` declarations.
 var (
 	testBrandVariant = RegisterButtonVariant("brand", VariantCSS{
@@ -84,7 +84,7 @@ func TestButtonVariantCSSInSheet(t *testing.T) {
 func TestCustomVariantStylesToggleAction(t *testing.T) {
 	// ToggleAction's root is data-fui-comp="ui-toggle-action" with
 	// class="ui-button ui-button--<variant>". The custom-variant rules
-	// routed into the ui-button sheet must therefore be dual-scoped —
+	// routed into the ui-button sheet must therefore be dual-scoped:
 	// a registered variant that only matches [data-fui-comp="ui-button"]
 	// can never style a ToggleAction.
 	css := buttonCSS(style.DefaultTheme())
@@ -196,7 +196,7 @@ func TestCardUnknownVariantPanics(t *testing.T) {
 
 func TestSidebarBadVariantPanics(t *testing.T) {
 	wantPanic(t, "Sidebar unknown Variant", func() {
-		// Sidebar is a component — force render by calling Render().
+		// Sidebar is a component. Force render by calling Render().
 		_ = Sidebar(SidebarConfig{Variant: SidebarVariant("nope")}).Render()
 	})
 }

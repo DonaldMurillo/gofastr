@@ -35,7 +35,7 @@ func TestRelationFieldDerivesBelongsTo(t *testing.T) {
 		t.Errorf("expected target entity %q, got %q", "users", rel.Entity)
 	}
 	// For BelongsTo, ForeignKey is the column on the local table holding the
-	// FK — that is the relation field's own column.
+	// FK, that is the relation field's own column.
 	if rel.ForeignKey != "author" {
 		t.Errorf("expected ForeignKey %q (the field's own column), got %q", "author", rel.ForeignKey)
 	}

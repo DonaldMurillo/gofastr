@@ -20,8 +20,8 @@ type snapshotter interface {
 // chunkLister is the optional Store capability the hybrid/keyword path needs:
 // listing a doc's chunk IDs (to purge keyword entries on delete) and looking a
 // chunk up by ID (to hydrate keyword-only hits). FlatStore implements it; a
-// custom Store that doesn't gets rejected at Open() when Options.Keyword is set
-// — otherwise hybrid search would silently drop keyword hits and deletes would
+// custom Store that doesn't gets rejected at Open() when Options.Keyword is set.
+// Otherwise hybrid search would silently drop keyword hits and deletes would
 // leave stale keyword entries.
 type chunkLister interface {
 	ChunkIDsForDoc(docID string) []string
@@ -246,7 +246,7 @@ func (i *index) dueSnapshotLocked() bool {
 // match. The caller MUST hold i.mu: that is what makes the store copy and the
 // WAL truncation bracket exactly the same set of applied operations. A write
 // that lands concurrently is then either fully included in the snapshot (its
-// WAL entry safely truncated) or fully after it (its WAL entry preserved) —
+// WAL entry safely truncated) or fully after it (its WAL entry preserved),
 // never straddling the copy→truncate window where it would be lost.
 func (i *index) snapshotLocked() error {
 	if i.path == "" {
@@ -364,7 +364,7 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 		}
 	}
 
-	// Strip embeddings on the way out — internal stages need them; the
+	// Strip embeddings on the way out, internal stages need them; the
 	// caller does not, and shipping ~1.5KB of floats per hit over the
 	// wire is wasteful.
 	for j := range candidates {
@@ -422,7 +422,7 @@ func (i *index) Close() error {
 			errs = append(errs, err)
 		}
 		// Nilled under i.mu so it is synchronized with every other i.wal
-		// reader (logAndApply*, snapshotLocked) — Close no longer races an
+		// reader (logAndApply*, snapshotLocked), Close no longer races an
 		// in-flight mutation on the wal pointer.
 		i.wal = nil
 	}

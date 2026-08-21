@@ -30,7 +30,7 @@ type Source struct {
 //
 // Per the spec, /list already returns names + descriptions +
 // inputSchema. The "lazy" mode in v0.1 just defers tool registration
-// to later if no schema has been seen — but most servers return
+// to later if no schema has been seen, but most servers return
 // schemas in /list anyway, so the actual savings come from server
 // implementations that elide schemas in /list.
 func NewSource(name, discovery string, c *Client) *Source {
@@ -87,7 +87,7 @@ func (t *mcpTool) Mutating() bool { return true }
 
 // Run executes the tool via MCP tools/call.
 func (t *mcpTool) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*tool.ToolResult, error) {
-	// Strip the server prefix when calling — the server expects its
+	// Strip the server prefix when calling, the server expects its
 	// own canonical tool name.
 	remoteName := call.Name
 	prefix := t.source.name + "."

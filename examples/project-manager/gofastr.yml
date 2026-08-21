@@ -30,7 +30,7 @@ entities:
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -90,7 +90,7 @@ entities:
 
   - name: project_members
     crud: true
-    # user_email is PII: membership rosters are internal team data — every
+    # user_email is PII: membership rosters are internal team data; every
     # operation is RBAC-gated (fail-closed 403 for anonymous).
     access:
       read: projects:read
@@ -126,7 +126,7 @@ entities:
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -177,7 +177,7 @@ entities:
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -223,7 +223,7 @@ entities:
   - name: tasks
     crud: true
     mcp: true
-    # assignee_email / reporter_email are PII: tasks are internal team data —
+    # assignee_email / reporter_email are PII: tasks are internal team data;
     # every operation is RBAC-gated (fail-closed 403 for anonymous).
     access:
       read: projects:read
@@ -313,7 +313,7 @@ entities:
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -350,7 +350,7 @@ entities:
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -387,7 +387,7 @@ entities:
 
   - name: comments
     crud: true
-    # author_email is PII: comments are internal team data — every operation
+    # author_email is PII: comments are internal team data; every operation
     # is RBAC-gated (fail-closed 403 for anonymous).
     access:
       read: projects:read

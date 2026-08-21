@@ -48,7 +48,7 @@ func (r *Runner) Handler(swap func(), healthz, readyz http.HandlerFunc) http.Han
 func (r *Runner) serve(w http.ResponseWriter, req *http.Request, healthz, readyz http.HandlerFunc) {
 	path := req.URL.Path
 
-	// Health endpoints always pass through — orchestrators need them
+	// Health endpoints always pass through, orchestrators need them
 	// during setup to know the process is alive.
 	if path == "/healthz" && healthz != nil {
 		healthz(w, req)
@@ -118,8 +118,8 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 	// Cheap re-check: if setup already completed AND not in force
 	// (rescue) mode, show a done page. completeAndSwap also fires the
 	// (idempotent) swap so this branch is self-healing: if completion
-	// was reached without the swap firing — a transient Complete error
-	// on the final POST, or completion via another path — any later
+	// was reached without the swap firing, a transient Complete error
+	// on the final POST, or completion via another path, any later
 	// request brings the app up instead of leaving it 503 forever.
 	force := isForceMode()
 	done, err := r.completeAndSwap(req.Context())
@@ -197,7 +197,7 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	r.mu.Unlock()
 
 	if nextStep >= len(steps) {
-		// All steps done — the completion page is rendered ONLY when the
+		// All steps done, the completion page is rendered ONLY when the
 		// Complete predicate confirms it (and the swap has fired).
 		// Claiming "your application is ready" while every route still
 		// answers 503 would strand the operator on a lie.
@@ -205,10 +205,10 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 		switch {
 		case err != nil:
 			r.renderIncomplete(w, "Every step ran, but the completion check failed: "+err.Error()+
-				". Fix the underlying issue and reload this page — setup finishes automatically once the check passes.")
+				". Fix the underlying issue and reload this page: setup finishes automatically once the check passes.")
 		case !done:
 			r.renderIncomplete(w, "Every step ran, but setup still reports incomplete. "+
-				"The Complete predicate does not observe the steps' writes — e.g. AdminStep configured "+
+				"The Complete predicate does not observe the steps' writes, e.g. AdminStep configured "+
 				"with a different users table than the auth store writes to. Fix the wiring and restart.")
 		default:
 			r.renderCompletionPage(w, req)
@@ -238,7 +238,7 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 	// Re-check Complete: if setup already finished (concurrent path),
 	// don't re-run.
 	//
-	// A probe ERROR is not "not done" — it is "unknown", and this guard is
+	// A probe ERROR is not "not done", it is "unknown", and this guard is
 	// the only thing standing between a second caller and a re-run of a
 	// step that typically creates the admin account. Refuse rather than
 	// proceed: a failed setup step is recoverable, a silently re-run one
@@ -255,7 +255,7 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 		return err
 	}
 
-	// Advance under the same lock — no window between run and advance.
+	// Advance under the same lock, no window between run and advance.
 	r.currentStep = stepIdx + 1
 	return nil
 }
@@ -272,7 +272,7 @@ func (r *Runner) write503(w http.ResponseWriter) {
 // completeAndSwap re-checks the Complete predicate and fires the swap
 // (idempotent on the framework side) when it reports true. Every path
 // that might observe completion routes through here, so completion
-// reached on ANY request — not just the final POST — brings the app up.
+// reached on ANY request, not only the final POST, brings the app up.
 func (r *Runner) completeAndSwap(ctx context.Context) (bool, error) {
 	done, err := r.cfg.Complete(ctx)
 	if err == nil && done && r.swap != nil {

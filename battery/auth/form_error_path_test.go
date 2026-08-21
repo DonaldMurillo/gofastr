@@ -43,7 +43,7 @@ func TestFormAuthError_FallsBackToConfiguredPath(t *testing.T) {
 // TestDefaultLoginErrorPath_ConcurrentSettersDontRace pins the
 // race-free contract of SetDefaultLoginErrorPath. Run with
 // `go test -race` to confirm. A plain string assignment is not
-// atomic in Go's memory model — concurrent setters can produce a
+// atomic in Go's memory model, concurrent setters can produce a
 // torn read that panics on bounds-check.
 func TestDefaultLoginErrorPath_ConcurrentSettersDontRace(t *testing.T) {
 	prev := getDefaultLoginErrorPath()

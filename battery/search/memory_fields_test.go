@@ -8,7 +8,7 @@ import (
 // TestMemoryFieldEqualsScopesByTenant is the tenant-scoping parity case: two
 // documents with identical text but different tenant fields must return only
 // the one whose tenant matches the filter. The Postgres backend is exercised
-// against the identical scenario in postgres_test.go — both must agree.
+// against the identical scenario in postgres_test.go, both must agree.
 func TestMemoryFieldEqualsScopesByTenant(t *testing.T) {
 	ctx := context.Background()
 	idx := NewMemory()

@@ -6,10 +6,10 @@ package main
 //
 //   - The page renders with StatCards + an activity feed island (SSR).
 //   - The SSE module loads and connects (waitModule + sseStatus check).
-//   - After the demo ticker fires, an island region's innerHTML changes —
+//   - After the demo ticker fires, an island region's innerHTML changes,
 //     proving the SSE island push reached the browser and the runtime
 //     swapped the slot.
-//   - The console/CSP error sink stays empty (the bespoke-CSS canary —
+//   - The console/CSP error sink stays empty (the bespoke-CSS canary,
 //     any inline style="…" that strict CSP strips shows up here).
 //
 // Gated by -short, like every chromedp e2e in this package. Claude runs
@@ -77,7 +77,7 @@ func TestE2E_LiveDashboard_IslandUpdatesViaSSE(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
 		chromedp.WaitReady("body", chromedp.ByQuery),
-		// Make sure the SSE module is up before capturing — otherwise
+		// Make sure the SSE module is up before capturing, otherwise
 		// the initial read could race a hydration swap.
 		waitModule("window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sse === true"),
 		// Confirm the stream actually opened. sseStatus.connected is
@@ -115,7 +115,7 @@ func TestE2E_LiveDashboard_IslandUpdatesViaSSE(t *testing.T) {
 // is present at SSR and carries the polite aria-live semantics. This is
 // the a11y contract: high-frequency metrics are NOT aria-live; the feed
 // IS. A regression that puts aria-live on the metrics would still pass
-// the metrics-update test but should fail an a11y review — this test
+// the metrics-update test but should fail an a11y review, this test
 // documents the lane separation.
 func TestE2E_LiveDashboard_FeedIslandRenders(t *testing.T) {
 	if testing.Short() {
@@ -130,7 +130,7 @@ func TestE2E_LiveDashboard_FeedIslandRenders(t *testing.T) {
 		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.InnerHTML(`[data-island="`+liveDashFeedID+`"]`, &feedHTML, chromedp.ByQuery),
-		// Read the role attribute off the data-island parent itself —
+		// Read the role attribute off the data-island parent itself,
 		// it must be "status" (implicit polite aria-live).
 		chromedp.AttributeValue(`[data-island="`+liveDashFeedID+`"]`, "role", &feedParentRole, nil, chromedp.ByQuery),
 	); err != nil {
@@ -156,7 +156,7 @@ func TestE2E_LiveDashboard_FeedIslandRenders(t *testing.T) {
 // TestE2E_LiveDashboard_ComputedStatusPill proves the store.Computed
 // pill is bound and that the reducer is loaded. The reducer ships via
 // uihost.WithExtraScripts, so a missing/delayed load would silently
-// leave the SSR-painted label in place — this test asserts the reducer
+// leave the SSR-painted label in place, this test asserts the reducer
 // is registered and runnable.
 func TestE2E_LiveDashboard_ComputedStatusPill(t *testing.T) {
 	if testing.Short() {
@@ -191,7 +191,7 @@ func TestE2E_LiveDashboard_ComputedStatusPill(t *testing.T) {
 // regression where the feed/jobs <h2> headings lived INSIDE the
 // data-island wrapper. The runtime does island.innerHTML = payload on
 // every SSE push, and the push payload contained only the Timeline /
-// DataTable — so the first tick permanently deleted the "Activity feed"
+// DataTable, so the first tick permanently deleted the "Activity feed"
 // and "Jobs" titles. The fix moves each heading OUTSIDE the slot, as a
 // sibling; this test asserts both headings are still in the DOM AFTER
 // at least one ticker frame has landed.
@@ -207,7 +207,7 @@ func TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush(t *testing.T) {
 	// OUT of the slot to a sibling position, so the heading must still
 	// be present in the parent wrapper. Read the title via JS so we
 	// explicitly assert "the h2 is a sibling of the data-island, not
-	// a child of it" — walking parentElement then querySelector'ing
+	// a child of it", walking parentElement then querySelector'ing
 	// for the h2 fails if the h2 is missing OR if it ended up inside
 	// the slot (parentElement would be the grid cell either way; the
 	// querySelector('h2') picks up the heading wherever it lives in
@@ -216,7 +216,7 @@ func TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
 		chromedp.WaitReady("body", chromedp.ByQuery),
-		// Confirm SSE actually connected — otherwise no push lands
+		// Confirm SSE actually connected, otherwise no push lands
 		// and the test would pass against a non-live page.
 		waitModule("window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sse === true"),
 		chromedp.Poll("window.__gofastr && window.__gofastr.sseStatus && window.__gofastr.sseStatus.connected === true", nil, chromedp.WithPollingInterval(100*1e6)),
@@ -252,7 +252,7 @@ func TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush(t *testing.T) {
 
 // TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount catches the
 // regression where the Acknowledge button incremented the
-// dash.incidentsAckd signal but nothing visible was bound to it — the
+// dash.incidentsAckd signal but nothing visible was bound to it, the
 // "Acknowledged 0" text was static SSR. The fix binds the count to a
 // live signal span; this test clicks Acknowledge and asserts the DOM
 // count actually changes.
@@ -267,7 +267,7 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 	// data-fui-signal-inc target. (ui.Button forces aria-label to the
 	// visible Label, so the aria-label="Acknowledge one incident" in
 	// the button's ExtraAttrs is overwritten by Label="Acknowledge"
-	// at render time — selecting by aria-label would silently match
+	// at render time, selecting by aria-label would silently match
 	// nothing.)
 	const ackBtnSel = `button[data-fui-signal-inc="dash.incidentsAckd:1"]`
 	const ackCountSel = `[data-fui-signal="dash.incidentsAckd"]`
@@ -281,17 +281,17 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 		// to be reachable before relying on it.
 		chromedp.Poll(`typeof (window.__gofastr || {}).setSignal === 'function'`, nil, chromedp.WithPollingInterval(50*1e6)),
 		// Confirm the bound count span is in the DOM with the SSR
-		// initial value of "0" — guards against the bind regressing
+		// initial value of "0", guards against the bind regressing
 		// back to static text (no data-fui-signal attr).
 		chromedp.WaitVisible(ackCountSel, chromedp.ByQuery),
 		chromedp.Text(ackCountSel, &before, chromedp.ByQuery),
-		// Click (NOT Submit — see CLAUDE.md). data-fui-signal-inc is
+		// Click (NOT Submit, see CLAUDE.md). data-fui-signal-inc is
 		// a click delegator; no form submission is involved.
 		chromedp.Click(ackBtnSel, chromedp.ByQuery),
 		// Poll for the DOM to reflect the new signal value. The
 		// runtime applies the inc synchronously and re-texts the
 		// bound span on the same tick, but a brief poll keeps the
-		// test robust to scheduling on slow CI runners.
+		// test tolerant of scheduling on slow CI runners.
 		chromedp.Poll(`(() => {
 			const el = document.querySelector('[data-fui-signal="dash.incidentsAckd"]');
 			return el && el.textContent === '1';

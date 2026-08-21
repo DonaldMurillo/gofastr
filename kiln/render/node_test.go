@@ -210,7 +210,7 @@ func TestRawNodeDoesNotEmitUnescapedHTML(t *testing.T) {
 }
 
 // Design-system kinds must render wherever they appear, including inside
-// semantic leaf containers — the leaf branch must not hand the whole subtree
+// semantic leaf containers, the leaf branch must not hand the whole subtree
 // to core noderender, whose vocabulary has no typed kinds.
 func TestRenderNodeCardInsideDiv(t *testing.T) {
 	got := render.RenderNode(world.Node{

@@ -15,7 +15,7 @@ import (
 // custom endpoint. Endpoint.Path is documented as "relative to the entity
 // table path", and under a prefix that table path is prefixed.
 //
-// Nothing reported the split — the route registered fine, just somewhere the
+// Nothing reported the split. The route registered fine, just somewhere the
 // author had no reason to look.
 func TestAPIPrefixAppliesToRelativeEntityEndpoints(t *testing.T) {
 	app := newPrefixEndpointApp(t, "/api")
@@ -26,7 +26,7 @@ func TestAPIPrefixAppliesToRelativeEntityEndpoints(t *testing.T) {
 		t.Fatalf("POST /api/licenses/abc/revoke = %d, want %d (relative endpoint did not inherit the API prefix)", rec.Code, http.StatusNoContent)
 	}
 
-	// The unprefixed path must NOT also answer — a route at both places is
+	// The unprefixed path must NOT also answer. A route at both places is
 	// the same split bug wearing a friendlier face.
 	rec = httptest.NewRecorder()
 	app.Router().ServeHTTP(rec, httptest.NewRequest("POST", "/licenses/abc/revoke", nil))

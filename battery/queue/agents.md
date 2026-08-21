@@ -1,8 +1,8 @@
 # battery/queue
 
 Background-job queue with three backends behind a single `Queue`
-interface: `MemoryQueue` (tests/dev), `DBQueue` (durable Postgres/SQLite
-— the default for real apps), `RedisQueue`.
+interface: `MemoryQueue` (tests/dev), `DBQueue` (durable Postgres/SQLite,
+the default for real apps), `RedisQueue`.
 
 **Use this when** the prompt mentions: background job, async task,
 "run later", "send email in the background", scheduled job, retry on
@@ -14,7 +14,7 @@ failure, job queue, dead-letter, worker pool.
 ```go
 q, err := queue.NewDBQueue(db,
     queue.WithTable("jobs"),
-    queue.WithWorkers(4),                  // shared pool — claims any lane
+    queue.WithWorkers(4),                  // shared pool, claims any lane
     queue.WithDBLaneWorkers("high", 2),    // reserved lane workers (optional)
 )
 if err != nil { return err }
@@ -34,7 +34,7 @@ _ = q.Enqueue(ctx, queue.Job{
 })
 ```
 
-**AI-typical anti-pattern** — if you're about to write any of these,
+**AI-typical anti-pattern.** If you're about to write any of these,
 stop and use `DBQueue` instead:
 - `go func() { for { doWork(); time.Sleep(N) } }()` in main
 - A `jobs` table you wrote yourself with `status TEXT` + a polling
@@ -47,23 +47,23 @@ stop and use `DBQueue` instead:
 (`WithDBLaneWorkers`), scheduled jobs, exponential retry, lease-based worker
 claim (safe under crashes), and a `Browsable` view consumed by
 `battery/admin`'s `/admin/queue` page.
-`RedisQueue` and `MemoryQueue` both implement `Browsable` as well —
-they surface dead-lettered jobs under the `"failed"` key so the admin
+`RedisQueue` and `MemoryQueue` both implement `Browsable` as well.
+They surface dead-lettered jobs under the `"failed"` key so the admin
 queue page works with any backend.
 
 **Lanes / starvation.** `Priority` only chooses among *pending* jobs when a
-worker frees up — it cannot preempt a running handler, so a bulk backfill can
+worker frees up. It cannot preempt a running handler, so a bulk backfill can
 starve urgent jobs by saturating every worker. `WithDBLaneWorkers(lane, n)`
 (DBQueue) / `WithLaneWorkers(lane, n)` (MemoryQueue) reserve dedicated workers
 that only claim `Job.Lane`-matching jobs; shared workers still take any lane.
-`RedisQueue` has no worker loop — run one instance per lane via `queueName`.
+`RedisQueue` has no worker loop. Run one instance per lane via `queueName`.
 MemoryQueue now honours `Priority` too (priority heap), not just DBQueue.
 
 **Lease / crash-safety.** Dequeue claims a row by setting `status='claimed'`
 and stamping `claimed_at`. If the worker dies before Ack/Nack the row would
 otherwise be stranded; instead, a claimed row whose `claimed_at` is older than
 the lease timeout (default 5m, set via `WithLeaseTimeout` / `SetLeaseTimeout`)
-becomes eligible for re-dequeue again — as long as it still has attempts left.
+becomes eligible for re-dequeue again, as long as it still has attempts left.
 An expired lease on the FINAL permitted attempt is not re-delivered; it is
 swept to `status='failed'` inside Dequeue (the crash equivalent of a terminal
 Nack) and logged at ERROR, so it shows up in `Stats`/`ListJobs("failed")` and
@@ -114,7 +114,7 @@ The resulting `Job.OccurrenceID` is the stable run-correlation key.
 expose fluent `Lane`, `Priority`, `MaxAttempts` methods after `Job`. They are
 carried unchanged into every fired `Job`: `Lane("bulk")` tags the job for
 bulk-lane workers and any shared catch-all worker (tagging alone does not
-reserve capacity or keep bulk off interactive workers — see Lanes above),
+reserve capacity or keep bulk off interactive workers, see Lanes above),
 `Priority(n)` nudges dequeue order, `MaxAttempts(k)` bounds per-occurrence
 retries. Omit them for today's defaults (empty lane, 0, 3). On the durable
 builder the values PERSIST with the schedule row; re-registering the same ID
@@ -122,4 +122,4 @@ updates them without resetting the next-run watermark, and the columns are
 added to existing tables by an idempotent migration.
 
 **Don't use `MemoryQueue` for real workloads.** Jobs die with the
-process — fine for tests, dangerous for anything users can observe.
+process. Fine for tests, dangerous for anything users can observe.

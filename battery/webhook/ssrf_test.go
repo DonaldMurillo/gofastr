@@ -44,7 +44,7 @@ func TestValidateSubscriberURL_RejectsNonHTTPSchemes(t *testing.T) {
 func TestValidateSubscriberURL_AllowsPublicHTTPandHTTPS(t *testing.T) {
 	cases := []string{
 		"https://api.example.com/hooks",
-		"http://203.0.113.10/hook", // documentation block — treated as public
+		"http://203.0.113.10/hook", // documentation block, treated as public
 		"https://example.com:8443/x",
 	}
 	for _, raw := range cases {

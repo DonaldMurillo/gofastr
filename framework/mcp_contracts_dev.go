@@ -11,17 +11,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	// The analyzers self-register from an init(). Without this import the
 	// registry is empty and contracts_verify would report every tree
-	// clean — see the guard in contracts.Run.
+	// clean. See the guard in contracts.Run.
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 )
 
 // The catalog tools (contracts_list / _explain / _capabilities) answer
 // "what are the rules". These two answer "what is wrong with THIS tree,
-// and fix it" — which means reading, and for contracts_fix writing, the
+// and fix it", which means reading, and for contracts_fix writing, the
 // source directory the process was started from.
 //
 // That makes them categorically different from the read-only catalog, and
-// they are registered ONLY in the dev loop. Not gated in production —
+// they are registered ONLY in the dev loop. Not gated in production:
 // absent. A deployed binary has no source tree to analyse, so a tool that
 // could only ever fail would still have leaked, through its schema in
 // tools/list, that the server will read files off local disk on request.
@@ -31,7 +31,7 @@ import (
 // page from reaching the file-writing half of this pair.
 
 // getwd is a seam. A dev server outlives the directory it was started in
-// when someone moves or deletes the checkout, and os.Getwd then fails —
+// when someone moves or deletes the checkout, and os.Getwd then fails,
 // but not reproducibly across platforms (macOS still resolves a removed
 // directory), so the failure is injected rather than staged.
 var getwd = os.Getwd
@@ -60,7 +60,7 @@ func (a *App) registerContractDevTools() error {
 				"the suggested fix. Optionally scope to one capability (routing, security, " +
 				"permissions, rendering, accessibility, testing, architecture, performance, data, " +
 				"entities, ai, meta). Runs the same analyzers as `gofastr verify`, minus its " +
-				"`go vet` stage — the dev loop's rebuild already reports compile errors. Dev-loop only. " +
+				"`go vet` stage: the dev loop's rebuild already reports compile errors. Dev-loop only. " +
 				"Call contracts_explain on any rule ID in the result for the full reasoning.",
 			schema: map[string]any{
 				"type": "object",
@@ -78,7 +78,7 @@ func (a *App) registerContractDevTools() error {
 			description: "Apply the autofixes for ONE contract rule to this app's source tree and " +
 				"report which files changed. Takes a rule ID (GOFASTR1002) or slug; scoped to a " +
 				"single rule on purpose, so the edits stay reviewable. Only rules whose analyzer " +
-				"produces a mechanical edit can be fixed — contracts_explain reports whether a rule " +
+				"produces a mechanical edit can be fixed: contracts_explain reports whether a rule " +
 				"is autofixable. WRITES TO DISK. Dev-loop only; commit or stash first.",
 			schema: map[string]any{
 				"type": "object",
@@ -106,7 +106,7 @@ func (a *App) registerContractDevTools() error {
 // applyBaseline separates the two callers on purpose. contracts_verify
 // honours the baseline so an agent's view of the tree matches every other
 // one. contracts_fix does NOT: the baseline records debt the team agreed
-// to carry, and paying it down is the point — a fix tool that silently
+// to carry, and paying it down is the point, a fix tool that silently
 // skipped every baselined finding would look broken.
 func runContractsPass(capability string, applyBaseline bool) (*contracts.Report, error) {
 	root, err := contractsSourceRoot()
@@ -138,8 +138,8 @@ func runContractsPass(capability string, applyBaseline bool) (*contracts.Report,
 	}
 	// Honour the same baseline `gofastr verify`, `gofastr build`, and the
 	// dev watcher read. An agent that saw the project's accepted debt as
-	// live findings would disagree with every other view of the same tree
-	// — and would set about "fixing" what the team decided to carry.
+	// live findings would disagree with every other view of the same tree,
+	// and would set about "fixing" what the team decided to carry.
 	baseline, baselineErr := contracts.ReadBaseline(filepath.Join(root, contracts.BaselineFileName))
 	if baselineErr != nil {
 		return nil, fmt.Errorf("read baseline: %w", baselineErr)
@@ -176,10 +176,10 @@ func (a *App) toolContractsVerify(ctx context.Context, params map[string]any) (a
 		// Baselined is accepted debt this run absorbed. Reported so a
 		// clean result never hides that the project is carrying findings.
 		Baselined int `json:"baselined"`
-		// Unparsed counts files the parser rejected — blind spots the
+		// Unparsed counts files the parser rejected, blind spots the
 		// findings above cannot speak for.
 		Unparsed int `json:"unparsed"`
-		// AnalyzerErrors are checks that errored instead of completing —
+		// AnalyzerErrors are checks that errored instead of completing,
 		// including recovered analyzer panics, relayed verbatim. Without
 		// them, passed=false with zero findings gives an agent nothing
 		// to act on. Verbatim is a considered choice, not an oversight:
@@ -187,7 +187,7 @@ func (a *App) toolContractsVerify(ctx context.Context, params map[string]any) (a
 		// caller by definition has direct file access (contracts_fix
 		// writes this very tree), so error text cannot cross a boundary
 		// the caller is not already on the inside of. The finding-level
-		// secret redaction is different — findings travel into reports
+		// secret redaction is different, findings travel into reports
 		// that get pasted and persisted; an error string that embedded
 		// source would too, which is why in-tree analyzers keep source
 		// content out of their error paths.
@@ -241,7 +241,7 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 		return nil, fmt.Errorf("contracts_fix: unknown rule %q; call contracts_list for the catalog", name)
 	}
 	if !rule.Autofix {
-		return nil, fmt.Errorf("contracts_fix: %s (%s) has no autofix — it has to be fixed by hand; call contracts_explain for how", rule.ID, rule.Slug)
+		return nil, fmt.Errorf("contracts_fix: %s (%s) has no autofix: it has to be fixed by hand; call contracts_explain for how", rule.ID, rule.Slug)
 	}
 	rep, err := runContractsPass("", false)
 	if err != nil {
@@ -250,7 +250,7 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 	applied, err := rep.Only(rule.ID).Apply()
 	if err != nil {
 		// Apply stops at the first file that refuses, but the files
-		// before it are already rewritten — and the agent's next read of
+		// before it are already rewritten, and the agent's next read of
 		// the tree will not match its last one unless the error says so.
 		if len(applied) > 0 {
 			written := map[string]bool{}
@@ -258,7 +258,7 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 				written[d.File] = true
 			}
 			n := len(applied)
-			return nil, fmt.Errorf("contracts_fix: %w — %d fix%s already written to %s; the tree has changed, re-run contracts_verify",
+			return nil, fmt.Errorf("contracts_fix: %w: %d fix%s already written to %s; the tree has changed, re-run contracts_verify",
 				err, n, map[bool]string{true: " was", false: "es were"}[n == 1],
 				strings.Join(contracts.SortedFiles(written), ", "))
 		}

@@ -8,13 +8,13 @@ import (
 // Severity is how loudly a diagnostic lands. A config may move a rule
 // either way along this list; what the ordering buys is that every move
 // *down* from the catalog default is a relaxation, which the report
-// names out loud (see [Config.Relaxations]) — turning a check off is a
+// names out loud (see [Config.Relaxations]), turning a check off is a
 // decision the whole team gets to see, not a line in a YAML file.
 type Severity int
 
 const (
 	// SeverityOff suppresses the rule entirely. Only reachable through
-	// configuration — no rule declares it.
+	// configuration: no rule declares it.
 	SeverityOff Severity = iota
 	// SeverityInfo reports without affecting the exit code.
 	SeverityInfo
@@ -54,7 +54,7 @@ func ParseSeverity(s string) (Severity, error) {
 	case "error", "err", "fail", "true":
 		return SeverityError, nil
 	}
-	return SeverityError, fmt.Errorf("unknown severity %q — use off, info, warn, or error", s)
+	return SeverityError, fmt.Errorf("unknown severity %q: use off, info, warn, or error", s)
 }
 
 // MarshalText makes Severity round-trip through JSON as its name.
@@ -71,7 +71,7 @@ func (s *Severity) UnmarshalText(b []byte) error {
 }
 
 // sarifLevel maps a severity onto the SARIF 2.1.0 result level
-// vocabulary. SARIF has no "off" — a suppressed diagnostic is dropped
+// vocabulary. SARIF has no "off": a suppressed diagnostic is dropped
 // before it reaches the writer.
 func (s Severity) sarifLevel() string {
 	switch s {

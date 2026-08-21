@@ -86,7 +86,7 @@ func New() *Runner {
 }
 
 // Register adds a hook. Returns an error if the hook's Source is
-// "project" and AllowProjectHooks is false — the hook is silently
+// "project" and AllowProjectHooks is false, the hook is silently
 // skipped (no error returned to keep callers simple).
 func (r *Runner) Register(h Hook) error {
 	if h.Event == "" || h.Command == "" {

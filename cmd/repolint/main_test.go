@@ -205,9 +205,9 @@ func TestLintRepoAcceptsLowercaseFeatureDocs(t *testing.T) {
 
 // The test-only-dep rule has to distinguish three shapes that a naive
 // strings.HasPrefix over every go.mod line conflates: a real require (report
-// it), a replace directive (do not — a replace does not put the module in a
+// it), a replace directive (do not: a replace does not put the module in a
 // consumer's graph, so there is nothing to act on), and a different module
-// that merely starts with the same characters (do not — a false positive in a
+// that merely starts with the same characters (do not: a false positive in a
 // blocking lint is worse than the dependency it guards).
 //
 // The submodule case is the one that must keep working: the dependency that
@@ -281,7 +281,7 @@ require github.com/other/thing v1.2.3
 }
 
 // The site is the project's best asset and was unreachable from the repo for
-// months — homepage field pointing at pkg.go.dev, zero README links. This rule
+// months: homepage field pointing at pkg.go.dev, zero README links. This rule
 // keeps the path open. Its missing-file branch matters as much as its
 // missing-link branch: an early version returned "no findings" for a deleted
 // README, so `rm README.md` passed the gate clean.
@@ -351,7 +351,7 @@ func TestLintExampleOrigins(t *testing.T) {
 		{"an uppercase scheme is still a URL", `var o = "HTTPS://meridian.gofastr.dev"`, true},
 		{"a // inside an earlier string must not hide a later URL", `var a = "x // y"; var o = "https://meridian.gofastr.dev"`, true},
 		// A label, `case`, or `default` may be followed immediately by a
-		// comment with no space — `default:// note` is valid Go. The comment
+		// comment with no space: `default:// note` is valid Go. The comment
 		// stripper used to treat any `//` preceded by a colon as a URL scheme
 		// and leave the line intact, so prose in such a comment was read as an
 		// emitted URL. Real URLs never need that rule: they live in string
@@ -398,11 +398,11 @@ func writeRepoFile(t *testing.T, root, rel, body string) {
 }
 
 // The rule is about this repository's front door, so it must stay silent on
-// any other module — repolint's own tests lint synthetic trees, and a rule
+// any other module. repolint's own tests lint synthetic trees, and a rule
 // that demanded a specific README link everywhere would fail all of them.
 // A trailing comment on the module line is valid go.mod. Parsing it as part of
 // the path made the module never match, which silently disabled every rule
-// scoped to this repository — the rule would report "clean" for the exact
+// scoped to this repository. The rule would report "clean" for the exact
 // reason it should have reported a finding.
 func TestLintFrontDoorSurvivesACommentOnTheModuleLine(t *testing.T) {
 	root := t.TempDir()
@@ -445,7 +445,7 @@ func TestLintFrontDoorIgnoresOtherModules(t *testing.T) {
 }
 
 // Every cmd/<name> builds to /<name> at the repository root, and .gitignore
-// cannot glob a directory listing — so the entries are hand-written and rot
+// cannot glob a directory listing, so the entries are hand-written and rot
 // whenever a command is added. This rule is the enumeration the .gitignore
 // comment claims to be.
 func TestLintCommandBinariesIgnored(t *testing.T) {

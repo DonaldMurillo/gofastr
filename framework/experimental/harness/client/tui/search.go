@@ -12,7 +12,7 @@ import "strings"
 
 // searchScrollback returns the indices of every line in lines that
 // contains query (case-insensitive). Empty query → no hits (instead
-// of matching every line — saves the user from accidentally hiding
+// of matching every line, saves the user from accidentally hiding
 // everything).
 func searchScrollback(lines []string, query string) []int {
 	if query == "" {

@@ -11,7 +11,7 @@ import (
 
 // accessMiddleware must forward http.Flusher so SSE / chunked-JSON
 // handlers under it can stream. Without the forwarder a downstream
-// handler's `w.(http.Flusher)` assertion fails — every SSE endpoint
+// handler's `w.(http.Flusher)` assertion fails, every SSE endpoint
 // behind battery/log returns 500 "streaming unsupported".
 func TestAccessMiddlewarePreservesFlusher(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(testWriter(t), nil))
@@ -30,7 +30,7 @@ func TestAccessMiddlewarePreservesFlusher(t *testing.T) {
 
 // accessMiddleware must forward http.Hijacker so WebSocket / connection-
 // upgrade handlers under it can take over the conn. Without the forwarder a
-// downstream handler's `w.(http.Hijacker)` assertion fails — every WS upgrade
+// downstream handler's `w.(http.Hijacker)` assertion fails, every WS upgrade
 // behind battery/log breaks with "does not support hijacking".
 func TestAccessMiddlewarePreservesHijacker(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(testWriter(t), nil))

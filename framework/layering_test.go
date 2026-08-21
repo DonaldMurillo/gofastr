@@ -38,7 +38,7 @@ func outOfContract(pkg string) bool {
 // never the reverse. A subpackage that pulls the root into its dependency
 // closure closes a cycle the facade pattern exists to prevent. One edge is
 // sanctioned: pluginhost imports battery/auth (the //gofastr:allow(GOFASTR1301)
-// exception in pluginhost/gate.go), and battery/auth links the root — so
+// exception in pluginhost/gate.go), and battery/auth links the root, so
 // pluginhost is pinned here as the only package allowed to carry the root
 // transitively. If that edge ever goes away, this test fails too, so the
 // exemption cannot outlive its reason.

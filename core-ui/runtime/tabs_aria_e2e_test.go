@@ -15,7 +15,7 @@ import (
 // wrapper's data-active, but assistive tech reads aria-selected on the
 // role=tab buttons. The runtime must mirror the new index into
 // aria-selected whenever the data-active attribute is written through
-// the signal path — otherwise SR users hear the SSR-time selection
+// the signal path, otherwise SR users hear the SSR-time selection
 // forever.
 func TestTabClickUpdatesAriaSelected(t *testing.T) {
 	js, err := RuntimeJS()
@@ -65,7 +65,7 @@ func TestTabClickUpdatesAriaSelected(t *testing.T) {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)

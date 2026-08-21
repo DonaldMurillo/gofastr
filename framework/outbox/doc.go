@@ -25,7 +25,7 @@
 // Each (parent row, declared consumer) pair has its own delivery row in
 // event_outbox_delivery. A consumer that errors or panics is retried with
 // exponential backoff and eventually dead-lettered INDEPENDENTLY of its
-// siblings — one broken consumer never blocks another or fails the whole
+// siblings, one broken consumer never blocks another or fails the whole
 // row. A consumer that is removed (no handler on any replica) has its
 // deliveries abandoned once they age past the handler grace, so it can't
 // block completion. A parent row is marked dispatched once it has no
@@ -44,8 +44,8 @@
 //
 // The claim takes a lease (the claimed_until column) at the delivery
 // grain. A Relay that dies mid-batch holds only its claimed deliveries
-// until the lease expires; after expiry another Relay — or the same
-// process after a restart — reclaims and re-delivers them.
+// until the lease expires; after expiry another Relay, or the same
+// process after a restart, reclaims and re-delivers them.
 //
 // # Layering
 //

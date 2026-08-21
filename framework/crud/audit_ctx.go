@@ -40,7 +40,7 @@ func AuditRequestFromContext(ctx context.Context) *http.Request {
 // the mutating statement runs.
 //
 // Casing: row is whatever selectPreImage produced, which runs the SELECT
-// results through the handler's own scanRow/convertKey pipeline — the same
+// results through the handler's own scanRow/convertKey pipeline, the same
 // key-casing step that shapes every CRUD response. Callers of this function
 // (doUpdate, doDelete) must pass a row that already carries the handler's
 // configured JSONCase; do not pass a raw snake_case DB row here.
@@ -57,14 +57,14 @@ func WithAuditPreImage(ctx context.Context, row map[string]any) context.Context 
 //
 // # Casing contract
 //
-// The returned map is keyed by the handler's configured JSONCase —
+// The returned map is keyed by the handler's configured JSONCase,
 // camelCase by default (e.g. "statusId"), NOT the underlying snake_case
 // DB column name ("status_id"). This is the same casing every CRUD
 // response uses, but it differs from the BeforeCreate/BeforeUpdate hook
 // body, which the framework unconverts back to snake_case before hooks
 // run. A hook that does `pre["status_id"]` against a default (camelCase)
-// handler silently gets nothing back — no panic, no error, just a missing
-// key — because the actual key is "statusId". Casing-identical keys
+// handler silently gets nothing back, no panic, no error, just a missing
+// key, because the actual key is "statusId". Casing-identical keys
 // (e.g. "version", "key") happen to work either way, which is what makes
 // this easy to miss in review.
 //
@@ -84,7 +84,7 @@ func AuditPreImageFromContext(ctx context.Context) map[string]any {
 // It reuses the exact casing translation typed hooks and typed queries
 // already use (see UnmarshalEntity / unmarshalRowToStruct): the row's keys
 // are normalized to camelCase before json.Unmarshal, so T's fields should
-// carry ordinary camelCase `json:"..."` tags — the same tags a generated
+// carry ordinary camelCase `json:"..."` tags, the same tags a generated
 // entity struct already has. This makes the pre-image and a typed hook's
 // payload "speak the same language" regardless of the handler's configured
 // JSONCase.
@@ -109,7 +109,7 @@ func AuditPreImageAs[T any](ctx context.Context) (T, bool) {
 // snake_case DB column names, regardless of the handler's configured
 // JSONCase. It applies the same casing.MapToSnake translation
 // CrudHandler.unconvertMapKeys uses to turn a camelCase request body back
-// into DB columns — no second translator, just the shared helper.
+// into DB columns, no second translator, just the shared helper.
 //
 // Prefer AuditPreImageAs[T] when a typed shape is available; this exists
 // for hooks that want plain map[string]any access keyed the way every

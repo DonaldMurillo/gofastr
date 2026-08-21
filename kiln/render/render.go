@@ -20,7 +20,7 @@ import (
 // carry declarative actions that effect evaluates; entity endpoints carry
 // actions too, but rendering a custom entity endpoint needs run-then-
 // respond semantics plus entity-row scope binding that kiln/effect does
-// not provide — so applyEntities screams (slog.Warn) per dropped endpoint
+// not provide, so applyEntities screams (slog.Warn) per dropped endpoint
 // rather than mounting a handler that would 500. Those endpoints still
 // graduate to owned-Go handler stubs via freeze.
 func Apply(app *framework.App, w *world.World) error {
@@ -136,7 +136,7 @@ func applyAppConfig(app *framework.App, c world.AppConfig) error {
 }
 
 func applyEntities(app *framework.App, w *world.World) error {
-	// Sort by name for deterministic registration order — matters for
+	// Sort by name for deterministic registration order, matters for
 	// migrate file naming and for deterministic test output.
 	names := make([]string, 0, len(w.Entities))
 	for n := range w.Entities {
@@ -181,7 +181,7 @@ func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
 	// session concept to scope against, and this is a deliberate
 	// exception rather than an oversight: kiln is the in-app build-mode
 	// runtime for someone assembling a world over HTTP, not a way to
-	// serve an application. A kiln world is a preview — treat its
+	// serve an application. A kiln world is a preview, treat its
 	// database as readable by anyone who can reach the port, and freeze
 	// to a real app (which does honour these fields) before it holds
 	// anything that matters.
@@ -244,7 +244,7 @@ func relationType(value string) (framework.RelationType, error) {
 
 // ApplySeeds inserts the world's seed rows into db. It's a separate call
 // because seeding requires migrations to have run first, and Kiln owns
-// the migration step — Apply registers the entities, the caller migrates,
+// the migration step: Apply registers the entities, the caller migrates,
 // the caller seeds.
 func ApplySeeds(db *sql.DB, w *world.World) error {
 	if db == nil || len(w.Seeds) == 0 {
@@ -295,12 +295,12 @@ func insertSeed(db *sql.DB, s *world.Seed) error {
 	return nil
 }
 
-// buildInsert assumes table and cols have already cleared query.SafeIdent —
+// buildInsert assumes table and cols have already cleared query.SafeIdent,
 // insertSeed is the only caller and validates both up front. Seed entity
 // names and row keys are agent-authored world IR, so validation (not just
 // quoting) is the contract: kiln used to carry a private quoteIdent that
 // escaped `"` and then wrote each rune with `append(out, byte(r))`,
-// truncating to the low byte AFTER the escape test — so U+2022 and every
+// truncating to the low byte AFTER the escape test, so U+2022 and every
 // other rune ending in 0x22 became a literal quote that closed the
 // identifier. core/query is the one correct implementation; there is no
 // second copy here any more.

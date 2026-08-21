@@ -20,7 +20,7 @@ import (
 // This file is the §10.7 falsifiable transport gate (design #37 §10 item 7).
 // It measures the steady-state per-call cost of proxying a small JSON
 // module.http request through the REAL demo child over moduleproto/stdio,
-// against an equivalent in-process handler, and reports the p95 DELTA — the
+// against an equivalent in-process handler, and reports the p95 DELTA, the
 // transport tax the process boundary adds. The design's ≤ 2 ms p95 target is
 // what we REPORT against; the assertion is deliberately generous (machine-
 // dependent numbers must not flake CI): the run completes and the delta stays
@@ -68,7 +68,7 @@ func benchSupervisor(tb testing.TB, env map[string]string) (*ProcessModuleSuperv
 	return sup, d.Name
 }
 
-// smallJSONBody is the bytes the demo's /tree route returns — a small valid
+// smallJSONBody is the bytes the demo's /tree route returns, a small valid
 // ui.node.v1 tree (~0.5 KiB). The in-process baseline handler writes the same
 // bytes so the proxy-vs-in-process comparison isolates the transport tax.
 var smallJSONBody = mustDemoScreenTree()

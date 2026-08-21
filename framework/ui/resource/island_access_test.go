@@ -98,7 +98,7 @@ func TestIslandRefusesRedirectPolicy(t *testing.T) {
 	}
 }
 
-// The island must enforce the entity's declared read permission — the same
+// The island must enforce the entity's declared read permission, the same
 // one GET /api/secrets enforces. Otherwise it answers 200 for rows the JSON
 // API answers 403 for.
 func TestIslandEnforcesEntityReadPermission(t *testing.T) {
@@ -117,7 +117,7 @@ func TestIslandEnforcesEntityReadPermission(t *testing.T) {
 	}
 }
 
-// A DataSource that does not answer the read gate keeps working — the
+// A DataSource that does not answer the read gate keeps working: the
 // permission check is an optional interface, not a new requirement.
 func TestIslandAllowsUngatedDataSource(t *testing.T) {
 	cfg := islandConfig(&stubSource{rows: []map[string]any{{"id": "s-1", "name": "Ada"}}})
@@ -143,7 +143,7 @@ func TestIslandHandlerUsesFullReadPosture(t *testing.T) {
 	// A SIGNED-IN caller: the handler's own session check passes, so the only
 	// thing that can refuse is the posture check. With an anonymous caller the
 	// session check answers 401 first and the two predicates are
-	// indistinguishable — which is why this case, not that one, is the test.
+	// indistinguishable, which is why this case, not that one, is the test.
 	rr := islandRequest(t, cfg, struct{ ID string }{ID: "u1"})
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("island fragment = %d for a signed-in caller, want 403 — the scoped posture refuses even though the RBAC-only check passes", rr.Code)

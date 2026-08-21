@@ -213,7 +213,7 @@ type ExposureDeclaration struct {
 	Access *AccessDeclaration `json:"access,omitempty"`
 }
 
-// AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl —
+// AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl,
 // the per-operation RBAC permissions for a blueprint-declared entity.
 // "read" covers both List and Get. The CRUD layer enforces these via
 // access.Can against the policy + roles in the request context (403 on

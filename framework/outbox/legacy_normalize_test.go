@@ -41,7 +41,7 @@ func TestNormalize_RewritesLegacyParentAndDelivery(t *testing.T) {
 	db, o := openPureOutbox(t)
 	ctx := context.Background()
 
-	// Future lease in legacy layout — the exact shape that breaks the relay
+	// Future lease in legacy layout, the exact shape that breaks the relay
 	// (an un-expired lease that sorts as expired).
 	futureLegacy := time.Now().UTC().Add(time.Hour).Format(legacySpaceLayout)
 	pastLegacy := time.Now().UTC().Add(-time.Hour).Format(legacySpaceLayout)
@@ -82,7 +82,7 @@ func TestNormalize_RewritesLegacyParentAndDelivery(t *testing.T) {
 		t.Fatalf("delivery claimed_until %q is not RFC3339Nano: %v", claimed, err)
 	}
 
-	// The future lease must still compare as FUTURE relative to now — i.e.
+	// The future lease must still compare as FUTURE relative to now, i.e.
 	// the SQL predicate the relay uses must say "not expired". This is the
 	// behavior fix the whole normalizer exists for.
 	var leased int
@@ -98,7 +98,7 @@ func TestNormalize_RewritesLegacyParentAndDelivery(t *testing.T) {
 
 // TestNormalize_Idempotent asserts a second normalization pass writes nothing
 // because every value is already canonical. We measure this by counting
-// rows-affected across both passes — the second pass must touch zero rows.
+// rows-affected across both passes, the second pass must touch zero rows.
 func TestNormalize_Idempotent(t *testing.T) {
 	db, o := openPureOutbox(t)
 	ctx := context.Background()

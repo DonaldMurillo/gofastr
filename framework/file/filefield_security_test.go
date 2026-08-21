@@ -12,7 +12,7 @@ import (
 )
 
 // TestFileField_RejectsJavaScriptScheme verifies Validate refuses a
-// FileField whose URL begins with javascript: / data: / vbscript: —
+// FileField whose URL begins with javascript: / data: / vbscript:,
 // downstream renderers that drop the URL into href / src would XSS.
 func TestFileField_RejectsJavaScriptScheme(t *testing.T) {
 	t.Parallel()
@@ -23,13 +23,13 @@ func TestFileField_RejectsJavaScriptScheme(t *testing.T) {
 		"vbscript:msgbox(1)",
 		"data:text/html,<script>alert(1)</script>",
 		"data:application/xhtml+xml,<x/>",
-		// Embedded TAB/LF/CR inside the scheme — browsers strip these
+		// Embedded TAB/LF/CR inside the scheme, browsers strip these
 		// anywhere before resolving the scheme, so they must be rejected.
 		"java\tscript:alert(1)",
 		"java\nscript:alert(1)",
 		"jav\rascript:alert(1)",
 		"\x00javascript:alert(1)",
-		// Leading C0 control bytes outside TAB/LF/CR/NUL — the WHATWG URL
+		// Leading C0 control bytes outside TAB/LF/CR/NUL, the WHATWG URL
 		// spec strips ALL leading C0-control-or-space bytes (0x00-0x20)
 		// before resolving the scheme, so the browser still executes
 		// javascript: here. The guard must too.
@@ -51,7 +51,7 @@ func TestFileField_RejectsJavaScriptScheme(t *testing.T) {
 }
 
 // TestFileField_RejectsTraversal verifies path-traversal markers in URL
-// or StorageRef are rejected — a downstream join could interpret them.
+// or StorageRef are rejected, a downstream join could interpret them.
 func TestFileField_RejectsTraversal(t *testing.T) {
 	t.Parallel()
 	cases := []*file.FileField{
@@ -99,7 +99,7 @@ func TestFileField_RejectsNegativeSize(t *testing.T) {
 }
 
 // TestFileField_RejectsOversize verifies the per-string length cap fires
-// for any of the four string fields — protects logs / DB columns from
+// for any of the four string fields, protects logs / DB columns from
 // an attacker shipping a 100 KB MIME string.
 func TestFileField_RejectsOversize(t *testing.T) {
 	t.Parallel()
@@ -118,7 +118,7 @@ func TestFileField_RejectsOversize(t *testing.T) {
 }
 
 // TestGenerateFilePath_NoCollision verifies repeated path generation for
-// the same entity/field/filename never collides — uniqueness must not
+// the same entity/field/filename never collides, uniqueness must not
 // depend on clock resolution, or one upload silently overwrites another.
 func TestGenerateFilePath_NoCollision(t *testing.T) {
 	t.Parallel()
@@ -157,7 +157,7 @@ func TestFileField_AcceptsLegitimate(t *testing.T) {
 // actually paint. The sink is framework/ui.placeholderUsable, which is
 // core-ui/urlsafe's ImageSource policy restricted to the data: scheme.
 // Asserting against urlsafe directly (rather than framework/ui) keeps
-// framework/file a leaf — this is a test-only edge.
+// framework/file a leaf, this is a test-only edge.
 //
 // The two must agree in BOTH directions. A value this package accepts
 // but the sink drops is a silently broken placeholder; a value this
@@ -192,8 +192,8 @@ func TestPlaceholderAllowListsAgree(t *testing.T) {
 	}
 }
 
-// TestFileFieldRejectsControlBytes pins one property — no C0 control
-// byte or DEL survives validation — across every FileField string
+// TestFileFieldRejectsControlBytes pins one property, no C0 control
+// byte or DEL survives validation, across every FileField string
 // surface that is persisted and later echoed into a header, an HTML
 // attribute, or a log line. mimeType is already covered by its
 // charset filter; url, filename, and storageRef were not.
@@ -235,7 +235,7 @@ func TestFileFieldRejectsFilenameTraversal(t *testing.T) {
 
 // TestProcessFileFieldStripsCtrlInName pins the doc claim at
 // FileField.Validate that "the constructors in this package
-// (ProcessFileField) already produce valid FileFields" — a hostile
+// (ProcessFileField) already produce valid FileFields", a hostile
 // multipart filename must not be able to produce a FileField that
 // Validate would reject.
 func TestProcessFileFieldStripsCtrlInName(t *testing.T) {

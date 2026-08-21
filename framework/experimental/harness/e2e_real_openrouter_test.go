@@ -28,13 +28,13 @@ func openRouterModel(t *testing.T) string {
 	if m := os.Getenv("OPENROUTER_MODEL"); m != "" {
 		return m
 	}
-	// Cheap default — adjust if it goes EOL.
+	// Cheap default, adjust if it goes EOL.
 	return "anthropic/claude-3.5-haiku"
 }
 
 // TestE2EReal_OpenRouter_TaskList: with TaskList registered, model
 // should auto-call it when given a multi-step prompt. Mirrors the
-// ZAI auto-use test — guards against the openai-adapter / content
+// ZAI auto-use test, guards against the openai-adapter / content
 // shape bug fired earlier (which was provider-specific).
 func TestE2EReal_OpenRouter_TaskList(t *testing.T) {
 	key := os.Getenv("OPENROUTER_API_KEY")
@@ -107,7 +107,7 @@ func TestE2EReal_OpenRouter_TaskList(t *testing.T) {
 }
 
 // TestE2EReal_OpenRouter_AssistantOnlyToolCalls: regression for the
-// openai-content-omit bug — when an assistant message has ONLY
+// openai-content-omit bug, when an assistant message has ONLY
 // tool_calls and no text, the wire format must use null content
 // (not empty string). Triggers by asking for a tool-only response.
 func TestE2EReal_OpenRouter_AssistantOnlyToolCalls(t *testing.T) {

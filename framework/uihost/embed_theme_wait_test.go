@@ -21,7 +21,7 @@ import (
 // This goes through embedThemeKey (not the bare embedThemeState) because that
 // is where the dup branch and its waitFor call live. The owner's in-flight
 // reservation is planted directly so the duplicate is GUARANTEED to take the
-// dup branch — without this, a fast owner would record before the duplicate
+// dup branch. Without this, a fast owner would record before the duplicate
 // reserved and the test would pass via the top-of-function lookup, never
 // exercising the wait.
 func TestEmbedThemeKeyWaitsForAnInFlightOwner(t *testing.T) {

@@ -1,8 +1,8 @@
-# UI wiring — adding the UI system to a framework.App
+# UI wiring: adding the UI system to a framework.App
 
 `gofastr init` writes this wiring for you. This doc is for the other
 case: you have a plain `framework.App` (entities, CRUD, batteries) and
-want to add server-rendered screens to it by hand — or you're reading a
+want to add server-rendered screens to it by hand, or you're reading a
 generated `main.go` and want to know what each line is for.
 
 This doc covers three objects and the bridge between them:
@@ -10,7 +10,7 @@ This doc covers three objects and the bridge between them:
 | Object | Package | Owns |
 |---|---|---|
 | `framework.App` | `framework` | DB, entities, auto-CRUD, middleware, the HTTP router |
-| `app.App` (the "site") | `core-ui/app` | Screens, layouts, theme — no HTTP knowledge |
+| `app.App` (the "site") | `core-ui/app` | Screens, layouts, theme: no HTTP knowledge |
 | `uihost.UIHost` | `framework/uihost` | The bridge: mounts the site's page routes, `runtime.js`, and `/__gofastr/app.css` onto the framework router |
 
 ## The whole thing
@@ -89,7 +89,7 @@ widget auto-bootstrapped by the runtime.
 ## Line by line
 
 **`framework.NewApp`** builds the data/HTTP spine. Register entities
-and batteries on it exactly as you would in an API-only app — UI
+and batteries on it exactly as you would in an API-only app; UI
 wiring doesn't change any of that. If screens and entity CRUD both
 want the root namespace, move CRUD aside with
 `framework.AppConfig{APIPrefix: "api"}` (see
@@ -102,7 +102,7 @@ port.
 
 **`WithTheme`** takes a `style.Theme`. Start from
 `style.DefaultTheme()` (or `framework/ui/theme.Default(...)`) and
-override token values — see [theming](theming.md). `WithTheme`
+override token values; see [theming](theming.md). `WithTheme`
 validates the theme and panics at startup on a missing token, naming
 the field path.
 
@@ -112,7 +112,7 @@ sidebar-rail app shell; `WithContainer` gives a centered column;
 `app.NewContextComponent` for auth-aware chrome that needs the
 request context). A layout is passed per `Register` call, and
 `SetDefaultLayout` covers screens registered with a nil layout.
-Layouts nest through `app.NewScreenGroup` — a section keeps its own
+Layouts nest through `app.NewScreenGroup`: a section keeps its own
 sidebar inside the app shell, and navigation swaps only the layers
 that change. See [layouts](layouts.md) for the chain model.
 
@@ -128,17 +128,17 @@ adapter; `examples/meridian/app.go` ships the identical type.
 route rendering the full SSR page, and the host serves `runtime.js`,
 the route manifest for client-side nav, and `/__gofastr/app.css`.
 Once mounted, in-page dynamic behavior (sort, paginate, form-submit
-without a reload) is built from islands — the cookbook is
+without a reload) is built from islands; the cookbook is
 [interactive-patterns](interactive-patterns.md).
 Useful options:
 
-- `uihost.WithStaticDir("static")` — serve a static asset directory.
-- `uihost.WithCustomCSS(css)` — append site CSS (e.g. `@font-face`
+- `uihost.WithStaticDir("static")`: serve a static asset directory.
+- `uihost.WithCustomCSS(css)`: append site CSS (e.g. `@font-face`
   rules) to `app.css`; combine with
   `uihost.ReadCustomCSSFile("static/app.css")` for a file you edit
   without recompiling.
 - `uihost.WithNotFoundScreen(c)`, `WithFavicon`, `WithDescription`,
-  `WithOpenGraph`, `WithCanonicalURL` — 404 page and head metadata.
+  `WithOpenGraph`, `WithCanonicalURL`: 404 page and head metadata.
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.
@@ -147,8 +147,8 @@ UI-specific.
 
 - **Registering screens after `fwApp.Mount(uihost.New(site))`.**
   Pages still render (the host resolves screens at request time), but
-  work the host does once at mount — compiling screen actions,
-  per-screen `llm.md` routes — misses late registrations. Register
+  work the host does once at mount, compiling screen actions and
+  per-screen `llm.md` routes, misses late registrations. Register
   everything on `site` first, then `Mount`; the framework's own
   `Mount` doc says the same: mount the UI host last, since it claims
   the router's NotFound catch-all.
@@ -156,7 +156,7 @@ UI-specific.
 > **405 trap (fixed).** Before the `MethodNotAllowed` hook, registering a
 > non-GET route at a path that also had a screen (e.g. `POST /shipments`
 > from an entity action) made `GET /shipments` return a bare text 405
-> instead of rendering the screen — the router's method-mismatch path
+> instead of rendering the screen: the router's method-mismatch path
 > fired *before* the NotFound catch-all. The uihost now installs a
 > `Router.MethodNotAllowed` handler that delegates to `serveOrRender`
 > for safe methods (GET/HEAD) when a static file or screen resolves at
@@ -176,7 +176,7 @@ UI-specific.
   route-conflict panic at startup. Set an `APIPrefix` or give screens
   their own noun space.
 - **Writing page chrome by hand instead of using a layout.** Headers,
-  footers, sidebars, and the centered container are layout concerns —
+  footers, sidebars, and the centered container are layout concerns:
   `app.NewLayout` + `framework/ui` components cover them with zero
   bespoke CSS. An app that ships its own shell markup ends up
   duplicating the design system (see the styling rules in

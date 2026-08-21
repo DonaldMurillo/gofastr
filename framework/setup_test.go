@@ -116,7 +116,7 @@ func (m *mockSetupRunner) SetupURL(_ string) string {
 
 // TestSetSetupWiresRunnerAfterNewApp pins the post-construction setup path.
 // setup.HealthStep needs the *App to run readiness checks, so an app that
-// wants a health step cannot pass WithSetup to NewApp — the runner does not
+// wants a health step cannot pass WithSetup to NewApp, the runner does not
 // exist yet. SetSetup is the supported way out; without it, the only spellings
 // are an unexported field (in-package only) or re-applying the option as a
 // function, which first-run.md used to document.

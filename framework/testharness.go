@@ -24,7 +24,7 @@ type TestApp struct {
 // Needed because auto-CRUD is secure-by-default: an entity declaring
 // neither OwnerField nor Access nor Public requires a session for every
 // operation (see EntityConfig.Public, framework/docs/content/security.md
-// "Default CRUD authentication"). user can be any non-nil value — a bare
+// "Default CRUD authentication"). user can be any non-nil value, a bare
 // struct{ ID string }{ID: "u1"} is enough to pass the baseline gate; use
 // a real user type when the test also needs battery/auth's owner
 // extractor or an access.Policy to resolve roles from it.
@@ -36,7 +36,7 @@ func (ta *TestApp) AsUser(user any) *TestApp {
 }
 
 // TestHarness creates an in-memory test harness around an App.
-// No real HTTP server is started — requests go directly through the router.
+// No real HTTP server is started, requests go directly through the router.
 //
 // Calls app.InitPlugins() internally so plugin / battery wiring is in
 // place before the first request. Without this, RegisterPlugin'd
@@ -124,7 +124,7 @@ func (ta *TestApp) Close() {
 }
 
 // ---------------------------------------------------------------------------
-// TestRequest — builder for custom requests
+// TestRequest: builder for custom requests
 // ---------------------------------------------------------------------------
 
 // TestRequest wraps an http.Request with a fluent builder API.
@@ -165,7 +165,7 @@ func (tr *TestRequest) WithBody(body any) *TestRequest {
 // Execute sends the request and returns a TestResponse. If the builder
 // captured an error (e.g. a WithBody marshal failure), Execute returns a
 // failed TestResponse carrying it instead of dispatching the malformed
-// request — the failure surfaces through the assertion helpers.
+// request, the failure surfaces through the assertion helpers.
 func (tr *TestRequest) Execute() *TestResponse {
 	if tr.err != nil {
 		return &TestResponse{err: tr.err}
@@ -176,7 +176,7 @@ func (tr *TestRequest) Execute() *TestResponse {
 }
 
 // ---------------------------------------------------------------------------
-// TestResponse — assertions
+// TestResponse: assertions
 // ---------------------------------------------------------------------------
 
 // TestResponse wraps the recorded response with assertion helpers.

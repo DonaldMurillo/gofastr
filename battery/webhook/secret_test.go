@@ -106,7 +106,7 @@ func TestSQLStore_WithSecretCodecEncryptsAtRest(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 
-	// Direct DB read — the column MUST NOT contain the plaintext.
+	// Direct DB read, the column MUST NOT contain the plaintext.
 	var rawSecret string
 	row := db.QueryRow("SELECT secret FROM webhook_subscribers WHERE id = ?", "abc")
 	if err := row.Scan(&rawSecret); err != nil {
@@ -119,7 +119,7 @@ func TestSQLStore_WithSecretCodecEncryptsAtRest(t *testing.T) {
 		t.Fatalf("expected version-prefixed ciphertext at rest, got %q", rawSecret)
 	}
 
-	// Round-trip through the store — caller sees plaintext.
+	// Round-trip through the store, caller sees plaintext.
 	got, err := store.GetSubscriber(ctx, "abc")
 	if err != nil || got == nil {
 		t.Fatalf("get: %v %v", got, err)

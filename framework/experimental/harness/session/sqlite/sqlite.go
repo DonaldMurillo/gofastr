@@ -145,7 +145,7 @@ func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint6
 }
 
 // ListPastSessions aggregates the events table into per-session
-// summaries. Newest-last-seen first. Uses two passes — one for the
+// summaries. Newest-last-seen first. Uses two passes, one for the
 // counts/timestamps (fast), one for the first user-message text per
 // session (slower; bounded by `limit`).
 func (s *Store) ListPastSessions(ctx context.Context, limit int) ([]session.PastSession, error) {
@@ -197,7 +197,7 @@ func (s *Store) ListPastSessions(ctx context.Context, limit int) ([]session.Past
 			string(out[i].SessionID),
 		).Scan(&payload)
 		if err != nil {
-			continue // missing TurnStarted is fine — sessions log other events too
+			continue // missing TurnStarted is fine, sessions log other events too
 		}
 		// TurnStarted payload contains {"content":[{"type":"text","text":"..."}]}
 		// Cheap extraction without unmarshaling the full schema.
@@ -370,7 +370,7 @@ func hashStr(s string) string {
 type DefaultRedactor struct{}
 
 // Redact applies a list of canned regex replacements. The list is
-// intentionally tight in v0.1 — false positives are worse than false
+// intentionally tight in v0.1, false positives are worse than false
 // negatives here because the regex runs on *every event payload*.
 // Roadmap OBS-EXPORT-BUNDLE adds a deeper-pass detector for export.
 func (DefaultRedactor) Redact(text string) string {

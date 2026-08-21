@@ -12,7 +12,7 @@ import (
 // Variant keys are content addresses, so two callers genuinely collide on the
 // same key: an embedded surface and the theme editor's live preview rendering
 // the same palette, or two surfaces sharing a brand. The refcount is what makes
-// one embed's eviction remove only its OWN contribution — without it, a single
+// one embed's eviction remove only its OWN contribution. Without it, a single
 // release deletes the variant another holder is still serving, and that holder's
 // ?t= URL degrades to the app theme mid-session.
 func TestReleaseThemeVariantKeepsAVariantWhileAHolderRemains(t *testing.T) {

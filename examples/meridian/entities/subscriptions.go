@@ -34,7 +34,7 @@ var (
 	SubscriptionsUserId     = framework.NewStringColumn("user_id")
 )
 
-// Subscriptions include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Subscriptions include names, pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	SubscriptionsInclCustomer = "customer"
 	SubscriptionsInclPlan     = "plan"
@@ -61,7 +61,7 @@ func NewSubscriptionsRepo(app *framework.App) *SubscriptionsRepo {
 	return &SubscriptionsRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler, useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *SubscriptionsRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -232,7 +232,7 @@ func OnSubscriptionsUpdated(app *framework.App, fn func(ctx context.Context, row
 }
 
 // OnSubscriptionsDeleted subscribes to entity.deleted events scoped to "subscriptions". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only, by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnSubscriptionsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

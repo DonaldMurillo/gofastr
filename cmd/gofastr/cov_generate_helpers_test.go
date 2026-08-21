@@ -129,7 +129,7 @@ func TestRenderIndexLiteral(t *testing.T) {
 	}
 	// Expression is the key for a function index and replaces Columns. Dropping
 	// it emitted an index with no key at all, so a declared UNIQUE constraint
-	// silently did not exist in the generated app — and a case-insensitive
+	// silently did not exist in the generated app, and a case-insensitive
 	// unique index is the usual reason to write one.
 	got = renderIndexLiteral(framework.Index{Name: "uniq_email_lower", Expression: "LOWER(email)", Unique: true})
 	for _, want := range []string{`Name: "uniq_email_lower"`, `Expression: "LOWER(email)"`, "Unique: true"} {

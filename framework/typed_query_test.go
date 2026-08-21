@@ -18,7 +18,7 @@ type queryTestPost struct {
 	Views int    `json:"views,omitempty"`
 }
 
-// hand-rolled "generated" column constants — a sneak-preview of what codegen
+// hand-rolled "generated" column constants, a sneak-preview of what codegen
 // will emit per entity once Task #25's generator side lands.
 var (
 	queryPostsTitle = entity.NewStringColumn("title")

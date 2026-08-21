@@ -12,7 +12,7 @@ import (
 // Property: supplying a custom Options.HTTPClient (for a proxy, tracing,
 // or timeouts) must NOT silently drop the dial-time SSRF guard. With
 // AllowPrivateNetworks=false the guard applies to every delivery client,
-// caller-supplied or default — otherwise the common "just set a timeout"
+// caller-supplied or default, otherwise the common "just set a timeout"
 // customization reopens 169.254.169.254 / RFC1918 / loopback.
 
 func dialLoopback(t *testing.T, c *http.Client) error {
@@ -42,8 +42,8 @@ func TestSSRF_CustomClientStillGuarded(t *testing.T) {
 }
 
 func TestSSRF_CustomTransportSettingsSurvive(t *testing.T) {
-	// The guard must wrap, not replace: the caller's transport — proxy,
-	// custom dialer (egress tunnel, unix socket), pools — is used
+	// The guard must wrap, not replace: the caller's transport, proxy,
+	// custom dialer (egress tunnel, unix socket), pools, is used
 	// verbatim underneath the per-request check. Swapping its dialer
 	// would break clients that legitimately dial through private
 	// infrastructure to reach public targets.
@@ -73,7 +73,7 @@ func TestSSRF_AllowPrivateSkipsGuardOnCustomClient(t *testing.T) {
 	}
 }
 
-// A fully custom RoundTripper (not *http.Transport) still gets guarded —
+// A fully custom RoundTripper (not *http.Transport) still gets guarded,
 // per-request resolved-IP check wraps it.
 type flagRT struct{ called bool }
 

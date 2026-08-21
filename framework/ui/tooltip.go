@@ -9,7 +9,7 @@ import (
 //
 // A CSS-only hover/focus tooltip. The visible pop element is always
 // present in the DOM and toggled by `:hover` / `:focus-visible` /
-// `:focus-within` rules on the wrapper — no JavaScript required, no
+// `:focus-within` rules on the wrapper, no JavaScript required, no
 // runtime callouts, no flash-on-mount.
 //
 // The wrapper carries data-fui-comp="ui-tooltip" so the stylesheet
@@ -44,7 +44,7 @@ type TooltipConfig struct {
 }
 
 // Tooltip wraps the given trigger HTML and appends a hidden tooltip
-// pop. The trigger is unwrapped — Tooltip only adds a containing
+// pop. The trigger is unwrapped. Tooltip only adds a containing
 // span + the pop element, so inline buttons and links stay inline.
 //
 // Use on icon-only buttons, truncated labels, or anywhere extra
@@ -68,7 +68,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// The trigger receives aria-describedby — splice it via the
+	// The trigger receives aria-describedby: splice it via the
 	// existing injectAttrs helper from form.go so the caller's
 	// element gets the attribute without re-parsing.
 	triggerWithDescribedBy := injectAttrs(trigger, ` aria-describedby="`+id+`"`)

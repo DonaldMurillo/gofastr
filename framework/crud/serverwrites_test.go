@@ -133,7 +133,7 @@ func TestCreateOneStillSkipsHiddenByDefault(t *testing.T) {
 	}.WithTimestamps(false),
 		`CREATE TABLE sw_def (id TEXT PRIMARY KEY, name TEXT NOT NULL, secret_code TEXT)`)
 
-	// No WithServerWrites — the hidden field must be skipped.
+	// No WithServerWrites, the hidden field must be skipped.
 	if _, err := ch.CreateOne(context.Background(), map[string]any{"name": "x", "secret_code": "LEAK"}); err != nil {
 		t.Fatalf("CreateOne: %v", err)
 	}

@@ -1,7 +1,7 @@
 // Package fanout carries real-time messages between replicas.
 //
-// GoFastr's real-time surfaces — [event.EventBus], [island.Manager], and
-// [stream.SSEBroker] — are per-process by default. A write on replica A
+// GoFastr's real-time surfaces, [event.EventBus], [island.Manager], and
+// [stream.SSEBroker], are per-process by default. A write on replica A
 // notifies only the browsers connected to A. Fanout is the seam that lets
 // those surfaces broadcast across replicas.
 //
@@ -10,13 +10,13 @@
 // This is the real-time lane. Implementations are permitted to drop a message
 // published while a subscriber is disconnected, reconnecting, or queue-full.
 // Durable, at-least-once delivery is the transactional outbox's job
-// (framework/outbox — see "Two delivery lanes"). The two lanes are disjoint:
+// (framework/outbox, see "Two delivery lanes"). The two lanes are disjoint:
 // fanout never participates in the durable path.
 //
 // Two real-time consumers ride this transport on separate topics, each lossy:
 // invalidation-style updates (island push, entity events) and presence
 // announcements (cross-replica "who is viewing topic X" rosters). Presence is
-// ephemeral, self-healing STATE, not an invalidation — but because each
+// ephemeral, self-healing STATE, not an invalidation, but because each
 // replica rebroadcasts its full roster on a periodic heartbeat, a dropped
 // announcement simply heals on the next beat, so the lossy contract still
 // holds. The presence lane lives entirely in core-ui/island (presence_fanout.go);
@@ -32,11 +32,11 @@
 //
 // # Backends
 //
-//   - [InProcess] — an in-memory pub/sub. Its primary purpose is tests: wiring
+//   - [InProcess], an in-memory pub/sub. Its primary purpose is tests: wiring
 //     two buses / two island managers / two brokers to one InProcess simulates
 //     two replicas inside a single test binary.
 //
-//   - [NewRedis] — a thin adapter over a user-supplied [RedisPubSub]. No Redis
+//   - [NewRedis], a thin adapter over a user-supplied [RedisPubSub]. No Redis
 //     library is imported; adapt go-redis (or redigo) in ~15 lines:
 //
 //     // go-redis adapter
@@ -58,7 +58,7 @@
 //
 // The fanout transport is trusted input: write access to the underlying
 // channel (a Postgres NOTIFY channel, a Redis pub/sub channel, …) equals
-// event-injection into every replica. Payloads are not authenticated — a
+// event-injection into every replica. Payloads are not authenticated; a
 // forged envelope published to the channel is re-emitted on every bus that
 // subscribes to it. Secure the channel (network isolation, DB/Redis
 // credentials) rather than relying on the fanout to reject malicious input.

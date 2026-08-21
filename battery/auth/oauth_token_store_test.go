@@ -212,7 +212,7 @@ func TestValidToken_RefreshesNearExpiry(t *testing.T) {
 	prov.tokenEndpoint = srv.URL
 	store := newSQLOAuthTokenStore(t)
 	ctx := context.Background()
-	// Expires in 10s — inside the default skew window, so ValidToken refreshes.
+	// Expires in 10s, inside the default skew window, so ValidToken refreshes.
 	_ = store.Save(ctx, OAuthTokenRecord{UserID: "u1", Provider: "google", AccessToken: "almost-dead", RefreshToken: "rt", Expiry: time.Now().Add(10 * time.Second)}) // not-a-secret: expiry fixture
 	at, err := ValidOAuthToken(ctx, store, prov, "u1")
 	if err != nil {
@@ -330,7 +330,7 @@ func TestOAuthStore_RequiresKey(t *testing.T) {
 		t.Skip("sqlite3 driver unavailable")
 	}
 	t.Cleanup(func() { db.Close() })
-	// Empty EncryptionKey must fail closed — refresh tokens are password-
+	// Empty EncryptionKey must fail closed, refresh tokens are password-
 	// equivalent and must never be sealed with a default key.
 	if _, err := NewSQLOAuthTokenStore(db); err == nil {
 		t.Fatal("expected error for empty EncryptionKey, got nil")

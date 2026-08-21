@@ -7,7 +7,7 @@ import (
 
 // App-level wiring for process-isolated third-party modules (#37). Kept in a
 // processmodule_-named file (not app.go) so its coverage is attributed to the
-// process-module subsystem's coverage bucket rather than the App spine's — the
+// process-module subsystem's coverage bucket rather than the App spine's, the
 // wiring's defensive misconfiguration guards and the composite MCP call-gate
 // closure share the subprocess subsystem's testability profile, not the
 // spine's. See scripts/coverage-floors.sh.
@@ -27,7 +27,7 @@ import (
 // are started in [App.runStartHooks]; the drain drainer is registered
 // via [lifecycle.PrependDrainer] so children drain first during shutdown.
 //
-// Panics on validation or schema errors (caller-time misconfiguration —
+// Panics on validation or schema errors (caller-time misconfiguration,
 // the descriptor is operator-supplied at install). Returns the App for
 // chaining.
 func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved ApprovedGrants) *App {
@@ -37,7 +37,7 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 	// Lazily construct the store + supervisor on first call.
 	if a.processModules == nil {
 		if a.DB == nil {
-			panic("framework: RegisterProcessModule requires WithDB — the ProcessModuleStore is SQL-backed (design §8)")
+			panic("framework: RegisterProcessModule requires WithDB: the ProcessModuleStore is SQL-backed (design §8)")
 		}
 		store, err := NewSQLProcessModuleStore(a.DB)
 		if err != nil {
@@ -93,7 +93,7 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 	}
 	// Register with the in-process manager so the route gate knows the
 	// name. Manifest carries the migration group pointer; DependsOn stays
-	// empty (process modules are enable-gated only this wave — design §2).
+	// empty (process modules are enable-gated only this wave, design §2).
 	a.modules.register(desc.Name, ModuleManifest{
 		Version:        desc.Version,
 		Description:    "process module: " + desc.Name,
@@ -107,7 +107,7 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 		a.router.Handle(route.Method, route.Path, a.processModules.ProxyHandler(desc.Name, route.ID))
 		a.modules.clearCurrent()
 	}
-	// Process modules default to DISABLED (InstalledDisabled) — the
+	// Process modules default to DISABLED (InstalledDisabled), the
 	// operator enables via [App.ProcessModules].Enable after install.
 	a.modules.mu.Lock()
 	a.modules.enabled[desc.Name] = false
@@ -132,7 +132,7 @@ func (a *App) ProcessModules() *ProcessModuleSupervisor {
 //
 // For the Postgres path, pass [WithCoordinatorAdminDSN] with the host's
 // URL-form DSN (the same one the app boots against). SQLite is
-// trusted/dev-only — the coordinator rejects an untrusted module's
+// trusted/dev-only, the coordinator rejects an untrusted module's
 // migrations on SQLite (fail-closed, design §7 decision F).
 func (a *App) NewModuleMigrationCoordinator(opts ...CoordinatorOption) (*MigrationCoordinator, error) {
 	if a.processModules == nil {

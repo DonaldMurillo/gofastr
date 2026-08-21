@@ -50,8 +50,8 @@ The blog example wires this into `GET /posts/search?q=...`. See
 | `Text`   | `string`           | Query text. Empty string matches all documents.  |
 | `Type`   | `string`           | Optional. Restricts results to one `Document.Type`. |
 | `Limit`  | `int`              | Max hits. `0` means no limit (engine default).   |
-| `Offset` | `int`              | Skip first N hits — useful for pagination.       |
-| `FieldEquals` | `map[string]string` | Optional. Exact-match filter on `Document.Fields` — the scope hook (see below). |
+| `Offset` | `int`              | Skip first N hits, useful for pagination.       |
+| `FieldEquals` | `map[string]string` | Optional. Exact-match filter on `Document.Fields`: the scope hook (see below). |
 
 ### `Result`
 
@@ -77,7 +77,7 @@ type Backend interface {
 ```
 
 Anything that implements all three methods is a valid backend. There
-is no registration step — wire your backend wherever you would have
+is no registration step; wire your backend wherever you would have
 used `search.NewMemory()`.
 
 ## The in-memory backend
@@ -90,7 +90,7 @@ Documents are stored in a map, so:
 - Memory usage is `O(total text size)`.
 - Search is `O(n)` over the corpus.
 
-The implementation is in `battery/search/memory.go` — read it before
+The implementation is in `battery/search/memory.go`; read it before
 using it in anything user-facing.
 
 ## The Postgres backend
@@ -157,7 +157,7 @@ string; non-string values are skipped. The default `ts_rank` weight multipliers
 
 `Query.FieldEquals` is the multi-tenant / per-owner / permission scope hook.
 Put the scope value in `Document.Fields` at index time and filter on it in
-the query — in-query, not post-filtered:
+the query. The filter is in-query, not post-filtered:
 
 ```go
 _ = idx.Index(ctx, search.Document{
@@ -183,7 +183,7 @@ never matches. The Postgres backend encodes this as JSONB containment
 ### Prefix matching
 
 The query builder joins terms with AND and suffixes the **last** term with
-`:*`, so partial input matches as the user types — useful for command palettes
+`:*`, so partial input matches as the user types, useful for command palettes
 and autocomplete. A query for `"pagin"` matches documents containing
 `"pagination"`.
 
@@ -249,12 +249,12 @@ The schema is fixed: `CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, type UNI
 
 Results are ranked by BM25. The SQLite FTS5 `bm25()` function returns negative
 values (more negative = better match), so the backend exposes
-`Score = -bm25` — callers sort descending consistently with the other backends.
+`Score = -bm25`; callers sort descending consistently with the other backends.
 The tiebreak is `id ASC`.
 
 ### Scoping with `FieldEquals`
 
-`FieldEquals` uses `json_extract(fields, '$."key"') = ?` — the key is validated
+`FieldEquals` uses `json_extract(fields, '$."key"') = ?`: the key is validated
 against `^[A-Za-z0-9_]+$` before the JSON path is interpolated, and the value
 is parameterised. String-only matching is enforced naturally by SQLite's type
 system: a JSON number and a TEXT parameter are different storage classes and
@@ -263,7 +263,7 @@ never compare equal.
 ### Indexing
 
 FTS5 has no upsert, so `Index` is `DELETE` by id + `INSERT` in a single
-transaction — re-indexing the same id replaces in place with no duplicate rows.
+transaction: re-indexing the same id replaces in place with no duplicate rows.
 
 ## Choosing a backend
 
@@ -275,12 +275,12 @@ transaction — re-indexing the same id replaces in place with no duplicate rows
 
 **When to pick:**
 
-- **Memory** — tests, single-binary demos, small read-only sites. Loses
+- **Memory**: tests, single-binary demos, small read-only sites. Loses
   everything on restart.
-- **PostgresSearch** — a Postgres-first production app. Ranked search
+- **PostgresSearch**: a Postgres-first production app. Ranked search
   without standing up separate search infrastructure, plus weighted fields
   for title-vs-body ranking.
-- **SQLiteFTS** — a SQLite-first app (embedded, single-file, edge). Ranked
+- **SQLiteFTS**: a SQLite-first app (embedded, single-file, edge). Ranked
   BM25 search without standing up Postgres. Needs the `sqlite_fts5` build tag.
 
 All three share AND-of-terms semantics, prefix matching on the last term,
@@ -306,7 +306,7 @@ results, _ := sb.Backend().Search(ctx, search.Query{Text: "..."})
 ```
 
 `search.Memory` has no background goroutine, so `Battery` implements
-`framework.Battery` only — `Name` and `Init` (a no-op); there is no
+`framework.Battery` only: `Name` and `Init` (a no-op); there is no
 `OnStop`. A future backend that starts a background goroutine will need
 an `OnStop` added to this wrapper (it does not exist today): implement
 `io.Closer` on that backend type and call `Close` from the new hook.
@@ -315,7 +315,7 @@ an `OnStop` added to this wrapper (it does not exist today): implement
 
 - **Indexing inside a hook without context.** Pass the request context
   to `Index` so cancellations propagate. Don't use `context.Background()`
-  from inside a request-scoped hook — you'll leak goroutines on client
+  from inside a request-scoped hook; you'll leak goroutines on client
   disconnect.
 - **Expecting `Type` to be required.** It isn't. Searches without a
   `Type` filter scan all documents. Set `Type` consistently when you

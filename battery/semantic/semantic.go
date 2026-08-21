@@ -196,12 +196,12 @@ func Open(opts Options) (Index, error) {
 	// entries). The default FlatStore satisfies both capabilities.
 	if opts.Path != "" {
 		if _, ok := opts.Store.(snapshotter); !ok {
-			return nil, fmt.Errorf("semantic: Options.Path is set but Store %T cannot persist — it must implement Snapshot(path)/LoadSnapshot(path)", opts.Store)
+			return nil, fmt.Errorf("semantic: Options.Path is set but Store %T cannot persist: it must implement Snapshot(path)/LoadSnapshot(path)", opts.Store)
 		}
 	}
 	if opts.Keyword != nil {
 		if _, ok := opts.Store.(chunkLister); !ok {
-			return nil, fmt.Errorf("semantic: Options.Keyword is set but Store %T cannot list chunks — it must implement ChunkIDsForDoc(docID)/ChunkByID(id) for hybrid search", opts.Store)
+			return nil, fmt.Errorf("semantic: Options.Keyword is set but Store %T cannot list chunks: it must implement ChunkIDsForDoc(docID)/ChunkByID(id) for hybrid search", opts.Store)
 		}
 	}
 	if opts.SnapshotEvery == 0 {

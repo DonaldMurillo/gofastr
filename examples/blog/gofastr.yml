@@ -25,7 +25,7 @@ entities:
     mcp: true
     # email is PII: accounts are staff-managed records, so every operation
     # is gated behind RBAC permissions (fail-closed 403 for anonymous).
-    # Auth alone does not scope auto-CRUD — `gofastr validate` enforces this.
+    # Auth alone does not scope auto-CRUD; `gofastr validate` enforces this.
     access:
       read: users:read
       create: users:write
@@ -61,8 +61,8 @@ entities:
 
   - name: posts
     # A blog's posts are public to READ and nothing else. `public: true` would
-    # also hand anonymous callers create/update/delete on every row — the
-    # exposure `gofastr generate` warns about — so reads are opened with a
+    # also hand anonymous callers create/update/delete on every row, the
+    # exposure `gofastr generate` warns about, so reads are opened with a
     # blank `read:` and every write stays behind a real permission.
     access:
       read:

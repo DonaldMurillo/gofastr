@@ -13,7 +13,7 @@ import (
 
 // TestRegister_IgnoresClientSuppliedRoles_JSON pins the security
 // contract: anyone POSTing roles:["admin"] in the JSON body MUST NOT
-// be created as an admin. The /auth/register endpoint is anonymous —
+// be created as an admin. The /auth/register endpoint is anonymous,
 // honoring client roles trivially self-promotes anyone to any role.
 func TestRegister_IgnoresClientSuppliedRoles_JSON(t *testing.T) {
 	mgr, store := newTestManager(t)
@@ -44,7 +44,7 @@ func TestRegister_IgnoresClientSuppliedRoles_JSON(t *testing.T) {
 }
 
 // TestRegister_IgnoresClientSuppliedRoles_Form pins the same contract
-// for the form-encoded register path — CSRF-style cross-origin POSTs
+// for the form-encoded register path. CSRF-style cross-origin POSTs
 // can target this with <form><input name=roles value=admin>.
 func TestRegister_IgnoresClientSuppliedRoles_Form(t *testing.T) {
 	mgr, store := newTestManager(t)
@@ -96,7 +96,7 @@ func newTestManagerWithRoles(t *testing.T, roles []string) (*AuthManager, *memor
 }
 
 // TestRegisterUsesConfiguredRoles pins that an operator-configured
-// DefaultRoles is what lands on the created account — the hardcoded
+// DefaultRoles is what lands on the created account, the hardcoded
 // ["user"] is gone in favour of AuthManager.DefaultRoles().
 func TestRegisterUsesConfiguredRoles(t *testing.T) {
 	mgr, store := newTestManagerWithRoles(t, []string{"member", "editor"})
@@ -125,7 +125,7 @@ func TestRegisterUsesConfiguredRoles(t *testing.T) {
 }
 
 // TestDefaultRolesIgnoreClientInput pins that even with DefaultRoles
-// configured, a client-supplied roles key is ignored — configured
+// configured, a client-supplied roles key is ignored, configured
 // roles win, client input never reaches the created account.
 func TestDefaultRolesIgnoreClientInput(t *testing.T) {
 	mgr, store := newTestManagerWithRoles(t, []string{"member"})

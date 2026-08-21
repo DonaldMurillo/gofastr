@@ -11,7 +11,7 @@ import (
 // The journal is replayed at boot (kiln/live.New) and by `kiln freeze`, which
 // turns the replayed world into a blueprint. Replay went straight to the world
 // mutators, skipping every semantic guard kiln/protocol enforces on the live
-// path — so a hand-authored .kiln.session.jsonl installed world state the API
+// path, so a hand-authored .kiln.session.jsonl installed world state the API
 // refuses, and `kiln freeze` then generated an app from it.
 //
 // The precondition is a local filesystem write, so this is not a remote hole.
@@ -48,7 +48,7 @@ func TestReplayRefusesMultiTenantEntity(t *testing.T) {
 // A destructive op is plan-gated on the live path: it needs a plan the user
 // approved that names this exact target. The journal recorded the deletion but
 // not its authorization, so replay could not tell an approved delete from a
-// forged one — and reproduced both.
+// forged one, and reproduced both.
 func TestReplayRefusesUnauthorizedDelete(t *testing.T) {
 	s := NewSession()
 	mustApply(t, s, worldEdit(OpAddEntity, AddEntityPayload{Entity: &world.Entity{Name: "orders"}}))
@@ -109,7 +109,7 @@ func TestReplayAppliesAuthorizedDelete(t *testing.T) {
 	}
 }
 
-// Every destructive op protocol.go plan-gates must be gated on replay too —
+// Every destructive op protocol.go plan-gates must be gated on replay too,
 // a guard that covers four of five ops is a guard with a documented bypass.
 func TestReplayGatesEveryDestructiveOp(t *testing.T) {
 	cases := []struct {

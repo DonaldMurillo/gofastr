@@ -86,7 +86,7 @@ func newPollBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -164,7 +164,7 @@ func TestPoll_ClampsIntervalToFiveSeconds(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.Poll(`window.__gofastr && window.__gofastr.loadModule`, nil,
 			chromedp.WithPollingInterval(100*time.Millisecond)),
-		// Explicitly load the poll module — no [data-fui-poll] marker
+		// Explicitly load the poll module, no [data-fui-poll] marker
 		// on this page means the scanner wouldn't trigger it. Same
 		// loadModule path _scanForModules takes internally.
 		chromedp.Evaluate(`window.__gofastr.loadModule('poll')`, nil),
@@ -175,7 +175,7 @@ func TestPoll_ClampsIntervalToFiveSeconds(t *testing.T) {
 		chromedp.Evaluate(`window.__gofastr._pollClampedMs("30s")`, &aboveFloor),
 		chromedp.Evaluate(`window.__gofastr._pollClampedMs("500ms")`, &raised),
 		// NaN serializes as JSON null, which chromedp can't decode
-		// into a float64 — wrap in String() so we capture "NaN".
+		// into a float64, wrap in String() so we capture "NaN".
 		chromedp.Evaluate(`String(window.__gofastr._pollClampedMs("garbage"))`, &bad),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -220,11 +220,11 @@ func TestPoll_TeardownOnRemoval(t *testing.T) {
 	ctx := newPollBrowserCtx(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
-		// Wait for first tick (clamp ~5s) — proves the poll armed.
+		// Wait for first tick (clamp ~5s), proves the poll armed.
 		chromedp.Poll(`/fresh-/.test(document.getElementById('region').textContent)`, nil,
 			chromedp.WithPollingInterval(200*time.Millisecond)),
 		// Remove the polled element. The next tick must self-teardown
-		// via the isConnected check — no further /fresh hit.
+		// via the isConnected check, no further /fresh hit.
 		chromedp.Evaluate(`document.getElementById('host').innerHTML = ''`, nil),
 		// Sleep one full clamped interval. If the timer leaked,
 		// /fresh would be hit again in this window.
@@ -251,7 +251,7 @@ func TestPoll_TeardownOnRemoval(t *testing.T) {
 func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 	var mu sync.Mutex
 	stateHits := 0
-	// 1s pollMs — the widget poll path doesn't apply the 5s clamp
+	// 1s pollMs, the widget poll path doesn't apply the 5s clamp
 	// (only data-fui-poll does), so the test observes multiple ticks
 	// well within the chromedp timeout.
 	const pollMs = 1000
@@ -314,7 +314,7 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 	// at 1s cadence, plus the mount-hydration fetch). Then read the
 	// signal value + hit count. We use Sleep + Evaluate instead of
 	// chromedp.Poll because Poll's internal default timeout races
-	// with the 1s poll cadence — a Sleep is deterministic.
+	// with the 1s poll cadence, a Sleep is deterministic.
 	var snapshot string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -381,7 +381,7 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 // refresh contract added in #112: after a successful data-fui-rpc, the
 // widget re-fetches /state immediately (dispatchRPC → entry.pollNow)
 // instead of waiting out the cadence. The 60s pollMs makes the test
-// deterministic — no scheduled tick can fire within the test window, so
+// deterministic, no scheduled tick can fire within the test window, so
 // a second /state hit after the click can ONLY be pollNow. Deleting the
 // pollNow call (or breaking its wiring through the demand-loaded poll
 // module) fails this test; the kiln integration suite's 5s windows are
@@ -473,7 +473,7 @@ func TestWidgetPollNow_RefreshesAfterRPC(t *testing.T) {
 // TestWidgetPollLargeIntervalNoOverflow pins the round-2 fix for the
 // `| 0` 32-bit overflow: a legitimate long interval (Poll(30 days) →
 // pollMs ~2.59e9) must NOT wrap negative and collapse to the 100ms
-// floor — which would turn a monthly poll into a ~10 req/s hammer.
+// floor, which would turn a monthly poll into a ~10 req/s hammer.
 // With Math.trunc the first re-fetch is scheduled ~a month out, so no
 // /state hit lands within the test window beyond the mount hydration.
 func TestWidgetPollLargeIntervalNoOverflow(t *testing.T) {
@@ -534,7 +534,7 @@ func TestWidgetPollLargeIntervalNoOverflow(t *testing.T) {
 // TestPoll_StopsOnTerminalHeader pins issue #192 on the page-level path:
 // a poll-src handler ends the poll by setting X-Gofastr-Poll-Stop on its
 // response. The terminal body is applied (innerHTML swap) and the timer
-// is torn down — the region reaches terminal state and /fresh is never
+// is torn down, the region reaches terminal state and /fresh is never
 // hit again. Without honoring the header the poll runs forever (#192).
 func TestPoll_StopsOnTerminalHeader(t *testing.T) {
 	var mu sync.Mutex
@@ -566,7 +566,7 @@ func TestPoll_StopsOnTerminalHeader(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		// Wait for the terminal body to land (tick 2, ~10s at the 5s
-		// clamp) — proves the poll armed, ticked at least once, and
+		// clamp), proves the poll armed, ticked at least once, and
 		// applied the terminal response body.
 		chromedp.Poll(`/completed-/.test(document.getElementById('region').textContent)`, nil,
 			chromedp.WithPollingInterval(200*time.Millisecond)),
@@ -593,13 +593,13 @@ func TestPoll_StopsOnTerminalHeader(t *testing.T) {
 
 // TestWidgetPoll_StopsOnTerminalHeader pins issue #192 on the widget
 // path: a Builder.Poll widget whose /state response carries
-// X-Gofastr-Poll-Stop applies the final signal values, then stops — no
+// X-Gofastr-Poll-Stop applies the final signal values, then stops, no
 // further /state fetches. The stop header is the only thing that ends
 // the cadence; without it the widget polls forever after terminal state.
 func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 	var mu sync.Mutex
 	stateHits := 0
-	// 1s pollMs — the widget poll path doesn't apply the 5s clamp, so
+	// 1s pollMs, the widget poll path doesn't apply the 5s clamp, so
 	// the test observes multiple ticks within the chromedp timeout.
 	const pollMs = 1000
 	const terminalAt = 3
@@ -660,7 +660,7 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 
 	ctx := newPollBrowserCtx(t)
 
-	// Phase 1: wait for the terminal signal to land — proves ≥2 poll
+	// Phase 1: wait for the terminal signal to land, proves ≥2 poll
 	// ticks fired after mount hydration and the terminal body applied.
 	var snapshot string
 	if err := chromedp.Run(ctx,
@@ -680,7 +680,7 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 	hitsAtTerminal := stateHits
 	mu.Unlock()
 
-	// Phase 2: sleep well past 3 cadences — a leaked timer would have
+	// Phase 2: sleep well past 3 cadences, a leaked timer would have
 	// fired /state several more times in this window.
 	if err := chromedp.Run(ctx,
 		chromedp.Sleep(3500*time.Millisecond),

@@ -85,7 +85,7 @@ func TestSQLRateLimit_SharedAcrossLimiters(t *testing.T) {
 	if ok, _ := replicaA.Allow("9.9.9.9"); !ok {
 		t.Fatal("A attempt 3 should pass")
 	}
-	// Budget (3) is spent ACROSS replicas — the 4th attempt blocks…
+	// Budget (3) is spent ACROSS replicas, the 4th attempt blocks…
 	if ok, _ := replicaB.Allow("9.9.9.9"); ok {
 		t.Fatal("attempt 4 via B must block: budget is shared, not per-replica")
 	}
@@ -186,7 +186,7 @@ func TestSQLRateLimit_RecoversAfterTransientSchemaError(t *testing.T) {
 		t.Fatalf("first Allow on a dead DB must fail closed: ok=%v err=%v", ok, err)
 	}
 
-	// DB recovers (swap in a live handle — single-goroutine test).
+	// DB recovers (swap in a live handle, single-goroutine test).
 	liveDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("open live: %v", err)
@@ -202,18 +202,18 @@ func TestSQLRateLimit_RecoversAfterTransientSchemaError(t *testing.T) {
 // Regression: the amortized sweep is table-global but must use each
 // limiter's OWN Window. A short-window co-tenant (e.g. a 1m 2FA limiter)
 // must not delete a long-window limiter's (1h login-account) still-valid
-// attempt rows — which would silently collapse the longer window.
+// attempt rows, which would silently collapse the longer window.
 func TestSQLRateLimit_SweepScopedNotCrossWindow(t *testing.T) {
 	s, db := newRLStore(t)
 	ctx := context.Background()
 
-	// A login-account attempt 30 min old — inside its 1h window, must survive.
+	// A login-account attempt 30 min old, inside its 1h window, must survive.
 	thirtyMinAgo := time.Now().Add(-30 * time.Minute).UnixMilli()
 	if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ('login_account|bob', $1)", thirtyMinAgo); err != nil {
 		t.Fatalf("seed long-window attempt: %v", err)
 	}
 
-	// A fresh store's lastSweep is zero, so this first Allow sweeps — but
+	// A fresh store's lastSweep is zero, so this first Allow sweeps, but
 	// with the SHORT-window 2FA limiter's config (Window=1m). Pre-fix, the
 	// unscoped sweep would delete bob's 30-min-old row.
 	shortCfg := RateLimiterConfig{MaxAttempts: 3, Window: time.Minute, BlockDuration: time.Hour, Scope: "twofa"}
@@ -285,7 +285,7 @@ func TestSQLRateLimit_SweepEscapesScopeMetacharacters(t *testing.T) {
 	}
 
 	// Short-window scope "a_c" sweeps (cutoff now-1m). Unescaped, "a_c|%"
-	// treats "_" as a wildcard and matches "abc|victim" — wrongly deleting a
+	// treats "_" as a wildcard and matches "abc|victim", wrongly deleting a
 	// row that belongs to the unrelated 1h "abc" scope.
 	shortCfg := RateLimiterConfig{MaxAttempts: 3, Window: time.Minute, BlockDuration: time.Hour, Scope: "a_c"}
 	if _, _, err := s.Allow(ctx, "a_c|attacker", shortCfg); err != nil {
@@ -308,7 +308,7 @@ func TestSQLRateLimit_PipeInKeyCannotCrossScope(t *testing.T) {
 	twofa := newScopedRateLimiter(cfg, "twofa")
 
 	// Attacker hammers login with a raw key crafted to look like a twofa key.
-	// Composite becomes "login_ip|twofa|victim" — still under login_ip.
+	// Composite becomes "login_ip|twofa|victim", still under login_ip.
 	login.Allow("twofa|victim")
 	login.Allow("twofa|victim")
 	if ok, _ := login.Allow("twofa|victim"); ok {

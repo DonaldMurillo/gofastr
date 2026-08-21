@@ -15,7 +15,7 @@ import (
 // to render a status pill with optional icon, title, body, and a
 // dismiss link.
 //
-// Notification is intentionally stateless — auto-dismiss timing is the
+// Notification is intentionally stateless: auto-dismiss timing is the
 // host's responsibility. The dismiss link can target a URL that the
 // server uses to remove the notification from session state, then a
 // signal-driven re-render swaps it out.

@@ -33,12 +33,12 @@ func TestMigrateDefersDanglingBelongsTo(t *testing.T) {
 		},
 	})
 
-	// users is absent — the dangling BelongsTo must be deferred, not fatal.
+	// users is absent, the dangling BelongsTo must be deferred, not fatal.
 	if err := db.Migrate(d, app.Registry); err != nil {
 		t.Fatalf("Migrate with dangling BelongsTo should defer, got: %v", err)
 	}
 
-	// Add the target and migrate again — now resolvable, still clean.
+	// Add the target and migrate again, now resolvable, still clean.
 	app.Entity("users", framework.EntityConfig{
 		Fields: []schema.Field{{Name: "email", Type: schema.String}},
 	})

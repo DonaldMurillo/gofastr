@@ -17,7 +17,7 @@
 //   - Multi-line values are NOT supported. Use \n inside a double-quoted
 //     value if you need a newline character.
 //   - Inline comments after an UNQUOTED value are preserved as part of
-//     the value — write a quoted value if you need to embed `#`.
+//     the value. Write a quoted value if you need to embed `#`.
 //   - On a malformed line the parser returns an error with line number.
 //
 // See Expand for the variable-expansion semantics and the hardening
@@ -34,7 +34,7 @@ import (
 
 // Parse reads .env content from r and returns the parsed key/value
 // map. Variable expansion is performed on double-quoted values using
-// already-parsed keys (later lines see earlier lines) — for the full
+// already-parsed keys (later lines see earlier lines); for the full
 // rules including os.Environ fallback, use Expand explicitly.
 //
 // Duplicate keys: last wins.
@@ -63,7 +63,7 @@ func Parse(r io.Reader) (map[string]string, error) {
 			// wrap LoadAndApply in log.Fatal, so echoing the raw line
 			// puts "API_TOKEN sk-live-..." (the exact typo this branch
 			// catches) into stderr. The sibling branches below already
-			// name only the key or the shape — match them.
+			// name only the key or the shape; match them.
 			return nil, fmt.Errorf("dotenv: line %d: missing '='", lineNum)
 		}
 		key := strings.TrimSpace(trimmed[:eq])
@@ -140,7 +140,7 @@ func parseValue(v string, seen map[string]string) (string, error) {
 // `\$` is INTENTIONALLY left as-is; the expander downstream knows to
 // treat `\$` as a literal `$` that does NOT start a `${...}` lookup.
 // Doing the strip here would let `\${VAR}` get expanded a moment
-// later — exactly the opposite of what the author meant.
+// later, exactly the opposite of what the author meant.
 //
 // Anything else after `\` is left verbatim (the `\` is kept).
 func unescapeDouble(s string) (string, error) {
@@ -166,7 +166,7 @@ func unescapeDouble(s string) (string, error) {
 		case '"', '\\':
 			b.WriteByte(nxt)
 		default:
-			// Includes '$' — preserved verbatim (with leading \) so
+			// Includes '$', preserved verbatim (with leading \) so
 			// the expander can recognise it as an escape.
 			b.WriteByte('\\')
 			b.WriteByte(nxt)

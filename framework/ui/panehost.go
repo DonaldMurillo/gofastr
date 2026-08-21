@@ -1,6 +1,6 @@
 package ui
 
-// PaneHost — a layout shell with an always-visible primary pane and one
+// PaneHost is a layout shell with an always-visible primary pane and one
 // or two openable side panes (secondary / tertiary). It owns the pane
 // LIFECYCLE: show/hide, focus handoff on open, focus restore on close,
 // and a responsive collapse where, below 768px, an open side pane
@@ -11,15 +11,15 @@ package ui
 // uses the EXISTING rails: a trigger carries data-fui-rpc + a
 // data-fui-rpc-signal that broadcasts into a data-fui-signal +
 // data-fui-signal-mode="html" region inside the pane. Pane open/close
-// is in-page state — never a URL route (Hard Rule 1).
+// is in-page state, never a URL route (Hard Rule 1).
 //
 // A host can still round-trip that state through the URL: set
 // DeepLinkParam and the runtime records the open pane in a query
 // parameter, so refresh, share, and Back reproduce it. That is a query
-// parameter describing in-page state, not a route — the same shape
+// parameter describing in-page state, not a route, the same shape
 // widget deep links use for modals.
 //
-// Shape (mirrors DocLayout — a display:grid whose column count CSS
+// Shape (mirrors DocLayout, a display:grid whose column count CSS
 // keys off open-state modifier classes on the root, so no inline style
 // is emitted and CSP stays strict):
 //
@@ -45,7 +45,7 @@ import (
 
 // PaneHostConfig configures a PaneHost.
 type PaneHostConfig struct {
-	// Primary is the always-visible main pane. Required — PaneHost
+	// Primary is the always-visible main pane. Required: PaneHost
 	// panics when it is empty (mirrors DataTable/DocLayout required
 	// slots).
 	Primary render.HTML
@@ -56,7 +56,7 @@ type PaneHostConfig struct {
 	Tertiary render.HTML
 
 	// SecondaryOpen / TertiaryOpen set the SSR initial open state so
-	// the first paint matches server state (Hard Rule 6) — e.g. a
+	// the first paint matches server state (Hard Rule 6), e.g. a
 	// detail route that should render with the pane already shown. A
 	// closed optional pane renders with hidden; the runtime reveals it
 	// on open so there is no flash.
@@ -70,7 +70,7 @@ type PaneHostConfig struct {
 	TertiaryLabel  string
 
 	// DeepLinkParam opts this host into URL round-tripping, naming the
-	// query parameter that carries pane state — e.g. "pane" for
+	// query parameter that carries pane state, e.g. "pane" for
 	// `?pane=secondary:ticket-42`. Opening a pane whose trigger declares
 	// a key writes that parameter, closing strips it, and Back moves
 	// between those states. Empty (the default) leaves the URL alone.
@@ -78,7 +78,7 @@ type PaneHostConfig struct {
 	// Pane open/close remains in-page state, not a route (Hard Rule 1):
 	// the parameter records which pane is showing so a refresh or a
 	// shared link reproduces it, exactly as widget deep links do for
-	// modals. The server still decides first paint — read the parameter
+	// modals. The server still decides first paint. Read the parameter
 	// with PaneDeepLink and set SecondaryOpen/TertiaryOpen plus the
 	// pane's content from it. Without that, a shared link renders the
 	// URL's pane closed and the runtime opens it after hydration.
@@ -149,7 +149,7 @@ func PaneHost(cfg PaneHostConfig) render.HTML {
 // The value is `<slot>` or `<slot>:<key>`, where slot is "secondary" or
 // "tertiary" and key identifies what the pane is showing. It is the
 // server half of PaneHostConfig.DeepLinkParam, and it parses exactly
-// what the runtime writes — keep the two in step:
+// what the runtime writes. Keep the two in step:
 //
 //	q := appui.QueryFromContext(ctx)
 //	slot, key, ok := ui.PaneDeepLink(q, "pane")

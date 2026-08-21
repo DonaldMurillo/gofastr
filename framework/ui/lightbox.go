@@ -15,21 +15,21 @@ import (
 
 // ─── Lightbox ───────────────────────────────────────────────────────
 //
-// Standalone zoom overlay. Composes preset.Modal — ESC, click-outside,
+// Standalone zoom overlay. Composes preset.Modal: ESC, click-outside,
 // focus-trap, return-focus all come free. Lightbox does NOT render any
 // trigger surface itself; any element on the page can open it via
 // `data-fui-open="<lightbox-name>" data-fui-deeplink="src=…&alt=…&caption=…&group=<id>"`.
 //
 // Pairs cleanly with framework/ui.Gallery (set its Lightbox field to
 // this Lightbox's Name and each gallery item becomes a trigger) but
-// works equally well standalone — markdown-content authors, inline
+// works equally well standalone: markdown-content authors, inline
 // figures, custom photo feeds, etc. can all trigger the same overlay.
 //
 // Optional features:
-//   - NavArrows     — Prev/Next buttons + ArrowLeft/Right keyboard nav
+//   - NavArrows:      Prev/Next buttons + ArrowLeft/Right keyboard nav
 //                     across siblings sharing `data-fui-lightbox-group`.
-//   - ShowCaption   — `<figcaption>` slot bound to a "caption" signal.
-//   - AllowDownload — visible Download button bound to current src.
+//   - ShowCaption:    `<figcaption>` slot bound to a "caption" signal.
+//   - AllowDownload:  visible Download button bound to current src.
 //
 // All three live in the optional runtime module
 // core-ui/runtime/src/lightbox.js, which auto-loads when the modal is
@@ -59,7 +59,7 @@ type LightboxConfig struct {
 
 	// Ctx carries the per-request context used to resolve i18n strings
 	// (Prev/Next nav aria-labels, Download aria-label). When nil,
-	// context.Background() is used and English fallbacks are returned —
+	// context.Background() is used and English fallbacks are returned,
 	// preserving today's behaviour.
 	Ctx context.Context
 }
@@ -119,13 +119,13 @@ func (s *lightboxSlot) Render() render.HTML {
 		ctx = context.Background()
 	}
 	figChildren := []render.HTML{
-		// SR-only title — Modal.LabelledBy() points here.
+		// SR-only title: Modal.LabelledBy() points here.
 		html.Span(html.TextConfig{
 			ID:         s.name + "-title",
 			Class:      "ui-visually-hidden",
 			ExtraAttrs: html.Attrs{"data-fui-signal": "alt"},
 		}, render.Text(s.label)),
-		// Image — runtime writes signal value into the src attr.
+		// Image: runtime writes signal value into the src attr.
 		render.Tag("img", map[string]string{
 			"class":                "ui-lightbox__full",
 			"alt":                  "",
@@ -142,7 +142,7 @@ func (s *lightboxSlot) Render() render.HTML {
 			}, render.HTML("")))
 	}
 
-	// Toolbar — Prev/Next + Download.
+	// Toolbar: Prev/Next + Download.
 	toolbar := []render.HTML{}
 	if s.navArrows {
 		toolbar = append(toolbar,

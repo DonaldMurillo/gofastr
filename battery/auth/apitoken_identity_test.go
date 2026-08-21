@@ -12,7 +12,7 @@ import (
 
 // TokenMiddleware must expose the authenticating token's own ID in ctx via
 // TokenID. Owner + scopes alone can't attribute a request to a SPECIFIC
-// credential — one owner can hold many tokens, and per-token metering,
+// credential, one owner can hold many tokens, and per-token metering,
 // quotas, and audit trails all need to know which one was used.
 func TestTokenMiddleware_ExposesTokenID(t *testing.T) {
 	_, ts, _ := newTokenTestDB(t)
@@ -44,7 +44,7 @@ func TestTokenMiddleware_ExposesTokenID(t *testing.T) {
 
 // ListAll is the admin view: every token across owners, newest first.
 // RevokeAny is the admin revoke: ignores owner scoping, idempotent,
-// ErrTokenNotFound on unknown ids. Both live on the concrete SQL store only —
+// ErrTokenNotFound on unknown ids. Both live on the concrete SQL store only,
 // the plugin's self-service routes must never reach them.
 func TestSQLAPITokenStore_AdminListAndRevoke(t *testing.T) {
 	_, ts, _ := newTokenTestDB(t)

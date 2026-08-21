@@ -29,9 +29,9 @@ st := storage.NewS3Storage("my-bucket", "us-east-1",
 )
 ```
 
-**AI-typical anti-pattern** — if you're about to write any of these,
+**AI-typical anti-pattern.** If you're about to write any of these,
 stop and use `LocalStorage` / `S3Storage` instead:
-- `os.WriteFile(filepath.Join("uploads", name), body, 0o644)` —
+- `os.WriteFile(filepath.Join("uploads", name), body, 0o644)`:
   no path-traversal guard (`name="../../../etc/passwd"`), no temp
   file, breaks on the first multi-host deploy
 - `io.Copy` into a `*os.File` whose name comes from the upload's
@@ -40,11 +40,11 @@ stop and use `LocalStorage` / `S3Storage` instead:
 - Anything that calls `aws-sdk-go` directly when this app's storage
   needs are just put/get/delete by key
 
-Hand the result to `framework.WithFileStorage` — `Image` / `File`
+Hand the result to `framework.WithFileStorage`. `Image` / `File`
 entity fields then upload through it for free, and the S3 swap is
 a constructor change.
 
-**Direct construction:** backends have no registry — call `storage.NewLocalStorage(dir)`, `storage.NewMemoryStorage()`, or `storage.NewS3Storage(bucket, region)` directly and hand the result to `framework.WithFileStorage`. Swapping backends is a constructor change.
+**Direct construction:** backends have no registry. Call `storage.NewLocalStorage(dir)`, `storage.NewMemoryStorage()`, or `storage.NewS3Storage(bucket, region)` directly and hand the result to `framework.WithFileStorage`. Swapping backends is a constructor change.
 
 **Content checksums:** `storage.SaveWithChecksum(ctx, s, key, r)` writes
 through any `Storage` while teeing a SHA-256 hasher, returning

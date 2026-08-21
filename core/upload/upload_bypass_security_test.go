@@ -148,7 +148,7 @@ func TestUploadBypass_SVGPayloads(t *testing.T) {
 func TestUploadBypass_DoubleExtensionValidation(t *testing.T) {
 	err := ValidateExt("shell.php.jpg", []string{"jpg", "png"})
 	if err != nil {
-		// ValidateExt rejects — good, but let's document why
+		// ValidateExt rejects. Good, but let's document why
 		t.Logf("ValidateExt rejected double extension: %v", err)
 		return
 	}
@@ -180,7 +180,7 @@ func TestSanitize_TruncatesOnRuneBoundary(t *testing.T) {
 }
 
 // TestSanitize_StripsUnicodeLineSeparators verifies that Unicode line
-// terminators are removed, not just ASCII control bytes. Attack: a
+// terminators are removed along with ASCII control bytes. Attack: a
 // filename with U+2028/U+2029/U+0085 (all bytes >=0x80) passes an
 // ASCII-only control filter and injects a line break into logs / JS /
 // JSON consumers that split on Unicode newlines.

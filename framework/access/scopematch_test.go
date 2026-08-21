@@ -51,10 +51,10 @@ func TestScopeMatch_EmptyGrantsDeny(t *testing.T) {
 }
 
 // TestScopeMatch_InvalidRequiredDenies confirms a required scope that does
-// not parse as "resource:verb" can never be satisfied — the matcher fails
+// not parse as "resource:verb" can never be satisfied, the matcher fails
 // closed rather than mis-handling malformed input. Note splitScope splits on
 // the FIRST colon, so a multi-segment value like "a:b:c" parses as
-// resource="a", verb="b:c" and is therefore matchable by "*:*" — that is
+// resource="a", verb="b:c" and is therefore matchable by "*:*", that is
 // the documented behavior, not a bug, and is excluded from the deny list.
 func TestScopeMatch_InvalidRequiredDenies(t *testing.T) {
 	cases := []Permission{"no-colon", ":verb", "res:", ""}
@@ -73,7 +73,7 @@ func TestScopeMatch_InvalidRequiredDenies(t *testing.T) {
 // "teams:<anything>" purely through the algebra, with zero registered
 // capabilities and no RolePolicy in play.
 func TestScopeMatch_DoesNotExpandWildcards(t *testing.T) {
-	// Deliberately no registry, no RolePolicy — ScopeMatch is a pure
+	// Deliberately no registry, no RolePolicy. ScopeMatch is a pure
 	// function of its two arguments.
 	granted := []Permission{"teams:*"}
 	for _, req := range []Permission{"teams:read", "teams:write", "teams:delete"} {

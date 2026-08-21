@@ -61,7 +61,7 @@ func TestMultipartCreateAcceptsLargeFile(t *testing.T) {
 	}
 }
 
-// TestMultipartUpdateAcceptsLargeFile: the Update sibling of the above —
+// TestMultipartUpdateAcceptsLargeFile: the Update sibling of the above,
 // PATCH with a >1 MiB multipart body must succeed, not 400.
 func TestMultipartUpdateAcceptsLargeFile(t *testing.T) {
 	ch := multipartLimitHandler(t)
@@ -100,7 +100,7 @@ func TestMultipartCreateOverWireCapIs413(t *testing.T) {
 
 // TestMultipartMixedCaseTypeLargeFile: media types are case-insensitive
 // (RFC 9110 §8.3.1). enforceJSONContentType parses the header with
-// mime.ParseMediaType — which lowercases — so `Multipart/Form-Data`
+// mime.ParseMediaType, which lowercases, so `Multipart/Form-Data`
 // passes the content-type gate, but isMultipart used a case-sensitive
 // prefix check and routed the request down the JSON path: the 1 MiB
 // MaxJSONBodyBytes cap applied and every >1 MiB upload died. The two

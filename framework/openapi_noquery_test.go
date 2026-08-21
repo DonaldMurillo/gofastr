@@ -11,8 +11,8 @@ import (
 )
 
 // TestOpenAPIOmitsNoQueryFilterParams pins that the published contract agrees
-// with the parser. A NoQuery column belongs in the response schema — it is
-// returned, just in whatever form a redaction hook leaves it — but must not
+// with the parser. A NoQuery column belongs in the response schema, it is
+// returned, just in whatever form a redaction hook leaves it, but must not
 // appear as a filter parameter, or every generated SDK method and agent call
 // built from the spec is a guaranteed 400.
 func TestOpenAPIOmitsNoQueryFilterParams(t *testing.T) {

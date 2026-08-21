@@ -52,7 +52,7 @@ func TestE2E_SortableKanbanDragPersist(t *testing.T) {
 		t.Errorf("k1 should be in doing after move, got %q", containerAfter)
 	}
 
-	// Reload the page — the server-side board store should reflect
+	// Reload the page, the server-side board store should reflect
 	// the persisted move.
 	err = chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/sortablelist"),

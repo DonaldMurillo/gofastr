@@ -1,10 +1,10 @@
-// GoFastr runtime module — per-screen action-script loader.
+// GoFastr runtime module, per-screen action-script loader.
 //
 // Loaded by boot only when the page manifest carries compiled-action
 // hashes (window.__gofastr_actions, assigned by /__gofastr/manifest.js).
 // SSR emits a content-addressed <script> per component id present on the
-// initial page; this module covers what SSR can't see — client-side
-// navigation to a screen whose action registry hasn't loaded yet — by
+// initial page; this module covers what SSR can't see, client-side
+// navigation to a screen whose action registry hasn't loaded yet, by
 // mirroring the CSS scanner: on every navigate, inject the script for
 // any on-page component id in the manifest that isn't loaded.
 (function () {
@@ -22,7 +22,7 @@
 
   // Re-fire the JUST-registered component's data-action-mount actions.
   // Boot's gofastr:navigate listener ran the mount pass before this
-  // script's registrations existed, so those triggers were dropped —
+  // script's registrations existed, so those triggers were dropped,
   // an entity list navigated to for the first time never populated.
   // Scoped to one id so components whose registries were already live
   // (and whose mounts boot fired) don't fire twice.

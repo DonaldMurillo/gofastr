@@ -1,8 +1,8 @@
 package ui
 
 // Lightweight syntax highlighter for fenced code blocks. It is deliberately
-// small — a single-pass scanner, not a full grammar — but robust enough not to
-// mis-tokenize the common cases (it understands string/comment boundaries, so a
+// small, a single-pass scanner, not a full grammar, but correct on the
+// common cases (it understands string/comment boundaries, so a
 // `//` inside a string is not treated as a comment). It emits per-line
 // []render.HTML where each token is an HTML-escaped <span class="tk-*">,
 // matching the token palette the site theme already styles
@@ -11,7 +11,7 @@ package ui
 // Go gets keyword/type/builtin/function awareness. Other languages get a
 // generic pass (comments + strings + numbers), which covers the visually
 // dominant tokens for JS/TS/SQL/JSON/YAML/shell without per-grammar code.
-// Unknown languages fall back to plain (escaped, untokenized) text — still
+// Unknown languages fall back to plain (escaped, untokenized) text, still
 // rendered through ui.CodeBlock so they keep the chrome + copy button.
 
 import (
@@ -127,7 +127,7 @@ func tokenize(src, lang string) []hlToken {
 	for i < n {
 		c := src[i]
 		switch {
-		// Line comment: // (all) or # (generic only — Go has no # comments).
+		// Line comment: // (all) or # (generic only: Go has no # comments).
 		case c == '/' && i+1 < n && src[i+1] == '/':
 			j := i + 2
 			for j < n && src[j] != '\n' {
@@ -164,7 +164,7 @@ func tokenize(src, lang string) []hlToken {
 			j := scanQuoted(src, i, c, false) // no escapes in raw strings
 			add("tk-str", src[i:j])
 			i = j
-		// Numbers (incl. hex/float/exponent — loose but fine for display).
+		// Numbers (incl. hex/float/exponent, loose but fine for display).
 		case c >= '0' && c <= '9':
 			j := i + 1
 			for j < n && isNumChar(src[j]) {
@@ -240,7 +240,7 @@ func isNumChar(c byte) bool {
 		(c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
-// isPlainRun reports whether c continues a plain (untokenized) run — i.e. it is
+// isPlainRun reports whether c continues a plain (untokenized) run, i.e. it is
 // NOT the start of a token the scanner recognizes.
 func isPlainRun(c byte, lang string) bool {
 	if isIdentStart(c) || (c >= '0' && c <= '9') {

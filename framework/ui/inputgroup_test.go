@@ -127,7 +127,7 @@ func TestInputGroupComposesPrependInputAppend(t *testing.T) {
 	}))
 
 	// The runtime style hook + CSS selectors all key off this
-	// data-fui-comp marker — its absence would silently strip the
+	// data-fui-comp marker. Its absence would silently strip the
 	// visual join (regression seen on prior shipped components).
 	if !strings.Contains(h, `data-fui-comp="ui-input-group"`) {
 		t.Errorf("missing data-fui-comp=\"ui-input-group\" marker:\n%s", h)

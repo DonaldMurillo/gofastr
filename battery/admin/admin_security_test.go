@@ -147,7 +147,7 @@ func TestAdmin_QueueReplayRequiresAuth(t *testing.T) {
 }
 
 // TestAdmin_QueueReplayForbidsNonAdmin confirms an authenticated non-admin is
-// refused (403) — same gate as the rest of the admin.
+// refused (403), same gate as the rest of the admin.
 func TestAdmin_QueueReplayForbidsNonAdmin(t *testing.T) {
 	h := mountAdminBare(t, Config{})
 	req := httptest.NewRequest(http.MethodPost, "/admin/queue/_replay/some-job-id", nil)

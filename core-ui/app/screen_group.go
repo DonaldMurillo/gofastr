@@ -82,7 +82,7 @@ func NewScreenGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGr
 // Standalone marks this group as a self-contained shell: its own layout is the
 // outermost wrapper and the host App's default layout (SetDefaultLayout) does
 // NOT wrap it. Use this when a battery or feature mounts its screens on the
-// host's App but renders a full page shell of its own — e.g. the admin
+// host's App but renders a full page shell of its own, e.g. the admin
 // back-office, whose sidebar would otherwise nest inside the app's sidebar
 // (a double-sidebar). Returns the group for chaining.
 func (g *ScreenGroup) Standalone() *ScreenGroup {
@@ -134,8 +134,8 @@ func (g *ScreenGroup) Layout() *Layout {
 // the group's layout is applied.
 //
 // The screen path can be:
-//   - Absolute ("/users") — used as-is, but must start with the group prefix
-//   - Relative ("users") — prefixed with the group's prefix
+//   - Absolute ("/users"): used as-is, but must start with the group prefix
+//   - Relative ("users"): prefixed with the group's prefix
 func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
 	// Resolve path relative to group prefix
 	screen.Path = g.resolvePath(screen.Path)
@@ -160,11 +160,11 @@ func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
 // group's layout unless it declares its own.
 //
 // Optional policies are appended to the parent's policy chain at
-// resolution time — they don't replace inherited policies. A child's
+// resolution time, they don't replace inherited policies. A child's
 // screens are gated by parent.policies + child.policies + screen.Policies
 // in that order.
 func (g *ScreenGroup) SubGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGroup {
-	// Always resolve relative to parent — strip leading slash
+	// Always resolve relative to parent, strip leading slash
 	for len(prefix) > 0 && prefix[0] == '/' {
 		prefix = prefix[1:]
 	}
@@ -186,10 +186,10 @@ func (g *ScreenGroup) SubGroup(prefix string, layout *Layout, policies ...Policy
 // resolvePath resolves a path relative to the group's prefix.
 func (g *ScreenGroup) resolvePath(path string) string {
 	if startsWithSlash(path) {
-		// Absolute path — validate it starts with group prefix
+		// Absolute path, validate it starts with group prefix
 		return path
 	}
-	// Relative path — prepend group prefix
+	// Relative path, prepend group prefix
 	return g.prefix + path
 }
 
@@ -251,7 +251,7 @@ func groupChainContainsLayout(innermost *ScreenGroup, layout *Layout) bool {
 }
 
 // groupChainIsStandalone reports whether any group in the chain is marked
-// Standalone — in which case the host App's default layout must NOT wrap the
+// Standalone, in which case the host App's default layout must NOT wrap the
 // composition (the group ships its own full shell).
 func groupChainIsStandalone(innermost *ScreenGroup) bool {
 	for g := innermost; g != nil; g = g.parent {

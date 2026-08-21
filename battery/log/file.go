@@ -20,7 +20,7 @@ type FileOpts struct {
 	// MaxBackups is the number of rotated files kept. Older files are
 	// removed. Default 5.
 	MaxBackups int
-	// FileMode is the permission for the log file. Default 0o600 —
+	// FileMode is the permission for the log file. Default 0o600,
 	// server logs typically contain request paths, request IDs, and
 	// panic stacks; world-readable defaults aren't appropriate on a
 	// multi-user host. Override only if you need broader access.
@@ -31,7 +31,7 @@ type FileOpts struct {
 // buffered and serialized with a mutex; rotation is triggered when the
 // in-flight size crosses MaxSize.
 //
-// After Close, Write and Close are no-ops returning ErrSinkClosed —
+// After Close, Write and Close are no-ops returning ErrSinkClosed,
 // derived loggers held by long-lived goroutines past shutdown don't
 // crash, they just stop persisting. Callers that care can check for
 // ErrSinkClosed.
@@ -63,7 +63,7 @@ func FileSink(path string, opts FileOpts) (Sink, error) {
 		return nil, fmt.Errorf("log: mkdir %s: %w", parent, err)
 	}
 	// MkdirAll respects umask; explicitly tighten if a prior mkdir left
-	// a broader mode in place. Log directories must be owner-only —
+	// a broader mode in place. Log directories must be owner-only,
 	// server logs contain request IDs, paths, panic stacks.
 	if err := os.Chmod(parent, 0o700); err != nil {
 		return nil, fmt.Errorf("log: chmod %s: %w", parent, err)
@@ -97,7 +97,7 @@ func MustFileSink(path string, opts FileOpts) Sink {
 //
 // appName must be non-empty. Two apps that both pass an empty name
 // would otherwise silently share one log file ("gofastr/server.log")
-// and clobber each other — a real footgun when the same binary runs
+// and clobber each other, a real footgun when the same binary runs
 // for multiple App instances in tests or subcommands.
 func DefaultFileSink(appName string, opts FileOpts) (Sink, error) {
 	if appName == "" {
@@ -134,7 +134,7 @@ func (s *fileSink) open() error {
 // Write appends a single JSON-encoded entry plus a trailing '\n'.
 // Rotation runs if the post-write size would cross MaxSize.
 //
-// Returns ErrSinkClosed if Close has already run — no panic from a
+// Returns ErrSinkClosed if Close has already run, no panic from a
 // derived logger that outlives the App's shutdown.
 func (s *fileSink) Write(entry []byte) error {
 	s.mu.Lock()
@@ -169,7 +169,7 @@ func (s *fileSink) Write(entry []byte) error {
 	}
 	s.size += int64(n) + 1
 	// Flush after every entry. Buffering exists only to coalesce when
-	// the kernel is busy, not to delay durability — server logs are
+	// the kernel is busy, not to delay durability, server logs are
 	// time-critical for debugging.
 	return s.bw.Flush()
 }
@@ -191,7 +191,7 @@ func (s *fileSink) Close() error {
 	}
 	// fsync before close: bw.Flush only pushes bytes into the kernel
 	// write cache. On SIGKILL / OOM / kernel panic mid-Close, anything
-	// still in cache is lost — exactly the data you most want to keep
+	// still in cache is lost, exactly the data you most want to keep
 	// at incident time. Sync is one syscall on shutdown; negligible.
 	_ = s.f.Sync()
 	err := s.f.Close()

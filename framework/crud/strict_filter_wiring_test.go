@@ -66,7 +66,7 @@ func TestList_AllowedFilterParamReachesHook(t *testing.T) {
 	}
 }
 
-// Without the declaration the same custom param still fails closed — the
+// Without the declaration the same custom param still fails closed, the
 // escape hatch is opt-in and narrow, not a blanket relaxation.
 func TestList_UndeclaredCustomParamStillRejected(t *testing.T) {
 	ch, _ := allowedFilterHandler(t, nil)
@@ -78,8 +78,8 @@ func TestList_UndeclaredCustomParamStillRejected(t *testing.T) {
 	}
 }
 
-// ?per_page is accepted as an alias for ?limit — both to set the page size
-// and to survive strict filter parsing — so a client using the common
+// ?per_page is accepted as an alias for ?limit, both to set the page size
+// and to survive strict filter parsing, so a client using the common
 // per_page convention gets the size it asked for instead of a 400 or a
 // silent default.
 func TestParsePagination_PerPageAlias(t *testing.T) {
@@ -130,7 +130,7 @@ func TestExplicitOffset(t *testing.T) {
 }
 
 // End-to-end: ?offset= is honored (a raw row skip, as the process-module
-// broker sends it) rather than silently ignored — the regression F6 flagged.
+// broker sends it) rather than silently ignored, the regression F6 flagged.
 func TestList_OffsetSkipsRows(t *testing.T) {
 	ch, db := allowedFilterHandler(t, nil)
 	if _, err := db.Exec(`INSERT INTO notes (id, owner, body) VALUES
@@ -154,7 +154,7 @@ func TestList_OffsetSkipsRows(t *testing.T) {
 	}
 }
 
-// The STREAMING path must honor ?offset= too — otherwise ?offset=N&stream=true
+// The STREAMING path must honor ?offset= too, otherwise ?offset=N&stream=true
 // silently serves page 1 (the buffered path honors it; divergence caught by
 // the GLM review).
 func TestServeStreamingList_OffsetSkipsRows(t *testing.T) {

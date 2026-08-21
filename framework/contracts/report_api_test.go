@@ -67,7 +67,7 @@ func TestOnlyUnknownRuleSelectsNothing(t *testing.T) {
 
 // The analyzers self-register from another package's init(). A binary
 // that forgets to import it gets an empty registry, and running zero
-// analyzers yields zero diagnostics — a clean bill of health for a tree
+// analyzers yields zero diagnostics, a clean bill of health for a tree
 // nobody looked at. Run must refuse rather than pass.
 //
 // This test binary is exactly that situation: package contracts does not
@@ -96,7 +96,7 @@ func TestRunRefusesWhenNoAnalyzersAreRegistered(t *testing.T) {
 
 // Summary, Counts and Passed are derived from Diagnostics. A narrowed
 // report that keeps the originals prints its findings under a "0 errors"
-// footer and claims to have passed — which is how `verify --rule X --fix`
+// footer and claims to have passed, which is how `verify --rule X --fix`
 // would report success on a run that just failed.
 func TestOnlyRecomputesTheDerivedTallies(t *testing.T) {
 	full := &Report{
@@ -124,7 +124,7 @@ func TestOnlyRecomputesTheDerivedTallies(t *testing.T) {
 		}
 	}
 
-	// And a narrowing that selects nothing really has passed — for a
+	// And a narrowing that selects nothing really has passed, for a
 	// rule that EXISTS. (An unknown name is an error, not an empty pass;
 	// see TestOnlyReportsAnUnknownRuleName.)
 	empty := full.Only(RuleInsecureCookie)
@@ -231,10 +231,10 @@ func TestOnlyFilesTreatsNilAsNoRestriction(t *testing.T) {
 // Apply is the only function in the package that writes to disk, and
 // contracts_fix exposes it over MCP. filepath.Join cleans `..` segments
 // away, so a diagnostic whose File escaped the root would be written
-// silently — containment is checked rather than trusted.
+// silently. Containment is checked rather than trusted.
 func TestApplyRefusesToWriteOutsideTheRoot(t *testing.T) {
 	// root must be a CHILD of the directory holding the victim, or the
-	// traversal paths point at nothing and Apply fails on ReadFile —
+	// traversal paths point at nothing and Apply fails on ReadFile,
 	// passing the test without the guard ever being consulted.
 	parent := t.TempDir()
 	root := filepath.Join(parent, "project")
@@ -282,7 +282,7 @@ func TestApplyRefusesToWriteOutsideTheRoot(t *testing.T) {
 	}
 }
 
-// The guard must not reject legitimate paths — including nested ones and
+// The guard must not reject legitimate paths, including nested ones and
 // a `.` prefix, which the analyzers can produce.
 func TestApplyAcceptsPathsInsideTheRoot(t *testing.T) {
 	root := t.TempDir()
@@ -318,7 +318,7 @@ func TestApplyAcceptsPathsInsideTheRoot(t *testing.T) {
 
 // SARIF requires every result's ruleId to resolve to an entry in
 // tool.driver.rules, and code scanning maps artifact URIs through
-// originalUriBaseIds — an absolute URI resolves to nothing. Neither can
+// originalUriBaseIds, an absolute URI resolves to nothing. Neither can
 // fail on a single-rule report, which is what the other SARIF test uses.
 func TestFormatSARIFIsReferentiallyIntactAcrossRules(t *testing.T) {
 	ids := []string{RuleColonPathParam, RuleNonUppercaseVerb, RuleSQLStringConcat}
@@ -432,7 +432,7 @@ func TestRuleWithoutAnExampleIsRejected(t *testing.T) {
 	}
 }
 
-// The whole catalog satisfies the requirement — a gate that only the
+// The whole catalog satisfies the requirement, a gate that only the
 // fixture above exercises would not prove the shipped rules do.
 func TestEveryCatalogRuleCarriesAnExample(t *testing.T) {
 	rules := AllRules()
@@ -446,8 +446,8 @@ func TestEveryCatalogRuleCarriesAnExample(t *testing.T) {
 	}
 }
 
-// A mistyped rule ID is the most likely thing to get wrong — IDs are
-// copied out of a report by hand — and it is the one input substring
+// A mistyped rule ID is the most likely thing to get wrong, IDs are
+// copied out of a report by hand, and it is the one input substring
 // matching cannot help with: GOFASTR1oo2 shares no substring with
 // GOFASTR1002.
 func TestSuggestRulesHandlesAMistypedID(t *testing.T) {
@@ -492,7 +492,7 @@ func TestSuggestRulesStaysSilentOnAWildGuess(t *testing.T) {
 	}
 }
 
-// Substring matching still wins when it finds something — it is more
+// Substring matching still wins when it finds something, it is more
 // precise than distance for a partial slug.
 func TestSuggestRulesPrefersSubstringMatches(t *testing.T) {
 	got := SuggestRules("colon-path")
@@ -502,8 +502,8 @@ func TestSuggestRulesPrefersSubstringMatches(t *testing.T) {
 }
 
 // A file the parser rejects produces no findings from any analyzer. That
-// is the right behaviour mid-edit — the rest of the tree still gets
-// checked — but silence about it turns "nobody could read these files"
+// is the right behaviour mid-edit, the rest of the tree still gets
+// checked, but silence about it turns "nobody could read these files"
 // into "these files are clean", which is the one thing this tool must
 // never say by accident.
 func TestUnparsedFilesAreCountedAndReported(t *testing.T) {
@@ -568,7 +568,7 @@ func TestReportSurfacesUnparsedCount(t *testing.T) {
 
 // A stale suppression's documented fix is "delete the directive", which
 // is mechanical in both shapes it takes. Getting it wrong deletes code,
-// so both are pinned — as is the refusal to guess.
+// so both are pinned, as is the refusal to guess.
 func TestStaleSuppressionAutofixDeletesOnlyTheDirective(t *testing.T) {
 	cases := []struct {
 		name string
@@ -694,8 +694,8 @@ func TestNarrowingKeepsRunWideState(t *testing.T) {
 
 // git reports `diff --name-only` relative to the REPOSITORY root but
 // `ls-files --others` relative to the cwd. When the analysed root is a
-// subdirectory — an app in a monorepo, --root examples/x, or the dev
-// watcher anywhere below the top — tracked paths never matched the
+// subdirectory, an app in a monorepo, --root examples/x, or the dev
+// watcher anywhere below the top, tracked paths never matched the
 // diagnostics' root-relative paths and were dropped as "outside the
 // change". The file just edited was the one withheld, while untracked
 // files still matched, so the feature looked like it worked.

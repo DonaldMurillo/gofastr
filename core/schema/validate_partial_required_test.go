@@ -6,13 +6,13 @@ func float64Ptr(v float64) *float64 { return &v }
 
 // TestValidatePartial_RejectsPresentButEmptyRequired pins the data-corruption
 // fix surfaced in adversarial review: when a sparse-update body INCLUDES a
-// required field but sends an empty zero-value, validation must reject —
-// the client is trying to blank a required column.
+// required field but sends an empty zero-value, validation must reject.
+// The client is trying to blank a required column.
 //
 // Absence (field not in body) is OK; presence-with-zero-value is the
 // distinct error we have to catch.
 func TestValidatePartial_RejectsPresentButEmptyRequired(t *testing.T) {
-	// No Min set — the only thing that should reject "" is the
+	// No Min set. The only thing that should reject "" is the
 	// Required-but-empty check. Without the fix this passes, which
 	// lets PUT {"name":""} silently blank a Required column.
 	s := Schema{Fields: []Field{

@@ -13,7 +13,7 @@ import (
 //	idx := search.NewMemory()
 //	app.Batteries.Register(search.NewBattery(idx))
 //
-// The battery's Init is a no-op — the backend is fully configured before
+// The battery's Init is a no-op, the backend is fully configured before
 // registration.  search.Memory has no background goroutine so no OnStop
 // hook is needed; if a future backend adds one, implement io.Closer on that
 // type and update this wrapper.

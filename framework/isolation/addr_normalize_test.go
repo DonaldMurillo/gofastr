@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// inactiveRuntime returns a Resolve'd runtime that is NOT isolated — the normal
+// inactiveRuntime returns a Resolve'd runtime that is NOT isolated, the normal
 // production / PaaS case.
 func inactiveRuntime(t *testing.T) *Runtime {
 	t.Helper()

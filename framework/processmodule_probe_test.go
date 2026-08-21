@@ -14,18 +14,18 @@ import (
 
 // This file holds the wave-3a sandbox conformance-probe tests:
 //
-//   - TestProbeIDs — the P1–P7 enum shape (the §6 contract surface).
-//   - TestConformanceReport_Conforms — the fail-closed gate predicate.
-//   - TestRunConformance_NilBackend / _UnavailableBackend — every probe
+//   - TestProbeIDs: the P1–P7 enum shape (the §6 contract surface).
+//   - TestConformanceReport_Conforms: the fail-closed gate predicate.
+//   - TestRunConformance_NilBackend / _UnavailableBackend: every probe
 //     unreachable when the backend cannot run; Conforms() false.
-//   - TestProbeChildBodies_PrintParseableLine — every probe body, run
+//   - TestProbeChildBodies_PrintParseableLine: every probe body, run
 //     in-process (no spawning), prints exactly one parseable result line.
-//   - TestParseProbeOutput_Contract — the child-stdout → ProbeStatus
+//   - TestParseProbeOutput_Contract: the child-stdout → ProbeStatus
 //     translation (a regression here would silently flip pass/fail).
-//   - TestSandboxConformance — the CI gate: runs the full probe suite
+//   - TestSandboxConformance: the CI gate: runs the full probe suite
 //     against the host's available backend, logs the report, and either
 //     passes (host conforms) or skips with the report summary (host
-//     cannot run untrusted in v1 — the documented outcome per §11 risk 1).
+//     cannot run untrusted in v1, the documented outcome per §11 risk 1).
 //     It NEVER passes silently as if enforcement happened.
 
 func TestProbeIDs(t *testing.T) {
@@ -143,7 +143,7 @@ func TestRunConformance_UnavailableBackend(t *testing.T) {
 // TestProbeChildBodies_PrintParseableLine asserts each probe body, run
 // in-process with the context env vars it expects, prints exactly one
 // line beginning with one of the probeOut* sentinels. The bodies run
-// WITHOUT a sandbox wrap (we test the bodies, not the backends) — so
+// WITHOUT a sandbox wrap (we test the bodies, not the backends), so
 // probes that check for sandbox enforcement will report BREACH here (no
 // sandbox = the forbidden action succeeds). That is expected: this test
 // asserts the body produces a parseable line, not that the action was
@@ -168,7 +168,7 @@ func TestProbeChildBodies_PrintParseableLine(t *testing.T) {
 				case strings.HasPrefix(first, probeOutPass),
 					strings.HasPrefix(first, probeOutBreach),
 					strings.HasPrefix(first, probeOutUnreachable):
-					// ok — parseable protocol line
+					// ok: parseable protocol line
 				default:
 					t.Errorf("probe %s body printed unparsable line %q", p, first)
 				}
@@ -270,8 +270,8 @@ func TestProbeTimeoutIsBounded(t *testing.T) {
 //
 //   - PASSES if the host conforms (every probe P1–P7 enforced);
 //   - SKIPS with the report summary if the host cannot conform (the
-//     documented v1 outcome on darwin/windows/some-linux per §11 risk 1)
-//     — never passing silently as if enforcement happened;
+//     documented v1 outcome on darwin/windows/some-linux per §11 risk 1),
+//     never passing silently as if enforcement happened;
 //   - SKIPS with a clear message if the host has no backend available.
 func TestSandboxConformance(t *testing.T) {
 	b := HostSandboxBackend()

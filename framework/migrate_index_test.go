@@ -39,7 +39,7 @@ func indexInfo(t *testing.T, db *sql.DB, table string, dialect Dialect) map[stri
 		return out
 	}
 
-	// SQLite — parse the original CREATE INDEX DDL stored in sqlite_master.
+	// SQLite, parse the original CREATE INDEX DDL stored in sqlite_master.
 	// PRAGMA index_info is unreliable in this test harness; the recorded sql
 	// is authoritative.
 	rows, err := db.Query("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL", table)
@@ -174,7 +174,7 @@ func TestMigrate_Indices_Idempotent(t *testing.T) {
 // TestMigrate_Indices_ExpressionUniqueEnforced pins V3 #3: a functional
 // index `UNIQUE(user_id, lower(food))` deduplicates case-insensitively,
 // which the column-list form can't express. Tested by inserting two
-// rows whose `food` differs only in case — the second must fail.
+// rows whose `food` differs only in case, the second must fail.
 func TestMigrate_Indices_ExpressionUniqueEnforced(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
@@ -200,11 +200,11 @@ func TestMigrate_Indices_ExpressionUniqueEnforced(t *testing.T) {
 		if _, err := db.Exec(`INSERT INTO triggers(id, user_id, food) VALUES ($1, $2, $3)`, "t1", "u1", "Coffee"); err != nil {
 			t.Fatalf("first insert: %v", err)
 		}
-		// Different casing — must collide via lower().
+		// Different casing, must collide via lower().
 		if _, err := db.Exec(`INSERT INTO triggers(id, user_id, food) VALUES ($1, $2, $3)`, "t2", "u1", "COFFEE"); err == nil {
 			t.Fatal("expected functional-unique violation on COFFEE vs Coffee, got nil")
 		}
-		// Different user — must still succeed.
+		// Different user, must still succeed.
 		if _, err := db.Exec(`INSERT INTO triggers(id, user_id, food) VALUES ($1, $2, $3)`, "t3", "u2", "Coffee"); err != nil {
 			t.Fatalf("different-user insert should succeed: %v", err)
 		}

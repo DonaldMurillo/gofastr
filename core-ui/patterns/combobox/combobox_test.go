@@ -163,13 +163,13 @@ func TestRenderStaticOptions(t *testing.T) {
 			t.Errorf("static-options combobox missing %q:\n%s", w, out)
 		}
 	}
-	// No RPC wired — search is client-side, no network round-trip.
+	// No RPC wired, search is client-side, no network round-trip.
 	if strings.Contains(out, "data-fui-rpc") {
 		t.Errorf("static-options combobox must not emit data-fui-rpc:\n%s", out)
 	}
 }
 
-// A static-only combobox (no RPCPath) is valid — the panic only fires when
+// A static-only combobox (no RPCPath) is valid, the panic only fires when
 // neither RPCPath nor Options is set.
 func TestRenderStaticOptionsNoRPCPath(t *testing.T) {
 	out := string(Render(Config{
@@ -187,7 +187,7 @@ func TestStaticSSRStateIsExpanded(t *testing.T) {
 		Options: []Option{{Label: "Go"}, {Label: "Rust"}},
 	}))
 	// Static options render visible at SSR, so the combobox input must
-	// ship aria-expanded="true" — otherwise the runtime's Escape /
+	// ship aria-expanded="true", otherwise the runtime's Escape /
 	// outside-click dismissal (both keyed on aria-expanded="true")
 	// can't close the visibly-open listbox until a keystroke re-syncs
 	// the state.

@@ -11,7 +11,7 @@ import (
 // TestCrudAPI_GetOneScopesByOwner pins the programmatic in-process
 // equivalent of the HTTP-handler RequireOwner fix. CrudHandler.GetOne /
 // ListAll / CountAll are the helpers typed repositories + hooks call
-// from inside request handlers — they MUST mirror the HTTP path's
+// from inside request handlers, they MUST mirror the HTTP path's
 // owner scoping or every in-process caller becomes a cross-user leak
 // vector.
 func TestCrudAPI_GetOneScopesByOwner(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 )
 
 // TestBuilderPoll_RecordsMilliseconds verifies Builder.Poll converts a
-// time.Duration to whole milliseconds on Definition.PollMS verbatim —
+// time.Duration to whole milliseconds on Definition.PollMS verbatim,
 // the runtime applies no further clamping on the widget path.
 func TestBuilderPoll_RecordsMilliseconds(t *testing.T) {
 	def := widget.New("p").
@@ -24,7 +24,7 @@ func TestBuilderPoll_RecordsMilliseconds(t *testing.T) {
 	}
 
 	// Sub-millisecond truncation: 800µs rounds down to 0ms. The catalog
-	// gate (PollMS > 0) then suppresses emission — the caller asked for
+	// gate (PollMS > 0) then suppresses emission, the caller asked for
 	// an impossibly fast poll and gets silence instead of a busy-loop.
 	def = widget.New("p").Poll(800 * time.Microsecond).Build()
 	if def.PollMS != 0 {

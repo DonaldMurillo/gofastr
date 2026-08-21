@@ -29,7 +29,7 @@ func countersConfig() entity.EntityConfig {
 // newHostedAppNoDB builds a hosted app whose app.DB is deliberately nil while
 // the schema is migrated against a separate db by the caller. This is the
 // deterministic wiring error that makes crudFor's CrudHandlerForEntity fail
-// per-request — the exact "panic per request" condition entity_admin hit.
+// per-request, the exact "panic per request" condition entity_admin hit.
 func newHostedAppNoDB(t *testing.T, configs map[string]entity.EntityConfig) *framework.App {
 	t.Helper()
 	fapp := framework.NewApp(framework.WithoutDefaultMiddleware()) // no WithDB → app.DB nil
@@ -44,7 +44,7 @@ func newHostedAppNoDB(t *testing.T, configs map[string]entity.EntityConfig) *fra
 
 // TestEntitySave_WiringErrorIs500NotPanic pins fix #4a: when an entity's
 // CrudHandler can't be built (a deterministic wiring error, here app.DB nil),
-// the save handler must return a clean 500 — NOT panic per request. The
+// the save handler must return a clean 500, NOT panic per request. The
 // mutation never reaches the CrudHandler, so there is nothing to undo; the
 // wiring error is logged for the operator.
 func TestEntitySave_WiringErrorIs500NotPanic(t *testing.T) {
@@ -99,7 +99,7 @@ func TestEntitySave_BadNumericInputIsFieldError(t *testing.T) {
 // TestEntityDelete_ServerErrorIsLogged pins fix #4c: entityDelete used to
 // discard the delete result entirely. A genuine server-side failure (here the
 // table is dropped out from under the CrudHandler, so the DELETE errors) must
-// be observable — the island-swap contract forces an HTML response, so the log
+// be observable, the island-swap contract forces an HTML response, so the log
 // is the signal. A 404 scope-miss stays silent by design (the row is simply
 // gone from the caller's list).
 func TestEntityDelete_ServerErrorIsLogged(t *testing.T) {

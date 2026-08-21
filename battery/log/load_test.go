@@ -177,7 +177,7 @@ func TestLoadShutdownDuringTraffic(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	// Background writer keeps logging after Shutdown — simulates a
+	// Background writer keeps logging after Shutdown, simulates a
 	// worker goroutine outliving the App.
 	done := make(chan struct{})
 	go func() {
@@ -215,8 +215,8 @@ func hammer(t *testing.T, url string, workers int, dur time.Duration) {
 	// tests (the CloseIdleConnections defer tears them down with the test).
 	// Keep-alives stay ON: the hammer needs concurrent REQUESTS, not fresh
 	// connections. With them off, 32 workers × 3s × 3 load tests opened and
-	// closed ~34K loopback connections, each parking 15-30s in TIME_WAIT —
-	// more than macOS's entire ephemeral port range (49152-65535, ~16K) —
+	// closed ~34K loopback connections, each parking 15-30s in TIME_WAIT,
+	// more than macOS's entire ephemeral port range (49152-65535, ~16K),
 	// which starved every OTHER package's httptest dials in a full-suite
 	// run ("connect: can't assign requested address"). With reuse the same
 	// load runs on ~32 connections total.

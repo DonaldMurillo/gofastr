@@ -238,7 +238,7 @@ func TestDurableSchedulerRestartResumesPersistedWatermark(t *testing.T) {
 	}
 	firstOccurrenceID := firstJobs[0].OccurrenceID
 	// Complete the first occurrence so the next tick is not an overlap skip:
-	// claim it (a worker's Dequeue) then Ack — Ack alone must not remove a
+	// claim it (a worker's Dequeue) then Ack. Ack alone must not remove a
 	// never-claimed pending row.
 	claimed, err := q.Dequeue(context.Background())
 	if err != nil {

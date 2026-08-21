@@ -25,7 +25,7 @@ func TestPageThemeIncludesCanonicalDefaults(t *testing.T) {
 
 func TestPageThemeOverridesViaDirectAssignment(t *testing.T) {
 	tt := theme.PageTheme()
-	// Apps override by directly assigning typed values — no
+	// Apps override by directly assigning typed values, no
 	// MergeThemes helper.
 	tt.Colors.Background = style.Color{Name: "background", Value: "#000000"}
 	tt.Colors.Primary = style.Color{Name: "primary", Value: "#FF00FF"}

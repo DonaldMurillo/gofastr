@@ -1,9 +1,9 @@
 //go:build e2e_real
 
-// e2e_capabilities_test.go — single hard test that drives every
+// e2e_capabilities_test.go, single hard test that drives every
 // claimed v0.1 capability through one harness, then asserts each.
 // Designed to surface regressions that the per-feature tests miss
-// because they bootstrap fresh — here every subsystem shares state.
+// because they bootstrap fresh, here every subsystem shares state.
 //
 // Run with:
 //
@@ -28,13 +28,13 @@ import (
 )
 
 // TestAllCapabilities walks every v0.1 capability through one shared
-// harness. It is deliberately aggressive — sequential subtests build
+// harness. It is deliberately aggressive, sequential subtests build
 // on each other's state. Subtests are listed in the order they run.
 //
 // The capabilities checked here (matching project_harness_features.md):
 //
 //	A. Engine + tool dispatch end-to-end
-//	B. Turn numbering — sequential after multi-LLM-round turns
+//	B. Turn numbering, sequential after multi-LLM-round turns
 //	C. Empty model response → Error event + reason="empty"
 //	D. Multi-turn history preservation
 //	E. TurnStarted carries user content (cross-client echo)
@@ -97,7 +97,7 @@ func TestAllCapabilities(t *testing.T) {
 	defer cancelAll()
 
 	sub := c.Subscribe(ctx)
-	// Drain helper — pulls events until predicate true or timeout, returns collected.
+	// Drain helper, pulls events until predicate true or timeout, returns collected.
 	drain := func(t *testing.T, pred func([]control.EventEnvelope) bool, timeout time.Duration) []control.EventEnvelope {
 		t.Helper()
 		var got []control.EventEnvelope
@@ -239,8 +239,8 @@ func TestAllCapabilities(t *testing.T) {
 			ExpiresAt: time.Now().Add(time.Hour).Unix(),
 		})
 		_ = token
-		// Two SSE subscribers via inproc (simpler than two HTTP clients
-		// — exercises the SAME Mux broadcast). The HTTP server is
+		// Two SSE subscribers via inproc (simpler than two HTTP clients,
+		// and exercises the SAME Mux broadcast). The HTTP server is
 		// stood up only to validate construction doesn't conflict
 		// with the live engine. Real HTTP SSE coverage is in
 		// TestE2EExternal_REST_PostInputAndSSE.
@@ -296,13 +296,13 @@ func TestAllCapabilities(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("first Send: %v", err)
 		}
-		// Spam 5 more sends — each MUST be rejected with TurnInProgress.
+		// Spam 5 more sends, each MUST be rejected with TurnInProgress.
 		var accepted, rejected int
 		for i := 0; i < 5; i++ {
 			if err := c.Send(ctx, control.SendInput{
 				SessionID: sess, Content: engine.SimpleInput("spam"),
 			}); err != nil {
-				// Any error means rejected — multiplex returns
+				// Any error means rejected, multiplex returns
 				// "another client is sending input" / TurnInProgress /
 				// similar based on the conflict.
 				rejected++
@@ -327,7 +327,7 @@ func TestAllCapabilities(t *testing.T) {
 	})
 
 	// --- I: permission deny path is covered by the dedicated
-	// TestE2EPlumbing_Permission_Deny — replicating it here without
+	// TestE2EPlumbing_Permission_Deny, replicating it here without
 	// a fresh harness is fragile (shared provider script state).
 	// We do a smoke check that the AnswerPermission command at
 	// least dispatches without error.
@@ -336,7 +336,7 @@ func TestAllCapabilities(t *testing.T) {
 			SessionID: sess, CallID: ids.NewCallID(),
 			Decision: control.DecisionDeny, Scope: control.ScopeOnce,
 		})
-		// Multiplex may reject (no pending call) or accept silently —
+		// Multiplex may reject (no pending call) or accept silently,
 		// either is fine. We only fail on a hard error like a panic
 		// or "command not understood".
 		if err != nil && strings.Contains(err.Error(), "unknown command") {
@@ -350,13 +350,13 @@ func TestAllCapabilities(t *testing.T) {
 		// Drive the bus directly with 500 synthetic events so the
 		// outcome doesn't depend on provider script state. The fast
 		// subscriber drains in its own goroutine CONCURRENTLY with
-		// publishing — otherwise both buffers fill at 256 (publisher
+		// publishing, otherwise both buffers fill at 256 (publisher
 		// is the would-be drainer) and we'd be measuring drop policy,
 		// not back-pressure isolation.
 		bus := h.Mux.EngineFor(sess).Bus
 		slowCtx, slowCancel := context.WithCancel(ctx)
 		defer slowCancel()
-		_ = bus.Subscribe(slowCtx) // never drained — should NOT block bus
+		_ = bus.Subscribe(slowCtx) // never drained, should NOT block bus
 		fast := bus.Subscribe(ctx)
 		const N = 500
 		got := make(chan int, 1)
@@ -488,7 +488,7 @@ func TestAllCapabilities(t *testing.T) {
 			}
 			return false
 		}, 3*time.Second)
-		// Pass either way — but the lifecycle must close. Most likely
+		// Pass either way, but the lifecycle must close. Most likely
 		// the brief sleep let some deltas through before cancel landed.
 		var ended bool
 		for _, e := range envs {
@@ -506,7 +506,7 @@ func TestAllCapabilities(t *testing.T) {
 // TestRunawayLoop_InnerIterationsCapped: dedicated test for the
 // inner-loop cap. Uses its own harness so state from other subtests
 // can't pollute the script index. Regression for the runaway session
-// (sess_01KSDZK5… — 70 tool calls in one turn). Without the cap this
+// (sess_01KSDZK5…, 70 tool calls in one turn). Without the cap this
 // test would hang for the full timeout; with it, terminates fast
 // with an explicit "IterationLimit" error and "iteration_limit" end
 // reason.

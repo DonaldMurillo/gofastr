@@ -4,7 +4,7 @@ An operator deploying your binary against an empty database gets no
 admin account, no verified adapters, and no way in. The setup battery
 (`battery/setup`) gives every self-hosted GoFastr app the same minute
 one: an interactive setup wizard on first boot, and a fully scriptable
-headless path for IaC installs — two skins over one bootstrap API.
+headless path for IaC installs: two skins over one bootstrap API.
 
 ## Wiring
 
@@ -38,7 +38,7 @@ app.SetSetup(runner)
 
 `Complete` decides everything: while it reports false, the app is in
 setup; the moment it reports true, setup is over. It is **derived
-state** — "at least one user exists" for `AdminStep` — never a marker
+state**, "at least one user exists" for `AdminStep`, never a marker
 file, so a crash mid-setup simply re-enters setup on the next boot.
 
 ## The interactive skin
@@ -46,8 +46,8 @@ file, so a crash mid-setup simply re-enters setup on the next boot.
 When setup is incomplete and required values are missing from the
 environment, `Start` binds the port but serves setup pages instead
 of the app router: the SSR wizard (composed from the design
-system — `AuthCard`, `ProgressSteps`, `FormField`), plus `/healthz`
-and `/readyz`. Every other path answers 503 "setup required" — no
+system: `AuthCard`, `ProgressSteps`, `FormField`), plus `/healthz`
+and `/readyz`. Every other path answers 503 "setup required". No
 entity CRUD, no OpenAPI, no admin, nothing reachable before bootstrap.
 
 The banner prints a one-time setup URL:
@@ -57,16 +57,16 @@ Setup: http://192.168.1.20:8080/setup?token=9f2c…
 ```
 
 The token is required (a fresh instance's setup page is an
-instance-takeover window — whoever reaches it first owns the app).
+instance-takeover window: whoever reaches it first owns the app).
 It is **single-use**: the first successful visit exchanges it for an
 HttpOnly cookie and invalidates the URL form, so a token that leaked
 into an access log cannot be replayed. Lost the session? Restart the
-app — setup re-enters and a fresh token is printed.
+app: setup re-enters and a fresh token is printed.
 `Config.DisableToken` opts out for trusted networks; wizard POSTs are
 still origin-guarded either way.
 
 When the final step succeeds, the serving handler swaps atomically to
-the real router — no restart. Background consumers (cron, queues, the
+the real router, with no restart. Background consumers (cron, queues, the
 outbox relay) do not start until that swap: setup owns the schema's
 initial state.
 
@@ -74,8 +74,8 @@ initial state.
 
 Every wizard field maps to an environment variable. When setup is
 incomplete and **all** required values resolve from the environment,
-the steps run synchronously during `Start`, before the port binds —
-no wizard is ever exposed:
+the steps run synchronously during `Start`, before the port binds.
+No wizard is ever exposed:
 
 ```sh
 GOFASTR_ADMIN_EMAIL=ops@example.com \
@@ -83,22 +83,22 @@ GOFASTR_ADMIN_PASSWORD=$(cat /run/secrets/admin_pw) \
 ./myapp
 ```
 
-A failing step aborts `Start` with an error naming the step — a bad
+A failing step aborts `Start` with an error naming the step: a bad
 password (the auth battery's policy applies) fails the boot, loudly.
 Partially-set env is not headless: the wizard appears with the known
-values prefilled (secrets excepted — never echoed into HTML).
+values prefilled (secrets excepted, never echoed into HTML).
 
 ## Overrides
 
-- `GOFASTR_SETUP=off` — never enter setup mode; `Start` proceeds even
+- `GOFASTR_SETUP=off`: never enter setup mode; `Start` proceeds even
   with `Complete` false. Sharp edge, deliberate: you are declaring
   bootstrap is handled elsewhere.
-- `GOFASTR_SETUP=force` — enter setup even when complete (rescue). The
+- `GOFASTR_SETUP=force`: enter setup even when complete (rescue). The
   wizard warns that setup already completed.
 - An invalid value fails `Start`, mirroring `GOFASTR_ROLE`.
 
 Worker-role processes (`GOFASTR_ROLE=worker`) refuse to start while
-setup is incomplete — run a serve/all process to complete setup first.
+setup is incomplete. Run a serve/all process to complete setup first.
 
 ## Custom steps
 
@@ -121,7 +121,7 @@ setup.Step{
 Fields with `Secret: true` render as password inputs and are never
 prefilled or logged. `setup.HealthStep(app)` runs the app's registered
 readiness checks (the same ones `/readyz` serves) and fails with a
-per-adapter, actionable error list — DB, storage, and email
+per-adapter, actionable error list. DB, storage, and email
 verification come free if those batteries registered checks.
 
 ## Ordering with proxies and TLS
@@ -135,7 +135,7 @@ that header (every mainstream proxy does by default).
 
 - **A `Complete` predicate that doesn't observe the steps' writes.**
   E.g. `AdminStep(mgr, db, "users")` while the auth battery writes to
-  `auth_users` — every step succeeds but setup stays incomplete, and
+  `auth_users`: every step succeeds but setup stays incomplete, and
   the wizard tells you so instead of showing the completion page. Pass
   the table your auth store actually writes to.
 - **Writing a marker file to record completion.** Completion is
@@ -143,7 +143,7 @@ that header (every mainstream proxy does by default).
   and would boot a half-bootstrapped app straight into serving. Derive
   it from the data the steps create.
 - **Sharing the setup URL with the token in it.** The token is
-  single-use — the first visit exchanges it for a cookie and
+  single-use: the first visit exchanges it for a cookie and
   invalidates the URL form. A second person following the same link
   gets a 403; restart the app to mint a fresh token.
 - **Expecting cron/queue/outbox work during setup.** Background

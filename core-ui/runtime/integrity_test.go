@@ -9,7 +9,7 @@ import (
 // TestRuntimeJSIsCleanText guards against control-byte corruption in
 // the embedded runtime source. A literal NUL (or other C0 control
 // byte) crept in once when an editor collapsed a `\x00` regex escape
-// into the raw byte — that makes the file "binary" to grep/diff tools
+// into the raw byte, that makes the file "binary" to grep/diff tools
 // and risks minifier/embed edge cases. The served payload must stay
 // valid UTF-8 with no stray control bytes (tab/newline/CR excepted).
 func TestRuntimeJSIsCleanText(t *testing.T) {

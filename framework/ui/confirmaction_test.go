@@ -65,7 +65,7 @@ func TestConfirmActionVariant(t *testing.T) {
 }
 
 func TestConfirmActionSlotRendersAlertdialog(t *testing.T) {
-	// Render the slot directly — this exercises the dialog HTML
+	// Render the slot directly. This exercises the dialog HTML
 	// shape independent of the widget chrome.
 	_, b := ConfirmAction(ConfirmActionConfig{
 		Name:         "delete-row-9",
@@ -115,7 +115,7 @@ func TestConfirmActionSlotRendersAlertdialog(t *testing.T) {
 	}
 	// Default (AutofocusConfirm=false): NEITHER button carries autofocus.
 	// Cancel renders first in DOM order, so the Modal preset's
-	// "focus first focusable" pass lands on it naturally — no need to
+	// "focus first focusable" pass lands on it naturally, no need to
 	// race with the platform's native autofocus pass.
 	if strings.Contains(body, "autofocus") {
 		t.Errorf("default ConfirmAction must not emit an autofocus attribute (would race with the Modal preset's focus pass and trigger Chrome's 'Autofocus processing was blocked' info message); body: %s", body)
@@ -161,7 +161,7 @@ func TestConfirmActionAutofocusConfirm(t *testing.T) {
 
 // TestConfirmActionSuccessSignal wires the response-signal attribute on
 // the Confirm button. The runtime reads data-fui-rpc-signal to decide
-// where the 2xx body goes — without it, a ConfirmAction that mutates
+// where the 2xx body goes. Without it, a ConfirmAction that mutates
 // server state (e.g. delete) can never reconcile a list region.
 func TestConfirmActionSuccessSignal(t *testing.T) {
 	_, b := ConfirmAction(ConfirmActionConfig{
@@ -177,7 +177,7 @@ func TestConfirmActionSuccessSignal(t *testing.T) {
 	if !strings.Contains(dangerTag, `data-fui-rpc-signal="row-list"`) {
 		t.Errorf("expected data-fui-rpc-signal=\"row-list\" on the Confirm button, got tag: %s", dangerTag)
 	}
-	// Sanity: the Cancel button must NOT carry the signal — only the
+	// Sanity: the Cancel button must NOT carry the signal. Only the
 	// confirm action reconciles state.
 	ghostTag := substringFromTag(body, "<button", strings.Index(body, "ui-button--ghost"))
 	if strings.Contains(ghostTag, "data-fui-rpc-signal") {

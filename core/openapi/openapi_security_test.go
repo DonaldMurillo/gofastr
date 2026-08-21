@@ -84,7 +84,7 @@ func TestOpenAPI_ParameterNameSafe(t *testing.T) {
 }
 
 // TestOpenAPI_GatedHandlerHidesSpec verifies that GatedHandler responds
-// with 404 (not 401/403) when the allow predicate denies — leaking the
+// with 404 (not 401/403) when the allow predicate denies. Leaking the
 // existence of an OpenAPI endpoint is the disclosure we want to avoid.
 func TestOpenAPI_GatedHandlerHidesSpec(t *testing.T) {
 	spec := NewSpec("test", "1.0")
@@ -118,7 +118,7 @@ func TestOpenAPI_GatedHandlerAdmitsAllowed(t *testing.T) {
 }
 
 // TestOpenAPI_GatedHandlerNilAllowDenies verifies a nil predicate
-// fail-closes — never returns the spec.
+// fail-closes, never returns the spec.
 func TestOpenAPI_GatedHandlerNilAllowDenies(t *testing.T) {
 	spec := NewSpec("test", "1.0")
 	gated := GatedHandler(spec, nil)
@@ -175,7 +175,7 @@ func TestDocsHandler_DoesNotLoadThirdPartyCDNAssets(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/docs/", nil)
 	rr := httptest.NewRecorder()
 
-	// public=true so the rendered page body is actually asserted — the
+	// public=true so the rendered page body is actually asserted. The
 	// gated variant 401s an anonymous request and the check is vacuous.
 	DocsHandler(spec, "/docs", true).ServeHTTP(rr, req)
 

@@ -16,8 +16,8 @@ import (
 )
 
 // StrictLevel is the posture of one strict check. The zero value is
-// StrictEnforce, so a zero-value [StrictConfig] — and a bare
-// WithStrict() — is the strictest configuration, and relaxing anything
+// StrictEnforce, so a zero-value [StrictConfig], and a bare
+// WithStrict(), is the strictest configuration, and relaxing anything
 // is always an explicit, visible-in-review choice.
 type StrictLevel int
 
@@ -45,7 +45,7 @@ const (
 )
 
 // StrictConfig tunes every strict check individually. The zero value
-// enforces everything — each field is only ever written to relax.
+// enforces everything: each field is only ever written to relax.
 type StrictConfig struct {
 	// ScreenTitles: every page screen declares a title.
 	ScreenTitles StrictLevel
@@ -63,11 +63,11 @@ type StrictConfig struct {
 	Robots StrictLevel
 	// AxeCoverage: every page route has a recorded axe scan in the
 	// .gofastr/axe-coverage.json manifest. Only evaluated under
-	// `gofastr dev` regardless of level — the manifest is a local test
+	// `gofastr dev` regardless of level: the manifest is a local test
 	// artifact that never ships, so production boots can't depend on it.
 	AxeCoverage StrictLevel
 	// AxeManifestMissing is the posture when the manifest doesn't exist
-	// at all (fresh clone / fresh generate — the axe suite has never
+	// at all (fresh clone / fresh generate, the axe suite has never
 	// run). Its zero value is StrictAbsenceWarn, NOT enforce: first
 	// boot should never be walled off behind a Chrome run. Set
 	// StrictAbsenceEnforce for environments where an unproven checkout
@@ -82,7 +82,7 @@ type StrictConfig struct {
 	ExemptScreens []string
 }
 
-// strict check identifiers — used to route findings through their
+// strict check identifiers: used to route findings through their
 // configured level and to label warn logs.
 const (
 	strictCheckScreenTitles       = "screen-titles"
@@ -148,14 +148,14 @@ func (c StrictConfig) exempt(route string) bool {
 // serving. The checks:
 //
 //   - every page screen declares a title, and a description unless it
-//     implements [ScreenSEO] (the documented zero-value opt-out — a
+//     implements [ScreenSEO] (the documented zero-value opt-out: a
 //     deliberate "this page is naked" beats a forgotten one);
 //   - the site declares a description ([WithDescription]), an icon
 //     ([WithFavicon] or [WithAppIcon]), a sitemap ([WithSitemap]), and
 //     robots directives ([WithRobots]);
 //   - under `gofastr dev` only: every page route is covered by the
 //     axe-coverage manifest (.gofastr/axe-coverage.json) that
-//     framework/testkit/axetest scans record — i.e. every screen has an
+//     framework/testkit/axetest scans record, i.e. every screen has an
 //     accessibility test. A manifest that exists but misses a route is
 //     drift; a manifest that doesn't exist yet (fresh clone or fresh
 //     generate) warns by default so first boot is never walled off
@@ -163,7 +163,7 @@ func (c StrictConfig) exempt(route string) bool {
 //
 // WithStrict() with no arguments enforces everything. Pass a
 // [StrictConfig] to tune each check to enforce, warn, or off, exempt
-// specific routes, or harden the missing-manifest posture — the zero
+// specific routes, or harden the missing-manifest posture. The zero
 // value of every field is the strictest setting, so configuration only
 // ever relaxes, visibly.
 func WithStrict(cfg ...StrictConfig) Option {
@@ -191,8 +191,8 @@ type strictFinding struct {
 }
 
 // enforceStrict runs the strict checks, warns the warn-level findings,
-// and panics with the enforced ones. Called from Mount — boot time,
-// before any traffic — so a strict app can never serve a surface that
+// and panics with the enforced ones. Called from Mount, boot time,
+// before any traffic, so a strict app can never serve a surface that
 // fails its enforced checks. Panic (not error) is the framework's
 // contract for configuration it cannot honor, same as route conflicts
 // and fanout-without-secret.
@@ -226,12 +226,12 @@ func (ds *UIHost) enforceStrict() {
 	for i, v := range enforced {
 		fmt.Fprintf(&b, "  %d. %s\n", i+1, v)
 	}
-	b.WriteString("strict mode is opt-in (uihost.WithStrict) — fix the findings above; they are ordered, independent, and each names its remedy. To relax a check deliberately, pass a StrictConfig (levels: enforce/warn/off, per-route ExemptScreens).")
+	b.WriteString("strict mode is opt-in (uihost.WithStrict): fix the findings above; they are ordered, independent, and each names its remedy. To relax a check deliberately, pass a StrictConfig (levels: enforce/warn/off, per-route ExemptScreens).")
 	panic(b.String())
 }
 
 // strictScreenFindings checks per-screen SEO completeness for every
-// page-type screen. Drawers, sheets, and dialogs are skipped — they
+// page-type screen. Drawers, sheets, and dialogs are skipped. They
 // render inside a page and have no head of their own.
 func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 	var out []strictFinding
@@ -242,11 +242,11 @@ func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 		}
 		if screen.Title == "" {
 			out = append(out, strictFinding{strictCheckScreenTitles, fmt.Sprintf(
-				"screen %q: no title — implement ScreenTitler on the component or register with Screen.WithTitle", screen.Path)})
+				"screen %q: no title: implement ScreenTitler on the component or register with Screen.WithTitle", screen.Path)})
 		}
 		if _, deliberate := screen.Component.(ScreenSEO); screen.Description == "" && !deliberate {
 			out = append(out, strictFinding{strictCheckScreenDescriptions, fmt.Sprintf(
-				"screen %q: no description — implement ScreenDescriber (or ScreenSEO; a zero-value ScreenSEO return deliberately opts the page out)", screen.Path)})
+				"screen %q: no description: implement ScreenDescriber (or ScreenSEO; a zero-value ScreenSEO return deliberately opts the page out)", screen.Path)})
 		}
 	}
 	return out
@@ -257,22 +257,22 @@ func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 func (ds *UIHost) strictSiteFindings() []strictFinding {
 	var out []strictFinding
 	if !ds.siteDescription {
-		out = append(out, strictFinding{strictCheckSiteDescription, "site: no description — add uihost.WithDescription"})
+		out = append(out, strictFinding{strictCheckSiteDescription, "site: no description: add uihost.WithDescription"})
 	}
 	if ds.faviconURL == "" && len(ds.appIcons) == 0 {
-		out = append(out, strictFinding{strictCheckSiteIcon, "site: no icon — add uihost.WithAppIcon (one source image) or uihost.WithFavicon"})
+		out = append(out, strictFinding{strictCheckSiteIcon, "site: no icon: add uihost.WithAppIcon (one source image) or uihost.WithFavicon"})
 	}
 	switch {
 	case ds.sitemapConfig == nil:
-		out = append(out, strictFinding{strictCheckSitemap, "site: no sitemap — add uihost.WithSitemap so crawlers and the a11y audit can discover every route"})
+		out = append(out, strictFinding{strictCheckSitemap, "site: no sitemap: add uihost.WithSitemap so crawlers and the a11y audit can discover every route"})
 	default:
 		if reason := invalidSitemapBaseURL(ds.sitemapConfig.BaseURL); reason != "" {
 			out = append(out, strictFinding{strictCheckSitemap, fmt.Sprintf(
-				"site: sitemap BaseURL %q %s — <loc> entries must be absolute URLs (scheme + host), e.g. https://example.com", ds.sitemapConfig.BaseURL, reason)})
+				"site: sitemap BaseURL %q %s: <loc> entries must be absolute URLs (scheme + host), e.g. https://example.com", ds.sitemapConfig.BaseURL, reason)})
 		}
 	}
 	if ds.robotsConfig == nil {
-		out = append(out, strictFinding{strictCheckRobots, "site: no robots directives — add uihost.WithRobots"})
+		out = append(out, strictFinding{strictCheckRobots, "site: no robots directives: add uihost.WithRobots"})
 	}
 	return out
 }
@@ -298,7 +298,7 @@ func invalidSitemapBaseURL(base string) string {
 	case u.RawQuery != "" || u.Fragment != "":
 		return "must not carry a query or fragment"
 	case u.Path != "" && u.Path != "/":
-		return "must be a bare origin — a deployment path prefix belongs in the static Builder's BasePath, not here (it would be prefixed twice)"
+		return "must be a bare origin: a deployment path prefix belongs in the static Builder's BasePath, not here (it would be prefixed twice)"
 	}
 	return ""
 }
@@ -322,7 +322,7 @@ func isDynamicRoute(pattern string) bool {
 // The demand surface mirrors the sitemap's discovery surface: a dynamic
 // route whose screen does not implement [app.StaticPathsProvider] is
 // invisible to the sitemap, hence unreachable by a sitemap-driven axe
-// gate, hence structurally uncoverable — strict skips it and screams
+// gate, hence structurally uncoverable. Strict skips it and screams
 // instead of demanding the impossible.
 func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	if cfg.level(strictCheckAxeCoverage) == StrictOff {
@@ -349,7 +349,7 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	}
 	if len(invisible) > 0 {
 		sort.Strings(invisible)
-		slog.Warn("uihost strict: dynamic screens whose StaticPaths returns no instances (or is not implemented) are invisible to the sitemap and the axe gate — return concrete instances to bring them under coverage",
+		slog.Warn("uihost strict: dynamic screens whose StaticPaths returns no instances (or is not implemented) are invisible to the sitemap and the axe gate: return concrete instances to bring them under coverage",
 			"routes", strings.Join(invisible, ", "))
 	}
 	// No page screens → nothing an axe test could scan; requiring a
@@ -362,14 +362,14 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return []strictFinding{{strictCheckAxeManifest, fmt.Sprintf(
-				"axe coverage unverified — no manifest at %s; run the axe suite (go test) so every screen's scan is recorded (%v)", axecov.FileName, err)}}
+				"axe coverage unverified: no manifest at %s; run the axe suite (go test) so every screen's scan is recorded (%v)", axecov.FileName, err)}}
 		}
 		// A manifest that exists but cannot be read is NOT absence:
 		// treating corruption as absence would relax enforcement exactly
 		// when the coverage record is untrustworthy. Routed through the
 		// AxeCoverage level (enforced by default).
 		return []strictFinding{{strictCheckAxeCoverage, fmt.Sprintf(
-			"axe coverage manifest unreadable (%v) — delete %s and re-run the axe suite", err, axecov.FileName)}}
+			"axe coverage manifest unreadable (%v): delete %s and re-run the axe suite", err, axecov.FileName)}}
 	}
 	covered := map[string]bool{}
 	for scanned := range m.Pages {
@@ -381,7 +381,7 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	for _, route := range pageRoutes {
 		if !covered[route] {
 			msgs = append(msgs, fmt.Sprintf(
-				"axe coverage: screen %q has no recorded axe scan — add it to the axe gate's page list (derive the list from your screen catalog so this cannot recur)", route))
+				"axe coverage: screen %q has no recorded axe scan: add it to the axe gate's page list (derive the list from your screen catalog so this cannot recur)", route))
 		}
 	}
 	sort.Strings(msgs)

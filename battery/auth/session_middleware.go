@@ -41,7 +41,7 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 //
 // This is the missing counterpart to RequireAuth, which is JWT-only. Host
 // apps with HTML/form auth want SessionMiddleware mounted on the routes
-// that need to know "who is logged in" — typically the whole app router.
+// that need to know "who is logged in", typically the whole app router.
 //
 //	app.Use(auth.SessionMiddleware(mgr))
 //
@@ -54,7 +54,7 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 		panic("auth.SessionMiddleware: mgr is nil")
 	}
 	if mgr.UserStore() == nil {
-		panic("auth.SessionMiddleware: AuthManager has no UserStore — set AuthConfig.UserStore before constructing the middleware. Without it, every request would log a WARN and proceed anonymously, making the middleware useless.")
+		panic("auth.SessionMiddleware: AuthManager has no UserStore: set AuthConfig.UserStore before constructing the middleware. Without it, every request would log a WARN and proceed anonymously, making the middleware useless.")
 	}
 	o := sessionMiddlewareOpts{logger: slog.Default()}
 	for _, fn := range opts {
@@ -63,14 +63,14 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 	log := o.logger
 	// anon is the common fall-through for every "no valid user this
 	// time" branch. It MUST clear any pre-existing user on ctx that
-	// an outer SessionMiddleware (or other auth source) installed —
+	// an outer SessionMiddleware (or other auth source) installed,
 	// otherwise an inner per-tenant middleware silently carries the
 	// outer tenant's identity into its handler, and OwnerField CRUD
 	// queries scope cross-tenant. See TestSessionMiddleware_ClearsUserOn*.
 	anon := func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		// ...but NOT an embed grant's subject. An embed request has no session
-		// cookie by construction — framework/embed deletes it, and a browser
-		// would not send one cross-site anyway — so this branch is the one every
+		// cookie by construction, framework/embed deletes it, and a browser
+		// would not send one cross-site anyway, so this branch is the one every
 		// embed request takes. Clearing here erased the identity the grant just
 		// established, which made the documented wiring
 		//
@@ -78,8 +78,8 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 		//	fwApp.Use(auth.SessionMiddleware(mgr))
 		//
 		// produce an anonymous handler: owner-scoped CRUD, policies, tenant
-		// resolution and audit all saw nobody. The reason anon exists — an outer
-		// SessionMiddleware leaking one tenant's user into an inner one — does
+		// resolution and audit all saw nobody. The reason anon exists, an outer
+		// SessionMiddleware leaking one tenant's user into an inner one, does
 		// not apply to a credential this middleware never issued and cannot
 		// verify.
 		if _, embedded := embed.GrantFromContext(r.Context()); embedded {
@@ -94,11 +94,11 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 			ctx := r.Context()
 			cfg := mgr.Config()
 
-			// Try EVERY cookie carrying the session name, not just the first.
+			// Try EVERY cookie carrying the session name, not only the first.
 			// A jar can hold several: a stale cookie from an old deployment at
 			// a more specific Path, or another localhost port's cookie
 			// (localhost cookies ignore ports). Browsers send the most
-			// path-specific first and r.Cookie returns only that one — so a
+			// path-specific first and r.Cookie returns only that one, so a
 			// dead cookie would shadow a live session and login would
 			// silently fail while a valid cookie sits one position later.
 			for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
@@ -132,8 +132,8 @@ func sessionCookieCandidates(r *http.Request, name string) []string {
 func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log *slog.Logger) (User, bool) {
 	sess, err := mgr.SessionStore().Get(ctx, token)
 	if err != nil {
-		// Distinguish "session expired / not in store" (debug — normal
-		// anonymous transition) from "store outage" (warn — operator needs
+		// Distinguish "session expired / not in store" (debug, normal
+		// anonymous transition) from "store outage" (warn, operator needs
 		// to see). The framework's ErrSessionNotFound is the legit not-found
 		// sentinel; anything else is suspicious.
 		if log != nil {
@@ -141,7 +141,7 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 				log.Debug("session: not found in store",
 					"err", err.Error())
 			} else {
-				log.Warn("session: store lookup failed — request degraded to anonymous",
+				log.Warn("session: store lookup failed: request degraded to anonymous",
 					"err", err.Error())
 			}
 		}
@@ -153,7 +153,7 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 		}
 		return nil, false
 	}
-	// Pending-2FA sessions are NOT loaded into context — they're
+	// Pending-2FA sessions are NOT loaded into context, they're
 	// only usable for /auth/2fa/challenge.
 	if sess.PendingTwoFactor {
 		if log != nil {
@@ -164,12 +164,12 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 	}
 	store := mgr.UserStore()
 	if store == nil {
-		// This is a host misconfiguration — battery/auth was wired
+		// This is a host misconfiguration, battery/auth was wired
 		// without a UserStore. WARN every time so operators see
 		// the line; we don't panic because that would take the
 		// app down for a recoverable mistake.
 		if log != nil {
-			log.Warn("session: UserStore not configured on AuthManager — session cookie can't be resolved",
+			log.Warn("session: UserStore not configured on AuthManager: session cookie can't be resolved",
 				"recommendation", "set AuthConfig.UserStore at init")
 		}
 		return nil, false
@@ -181,7 +181,7 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 				log.Debug("session: user not found for session",
 					"user_id", sess.UserID)
 			} else {
-				log.Warn("session: user-store lookup failed — request degraded to anonymous",
+				log.Warn("session: user-store lookup failed: request degraded to anonymous",
 					"user_id", sess.UserID, "err", err.Error())
 			}
 		}
@@ -231,7 +231,7 @@ type requireSessionOptions struct {
 
 // WithRedirectOnFail redirects unauthenticated HTML requests to the
 // given path (e.g. "/login") instead of returning JSON 401. JSON
-// requests still receive 401 — only browsers get the redirect.
+// requests still receive 401, only browsers get the redirect.
 func WithRedirectOnFail(path string) RequireSessionOption {
 	return func(o *requireSessionOptions) { o.failHTMLPath = path }
 }

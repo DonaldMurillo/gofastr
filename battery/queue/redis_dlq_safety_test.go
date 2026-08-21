@@ -24,7 +24,7 @@ func (f *dlqFailingRedis) LPush(ctx context.Context, key string, values ...inter
 
 // An exhausted job whose dead-letter push fails must not vanish: it was
 // already popped off the main list, so the failed DLQ write has to
-// restore it and surface the error — the same no-silent-loss contract
+// restore it and surface the error, the same no-silent-loss contract
 // the pop→processing transition has.
 func TestRedisExhaustedJobSurvivesDLQFailure(t *testing.T) {
 	r := newMockRedis()
@@ -82,7 +82,7 @@ func (f *pushFailingRedis) LPush(ctx context.Context, key string, values ...inte
 // Nack must not delete the processing entry until the job's next home is
 // written. The processing hash is the only durable copy of a claimed job:
 // removing it first and then failing the retry (or dead-letter) push leaves
-// the job in no list and invisible to Reclaim — silently lost.
+// the job in no list and invisible to Reclaim, silently lost.
 func TestRedisNackKeepsJobWhenPushFails(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -129,7 +129,7 @@ func TestRedisNackKeepsJobWhenPushFails(t *testing.T) {
 // A type-filtered Dequeue pops non-matching jobs off the main list and
 // holds them in memory until it restores them. Discarding a restore
 // failure left a valid job in NO list while Dequeue reported an ordinary
-// empty queue — the same silent-loss class as the Nack ordering bug, in
+// empty queue, the same silent-loss class as the Nack ordering bug, in
 // the sibling path.
 func TestRedisSkippedJobLossIsReported(t *testing.T) {
 	r := newMockRedis()

@@ -11,7 +11,7 @@ import (
 // Detection and launch must share this path: chromedp's Windows fallback
 // searches Chrome/Chromium but not a discovered Edge installation.
 // Resolution lives in internal/browserpath so every OS is covered by one
-// list — a PATH-only lookup skipped these suites on macOS, where Chrome
+// list, a PATH-only lookup skipped these suites on macOS, where Chrome
 // installs to /Applications and is not on $PATH.
 func browserExecutable(t *testing.T) string {
 	t.Helper()

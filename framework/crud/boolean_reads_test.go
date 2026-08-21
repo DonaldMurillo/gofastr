@@ -96,7 +96,7 @@ func TestEagerLoadNormalizesBooleanSchemaForModernc(t *testing.T) {
 
 // TestScanOneNormalizesBooleanForModernc covers the single-row read path.
 // Get, Create, Update and Upsert all return through scanOne, which also
-// carries schema.JSON decoding — so the two normalizations have to coexist
+// carries schema.JSON decoding, so the two normalizations have to coexist
 // on that one seam. Without this, rerouting the path would silently serve
 // booleans as 0/1 again while the list-path tests stayed green.
 func TestScanOneNormalizesBooleanForModernc(t *testing.T) {

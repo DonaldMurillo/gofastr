@@ -4,7 +4,7 @@ package migrate_test
 // rest of the suite asserts the SQL *sequence* via sqlmock; these execute the
 // runner end-to-end against a live Postgres so we prove migrations actually
 // apply, roll back, detect drift, serialize concurrent deployers, and honour
-// the NoTransaction escape hatch — the production path the CLI drives.
+// the NoTransaction escape hatch, the production path the CLI drives.
 //
 // Skips automatically when Postgres is unreachable (see internal/pgtest).
 
@@ -118,7 +118,7 @@ func TestPG_ChecksumDriftBlocks(t *testing.T) {
 	if err := m1.Up(ctx); err != nil {
 		t.Fatalf("initial Up: %v", err)
 	}
-	// A fresh migrator with the SAME version but MUTATED Up SQL — an
+	// A fresh migrator with the SAME version but MUTATED Up SQL. An
 	// already-applied migration was edited. The runner must refuse.
 	m2 := pgMigrator(t, db)
 	m2.Register(migrate.Migration{Version: 1, Name: "c", Up: "CREATE TABLE c (id BIGINT, extra TEXT)", Down: "DROP TABLE c"})
@@ -138,7 +138,7 @@ func TestPG_DirtyStateBlocksUntilForce(t *testing.T) {
 	m := pgMigrator(t, db)
 	// NoTransaction: the runner marks the row dirty BEFORE running and only
 	// clears it on success. A statement that fails mid-way (after a partial
-	// effect, since there's no surrounding tx) leaves the DB dirty — exactly
+	// effect, since there's no surrounding tx) leaves the DB dirty, exactly
 	// the hazard NoTransaction documents.
 	m.Register(migrate.Migration{
 		Version:       1,

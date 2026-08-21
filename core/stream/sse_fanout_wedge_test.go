@@ -16,7 +16,7 @@ import (
 // Before the fix the fanout-receive callback invoked deliverLocal, whose
 // block-mode send `select { case ch<-evt: case <-done: }` blocked forever
 // once the block subscriber's bounded channel was full and its loop stopped
-// draining — stalling delivery to EVERY other subscriber on B. Remote-origin
+// draining, stalling delivery to EVERY other subscriber on B. Remote-origin
 // delivery now uses deliverFromFanout, which is always drop-oldest.
 func TestFanoutReceiveSurvivesBlockSubscriber(t *testing.T) {
 	f := fanout.NewInProcess()
@@ -26,7 +26,7 @@ func TestFanoutReceiveSurvivesBlockSubscriber(t *testing.T) {
 	defer brokerB.Close()
 
 	// block sub: cap 1, block mode, loop never drains (we never serve it),
-	// so its channel fills and stays full — the exact condition that wedged
+	// so its channel fills and stays full: the exact condition that wedged
 	// the old deliverLocal-on-fanout-receive path.
 	blockSub := &subscriber{
 		ch:       make(chan sseEvent, 1),
@@ -64,7 +64,7 @@ func TestFanoutReceiveSurvivesBlockSubscriber(t *testing.T) {
 // Subscribe loop exits and owns its own removal, it must close(sub.done) so a
 // concurrent LOCAL Publish blocked on the block-mode channel send unblocks
 // instead of hanging forever. (Local Publish keeps block-mode backpressure;
-// the disconnect unblocks it via the done channel — the symmetric guard to
+// the disconnect unblocks it via the done channel, the symmetric guard to
 // deliverFromFanout's drop-oldest.)
 func TestBlockSubDisconnectUnblocksLocalPublish(t *testing.T) {
 	b := NewSSEBroker(SSEBrokerConfig{Topic: "t"})

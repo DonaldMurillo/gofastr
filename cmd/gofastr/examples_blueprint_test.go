@@ -21,7 +21,7 @@ import (
 // -short and catches a blueprint that no longer decodes.
 //
 // It is NOT sufficient on its own. Parsing proves nothing about the Go the
-// generator emits from the parse — see TestExampleBlueprintsGenerateAndCompile.
+// generator emits from the parse. See TestExampleBlueprintsGenerateAndCompile.
 func TestExampleBlueprintsLoad(t *testing.T) {
 	for _, path := range exampleBlueprints(t) {
 		path := path
@@ -65,11 +65,11 @@ func exampleBlueprints(t *testing.T) []string {
 // examples/meridian/blueprint_gate_test.go already made exactly this argument
 // for one blueprint ("Without this gate, gofastr.yml can rot silently, which is
 // exactly how #131 went unnoticed"), and examples/ecommerce reaches the same
-// guarantee a different way — its committed app/ is compiled by `go build
+// guarantee a different way: its committed app/ is compiled by `go build
 // ./...` and a byte-parity test pins the generator to it.
 //
 // Those two were the ONLY blueprints whose emitted Go was ever compiled. The
-// other five — blog, lms, portfolio, project-manager, real-estate — were
+// other five, blog, lms, portfolio, project-manager, real-estate, were
 // covered solely by TestExampleBlueprintsLoad above, which checks that the YAML
 // parses. All five emitted code that did not compile, and neither of the two
 // gated examples could catch it: ecommerce declares no home screen and no
@@ -95,7 +95,7 @@ func TestExampleBlueprintsGenerateAndCompile(t *testing.T) {
 // TestExampleBlueprintsBoot is the top rung of the blueprint ladder:
 // load → generate → compile → START the binary and serve. Compile-only
 // was not enough: the blog blueprint rotted for a whole release while
-// passing all three lower rungs — its seed seeded `post_id: 1` into a
+// passing all three lower rungs. Its seed seeded `post_id: 1` into a
 // UUID relation column, an app that builds cleanly and dies at boot
 // ("seed hooks: seed comments: validation failed"). Nothing below the
 // boot rung can see a runtime failure, so this test is the gate that
@@ -122,7 +122,7 @@ func TestExampleBlueprintsBoot(t *testing.T) {
 }
 
 // exerciseGeneratedApp is the rung above "it booted". The boot probe accepts
-// any non-5xx answer to GET / — which proves the process is alive and routing,
+// any non-5xx answer to GET /, which proves the process is alive and routing,
 // and nothing else. Every generated surface past the homepage (the REST list
 // routes, the MCP tools, the authorization posture shared by both) was
 // unexercised by any gate, so a generated app could serve a homepage and be
@@ -130,7 +130,7 @@ func TestExampleBlueprintsBoot(t *testing.T) {
 //
 // The check is derived from the app rather than hardcoded per blueprint: ask
 // /mcp which tools exist, and for every "<table>_list" tool compare the MCP
-// answer's posture against the REST list route's. The invariant is parity —
+// answer's posture against the REST list route's. The invariant is parity:
 // tool calls re-enter the same router and Exposure as the REST handlers, so
 // the two must agree about whether the caller may read. A tools/call that
 // succeeds where REST answers 401/403 is an unguarded second authorization
@@ -175,7 +175,7 @@ func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer
 		restStatus, restPath := restListStatus(t, baseURL, table)
 		if restStatus == 0 {
 			// No REST list route for this tool's table (introspection tools,
-			// or an entity exposed to MCP only) — nothing to compare against.
+			// or an entity exposed to MCP only). Nothing to compare against.
 			continue
 		}
 		callStatus, callBody := postMCP(t, baseURL,
@@ -185,9 +185,9 @@ func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer
 				name, tool.Name, callStatus, callBody)
 		}
 		// Classify on the authorization signal, not on "an error happened".
-		// Any JSON-RPC failure — a missing required argument, a 500 — used to
-		// read as "refused", so a tool that was merely broken counted as
-		// correctly gated and the assertion passed vacuously.
+		// Any JSON-RPC failure, such as a missing required argument or a
+		// 500, used to read as "refused", so a tool that was merely broken
+		// counted as correctly gated and the assertion passed vacuously.
 		mcpErr, mcpFailed := mcpErrorMessage(callBody)
 		mcpRefused := strings.Contains(mcpErr, "status 401") ||
 			strings.Contains(mcpErr, "status 403") ||
@@ -207,7 +207,7 @@ func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer
 		}
 		// The third surface. REST and MCP share the route middleware; a
 		// server-rendered screen does not enter it at all, so an entity could
-		// answer 403 on /api/<table> and 200 — with every row in the HTML — on
+		// answer 403 on /api/<table> and 200, with every row in the HTML, on
 		// the /<table> screen the same blueprint generated. That was live on
 		// the flagship blog blueprint: GET /api/users refused while GET /users
 		// served three user emails.
@@ -225,8 +225,8 @@ func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer
 		checked++
 	}
 	// Fatal, not Logf. Every assertion above lives inside the loop, so a
-	// `checked` of zero means this whole gate — REST/MCP parity AND both
-	// screen directions — silently exercised nothing while the test reported
+	// `checked` of zero means this whole gate, REST/MCP parity AND both
+	// screen directions, silently exercised nothing while the test reported
 	// a pass. Tool-name drift or an API-prefix change would do it: the
 	// `_list` suffix stops matching, or restListStatus stops finding a route,
 	// and every iteration `continue`s. The blueprint reached here with tools
@@ -240,7 +240,7 @@ func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer
 	// value-level half only runs when the REST route actually served rows AND
 	// the screen answered 200. If rows existed everywhere and nothing was ever
 	// compared, that half verified nothing while the count still looked
-	// healthy — a seed that stopped running, a list envelope this gate can no
+	// healthy: a seed that stopped running, a list envelope this gate can no
 	// longer read, or every screen quietly redirecting all present that way.
 	if servedRows > 0 && valuesCompared == 0 {
 		t.Fatalf("%s: %d entities served rows over REST but not one screen was checked against an actual value — "+
@@ -271,7 +271,7 @@ func restListStatus(t *testing.T, baseURL, table string) (int, string) {
 
 // assertScreenServesNoRows fails when a generated SSR screen renders a data
 // table for an entity whose REST list route refused the same anonymous caller.
-// The screen may answer 200 — it renders an access notice — but it must not
+// The screen may answer 200, since it renders an access notice, but it must not
 // contain the rows.
 func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 	t.Helper()
@@ -283,7 +283,7 @@ func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
 		// No screen for this entity at all, so there is nothing that could
-		// leak. This is a silent pass by design — unlike the zero-`checked`
+		// leak. This is a silent pass by design. Unlike the zero-`checked`
 		// case above, "no screen exists" is itself the safe answer.
 		return
 	case resp.StatusCode == http.StatusUnauthorized,
@@ -303,7 +303,7 @@ func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 	}
 	// The check above names one renderer, so it only catches a leak shaped
 	// like a data table; a screen that listed the same rows as cards would
-	// pass it. Require the refusal POSITIVELY instead — the screen has to say
+	// pass it. Require the refusal POSITIVELY instead: the screen has to say
 	// it declined, which no renderer of actual rows does.
 	if !strings.Contains(string(body), resource.AccessDeniedTitle) {
 		t.Fatalf("%s: GET /%s returned 200 without the access notice while GET /api/%s refuses the same "+
@@ -319,7 +319,7 @@ func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 // and every test stayed green.
 //
 // If the REST list route serves an anonymous caller, the screen for the same
-// entity must serve them too — and must show the same rows. Asserting only
+// entity must serve them too, and must show the same rows. Asserting only
 // that the refusal notice is ABSENT would pass for a screen that renders an
 // empty table because its query broke, which looks identical to a correctly
 // permitted screen with nothing to show. restPath is the route that already
@@ -330,7 +330,7 @@ func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 // The two must be able to DIVERGE, or the caller's accounting is dead code.
 // An earlier version derived both from the same return points, so they were
 // always equal and the guard that watches for "rows existed but nothing was
-// compared" could never fire — an anti-vacuity check that was itself vacuous.
+// compared" could never fire: an anti-vacuity check that was itself vacuous.
 // The REST payload is therefore read FIRST, independently of what the screen
 // does: a screen that 404s or redirects returns (restHadRows, false), which is
 // exactly the divergence the caller needs to see.
@@ -400,7 +400,7 @@ func truncateForLog(b []byte) string {
 // The two returns are separate because they answer different questions, and
 // deriving presence from the values conflated them. A first row whose fields
 // are all numeric, boolean, or null yields no values, and the caller then read
-// that as "the table is empty" and skipped the screen assertion entirely — a
+// that as "the table is empty" and skipped the screen assertion entirely, a
 // populated table silently opting out of the check.
 func firstRowDisplayValues(t *testing.T, baseURL, restPath string) (bool, []string) {
 	t.Helper()
@@ -415,7 +415,7 @@ func firstRowDisplayValues(t *testing.T, baseURL, restPath string) (bool, []stri
 	raw, _ := io.ReadAll(resp.Body)
 	// Decode loosely first: a renamed or restructured envelope unmarshals
 	// cleanly into a typed struct and leaves Data empty, which is
-	// indistinguishable from an empty table — and that is exactly how this
+	// indistinguishable from an empty table, and that is exactly how this
 	// gate's value-level half can silently stop verifying anything. Require
 	// the `data` key to exist.
 	var envelope map[string]json.RawMessage
@@ -449,7 +449,7 @@ func firstRowDisplayValues(t *testing.T, baseURL, restPath string) (bool, []stri
 // isIDOrTimestampKey matches both key conventions a blueprint can serve. The
 // framework emits camelCase, but the filter has to hold for a snake_case
 // payload too, and checking only `Id`/`At` let `user_id` and `created_at`
-// through as display values — matching a screen on a raw id is noise at best
+// through as display values. Matching a screen on a raw id is noise at best
 // and a false pass at worst.
 //
 // The suffixes are matched with their separator rather than case-folded, so
@@ -466,7 +466,7 @@ func isIDOrTimestampKey(k string) bool {
 // Scanning the whole response for phrases like "access denied" classified row
 // CONTENT as an authorization refusal: a seeded row whose text happens to
 // contain the phrase made a successful call read as refused, which is exactly
-// the direction that hides a real MCP bypass — the REST route refuses, the MCP
+// the direction that hides a real MCP bypass: the REST route refuses, the MCP
 // tool serves the rows, and the parity check calls them equal.
 //
 // The transport may frame the response as SSE because the request accepts
@@ -526,7 +526,7 @@ var bootProbeClient = &http.Client{Timeout: 5 * time.Second}
 
 // bootGeneratedApp starts a generated app binary on a free port and waits
 // for it to serve. A process that exits first (seed validation, failed
-// migration, refused bind) fails immediately with its captured output —
+// migration, refused bind) fails immediately with its captured output,
 // faster than burning the whole HTTP deadline, and the output is the
 // diagnostic that matters.
 func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuffer) {
@@ -567,7 +567,7 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuff
 		resp, err := bootProbeClient.Get(baseURL + "/")
 		if err == nil {
 			resp.Body.Close()
-			// Any non-server-error answer proves the app is up and routing —
+			// Any non-server-error answer proves the app is up and routing:
 			// auth-gated apps answer 302/401 on /, a screen-less one 404.
 			if resp.StatusCode < 500 {
 				return baseURL, output
@@ -657,7 +657,7 @@ func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) (stri
 		appDir = filepath.Join(dir, out)
 	}
 
-	// Compile the main package. The binary goes to a temp dir — never the
+	// Compile the main package. The binary goes to a temp dir, never the
 	// worktree. This pulls in the generated entities package transitively;
 	// ./... below covers any package the main package does not import.
 	bin := filepath.Join(t.TempDir(), name+"-from-blueprint")

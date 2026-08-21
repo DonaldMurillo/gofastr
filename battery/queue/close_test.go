@@ -7,8 +7,8 @@ import (
 )
 
 // Close waits on q.stopped, and only Start's goroutine ever closes it. A queue
-// that was constructed and abandoned — a startup sequence that failed after
-// NewDBQueue, a test that only exercised Enqueue — therefore hung forever on
+// that was constructed and abandoned, a startup sequence that failed after
+// NewDBQueue, a test that only exercised Enqueue, therefore hung forever on
 // shutdown instead of exiting.
 func TestCloseWithoutStartReturns(t *testing.T) {
 	_, q := openDBQueue(t, 1)
@@ -42,7 +42,7 @@ func TestCloseWithoutStartIsIdempotent(t *testing.T) {
 	}
 }
 
-// Close must still join the workers when Start did run — otherwise fixing the
+// Close must still join the workers when Start did run, otherwise fixing the
 // never-started hang would turn shutdown into a goroutine leak.
 func TestCloseAfterStartStillJoinsWorkers(t *testing.T) {
 	_, q := openDBQueue(t, 1)

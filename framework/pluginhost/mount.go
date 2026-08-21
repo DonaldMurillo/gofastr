@@ -32,7 +32,7 @@ type Field struct {
 // MountConfig configures [MountMarker]. It is the generic, plugin-agnostic
 // shape; a plugin's own Mount wraps it (see the wysiwyg plugin for the pattern).
 type MountConfig struct {
-	// Plugin is the plugin name — the data-fui-plugin attribute the generic
+	// Plugin is the plugin name, the data-fui-plugin attribute the generic
 	// broker dispatches on to find the registered adapter. Required.
 	Plugin string
 
@@ -94,7 +94,7 @@ func MountMarker(cfg MountConfig) render.HTML {
 	for _, attr := range cfg.Attributes {
 		// Attribute NAMES can't be HTML-escaped into a safe form (an escaped
 		// name isn't a valid name), so an unsafe name must be dropped, not
-		// emitted raw — otherwise a name like `x" onload="…` breaks out of the
+		// emitted raw, otherwise a name like `x" onload="…` breaks out of the
 		// tag. Values are escaped as usual. Names are meant to be static plugin
 		// constants; a non-conforming one is a bug, so skip it.
 		if !validAttributeName(attr.Name) {
@@ -122,7 +122,7 @@ func MountMarker(cfg MountConfig) render.HTML {
 }
 
 // validAttributeName reports whether s is safe to emit as an HTML attribute
-// name unescaped: a conservative subset of the HTML name grammar —
+// name unescaped: a conservative subset of the HTML name grammar,
 // letters, digits, '-', '_', and ':' (for data-*/namespaced names), starting
 // with a letter. This admits every real plugin marker attribute
 // (data-fui-plugin-*) while rejecting anything that could terminate the

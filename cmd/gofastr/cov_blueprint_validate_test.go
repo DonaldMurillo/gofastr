@@ -96,7 +96,7 @@ func TestValidateDevAuthNoSecretOK(t *testing.T) {
 }
 
 func TestValidateAuthDisabledIgnoresSecret(t *testing.T) {
-	// Zero-value BlueprintAuth (auth omitted entirely) has DevMode=false —
+	// Zero-value BlueprintAuth (auth omitted entirely) has DevMode=false;
 	// the check must gate on Enabled or every auth-less blueprint breaks.
 	if err := validateBlueprint(Blueprint{}); err != nil {
 		t.Fatalf("blueprint without auth should validate: %v", err)

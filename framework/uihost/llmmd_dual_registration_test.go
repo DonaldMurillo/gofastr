@@ -10,7 +10,7 @@ import (
 // TestLLMMD_DualSlashRegistrationNoPanic covers issue #89: a group index
 // aliased at both the slashless and trailing-slash path (/studio and
 // /studio/) collapses to one llm.md route (/studio/llm.md). Registering it
-// twice used to panic on a duplicate router pattern during mount — now the
+// twice used to panic on a duplicate router pattern during mount. Now the
 // per-screen loop dedupes the collapsed route.
 func TestLLMMD_DualSlashRegistrationNoPanic(t *testing.T) {
 	a := app.NewApp("llmmd-dual")

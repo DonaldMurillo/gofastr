@@ -43,7 +43,7 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 		// screenshot / verification tooling that hammers /auth/login
 		// from localhost is not locked out (issue #71). The per-IP
 		// flood throttle is the one that bites tooling; the per-account
-		// limiter below is deliberately NOT relaxed — it guards brute-
+		// limiter below is deliberately NOT relaxed, it guards brute-
 		// force even in dev (pinned by TestAuthBypass_BruteForceNoLockout).
 		ipCfg := *cfg.LoginRateLimit
 		ipCfg.DevMode = cfg.DevMode
@@ -68,15 +68,15 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 
 // rejectCrossSiteForm refuses a browser cross-site submission to an auth
 // mutation endpoint and reports whether it wrote a response. Login CSRF
-// needs no pre-existing cookie — an attacker's page can silently log the
-// victim into an attacker-controlled account — so SameSite session
+// needs no pre-existing cookie, an attacker's page can silently log the
+// victim into an attacker-controlled account, so SameSite session
 // cookies don't cover it. JSON bodies are exempt: a cross-site JSON POST
 // needs a CORS preflight, which the framework never answers for these
 // routes. Non-browser clients (curl, tests, native apps) send neither
 // header and pass.
 //
 // The gate is isForgeableRequest, NOT isFormRequest. It used to be the
-// latter, which recognised only urlencoded and multipart — so a form with
+// latter, which recognised only urlencoded and multipart, so a form with
 // enctype="text/plain" (a CORS-simple type, no preflight) skipped the
 // check entirely, and so did a bodyless fetch() that sends no
 // Content-Type. On magic-link verify, whose credential comes from the URL
@@ -89,7 +89,7 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 // "cross-site" regardless of the Origin value. The Origin fallback exists
 // only for older clients that omit Fetch Metadata; there, a "null" Origin
 // is NOT treated as an attack, because a legitimate top-level same-origin
-// form navigation sends Origin: null (opaque origin) too — using null as
+// form navigation sends Origin: null (opaque origin) too, using null as
 // the reject trigger would break normal browser logins.
 func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
 	if !isForgeableRequest(r) {
@@ -97,7 +97,7 @@ func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
 	}
 	// Primary: Fetch Metadata. Same-origin / none are safe; a cross-site
 	// form POST (the CSRF shape) is refused outright. "same-site" is NOT
-	// sufficient — a form on a sibling subdomain (evil.example.com →
+	// sufficient, a form on a sibling subdomain (evil.example.com →
 	// app.example.com) is same-site yet still carries the SameSite
 	// cookie, so it falls through to the Origin-host comparison below.
 	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
@@ -111,7 +111,7 @@ func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
 	}
 	// Fallback for clients without Fetch Metadata: compare Origin host to
 	// the request host. Absent or opaque ("null") Origin can't prove an
-	// attack — allow, matching a same-origin top-level form navigation.
+	// attack, allow, matching a same-origin top-level form navigation.
 	if o := r.Header.Get("Origin"); o != "" && o != "null" {
 		if u, err := url.Parse(o); err == nil && u.Host != "" && !strings.EqualFold(u.Host, r.Host) {
 			writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
@@ -143,7 +143,7 @@ func guardAuthLimit(rl *RateLimiter, w http.ResponseWriter, r *http.Request) boo
 }
 
 // loginHandler handles POST /auth/login. Accepts either:
-//   - application/json: {"email":"…","password":"…"} — returns JSON
+//   - application/json: {"email":"…","password":"…"}, returns JSON
 //     {"user":{…},"token":"…"} with 200.
 //   - application/x-www-form-urlencoded / multipart/form-data: same
 //     fields, returns 303 See Other to the post-login destination
@@ -179,7 +179,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// Per-account limit, keyed on the lower-cased email. Independent
 		// of the per-IP limit so an attacker pivoting IPs cannot bypass.
 		// Apply BEFORE the user-store lookup so an attacker can't probe
-		// account existence by measuring per-account 429s either —
+		// account existence by measuring per-account 429s either,
 		// every non-empty email gets the same treatment.
 		if c.loginLimitAccount != nil {
 			key := "account:" + strings.ToLower(strings.TrimSpace(email))
@@ -207,7 +207,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			// the response time matches the existing-user path. Skipping
 			// bcrypt here leaks user existence via timing.
 			_ = CheckPassword(password, dummyBcryptHash)
-			// Unknown user OR a transport error — record a failed login.
+			// Unknown user OR a transport error, record a failed login.
 			// UserID stays empty (anti-enumeration: the event never
 			// distinguishes "no such user" from "wrong password").
 			c.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -241,7 +241,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 
 		// Mint the session through the manager so the second-factor
 		// pending mark is applied by construction. Until /2fa/challenge
-		// succeeds, only that endpoint accepts the cookie — meHandler
+		// succeeds, only that endpoint accepts the cookie, meHandler
 		// and any RequireAuth-protected route will refuse it. If the
 		// pending mark can't be established, MintSession destroys the
 		// session and we reject the login rather than issue a
@@ -306,7 +306,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			},
 		}
 
-		// Also return a JWT if configured — but never for a pending-2FA
+		// Also return a JWT if configured, but never for a pending-2FA
 		// login. The JWT is stateless: handing it out here would let a
 		// password-only caller skip the second factor entirely on any
 		// JWT-authenticated route.
@@ -336,13 +336,13 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			return
 		}
 		cfg := c.mgr.Config()
-		// Revoke EVERY session-name cookie the client sent, not just the
-		// first — a jar can hold duplicates at different scopes, and logout
+		// Revoke EVERY session-name cookie the client sent, not only the
+		// first. A jar can hold duplicates at different scopes, and logout
 		// must not leave a shadowed-but-valid session alive.
 		for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
 			// Capture the principal before deleting so the audit row
 			// names who logged out. A Get failure (expired/invalid
-			// cookie) yields no event — nothing to revoke of record.
+			// cookie) yields no event, nothing to revoke of record.
 			if sess, gerr := c.mgr.SessionStore().Get(r.Context(), token); gerr == nil {
 				c.mgr.emitSecurity(r.Context(), SecurityEvent{
 					Kind:   "session.revoked",
@@ -371,7 +371,7 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 	}
 }
 
-// meHandler handles GET /auth/me — returns the current user.
+// meHandler handles GET /auth/me, returns the current user.
 func (c *CorePlugin) meHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := c.mgr.Config()
@@ -390,7 +390,7 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 				continue
 			}
 			// Pending-2FA sessions are usable ONLY for /auth/2fa/challenge.
-			// Anything else — meHandler included — refuses them; remember we
+			// Anything else, meHandler included, refuses them; remember we
 			// saw one so the error names the real state.
 			if s.PendingTwoFactor {
 				pending = true
@@ -429,13 +429,13 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 	}
 }
 
-// registerHandler handles POST /auth/register — creates a new user.
+// registerHandler handles POST /auth/register, creates a new user.
 // Accepts JSON or form-encoded bodies. Form requests get a 303 redirect
 // to the post-register destination (?next= override or "/") with the
 // session cookie set after auto-login.
 func (c *CorePlugin) registerHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Cross-site rejection first — a 403'd request must not burn the
+		// Cross-site rejection first, a 403'd request must not burn the
 		// victim's per-IP budget (see loginHandler). Then the per-IP
 		// throttle: unthrottled registration is account-table flooding +
 		// email bombing once verification mail is wired.
@@ -465,7 +465,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 		}
 
 		// SECURITY: roles are server-assigned, never client-controlled.
-		// /auth/register is anonymous — see decodeAuthCredentials for
+		// /auth/register is anonymous. See decodeAuthCredentials for
 		// the rationale. Role elevation is a separate admin-gated flow.
 		// The values come from AuthConfig.DefaultRoles (operator
 		// configuration, fallback ["user"]); any client-supplied roles
@@ -497,7 +497,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			return
 		}
 
-		// Registration succeeded — record before the form/JSON branch so
+		// Registration succeeded, record before the form/JSON branch so
 		// both paths produce the event.
 		c.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "register.succeeded",
@@ -512,7 +512,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			// MintSession so the second-factor pending mark is applied.
 			// A freshly-registered user has no factor today, but the
 			// invariant is "no path creates a session the enforcement
-			// layer never sees" — the exceptions are what this audit
+			// layer never sees", the exceptions are what this audit
 			// found.
 			sess, _, err := c.mgr.MintSession(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
 			if err != nil {
@@ -546,7 +546,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 }
 
 // writeAuthError is the shared error helper: it emits the canonical flat
-// envelope {"error","success","code"} with Content-Type application/json —
+// envelope {"error","success","code"} with Content-Type application/json,
 // the shape framework/crud/crud.go's writeJSONError uses and the generated
 // SDKs and sdkdocs document. battery/auth keeps a local copy because
 // batteries may not import framework/crud.

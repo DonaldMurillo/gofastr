@@ -14,17 +14,17 @@ import (
 //
 // Why not 'self': the frame runs sandbox="allow-scripts" WITHOUT
 // allow-same-origin, so its document is an OPAQUE origin ("null"). Per CSP spec,
-// 'self' matches the protected resource's origin — which for the frame is the
+// 'self' matches the protected resource's origin, which for the frame is the
 // opaque null origin, NOT the host origin that actually served editor.js/css. So
 // `script-src 'self'` / `style-src 'self'` REFUSE the frame's own same-URL
 // sub-resources. Chrome resolves 'self' leniently to the document's URL origin
-// and loads them anyway; Safari follows the spec and BLOCKS them — leaving an
+// and loads them anyway; Safari follows the spec and BLOCKS them, leaving an
 // empty, un-typeable editor. Using the concrete origin makes it unambiguous
 // across browsers.
 //
 // style-src allows 'unsafe-inline' (ProseMirror inline style attrs + the injected
-// token <style>). connect-src 'none': the editor has no network need — every host
-// interaction is a postMessage — so we forbid fetch/XHR/WebSocket outright, which
+// token <style>). connect-src 'none': the editor has no network need, every host
+// interaction is a postMessage, so we forbid fetch/XHR/WebSocket outright, which
 // is the real exfiltration guard the sandbox + this line provide together.
 func framedCSP(origin string) string {
 	// sandbox allow-scripts: forces the document into an opaque-origin sandbox
@@ -56,7 +56,7 @@ func requestOrigin(r *http.Request) (string, bool) {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	// Only an exact http/https X-Forwarded-Proto is honoured — never a raw
+	// Only an exact http/https X-Forwarded-Proto is honoured, never a raw
 	// header value spliced into the policy.
 	if xf := r.Header.Get("X-Forwarded-Proto"); xf != "" {
 		switch xf {
@@ -76,7 +76,7 @@ func requestOrigin(r *http.Request) (string, bool) {
 	return scheme + "://" + host, true
 }
 
-// validHost accepts only hostname[:port] / IPv4 / bracketed-IPv6 characters —
+// validHost accepts only hostname[:port] / IPv4 / bracketed-IPv6 characters,
 // enough to serve any real origin, but nothing that can break out of a CSP
 // directive (no space, ';', quote, comma, control char).
 func validHost(host string) bool {
@@ -197,7 +197,7 @@ func serveBytes(a loadedAsset) http.HandlerFunc {
 }
 
 // writeAsset emits the bytes with a fixed Content-Type and a dev Cache-Control,
-// then — for framed assets only — applies the framing/CORP/CSP relaxation.
+// then, for framed assets only, applies the framing/CORP/CSP relaxation.
 //
 // GoFastr's global security middleware sends anti-embedding headers on EVERY
 // response: X-Frame-Options: DENY, CSP frame-ancestors 'none', and
@@ -211,10 +211,10 @@ func serveBytes(a loadedAsset) http.HandlerFunc {
 //     a buffering middleware upstream can re-emit XFO after this Del, so the
 //     EFFECTIVE framing control is the CSP frame-ancestors directive below,
 //     which browsers honour OVER X-Frame-Options (DECISIONS.md Phase-0 gotcha).
-//   - CSP frame-ancestors 'self' — the EMBEDDER (host page) is same-origin,
+//   - CSP frame-ancestors 'self', the EMBEDDER (host page) is same-origin,
 //     which is what frame-ancestors checks; this SUPersedes any XFO:DENY and is
 //     the load-bearing framing permission.
-//   - Cross-Origin-Resource-Policy: cross-origin — so the opaque ("null") frame
+//   - Cross-Origin-Resource-Policy: cross-origin, so the opaque ("null") frame
 //     may fetch these public, secret-free static assets.
 func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType string, framed bool) {
 	h := w.Header()

@@ -30,7 +30,7 @@ import (
 // canonical and JSON-LD URL.
 //
 // Meridian is a demonstration product that is not deployed anywhere, so the
-// default is a domain under example.com — IANA-reserved for exactly this, and
+// default is a domain under example.com, IANA-reserved for exactly this, and
 // unmistakably illustrative. It used to be "meridian.gofastr.dev", which does
 // not resolve (NXDOMAIN): a flagship example emitting canonical URLs on a dead
 // host teaches the shape wrong and would send any crawler that trusted it
@@ -40,7 +40,7 @@ import (
 var siteOrigin = "https://meridian.example.com"
 
 func main() {
-	// Load .env before anything reads the environment — the DB (and
+	// Load .env before anything reads the environment, the DB (and
 	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
 	// would run. Existing process env always wins over the files.
 	//
@@ -96,15 +96,15 @@ func main() {
 	site := uiapp.NewApp(appName)
 	RegisterGenerated(fwApp, site, db)
 	// SEO surface: sitewide description/OG defaults (per-screen values
-	// override — see screen_home.go / screen_pricing.go), a sitemap of the
+	// override, see screen_home.go / screen_pricing.go), a sitemap of the
 	// marketing pages only, and a robots.txt that keeps the authed app,
 	// admin, and framework internals out of the index.
 	fwApp.Mount(uihost.New(site,
 		uihost.WithStaticDir("static"),
 		uihost.WithAppIcon(appIconPNG()),
 		uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile("static/app.css")),
-		uihost.WithDescription("Meridian is the revenue console for modern SaaS — customers, subscriptions, invoices, and live MRR in one calm place."),
-		uihost.WithOpenGraph(uihost.OG{Title: "Meridian — billing that runs itself", URL: siteOrigin, Type: "website"}),
+		uihost.WithDescription("Meridian is the revenue console for modern SaaS: customers, subscriptions, invoices, and live MRR in one calm place."),
+		uihost.WithOpenGraph(uihost.OG{Title: "Meridian: billing that runs itself", URL: siteOrigin, Type: "website"}),
 		uihost.WithSitemap(uihost.SitemapConfig{
 			BaseURL:      siteOrigin,
 			ExcludePaths: []string{"/app", "/admin", "/login", "/signup"},
@@ -131,7 +131,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Banner fires via OnReady — only after auto-migrate, hooks, and the
+	// Banner fires via OnReady, only after auto-migrate, hooks, and the
 	// port bind all succeeded. Printing before Start would announce a
 	// server that may never come up.
 	fwApp.OnReady(func(boundAddr string) {
@@ -163,7 +163,7 @@ func openDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {
 }
 
 // sdkDistFS returns the generated SDK dist directory when present. Nil (no
-// downloads yet) is a supported state — the docs site shows how to generate
+// downloads yet) is a supported state, the docs site shows how to generate
 // them.
 func sdkDistFS() fs.FS {
 	if _, err := os.Stat("gen/sdk/dist"); err != nil {

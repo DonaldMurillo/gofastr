@@ -16,8 +16,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// servedOpenAPI boots app through the real Start path — /openapi.json is
-// mounted there, not by Entity() — and returns the decoded document: the
+// servedOpenAPI boots app through the real Start path, /openapi.json is
+// mounted there, not by Entity(), and returns the decoded document: the
 // sorted path keys, the per-path documented methods, and the server URLs.
 func servedOpenAPI(t *testing.T, app *App) (paths []string, methods map[string][]string, servers []string) {
 	t.Helper()
@@ -73,11 +73,11 @@ func prefixedTicketsApp(t *testing.T, db *sql.DB, prefix string) *App {
 
 // TestAPIPrefix_OpenAPIPathsMatchLiveRoutes is the regression net for the
 // defect the 2026-07-26 Codex backend eval reproduced twice and ranked as its
-// highest-leverage next move: "/openapi.json returned 200, but the document
+// highest-value next move: "/openapi.json returned 200, but the document
 // did not describe the live /api/tickets path".
 //
 // The spec used to key its paths relative to a servers[0].url of "/api", which
-// is legal OpenAPI — servers + paths compose to the right URL. It is also the
+// is legal OpenAPI: servers + paths compose to the right URL. It is also the
 // one form that misleads a consumer reading `paths` literally, and that
 // consumer is the audience this framework is built for: the eval's agent AND
 // its deterministic grader both concluded the document was wrong, and both
@@ -117,7 +117,7 @@ func TestAPIPrefix_OpenAPIPathsMatchLiveRoutes(t *testing.T) {
 	})
 }
 
-// The documented path is not merely well-formed — it is reachable. This walks
+// The documented path is not merely well-formed. It is reachable. This walks
 // the spec and requests each key, so a path that is correct-looking but wrong
 // (a missed segment, a stale plural) still fails.
 func TestAPIPrefix_EveryDocumentedPathIsRoutable(t *testing.T) {
@@ -140,13 +140,13 @@ func TestAPIPrefix_EveryDocumentedPathIsRoutable(t *testing.T) {
 				// until the client goes away, so an unbounded ServeHTTP here
 				// hangs the suite rather than failing it. A deadline turns
 				// "still streaming" into "routed", which is exactly the claim
-				// under test — an unrouted path 404s at once and never
+				// under test: an unrouted path 404s at once and never
 				// reaches the deadline.
 				ctx, cancel := context.WithTimeout(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"}), 250*time.Millisecond)
 				app.Router().ServeHTTP(rec, r.WithContext(ctx))
 				cancel()
 				// Only 404 is disqualifying. A 400/422 from an empty body, or
-				// a 404 for "no row with id 1", both mean the route matched —
+				// a 404 for "no row with id 1", both mean the route matched,
 				// but "no such row" and "no such route" share a status, so a
 				// templated path cannot distinguish them and is exempt.
 				if rec.Code == http.StatusNotFound && !strings.Contains(p, "{id}") {

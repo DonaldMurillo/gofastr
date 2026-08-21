@@ -4,7 +4,7 @@ import "testing"
 
 // Property: the harness sidecar pins Host to the authority it actually
 // bound, so a DNS-rebound request (attacker domain re-pointed at
-// 127.0.0.1) is rejected before it can read the chat page — which
+// 127.0.0.1) is rejected before it can read the chat page, which
 // carries the bearer token in a meta tag.
 func TestLoopbackGuardsPinHost(t *testing.T) {
 	hosts, origins := loopbackGuards("127.0.0.1:41234")

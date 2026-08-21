@@ -7,7 +7,7 @@ import (
 
 // TestIRDropsScriptAndURLGadgets pins the attribute policy for the node
 // IR. node.go documents the IR as agent-authored and untrusted, and drops
-// a "raw" kind for exactly that reason — but the attribute pass-through
+// a "raw" kind for exactly that reason, but the attribute pass-through
 // was a DENY-list of three names (style, srcdoc, on*), so everything the
 // browser runtime treats as privileged sailed through: data-behavior
 // (an unvalidated <script src> sink), data-widget / data-component /
@@ -65,7 +65,7 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 	}
 
 	// The allow-list must still let presentational and accessibility
-	// attributes through — a renderer that drops everything is useless.
+	// attributes through, a renderer that drops everything is useless.
 	got := string(RenderKind("div", map[string]any{
 		"id": "card", "class": "row", "role": "region",
 		"aria-label": "Card", "data-testid": "card", "title": "hi",
@@ -78,13 +78,13 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 		// that fires a kiln tool is a deliberate kiln feature
 		// (kiln/integration's TestBrowser_ButtonToolCallFires). This
 		// used to claim the delegator's data-fui-trusted ancestor was
-		// something "this IR cannot produce" — that was false:
+		// something "this IR cannot produce", that was false:
 		// kiln/render/uihost.go wraps the whole agent tree in one. The
 		// value, not the attribute, is what has to be bounded, so kiln
 		// validates the tool name against ^[a-z][a-z0-9_]*$ before it
 		// reaches the IR (kiln/render/node.go safeToolName), which is
 		// what stops "../../api/posts" escaping /kiln/tool/.
-		// data-action is NOT in this list — see TestIRCannotFireActions.
+		// data-action is NOT in this list. See TestIRCannotFireActions.
 		"data-field": "title", "data-entity-list-body": "posts",
 		"data-kiln-tool": "chat",
 	}, nil))
@@ -98,7 +98,7 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 
 // The IR is agent-authored and untrusted (see node.go's package doc). An
 // element it renders sits inside a real island, so core-ui/runtime's
-// boot.js — which resolves the nearest [data-component] ancestor — would
+// boot.js, which resolves the nearest [data-component] ancestor, would
 // happily fire a compiled server action on that island's behalf.
 //
 // data-action-mount is the worst shape: boot.js runs it at hydration and
@@ -106,7 +106,7 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 // data-param-* lets the IR choose the arguments.
 func TestIRCannotFireActions(t *testing.T) {
 	privileged := []string{
-		"data-island",        // SSE swap target — hydration identity
+		"data-island",        // SSE swap target, hydration identity
 		"data-action",        // click-handler form
 		"data-action-mount",  // fires at hydration, unprompted
 		"data-action-type",   // selects the event to bind
@@ -127,7 +127,7 @@ func TestIRCannotFireActions(t *testing.T) {
 // The blueprint compiles a developer's own YAML and wires button actions
 // through exactly the attributes the untrusted path strips. If the
 // trusted variant ever stops passing them, every generated action goes
-// silently dead — no error, just a button that does nothing.
+// silently dead, no error, just a button that does nothing.
 func TestTrustedIRKeepsActions(t *testing.T) {
 	props := map[string]any{
 		"data-action":       "refresh",
@@ -142,7 +142,7 @@ func TestTrustedIRKeepsActions(t *testing.T) {
 	}
 }
 
-// Stripping must not mutate the caller's map — the blueprint reuses prop
+// Stripping must not mutate the caller's map, the blueprint reuses prop
 // maps across renders, and a silent delete would break the second use.
 func TestUntrustedRenderLeavesPropsIntact(t *testing.T) {
 	props := map[string]any{"data-action": "save", "class": "row"}

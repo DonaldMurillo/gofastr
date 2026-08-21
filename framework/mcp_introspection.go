@@ -29,7 +29,7 @@ import (
 //   - framework_docs_list / framework_docs_get / framework_docs_search:
 //     expose the framework's markdown docs (embedded at
 //     build time, so they match the framework version
-//     this binary was built against — no GitHub fetch).
+//     this binary was built against, no GitHub fetch).
 func WithMCPIntrospection() AppOption {
 	return func(a *App) {
 		a.mcpIntrospection = true
@@ -51,7 +51,7 @@ func (a *App) registerIntrospectionTools() error {
 		},
 		{
 			name:        "app_plugins",
-			description: "List registered plugin names in registration order. Plugins are lightweight modules — see app_batteries for heavier modules with dependency declarations.",
+			description: "List registered plugin names in registration order. Plugins are lightweight modules: see app_batteries for heavier modules with dependency declarations.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolPlugins,
 		},
@@ -81,7 +81,7 @@ func (a *App) registerIntrospectionTools() error {
 		},
 		{
 			name:        "app_routines",
-			description: "List every registered stored routine (function / procedure / trigger / view-as-routine) with its name, declared dialect (empty = all), sha256 checksum of the Up body, ledger state (present | drifted | missing | skipped_for_dialect | unknown — skipped_for_dialect means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness (does the object exist in pg_proc / pg_views on Postgres, unknown on SQLite). Read-only. Use to verify a routine body change has propagated, or to spot a routine the code still registers but the boot no longer applies.",
+			description: "List every registered stored routine (function / procedure / trigger / view-as-routine) with its name, declared dialect (empty = all), sha256 checksum of the Up body, ledger state (present | drifted | missing | skipped_for_dialect | unknown; skipped_for_dialect means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness (does the object exist in pg_proc / pg_views on Postgres, unknown on SQLite). Read-only. Use to verify a routine body change has propagated, or to spot a routine the code still registers but the boot no longer applies.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolRoutines,
 		},
@@ -267,7 +267,7 @@ func (a *App) toolDocsGet(_ context.Context, params map[string]any) (any, error)
 }
 
 // toolDocsSearch greps every topic for a substring. The response shape
-// mirrors the SearchHit type — topic, line, heading, excerpt — but
+// mirrors the SearchHit type, topic, line, heading, excerpt, but
 // keeps the payload size bounded by capping each excerpt at 240 chars.
 func (a *App) toolDocsSearch(_ context.Context, params map[string]any) (any, error) {
 	term, _ := params["term"].(string)
@@ -302,7 +302,7 @@ func (a *App) toolDocsSearch(_ context.Context, params map[string]any) (any, err
 
 func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) {
 	checks := a.readinessChecks()
-	// Force verbose=false regardless of App.readinessVerbose — /readyz
+	// Force verbose=false regardless of App.readinessVerbose, /readyz
 	// and /mcp may have very different trust boundaries (e.g. /readyz on
 	// a private listener vs /mcp behind authenticated tunneling), and
 	// the introspection tool must not leak raw error text (DSNs, IPs,
@@ -310,7 +310,7 @@ func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) 
 	// the load balancer's probe.
 	resp := runReadinessChecks(ctx, checks, false)
 	out := make([]map[string]any, 0, len(resp.Checks))
-	// An app with no checks registered is not "ready" — it's
+	// An app with no checks registered is not "ready", it's
 	// unconfirmed. Surface that explicitly rather than silently
 	// reporting ready=true (which would hide a wiring mistake).
 	if len(checks) == 0 {
@@ -351,7 +351,7 @@ func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) 
 // checksum of the current registered Up body, ledger_state ∈
 // {present,drifted,missing,unknown}, and liveness ∈ {present,absent,unknown}.
 // ledger_state is "unknown" when no DB is wired; liveness is "unknown" on
-// SQLite (no pg_proc/pg_views) or when the catalog query errors — the tool
+// SQLite (no pg_proc/pg_views) or when the catalog query errors, the tool
 // never fails, it just degrades gracefully so an agent always gets the
 // static fields.
 func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
@@ -381,7 +381,7 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 	dialect := migrate.DetectDialect(a.DB)
 
 	// Read the ledger in one shot. On error, every entry gets ledger_state
-	// "unknown" — we still surface the registered set + checksums.
+	// "unknown", we still surface the registered set + checksums.
 	ledger := map[string]string{}
 	if rows, err := a.DB.QueryContext(ctx,
 		`SELECT name, checksum FROM gofastr_routines`); err == nil {
@@ -403,7 +403,7 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 		}
 		// Ledger state: only meaningful when the dialect matches. A routine
 		// declared PG-only running against SQLite will never have a ledger row
-		// for this engine — report "skipped_for_dialect" so an agent doesn't
+		// for this engine, report "skipped_for_dialect" so an agent doesn't
 		// read it as drift.
 		if r.Dialect != "" && r.Dialect != dialect {
 			entry["ledger_state"] = "skipped_for_dialect"
@@ -431,7 +431,7 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 // name currently exists. Postgres: pg_proc (functions/procedures) UNIONed
 // with pg_views (views). SQLite: there is no portable catalog query that
 // covers all routine kinds cheaply, so we report "unknown" rather than lie.
-// Any query error returns "unknown" — the introspection tool degrades to the
+// Any query error returns "unknown", the introspection tool degrades to the
 // static fields rather than failing.
 func (a *App) probeRoutineLiveness(ctx context.Context, name string, dialect migrate.Dialect) string {
 	switch dialect {
@@ -464,7 +464,7 @@ func (a *App) probeRoutineLiveness(ctx context.Context, name string, dialect mig
 // dialectStringForTool renders a Dialect for the MCP response. Re-implements
 // the migrate package's dialectString helper because this file lives in
 // package framework and the helper is unexported there. The two must stay in
-// sync — see TestRoutineChecksum_StableAndDifferent's sibling test
+// sync. See TestRoutineChecksum_StableAndDifferent's sibling test
 // (framework-level) for the parity assertion.
 func dialectStringForTool(d migrate.Dialect) string {
 	if d == "" {

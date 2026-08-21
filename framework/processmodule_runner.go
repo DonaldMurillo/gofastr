@@ -27,21 +27,21 @@ import (
 // The Runner is RESPONSIBLE FOR and ONLY FOR:
 //
 //   - verifying the executable SHA-256 equals the descriptor pin BEFORE exec
-//     (verify-then-exec, design §4.6 — mirrors
+//     (verify-then-exec, design §4.6, mirrors
 //     framework/experimental/harness/mcpclient/client.go:83-91);
 //   - applying baseline hygiene (empty-by-default env allowlist, no fds
 //     beyond stdio, cwd = per-module scratch dir, own process group);
 //   - wiring the child's stdin/stdout to a [moduleproto.Codec];
 //   - draining the child's stderr to a bounded [moduleproto.RingSink].
 //
-// It does NOT perform the handshake, poll ready, or apply capability policy
-// — those live in the supervisor above. The returned [RunningChild] is at
+// It does NOT perform the handshake, poll ready, or apply capability policy.
+// Those live in the supervisor above. The returned [RunningChild] is at
 // "process started, codec wired, peer NOT yet started": the supervisor
 // installs the reverse broker handlers and then calls Peer.Start.
 type Runner interface {
 	// Start spawns the child per spec and returns the live handle.
 	// Canceling ctx cancels the spawn (kills a half-spawned child); it does
-	// NOT cancel the child's lifetime — the supervisor owns teardown via
+	// NOT cancel the child's lifetime, the supervisor owns teardown via
 	// [RunningChild.CloseStdin] / [RunningChild.Kill] / [RunningChild.Wait].
 	Start(ctx context.Context, spec ChildSpec) (RunningChild, error)
 }
@@ -122,18 +122,18 @@ type RunningChild interface {
 
 	// Wait blocks until the child exits and returns the wait error
 	// (nil for a clean exit). It is the reap step. Calling Wait before
-	// Kill/CloseStdin is legal — it just blocks until natural exit.
+	// Kill/CloseStdin is legal, it just blocks until natural exit.
 	Wait() error
 }
 
 // TrustedProcessRunner is the wave-2a Runner: crash isolation only (design
-// §6 decision C — "TrustedProcessRunner for dev"). It applies baseline
+// §6 decision C, "TrustedProcessRunner for dev"). It applies baseline
 // hygiene (empty-by-default env allowlist, own process group, cwd =
 // per-module scratch dir, SHA-256 pin verified before exec, stderr →
 // RingSink) via the shared [prepareChildForSpawn]/[startPreparedChild]
-// helpers — the SAME helpers [SandboxRunner] uses, so the two runners
+// helpers, the SAME helpers [SandboxRunner] uses, so the two runners
 // cannot drift on baseline hygiene (design §6: "applied by BOTH runners").
-// It is NOT a security sandbox — an unconfined child can still
+// It is NOT a security sandbox, an unconfined child can still
 // open/connect/dial. Untrusted modules must use [SandboxRunner], which
 // layers OS-enforced denials on top of the same baseline.
 type TrustedProcessRunner struct {
@@ -200,17 +200,17 @@ type childPrep struct {
 //   - per-module scratch dir as cwd (0o700; concurrent children never
 //     collide);
 //   - empty-default env allowlist: cmd.Env is the explicit union of the
-//     runner's allowlist + spec.InheritEnv + spec.ExtraEnv — NEVER the
+//     runner's allowlist + spec.InheritEnv + spec.ExtraEnv. NEVER the
 //     full os.Environ() (this is the §6 finding that mcpclient.Spawn
 //     leaked every host secret; baseline hygiene is the P2 enforcement);
 //   - own process group (Setpgid on Unix, CREATE_NEW_PROCESS_GROUP on
-//     Windows — the sysproc_unix.go/_other.go split);
+//     Windows, the sysproc_unix.go/_other.go split);
 //   - stdio pipes wired: stdin/stdout = protocol, stderr = bounded
 //     RingSink (design §4.2; stdout=protocol only, stderr=bounded log).
 //
-// It does NOT call cmd.Start — the caller may apply sandbox wrapping
+// It does NOT call cmd.Start, the caller may apply sandbox wrapping
 // (SandboxRunner) or exec directly (TrustedProcessRunner). No fds beyond
-// 0/1/2 are inherited (cmd.ExtraFiles stays nil — the P3 enforcement).
+// 0/1/2 are inherited (cmd.ExtraFiles stays nil, the P3 enforcement).
 func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error) {
 	d := spec.Descriptor
 	if d.ArtifactPath == "" || d.ArtifactSHA256 == "" {
@@ -248,7 +248,7 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 	cmd.Env = buildChildEnv(allowlist, spec.ExtraEnv, spec.InheritEnv)
 	// Own process group (Unix: Setpgid; Windows: CREATE_NEW_PROCESS_GROUP).
 	// SandboxRunner's backend may ADD fields (Cloneflags, UidMappings) on
-	// top without clearing Setpgid — they compose.
+	// top without clearing Setpgid, they compose.
 	setChildProcessGroup(cmd)
 
 	stdin, err := cmd.StdinPipe()
@@ -342,7 +342,7 @@ func (r *TrustedProcessRunner) allowlist() []string {
 // [prepareChildForSpawn]/[startPreparedChild] spawn path; only the
 // backend.Wrap step in between differs). The handle's lifetime contract
 // (CloseStdin → Wait → Kill) is identical for trusted and sandboxed
-// children, so one concrete type serves both — a sandboxed child whose
+// children, so one concrete type serves both, a sandboxed child whose
 // backend set its own process group / kill-tree just feeds a different
 // pgid into the same Kill path.
 type spawnedChild struct {
@@ -354,7 +354,7 @@ type spawnedChild struct {
 	pgid int
 
 	// mu guards stdin / Kill against concurrent CloseStdin from a drain
-	// path. waitOnce serializes [os/exec.Cmd.Wait] — exec.Cmd.Wait is NOT
+	// path. waitOnce serializes [os/exec.Cmd.Wait], exec.Cmd.Wait is NOT
 	// safe for concurrent calls, but the supervisor has two legitimate
 	// callers (the spawn's exit-watcher and a lease-expired / shutdown
 	// drain), so the first caller reaps and the rest observe the same
@@ -432,7 +432,7 @@ func (e *ExecutableSHAMismatchError) Error() string {
 
 // sha256OfFile hashes the file at path (verbatim lift of
 // framework/experimental/harness/mcpclient.sha256OfBinary, kept local so this runner does
-// not import the harness subpackage — the framework root may not import
+// not import the harness subpackage, the framework root may not import
 // framework/experimental/harness per ARCHITECTURE.md layering).
 func sha256OfFile(path string) (string, error) {
 	f, err := os.Open(path)

@@ -2,7 +2,7 @@
 #
 # The site is an SSR-first GoFastr app. Rather than crawling a running
 # server with wget (the old approach, which baked "?v=<hash>" into split
-# runtime-module filenames and 404'd every module on the static host —
+# runtime-module filenames and 404'd every module on the static host,
 # silently killing all client interactivity), `site --export` renders
 # every declared route in-process and dumps all /__gofastr assets with
 # query-free filenames. See framework/static.Builder + framework.App.ExportStatic.
@@ -68,7 +68,7 @@ jobs:
           # URLs must resolve under the /gofastr mount path.
           /tmp/site --export _site --export-base /gofastr
           test -f "_site/index.html" || { echo "export produced no index.html"; exit 1; }
-          # __gofastr/ starts with an underscore — Jekyll would drop it.
+          # __gofastr/ starts with an underscore, Jekyll would drop it.
           touch _site/.nojekyll
           echo "pages: $(find _site -name 'index.html' | wc -l) html files, $(du -sh _site | cut -f1) total"
 

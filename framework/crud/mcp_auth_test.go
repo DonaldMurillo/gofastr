@@ -42,7 +42,7 @@ func sessionLikeMiddleware(cookieName string, users map[string]*testUser) func(h
 
 // TestMCPAuthenticatedListReturnsOwnerRows pins the end-to-end contract that
 // an authenticated MCP _list / _get call against an OwnerField entity returns
-// that user's rows — not 401 — even when SessionMiddleware sits in the router
+// that user's rows, not 401, even when SessionMiddleware sits in the router
 // chain. The internal request runToolRequest builds carries no session cookie,
 // so a re-running SessionMiddleware would demote the user to anonymous and
 // RequireOwner/owner-scoping would 401. The fix copies the original request's

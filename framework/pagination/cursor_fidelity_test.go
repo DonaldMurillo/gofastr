@@ -10,7 +10,7 @@ import (
 // sortable column can store must survive EncodeCursor → DecodeCursor
 // byte-for-byte. The value half of the token is compared against the
 // DATABASE (a bound SQL arg), not interpolated into SQL, so it is data,
-// not an identifier — stripping zero-width/bidi codepoints on decode made
+// not an identifier, stripping zero-width/bidi codepoints on decode made
 // a row whose sort key contains e.g. U+200B resume paging BEFORE that
 // row, re-serving it on the next page. Field names stay stripped: they
 // do reach ORDER BY.
@@ -19,7 +19,7 @@ func TestCursorValueRoundTripIsLossless(t *testing.T) {
 		"a\u200bb",     // zero-width space
 		"a\ufeffb",     // BOM
 		"a\u202Eb",     // RLO bidi override
-		"a\nb", "a\rb", // newlines — inert as a bound arg
+		"a\nb", "a\rb", // newlines, inert as a bound arg
 		"a\x00b",           // NUL
 		"plain", "", "日本的", // sanity + empty + non-Latin
 	}
@@ -40,7 +40,7 @@ func TestCursorValueRoundTripIsLossless(t *testing.T) {
 
 // TestMultiCursorValueRoundTripIsLossless: the composite-cursor encoding
 // must round-trip values losslessly for the same reason as the
-// single-field cursor above — tuple comparison binds the values, so a
+// single-field cursor above, tuple comparison binds the values, so a
 // stripped value resumes the keyset at the wrong row.
 func TestMultiCursorValueRoundTripIsLossless(t *testing.T) {
 	row := map[string]any{

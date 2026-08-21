@@ -14,8 +14,8 @@ type Schedule struct {
 
 // Parse parses a cron spec into a Schedule. It accepts the same syntax as
 // ParseCron (standard 5-field plus @shortcuts, ranges, lists and steps).
-// Unlike ParseCron — which returns the unexported internal form used by the
-// in-process Scheduler — Parse returns a value other packages can hold and
+// Unlike ParseCron, which returns the unexported internal form used by the
+// in-process Scheduler. Parse returns a value other packages can hold and
 // query via Next and Matches.
 func Parse(spec string) (Schedule, error) {
 	expr, err := ParseCron(spec)

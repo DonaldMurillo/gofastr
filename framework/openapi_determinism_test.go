@@ -12,7 +12,7 @@ import (
 // TestOpenAPI_DeterministicAcrossBuilds pins that two identical registry
 // constructions produce byte-identical /openapi.json output. Without
 // sorted iteration, Go's randomised map walk yields a different ordering
-// of tags / paths each run — that breaks ETag caching for clients, and
+// of tags / paths each run, that breaks ETag caching for clients, and
 // breaks golden-file diffs for codegen consumers.
 func TestOpenAPI_DeterministicAcrossBuilds(t *testing.T) {
 	buildReg := func() *Registry {

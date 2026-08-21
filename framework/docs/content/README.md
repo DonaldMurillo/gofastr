@@ -4,213 +4,213 @@ The top-level `README.md` is the entry point. These pages are
 per-feature references, each grounded in the actual code. Every
 guide doc ends with a "common mistakes" callout; the handful of
 data and index artifacts (this index, the overview map, benchmark
-results, the harness contract) are exempt — the exemption list lives in
+results, the harness contract) are exempt. The exemption list lives in
 `framework/docs/docs_test.go` and is enforced by
 `TestGuideDocsEndWithCommonMistakes`.
 
 ## Start here
 
-- [Backend capability map](backend-capability-map.md) — one row per job
+- [Backend capability map](backend-capability-map.md): one row per job
   (scope rows to a user, add auth, prove the API works), the symbols to
   compose, and a command that verifies it. Land here before opening any
   topic page below.
-- [UI capability map](ui-capability-map.md) — start from a product job
+- [UI capability map](ui-capability-map.md): start from a product job
   such as a live dashboard, optimistic board, master/detail workspace,
   or server-authoritative reactive SaaS; choose state and delivery
   boundaries before package names.
-- [Blueprint tutorial](tutorial-blueprint-app.md) — walks through the
+- [Blueprint tutorial](tutorial-blueprint-app.md): walks through the
   optional scaffolder: blueprint → generated UI + API → auth + owner
   scoping + RBAC → customize in plain Go → deploy.
-- [Comparison](comparison.md) — vs PocketBase, Encore, Wasp, and
+- [Comparison](comparison.md): vs PocketBase, Encore, Wasp, and
   hand-rolled Gin+sqlc; weaknesses stated honestly.
-- [API stability](stability.md) — compatibility windows, deprecation rules,
+- [API stability](stability.md): compatibility windows, deprecation rules,
   experimental exclusions, and the v1 semantic-versioning promise.
 
 ## Architecture & conventions
 
-- [Runtime contract](runtime-contract.md) — the UI/runtime contract:
+- [Runtime contract](runtime-contract.md): the UI/runtime contract:
   SSR/hydration/island/SSE model + `data-fui-*` attribute reference.
   **Mandatory reading** before any UI or runtime change. (Embedded
   extract; the repo's source of truth is `core-ui/ARCHITECTURE.md`.)
-- [`ROADMAP.md`](../../../ROADMAP.md) — forward-looking work (proposals,
+- [`ROADMAP.md`](../../../ROADMAP.md): forward-looking work (proposals,
   performance opportunities, in-flight plans).
-- [Project structure](project-structure.md) — why `gofastr init` ships a
+- [Project structure](project-structure.md): why `gofastr init` ships a
   flat layout and you grow structure as real boundaries appear.
-- [Core packages](core-packages.md) — a map of the exported `core/*`
+- [Core packages](core-packages.md): a map of the exported `core/*`
   packages with no dedicated page: what each does, when you touch it
   directly vs through the framework, and one code anchor.
-- [The SQLite driver GoFastr ships](sqlite-driver.md) — modernc.org/sqlite
+- [The SQLite driver GoFastr ships](sqlite-driver.md): modernc.org/sqlite
   registered as `sqlite3`, the three DSN defaults `sqlite/stdlib` adds to
   every connection, and why `:memory:` needs one connection.
 
 ## Entity APIs
 
-- [Entity declarations](entity-declarations.md) — JSON + Go field types
+- [Entity declarations](entity-declarations.md): JSON + Go field types
   and the runtime/code-gen loaders.
-- [Batch endpoints](batch-endpoints.md) — `_batch` POST / PATCH / DELETE
+- [Batch endpoints](batch-endpoints.md): `_batch` POST / PATCH / DELETE
   with one-transaction semantics.
-- [Includes & eager loading](includes.md) — `?include=` with scoped
+- [Includes & eager loading](includes.md): `?include=` with scoped
   filters and nested paths.
-- [Cursor pagination](cursor-pagination.md) — opt-in keyset paging,
+- [Cursor pagination](cursor-pagination.md): opt-in keyset paging,
   composite cursors, when to pick offset vs cursor.
-- [Entity events & SSE](events.md) — `_events` stream, push-only,
+- [Entity events & SSE](events.md): `_events` stream, push-only,
   backpressure rules.
-- [File uploads](uploads.md) — multipart on `Image`/`File` fields via
+- [File uploads](uploads.md): multipart on `Image`/`File` fields via
   `WithFileStorage`, plus `WithImagePipeline` for automatic renditions,
   BlurHash, and LQIP on every `Image` upload.
-- [Query DSL](query-dsl.md) — agent-friendly query parser →
+- [Query DSL](query-dsl.md): agent-friendly query parser →
   `core/query` builder.
 
 ## App features
 
-- [Hooks & transactions](hooks-and-transactions.md) — lifecycle hook
+- [Hooks & transactions](hooks-and-transactions.md): lifecycle hook
   points, `TxFromContext`, `App.InTx`, typed hooks.
-- [Access control](access-control.md) — `RolePolicy`,
+- [Access control](access-control.md): `RolePolicy`,
   `RequirePermission`, custom `Policy` implementations.
-- [Authentication](auth.md) — `battery/auth`: AuthManager + plugins
+- [Authentication](auth.md): `battery/auth`: AuthManager + plugins
   (login, OAuth, magic-link, 2FA, accounts, email verification,
   password reset), optional UserStore/SessionStore extensions,
   cookie + rate-limit posture, threat model.
-- [Multi-tenant scoping](multi-tenant.md) — auto-inject, auto-scope,
+- [Multi-tenant scoping](multi-tenant.md): auto-inject, auto-scope,
   the tenant header middleware.
-- [Cron / scheduled jobs](cron.md) — in-process `Scheduler`, spec
+- [Cron / scheduled jobs](cron.md): in-process `Scheduler`, spec
   syntax, single-replica constraint.
-- [Audit log](audit-log.md) — `WithAuditLog`, transactional row
+- [Audit log](audit-log.md): `WithAuditLog`, transactional row
   writes, schema.
-- [Server logs](log.md) — `battery/log`: structured JSON access logs,
+- [Server logs](log.md): `battery/log`: structured JSON access logs,
   panic recovery, lifecycle events; writes to a file (default or a
   path you choose) and to webhook sinks.
-- [Plugins](plugins.md) — `Plugin` + optional capability interfaces.
-- [Heavy-JS plugin platform](plugin-platform.md) — sandboxed-iframe
+- [Plugins](plugins.md): `Plugin` + optional capability interfaces.
+- [Heavy-JS plugin platform](plugin-platform.md): sandboxed-iframe
   isolation host for megabyte-class client plugins; capability grants
   over auth scopes; the trusted-mount opt-out; the plugins.json
   registry convention.
-- [Dev-mode livereload](dev-livereload.md) — auto-wired SSE refresh
+- [Dev-mode livereload](dev-livereload.md): auto-wired SSE refresh
   under `gofastr dev`; env kill switches for prod.
-- [Runtime JS minification](runtime-minification.md) — embedded
+- [Runtime JS minification](runtime-minification.md): embedded
   `runtime.js` minifier, env gating, prod-wins defaults.
 
 ## Building UI
 
-- [Reactivity model](reactivity.md) — the four ways to make a page
+- [Reactivity model](reactivity.md): the four ways to make a page
   change after first paint: client signals, RPC, polling, and SSE push.
   Read this first when deciding how a surface stays fresh. The ladder,
   the statelessness contract, and the session-token story.
-- [UI capability map](ui-capability-map.md) — task-oriented architecture
+- [UI capability map](ui-capability-map.md): task-oriented architecture
   map with runnable proofs, state ownership, replica semantics, and
   explicit non-goals.
-- [UI getting started](ui-getting-started.md) — the 15-minute path:
+- [UI getting started](ui-getting-started.md): the 15-minute path:
   scaffold → design direction → theme → framework-native composition.
-- [UI composition recipes](ui-composition-recipes.md) — product-shaped
+- [UI composition recipes](ui-composition-recipes.md): product-shaped
   desktop/mobile page structures composed entirely from `framework/ui`
   primitives.
-- [UI wiring](ui-wiring.md) — adding the UI system to a plain
+- [UI wiring](ui-wiring.md): adding the UI system to a plain
   `framework.App` by hand: site app, theme, layout, `uihost.New`,
   and the `WidgetMounter` shim, with a complete `main.go`.
-- [Theming](theming.md) — the token catalog, dark mode via
+- [Theming](theming.md): the token catalog, dark mode via
   `DarkColors` + `data-color-scheme`, `ui.Themed` section overrides,
   `--ui-*` component knobs, and why component internals are never
   overridden from site CSS.
-- [Runtime contract](runtime-contract.md) — the SSR / hydration /
+- [Runtime contract](runtime-contract.md): the SSR / hydration /
   island / SSE model and the `data-fui-*` attribute reference
   (embedded extract of `core-ui/ARCHITECTURE.md`).
-- [UI components index](ui-new-components.md) — one-page catalog of
+- [UI components index](ui-new-components.md): one-page catalog of
   every component the framework ships, each with its package, `go doc`
   path, and live demo at `/components/<slug>` on the docs site.
-- [Interactive patterns](interactive-patterns.md) — every `data-fui-*`
+- [Interactive patterns](interactive-patterns.md): every `data-fui-*`
   behavior, client-only vs RPC-backed, plus writing a hand-written
   island end to end.
-- [Form module](form-module.md) — HTML form primitives, `framework/ui`
+- [Form module](form-module.md): HTML form primitives, `framework/ui`
   form components, validation, conditional sections, step wizards.
-- [Widgets](widgets.md) — `core-ui/widget` builder and presets
+- [Widgets](widgets.md): `core-ui/widget` builder and presets
   (modal, drawer, popover, toast).
-- [Signal store](signal-store.md) — `core-ui/store` typed shared
+- [Signal store](signal-store.md): `core-ui/store` typed shared
   client state with SSR seeding.
 
 ## Operations
 
-- [Worktree isolation](isolation.md) — automatic local port, DB, and
+- [Worktree isolation](isolation.md): automatic local port, DB, and
   service-env isolation for linked Git worktrees.
-- [Migrations](migrations.md) — SQL files, CLI subcommands,
+- [Migrations](migrations.md): SQL files, CLI subcommands,
   auto-migrate, dialects.
-- [First-run setup](first-run.md) — the `battery/setup` wizard: an
+- [First-run setup](first-run.md): the `battery/setup` wizard: an
   interactive first-boot setup and a scriptable headless path for IaC,
   over one bootstrap API.
-- [Security defaults](security.md) — default middleware chain, CSP,
+- [Security defaults](security.md): default middleware chain, CSP,
   CORS, CSRF, rate limiting.
-- [Auditing init-time registrations](audit-deps.md) — `gofastr audit deps`
+- [Auditing init-time registrations](audit-deps.md): `gofastr audit deps`
   lists every `init()` that mutates framework-wide state, so a dependency
   that hijacks startup is visible before `main()` runs.
-- [Idempotency keys](idempotency.md) — `Idempotency-Key` header
+- [Idempotency keys](idempotency.md): `Idempotency-Key` header
   support for safe-retry of POST / PUT / PATCH / DELETE.
-- [Health checks](health-checks.md) — `/healthz` + `/readyz`,
+- [Health checks](health-checks.md): `/healthz` + `/readyz`,
   custom readiness checks, plugin/battery integration.
-- [Feature flags](feature-flags.md) — `core/featureflag` evaluator,
+- [Feature flags](feature-flags.md): `core/featureflag` evaluator,
   rollout percentage, user/tenant/environment allow lists.
-- [Outbound webhooks](webhooks.md) — `battery/webhook`: signed
+- [Outbound webhooks](webhooks.md): `battery/webhook`: signed
   delivery, retry-with-backoff, dead-letter, glob event filters.
-- [Internationalization](i18n.md) — `core/i18n` translator,
+- [Internationalization](i18n.md): `core/i18n` translator,
   JSON catalogs, plurals, `Accept-Language` negotiation.
-- [Unified notifications](notifications.md) — `battery/notify` sends
+- [Unified notifications](notifications.md): `battery/notify` sends
   to multiple channels, each with its own template.
-- [Email](email.md) — `battery/email`: SMTP and log senders behind one
+- [Email](email.md): `battery/email`: SMTP and log senders behind one
   `Sender` interface, plus template rendering.
-- [Factories / fixtures](factories.md) — `framework/factory`
+- [Factories / fixtures](factories.md): `framework/factory`
   Rails-style test setup helpers.
-- [Testkit](testkit.md) — `framework/testkit`: isolated per-test Postgres
+- [Testkit](testkit.md): `framework/testkit`: isolated per-test Postgres
   databases, migrate callback, auto-drop on cleanup.
-- [Queue](queue.md) — `battery/queue`: background job processing, dead-letter
+- [Queue](queue.md): `battery/queue`: background job processing, dead-letter
   replay, Redis and in-memory backends.
-- [Embed](embed.md) — hand out screens as embeddable surfaces on other
+- [Embed](embed.md): hand out screens as embeddable surfaces on other
   people's sites: single-use handshake nonce, exact origin allowlist, a frame
   runtime with no SPA navigation.
-- [Semantic search](semantic-search.md) — local semantic search via brute-force cosine, no API
+- [Semantic search](semantic-search.md): local semantic search via brute-force cosine, no API
   key required.
-- [Admin UI](admin.md) — `battery/admin` stock screens for
+- [Admin UI](admin.md): `battery/admin` stock screens for
   queue + audit log.
-- [Printable documents](print.md) — `battery/print`: declare a
+- [Printable documents](print.md): `battery/print`: declare a
   print-friendly document route (invoice / receipt / report); optional
   headless-Chromium PDF via the `chromepdf` adapter.
-- [Search](search.md) — `battery/search` backend interface with three
+- [Search](search.md): `battery/search` backend interface with three
   shipped backends: in-memory, Postgres FTS, and SQLite FTS5.
-- [Image pipeline](image.md) — `framework/image`: chainable
+- [Image pipeline](image.md): `framework/image`: chainable
   Resize / Rotate / Flip / Modulate / Placeholder / BlurHash (encode and
   decode), pure-Go with no CGo or system codec dependencies. For CRUD
-  uploads, wire it once with `WithImagePipeline` — see
+  uploads, wire it once with `WithImagePipeline`; see
   [File uploads](uploads.md).
-- [File storage](storage.md) — `battery/storage`: the `Storage`
+- [File storage](storage.md): `battery/storage`: the `Storage`
   interface plus local and S3 backends, wired via `WithFileStorage`.
 
 ## Build-time tooling
 
-- [The gofastr CLI](cli.md) — one binary; maps each `gofastr` command to
+- [The gofastr CLI](cli.md): one binary; maps each `gofastr` command to
   the doc that covers it.
-- [Contracts](contracts.md) — `gofastr verify`: the rules that say whether
+- [Contracts](contracts.md): `gofastr verify`: the rules that say whether
   an app is still an idiomatic GoFastr app, not merely a compiling one.
   Routing, permissions, security, architecture, rendering, semantic
   coverage. Strict by default, relaxed only in writing.
-- [Static-site export](static-export.md) — `app.ExportStatic`: render
+- [Static-site export](static-export.md): `app.ExportStatic`: render
   every route in-process to a directory of query-free HTML + assets for
   any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
   stamps pages with `data-fui-static` so server-backed islands no-op
   instead of 404'ing.
 
-- [Codegen](codegen.md) — YAML-configured generators, external extension
+- [Codegen](codegen.md): YAML-configured generators, external extension
   protocol, safe output paths, and manifest-based cleaning.
-- [Ship your API as a CLI](app-cli.md) — `gofastr generate cli`: a
+- [Ship your API as a CLI](app-cli.md): `gofastr generate cli`: a
   branded, stdlib-only terminal client for your customers, with scoped
   API-token auth, batch verbs, live `watch`, entity/verb selection, and
   a never-overwritten `custom.go` extension seam.
-- [Ship your API as SDKs](sdk.md) — `gofastr generate sdk`: a
+- [Ship your API as SDKs](sdk.md): `gofastr generate sdk`: a
   downloadable Go SDK module and a zero-dependency JS/TS client, served
-  by the app itself via `framework/sdkdocs` — live per-entity reference
+  by the app itself via `framework/sdkdocs`: live per-entity reference
   pages, tabbed install guides, and schema-hash drift detection.
-- [Blueprints](blueprints.md) — deterministic YAML-to-code input for
+- [Blueprints](blueprints.md): deterministic YAML-to-code input for
   `gofastr generate --from`, backed by the in-house `core/yaml` parser.
-- [Kiln (agent-driven build mode)](kiln.md) — separate binary; build a
+- [Kiln (agent-driven build mode)](kiln.md): separate binary; build a
   GoFastr app live via an agent CLI, then freeze to a `gofastr.yml` blueprint
   (with a lossless `world.json` snapshot) and generate owned Go.
-- [Benchmarks](benchmarks.md) — tiered Go benchmarks covering claims-
+- [Benchmarks](benchmarks.md): tiered Go benchmarks covering claims-
   defending end-to-end paths, hot-path microbenchmarks, concurrency,
   and startup. `make bench`, output to `dist/bench/`.
 
@@ -219,4 +219,4 @@ results, the harness contract) are exempt — the exemption list lives in
 The `gofastr-docs` skill at
 `.claude/skills/gofastr-docs/SKILL.md` auto-loads when adding,
 changing, or removing any exported API. Docs ship in the same commit
-as the code — not a follow-up.
+as the code, not a follow-up.

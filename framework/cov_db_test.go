@@ -13,7 +13,7 @@ import (
 )
 
 // ============================================================================
-// tx.go — InTx no-DB error branch
+// tx.go: InTx no-DB error branch
 // ============================================================================
 
 func TestCovInTxNoDB(t *testing.T) {
@@ -37,7 +37,7 @@ func TestCovInTxBeginError(t *testing.T) {
 }
 
 // ============================================================================
-// app.go — CrudHandler / MustCrudHandler error branches
+// app.go: CrudHandler / MustCrudHandler error branches
 // ============================================================================
 
 func TestCovCrudHandlerErrors(t *testing.T) {
@@ -64,7 +64,7 @@ func TestCovCrudHandlerErrors(t *testing.T) {
 }
 
 // ============================================================================
-// app.go — Entity MCP-with-CRUD-false guard (requires DB)
+// app.go: Entity MCP-with-CRUD-false guard (requires DB)
 // ============================================================================
 
 func TestCovEntityMCPWithoutCRUDPanics(t *testing.T) {
@@ -154,7 +154,7 @@ func TestCovGroupEntityWithDB(t *testing.T) {
 }
 
 // ============================================================================
-// app.go — Table / View / Routine registration
+// app.go: Table / View / Routine registration
 // ============================================================================
 
 func TestCovTableAndView(t *testing.T) {
@@ -217,7 +217,7 @@ func TestCovTableDuplicatePanics(t *testing.T) {
 }
 
 // ============================================================================
-// health.go — dbReadinessCheck actually pings the DB
+// health.go: dbReadinessCheck actually pings the DB
 // ============================================================================
 
 func TestCovDBReadinessCheck(t *testing.T) {

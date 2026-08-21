@@ -9,7 +9,7 @@ import (
 )
 
 // TestRegistry_RejectsConflictingRelationsAcrossVersions pins the F9
-// invariant — two versions of one entity share a physical table, so a
+// invariant, two versions of one entity share a physical table, so a
 // relation on the same column/key MUST reference the same target. The gate
 // fires for EVERY relation type, not only BelongsTo: a HasOne, a
 // ManyToMany, or a name-deduped logical relation that diverges across

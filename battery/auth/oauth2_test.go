@@ -20,7 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// Aliases used only by mintBackdatedState — keep them at file scope so
+// Aliases used only by mintBackdatedState, keep them at file scope so
 // edits to the production token shape force matching updates in tests.
 var (
 	stateTestRand = rand.Reader
@@ -214,7 +214,7 @@ func TestOAuth2Plugin_StateExpiry(t *testing.T) {
 }
 
 // mintBackdatedState recreates the on-wire encoding of generateState
-// with a caller-chosen expiry — used by tests that need to plant an
+// with a caller-chosen expiry, used by tests that need to plant an
 // already-expired (but otherwise well-signed) token. Mirrors the format
 // in oauth2.go:generateState so any change there must update this too.
 func mintBackdatedState(t *testing.T, p *OAuth2Plugin, providerName string, expiry time.Time) string {
@@ -234,7 +234,7 @@ func mintBackdatedState(t *testing.T, p *OAuth2Plugin, providerName string, expi
 
 // TestOAuth2Plugin_StateSurvivesRestart_Stateless pins the
 // stateless-token contract: a freshly-minted token can be validated by
-// a SECOND plugin instance that shares the same signing key — i.e. the
+// a SECOND plugin instance that shares the same signing key, i.e. the
 // redirect-side server can restart before the callback arrives without
 // invalidating the in-flight OAuth flow. Pre-stateless, the per-process
 // stateStore made this impossible.
@@ -313,7 +313,7 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 	mgr, userStore := newOAuth2Manager(t, mock)
 	r := mountOAuth2Routes(mgr)
 
-	// Pre-seed a PASSWORDLESS local account — the shape a prior OAuth
+	// Pre-seed a PASSWORDLESS local account, the shape a prior OAuth
 	// login leaves behind. HasPassword() reports false; the verified-email
 	// match is therefore allowed to auto-link rather than refused.
 	ctx := context.Background()
@@ -344,7 +344,7 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 	}
 
 	// The pre-existing passwordless user must now be linked to the
-	// (provider, provider_id) — that is the contract this test pins. A
+	// (provider, provider_id), that is the contract this test pins. A
 	// drift here would mean the auto-link branch was skipped and a fresh
 	// user was created instead.
 	linked, err := userStore.FindByOAuth(ctx, "mock", "ext-123")
@@ -367,7 +367,7 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 		t.Fatal("expected session cookie to be set")
 	}
 
-	// Verify session is valid AND points at the pre-existing user — not a
+	// Verify session is valid AND points at the pre-existing user, not a
 	// freshly created one. This is the load-bearing assertion: the verified
 	// email re-bound the existing identity rather than creating a new one.
 	sess, err := mgr.SessionStore().Get(context.Background(), cookie.Value)
@@ -397,7 +397,7 @@ func TestOAuth2Plugin_Callback_SuccessNewUser(t *testing.T) {
 	mgr, userStore := newOAuth2Manager(t, mock)
 	r := mountOAuth2Routes(mgr)
 
-	// No pre-seeded user — should auto-create
+	// No pre-seeded user, should auto-create
 
 	// Get state
 	redirectReq := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock", nil)
@@ -623,7 +623,7 @@ func TestGitHubProvider_AuthURL(t *testing.T) {
 // Today both GoogleProvider and GitHubProvider use http.DefaultClient
 // (no timeout). An IdP that hangs the connection pins one goroutine
 // + two TCP fds per inflight callback until the kernel kills the
-// socket — minutes. At 200 callbacks/s a one-minute stall = ~12k
+// socket, minutes. At 200 callbacks/s a one-minute stall = ~12k
 // stuck goroutines, easy OOM/EMFILE.
 //
 // We verify by pointing the provider at a stub server that sleeps
@@ -851,7 +851,7 @@ func runCallback(t *testing.T, mgr *AuthManager, r *router.Router, providerName 
 	return w
 }
 
-// Test A — same provider+id resolves to same local user even if the
+// Test A, same provider+id resolves to same local user even if the
 // provider-side email changed between logins.
 func TestOAuth_StableUserAcrossEmailChange(t *testing.T) {
 	store := newLinkingUserStore()
@@ -898,7 +898,7 @@ func TestOAuth_StableUserAcrossEmailChange(t *testing.T) {
 	}
 }
 
-// Test B — local account exists with this email (created via password).
+// Test B, local account exists with this email (created via password).
 // An OAuth login with the same email but a NEW provider+id must not
 // silently take over that account.
 func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
@@ -953,7 +953,7 @@ func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
 // Attack (login CSRF / account confusion): the state token is
 // unforgeable and single-use, but it is bound to nothing about the
 // caller. An attacker starts a flow in their own browser, captures the
-// resulting callback URL — state + code — and gets the victim to load
+// resulting callback URL, state + code, and gets the victim to load
 // it. The callback is a GET, so rejectCrossSiteForm never sees it, and
 // the victim's browser silently ends up logged into the attacker's
 // account. Anything the victim then does happens in that account; the
@@ -962,7 +962,7 @@ func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
 // The fix is a short-lived HttpOnly SameSite=Lax cookie planted when the
 // flow starts and required to match at the callback. SameSite=Lax still
 // rides the provider's top-level redirect back, so the legitimate flow is
-// unaffected — but a callback URL replayed into a different browser
+// unaffected, but a callback URL replayed into a different browser
 // carries no cookie.
 func TestOAuthCallbackNeedsBrowserBinding(t *testing.T) {
 	mgr, _ := newOAuth2Manager(t, &mockProvider{
@@ -1004,7 +1004,7 @@ func TestOAuthCallbackNeedsBrowserBinding(t *testing.T) {
 	}
 }
 
-// The legitimate flow — same browser, cookie present — must still work.
+// The legitimate flow, same browser, cookie present, must still work.
 func TestOAuthCallbackSameBrowserSucceeds(t *testing.T) {
 	mgr, _ := newOAuth2Manager(t, &mockProvider{
 		name:      "mock",

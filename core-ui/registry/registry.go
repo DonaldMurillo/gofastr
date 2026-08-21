@@ -28,7 +28,7 @@
 // loadComponentCSS, which dedups on the link's data-fui-style attr.
 //
 // Component CSS is always scoped to [data-fui-comp="<name>"]. Global
-// rules belong in theme.css or WithCustomCSS — see the design doc at
+// rules belong in theme.css or WithCustomCSS. See the design doc at
 // core-ui/ARCHITECTURE.md.
 package registry
 
@@ -61,7 +61,7 @@ const (
 
 	// LoadAlways emits the <link> in <head> on every page,
 	// regardless of whether the page renders the component. Use for
-	// page chrome — headers, layout primitives — that almost every
+	// page chrome, headers, layout primitives, that almost every
 	// screen touches.
 	LoadAlways
 )
@@ -169,7 +169,7 @@ func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *St
 	if existing, ok := entries[name]; ok {
 		if !sameEntry(existing, e) {
 			panic(fmt.Sprintf(
-				"registry.RegisterStyle: duplicate name %q with different definition — pick a unique name in one of the two call sites\n"+
+				"registry.RegisterStyle: duplicate name %q with different definition. Pick a unique name in one of the two call sites\n"+
 					"  existing: load=%d styleFn=%s\n"+
 					"  new:      load=%d styleFn=%s",
 				name, existing.Load, fnLocation(existing.StyleFn), e.Load, fnLocation(e.StyleFn),
@@ -202,8 +202,8 @@ func All() []*Entry {
 }
 
 // EvictTheme drops the cached CSS + version for hash from EVERY registered
-// entry. A theme variant is process-wide — it can warm any component's cache via
-// the per-request catalog — so its release must sweep all entries, not one. Lock
+// entry. A theme variant is process-wide, it can warm any component's cache via
+// the per-request catalog, so its release must sweep all entries, not one. Lock
 // order is the package mutex THEN the entry mutex (the only nested acquisition
 // site), so this cannot deadlock against CSSFor/VersionFor (entry-only) or
 // RegisterStyle/Lookup/All (package-only).

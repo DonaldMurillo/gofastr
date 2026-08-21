@@ -23,7 +23,7 @@ type txKey struct{}
 
 // TxFromContext returns the active *sql.Tx from context when a CRUD handler
 // has wrapped the operation in a transaction. Lifecycle hooks may use it to
-// perform additional database work that is atomic with the parent operation —
+// perform additional database work that is atomic with the parent operation,
 // queries the hook runs through the tx see (and only commit with) the parent
 // write.
 func TxFromContext(ctx context.Context) (*sql.Tx, bool) {

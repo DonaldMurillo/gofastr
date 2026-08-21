@@ -20,7 +20,7 @@ import (
 
 // magicConfirmReq builds the POST that actually signs a user in.
 // Following the emailed link (GET) now renders a confirmation page and
-// signs nobody in — the link is itself a credential, so an attacker
+// signs nobody in, the link is itself a credential, so an attacker
 // could otherwise mail their own link to a victim and land the victim's
 // browser in the attacker's account (TestMagicLinkVerifyNeedsConfirmation).
 func magicConfirmReq(token string) *http.Request {
@@ -263,7 +263,7 @@ func TestMagicLink_Send_NoEmail_Returns400(t *testing.T) {
 }
 
 func TestMagicLink_Send_DevMode_LogsURL(t *testing.T) {
-	// EmailSender is nil — dev mode
+	// EmailSender is nil, dev mode
 	mgr, _, _ := newMagicLinkManager(t, nil)
 	r := mountMagicLinkRoutes(mgr)
 
@@ -442,7 +442,7 @@ func TestMagicLink_Verify_FindsExistingUser(t *testing.T) {
 		t.Errorf("expected session for user %q, got %q", existingID, sess.UserID)
 	}
 
-	// Confirm no duplicate user was created — FindByEmail should succeed
+	// Confirm no duplicate user was created. FindByEmail should succeed
 	// and FindByID should return the same user as the original.
 	found, _, findErr := userStore.FindByEmail(context.Background(), email)
 	if findErr != nil {
@@ -468,7 +468,7 @@ func TestMagicLink_Verify_TokenConsumedAfterUse(t *testing.T) {
 		t.Fatalf("first verify: expected 302, got %d", w.Code)
 	}
 
-	// Second verify fails — token already consumed
+	// Second verify fails, token already consumed
 	req2 := magicConfirmReq(token)
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)
@@ -554,7 +554,7 @@ func TestMagicLink_SendThenVerify_EndToEnd(t *testing.T) {
 }
 
 // First-time OAuth/magic-link signups must NOT recompute a fresh bcrypt
-// hash per request — that's ~50ms of CPU + a hash allocation just to
+// hash per request, that's ~50ms of CPU + a hash allocation just to
 // store a value nobody will ever try to verify against (the user logs
 // in via OAuth/magic-link, never via password).
 //
@@ -615,7 +615,7 @@ func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
 }
 
 // MagicLink dev mode (logging the token URL) must be opt-in. Today
-// nil EmailSender silently logs live tokens — a production deploy
+// nil EmailSender silently logs live tokens, a production deploy
 // missing the email sender ships token-in-logs account takeover.
 
 func newMagicLinkPluginWithDev(t *testing.T, sender MagicLinkEmailSender, devMode bool) (*AuthManager, *MagicLinkPlugin) {

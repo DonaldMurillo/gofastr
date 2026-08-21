@@ -123,7 +123,7 @@ func Apply(s *Session, e Entry) error {
 // applyWorldEdit dispatches by Op.
 //
 // It enforces the same semantic guards kiln/protocol enforces on the live
-// path — the multi-tenant refusal and plan-gating of destructive ops. Those
+// path, the multi-tenant refusal and plan-gating of destructive ops. Those
 // used to live only in protocol.go, so a hand-authored .kiln.session.jsonl
 // replayed at boot (kiln/live.New) or by `kiln freeze` installed world state
 // the HTTP API refuses. The log is the authorization record; a guard that
@@ -163,7 +163,7 @@ func applyWorldEdit(s *Session, e Entry) error {
 			return fmt.Errorf("add_entity: entity has empty name")
 		}
 		if p.Entity.MultiTenant {
-			return fmt.Errorf("add_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver) — use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
+			return fmt.Errorf("add_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver): use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
 		}
 		if err := validateEntityEndpoints("add_entity", p.Entity); err != nil {
 			return err
@@ -183,7 +183,7 @@ func applyWorldEdit(s *Session, e Entry) error {
 			return fmt.Errorf("update_entity: nil entity")
 		}
 		if p.Entity.MultiTenant {
-			return fmt.Errorf("update_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver) — use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
+			return fmt.Errorf("update_entity: entity %q sets multi_tenant, which kiln cannot honour (it cannot choose the app-specific tenant resolver): use owner_field, or add tenant middleware in owned Go after freeze", p.Entity.Name)
 		}
 		if err := validateEntityEndpoints("update_entity", p.Entity); err != nil {
 			return err
@@ -410,11 +410,11 @@ func validateEntityEndpoints(op string, ent *world.Entity) error {
 // target) pair is marked consumed so one approval authorizes one deletion.
 //
 // It mirrors kiln/protocol's requirePlan + consumeTarget, but derives
-// consumption from the log instead of a per-process map — that map was never
+// consumption from the log instead of a per-process map, that map was never
 // rebuilt on replay, so every restart re-armed every consumed plan.
 func (s *Session) spendPlan(planID string, target PlanTarget) error {
 	if planID == "" {
-		return fmt.Errorf("%s %q: no plan_id — destructive edits require an approved plan naming this target", target.Op, target.Name)
+		return fmt.Errorf("%s %q: no plan_id: destructive edits require an approved plan naming this target", target.Op, target.Name)
 	}
 	plan, ok := s.Plans[planID]
 	if !ok {

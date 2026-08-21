@@ -56,7 +56,7 @@ func main() {
 	)
 
 	app.Entity("users", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
@@ -81,7 +81,7 @@ func main() {
 		// Public read (the ?include=author.profile flows stay anonymous),
 		// gated writes: per-user data must never be world-writable. With
 		// no RBAC policy installed in this demo, the write permissions
-		// simply fail closed for everyone — the read-only posture a
+		// simply fail closed for everyone, the read-only posture a
 		// public author bio wants.
 		&framework.ExposureConfig{Access: framework.AccessControl{
 			Create: "profiles:write",
@@ -91,7 +91,7 @@ func main() {
 	})
 
 	app.Entity("posts", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "posts", Pagination: &framework.PaginationConfig{
 		// pagination by recency, not PK
 		CursorField: "created_at"}, Fields: []schema.Field{
@@ -107,7 +107,7 @@ func main() {
 	})
 
 	app.Entity("comments", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "comments",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
@@ -119,7 +119,7 @@ func main() {
 		},
 	})
 
-	// Demo seed: a couple of users + one post + comments. Idempotent — only
+	// Demo seed: a couple of users + one post + comments. Idempotent, only
 	// inserts if the table is empty.
 	seedDemoData(db)
 

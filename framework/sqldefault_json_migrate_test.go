@@ -7,7 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// The bug this closes was not in the rendering alone — it was that a valid
+// The bug this closes was not in the rendering alone, it was that a valid
 // declaration could not boot. schema.validateJSON accepts a Go map, the insert
 // path json.Marshals it, and only the DDL rendered Go's debug form, so
 // AutoMigrate failed on Postgres (JSONB rejects `map[a:1]`) while SQLite's TEXT

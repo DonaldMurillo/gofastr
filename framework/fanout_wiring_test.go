@@ -22,13 +22,13 @@ import (
 
 // TestWithFanout_CrossAppDelivery drives the full seam: a CRUD write on app
 // A emits on A's bus, the bridge mirrors it through the shared fanout, and a
-// plain bus subscriber on app B (a second "replica") receives it — marked
+// plain bus subscriber on app B (a second "replica") receives it, marked
 // remote.
 func TestWithFanout_CrossAppDelivery(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		f := fanout.NewInProcess()
 
-		// Replica B: no DB, no entities — just a bus bridged to the fanout.
+		// Replica B: no DB, no entities, just a bus bridged to the fanout.
 		appB := NewApp(WithFanout(f), WithoutDefaultMiddleware())
 		got := make(chan event.Event, 4)
 		remote := make(chan bool, 4)

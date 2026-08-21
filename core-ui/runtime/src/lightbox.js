@@ -1,4 +1,4 @@
-// Lightbox runtime module — arrow nav + image preload + tiny extras
+// Lightbox runtime module, arrow nav + image preload + tiny extras
 // on top of the framework's preset.Modal machinery.
 //
 // Responsibilities (all opt-in via Lightbox config):
@@ -33,7 +33,7 @@
     return modal && modal.querySelector('[data-fui-comp="ui-lightbox"][data-fui-lightbox]');
   }
 
-  // The topmost OPEN lightbox modal — last open one in DOM order, which
+  // The topmost OPEN lightbox modal, last open one in DOM order, which
   // is the topmost paint. Used by keyboard nav, which has no clicked-in
   // element to resolve the active lightbox from.
   function findOpenModal() {
@@ -61,7 +61,7 @@
   }
 
   function cssEscape(s) {
-    // Minimal escape — group ids are framework-generated and only
+    // Minimal escape, group ids are framework-generated and only
     // contain [a-zA-Z0-9-]; tightening this if user-controlled is a
     // follow-up.
     return s.replace(/[^a-zA-Z0-9_\-]/g, '\\$&');
@@ -115,14 +115,14 @@
     if (state.loop || (i >= 0 && i < n)) {
       i = (i + n) % n;
     } else {
-      return; // at end, no-loop — silently no-op.
+      return; // at end, no-loop, silently no-op.
     }
     state.index = i;
     // Instead of synthesizing a click on the sibling anchor (which can
     // bubble into the default <a target="_blank"> navigation path on
     // some browsers and is generally indirect), call the runtime's
     // openWidget directly with the parsed deeplink params. openWidget
-    // is idempotent on an already-open widget — it just re-fires
+    // is idempotent on an already-open widget, it just re-fires
     // setSignal for each declared DeepLinkParam, which is exactly
     // what we want: src / alt / caption / group signals update in
     // place, the bound <img src> swaps via the signal pipeline.
@@ -142,7 +142,7 @@
     if (!viewer) { states.delete(modal); return; }
 
     // group signal is mirrored into a hidden element via
-    // data-fui-signal="group" — but we read directly from the global
+    // data-fui-signal="group", but we read directly from the global
     // signal store for resilience.
     const ns = window.__gofastr || {};
     const groupSig = ns._signals && ns._signals.group ? ns._signals.group.value : '';
@@ -198,7 +198,7 @@
     if (typeof pinchScannerHook === 'function') pinchScannerHook(root);
   }
 
-  // Prev/Next button clicks — scoped to the lightbox the clicked button
+  // Prev/Next button clicks, scoped to the lightbox the clicked button
   // lives in (its [data-fui-widget] modal), so two Lightbox widgets on
   // one page cannot cross-talk. State may be missing when the modal
   // mounted catalog-lazily after this module's initial scan; bootstrap
@@ -222,7 +222,7 @@
 
   // ArrowLeft / ArrowRight while a lightbox is open. Keyboard nav has no
   // clicked-in element to resolve context from, so operate on the
-  // topmost OPEN lightbox modal (findOpenModal — last open in DOM order).
+  // topmost OPEN lightbox modal (findOpenModal, last open in DOM order).
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
     const m = findOpenModal();
@@ -241,7 +241,7 @@
   //   - Double-tap toggles 1× ↔ 2×.
   //
   // The pinch state is per-viewer instance (one open lightbox at a time
-  // in practice, but we key by the element to stay robust). On modal
+  // in practice, but we key by the element to stay correct). On modal
   // close the transform is reset so the next open starts at 1×.
   function _installPinchZoom() {
     if (document.__fuiLightboxPinch) return;

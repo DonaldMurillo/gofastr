@@ -15,7 +15,7 @@ import (
 
 // docker stop / kubectl rollout send SIGTERM. Start must install signal
 // handling by default and drain (server, batteries, OnStop hooks) before
-// the process exits — deploy.md promises exactly this.
+// the process exits. deploy.md promises exactly this.
 func TestSIGTERMDrainsApp(t *testing.T) {
 	requireSIGTERMForTest(t)
 	// Keep the test binary alive if Start does NOT handle the signal:
@@ -60,7 +60,7 @@ func TestSIGTERMDrainsApp(t *testing.T) {
 
 // An open SSE stream never goes idle, so http.Server.Shutdown alone waits
 // out the full deadline and leaves the connection open. Shutdown must
-// force-close whatever remains once the drain deadline expires — the
+// force-close whatever remains once the drain deadline expires, the
 // drain is bounded, not best-effort-forever.
 func TestShutdownForceClosesHangingConns(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())

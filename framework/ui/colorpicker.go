@@ -9,7 +9,7 @@ import (
 // ─── ColorPicker ────────────────────────────────────────────────────
 //
 // Styled wrapper around <input type="color">. The browser's native
-// color UI handles the actual color picking — we own the visual
+// color UI handles the actual color picking. We own the visual
 // chrome (label + sized swatch that respects --spacing-touch-target).
 //
 // Preset-swatches strip is deferred (see ui-component-roadmap.md):
@@ -65,7 +65,7 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 		inputAttrs["disabled"] = ""
 	}
 
-	// Swatch first, label after — the same reading order as Checkbox
+	// Swatch first, label after. The same reading order as Checkbox
 	// (control on the left, its name on the right).
 	row := []render.HTML{
 		render.Tag("input", inputAttrs),

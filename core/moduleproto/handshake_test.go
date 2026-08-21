@@ -74,7 +74,7 @@ func TestHandshakeSuccessRoundTrip(t *testing.T) {
 }
 
 // TestHandshakeDigestMismatchTerminal: a child that echoes a DIFFERENT
-// surface digest is terminal — the round-trip must fail.
+// surface digest is terminal. The round-trip must fail.
 func TestHandshakeDigestMismatchTerminal(t *testing.T) {
 	host, child, _, _, cleanup := newPeerPair(t, 0)
 	defer cleanup()

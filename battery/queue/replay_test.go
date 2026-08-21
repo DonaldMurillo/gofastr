@@ -50,7 +50,7 @@ func TestDBQueue_ReplayUnknownIsNoop(t *testing.T) {
 }
 
 // TestDBQueue_ReplayPendingIsNoop confirms replaying a still-pending job
-// doesn't duplicate or reset it into a bad state — it stays dequeuable once.
+// doesn't duplicate or reset it into a bad state, it stays dequeuable once.
 func TestDBQueue_ReplayPendingIsNoop(t *testing.T) {
 	_, q := openDBQueue(t, 0)
 	ctx := context.Background()

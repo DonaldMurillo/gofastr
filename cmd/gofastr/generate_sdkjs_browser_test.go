@@ -18,9 +18,9 @@ import (
 )
 
 // TestGeneratedJSSDK_BrowserRoundTrip executes the generated client.js in a
-// real Chrome against a live framework server on the same origin — both the
-// syntax check (Node is not in CI; the browser is the repo-standard JS
-// runtime) and the behavioral contract: camelCase responses, snake_case
+// real Chrome against a live framework server on the same origin, covering
+// both the syntax check (Node is not in CI; the browser is the repo-standard
+// JS runtime) and the behavioral contract: camelCase responses, snake_case
 // filter params and validation-error keys, presence-faithful PATCH ({views:0}
 // must set zero), batch rollback surfaced as a result, and the SSE watch.
 func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
@@ -113,7 +113,7 @@ func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
 	defer browserCancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's;
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)

@@ -7,7 +7,7 @@ import (
 
 // TestColors_NoANSIWhenNotTTY pins the operator-quality fix: when
 // stdout isn't a terminal (the typical CI / piped / `go test`
-// scenario), ANSI escape codes must NOT be emitted — piping
+// scenario), ANSI escape codes must NOT be emitted; piping
 // `gofastr docs` through `less` or `wc -l` should not see
 // `\033[32m...` garbage.
 //

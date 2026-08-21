@@ -27,9 +27,9 @@ import (
 )
 
 // validVersionRe accepts canonicalised version prefixes: "v" followed by
-// a numeric major (and optional .minor). Anything outside this shape —
-// path separators, query glue, empty string — is rejected at Version()
-// time so misuse can't smuggle a /v1/admin prefix into the router.
+// a numeric major (and optional .minor). Anything outside this shape,
+// such as path separators, query glue, or an empty string, is rejected at
+// Version() time so misuse can't smuggle a /v1/admin prefix into the router.
 var validVersionRe = regexp.MustCompile(`^v[0-9]+(\.[0-9]+)?$`)
 
 // VersionPrefix is the default URL prefix format. "/v1", "/v2", etc.
@@ -106,7 +106,7 @@ func (v *APIVersion) IsDeprecated() bool {
 //	Link: <replacementURL>; rel="successor-version"
 //
 // Unsafe replacement URLs (non-http(s) schemes, embedded CR/LF) are
-// dropped silently — the Link header is a clickable hint to API clients
+// dropped silently, the Link header is a clickable hint to API clients
 // and a `javascript:` / `mailto:` / data: there is a phishing primitive.
 func (v *APIVersion) DeprecationMiddleware() router.Middleware {
 	return func(next http.Handler) http.Handler {
@@ -133,7 +133,7 @@ func (v *APIVersion) Use(mw ...router.Middleware) {
 // normalizeVersion strips any leading "/" or "v" from the prefix
 // and returns the clean form (e.g. "/v1" → "v1", "1" → "v1").
 // Panics with a clear message if the result is not a valid version
-// identifier — apps must catch this at startup, not in the request path.
+// identifier, apps must catch this at startup, not in the request path.
 func normalizeVersion(prefix string) string {
 	prefix = strings.TrimPrefix(prefix, "/")
 	if !strings.HasPrefix(prefix, "v") {
@@ -147,7 +147,7 @@ func normalizeVersion(prefix string) string {
 
 // DeprecationHeaders is a helper that writes deprecation headers onto a
 // response. Useful when you need to mark individual endpoints as deprecated
-// rather than a whole version. Unsafe replacement URLs are dropped — see
+// rather than a whole version. Unsafe replacement URLs are dropped. See
 // [APIVersion.DeprecationMiddleware] for the policy.
 func DeprecationHeaders(w http.ResponseWriter, sunset time.Time, replacement string) {
 	w.Header().Set("Deprecation", "true")
@@ -165,8 +165,8 @@ func DeprecationHeaders(w http.ResponseWriter, sunset time.Time, replacement str
 // it is safe to expose in a Link header. Allowed shapes: relative paths
 // ("/v2", "./v2") and absolute http(s) URLs. CR/LF/NUL anywhere in the
 // string disqualifies it (header smuggling). Other schemes like
-// `javascript:`, `data:`, `file:`, `mailto:`, `view-source:` are dropped
-// — they would render as clickable in API clients and turn the
+// `javascript:`, `data:`, `file:`, `mailto:`, `view-source:` are dropped,
+// they would render as clickable in API clients and turn the
 // deprecation hint into a phishing vector. Protocol-relative URLs
 // ("//other.example") are dropped as ambiguous about origin trust.
 func safeReplacementURL(u string) (string, bool) {

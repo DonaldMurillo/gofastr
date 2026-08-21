@@ -221,7 +221,7 @@ func TestInProcessCancelStopsDelivery(t *testing.T) {
 
 // TestInProcessOverflowDropOldest: a subscriber whose bounded queue fills
 // (because it never drains) must drop the oldest queued message, not block
-// the publisher — matching SSEBroker's lossy contract.
+// the publisher, matching SSEBroker's lossy contract.
 func TestInProcessOverflowDropOldest(t *testing.T) {
 	t.Parallel()
 	// Tiny queue so the overflow path is exercised quickly.

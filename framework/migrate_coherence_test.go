@@ -13,7 +13,7 @@ import (
 // The coherence suite pins the contract that the entity schema, AutoMigrate
 // (table creation), and DiffSchema (declarative diff) all agree. The
 // load-bearing property is the round-trip: a table AutoMigrate just created
-// must diff CLEAN — DiffSchema reports zero changes. Any drift between what
+// must diff CLEAN. DiffSchema reports zero changes. Any drift between what
 // Define injects, what AutoMigrate emits, and what DiffSchema expects shows
 // up here as a spurious ADD/DROP.
 
@@ -135,7 +135,7 @@ func TestCoherence_UniqueAndIndexRoundTrip(t *testing.T) {
 }
 
 // TestCoherence_RelationsRoundTrip pins that an entity graph with a
-// BelongsTo relation (FK column + constraint) migrates and then diffs clean —
+// BelongsTo relation (FK column + constraint) migrates and then diffs clean:
 // the FK column is a declared field, so DiffSchema must not want to re-add or
 // drop it, and the topo-sorted CREATE TABLEs leave nothing pending.
 func TestCoherence_RelationsRoundTrip(t *testing.T) {

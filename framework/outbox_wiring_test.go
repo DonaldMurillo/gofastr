@@ -20,20 +20,20 @@ import (
 
 // outboxTestApp builds an app with the outbox enabled, one entity, a
 // declared durable witness consumer, and a relay running (tests drive the
-// router directly, so the Start()-owned relay never launches — start one
+// router directly, so the Start()-owned relay never launches, start one
 // on the app's outbox by hand). Returns the durable witness channel so
 // tests can assert a staged event reached a declared consumer.
 func outboxTestApp(t *testing.T, db *sql.DB) (*App, chan event.Event, func(method, path, body string) *httptest.ResponseRecorder) {
 	t.Helper()
 	// The relay goroutine runs claims concurrently with the HTTP writes.
 	// testdb's sqlite is a plain ":memory:" DSN where every pooled
-	// connection is its own empty database — concurrency would open a
+	// connection is its own empty database, concurrency would open a
 	// second conn and see "no such table". One conn serializes them onto
 	// the same memory database (Postgres already pins to 1 in testdb).
 	db.SetMaxOpenConns(1)
 
 	// Durable witness: a declared consumer that records every delivered
-	// lifecycle event. This is the per-consumer delivery lane — distinct
+	// lifecycle event. This is the per-consumer delivery lane, distinct
 	// from the real-time bus lane (EmitEvent) that tests also subscribe to.
 	durable := make(chan event.Event, 16)
 	witness := func(_ context.Context, e event.Event) error {
@@ -68,7 +68,7 @@ func outboxTestApp(t *testing.T, db *sql.DB) (*App, chan event.Event, func(metho
 		} else {
 			r = httptest.NewRequest(method, path, nil)
 		}
-		// posts has no OwnerField/Access/Public — the secure-by-default
+		// posts has no OwnerField/Access/Public, the secure-by-default
 		// session gate (issue #65) requires a session for every op; stamp
 		// one so these outbox-wiring tests exercise the relay, not auth.
 		r = r.WithContext(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"}))

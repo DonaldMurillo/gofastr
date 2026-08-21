@@ -95,7 +95,7 @@ func TestSectionMenuLeadAndEyebrow(t *testing.T) {
 	}
 }
 
-// The mobile sheet is the framework's preset.Drawer — backdrop + dismiss
+// The mobile sheet is the framework's preset.Drawer, backdrop + dismiss
 // behaviours come from the widget, not re-implemented here.
 func TestSectionMenuDrawerIsADismissibleWidget(t *testing.T) {
 	def := SectionMenuDrawer(sampleMenu()).Build()

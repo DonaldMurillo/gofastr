@@ -31,8 +31,8 @@ func runGuidance(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 }
 
 // handrolledCRUD reports a resource whose REST surface was written by
-// hand. The bar is deliberately high — three or more of the five CRUD
-// verbs on one collection path — because two endpoints on a resource is
+// hand. The bar is deliberately high, three or more of the five CRUD
+// verbs on one collection path, because two endpoints on a resource is
 // a normal amount of custom behaviour, and five is someone reimplementing
 // `app.Entity`.
 func handrolledCRUD(p *contracts.Pass) []contracts.Diagnostic {
@@ -77,7 +77,7 @@ func handrolledCRUD(p *contracts.Pass) []contracts.Diagnostic {
 		if crud < 3 {
 			continue
 		}
-		// A resource that already has a declared entity is fine — the
+		// A resource that already has a declared entity is fine. The
 		// hand-written routes are the custom operations beside it.
 		name := strings.Trim(collection, "/")
 		if i := strings.LastIndex(name, "/"); i >= 0 {
@@ -94,7 +94,7 @@ func handrolledCRUD(p *contracts.Pass) []contracts.Diagnostic {
 		d := diag(p, contracts.RuleHandrolledCRUD, res.first.File, res.first.Pos, fmt.Sprintf(
 			"%s has hand-written %s handlers and no declared entity", collection, strings.Join(verbs, "/")))
 		d.Suggestion = fmt.Sprintf(
-			"declare the entity — app.Entity(%q, …) mounts the same surface plus filtering, pagination, includes, OpenAPI, and MCP tools", name)
+			"declare the entity: app.Entity(%q, …) mounts the same surface plus filtering, pagination, includes, OpenAPI, and MCP tools", name)
 		d.Evidence = map[string]string{"collection": collection, "methods": strings.Join(verbs, ",")}
 		out = append(out, d)
 	}
@@ -163,13 +163,13 @@ func handrolledBattery(p *contracts.Pass) []contracts.Diagnostic {
 			if !importsAny(file, signal.Imports...) {
 				continue
 			}
-			// Already using the battery alongside it — that is composition,
+			// Already using the battery alongside it. That is composition,
 			// not reimplementation.
 			if importsAny(file, signal.Battery) {
 				continue
 			}
 			d := diag(p, contracts.RuleHandrolledBattery, f.Rel, file.Pos(), fmt.Sprintf(
-				"this file implements %s directly — %s already provides it", signal.What, signal.Battery))
+				"this file implements %s directly: %s already provides it", signal.What, signal.Battery))
 			d.Suggestion = fmt.Sprintf("register %s and keep the custom parts in a hook", signal.Battery)
 			d.Evidence = map[string]string{"battery": signal.Battery, "subsystem": signal.What}
 			out = append(out, d)
@@ -179,9 +179,9 @@ func handrolledBattery(p *contracts.Pass) []contracts.Diagnostic {
 }
 
 // rawSQLOverRepo reports a raw query naming a table that has a declared
-// entity. The entity's scoping — soft delete, tenant filter, owner field —
-// lives in the CRUD layer, so a raw query silently returns rows those
-// rules exist to hide.
+// entity. The entity's scoping, whether soft delete, tenant filter, or
+// owner field, lives in the CRUD layer, so a raw query silently returns
+// rows those rules exist to hide.
 func rawSQLOverRepo(p *contracts.Pass) []contracts.Diagnostic {
 	entities := Entities(p)
 	if len(entities) == 0 {
@@ -218,7 +218,7 @@ func rawSQLOverRepo(p *contracts.Pass) []contracts.Diagnostic {
 					return true
 				}
 				d := diag(p, contracts.RuleRawSQLOverRepo, f.Rel, call.Pos(), fmt.Sprintf(
-					"raw %s against %q, which is a declared entity — the entity's scoping does not apply here",
+					"raw %s against %q, which is a declared entity: the entity's scoping does not apply here",
 					method, table))
 				d.Evidence = map[string]string{"table": table, "receiver": exprText(recv)}
 				out = append(out, d)
@@ -231,7 +231,7 @@ func rawSQLOverRepo(p *contracts.Pass) []contracts.Diagnostic {
 }
 
 // tableInStatement finds a declared entity name used as a table in a SQL
-// statement — after FROM, INTO, UPDATE, or JOIN. Matching only in those
+// statement: after FROM, INTO, UPDATE, or JOIN. Matching only in those
 // positions keeps a column or alias that happens to share the name from
 // counting.
 func tableInStatement(sql string, tables map[string]string) string {

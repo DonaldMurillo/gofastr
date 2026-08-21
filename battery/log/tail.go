@@ -19,7 +19,7 @@ import (
 // covers ~typical access entries comfortably. Tune via the second
 // parameter if you have unusually large entries.
 //
-// Returns (nil, nil) when the file doesn't exist — agents asking for
+// Returns (nil, nil) when the file doesn't exist, agents asking for
 // historical logs against an app that hasn't enabled a file sink should
 // get an empty list, not an error.
 func tailFile(path string, maxLines int) ([]map[string]any, error) {
@@ -63,7 +63,7 @@ func tailFileWithWindow(path string, maxLines int, window int64) ([]map[string]a
 
 	// If we seeked into the middle of a line, discard the partial one.
 	scanner := bufio.NewScanner(f)
-	// Allow up to 1 MiB per line — the recovery middleware caps stacks
+	// Allow up to 1 MiB per line, the recovery middleware caps stacks
 	// at 64 KiB and panic values at 4 KiB, so this is comfortable.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	if offset > 0 && scanner.Scan() {

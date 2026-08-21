@@ -1,4 +1,4 @@
-// Animate runtime module — signal-driven CSS transitions.
+// Animate runtime module, signal-driven CSS transitions.
 //
 // Loaded on-demand when any [data-fui-animate-signal] marker is on the
 // page (or arrives via SPA-nav). Subscribes to signal changes via
@@ -6,8 +6,8 @@
 // element when the signal value changes.
 //
 // Attributes:
-//   data-fui-animate-signal="<name>"  — signal to watch
-//   data-fui-animate-class="<class>"  — CSS class to toggle
+//   data-fui-animate-signal="<name>"  : signal to watch
+//   data-fui-animate-class="<class>"  : CSS class to toggle
 //
 // Truthy signals ("true", non-empty, non-"0", non-"false") add the
 // class; falsy signals remove it. Initial state is applied on setup.
@@ -114,7 +114,7 @@
   // alone leaks the apply closure. A MutationObserver catches the
   // detach: teardownDetached is idempotent (it only reclaims nodes no
   // longer isConnected), so running it on any childList change is safe
-  // and cheap — the wired set is tiny.
+  // and cheap, the wired set is tiny.
   if (typeof MutationObserver === 'function') {
     new MutationObserver(() => { teardownDetached(); })
       .observe(document, { childList: true, subtree: true });

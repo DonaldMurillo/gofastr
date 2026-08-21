@@ -118,7 +118,7 @@ func TestApp_LocaleResolverCookieWins(t *testing.T) {
 }
 
 // TestApp_WithLocaleResolverWithoutI18nPanics: using the option
-// without a translator is a programmer error — fail loudly.
+// without a translator is a programmer error. Fail loudly.
 func TestApp_WithLocaleResolverWithoutI18nPanics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {

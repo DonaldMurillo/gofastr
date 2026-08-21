@@ -1,7 +1,7 @@
 package main
 
 // =============================================================================
-// Page-local CSS — additions beyond styles.go's site chrome. One function per
+// Page-local CSS, additions beyond styles.go's site chrome. One function per
 // page, registered from createStyleSheet so token resolution flows uniformly
 // through the typed pipeline. Each block's class names come straight from the
 // design prototype at /tmp/gofastr-design/gofastr/project/pages/*-v2.html so
@@ -14,14 +14,14 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// /get-started — six-step onboarding with sticky step-rail.
+// /get-started, six-step onboarding with sticky step-rail.
 // -----------------------------------------------------------------------------
 
 func pageGetStarted(ss *style.StyleSheet) {
 	ss.Rule(".gs-hero").
 		Set("padding", "var(--s-9) 0 {spacing.xxl}",
 			"border-bottom", "1px solid var(--line-faint)").End()
-	// .gs-hero__grid is gone — ui.HeroSplit handles the 2-col grid.
+	// .gs-hero__grid is gone, ui.HeroSplit handles the 2-col grid.
 	ss.Rule(".gs-hero h1").
 		Set("font-size", "clamp(40px, 5vw, 64px)",
 			"line-height", "1.05",
@@ -34,7 +34,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 			"font-size", "var(--t-lg)",
 			"max-width", "48ch").End()
 
-	// .gs-facts is now a <dl> — label / value pairs as a definition
+	// .gs-facts is now a <dl>, label / value pairs as a definition
 	// list, not card tiles. Engineer-voice prefers a tight tabular
 	// layout where the eye can scan label→value horizontally.
 	ss.Rule(".gs-facts").
@@ -112,7 +112,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 			"max-width", "62ch",
 			"margin-bottom", "{spacing.lg}").End()
 
-	// .callout class is gone — gsBody now uses ui.Callout (framework).
+	// .callout class is gone, gsBody now uses ui.Callout (framework).
 
 	ss.Rule(".result").
 		Set("padding", "{spacing.xl}",
@@ -152,14 +152,14 @@ func pageGetStarted(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /docs/ (concepts index) — IA-grouped 53 docs.
+// /docs/ (concepts index), IA-grouped 53 docs.
 // -----------------------------------------------------------------------------
 
 func pageConceptsIndex(ss *style.StyleSheet) {
 	ss.Rule(".cx-hero").
 		Set("padding", "var(--s-9) 0 {spacing.xxl}",
 			"border-bottom", "1px solid var(--line-faint)").End()
-	// .cx-hero__grid is gone — ui.HeroSplit handles the 2-col grid.
+	// .cx-hero__grid is gone, ui.HeroSplit handles the 2-col grid.
 	ss.Rule(".cx-hero h1").
 		Set("font-size", "clamp(40px, 5vw, 64px)",
 			"line-height", "1.05",
@@ -216,7 +216,7 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"text-align", "right").End()
 	ss.Rule(".intent-rail li a.active").Set("color", "{colors.text}").End()
 	ss.Rule(".intent-rail li a.active .n").Set("color", "{colors.primary}").End()
-	// scrollspy state — runtime adds .is-active + aria-current="true" on the
+	// scrollspy state, runtime adds .is-active + aria-current="true" on the
 	// anchor whose section is in view. Same visual as .active.
 	ss.Rule(`.intent-rail li a.is-active, .intent-rail li a[aria-current="true"]`).
 		Set("color", "{colors.text}").End()
@@ -251,7 +251,7 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"border", "1px solid var(--line-faint)",
 			"border-radius", "{radii.md}",
 			"overflow", "hidden").End()
-	// .doc is an <a> (each card links to /docs/<slug>) — reset link
+	// .doc is an <a> (each card links to /docs/<slug>), reset link
 	// chrome and let the inner spans own color.
 	ss.Rule(".doc").
 		Set("padding", "{spacing.lg}",
@@ -317,7 +317,7 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /docs/{slug} (concepts doc) — 3-col article shell.
+// /docs/{slug} (concepts doc), 3-col article shell.
 // -----------------------------------------------------------------------------
 
 func pageConceptsDoc(ss *style.StyleSheet) {
@@ -334,7 +334,7 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"--ui-doc-layout-crumb-link-color", "{colors.primary}",
 			"--ui-doc-layout-crumb-sep-color", "var(--fg-4)").End()
 
-	// interactive.SectionMenu — the unified docs/components rail + mobile
+	// interactive.SectionMenu, the unified docs/components rail + mobile
 	// sheet. Clear the sticky header, tune the sheet surface + scrim + the
 	// group-eyebrow tone to the v2 palette.
 	ss.Rule(`[data-fui-comp="fui-section-menu"]`).
@@ -460,7 +460,7 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /examples — six reference apps as stacked card rows.
+// /examples, six reference apps as stacked card rows.
 // -----------------------------------------------------------------------------
 
 func pageExamples(ss *style.StyleSheet) {
@@ -559,7 +559,7 @@ func pageExamples(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /kiln — agent build mode, with a restrained amber surface tint.
+// /kiln: agent build mode, with a restrained amber surface tint.
 // -----------------------------------------------------------------------------
 
 func pageKiln(ss *style.StyleSheet) {
@@ -819,7 +819,7 @@ func pageKiln(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /philosophy — long-form essay with magazine masthead.
+// /philosophy, long-form essay with magazine masthead.
 // -----------------------------------------------------------------------------
 
 func pagePhilosophy(ss *style.StyleSheet) {
@@ -952,7 +952,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 	ss.Rule(".roadmap__status.shipped").
 		Set("background", "color-mix(in oklch, var(--tk-str) 18%, transparent)",
 			"color", "var(--tk-str)").End()
-	// 12% tint, not 18 — at 18% the light-scheme chip darkened enough that
+	// 12% tint, not 18, at 18% the light-scheme chip darkened enough that
 	// the amber label read 4.25:1 (axe color-contrast fail); 12% keeps the
 	// label ≥4.9:1 in light and ≥7:1 in dark.
 	ss.Rule(".roadmap__status.next").
@@ -980,18 +980,18 @@ func pagePhilosophy(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /components/* — page chrome for the showcase grid + single-page demos.
+// /components/*, page chrome for the showcase grid + single-page demos.
 // -----------------------------------------------------------------------------
 
 func pageComponents(ss *style.StyleSheet) {
-	// .doc-shell-narrow — single-column variant of the doc page used by
+	// .doc-shell-narrow, single-column variant of the doc page used by
 	// component showcase pages (no docnav / no toc). Same vertical rhythm.
 	ss.Rule(".doc-shell-narrow").
 		Set("max-width", "880px",
 			"margin", "0 auto",
 			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)").End()
 
-	// .demo-stage — live component preview frame. Surface + border + label
+	// .demo-stage, live component preview frame. Surface + border + label
 	// chip so the rendered component reads as a deliberate sample, not
 	// random body markup.
 	ss.Rule(".demo-stage").
@@ -1054,13 +1054,13 @@ func pageComponents(ss *style.StyleSheet) {
 	ss.Rule(".demo-dropdown-room").
 		Set("min-height", "200px").End()
 
-	// .demo-section-menu — frames the SectionMenu rail in the catalog demo
+	// .demo-section-menu, frames the SectionMenu rail in the catalog demo
 	// (the live nav that powers /docs/* and /components/*).
 	ss.Rule(".demo-section-menu").
 		Set("max-width", "260px",
 			"min-height", "220px").End()
 
-	// .doc-usage — the example-code block under each component demo.
+	// .doc-usage, the example-code block under each component demo.
 	ss.Rule(".doc-usage").
 		Set("margin-top", "{spacing.xl}").End()
 	ss.Rule(".doc-usage__title").
@@ -1084,7 +1084,7 @@ func pageComponents(ss *style.StyleSheet) {
 		Set("font-size", "24px",
 			"margin", "0 0 {spacing.sm}").End()
 
-	// .demo-signal-out — inline signal output shown beside buttons in demos.
+	// .demo-signal-out, inline signal output shown beside buttons in demos.
 	ss.Rule(".demo-signal-out").
 		Set("display", "inline-flex",
 			"align-items", "center",
@@ -1102,7 +1102,7 @@ func pageComponents(ss *style.StyleSheet) {
 			"color", "{colors.text-subtle}",
 			"font-style", "italic").End()
 
-	// .demo-form-inline — compact inline form for demos.
+	// .demo-form-inline, compact inline form for demos.
 	ss.Rule(".demo-form-inline").
 		Set("display", "flex",
 			"gap", "{spacing.sm}",
@@ -1138,7 +1138,7 @@ func pageComponents(ss *style.StyleSheet) {
 			// align-content defaults to `normal` which behaves as
 			// `stretch` for grid containers. With min-height > sum of
 			// auto-row content, the browser distributes the extra
-			// vertical space across rows — pushing content down. Pin
+			// vertical space across rows, pushing content down. Pin
 			// rows to the top so the layout stays tight; min-height
 			// still keeps the background filling the viewport.
 			"align-content", "start").End()
@@ -1158,7 +1158,7 @@ func pageComponents(ss *style.StyleSheet) {
 	// clears the sticky header and tunes the sheet surface to the v2 tokens.
 	// (Same vars set on the doc-layout context below.)
 
-	// Overview content — the cards grid + hero, no rail (sidebar replaces it).
+	// Overview content: the cards grid + hero, no rail (sidebar replaces it).
 	ss.Rule(".components-overview__hero").
 		Set("padding-bottom", "{spacing.xl}",
 			"border-bottom", "1px solid var(--line-faint)",
@@ -1179,7 +1179,7 @@ func pageComponents(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /404 — router-trace miss page.
+// /404, router-trace miss page.
 // -----------------------------------------------------------------------------
 
 func pageNotFound(ss *style.StyleSheet) {
@@ -1265,7 +1265,7 @@ func pageNotFound(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /examples/workspace — full-page master-detail on ui.PaneHost. The
+// /examples/workspace, full-page master-detail on ui.PaneHost. The
 // pane-host component owns the grid/drawer; these rules only style the
 // queue list rows, the intro, and the pane chrome (all token-driven).
 // -----------------------------------------------------------------------------
@@ -1300,7 +1300,7 @@ func pageWorkspace(ss *style.StyleSheet) {
 			"color", "{colors.text-subtle}",
 			"margin", "0 0 {spacing.xs}").End()
 
-	// Ticket row — a full-width semantic button styled as a list row.
+	// Ticket row, a full-width semantic button styled as a list row.
 	ss.Rule(".ws-row").
 		Set("display", "flex",
 			"align-items", "center",
@@ -1350,7 +1350,7 @@ func pageWorkspace(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
-// /examples/catalog — the intercepting-route demo. The overlay chrome
+// /examples/catalog, the intercepting-route demo. The overlay chrome
 // (scrim, drawer docking, reduced-motion entrance) belongs to the
 // framework: app.InterceptOverlayCSS ships it whenever a route declares
 // an intercept. These rules style only the list and the detail body, so
