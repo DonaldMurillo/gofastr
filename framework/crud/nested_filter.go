@@ -34,16 +34,6 @@ func isSafeIdentifier(s string) bool {
 	return safeIdentifierRE.MatchString(s)
 }
 
-// scopePredicate is one row-scope narrowing that the EXISTS subquery carries:
-// a column on the TARGET table and the single value the caller is confined to.
-// An empty Value is deliberate and matches no real row — a caller with no owner
-// or no tenant in context is narrowed to nothing rather than exempted, which is
-// how the include and eager paths already fail closed.
-type scopePredicate struct {
-	Column string
-	Value  string
-}
-
 // nestedFilter is one parsed `?author.name=alice` style predicate.
 type nestedFilter struct {
 	Relation entity.Relation
@@ -59,12 +49,15 @@ type nestedFilter struct {
 	// softDelete marks a target entity that hides trashed rows on every other
 	// read surface, so the EXISTS clause must hide them too.
 	softDelete bool
-	// scopes are the target's row-scope predicates — owner, tenant — that the
-	// EXISTS subquery must carry so it counts only rows the caller could
-	// already read one at a time through the target's own list route. They are
-	// attached by scopeNestedFiltersForCaller, which is the only thing that
-	// makes a scoped target safe to filter across; see its doc comment.
-	scopes []scopePredicate
+	// scopes are the target's row-scope predicates — owner, tenant, and the
+	// target's Exposure.ReadScope — that the EXISTS subquery must carry so
+	// it counts only rows the caller could already read one at a time
+	// through the target's own list route. They are attached by
+	// scopeNestedFiltersForCaller, which is the only thing that makes a
+	// scoped target safe to filter across; see its doc comment. ParsedFilter
+	// (not a local eq-only shape) so the read-scope operators render through
+	// renderReadScope like every other sink.
+	scopes []filter.ParsedFilter
 	// table is the RESOLVED target's table name. Relation.Entity is the
 	// registry KEY (the entity name), and the two differ whenever a host
 	// declares Name != Table or registers a versioned entity. Every check this
@@ -361,7 +354,6 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 	// searched value to the owner column: the query returns nothing, which
 	// reads as "no matching rows" rather than as a bug.
 	var args []any
-	var scopeClauses []string
 
 	// Narrow the subquery to the caller's own rows. Without this the EXISTS
 	// clause counts EVERY row in the target table: it does not return them, but
@@ -370,15 +362,28 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 	// predicates come from scopeNestedFiltersForCaller, which reuses the same
 	// builder the include and eager paths use, so a narrowed subquery counts
 	// exactly the rows the target's own list route would have served.
+	//
+	// Owner/tenant eq predicates and the target's ReadScope (eq/neq/in/not_in)
+	// all render through renderReadScope: one renderer, one meaning, the
+	// same fragment shape every other sink uses.
 	for _, sc := range nf.scopes {
-		if !isSafeIdentifier(sc.Column) {
+		if !isSafeIdentifier(sc.Field) {
 			// A scope column that is not a plain identifier cannot be emitted,
 			// and dropping it would silently widen the subquery back to every
 			// row. Match nothing instead.
 			return "1 = 0", nil
 		}
-		scopeClauses = append(scopeClauses, fmt.Sprintf("%s.%s = $%d", relTable, sc.Column, len(args)+1))
-		args = append(args, sc.Value)
+	}
+	var scopeClause string
+	if len(nf.scopes) > 0 {
+		var scopeArgs []any
+		scopeClause, scopeArgs = renderReadScope(nf.scopes, relTable, 1)
+		if scopeClause == "" {
+			// Non-empty predicates that render to nothing means the renderer
+			// refused them; matching nothing is the only safe answer.
+			return "1 = 0", nil
+		}
+		args = append(args, scopeArgs...)
 	}
 
 	var predicate string
@@ -396,16 +401,16 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		// One operator, one meaning: `_like` is a literal substring at
 		// every depth. Nested filters used to pass the caller's value
 		// through as a raw LIKE pattern while the top level escaped and
-		// wrapped it, so `?author.name_like=100%` prefix-matched instead
-		// of finding "100% cotton" — and a bare `%` matched every row.
+		// wrapped it, so `?author.name_like=100%` prefix-matched instead of
+		// finding "100% cotton" — and a bare `%` matched every row.
 		predicate = fmt.Sprintf("%s.%s LIKE $%d"+filter.LikeEscapeSuffix, relTable, col, len(args)+1)
 		args = append(args, filter.EscapeLikePattern(nf.Value))
 	} else {
 		predicate = fmt.Sprintf("%s.%s %s $%d", relTable, col, opToSQL(nf.Op), len(args)+1)
 		args = append(args, filter.BoolBind(nf.isBool, nf.Value))
 	}
-	if len(scopeClauses) > 0 {
-		predicate = strings.Join(scopeClauses, " AND ") + " AND " + predicate
+	if scopeClause != "" {
+		predicate = scopeClause + " AND " + predicate
 	}
 
 	// Every other read surface hides soft-deleted rows — the routes via
@@ -520,18 +525,17 @@ func (ch *CrudHandler) scopeNestedFiltersForCaller(ctx context.Context, filters 
 		if !probe.CanReadScoped(ctx) {
 			return &includeForbiddenError{Entity: target.GetName()}
 		}
-		var scopes []scopePredicate
-		for _, p := range eagerScopeFilters(ctx, target) {
-			scopes = append(scopes, scopePredicate{Column: p.Field, Value: p.Value})
-		}
+		var scopes []filter.ParsedFilter
+		scopes = append(scopes, eagerScopeFilters(ctx, target)...)
+		// The target's ReadScope narrows the same subquery: without it a
+		// `?rel.field=` count is an oracle over rows the target's own route
+		// refuses (the drafts), one question at a time. Same builder as
+		// every other sink.
+		scopes = append(scopes, readScopeFilters(ctx, target)...)
 		filters[i].scopes = scopes
 	}
 	return nil
 }
-
-// resolvedTable returns the table the subquery must read: the resolved target's
-// table, falling back to the relation's entity name when no target resolved
-// (the historical no-registry contract, mirroring the eager path).
 func resolvedTable(target *entity.Entity, rel entity.Relation) string {
 	if target != nil && target.GetTable() != "" {
 		return target.GetTable()

@@ -58,6 +58,14 @@ Update, Delete, the batch/stream variants, and the `_events` SSE feed. The
 roles + policy must be in the request context first; mount
 `framework.AccessMiddleware` (above) ahead of the CRUD routes.
 
+`Access` decides **whether** a caller may read the entity at all. **Which
+rows** they see is a second question with its own knob: `Exposure.ReadScope`
+declares row predicates on the entity's own columns (anonymous visitors see
+`status=published`; a caller holding the `Unrestricted` permission, or,
+when it is empty, any signed-in caller, sees every row). The two compose:
+`Access.Read` gates the route, then `ReadScope` narrows the rows. See
+[entity-declarations](entity-declarations.md) → "Row-level read scoping".
+
 The generated OpenAPI spec (`/openapi.json`) advertises **401** (authentication
 required) and **403** (authenticated but forbidden) on every operation of an
 RBAC-gated entity — including the `_batch` and `_events` endpoints. This means
@@ -293,6 +301,12 @@ elsewhere:
 - **Owner scoping** — set `Scope.OwnerField` so auto-CRUD only
   ever reads/writes rows owned by the caller. See
   [entity-declarations.md](entity-declarations.md) → "Per-user scoping".
+- **Row-level read scoping**: `Exposure.ReadScope` filters reads by
+  predicates on the entity's own columns, lifting the filter for a caller
+  holding the declared `Unrestricted` permission. It narrows WHICH rows a
+  read returns (List, Get, count, include, nested filters) rather than
+  refusing. See [entity-declarations.md](entity-declarations.md) →
+  "Row-level read scoping".
 - **`BeforeCreate` / `BeforeUpdate` / `BeforeDelete` hooks** — these run
   with the candidate record (and, for updates, the patch) in hand, so
   they can deny per-row. Return an error from the hook to reject. This is

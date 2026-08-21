@@ -685,6 +685,79 @@ app.Entity("sessions", auth.SessionEntityConfig()) // CRUD=false, MCP=false
 hosts that want full control; the `*EntityConfig()` helpers are the
 safer default.
 
+## Row-level read scoping (`Exposure.ReadScope`)
+
+`Exposure.Access` answers **whether** a caller may read an entity.
+`Exposure.ReadScope` answers **which rows** they see. It exists for the
+most ordinary content posture there is: anonymous visitors see published
+rows, signed-in editors see drafts.
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/core/schema"
+-->
+```go
+app.Entity("posts", entity.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "status", Type: schema.String, Default: "draft"},
+        {Name: "title", Type: schema.String},
+    },
+    Exposure: &entity.ExposureConfig{
+        Public: true, // reads (and writes) are open; ReadScope narrows the rows
+        ReadScope: &entity.ReadScopeConfig{
+            Filter: []entity.RowPredicate{
+                {Field: "status", Op: "eq", Value: "published"},
+            },
+            Unrestricted: "", // any signed-in caller reads every row
+        },
+    },
+})
+```
+
+The predicates are conditions on the entity's **own columns**, and they
+AND together. Each `RowPredicate` names a `Field`, an `Op` (`eq`, `neq`,
+`in`, `not_in`; an empty `Op` means `eq`), and either `Value` (single-value
+ops) or `Values` (`in` / `not_in`). There is **no OR form** in this
+version: a row must satisfy every predicate. Model "one of several
+values" with `in`, not with multiple declarations.
+
+`Unrestricted` decides who reads **every** row:
+
+- **Non-empty**: it names an RBAC permission. A caller holding it reads
+  every row; everyone else gets the filter. Like every permission check
+  this is fail-closed: no policy in context means no widening.
+- **Empty**: any caller **with a session** reads every row, and an
+  anonymous caller gets the filter. That is the posture above, and it is
+  a weak one on purpose: "any signed-in user" means exactly that, not an
+  editor role. If drafts should be limited to editors, give the entity an
+  `Unrestricted` permission and grant it to the editor role.
+
+The filter applies to every read of the entity's own table: List, Get,
+count, cursor and stream variants, the in-process API (`GetOne`,
+`ListAll`, `CountAll`), typed queries, and, when the entity is the
+target of a relation, `?include=`, eager loading, and `?rel.field=`
+subqueries. A filtered-out row answers **404** on Get, not 403: the
+caller must not learn it exists.
+
+**Writes are not filtered.** Update, delete, and the upsert write do not
+carry the predicate in this version; a write is authorized by the write
+gates (owner, tenant, `Access`), not by the read posture. If callers can
+write but not read everything, they can still modify a row they cannot
+see. Close that with an `Access` block on the write operations.
+
+A declaration is validated at registration and a bad one fails the app's
+start (`app.Entity` panics, `app.TryEntity` returns the error, both naming
+the field): `Field` must be a declared column, must not be `Hidden` (a
+predicate on a masked column leaks its values through the row set), `Op`
+must be one of the four, and `in`/`not_in` require a non-empty `Values`
+while the single-value ops require an empty one. A typo must never
+silently serve every row.
+
+An entity with no `ReadScope` (or an empty `Filter`) is untouched: a
+true no-op for every existing entity.
+
 ## Free-text search (`SearchFields` + `?q=`)
 
 Set `SearchFields` to a slice of DB column names and List requests

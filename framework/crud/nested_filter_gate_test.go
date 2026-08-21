@@ -65,7 +65,7 @@ func TestScopeNestedFiltersForCaller_ScopedTargets(t *testing.T) {
 	}
 	// scopesFor runs the gate and returns the predicates it attached, failing
 	// the test if the target was refused.
-	scopesFor := func(t *testing.T, ctx context.Context, target string) []scopePredicate {
+	scopesFor := func(t *testing.T, ctx context.Context, target string) []filter.ParsedFilter {
 		t.Helper()
 		nf := filterOn(target)
 		if err := ch.scopeNestedFiltersForCaller(ctx, nf); err != nil {
@@ -73,10 +73,10 @@ func TestScopeNestedFiltersForCaller_ScopedTargets(t *testing.T) {
 		}
 		return nf[0].scopes
 	}
-	wantScope := func(t *testing.T, got []scopePredicate, col, val string) {
+	wantScope := func(t *testing.T, got []filter.ParsedFilter, col, val string) {
 		t.Helper()
 		for _, sc := range got {
-			if sc.Column == col {
+			if sc.Field == col {
 				if sc.Value != val {
 					t.Errorf("scope on %q binds %q, want %q", col, sc.Value, val)
 				}
@@ -194,10 +194,13 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 		t.Run(sh.name, func(t *testing.T) {
 			nf := nestedFilter{
 				Relation: sh.rel, Field: "body", Op: filter.OpEq, Value: "x", table: "note_rows",
-				scopes: []scopePredicate{{Column: "owner_id", Value: "u1"}, {Column: "tenant_id", Value: "t1"}},
+				scopes: []filter.ParsedFilter{
+					{Field: "owner_id", Op: filter.OpEq, Value: "u1"},
+					{Field: "tenant_id", Op: filter.OpEq, Value: "t1"},
+				},
 			}
 			sql, args := buildExistsSubquery("boards", "id", nf)
-			for _, want := range []string{"note_rows.owner_id = $", "note_rows.tenant_id = $"} {
+			for _, want := range []string{`"note_rows"."owner_id" = $`, `"note_rows"."tenant_id" = $`} {
 				if !strings.Contains(sql, want) {
 					t.Errorf("missing %q — the subquery counts every row:\n%s", want, sql)
 				}
@@ -227,7 +230,7 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 	nf := nestedFilter{
 		Relation: entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"},
 		Field:    "body", Op: filter.OpEq, Value: "x", table: "notes",
-		scopes: []scopePredicate{{Column: "owner_id; DROP TABLE notes --", Value: "u1"}},
+		scopes: []filter.ParsedFilter{{Field: "owner_id; DROP TABLE notes --", Op: filter.OpEq, Value: "u1"}},
 	}
 	if sql, _ := buildExistsSubquery("boards", "id", nf); sql != "1 = 0" {
 		t.Errorf("an unsafe scope column produced %q, want an unconditionally-false predicate", sql)

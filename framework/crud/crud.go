@@ -636,6 +636,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToCountQuery(countQb, filters)
 		ch.ApplyTenantScopeCount(countQb, r)
 		ch.ApplyOwnerScopeCount(countQb, r)
+		ch.ApplyReadScopeCount(countQb, r)
 		ch.applySoftDeleteFilterCountQ(countQb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
@@ -657,6 +658,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToQuery(qb, filters)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
+		ch.ApplyReadScope(qb, r)
 		ch.applySoftDeleteFilterQ(qb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
@@ -871,6 +873,10 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		qb.Where(ch.PrimaryKey+" = $1", id)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
+		// A row outside the read scope must 404, not 403: the filter lives
+		// in the WHERE clause, so the row is simply not found: the caller
+		// must not learn it exists. Same shape as the owner-scope path.
+		ch.ApplyReadScope(qb, r)
 		ch.ApplySoftDeleteFilter(qb, r)
 		for _, c := range getPayload.Where {
 			qb.Where(c.SQL, c.Args...)

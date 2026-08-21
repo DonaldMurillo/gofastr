@@ -512,6 +512,18 @@ for every operation on an entity that declares none of `OwnerField`,
    public reads but gated writes uses `Access` instead (a blank
    `Read` + a real `Create` permission).
 
+The read posture has two questions, and `Public` answers only the first
+(may this caller read the entity). **Which rows** they see is
+`Exposure.ReadScope`: declared predicates on the entity's own columns,
+applied to every read surface (List, Get, count, cursor, stream,
+`?include=`, `?rel.field=`, the in-process API, typed queries), lifted for
+a caller holding the `Unrestricted` permission, or, when it is empty, for
+any signed-in caller. That empty-`Unrestricted` form is the "anonymous
+visitors see published rows, signed-in editors see drafts" posture, and it
+is deliberately weak: any signed-in user, not an editor role. Writes are
+not filtered by it. See
+[entity-declarations](entity-declarations.md) → "Row-level read scoping".
+
 Because entity MCP tools dispatch through the router, this gate governs
 them automatically — no separate `mcp.WithToolGate`/`auth.MCPUser` wiring
 is needed for generated CRUD tools (that machinery remains for *custom*

@@ -128,10 +128,41 @@ type PaginationConfig struct {
 // ExposureConfig groups generated routes and their access rules. CRUD is a
 // pointer so nil keeps automatic route generation and false disables it.
 type ExposureConfig struct {
-	CRUD   *bool         // nil or true generates CRUD routes
-	MCP    bool          // register MCP CRUD tools
-	Public bool          // allow anonymous CRUD when no scope or access rule applies
-	Access AccessControl // per-operation permissions
+	CRUD      *bool            // nil or true generates CRUD routes
+	MCP       bool             // register MCP CRUD tools
+	Public    bool             // allow anonymous CRUD when no scope or access rule applies
+	Access    AccessControl    // per-operation permissions
+	ReadScope *ReadScopeConfig // narrows which rows a caller may read; nil = no row filtering
+}
+
+// RowPredicate is one declared condition on the entity's own columns,
+// used by ReadScopeConfig to narrow which rows a caller may read.
+type RowPredicate struct {
+	Field  string   // column name, exactly as declared on the entity
+	Op     string   // "eq", "neq", "in", "not_in"; empty means "eq"
+	Value  string   // single-value ops
+	Values []string // "in" / "not_in"
+}
+
+// ReadScopeConfig narrows WHICH rows a caller may read, as opposed to
+// Exposure.Access, which decides whether they may read the entity at all.
+// Filter's predicates are AND-ed into every read of the entity's own table
+// (List, Get, count, cursor, stream, the in-process API, typed queries, and
+// the ?include= / eager-load paths when this entity is the relation target)
+// unless the caller is unrestricted. Writes (update, delete, the upsert
+// write) are NOT filtered in this version.
+//
+// Unrestricted names a permission: a caller holding it reads every row.
+// When Unrestricted is EMPTY the lift is weaker and deliberate: any caller
+// with a session reads every row, and an anonymous caller gets the filter —
+// the "anonymous visitors see published rows, signed-in editors see
+// drafts" posture. "Any signed-in user" is exactly what it says; it is not
+// an editor role, so say so in the declaration when that matters.
+//
+// The predicates AND together; there is no OR form in this version.
+type ReadScopeConfig struct {
+	Filter       []RowPredicate
+	Unrestricted string
 }
 
 // AccessControl declares the RBAC permission required for each CRUD operation
@@ -459,6 +490,45 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 
+	// ReadScope predicates are a query surface that decides which rows a
+	// caller may see, so a typo'd column or op must fail the declaration:
+	// the alternative is a scope that silently matches nothing (a "no such
+	// column" error per request) or, worse, an op that renders as equality
+	// and narrows to the WRONG rows. A predicate on a Hidden column is
+	// refused for the same reason Hidden exists: the row set itself is a
+	// value oracle ("does a row with password_hash = x exist?"), and a
+	// declared predicate would answer it. All four checks fire here, at
+	// definition, naming the field.
+	if rs := config.Exposure.ReadScope; rs != nil && len(rs.Filter) > 0 {
+		for _, p := range rs.Filter {
+			var found *schema.Field
+			for i := range config.Fields {
+				if config.Fields[i].Name == p.Field {
+					found = &config.Fields[i]
+					break
+				}
+			}
+			if found == nil {
+				panic(fmt.Sprintf("entity %q: ReadScope field %q is not a declared field", name, p.Field))
+			}
+			if found.Hidden {
+				panic(fmt.Sprintf("entity %q: ReadScope field %q is Hidden (a predicate on a masked column leaks its values through the row set)", name, p.Field))
+			}
+			switch p.Op {
+			case "", "eq", "neq":
+				if len(p.Values) > 0 {
+					panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q must leave Values empty (only in/not_in take Values)", name, p.Op, p.Field))
+				}
+			case "in", "not_in":
+				if len(p.Values) == 0 {
+					panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q requires a non-empty Values", name, p.Op, p.Field))
+				}
+			default:
+				panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q must be one of eq, neq, in, not_in (empty means eq)", name, p.Op, p.Field))
+			}
+		}
+	}
+
 	// Cursor columns are a query surface too: they land in ORDER BY and in the
 	// keyset WHERE, and the emitted cursor token is base64 JSON of the raw
 	// value — reversible, not secret. A Hidden or NoQuery keyset column
@@ -561,6 +631,11 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 		if c.Exposure.CRUD != nil {
 			crud := *c.Exposure.CRUD
 			exposure.CRUD = &crud
+		}
+		if c.Exposure.ReadScope != nil {
+			readScope := *c.Exposure.ReadScope
+			readScope.Filter = append([]RowPredicate(nil), c.Exposure.ReadScope.Filter...)
+			exposure.ReadScope = &readScope
 		}
 		c.Exposure = &exposure
 	}
