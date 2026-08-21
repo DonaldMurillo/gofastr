@@ -164,7 +164,7 @@ func newTestSupervisor(t *testing.T, store framework.ProcessModuleStore, mode ch
 }
 
 // newBareTestSupervisor constructs a supervisor with an explicit runner
-// (no envRunner wrapping) — used by tests that don't spawn real children
+// (no envRunner wrapping), used by tests that don't spawn real children
 // (e.g. TestSupervisor_UntrustedNoSandbox, which fails at Register).
 func newBareTestSupervisor(t *testing.T, store framework.ProcessModuleStore, runner framework.Runner) *framework.ProcessModuleSupervisor {
 	t.Helper()
@@ -363,7 +363,7 @@ func TestSupervisor_Disabled404_EnableDown503(t *testing.T) {
 	if err := sup.Enable(context.Background(), d.Name); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	// Drive the proxy immediately — before Ready lands — to catch the
+	// Drive the proxy immediately, before Ready lands, to catch the
 	// enabled-but-not-Ready 503 window (decision D). If the spawn is
 	// too fast to observe, the test logs and continues.
 	hit503 := false
@@ -431,7 +431,7 @@ func waitForStateOn(t *testing.T, sup *framework.ProcessModuleSupervisor, name s
 // Child process (self-exec). The test binary re-execs itself with
 // GOFASTR_PROCESS_MODULE_CHILD=<mode>; this main wires a moduleproto Peer
 // over stdin/stdout and serves the configured behavior. Nothing is written
-// to the repo tree — the artifact IS the test binary copied to t.TempDir().
+// to the repo tree, the artifact IS the test binary copied to t.TempDir().
 // ============================================================================
 
 // processModuleChildMain is invoked from TestMain when the env guard is set.

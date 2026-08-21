@@ -29,7 +29,7 @@ import (
 // out of the framework root package so the root can run under the CI race
 // gate (issue #208). It drives the REAL demo module binary
 // (examples/processmodule-demo) against the REAL supervisor + store +
-// broker — not a re-exec'd test binary. The demo is built into a temp dir
+// broker, not a re-exec'd test binary. The demo is built into a temp dir
 // once per test run; every test spawns it as a genuine out-of-process
 // child over moduleproto/stdio.
 //
@@ -243,7 +243,7 @@ func proxyGet(t testing.TB, sup *framework.ProcessModuleSupervisor, name, routeI
 }
 
 // =====================================================================
-// Item 1 — Crash containment (design §10.1)
+// Item 1: Crash containment (design §10.1)
 // =====================================================================
 
 // TestGate_CrashContainment proves the headline property through the real
@@ -276,8 +276,8 @@ func TestGate_CrashContainment(t *testing.T) {
 
 	// The host stayed up: the supervisor must RESTART the child and charge
 	// the crash to the circuit. The exit is asynchronous (the child dies on
-	// its own ~20ms into the handler), so we wait for the restart to land —
-	// RestartCount > 0 AND state back to Ready — rather than racing the
+	// its own ~20ms into the handler), so we wait for the restart to land:
+	// RestartCount > 0 AND state back to Ready, rather than racing the
 	// exit-watcher.
 	deadline := time.Now().Add(8 * time.Second)
 	restarted := false
@@ -296,7 +296,7 @@ func TestGate_CrashContainment(t *testing.T) {
 		info, _ := sup.Info(d.Name)
 		t.Fatalf("child did not restart after self-crash: state=%s restarts=%d", info.State, info.RestartCount)
 	}
-	// A second route is unaffected — the host is healthy.
+	// A second route is unaffected, the host is healthy.
 	rec2 := proxyGet(t, sup, d.Name, "tree", "")
 	if rec2.Code != http.StatusOK {
 		t.Errorf("post-restart /tree: status = %d, want 200 (host healthy)", rec2.Code)
@@ -355,7 +355,7 @@ func TestGate_NotReadyAndDisabledGates(t *testing.T) {
 }
 
 // =====================================================================
-// Item 3 — Sandbox conformance (design §10.3)
+// Item 3: Sandbox conformance (design §10.3)
 // =====================================================================
 
 // TestGate_SandboxConformanceSelection proves the fail-closed SELECTION
@@ -385,7 +385,7 @@ func TestGate_SandboxConformanceSelection(t *testing.T) {
 }
 
 // =====================================================================
-// Item 4 — DDL isolation (design §10.4)
+// Item 4: DDL isolation (design §10.4)
 // =====================================================================
 
 // TestGate_DDLIsolation_ReadyGate asserts the Ready-gate holds a module with
@@ -393,7 +393,7 @@ func TestGate_SandboxConformanceSelection(t *testing.T) {
 // never spawns), then releases it once the coordinator stamps the timestamp.
 // The actual Postgres isolation (module_<M> schema+role, public denied,
 // SET ROLE refused) is proved by TestCoord_PG_* in
-// processmodule_migrate_test.go — this test does NOT duplicate the
+// processmodule_migrate_test.go, this test does NOT duplicate the
 // testcontainer; it pins the supervisor-side Ready-gate that gating depends on.
 func TestGate_DDLIsolation_ReadyGate(t *testing.T) {
 	store := newTestStore(t)
@@ -434,7 +434,7 @@ func TestGate_DDLIsolation_ReadyGate(t *testing.T) {
 }
 
 // =====================================================================
-// Item 5 — UI containment (design §10.5 / §9)
+// Item 5: UI containment (design §10.5 / §9)
 // =====================================================================
 
 // TestGate_UIContainment proves the closed ui.node.v1 validator is the render
@@ -445,7 +445,7 @@ func TestGate_DDLIsolation_ReadyGate(t *testing.T) {
 //     ui.node.v1 today), so /hello is served-safe and the forged attribute
 //     never reaches the wire. The /tree route returns the SAME bytes as a
 //     json body (which the proxy passes through), and uinodev1.Validate
-//     whole-tree rejects them — proving the validator is what the render
+//     whole-tree rejects them, proving the validator is what the render
 //     path will check.
 //   - Clean tree: Validate passes (so it WILL render once the render path
 //     lands); /hello is served-safe (503) until then.
@@ -502,7 +502,7 @@ func TestGate_UIContainment(t *testing.T) {
 		t.Errorf("clean tree root = %q, want card", tree.Root.Component)
 	}
 	// /hello on the clean tree now renders through the wired render path:
-	// 200, text/html, real design-system markup — and NOTHING the module
+	// 200, text/html, real design-system markup, and NOTHING the module
 	// supplied (no id/class/data-* from the tree; the host assigns all of it).
 	helloClean := proxyGet(t, cleanSup, dClean.Name, "hello", "")
 	if helloClean.Code != http.StatusOK {
@@ -544,7 +544,7 @@ type gateCapEnv struct {
 func newGateCapEnv(t *testing.T) *gateCapEnv {
 	t.Helper()
 	// Register the global owner extractor so RequireOwner (owner.Get) can
-	// resolve the Cookie-derived brokerTestUser to an owner id — the same
+	// resolve the Cookie-derived brokerTestUser to an owner id, the same
 	// setup newCrudBrokerEnv uses in processmodule_broker_test.go.
 	brokerInstallOwnerExtractor(t)
 	db := brokerSetupDB(t,
@@ -577,7 +577,7 @@ func (e *gateCapEnv) newBroker() *framework.Broker {
 }
 
 // =====================================================================
-// Item 2 — Capability containment (design §10.2)
+// Item 2: Capability containment (design §10.2)
 // =====================================================================
 
 // TestGate_CapabilityContainment proves, through the REAL child's reverse
@@ -589,7 +589,7 @@ func (e *gateCapEnv) newBroker() *framework.Broker {
 //     module-grant gate (the router is never reached);
 //   - the confused-deputy control holds: EntityQueryParams has NO capability
 //     field, so the required permission (articles:read / secrets:read) is
-//     derived from the trusted method + the entity NAME in the call — the
+//     derived from the trusted method + the entity NAME in the call, the
 //     child cannot name its own permission label or talk its way into
 //     secrets:read.
 //
@@ -623,7 +623,7 @@ func TestGate_CapabilityContainment(t *testing.T) {
 		t.Fatalf("decode /items body: %v: %s", err, rec.Body.String())
 	}
 	if body.Total != 2 {
-		t.Errorf("granted /items total = %d, want 2 (userA's articles only — owner scope held)", body.Total)
+		t.Errorf("granted /items total = %d, want 2 (userA's articles only, owner scope held)", body.Total)
 	}
 	if !strings.Contains(string(body.Rows), "Alpha-one") {
 		t.Errorf("granted /items rows missing userA's Alpha-one: %s", body.Rows)
@@ -652,7 +652,7 @@ func TestGate_CapabilityContainment(t *testing.T) {
 }
 
 // =====================================================================
-// Item 6 — Convergence + revoke (design §10.6)
+// Item 6: Convergence + revoke (design §10.6)
 // =====================================================================
 
 // TestGate_ConvergenceAndRevoke (the cross-replica convergence half of this
@@ -663,7 +663,7 @@ func TestGate_CapabilityContainment(t *testing.T) {
 
 // TestGate_RevokeDeniesReverseCall is the enforcement half of item 6: after
 // RevokeGrants bumps the generation and the replica respawns the child at the
-// new generation, the revoked capability's next reverse call MUST be denied —
+// new generation, the revoked capability's next reverse call MUST be denied:
 // no token-expiry window. This exercises the fail-closed respawn path:
 // finishDrain re-reads the store's authoritative EffectiveGrants (now empty)
 // so the new child's broker view no longer carries articles:read.
@@ -708,7 +708,7 @@ func TestGate_RevokeDeniesReverseCall(t *testing.T) {
 			t.Fatalf("post-revoke /items: status = %d, want 403 (or transient 200/503)", got.Code)
 		}
 	}
-	t.Fatal("post-revoke /items never returned 403 — revoked grant still served after respawn")
+	t.Fatal("post-revoke /items never returned 403, revoked grant still served after respawn")
 }
 
 // TestGate_GenerationBumpResetsCircuit proves the other half of item 6: a
@@ -732,7 +732,7 @@ func TestGate_GenerationBumpResetsCircuit(t *testing.T) {
 	overall := time.Now().Add(30 * time.Second)
 	for time.Now().Before(overall) {
 		// Wait for either Ready (child restarted from the previous crash)
-		// or the circuit to open — whichever happens first.
+		// or the circuit to open, whichever happens first.
 		ready := false
 		step := time.Now().Add(5 * time.Second)
 		for time.Now().Before(step) {
