@@ -130,6 +130,7 @@ gofastr migrate down 1
 gofastr migrate generate add_email --from=gofastr.yml   # write a versioned migration file from entity changes
 gofastr migrate force 7                  # mark version 7 cleanly applied
 gofastr migrate force 7 --not-applied    # treat version 7 as pending again
+gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carrying the stale owner-column key
 ```
 
 | Subcommand   | Effect                                                        |
@@ -139,6 +140,7 @@ gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 | `down N`     | Roll back the most recent `N` applied migrations in reverse.  |
 | `generate N` | Write a versioned, reversible migration file from entity changes. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
+| `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
 
 Flags & inputs:
 
@@ -152,6 +154,11 @@ Flags & inputs:
   yet; a no-op when it already exists.
 - `--not-applied` (`force` only) — remove the version from the tracking
   table (treat as pending) instead of marking it applied.
+- `--from=<yml>` (`generate`/`repair`) — the blueprint holding the entity
+  declarations; `repair` needs it to know each table's owner column.
+- `--apply` (`repair` only) — rebuild the reported tables instead of only
+  reporting them. The rebuild keeps every row, column, default, index, and
+  other constraint.
 - `--group=<name>` — scope `up`/`down`/`status` to one or more groups
   (repeat the flag); a single `--group` on `force` targets that group's
   version. `--group=default` addresses the default (ungrouped) set.
