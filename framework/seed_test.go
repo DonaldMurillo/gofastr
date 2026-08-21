@@ -515,7 +515,11 @@ func TestAppStart_WiresRunSeeds(t *testing.T) {
 	startErr := make(chan error, 1)
 	go func() { startErr <- app.Start(":0") }()
 
-	deadline := time.Now().Add(3 * time.Second)
+	// Generous deadline: the poll breaks the moment the row lands, so
+	// the budget is only ever spent on failure — 3s was a real 1-in-N
+	// CI flake when Start→migrate→seed ran on a box under full
+	// parallel-job load (v0.65.0's release gate caught exactly that).
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		var rows int
 		if err := db.QueryRow("SELECT COUNT(*) FROM startup_seeded").Scan(&rows); err == nil && rows == 1 {
