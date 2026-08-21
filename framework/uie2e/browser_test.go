@@ -1,4 +1,4 @@
-package framework_test
+package uie2e
 
 import (
 	"os"

@@ -9,7 +9,7 @@
 // followed → next page sees the user in context → scoped CRUD returns
 // only owned rows. The four scenarios below are the ones a security
 // auditor will re-prove first; failure here means a real-world bypass.
-package framework_test
+package uie2e
 
 import (
 	"context"
