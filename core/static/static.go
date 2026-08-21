@@ -42,13 +42,13 @@ type Config struct {
 	// DirListing is reserved for a future release.
 	// When implemented, enabling it will render an HTML directory listing
 	// instead of returning 404 for directory paths that lack an index file.
-	// Do not set this field — it is currently ignored.
+	// Do not set this field. It is currently ignored.
 	DirListing bool
 
 	// digests memoises content digests for THIS handler's FS so the ETag
 	// is not recomputed on every request. Handler allocates one per call;
 	// see digestKey for why it must not be shared across filesystems.
-	// Copying a Config shares the same cache, which is correct — the FS
+	// Copying a Config shares the same cache, which is correct. The FS
 	// travels with it.
 	digests *sync.Map
 }
@@ -78,7 +78,7 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
-		// Reject `..` segments on the *raw* URL — running path.Clean
+		// Reject `..` segments on the *raw* URL: running path.Clean
 		// first (the previous behaviour) silently collapses
 		// /static/../secret to /secret and lets the prefix check miss
 		// the traversal entirely.
@@ -97,7 +97,7 @@ func Handler(config Config) http.Handler {
 			reqPath = config.IndexFile
 		}
 
-		// Refuse to serve dotfiles (.env, .git, .htpasswd, etc.) — these
+		// Refuse to serve dotfiles (.env, .git, .htpasswd, etc.): these
 		// typically hold secrets or VCS metadata and must not be exposed
 		// via the public static handler.
 		if hasDotfileSegment(reqPath) {
@@ -107,7 +107,7 @@ func Handler(config Config) http.Handler {
 		// Refuse to serve well-known server-side config / metadata files
 		// (web.config, .htaccess equivalents, ASP.NET app files). Even
 		// when the backing FS is innocuous, an embed of a project tree
-		// can accidentally ship these — and probing for them is a
+		// can accidentally ship these, and probing for them is a
 		// standard fingerprinting step.
 		if hasForbiddenConfigSegment(reqPath) {
 			http.NotFound(w, r)
@@ -137,14 +137,14 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	f, err := config.FS.Open(name)
 	if err != nil {
 		// A genuinely missing file is a 404 (let the handler fall
-		// through). Any other open error — permission denied, I/O
-		// fault, unreadable backing store — is a server fault and must
+		// through). Any other open error, permission denied, I/O
+		// fault, unreadable backing store, is a server fault and must
 		// surface as 500, not be masked as "not found".
 		//
 		// fs.ErrInvalid is on the 404 side of that line: fs.ValidPath
 		// rejects any name that is not valid UTF-8, so os.DirFS and
 		// embed.FS answer ErrInvalid for a URL like /%ff. That is a
-		// malformed request, not a server fault — treating it as one let
+		// malformed request, not a server fault. Treating it as one let
 		// any client drive a 5xx with a two-character URL, and skipped
 		// the SPA fallback on the way.
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
@@ -169,7 +169,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 
 	// ETag from a cached content digest. On a cache miss the file is
 	// streamed through SHA-256 (never held in RAM); previously the whole
-	// file was read and re-hashed on every request, and capped at 32MB —
+	// file was read and re-hashed on every request, and capped at 32MB,
 	// which silently truncated larger files to a 200 with a
 	// Content-Length/ETag that matched the truncated body.
 	etag, consumed, err := fileETag(config.digests, f, stat, name)
@@ -213,7 +213,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	// fs.FS promises no seeking, so a conforming filesystem may hand back
 	// a read-only handle. Reopen in that case: skipping the rewind would
 	// copy from an exhausted reader and answer 200 with an EMPTY body
-	// under the full Content-Length — a corrupt response.
+	// under the full Content-Length, a corrupt response.
 	if rs, ok := f.(io.Seeker); ok {
 		if _, err := rs.Seek(0, io.SeekStart); err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -230,7 +230,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	}
 	if _, err := io.Copy(w, f); err != nil {
 		// Headers (and possibly part of the body) are already on the
-		// wire — the status can no longer change. A mid-stream write
+		// wire. The status can no longer change. A mid-stream write
 		// fault surfaces to the client as a truncated transfer, which
 		// is the only honest signal left.
 		return true

@@ -14,7 +14,7 @@ import (
 type requestContextKey struct{}
 
 // WithRequest returns a new context that carries r. The host should
-// call this exactly once per page render — typically inside the HTTP
+// call this exactly once per page render, typically inside the HTTP
 // handler that drives the screen.
 func WithRequest(ctx context.Context, r *http.Request) context.Context {
 	if r == nil {
@@ -24,7 +24,7 @@ func WithRequest(ctx context.Context, r *http.Request) context.Context {
 }
 
 // RequestFromContext returns the *http.Request associated with ctx, or
-// nil if none was set. Always nil-check the result — Load may run in
+// nil if none was set. Always nil-check the result, Load may run in
 // build-time SSG too, where there is no live request.
 func RequestFromContext(ctx context.Context) *http.Request {
 	r, _ := ctx.Value(requestContextKey{}).(*http.Request)

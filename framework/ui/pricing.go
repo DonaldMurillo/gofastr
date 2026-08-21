@@ -12,7 +12,7 @@ import (
 // A marketing pricing card: plan name, headline price + period, an
 // optional one-line pitch, a checked feature list, and a CTA. Compose
 // several inside a ui.Grid for a pricing page. Styling lives in the
-// design system (ui-pricing-card, tokens only) — callers ship no CSS.
+// design system (ui-pricing-card, tokens only). Callers ship no CSS.
 
 // PricingCardConfig configures one plan card.
 type PricingCardConfig struct {

@@ -244,7 +244,7 @@ func TestMCPTools_DispatchThroughRouter(t *testing.T) {
 	if err := RegisterEntityMCPTools(srv, ch, r); err != nil {
 		t.Fatalf("register mcp: %v", err)
 	}
-	// widgets has no OwnerField/Access/Public — MCP tools inherit the same
+	// widgets has no OwnerField/Access/Public. MCP tools inherit the same
 	// secure-by-default session gate as REST (issue #65), so this dispatch
 	// test needs an authenticated caller. See
 	// TestMCPTools_AnonymousCallsRejected for the negative case.
@@ -299,7 +299,7 @@ func TestMCPTools_DispatchThroughRouter(t *testing.T) {
 // tools dispatch through the same router + requireScope chain as REST, so an
 // anonymous caller (no Cookie/Authorization on the inbound MCP request, no
 // user in ctx) must be refused on every generated tool exactly like the
-// REST routes are. No per-tool mcp.Gated wrapping is needed — the shared
+// REST routes are. No per-tool mcp.Gated wrapping is needed, the shared
 // dispatch path (RegisterEntityMCPTools → runToolRequest → router.ServeHTTP)
 // is the enforcement point, see mcp.Gated's doc comment.
 func TestMCPTools_AnonymousCallsRejected(t *testing.T) {
@@ -310,7 +310,7 @@ func TestMCPTools_AnonymousCallsRejected(t *testing.T) {
 	if err := RegisterEntityMCPTools(srv, ch, r); err != nil {
 		t.Fatalf("register mcp: %v", err)
 	}
-	ctx := context.Background() // no user, no inbound request — anonymous
+	ctx := context.Background() // no user, no inbound request, anonymous
 
 	for _, call := range []struct {
 		tool   string

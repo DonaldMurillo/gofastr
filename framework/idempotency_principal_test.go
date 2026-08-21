@@ -16,7 +16,7 @@ import (
 func TestOwnerPrincipalKeysPerUser(t *testing.T) {
 	// The extractor is process-global. Restoring the PREVIOUS one, not
 	// nil, is the difference between a self-contained test and one that
-	// silently unauthenticates whatever runs after it — the same trap
+	// silently unauthenticates whatever runs after it, the same trap
 	// framework/crud's installSecurityOwnerExtractor documents.
 	prev := owner.GetExtractor()
 	owner.SetExtractor(func(ctx context.Context) (any, bool) {

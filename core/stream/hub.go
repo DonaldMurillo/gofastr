@@ -69,14 +69,14 @@ func (h *Hub) Run() {
 					cc.Close()
 				}(c)
 			}
-			// We don't wait — Stop returns immediately. Closers run
+			// We don't wait: Stop returns immediately. Closers run
 			// concurrently and finish at their own pace.
 			return
 
 		case msg := <-h.broadcast:
 			h.mu.RLock()
 			for conn := range h.connections {
-				// Skip conns that have already closed — their sendBuffer
+				// Skip conns that have already closed: their sendBuffer
 				// drains nothing and a dead conn would otherwise silently
 				// absorb broadcasts until GC. The closed-channel check
 				// races benignly with concurrent Close(): worst case we
@@ -87,11 +87,11 @@ func (h *Hub) Run() {
 					continue
 				default:
 				}
-				// Non-blocking send — drop if buffer full (backpressure)
+				// Non-blocking send: drop if buffer full (backpressure)
 				// or the conn closed between the check and the send.
 				select {
 				case <-conn.Closed():
-					// Conn closed mid-broadcast — drop without blocking.
+					// Conn closed mid-broadcast; drop without blocking.
 				case conn.sendBuffer <- msg:
 				default:
 					// Buffer full, drop the message for this connection
@@ -134,7 +134,7 @@ func (h *Hub) Unregister(conn *WebSocketConn) {
 }
 
 // Broadcast sends a message to all registered connections.
-// Non-blocking — if the hub's broadcast channel is full, the message is dropped.
+// Non-blocking: if the hub's broadcast channel is full, the message is dropped.
 func (h *Hub) Broadcast(msg []byte) {
 	if h.stopped.Load() {
 		return

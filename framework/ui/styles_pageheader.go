@@ -9,7 +9,7 @@ import (
 // component registry. The handle wraps every PageHeader render so
 // the runtime auto-loads /__gofastr/comp/ui-page-header.css on
 // first appearance, dedup'd globally. LoadAlways because page
-// headers appear on essentially every screen — paying the eager
+// headers appear on essentially every screen. Paying the eager
 // link saves a flash of unstyled chrome on first paint.
 var pageHeaderStyle = registry.RegisterStyle(
 	"ui-page-header",

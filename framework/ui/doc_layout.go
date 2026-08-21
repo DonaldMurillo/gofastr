@@ -1,10 +1,10 @@
 package ui
 
-// DocLayout — the structural skeleton of a documentation / article page: a
+// DocLayout is the structural skeleton of a documentation / article page: a
 // sticky left nav rail, a centered article column, and an optional right
 // table-of-contents rail, with breadcrumbs at the top and a prev/next pager
 // at the bottom. It owns the grid, the rails, the crumbs, and the pager; it
-// does NOT own the article's prose typography — markdown styling is an
+// does NOT own the article's prose typography. Markdown styling is an
 // editorial choice the consuming app keeps.
 //
 // Three shapes, picked automatically:
@@ -104,7 +104,7 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 				html.Span(html.TextConfig{Class: "ui-doc-layout__crumb-current"}, render.Text(c.Label)))
 		} else {
 			// Crumbs can be data-driven (doc titles/paths from content
-			// files) — drop unsafe href schemes; degrade to "#".
+			// files). Drop unsafe href schemes; degrade to "#".
 			href := urlsafe.CleanAnchor(c.Href)
 			if href == "" {
 				href = "#"
@@ -120,7 +120,7 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 // (callers point it at an index fallback); the next card is omitted when
 // NextHref is empty.
 func DocPrevNext(p DocPager) render.HTML {
-	// Pager hrefs can be data-driven — drop unsafe schemes; degrade to "#".
+	// Pager hrefs can be data-driven. Drop unsafe schemes; degrade to "#".
 	safeHref := func(u string) string {
 		if s := urlsafe.CleanAnchor(u); s != "" {
 			return s

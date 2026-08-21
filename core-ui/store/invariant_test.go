@@ -21,7 +21,7 @@ func extractText(s string) string {
 // TestInvariant_SeedEqualsStampedValue is the single-source-of-truth
 // guarantee: the value Bind stamps into the SSR DOM (after HTML-unescape,
 // i.e. what the browser sees) is identical to the value carried in the
-// seed (what JSON.parse yields). They can never drift — this is the
+// seed (what JSON.parse yields). They can never drift, this is the
 // structural fix for the Counter/Toggle "hardcoded 0 vs empty store" bug.
 func TestInvariant_SeedEqualsStampedValue(t *testing.T) {
 	cases := []struct {

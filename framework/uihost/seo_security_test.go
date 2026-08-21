@@ -131,7 +131,7 @@ func TestHeadHTML_NeutralisesAutofocusXSS(t *testing.T) {
 // dangerousURLs are scheme/escape combinations that have no business in
 // a typed SEO URL field. The typed helpers (WithCanonicalURL,
 // WithOpenGraph URL/Image, WithTwitterCard Image) flow into rendered
-// meta tags — a `javascript:` / `data:` value there is a phishing
+// meta tags. A `javascript:` / `data:` value there is a phishing
 // primitive once any consumer (preview crawler, share card) follows it.
 var dangerousURLs = []string{
 	"javascript:alert(1)",
@@ -162,7 +162,7 @@ func TestSEO_TypedURLsRejectUnsafeSchemes(t *testing.T) {
 }
 
 // seoBundleComp is a screen that returns a per-page SEO bundle from
-// dynamic (e.g. CMS / per-record) data — the path that bypasses the
+// dynamic (e.g. CMS / per-record) data, the path that bypasses the
 // sitewide WithCanonicalURL/WithOpenGraph allow-list.
 type seoBundleComp struct{ seo SEO }
 
@@ -181,7 +181,7 @@ func renderBundleSEOPage(t *testing.T, s SEO) string {
 }
 
 // Per-page typed SEO URL fields (the ScreenSEO bundle path) must enforce
-// the same scheme allow-list as the sitewide helpers — they flow into
+// the same scheme allow-list as the sitewide helpers. They flow into
 // the same crawler-followed meta/link tags.
 func TestSEO_BundleURLsRejectUnsafeSchemes(t *testing.T) {
 	checks := map[string]func(string) SEO{

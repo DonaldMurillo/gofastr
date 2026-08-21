@@ -17,7 +17,7 @@ import (
 // visit re-fetches; __gofastr.invalidate/refresh are the JS mirrors.
 //
 // Every screen renders "name N" where N is that URI's server fetch
-// count — a repeat of the same N proves a cache hit, a bump proves a
+// count, a repeat of the same N proves a cache hit, a bump proves a
 // re-fetch.
 
 // invalidationSrv serves a home page (links + mutation buttons), three
@@ -85,7 +85,7 @@ func invalidationSrv(t *testing.T) *httptest.Server {
 	// Mutation endpoints, one per header shape under test. Each returns
 	// a distinct body; the buttons carry data-fui-rpc-signal="mut", so
 	// the body lands in the #mutsig span AFTER the runtime processed
-	// the response headers — waiting for that text is a deterministic
+	// the response headers, waiting for that text is a deterministic
 	// "eviction already happened" barrier (no sleeps).
 	mut := func(header, body string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +145,7 @@ func invalidationSrv(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// waitText polls until sel's textContent equals want — robust against
+// waitText polls until sel's textContent equals want, tolerating
 // swap latency without fixed sleeps.
 func waitText(sel, want string) chromedp.Action {
 	return chromedp.Poll(
@@ -171,7 +171,7 @@ func TestInvalidateHeaderEviction(t *testing.T) {
 	// mutate clicks a mutation button and waits for the response body
 	// to land in the signal-bound #mutsig span. The runtime writes the
 	// signal AFTER processing response headers, so once the marker
-	// shows, X-Gofastr-Invalidate has been applied — a deterministic
+	// shows, X-Gofastr-Invalidate has been applied, a deterministic
 	// barrier where a fixed sleep flaked on slow CI runners.
 	mutate := func(id, marker string) []chromedp.Action {
 		return []chromedp.Action{
@@ -183,7 +183,7 @@ func TestInvalidateHeaderEviction(t *testing.T) {
 	steps := []chromedp.Action{
 		chromedp.Navigate(srv.URL + "/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		// #ready proves the DOM, not the runtime — on a slow runner the
+		// #ready proves the DOM, not the runtime, on a slow runner the
 		// first click can beat hydration and fall back to a hard load,
 		// desyncing the fetch counters. Wait for the router to exist.
 		chromedp.Poll(`window.__gofastr && typeof window.__gofastr.navigate === 'function'`,
@@ -209,7 +209,7 @@ func TestInvalidateHeaderEviction(t *testing.T) {
 	// Wildcard clears everything.
 	steps = append(steps, mutate("mut-all", "did-all")...)
 	steps = append(steps, visit("detail", "detail 2")...)
-	// Non-2xx: the header on a failed mutation is ignored — detail
+	// Non-2xx: the header on a failed mutation is ignored, detail
 	// still serves from cache. The error path writes {ok:false,…} into
 	// the signal, so waiting for the marker to leave "did-all" is the
 	// barrier.
@@ -228,7 +228,7 @@ func TestInvalidateHeaderEviction(t *testing.T) {
 		chromedp.Click("#home", chromedp.ByID),
 		chromedp.WaitVisible("#tog", chromedp.ByID),
 	)
-	// ToggleAction is a mutation surface too — its commit consumes the
+	// ToggleAction is a mutation surface too, its commit consumes the
 	// header before setState('committed'), so data-state flipping is
 	// the barrier.
 	steps = append(steps,
@@ -250,7 +250,7 @@ func TestInvalidateJSAndRefresh(t *testing.T) {
 	var n int
 	var search string
 	if err := chromedp.Run(ctx,
-		// Land directly on a query-bearing URL — the initial screen must
+		// Land directly on a query-bearing URL, the initial screen must
 		// be cached under pathname+search.
 		chromedp.Navigate(srv.URL+"/entry?x=1"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -268,7 +268,7 @@ func TestInvalidateJSAndRefresh(t *testing.T) {
 		chromedp.Evaluate(`(window.__gofastr.invalidate('/entry?x=1'), 1)`, &n),
 		chromedp.Click("#toentry", chromedp.ByID),
 		waitText("#v", "entry 2"),
-		// refresh(): re-render the current screen in place — the URL,
+		// refresh(): re-render the current screen in place, the URL,
 		// including a #fragment, must survive untouched.
 		chromedp.Evaluate(`(location.hash = '#keep', window.__gofastr.refresh(), 1)`, &n),
 		waitText("#v", "entry 3"),

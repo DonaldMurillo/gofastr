@@ -131,7 +131,7 @@ func resolveUtilityClass(class string, theme Theme) string {
 		return props
 	}
 
-	// Font size utilities — `text-base`, `text-lg`, etc. → font-size token.
+	// Font size utilities, `text-base`, `text-lg`, etc. → font-size token.
 	if strings.HasPrefix(class, "text-") {
 		token := strings.TrimPrefix(class, "text-")
 		if isFontSizeToken(token) {
@@ -260,7 +260,7 @@ func tokenOrPx(token, category string) string {
 	return fmt.Sprintf("var(--%s-%s)", category, token)
 }
 
-// fontWeightMap — keyword → numeric weight.
+// fontWeightMap: keyword → numeric weight.
 func fontWeightMap() map[string]string {
 	return map[string]string{
 		"normal":   "400",
@@ -270,7 +270,7 @@ func fontWeightMap() map[string]string {
 	}
 }
 
-// isFontSizeToken — known typography-scale names.
+// isFontSizeToken: known typography-scale names.
 func isFontSizeToken(token string) bool {
 	switch token {
 	case "xs", "sm", "base", "lg", "xl", "2xl", "3xl":
@@ -279,7 +279,7 @@ func isFontSizeToken(token string) bool {
 	return false
 }
 
-// isSpacingToken — known spacing-scale names.
+// isSpacingToken: known spacing-scale names.
 func isSpacingToken(token string) bool {
 	switch token {
 	case "xs", "sm", "md", "lg", "xl", "2xl", "3xl":

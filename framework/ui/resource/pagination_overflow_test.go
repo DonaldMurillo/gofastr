@@ -12,7 +12,7 @@ import (
 // TestTableHugePageOffsetGuarded: the admin table computes
 // Offset: (page-1)*limit from ?p= with no upper bound on page. For
 // page = 2^62+2 and a page size of 4, (page-1)*limit wraps int
-// arithmetic to +4 — the grid silently renders the second window while
+// arithmetic to +4. The grid silently renders the second window while
 // its pager claims the astronomically-large page. The offset handed to
 // ListAll must be overflow-guarded (0), matching pagination's guard.
 func TestTableHugePageOffsetGuarded(t *testing.T) {

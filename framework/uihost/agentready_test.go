@@ -155,7 +155,7 @@ func TestAgentCard_JSON(t *testing.T) {
 	if doc["version"] != "2.0.0" {
 		t.Errorf("version: %v", doc["version"])
 	}
-	// v1.0 has NO top-level url — the service endpoint lives ONLY in
+	// v1.0 has NO top-level url. The service endpoint lives ONLY in
 	// supportedInterfaces[].url (camelCase per ADR-001).
 	if _, ok := doc["url"]; ok {
 		t.Errorf("card must not carry a top-level url in v1.0: %v", doc["url"])
@@ -258,7 +258,7 @@ func TestRobots_AIBotAllow_InheritsHostDisallow(t *testing.T) {
 		t.Fatalf("GPTBot does not inherit the host Disallow (shadowing bug):\n%s", body)
 	}
 	// A blank line between GPTBot and the Disallow would mean a separate
-	// group — the shadowing bug. Same group = only User-agent lines between.
+	// group, the shadowing bug. Same group = only User-agent lines between.
 	if strings.Contains(rest[:disallowIdx], "\n\n") {
 		t.Errorf("blank line splits GPTBot into its own group (shadowing):\n%s", body)
 	}
@@ -351,7 +351,7 @@ func TestMarkdownAlternate(t *testing.T) {
 	}
 }
 
-// mdPageScreen is a minimal Component for markdown-negotiation tests —
+// mdPageScreen is a minimal Component for markdown-negotiation tests:
 // it only needs to resolve via Router.Resolve; ScreenLLMMD derives
 // markdown from screen metadata, not Render().
 type mdPageScreen struct{}
@@ -415,7 +415,7 @@ func TestDefaultLLMsSections_LLMMDPublic(t *testing.T) {
 }
 
 func TestDefaultLLMsSections_NoneWhenPrivate(t *testing.T) {
-	// Without WithPublicLLMMD there are no default links — only title+summary.
+	// Without WithPublicLLMMD there are no default links, only title+summary.
 	ds := newAgentReadyHost(WithLLMsTxt("T", "s", nil))
 	out := renderLLMsTxt(&llmsCfg{title: "T", summary: "s"}, ds)
 	if strings.Contains(out, "## ") {

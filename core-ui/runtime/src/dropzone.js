@@ -1,4 +1,4 @@
-// FileDropzone runtime module — adds two augmentations on top of the
+// FileDropzone runtime module, adds two augmentations on top of the
 // existing data-fui-fileupload drag-drop hook:
 //
 //   1. Filename display: after change on a file input inside a

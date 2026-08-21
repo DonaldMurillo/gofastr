@@ -74,7 +74,7 @@ func TestXSS_TagSanitizesUserContent(t *testing.T) {
 func TestXSS_TagNameInjection(t *testing.T) {
 	malicious := `div onclick="alert(1)"`
 	got := string(Tag(malicious, nil, Text("hello")))
-	// The tag name is not validated — this test documents the behavior.
+	// The tag name is not validated. This test documents the behavior.
 	if strings.Contains(got, `onclick="alert(1)"`) {
 		t.Errorf("SECURITY: [xss] Tag(%q, ...) produced %q — tag name injection created an event handler attribute. Attack: tag name breakout.", malicious, got)
 	}

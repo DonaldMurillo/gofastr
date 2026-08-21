@@ -9,7 +9,7 @@ import (
 
 // projectFromRequest reads the `?fields=` query parameter and returns the
 // validated subset of visible columns to SELECT. The primary key is always
-// included regardless of whether the client asked for it — clients need it
+// included regardless of whether the client asked for it, clients need it
 // to do follow-up reads. Unknown names yield an error so callers can return
 // 400 (silent ignoring would mask typos).
 //

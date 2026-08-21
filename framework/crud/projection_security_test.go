@@ -74,7 +74,7 @@ func TestProjection_WildcardDoesNotBypassOwnerScope(t *testing.T) {
 		{"id": "doc-2", "user_id": "bob", "title": "Bob Doc"},
 	})
 
-	// Anonymous request — should be rejected regardless of ?fields=
+	// Anonymous request, should be rejected regardless of ?fields=
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/documents?fields=title",

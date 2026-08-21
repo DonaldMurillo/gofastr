@@ -177,7 +177,7 @@ loop:
 	// The persistence goroutine flushes asynchronously. Wait for the
 	// event the assertion needs rather than for a fixed interval: 150ms
 	// was always enough on a developer machine and intermittently not
-	// enough on a loaded CI runner — the same fixed-sleep-vs-async race
+	// enough on a loaded CI runner, the same fixed-sleep-vs-async race
 	// the WS reader's pacing deadline had. Polling for "any event" would
 	// keep a narrower version of the race: a partial flush lands
 	// TurnStarted before the TextDelta.

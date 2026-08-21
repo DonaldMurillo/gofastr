@@ -72,7 +72,7 @@ func (i *Issuer) WithClock(now func() time.Time) *Issuer {
 // back to Confirm, plus the chosen claim set (the issuer may have
 // added defaults like JTI and exp).
 //
-// If channel is nil, returns ErrNoChannel — the issuer refuses to
+// If channel is nil, returns ErrNoChannel, the issuer refuses to
 // proceed.
 func (i *Issuer) Begin(ctx context.Context, claims Claims, desc string) (mintID string, err error) {
 	if i.channel == nil {
@@ -88,7 +88,7 @@ func (i *Issuer) Begin(ctx context.Context, claims Claims, desc string) (mintID 
 	if err != nil {
 		return "", err
 	}
-	mintID = string(ids.NewJTI()) // reuse ULID space — internal identifier
+	mintID = string(ids.NewJTI()) // reuse ULID space, internal identifier
 	i.mu.Lock()
 	i.pending[mintID] = pendingMint{
 		code:    code,
@@ -147,7 +147,7 @@ func generateCode() (string, error) {
 
 // Errors surfaced as user-facing strings per § User-facing errors.
 var (
-	// No --auth-token-file flag exists (yet) — do not point users at it.
+	// No --auth-token-file flag exists (yet), do not point users at it.
 	ErrNoChannel    = errors.New("auth: token issuance requires an interactive confirmation channel; mint the token from an interactive harness session and reuse it for headless setups")
 	ErrUnknownMint  = errors.New("auth: unknown mint ID")
 	ErrCodeMismatch = errors.New("auth: confirmation code mismatch")

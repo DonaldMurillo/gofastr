@@ -53,7 +53,7 @@ func TestColorPickerDisabledClassAndAttr(t *testing.T) {
 	}
 }
 
-// The swatch renders BEFORE the label — control on the left, name on the
+// The swatch renders BEFORE the label: control on the left, name on the
 // right, the same reading order as Checkbox. A swap back to label-first
 // changes every consumer's layout silently.
 func TestColorPickerSwatchPrecedesLabel(t *testing.T) {

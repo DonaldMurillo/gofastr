@@ -22,7 +22,7 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 			if rec := recover(); rec != nil {
 				// The raw panic value (driver strings, internal paths,
 				// wrapped DB errors) must stay out of the client body.
-				// Log it server-side and return a fixed generic 500 —
+				// Log it server-side and return a fixed generic 500,
 				// mirroring middleware.RecoveryFn. The value/stack are
 				// truncated so a giant panic can't drive a multi-MB log.
 				slog.Default().Error("panic recovered in handler",

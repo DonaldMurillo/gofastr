@@ -89,7 +89,7 @@ func CORS(cfg CORSConfig) Middleware {
 			}
 
 			// SECURITY: wildcard ACAO is incompatible with credentialed
-			// responses — browsers reject the combo. Defer the final check
+			// responses; browsers reject the combo. Defer the final check
 			// so it also runs while a panicking handler unwinds to Recovery.
 			sw := stripCredsWriter{ResponseWriter: w}
 			defer sw.stripCredentialsForWildcard()
@@ -105,9 +105,9 @@ func CORS(cfg CORSConfig) Middleware {
 //
 // It forwards Flush and Hijack like every other wrapper in this package
 // (metrics, logging, tracing, timeout). It did not, so behind a wildcard CORS
-// policy the SSE bus lost its Flusher — and the framework's SSE constructor
+// policy the SSE bus lost its Flusher, and the framework's SSE constructor
 // type-asserts http.Flusher, making that a hard failure rather than degraded
-// buffering — while a WebSocket upgrade lost its Hijacker.
+// buffering, while a WebSocket upgrade lost its Hijacker.
 type stripCredsWriter struct {
 	http.ResponseWriter
 }
@@ -139,7 +139,7 @@ func (s stripCredsWriter) Flush() {
 
 // Hijack forwards to the underlying writer so a WebSocket upgrade behind a
 // wildcard CORS policy still works. Once hijacked the connection is raw and
-// this wrapper no longer mediates it — which is correct: there are no HTTP
+// this wrapper no longer mediates it, which is correct: there are no HTTP
 // response headers left to strip.
 func (s stripCredsWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := s.ResponseWriter.(http.Hijacker); ok {

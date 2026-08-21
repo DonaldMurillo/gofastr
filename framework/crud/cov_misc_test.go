@@ -283,7 +283,7 @@ func TestInTx_AmbientTransaction(t *testing.T) {
 	if err != nil || !ran {
 		t.Fatalf("inTx ambient err=%v ran=%v", err, ran)
 	}
-	// Tx still open — a query must succeed against it.
+	// Tx still open, a query must succeed against it.
 	if _, err := tx.Exec(`SELECT 1`); err != nil {
 		t.Errorf("ambient tx was closed by inTx: %v", err)
 	}

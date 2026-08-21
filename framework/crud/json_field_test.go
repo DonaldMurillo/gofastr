@@ -54,7 +54,7 @@ func dataField(t *testing.T, raw, key string) any {
 // A schema.JSON field carrying a decoded object must be writable. The
 // handler used to bind the Go map straight to the driver, which
 // database/sql rejects ("unsupported type map[string]interface {}, a
-// map") — a 500 on every create that populated the field, and the only
+// map"), a 500 on every create that populated the field, and the only
 // supported way to configure such a column.
 func TestCreateWritesJSONObject(t *testing.T) {
 	ch := jsonFieldHandler(t)
@@ -183,7 +183,7 @@ func TestJSONStringInputStaysJSONText(t *testing.T) {
 
 // An eager-loaded relation row goes through the include loaders rather
 // than the handler's own scanner, and it belongs to a different entity.
-// Its JSON columns still have to arrive parsed — otherwise a field is an
+// Its JSON columns still have to arrive parsed, otherwise a field is an
 // object on GET /comments and a string one relation hop away.
 func TestJSONFieldDecodedThroughInclude(t *testing.T) {
 	db := setupDB(t,
@@ -318,7 +318,7 @@ func TestJSONDecodeNoOpsOnEmptyInput(t *testing.T) {
 }
 
 // The list path scans through the keyed/pooled scanners rather than
-// ch.scanMany, so it decodes its own JSON columns — a separate branch
+// ch.scanMany, so it decodes its own JSON columns, a separate branch
 // from the single-record read.
 func TestListDecodesJSONField(t *testing.T) {
 	ch := jsonFieldHandler(t)

@@ -44,8 +44,8 @@ func (sl *Slice[T]) Global() *Slice[T] {
 	return sl
 }
 
-// Seed sets the per-request authoritative value (called by the producer
-// — a screen loader or island — at render time). No-op if the request
+// Seed sets the per-request authoritative value (called by the producer,
+// a screen loader or island, at render time). No-op if the request
 // context carries no value bag (i.e. rendered outside the UI host).
 func (sl *Slice[T]) Seed(ctx context.Context, v T) {
 	if b := valuesFrom(ctx); b != nil {
@@ -94,7 +94,7 @@ func (sl *Slice[T]) applyComputed(a map[string]string) {
 // BindAttr binds the slice value to an HTML attribute (attr mode),
 // stamping the resolved value into that attribute. URL-bearing attrs are
 // guarded against dangerous schemes both at SSR (sanitizeSignalURL below)
-// AND on every client-side update by the runtime (_isUnsafeSignalUrl) —
+// AND on every client-side update by the runtime (_isUnsafeSignalUrl),
 // defense-in-depth parity, because a producer may Seed a request-
 // influenced URL into a URL-bound slice.
 func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs map[string]string) render.HTML {
@@ -147,7 +147,7 @@ func sanitizeSignalURL(htmlAttr, value string) string {
 }
 
 // stripURLControlBytes removes every ASCII whitespace and C0 control byte
-// (0x00–0x1f) from s — the chars browsers strip during URL parsing.
+// (0x00–0x1f) from s, the chars browsers strip during URL parsing.
 func stripURLControlBytes(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -160,7 +160,7 @@ func stripURLControlBytes(s string) string {
 	return b.String()
 }
 
-// BindHTML binds in html mode (innerHTML). TRUSTED VALUES ONLY — the
+// BindHTML binds in html mode (innerHTML). TRUSTED VALUES ONLY, the
 // value is written without escaping. Use Bind (text mode) for any value
 // that can be influenced by users.
 func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]string) render.HTML {
@@ -172,7 +172,7 @@ func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]s
 
 // Publish connects a producer's RPC to this slice: on a 2xx response the
 // runtime treats the response body as the new signal value and fans it
-// out to every consumer client-side — no server re-render of consumers.
+// out to every consumer client-side, no server re-render of consumers.
 // Sugar over interactive.SetSignal(sl.Name()).
 //
 //	interactive.OnClick(btn, company.Publish(interactive.Post("/rename")))

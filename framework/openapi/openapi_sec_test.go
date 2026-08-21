@@ -188,7 +188,7 @@ func TestMultiTenantOpsDeclare401(t *testing.T) {
 }
 
 // An unguarded entity (no OwnerField, not MultiTenant) must NOT gain a
-// spurious 401 — the fix must be scoped to gated entities only.
+// spurious 401, the fix must be scoped to gated entities only.
 func TestUnguardedOpsHaveNo401(t *testing.T) {
 	e := entity.Define("public_posts", entity.EntityConfig{Table: "public_posts", Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String},
@@ -256,7 +256,7 @@ func TestJSONFieldOmitsRangeFilters(t *testing.T) {
 //      batch and _events ops must carry them too on gated entities.
 // ---------------------------------------------------------------------------
 
-// rbacOnly has no OwnerField or MultiTenant — only Access.
+// rbacOnly has no OwnerField or MultiTenant, only Access.
 func rbacOnlyEntity() *entity.Entity {
 	return entity.Define("rbac_items", entity.EntityConfig{Table: "rbac_items",
 		Fields: []schema.Field{
@@ -334,7 +334,7 @@ func TestUnguardedBatchAndSSEHaveNo401(t *testing.T) {
 }
 
 // Comparable fields (Int/Timestamp) must KEEP their range filters, and
-// text fields must keep _like — the gate must not over-strip.
+// text fields must keep _like, the gate must not over-strip.
 func TestComparableFieldsKeepRangeFilters(t *testing.T) {
 	e := entity.Define("metrics", entity.EntityConfig{
 		Table: "metrics",

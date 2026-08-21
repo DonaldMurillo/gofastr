@@ -1,7 +1,7 @@
 // Package factory provides Rails-style fixture / factory helpers for
 // GoFastr tests and dev-time seeders. Each Factory binds to one
-// entity's CRUD handler and produces fresh row bodies — typically by
-// layering caller overrides on top of a base function — so test setup
+// entity's CRUD handler and produces fresh row bodies, typically by
+// layering caller overrides on top of a base function, so test setup
 // reads "make me a user with admin=true" instead of "construct a map
 // with every required field by hand."
 //
@@ -38,15 +38,15 @@ import (
 )
 
 // EntityRegistry is the minimal surface the factory needs from the
-// framework's registry — a way to look up an entity by name. The
+// framework's registry, a way to look up an entity by name. The
 // factory accepts the interface so tests can supply a hand-rolled
 // registry; in production this is the App.Registry.
 type EntityRegistry interface {
 	Get(name string) (*entity.Entity, error)
 }
 
-// BaseFunc returns a fresh body map. Called for each Create / Build
-// — returning a new map each time keeps tests independent of each
+// BaseFunc returns a fresh body map. Called for each Create / Build,
+// returning a new map each time keeps tests independent of each
 // other.
 type BaseFunc func() map[string]any
 
@@ -72,7 +72,7 @@ func WithHandler(h *crud.CrudHandler) Option {
 }
 
 // New constructs a Factory bound to the named entity in the registry.
-// The base function MUST return a fresh map per call — sharing a map
+// The base function MUST return a fresh map per call, sharing a map
 // would let later overrides leak into earlier factory results.
 //
 // Returns an error when the entity is unknown or has no DB attached.
@@ -101,7 +101,7 @@ func New(reg EntityRegistry, entityName string, base BaseFunc, opts ...Option) (
 	return f, nil
 }
 
-// Build returns the row body that Create would insert — useful when
+// Build returns the row body that Create would insert, useful when
 // a test wants to assert on the request shape without actually
 // hitting the database. Overrides apply left-to-right; later
 // overrides win on key conflict.
@@ -128,7 +128,7 @@ func (f *Factory) Create(ctx context.Context, overrides ...map[string]any) (map[
 
 // CreateMany inserts n rows. The optional perIndex callback runs
 // once per row and its return is merged on top of base + caller
-// overrides — handy when each row needs a unique value derived from
+// overrides, handy when each row needs a unique value derived from
 // its index (e.g. ordering tests).
 func (f *Factory) CreateMany(ctx context.Context, n int, perIndex func(i int) map[string]any) ([]map[string]any, error) {
 	if n <= 0 {

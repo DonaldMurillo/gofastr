@@ -49,7 +49,7 @@ func policyEmbedFixture(t *testing.T, policy app.Policy) embedFixture {
 //
 // This is the one place an app's own authorization decision meets the embed
 // path: the surface is granted and the subject resolves, so identity and scope
-// checks all pass — and then the screen's policy says "not this viewer". If the
+// checks all pass, and then the screen's policy says "not this viewer". If the
 // handler ignores that decision and falls through to res.HTML, content the
 // policy already denied is written into the frame with a 200. DecisionRedirect
 // is how "complete onboarding" / "subscription lapsed" gates are expressed, and

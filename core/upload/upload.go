@@ -31,11 +31,11 @@ const multipartFramingSlack = 4 << 10 // 4 KiB
 // UniqueFilename derives a collision-proof storage name from a client
 // filename: the sanitized base name, a UnixNano timestamp, and 16 hex
 // chars of crypto/rand. The random component is the real uniqueness
-// guarantee — the timestamp is retained only for human-readable
+// guarantee: the timestamp is retained only for human-readable
 // ordering, because two requests landing on the same clock tick must
 // still map to different objects (Storage.Save implementations open
 // with O_TRUNC, so a colliding key silently overwrites). This is the
-// single unique-key generator the framework's upload surfaces share —
+// single unique-key generator the framework's upload surfaces share:
 // framework/file.GenerateFilePath builds its entity/field-scoped paths
 // on top of it; do not grow a second scheme.
 //
@@ -56,7 +56,7 @@ func UniqueFilename(filename string) string {
 // error, and always fills b entirely", crashing the program irrecoverably
 // if the OS source fails. So there is no reachable state where the suffix
 // is missing and two requests on the same clock tick could collide into an
-// O_TRUNC clobber — which is the whole reason the suffix exists.
+// O_TRUNC clobber, which is the whole reason the suffix exists.
 func randomSuffix() string {
 	var b [8]byte
 	rand.Read(b[:])
@@ -156,7 +156,7 @@ func Handler(cfg Config) http.HandlerFunc {
 		// Sniff the actual content type so stored metadata reflects what
 		// the file *is*, not what the client claimed in the multipart
 		// header. A misleading Content-Type / extension is a standard
-		// MIME-spoofing primitive (HTML uploaded as image/png, etc.) —
+		// MIME-spoofing primitive (HTML uploaded as image/png, etc.):
 		// stored metadata must never echo the attacker-controlled value
 		// back to downstream consumers.
 		detectedMime, err := sniffContentType(file)
@@ -167,7 +167,7 @@ func Handler(cfg Config) http.HandlerFunc {
 
 		// Storage key: the sanitized filename PLUS a unique timestamp/rand
 		// component. The bare sanitized filename keyed objects per-client-
-		// name, and Storage.Save implementations open O_TRUNC — two users
+		// name, and Storage.Save implementations open O_TRUNC: two users
 		// uploading report.txt silently overwrote each other. UniqueFilename
 		// is the same generator the auto-CRUD path builds on
 		// (framework/file.GenerateFilePath).
@@ -196,7 +196,7 @@ func Handler(cfg Config) http.HandlerFunc {
 // sniffContentType reads the first 512 bytes of f to detect its content
 // type via [http.DetectContentType], then rewinds f so the storage
 // backend reads the full payload. The detected type is what the metadata
-// must record — never the attacker-controlled multipart Content-Type.
+// must record, never the attacker-controlled multipart Content-Type.
 func sniffContentType(f io.ReadSeeker) (string, error) {
 	buf := make([]byte, 512)
 	n, err := io.ReadFull(f, buf)

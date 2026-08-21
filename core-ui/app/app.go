@@ -46,7 +46,7 @@ func NewApp(name string) *App {
 // WithTheme sets the application theme and returns the app for
 // chaining. Auto-fills missing token Names from struct-field paths
 // (Colors.Primary → "primary", Colors.PrimaryFg → "primary-fg"),
-// then validates — passing a partially-populated theme (e.g. a
+// then validates, passing a partially-populated theme (e.g. a
 // Color with empty Value) panics with the field path naming the
 // missing piece. This catches "silently broken styling" failures at
 // startup, not at the first page render.
@@ -60,7 +60,7 @@ func (a *App) WithTheme(theme style.Theme) *App {
 // WithLang sets the document language (BCP-47 tag, e.g. "en", "fr", "pt-BR")
 // and returns the app for chaining. It becomes the <html lang="…"> attribute so
 // assistive tech announces the page in the right language (WCAG 3.1.1). An empty
-// tag is rejected in favor of the "en" default — a bad tag is worse than the
+// tag is rejected in favor of the "en" default, a bad tag is worse than the
 // default, which is at least correct for English content.
 func (a *App) WithLang(lang string) *App {
 	a.Lang = lang
@@ -92,7 +92,7 @@ func (a *App) RegisterScreen(screen *Screen, layout *Layout) {
 
 // Register adds a screen to the app by reading metadata from the component
 // if it implements ScreenTitler, ScreenDescriber, or ScreenTyper. This is
-// the preferred registration API — the component declares its own metadata.
+// the preferred registration API, the component declares its own metadata.
 //
 //	application.Register("/", &HomeScreen{})  // HomeScreen implements ScreenTitler
 //
@@ -108,7 +108,7 @@ func (a *App) Register(path string, comp component.Component, layout *Layout, op
 	}
 
 	// Read metadata from individual interfaces when implemented.
-	// Each is detected independently — a component can implement
+	// Each is detected independently, a component can implement
 	// ScreenTitler alone, or ScreenTitler + ScreenDescriber, etc.
 	if titler, ok := comp.(ScreenTitler); ok {
 		screen.Title = titler.ScreenTitle()
@@ -135,7 +135,7 @@ type RouteEntry struct {
 	Description string
 	// Layouts is the route's resolved layout chain as layer keys, outermost
 	// → innermost ("l:<name>" for plain layers, "g:<prefix>" for screen-group
-	// layers — see LayoutLayer.Key). The runtime compares it positionally
+	// layers. See LayoutLayer.Key). The runtime compares it positionally
 	// against the DOM's data-fui-layout-key spine to find the deepest layer
 	// shared with a navigation target, swapping only below it. Empty when
 	// the route has no layout. An unnamed layer contributes "" to keep depth
@@ -156,12 +156,12 @@ type RouteEntry struct {
 	// Intercept is set when the screen presents as an overlay for soft
 	// navigations from a declared origin (see InterceptFrom). The route
 	// manifest carries it so the runtime knows, without asking, which
-	// links are worth diverting — and loads the intercept module only
+	// links are worth diverting, and loads the intercept module only
 	// when at least one route wants it. Nil for ordinary screens.
 	Intercept *Intercept
 }
 
-// Routes returns every registered route — screens and redirects — as
+// Routes returns every registered route, screens and redirects, as
 // RouteEntry slices. Redirect entries carry a non-empty RedirectTo and
 // have no screen; page-rendering consumers must skip them.
 func (a *App) Routes() []RouteEntry {
@@ -169,7 +169,7 @@ func (a *App) Routes() []RouteEntry {
 	for _, path := range a.Router.Paths() {
 		// ScreenByPattern, NOT Resolve: path is a registered PATTERN, and
 		// a constrained pattern's own text fails its constraint at
-		// resolve time ("/admin/:id:int" is not numeric) — Resolve here
+		// resolve time ("/admin/:id:int" is not numeric), Resolve here
 		// silently dropped constrained routes from the manifest, export,
 		// sitemap, and llm.md.
 		screen, ok := a.Router.ScreenByPattern(path)
@@ -193,7 +193,7 @@ func (a *App) Routes() []RouteEntry {
 			Intercept:   screen.Intercept,
 		})
 	}
-	// Map iteration is randomized — sort exact redirects so Routes()
+	// Map iteration is randomized, sort exact redirects so Routes()
 	// (and everything derived from it: the route manifest JSON, the
 	// static export walk) is deterministic across processes.
 	exactFroms := make([]string, 0, len(a.Router.exactRedir))
@@ -219,7 +219,7 @@ func (a *App) SetDefaultLayout(layout *Layout) {
 }
 
 // RenderScreenRaw is a policy-bypassing convenience over
-// Router.RenderRaw. INTENDED FOR INTERNAL/SSG USE ONLY — HTTP
+// Router.RenderRaw. INTENDED FOR INTERNAL/SSG USE ONLY, HTTP
 // handlers must use RenderPageResult so the Policy chain is
 // honored (auth gating, RenderAlt, Redirect, Block).
 func (a *App) RenderScreenRaw(path string) (render.HTML, error) {
@@ -267,7 +267,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	// Evaluate policy chain BEFORE Load — a Redirect/Block decision
+	// Evaluate policy chain BEFORE Load, a Redirect/Block decision
 	// short-circuits without touching the DB.
 	decision := ResolvePolicy(ctx, screen)
 	switch decision.Kind {
@@ -306,7 +306,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	}
 
 	// Render the component directly for ScreenPage when the resolved layout
-	// chain is non-empty — layer 0 provides the <main> wrapper. For other
+	// chain is non-empty, layer 0 provides the <main> wrapper. For other
 	// screen types (drawer, sheet, dialog), always use screen.Render() which
 	// adds proper ARIA wrapping and skip layouts entirely since they are
 	// overlays.
@@ -327,7 +327,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 			wrapped = content
 		}
 	} else {
-		// Drawer/sheet/dialog — render with ARIA wrapping, skip layout
+		// Drawer/sheet/dialog: render with ARIA wrapping, skip layout
 		content = renderComponentInScreen(ctx, screen, comp)
 		wrapped = content
 	}
@@ -404,7 +404,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 // <html>/<head>/<body>). Used for client-side navigation where the layout
 // is already in the DOM. Runs the same param-injection / DI / Load pipeline
 // as RenderPage, including policy evaluation. Returns an error for
-// Redirect/Block decisions — partials cannot express those; use
+// Redirect/Block decisions, partials cannot express those; use
 // RenderPartialResult instead.
 func (a *App) RenderPartial(ctx context.Context, path string) (render.HTML, error) {
 	res, err := a.RenderPartialResult(ctx, path)
@@ -438,7 +438,7 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 // shared layer; the client swaps the content cell marked
 // data-fui-layout-slot=SwapLayer.
 //
-// Layers are compared by *Layout pointer identity plus group prefix — the
+// Layers are compared by *Layout pointer identity plus group prefix, the
 // same identities that produced the layer keys in the route manifest, so
 // the server and client always agree on the boundary. When fromPath is
 // unknown, or the chains share no addressable layer, the result is
@@ -484,7 +484,7 @@ func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string
 }
 
 // RenderOverlayResult renders the screen at path as an intercepted
-// overlay — the same component, the same Load, wrapped in `as` instead
+// overlay, the same component, the same Load, wrapped in `as` instead
 // of the screen's own type.
 //
 // Callers must have already asked Router.InterceptFor whether this
@@ -495,7 +495,7 @@ func (a *App) RenderOverlayResult(ctx context.Context, path string, as ScreenTyp
 }
 
 // renderPartial is the shared body. overlay, when non-nil, replaces the
-// screen's registered type for wrapping only — routing, policy, params,
+// screen's registered type for wrapping only, routing, policy, params,
 // DI, and Load are identical, so an intercepted render can never diverge
 // from the canonical one in anything but its outermost element.
 func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenType) (RenderResult, error) {
@@ -512,7 +512,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
 	}
 
-	// Per-request component instance — see RenderPageResult for rationale.
+	// Per-request component instance. See RenderPageResult for rationale.
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
@@ -544,7 +544,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 		if renderErr != nil {
 			return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 		}
-		// Same article wrapping as the full-page path — without it, SPA
+		// Same article wrapping as the full-page path, without it, SPA
 		// navigation silently dropped the <article> element Reader Mode
 		// keys on, so an article page lost reader support after the first
 		// client-side visit.
@@ -556,7 +556,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 	out := RenderResult{HTML: body, Component: comp}
 	// Effective title AFTER Load: dynamic routes register with an empty
 	// (or generic) title, so the partial path must re-read it from the
-	// loaded instance — same as the full-page path's <title> build.
+	// loaded instance, same as the full-page path's <title> build.
 	if t, ok := comp.(ScreenTitler); ok {
 		out.Title = t.ScreenTitle()
 	}

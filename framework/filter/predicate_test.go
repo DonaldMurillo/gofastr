@@ -94,7 +94,7 @@ func TestWhereUnknownFieldRejected(t *testing.T) {
 }
 
 func TestWhereHiddenFieldRejected(t *testing.T) {
-	// A Hidden field must be indistinguishable from unknown — no predicate,
+	// A Hidden field must be indistinguishable from unknown, no predicate,
 	// or it becomes a value-disclosure oracle.
 	if _, err := ParseWhere(`{"field":"secret","op":"like","value":"a"}`, predFields()); err == nil {
 		t.Fatal("Hidden field must be rejected in a where tree")

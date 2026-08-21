@@ -6,7 +6,7 @@ import (
 )
 
 // Evaluation is one permission check that actually happened, whatever the
-// verdict. A denial proves the boundary exists as well as a grant does —
+// verdict. A denial proves the boundary exists as well as a grant does,
 // arguably better, since the interesting failure is a check that is never
 // reached at all.
 type Evaluation struct {
@@ -36,7 +36,7 @@ type Evaluation struct {
 var observer atomic.Pointer[func(Evaluation)]
 
 // SetObserver installs a callback fired for every permission evaluation.
-// Pass nil to clear. Intended for test tooling — framework's semantic
+// Pass nil to clear. Intended for test tooling, framework's semantic
 // coverage recorder is the first consumer, and nothing installs one in a
 // production binary.
 //
@@ -54,8 +54,8 @@ func SetObserver(fn func(Evaluation)) {
 // returns the verdict unchanged so call sites can wrap their result.
 //
 // Role resolution happens inside the nil check: GetRoles walks the
-// context, and doing that on every permission check in production — for
-// a value nobody reads — would be a real cost for no benefit.
+// context, and doing that on every permission check in production, for
+// a value nobody reads, would be a real cost for no benefit.
 func observe(ctx context.Context, permission Permission, granted bool, path string) bool {
 	if fn := observer.Load(); fn != nil {
 		(*fn)(Evaluation{

@@ -28,7 +28,7 @@ import (
 // WithPWA turns a UIHost app into an installable Progressive Web App:
 // a typed web app manifest, a CSP-safe external service worker with a
 // versioned app-shell precache, an offline fallback screen, and the
-// registration script — without the host app hand-wiring any of it.
+// registration script, without the host app hand-wiring any of it.
 //
 // The service worker is deliberately conservative: document navigations
 // are network-first and NEVER cached (rendered HTML can be
@@ -93,7 +93,7 @@ type PWAConfig struct {
 	// assets, fonts, hero images) to keep available offline alongside
 	// the runtime/app shell. Entries that point at sensitive framework
 	// endpoints (API, auth, session, action, signal, SSE) or at another
-	// origin are dropped — the app-shell cache can never hold them.
+	// origin are dropped: the app-shell cache can never hold them.
 	Precache []string
 
 	// OfflineScreen renders the offline fallback page served at
@@ -106,7 +106,7 @@ type PWAConfig struct {
 
 	// DenyPaths extends the built-in sensitive-path deny list
 	// (/__gofastr/{sse,session,action,widgets}, /api, /auth)
-	// with app-specific mounts — e.g. a CRUD API at a custom prefix or
+	// with app-specific mounts, e.g. a CRUD API at a custom prefix or
 	// an auth battery at a custom base path. Listed paths (and
 	// everything under them) can never be precached and are never
 	// intercepted by the service worker. Root-relative; a bare "/" is
@@ -359,7 +359,7 @@ const pwaOfflinePath = "/__gofastr/pwa/offline"
 // PWAOfflineHTML renders the offline fallback page: the configured (or
 // default) offline screen inside the standard document shell with the
 // usual chrome (theme bootstrap, app.css, runtime). It is deliberately
-// NOT wrapped in the app layout — the page is precached at
+// NOT wrapped in the app layout: the page is precached at
 // service-worker install time, so nothing personalized may render into
 // it. Returns "" when WithPWA was not configured.
 func (ds *UIHost) PWAOfflineHTML() string {
@@ -373,7 +373,7 @@ func (ds *UIHost) PWAOfflineHTML() string {
 	} else {
 		// Minimal semantic HTML, same treatment as the bare 404
 		// fallback: typography comes from app.css, no component CSS.
-		// (uihost deliberately does not import framework/ui — linking
+		// (uihost deliberately does not import framework/ui; linking
 		// it would force its LoadAlways styles into every host's CSS
 		// bundle. Apps that want a richer screen pass OfflineScreen.)
 		body = html.Heading(html.HeadingConfig{Level: 1}, render.Text("You're offline")) +
@@ -384,7 +384,7 @@ func (ds *UIHost) PWAOfflineHTML() string {
 		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(cfg.Name), string(body))
 	// bundle=false (same as RenderStaticPage): component CSS must be
 	// direct per-component links. The bundle URL depends on the page's
-	// component set — precaching it would answer every OTHER page's
+	// component set: precaching it would answer every OTHER page's
 	// bundle request with the offline page's set, and static exports
 	// don't emit the bundle endpoint at all.
 	return ds.injectChromeMode(shell, pwaOfflinePath, "", "", false)
@@ -393,7 +393,7 @@ func (ds *UIHost) PWAOfflineHTML() string {
 // pwaVersion fingerprints the deployment: the manifest, the precache
 // URL list (content-addressed framework assets carry their hash in the
 // URL), the offline page, the shell asset bodies, and the bytes of
-// every precache entry resolvable from the host's static storage —
+// every precache entry resolvable from the host's static storage,
 // so swapping an icon or a precached asset in place (same path, new
 // bytes) rotates the cache. Entries served from elsewhere (a reverse
 // proxy) contribute their URL only; give those a new path or query to
@@ -468,7 +468,7 @@ func pwaSlug(name string) string {
 // human-readable slug in a live worker's cache name: sha256 of the app
 // name, truncated to 12 hex chars. The dot-separated form
 // "gofastr-pwa-<slug>.<hash>." makes activate's delete-prefix
-// un-extendable — pwaSlug emits only [a-z0-9-] (never "."), so the slug
+// un-extendable: pwaSlug emits only [a-z0-9-] (never "."), so the slug
 // can never run into the hash, and a sibling whose slug is a prefix of
 // ours (e.g. "acme" vs "acme-docs") differs at the "." boundary: its
 // full cache name can never start with our delete-prefix.
@@ -493,7 +493,7 @@ func pwaStaticHash(name, basePath string) string {
 // document navigations network-first with the offline screen as
 // fallback, never caches anything at runtime, and on activate deletes
 // only obsolete caches owned by this application. It never calls
-// skipWaiting — a new worker activates once existing tabs release the
+// skipWaiting. A new worker activates once existing tabs release the
 // old one; pages hear about a waiting update via the
 // "gofastr:pwa-update" window event dispatched by register.js.
 func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
@@ -538,12 +538,12 @@ func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 // PWAStaticExport describes a completed static export to the full-site
 // worker generator.
 type PWAStaticExport struct {
-	// Pages are the exported route paths — precached atomically.
+	// Pages are the exported route paths: precached atomically.
 	Pages []string
 	// Assets are framework-generated files (runtime, CSS, widget chrome,
-	// llm.md) — precached atomically with the pages.
+	// llm.md): precached atomically with the pages.
 	Assets []string
-	// OptionalAssets are user static-dir files — precached best-effort:
+	// OptionalAssets are user static-dir files: precached best-effort:
 	// one un-servable file (a dotfile a host strips, say) must not brick
 	// the install and pin clients to a previous deployment forever.
 	OptionalAssets []string
@@ -596,9 +596,9 @@ func pwaMarshalPrefixed(basePath string, paths []string) ([]byte, error) {
 // export ("static site as an app"). A static export is a closed,
 // immutable page set, so the personalization concern that keeps the
 // live worker's navigations network-first does not exist: this worker
-// precaches the WHOLE exported site — app shell, every page, every
+// precaches the WHOLE exported site, app shell, every page, every
 // component stylesheet (under the versioned ?v= URLs pages actually
-// request), every asset (deny-filtered) — and serves navigations
+// request), every asset (deny-filtered), and serves navigations
 // cache-first, tolerating the trailing-slash redirects of static
 // hosts, so the installed PWA works fully offline from the first
 // install. Everything else mirrors PWAServiceWorkerJS: exact URL
@@ -650,8 +650,8 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 	// "static" + name/basePath hash discriminator: the dot-separated
 	// "gofastr-pwa-static-<slug>.<hash>." delete-prefix can never be a
 	// prefix of a sibling's cache name (see pwaNameHash). The hash is
-	// over the RAW basePath before slugging, so "/a/b" and "/ab" — which
-	// slug identically — still get distinct hashes and stay isolated.
+	// over the RAW basePath before slugging, so "/a/b" and "/ab", which
+	// slug identically, still get distinct hashes and stay isolated.
 	nameSlug := pwaSlug(cfg.Name)
 	pathSlug := "root"
 	if basePath != "" {
@@ -689,7 +689,7 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 
 // pwaServiceWorkerTemplate is the generated worker source. Kept ES5-safe
 // and dependency-free; all dynamic values arrive as JSON literals.
-const pwaServiceWorkerTemplate = `/* goFastr service worker — generated by uihost.WithPWA. Do not edit. */
+const pwaServiceWorkerTemplate = `/* goFastr service worker: generated by uihost.WithPWA. Do not edit. */
 var CACHE_NAME = %q;
 var CACHE_PREFIX = %q;
 var OLD_PREFIX = %q;
@@ -728,7 +728,7 @@ self.addEventListener("activate", function (event) {
       // so its cache survives. The identical-slug case (static worker
       // basePaths "/a/b" vs "/ab", which slug identically) was already
       // mutually wiping before the hash existed and cannot be migrated
-      // apart — left for manual cleanup.
+      // apart: left for manual cleanup.
       return n.indexOf(OLD_PREFIX) === 0 && /^[0-9a-f]+$/.test(n.slice(OLD_PREFIX.length));
     }).map(function (n) { return caches.delete(n); }));
   }).then(function () { return self.clients.claim(); }));
@@ -749,7 +749,7 @@ self.addEventListener("fetch", function (event) {
   if (url.origin !== self.location.origin) return;
   if (denied(url.pathname)) return;
   if (req.mode === "navigate") {
-    // Documents are network-first and never cached — rendered HTML can
+    // Documents are network-first and never cached: rendered HTML can
     // be personalized. Offline falls back to the precached screen.
     event.respondWith(fetch(req).catch(function () {
       return caches.match(OFFLINE_URL, { cacheName: CACHE_NAME });
@@ -761,7 +761,7 @@ self.addEventListener("fetch", function (event) {
   // app shell. Content-addressed URLs (?v=<hash>) are immutable:
   // cache-first, and a new deployment's URLs miss the old cache and
   // reach the network. Everything else is network-first so fresh HTML
-  // never pairs with a previous deployment's runtime/CSS — the cache
+  // never pairs with a previous deployment's runtime/CSS: the cache
   // answers only when the network is gone.
   if (url.searchParams.has("v")) {
     event.respondWith(caches.match(req, { cacheName: CACHE_NAME }).then(function (hit) {
@@ -783,7 +783,7 @@ self.addEventListener("fetch", function (event) {
 // strategy differs: the exported site is immutable, so navigations are
 // cache-first (network fallback, then the offline screen) and every
 // precached asset answers from cache. ES5-safe, dependency-free.
-const pwaStaticServiceWorkerTemplate = `/* goFastr service worker (static full-site) — generated by uihost.WithPWA + static export. Do not edit. */
+const pwaStaticServiceWorkerTemplate = `/* goFastr service worker (static full-site): generated by uihost.WithPWA + static export. Do not edit. */
 var CACHE_NAME = %q;
 var CACHE_PREFIX = %q;
 var OLD_PREFIX = %q;
@@ -808,7 +808,7 @@ function precacheOne(cache, u) {
 
 self.addEventListener("install", function (event) {
   event.waitUntil(caches.open(CACHE_NAME).then(function (cache) {
-    // Pages and framework assets install atomically — the offline
+    // Pages and framework assets install atomically: the offline
     // guarantee is all-or-nothing for them. User static-dir files are
     // best-effort: one un-servable file must not fail the install and
     // pin every client to the previous deployment.
@@ -833,7 +833,7 @@ self.addEventListener("activate", function (event) {
       // leaves a "<extra>-<hex>" remainder containing non-hex, so it
       // survives. The identical-slug case (basePaths "/a/b" vs "/ab",
       // which slug identically) was already mutually wiping before the
-      // hash existed and cannot be migrated apart — left for manual
+      // hash existed and cannot be migrated apart: left for manual
       // cleanup.
       return n.indexOf(OLD_PREFIX) === 0 && /^[0-9a-f]+$/.test(n.slice(OLD_PREFIX.length));
     }).map(function (n) { return caches.delete(n); }));
@@ -906,7 +906,7 @@ func (ds *UIHost) PWARegisterJS(basePath string) string {
 	)
 }
 
-const pwaRegisterTemplate = `/* goFastr PWA registration — generated by uihost.WithPWA. Do not edit. */
+const pwaRegisterTemplate = `/* goFastr PWA registration: generated by uihost.WithPWA. Do not edit. */
 (function () {
   if (!("serviceWorker" in navigator)) return;
   window.addEventListener("load", function () {
@@ -940,7 +940,7 @@ func (ds *UIHost) handlePWAManifest(w http.ResponseWriter, _ *http.Request) {
 
 func (ds *UIHost) handlePWAServiceWorker(w http.ResponseWriter, _ *http.Request) {
 	// The worker is deployment-constant, but generating it renders the
-	// offline page and hashes the shell assets — too much to repeat on
+	// offline page and hashes the shell assets: too much to repeat on
 	// every update check (browsers re-fetch the worker on page loads).
 	// Memoized on first request: by then the app has rendered at least
 	// one page, so the style registries have settled (same reasoning

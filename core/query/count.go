@@ -10,7 +10,7 @@ type CountBuilder struct {
 }
 
 // Count creates a new CountBuilder for the given table. wheres/args are
-// pre-capped — see query.Select's rationale (CRUD List adds ~4-5 Where
+// pre-capped. See query.Select's rationale (CRUD List adds ~4-5 Where
 // clauses per count + data builder; without the hint each grows through
 // 1 → 2 → 4 → 8 across the request).
 func Count(table string) *CountBuilder {
@@ -49,7 +49,7 @@ func (cb *CountBuilder) Build() (string, []any) {
 				sb.WriteString(w.connector)
 				sb.WriteString(" ")
 			}
-			// Wrap each condition in parens — see query.go for the
+			// Wrap each condition in parens. See query.go for the
 			// SQL-precedence bypass this defends against.
 			condition := renumberPlaceholders(w.condition, paramIdx)
 			paramIdx += len(w.args)

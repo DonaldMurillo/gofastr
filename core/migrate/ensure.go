@@ -25,7 +25,7 @@ var sqlOpen = sql.Open
 
 // EnsureDatabase creates the target database if it does not already exist,
 // returning whether it had to create it. This is the "first migration can
-// create the DB" capability — call it before running migrations.
+// create the DB" capability. Call it before running migrations.
 //
 //   - SQLite (and any file/embedded driver): a no-op. The database file is
 //     created automatically when the runner opens it, so there is nothing to
@@ -63,7 +63,7 @@ func EnsureDatabase(driver, dsn string) (bool, error) {
 // pg_database on an already-open admin connection and CREATE DATABASE when
 // absent. Separated so it can be exercised without a live Postgres.
 func ensureDatabaseOn(ctx context.Context, admin *sql.DB, dbName, safeName string) (bool, error) {
-	// Tolerate a still-starting server — the first connection can reset.
+	// Tolerate a still-starting server. The first connection can reset.
 	if err := pingWithRetry(ctx, admin); err != nil {
 		return false, fmt.Errorf("ensure database: connect to maintenance db: %w", err)
 	}

@@ -10,7 +10,7 @@ import (
 func TestCollapsedSidebarLabelsStayAccessible(t *testing.T) {
 	css := sidebarCSS(style.Theme{})
 	// The collapsed rail must hide labels with the visually-hidden clip
-	// pattern, never display:none — focusable links would lose their
+	// pattern, never display:none. Focusable links would lose their
 	// accessible names (WCAG 4.1.2).
 	start := strings.Index(css, `[data-collapsed="true"] .ui-sidebar__label`)
 	if start == -1 {

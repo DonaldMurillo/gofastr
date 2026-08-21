@@ -19,7 +19,7 @@ type HeadingConfig struct {
 }
 
 // TextConfig configures a text container element (Paragraph, Span, Strong, Em, etc.).
-// No required fields — used for generic text containers.
+// No required fields, used for generic text containers.
 type TextConfig struct {
 	Class      string
 	ID         string
@@ -66,7 +66,7 @@ func slugify(s string) string {
 // Required: Level (1-6). Auto-generates an id attribute from the text content
 // of children for aria-labelledby references. If cfg.ID is set, it is used instead.
 //
-// The auto-generated id is content-derived and deterministic — the same
+// The auto-generated id is content-derived and deterministic, the same
 // text always yields the same id, so anchor links survive re-renders and
 // SPA partial swaps. The trade-off: two headings with EQUAL text on one
 // page produce duplicate ids (render functions have no page-wide context
@@ -133,7 +133,7 @@ func Pre(cfg TextConfig, children ...render.HTML) render.HTML {
 	return render.Tag("pre", attrs, children...)
 }
 
-// Kbd produces a <kbd> element for keyboard input — a single key, a chord,
+// Kbd produces a <kbd> element for keyboard input, a single key, a chord,
 // or a sequence. Pairs with framework/ui.ShortcutHint for rendering
 // shortcut chips. Pure semantic markup, no scripting.
 func Kbd(cfg TextConfig, children ...render.HTML) render.HTML {

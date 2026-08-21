@@ -59,7 +59,7 @@ func setupCrossOwnerReadTenantHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 }
 
 // ctxWithGrant returns ctx carrying a RolePolicy that grants perm to
-// "staff", plus the "staff" role — the shape access.Middleware installs.
+// "staff", plus the "staff" role, the shape access.Middleware installs.
 func ctxWithGrant(ctx context.Context, perm string) context.Context {
 	policy := access.NewRolePolicy()
 	policy.Grant("staff", access.Permission(perm))
@@ -92,7 +92,7 @@ func TestCrossOwnerReadHTTPCannotSpoof(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupCrossOwnerReadHandler(t)
 
-	// Vector 1 — header spoof. The request runs; owner scope holds.
+	// Vector 1: header spoof. The request runs; owner scope holds.
 	req := httptest.NewRequest(http.MethodGet, "/api/ctickets", nil)
 	req.Header.Set("X-Cross-Owner-Read", "tickets:read:all")
 	req.Header.Set("X-Role", "staff")
@@ -111,7 +111,7 @@ func TestCrossOwnerReadHTTPCannotSpoof(t *testing.T) {
 		t.Fatalf("alice's own row missing: %s", body)
 	}
 
-	// Vector 2 — query-param spoof. Strict filter parsing fails closed with
+	// Vector 2: query-param spoof. Strict filter parsing fails closed with
 	// a 400; the response body can never contain bob's row.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/ctickets?cross_owner_read=tickets:read:all&role=staff", nil)
 	req2 = withTestUser(req2, "alice")
@@ -356,7 +356,7 @@ func TestCrossOwnerReadTenantScopeHolds(t *testing.T) {
 }
 
 // TestCrossOwnerReadAnonymousStill401: an anonymous request (no owner in
-// context) on a CrossOwnerRead entity is still refused with 401 — the
+// context) on a CrossOwnerRead entity is still refused with 401, the
 // RequireOwner gate fires before the scope helper. A bare permission grant
 // in context does NOT replace authentication.
 func TestCrossOwnerReadAnonymousStill401(t *testing.T) {

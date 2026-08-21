@@ -11,9 +11,9 @@ import (
 // ExportStatic renders the app to a folder of static HTML + assets
 // using the SSG Builder (framework/static). It locates the mounted
 // UIHost and renders every declared route to a directory-style file,
-// plus all /__gofastr assets the runtime needs to boot — runtime.js,
+// plus all /__gofastr assets the runtime needs to boot, runtime.js,
 // the split runtime modules (themeswitch, shortcut, copy, widgets, …),
-// app.css, and per-component CSS — with query-free filenames so the
+// app.css, and per-component CSS, with query-free filenames so the
 // output serves correctly from any static host (GitHub Pages, S3, …).
 //
 // basePath is the URL subpath the site is served under (e.g. "/gofastr"

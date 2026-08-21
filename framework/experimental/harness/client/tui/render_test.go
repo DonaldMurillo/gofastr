@@ -246,7 +246,7 @@ func TestDecodePermissionAnswer(t *testing.T) {
 
 // TestSubmitAnswersPendingPermission ensures that when a permit is
 // pending, submit() consumes the input as the answer and clears the
-// pending state — the input must NOT be sent as a new turn.
+// pending state, the input must NOT be sent as a new turn.
 func TestSubmitAnswersPendingPermission(t *testing.T) {
 	tui := &TUI{Session: ids.NewSessionID(), out: &bytes.Buffer{}}
 	callID := ids.NewCallID()
@@ -265,7 +265,7 @@ func TestSubmitAnswersPendingPermission(t *testing.T) {
 }
 
 // TestToolResultSplitsEmbeddedNewlines: a multi-line tool result is
-// split into one scrollback line per source line — embedded `\n`
+// split into one scrollback line per source line, embedded `\n`
 // inside a single scrollback entry causes the raw-mode terminal to
 // emit LF without CR, producing the cascading-indent bug.
 func TestToolResultSplitsEmbeddedNewlines(t *testing.T) {

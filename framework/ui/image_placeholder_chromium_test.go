@@ -39,7 +39,7 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			// The real image never arrives — this is the slow-network case
+			// The real image never arrives. This is the slow-network case
 			// the placeholder exists for.
 			select {
 			case <-r.Context().Done():
@@ -61,7 +61,7 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 	defer cancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's:
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)

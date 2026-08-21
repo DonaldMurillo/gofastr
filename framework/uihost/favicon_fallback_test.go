@@ -27,7 +27,7 @@ func TestWithFaviconServesNoContentWhenFileMissing(t *testing.T) {
 }
 
 // The fallback only kicks in for the configured favicon URL. Other
-// missing paths must still 404 — otherwise the fallback would mask
+// missing paths must still 404. Otherwise the fallback would mask
 // real routing bugs.
 func TestWithFaviconDoesNotMaskOtherMissingPaths(t *testing.T) {
 	application := app.NewApp("Test")

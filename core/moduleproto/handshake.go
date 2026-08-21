@@ -8,7 +8,7 @@ import (
 )
 
 // HandshakeConfig is the host-side input to [Handshake]. Every opaque value
-// here is CALLER-SUPPLIED — this package verifies the round-trip and emits a
+// here is CALLER-SUPPLIED; this package verifies the round-trip and emits a
 // terminal [HandshakeMismatchError] on divergence; it makes NO trust decision
 // about whether the expected values are themselves correct. That is the
 // supervisor's policy (design §5 decision B).
@@ -74,7 +74,7 @@ type HandshakeOutcome struct {
 //  3. checking every host-critical feature appears in the child's features
 //     (terminal [ErrCriticalFeature] on miss).
 //
-// Handshake does NOT poll module.ready — that is a separate step (§4.7 step
+// Handshake does NOT poll module.ready; that is a separate step (§4.7 step
 // 4). The Ready field on the outcome is the child's initial flag; the
 // supervisor drives the warmup poll via [MethodReady].
 func Handshake(ctx context.Context, p *Peer, cfg HandshakeConfig) (*HandshakeOutcome, error) {
@@ -138,7 +138,7 @@ func crossCheck(want HandshakeExpected, got HandshakeResult) error {
 		return err
 	}
 	// instance_id is the per-spawn liveness nonce. A mismatch means this is
-	// NOT the spawn the host just minted — reject as stale/duplicate.
+	// NOT the spawn the host just minted; reject as stale/duplicate.
 	if err := check("identity.instance_id", want.InstanceID, got.Identity.InstanceID); err != nil {
 		return err
 	}

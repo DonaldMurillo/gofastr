@@ -62,7 +62,7 @@ const (
 	StateDrainingUpgrade
 
 	// StateFailed: terminal. An integrity fault (SHA mismatch, handshake
-	// digest mismatch, protocol negotiation failure) — a restart cannot
+	// digest mismatch, protocol negotiation failure), a restart cannot
 	// fix a bad artifact. The module stays 404 (disabled) or 503 (enabled)
 	// until the operator explicitly bumps generation with a corrected
 	// artifact. The restart circuit is NOT charged.
@@ -110,14 +110,14 @@ type SupervisorConfig struct {
 
 	// Sandbox spawns TrustUntrusted modules. Nil is the fail-closed
 	// state: every TrustUntrusted descriptor fails Register with
-	// [UntrustedNoSandboxError] (design §6 — never a silent downgrade
+	// [UntrustedNoSandboxError] (design §6, never a silent downgrade
 	// to Runner). A non-nil SandboxRunner whose backend does not pass
-	// the P1–P7 conformance probe is equivalent to nil — SelectRunner
+	// the P1–P7 conformance probe is equivalent to nil. SelectRunner
 	// consults Sandbox.Conforms() at Register.
 	Sandbox *SandboxRunner
 
 	// Broker is the reverse-request capability broker. Defaults to
-	// [NopBroker] (deny-all) when nil — the real broker lands in a later
+	// [NopBroker] (deny-all) when nil, the real broker lands in a later
 	// wave.
 	Broker ReverseBroker
 
@@ -125,7 +125,7 @@ type SupervisorConfig struct {
 	// *mcp.Server after handshake verifies it (design §5.1 / §4.7 step 5).
 	// Nil means the supervisor still verifies digests at handshake (a
 	// mismatch quarantines the module) but does not register tools into
-	// any MCP server — tests that do not exercise the tool surface leave
+	// any MCP server, tests that do not exercise the tool surface leave
 	// it nil. The host wiring sets it to a [ModuleToolRegistry].
 	ToolRegistrar ToolRegistrar
 
@@ -154,7 +154,7 @@ type SupervisorConfig struct {
 	// LeaseTTL is the fail-closed bound: if the store cannot be re-read
 	// for this long, children are drained and routes 503/404. Default 5s
 	// (≈ 3× HeartbeatInterval, design §8). This INVERTS in-process
-	// handleRemoteToggle's fail-open — documented at
+	// handleRemoteToggle's fail-open, documented at
 	// [SQLProcessModuleStore].
 	LeaseTTL time.Duration
 
@@ -178,7 +178,7 @@ type SupervisorConfig struct {
 	CircuitWindow time.Duration
 
 	// Now is the clock the supervisor reads. Defaults to [time.Now] when
-	// nil — tests inject a tunable clock so the 60s circuit window does
+	// nil, tests inject a tunable clock so the 60s circuit window does
 	// not need real sleeps.
 	Now func() time.Time
 
@@ -324,7 +324,7 @@ func (s *moduleSlot) snapshot() snapshot {
 }
 
 // NewProcessModuleSupervisor constructs a supervisor. It does NOT call
-// EnsureSchema — that is the app wiring's job (so the schema-creation
+// EnsureSchema, that is the app wiring's job (so the schema-creation
 // error surfaces where the operator expects it). The supervisor launches
 // its per-module loops lazily as modules are registered.
 func NewProcessModuleSupervisor(cfg SupervisorConfig) (*ProcessModuleSupervisor, error) {
@@ -488,7 +488,7 @@ func randomReplicaID() string {
 }
 
 // mintInstanceID mints a per-spawn liveness nonce (design §4.7 step 1). It
-// is random and never persisted — its only job is to reject a stale or
+// is random and never persisted, its only job is to reject a stale or
 // duplicate connection from a prior spawn of the same module.
 func mintInstanceID() string {
 	var b [16]byte
@@ -521,7 +521,7 @@ type RegisterResult struct {
 
 // Register validates the descriptor, installs a desired-state row in the
 // store, and registers the module for supervision. It is idempotent on the
-// descriptor — calling it twice for the same name returns
+// descriptor, calling it twice for the same name returns
 // [ErrModuleInstalled] (the store row already exists). The supervisor's
 // per-module loop is started lazily by [ProcessModuleSupervisor.StartLoops]
 // or implicitly by [ProcessModuleSupervisor.Enable].
@@ -559,7 +559,7 @@ func (s *ProcessModuleSupervisor) Register(ctx context.Context, d ProcessModuleD
 	}); err != nil {
 		return RegisterResult{}, err
 	}
-	// Create the slot. The supervise loop is NOT started yet — it starts
+	// Create the slot. The supervise loop is NOT started yet, it starts
 	// (lazily) when StartLoops is called by the app wiring, or the first
 	// time the module is Enabled.
 	slot := &moduleSlot{
@@ -676,7 +676,7 @@ func (s *ProcessModuleSupervisor) Disable(ctx context.Context, name string) erro
 	return nil
 }
 
-// RevokeGrants replaces the effective grants AND bumps generation — every
+// RevokeGrants replaces the effective grants AND bumps generation, every
 // replica's next reconcile observes the higher generation and restarts the
 // child with the narrowed view (design §5 "binding + revocation"). Returns
 // the new generation.
@@ -739,7 +739,7 @@ func (s *ProcessModuleSupervisor) startLoopIfAbsent(name string) {
 // Reconcile pokes the named module's supervise loop. It is the single
 // entry point the three reconcile sources funnel into (local enable/
 // disable, handleRemoteToggle after its store re-read, periodic generation
-// poll — design §8). Safe to call for unknown names (no-op).
+// poll, design §8). Safe to call for unknown names (no-op).
 func (s *ProcessModuleSupervisor) Reconcile(name string) {
 	s.wake(name)
 }
@@ -804,7 +804,7 @@ func (sl *moduleSlot) reconcile() {
 	if err != nil {
 		// Lease enforcement: if the store has been unreadable past
 		// LeaseTTL, fail CLOSED (drain children). This is the deliberate
-		// inversion of handleRemoteToggle's fail-open — documented at
+		// inversion of handleRemoteToggle's fail-open, documented at
 		// [SQLProcessModuleStore].
 		if errors.Is(err, errLeaseExpired) {
 			sl.handleLeaseExpired()
@@ -848,7 +848,7 @@ func (sl *moduleSlot) reconcile() {
 	case desired.Enabled && migrationsPending(sl.desc, desired):
 		// Migrations pending (design §7 / §8): the module declares a
 		// migration group whose DDL the coordinator has not yet applied
-		// (MigrationsAppliedAt is nil). Refuse Ready — do NOT spawn. Hold
+		// (MigrationsAppliedAt is nil). Refuse Ready, do NOT spawn. Hold
 		// in InstalledDisabled so the proxy returns 503 and module tools
 		// return retryable-unavailable until the operator runs the
 		// coordinator, which stamps MigrationsAppliedAt and (via a
@@ -923,11 +923,11 @@ func (sl *moduleSlot) handleLeaseExpired() {
 	peer := sl.peer
 	state := sl.state
 	sl.mu.Unlock()
-	sl.sup.logf("processmodule: %s lease expired — draining (fail-closed)", sl.name)
+	sl.sup.logf("processmodule: %s lease expired: draining (fail-closed)", sl.name)
 	if child == nil {
 		return
 	}
-	// Quick drain — no module.drain notification (the child may be fine,
+	// Quick drain, no module.drain notification (the child may be fine,
 	// but we cannot trust the desired state). Kill after a short grace.
 	if peer != nil {
 		_ = peer.Close()
@@ -1010,10 +1010,10 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64) {
 // re-reads the AUTHORITATIVE desired state from the store before respawning:
 // a revoke/upgrade bumped the generation precisely because the effective
 // grant set (or the enabled flag) changed, so the new child must be built
-// from the store's current EffectiveGrants — never the descriptor's original
+// from the store's current EffectiveGrants, never the descriptor's original
 // RequestedGrants, which would keep serving a just-revoked capability across
 // the respawn. If the store cannot be read, it fails closed (stays disabled)
-// rather than respawn a possibly-revoked module — the same posture as the
+// rather than respawn a possibly-revoked module, the same posture as the
 // state lease.
 func (sl *moduleSlot) finishDrain(drainState ProcessState, gen uint64) {
 	switch drainState {
@@ -1022,7 +1022,7 @@ func (sl *moduleSlot) finishDrain(drainState ProcessState, gen uint64) {
 	case StateDrainingUpgrade:
 		desired, err := sl.refreshDesired()
 		if err != nil {
-			sl.sup.logf("processmodule: %s upgrade-drain desired re-read failed (%v) — staying disabled (fail-closed)", sl.name, err)
+			sl.sup.logf("processmodule: %s upgrade-drain desired re-read failed (%v): staying disabled (fail-closed)", sl.name, err)
 			sl.setState(StateInstalledDisabled)
 			return
 		}
@@ -1171,8 +1171,8 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	// §4.7 step 5: verify the optional MCP tool surface. If the
 	// descriptor declares tools, fetch module.tool.list and require
 	// byte-equality with the descriptor digests; a mismatch (extra tool,
-	// missing tool, renamed/reshaped tool) is a terminal integrity fault
-	// — the child cannot add, rename, or reshape a tool at runtime (design
+	// missing tool, renamed/reshaped tool) is a terminal integrity fault.
+	// The child cannot add, rename, or reshape a tool at runtime (design
 	// §5.1). Then install the verified tools into the host MCP server via
 	// the registrar; the registrar's handlers dispatch dynamically, so
 	// this is idempotent across respawns.
@@ -1210,7 +1210,7 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 		sl.lastExit = exitLabel(waitErr, expected)
 		sl.mu.Unlock()
 		if expected {
-			// Drained exit — no restart, no charge.
+			// Drained exit: no restart, no charge.
 			sup.logf("processmodule: %s expected exit: %v", sl.name, waitErr)
 			return
 		}
@@ -1230,9 +1230,9 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 // verifyToolSurface fetches module.tool.list and requires byte-equality
 // between each returned tool's canonical digest and the matching
 // [ProcessModuleDescriptor.Tools] digest (design §5.1 / §4.7 step 5).
-// Any divergence — an extra tool the descriptor did not approve, a
+// Any divergence, an extra tool the descriptor did not approve, a
 // missing tool, a duplicate id, or a reshaped tool whose digest no longer
-// matches — is a terminal integrity fault surfaced as a
+// matches, is a terminal integrity fault surfaced as a
 // [*moduleproto.HandshakeMismatchError] so [isIntegrityFault] quarantines
 // the module to Failed rather than retrying. On success the verified
 // tools are installed into the host MCP server via the registrar (the
@@ -1302,7 +1302,7 @@ func (sl *moduleSlot) verifyToolSurface(ctx context.Context, peer *moduleproto.P
 // migrationsPending reports whether a module that declared a migration
 // group is still waiting for the migration coordinator to run (design §7
 // + §8: the supervisor refuses to spawn a module to Ready while its
-// migrations are unapplied — MigrationsAppliedAt is nil until the
+// migrations are unapplied. MigrationsAppliedAt is nil until the
 // short-lived coordinator provisions the per-module schema/role, runs
 // Up, and stamps the timestamp). A module with no migration group is
 // never pending.
@@ -1317,7 +1317,7 @@ func (sl *moduleSlot) handleCrashed(desired DesiredState) {
 	sl.chargeCircuit()
 	open := sl.isCircuitOpen()
 	if open {
-		sl.sup.logf("processmodule: %s circuit OPEN — staying Crashed until generation bump", sl.name)
+		sl.sup.logf("processmodule: %s circuit OPEN: staying Crashed until generation bump", sl.name)
 		// State stays Crashed; proxy returns 503.
 		return
 	}
@@ -1417,7 +1417,7 @@ func (sl *moduleSlot) markCrashed(reason string) {
 }
 
 // markFailed transitions to terminal Failed. Used for integrity faults
-// (SHA mismatch, handshake digest mismatch, negotiation failure) — a
+// (SHA mismatch, handshake digest mismatch, negotiation failure), a
 // restart cannot fix a bad artifact (design §8).
 func (sl *moduleSlot) markFailed(reason string) {
 	sl.mu.Lock()

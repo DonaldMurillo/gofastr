@@ -1,6 +1,6 @@
 package builtins
 
-// Agent — the harness's sub-agent launcher. Pattern from Claude Code's
+// Agent, the harness's sub-agent launcher. Pattern from Claude Code's
 // "Task" tool: the model can spawn a fresh agent with a focused prompt
 // and get back a final summary. The sub-agent has the same Provider,
 // Model, and Tools as the parent but a blank conversation history, so
@@ -44,7 +44,7 @@ func (Agent) InputSchema() []byte {
 	return []byte(`{
   "type": "object",
   "properties": {
-    "prompt":      {"type": "string", "description": "The task the sub-agent should perform — phrased as a direct request."},
+    "prompt":      {"type": "string", "description": "The task the sub-agent should perform, phrased as a direct request."},
     "description": {"type": "string", "description": "Short 3-5 word label shown in clients while the sub-agent runs."},
     "system":      {"type": "string", "description": "Optional extra system hint prepended to the sub-agent's history."}
   },
@@ -71,14 +71,14 @@ func (Agent) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*to
 	if !ok {
 		return errorResult("Agent: no spawner in dispatch context (engine wiring missing)"), nil
 	}
-	// Depth guard — refuse if this Agent call is already inside a
+	// Depth guard, refuse if this Agent call is already inside a
 	// sub-agent at the max depth. Prevents recursive Agent → Agent →
 	// Agent chains that ran a single session up to 70+ tool calls
 	// (sess_01KSDZK5…).
 	depth := tool.SpawnDepthFromContext(ctx)
 	if depth >= tool.MaxSpawnDepth {
 		return errorResult(fmt.Sprintf("Agent: refusing to spawn at depth %d (MaxSpawnDepth=%d). "+
-			"You are already inside a sub-agent — finish the work directly here instead of recursing further.",
+			"You are already inside a sub-agent: finish the work directly here instead of recursing further.",
 			depth, tool.MaxSpawnDepth)), nil
 	}
 	answer, err := sp.Spawn(ctx, args.System, args.Prompt)

@@ -43,7 +43,7 @@ var (
 //
 // The override is registered against the FULL theme (not "diffs vs
 // default"). When emitted, the framework walks the theme and emits
-// every token under the override class — the browser's cascade
+// every token under the override class, the browser's cascade
 // handles the actual delta vs the canonical :root.
 func RegisterThemeOverride(t Theme) ThemeRef {
 	css := t.CSSCustomProperties()

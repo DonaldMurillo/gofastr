@@ -52,7 +52,7 @@ func (s *SSEWriter) Flush() {
 // SetRetry writes the "retry:" field, telling the client how many
 // milliseconds to wait before reconnecting. Non-positive values are
 // dropped: `retry: 0` tells the client to reconnect with zero delay,
-// which spins into a reconnect storm — accidental DoS amplifier.
+// which spins into a reconnect storm, an accidental DoS amplifier.
 func (s *SSEWriter) SetRetry(seconds int) {
 	if seconds <= 0 {
 		return
@@ -77,7 +77,7 @@ func (s *SSEWriter) SetID(id string) {
 //
 // followed by a blank line and a flush.
 //
-// CR/LF characters in the event name are stripped — an event name may
+// CR/LF characters in the event name are stripped: an event name may
 // only occupy a single SSE field line. A caller-supplied newline would
 // otherwise terminate the field and let following bytes appear as
 // arbitrary SSE directives.
@@ -102,7 +102,7 @@ func (s *SSEWriter) WriteEvent(event, data string) error {
 	b.WriteString(event)
 	b.WriteByte('\n')
 
-	// multi-line data — strip CR/NUL per the WHATWG SSE parser, which
+	// multi-line data: strip CR/NUL per the WHATWG SSE parser, which
 	// terminates a field on CR, LF, or CRLF. A `data: foo\rbar` field
 	// would otherwise split into two values on Windows EventSource impls.
 	for _, line := range strings.Split(scrubSSEDataLines(data), "\n") {
@@ -192,7 +192,7 @@ func (s *SSEWriter) WriteComment(comment string) error {
 	return err
 }
 
-// stripSSEControlChars truncates at the first CR, LF or NUL — those
+// stripSSEControlChars truncates at the first CR, LF or NUL: those
 // are the only characters that can break out of a single SSE field,
 // and once one appears the rest of the input is treated as adversarial
 // (an injected directive or header). We don't merely *delete* the

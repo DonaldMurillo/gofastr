@@ -6,12 +6,12 @@ import (
 )
 
 // maxInlineDepth bounds inline nesting (link text, emphasis inner content).
-// renderInline recurses once per nesting level — attacker-supplied markdown
+// renderInline recurses once per nesting level: attacker-supplied markdown
 // like "[[[…x…](u)](u)](u)" or deeply nested emphasis drives that recursion
 // arbitrarily deep, exhausting the goroutine stack (an unrecoverable crash)
 // and burning super-linear CPU. Past the cap we stop recursing and emit the
 // remaining inner text verbatim (HTML-escaped), failing closed without
-// dropping content — exactly like maxBlockquoteDepth in the block layer.
+// dropping content, exactly like maxBlockquoteDepth in the block layer.
 const maxInlineDepth = 64
 
 // renderInline runs the inline parser over a single block of text and emits
@@ -34,7 +34,7 @@ func renderInlineDepth(input string, depth int) string {
 	// run has no closer from some position, no later opener of the same
 	// (delim,run) can find one either (its scan covers a suffix of the same
 	// region), so we skip the rescan. This turns the unmatched-emphasis
-	// case from O(n^2) into O(n) — a CPU-DoS guard.
+	// case from O(n^2) into O(n), a CPU-DoS guard.
 	var noCloser map[int]bool
 	i := 0
 	for i < len(input) {
@@ -271,7 +271,7 @@ var htmlEscaper = strings.NewReplacer(
 
 func escapeHTML(s string) string { return htmlEscaper.Replace(s) }
 
-// escapeAttr is the same as escapeHTML for now — we never embed attribute
+// escapeAttr is the same as escapeHTML for now. We never embed attribute
 // values from user-controlled context without escaping, and the same set of
 // characters needs to be neutralised in either spot.
 func escapeAttr(s string) string { return htmlEscaper.Replace(s) }
@@ -279,9 +279,9 @@ func escapeAttr(s string) string { return htmlEscaper.Replace(s) }
 // safeLinkURL refuses script-y schemes inside a markdown link href.
 // `javascript:`, `vbscript:` and the small set of `data:` types that
 // render executable content (text/html, application/xhtml+xml,
-// image/svg+xml — SVG can carry inline JS) get replaced with `#` so a
-// click can't navigate to an active payload. Other schemes — http(s),
-// mailto, tel, fragment-only, relative paths — pass through unchanged.
+// image/svg+xml, which can carry inline JS) get replaced with `#` so a
+// click can't navigate to an active payload. Other schemes, http(s),
+// mailto, tel, fragment-only, relative paths, pass through unchanged.
 func safeLinkURL(url string) string {
 	url = stripURLControlBytes(url)
 	if isDangerousURLScheme(url) {
@@ -310,8 +310,8 @@ func safeImageURL(url string) string {
 
 // stripURLControlBytes removes the tab/LF/CR/NUL bytes that the HTML5
 // URL parser deletes from a URL before resolving its scheme. Browsers
-// ignore them anywhere in the URL — including in the MIDDLE of a scheme
-// name — so `java\tscript:` resolves to `javascript:`. We delete them up
+// ignore them anywhere in the URL, including in the MIDDLE of a scheme
+// name, so `java\tscript:` resolves to `javascript:`. We delete them up
 // front so both the scheme allow-list and the stored href see the same
 // string the browser will execute, closing the interior-control-byte
 // bypass.
@@ -324,7 +324,7 @@ func stripURLControlBytes(url string) string {
 	for i := 0; i < len(url); i++ {
 		switch url[i] {
 		case '\t', '\n', '\r', '\x00':
-			// dropped — mirrors the browser URL parser
+			// dropped, mirrors the browser URL parser
 		default:
 			sb.WriteByte(url[i])
 		}
@@ -334,7 +334,7 @@ func stripURLControlBytes(url string) string {
 
 // isDangerousURLScheme reports whether url begins with a URL scheme
 // known to execute script or render HTML in a navigation context.
-// Leading ASCII whitespace and control chars are ignored — they're
+// Leading ASCII whitespace and control chars are ignored. They're
 // stripped from the scheme by the HTML parser anyway, so we match the
 // parser's view. Callers should run stripURLControlBytes first so that
 // control bytes embedded INSIDE the scheme (java\tscript:) are also

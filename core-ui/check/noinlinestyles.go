@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-// Inline-style ban — compile-rule enforcement of the framework's
+// Inline-style ban, compile-rule enforcement of the framework's
 // strict-CSP contract.
 //
 // The framework's default Content-Security-Policy is
@@ -33,7 +33,7 @@ import (
 //      anywhere in the body. Catches `render.HTML("<div style=…>")`
 //      and back-tick raw strings alike.
 //   2. Map / composite literals with a "style" key passed to any of
-//      the HTML helpers — render.Tag(…, map[string]string{"style": …},
+//      the HTML helpers, render.Tag(…, map[string]string{"style": …},
 //      html.Attrs{"style": …}, html.DivConfig{ExtraAttrs: html.Attrs{"style":
 //      …}}, etc.
 //   3. html.* config struct literals whose Attrs field literal carries
@@ -46,7 +46,7 @@ import (
 // fixtures that intentionally contain known-bad strings for
 // assertion.
 //
-// Usage mirrors LintNoInlineScripts — run from `cmd/check-csp` and
+// Usage mirrors LintNoInlineScripts, run from `cmd/check-csp` and
 // from any package test that wants the rule enforced on every
 // `go test ./...`.
 
@@ -56,7 +56,7 @@ var (
 	// whitespace so prefixes like `data-fui-style=`, `font-style=`,
 	// `text-style=` (CSS, data-attributes, custom-named props) don't
 	// trigger false positives. The non-greedy quoted body keeps the
-	// match short — we just need to know IT EXISTS.
+	// match short, we just need to know IT EXISTS.
 	inlineStyleAttrRe = regexp.MustCompile(`(?s)(?:^|\s)style\s*=\s*("[^"]*"|'[^']*')`)
 )
 
@@ -100,7 +100,7 @@ func LintNoInlineStyles(dir string) (*Result, error) {
 }
 
 // LintNoInlineStylesRecursive walks dir and every subdirectory.
-// Skips vendor/, node_modules/, hidden dirs, and testdata/ —
+// Skips vendor/, node_modules/, hidden dirs, and testdata/,
 // matching the script linter's recursion contract.
 func LintNoInlineStylesRecursive(root string) (*Result, error) {
 	result := &Result{}
@@ -153,7 +153,7 @@ func scanInlineStyles(fset *token.FileSet, file *ast.File, filename string, resu
 }
 
 // checkInlineStyleInString flags any string literal whose body
-// contains a `style="…"` attribute. False positives are rare — the
+// contains a `style="…"` attribute. False positives are rare, the
 // pattern is specific enough that it almost only appears in actual
 // HTML emission contexts. When it does fire in a legitimate non-CSP
 // context (printing diagnostic HTML, generating an SVG icon for a
@@ -171,7 +171,7 @@ func checkInlineStyleInString(s string, line int, filename string, result *Resul
 }
 
 // checkStyleKeyInComposite flags `{"style": "…"}` in composite
-// literals — typically `render.Tag(…, map[string]string{"style": …}, …)`
+// literals, typically `render.Tag(…, map[string]string{"style": …}, …)`
 // or `html.Attrs{"style": …}`. Catches the case where the value is
 // computed at runtime (string concat, fmt.Sprintf) which the
 // string-literal scan can't see.
@@ -205,7 +205,7 @@ func checkStyleKeyInComposite(node *ast.CompositeLit, fset *token.FileSet, filen
 }
 
 // valueLooksLikeString returns true when the expression is plausibly
-// a string at runtime — string literal, fmt.Sprintf, concatenation,
+// a string at runtime, string literal, fmt.Sprintf, concatenation,
 // identifier of a string-typed variable, etc. False for bool/int
 // literals (which appear in metadata maps like sanitizer denylists).
 func valueLooksLikeString(e ast.Expr) bool {
@@ -213,7 +213,7 @@ func valueLooksLikeString(e ast.Expr) bool {
 	case *ast.BasicLit:
 		return v.Kind == token.STRING
 	case *ast.Ident:
-		// `true`/`false`/`nil` are predeclared idents — skip those.
+		// `true`/`false`/`nil` are predeclared idents, skip those.
 		switch v.Name {
 		case "true", "false", "nil", "iota":
 			return false
@@ -222,7 +222,7 @@ func valueLooksLikeString(e ast.Expr) bool {
 	case *ast.BinaryExpr:
 		return valueLooksLikeString(v.X) || valueLooksLikeString(v.Y)
 	case *ast.CallExpr:
-		return true // fmt.Sprintf / string concat / formatter — assume stringy
+		return true // fmt.Sprintf / string concat / formatter, assume stringy
 	case *ast.SelectorExpr, *ast.IndexExpr:
 		return true
 	}

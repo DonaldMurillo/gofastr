@@ -68,7 +68,7 @@ func TestRequireScopeLetsOrdinaryTrafficPast(t *testing.T) {
 
 func TestRequireScopeRefusesAnUncheckedGrantHeader(t *testing.T) {
 	// RequireScope installed WITHOUT Middleware in front of it. The context
-	// carries no grant, so the naive reading is "not an embed request, pass" —
+	// carries no grant, so the naive reading is "not an embed request, pass",
 	// which would make the gate skippable by the very caller it gates.
 	h := middlewareHost(t)
 	p := &probe{}
@@ -130,7 +130,7 @@ func TestVerifyRejectsAnEmptyKey(t *testing.T) {
 		t.Error("VerifyGrant accepted a token under a nil key")
 	}
 	// A separately forged NONCE. Passing the grant token above would have made
-	// this assertion pass on the prefix mismatch alone — green even with the
+	// this assertion pass on the prefix mismatch alone, green even with the
 	// empty-key guard removed, which is the whole defect it exists to catch.
 	forgedNonce, err := sign(NoncePrefix, []byte{}, nonceClaims{
 		Surface: "dashboard", ID: "n1", Origin: "https://acme.com",

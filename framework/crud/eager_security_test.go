@@ -36,7 +36,7 @@ func (*stubErr) Error() string { return "no such entity" }
 
 // TestEagerLoadScrubsSoftDeleteAndHidden asserts the legacy exported
 // EagerLoad helper, when given a registry, excludes soft-deleted target
-// rows and never populates Hidden columns — matching the live include
+// rows and never populates Hidden columns, matching the live include
 // path (eager_filtered.go). The same scrubbing must hold for HasMany
 // (child holds FK) and ManyToOne (parent holds FK) shapes.
 func TestEagerLoadScrubsSoftDeleteAndHidden(t *testing.T) {
@@ -113,7 +113,7 @@ func TestEagerLoadScrubsSoftDeleteAndHidden(t *testing.T) {
 		t.Errorf("SECURITY: Hidden column 'password_hash' leaked via EagerLoad: %v", author)
 	}
 
-	// ManyToOne author on p2 references soft-deleted u2 — must be absent.
+	// ManyToOne author on p2 references soft-deleted u2, must be absent.
 	if _, present := got["p2"]["author"]; present {
 		t.Errorf("SECURITY: soft-deleted user u2 resurfaced as p2's author via EagerLoad")
 	}
@@ -192,7 +192,7 @@ func versionedComments(t *testing.T) (*entity.Entity, versionedStubRegistry) {
 }
 
 // EagerLoad resolved its relation target with registry.Get, which prefers the
-// unversioned declaration and errors on ambiguity — so a /api/v1 request
+// unversioned declaration and errors on ambiguity, so a /api/v1 request
 // scrubbed by whichever version Get happened to hand back. Resolution must
 // prefer the SOURCE entity's own version (entity.ResolveTarget).
 func TestEagerLoadScrubsByRequestVersion(t *testing.T) {
@@ -219,7 +219,7 @@ func TestEagerLoadScrubsByRequestVersion(t *testing.T) {
 
 // An unresolvable target must FAIL, not load with the scrubs off. Discarding
 // the resolution error left target nil, which makes hiddenColumns(nil) empty
-// and drops the soft-delete predicate — both guards silently disabled on the
+// and drops the soft-delete predicate, both guards silently disabled on the
 // one row set the caller could not vouch for.
 func TestEagerLoadFailsOnUnresolvedTarget(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE comments (id TEXT PRIMARY KEY, post_id TEXT, body TEXT, legacy_secret TEXT)`)
@@ -229,7 +229,7 @@ func TestEagerLoadFailsOnUnresolvedTarget(t *testing.T) {
 
 	_, reg := versionedComments(t)
 	// Unversioned source: neither same-version nor unversioned target exists,
-	// and two versions remain — the documented ambiguity error.
+	// and two versions remain, the documented ambiguity error.
 	posts := entity.Define("posts", entity.EntityConfig{}.WithTimestamps(false))
 	rel := entity.HasMany("comments", "comments", "post_id")
 
@@ -238,7 +238,7 @@ func TestEagerLoadFailsOnUnresolvedTarget(t *testing.T) {
 	}
 }
 
-// nilTargetRegistry resolves a name to (nil, nil) — no entity, no error.
+// nilTargetRegistry resolves a name to (nil, nil), no entity, no error.
 // A registry implementation is free to do that, and EagerLoad must treat
 // it as "schema unknown" rather than "nothing to scrub".
 type nilTargetRegistry struct{}

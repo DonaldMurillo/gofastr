@@ -1,8 +1,8 @@
-// GoFastr runtime module — DragDismiss
+// GoFastr runtime module, DragDismiss
 //
 // Pointer-driven drag-to-close for widgets whose Definition opts in
 // via DragDismiss (data-fui-drag-dismiss="true" on the widget root,
-// data-fui-drag-handle="true" on the visible handle bar — e.g.
+// data-fui-drag-handle="true" on the visible handle bar, e.g.
 // preset.BottomSheet). Drag is only initiated from the handle so taps
 // inside the panel content (scrolling, form input) don't accidentally
 // dismiss the sheet.
@@ -13,7 +13,7 @@
 // animation and transitions so the live transform isn't fought).
 //
 // Loads on demand: core's module scanner watches
-// [data-fui-drag-dismiss="true"] — present at boot for SSR-inlined
+// [data-fui-drag-dismiss="true"], present at boot for SSR-inlined
 // sheets, and caught by the MutationObserver scan when widget chrome
 // is appended to <body> on open. Listeners are document-level and
 // installed once (guarded), so no per-navigation rescan is needed.

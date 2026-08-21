@@ -3,10 +3,10 @@ package provider
 // Pricing lookup + USD math. Sources:
 //
 //   - OpenRouter: populated dynamically from upstream /models pricing.
-//     We don't need the static table for openrouter:* — the catalog
+//     We don't need the static table for openrouter:*, the catalog
 //     already has Pricing.
 //   - ZAI: static table below (their pricing page).
-//   - Copilot: a flat $0/per-token in PayG mode — no per-token math.
+//   - Copilot: a flat $0/per-token in PayG mode, no per-token math.
 //
 // New providers add a `case` to PricingForModel. The fallback returns
 // ok=false so callers can decide whether to skip cost emission or
@@ -25,7 +25,7 @@ func PricingForModel(providerName, modelID string) (Pricing, bool) {
 
 // zaiPricing returns the per-MTok rates for ZAI GLM models. Numbers
 // taken from the ZAI pricing page; CodingPlan flat-fee subscriptions
-// don't change per-token cost emission — the rates here are the
+// don't change per-token cost emission, the rates here are the
 // standard PAYG ones a user would see on a non-subscription account.
 func zaiPricing(modelID string) (Pricing, bool) {
 	switch modelID {

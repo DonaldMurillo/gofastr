@@ -234,7 +234,7 @@ func TestRoundTripWrapAroundBoundary(t *testing.T) {
 // requires RGB <= A). sampleRGBA8 routes RGBA through color.NRGBAModel.Convert.
 func TestRoundTripPremultipliedZeroAlphaOddRGB(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 4, 1))
-	// Manually poke pixel bytes — A=0 but R=128, an invalid premul state.
+	// Manually poke pixel bytes. A=0 but R=128, an invalid premul state.
 	src.Pix[0] = 128
 	src.Pix[1] = 0
 	src.Pix[2] = 0

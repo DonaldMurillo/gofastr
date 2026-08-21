@@ -44,7 +44,7 @@ func (r Role) String() string {
 // internal-error code; for finer-grained codes, return a [*Error].
 //
 // For notifications (no id) the result is ignored and no response is written;
-// only err is observed (and only for local logging — a notification cannot
+// only err is observed (and only for local logging; a notification cannot
 // produce a wire response).
 type Handler func(ctx context.Context, params json.RawMessage) (result any, err error)
 
@@ -53,7 +53,7 @@ type Handler func(ctx context.Context, params json.RawMessage) (result any, err 
 // requests concurrently over the SAME connection. This is the load-bearing
 // break from mcpclient, which could originate but not serve.
 //
-// Per-direction ID correlation (design §4.3 — the most-tested property):
+// Per-direction ID correlation (design §4.3, the most-tested property):
 //
 //   - Each Peer owns an independent id counter ([Peer.nextID], atomic, starts
 //     at 0; the first [Peer.Call] uses id=1).
@@ -84,7 +84,7 @@ type Peer struct {
 	maxServeInflight int
 
 	// Per-direction id counter (the load-bearing field). Atomic; starts at 0
-	// so the first Add(1) returns 1 — ids begin at 1, never 0.
+	// so the first Add(1) returns 1: ids begin at 1, never 0.
 	nextID atomic.Uint64
 
 	mu            sync.Mutex // guards pending, inflight, handlers, cancel
@@ -93,8 +93,8 @@ type Peer struct {
 	serveInflight int
 	handlers      map[string]Handler
 	// cancels maps an inbound-request id to every handler currently serving
-	// it. A counterparty is free to reuse ids — nothing on the wire forbids
-	// it — so this cannot be a 1:1 map: keyed by id alone, a second request
+	// it. A counterparty is free to reuse ids; nothing on the wire forbids
+	// it, so this cannot be a 1:1 map: keyed by id alone, a second request
 	// with the same id overwrote the first's entry, and then the FIRST
 	// handler's deferred delete removed the SECOND's, leaving a live handler
 	// that neither module.cancel nor Peer.Close could reach. Entries are
@@ -130,13 +130,13 @@ func WithMaxInflight(n int) PeerOption {
 // from a flooding counterparty: the origination-side cap only limits requests
 // a peer sends, so a hostile peer that never awaits responses could otherwise
 // spawn one handler goroutine per frame it writes. Overflow requests are
-// answered immediately with a [CodeInflightCap] error response — never
+// answered immediately with a [CodeInflightCap] error response, never
 // silently dropped (a drop would hang the caller) and never queued.
 //
 // The same cap bounds served NOTIFICATIONS, with the opposite overflow
 // policy: a notification is unacknowledged, so over-cap ones are dropped
 // (there is no response frame to write and no caller to hang).
-// [MethodCancel] is exempt — its built-in handler does no I/O, so it runs on
+// [MethodCancel] is exempt: its built-in handler does no I/O, so it runs on
 // the read loop and a flood can never starve cancellation.
 func WithMaxServeInflight(n int) PeerOption {
 	return func(p *Peer) {
@@ -184,7 +184,7 @@ func NewPeer(codec *Codec, role Role, opts ...PeerOption) *Peer {
 func (p *Peer) Role() Role { return p.role }
 
 // Handle registers (or replaces) a handler for an inbound method. Registering
-// [MethodCancel] is refused — that handler is built-in. Registering a handler
+// [MethodCancel] is refused; that handler is built-in. Registering a handler
 // after [Peer.Start] is allowed (the read loop consults the map under the
 // mutex), but doing so concurrently with traffic is unusual.
 func (p *Peer) Handle(method string, h Handler) error {
@@ -201,7 +201,7 @@ func (p *Peer) Handle(method string, h Handler) error {
 }
 
 // Start launches the read loop. It panics if called twice (the read loop must
-// be single-threaded — see [Codec]).
+// be single-threaded; see [Codec]).
 func (p *Peer) Start() {
 	if !p.started.CompareAndSwap(false, true) {
 		panic("moduleproto: Peer.Start called twice")
@@ -247,7 +247,7 @@ func (p *Peer) FatalDone() <-chan struct{} { return p.fatalCh }
 // Call originates a request with the given method and params, waits for the
 // paired response, and returns the result's raw bytes. params may be nil
 // (no params field), a typed value (JSON-marshaled), or [json.RawMessage]
-// (passed through). The id is drawn from this Peer's monotonic counter — the
+// (passed through). The id is drawn from this Peer's monotonic counter; the
 // first Call uses id=1, the next id=2, etc.
 //
 // Call is safe for concurrent use by multiple goroutines.
@@ -255,7 +255,7 @@ func (p *Peer) FatalDone() <-chan struct{} { return p.fatalCh }
 // Failure modes:
 //
 //   - ctx expired: the pending entry is removed and ctx.Err() is returned.
-//     Call does NOT automatically emit module.cancel — that is supervisor
+//     Call does NOT automatically emit module.cancel; that is supervisor
 //     policy. Origination-side cancellation is a [Peer.Notify] away.
 //   - inflight cap reached: returns [ErrInflightCap] without writing anything.
 //   - Peer closed (or read loop exited): returns [ErrClosed] (or the terminal
@@ -340,7 +340,7 @@ func (p *Peer) Call(ctx context.Context, method string, params any) (json.RawMes
 //
 // [MethodCancel] is special: the Peer has a built-in handler for it on the
 // receive side, but the origination side is the supervisor's policy (only the
-// host sends module.cancel). Notify itself places no role restriction — the
+// host sends module.cancel). Notify itself places no role restriction; the
 // policy lives above the codec.
 func (p *Peer) Notify(ctx context.Context, method string, params any) error {
 	if p.closed.Load() {
@@ -358,7 +358,7 @@ func (p *Peer) Notify(ctx context.Context, method string, params any) error {
 		Method:  method,
 		Params:  paramsRaw,
 	}
-	// Notify honors ctx only for the case where the peer is shutting down —
+	// Notify honors ctx only for the case where the peer is shutting down;
 	// the write itself is synchronous and bounded by max_frame_bytes.
 	done := make(chan error, 1)
 	go func() {
@@ -402,7 +402,7 @@ func (p *Peer) Close() error {
 	}
 	p.mu.Unlock()
 	// Close closeCh so in-flight outbound Calls/Notifies unblock with
-	// ErrClosed promptly — they no longer need to wait for the read loop to
+	// ErrClosed promptly; they no longer need to wait for the read loop to
 	// observe the transport teardown.
 	close(p.closeCh)
 	return nil
@@ -461,12 +461,12 @@ func (p *Peer) dispatch(f *Frame) {
 		// slow handler cannot stall the read loop (and therefore cannot
 		// stall unrelated responses or other concurrent requests). The
 		// handler writes a paired response with the same id. The request
-		// branch never consults p.pending — that map is reserved for the
+		// branch never consults p.pending; that map is reserved for the
 		// response branch below. This is the load-bearing rule: a request
 		// with the same numeric id as one of our originated requests
 		// cannot collide with it.
 		//
-		// Serve-side concurrency is bounded by maxServeInflight — the
+		// Serve-side concurrency is bounded by maxServeInflight; the
 		// origination-side cap only limits requests WE send, so without
 		// this bound a flooding counterparty could spawn one goroutine
 		// per frame it writes. Overflow gets an immediate CodeInflightCap
@@ -483,7 +483,7 @@ func (p *Peer) dispatch(f *Frame) {
 		p.mu.Unlock()
 		f := f
 		go func() {
-			// The serve slot bounds concurrent HANDLER execution — the thing a
+			// The serve slot bounds concurrent HANDLER execution: the thing a
 			// flooder could use to spawn work. It is released the moment the
 			// handler finishes, BEFORE the response is written. This matters
 			// for correctness at the ceiling: the originating peer frees its
@@ -512,7 +512,7 @@ func (p *Peer) dispatch(f *Frame) {
 			return
 		}
 		// Everything else is dispatched in its own goroutine so a slow
-		// handler cannot stall the read loop — but under the SAME serve cap
+		// handler cannot stall the read loop, but under the SAME serve cap
 		// the request branch uses. Without it a flooding counterparty spawns
 		// one goroutine per frame it writes, which is precisely the threat
 		// WithMaxServeInflight documents; the request branch was bounded and
@@ -546,7 +546,7 @@ func (p *Peer) dispatch(f *Frame) {
 	case f.Method == "" && f.ID != nil:
 		// Inbound RESPONSE. Deliver to our pending map. This is the ONLY
 		// branch that touches p.pending, and it only ever looks up ids WE
-		// originated — so a peer's id:7 lookup never sees the other peer's
+		// originated, so a peer's id:7 lookup never sees the other peer's
 		// id:7 (which was a request id on this side, handled above).
 		p.deliverResponse(f)
 	default:
@@ -557,7 +557,7 @@ func (p *Peer) dispatch(f *Frame) {
 }
 
 // buildResponse runs the handler for an inbound request and returns the Frame
-// the caller must write (never nil for a request — a request always gets a
+// the caller must write (never nil for a request; a request always gets a
 // paired response so the originating Call unblocks). It does NOT write the
 // frame itself: the caller writes it AFTER releasing the serve-inflight slot,
 // so the write is not counted against the concurrent-handler cap.
@@ -608,7 +608,7 @@ func (p *Peer) serveNotification(f *Frame) {
 	if !ok {
 		// Unknown notification: silently drop. JSON-RPC 2.0 notifications
 		// are not acknowledged, so there is nothing to write. We log via
-		// the fatal hook only for diagnostics — NOT fatal.
+		// the fatal hook only for diagnostics; NOT fatal.
 		return
 	}
 	// Notifications get a context that is cancelled on Peer.Close. There is
@@ -629,7 +629,7 @@ func (p *Peer) deliverResponse(f *Frame) {
 	p.mu.Unlock()
 	if !ok {
 		// A response with no matching pending id. Under correct per-direction
-		// correlation this is impossible on a healthy peer — treat as a
+		// correlation this is impossible on a healthy peer; treat as a
 		// terminal protocol fault. During shutdown, however, late responses
 		// for Calls that already gave up are expected; suppress in that case.
 		if p.closed.Load() {

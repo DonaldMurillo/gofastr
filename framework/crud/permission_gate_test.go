@@ -40,7 +40,7 @@ func setupPermissionedHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 }
 
 // grantReq returns a request whose context carries a RolePolicy granting the
-// given permissions to the role "member", with the user holding that role —
+// given permissions to the role "member", with the user holding that role,
 // the shape access.Middleware would install.
 func grantReq(r *http.Request, perms ...access.Permission) *http.Request {
 	policy := access.NewRolePolicy()
@@ -53,7 +53,7 @@ func grantReq(r *http.Request, perms ...access.Permission) *http.Request {
 // TestPermissionGate_ListDeniedWithoutPermission pins the secure behaviour:
 // an entity declaring Access.Read refuses a request whose context lacks the
 // permission with 403. Before B2 there was no permission check in auto-CRUD at
-// all — every authenticated user got full CRUD.
+// all, every authenticated user got full CRUD.
 func TestPermissionGate_ListDeniedWithoutPermission(t *testing.T) {
 	ch, db := setupPermissionedHandler(t)
 	if _, err := db.Exec(`INSERT INTO docs (id, body) VALUES ('d1','secret')`); err != nil {

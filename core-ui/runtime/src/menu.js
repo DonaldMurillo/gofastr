@@ -1,13 +1,13 @@
-// GoFastr runtime module — Menu keyboard navigation
+// GoFastr runtime module, Menu keyboard navigation
 //
 // Document-level keydown handler for [role="menuitem"] elements
 // inside a [role="menu"] panel. Handles:
-//   ArrowDown / ArrowUp   — roving focus (wraps at edges)
-//   Home / End            — jump to first / last enabled item
-//   Tab                   — close the surrounding
+//   ArrowDown / ArrowUp   : roving focus (wraps at edges)
+//   Home / End            : jump to first / last enabled item
+//   Tab                   : close the surrounding
 //                           <details data-fui-disclosure> and let
 //                           Tab fall through naturally
-//   Printable single key  — type-ahead jump to next item whose
+//   Printable single key  : type-ahead jump to next item whose
 //                           label starts with the accumulated prefix
 //                           (800ms inactivity resets the buffer)
 //
@@ -17,7 +17,7 @@
 //   - hover/focus prefetch via data-fui-prefetch="menu" warms it.
 //
 // The "focus first menuitem on disclosure open" behaviour lives in
-// core's existing disclosure-toggle listener — it's a 4-line block
+// core's existing disclosure-toggle listener, it's a 4-line block
 // integrated with the aria-expanded mirror, not worth duplicating
 // across modules.
 (() => {
@@ -46,7 +46,7 @@
       // Close the surrounding disclosure so focus escapes naturally.
       const d = panel.closest('details[data-fui-disclosure]');
       if (d) d.removeAttribute('open');
-      return; // do NOT preventDefault — let Tab move focus
+      return; // do NOT preventDefault, let Tab move focus
     }
     // Type-ahead: a printable single-character key jumps to the
     // next item whose label starts with the accumulated prefix.

@@ -25,7 +25,7 @@ func requireUser(ctx context.Context) error {
 
 // tools/list ran with no gate at all: mcp.Gated wraps HANDLERS, so it only
 // ever affected tools/call. An unauthenticated POST therefore returned every
-// tool's inputSchema — which framework/crud builds from live entity
+// tool's inputSchema, which framework/crud builds from live entity
 // definitions, i.e. every entity name, every non-Hidden field, its type and
 // full enum set. The call 401s; the schema was already out.
 func TestGatedToolIsHiddenFromUnauthenticatedList(t *testing.T) {
@@ -54,7 +54,7 @@ func TestGatedToolIsVisibleToAuthenticatedList(t *testing.T) {
 	}
 }
 
-// Hiding it from the listing is disclosure control, not access control — the
+// Hiding it from the listing is disclosure control, not access control. The
 // gate must also refuse the call.
 func TestGatedToolRefusesUnauthenticatedCall(t *testing.T) {
 	s := NewServer()

@@ -66,7 +66,7 @@ func TestCodecWriteOvercapTerminal(t *testing.T) {
 }
 
 // TestCodecReadOvercapTerminal: a frame larger than negotiated cap on the read
-// side is terminal too (not just the structural scanner cap).
+// side is terminal too; the structural scanner cap is not the only one.
 func TestCodecReadOvercapTerminal(t *testing.T) {
 	// Use a default-cap codec to WRITE (so it fits in 1 MiB), then READ on a
 	// tighter-cap codec that rejects the same bytes.
@@ -115,7 +115,7 @@ func TestCodecEnforcesJSONRPCRequired(t *testing.T) {
 }
 
 // TestCodecConcurrentWrites: parallel WriteFrame calls produce parseable
-// frames — the mutex serializes them, no interleaving.
+// frames. The mutex serializes them, no interleaving.
 func TestCodecConcurrentWrites(t *testing.T) {
 	var buf bytes.Buffer
 	c, _ := NewCodec(&buf, &buf, 0)

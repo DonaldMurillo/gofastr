@@ -12,7 +12,7 @@ import (
 // surface advertises the SAME wire key for a field that sets WireName.
 // Before the fix, the ?fields= description recomputed casing.ToCamel
 // (advertising "bodyText") while the response used the WireName
-// ("content") — so ?fields=bodyText 400'd. Likewise, the request-schema
+// ("content"), so ?fields=bodyText 400'd. Likewise, the request-schema
 // exclusion tried to delete "roleCode" after the property was renamed
 // to "role", leaving a ReadOnly field the runtime ignores in every
 // POST/PUT/PATCH request schema.

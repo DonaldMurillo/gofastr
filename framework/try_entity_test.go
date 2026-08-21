@@ -9,7 +9,7 @@ import (
 )
 
 // TestTryEntity_ReturnsErrorOnBadConfig confirms TryEntity converts a
-// misconfiguration into an error rather than crashing the process — the
+// misconfiguration into an error rather than crashing the process, the
 // property an agent-driven authoring loop needs. An invalid TenantField makes
 // the underlying Define panic; TryEntity must recover it.
 func TestTryEntity_ReturnsErrorOnBadConfig(t *testing.T) {

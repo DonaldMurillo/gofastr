@@ -7,7 +7,7 @@ import (
 
 // Frame is the single bidirectional envelope used by both endpoints of a
 // moduleproto connection (design §4.3). One Frame type carries requests,
-// notifications, and responses — discrimination happens in the read loop, not
+// notifications, and responses; discrimination happens in the read loop, not
 // the type system.
 //
 // Wire shape (JSON-RPC 2.0):
@@ -31,8 +31,8 @@ import (
 //     UnmarshalJSON rejects a decoded id:0 as malformed.
 //
 //   - IDs are per-direction (design §4.3): each endpoint owns an independent
-//     counter. Host-originated id:7 and child-originated id:7 never collide —
-//     see the [Peer] read loop and peer_test.go's interleaved test.
+//     counter. Host-originated id:7 and child-originated id:7 never collide.
+//     See the [Peer] read loop and peer_test.go's interleaved test.
 type Frame struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      *uint64         `json:"id,omitempty"`
@@ -47,7 +47,7 @@ type Frame struct {
 func (f *Frame) HasID() bool { return f != nil && f.ID != nil }
 
 // IDValue returns the id, or 0 if absent. The 0 return for "absent" is NOT a
-// valid id — it is a convenience for callers that have already checked HasID.
+// valid id; it is a convenience for callers that have already checked HasID.
 // A decoded Frame never holds id:0 (UnmarshalJSON rejects it), so a 0 return
 // unambiguously means "absent" for any Frame obtained via the codec.
 func (f *Frame) IDValue() uint64 {
@@ -162,7 +162,7 @@ func (f *Frame) UnmarshalJSON(data []byte) error {
 		}
 	}
 	if !hasMethod && !hasID {
-		// Empty envelope — neither request nor response nor notification.
+		// Empty envelope: neither request nor response nor notification.
 		return fmt.Errorf("%w: frame has no method and no id", ErrInvalidFrame)
 	}
 	*f = Frame(r)

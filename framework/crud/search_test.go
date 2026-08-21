@@ -164,14 +164,14 @@ func TestSearch_NoSearchFieldsBackCompat(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	lr := decodeListResponse(t, rec.Body.String())
-	// Without SearchFields, ?q= is ignored — both rows return.
+	// Without SearchFields, ?q= is ignored, both rows return.
 	if len(lr.Data) != 2 {
 		t.Fatalf("no-SearchFields entity returned %d rows, want 2 (?q= ignored)", len(lr.Data))
 	}
 }
 
 // TestSearch_QColumnEdge: an entity WITH SearchFields that also has a
-// physical column named "q" — plain ?q= means search, not column filter.
+// physical column named "q", plain ?q= means search, not column filter.
 func TestSearch_QColumnEdge(t *testing.T) {
 	installOwnerExtractor(t)
 	db := setupDB(t, `CREATE TABLE sedge (

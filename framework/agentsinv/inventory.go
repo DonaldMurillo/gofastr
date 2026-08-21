@@ -9,7 +9,7 @@
 //   - the generator in cmd/gofastr can dump the inventory by importing
 //     blank (`_ "...battery/admin"`) the packages it wants in scope.
 //
-// The contract is intentionally tiny — just enough to drive AGENTS.md
+// The contract is intentionally tiny, just enough to drive AGENTS.md
 // generation. Per-battery prose lives in the package's own `agents.md`,
 // not in this registry.
 package agentsinv
@@ -41,7 +41,7 @@ type Entry struct {
 	// registered the entry.
 	ImportPath string
 	// Markdown is the embedded contents of the package's agents.md.
-	// MUST be non-empty — a missing file would silently drop the
+	// MUST be non-empty, a missing file would silently drop the
 	// entry from generated AGENTS.md.
 	Markdown string
 }
@@ -56,7 +56,7 @@ var (
 //
 // If Markdown is empty (missing or stale `//go:embed agents.md`), the
 // entry is recorded in MissingMarkdown() but NOT added to All(). This
-// is a soft warning by design — a panic from package init would kill
+// is a soft warning by design, a panic from package init would kill
 // the entire gofastr binary for every subcommand (build / dev /
 // migrate / version), and one mis-shipped battery shouldn't prevent
 // users from running unrelated commands. The `gofastr agents` family
@@ -110,7 +110,7 @@ func All() []Entry {
 // links the whole testing/flag/pprof/regexp tree into those binaries.
 type TestingT interface{ Helper() }
 
-// Reset clears the registry. The TestingT parameter is a discipline marker —
+// Reset clears the registry. The TestingT parameter is a discipline marker,
 // production code can technically pass any Helper()er, so this is
 // convention, not enforcement.
 func Reset(_ TestingT) {

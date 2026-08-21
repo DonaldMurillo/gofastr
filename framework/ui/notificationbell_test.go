@@ -24,7 +24,7 @@ func TestNotificationBellRequiresLabel(t *testing.T) {
 }
 
 // TestBellRowHrefDropsUnsafeScheme pins the URL scheme allow-list on
-// notification rows — items are data-driven (live feeds), so a
+// notification rows. Items are data-driven (live feeds), so a
 // javascript:/data: Href must degrade to "#", never a live link.
 func TestBellRowHrefDropsUnsafeScheme(t *testing.T) {
 	for _, payload := range []string{"javascript:alert(1)", "data:text/html,<x>"} {

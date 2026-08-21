@@ -57,7 +57,7 @@ func TestResolveTenantInstallsTheSubjectsTenant(t *testing.T) {
 }
 
 // The tenant comes from a server-side lookup on the SUBJECT. Anything the
-// request carried must be unable to influence it — that is the property that
+// request carried must be unable to influence it: that is the property that
 // makes this safe to add at all.
 func TestRequestCannotInfluenceTheResolvedTenant(t *testing.T) {
 	h := testHost(t, func(c *Config) {
@@ -108,7 +108,7 @@ func TestResolveTenantErrorFailsClosed(t *testing.T) {
 // Scope note, because the earlier version of this test overclaimed: it set a
 // `tenant=` COOKIE and said it proved the cookie's tenant "does not leak in".
 // Nothing in the fixture parses a cookie into a context tenant, so that held
-// vacuously. It cannot be fixed by seeding the context either — the ordering
+// vacuously. It cannot be fixed by seeding the context either: the ordering
 // guard 500s on any request that already carries a tenant, so the clearing in
 // Middleware is unreachable and unpinnable by construction.
 //
@@ -135,7 +135,7 @@ func TestWithoutResolveTenantNothingIsInstalled(t *testing.T) {
 	}
 }
 
-// An empty tenant id is "no tenant", not an error — a resolver may legitimately
+// An empty tenant id is "no tenant", not an error: a resolver may legitimately
 // say a subject is untenanted.
 func TestEmptyTenantIsNotAnError(t *testing.T) {
 	h := testHost(t, func(c *Config) {

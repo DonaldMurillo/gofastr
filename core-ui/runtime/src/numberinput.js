@@ -1,4 +1,4 @@
-// NumberInput runtime module — wires the +/- step buttons to the
+// NumberInput runtime module, wires the +/- step buttons to the
 // associated <input type="number">. Click the button, parse its
 // data-fui-number-step (signed delta), clamp to min/max, write back,
 // dispatch an `input` event so any form-RPC pipeline that watches

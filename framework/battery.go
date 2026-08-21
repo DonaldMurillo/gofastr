@@ -20,15 +20,15 @@ import (
 //     App-wide app.OnStart / app.OnStop. The framework runs them in
 //     dependency order on Start and reverse-dependency order on Stop.
 //
-// If neither of those applies, prefer Plugin — there is less ceremony
+// If neither of those applies, prefer Plugin. There is less ceremony
 // and the Plugin/Battery distinction stays meaningful only for the
 // modules that genuinely need it.
 //
-// From Init the battery does everything by calling into the App —
+// From Init the battery does everything by calling into the App:
 // register routes via app.Router, middleware via app.Use, swap the
 // logger via app.SetLogger, MCP tools via app.MCP, hooks via
 // app.HookRegistry(name).RegisterHook(...), and so on. There are no
-// optional interfaces for routes / middleware / hooks / tools — Init
+// optional interfaces for routes / middleware / hooks / tools. Init
 // owns it all.
 type Battery interface {
 	// Name returns the unique battery identifier. Used for dependency
@@ -182,7 +182,7 @@ func (bm *BatteryManager) resolveOrder() error {
 	}
 
 	if len(sorted) != len(bm.entries) {
-		// Circular dependency — find which batteries are unresolved
+		// Circular dependency: find which batteries are unresolved
 		var unresolved []string
 		for name, deg := range inDegree {
 			if deg > 0 {
@@ -236,7 +236,7 @@ func initBatterySafe(name string, b Battery, app *App) (err error) {
 		if v := recover(); v != nil {
 			// Format with %T not %v so a panic value containing secrets
 			// (e.g. panic(config)) doesn't leak into the error chain.
-			err = fmt.Errorf("battery %q init panicked (panic type %T) — set GOTRACEBACK=all for details", name, v)
+			err = fmt.Errorf("battery %q init panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
 		}
 	}()
 	if e := b.Init(app); e != nil {

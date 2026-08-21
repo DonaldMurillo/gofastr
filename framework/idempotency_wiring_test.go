@@ -31,7 +31,7 @@ func TestWithIdempotency_OmittedMeansNoExtraMiddleware(t *testing.T) {
 	var calls int32
 	withTestRoute(a, &calls, http.StatusCreated, "ok")
 	// Without idempotency wired, two identical POSTs hit the handler
-	// twice — same as before.
+	// twice, same as before.
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/r", strings.NewReader("{}"))
 		req.Header.Set("Idempotency-Key", "x")
@@ -90,5 +90,5 @@ func TestWithIdempotency_PanicsWithWithoutDefaultMiddleware(t *testing.T) {
 }
 
 // Compile-time assertion that router.Middleware is the adapter shape
-// the wiring uses — guards against accidental refactor.
+// the wiring uses, guards against accidental refactor.
 var _ router.Middleware = router.Middleware(middleware.Idempotency(middleware.IdempotencyConfig{}))

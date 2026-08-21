@@ -1,6 +1,6 @@
 //check-csp:ignore-file
 // The bundled harness web client is a dev-only operator surface served
-// on a random localhost port — not a production browser app — so the
+// on a random localhost port, not a production browser app, so the
 // framework's strict-CSP contract does not apply. The indexHTML
 // constant inlines the SSE listener + form handler so the harness
 // runs without a build step or an extra HTTP round-trip.
@@ -47,7 +47,7 @@ type Server struct {
 // New constructs a Server bound to the given inproc Client + bus.
 //
 // The bus is needed (in addition to the Client) so each browser
-// subscriber gets its own dedicated channel — the inproc.Client's
+// subscriber gets its own dedicated channel, the inproc.Client's
 // Subscribe is one-channel-per-client, and we want N browsers to
 // share one engine.
 func New(c *inproc.Client, session ids.SessionID, bus *engine.Bus) *Server {
@@ -167,7 +167,7 @@ func jsonString(s string) string {
 	return string(b)
 }
 
-// indexHTML is the minimal SPA. v0.1 ships inline — when the
+// indexHTML is the minimal SPA. v0.1 ships inline, when the
 // GoFastr-App dogfooding lands this is replaced with island-rendered
 // pages.
 const indexHTML = `<!doctype html>

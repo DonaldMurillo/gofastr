@@ -50,7 +50,7 @@
       }
     }
 
-    // Single button click (icon/label) — cycle dark → light → auto
+    // Single button click (icon/label), cycle dark → light → auto
     const btn = e.target.closest('[data-fui-theme-toggle]');
     if (!btn || btn.getAttribute('data-fui-theme-toggle') === 'pill') return;
     e.preventDefault();

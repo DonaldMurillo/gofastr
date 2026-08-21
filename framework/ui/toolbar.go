@@ -22,13 +22,13 @@ type ToolbarGroup struct {
 	// group renders with role="group" + aria-label.
 	Label string
 	// Children are the actual button/link elements. The caller
-	// decides what goes in — Button, Link, IconButton, etc.
+	// decides what goes in: Button, Link, IconButton, etc.
 	Children []render.HTML
 }
 
 // ToolbarConfig configures a Toolbar.
 type ToolbarConfig struct {
-	// Label is the accessible name for the toolbar (required —
+	// Label is the accessible name for the toolbar (required,
 	// becomes aria-label).
 	Label string
 	// Groups are rendered in order with separators between.
@@ -53,7 +53,7 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 	case "", "start", "center", "end", "between":
 	default:
 		panic("ui: Toolbar unknown Align " + cfg.Align +
-			` — pick one of: "" (start), start, center, end, between`)
+			`. Pick one of: "" (start), start, center, end, between`)
 	}
 	cls := "ui-toolbar"
 	if cfg.Align != "" && cfg.Align != "start" {

@@ -44,7 +44,7 @@ func newValidationTestHandler(t *testing.T, fields []schema.Field, ddl string) (
 
 // TestValidationErrorMatchesErrorsAs drives the in-process CreateOne with
 // an invalid body and asserts the returned error unwraps to
-// *crud.ValidationError via errors.As — the contract host code relies on
+// *crud.ValidationError via errors.As, the contract host code relies on
 // to branch on validation failures.
 func TestValidationErrorMatchesErrorsAs(t *testing.T) {
 	ch, _ := newValidationTestHandler(t,
@@ -91,7 +91,7 @@ func TestValidationErrorFieldsPerField(t *testing.T) {
 }
 
 // TestValidationWireShapeUnchanged locks down the exact 400 response body
-// the HTTP Create path emits for a validation failure — three keys
+// the HTTP Create path emits for a validation failure, three keys
 // (error, success, fields) and the canonical "validation failed" string.
 func TestValidationWireShapeUnchanged(t *testing.T) {
 	ch, _ := newValidationTestHandler(t,

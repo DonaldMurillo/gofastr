@@ -7,13 +7,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// A schema.JSON field's Default is naturally authored as a Go map or slice —
+// A schema.JSON field's Default is naturally authored as a Go map or slice,
 // that is the shape the write path handles (crud.marshalJSONColumn) and the
 // shape schema.validateJSON accepts. SQLDefault had no arm for either, so both
 // fell to the fmt.Sprintf("%v") fallback and rendered as Go's debug form:
 // DEFAULT 'map[a:1]' on a JSONB column, which Postgres rejects at AutoMigrate.
 //
-// The same declaration works on SQLite, whose column is TEXT — so the value is
+// The same declaration works on SQLite, whose column is TEXT, so the value is
 // right in two places (validation, insert) and wrong only in the DDL.
 func TestSQLDefaultRendersJSONForMapsAndSlices(t *testing.T) {
 	for _, tc := range []struct {

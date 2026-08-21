@@ -119,7 +119,7 @@ func TestSecurityHeaders_COOPPresent(t *testing.T) {
 // default-src does NOT cover.
 //
 // CSP does not let default-src fall back for form-action at all, and
-// object-src's fallback was removed in CSP3 — so a policy of
+// object-src's fallback was removed in CSP3, so a policy of
 // "default-src 'self'" leaves both unrestricted in practice. That
 // matters here because the default CSP is the single load-bearing
 // mitigation for the browser-runtime gadget class: without form-action,
@@ -143,7 +143,7 @@ func TestDefaultCSPBoundsFormAndObject(t *testing.T) {
 			t.Errorf("the default CSP lost %q: %q", want, csp)
 		}
 	}
-	// A host-supplied policy is still used verbatim — this is a default,
+	// A host-supplied policy is still used verbatim; this is a default,
 	// not an override.
 	custom := SecurityHeaders(SecurityHeadersConfig{ContentSecurityPolicy: "default-src 'none'"})(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))

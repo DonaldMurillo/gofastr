@@ -39,7 +39,7 @@ func (f *staticTestRegistry) Get(name string) (*entity.Entity, error) {
 
 // The SDK docs site exports like any other screens (dynamic entity pages
 // expand via StaticPaths) and ExtraDirs ships the downloadable artifacts
-// into the tree — without clobbering files the export already owns.
+// into the tree, without clobbering files the export already owns.
 func TestBuildExportsSDKDocsAndExtraDirs(t *testing.T) {
 	reg := &staticTestRegistry{entities: []*entity.Entity{
 		entity.Define("posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}),

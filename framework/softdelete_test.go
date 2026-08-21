@@ -149,7 +149,7 @@ func TestTenantFilter(t *testing.T) {
 }
 
 func TestTenantFilterEmptyID(t *testing.T) {
-	// Empty tenantID is now fail-closed — see the security test
+	// Empty tenantID is now fail-closed. See the security test
 	// TestApplyTenantFilter_EmptyTenantDoesNotLeaveQueryUnscoped.
 	qb := query.Select("*").From("posts")
 	tenant.ApplyTenantFilter(qb, "")

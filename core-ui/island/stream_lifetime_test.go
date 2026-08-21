@@ -38,8 +38,8 @@ func readSSE(t *testing.T, body io.Reader, stop func(buf string) bool) (string, 
 // must NOT cut a live SSE stream mid-flight. A stream that survives its own
 // request deadline and still delivers a post-deadline update proves the fix.
 //
-// The handler simulates exactly what middleware.Timeout does — derive a short
-// deadline from r.Context() and run the handler under it — without importing
+// The handler simulates exactly what middleware.Timeout does, derive a short
+// deadline from r.Context() and run the handler under it, without importing
 // the middleware (which would risk a cycle and couple the unit test to the
 // middleware's goroutine plumbing).
 func TestSSEStreamOutlivesRequestDeadline(t *testing.T) {
@@ -135,7 +135,7 @@ func TestSSEHeartbeatKeepsIdleStreamAlive(t *testing.T) {
 }
 
 // TestSSEStreamBoundReclaimsStream proves a stream is closed after the bound
-// even when nothing else ends it — the safety net that reclaims a stream
+// even when nothing else ends it, the safety net that reclaims a stream
 // stranded by a peer the server cannot observe as gone (whose heartbeat writes
 // keep succeeding into the kernel buffer). With the bound, EventSource simply
 // reconnects on a live stream; a stranded stream is dropped.
@@ -222,7 +222,7 @@ func TestSSEStreamClosesOnClientDisconnect(t *testing.T) {
 // watcher goroutine introduces: a stream reclaimed by the BOUND (not by a
 // client disconnect) must still release its watcher goroutine. The watcher
 // blocks on the request context's Done channel, which net/http cancels when
-// ServeHTTP returns — so once the bound closes the stream the watcher must
+// ServeHTTP returns, so once the bound closes the stream the watcher must
 // unwind, not linger for the lifetime of the keep-alive connection.
 func TestSSEStreamBoundReclaimsNoGoroutineLeak(t *testing.T) {
 	mgr := NewManager(
@@ -233,7 +233,7 @@ func TestSSEStreamBoundReclaimsNoGoroutineLeak(t *testing.T) {
 	defer server.Close()
 
 	// DisableKeepAlives so the client's transport goroutines release as soon as
-	// the response body closes — otherwise they linger in the connection pool
+	// the response body closes, otherwise they linger in the connection pool
 	// and mask whether the SERVER-side watcher goroutine unwound.
 	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 

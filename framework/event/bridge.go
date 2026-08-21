@@ -25,7 +25,7 @@ const bridgeQueueDepth = 256
 
 // bridgePublishTimeout bounds a single Publish from the publisher goroutine.
 // A well-behaved backend honors the ctx and fails fast; it is defense-in-depth
-// only — the tap is non-blocking regardless of backend behavior.
+// only, the tap is non-blocking regardless of backend behavior.
 const bridgePublishTimeout = 5 * time.Second
 
 // AttachFanout bridges bus to f: every locally-emitted event (via Emit,
@@ -37,7 +37,7 @@ const bridgePublishTimeout = 5 * time.Second
 // outbox's job. Each event is wrapped in a node-id envelope; messages that
 // originated on this bus are dropped on receive so broadcasts do not echo
 // back. Remote re-emits run through EmitAsync with the tap suppressed
-// (withRemoteReemit) so they are not re-published — preventing loops.
+// (withRemoteReemit) so they are not re-published, preventing loops.
 //
 // The tap NEVER blocks a synchronous emitter: it enqueues to a bounded queue
 // serviced by a single publisher goroutine (drop-oldest on overflow), so a
@@ -45,7 +45,7 @@ const bridgePublishTimeout = 5 * time.Second
 //
 // DERIVED EVENTS: handlers that react to an event by emitting a NEW event
 // must gate the derivation on [IsRemote] so it runs only on the origin
-// replica — `if IsRemote(ctx) { return nil }`. Without the gate, every
+// replica, `if IsRemote(ctx) { return nil }`. Without the gate, every
 // replica derives its own copy and remote replicas observe duplicates
 // (the reaction handler runs on every replica, each re-deriving).
 //

@@ -25,7 +25,7 @@ import (
 // it, and the role keeps its ORIGINAL password. The following ALTER ROLE
 // re-asserted every privilege flag but not the password, so the coordinator
 // then connected as the role with a freshly generated secret and got
-// `password authentication failed for user "module_demo_role" (28P01)` —
+// `password authentication failed for user "module_demo_role" (28P01)`,
 // every process-module migration failing from the second deploy onward.
 //
 // It stayed invisible because CI gave each test process a throwaway Postgres
@@ -33,7 +33,7 @@ import (
 // tests began sharing one server.
 //
 // Asserted at the statement level rather than against a live Postgres so the
-// check runs in the ordinary unit lane — no Docker, no skip. The end-to-end
+// check runs in the ordinary unit lane, no Docker, no skip. The end-to-end
 // proof is TestCoord_PG_ModuleSchemaIsolation, which needs a real server.
 func TestModuleSchemaRoleStmtsResetPasswordOnReprovision(t *testing.T) {
 	const pw = "deadbeefcafe0123456789ab"
@@ -66,7 +66,7 @@ func TestModuleSchemaRoleStmtsResetPasswordOnReprovision(t *testing.T) {
 	// Order matters, and only the slice order encodes it:
 	// execModuleSchemaRoleStmts runs these sequentially, so an ALTER placed
 	// before the CREATE would error on a role that does not exist yet and
-	// break FIRST-time provisioning — the opposite of the bug above, and
+	// break FIRST-time provisioning, the opposite of the bug above, and
 	// invisible to a test that merely checks both statements are present.
 	if createAt >= 0 && alterAt >= 0 && createAt >= alterAt {
 		t.Errorf("CREATE ROLE is at index %d and ALTER ROLE at %d — the CREATE must come first, or first-time provisioning alters a role that does not exist yet", createAt, alterAt)

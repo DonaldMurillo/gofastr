@@ -10,7 +10,7 @@ import (
 
 // TestDevCSRFKeyFromFile_GeneratesAndPersists pins V3 #5: first call
 // creates a stable key on disk; second call reads the SAME bytes back.
-// Persistence across restarts is the entire point — without it, every
+// Persistence across restarts is the entire point; without it, every
 // dev-server reload rotates the key and every open tab 403s.
 func TestDevCSRFKeyFromFile_GeneratesAndPersists(t *testing.T) {
 	dir := t.TempDir()
@@ -23,7 +23,7 @@ func TestDevCSRFKeyFromFile_GeneratesAndPersists(t *testing.T) {
 	if len(first) != 32 {
 		t.Fatalf("want 32 bytes, got %d", len(first))
 	}
-	// File mode should be 0600 — the key is a signing secret.
+	// File mode should be 0600; the key is a signing secret.
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat: %v", err)

@@ -23,7 +23,7 @@ func parseQuery(t *testing.T, rawQuery string, opts ...FilterOption) ([]ParsedFi
 	return ParseFilters(r, strictFields(), opts...)
 }
 
-// A misspelled top-level filter must NOT silently return unfiltered data —
+// A misspelled top-level filter must NOT silently return unfiltered data,
 // it must be rejected so a broken client can't read the whole table. This is
 // the core #100A correctness contract.
 func TestStrictRejectsUnknownFilter(t *testing.T) {
@@ -105,7 +105,7 @@ func TestLenientDropsUnknown(t *testing.T) {
 }
 
 // A declared field whose name collides with a reserved control word must be
-// FILTERED, never swallowed by the reserved-skip — otherwise ?stream=true
+// FILTERED, never swallowed by the reserved-skip, otherwise ?stream=true
 // returns the whole table (the exact #100A hazard). Field wins over reserved.
 func TestStrictFieldWinsOverReservedName(t *testing.T) {
 	fields := []schema.Field{
@@ -128,7 +128,7 @@ func TestStrictFieldWinsOverReservedName(t *testing.T) {
 
 // A field sent both plain and suffixed (?priority=high&priority_gte=2) must
 // never be misreported as an unknown filter regardless of map-iteration
-// order — the suffixed op is consumed and the plain key is a KNOWN field.
+// order, the suffixed op is consumed and the plain key is a KNOWN field.
 func TestStrictConsumedFieldNotUnknown(t *testing.T) {
 	// Run many times: Go map iteration order is randomized, so a flaky
 	// misclassification would surface across iterations.
@@ -150,7 +150,7 @@ func TestStrictConsumedFieldNotUnknown(t *testing.T) {
 }
 
 // Allow() lets a host declare custom query params (consumed by a BeforeList
-// hook or middleware) so strict parsing skips them instead of 400ing —
+// hook or middleware) so strict parsing skips them instead of 400ing,
 // without disabling strictness for genuine typos.
 func TestStrictAllowsDeclaredExtraParams(t *testing.T) {
 	filters, err := parseQuery(t, "region=eu&status=open", Allow("region"))

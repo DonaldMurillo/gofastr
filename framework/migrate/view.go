@@ -9,7 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// View is a virtual table built from other entities — a read model defined by
+// View is a virtual table built from other entities, a read model defined by
 // a SELECT over entity tables. It belongs to both the migration story (created
 // after its source tables, reversible, checksum-tracked in generate) and the
 // ORM story (register it with App.View to query it read-only). A View is the
@@ -17,7 +17,7 @@ import (
 type View struct {
 	Name         string   // view name; also the registry key / table name for queries
 	Select       string   // the SELECT body: "SELECT u.id, u.name FROM users u WHERE u.active"
-	DependsOn    []string // source table/view names — for create-after ordering
+	DependsOn    []string // source table/view names, for create-after ordering
 	Columns      []Column // output columns, for the read-only ORM entity + OpenAPI
 	Materialized bool     // Postgres MATERIALIZED VIEW (a plain VIEW otherwise; ignored on SQLite)
 }
@@ -30,9 +30,9 @@ type View struct {
 func (v View) render(dialect Dialect) (up, down string) {
 	// View.Name is interpolated into DDL as an identifier, so it must be a
 	// safe identifier. It comes from developer code (not request input), so an
-	// unsafe name is a misconfiguration — fail loud, consistent with ToEntity.
+	// unsafe name is a misconfiguration. Fail loud, consistent with ToEntity.
 	// View.Select is intentionally free-form developer-authored SQL (the read
-	// model's query body), so it is not — and cannot be — identifier-escaped.
+	// model's query body), so it is not, and cannot be, identifier-escaped.
 	name, err := query.SafeIdent(v.Name)
 	if err != nil {
 		panic(fmt.Sprintf("migrate: view name %q is not a valid SQL identifier: %v", v.Name, err))
@@ -60,9 +60,9 @@ func (v View) routine(dialect Dialect) Routine {
 
 // ToEntity builds the read-only ORM entity for a view from its declared
 // Columns. The entity is Unmanaged (the migration system never emits table DDL
-// for it — the view DDL handles its existence), so registering it only adds the
+// for it. The view DDL handles its existence), so registering it only adds the
 // ability to query the view through the ORM. Returns nil when no columns are
-// declared (the view is then migration-only — query it with raw SQL).
+// declared (the view is then migration-only: query it with raw SQL).
 func (v View) ToEntity() *entity.Entity {
 	if len(v.Columns) == 0 {
 		return nil
@@ -84,10 +84,10 @@ func (v View) ToEntity() *entity.Entity {
 	// A view exposed through the ORM needs exactly one primary-key column so
 	// GET /{view}/{id} resolves; fail loud rather than mounting a broken route.
 	if pk == "" {
-		panic(fmt.Sprintf("migrate: view %q declares Columns but no PrimaryKey column — mark one column PrimaryKey: true (it's the id the ORM reads), or drop Columns to keep the view migration-only", v.Name))
+		panic(fmt.Sprintf("migrate: view %q declares Columns but no PrimaryKey column: mark one column PrimaryKey: true (it's the id the ORM reads), or drop Columns to keep the view migration-only", v.Name))
 	}
 	if pkCount > 1 {
-		panic(fmt.Sprintf("migrate: view %q marks %d columns PrimaryKey — exactly one is required", v.Name, pkCount))
+		panic(fmt.Sprintf("migrate: view %q marks %d columns PrimaryKey: exactly one is required", v.Name, pkCount))
 	}
 	timestamps := false
 	ent := &entity.Entity{Config: entity.EntityConfig{
@@ -97,7 +97,7 @@ func (v View) ToEntity() *entity.Entity {
 		Unmanaged:  true,
 		Timestamps: &timestamps,
 		// Materialized because this constructor bypasses Define()'s
-		// normalization — the diff engine reads Config.Scope directly.
+		// normalization. The diff engine reads Config.Scope directly.
 		Scope:      &entity.ScopeConfig{},
 		Pagination: &entity.PaginationConfig{},
 		Exposure:   &entity.ExposureConfig{},
@@ -108,7 +108,7 @@ func (v View) ToEntity() *entity.Entity {
 
 // topoSortViews orders views so that a view depending on another view (via
 // DependsOn) is created after it. Dependencies on plain tables are ignored
-// here — all views are emitted after all tables regardless. Cycles are broken
+// here. All views are emitted after all tables regardless. Cycles are broken
 // conservatively (name order); a view cannot truly depend on itself.
 func topoSortViews(views []View) []View {
 	byName := make(map[string]View, len(views))
@@ -129,7 +129,7 @@ func topoSortViews(views []View) []View {
 		}
 		v, ok := byName[name]
 		if !ok {
-			return // a table dependency, not a view — ignore
+			return // a table dependency, not a view: ignore
 		}
 		temp[name] = true
 		deps := append([]string(nil), v.DependsOn...)

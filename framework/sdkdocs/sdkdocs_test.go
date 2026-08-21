@@ -265,7 +265,7 @@ func TestDriftBanner(t *testing.T) {
 	if !strings.Contains(body, "out of date") {
 		t.Error("mismatched schema hash should render the drift banner")
 	}
-	// Downloads still work — stale beats nothing.
+	// Downloads still work, stale beats nothing.
 	if resp, _ := get(t, srv, "/docs/api/sdk/go.zip"); resp.StatusCode != 200 {
 		t.Errorf("stale artifact should still download: %d", resp.StatusCode)
 	}

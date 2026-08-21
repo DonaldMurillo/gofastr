@@ -14,7 +14,7 @@ import (
 // eye: a hash holds at most 9×9 cosine components, so 20 px still samples
 // the busiest possible hash about twice per component and a typical 4×3
 // one about five times. Rendering larger cannot recover detail the hash
-// never carried — it only costs bytes inlined into every HTML response.
+// never carried. It only costs bytes inlined into every HTML response.
 const DefaultBlurHashRenderSize = 20
 
 // MaxBlurHashRenderSize caps each output axis. Decoding costs
@@ -28,7 +28,7 @@ type BlurHashRenderConfig struct {
 	// Width and Height are the output pixel dimensions. Zero means
 	// DefaultBlurHashRenderSize; neither may exceed MaxBlurHashRenderSize.
 	//
-	// These need not match the real image's aspect ratio — the output is
+	// These need not match the real image's aspect ratio. The output is
 	// stretched to fill whatever box the UI paints it into, and a blur has
 	// no detail for the distortion to spoil.
 	Width, Height int
@@ -159,7 +159,7 @@ func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, e
 
 	factors := make([][3]float64, numX*numY)
 	// The DC term is a 24-bit RGB triple written as four positional base83
-	// digits (see appendBase83 in blurhash.go) — not a bit-packed field.
+	// digits (see appendBase83 in blurhash.go), not a bit-packed field.
 	dc := base83Value(digits[2:6])
 	factors[0] = [3]float64{
 		srgbToLinear(uint8(dc >> 16)),

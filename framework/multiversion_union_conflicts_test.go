@@ -12,7 +12,7 @@ import (
 
 // Each test below exercises ONE multi-version union defect (findings F5–F10
 // from the review). They register conflicting versions via GroupEntity and
-// assert the SECOND registration panics — the conflict must surface at
+// assert the SECOND registration panics, the conflict must surface at
 // registration (app.Entity / app.GroupEntity), not silently at boot. A test
 // that names the right symbol in the panic message is the contract; the fix
 // lives in registry.go's checkVersionCompat + checkColumnConflicts.
@@ -20,7 +20,7 @@ import (
 // TestUnion_RejectsSameNameDifferentTable (F5): two versions of one entity
 // name MUST share one physical table. Registering /api/v1/posts on table
 // "posts_v1" and /api/v2/posts on table "posts_v2" would make the name-union
-// keep only the lex-first table and never create the other — every v2 request
+// keep only the lex-first table and never create the other, every v2 request
 // then hits a missing table.
 func TestUnion_RejectsSameNameDifferentTable(t *testing.T) {
 	defer expectPanic(t, "same entity name with different tables")()
@@ -39,7 +39,7 @@ func TestUnion_RejectsSameNameDifferentTable(t *testing.T) {
 
 // TestUnion_RejectsVersionExclusiveRequired (F6): a Required-no-default column
 // added in v2 but absent in v1 creates a NOT NULL column the older version can
-// never supply — every complete POST /api/v1/posts is rejected by the DB.
+// never supply, every complete POST /api/v1/posts is rejected by the DB.
 func TestUnion_RejectsVersionExclusiveRequired(t *testing.T) {
 	defer expectPanicContaining(t, "version-exclusive mandatory column", "summary")()
 	app := NewApp(WithoutDefaultMiddleware())
@@ -60,7 +60,7 @@ func TestUnion_RejectsVersionExclusiveRequired(t *testing.T) {
 
 // TestUnion_RejectsConflictingStringMax (F7): String.Max selects VARCHAR(n),
 // which is DDL, not validation. v1 title Max 100 and v2 title Max 200 must
-// conflict — otherwise the lex-first width wins and a valid v2 request longer
+// conflict, otherwise the lex-first width wins and a valid v2 request longer
 // than that width fails at Postgres.
 func TestUnion_RejectsConflictingStringMax(t *testing.T) {
 	max100 := float64(100)
@@ -81,7 +81,7 @@ func TestUnion_RejectsConflictingStringMax(t *testing.T) {
 
 // TestUnion_RejectsConflictingNamedIndex (F8): a named index on the shared
 // table must be identical across versions. v1 declares idx_posts_slug
-// non-unique, v2 declares it UNIQUE — the merge would keep the first and
+// non-unique, v2 declares it UNIQUE, the merge would keep the first and
 // silently violate v2's declared invariant.
 func TestUnion_RejectsConflictingNamedIndex(t *testing.T) {
 	defer expectPanicContaining(t, "conflicting named index", "idx_posts_slug")()
@@ -104,7 +104,7 @@ func TestUnion_RejectsConflictingNamedIndex(t *testing.T) {
 
 // TestUnion_RejectsConflictingForeignKey (F9): a foreign-key column must
 // reference the same target across versions. v1 points owner_id at users, v2
-// at teams — the DDL would reference whichever the merge saw first, silently
+// at teams, the DDL would reference whichever the merge saw first, silently
 // mis-typing the other version's relation.
 func TestUnion_RejectsConflictingForeignKey(t *testing.T) {
 	// Register the FK targets so the entity declarations are well-formed.

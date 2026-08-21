@@ -1,6 +1,6 @@
 package tui
 
-// Spinner — a tiny animated indicator shown while a turn is in
+// Spinner, a tiny animated indicator shown while a turn is in
 // flight but before any text/thinking/tool events have arrived. Uses
 // Braille patterns (U+28xx) because they're true text glyphs, no
 // emoji, render in every terminal font.

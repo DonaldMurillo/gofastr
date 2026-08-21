@@ -116,7 +116,7 @@ func TestSetup_OffSkipsSetupCheck(t *testing.T) {
 }
 
 // TestSetup_ConsumersDeferredUntilSwap: interactive setup defers
-// consumer startup — the queue must not start until the wizard completes.
+// consumer startup, the queue must not start until the wizard completes.
 func TestSetup_ConsumersDeferredUntilSwap(t *testing.T) {
 	t.Setenv("GOFASTR_SETUP", "")
 	t.Setenv("GOFASTR_ROLE", "")
@@ -328,7 +328,7 @@ func TestSetup_InvalidEnvAbortsStart(t *testing.T) {
 
 // A deferred start hook failing at swap time must get boot-parity
 // fail-loud semantics: the real handler serves (setup IS complete), the
-// failure is logged, and the process shuts down — never a silent
+// failure is logged, and the process shuts down, never a silent
 // half-up server, never a setup surface serving 503s forever.
 func TestSetup_SwapHookFailureShutsDown(t *testing.T) {
 	t.Setenv("GOFASTR_SETUP", "")
@@ -361,7 +361,7 @@ func TestSetup_SwapHookFailureShutsDown(t *testing.T) {
 
 	select {
 	case <-startDone:
-		// Start returned — the process shut itself down. Correct.
+		// Start returned, the process shut itself down. Correct.
 	case <-time.After(5 * time.Second):
 		t.Fatal("Start did not return after a swap-time hook failure — half-up server")
 	}

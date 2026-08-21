@@ -4,8 +4,8 @@ package tui
 // top of the scrollback. While active, all keys flow through the
 // modal first; the standard ones (Esc, Enter, q) dismiss it. The
 // goal here is a self-contained primitive future features can lean
-// on — e.g. interactive model picker, diff preview, confirmation
-// prompts — without re-implementing overlay geometry each time.
+// on, e.g. interactive model picker, diff preview, confirmation
+// prompts, without re-implementing overlay geometry each time.
 //
 // v1 supports a static text panel (title + body lines). Interactive
 // pickers are roadmap.
@@ -43,7 +43,7 @@ func (t *TUI) modalKey(bs []byte) bool {
 	if len(bs) == 0 {
 		return false
 	}
-	// Esc, Enter, 'q', 'Q' — all dismiss.
+	// Esc, Enter, 'q', 'Q', all dismiss.
 	if bs[0] == 0x1b && len(bs) == 1 {
 		t.closeModal()
 		return true

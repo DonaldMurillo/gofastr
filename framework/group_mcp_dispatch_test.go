@@ -62,7 +62,7 @@ func openMemDB(t *testing.T) *sql.DB {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	// ":memory:" with the default pool hands out a fresh empty database per
-	// connection — pin to one.
+	// connection. Pin to one.
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	return db

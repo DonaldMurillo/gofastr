@@ -4,7 +4,7 @@ import "encoding/binary"
 
 // readJPEGOrientation scans a JPEG byte stream for an APP1 (Exif) marker
 // and returns the EXIF orientation tag (1..8) when present, or 0 when
-// absent or malformed. Only the orientation tag is parsed — full EXIF
+// absent or malformed. Only the orientation tag is parsed. Full EXIF
 // support is intentionally out of scope here.
 //
 // The JPEG file structure is: 0xFFD8 (SOI), a sequence of markers of the

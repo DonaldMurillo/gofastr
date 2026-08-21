@@ -13,7 +13,7 @@ import (
 )
 
 // bareStub is a minimal Component whose rendered HTML is the slot's
-// root element — used to plant .fui-slot-bare / data-fui-comp markers
+// root element, used to plant .fui-slot-bare / data-fui-comp markers
 // on the body root for the panel opt-out rendered-DOM tests.
 type bareStub struct{ html string }
 
@@ -43,7 +43,7 @@ func newBareBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -102,14 +102,14 @@ func barePanelBackgroundRGB(t *testing.T, ctx context.Context, url string) strin
 	return bg
 }
 
-// TestCenterPanelBareOptOutRendered — the .fui-slot-bare opt-out is
+// TestCenterPanelBareOptOutRendered: the .fui-slot-bare opt-out is
 // only string-matched in slot_surface_test.go; this renders real DOM
 // and reads the panel's computed background to prove the :has()
 // selector ACTUALLY matches (not just that the selector text exists).
 func TestCenterPanelBareOptOutRendered(t *testing.T) {
 	ctx := newBareBrowserCtx(t)
 
-	// Sanity: a plain body DOES paint the surface — proves the CSS
+	// Sanity: a plain body DOES paint the surface, proves the CSS
 	// loaded and the panel rule applies, so the opt-out assertions
 	// below are meaningful (not vacuously passing on missing CSS).
 	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div>plain</div>`)); bg != bareProbeSurface {
@@ -117,21 +117,21 @@ func TestCenterPanelBareOptOutRendered(t *testing.T) {
 	}
 
 	// (a) .fui-slot-bare on the body's ROOT element suppresses the
-	// panel surface — bare means the body owns every pixel.
+	// panel surface, bare means the body owns every pixel.
 	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div class="fui-slot-bare">bare</div>`)); bg == bareProbeSurface {
 		t.Errorf("bare-root panel painted the surface %q — .fui-slot-bare must opt the panel out of its background", bg)
 	}
 
 	// The bare marker must be the DIRECT child of .fui-slot. A wrapper
 	// <div> around it defeats the :has(> .fui-slot > .fui-slot-bare)
-	// selector, so the panel re-paints — pins the single-root rule
+	// selector, so the panel re-paints, pins the single-root rule
 	// the docs state.
 	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div><div class="fui-slot-bare">bare</div></div>`)); bg != bareProbeSurface {
 		t.Errorf("wrapped .fui-slot-bare panel did NOT paint %q — a wrapper div must defeat the opt-out (marker not a direct child of .fui-slot); got %q", bareProbeSurface, bg)
 	}
 }
 
-// TestCenterPanelCmdPaletteExclusionRendered — the legacy
+// TestCenterPanelCmdPaletteExclusionRendered: the legacy
 // [data-fui-comp="ui-cmd-palette"] branch of the opt-out selector must
 // actually match a rendered palette root (the string test only checks
 // the selector text; a stray quote or typo would slip past it).

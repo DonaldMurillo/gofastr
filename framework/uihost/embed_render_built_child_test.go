@@ -9,7 +9,7 @@ import (
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
-// The boot gate walks the surface component's VALUE graph — pointers,
+// The boot gate walks the surface component's VALUE graph: pointers,
 // interfaces, struct fields, slices, arrays, map keys and map values. That
 // finds a child a parent HOLDS.
 //
@@ -19,7 +19,7 @@ import (
 //	func (c *Root) Render() render.HTML { return Panel{}.Render() }
 //
 // Nothing in the value graph references Panel, so reachableComponentTypes
-// never sees it — while AutoCompileActions still compiled Panel's registry and
+// never sees it, while AutoCompileActions still compiled Panel's registry and
 // GetActionJS concatenates every compiled registry into the ONE bundle
 // handleEmbedRuntimeJS ships to the frame.
 //
@@ -60,7 +60,7 @@ func TestBootWalkCannotSeeRenderBuiltChild(t *testing.T) {
 	host := New(application, WithEmbed(eh))
 	got := panicFromMount(t, host)
 
-	// The action really does ship into the frame's bundle — this is not a
+	// The action really does ship into the frame's bundle. This is not a
 	// hypothetical shape.
 	js := host.GetActionJS()
 	if !strings.Contains(js, `G._serverActionFor("child-action"`) {
@@ -68,7 +68,7 @@ func TestBootWalkCannotSeeRenderBuiltChild(t *testing.T) {
 	}
 	// The boot walk does NOT catch it, and that is a property of walking
 	// values rather than an oversight. If this ever starts panicking the walk
-	// gained render-time visibility — good news, but update the build gate's
+	// gained render-time visibility. Good news, but update the build gate's
 	// reasoning and embed.md before deleting this test.
 	if got != "" {
 		t.Fatalf("boot walk unexpectedly caught a render-built child: %s\n"+

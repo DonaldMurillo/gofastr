@@ -25,7 +25,7 @@ func hasCSPIgnoreDirective(raw []byte) bool {
 		strings.Contains(s, "// check-csp:ignore-file")
 }
 
-// Inline-script ban — compile-rule enforcement of the framework's
+// Inline-script ban, compile-rule enforcement of the framework's
 // strict-CSP contract.
 //
 // The framework's default Content-Security-Policy is
@@ -34,7 +34,7 @@ func hasCSPIgnoreDirective(raw []byte) bool {
 // Components / screens that emit inline <script> blocks (via raw
 // render.HTML strings, render.Tag("script", ...) calls with body
 // content, or string concatenation) silently break the page in
-// production — the browser blocks the script with a CSP error.
+// production, the browser blocks the script with a CSP error.
 //
 // LintNoInlineScripts walks every .go file in dir, scans string
 // literals (both backtick and double-quoted), and reports any that
@@ -62,7 +62,7 @@ var (
 	// these so CSP doesn't block them and the linter shouldn't either.
 	scriptInertTypeRe = regexp.MustCompile(`(?si)\btype\s*=\s*["']?(application/json|application/ld\+json|text/plain|importmap|module-shim/json)\b`)
 	// scriptCloseRe matches a closing </script> tag. Used as a
-	// secondary signal — a string literal containing both opening
+	// secondary signal, a string literal containing both opening
 	// (without src) AND closing tags is almost certainly an inline
 	// script body.
 	scriptCloseRe = regexp.MustCompile(`(?s)</script\s*>`)
@@ -76,11 +76,11 @@ var (
 // A file can opt out by including the directive
 // `//check-csp:ignore-file` somewhere in its source (typically near
 // the top). Use only when the file inherently references <script>
-// in non-emitting contexts — the linter itself, regex patterns, or
+// in non-emitting contexts, the linter itself, regex patterns, or
 // CLI scaffolding.
 // ScanInlineScriptsIn reports inline <script> bodies in an already-parsed
 // file. It exists for callers that have read and parsed the source
-// already — the contracts pass caches both — so the check does not repeat
+// already, the contracts pass caches both, so the check does not repeat
 // a directory walk, a file read, and an AST parse that just happened.
 //
 // raw is needed only for the `//check-csp:ignore-file` directive, which is
@@ -110,7 +110,7 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 		if !strings.HasSuffix(name, ".go") {
 			continue
 		}
-		// Skip test files — they may legitimately embed inline
+		// Skip test files, they may legitimately embed inline
 		// scripts as fixtures for assertion. The runtime rule
 		// applies to production code only.
 		if strings.HasSuffix(name, "_test.go") {
@@ -140,7 +140,7 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 // hidden dirs, testdata/, and dist/.
 //
 // dist/ is the repo's sanctioned build-output directory and is gitignored, so
-// what lives there is generated — including whole example workspaces written by
+// what lives there is generated, including whole example workspaces written by
 // the evaluation harness. Linting it means the repo-cleanliness gate fails on
 // any machine that has run `make build-all` or an eval, pointing at a file
 // nobody wrote and nobody ships.
@@ -224,20 +224,20 @@ func checkInlineScriptInString(s string, line int, filename string, result *Resu
 		return
 	}
 	// type="application/json" and other inert data blocks are not executed
-	// by the browser — CSP does not block them.
+	// by the browser, CSP does not block them.
 	if scriptInertTypeRe.MatchString(openTag) {
 		return
 	}
 	// Look for either a closing </script> tag OR any non-whitespace
 	// content right after the open. A bare "<script></script>" is
-	// technically empty and harmless, but suspicious — flag anyway.
+	// technically empty and harmless, but suspicious, flag anyway.
 	if scriptCloseRe.MatchString(s) {
 		result.add(filename, line,
 			"inline <script> block forbidden: framework strict-CSP (default-src 'self') blocks inline JS. "+
 				"Serve from an external URL via <script src=\"/your-script.js\"> instead.")
 		return
 	}
-	// Open tag with no close in the same literal — still suspicious
+	// Open tag with no close in the same literal, still suspicious
 	// (e.g. someone building the script via concatenation).
 	tail := strings.TrimSpace(s[loc[1]:])
 	if tail != "" {
@@ -248,7 +248,7 @@ func checkInlineScriptInString(s string, line int, filename string, result *Resu
 }
 
 // isInertScriptType reports whether a <script type="…"> value marks
-// the contents as a non-executable data block per the HTML spec —
+// the contents as a non-executable data block per the HTML spec,
 // browsers never run these and CSP does not block them.
 func isInertScriptType(t string) bool {
 	switch strings.ToLower(strings.TrimSpace(t)) {

@@ -30,7 +30,7 @@ func mustNotContain(t *testing.T, h render.HTML, sub string) {
 	}
 }
 
-// mustContain is the inverse — confirms expected safe substring.
+// mustContain is the inverse: confirms expected safe substring.
 func mustContain(t *testing.T, h render.HTML, sub string) {
 	t.Helper()
 	if !strings.Contains(string(h), sub) {
@@ -45,7 +45,7 @@ func mustContain(t *testing.T, h render.HTML, sub string) {
 // TestLink_DropsDangerousHrefs pins the framework-side allow-list:
 // javascript:, data:, vbscript:, file:, blob:, and protocol-relative
 // URLs never appear in the rendered href. Previously the framework
-// only attribute-escaped — the contract was "callers must validate".
+// only attribute-escaped. The contract was "callers must validate".
 // That contract flipped: scheme validation lives in framework/ui/safety.go
 // so component-level callers can't accidentally ship an XSS vector.
 func TestLink_DropsDangerousHrefs(t *testing.T) {
@@ -84,7 +84,7 @@ func TestLink_AllowsSafeHrefs(t *testing.T) {
 
 // TestLink_StripsEventHandlerExtraAttrs pins that the ExtraAttrs
 // escape hatch never carries on* handlers into the DOM. Earlier the
-// framework documented "ExtraAttrs is an escape hatch — callers must
+// framework documented "ExtraAttrs is an escape hatch: callers must
 // not pass event handlers"; the contract is now enforced.
 func TestLink_StripsEventHandlerExtraAttrs(t *testing.T) {
 	for _, attr := range []string{"onclick", "onmouseover", "onfocus", "onkeydown"} {
@@ -168,7 +168,7 @@ func TestLink_HrefPathTraversal(t *testing.T) {
 	if href == "" {
 		t.Fatal("SECURITY: [link-xss] href attribute missing from output")
 	}
-	// The framework doesn't sanitize path traversal in href — that's the
+	// The framework doesn't sanitize path traversal in href: that's the
 	// server's job. But the attribute should be properly escaped.
 	if strings.Contains(out, `"../../../../etc/passwd"`) {
 		t.Logf("NOTE: path traversal in href is passed through (attribute-escaped but not path-sanitized)")
@@ -194,7 +194,7 @@ func TestLink_EmptyTextPanics(t *testing.T) {
 // vbscript: scheme split by an INTERIOR ASCII control byte (tab,
 // newline, CR, NUL) is still refused. Browsers strip those bytes from
 // the URL before resolving the scheme, so "java\tscript:" executes as
-// javascript: — the deny-list must normalize the same way and panic.
+// javascript:. The deny-list must normalize the same way and panic.
 func TestLinkButtonRejectsControlByteScheme(t *testing.T) {
 	for _, payload := range []string{
 		"javascript:alert(1)", // leading-safe baseline
@@ -237,7 +237,7 @@ func TestMenuNeutralisesControlByteScheme(t *testing.T) {
 
 // TestCardHrefDropsUnsafeSchemes pins the URL scheme allow-list on the
 // interactive Card shell: a javascript:/data: (or control-byte-split)
-// Href never reaches the rendered <a>; it is reduced to "#" — dropped,
+// Href never reaches the rendered <a>; it is reduced to "#": dropped,
 // not panicked, because Card is a content-level component.
 func TestCardHrefDropsUnsafeSchemes(t *testing.T) {
 	for _, payload := range []string{
@@ -286,7 +286,7 @@ func TestTagHrefDropsUnsafeSchemes(t *testing.T) {
 // TestNavHrefSinksDropUnsafeSchemes pins the URL scheme allow-list on
 // the remaining content-level Href sinks that render live anchors:
 // ProgressSteps step Href, Sidebar item Href, DocLayout crumb Href,
-// and DocPrevNext pager Hrefs. Each degrades to "#" — never a live
+// and DocPrevNext pager Hrefs. Each degrades to "#", never a live
 // javascript: link.
 func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
 	const payload = "javascript:alert(1)"
@@ -327,7 +327,7 @@ func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
 // TestHrefSinksDropProtocolRelative pins that the three sinks that
 // previously used the weak sanitizeHref (MenuItem.Href,
 // SidebarItem.Href, Notification.DismissHref) now use safeURL, which
-// drops protocol-relative URLs (//evil.com), file:, and blob: —
+// drops protocol-relative URLs (//evil.com), file:, and blob:, which
 // schemes sanitizeHref let through verbatim. Each degrades to href="#".
 func TestHrefSinksDropProtocolRelative(t *testing.T) {
 	for _, payload := range []string{
@@ -765,7 +765,7 @@ func TestHTML_PreCodeXSS(t *testing.T) {
 // ─── Internal helper ──────────────────────────────────────────────────────────
 
 // extractAttr naively extracts an attribute value from HTML output.
-// Used only for logging/inspection in tests — not for production.
+// Used only for logging/inspection in tests, not for production.
 func extractAttr(htmlStr, attrName string) string {
 	needle := attrName + `="`
 	idx := strings.Index(htmlStr, needle)
@@ -781,7 +781,7 @@ func extractAttr(htmlStr, attrName string) string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Form action sinks — SearchInput + FilterToolbar (sibling drift of ui.Form)
+//  Form action sinks: SearchInput + FilterToolbar (sibling drift of ui.Form)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // TestFormActionSinksRejectUnsafeURL pins the URL-scheme allow-list on the
@@ -822,7 +822,7 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 					t.Errorf("SECURITY: %s kept dangerous scheme %q in output:\n%s", s.name, scheme, h)
 				}
 			}
-			// A valid relative action must round-trip unchanged — the guard
+			// A valid relative action must round-trip unchanged: the guard
 			// is a scheme allow-list, not a blanket reject.
 			h := string(s.render("/search"))
 			if !strings.Contains(h, `action="/search"`) {
@@ -847,14 +847,14 @@ func schemeOf(u string) string {
 }
 
 // TestFilterToolbarExtraAttrsCannotOverrideAction pins that the sanitized
-// form action is NOT silently reversible via ExtraAttrs — including via a
+// form action is NOT silently reversible via ExtraAttrs, including via a
 // case-VARIANT key, because HTML attribute names are case-insensitive.
 // #198 ran cfg.Action through urlsafe.CleanAnchor but let the ExtraAttrs
 // merge write cfg.ExtraAttrs["action"] straight over it; #199 dropped the
 // lowercase "action" key from ExtraAttrs. A mixed-case key ("Action" /
 // "ACTION" / "AcTiOn") still survived as a distinct map entry, rendered as a
 // SECOND attribute, and the HTML parser folds duplicate attributes back onto
-// "action" (first occurrence wins) — so whichever rendered first became the
+// "action" (first occurrence wins), so whichever rendered first became the
 // live form action, silently reversing the sanitizer. Property × key-case:
 // the sanitized action must be the ONLY attribute that folds to "action".
 func TestFilterToolbarExtraAttrsCannotOverrideAction(t *testing.T) {

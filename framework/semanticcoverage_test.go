@@ -80,7 +80,7 @@ func TestRecordingIsOffWhenOptedOut(t *testing.T) {
 // TestPermissionEvaluationsAreRecorded closes the hole that made
 // GOFASTR1102 unusable: the rule reads permission coverage from the
 // manifest, so if nothing writes it, every declared permission reports as
-// unexercised forever — a rule that is always wrong is worse than no rule.
+// unexercised forever, a rule that is always wrong is worse than no rule.
 func TestPermissionEvaluationsAreRecorded(t *testing.T) {
 	dir := t.TempDir()
 	semcov.Reset()
@@ -121,7 +121,7 @@ func TestPermissionEvaluationsAreRecorded(t *testing.T) {
 	if !m.CoveredPermission("posts:write") {
 		t.Errorf("a granted permission was not recorded: %v", m.Permissions)
 	}
-	// A denial proves the boundary as well as a grant does — recording
+	// A denial proves the boundary as well as a grant does, recording
 	// only the grants would report a correctly-tested rejection path as
 	// untested.
 	if !m.CoveredPermission("posts:delete") {
@@ -141,8 +141,8 @@ func TestPermissionEvaluationsAreRecorded(t *testing.T) {
 }
 
 // TestHookFiringsAreRecorded proves the other half of GOFASTR1107: a
-// registered hook that actually runs is credited, and — the part that
-// makes the rule meaningful — a lifecycle point with nothing registered
+// registered hook that actually runs is credited, and, the part that
+// makes the rule meaningful, a lifecycle point with nothing registered
 // is NOT, so an app with no hooks does not report full hook coverage.
 func TestHookFiringsAreRecorded(t *testing.T) {
 	dir := t.TempDir()
@@ -247,7 +247,7 @@ func TestEntityForPatternWithoutARegistry(t *testing.T) {
 
 func TestEntityForPatternIgnoresParameterSegments(t *testing.T) {
 	app := NewApp(WithConfig(AppConfig{Name: "entity-lookup"}))
-	// No entity registered, so every pattern resolves to nothing — the
+	// No entity registered, so every pattern resolves to nothing, the
 	// walk must still terminate on a pattern that is all parameters.
 	for _, pattern := range []string{"/", "", "/{id}", "/{a}/{b}"} {
 		if got := app.entityForPattern(pattern); got != "" {
@@ -258,7 +258,7 @@ func TestEntityForPatternIgnoresParameterSegments(t *testing.T) {
 
 func TestEntityForPatternResolvesThroughTheTableName(t *testing.T) {
 	// The route mounts at the entity's TABLE, which need not equal the
-	// entity name — /api/v1/blog_posts/{id} has to find "BlogPost".
+	// entity name, /api/v1/blog_posts/{id} has to find "BlogPost".
 	app := NewApp(WithConfig(AppConfig{Name: "entity-table"}))
 	app.Entity("BlogPost", EntityConfig{
 		Table:  "blog_posts",
@@ -271,7 +271,7 @@ func TestEntityForPatternResolvesThroughTheTableName(t *testing.T) {
 		t.Errorf("entityForPattern matched an unrelated path: %q", got)
 	}
 	// The name is also matched, for a surface mounted under the entity
-	// name rather than its table — a renamed table must not make the
+	// name rather than its table, a renamed table must not make the
 	// entity invisible to coverage.
 	if got := app.entityForPattern("/admin/BlogPost"); got != "BlogPost" {
 		t.Errorf("entityForPattern by name = %q, want BlogPost", got)
@@ -367,7 +367,7 @@ func TestServingProcessRecordsWhenEnvIsSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Flushed from the serve hook, not at shutdown — a harness usually
+	// Flushed from the serve hook, not at shutdown, a harness usually
 	// SIGKILLs the server, so nothing would ever run a shutdown path.
 	m, err := semcov.Read(dir)
 	if err != nil {
@@ -392,8 +392,8 @@ func TestServingProcessRecordsWhenEnvIsSet(t *testing.T) {
 
 func TestServingProcessSurvivesAnUnwritableManifest(t *testing.T) {
 	// Coverage recording is observability bolted onto a serving process.
-	// If the manifest cannot be written, the server must keep serving —
-	// the request that triggered the flush is a user's request.
+	// If the manifest cannot be written, the server must keep serving.
+	// The request that triggered the flush is a user's request.
 	blocked := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)

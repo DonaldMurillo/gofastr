@@ -1,4 +1,4 @@
-// GoFastr runtime module — intercepting routes
+// GoFastr runtime module, intercepting routes
 //
 // A detail screen that presents as an overlay when you reach it from
 // inside the app, and as its own full page when you land on it directly.
@@ -13,7 +13,7 @@
 //     STARTED on the declared origin is diverted.
 //   - The server decides. We ask with X-Gofastr-Intercept and say where
 //     we came from; the response only counts as an overlay if it comes
-//     back with X-Gofastr-Overlay. No header, no overlay — we hand the
+//     back with X-Gofastr-Overlay. No header, no overlay, we hand the
 //     navigation back to the normal loadPage path.
 //   - The page underneath stays mounted. Closing is history.back(), so
 //     Back, ESC, and the backdrop all resolve to the same thing, and
@@ -69,7 +69,7 @@
     if (focus && typeof focus.focus === 'function') {
       try { focus.focus({ preventScroll: true }); } catch (_) { focus.focus(); }
     }
-    // Closing IS going back — the overlay owns one history entry, so
+    // Closing IS going back, the overlay owns one history entry, so
     // ESC and the backdrop go through history rather than around it.
     if (!fromPopstate) history.back();
   }
@@ -81,7 +81,7 @@
     if (NS.doc) NS.doc.lockScroll('intercept');
     // Deliberately NOT NS._pushURL: currentPath must stay on the page
     // UNDER the overlay, so the popstate fired by close()'s
-    // history.back() sees no path change and skips the refetch — the
+    // history.back() sees no path change and skips the refetch, the
     // list under the overlay never unmounted.
     history.pushState(null, '', path + (hash || ''));
     // Focus the overlay's first focusable so keyboard users land inside
@@ -100,12 +100,12 @@
 
   // Hand a navigation back to the normal SPA path. loadPage is private
   // to core, so reach it the way the browser does: move the URL, then
-  // fire popstate — core's handler sees a path change and loads it. That
+  // fire popstate, core's handler sees a path change and loads it. That
   // avoids exporting anything new from a bundle with no room.
   function fallbackNav(path, hash) {
     // Deliberately NOT NS._pushURL: the choke point syncs currentPath,
     // and the popstate handler below loads only when the URL DIFFERS
-    // from currentPath — a synced write would make the synthetic event
+    // from currentPath, a synced write would make the synthetic event
     // a no-op. The raw push leaves currentPath stale on purpose; the
     // handler stamps the entry's id itself when it finds none.
     history.pushState(null, '', path + (hash || ''));
@@ -155,7 +155,7 @@
   };
 
   // Any history move while the overlay is up drops it. Returning to the
-  // page underneath costs no refetch — the list never unmounted — and
+  // page underneath costs no refetch, the list never unmounted, and
   // core's own popstate handler loads anything further afield.
   window.addEventListener('popstate', () => { if (open) close(true); });
 

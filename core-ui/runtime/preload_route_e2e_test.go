@@ -142,7 +142,7 @@ func TestHoverPrefetchServesClick(t *testing.T) {
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Click(`#to-detail`, chromedp.ByID),
 		chromedp.WaitVisible(`#detail-screen`, chromedp.ByID),
-		// Hover the intercepting route's link too — must NOT prefetch.
+		// Hover the intercepting route's link too, must NOT prefetch.
 		chromedp.Sleep(200*time.Millisecond),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)

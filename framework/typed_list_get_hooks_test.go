@@ -16,7 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
-// widgetTestUser stamps an authenticated caller into the request context —
+// widgetTestUser stamps an authenticated caller into the request context,
 // widgets has no OwnerField/Access/Public, so the secure-by-default session
 // gate (issue #65) requires a session for every op.
 func widgetTestUser(req *http.Request) *http.Request {

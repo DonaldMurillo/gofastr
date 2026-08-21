@@ -113,7 +113,7 @@ func heading(level int, t string) render.HTML {
 }
 
 // ---------------------------------------------------------------------------
-// / — overview: downloads + install + quickstart
+// /, overview: downloads + install + quickstart
 // ---------------------------------------------------------------------------
 
 type indexScreen struct{ site *site }
@@ -130,7 +130,7 @@ func (sc *indexScreen) Render() render.HTML {
 	body := []render.HTML{
 		heading(1, s.cfg.AppName+" SDKs & API"),
 		para(
-			text("Typed clients for the "+s.cfg.AppName+" HTTP API — a standalone Go module and a zero-dependency JS/TS client — plus a live reference for every documented entity. The machine-readable spec is at "),
+			text("Typed clients for the "+s.cfg.AppName+" HTTP API: a standalone Go module and a zero-dependency JS/TS client, plus a live reference for every documented entity. The machine-readable spec is at "),
 			code("/openapi.json"),
 			text(" (may require auth unless the app opts into a public spec)."),
 		),
@@ -195,21 +195,21 @@ func humanBytes(n int64) string {
 }
 
 func (s *site) installTabs() render.HTML {
-	// Docs + downloads mount on the app host, NOT under the API prefix —
+	// Docs + downloads mount on the app host, NOT under the API prefix,
 	// only API example URLs get exampleOrigin().
 	docsBase := s.exampleHost() + s.cfg.BasePath
 	goInstall := fmt.Sprintf(`curl -LO %s/sdk/go.zip
 unzip go.zip
 go mod edit -replace %s=./%s
 go mod tidy`, docsBase, s.goModuleHint(), s.goDirHint())
-	jsInstall := fmt.Sprintf(`# Two plain files — download them, or import straight from this app:
+	jsInstall := fmt.Sprintf(`# Two plain files: download them, or import straight from this app:
 curl -LO %s/sdk/client.js
 curl -LO %s/sdk/client.d.ts
 
 # or, in the browser / Deno, with no download at all:
 # import { Client } from "%s/sdk/client.js";`,
 		docsBase, docsBase, docsBase)
-	curl := fmt.Sprintf(`# No SDK required — it's a plain HTTP API.
+	curl := fmt.Sprintf(`# No SDK required: it's a plain HTTP API.
 curl -H "Authorization: Bearer $API_TOKEN" %s/<entity>`, s.exampleOrigin())
 
 	return ui.CodeTabs(ui.CodeTabsConfig{Name: "sdk-install", Label: "Install"},
@@ -293,7 +293,7 @@ func (sc *authScreen) Render() render.HTML {
 	if s.cfg.HasAPITokens {
 		body = append(body,
 			heading(2, "Mint a token"),
-			para(text("Log in with a session first, then create a scoped token. The plaintext token is shown once — store it like a password.")),
+			para(text("Log in with a session first, then create a scoped token. The plaintext token is shown once: store it like a password.")),
 			ui.CodeTabs(ui.CodeTabsConfig{Name: "sdk-auth-mint"},
 				ui.CodeSample{Label: "curl", Language: "shell", Code: fmt.Sprintf(`curl -X POST %s%s/tokens \
   -H "Content-Type: application/json" \
@@ -339,18 +339,18 @@ func (sc *errorsScreen) ScreenDescription() string {
 func (sc *errorsScreen) Render() render.HTML {
 	s := sc.site
 	rows := []ui.Row{
-		errRow("400", "Validation failed or malformed request — the envelope carries a fields map."),
+		errRow("400", "Validation failed or malformed request: the envelope carries a fields map."),
 		errRow("401", "No session or bearer token."),
 		errRow("403", "Authenticated but not permitted (RBAC / token scopes)."),
 		errRow("404", "No such record or route."),
 		errRow("413", "Request body too large."),
-		errRow("429", "Rate limited — retry later."),
+		errRow("429", "Rate limited: retry later."),
 	}
 	return s.page("errors", "Errors",
 		heading(1, "Errors"),
 		para(text("Every non-2xx JSON response uses one envelope. Validation errors key the "),
 			code("fields"), text(" map by the "), html.Strong(html.TextConfig{}, text("snake_case column name")),
-			text(" — not the camelCase response casing. Both SDKs surface the envelope (Go: "),
+			text(": not the camelCase response casing. Both SDKs surface the envelope (Go: "),
 			code("*APIError"), text("; JS: "), code("ApiError"), text(").")),
 		ui.CodeBlock(ui.CodeBlockConfig{
 			Language: "json",
@@ -394,7 +394,7 @@ type entityScreen struct {
 
 func (sc *entityScreen) SetParams(params map[string]string) { sc.params = params }
 
-// StaticPaths exports one page per included entity (keyed by table — the
+// StaticPaths exports one page per included entity (keyed by table, the
 // URL segment).
 func (sc *entityScreen) StaticPaths(_ context.Context) []map[string]string {
 	var out []map[string]string
@@ -406,7 +406,7 @@ func (sc *entityScreen) StaticPaths(_ context.Context) []map[string]string {
 
 func (sc *entityScreen) ScreenTitle() string {
 	if e, ok := sc.current(); ok {
-		return e.Config.Name + " — API reference"
+		return e.Config.Name + ": API reference"
 	}
 	return "API reference"
 }
@@ -504,7 +504,7 @@ func (sc *entityScreen) endpointsTable(cfg entity.EntityConfig) render.HTML {
 		{"GET", base + "/{id}", "Get one record"},
 		{"POST", base, "Create"},
 		{"PUT", base + "/{id}", "Full update"},
-		{"PATCH", base + "/{id}", "Partial update — only keys present in the body change"},
+		{"PATCH", base + "/{id}", "Partial update: only keys present in the body change"},
 		{"DELETE", base + "/{id}", "Delete"},
 		{"POST", base + "/_batch", "Atomic batch create ({\"items\": […]})"},
 		{"PATCH", base + "/_batch", "Atomic batch update (items carry id)"},
@@ -520,7 +520,7 @@ func (sc *entityScreen) endpointsTable(cfg entity.EntityConfig) render.HTML {
 		if desc == "" {
 			desc = "Custom endpoint" + map[bool]string{true: " (" + ep.Name + ")", false: ""}[ep.Name != ""]
 		}
-		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc + " — use the SDK's Do escape hatch"})
+		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc + ": use the SDK's Do escape hatch"})
 	}
 	var rows []ui.Row
 	for _, o := range ops {
@@ -556,16 +556,16 @@ func methodVariant(method string) ui.StatusVariant {
 
 func (sc *entityScreen) listParamsNotes(cfg entity.EntityConfig) render.HTML {
 	items := []render.HTML{
-		para(code("?page=2&limit=25"), text(" — offset pagination; "), code("?cursor=&limit=25"), text(" — keyset pagination (pass the returned cursor to continue).")),
-		para(code("?sort=-created_at"), text(" — leading "), code("-"), text(" for descending; snake_case column names.")),
-		para(code("?<column>=x"), text(" — equality filter; suffix operators: "), code("_gt _gte _lt _lte _like _in"), text(".")),
-		para(code("?include=relation"), text(" — eager-load declared relations; "), code("?fields=col1,col2"), text(" — project columns.")),
+		para(code("?page=2&limit=25"), text(": offset pagination; "), code("?cursor=&limit=25"), text(": keyset pagination (pass the returned cursor to continue).")),
+		para(code("?sort=-created_at"), text(": leading "), code("-"), text(" for descending; snake_case column names.")),
+		para(code("?<column>=x"), text(": equality filter; suffix operators: "), code("_gt _gte _lt _lte _like _in"), text(".")),
+		para(code("?include=relation"), text(": eager-load declared relations; "), code("?fields=col1,col2"), text(": project columns.")),
 	}
 	if len(cfg.SearchFields) > 0 {
-		items = append(items, para(code("?q=term"), text(" — free-text search over: "+strings.Join(cfg.SearchFields, ", ")+".")))
+		items = append(items, para(code("?q=term"), text(": free-text search over: "+strings.Join(cfg.SearchFields, ", ")+".")))
 	}
 	if cfg.Scope.SoftDelete {
-		items = append(items, para(code("?trashed=only|with"), text(" — include soft-deleted rows.")))
+		items = append(items, para(code("?trashed=only|with"), text(": include soft-deleted rows.")))
 	}
 	return render.Join(items...)
 }
@@ -654,7 +654,7 @@ func upperFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// fieldTypeLabel mirrors crud/llmmd.go's labels — human-readable field
+// fieldTypeLabel mirrors crud/llmmd.go's labels, human-readable field
 // types for the reference table.
 func fieldTypeLabel(t schema.FieldType) string {
 	switch t {

@@ -16,7 +16,7 @@ import (
 // 1. Header values (via `header:"X-Request-ID"` tag)
 // 2. Query parameters (via `query:"name"` tag)
 // 3. Path parameters (via `path:"id"` tag)
-// 4. JSON body (decodes entire struct — highest priority)
+// 4. JSON body (decodes entire struct, highest priority)
 //
 // If the request has a JSON body and Content-Type is application/json,
 // the body is decoded first. Then query/path/header values fill in
@@ -36,7 +36,7 @@ func Bind(r *http.Request, dst any) error {
 
 	rv = rv.Elem()
 	if rv.Kind() != reflect.Struct {
-		// Non-struct pointer (e.g. *string) — only JSON body applies.
+		// Non-struct pointer (e.g. *string); only JSON body applies.
 		return bindBody(r, dst)
 	}
 
@@ -55,7 +55,7 @@ func Bind(r *http.Request, dst any) error {
 		return err
 	}
 
-	// 4. Bind JSON body (highest priority — overwrites)
+	// 4. Bind JSON body (highest priority, overwrites)
 	hasBody := r.Body != nil && r.ContentLength != 0
 	if hasBody || r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
 		if isJSONContentType(r.Header.Get("Content-Type")) {
@@ -72,7 +72,7 @@ func Bind(r *http.Request, dst any) error {
 // parses the value through mime.ParseMediaType so "application/json"
 // and "application/json; charset=utf-8" both match, while a literal
 // prefix check would also accept "application/jsonp" or
-// "application/json-evil" — a known Content-Type smuggling trick.
+// "application/json-evil", a known Content-Type smuggling trick.
 func isJSONContentType(ct string) bool {
 	if ct == "" {
 		return false
@@ -127,7 +127,7 @@ func bindBody(r *http.Request, dst any) error {
 
 // validateBodyKeys enforces strict top-level key handling for the JSON
 // body decoded into dst. It is a no-op when dst is not a struct pointer
-// or when the body isn't a top-level object — both shapes flow through
+// or when the body isn't a top-level object. Both shapes flow through
 // the decoder unchanged. For struct destinations it requires every
 // top-level key to exact-match a json tag on the struct (rejecting
 // case-folded variants) and rejects duplicate keys.
@@ -200,7 +200,7 @@ func collectJSONTags(t reflect.Type, out map[string]struct{}) {
 
 		// Anonymous embedded struct with no explicit json name:
 		// encoding/json promotes its EXPORTED fields into the parent
-		// object — even when the embedded type itself is unexported —
+		// object, even when the embedded type itself is unexported,
 		// so merge the embedded type's key set rather than naming the
 		// field. The promoted fields' own exportedness is enforced in
 		// the recursive call.

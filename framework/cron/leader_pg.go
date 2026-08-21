@@ -15,7 +15,7 @@ import (
 //
 // Pool sizing: each tick pins one connection for the lock's duration (held
 // until the tick's jobs finish), so the DB pool should allow at least 2 open
-// connections when the scheduled jobs themselves use the database — otherwise
+// connections when the scheduled jobs themselves use the database, otherwise
 // the leader holds the only connection and the jobs deadlock on it.
 type PostgresAdvisoryLease struct {
 	db  *sql.DB
@@ -55,7 +55,7 @@ func (p *PostgresAdvisoryLease) Acquire(ctx context.Context) (bool, func(), erro
 		// best-effort: a session-scoped advisory lock is released by Postgres
 		// when the session ends, and the very next statement closes it. A
 		// failure here means the connection is already gone, which has the
-		// same outcome — there is nothing to report and nothing to retry.
+		// same outcome, there is nothing to report and nothing to retry.
 		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", p.key)
 		_ = conn.Close()
 	}, nil

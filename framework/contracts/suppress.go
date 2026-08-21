@@ -13,8 +13,8 @@ import (
 //	//gofastr:allow(GOFASTR1003) exercised by the chromedp suite in examples/site
 //	//gofastr:allow-file(rendering/inline-style) vendored third-party widget
 //
-// `allow` covers the line it sits on, or — when it is the only thing on
-// its line — the next non-blank line. `allow-file` covers the whole file
+// `allow` covers the line it sits on, or, when it is the only thing on
+// its line, the next non-blank line. `allow-file` covers the whole file
 // and is the heavier hammer, deliberately more visible in review.
 //
 // A directive naming several rules separates them with commas or spaces.
@@ -22,11 +22,11 @@ import (
 // nobody has written yet is a hole, not a decision.
 // The directive must be the FIRST thing in its comment. That anchor is
 // what separates a live suppression from documentation *about*
-// suppressions — this package's own doc comments are full of the latter,
+// suppressions: this package's own doc comments are full of the latter,
 // and so is any project that writes down how its linting works:
 //
-//	//gofastr:allow(GOFASTR1403) …      live — starts the comment
-//	// as in `//gofastr:allow(X)` …     prose — the directive is quoted
+//	//gofastr:allow(GOFASTR1403) …      live: starts the comment
+//	// as in `//gofastr:allow(X)` …     prose: the directive is quoted
 //	//	//gofastr:allow(X) …            a doc-comment code block
 //
 // Without the anchor, writing the documentation disables the rule.
@@ -66,8 +66,8 @@ type suppressionSet struct {
 	issues []Diagnostic
 }
 
-// collectSuppressions scans every discovered file — including test and
-// generated files, since a directive may legitimately sit in either — for
+// collectSuppressions scans every discovered file, including test and
+// generated files, since a directive may legitimately sit in either, for
 // allow directives.
 //
 // Only text inside a *comment* counts. That distinction is load-bearing:
@@ -90,8 +90,8 @@ func collectSuppressions(p *Pass) *suppressionSet {
 				set.add(p, f.Rel, c.line, 0, true, m[1], m[2])
 			}
 			for _, m := range reAllowLine.FindAllStringSubmatch(c.text, -1) {
-				// `allow-file(` cannot also match `allow(` — the regex
-				// requires the paren immediately after "allow" — so a line
+				// `allow-file(` cannot also match `allow(`, the regex
+				// requires the paren immediately after "allow", so a line
 				// carrying both forms is counted once each, not twice.
 				set.add(p, f.Rel, c.line, scopeLineFor(lines, c.line-1), false, m[1], m[2])
 			}
@@ -143,7 +143,7 @@ func scopeLineFor(lines []string, idx int) int {
 	if !standalone && strings.HasPrefix(trimmed, "/*") {
 		// A block comment is standalone only when nothing follows its
 		// close on the same line. `/*gofastr:allow(X)*/ code` trails the
-		// code it shares the line with — treating it as standalone
+		// code it shares the line with, treating it as standalone
 		// waived the NEXT line and then reported the directive stale at
 		// the very line where its match sits.
 		if close := strings.Index(trimmed, "*/"); close < 0 || strings.TrimSpace(trimmed[close+2:]) == "" {
@@ -188,13 +188,13 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope int, isFile bool,
 		return
 	}
 
-	// Reject the catch-all before anything else — an `all` suppression
+	// Reject the catch-all before anything else: an `all` suppression
 	// silently absorbs every rule added to the catalog afterwards.
 	for _, r := range rules {
 		if strings.EqualFold(r, "all") || r == "*" {
 			s.issues = append(s.issues, Diagnostic{
 				RuleID: RuleSuppressionMalformed, File: file, Line: line,
-				Message: fmt.Sprintf("`//%s(%s)` is not allowed — name each rule explicitly", directive, r),
+				Message: fmt.Sprintf("`//%s(%s)` is not allowed: name each rule explicitly", directive, r),
 				Snippet: p.Line(file, line),
 			})
 			return
@@ -267,7 +267,7 @@ func (s *suppressionSet) stale(p *Pass) []Diagnostic {
 			out = append(out, Diagnostic{
 				RuleID: RuleSuppressionStale, File: f, Line: sup.Line,
 				Message:    fmt.Sprintf("suppression for %s matches nothing here", strings.Join(sup.Rules, ", ")),
-				Suggestion: "delete the directive — the finding it silenced is gone",
+				Suggestion: "delete the directive: the finding it silenced is gone",
 				Snippet:    p.Line(f, sup.Line),
 				Evidence:   map[string]string{"reason": sup.Reason},
 				Fix:        deleteDirectiveFix(p, f, sup.Line),
@@ -280,7 +280,7 @@ func (s *suppressionSet) stale(p *Pass) []Diagnostic {
 // deleteDirectiveFix removes a stale suppression. The rule's documented
 // fix is "delete the directive", which is mechanical in both shapes it
 // takes: on its own line the whole line goes, and trailing a statement
-// only the comment goes — never the code it sat behind.
+// only the comment goes, never the code it sat behind.
 //
 // Returns nil rather than guessing when the line no longer looks like a
 // directive: the stale set is computed from a parse that may be one edit
@@ -308,7 +308,7 @@ func deleteDirectiveFix(p *Pass, rel string, line int) *SuggestedFix {
 	}
 	before := text[:idx]
 	if strings.TrimSpace(before) == "" {
-		// Whole line, including its newline — leaving a blank line behind
+		// Whole line, including its newline, leaving a blank line behind
 		// would be a second diff nobody asked for.
 		end := offset + len(text) + 1
 		if end > len(body) {

@@ -13,7 +13,7 @@ import (
 type chromeCtxKey struct{}
 
 // ctxAwareChromeSlot implements ContextComponent so RenderComponentCtx routes to
-// RenderCtx — the path a role-aware nav drawer or tenant-scoped chrome takes.
+// RenderCtx, the path a role-aware nav drawer or tenant-scoped chrome takes.
 type ctxAwareChromeSlot struct {
 	component.ContextOnly
 }
@@ -41,7 +41,7 @@ func TestRenderChromeCtxThreadsRequestContext(t *testing.T) {
 		t.Fatalf("SSR-inlined chrome must render the slot with the request context; got:\n%s", chrome)
 	}
 
-	// The build-time / no-ctx entry point stays anonymous — the static exporter
+	// The build-time / no-ctx entry point stays anonymous, the static exporter
 	// dumps chrome outside any request, so it must not regress.
 	bg := RenderChrome(&def)
 	if !strings.Contains(bg, "ctxuser:anonymous") {

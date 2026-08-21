@@ -121,7 +121,7 @@ func TestMethodNotAllowed(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// DELETE /users should fail — only GET is registered
+	// DELETE /users should fail: only GET is registered
 	req := httptest.NewRequest(http.MethodDelete, "/users", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -436,7 +436,7 @@ func TestGroupMiddlewareIsolation(t *testing.T) {
 		order = append(order, "web-handler")
 	}))
 
-	// Hit /api/test — should get root + api middleware
+	// Hit /api/test: should get root + api middleware
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -451,7 +451,7 @@ func TestGroupMiddlewareIsolation(t *testing.T) {
 		}
 	}
 
-	// Hit /web/test — should get root + web middleware
+	// Hit /web/test: should get root + web middleware
 	order = order[:0]
 	req = httptest.NewRequest(http.MethodGet, "/web/test", nil)
 	w = httptest.NewRecorder()

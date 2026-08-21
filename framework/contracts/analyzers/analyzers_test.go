@@ -14,8 +14,8 @@ import (
 
 // fixture builds a throwaway module from a file map and runs every
 // analyzer over it. Each test states the exact rules it expects and the
-// exact rules it must NOT see — false positives are the failure mode that
-// kills a linter, so absence is asserted as loudly as presence.
+// exact rules it must NOT see. False positives are the failure mode
+// that kills a linter, so absence is asserted as loudly as presence.
 func fixture(t *testing.T, files map[string]string) []contracts.Diagnostic {
 	t.Helper()
 	dir := t.TempDir()
@@ -115,7 +115,7 @@ func TestBracePathParameterIsClean(t *testing.T) {
 }
 
 func TestScreenColonParameterIsNotReported(t *testing.T) {
-	// core-ui's screen router takes `:id` natively — it even rewrites
+	// core-ui's screen router takes `:id` natively. It even rewrites
 	// `{id}` into `:id`. Flagging it there would be telling people to
 	// break working code.
 	ds := fixture(t, map[string]string{
@@ -185,7 +185,7 @@ func TestUnguardedMutationIsReported(t *testing.T) {
 	assertHas(t, ds, contracts.RuleUnguardedMutation)
 }
 
-// GOFASTR1004's premise — sorting a table is not navigation — is a
+// GOFASTR1004's premise, that sorting a table is not navigation, is a
 // statement about browsers: scroll position, focus, history entries.
 // A headless API has none of those, and `GET /orders/page/{n}` is an
 // ordinary REST shape there, so the rule only runs when the module
@@ -214,7 +214,7 @@ func page() any { return html.Text("orders") }
 	}
 }
 
-// The word list must only match state VERBS, never resource nouns — and
+// The word list must only match state VERBS, never resource nouns, and
 // must stay away from continuous client-owned state, where a URL is the
 // deliberate, shareable artifact.
 func TestStateRouteWordListSparesResourcesAndClientState(t *testing.T) {
@@ -232,14 +232,14 @@ func page() any { return html.Text("x") }
 	// "order" the noun: a resource route in any shop, not sort state.
 	assertNot(t, ui(`	r.Handle("GET", "/order/{id}", nil)`),
 		contracts.RuleStateAsRoute, "a singular resource route is not in-page state")
-	// A wildcard NAMED "page" is a resource identifier — a CMS page slug
-	// — not pagination. Only literal segments carry the rule's evidence;
+	// A wildcard NAMED "page" is a resource identifier, a CMS page slug,
+	// not pagination. Only literal segments carry the rule's evidence;
 	// stripping the braces before matching erased that distinction.
 	assertNot(t, ui(`	r.Handle("GET", "/docs/{page}", nil)`),
 		contracts.RuleStateAsRoute, "a parameter named page is a slug, not pagination")
 	// A shareable map viewport and an animated chart range: continuous,
 	// client-owned state whose URL form is the point. Neither routes nor
-	// islands — and not this rule's business.
+	// islands, and not this rule's business.
 	assertNot(t, ui(`	r.Handle("GET", "/map/{lat}/{lng}/{zoom}", nil)`),
 		contracts.RuleStateAsRoute, "a map viewport URL is a shareable artifact")
 	assertNot(t, ui(`	r.Handle("GET", "/metrics/chart/{range}", nil)`),
@@ -316,7 +316,7 @@ func f(w http.ResponseWriter, token string) {
 }
 
 // applyFixes runs the analyzers over a one-file module, applies every
-// mechanical fix, and returns the rewritten source — the round trip the
+// mechanical fix, and returns the rewritten source, the round trip the
 // `--fix` flag performs.
 func applyFixes(t *testing.T, source string) string {
 	t.Helper()
@@ -361,7 +361,7 @@ func f(w http.ResponseWriter, token string) {
 			t.Errorf("fixed source is missing %q:\n%s", want, got)
 		}
 	}
-	// Apply gofmt-s the result, so the output must be canonical Go — that
+	// Apply gofmt-s the result, so the output must be canonical Go. That
 	// is what lets the edit ignore surrounding indentation.
 	if formatted, err := format.Source([]byte(got)); err != nil {
 		t.Fatalf("fixed source does not parse: %v\n%s", err, got)
@@ -730,7 +730,7 @@ func wire(app *framework.App) {
 	assertNot(t, ds, contracts.RuleUnscopedPII, "the field list could not be read, so nothing is claimed")
 }
 
-// GOFASTR1703 — CRUD entity exposed with no auth wired. The secure-by-
+// GOFASTR1703: CRUD entity exposed with no auth wired. The secure-by-
 // default session requirement makes every operation 401 when no auth
 // battery is present, so the whole surface reads as broken on first
 // contact. Fires when no auth.New and no reader (SessionMiddleware /
@@ -1128,7 +1128,7 @@ contracts:
 		"heavy/heavy.go": "package heavy\n\nfunc F() {}\n",
 	})
 	d := assertHas(t, ds, contracts.RuleForbiddenImport)
-	// The reason is the whole point — a ban nobody can explain gets
+	// The reason is the whole point. A ban nobody can explain gets
 	// deleted the first time it is inconvenient.
 	if !strings.Contains(d.Suggestion, "linkable without the decoders") {
 		t.Errorf("the forbid reason did not reach the finding: %q", d.Suggestion)
@@ -1298,7 +1298,7 @@ func TestLayerGlobDoesNotCollideWithTheModuleName(t *testing.T) {
 }
 
 func TestUnparsableFileDoesNotStopTheRest(t *testing.T) {
-	// Verify has to be useful mid-edit — that is the whole reason the
+	// Verify has to be useful mid-edit. That is the whole reason the
 	// analyzers are AST-based rather than type-checked, since a
 	// go/packages load fails outright on a tree that does not compile.
 	// A half-typed file must be skipped, not abort the run.
@@ -1328,7 +1328,7 @@ func TestCRLFFileIsAnalysedAndKeepsItsLineEndings(t *testing.T) {
 	// real case. Two things must hold: findings are detected with correct
 	// lines and clean snippets, and --fix must not rewrite the file's line
 	// endings. gofmt always emits LF, so without restoring the original
-	// convention a one-line fix produces a diff touching every line —
+	// convention a one-line fix produces a diff touching every line,
 	// which is how people learn to distrust an autofixer.
 	dir := t.TempDir()
 	crlf := func(lines ...string) string { return strings.Join(lines, "\r\n") + "\r\n" }
@@ -1405,7 +1405,7 @@ func f(w http.ResponseWriter, token string) {
 
 func TestFixDoesNotOverrideASuppression(t *testing.T) {
 	// A suppression is a written decision with a stated reason. An
-	// autofixer that "fixes" it anyway silently reverses that decision —
+	// autofixer that "fixes" it anyway silently reverses that decision,
 	// and for GOFASTR1404 specifically, adding HttpOnly to a
 	// double-submit CSRF cookie would break the mechanism it protects.
 	source := `package main
@@ -1490,7 +1490,7 @@ func TestAuthConfiguredButNeverMounted(t *testing.T) {
 func TestAuthMountedInEveryRecognisedForm(t *testing.T) {
 	// Middleware is routinely passed as a VALUE rather than invoked at the
 	// mount site, so matching only call expressions missed
-	// `Group("/x", auth.RequireAuth)` — a real wiring form.
+	// `Group("/x", auth.RequireAuth)`, a real wiring form.
 	for _, mount := range []string{
 		"fwApp.Use(auth.SessionMiddleware(authMgr))",
 		"_ = auth.RequireAuth",
@@ -1512,7 +1512,7 @@ func TestAuthRuleIgnoresAModuleWithoutAuth(t *testing.T) {
 
 // A mount only covers a configure the compiler could link it with. With
 // one module-global Mounted flag, the first binary that wired auth
-// correctly silenced the rule for every OTHER binary in the module — and
+// correctly silenced the rule for every OTHER binary in the module. And
 // "configured but never read" is exactly the 401-for-everyone bug the
 // rule exists to catch.
 func TestAuthMountInOneAppDoesNotCoverAnother(t *testing.T) {
@@ -1532,7 +1532,7 @@ func TestAuthMountInOneAppDoesNotCoverAnother(t *testing.T) {
 }
 
 // Without a module path, files get RELATIVE-directory package names
-// while the import matcher rejects every path — a graph with nodes and
+// while the import matcher rejects every path: a graph with nodes and
 // no edges, where a mount can never cover a configure in another
 // directory. The promised fallback is the opposite: no go.mod means
 // packages cannot be told apart, so everything collapses to one node
@@ -1568,7 +1568,7 @@ var Reader = auth.RequireAuth
 }
 
 // A dot import puts the auth package's names in the file scope, so the
-// mount is a bare `RequireAuth` — no selector for the walk to see. The
+// mount is a bare `RequireAuth`, no selector for the walk to see. The
 // import is still on the file, and missing it turns a correctly wired
 // app into an error-severity false positive.
 func TestAuthMountThroughADotImportIsSeen(t *testing.T) {
@@ -1595,7 +1595,7 @@ var guard = RequireAuth
 // Exclusion has to be by NAME, not by declaration site: a use of a
 // shadowed name is a different ident node from its declaration, so a
 // pointer-keyed exclusion let the app's own `Opts{RequireAuth: true}`
-// field key — or a use of a local `RequireAuth := 42` — count as a
+// field key, or a use of a local `RequireAuth := 42`, count as a
 // mount, silently disabling the rule for a manager nothing reads.
 func TestAuthShadowedReaderNameIsNotAMount(t *testing.T) {
 	const configure = `package main
@@ -1640,7 +1640,7 @@ func local() {
 }
 
 // The bare-identifier walk must count USES, not declarations: a method
-// the app defines with the same name as a reader (legal Go — method
+// the app defines with the same name as a reader (legal Go: method
 // names do not collide with file-block dot imports) is not a mount, and
 // counting it silenced the rule for a manager nothing reads.
 func TestAuthDeclarationNamedLikeAReaderIsNotAMount(t *testing.T) {
@@ -1669,7 +1669,7 @@ func (s *Svc) RequireAuth() {}
 }
 
 // The two legitimate cross-package shapes must stay covered: main
-// configures and an imported package mounts, and the reverse — a setup
+// configures and an imported package mounts, and the reverse, a setup
 // package configures while the importing main mounts. Attribution is by
 // import reachability, not by package identity.
 func TestAuthCrossPackageWiringIsStillCovered(t *testing.T) {

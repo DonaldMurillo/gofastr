@@ -11,7 +11,7 @@ import (
 // A recovered panic must never leak its raw value into the 500 body.
 // The recover path in HandlerAdapter used to format the panic value
 // into the client-facing message ("internal server error: %v"),
-// surfacing driver strings, internal paths, and DB errors verbatim —
+// surfacing driver strings, internal paths, and DB errors verbatim,
 // exactly the leak WriteError's own doc-comment promises to prevent.
 func TestHandlerAdapter_PanicNoLeak(t *testing.T) {
 	cases := []struct {
@@ -22,7 +22,7 @@ func TestHandlerAdapter_PanicNoLeak(t *testing.T) {
 		{"db driver string", `pq: password authentication failed for user "admin" at /secret/path`, "pq:"},
 		{"wrapped error value", errSecret("connect to 10.0.0.5:5432: refused"), "10.0.0.5"},
 		{"internal path", "open /var/lib/app/secrets.key: permission denied", "secrets.key"},
-		{"raw struct", struct{ Token string }{Token: "sk-live-abc123"}, "sk-live-abc123"},
+		{"raw struct", struct{ Token string }{Token: "sk-live-abc123"}, "sk-live-abc123"}, // not-a-secret: fake token exercising the redaction path under test
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

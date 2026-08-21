@@ -282,7 +282,7 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 	// The first argument should be a composite literal: XxxConfig{...}
 	lit, ok := call.Args[0].(*ast.CompositeLit)
 	if !ok {
-		// Not a struct literal — could be a variable, skip static analysis
+		// Not a struct literal, could be a variable, skip static analysis
 		return
 	}
 
@@ -290,10 +290,10 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 	// plus what the ExtraAttrs escape hatch carries: some elements
 	// accept an ARIA attribute in place of the typed field (icon-only
 	// buttons pass ExtraAttrs["aria-label"] instead of a visible
-	// Label — that is the documented runtime contract, not a
+	// Label, that is the documented runtime contract, not a
 	// violation). A literal ExtraAttrs map is inspected for those
 	// keys; a non-literal one (variable, call) can't be seen
-	// statically, so it satisfies the check — fail OPEN, because the
+	// statically, so it satisfies the check, fail OPEN, because the
 	// element's own runtime validation still panics on a genuinely
 	// missing name, while a false lint failure blocks `gofastr build`.
 	setFields := map[string]bool{}
@@ -361,7 +361,7 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 		}
 		if !found {
 			result.add(filename, line,
-				fmt.Sprintf("html.%s: missing required field — must set one of %v in %sConfig", funcName, rule.orFields, funcName))
+				fmt.Sprintf("html.%s: missing required field. Set one of %v in %sConfig", funcName, rule.orFields, funcName))
 		}
 	}
 }
@@ -369,7 +369,7 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 // ariaEquivalent maps a typed config field to the raw ARIA attribute
 // that satisfies the same accessibility requirement when supplied via
 // ExtraAttrs. Fields with no raw equivalent (Alt, Legend, For, …) are
-// deliberately absent — the typed field is the only way to set them.
+// deliberately absent, the typed field is the only way to set them.
 var ariaEquivalent = map[string]string{
 	"Label":      "aria-label",
 	"LabelledBy": "aria-labelledby",

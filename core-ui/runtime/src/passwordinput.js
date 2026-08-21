@@ -1,4 +1,4 @@
-// PasswordInput runtime module — wires the show/hide toggle button to
+// PasswordInput runtime module, wires the show/hide toggle button to
 // flip the input type between "password" and "text". Updates aria-label
 // and aria-pressed on the toggle button to reflect the current state.
 //

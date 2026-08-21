@@ -25,8 +25,8 @@ func buildPWASite(t *testing.T, basePath string, offline ...component.Component)
 	if len(offline) > 0 {
 		offlineScreen = offline[0]
 	}
-	// Real static assets behind the declared icon + Precache paths —
-	// entries that don't resolve would fail service-worker install.
+	// Real static assets behind the declared icon + Precache paths.
+	// Entries that don't resolve would fail service-worker install.
 	staticDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(staticDir, "icons"), 0o755); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestBuildPWABasePath(t *testing.T) {
 	}
 }
 
-// pwaStyledOffline renders two styled components — enough that the old
+// pwaStyledOffline renders two styled components, enough that the old
 // bundle=true offline chrome would emit the (never-exported)
 // comp-bundle URL into the precache.
 type pwaStyledOffline struct{ styles []*registry.Style }
@@ -151,7 +151,7 @@ func (c pwaStyledOffline) Render() render.HTML {
 }
 
 // TestBuildPWAPrecacheEntriesAllResolve: every URL the exported service
-// worker precaches must exist as a file in the export — one 404 rejects
+// worker precaches must exist as a file in the export. One 404 rejects
 // the whole install and kills the PWA surface. The styled offline
 // screen is what used to push an inexistent comp-bundle URL into the
 // precache.

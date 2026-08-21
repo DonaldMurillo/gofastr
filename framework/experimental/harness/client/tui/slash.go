@@ -4,7 +4,7 @@ package tui
 //   - Tab completes the longest unambiguous prefix of `/<verb>`.
 //   - Multiple matches print a one-line listing to scrollback.
 //   - A handful of commands (clear, help, quit, web) are dispatched
-//     locally — they only affect the client. The rest are forwarded
+//     locally, they only affect the client. The rest are forwarded
 //     to the engine via SendInput so a server-side parser can route
 //     them (this preserves wire compatibility with non-TUI clients).
 
@@ -19,7 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/builtins"
 )
 
-// slashCandidates returns every completable identifier — namespaces
+// slashCandidates returns every completable identifier, namespaces
 // (e.g. "sessions:", "mcp:") plus built-in verbs ("help", "clear",
 // "model", …). Namespaces include their trailing colon so completing
 // "/sess<Tab>" lands on "/sessions:" cursor-ready to take the suffix.
@@ -37,7 +37,7 @@ func slashCandidates() []string {
 
 // completeSlash takes the input buffer (e.g. "/he") and returns
 // (completion, matches). `completion` is the longest common prefix of
-// all matching candidates — caller can replace the input with it.
+// all matching candidates, caller can replace the input with it.
 // `matches` is non-nil only when there are multiple matches; callers
 // typically show them in scrollback.
 //
@@ -109,7 +109,7 @@ func slashPopupItems(input string, maxRows int) (rows []string, names []string, 
 	for _, ns := range slash.AllNamespaces() {
 		if strings.HasPrefix(ns, prefix) {
 			allNames = append(allNames, "/"+ns+":")
-			allRows = append(allRows, fmt.Sprintf("/%-14s (namespace — type to scope)", ns+":"))
+			allRows = append(allRows, fmt.Sprintf("/%-14s (namespace: type to scope)", ns+":"))
 		}
 	}
 	total = len(allNames)
@@ -178,7 +178,7 @@ func (t *TUI) popupAcceptsEnter() bool {
 	}
 	for _, n := range names {
 		if n == input {
-			return false // exact match — let Enter submit
+			return false // exact match, let Enter submit
 		}
 	}
 	return true
@@ -188,7 +188,7 @@ func (t *TUI) popupAcceptsEnter() bool {
 // client-side. When it returns false, the caller should forward the
 // raw input to the engine so server-side handlers can take it.
 //
-// Caller must NOT hold t.mu — this function locks internally.
+// Caller must NOT hold t.mu, this function locks internally.
 func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 	c, err := slash.Parse(input)
 	if err != nil {
@@ -298,7 +298,7 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 				"       "+t.WebURL+"/v1/sessions",
 			)
 		} else {
-			lines = append(lines, "Token: (none — running without auth)")
+			lines = append(lines, "Token: (none: running without auth)")
 		}
 		t.openModal("Web sidecar", lines)
 		return true, false
@@ -335,7 +335,7 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 			"",
 			"  TUI         · live",
 			"  Session     · " + string(t.Session),
-			"  Web sidecar · " + nonempty(t.WebURL, "(not running — start with -web)"),
+			"  Web sidecar · " + nonempty(t.WebURL, "(not running: start with -web)"),
 		}
 		if t.WebURL != "" {
 			lines = append(lines, "",
@@ -385,7 +385,7 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 		t.mu.Lock()
 		t.ensureBlankBefore()
 		t.scrollback = append(t.scrollback,
-			"[compact] requested — engine-side compaction lands in v0.2")
+			"[compact] requested: engine-side compaction lands in v0.2")
 		t.mu.Unlock()
 		return true, false
 	}

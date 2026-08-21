@@ -1,13 +1,13 @@
 package gallery
 
-// The catalog — every component the showcase site (and any importing tool)
+// The catalog: every component the showcase site (and any importing tool)
 // iterates over. Grouped by category for the index screen; routes are flat
 // at /components/<slug>. Each entry has:
-//   - Slug      — route segment (/components/<slug>)
-//   - Name      — display name
-//   - Category  — coarse grouping for the index page
-//   - Desc      — one-line role
-//   - Demo()    — render.HTML showing the component live, configured with
+//   - Slug:       route segment (/components/<slug>)
+//   - Name:       display name
+//   - Category:  coarse grouping for the index page
+//   - Desc:       one-line role
+//   - Demo():     render.HTML showing the component live, configured with
 //                 sensible defaults so the page works without setup
 //
 // Where a component requires non-trivial backend wiring (DataTable's RPC
@@ -16,7 +16,7 @@ package gallery
 // every page has SOMETHING that works. Comments call out the simplification.
 //
 // This file is a faithful move of the original examples/site/components.go
-// catalog (141 entries, 16 categories). The closure bodies are unchanged —
+// catalog (141 entries, 16 categories). The closure bodies are unchanged,
 // they reference the same framework/ui + core-ui/* primitives the site did.
 
 import (
@@ -37,7 +37,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Catalog — every component the showcase ships. The source of truth: hosts
+// Catalog: every component the showcase ships. The source of truth: hosts
 // iterate over it to register routes, the index screen iterates to render
 // cards, and the showcase screen iterates to look up the active entry.
 //
@@ -46,7 +46,7 @@ import (
 // after: concurrent reads of a stable slice header are safe, and wrapping
 // every iteration site behind a snapshot accessor would add per-call
 // allocation for no practical safety gain. A host that reassigns Catalog
-// after serving begins would race readers — don't.
+// after serving begins would race readers. Don't.
 var Catalog = []Entry{
 	// ---------- Buttons & links ----------
 	{"button", "Button", "Buttons & links", "Primary action element with size + variant slots.", func() render.HTML {
@@ -111,7 +111,7 @@ var Catalog = []Entry{
 	{"banner", "Banner", "Feedback", "Full-width alert; optional dismiss + action.", func() render.HTML {
 		return ui.Banner(ui.BannerConfig{
 			Title:       "v0.x",
-			Body:        "GoFastr is v0.x — pin a version; APIs may change between releases.",
+			Body:        "GoFastr is v0.x: pin a version; APIs may change between releases.",
 			Variant:     ui.BannerWarn,
 			Dismissible: true,
 			DismissID:   "feature-filter-chips-2026-05",
@@ -172,7 +172,7 @@ var Catalog = []Entry{
 	}},
 	{"container", "Container", "Layout", "Max-width wrapper with width tokens.", func() render.HTML {
 		return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
-			html.Paragraph(html.TextConfig{}, render.Text("Narrow container — text columns stay readable.")),
+			html.Paragraph(html.TextConfig{}, render.Text("Narrow container: text columns stay readable.")),
 		)
 	}},
 	{"stack", "Stack", "Layout", "Vertical flex stack with gap token.", func() render.HTML {
@@ -242,7 +242,7 @@ var Catalog = []Entry{
 				}), "secondary"),
 			),
 			html.Paragraph(html.TextConfig{}, render.Text(
-				"Primary pane — the list or main view. Open the side pane to see the split layout; narrow the window and it becomes an overlay drawer.")),
+				"Primary pane: the list or main view. Open the side pane to see the split layout; narrow the window and it becomes an overlay drawer.")),
 			html.Paragraph(html.TextConfig{},
 				ui.Link(ui.LinkConfig{Href: "/examples/workspace", Text: "→ Full-page master-detail workspace example"})),
 		)
@@ -378,13 +378,13 @@ var Catalog = []Entry{
 			},
 		})
 	}},
-	{"tabs", "Tabs", "Navigation", "Signal-driven tab strip — client-side panel switching with zero JS.", func() render.HTML {
+	{"tabs", "Tabs", "Navigation", "Signal-driven tab strip: client-side panel switching with zero JS.", func() render.HTML {
 		return ui.Tabs(ui.TabsConfig{
 			SignalName: "demo-tabs",
 			Tabs: []ui.TabItem{
 				{Label: "Overview", Content: html.Paragraph(html.TextConfig{}, render.Text("Clicking tabs switches content without any server round-trip."))},
 				{Label: "Details", Content: html.Paragraph(html.TextConfig{}, render.Text("Panels are pre-rendered; the runtime shows/hides them based on a signal."))},
-				{Label: "Settings", Content: html.Paragraph(html.TextConfig{}, render.Text("No JavaScript needed — data attributes + CSS attribute selectors."))},
+				{Label: "Settings", Content: html.Paragraph(html.TextConfig{}, render.Text("No JavaScript needed: data attributes + CSS attribute selectors."))},
 			},
 		})
 	}},
@@ -394,7 +394,7 @@ var Catalog = []Entry{
 		return patternsAccordion.Stack(patternsAccordion.StackConfig{},
 			patternsAccordion.Item{Summary: "What is an entity?", Content: html.Paragraph(html.TextConfig{}, render.Text("A typed declaration the framework turns into SQL + REST + MCP + Go."))},
 			patternsAccordion.Item{Summary: "How are migrations stored?", Content: html.Paragraph(html.TextConfig{}, render.Text("Plain SQL up/down files under migrations/."))},
-			patternsAccordion.Item{Summary: "Can agents drop tables?", Content: html.Paragraph(html.TextConfig{}, render.Text("Only with an approved plan — see /kiln."))},
+			patternsAccordion.Item{Summary: "Can agents drop tables?", Content: html.Paragraph(html.TextConfig{}, render.Text("Only with an approved plan: see /kiln."))},
 		)
 	}},
 	{"tooltip", "Tooltip", "Disclosure", "Hover/focus-triggered tip.", func() render.HTML {
@@ -403,7 +403,7 @@ var Catalog = []Entry{
 		)
 	}},
 	{"confirmaction", "ConfirmAction", "Disclosure", "Two-step confirm interaction (trigger + modal pair).", func() render.HTML {
-		// ConfirmAction returns (trigger, *widget.Builder) — the modal
+		// ConfirmAction returns (trigger, *widget.Builder). The modal
 		// needs to be mounted once at app startup. The showcase renders
 		// the trigger plus a static explanation; the modal isn't wired
 		// here because it'd require widget.Mount in main.go.
@@ -424,7 +424,7 @@ var Catalog = []Entry{
 	{"collapsible", "Collapsible", "Disclosure", "Expand/collapse section using native <details>.", func() render.HTML {
 		return render.Join(
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "What is this?"},
-				html.Paragraph(html.TextConfig{}, render.Text("A collapsible section using native <details>. The browser handles open/close — the runtime adds keyboard support via data-fui-disclosure.")),
+				html.Paragraph(html.TextConfig{}, render.Text("A collapsible section using native <details>. The browser handles open/close; the runtime adds keyboard support via data-fui-disclosure.")),
 			),
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "Is it accessible?", Open: true},
 				html.Paragraph(html.TextConfig{}, render.Text("Yes. Escape to close, aria-expanded mirroring, all handled automatically.")),
@@ -613,7 +613,7 @@ var Catalog = []Entry{
 	}},
 	{"repeater", "Repeater", "Forms", "Generic repeatable group.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("Repeater is the headless variant of FormRepeater — bring your own chrome."),
+			render.Text("Repeater is the headless variant of FormRepeater: bring your own chrome."),
 		)
 	}},
 
@@ -704,7 +704,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"rating", "Rating", "Data", "Star rating input or display.", func() render.HTML {
 		return ui.RatingInput(ui.RatingConfig{Name: "rating", Label: "Rating", Max: 5, Value: 4})
 	}},
-	{"counter", "Counter", "Data", "Numeric counter with +/− buttons — client-side only.", func() render.HTML {
+	{"counter", "Counter", "Data", "Numeric counter with +/− buttons, client-side only.", func() render.HTML {
 		return ui.Counter(ui.CounterConfig{SignalName: "demo-counter"})
 	}},
 
@@ -796,7 +796,7 @@ const page = await api.posts.list({ limit: 25 });`},
 			}),
 		)
 	}},
-	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle — client-side signal flip, no RPC.", func() render.HTML {
+	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle: client-side signal flip, no RPC.", func() render.HTML {
 		row := html.Div(html.DivConfig{Class: "demo-row"},
 			ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
 			interactive.BindText(render.Tag("span", nil, render.Text("false")), "demo-toggle"),
@@ -806,7 +806,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	// ---------- Wizards + cross-cutting affordances ----------
 	// StepWizard/ProgressSteps are Wizards; the rest below are
 	// categorized into their real homes (Navigation/Feedback/Media)
-	// via the Category field — they're grouped here only physically.
+	// via the Category field. They're grouped here only physically.
 	{"stepwizard", "StepWizard", "Wizards", "Numbered multi-step form (server-driven).", func() render.HTML {
 		return ui.StepWizard(ui.StepWizardConfig{
 			Action:      "#",
@@ -834,7 +834,7 @@ const page = await api.posts.list({ limit: 25 });`},
 			SuccessLabel: "Marked ✓",
 		})
 	}},
-	{"toggleaction", "ToggleAction", "Feedback", "Three-state toggle — commit, untoggle, mutex groups.", func() render.HTML {
+	{"toggleaction", "ToggleAction", "Feedback", "Three-state toggle: commit, untoggle, mutex groups.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
 			ui.ToggleAction(ui.ToggleActionConfig{
 				Endpoint:         "/__site/toggle/noop",
@@ -864,7 +864,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"optimisticinlineedit", "Optimistic Inline Edit", "Optimistic UI",
 		"Edit a field + save; the button flips optimistically, rolls back + shakes on rejection.",
 		func() render.HTML {
-			// The text input is visual — its value does not transmit on
+			// The text input is visual. Its value does not transmit on
 			// the OptimisticAction fetch (the runtime is fire-and-
 			// forget). The two buttons exercise both reconciliation
 			// paths against the same field: one commits, one rolls back.
@@ -900,7 +900,7 @@ const page = await api.posts.list({ limit: 25 });`},
 					}),
 				),
 				html.Div(html.DivConfig{Class: "fact"},
-					render.Text("Click Save — the button flips to “Saved ✓” optimistically, the 2xx keeps it committed. Click Save (reject) — the button flips, then shakes and reverts when the 4xx lands. To transmit the actual input value, wrap the field in a form with interactive.OnSubmit (see the optimistic-ui doc, Recipe 2)."),
+					render.Text("Click Save: the button flips to “Saved ✓” optimistically, the 2xx keeps it committed. Click Save (reject): the button flips, then shakes and reverts when the 4xx lands. To transmit the actual input value, wrap the field in a form with interactive.OnSubmit (see the optimistic-ui doc, Recipe 2)."),
 				),
 			)
 		}},
@@ -908,7 +908,7 @@ const page = await api.posts.list({ limit: 25 });`},
 		"Click Add → server appends a row and returns authoritative list HTML.",
 		// Seed render: the live SSR path (host-side) renders this with
 		// the request ctx so a reload reflects the visitor's own appends.
-		// This bare Demo() closure (no request) renders the seed — used
+		// This bare Demo() closure (no request) renders the seed. Used
 		// by static export, theme previewers, and the llm.md generator.
 		func() render.HTML { return RenderOptimisticCreateDemoFor(InitialOptimisticNotes) }},
 	{"optimisticdelete", "Optimistic Delete + Confirm", "Optimistic UI",
@@ -945,13 +945,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					}),
 				),
 				html.Div(html.DivConfig{Class: "fact"},
-					render.Text("Save (slow) exercises the pending window — the button is aria-busy + disabled for ~2s, then commits. Save (will fail) flips optimistically, then shakes and reverts when the 4xx lands. Neither auto-retries; for durable retries use a queue + idempotency key."),
+					render.Text("Save (slow) exercises the pending window: the button is aria-busy + disabled for ~2s, then commits. Save (will fail) flips optimistically, then shakes and reverts when the 4xx lands. Neither auto-retries; for durable retries use a queue + idempotency key."),
 				),
 			)
 		}},
-	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette — wired in nav (try it).", func() render.HTML {
+	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette, wired in nav (try it).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair — mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
+			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair: mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
 		)
 	}},
 	{"globalsearch", "GlobalSearch", "Navigation", "Inline persistent search bar.", func() render.HTML {
@@ -986,7 +986,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			html.Div(html.DivConfig{Class: "fact"},
 				render.Text("Left to right: the "+demo.hash+" BlurHash decoded to a placeholder, "+
 					"and the same image with that placeholder stacked behind it. "+
-					"The placeholder is server-rendered markup — no JavaScript decodes anything in the browser."),
+					"The placeholder is server-rendered markup: no JavaScript decodes anything in the browser."),
 			),
 		)
 	}},
@@ -1005,7 +1005,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("You have a counter, a vote button, or any UI where a click should update a number or string on screen — without a full page reload. The server owns the state; the browser just displays the latest value."),
+					render.Text("You have a counter, a vote button, or any UI where a click should update a number or string on screen, without a full page reload. The server owns the state; the browser just displays the latest value."),
 				),
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("Put data-fui-rpc on a button and data-fui-rpc-signal on the same element. Add a data-fui-signal span wherever you want the response to appear. The runtime POSTs, parses JSON or text, and pushes the result into every matching signal node."),
@@ -1020,7 +1020,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
 							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-								render.Text("Click the button — the number updates from the server. No page reload."),
+								render.Text("Click the button: the number updates from the server. No page reload."),
 							),
 							html.Div(html.DivConfig{Class: "demo-row"},
 								btn,
@@ -1045,7 +1045,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("A user submits a form or clicks an action, and on success a drawer or modal should appear — showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern."),
+					render.Text("A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern."),
 				),
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal."),
@@ -1060,7 +1060,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
 							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-								render.Text("Click — a modal pops up after the POST succeeds."),
+								render.Text("Click: a modal pops up after the POST succeeds."),
 							),
 							btn,
 						),
@@ -1070,7 +1070,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}},
 
 	{"rpc-form-signal", "Submit Without Reload", "Clientside Interactivity",
-		"Submit a form and see the result inline — the page never reloads.",
+		"Submit a form and see the result inline: the page never reloads.",
 		func() render.HTML {
 			form := interactive.OnSubmit(
 				render.Tag("form", map[string]string{"class": "demo-form-inline"},
@@ -1091,7 +1091,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("A comment form, a search box, a quick-add field — submit without losing scroll position or context. The server processes it and returns a snippet (confirmation text, rendered item, status message) that appears right below the form."),
+					render.Text("A comment form, a search box, a quick-add field: submit without losing scroll position or context. The server processes it and returns a snippet (confirmation text, rendered item, status message) that appears right below the form."),
 				),
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("Put data-fui-rpc on a <form> element. The runtime intercepts the submit, POSTs fields as JSON, and writes the response into the signal. Add data-fui-rpc-reset to clear the form after success so the user can submit again."),
@@ -1137,7 +1137,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					render.Text("A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination."),
 				),
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click — but only after the server confirms the action succeeded."),
+					render.Text("Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Create Project")),
@@ -1149,7 +1149,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
 							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-								render.Text("Click — the page transitions to the Button component via SPA. Use the back button to return."),
+								render.Text("Click: the page transitions to the Button component via SPA. Use the back button to return."),
 							),
 							btn,
 						),
@@ -1160,7 +1160,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	// ---------- Clientside Interactivity: new primitives ----------
 
 	{"scroll-reveal", "Scroll Reveal", "Clientside Interactivity",
-		"Elements fade in as they scroll into view — IntersectionObserver, no JS needed.",
+		"Elements fade in as they scroll into view: IntersectionObserver, no JS needed.",
 		func() render.HTML {
 			box := render.Tag("div", map[string]string{
 				"class": "demo-reveal-box",
@@ -1169,7 +1169,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}},
 
 	{"signal-animate", "Signal Animate", "Clientside Interactivity",
-		"Toggle a CSS class when a signal changes — the same primitive drives several transition styles. Each example is one signal + one class.",
+		"Toggle a CSS class when a signal changes; the same primitive drives several transition styles. Each example is one signal + one class.",
 		func() render.HTML {
 			example := func(sig, cls, panelClass, label, copy string) render.HTML {
 				panel := render.Tag("div", map[string]string{"class": panelClass}, render.Text(copy))
@@ -1207,7 +1207,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}},
 
 	{"signal-store", "Signal Store", "Clientside Interactivity",
-		"Typed shared state: one producer renames the company, every bound consumer updates client-side — no per-consumer request.",
+		"Typed shared state: one producer renames the company, every bound consumer updates client-side: no per-consumer request.",
 		func() render.HTML {
 			ctx := context.Background()
 			name := DemoCompany.Name()
@@ -1224,7 +1224,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			consumers := html.Div(html.DivConfig{Class: "demo-stack"},
 				DemoCompany.Bind(ctx, "div", map[string]string{"id": "store-consumer-heading", "class": "demo-store-heading"}),
 				html.Paragraph(html.TextConfig{},
-					render.Text("Inline mention — "),
+					render.Text("Inline mention: "),
 					DemoCompany.Bind(ctx, "strong", map[string]string{"id": "store-consumer-inline"}),
 				),
 				html.Paragraph(html.TextConfig{},
@@ -1239,12 +1239,12 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 
 	// Disclosure / overlays / navigation patterns and the overlay widgets
 	// (modal/drawer/bottomsheet/toast) the gallery used to show.
-	{"disclosure", "Disclosure", "Disclosure", "Single styled <details>/<summary> reveal — keyboard + find-in-page work with no JS.", func() render.HTML {
+	{"disclosure", "Disclosure", "Disclosure", "Single styled <details>/<summary> reveal: keyboard + find-in-page work with no JS.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
 			patternsDisclosure.Render(patternsDisclosure.Config{Title: "What's included in the free plan?"},
 				html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, community support, and all core features."))),
 			patternsDisclosure.Render(patternsDisclosure.Config{Title: "Can I export my data?", Open: true},
-				html.Paragraph(html.TextConfig{}, render.Text("Yes — Settings → Export emits a JSON archive with everything, no questions asked."))),
+				html.Paragraph(html.TextConfig{}, render.Text("Yes: Settings → Export emits a JSON archive with everything, no questions asked."))),
 		)
 	}},
 	{"tree", "Tree", "Navigation", "WAI-ARIA treeview with roving tabindex, type-ahead, and arrow-key nav.", func() render.HTML {
@@ -1264,7 +1264,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			},
 		})
 	}},
-	{"nestedlist", "NestedList", "Navigation", "Recursive ul/ol with native <details> collapse on branches — no runtime module.", func() render.HTML {
+	{"nestedlist", "NestedList", "Navigation", "Recursive ul/ol with native <details> collapse on branches, no runtime module.", func() render.HTML {
 		return patternsNestedlist.Render(patternsNestedlist.Config{
 			AriaLabel: "Settings",
 			Items: []patternsNestedlist.Item{
@@ -1280,14 +1280,14 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			},
 		})
 	}},
-	{"progress", "Progress", "Feedback", "Native <progress> wrapper — determinate (Value set) or indeterminate (Value < 0).", func() render.HTML {
+	{"progress", "Progress", "Feedback", "Native <progress> wrapper: determinate (Value set) or indeterminate (Value < 0).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
 			patternsProgress.New(patternsProgress.Config{Value: 73, Max: 100, Label: "Upload progress", Description: "73 of 100"}),
 			patternsProgress.New(patternsProgress.Config{Value: 18, Max: 100, Label: "Storage used", Description: "18% of 1 TB"}),
 			patternsProgress.New(patternsProgress.Config{Value: -1, Label: "Working…", Description: "Reticulating splines…"}),
 		)
 	}},
-	{"kbd", "Kbd", "Buttons & links", "Semantic <kbd> primitive for keyboard input — pair with ShortcutHint for styled chips.", func() render.HTML {
+	{"kbd", "Kbd", "Buttons & links", "Semantic <kbd> primitive for keyboard input: pair with ShortcutHint for styled chips.", func() render.HTML {
 		return html.Paragraph(html.TextConfig{},
 			render.Text("Press "), html.Kbd(html.TextConfig{}, render.Text("Esc")),
 			render.Text(" to dismiss, or "), html.Kbd(html.TextConfig{}, render.Text("/")),
@@ -1300,13 +1300,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit user #42", Variant: ui.ButtonSecondary, ExtraAttrs: html.Attrs{"data-fui-deeplink": "user_id=42"}}), "site-demo-modal"),
 		)
 	}},
-	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel — same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
+	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel: same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open drawer", Variant: ui.ButtonPrimary}), "site-demo-drawer")
 	}},
 	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")
 	}},
-	{"toast", "Toast", "Feedback", "Stacked notifications — client (data-fui-toast) or server (X-Gofastr-Toast header).", func() render.HTML {
+	{"toast", "Toast", "Feedback", "Stacked notifications: client (data-fui-toast) or server (X-Gofastr-Toast header).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: success", Variant: ui.ButtonPrimary}), interactive.Toast{Variant: "success", Title: "Saved", Body: "Triggered from JS, no round-trip.", TTLMs: 5000}),
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: info", Variant: ui.ButtonSecondary}), interactive.Toast{Variant: "info", Title: "FYI", Body: "Body text + five-second TTL.", TTLMs: 5000}),
@@ -1324,13 +1324,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				},
 			}),
 			html.Div(html.DivConfig{Class: "fact"}, render.Text(
-				"ScrollSpy wraps a nav like the one above with scrollspy.Wrap(cfg, nav) and sets aria-current + .is-active on the link whose target is in view. It needs a tall, scrollable page region — see it working live in the left rail of any /docs/* page.")),
+				"ScrollSpy wraps a nav like the one above with scrollspy.Wrap(cfg, nav) and sets aria-current + .is-active on the link whose target is in view. It needs a tall, scrollable page region: see it working live in the left rail of any /docs/* page.")),
 		)
 	}},
-	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list — single list or linked kanban columns with version-aware 409 recovery.", func() render.HTML {
+	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list: single list or linked kanban columns with version-aware 409 recovery.", func() render.HTML {
 		return RenderKanbanBoard(InitialKanbanColumns(), 1)
 	}},
-	{"infinitescroll", "InfiniteScroll", "Data", "Sentinel-driven lazy pagination — server appends HTML + a next-cursor header.", func() render.HTML {
+	{"infinitescroll", "InfiniteScroll", "Data", "Sentinel-driven lazy pagination: server appends HTML + a next-cursor header.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
 			"infinitescroll.Render(cfg) observes a sentinel and GETs cfg.RPCPath?cursor=X; the handler returns the next page's HTML and sets X-Gofastr-Infinite-Cursor (empty = end). Needs a per-page RPC, so it's shown as a note here."))
 	}},
@@ -1340,7 +1340,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return ui.Hero(ui.HeroConfig{
 			Eyebrow:  "Open source · v0.x",
 			Title:    "Ship the whole stack from one file.",
-			Subtitle: "UI, REST, OpenAPI, and MCP — generated, then yours to own.",
+			Subtitle: "UI, REST, OpenAPI, and MCP: generated, then yours to own.",
 			Actions: []render.HTML{
 				ui.Button(ui.ButtonConfig{Label: "Get started", Variant: ui.ButtonPrimary}),
 				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/"}),
@@ -1399,7 +1399,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			{Label: "Status", Value: ui.StatusPill(ui.StatusPillConfig{Label: "Active", Dot: true})},
 		}})
 	}},
-	{"factbox", "FactBox", "Data", "Single labelled fact — a compact label + value pair.", func() render.HTML {
+	{"factbox", "FactBox", "Data", "Single labelled fact: a compact label + value pair.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			ui.FactBox(ui.FactBoxConfig{Label: "Uptime", Value: "99.98%"}),
 			ui.FactBox(ui.FactBoxConfig{Label: "Requests", Value: "1.2M", Style: ui.FactStyleValueFirst}),
@@ -1443,10 +1443,10 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 }
 
-// codeSnippets holds the example Go for a component's showcase page — the
+// codeSnippets holds the example Go for a component's showcase page. The
 // actual usage that produces the live demo. Keyed by slug so adding a
 // snippet never disturbs the catalog tuples. Private so request handlers
-// read through the CodeSnippet accessor, not the raw map — a host writing
+// read through the CodeSnippet accessor, not the raw map. A host writing
 // to the map after init would race the reader (fatal concurrent map
 // access, not recoverable).
 var codeSnippets = map[string]string{
@@ -1525,7 +1525,7 @@ interactive.Dropdown(trigger, panel)`,
     render.Text("Fades up when scrolled into view."))
 interactive.Reveal(box, "fade-up") // or "fade-in", "slide-left", "slide-right"`,
 
-	"signal-animate": `// One signal drives a CSS class toggle — wire any transition you like.
+	"signal-animate": `// One signal drives a CSS class toggle: wire any transition you like.
 panel := html.Div(html.DivConfig{Class: "panel"}, render.Text("…"))
 interactive.AnimateOnSignal(panel, "open", "is-shown")
 interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: "Toggle"}), "open")`,
@@ -1536,7 +1536,7 @@ var Company = store.New("org").String("companyName", "Acme Corp")
 // Producer: any control sets it client-side (or via an island RPC + .Publish).
 interactive.SetLocal(ui.Button(ui.ButtonConfig{Label: "Rename"}), Company.Name(), "Globex")
 
-// Consumers: bind read-only anywhere — all update together, no per-consumer request.
+// Consumers: bind read-only anywhere; all update together, no per-consumer request.
 Company.Bind(ctx, "h3", nil)
 Company.Bind(ctx, "strong", nil)`,
 
@@ -1589,12 +1589,12 @@ widget.MountBuilder(r, preset.Modal("user-edit").
 // Server: any data-fui-rpc handler attaches the header on 2xx.
 func push(w http.ResponseWriter, r *http.Request) { ui.AddToastSuccess(w, "Saved", "", 5000) }`,
 
-	"sortablelist": `// Single list (back-compat — sends only order=<keys>)
+	"sortablelist": `// Single list (back-compat: sends only order=<keys>)
 sortablelist.Render(sortablelist.Config{
     Label: "Priorities", RPCPath: "/api/reorder",
     Items: []sortablelist.Item{{Key: "a", Label: "A"}},
 })
-// Kanban — one Render per column, same Group, unique Container
+// Kanban: one Render per column, same Group, unique Container
 sortablelist.Render(sortablelist.Config{
     Label: "To do", Group: "board-1", Container: "todo",
     RPCPath: "/api/move", Version: "v1",
@@ -1604,11 +1604,11 @@ sortablelist.Render(sortablelist.Config{
 }
 
 // noteOnlySlugs are components whose showcase shows an explanatory NOTE
-// instead of a live, interactive demo — they need per-page backend wiring
+// instead of a live, interactive demo. They need per-page backend wiring
 // (an RPC, a mounted widget, image sources), so a self-contained live
 // render isn't possible. Their stage is labeled "Note", not "Live", so the
 // box doesn't claim to be something it isn't. Private for the same reason
-// as codeSnippets — read through the IsNoteOnly accessor.
+// as codeSnippets. Read through the IsNoteOnly accessor.
 var noteOnlySlugs = map[string]bool{
 	"datatable":        true,
 	"conditionalfield": true, "formrepeater": true, "repeater": true,

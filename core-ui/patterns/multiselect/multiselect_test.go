@@ -121,7 +121,7 @@ func TestLabelForMatchesInputID(t *testing.T) {
 		Name: "langs", Label: "Languages",
 		Options: []Option{{Value: "go", Label: "Go"}},
 	}))
-	// The runtime resolves chip text via label[for="<checkbox id>"] —
+	// The runtime resolves chip text via label[for="<checkbox id>"],
 	// the row label must carry a for= matching the input id, or chips
 	// degrade to showing the raw option Value.
 	m := regexp.MustCompile(`<input[^>]* id="([^"]+)"`).FindStringSubmatch(h)

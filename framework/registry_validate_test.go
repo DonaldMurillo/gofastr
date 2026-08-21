@@ -14,7 +14,7 @@ import (
 func TestRegisterRejectsInvalidConfig(t *testing.T) {
 	reg := NewRegistry()
 
-	// Two fields named "title" — a duplicate-field misconfig that Validate
+	// Two fields named "title", a duplicate-field misconfig that Validate
 	// catches but Define does not inject away.
 	e := entity.Define("posts", entity.EntityConfig{
 		Fields: []schema.Field{

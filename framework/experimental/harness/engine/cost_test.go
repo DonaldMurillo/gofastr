@@ -39,7 +39,7 @@ func (*usageProvider) TokenCount(_ context.Context, _ string, _ []provider.Messa
 
 // TestEngineEmitsNonZeroUSDForKnownModel: when provider+model match
 // the pricing table, the CostIncremented event MUST carry a non-zero
-// USD value. Today's status meter showed $0.0000 forever — that's
+// USD value. Today's status meter showed $0.0000 forever, that's
 // what this test guards against.
 func TestEngineEmitsNonZeroUSDForKnownModel(t *testing.T) {
 	prov := &usageProvider{

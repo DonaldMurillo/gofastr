@@ -14,7 +14,7 @@ import (
 )
 
 // ============================================================================
-// Tier 3 — concurrency & background (no DB)
+// Tier 3: concurrency & background (no DB)
 // ============================================================================
 
 // BenchmarkEventBus_Emit measures the cost of synchronous fan-out for N
@@ -61,7 +61,7 @@ func BenchmarkEventBus_EmitAsync(b *testing.B) {
 	}
 }
 
-// BenchmarkSSE_BackpressureDropRate is a property benchmark — it reports
+// BenchmarkSSE_BackpressureDropRate is a property benchmark, it reports
 // the effective drop rate when a single slow subscriber is paired with a
 // fast emitter through the production SSEBroker. This intentionally
 // exercises the configurable ?buffer= path rather than the legacy raw
@@ -176,7 +176,7 @@ func BenchmarkSSEWriter_Write(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
 		// stream.NewSSEWriter would be the production path, but it's in
-		// a sibling package — write the same wire bytes inline for a
+		// a sibling package, write the same wire bytes inline for a
 		// strict comparison-free measurement.
 		fmt.Fprintf(rec.Body, "event: entity.created\n")
 		fmt.Fprintf(rec.Body, "data: {\"type\":\"entity.created\",\"data\":{\"id\":\"p%d\"}}\n\n", i)

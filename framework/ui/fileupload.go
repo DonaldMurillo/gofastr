@@ -12,7 +12,7 @@ import (
 // ─── FileUpload ─────────────────────────────────────────────────────
 //
 // A labelled file-picker with a drag-and-drop hot zone. The native
-// <input type="file"> is the source of truth — keyboard, screen
+// <input type="file"> is the source of truth: keyboard, screen
 // reader, and form-POST flows all work without JavaScript. The drag
 // zone is progressive enhancement: data-fui-fileupload tells the
 // runtime to wire dragover/dragleave/drop handlers that forward

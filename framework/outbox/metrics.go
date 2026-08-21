@@ -14,7 +14,7 @@ import (
 //   - dead:    delivery rows that exhausted their retry budget and were
 //     dead-lettered (status = "dead").
 //
-// One GROUP BY query (dialect-agnostic — works on both Postgres and SQLite).
+// One GROUP BY query (dialect-agnostic, works on both Postgres and SQLite).
 // The maps are non-nil and empty when there is nothing to report, so callers
 // can iterate them unconditionally.
 func (o *Outbox) DeliveryCounts(ctx context.Context) (pending, dead map[string]int, err error) {
@@ -49,7 +49,7 @@ func (o *Outbox) DeliveryCounts(ctx context.Context) (pending, dead map[string]i
 // it on the app's *middleware.Metrics via RegisterCollector so outbox lag and
 // dead-letters land on the single /metrics surface.
 //
-// A transient query error emits nothing for this scrape — the collector must
+// A transient query error emits nothing for this scrape, the collector must
 // never break /metrics. Consumers are rendered in sorted order for
 // deterministic scrape output.
 func (o *Outbox) MetricsCollector() func(io.Writer) {

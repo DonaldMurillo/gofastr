@@ -85,7 +85,7 @@ func TestMarkdown_HeadingIDSanitized(t *testing.T) {
 // escaping. Attack: ![a](" onerror="alert(1)).
 //
 // The literal substring `onerror=` may still appear inside a properly
-// `&quot;`-escaped src value — that's not an injection, the HTML parser
+// `&quot;`-escaped src value. That's not an injection, the HTML parser
 // will read it as a single string. What matters is that no UNESCAPED
 // `"` survives the escape pass, since an unescaped quote is what would
 // terminate the attribute and let the next token become a new
@@ -153,7 +153,7 @@ func TestMarkdown_LinkDataURIVerify(t *testing.T) {
 // dangerous-scheme allow-list. Attack: [x](java<TAB>script:alert(1)).
 func TestMarkdown_SchemeInteriorControlChar(t *testing.T) {
 	// Each attack embeds a different control byte between "java" and
-	// "script:" — a browser ignores it and resolves the URL to
+	// "script:", a browser ignores it and resolves the URL to
 	// javascript:, so the renderer must neutralise all of them.
 	for _, ctrl := range []string{"\t", "\n", "\r", "\x00"} {
 		link := "[x](java" + ctrl + "script:alert(1))"

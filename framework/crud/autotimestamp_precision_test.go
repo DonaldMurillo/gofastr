@@ -46,7 +46,7 @@ func TestAutoTimestampLexicographicOrder(t *testing.T) {
 	// And the production path must use that fixed-width layout: EVERY
 	// generated value carries exactly six fractional digits. Sampled,
 	// because a zero-stripping layout (.999999) only betrays itself when
-	// the instant's microseconds end in 0 — ~1 in 10 generations, near
+	// the instant's microseconds end in 0, ~1 in 10 generations, near
 	// certain across 200.
 	for range 200 {
 		v := generateFieldValue(schema.AutoTimestamp).(string)

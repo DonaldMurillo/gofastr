@@ -44,7 +44,7 @@ type nestedFilter struct {
 	Value    string   // single-value ops (eq/gt/like/…)
 	Values   []string // OpIn: the full value set, emitted as one IN (...)
 	// isBool marks a filter on a Bool-typed target column so
-	// buildExistsSubquery binds a Go bool for true/false spellings —
+	// buildExistsSubquery binds a Go bool for true/false spellings,
 	// a raw string binds TEXT against SQLite's INTEGER storage and
 	// matches nothing (same coercion as filter.ParseFiltersValues).
 	isBool bool
@@ -54,8 +54,8 @@ type nestedFilter struct {
 	// table is the RESOLVED target's table name. Relation.Entity is the
 	// registry KEY (the entity name), and the two differ whenever a host
 	// declares Name != Table or registers a versioned entity. Every check this
-	// file performs — declared fields, Hidden/NoQuery, soft delete, the
-	// owner/tenant refusal — is made against the resolved target, so the SQL
+	// file performs, declared fields, Hidden/NoQuery, soft delete, the
+	// owner/tenant refusal, is made against the resolved target, so the SQL
 	// has to run against that same target's table or the validation describes
 	// one table while the query reads another. The eager path documents the
 	// identical contract (see eager.go, "The SELECT targets the entity's
@@ -75,7 +75,7 @@ type nestedFilter struct {
 //	?author_like.name=al         not supported
 //
 // Unknown relations and unknown fields on the target return an error so
-// the caller can map to 400 — silent ignoring would mask client typos.
+// the caller can map to 400, silent ignoring would mask client typos.
 func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
 	return parseNestedFiltersValues(r.URL.Query(), ent, registry)
 }
@@ -86,7 +86,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		relsByName[rel.Name] = rel
 	}
 
-	// filter.FilterSuffixes is the canonical operator-suffix table — reuse
+	// filter.FilterSuffixes is the canonical operator-suffix table, reuse
 	// it instead of rebuilding a local literal per call. Order is the same
 	// (longer suffixes first) so ?author.name_gte=v matches _gte not _gt.
 
@@ -125,7 +125,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 
 		// Validate the field against the target entity's schema.
 		//
-		// A Hidden column is treated as NOT declared — the identical error to
+		// A Hidden column is treated as NOT declared, the identical error to
 		// a nonexistent field, so the response can't distinguish hidden from
 		// absent. Otherwise a nested predicate (?author.password_hash_like=…)
 		// would resurrect exactly the value-disclosure oracle the flat-filter
@@ -137,7 +137,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		// check on two independent paths: resolution fails precisely when a
 		// name has several versions, so two versions of "users" disabled the
 		// Hidden check; and a relation pointing at a real table that no entity
-		// registers — auth_users is the documented case — dropped it too.
+		// registers, auth_users is the documented case, dropped it too.
 		// isSafeIdentifier gates the SHAPE of a name, not its membership, so
 		// either way ?author.password_hash_like=$2a$ reached SQL as a
 		// value-disclosure oracle. ResolveTarget also errors on a nil registry,
@@ -149,7 +149,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		// Match the column name OR the field's wire key. A client is told the
 		// field is called "content"; ?author.content=x must work for the same
 		// reason ?content=x does on the flat path. Hidden and NoQuery both win
-		// under BOTH names — resolving an alias past a refusal would make the
+		// under BOTH names, resolving an alias past a refusal would make the
 		// wire key a way around the guard.
 		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
@@ -175,11 +175,11 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		if op == filter.OpIn {
 			// Coalesce into ONE filter emitting `col IN (...)`. Splitting into
 			// separate AND-ed EXISTS made a to-one relation (BelongsTo/HasOne)
-			// unmatchable — a single related row can't equal every value — so
+			// unmatchable, a single related row can't equal every value, so
 			// `?author.name_in=a,b` silently returned nothing. One IN matches
 			// the top-level _in semantics, including the union across
 			// repeated keys (filter.SplitINValuesBounded) and the entry cap
-			// the flat path enforces — same cap, same error shape, so the
+			// the flat path enforces, same cap, same error shape, so the
 			// nested surface can't drive uncapped placeholders per request.
 			vals, total := filter.SplitINValuesBounded(values, filter.MaxINListEntries)
 			if total > filter.MaxINListEntries {
@@ -218,7 +218,7 @@ type NestedFilter struct {
 // It deliberately does NOT run checkNestedFiltersReadable. The asymmetry with
 // the HTTP path is intentional and worth stating, because it looks like an
 // omission: Hidden/NoQuery are enforced here because those are properties of
-// the DATA — a masked column stays masked no matter who asks — while the read
+// the DATA, a masked column stays masked no matter who asks, while the read
 // posture is a question about the CALLER, and an in-process caller is server
 // code acting on its own authority, the same carve-out ApplyIncludes makes via
 // realRequestKey. The consequence is real and belongs to the host: a typed
@@ -257,7 +257,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
 			if f.Name == field || (f.WireName != "" && f.WireName == field) {
-				// A Hidden target column is treated as not-declared —
+				// A Hidden target column is treated as not-declared,
 				// the same value-disclosure-oracle rejection the HTTP
 				// path applies in parseNestedFilters. Without this, a
 				// typed caller passing a partially user-influenced
@@ -293,7 +293,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 // applyNestedFilters invokes addWhere once per nestedFilter with an EXISTS
 // subquery. EXISTS avoids the row duplication that a plain JOIN would
 // introduce for HasMany / ManyToMany relations and works uniformly across
-// BelongsTo / HasOne too — same SQL pattern, no per-relation special-casing.
+// BelongsTo / HasOne too, same SQL pattern, no per-relation special-casing.
 //
 // addWhere mirrors the Where signature shared by QueryBuilder and
 // CountBuilder so a single call site can wire the same filter chain into
@@ -306,11 +306,11 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, par
 }
 
 // buildExistsSubquery returns the WHERE fragment for one nested filter.
-// Renumbering happens inside QueryBuilder.Build — the args are passed
+// Renumbering happens inside QueryBuilder.Build, the args are passed
 // through carry semantics that make $N adjustment correct downstream.
 //
 // The field name on the target relation comes from a URL query key
-// (?author.name=...) and is interpolated into the SQL directly — there
+// (?author.name=...) and is interpolated into the SQL directly, there
 // is no parameter placeholder for an identifier. We refuse anything
 // that doesn't look like a plain `[A-Za-z_][A-Za-z0-9_]*` identifier so
 // payloads like `name OR 1=1 --` can't smuggle SQL fragments through
@@ -321,7 +321,7 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, par
 // metadata, not request input, so they don't need the same gate.
 func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string, []any) {
 	rel := nf.Relation
-	// relTable, never rel.Entity — see nestedFilter.table.
+	// relTable, never rel.Entity. See nestedFilter.table.
 	relTable := nf.table
 	if relTable == "" {
 		relTable = rel.Entity
@@ -330,7 +330,7 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 	if !isSafeIdentifier(col) {
 		// "1 = 0" is an unconditionally-false predicate that lets the
 		// outer query still build but matches nothing. Better than
-		// returning an error here — buildExistsSubquery has no error
+		// returning an error here, buildExistsSubquery has no error
 		// channel and the parse layer normally catches unsafe names;
 		// this is the last-line defence.
 		return "1 = 0", nil
@@ -356,7 +356,7 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		// every depth. Nested filters used to pass the caller's value
 		// through as a raw LIKE pattern while the top level escaped and
 		// wrapped it, so `?author.name_like=100%` prefix-matched instead
-		// of finding "100% cotton" — and a bare `%` matched every row.
+		// of finding "100% cotton", and a bare `%` matched every row.
 		predicate = fmt.Sprintf("%s.%s LIKE $1"+filter.LikeEscapeSuffix, relTable, col)
 		args = []any{filter.EscapeLikePattern(nf.Value)}
 	} else {
@@ -364,7 +364,7 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		args = []any{filter.BoolBind(nf.isBool, nf.Value)}
 	}
 
-	// Every other read surface hides soft-deleted rows — the routes via
+	// Every other read surface hides soft-deleted rows, the routes via
 	// ApplySoftDeleteFilter, the eager loaders via their softDeleteFilter
 	// argument. This subquery did not, so `?rel.field=` counted trashed rows
 	// and became a value oracle over data that GET /api/<entity>/{id} answers
@@ -427,7 +427,7 @@ func opToSQL(op filter.FilterOp) string {
 // caller may not read.
 //
 // `?author.email=jane@example.com` does not return the related row, so it is
-// not a disclosure in the way `?include=author` was — but it is an oracle:
+// not a disclosure in the way `?include=author` was, but it is an oracle:
 // the row count changes with the guessed value, so an anonymous caller can
 // confirm any value in a column the entity's own route refuses to serve.
 // Filtering across a relation is a use of that relation's data, so the same
@@ -446,18 +446,18 @@ func (ch *CrudHandler) checkNestedFiltersReadable(ctx context.Context, filters [
 		probe := &CrudHandler{Entity: target, DB: ch.DB, Registry: ch.Registry}
 		// NOTE: the scoped-target refusal below now covers every owner- or
 		// tenant-scoped entity, so the choice between CanReadScoped and the
-		// narrower canReadEntityGate here no longer changes any outcome — a
+		// narrower canReadEntityGate here no longer changes any outcome, a
 		// mutation swapping them survives the suite. CanReadScoped stays
 		// because it is the correct predicate for "may this caller read this
 		// entity at all", and because the refusal below is about the EXISTS
 		// oracle specifically: if that ever narrows, this line is what still
 		// answers the general question.
 		// CanReadScoped, not canReadEntityGate. The narrow gate omits owner and
-		// tenant because the INCLUDE path scopes rows per node — but
+		// tenant because the INCLUDE path scopes rows per node, but
 		// buildExistsSubquery emits no owner or tenant predicate at all, so
 		// nothing else here constrains which of the target's rows the EXISTS
 		// clause counts. Borrowing the include path's reasoning left the
-		// oracle open for exactly the entities that most need it closed —
+		// oracle open for exactly the entities that most need it closed,
 		// though this predicate alone closes only the "may not read at all"
 		// case; owner/tenant scoping and soft delete are handled below and in
 		// buildExistsSubquery respectively.
@@ -465,7 +465,7 @@ func (ch *CrudHandler) checkNestedFiltersReadable(ctx context.Context, filters [
 			return &includeForbiddenError{Entity: target.GetName()}
 		}
 		// CanReadScoped establishes that the caller has AN owner or tenant, not
-		// that these rows are theirs — and the subquery cannot narrow them,
+		// that these rows are theirs, and the subquery cannot narrow them,
 		// because it counts rows without ever selecting them. A signed-in owner
 		// would otherwise count every other owner's rows one guess at a time,
 		// through a parent they may legitimately read. Refuse what this shape
@@ -478,7 +478,7 @@ func (ch *CrudHandler) checkNestedFiltersReadable(ctx context.Context, filters [
 		// The exemption is PER SCOPE. ORing the three markers together meant a
 		// caller holding only a cross-OWNER grant cleared the refusal for a
 		// target that is multi-tenant and not owner-scoped, restoring the
-		// count oracle across tenants — and the reverse for a cross-tenant
+		// count oracle across tenants, and the reverse for a cross-tenant
 		// caller against an owner-scoped target. A grant on one axis says
 		// nothing about the other. eagerScopeFilters keeps them separate and
 		// TestEagerScopeFiltersExemptCrossScopeCallers pins it there; this is

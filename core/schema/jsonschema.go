@@ -108,7 +108,7 @@ func fieldToJSONSchema(f Field) map[string]any {
 
 	case JSON:
 		// JSON fields accept any valid JSON value
-		// no "type" constraint — any JSON value is valid
+		// no "type" constraint, any JSON value is valid
 
 	case Relation:
 		prop["type"] = "string"

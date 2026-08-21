@@ -17,7 +17,7 @@ func TestEnsureDatabase_PostgresCreates(t *testing.T) {
 	if err != nil {
 		t.Skipf("no postgres available: %v", err)
 	}
-	// Pin to IPv4 — Docker's port proxy on macOS resets the IPv6 (::1) handshake
+	// Pin to IPv4. Docker's port proxy on macOS resets the IPv6 (::1) handshake
 	// that `localhost` resolves to first, which would flake this test.
 	base = strings.Replace(base, "@localhost:", "@127.0.0.1:", 1)
 	u, err := url.Parse(base)

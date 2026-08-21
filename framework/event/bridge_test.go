@@ -68,7 +68,7 @@ func TestBridgeTwoBusCrossDelivery(t *testing.T) {
 }
 
 // TestBridgeThreeBusExactlyOnce: a 3-bus network delivers each event exactly
-// once per remote bus and never loops or duplicates — the core loop guard.
+// once per remote bus and never loops or duplicates, the core loop guard.
 func TestBridgeThreeBusExactlyOnce(t *testing.T) {
 	buses, counts, stop := attachBuses(t, 3)
 	defer stop()
@@ -218,7 +218,7 @@ func (s *stallFanout) Subscribe(_ string, _ func([]byte)) (func(), error) {
 }
 
 // TestBridgeEmitDoesNotBlockOnStalledFanout: a fanout whose Publish blocks
-// forever must not stall Emit — the tap enqueues to a bounded queue serviced
+// forever must not stall Emit, the tap enqueues to a bounded queue serviced
 // by a dedicated goroutine, so synchronous emitters return promptly and
 // overflow drops oldest (lossy real-time lane).
 func TestBridgeEmitDoesNotBlockOnStalledFanout(t *testing.T) {
@@ -252,7 +252,7 @@ func TestBridgeEmitDoesNotBlockOnStalledFanout(t *testing.T) {
 
 // TestAttachFanoutRejectsDoubleAttach: a second AttachFanout on the same bus
 // must error (otherwise the first subscription stays live with a stale nodeID
-// and echoes this bus's own emissions back to its handlers — double delivery).
+// and echoes this bus's own emissions back to its handlers, double delivery).
 func TestAttachFanoutRejectsDoubleAttach(t *testing.T) {
 	f := fanout.NewInProcess()
 	bus := event.NewEventBus()

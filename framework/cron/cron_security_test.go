@@ -11,7 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
-// TestCron_EmptyJobName rejects empty names — empty names can collide
+// TestCron_EmptyJobName rejects empty names, empty names can collide
 // across registrations and produce ambiguous log lines.
 func TestCron_EmptyJobName(t *testing.T) {
 	s := cron.NewScheduler()
@@ -34,7 +34,7 @@ func TestCron_VeryLongJobName(t *testing.T) {
 	}
 }
 
-// TestCron_NilJobFunc refuses to register a job with a nil Run — a nil
+// TestCron_NilJobFunc refuses to register a job with a nil Run, a nil
 // Run would nil-pointer at the next firing.
 func TestCron_NilJobFunc(t *testing.T) {
 	s := cron.NewScheduler()
@@ -48,7 +48,7 @@ func TestCron_NilJobFunc(t *testing.T) {
 }
 
 // TestScheduler_JobPanicRecovered verifies that a panicking job does not
-// crash the process — RunOnce launches each job in a goroutine, and the
+// crash the process. RunOnce launches each job in a goroutine, and the
 // scheduler must defer-recover inside that goroutine before it can route
 // the panic to OnError.
 func TestScheduler_JobPanicRecovered(t *testing.T) {
@@ -98,7 +98,7 @@ func TestScheduler_JobPanicRecovered(t *testing.T) {
 }
 
 // TestScheduler_StopBeforeStart verifies that Stop() returns promptly when
-// Start() was never called — a shutdown path that fires the OnStop drainer
+// Start() was never called, a shutdown path that fires the OnStop drainer
 // after an aborted boot must not hang forever on a bare channel receive.
 func TestScheduler_StopBeforeStart(t *testing.T) {
 	cases := []struct {

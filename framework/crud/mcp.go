@@ -18,7 +18,7 @@ import (
 
 // RegisterEntityMCPTools exposes a CRUD handler through MCP tools.
 //
-// router is the http.Handler that owns the entity's CRUD routes — typically
+// router is the http.Handler that owns the entity's CRUD routes, typically
 // app.Router. MCP tool calls are dispatched through router.ServeHTTP so they
 // share the exact same middleware chain (auth, recovery, logging, security
 // headers, etc.) as live HTTP traffic. Passing the bare CRUD handler would
@@ -31,11 +31,11 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		return fmt.Errorf("entity mcp: crud handler is nil")
 	}
 	if router == nil {
-		return fmt.Errorf("entity mcp: router is nil — MCP CRUD tools must dispatch through the app router so middleware applies")
+		return fmt.Errorf("entity mcp: router is nil: MCP CRUD tools must dispatch through the app router so middleware applies")
 	}
 	ent := crud.Entity.GetName()
 	// Tool name shape:
-	//   no namespace      → "<entity>_<action>"   (historical flat names — public agent surface)
+	//   no namespace      → "<entity>_<action>"   (historical flat names, public agent surface)
 	//   namespace set     → "<ns>.<entity>.<action>" (per routegroup.WithMCPNamespace docs)
 	// The flat form MUST stay stable for unversioned/no-namespace entities;
 	// the namespaced dot form disambiguates two versions of the same entity.
@@ -199,7 +199,7 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	}
 	// The internal request is re-dispatched through the full middleware
 	// chain (auth, recovery, etc.). Session/JWT middleware re-resolves the
-	// caller from transport headers, NOT from ctx — so without copying the
+	// caller from transport headers, NOT from ctx, so without copying the
 	// original request's auth the caller is demoted to anonymous and
 	// owner-scoped CRUD returns 401. Copy Cookie + Authorization from the
 	// original inbound request (stashed by the MCP transport) so the same
@@ -214,7 +214,7 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 		// The embed grant is a credential like the two above, and copying it
 		// is what keeps the re-dispatched path GATED rather than merely
 		// authenticated. The grant survives on ctx either way, so the user
-		// re-resolves — but embed.Host.Middleware short-circuits on a missing
+		// re-resolves, but embed.Host.Middleware short-circuits on a missing
 		// header, so without this the reach allow-list and the grant's expiry
 		// are never evaluated for the path being re-dispatched to.
 		if grant := orig.Header.Get(fembed.GrantHeader); grant != "" {
@@ -271,7 +271,7 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 	}
 	for _, field := range ent.GetFields() {
 		// These props are the list tool's FILTER arguments, so NoQuery
-		// fields are omitted alongside Hidden ones — an agent offered a
+		// fields are omitted alongside Hidden ones, an agent offered a
 		// filter the parser rejects just burns a call on a 400.
 		if field.Hidden || field.NoQuery {
 			continue

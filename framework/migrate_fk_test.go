@@ -45,7 +45,7 @@ func isFKError(err error) bool {
 }
 
 // ============================================================================
-// Test: FK constraint enforces at runtime — inserting an orphan post fails.
+// Test: FK constraint enforces at runtime, inserting an orphan post fails.
 // (Replaces the SQLite-only DDL scrape; the runtime semantic is what we care
 // about and it's directly observable on both engines.)
 // ============================================================================
@@ -159,12 +159,12 @@ func TestMigrate_FK_HasManyDoesNotAddSourceFK(t *testing.T) {
 			t.Fatalf("automigrate: %v", err)
 		}
 
-		// users has no outbound FK — a plain insert with no related rows must succeed.
+		// users has no outbound FK, a plain insert with no related rows must succeed.
 		if _, err := db.Exec("INSERT INTO users(id, name) VALUES ($1, $2)", "u1", "Alice"); err != nil {
 			t.Fatalf("insert into users without FK should succeed, got: %v", err)
 		}
 
-		// posts has an FK on author_id — orphan insert must fail.
+		// posts has an FK on author_id, orphan insert must fail.
 		_, err := db.Exec("INSERT INTO posts(id, title, author_id) VALUES ($1, $2, $3)", "p1", "orphan", "ghost-user")
 		if err == nil {
 			t.Fatal("expected FK violation on posts.author_id, got nil")

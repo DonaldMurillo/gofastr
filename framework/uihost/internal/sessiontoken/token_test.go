@@ -125,7 +125,7 @@ func TestVerifyAnyAcceptsPreviousKey(t *testing.T) {
 }
 
 // TestVerifyAnyRejectsWhenPreviousMissing ensures a token signed by a
-// key that is neither current nor listed as previous is rejected —
+// key that is neither current nor listed as previous is rejected:
 // rotation is a drain window, not a permanent backdoor.
 func TestVerifyAnyRejectsWhenPreviousMissing(t *testing.T) {
 	tok, _, _ := Mint(otherKey, now)
@@ -136,14 +136,14 @@ func TestVerifyAnyRejectsWhenPreviousMissing(t *testing.T) {
 
 // TestVerifyAnySignsWithCurrent ensures the rotation completes: a
 // freshly-minted token (signed by the current key) verifies against the
-// current key ALONE — it must not depend on a previous key being
+// current key ALONE. It must not depend on a previous key being
 // present, otherwise the operator could never drop the old key.
 func TestVerifyAnySignsWithCurrent(t *testing.T) {
 	tok, id, err := Mint(key, now)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
-	// A freshly-minted token verifies against the current key ALONE —
+	// A freshly-minted token verifies against the current key ALONE:
 	// it must not depend on a previous key being present, otherwise the
 	// operator could never drop the old key.
 	got, ok := VerifyAny(key, nil, tok, now, maxAge)
@@ -151,7 +151,7 @@ func TestVerifyAnySignsWithCurrent(t *testing.T) {
 		t.Fatalf("freshly-minted token did not verify against current key alone: %q, %v", got, ok)
 	}
 	// And it must NOT verify once its signing key has been fully retired
-	// — neither the new current nor any listed previous — so the drain
+	// neither the new current nor any listed previous, so the drain
 	// window actually closes.
 	third := []byte("cccccccccccccccccccccccccccccccc")
 	if _, ok := VerifyAny(otherKey, [][]byte{third}, tok, now, maxAge); ok {

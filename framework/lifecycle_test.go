@@ -42,7 +42,7 @@ func TestLifecycle_HooksRunInOrder(t *testing.T) {
 }
 
 // ============================================================================
-// First failing OnStart aborts — subsequent hooks must not run.
+// First failing OnStart aborts, subsequent hooks must not run.
 // ============================================================================
 
 func TestLifecycle_StartHookErrorAborts(t *testing.T) {
@@ -81,7 +81,7 @@ func TestLifecycle_AddCronStopsScheduler(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	// Give the scheduler's goroutine a moment to enter its loop before
-	// asking it to stop — otherwise Stop races with the goroutine spawn.
+	// asking it to stop, otherwise Stop races with the goroutine spawn.
 	time.Sleep(10 * time.Millisecond)
 
 	done := make(chan error, 1)
@@ -129,7 +129,7 @@ func TestLifecycle_AddQueueStartsAndStops(t *testing.T) {
 }
 
 // ============================================================================
-// The start context is the one Stop cancels — workers can watch ctx.Done().
+// The start context is the one Stop cancels, workers can watch ctx.Done().
 // ============================================================================
 
 func TestLifecycle_StartContextCancelledByStop(t *testing.T) {

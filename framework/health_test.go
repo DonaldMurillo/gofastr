@@ -99,7 +99,7 @@ func TestReadiness_FailingCheckReturns503(t *testing.T) {
 
 func TestReadiness_ChecksRunInParallel(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
-	// Two slow checks that overlap — total duration should be ~one
+	// Two slow checks that overlap, total duration should be ~one
 	// check, not two, if they truly run in parallel.
 	app.RegisterReadiness("slow-a", func(ctx context.Context) error {
 		select {

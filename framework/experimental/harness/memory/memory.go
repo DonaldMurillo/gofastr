@@ -229,7 +229,7 @@ func (s *Store) writeIndexLocked() error {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 	for _, e := range entries {
-		fmt.Fprintf(&b, "- [%s](%s.md) — %s\n", e.Name, e.Name, e.Description)
+		fmt.Fprintf(&b, "- [%s](%s.md): %s\n", e.Name, e.Name, e.Description)
 	}
 	return os.WriteFile(filepath.Join(s.root, "MEMORY.md"), []byte(b.String()), 0o644)
 }

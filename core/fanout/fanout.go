@@ -10,7 +10,7 @@ import "context"
 // Payloads must be valid UTF-8: framework payloads are JSON envelopes, and a
 // backend may reject invalid UTF-8 (e.g. the Postgres backend, which would
 // otherwise silently corrupt such bytes via U+FFFD substitution). The fanout
-// transport is trusted input — write access to the underlying channel equals
+// transport is trusted input. Write access to the underlying channel equals
 // event-injection into every replica (forged payloads are not authenticated).
 type Fanout interface {
 	// Publish broadcasts payload to all subscribers of topic on every node.

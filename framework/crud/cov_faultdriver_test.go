@@ -16,7 +16,7 @@ import (
 // injector so tests can deterministically exercise the DB-error-propagation
 // branches (Query / rows.Err / Exec / Commit failures) that a healthy
 // in-memory database never triggers. Faults are matched on the query text so a
-// single handler call's *other* queries run normally — only the targeted
+// single handler call's *other* queries run normally, only the targeted
 // statement fails.
 
 var errCovInjected = errors.New("cov: injected db fault")

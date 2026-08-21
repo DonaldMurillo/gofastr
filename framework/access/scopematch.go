@@ -16,7 +16,7 @@ import "strings"
 //
 // ScopeMatch is PURE: it is a function of its two arguments only. It does
 // NOT consult the capability registry and does NOT expand resource
-// wildcards the way RolePolicy.Grant does at grant time — "teams:*" matches
+// wildcards the way RolePolicy.Grant does at grant time. "teams:*" matches
 // literally here, against whatever the caller passes as required. Grant-time
 // expansion (teams:* → teams:read, teams:write, …) is a separate concern
 // that lives in RolePolicy; matching and expanding are deliberately not
@@ -25,7 +25,7 @@ import "strings"
 // This is the matcher the module-grant side and battery/auth's token scopes
 // delegate to, so the resource:verb algebra has exactly one home. access.Can
 // (the RBAC hot path) is untouched: it performs exact-string-or-global-"*"
-// matching and must stay that way — widening it would silently change live
+// matching and must stay that way, widening it would silently change live
 // RBAC for every caller.
 func ScopeMatch(granted []Permission, required Permission) bool {
 	wantRes, wantVerb, ok := splitScope(string(required))
@@ -82,7 +82,7 @@ func isScopeChar(c byte) bool {
 
 // splitScope parses "resource:verb" at the first colon. ok is false when
 // there is no colon or either half is empty. A value with multiple colons
-// parses on the first colon (resource = head, verb = the rest) — that is
+// parses on the first colon (resource = head, verb = the rest), that is
 // fine for matching, but ValidScope rejects multi-colon strings at mint
 // time so they never reach a granted set in practice.
 func splitScope(s string) (resource, verb string, ok bool) {

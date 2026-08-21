@@ -16,7 +16,7 @@ func TestWireName_RoundTripsBothCasings(t *testing.T) {
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "body_text", Type: schema.String, WireName: "content"},
-			{Name: "author_id", Type: schema.Int}, // no alias — case conversion only
+			{Name: "author_id", Type: schema.Int}, // no alias, case conversion only
 		},
 	}.WithTimestamps(false))
 
@@ -41,7 +41,7 @@ func TestWireName_RoundTripsBothCasings(t *testing.T) {
 				jc, wireKeysOf(in))
 		}
 
-		// A key that matches nothing passes through rather than vanishing —
+		// A key that matches nothing passes through rather than vanishing,
 		// dropping it silently would hide a client's typo.
 		if got := ch.unconvertMapKeys(map[string]any{"totally_unknown": 1}); len(got) != 1 {
 			t.Errorf("case %v: unknown key was dropped instead of passed through", jc)

@@ -92,7 +92,7 @@ CREATE TABLE comments (
 // TestInclude_ScopedFilterCannotBypassOwnerScope pins that an
 // attacker-supplied scoped filter on the related entity's OwnerField does
 // NOT disable cross-table owner scoping. Attack: alice requests
-// `/posts?include=comments(user_id=bob)` — the forged predicate must be
+// `/posts?include=comments(user_id=bob)`, the forged predicate must be
 // intersected with alice's real owner scope (matching nothing), not treated
 // as an opt-out that returns bob's private comment.
 func TestInclude_ScopedFilterCannotBypassOwnerScope(t *testing.T) {
@@ -164,7 +164,7 @@ CREATE TABLE comments (
 // TestInclude_RelatedHiddenFieldNotLeaked pins that a related entity's
 // Hidden field is scrubbed from an ?include= response, the same way the
 // base read path scrubs it. Attack: declare users.password_hash Hidden,
-// then GET /rf_posts?include=author — the eager loader SELECT *'d every
+// then GET /rf_posts?include=author, the eager loader SELECT *'d every
 // column of the related row and copied it verbatim, leaking the hash.
 func TestInclude_RelatedHiddenFieldNotLeaked(t *testing.T) {
 	ddl := `
@@ -192,7 +192,7 @@ CREATE TABLE rf_users (
 			}
 		},
 	)
-	// rf_users has no OwnerField — the relation is public-by-reference, but
+	// rf_users has no OwnerField, the relation is public-by-reference, but
 	// password_hash is Hidden and must never surface.
 	userCfg := makeEntityConfig("rf_users", "rf_users", "",
 		[]schema.Field{
@@ -240,7 +240,7 @@ CREATE TABLE rf_users (
 }
 
 // TestIncludeUnregisteredTargetFails pins the property that an ?include=
-// whose relation target cannot be resolved in the registry is REFUSED —
+// whose relation target cannot be resolved in the registry is REFUSED,
 // never eager-loaded with `SELECT *` and served unscrubbed.
 //
 // Attack: the blueprint wires auth.NewEntityUserStore over a self-migrated
@@ -283,7 +283,7 @@ CREATE TABLE ur_users (
 	)
 
 	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
-	// ur_users is deliberately NOT registered — this is the self-migrated
+	// ur_users is deliberately NOT registered, this is the self-migrated
 	// auth table shape the blueprint emits.
 	reg := newTestRegistry(t)
 	reg.add(t, ch.Entity)
@@ -458,8 +458,8 @@ func (r *testRegistry) Get(name string) (*entity.Entity, error) {
 // same thing at every depth.
 //
 // Nested `_like` used to pass the caller's value through as a RAW LIKE
-// pattern while top-level `_like` escaped it and wrapped it in wildcards
-// — the same query parameter spelled the same way meaning two different
+// pattern while top-level `_like` escaped it and wrapped it in wildcards,
+// the same query parameter spelled the same way meaning two different
 // things depending on whether a dot appeared in it. That is a footgun
 // before it is a vulnerability: a caller filtering on a value that
 // happens to contain `%` or `_` (an email, a path, a SQL-ish string)

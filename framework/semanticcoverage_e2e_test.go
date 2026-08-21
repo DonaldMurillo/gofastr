@@ -20,7 +20,7 @@ import (
 // from the parsed shape, both suites would still pass while the feature
 // reported every route untested.
 //
-// This drives the whole loop — exercise one of two routes, flush the
+// This drives the whole loop, exercise one of two routes, flush the
 // manifest the real code writes, and let the real analyzer read it.
 func TestSemanticCoverageLoopFromRecordingToRule(t *testing.T) {
 	dir := t.TempDir()

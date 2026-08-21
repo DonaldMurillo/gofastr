@@ -17,7 +17,7 @@ func TestManager_DroppedUpdatesCounter(t *testing.T) {
 		t.Fatalf("no drops expected within buffer, got %d", got)
 	}
 
-	// Buffer full — this one is dropped and counted.
+	// Buffer full, this one is dropped and counted.
 	m.PushUpdate(IslandUpdate{IslandID: "i", HTML: "x"}, "s1")
 	if got := m.DroppedUpdates(); got != 1 {
 		t.Errorf("DroppedUpdates = %d, want 1", got)

@@ -17,7 +17,7 @@ func FuzzDecodeFrame(f *testing.F) {
 	// Seed corpus: valid + adversarial shapes.
 	seeds := []string{
 		`{"jsonrpc":"2.0","id":1,"method":"x"}`,
-		`{"jsonrpc":"2.0","id":0,"method":"x"}`,     // id:0 — rejected
+		`{"jsonrpc":"2.0","id":0,"method":"x"}`,     // id:0, rejected
 		`{"jsonrpc":"1.0","id":1,"method":"x"}`,     // bad version
 		`{"jsonrpc":"2.0","method":"n"}`,            // notification
 		`{"jsonrpc":"2.0","id":1,"result":{"a":1}}`, // response
@@ -58,7 +58,7 @@ func FuzzDecodeFrame(f *testing.F) {
 //
 // Run: go test -fuzz=FuzzCodecReadLoop -fuzztime=30s ./core/moduleproto/
 func FuzzCodecReadLoop(f *testing.F) {
-	// Seed with concatenated newline-delimited frames — valid + adversarial.
+	// Seed with concatenated newline-delimited frames: valid + adversarial.
 	seeds := []string{
 		// Single valid frame.
 		`{"jsonrpc":"2.0","id":1,"method":"x"}` + "\n",
@@ -71,7 +71,7 @@ func FuzzCodecReadLoop(f *testing.F) {
 		`{"jsonrpc":"2.0","id":0,"method":"x"}` + "\n",
 		// Empty line.
 		"\n",
-		// Truncated (no newline) — scanner should not block forever here in
+		// Truncated (no newline); scanner should not block forever here in
 		// isolation (it would in a real reader, but we feed a closed buffer).
 		`{"jsonrpc":"2.0","id":1`,
 		// Extra fields.
@@ -88,11 +88,11 @@ func FuzzCodecReadLoop(f *testing.F) {
 			return // construction failure is not a fuzz target
 		}
 		// Drain the codec. Each ReadFrame must either return a frame or an
-		// error — never panic, never hang (bytes.Buffer is finite).
+		// error; never panic, never hang (bytes.Buffer is finite).
 		for i := 0; i < 64; i++ {
 			fr, err := c.ReadFrame()
 			if err != nil {
-				break // any error ends the stream — that's the contract
+				break // any error ends the stream; that's the contract
 			}
 			if fr == nil {
 				t.Errorf("ReadFrame returned nil frame with nil error")

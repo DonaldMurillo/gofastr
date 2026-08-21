@@ -12,8 +12,8 @@ import (
 // TestEmbedLayoutIsNotViewportTall does on lines 18 and 22-24) is a tautology
 // against NewLayout(EmbedLayoutName): it reads EmbedLayoutName into both the
 // rule lookup and the const, so renaming the constant silently orphans the CSS
-// rule — layout.go emits class layout-<newname> while layout_css.go still says
-// .layout-embed — and the frame ratchets its own height open under a band of
+// rule, layout.go emits class layout-<newname> while layout_css.go still says
+// .layout-embed, and the frame ratchets its own height open under a band of
 // empty space, all while the test reports success. This pins the two together.
 func TestEmbedLayoutCSSMatchesTheEmittedLayoutName(t *testing.T) {
 	want := ".layout-" + EmbedLayout().Name + " .layout-body { min-height: 0; }"

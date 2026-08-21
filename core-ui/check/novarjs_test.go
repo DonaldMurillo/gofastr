@@ -98,7 +98,7 @@ func TestLintNoVarJS_FlagsMidLineVar(t *testing.T) {
 // TestLintNoVarJS_RepoIsClean asserts the production runtime modules
 // (core-ui/runtime/*.js + core-ui/runtime/src/*.js) ship without any
 // var declarations. Mirrors the existing TestLintNoInlineScripts_RepoIsClean
-// pattern — if anyone reintroduces `var`, `go test ./...` flags it.
+// pattern, if anyone reintroduces `var`, `go test ./...` flags it.
 func TestLintNoVarJS_RepoIsClean(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {

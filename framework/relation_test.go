@@ -304,7 +304,7 @@ func TestUniqueValidator(t *testing.T) {
 		return value != "taken@example.com"
 	}))
 
-	// Not taken — no errors
+	// Not taken: no errors
 	errs := vr.Validate(context.Background(), map[string]any{
 		"email": "new@example.com",
 	})
@@ -312,7 +312,7 @@ func TestUniqueValidator(t *testing.T) {
 		t.Errorf("expected no errors, got %v", errs)
 	}
 
-	// Taken — error
+	// Taken: error
 	errs = vr.Validate(context.Background(), map[string]any{
 		"email": "taken@example.com",
 	})
@@ -422,7 +422,7 @@ func TestUniqueValidatorMissingField(t *testing.T) {
 		return true
 	}))
 
-	// Field not present — should not error
+	// Field not present: should not error
 	errs := vr.Validate(context.Background(), map[string]any{})
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for missing field, got %v", errs)

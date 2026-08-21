@@ -11,7 +11,7 @@ import (
 )
 
 // TestNestedInclude_HasManyUnderBelongsTo exercises the recursive nested
-// loader where the deeper relation is HasMany — the branch that attaches a
+// loader where the deeper relation is HasMany, the branch that attaches a
 // []map[string]any slice and deep-converts it.
 //
 //	posts → author (BelongsTo users) → posts_by_author (HasMany)

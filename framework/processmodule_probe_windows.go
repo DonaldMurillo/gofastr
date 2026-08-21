@@ -12,9 +12,9 @@ import (
 )
 
 // This file provides the Windows implementations of:
-//   - runProbeChildBody — the per-probe forbidden-action attempt the
+//   - runProbeChildBody: the per-probe forbidden-action attempt the
 //     conformance suite runs under the candidate backend.
-//   - hostUIDString — the host principal string P1 compares against.
+//   - hostUIDString: the host principal string P1 compares against.
 //
 // Windows reaches the §6 denials through AppContainer/restricted tokens
 // (P1/P5/P7) + Job Objects (P6) + per-SID WFP firewall rules (P4). The v1
@@ -44,7 +44,7 @@ func runProbeChildBody(id ProbeID) int {
 	case ProbeDistinctPrincipal:
 		// P1 on Windows compares the process token SID against the
 		// host's. The stub backend does not mint an AppContainer token,
-		// so the child runs under the host's token — they match.
+		// so the child runs under the host's token, they match.
 		// Honest outcome: BREACH (no distinct principal), which
 		// contributes to the Windows fail-closed until a real backend
 		// provisions a restricted token.
@@ -72,13 +72,13 @@ func runProbeChildBody(id ProbeID) int {
 		// P3 on Windows: handle inheritance under Go's exec is
 		// controlled by the syscall.SysProcAttr.InheritedHandles
 		// field; the stub does not enumerate inherited handles
-		// portably. Mark UNREACHABLE — a real Windows backend
+		// portably. Mark UNREACHABLE, a real Windows backend
 		// would assert bInheritHandles=FALSE here.
 		unreachable("Windows fd-inheritance probe needs InheritedHandles plumbing (stub)")
 
 	case ProbeNoNetworkEgress:
 		// P4 is portable: dial each target. The Windows stub does not
-		// install per-SID WFP rules, so egress succeeds — honest BREACH.
+		// install per-SID WFP rules, so egress succeeds, honest BREACH.
 		targets := splitCSV(os.Getenv("GOFASTR_PROBE_NET_TARGETS"))
 		if len(targets) == 0 {
 			unreachable("no GOFASTR_PROBE_NET_TARGETS")
@@ -119,7 +119,7 @@ func runProbeChildBody(id ProbeID) int {
 	case ProbeResourceLimits:
 		// P6 on Windows uses a Job Object (kill-tree + memory/pids/CPU
 		// limits). The stub does not assign one; fork is not a Windows
-		// primitive. Mark UNREACHABLE — a real backend would assign the
+		// primitive. Mark UNREACHABLE, a real backend would assign the
 		// child to a Job Object with per-limit fields and the probe
 		// would observe denial.
 		unreachable("Windows Job-Object limits not wired (stub)")

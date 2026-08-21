@@ -46,14 +46,14 @@ func ScreenLLMMD(screen *Screen) string {
 	}
 	writeScreenLLMMDHead(&b, screen, title, screen.Path)
 
-	// Page content — render the screen and convert HTML → markdown
+	// Page content, render the screen and convert HTML → markdown
 	b.WriteString("---\n\n")
 	b.WriteString("## Page Content\n\n")
 	if screen.Component != nil {
 		// ScreenLoader screens load data dynamically at request time.
 		// Render() without Load() produces placeholder content.
 		if _, ok := screen.Component.(ScreenLoader); ok {
-			b.WriteString("_(Content is loaded dynamically via ScreenLoader — not available in static context. See the rendered page for full content.)_\n")
+			b.WriteString("_(Content is loaded dynamically via ScreenLoader, not available in static context. See the rendered page for full content.)_\n")
 			return b.String()
 		}
 
@@ -62,7 +62,7 @@ func ScreenLLMMD(screen *Screen) string {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Printf("llm.md: panic rendering screen %s: %v", screen.Path, r)
-					b.WriteString("_(error rendering content — see server logs)_\n")
+					b.WriteString("_(error rendering content: see server logs)_\n")
 				}
 			}()
 			htmlContent := string(screen.Component.Render())
@@ -81,7 +81,7 @@ func ScreenLLMMD(screen *Screen) string {
 
 // writeScreenLLMMDHead writes the title + route-info header shared by the
 // pattern-level doc (ScreenLLMMD) and the concrete-URL doc
-// (ScreenLLMMDForPath). path is the path to display — the registered
+// (ScreenLLMMDForPath). path is the path to display, the registered
 // pattern for the former, the concrete URL for the latter (with the
 // pattern shown alongside when they differ).
 func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string) {
@@ -134,7 +134,7 @@ func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string
 
 // ScreenLLMMDWithheld renders a metadata-free llm.md for a screen whose
 // policy chain returned non-Allow. ONLY the route's path, pattern, and
-// type appear — the title, description, SEO bundle, and content are all
+// type appear, the title, description, SEO bundle, and content are all
 // component-supplied and therefore protected by the same policy that
 // gates the page render (a screen titled "Project X" must not leak the
 // name through its doc). The route's existence and shape are
@@ -147,12 +147,12 @@ func ScreenLLMMDWithheld(screen *Screen) string {
 	fmt.Fprintf(&b, "- **Type:** %s\n", screen.Type.String())
 	b.WriteString("\n---\n\n")
 	b.WriteString("## Page Content\n\n")
-	b.WriteString("_(Content withheld — this route is access-controlled.)_\n")
+	b.WriteString("_(Content withheld: this route is access-controlled.)_\n")
 	return b.String()
 }
 
 // ScreenLLMMDResult is what ScreenLLMMDForPath produced for a concrete
-// URL. Allowed reports whether the policy chain returned Allow — when
+// URL. Allowed reports whether the policy chain returned Allow, when
 // false, MD is the metadata-free withheld doc and callers MUST NOT
 // attach any component-derived metadata (titles, SEO front matter) of
 // their own. Component is the loaded per-request instance when Allowed
@@ -165,25 +165,25 @@ type ScreenLLMMDResult struct {
 }
 
 // ScreenLLMMDForPath generates the per-screen llm.md for a CONCRETE URL
-// of a (possibly dynamic) route. Unlike ScreenLLMMD — which documents the
-// registered pattern and emits a placeholder for ScreenLoader screens —
+// of a (possibly dynamic) route. Unlike ScreenLLMMD, which documents the
+// registered pattern and emits a placeholder for ScreenLoader screens,
 // this builds the same per-request instance the page render uses
 // (SetParams → DI → Load) so the document carries the loaded title and
 // rendered content. ok is false when the path resolves to no screen; a
 // DI or Load failure falls back to the pattern-level doc rather than
-// erroring (llm.md is documentation — a degraded doc beats a 500).
+// erroring (llm.md is documentation, a degraded doc beats a 500).
 func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDResult, bool) {
 	screen, params, found := a.Router.Resolve(path)
 	if !found {
 		return ScreenLLMMDResult{}, false
 	}
 
-	// Evaluate the policy chain BEFORE building the instance — this
+	// Evaluate the policy chain BEFORE building the instance, this
 	// function runs Load, so skipping the chain would leak loaded content
 	// a Redirect/Block policy protects on the page render (an authed
 	// detail screen must not answer via its /llm.md sibling). Anything
 	// but a plain Allow degrades to the metadata-free withheld doc: the
-	// pattern doc is NOT safe here — its title/description/content are
+	// pattern doc is NOT safe here, its title/description/content are
 	// component-supplied, which the policy protects too.
 	if ResolvePolicy(ctx, screen).Kind != DecisionAllow {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen)}, true
@@ -229,7 +229,7 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	content, err := component.SafeRenderCtx(ctx, comp)
 	if err != nil {
 		log.Printf("llm.md: render error for %s: %v", path, err)
-		b.WriteString("_(error rendering content — see server logs)_\n")
+		b.WriteString("_(error rendering content: see server logs)_\n")
 		return ScreenLLMMDResult{MD: b.String(), Title: title, Allowed: true, Component: comp}, true
 	}
 	if m := htmlToMarkdown(string(content)); m != "" {
@@ -249,7 +249,7 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 func pageLLMMDLink(path string) string {
 	clean := strings.TrimRight(path, "/")
 	if clean == "" {
-		// Root "/" — its llm.md is at /llm.md (entity index moved to /api/llm.md)
+		// Root "/", its llm.md is at /llm.md (entity index moved to /api/llm.md)
 		return "/llm.md"
 	}
 	return clean + "/llm.md"
@@ -261,7 +261,7 @@ func AppLLMMD(a *App) string {
 
 // AppLLMMDCtx is AppLLMMD with a request context: each screen's policy
 // chain is evaluated and non-Allow screens are listed with their PATH
-// ONLY — the title and description are component-supplied and protected
+// ONLY, the title and description are component-supplied and protected
 // by the same policy that gates the page render. Hosts pass the live
 // request context so an authenticated agent sees the full index; the
 // background-context AppLLMMD (and the static export) fail closed for
@@ -273,7 +273,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 	if title == "" {
 		title = "Application"
 	}
-	fmt.Fprintf(&b, "# %s — Page Reference\n\n", title)
+	fmt.Fprintf(&b, "# %s: Page Reference\n\n", title)
 	b.WriteString("Auto-generated LLM-friendly documentation for all registered pages and screens.\n\n")
 	b.WriteString("For API endpoints (CRUD resources), see [/api/llm.md](/api/llm.md).\n\n")
 
@@ -376,7 +376,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 	b.WriteString("This application uses server-side rendering (SSR) with client-side hydration:\n\n")
 	b.WriteString("1. **Initial load:** Every page is fully server-rendered as HTML.\n")
 	b.WriteString("2. **Hydration:** `runtime.js` attaches event handlers to the existing DOM after first paint.\n")
-	b.WriteString("3. **Cross-page navigation:** Client-side fetch with content swap — no full page reload.\n")
+	b.WriteString("3. **Cross-page navigation:** Client-side fetch with content swap, no full page reload.\n")
 	b.WriteString("4. **In-page state:** Interactive regions (islands/widgets) update via RPC, not URL changes.\n")
 	b.WriteString("5. **Server push:** Real-time updates flow through SSE for background events only.\n")
 	b.WriteString("\n")
@@ -395,7 +395,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 
 // ScreenLLMMDHandler returns an http.Handler that serves the LLM-friendly
 // markdown for a single screen. Content-Type is text/markdown. The
-// screen's policy chain is evaluated per request — a non-Allow decision
+// screen's policy chain is evaluated per request, a non-Allow decision
 // serves the metadata-free withheld doc, matching every other llm.md
 // surface.
 func ScreenLLMMDHandler(screen *Screen) http.Handler {

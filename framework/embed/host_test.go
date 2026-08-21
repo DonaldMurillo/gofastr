@@ -194,7 +194,7 @@ func TestExchangeChecksFramedOrigin(t *testing.T) {
 	if _, err := h2.Exchange(ctx, tok2, "https://evil.com"); err == nil {
 		t.Error("a nonce exchanged from an unlisted origin")
 	}
-	// The nonce must still be unspent after those rejections — verification
+	// The nonce must still be unspent after those rejections. Verification
 	// happens before the burn, so a failed probe cannot consume it.
 	if res, err := h2.Exchange(ctx, tok2, "https://acme.com"); err != nil || res.Replay {
 		t.Errorf("a rejected exchange consumed the nonce: res=%+v err=%v", res, err)
@@ -298,7 +298,7 @@ func TestPrunesExpiredBurns(t *testing.T) {
 // Burning stores the row under the grant's expiry, and Prune deletes rows past
 // it. But the nonce's own lifetime is an independent knob: with NonceTTL longer
 // than GrantTTL, a Prune between two exchanges deletes the evidence while the
-// nonce is still valid — the second exchange's INSERT wins and mints a SECOND,
+// nonce is still valid: the second exchange's INSERT wins and mints a SECOND,
 // distinct grant. One nonce, two identities: exactly what single-use exists to
 // make impossible.
 func TestSpentNonceSurvivesAPruneWhenItOutlivesItsGrant(t *testing.T) {
@@ -338,7 +338,7 @@ func TestSpentNonceSurvivesAPruneWhenItOutlivesItsGrant(t *testing.T) {
 
 // The frame's reported ancestor origin is required, not optional. An empty
 // value used to skip the comparison, which meant the only caller the check
-// could plausibly catch — a direct POST that never went through a browser — was
+// could plausibly catch, a direct POST that never went through a browser, was
 // also the one caller it waved through.
 func TestExchangeRequiresAReportedOrigin(t *testing.T) {
 	h := testHost(t)
@@ -350,7 +350,7 @@ func TestExchangeRequiresAReportedOrigin(t *testing.T) {
 	if _, err := h.Exchange(ctx, tok, ""); err == nil {
 		t.Fatal("an exchange with no reported origin succeeded")
 	}
-	// And the nonce survives that rejection — verification precedes the burn.
+	// And the nonce survives that rejection. Verification precedes the burn.
 	if res, err := h.Exchange(ctx, tok, "https://acme.com"); err != nil || res.Replay {
 		t.Fatalf("the rejected exchange consumed the nonce: res=%+v err=%v", res, err)
 	}
@@ -358,7 +358,7 @@ func TestExchangeRequiresAReportedOrigin(t *testing.T) {
 
 // Removing a surface and de-listing an origin already took effect for grants
 // in flight. Narrowing a surface's scopes did not: a grant kept the revoked
-// scope for up to GrantMaxAge — twelve hours by default — refreshing the whole
+// scope for up to GrantMaxAge, twelve hours by default, refreshing the whole
 // way. All three are the operator taking something away.
 func TestVerifyGrantIntersectsWithCurrentScopes(t *testing.T) {
 	ctx := context.Background()

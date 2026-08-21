@@ -19,7 +19,7 @@ func TestEncodedPathCannotOutrunTheRouter(t *testing.T) {
 		raw  string
 	}{
 		{
-			// Cleans to "/reports" — the surface's own subtree — while the
+			// Cleans to "/reports", the surface's own subtree, while the
 			// router matches the subtree pattern "/api/docs/".
 			name: "encoded dot segments clean into the surface subtree",
 			raw:  "/api/docs/%2e%2e/%2e%2e/reports",

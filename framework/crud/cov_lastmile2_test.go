@@ -18,7 +18,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// eager.go — BelongsTo SOURCE query error (eager.go:177). The existing fault
+// eager.go: BelongsTo SOURCE query error (eager.go:177). The existing fault
 // tests cover the HasMany/m2m next-err and the BelongsTo target query; the
 // unfiltered BelongsTo *source* query error had no coverage.
 // ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ func TestEagerBelongsTo_SrcQueryErr(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// crud.go:417 — the nested-filter closure `func(sql,args){ qb.Where(...) }`
+// crud.go:417: the nested-filter closure `func(sql,args){ qb.Where(...) }`
 // runs only when there are nested filters (?author.name=alice).
 // ---------------------------------------------------------------------------
 
@@ -57,7 +57,7 @@ func covIncludeReq(t *testing.T, include string) *http.Request {
 	return httptest.NewRequest("GET", "/posts?include="+include, nil)
 }
 
-// include.go:53 — a path that yields zero segments ("." splits to nothing).
+// include.go:53: a path that yields zero segments ("." splits to nothing).
 func TestParseIncludeTree_EmptySegment(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
 	nodes, err := parseIncludeTree(covIncludeReq(t, "."), ch.Entity, reg)
@@ -69,7 +69,7 @@ func TestParseIncludeTree_EmptySegment(t *testing.T) {
 	}
 }
 
-// include.go:73 — nested include whose intermediate target is unregistered.
+// include.go:73: nested include whose intermediate target is unregistered.
 func TestParseIncludeTree_NestedTargetUnregistered(t *testing.T) {
 	// users (author target) is intentionally LEFT OUT of the registry so the
 	// nested ".profile" segment can't resolve its parent target.
@@ -83,7 +83,7 @@ func TestParseIncludeTree_NestedTargetUnregistered(t *testing.T) {
 	}
 }
 
-// include.go:99 — a scoped-filter clause that fails to parse.
+// include.go:99: a scoped-filter clause that fails to parse.
 func TestParseIncludeTree_ScopedFilterParseError(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
 	// An empty operator/value scoped filter ("=") is rejected by
@@ -96,11 +96,11 @@ func TestParseIncludeTree_ScopedFilterParseError(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // include.go applyIncludeTree / recurseLoadOnRawRows / gatherLoadedRows
-// branches — driven directly with crafted in-memory rows so we don't depend
+// branches, driven directly with crafted in-memory rows so we don't depend
 // on DB round-trips for the pure traversal guards.
 // ---------------------------------------------------------------------------
 
-// include.go:343 — a parent row whose id field is nil/missing is skipped
+// include.go:343: a parent row whose id field is nil/missing is skipped
 // during the attach loop (but the include still loads for valid rows).
 func TestApplyIncludeTree_RowWithNilID(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
@@ -118,7 +118,7 @@ func TestApplyIncludeTree_RowWithNilID(t *testing.T) {
 	}
 }
 
-// include.go:331 — a node WITH children whose own relation resolves zero rows
+// include.go:331: a node WITH children whose own relation resolves zero rows
 // takes the `continue` branch (gatherLoadedRows returns nothing to recurse on).
 func TestApplyIncludeTree_ChildWithZeroRows(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
@@ -142,9 +142,9 @@ func TestApplyIncludeTree_ChildWithZeroRows(t *testing.T) {
 	}
 }
 
-// include.go:362 — recurseLoadOnRawRows defaults a blank PrimaryKey to "id".
+// include.go:362: recurseLoadOnRawRows defaults a blank PrimaryKey to "id".
 // Built directly with a target entity whose PrimaryKey is "" so the guard
-// fires (NOT removed — exercised).
+// fires (NOT removed, exercised).
 func TestRecurseLoadOnRawRows_BlankPK(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
 	target := reg.byName["users"]
@@ -162,7 +162,7 @@ func TestRecurseLoadOnRawRows_BlankPK(t *testing.T) {
 	}
 }
 
-// include.go:366 — recurseLoadOnRawRows returns early when no ids gather.
+// include.go:366: recurseLoadOnRawRows returns early when no ids gather.
 func TestRecurseLoadOnRawRows_NoIDs(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
 	target := reg.byName["users"]
@@ -178,7 +178,7 @@ func TestRecurseLoadOnRawRows_NoIDs(t *testing.T) {
 	}
 }
 
-// include.go:385 + :396 — grandchild recursion where the gathered nested rows
+// include.go:385 + :396, grandchild recursion where the gathered nested rows
 // are empty (385 continue) and a raw row with nil id is skipped (396).
 func TestRecurseLoadOnRawRows_GrandchildBranches(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
@@ -208,7 +208,7 @@ func TestRecurseLoadOnRawRows_GrandchildBranches(t *testing.T) {
 	}
 }
 
-// include.go:375 — loadIncludeNode error inside recurseLoadOnRawRows is
+// include.go:375: loadIncludeNode error inside recurseLoadOnRawRows is
 // wrapped and returned. Faults the child (profiles) query.
 func TestRecurseLoadOnRawRows_ChildLoadError(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
@@ -227,7 +227,7 @@ func TestRecurseLoadOnRawRows_ChildLoadError(t *testing.T) {
 	_ = db
 }
 
-// include.go:334 — recurseLoadOnRawRows error propagates back through
+// include.go:334: recurseLoadOnRawRows error propagates back through
 // applyIncludeTree's wrap. A 2-level include over the fault DB whose nested
 // (profiles) query fails.
 func TestApplyIncludeTree_NestedLoadError(t *testing.T) {
@@ -247,7 +247,7 @@ func TestApplyIncludeTree_NestedLoadError(t *testing.T) {
 	}
 }
 
-// include.go:388 — grandchild recurse error propagates. 3-level include
+// include.go:388: grandchild recurse error propagates. 3-level include
 // (author.profiles.X) is overkill; instead drive recurseLoadOnRawRows with a
 // child that has its own (grandchild) child whose query faults.
 func TestRecurseLoadOnRawRows_GrandchildLoadError(t *testing.T) {
@@ -273,7 +273,7 @@ func TestRecurseLoadOnRawRows_GrandchildLoadError(t *testing.T) {
 	}
 }
 
-// include.go:415 + :421 — gatherLoadedRows skips buckets missing the relation
+// include.go:415 + :421, gatherLoadedRows skips buckets missing the relation
 // (415) and flattens a []map[string]any relation value (421).
 func TestGatherLoadedRows_Branches(t *testing.T) {
 	loaded := map[string]map[string]any{
@@ -327,7 +327,7 @@ func covRunEventStream(t *testing.T, ch *CrudHandler, ctx context.Context, emit 
 	}
 }
 
-// crud_events.go:113 — event whose Data is not a map[string]any is dropped.
+// crud_events.go:113: event whose Data is not a map[string]any is dropped.
 func TestSSE_NonMapDataDropped(t *testing.T) {
 	ch, bus := covTenantNotesHandler(t)
 	// EventStream requires an authenticated subscriber for non-owner entities.
@@ -337,7 +337,7 @@ func TestSSE_NonMapDataDropped(t *testing.T) {
 	})
 }
 
-// crud_events.go:119 — event for a different tenant is dropped.
+// crud_events.go:119: event for a different tenant is dropped.
 func TestSSE_TenantMismatchDropped(t *testing.T) {
 	ch, bus := covTenantNotesHandler(t)
 	// Subscriber request carries tenant "t-alice"; emit an event stamped for
@@ -351,7 +351,7 @@ func TestSSE_TenantMismatchDropped(t *testing.T) {
 	})
 }
 
-// crud_events.go:127 — buffer-full default drop. Flood matching events before
+// crud_events.go:127: buffer-full default drop. Flood matching events before
 // the SSE reader drains the 32-slot channel.
 func TestSSE_BufferFullDrop(t *testing.T) {
 	ch, bus := covTenantNotesHandler(t)
@@ -369,7 +369,7 @@ func TestSSE_BufferFullDrop(t *testing.T) {
 // Upload branches (crud_upload.go).
 // ---------------------------------------------------------------------------
 
-// crud_upload.go:143 + :154 — directly seed r.MultipartForm with an empty
+// crud_upload.go:143 + :154, directly seed r.MultipartForm with an empty
 // value slice and an empty-headers file entry so the `len==0` guards fire.
 // ParseMultipartForm returns nil early when r.MultipartForm is already set.
 func TestParseMultipartBody_EmptySlices(t *testing.T) {
@@ -392,7 +392,7 @@ func TestParseMultipartBody_EmptySlices(t *testing.T) {
 	}
 }
 
-// crud_upload.go:161 + :179 — saveFilePart fails because the uploaded bytes
+// crud_upload.go:161 + :179, saveFilePart fails because the uploaded bytes
 // aren't a valid image, so ProcessFileField errors and parseMultipartBody
 // returns the wrapped error.
 func TestMultipartCreate_ProcessFileError(t *testing.T) {
@@ -409,7 +409,7 @@ func TestMultipartCreate_ProcessFileError(t *testing.T) {
 	}
 }
 
-// crud.go:233 — jsonKeysFor re-refreshes the field cache when the entity's
+// crud.go:233: jsonKeysFor re-refreshes the field cache when the entity's
 // field-cache signature changes after the cache was first populated.
 func TestJSONKeysFor_SignatureChangeRefreshes(t *testing.T) {
 	ch, _ := covNotesHandler(t)
@@ -428,7 +428,7 @@ func TestJSONKeysFor_SignatureChangeRefreshes(t *testing.T) {
 	}
 }
 
-// crud.go:651 — single-record Update rejects an oversized JSON body with 413.
+// crud.go:651: single-record Update rejects an oversized JSON body with 413.
 func TestUpdate_BodyTooLarge(t *testing.T) {
 	ch, _ := covNotesHandler(t)
 	big := `{"title":"` + strings.Repeat("x", int(MaxJSONBodyBytes)+100) + `"}`
@@ -442,7 +442,7 @@ func TestUpdate_BodyTooLarge(t *testing.T) {
 	}
 }
 
-// crud_upload.go:290 — isSafeMediaURL bare-filename (no colon, no delimiter)
+// crud_upload.go:290: isSafeMediaURL bare-filename (no colon, no delimiter)
 // returns true at the final line.
 func TestValidateMediaURLs_BareFilename(t *testing.T) {
 	ch, _ := covUploadHandler(t)
@@ -452,11 +452,11 @@ func TestValidateMediaURLs_BareFilename(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// mcp.go runToolRequest — marshal error (mcp.go:136) and response-unmarshal
+// mcp.go runToolRequest, marshal error (mcp.go:136) and response-unmarshal
 // error (mcp.go:158), exercised by calling the unexported helper directly.
 // ---------------------------------------------------------------------------
 
-// mcp.go:136 — json.Marshal(body) fails when the body holds an unmarshalable
+// mcp.go:136: json.Marshal(body) fails when the body holds an unmarshalable
 // value (a channel).
 func TestRunToolRequest_MarshalError(t *testing.T) {
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
@@ -467,7 +467,7 @@ func TestRunToolRequest_MarshalError(t *testing.T) {
 	}
 }
 
-// mcp.go:158 — the router returns 200 with a body that isn't valid JSON, so
+// mcp.go:158: the router returns 200 with a body that isn't valid JSON, so
 // the response unmarshal fails.
 func TestRunToolRequest_UnmarshalError(t *testing.T) {
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

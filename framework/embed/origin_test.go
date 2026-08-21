@@ -82,8 +82,8 @@ func TestOriginSetMatchesNormalized(t *testing.T) {
 
 // An allowlist entry has to match what the BROWSER sends, and the browser
 // serializes origins canonically. An entry the browser can never produce is not
-// a security hole — nothing matches it — but it is a config that silently never
-// completes a handshake, which is worse to debug than an error at boot.
+// a security hole, since nothing matches it, but it is a config that silently
+// never completes a handshake, which is worse to debug than an error at boot.
 func TestNormalizeOriginMatchesBrowserSerialization(t *testing.T) {
 	// Verified against Chromium's new URL(x).origin.
 	same := map[string]string{

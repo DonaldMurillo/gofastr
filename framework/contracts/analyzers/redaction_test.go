@@ -12,7 +12,7 @@ import (
 
 // The hardcoded-secret rule blanks its snippet so a report never prints
 // the credential back out. That property has to hold in EVERY formatter,
-// not just the one it was implemented against — a finding routed to CI
+// not merely the one it was implemented against. A finding routed to CI
 // logs through --json or to code scanning through --sarif is more exposed
 // than the terminal, not less.
 //

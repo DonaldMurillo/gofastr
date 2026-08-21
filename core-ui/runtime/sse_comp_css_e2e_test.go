@@ -14,7 +14,7 @@ import (
 // TestSSE_IslandSwapLoadsComponentCSS pins that an SSE island update
 // whose HTML introduces a NEW [data-fui-comp] gets its component CSS
 // loaded. nav / signals / poll / widgets / infinitescroll all call
-// scanAndLoadCSS after their innerHTML swap — sse.js was the only swap
+// scanAndLoadCSS after their innerHTML swap, sse.js was the only swap
 // path that did not, so a server-pushed island bringing in a styled
 // component rendered unstyled.
 func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {

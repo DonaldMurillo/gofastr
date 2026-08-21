@@ -8,25 +8,25 @@ import (
 )
 
 // Role selects which responsibilities a single binary assumes at boot.
-// One binary, role picked at deploy time — so background load (cron,
+// One binary, role picked at deploy time, so background load (cron,
 // queue workers, the outbox relay) can run in a dedicated process that
 // doesn't share a listener with request serving.
 //
 // Resolution precedence (see resolveRole): WithRole > the GOFASTR_ROLE
 // env var > RoleAll. An unknown value in either place fails loudly in
-// NewApp — a typo'd role must never silently run the wrong workload.
+// NewApp, a typo'd role must never silently run the wrong workload.
 type Role string
 
 const (
 	// RoleAll is the default: serve HTTP AND run background consumers
-	// (cron, queues, the outbox relay). Exactly today's behavior — zero
+	// (cron, queues, the outbox relay). Exactly today's behavior, zero
 	// change for existing apps.
 	RoleAll Role = "all"
 
 	// RoleServe runs the full HTTP surface (router, auto-migrate, seeds,
 	// plugins, batteries) but does NOT start worker-scoped consumers:
 	// AddCron/AddQueue registrations and the outbox relay are skipped, so
-	// a serve-only process never starts — nor later tries to drain — a
+	// a serve-only process never starts, nor later tries to drain, a
 	// scheduler it never owned. Plain OnStart hooks still run; gate your
 	// own via App.Role().
 	RoleServe Role = "serve"
@@ -52,7 +52,7 @@ func isValidRole(r Role) bool {
 
 // WithRole sets the process role explicitly, overriding the GOFASTR_ROLE
 // env var. Panics in NewApp if r is not one of RoleAll / RoleServe /
-// RoleWorker — matching how every other invalid option fails fast at
+// RoleWorker, matching how every other invalid option fails fast at
 // construction rather than silently degrading.
 func WithRole(r Role) AppOption {
 	return func(a *App) {
@@ -61,8 +61,8 @@ func WithRole(r Role) AppOption {
 	}
 }
 
-// resolveRole applies the documented precedence — WithRole wins, then
-// GOFASTR_ROLE (case-insensitive), then RoleAll — and returns an error
+// resolveRole applies the documented precedence. WithRole wins, then
+// GOFASTR_ROLE (case-insensitive), then RoleAll, and returns an error
 // describing any unknown value so the caller (NewApp) can fail loudly
 // rather than silently fall back. Read once at NewApp; later mutations
 // of GOFASTR_ROLE do not affect a constructed App.
@@ -86,7 +86,7 @@ func resolveRole(opt Role, optSet bool) (Role, error) {
 
 // Role returns the resolved process role (all/serve/worker). It is set
 // once in NewApp and never changes afterward, so OnStart hooks and other
-// setup code can gate their own background work on it — e.g. skipping an
+// setup code can gate their own background work on it, e.g. skipping an
 // expensive warm-up that only makes sense when serving HTTP:
 //
 //	app.OnStart(func(ctx context.Context) error {
@@ -118,7 +118,7 @@ func (a *App) roleHandler() http.Handler {
 // workerHealthMux is the worker role's entire HTTP surface: /healthz and
 // /readyz, backed by the SAME handlers the full router mounts
 // (healthHandlers), so orchestrator probes behave identically across roles.
-// Nothing else is served — no entity CRUD, no OpenAPI, no discovery routes.
+// Nothing else is served, no entity CRUD, no OpenAPI, no discovery routes.
 func (a *App) workerHealthMux() http.Handler {
 	liveness, readiness := a.healthHandlers()
 	mux := http.NewServeMux()

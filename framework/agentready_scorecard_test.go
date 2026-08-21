@@ -21,7 +21,7 @@ import (
 // answer to "can the framework score 100%?" and a permanent regression
 // guard: drop or break any check and this fails.
 //
-// The dogfood docs site (examples/site) legitimately scores lower — it has
+// The dogfood docs site (examples/site) legitimately scores lower. It has
 // no API catalog (no entities) and isn't an OAuth issuer. This test wires
 // EVERY surface so the maximum is provably reachable + guarded.
 

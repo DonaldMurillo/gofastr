@@ -11,7 +11,7 @@ import (
 
 // The danger button must take its colors from the theme's status
 // tokens (with the axe-safe literals as var() fallbacks), not from
-// hardcoded hex — a re-themed danger slot has to recolor it.
+// hardcoded hex: a re-themed danger slot has to recolor it.
 func TestDangerButtonColorTokens(t *testing.T) {
 	css := buttonCSS(style.DefaultTheme())
 	i := strings.Index(css, ".ui-button--danger {")
@@ -74,7 +74,7 @@ func TestButtonWrapIsContainerDriven(t *testing.T) {
 		t.Fatalf("button CSS must size to max-content so action rows wrap whole controls:\n%s", css)
 	}
 	// The clamp + break must be container-driven: a label wider than ITS
-	// container (a sidebar rail, a card cell — at any viewport) wraps inside
+	// container (a sidebar rail, a card cell, at any viewport) wraps inside
 	// the bounded button instead of clipping. break-word, NOT anywhere:
 	// anywhere lets emergency breaks into min-content sizing, so table/grid
 	// layout (a DataTable actions column) could compress the button to one
@@ -99,7 +99,7 @@ func TestButtonWrapIsContainerDriven(t *testing.T) {
 // value (up to the next ; or }). RE2 has no lookahead, so the value
 // is inspected in Go: a var()-led value is the sweep's token-with-
 // fallback pattern (var(--text-sm, 0.85rem)) and is NOT counted; any
-// other value containing a rem/px literal IS — including literals
+// other value containing a rem/px literal IS, including literals
 // nested inside clamp()/calc() that the old narrow regex missed.
 var fontSizeDeclRe = regexp.MustCompile(`(?i)font-size\s*:\s*([^;}]*)`)
 
@@ -117,7 +117,7 @@ func countFontSizeLiterals(css string) (int, []string) {
 	for _, m := range fontSizeDeclRe.FindAllStringSubmatch(css, -1) {
 		val := strings.TrimSpace(m[1])
 		if strings.HasPrefix(val, "var(") {
-			continue // token-with-fallback — the sweep's intended pattern
+			continue // token-with-fallback: the sweep's intended pattern
 		}
 		if sizeLiteralRe.MatchString(val) {
 			hits = append(hits, "font-size: "+val)
@@ -138,12 +138,12 @@ func countFontSizeLiterals(css string) (int, []string) {
 // scale step, e.g. display sizes above --text-3xl); the budget pins
 // their count so new hardcoded font-sizes fail here instead of
 // accreting silently. If you trip this: use var(--text-<step>, <lit>)
-// — or, for a genuinely off-scale size, raise the budget with a
+// or, for a genuinely off-scale size, raise the budget with a
 // comment saying why.
 func TestFontSizeLiteralBudget(t *testing.T) {
 	// Current leftovers (9 total):
 	//   - Fluid clamp() display sizes in ui-hero: clamp(2.5rem, 6vw, 4rem),
-	//     clamp(1.125rem, 2.2vw, 1.375rem) — viewport-interpolated, no
+	//     clamp(1.125rem, 2.2vw, 1.375rem): viewport-interpolated, no
 	//     single token fits (2).
 	//   - Display sizes above --text-3xl: 2.25rem (pricing-card), 1.75rem
 	//     (stat-card) (2).
@@ -170,8 +170,8 @@ func TestFontSizeLiteralBudget(t *testing.T) {
 // The interactive set (Counter, Toggle, Tabs, Collapsible) predates the
 // canonical --color-* theme and exposed --fui-* custom properties as its host
 // override surface. Both surfaces must stay wired: every --fui-* bridge read
-// chains to the matching canonical token before its literal fallback —
-// var(--fui-border, var(--color-border, #e2e8f0)) — so the adaptive theme
+// chains to the matching canonical token before its literal fallback,
+// var(--fui-border, var(--color-border, #e2e8f0)), so the adaptive theme
 // reaches these components with no host aliases AND a host's --fui-*
 // overrides keep winning.
 var fuiBridgeRe = regexp.MustCompile(`var\(--fui-(?:border|foreground|muted-bg|muted|primary|surface)\s*,\s*([^)\s,]+)`)

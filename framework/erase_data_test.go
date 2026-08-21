@@ -13,7 +13,7 @@ import (
 )
 
 // newEraseTestApp builds an App with two owner-scoped entities (documents,
-// notes) and one plain entity (tags, no owner — must be untouched by erasure),
+// notes) and one plain entity (tags, no owner, must be untouched by erasure),
 // then AutoMigrates. The caller creates the raw battery tables and seeds rows.
 func newEraseTestApp(t *testing.T) (*App, *sql.DB) {
 	t.Helper()
@@ -92,7 +92,7 @@ func seedEraseRows(t *testing.T, db *sql.DB) {
 	exec(`INSERT INTO notes (id, body, owner_id, created_at, updated_at) VALUES
 		('n1','hello','u1','2024-01-01T00:00:00Z','2024-01-02T00:00:00Z'),
 		('n2','world','u2','2024-01-03T00:00:00Z','2024-01-04T00:00:00Z')`)
-	// tags: one row, no owner — must survive erasure untouched.
+	// tags: one row, no owner, must survive erasure untouched.
 	exec(`INSERT INTO tags (id, name, created_at, updated_at) VALUES
 		('g1','go','2024-02-01T00:00:00Z','2024-02-02T00:00:00Z')`)
 	// auth_users: u1, u2.
@@ -106,7 +106,7 @@ func seedEraseRows(t *testing.T, db *sql.DB) {
 	exec(`INSERT INTO user_prefs (id, user_id, pref_value) VALUES
 		('p1','u1','secret-pref-1'),('p2','u2','secret-pref-2')`)
 	// audit_log: u1 actor twice, u2 actor once, one system (NULL actor) row.
-	// record_id carries heterogeneous values (a user id, a resource id) — it
+	// record_id carries heterogeneous values (a user id, a resource id), it
 	// must be left intact (only actor_id is anonymized).
 	exec(`INSERT INTO audit_log (id, entity, op, record_id, actor_id, created_at) VALUES
 		('a1','auth','login.succeeded','u1','u1','2024-01-01T00:00:00Z'),
@@ -500,7 +500,7 @@ func TestEraseUserData_AnonymizeRequiresScrubColumns(t *testing.T) {
 	if _, err := app.EraseUserData(context.Background(), "u1"); err == nil {
 		t.Fatal("anonymize with no ScrubColumns silently succeeded")
 	}
-	// The row survives — the transaction rolled back.
+	// The row survives, the transaction rolled back.
 	var n int
 	if err := db.QueryRow(`SELECT count(*) FROM trace_rows`).Scan(&n); err != nil {
 		t.Fatal(err)
@@ -510,7 +510,7 @@ func TestEraseUserData_AnonymizeRequiresScrubColumns(t *testing.T) {
 	}
 }
 
-// A relation cycle must not hang the ordering pass — it degrades to the
+// A relation cycle must not hang the ordering pass, it degrades to the
 // input (lexical) order, which is the best available answer.
 func TestOrderChildrenFirst_CycleDegradesToInputOrder(t *testing.T) {
 	a := entity.Define("a", entity.EntityConfig{
@@ -633,7 +633,7 @@ func TestEraseUserData_AbsentEraserTableIsSkipped(t *testing.T) {
 	}
 }
 
-// The report's TotalErased sums every plane — the number a compliance log
+// The report's TotalErased sums every plane, the number a compliance log
 // records.
 func TestEraseReport_TotalErasedSumsAllPlanes(t *testing.T) {
 	r := EraseReport{
@@ -733,7 +733,7 @@ func countRows(t *testing.T, db *sql.DB, table string) int {
 // ---- Identity resolution (email-keyed tables) ------------------------------
 //
 // App.EraseUserData matches by USER id, but some tables are keyed by another
-// identity — battery/auth's magic_link_tokens is keyed by EMAIL. The
+// identity, battery/auth's magic_link_tokens is keyed by EMAIL. The
 // IdentityKind seam lets an eraser declare a non-user-id identity that the
 // framework resolves ONCE at erase time (before the tx) and binds for the
 // match column. These scenarios prove the seam end to end using the magic-link
@@ -766,7 +766,7 @@ func createMagicLinkTables(t *testing.T, db *sql.DB) {
 
 // registerMagicLinkEraseScenario wires an ISOLATED registry: the email
 // identity resolver (auth_users.id → email), the auth_users eraser (so erasing
-// the user drops the user row — making the idempotency check meaningful), and
+// the user drops the user row, making the idempotency check meaningful), and
 // the magic_link_tokens eraser keyed by email (the gap this closes).
 func registerMagicLinkEraseScenario(t *testing.T) {
 	t.Helper()
@@ -788,7 +788,7 @@ func registerMagicLinkEraseScenario(t *testing.T) {
 // A user's magic-link tokens are erased via the email identity, while another
 // user's tokens survive. This is the gap the seam exists to close: pre-seam the
 // token table was unreachable (keyed by email; the eraser receives only the
-// user id) and the tokens silently survived — letting a pre-erasure magic link
+// user id) and the tokens silently survived, letting a pre-erasure magic link
 // re-create the account after erasure.
 func TestEraseUserData_EmailIdentityErasesMagicLinkTokens(t *testing.T) {
 	app, db := newIdentityEraseApp(t)
@@ -838,7 +838,7 @@ func TestEraseUserData_EmailIdentityErasesMagicLinkTokens(t *testing.T) {
 }
 
 // A second erasure is idempotent. After the first erase the user row is gone,
-// so the email identity CANNOT be resolved — the magic-link eraser is SKIPPED
+// so the email identity CANNOT be resolved, the magic-link eraser is SKIPPED
 // (not failed), the user-id erasers match zero rows, and the report carries
 // zero with no error. An unresolvable identity is "nothing left to match", not
 // a failure.
@@ -881,7 +881,7 @@ func TestEraseUserData_EmailIdentityIdempotentSecondRun(t *testing.T) {
 	}
 }
 
-// Dry-run takes the SAME resolution path as a real erase — it resolves the
+// Dry-run takes the SAME resolution path as a real erase, it resolves the
 // email, counts the token rows that would be deleted, and leaves the DB
 // untouched.
 func TestEraseUserData_EmailIdentityDryRunCounts(t *testing.T) {
@@ -926,7 +926,7 @@ func TestEraseUserData_EmailIdentityDryRunCounts(t *testing.T) {
 }
 
 // An eraser that declares a non-user-id identity with NO registered resolver
-// must FAIL LOUD — an unresolvable declared identity means the erasure is
+// must FAIL LOUD, an unresolvable declared identity means the erasure is
 // incomplete, and silently-incomplete is the failure mode this primitive
 // exists to prevent. Both real and dry-run paths must fail.
 func TestEraseUserData_IdentityWithoutResolverFailsLoud(t *testing.T) {
@@ -938,7 +938,7 @@ func TestEraseUserData_IdentityWithoutResolverFailsLoud(t *testing.T) {
 		t.Fatal(err)
 	}
 	datexport.Reset(t)
-	// NO IdentityEmail resolver registered — the eraser declares an identity
+	// NO IdentityEmail resolver registered, the eraser declares an identity
 	// the framework cannot resolve at all.
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name: "magic_link_tokens", Source: "auth", Table: "magic_link_tokens",
@@ -955,7 +955,7 @@ func TestEraseUserData_IdentityWithoutResolverFailsLoud(t *testing.T) {
 }
 
 // The resolved value is BOUND, not interpolated into SQL. An email containing
-// a single quote (o'brien@x.test) must erase correctly — neither breaking the
+// a single quote (o'brien@x.test) must erase correctly, neither breaking the
 // statement nor injecting past the match. Interpolating it would syntax-error
 // the DELETE or delete more than intended.
 func TestEraseUserData_EmailIdentityBindsQuotedValue(t *testing.T) {

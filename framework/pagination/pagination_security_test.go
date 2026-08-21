@@ -124,14 +124,14 @@ func TestDecodeMultiCursor_StripsNULFromFieldNames(t *testing.T) {
 }
 
 // TestDecodeCursor_ValueIsBoundDataNotSanitized: cursor values are
-// compared against the database as bound SQL args — never interpolated
-// into SQL, headers, or logs — so they are decoded verbatim. Stripping
+// compared against the database as bound SQL args, never interpolated
+// into SQL, headers, or logs, so they are decoded verbatim. Stripping
 // control bytes there broke the keyset round-trip: a row whose sort key
 // contains a newline (or a zero-width codepoint) resumed paging BEFORE
 // itself and was served twice. Field names stay stripped; values are
 // data. Round-trip fidelity is pinned in cursor_fidelity_test.go; this
-// test pins that the newline specifically — the classic header/log
-// injection byte — survives because it is inert as a bind arg.
+// test pins that the newline specifically, the classic header/log
+// injection byte, survives because it is inert as a bind arg.
 func TestDecodeCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 	t.Parallel()
 	cursor := EncodeCursor("id", "42\nadmin")
@@ -146,7 +146,7 @@ func TestDecodeCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 }
 
 // TestDecodeMultiCursor_ValueIsBoundDataNotSanitized: same contract as
-// above for the composite encoding — the value half feeds a tuple
+// above for the composite encoding, the value half feeds a tuple
 // comparison as bind args, so it decodes verbatim.
 func TestDecodeMultiCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 	t.Parallel()

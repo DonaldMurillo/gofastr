@@ -22,7 +22,7 @@ func TestCatalogCountMatchesDocs(t *testing.T) {
 
 // TestSiteComponentsCommentMatchesCatalog pins the "the N entries" count in
 // examples/site/components.go's header comment to len(Catalog). That file is
-// where the catalog was extracted FROM, so its comment is a doc site too —
+// where the catalog was extracted FROM, so its comment is a doc site too,
 // and it stayed at 139 while every other site moved to 141. Parsing the
 // number (rather than hard-coding 141) keeps the gate honest in both
 // directions: if the catalog grows, the comment must grow with it, and a

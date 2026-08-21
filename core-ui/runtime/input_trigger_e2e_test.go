@@ -15,8 +15,8 @@ import (
 
 // A <select> change is delivered as an `input` event in every modern
 // browser, so a hand-written island can drive a select-triggered RPC with
-// the documented recipe — wrap the control in
-// `<form data-fui-rpc data-fui-rpc-trigger="input">` — WITHOUT any dedicated
+// the documented recipe, wrap the control in
+// `<form data-fui-rpc data-fui-rpc-trigger="input">`, WITHOUT any dedicated
 // data-fui-rpc-trigger="change". This test is the empirical proof behind the
 // recipe in framework/docs/content/interactive-patterns.md: it selects an
 // option and asserts the runtime posted the control's `name` as the JSON key.
@@ -78,7 +78,7 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)

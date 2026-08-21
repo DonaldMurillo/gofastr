@@ -10,7 +10,7 @@ import (
 )
 
 // ============================================================================
-// ParseCron — accepts standard 5-field syntax + the @shortcuts.
+// ParseCron: accepts standard 5-field syntax + the @shortcuts.
 // ============================================================================
 
 func TestCron_Parse_StandardAndShortcuts(t *testing.T) {
@@ -60,7 +60,7 @@ func TestCron_Parse_RejectsBadInput(t *testing.T) {
 }
 
 // ============================================================================
-// matches — verifies the bitmask check against a concrete clock.
+// matches: verifies the bitmask check against a concrete clock.
 // ============================================================================
 
 func TestCron_Matches(t *testing.T) {
@@ -120,7 +120,7 @@ func TestCron_RunOnceDispatchesMatchingJobs(t *testing.T) {
 	noon := time.Date(2025, 4, 8, 12, 0, 0, 0, time.UTC)
 	s.RunOnce(context.Background(), noon)
 
-	// Goroutines launched by runOnce — give them a moment.
+	// Goroutines launched by runOnce, give them a moment.
 	deadline := time.Now().Add(time.Second)
 	for atomic.LoadInt32(&fired) < 1 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)

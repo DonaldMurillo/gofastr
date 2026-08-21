@@ -16,7 +16,7 @@ import (
 
 // skipDirs are trees no analyzer ever wants: dependency caches, VCS
 // metadata, and every build-output directory the project uses. Findings
-// in `dist/` are noise — nobody edits a build artifact to fix them.
+// in `dist/` are noise: nobody edits a build artifact to fix them.
 var skipDirs = map[string]bool{
 	"vendor": true, "node_modules": true, ".git": true,
 	"dist": true, "bin": true, "build": true, "tmp": true,
@@ -104,7 +104,7 @@ func (p *Pass) discover() error {
 	err := filepath.WalkDir(p.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// An unreadable subtree is not a reason to abandon the whole
-			// analysis — skip it and keep going.
+			// analysis. Skip it and keep going.
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
@@ -119,7 +119,7 @@ func (p *Pass) discover() error {
 				return fs.SkipDir
 			}
 			// Hidden directories are tooling state (.git, .gofastr,
-			// .claude) — never app source.
+			// .claude), never app source.
 			if strings.HasPrefix(name, ".") {
 				return fs.SkipDir
 			}
@@ -184,7 +184,7 @@ func (p *Pass) TestFiles() []SourceFile {
 }
 
 // Source returns the bytes of a discovered file. The returned slice is
-// the pass's own buffer — analyzers must not mutate it.
+// the pass's own buffer: analyzers must not mutate it.
 func (p *Pass) Source(rel string) ([]byte, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -235,10 +235,10 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 	f, err := parser.ParseFile(p.fset, rel, body, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		p.asts[rel] = nil
-		// Remembered, not just skipped. Every analyzer that wanted this
+		// Remembered, not merely skipped. Every analyzer that wanted this
 		// file reports nothing for it, and without a record the run reads
 		// as "these files are clean" rather than "these files could not
-		// be read" — the same distinction the baseline and --changed
+		// be read", the same distinction the baseline and --changed
 		// counters exist to preserve.
 		if p.unparsed == nil {
 			p.unparsed = map[string]string{}
@@ -252,7 +252,7 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 
 // Unparsed returns the files whose source could not be parsed, keyed by
 // path, with the parser's message. A tree mid-edit is the normal case for
-// the dev loop, so this is reported rather than fatal — but it is
+// the dev loop, so this is reported rather than fatal, but it is
 // reported.
 func (p *Pass) Unparsed() map[string]string {
 	p.mu.Lock()

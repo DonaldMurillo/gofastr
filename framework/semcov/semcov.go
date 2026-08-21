@@ -7,7 +7,7 @@
 //
 //   - Did a request ever reach this route through the real router, the
 //     real middleware chain, and the real auth check?
-//   - Was this permission ever evaluated — not just present in a file
+//   - Was this permission ever evaluated, not just present in a file
 //     that got loaded?
 //   - Did anything ever call this entity's Delete endpoint?
 //
@@ -58,7 +58,7 @@ type Manifest struct {
 	// /orders/42 credits the /orders/{id} route.
 	Routes map[string][]string `json:"routes"`
 	// Permissions are the permission strings that were evaluated,
-	// whatever the verdict — a denial proves the boundary as well as a
+	// whatever the verdict, a denial proves the boundary as well as a
 	// grant does, and arguably better.
 	Permissions []string `json:"permissions"`
 	// Entities maps an entity name to the CRUD operations exercised
@@ -71,7 +71,7 @@ type Manifest struct {
 	Hooks map[string][]string `json:"hooks,omitempty"`
 	// Events are the event types actually published during the run. A
 	// subscriber registered for a type that never appears here has never
-	// run — the same silent break as an unfired hook, one layer out.
+	// run, the same silent break as an unfired hook, one layer out.
 	Events []string `json:"events,omitempty"`
 	// Roles are the roles a caller actually held during a recorded
 	// permission check. A granted role nothing ever authenticates as is an
@@ -114,7 +114,7 @@ func Enable(root string) {
 	dir = root
 	if current == nil {
 		// Start from what is already on disk so a `go test ./...` run
-		// across many packages — each its own process — accumulates
+		// across many packages, each its own process, accumulates
 		// rather than each package overwriting the last.
 		if existing, err := readFrom(root); err == nil {
 			current = existing
@@ -240,7 +240,7 @@ func addTo(m map[string][]string, key, value string) bool {
 
 // Flush writes the accumulated manifest. It merges with whatever is on
 // disk first, because `go test ./...` runs one process per package and
-// each one only knows about its own requests — without the merge, the
+// each one only knows about its own requests, without the merge, the
 // last package to finish would be the only one recorded.
 func Flush() error {
 	mu.Lock()
@@ -344,7 +344,7 @@ func readFrom(root string) (*Manifest, error) {
 		return nil, fmt.Errorf("semcov: parse %s: %w", FileName, err)
 	}
 	if m.Version > Version {
-		return nil, fmt.Errorf("semcov: manifest is version %d, this build understands %d — delete %s and re-run the tests",
+		return nil, fmt.Errorf("semcov: manifest is version %d, this build understands %d: delete %s and re-run the tests",
 			m.Version, Version, FileName)
 	}
 	if m.Routes == nil {
@@ -439,7 +439,7 @@ func normalizePattern(p string) string {
 // does, so a project has one place where its coverage artifacts live:
 //
 //  1. GOFASTR_SEMANTIC_COVERAGE_DIR, when set.
-//  2. GOFASTR_AXE_COVERAGE_DIR, when set — sharing the override means an
+//  2. GOFASTR_AXE_COVERAGE_DIR, when set: sharing the override means an
 //     app that already pinned its axe manifest per-app gets the same
 //     isolation here without configuring it twice.
 //  3. The nearest ancestor holding go.work (Go's own workspace rule).

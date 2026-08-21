@@ -125,7 +125,7 @@ func TestUpsert_NoUpdatableFields_DoNothing(t *testing.T) {
 	// An entity whose only column is the auto-generated PK takes the
 	// "DO NOTHING" upsert branch (setParts is empty). The first insert
 	// succeeds; a conflicting re-upsert hits ON CONFLICT DO NOTHING, whose
-	// RETURNING yields no row — the framework surfaces that as an error.
+	// RETURNING yields no row, the framework surfaces that as an error.
 	// We exercise the branch either way; assert only that the first insert
 	// works and the conflicting one is handled (no panic).
 	db := setupDB(t, `CREATE TABLE only_id (id TEXT PRIMARY KEY)`)

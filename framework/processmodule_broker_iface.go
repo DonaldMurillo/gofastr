@@ -17,7 +17,7 @@ import (
 // the CRUD re-dispatch chokepoint (framework/crud/mcp.go's machinery, plus
 // the [access.ScopeMatch] module-grant pre-filter and the CrossOwnerRead
 // carve-out). Until that lands the supervisor wires [NopBroker], which denies
-// every reverse call with a capability error — fail-closed by default.
+// every reverse call with a capability error, fail-closed by default.
 //
 // The shape is deliberately small and stable: install handlers once per
 // child connection (handing the broker the live Peer + the child's grant
@@ -45,7 +45,7 @@ type ReverseBroker interface {
 
 // ModuleGrantView is the grant snapshot the broker enforces for one child
 // connection. It is the supervisor's effective-grant set for the module at
-// the spawn's read desired_generation — the binding the live stdio
+// the spawn's read desired_generation, the binding the live stdio
 // connection authenticates (design §5 "binding + revocation").
 type ModuleGrantView struct {
 	// Name is the module name (descriptor-supplied, operator-approved).
@@ -58,7 +58,7 @@ type ModuleGrantView struct {
 
 	// Generation is the ProcessModuleStore's desired_generation read at
 	// spawn. The supervisor rejects a reverse call whose echoed generation
-	// no longer matches the store's current value — the revoke path.
+	// no longer matches the store's current value, the revoke path.
 	Generation uint64
 }
 
@@ -70,7 +70,7 @@ type ModuleGrantView struct {
 //
 // Fail-closed: a child that issues host.entity.query / host.search.query /
 // host.event.emit under a NopBroker receives a JSON-RPC error response for
-// every call — no host data is brokered, ambient or delegated.
+// every call, no host data is brokered, ambient or delegated.
 type NopBroker struct{}
 
 // nopBrokerDeniedMethods is the full reverse catalog (design §4.4). A NopBroker
@@ -85,7 +85,7 @@ var nopBrokerDeniedMethods = []string{
 }
 
 // InstallHandlers registers deny-all handlers on p for every host.* method
-// in the moduleproto catalog. The view is accepted but unused — a NopBroker
+// in the moduleproto catalog. The view is accepted but unused, a NopBroker
 // grants nothing by construction.
 func (NopBroker) InstallHandlers(p *moduleproto.Peer, _ ModuleGrantView) {
 	if p == nil {
@@ -108,7 +108,7 @@ func (NopBroker) MintDelegation(_ *http.Request, _ uint64) (string, func()) {
 
 // nopBrokerDeniedError is the capability error every NopBroker reverse handler
 // returns. The wire form is a moduleproto.Error with [moduleproto.CodeInternalError]
-// (Peer.serveRequest maps a non-*Error return into that code) — the supervisor's
+// (Peer.serveRequest maps a non-*Error return into that code), the supervisor's
 // reverse path does not depend on the exact code because the caller is always
 // the child, which surfaces the error in its own response.
 type nopBrokerDeniedError struct{ Method string }

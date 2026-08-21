@@ -55,7 +55,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 	sb.WriteString("UPDATE ")
 	sb.WriteString(sanitizeFragment(ub.table))
 
-	// SET clauses — column slot is sanitized; the value flows through
+	// SET clauses: column slot is sanitized; the value flows through
 	// a placeholder. A payload like `role = 'admin' --` collapses to a
 	// non-injection token.
 	sb.WriteString(" SET ")
@@ -77,7 +77,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 				sb.WriteString(w.connector)
 				sb.WriteString(" ")
 			}
-			// Wrap each condition in parens — see query.go for the
+			// Wrap each condition in parens. See query.go for the
 			// SQL-precedence bypass this defends against.
 			condition := renumberPlaceholders(w.condition, paramIdx)
 			paramIdx += len(w.args)
@@ -87,7 +87,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		}
 	}
 
-	// Returning — each column sanitized.
+	// Returning: each column sanitized.
 	if len(ub.returning) > 0 {
 		sb.WriteString(" RETURNING ")
 		sanitizedRet := make([]string, len(ub.returning))

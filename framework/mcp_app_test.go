@@ -7,8 +7,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 )
 
-// WithMCPApp bundles an MCP App — a ui:// resource plus the tool that opens
-// it — onto the app's /mcp server, registered during InitPlugins.
+// WithMCPApp bundles an MCP App, a ui:// resource plus the tool that opens
+// it, onto the app's /mcp server, registered during InitPlugins.
 func TestWithMCPApp_RegistersResourceAndTool(t *testing.T) {
 	app := NewApp(WithMCPApp(mcp.AppConfig{
 		Name:        "studio",

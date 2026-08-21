@@ -9,7 +9,7 @@ import "sync/atomic"
 // is registered, so recording the call would report full coverage for an
 // app with no hooks at all. Only a hook with a body behind it counts.
 type Firing struct {
-	// Entity is the registry's label — the entity name the framework
+	// Entity is the registry's label, the entity name the framework
 	// created it for. Empty for a registry nobody labelled.
 	Entity string
 	// Type is the lifecycle point.
@@ -26,7 +26,7 @@ type Firing struct {
 var observer atomic.Pointer[func(Firing)]
 
 // SetObserver installs a callback fired whenever a registered hook runs.
-// Pass nil to clear. Intended for test tooling — the framework's semantic
+// Pass nil to clear. Intended for test tooling, the framework's semantic
 // coverage recorder is the first consumer.
 //
 // The callback runs inline on the request path, so it must be cheap, must
@@ -56,7 +56,7 @@ func (hr *HookRegistry) Label() string {
 }
 
 // String names a hook type as it appears in coverage manifests and
-// diagnostics — lower-case, matching the `OnBeforeCreate` API spelling.
+// diagnostics, lower-case, matching the `OnBeforeCreate` API spelling.
 func (h HookType) String() string {
 	switch h {
 	case BeforeCreate:

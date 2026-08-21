@@ -13,7 +13,7 @@ import (
 // guard for defense-in-depth parity, because a producer can Seed a
 // request-influenced URL into a URL-bound slice.
 //
-// Surfaces: every URL-bearing HTML attribute BindAttr can target —
+// Surfaces: every URL-bearing HTML attribute BindAttr can target,
 // href, src, action, xlink:href, formaction.
 func TestBindAttrBlocksDangerousSchemeAtSSR(t *testing.T) {
 	urlAttrs := []string{"href", "src", "action", "xlink:href", "formaction"}
@@ -45,7 +45,7 @@ func TestBindAttrBlocksDangerousSchemeAtSSR(t *testing.T) {
 }
 
 // A safe scheme / relative URL / data:image must still pass through
-// unchanged — the guard must not break legitimate URL-bound slices.
+// unchanged, the guard must not break legitimate URL-bound slices.
 func TestBindAttrAllowsSafeURLAtSSR(t *testing.T) {
 	cases := []string{"/logo.png", "https://example.com/x", "#frag", "data:image/png;base64,AAAA"}
 	for _, val := range cases {
@@ -62,7 +62,7 @@ func TestBindAttrAllowsSafeURLAtSSR(t *testing.T) {
 	}
 }
 
-// Non-URL attributes (alt, title, aria-*) are not scheme-guarded — a
+// Non-URL attributes (alt, title, aria-*) are not scheme-guarded, a
 // value that merely looks like a scheme must pass through unchanged so
 // the guard stays scoped to URL sinks only.
 func TestBindAttrLeavesNonURLAttrsAlone(t *testing.T) {
@@ -78,7 +78,7 @@ func TestBindAttrLeavesNonURLAttrsAlone(t *testing.T) {
 //
 // The URL-scheme guard above only covers href/src/action/xlink:href/
 // formaction, so it never sees the other attributes a signal binding can
-// write — and several of them execute regardless of their value's
+// write, and several of them execute regardless of their value's
 // scheme: `srcdoc` on an iframe is a whole document, `style` reaches CSS,
 // `data-behavior` is the runtime's <script src> sink, and any `on*` is
 // inline JS. A signal bound to one of those is a live-updating

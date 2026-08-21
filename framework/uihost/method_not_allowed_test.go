@@ -29,12 +29,12 @@ func TestGetScreenSurvivesPostOnlyRoute(t *testing.T) {
 	ds := New(a)
 
 	// Simulate the host app registering a POST-only entity route at the
-	// same path as the screen — the exact scenario that triggered the bug.
+	// same path as the screen, the exact scenario that triggered the bug.
 	r := router.New()
 	r.Post("/shipments", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 	}))
-	ds.Mount(r) // Mount last — claims NotFound + MethodNotAllowed catch-alls.
+	ds.Mount(r) // Mount last: claims NotFound + MethodNotAllowed catch-alls.
 
 	// GET /shipments must render the screen (200), not a bare 405.
 	req := httptest.NewRequest(http.MethodGet, "/shipments", nil)
@@ -52,7 +52,7 @@ func TestGetScreenSurvivesPostOnlyRoute(t *testing.T) {
 
 // TestPost405RendersStyledPage verifies that a POST to a GET-only path
 // renders a styled 405 page (not a bare text body) with the Allow
-// header preserved. The 405 page composes from the design system — no
+// header preserved. The 405 page composes from the design system, no
 // bespoke CSS.
 func TestPost405RendersStyledPage(t *testing.T) {
 	a := uiapp.NewApp("405-test")
@@ -65,7 +65,7 @@ func TestPost405RendersStyledPage(t *testing.T) {
 	ds := New(a)
 
 	r := router.New()
-	// A GET-only route — POST to it should 405.
+	// A GET-only route: POST to it should 405.
 	r.Get("/api/things", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -93,7 +93,7 @@ func TestPost405RendersStyledPage(t *testing.T) {
 // TestResolvePredicateMatchesServeOrRender pins the agreement between
 // resolvesStaticOrScreen (the MethodNotAllowed fall-through predicate)
 // and serveOrRender's actual behavior: whenever the predicate says a
-// path resolves, serveOrRender must not 404 it — and when it says it
+// path resolves, serveOrRender must not 404 it, and when it says it
 // doesn't, serveOrRender must 404. The two mirror each other's
 // resolution steps; this test catches drift.
 func TestResolvePredicateMatchesServeOrRender(t *testing.T) {

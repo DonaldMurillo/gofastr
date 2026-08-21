@@ -12,7 +12,7 @@ import (
 )
 
 // Each of these discovery/manifest handlers guards on "the host never
-// configured me" and 404s. The guard was untested on every one of them — and
+// configured me" and 404s. The guard was untested on every one of them, and
 // it is the branch that runs in the common case, since the surfaces are all
 // opt-in. A handler that fell through on nil config would nil-deref inside the
 // route rather than 404, taking the request down with it.
@@ -57,7 +57,7 @@ func TestMCPRequireUserAcceptsResolvedUser(t *testing.T) {
 }
 
 // resolveWellKnownBase decides the scheme every advertised absolute URL
-// carries — including the Link: rel=service MCP endpoint. Its own doc comment
+// carries, including the Link: rel=service MCP endpoint. Its own doc comment
 // weighs the forged-header risk, so both branches deserve to be pinned rather
 // than inferred.
 func TestResolveWellKnownBaseScheme(t *testing.T) {

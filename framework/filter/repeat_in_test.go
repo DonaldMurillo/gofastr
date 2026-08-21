@@ -14,7 +14,7 @@ import (
 // occurrence of ?field_in= contributes its values. Standard HTTP clients
 // (Rails/axios/jQuery arrays) naturally emit ?tag_in=a&tag_in=b for a
 // multi-select; reading only values[0] silently narrowed the filter to
-// "a" — the client asked for a union and got a subset without any error.
+// "a", the client asked for a union and got a subset without any error.
 // Union semantics equal the comma form: ?tag_in=a&tag_in=b,c ≡ ?tag_in=a,b,c.
 func TestRepeatedInKeysUnion(t *testing.T) {
 	fields := []schema.Field{{Name: "tag", Type: schema.String}}

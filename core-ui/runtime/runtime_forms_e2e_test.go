@@ -14,7 +14,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// formIntercept e2e suite — verifies the runtime.js submit interceptor's
+// formIntercept e2e suite, verifies the runtime.js submit interceptor's
 // safe-by-default behaviour:
 //
 //   - urlencoded / multipart / unspecified-enctype forms are NOT
@@ -131,7 +131,7 @@ func newFormBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -185,7 +185,7 @@ func TestFormIntercept_FormEnctypeSendsFormEncoded(t *testing.T) {
 // TestFormIntercept_NativeByDefaultForNoEnctype pins the safe-by-default
 // behaviour: a form with no enctype attribute is NOT intercepted; the
 // browser submits it natively as urlencoded (the HTML default). This
-// is what auth/login forms want — cookies set, Location followed.
+// is what auth/login forms want, cookies set, Location followed.
 func TestFormIntercept_NativeByDefaultForNoEnctype(t *testing.T) {
 	var recv atomic.Pointer[formRequest]
 	base := startFormE2EServer(t, &recv)
@@ -213,7 +213,7 @@ func TestFormIntercept_NativeByDefaultForNoEnctype(t *testing.T) {
 }
 
 // TestFormIntercept_JSONEnctypeIsIntercepted pins that explicit
-// enctype="application/json" still opts INTO the SPA interceptor —
+// enctype="application/json" still opts INTO the SPA interceptor,
 // the runtime sends JSON body + follows Location via the SPA router.
 func TestFormIntercept_JSONEnctypeIsIntercepted(t *testing.T) {
 	var recv atomic.Pointer[formRequest]
@@ -242,7 +242,7 @@ func TestFormIntercept_JSONEnctypeIsIntercepted(t *testing.T) {
 }
 
 // TestFormIntercept_DataFuiSPAOptsIn pins that data-fui-spa on a plain
-// urlencoded form opts INTO interception with urlencoded body — for
+// urlencoded form opts INTO interception with urlencoded body, for
 // hosts that explicitly want SPA-style nav on a non-JSON form.
 func TestFormIntercept_DataFuiSPAOptsIn(t *testing.T) {
 	var recv atomic.Pointer[formRequest]

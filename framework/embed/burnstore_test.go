@@ -72,7 +72,7 @@ func burnStoreContract(t *testing.T, name string, mk func(t *testing.T) BurnStor
 
 	// Contention: many callers claim ONE nonce at once and exactly one may
 	// win. Against the SQL store this exercises the unique constraint, which
-	// is the mechanism that also holds across replicas — the property a
+	// is the mechanism that also holds across replicas, the property a
 	// single-process race detector cannot see.
 	t.Run(name+"/one winner under contention", func(t *testing.T) {
 		s := mk(t)
@@ -206,7 +206,7 @@ func TestExchangeAgainstSQLBurnStore(t *testing.T) {
 
 // Verification happens before the burn and is not atomic with it. A request
 // that verified a nonce and then stalled past its retention deadline must not
-// mint a second grant when it finally lands — and the row it writes must still
+// mint a second grant when it finally lands, and the row it writes must still
 // be a tombstone, or the nonce is simply unburnt and the next caller takes it.
 func TestStalledClaimGetsNoGrantButStillBurns(t *testing.T) {
 	ctx := context.Background()

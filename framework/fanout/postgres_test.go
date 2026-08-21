@@ -257,7 +257,7 @@ func TestPostgres_BadDSNTimeout(t *testing.T) {
 }
 
 // TestPostgres_TableNameIsolatesChannel: two fanouts with DIFFERENT table
-// names on the SAME database must be fully isolated — each derives its
+// names on the SAME database must be fully isolated, each derives its
 // NOTIFY/LISTEN channel from its table name, so A's large-payload table
 // pointers ("t:<id>") are never resolved or re-delivered by B.
 func TestPostgres_TableNameIsolatesChannel(t *testing.T) {
@@ -364,7 +364,7 @@ func TestPostgres_SlowSubDoesNotStallOtherTopic(t *testing.T) {
 
 func TestPostgres_CloseStopsSubQueues(t *testing.T) {
 	f, _ := pgFanout(t)
-	// Subscribe many times, dropping the cancels — Close must stop the
+	// Subscribe many times, dropping the cancels. Close must stop the
 	// per-subscriber queue goroutines anyway or they park forever.
 	for i := 0; i < 40; i++ {
 		if _, err := f.Subscribe("leak", func([]byte) {}); err != nil {
@@ -398,7 +398,7 @@ func TestPostgres_SubscribeAfterCloseErrors(t *testing.T) {
 }
 
 func TestPostgres_LongTableNameRejected(t *testing.T) {
-	// 74 chars: SafeIdent-legal, but past Postgres's 63-byte NAMEDATALEN —
+	// 74 chars: SafeIdent-legal, but past Postgres's 63-byte NAMEDATALEN,
 	// CREATE TABLE would silently truncate while pg_notify errors on every
 	// publish. Construction must reject it up front (before touching the DB,
 	// so no live Postgres is needed here).
@@ -415,7 +415,7 @@ func TestPostgres_LongTableNameRejected(t *testing.T) {
 
 func TestPostgres_SubscribeRejectsBadUTF8Topic(t *testing.T) {
 	// Publish already rejects invalid-UTF-8 topics; an accepted subscriber on
-	// such a topic could never be matched — reject symmetrically.
+	// such a topic could never be matched, reject symmetrically.
 	p := &PostgresFanout{subs: map[string]map[uint64]*pgSub{}}
 	if _, err := p.Subscribe("top\xffic", func([]byte) {}); err == nil {
 		t.Fatal("Subscribe accepted an invalid-UTF-8 topic that Publish rejects")

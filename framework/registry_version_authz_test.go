@@ -16,11 +16,11 @@ import (
 // EntityConfig.Access and EntityConfig.Public are enforced per-version by the
 // very same CRUD handlers (framework/crud/owner.go permissionForOp reads
 // ch.Entity.Config.Access; requireAuthenticated reads Config.Public), against
-// the very same table — and they are NOT compared. A v2 declaring blank
+// the very same table, and they are NOT compared. A v2 declaring blank
 // Access, or Public: true, is a straight authz/authn bypass of v1 reached by
 // changing one path prefix.
 //
-// Note Public's own doc: "Has no effect when OwnerField or Access is set" —
+// Note Public's own doc: "Has no effect when OwnerField or Access is set",
 // so the Public case bites exactly when v1's only protection is the
 // framework's secure-by-default session requirement, which is the default
 // posture for every entity that does not opt into owner scoping.

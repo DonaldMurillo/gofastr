@@ -20,7 +20,7 @@ import (
 // requireNot500 fails the test hard when the handler returned a 500.
 // Historically this file auto-SKIPPED on (redacted) 500s under the
 // theory that SQLite couldn't execute the framework's $N placeholders.
-// That theory was false: go-sqlite3 accepts $N fine — the 500s came
+// That theory was false: go-sqlite3 accepts $N fine, the 500s came
 // from test fixtures that never set EntityConfig.Table, so every query
 // ran against an empty table name. The fixtures are fixed; a 500 is
 // now a bug, full stop.
@@ -86,7 +86,7 @@ func TestPagination_HugePage(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
 
-	// Huge page must be a 200 with empty results — anything else
+	// Huge page must be a 200 with empty results, anything else
 	// (especially a 500) is a server-error regression.
 	if rr.Code != http.StatusOK {
 		t.Fatalf("SECURITY: [pagination] page=999999 returned %d, want 200 with empty data. Attack: huge page number causes server error", rr.Code)
@@ -249,7 +249,7 @@ func TestCursor_TamperedSignature(t *testing.T) {
 
 	_, _, err := pagination.DecodeCursor(tampered)
 	if err == nil {
-		// DecodeCursor may accept malformed JSON — check that decodeCursorAny
+		// DecodeCursor may accept malformed JSON, check that decodeCursorAny
 		// at the crud level rejects it
 		_, err2 := decodeCursorAny(tampered, []string{"id"})
 		if err2 == nil {
@@ -332,7 +332,7 @@ func TestCursor_SQLInjectionInCursor(t *testing.T) {
 
 	requireNot500(t, rr, "cursor", "SQL payload in cursor value crashes the cursor list path")
 
-	// The table should still exist — SQL injection did not execute
+	// The table should still exist. SQL injection did not execute
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM sqli_cursor").Scan(&count)
 	if err != nil {
@@ -358,7 +358,7 @@ func TestCursor_ExpiredCursor(t *testing.T) {
 
 // TestCursor_FieldsNotInEntity verifies that a cursor referencing a
 // non-existent field is decoded but the query builder will reject it.
-// decodeCursorAny only decodes — field validation happens at query time.
+// decodeCursorAny only decodes, field validation happens at query time.
 func TestCursor_FieldsNotInEntity(t *testing.T) {
 	t.Parallel()
 	// Create a cursor for a field that doesn't exist on the entity
@@ -368,7 +368,7 @@ func TestCursor_FieldsNotInEntity(t *testing.T) {
 		t.Logf("NOTE: cursor for nonexistent field returned err=%v (some decoders reject it)", err)
 		return
 	}
-	// The cursor decoded — but the field "nonexistent_column" doesn't match
+	// The cursor decoded, but the field "nonexistent_column" doesn't match
 	// the entity's cursor fields ["id"], so the query builder will either
 	// use the wrong field or the caller must validate.
 	if _, ok := decoded["nonexistent_column"]; ok {
@@ -402,7 +402,7 @@ func TestCursor_ReverseDirectionPreservesScope(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
 
-	// Backward first page for an authorised user must be a 200 — and it
+	// Backward first page for an authorised user must be a 200, and it
 	// must never contain another user's rows.
 	if rr.Code != http.StatusOK {
 		t.Fatalf("SECURITY: [cursor] backward cursor returned %d, want 200. Attack: backward direction crashes cursor pagination", rr.Code)
@@ -470,7 +470,7 @@ func TestCursor_IncludeNotInCursor(t *testing.T) {
 		{"id": "ic-2", "user_id": "alice", "title": "second"},
 	})
 
-	// Include a nonexistent relation — should not affect cursor results
+	// Include a nonexistent relation, should not affect cursor results
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/ic_items?cursor=&include=nonexistent",
@@ -517,7 +517,7 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 			})
 			rr := httptest.NewRecorder()
 			ch.List()(rr, req)
-			// Every concurrent first-page read must succeed — a 500 here
+			// Every concurrent first-page read must succeed, a 500 here
 			// is a panic/deadlock regression, not an environment quirk.
 			if rr.Code != http.StatusOK {
 				t.Errorf("SECURITY: [cursor] concurrent cursor request %d returned %d, want 200. Attack: concurrent cursors cause server panic", iter, rr.Code)
@@ -646,7 +646,7 @@ func TestBatchCreate_DuplicateIDsInOneBatch(t *testing.T) {
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE dup_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
-	// Send two identical items — the system should not crash
+	// Send two identical items, the system should not crash
 	body := `{"items":[{"title":"dup"},{"title":"dup"}]}`
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodPost,
@@ -826,7 +826,7 @@ func TestBatchCreate_HookRollback(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.BatchCreate()(rr, req)
 
-	// Transaction must roll back — no items should persist
+	// Transaction must roll back, no items should persist
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM hr_items").Scan(&count)
 	if count > 0 {
@@ -1081,7 +1081,7 @@ func TestNestedFilter_DeeplyNested(t *testing.T) {
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 	}.WithTimestamps(false), `CREATE TABLE dnf_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
-	// Deep nested path — should be rejected as multi-level not supported
+	// Deep nested path, should be rejected as multi-level not supported
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/dnf_items?a.b.c.d.e=value",
@@ -1091,7 +1091,7 @@ func TestNestedFilter_DeeplyNested(t *testing.T) {
 	ch.List()(rr, req)
 
 	// Multi-level nested paths are unsupported and must be rejected
-	// with a 400 — never a 500.
+	// with a 400, never a 500.
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("SECURITY: [nested_filter] deeply nested filter returned %d, want 400. Attack: deeply nested filter causes stack overflow", rr.Code)
 	}
@@ -1114,7 +1114,7 @@ func TestNestedFilter_NonexistentField(t *testing.T) {
 	CREATE TABLE nff_users (id TEXT PRIMARY KEY, name TEXT)`)
 
 	// parseNestedFilters can only validate the field against the target
-	// entity when the registry knows it — without a registry the unknown
+	// entity when the registry knows it, without a registry the unknown
 	// column reaches SQL and fails as a redacted 500. Wire the target so
 	// the test exercises the intended 400 validation path.
 	usersEnt := entity.Define("nff_users", entity.EntityConfig{
@@ -1376,7 +1376,7 @@ func TestStreaming_ConcurrentStreams(t *testing.T) {
 			})
 			rr := httptest.NewRecorder()
 			ch.List()(rr, req)
-			// Every concurrent stream must succeed — a 500 is a
+			// Every concurrent stream must succeed, a 500 is a
 			// deadlock/panic regression.
 			if rr.Code != http.StatusOK {
 				t.Errorf("SECURITY: [streaming] concurrent stream returned %d, want 200. Attack: concurrent streams cause deadlock", rr.Code)
@@ -1565,7 +1565,7 @@ func TestList_ConcurrentOwnerScope(t *testing.T) {
 				rr := httptest.NewRecorder()
 				ch.List()(rr, req)
 				// Every authorised list must succeed AND stay scoped to
-				// its own user — a 500 or a cross-user leak both fail.
+				// its own user, a 500 or a cross-user leak both fail.
 				if rr.Code != http.StatusOK {
 					t.Errorf("SECURITY: [list] concurrent list for %q returned %d, want 200. Attack: concurrent owner-scoped lists crash", uid, rr.Code)
 					return

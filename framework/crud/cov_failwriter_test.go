@@ -12,7 +12,7 @@ import (
 )
 
 // covSSEFailWriter is a Flusher-capable ResponseWriter whose Write fails once
-// calls exceed failAfter — modelling an SSE subscriber that disconnects.
+// calls exceed failAfter, modelling an SSE subscriber that disconnects.
 type covSSEFailWriter struct {
 	hdr       http.Header
 	calls     int
@@ -36,7 +36,7 @@ func (w *covSSEFailWriter) Write(b []byte) (int, error) {
 func (w *covSSEFailWriter) Flush() {}
 
 // Stream row-encode failure (crud_stream.go:106): the prefix write succeeds,
-// then the first row's json.Encode write fails — modelling a client that
+// then the first row's json.Encode write fails, modelling a client that
 // disconnects mid-stream. failAfter=1 lets the `{"data":[` prefix through and
 // fails the very next write (the first row's Encode).
 func TestStream_EncodeErrorAborts(t *testing.T) {
@@ -76,7 +76,7 @@ func TestEventStream_WriteErrorReturns(t *testing.T) {
 }
 
 // SSE marshal failure (crud_events.go:150): an event whose data can't be
-// JSON-encoded is skipped (continue), not fatal — the stream keeps running
+// JSON-encoded is skipped (continue), not fatal, the stream keeps running
 // until the client disconnects.
 func TestEventStream_MarshalErrorContinues(t *testing.T) {
 	ch, _ := covOwnerNotesHandler(t)

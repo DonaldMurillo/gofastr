@@ -21,7 +21,7 @@ func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string) {
 // CrudRouteOptions controls which routes are registered by RegisterCrudRoutes.
 type CrudRouteOptions struct {
 	NoLLMMD  bool // disable auto-generated /path/llm.md
-	ReadOnly bool // register only the read routes (List/Get/events) — for views and other read-only objects
+	ReadOnly bool // register only the read routes (List/Get/events), for views and other read-only objects
 }
 
 // CrudRoutePatterns returns the "METHOD /pattern" set RegisterCrudRoutes
@@ -35,7 +35,7 @@ type CrudRouteOptions struct {
 // way to un-publish them.
 //
 // TestCrudRoutePatternsMatchRegistration pins this list against what
-// RegisterCrudRoutes actually registers — a route added to one and not
+// RegisterCrudRoutes actually registers, a route added to one and not
 // the other fails that test rather than silently reopening the gap.
 func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 	path = NormalizePath(path)

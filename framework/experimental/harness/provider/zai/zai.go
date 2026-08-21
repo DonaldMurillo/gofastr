@@ -17,8 +17,8 @@ import (
 
 // ZAI publishes two base URLs:
 //
-//   - https://api.z.ai/api/paas/v4 — general API (pay-as-you-go).
-//   - https://api.z.ai/api/coding/paas/v4 — GLM Coding Plan
+//   - https://api.z.ai/api/paas/v4: general API (pay-as-you-go).
+//   - https://api.z.ai/api/coding/paas/v4: GLM Coding Plan
 //     subscription. Same wire shape, dedicated quota.
 //
 // Keys provisioned for the Coding Plan return HTTP 429 with code

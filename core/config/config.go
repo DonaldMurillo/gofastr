@@ -43,7 +43,7 @@ type EnvSource struct{}
 
 // Get returns the environment variable for the given key. Distinguishes
 // between unset (returns ok=false) and set-but-empty (returns "", true).
-// Conflating those breaks defaulting — an explicit empty value used to
+// Conflating those breaks defaulting. An explicit empty value used to
 // silently fall back to the `default:` tag.
 func (EnvSource) Get(key string) (string, bool) {
 	return os.LookupEnv(key)
@@ -76,7 +76,7 @@ func (cs ChainedSource) Get(key string) (string, bool) {
 // been populated; returning a non-nil error aborts Load.
 //
 // Renamed from Validator to avoid collision with entity.Entity's own
-// Validate() error method — a config struct that doubled as an
+// Validate() error method. A config struct that doubled as an
 // entity would otherwise accidentally satisfy this interface.
 type ConfigValidator interface {
 	Validate() error
@@ -96,7 +96,7 @@ type ConfigValidator interface {
 // tag still satisfies a required field when the key is absent.
 //
 // Fields tagged `sensitive:"true"` have their raw value redacted from
-// any error messages — including the text of a ConfigValidator error.
+// any error messages, including the text of a ConfigValidator error.
 //
 // If the config (or a pointer to it) implements ConfigValidator,
 // Validate is called after binding and its error is returned.
@@ -201,8 +201,8 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 
 		// `required` means a usable value, not merely a present key.
 		// EnvSource deliberately reports set-but-empty as ("", true), so
-		// checking only !found let `SECRET=` — an empty .env line, a k8s
-		// ConfigMap key with no value, a secret-manager miss — satisfy
+		// checking only !found let `SECRET=`, an empty .env line, a k8s
+		// ConfigMap key with no value, a secret-manager miss, satisfy
 		// `required` and silently bind the zero value. Test the resolved
 		// value instead of the lookup's ok flag.
 		if val == "" {

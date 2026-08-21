@@ -29,7 +29,7 @@ type Config struct {
 
 	// EmptyHTML is HTML rendered into the listbox at first paint when
 	// no options are server-rendered. Pass an empty string to start
-	// with an empty hidden listbox (the typical case — the listbox
+	// with an empty hidden listbox (the typical case, the listbox
 	// auto-opens once the user types and the server returns options).
 	EmptyHTML string
 
@@ -41,7 +41,7 @@ type Config struct {
 	Class string
 
 	// Options, when non-empty, renders a static, client-side-filtered
-	// list (no RPC round-trip). Use for small fixed command sets — e.g.
+	// list (no RPC round-trip). Use for small fixed command sets, e.g.
 	// a docs/nav palette on a static export where no search endpoint
 	// exists. The combobox runtime module filters these on input. Takes
 	// precedence over RPCPath.

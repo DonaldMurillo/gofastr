@@ -47,7 +47,7 @@ type Baseline struct {
 //
 // Findings below the run's fail-on severity are deliberately left out. A
 // baseline exists to unblock a gate; recording something that cannot fail
-// the run is not just noise in the file, it is actively harmful — the
+// the run is not merely noise in the file, it is actively harmful. The
 // entry absorbs the finding on every later run, so an informational
 // signal the project wanted to keep watching disappears instead.
 //
@@ -107,7 +107,7 @@ func WriteBaseline(path string, b *Baseline) error {
 	return nil
 }
 
-// ReadBaseline loads a baseline. A missing file returns (nil, nil) — no
+// ReadBaseline loads a baseline. A missing file returns (nil, nil). No
 // baseline is the normal state, not an error.
 func ReadBaseline(path string) (*Baseline, error) {
 	data, err := os.ReadFile(path)
@@ -122,7 +122,7 @@ func ReadBaseline(path string) (*Baseline, error) {
 		return nil, fmt.Errorf("parse baseline %s: %w", path, err)
 	}
 	if b.Schema > BaselineSchemaVersion {
-		return nil, fmt.Errorf("baseline %s is version %d, this build understands %d — re-record it",
+		return nil, fmt.Errorf("baseline %s is version %d, this build understands %d: re-record it",
 			path, b.Schema, BaselineSchemaVersion)
 	}
 	if b.Counts == nil {
@@ -136,7 +136,7 @@ type BaselineResult struct {
 	// Accepted is how many findings the baseline absorbed.
 	Accepted int
 	// Fixed lists (rule, file) pairs where fewer findings occur now than
-	// the baseline records — debt that was paid down. Reported so the
+	// the baseline records, debt that was paid down. Reported so the
 	// baseline visibly shrinks instead of quietly over-accepting forever.
 	Fixed []BaselineDelta
 }
@@ -154,7 +154,7 @@ type BaselineDelta struct {
 //
 // Diagnostics are dropped worst-first within each (rule, file) bucket, so
 // when a file has three accepted findings and gains a fourth, the one
-// left visible is the most severe — not whichever happened to sort last.
+// left visible is the most severe, not whichever happened to sort last.
 func (r *Report) ApplyBaseline(b *Baseline) BaselineResult {
 	var res BaselineResult
 	if b == nil || len(b.Counts) == 0 {
@@ -163,7 +163,7 @@ func (r *Report) ApplyBaseline(b *Baseline) BaselineResult {
 	// One-shot: the apply consumes the diagnostic list, so a second call
 	// would see it already emptied, re-claim the suppressed slots into
 	// the Fixed deltas, and rewrite Baselined to 0. No caller does this
-	// on purpose — which is why the misuse is inert instead of silently
+	// on purpose, which is why the misuse is inert instead of silently
 	// corrupting the counters.
 	if r.baselineApplied {
 		return res
@@ -180,12 +180,12 @@ func (r *Report) ApplyBaseline(b *Baseline) BaselineResult {
 
 	// A suppressed finding still occupies its slot. Suppression is
 	// consumed inside Run, so by the time the baseline is applied the
-	// finding is invisible — but it has not gone away, and handing its
+	// finding is invisible, but it has not gone away, and handing its
 	// allowance to the next finding of the same rule in the same file
 	// would let debt grow behind a balanced count. Claimed slots are not
 	// Accepted (nothing visible was absorbed); they surface below as
-	// over-accepting, because a re-recorded baseline — which also runs
-	// after suppression — would no longer include them.
+	// over-accepting, because a re-recorded baseline, which also runs
+	// after suppression, would no longer include them.
 	claimed := map[string]map[string]int{}
 	for rule, files := range r.suppressedAt {
 		rem, ok := remaining[rule]
@@ -220,7 +220,7 @@ func (r *Report) ApplyBaseline(b *Baseline) BaselineResult {
 	r.Diagnostics = kept
 	r.Baselined = res.Accepted
 
-	// Whatever is left unconsumed is debt that has been paid — and a
+	// Whatever is left unconsumed is debt that has been paid, and a
 	// suppression-claimed slot counts as unconsumed here, because the
 	// re-recorded baseline this nudge asks for would drop it too.
 	for rule, files := range remaining {

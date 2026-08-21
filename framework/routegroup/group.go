@@ -40,7 +40,7 @@ type GroupOption func(*RouteGroup)
 // core/router.Group for prefix and middleware chaining while adding
 // App-level concerns: OpenAPI tagging and MCP tool namespacing.
 //
-// RouteGroup does NOT own entity registration — that stays on App.
+// RouteGroup does NOT own entity registration, that stays on App.
 // The group provides the router surface (Handle/Get/Post/...) and the
 // metadata (prefix, OpenAPI tag, MCP namespace) that App.GroupEntity
 // reads when mounting an entity into a group.
@@ -62,7 +62,7 @@ type RouteGroup struct {
 	// entities in this group are prefixed as "<namespace>.<tool>".
 	mcpNamespace string
 
-	// Access policy middleware — typically RequirePermission or similar.
+	// Access policy middleware, typically RequirePermission or similar.
 	// Applied as the outermost group-scoped middleware so it gates
 	// everything inside.
 	accessMW router.Middleware
@@ -186,8 +186,8 @@ func (g *RouteGroup) Group(prefix string, opts ...GroupOption) *RouteGroup {
 //
 // It used to return only this group's own segment, so a nested
 // app.Group("/api").Group("/v2") reported "/v2". Callers that address the
-// group's routes by URL — the entity route-collision pre-flight, and the MCP
-// tools that re-dispatch through the router — were checking and dispatching
+// group's routes by URL, the entity route-collision pre-flight, and the MCP
+// tools that re-dispatch through the router, were checking and dispatching
 // against a path that does not exist.
 func (g *RouteGroup) Prefix() string {
 	return g.router_().Prefix()

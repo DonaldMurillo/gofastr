@@ -7,7 +7,7 @@ import (
 
 // FuzzRenderHTML drives the markdown renderer with arbitrary input. Five
 // shipped DoS findings on this surface (quadratic blockquotes, unbounded
-// inline recursion, emphasis blowup) were all liveness failures — so the
+// inline recursion, emphasis blowup) were all liveness failures, so the
 // fuzz contract is: always terminate, never panic. Pathological inputs
 // that re-introduce super-linear blowup surface as fuzz timeouts.
 func FuzzRenderHTML(f *testing.F) {

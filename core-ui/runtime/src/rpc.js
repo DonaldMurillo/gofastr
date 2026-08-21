@@ -1,4 +1,4 @@
-// GoFastr runtime module — RPC dispatch
+// GoFastr runtime module, RPC dispatch
 //
 // Core owns the document click, submit, and input bridges so an interaction
 // that lands before this file arrives is retained. This module owns request
@@ -44,7 +44,7 @@
     } else if (!body && node.form) {
       // A form control that belongs to a form (radio/select/input/textarea
       // with node.form set) carries its value by serializing the enclosing
-      // form — the same class as the data-fui-rpc fix below. Explicit
+      // form, the same class as the data-fui-rpc fix below. Explicit
       // data-kiln-args wins (read above); a control with no form keeps the
       // legacy '' body rather than erroring.
       const obj = {};
@@ -203,7 +203,7 @@
         try {
           // Through the router's choke point (entry id + currentPath).
           // nav is absent from the embed composition, so fall back to a
-          // raw write there — an embed has no router state to keep.
+          // raw write there, an embed has no router state to keep.
           if (NS._pushURL) NS._pushURL(pushState);
           else {
             history.pushState(null, '', pushState);

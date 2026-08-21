@@ -14,7 +14,7 @@ const (
 	maxRecoveryPanicLen  = 4 << 10  // 4 KiB
 	maxRecoveryStackLen  = 64 << 10 // 64 KiB
 	maxRecoveryPathLen   = 2 << 10  // 2 KiB
-	maxRecoveryMethodLen = 1 << 5   // 32 B — real HTTP methods are ≤ ~10 chars
+	maxRecoveryMethodLen = 1 << 5   // 32 B; real HTTP methods are ≤ ~10 chars
 )
 
 func truncate(s string, max int) string {

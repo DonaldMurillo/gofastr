@@ -12,7 +12,7 @@ import (
 // a NON-representative version IS run. RunSeeds iterates the version union
 // (UnionEntities), which propagates the sole seed into the merged entity
 // regardless of which version is the representative. The old path iterated
-// Registry.All() — one representative per name — so a seed only on v2 was
+// Registry.All(), one representative per name, so a seed only on v2 was
 // invisible: hasSeed stayed false, RunSeeds returned success, and the seed
 // silently never ran.
 func TestRunSeeds_PicksUpSeedFromNonRepresentative(t *testing.T) {
@@ -30,7 +30,7 @@ func TestRunSeeds_PicksUpSeedFromNonRepresentative(t *testing.T) {
 	v1 := rawEnt("posts", "posts",
 		[]schema.Field{{Name: "id", Type: schema.String}, {Name: "title", Type: schema.String}},
 		nil, "id")
-	v1.Version = "/api/v1" // representative — AllSorted orders "/api/v1" first
+	v1.Version = "/api/v1" // representative. AllSorted orders "/api/v1" first
 	// v1 has NO seed.
 
 	v2 := rawEnt("posts", "posts",

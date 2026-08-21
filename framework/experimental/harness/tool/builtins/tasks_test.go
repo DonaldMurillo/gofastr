@@ -35,7 +35,7 @@ func TestTaskListReplaceAndSnapshot(t *testing.T) {
 		t.Fatalf("after first write: %d tasks, want 2", len(got))
 	}
 
-	// Second write: shorter list with one in_progress — must REPLACE,
+	// Second write: shorter list with one in_progress, must REPLACE,
 	// not append.
 	if _, err := tl.Run(ctx, mkCall(
 		TaskItem{Content: "read file", Status: "completed"},
@@ -51,7 +51,7 @@ func TestTaskListReplaceAndSnapshot(t *testing.T) {
 		t.Errorf("replace didn't take: %+v", got)
 	}
 
-	// Third write: empty list (all done) — must clear.
+	// Third write: empty list (all done), must clear.
 	if _, err := tl.Run(ctx, mkCall(), nil); err != nil {
 		t.Fatal(err)
 	}

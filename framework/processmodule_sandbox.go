@@ -18,7 +18,7 @@ import (
 //   - NewSandboxRunner PROBES the backend at construction (the §6 gate):
 //     every probe P1–P7 MUST pass. Any failure or unreachable ⇒ the
 //     constructor errors and the supervisor records the module
-//     InstalledDisabled / fails Register — never a silent downgrade to
+//     InstalledDisabled / fails Register, never a silent downgrade to
 //     TrustedProcessRunner.
 //   - SelectRunner maps a descriptor's TrustTier to the right Runner:
 //     trusted → TrustedProcessRunner, untrusted → SandboxRunner (or
@@ -44,12 +44,12 @@ type SandboxRunner struct {
 
 	// opts are the default per-module confinement parameters. Per-spec
 	// overrides (a descriptor with tighter Limits) narrow these at Start;
-	// they never widen — a descriptor cannot raise a ceiling.
+	// they never widen, a descriptor cannot raise a ceiling.
 	opts SandboxOpts
 
 	// EnvAllowlist is the base env-var names the child receives (PATH,
 	// HOME, …). If nil, [DefaultChildEnvAllowlist] is used. This is the
-	// SAME baseline-hygiene allowlist TrustedProcessRunner applies — the
+	// SAME baseline-hygiene allowlist TrustedProcessRunner applies, the
 	// two runners share it so P2 (no inherited secret) cannot drift.
 	EnvAllowlist []string
 
@@ -65,8 +65,8 @@ type SandboxRunner struct {
 
 // NewSandboxRunner constructs a SandboxRunner over backend, PROBING the
 // backend at construction per design §6. Returns a non-nil error iff the
-// backend is unavailable or any probe P1–P7 fails or is unreachable —
-// the caller (supervisor wiring) treats that as "no sandbox on this host"
+// backend is unavailable or any probe P1–P7 fails or is unreachable.
+// The caller (supervisor wiring) treats that as "no sandbox on this host"
 // and fail-closes untrusted Register attempts.
 //
 // The probe pass runs the full suite once and caches the report on the
@@ -95,7 +95,7 @@ func NewSandboxRunner(backend SandboxBackend, opts SandboxOpts) (*SandboxRunner,
 // Start implements [Runner.Start]. It is the untrusted-tier spawn:
 // baseline hygiene (shared [prepareChildForSpawn]) + backend.Wrap (the
 // OS-enforced denials) + shared [startPreparedChild]. The backend.Wrap
-// step is the ONLY difference from TrustedProcessRunner.Start — that is
+// step is the ONLY difference from TrustedProcessRunner.Start, that is
 // the design's point: the two runners are identical except for the
 // OS-enforced denial layer.
 func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild, error) {
@@ -104,7 +104,7 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 		return nil, err
 	}
 	// Build the per-spawn confinement opts from the runner defaults,
-	// narrowed by the descriptor's Limits (never widened — a descriptor
+	// narrowed by the descriptor's Limits (never widened, a descriptor
 	// may lower a ceiling, not raise it).
 	opts := r.opts
 	if opts.ScratchDir == "" {
@@ -126,7 +126,7 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 // construction. The supervisor consults this at Register to fail-closed
 // an untrusted module whose host lost conformance (e.g. the operator
 // pointed NewSandboxRunner at a backend that was available at boot but
-// is now not — belt-and-suspenders alongside the constructor's gate).
+// is now not, belt-and-suspenders alongside the constructor's gate).
 func (r *SandboxRunner) Conforms() bool {
 	if r == nil {
 		return false
@@ -153,7 +153,7 @@ func (r *SandboxRunner) Backend() SandboxBackend {
 }
 
 // allowlist returns the runner's env allowlist, defaulting to
-// DefaultChildEnvAllowlist — mirrors TrustedProcessRunner.allowlist so
+// DefaultChildEnvAllowlist: mirrors TrustedProcessRunner.allowlist so
 // the two runners share the exact same baseline hygiene.
 func (r *SandboxRunner) allowlist() []string {
 	if r == nil || len(r.EnvAllowlist) == 0 {
@@ -175,13 +175,13 @@ func cleanupPrepPipes(prep *childPrep) {
 }
 
 // SelectRunner maps a descriptor's TrustTier to the Runner the supervisor
-// spawns under (design §6 decision C — the inversion of the wave-2a
+// spawns under (design §6 decision C, the inversion of the wave-2a
 // site that unconditionally errored on TrustUntrusted):
 //
 //   - TrustTrusted → trusted (TrustedProcessRunner).
 //   - TrustUntrusted + sandbox that Conforms() → sandbox (SandboxRunner).
 //   - TrustUntrusted + nil/non-conforming sandbox → ErrSandboxUnavailable
-//     (the caller — supervisor.Register — wraps this as
+//     (the caller, supervisor.Register, wraps this as
 //     [UntrustedNoSandboxError] and the module never reaches Ready).
 //
 // This is the single point that decides runner selection; the supervisor

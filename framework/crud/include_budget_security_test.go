@@ -54,13 +54,13 @@ CREATE TABLE bg_nodes (
 
 // TestIncludeDepthBudget pins that ?include= is bounded. Attack: a 23-byte
 // `include=up.down.up.down.up.down` on a self-referencing entity expanded
-// into a 13.7 MB response (~600,000×) and OOMed two levels deeper — no
+// into a 13.7 MB response (~600,000×) and OOMed two levels deeper, no
 // segment cap, no depth cap, no LIMIT on the eager SELECTs, and every
 // parent got its own deep copy of the shared child subtree.
 //
 // The property is "the response an include can produce is bounded by the
 // request, not exponential in it". Case shapes: over-deep, cyclic,
-// wide fan-out — plus a legitimate two-level include that must still work.
+// wide fan-out, plus a legitimate two-level include that must still work.
 func TestIncludeDepthBudget(t *testing.T) {
 	ch := budgetHandler(t, 20)
 
@@ -105,7 +105,7 @@ func TestIncludeDepthBudget(t *testing.T) {
 // permitted, at-the-cap include must stay linear in the data. Every one of
 // the 20 rows resolves `up` to the SAME root row, so the shared subtree
 // was deep-copied once per parent at each level. Bounded depth alone does
-// not fix that — the copy has to be shared.
+// not fix that, the copy has to be shared.
 func TestIncludeSharedSubtreeNotRecopied(t *testing.T) {
 	ch := budgetHandler(t, 20)
 
@@ -127,7 +127,7 @@ func TestIncludeSharedSubtreeNotRecopied(t *testing.T) {
 
 // The budget is threaded as a pointer so in-process callers that build
 // IncludeNodes by hand can pass nil; a nil budget must be unmetered
-// rather than a panic. Also covers the exhaustion boundary directly —
+// rather than a panic. Also covers the exhaustion boundary directly,
 // the HTTP tests above reach it through a real query, which does not
 // exercise the "spend more than remains in one call" path that a wide
 // shared subtree takes.
@@ -148,7 +148,7 @@ func TestIncludeBudgetAccounting(t *testing.T) {
 		t.Errorf("spend past zero = %v, want errIncludeBudget", err)
 	}
 
-	// A single oversized charge — one shared subtree referenced again —
+	// A single oversized charge, one shared subtree referenced again,
 	// trips it just the same.
 	big := &includeBudget{remaining: 3}
 	if err := big.spend(9); !errors.Is(err, errIncludeBudget) {
@@ -211,7 +211,7 @@ func TestDeepConvertMapShapes(t *testing.T) {
 	if arr[1] != "scalar" || arr[2] != nil {
 		t.Errorf("non-map elements must pass through unchanged: %v", arr)
 	}
-	// The shared map is one object referenced twice — converted once,
+	// The shared map is one object referenced twice, converted once,
 	// counted twice.
 	if got["sharedAgain"].(map[string]any)["innerKey"] != "v" {
 		t.Errorf("memoised subtree lost its content: %v", got)

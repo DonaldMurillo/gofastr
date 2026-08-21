@@ -33,7 +33,7 @@ const (
 	TopRight     Position = "top-right"
 	TopCenter    Position = "top-center" // toast / banner stack mid-edge
 	TopLeft      Position = "top-left"
-	Center       Position = "center"    // modal — backdrop + focus trap
+	Center       Position = "center"    // modal, backdrop + focus trap
 	Top          Position = "top"       // banner across the top
 	Bottom       Position = "bottom"    // banner across the bottom
 	Edge         Position = "edge-left" // drawer-style edge mount
@@ -81,7 +81,7 @@ type Definition struct {
 	// Signals are served by the widget's /state endpoint.
 	//
 	// SECURITY: /state is UNAUTHENTICATED unless RequireSession is set,
-	// and SignalSource.Read takes no context — so a signal value is
+	// and SignalSource.Read takes no context, so a signal value is
 	// process-global, identical for every caller, and cannot be scoped
 	// per user. Treat every signal as world-readable: put counts,
 	// statuses and other non-sensitive display data here, never
@@ -140,12 +140,12 @@ type Definition struct {
 	Hidden bool
 
 	// DeepLinkKey is the URL query parameter that controls open state
-	// for this widget — e.g. "modal". When the request URL contains
+	// for this widget, e.g. "modal". When the request URL contains
 	// `?<DeepLinkKey>=<DeepLinkValue>`, the SSR layer renders the
 	// widget open at first paint AND the runtime mirrors open/close to
 	// pushState so refresh/share/back-button all stay consistent.
 	//
-	// Empty (the default) disables deep-linking — the widget remains
+	// Empty (the default) disables deep-linking, the widget remains
 	// purely click-driven via data-fui-open.
 	//
 	// Only meaningful for Hidden widgets (modal / drawer). Toasts and
@@ -165,7 +165,7 @@ type Definition struct {
 	// Routes scopes the widget to specific request paths. When non-
 	// empty, the SSR layer and the runtime catalog only expose this
 	// widget on pages whose path is accepted by at least one matcher.
-	// Empty (the default) means "available on every page" — the
+	// Empty (the default) means "available on every page", the
 	// behaviour before per-page scoping shipped.
 	//
 	// Constructed via the Builder methods .Pages, .PagesPrefix,
@@ -190,7 +190,7 @@ type Definition struct {
 	// PollMS is the freshness interval (milliseconds) the runtime
 	// should re-fetch StatePath on. Zero (the default) disables
 	// polling. Emitted as "pollMs" in the catalog ONLY when both
-	// PollMS > 0 AND the widget declares at least one Signal — a
+	// PollMS > 0 AND the widget declares at least one Signal, a
 	// widget without signals has no StatePath to poll. The runtime
 	// applies ±10% jitter, pauses while document.hidden, fetches
 	// immediately on visibility regain, and backs off (doubling,
@@ -201,7 +201,7 @@ type Definition struct {
 	// PollTerminal, when non-nil, is evaluated on every /state fetch.
 	// When it returns true, serveState sets the X-Gofastr-Poll-Stop
 	// response header so the runtime applies the final signal values
-	// and then ends the cadence — the server-side half of the terminal
+	// and then ends the cadence, the server-side half of the terminal
 	// contract (#192). Use it for widgets whose freshness job is done
 	// once a terminal state is reached (a job that completed, a batch
 	// that finished). Set via Builder.PollTerminal. The predicate sees
@@ -237,9 +237,9 @@ var (
 
 // allWidgets returns the registered widgets (snapshot copy), sorted by
 // name. Sorting matters: every consumer emits bytes derived from the
-// walk — the /__gofastr/widgets catalog JSON, SSR-inlined chrome order,
+// walk, the /__gofastr/widgets catalog JSON, SSR-inlined chrome order,
 // and the static export's widget dump (whose tree hash versions the PWA
-// cache) — and Go's map iteration would make all of them flap once a
+// cache), and Go's map iteration would make all of them flap once a
 // second widget registers.
 func allWidgets() []*Definition {
 	registryMu.Lock()
@@ -387,7 +387,7 @@ func (b *Builder) Signal(name string, src SignalSource) *Builder {
 // No-op in catalog emission when the widget declares no Signals
 // (statePath is omitted, so there is nothing to poll). interval is
 // recorded verbatim as milliseconds; the browser runtime enforces a
-// 100ms floor (Go callers are trusted config — the page-attribute
+// 100ms floor (Go callers are trusted config, the page-attribute
 // path clamps at 5s instead, because markup is cheap to typo).
 func (b *Builder) Poll(interval time.Duration) *Builder {
 	b.def.PollMS = int(interval / time.Millisecond)
@@ -397,7 +397,7 @@ func (b *Builder) Poll(interval time.Duration) *Builder {
 // PollTerminal declares a predicate evaluated on every /state fetch.
 // When it returns true, serveState emits X-Gofastr-Poll-Stop and the
 // runtime applies the final signal snapshot and then ends the poll
-// cadence — the server-side half of the terminal contract (#192). Use
+// cadence, the server-side half of the terminal contract (#192). Use
 // it for a polling widget whose freshness job finishes once a terminal
 // state is reached (a job-status pill that hits completed, a batch that
 // finishes); without it the widget polls forever after going terminal.
@@ -475,7 +475,7 @@ func (b *Builder) PagesMatch(fn func(path string) bool) *Builder {
 
 // DeepLink wires this widget to a query-string pair. When the URL
 // includes `?key=value`, the SSR layer opens the widget at first paint
-// and the runtime mirrors open/close as pushState updates — so refresh,
+// and the runtime mirrors open/close as pushState updates, so refresh,
 // share, and the browser back button all work.
 //
 // Pair with DeepLinkParam to pass extra data into the widget's signals.
@@ -526,7 +526,7 @@ func (b *Builder) Build() Definition { return b.def }
 // case a widget asking for a session fails closed.
 //
 // Backed by atomic.Pointer so a host installing it (SetSessionCheck) at wire
-// time races nothing with the per-request read in gateSession — a plain var
+// time races nothing with the per-request read in gateSession, a plain var
 // here was a data race under -race, and the predicate is read on every gated
 // request. Set once before serving; hot-swapping on a live host is not advised
 // but is at least race-free.
@@ -571,7 +571,7 @@ func gateSession(required bool, h http.Handler) http.Handler {
 
 // Mount registers the widget's HTTP routes on r and adds it to the
 // process-global registry the framework runtime auto-discovers. Hosts
-// don't embed a per-widget script tag — they embed ONE shared runtime
+// don't embed a per-widget script tag, they embed ONE shared runtime
 // tag (see RuntimeTag) and the runtime mounts every registered widget.
 //
 // Routes mounted on r:
@@ -594,7 +594,7 @@ func Mount(r *router.Router, def *Definition) {
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
 	r.Get(def.StatePath, gateSession(def.RequireSession, http.HandlerFunc(srv.serveState)))
-	// Chrome endpoint — runtime fetches HTML lazily on first open
+	// Chrome endpoint: runtime fetches HTML lazily on first open
 	// instead of receiving it inline in the /widgets catalog. Keeps
 	// the registry small and lets browsers cache by URL.
 	r.Get(chromePathFor(def), gateSession(def.RequireSession, http.HandlerFunc(srv.serveChrome)))
@@ -620,7 +620,7 @@ func Mount(r *router.Router, def *Definition) {
 	registryMu.Unlock()
 }
 
-// MountBuilder builds the widget from b and mounts it on r — sugar over the
+// MountBuilder builds the widget from b and mounts it on r, sugar over the
 // two-step
 //
 //	def := b.Build()

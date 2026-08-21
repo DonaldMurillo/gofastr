@@ -11,7 +11,7 @@ import (
 )
 
 // ============================================================================
-// ScreenLLMMD — basic page
+// ScreenLLMMD: basic page
 // ============================================================================
 
 func TestScreenLLMMD_BasicPage(t *testing.T) {
@@ -36,7 +36,7 @@ func TestScreenLLMMD_BasicPage(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — dynamic route with params
+// ScreenLLMMD: dynamic route with params
 // ============================================================================
 
 func TestScreenLLMMD_DynamicRoute(t *testing.T) {
@@ -54,7 +54,7 @@ func TestScreenLLMMD_DynamicRoute(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — drawer type
+// ScreenLLMMD: drawer type
 // ============================================================================
 
 func TestScreenLLMMD_DrawerType(t *testing.T) {
@@ -69,7 +69,7 @@ func TestScreenLLMMD_DrawerType(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — dialog type
+// ScreenLLMMD: dialog type
 // ============================================================================
 
 func TestScreenLLMMD_DialogType(t *testing.T) {
@@ -84,7 +84,7 @@ func TestScreenLLMMD_DialogType(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — ScreenLoader capability detection
+// ScreenLLMMD: ScreenLoader capability detection
 // ============================================================================
 
 func TestScreenLLMMD_ScreenLoader(t *testing.T) {
@@ -102,7 +102,7 @@ func TestScreenLLMMD_ScreenLoader(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — StaticPathsProvider capability detection
+// ScreenLLMMD: StaticPathsProvider capability detection
 // ============================================================================
 
 func TestScreenLLMMD_StaticPathsProvider(t *testing.T) {
@@ -117,7 +117,7 @@ func TestScreenLLMMD_StaticPathsProvider(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — ScreenActions capability detection
+// ScreenLLMMD: ScreenActions capability detection
 // ============================================================================
 
 func TestScreenLLMMD_ScreenActions(t *testing.T) {
@@ -132,7 +132,7 @@ func TestScreenLLMMD_ScreenActions(t *testing.T) {
 }
 
 // ============================================================================
-// AppLLMMD — index with multiple screens
+// AppLLMMD: index with multiple screens
 // ============================================================================
 
 func TestAppLLMMD_Index(t *testing.T) {
@@ -167,7 +167,7 @@ func TestAppLLMMD_Index(t *testing.T) {
 }
 
 // ============================================================================
-// AppLLMMD — empty app
+// AppLLMMD: empty app
 // ============================================================================
 
 func TestAppLLMMD_Empty(t *testing.T) {
@@ -184,7 +184,7 @@ func TestAppLLMMD_Empty(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMDHandler — HTTP serving
+// ScreenLLMMDHandler: HTTP serving
 // ============================================================================
 
 func TestScreenLLMMDHandler_HTTP(t *testing.T) {
@@ -209,7 +209,7 @@ func TestScreenLLMMDHandler_HTTP(t *testing.T) {
 }
 
 // ============================================================================
-// AppLLMMDHandler — HTTP serving
+// AppLLMMDHandler: HTTP serving
 // ============================================================================
 
 func TestAppLLMMDHandler_HTTP(t *testing.T) {
@@ -259,7 +259,7 @@ func TestExtractParamNames(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — content rendering
+// ScreenLLMMD: content rendering
 // ============================================================================
 
 func TestScreenLLMMD_ContentRendered(t *testing.T) {
@@ -358,7 +358,7 @@ func TestAppLLMMD_NoLLMMD_Global(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — panic guard on Render()
+// ScreenLLMMD: panic guard on Render()
 // ============================================================================
 
 type panicComp struct{}
@@ -369,7 +369,7 @@ func TestScreenLLMMD_PanicGuard(t *testing.T) {
 	screen := NewScreen("/crash", &panicComp{})
 	screen.Title = "Crash"
 
-	// Should NOT panic — should produce a generic fallback message
+	// Should NOT panic, should produce a generic fallback message
 	md := ScreenLLMMD(screen)
 	if !strings.Contains(md, "# Crash") {
 		t.Error("expected title to still appear")
@@ -383,7 +383,7 @@ func TestScreenLLMMD_PanicGuard(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMD — ScreenLoader gets dynamic content note
+// ScreenLLMMD: ScreenLoader gets dynamic content note
 // ============================================================================
 
 type emptyRenderLoader struct{ basicComp }
@@ -401,7 +401,7 @@ func TestScreenLLMMD_ScreenLoaderFallback(t *testing.T) {
 }
 
 // ============================================================================
-// ScreenLLMMDWithMeta — metadata prefix
+// ScreenLLMMDWithMeta: metadata prefix
 // ============================================================================
 
 func TestScreenLLMMDWithMeta_EmptyPrefixMatchesBase(t *testing.T) {
@@ -544,7 +544,7 @@ func (c *secretNonLoaderComp) Render() render.HTML {
 	return render.HTML("<p>" + c.body + "</p>")
 }
 
-// Sol round-2 finding 1: the withheld doc must be METADATA-free — the
+// Sol round-2 finding 1: the withheld doc must be METADATA-free, the
 // screen's title, description, and SEO bundle are component-supplied and
 // protected by the same policy as the content.
 func TestWithheldDocLeaksNoMetadata(t *testing.T) {

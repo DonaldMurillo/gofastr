@@ -22,7 +22,7 @@ import (
 type MarkdownConfig struct {
 	// Source is the raw markdown text (required).
 	Source string
-	// Compact tightens spacing — useful for inline previews where
+	// Compact tightens spacing, useful for inline previews where
 	// hero-page paragraph rhythm would feel wrong.
 	Compact    bool
 	ID         string
@@ -55,7 +55,7 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 
 // enrichCodeBlocks upgrades the plain `<pre><code class="language-X">…</code></pre>`
 // blocks that core/markdown emits into framed ui.CodeBlock surfaces: syntax
-// highlighting (via highlightLines) plus a copy button and chrome — the same
+// highlighting (via highlightLines) plus a copy button and chrome, the same
 // component the rest of the framework uses for code. The fenced body arrives
 // HTML-escaped (core/markdown escapes it), so `</code></pre>` is an
 // unambiguous terminator; we un-escape back to source, tokenize, and re-emit.
@@ -118,7 +118,7 @@ func markdownCSS(_ style.Theme) string {
 	// scales with the host's body size, and HIERARCHICAL rather than a flat
 	// gap between every element: paragraphs breathe, section headings open a
 	// larger gap above and bind tightly to the content below, lists and code
-	// get their own measure. Leading is 1.7 — light-on-dark text reads lighter
+	// get their own measure. Leading is 1.7: light-on-dark text reads lighter
 	// and wants extra line-height (the canonical site theme is dark-first).
 	return `[data-fui-comp="ui-markdown"] {
   display: block;

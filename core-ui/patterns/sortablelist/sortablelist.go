@@ -3,7 +3,7 @@
 // to move within a column, Arrow left/right to move between columns,
 // Space again to drop, Esc to cancel).
 //
-// Single-list usage (back-compat — no new attrs emitted):
+// Single-list usage (back-compat, no new attrs emitted):
 //
 //	<ol data-fui-comp="sortablelist" role="listbox"
 //	    data-fui-sortable data-fui-sortable-rpc="<path>">
@@ -11,7 +11,7 @@
 //	      draggable="true" tabindex="0" role="option">…</li>
 //	</ol>
 //
-// Kanban (cross-container) usage — render one list per column, all
+// Kanban (cross-container) usage, render one list per column, all
 // sharing the same Group, each with a unique Container id:
 //
 //	<ol data-fui-sortable data-fui-sortable-group="board-1"
@@ -27,7 +27,7 @@
 // `order=<dest-keys>&moved=<key>&container=<col-id>`. When Version is
 // set, a `version=<token>` field is appended to every commit; a 409
 // response fires the conflict path (GET ConflictRPC → replace list
-// HTML) instead of a blanket rollback. The server is authoritative —
+// HTML) instead of a blanket rollback. The server is authoritative,
 // non-2xx reverts the DOM.
 package sortablelist
 
@@ -54,7 +54,7 @@ type Item struct {
 
 // Config configures a SortableList.
 type Config struct {
-	// Items are the entries in initial order. May be empty — an empty
+	// Items are the entries in initial order. May be empty, an empty
 	// column renders a valid sortable <ol> wrapper with no <li>
 	// children (Kanban empty containers, issue #82).
 	Items []Item
@@ -77,14 +77,14 @@ type Config struct {
 	// Container is the per-column id sent as the `container` field in
 	// a cross-container move payload so the server knows which column
 	// the item landed in. Distinct from Group (the board id) because a
-	// board has one Group but N Containers — the server needs both to
+	// board has one Group but N Containers, the server needs both to
 	// route the write.
 	Container string
 	// Version is an optional optimistic-concurrency token sent as a
 	// `version` body field on every commit. When set, a 409 response
 	// fires the conflict path (refetch ConflictRPC HTML) instead of a
 	// blanket rollback. Without Version, 409 is treated like any other
-	// non-2xx (rollback) — back-compat.
+	// non-2xx (rollback), back-compat.
 	Version string
 	// ConflictRPC, when set alongside Version, is GET-fetched on a
 	// 409 response. The response body replaces the destination list's
@@ -180,7 +180,7 @@ func renderRows(cfg Config) []render.HTML {
 // Used by conflict-recovery endpoints that need to replace a list's
 // innerHTML with fresh server-rendered rows. Returns an empty
 // fragment when cfg has no Items (authoritative reconciliation can
-// replace a column with an empty response — issue #82).
+// replace a column with an empty response, issue #82).
 func RenderItems(cfg Config) render.HTML {
 	return render.Join(renderRows(cfg)...)
 }

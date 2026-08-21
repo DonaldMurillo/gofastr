@@ -9,7 +9,7 @@ import (
 )
 
 // chainTestApp builds an app with a default "site" layout, a /docs screen
-// group nested under it, and a direct /about screen — the minimal shape
+// group nested under it, and a direct /about screen, the minimal shape
 // that exercises every subtree-partial branch.
 func chainTestApp() *app.App {
 	application := app.NewApp("t")
@@ -77,8 +77,8 @@ func TestSubtreePartialSiblingIsBare(t *testing.T) {
 	}
 }
 
-// Without X-Gofastr-From the response is exactly the legacy bare partial
-// — old runtimes keep working across a deploy skew.
+// Without X-Gofastr-From the response is exactly the legacy bare partial,
+// old runtimes keep working across a deploy skew.
 func TestSubtreePartialWithoutFromIsLegacy(t *testing.T) {
 	ds := New(chainTestApp())
 	w := partialGet(t, ds, "/docs/intro", "")
@@ -91,7 +91,7 @@ func TestSubtreePartialWithoutFromIsLegacy(t *testing.T) {
 	}
 }
 
-// A forged/unknown From can only degrade to the bare partial — content,
+// A forged/unknown From can only degrade to the bare partial: content,
 // policy, and status are unchanged.
 func TestSubtreePartialForgedFromDegrades(t *testing.T) {
 	ds := New(chainTestApp())

@@ -112,7 +112,7 @@ func TestGenerate_DropTable(t *testing.T) {
 func TestGenerate_DropTableFallback(t *testing.T) {
 	prev := migrate.SchemaSnapshot{
 		Tables: map[string]map[string]string{"legacy": {"id": "TEXT", "name": "TEXT"}},
-		// No TableDDL — older snapshot.
+		// No TableDDL, older snapshot.
 	}
 	up, down, _, err := migrate.GenerateMigration(NewRegistry(), prev, DialectSQLite)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestGenerate_DropTableFallback(t *testing.T) {
 
 // TestGenerate_AppliesAndRollsBackThroughRunner is the end-to-end proof: the
 // generated Up/Down round-trips through the versioned runner on a real database
-// (both dialects) — apply, then roll back, then re-apply.
+// (both dialects), apply, then roll back, then re-apply.
 func TestGenerate_AppliesAndRollsBackThroughRunner(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
 		// Gen 1: create table.

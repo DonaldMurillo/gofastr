@@ -61,7 +61,7 @@ type BarChartConfig struct {
 	// with the full text preserved in the bar's <title>. Default off.
 	ShowLabels bool
 	// HideValues suppresses the per-bar value labels that ride above each
-	// cap. Values are shown by default — set this to opt out (e.g. a dense
+	// cap. Values are shown by default. Set this to opt out (e.g. a dense
 	// sparkline-style strip where the numbers would crowd).
 	HideValues bool
 	// LabelledBy is the id of an element naming the chart for AT.
@@ -95,7 +95,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	}
 	// Round the axis up to a clean maximum with ~15% headroom above the
 	// tallest bar. This is what stops uniform (8/8/8/8) and near-equal
-	// (6/5/5) datasets from rendering as identical full-height slabs — the
+	// (6/5/5) datasets from rendering as identical full-height slabs. The
 	// tallest bar lands around 85% of the plot, not the ceiling.
 	valueMax := niceCeil(dataMax / 0.85)
 	if valueMax == 0 {
@@ -218,7 +218,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 	}
 
-	// Baseline — always drawn so the bars sit on solid ground.
+	// Baseline: always drawn so the bars sit on solid ground.
 	sb.WriteString(`<line x1="`)
 	sb.WriteString(ftoa(axisGutter))
 	sb.WriteString(`" y1="`)
@@ -247,7 +247,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 		// Resolve the effective fill. Palette tokens and an empty Color
 		// are class-based (theme-aware). Any other value is a raw SVG
-		// fill attribute — but only when it names a registered status
+		// fill attribute, but only when it names a registered status
 		// variant (resolved to its accent) or is a plausible CSS color.
 		// Anything else falls back to the primary class so a typo like
 		// "draft" never renders an invalid (black) fill.
@@ -299,7 +299,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(`</text>`)
 		}
 
-		// Category label(s) under the bar — wrapped onto multiple lines.
+		// Category label(s) under the bar, wrapped onto multiple lines.
 		if cfg.ShowLabels && b.Label != "" {
 			lines := wrapped[i]
 			ly := baseY + lineH
@@ -364,7 +364,7 @@ func niceCeil(v float64) float64 {
 	return nf * base
 }
 
-// niceTicks returns 0, max/2, max — three clean gridline values.
+// niceTicks returns 0, max/2, max: three clean gridline values.
 func niceTicks(max float64) []float64 {
 	return []float64{0, max / 2, max}
 }
@@ -372,7 +372,7 @@ func niceTicks(max float64) []float64 {
 // plausibleCSSColor reports whether s is shaped like a CSS color the
 // SVG fill attribute can use: #hex (3/4/6/8 digits), a rgb()/rgba()/
 // hsl()/hsla()/oklch()/color() function, or var(--…). Bare words
-// ("draft", "tomato") are NOT accepted — a bare word is either a
+// ("draft", "tomato") are NOT accepted. A bare word is either a
 // registered status variant (handled upstream) or a mistake. CSS named
 // colors must be written as hex or var(). Syntax-only: no parsing of
 // the function arguments, just a prefix + closing ')' shape check.
@@ -380,7 +380,7 @@ func plausibleCSSColor(s string) bool {
 	if s == "" {
 		return false
 	}
-	// #hex — 3/4/6/8 hex digits (4 and 8 carry the alpha channel).
+	// #hex: 3/4/6/8 hex digits (4 and 8 carry the alpha channel).
 	if s[0] == '#' {
 		hex := s[1:]
 		switch len(hex) {

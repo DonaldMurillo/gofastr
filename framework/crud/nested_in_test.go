@@ -10,7 +10,7 @@ import (
 
 // TestNestedIn_BelongsToCoalescesToIN pins the fix: a nested _in on a
 // BelongsTo (ManyToOne) emits a single `col IN ($1,$2)` inside one EXISTS with
-// all values as args — not separate AND-ed equals that can never all hold for a
+// all values as args, not separate AND-ed equals that can never all hold for a
 // single related row.
 func TestNestedIn_BelongsToCoalescesToIN(t *testing.T) {
 	nf := nestedFilter{

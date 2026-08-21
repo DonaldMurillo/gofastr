@@ -3,8 +3,8 @@
 //
 // Two variants:
 //
-//   - Determinate — Value/Max are set; bar fills proportionally.
-//   - Indeterminate — Value < 0; the browser shows its native animated
+//   - Determinate: Value/Max are set; bar fills proportionally.
+//   - Indeterminate: Value < 0; the browser shows its native animated
 //     "in progress" stripe.
 //
 // The component is server-rendered and does not require JavaScript.

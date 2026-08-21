@@ -6,7 +6,7 @@ package framework
 // that are neither linux, darwin, nor windows (e.g. freebsd, netbsd,
 // openbsd, js/wasm, plan9). The repo does not implement a wrapper-command
 // backend for those platforms in v1, so defaultSandboxBackend returns nil
-// and HostSandboxBackend propagates that nil to the supervisor — every
+// and HostSandboxBackend propagates that nil to the supervisor, every
 // TrustUntrusted module fails closed on these platforms. Fail-closed is
 // the only honest answer when no backend is compiled in.
 //

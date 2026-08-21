@@ -19,7 +19,7 @@ type IslandUpdate struct {
 }
 
 // streamEntry holds a session's live subscribers. Each subscriber (one
-// SSE connection — e.g. each browser tab sharing the session cookie)
+// SSE connection, e.g. each browser tab sharing the session cookie)
 // gets its OWN buffered channel, and deliver broadcasts to all of them.
 // The previous single-shared-channel design made same-session tabs
 // COMPETE for updates (one channel, first receiver wins); per-subscriber
@@ -34,8 +34,8 @@ type streamEntry struct {
 // An anonymous same-origin caller can mint a session (POST /__gofastr/session)
 // and then open an unbounded number of EventSource connections against it; each
 // Subscribe allocates a goroutine-sized buffered channel (64 slots) that lives
-// until the client disconnects. Without a ceiling a single client — or a
-// reconnect-loop bug — holds them forever. The policy is REJECT-not-evict (the
+// until the client disconnects. Without a ceiling a single client, or a
+// reconnect-loop bug, holds them forever. The policy is REJECT-not-evict (the
 // v0.39 SSE review): a stream over the cap is refused with a clear status, and
 // a new stream NEVER silently drops an existing one. A field value of 0 means
 // "unlimited"; the defaults are applied by NewManager.
@@ -103,9 +103,9 @@ func WithSSEHeartbeat(d time.Duration) ManagerOption {
 // WithSSEStreamBound sets the maximum lifetime of a single SSE stream
 // (default DefaultSSEStreamBound = 5m). A stream is closed after this
 // duration even when its heartbeat writes keep succeeding into the kernel
-// buffer — the safety net that reclaims a stream stranded by a peer the
+// buffer, the safety net that reclaims a stream stranded by a peer the
 // server cannot observe as gone (which otherwise exhausts the browser's
-// per-origin connection pool). EventSource reconnects seamlessly on a live
+// per-origin connection pool). EventSource reconnects automatically on a live
 // stream. The bound must exceed the heartbeat interval; a non-positive or
 // sub-heartbeat value restores the default. See issue #159.
 func WithSSEStreamBound(d time.Duration) ManagerOption {
@@ -165,7 +165,7 @@ type Manager struct {
 	// returning false drops that topic BEFORE any subscription or roster
 	// emission, so an unauthorized viewer never sees the roster (which can
 	// contain emails) and never receives join/leave events. A nil hook
-	// authorizes every topic — presence is public by default (opt-in gating),
+	// authorizes every topic, presence is public by default (opt-in gating),
 	// so existing apps are unaffected. Install with SetAuthorizeTopic BEFORE
 	// serving traffic; the atomic.Pointer keeps the install race-free against
 	// the SSE-connect read.
@@ -179,7 +179,7 @@ type Manager struct {
 	// fanout, when attached via SetFanout, mirrors PushUpdate updates
 	// to other replicas and re-delivers theirs locally. nodeID is the
 	// originator stamp used to drop own-node echoes. fanoutSend is the
-	// non-blocking enqueue into the publish queue (fanout.PublishQueue) —
+	// non-blocking enqueue into the publish queue (fanout.PublishQueue),
 	// PushUpdate runs on HTTP request goroutines and must never wait on
 	// the backend's network/DB round-trip. All guarded by mu.
 	fanout     fanout.Fanout
@@ -188,7 +188,7 @@ type Manager struct {
 
 	// ── Presence fanout (cross-replica; presence_fanout.go) ──
 	// The SAME transport as `fanout` above, used for a DEDICATED presence
-	// lane on topic presenceFanoutTopic ("gofastr.presence") — parallel to
+	// lane on topic presenceFanoutTopic ("gofastr.presence"), parallel to
 	// the island-invalidation lane, never sharing its payload shape.
 	// presenceSend is the non-blocking enqueue into the presence publish
 	// queue. remoteRosters maps topic → replicaID → entry (with TTL); nil
@@ -212,7 +212,7 @@ func (m *Manager) DroppedUpdates() int64 { return m.dropped.Load() }
 
 // SetOnPresenceChange installs the roster-change callback. Install BEFORE
 // serving traffic (the typical wire-time set). Stored in an atomic.Pointer so
-// the install races nothing with the per-change read — a plain field here was a
+// the install races nothing with the per-change read, a plain field here was a
 // data race under -race when an app installed it concurrently with a roster
 // change firing. Replaces the old direct field assignment.
 func (m *Manager) SetOnPresenceChange(fn func(topic string)) {
@@ -273,8 +273,8 @@ func NewManager(opts ...ManagerOption) *Manager {
 
 // Subscribe registers a new subscriber on the session's stream and
 // returns its OWN buffered update channel plus a cancel func that
-// removes exactly this subscription (idempotent). Every subscriber —
-// each tab sharing the session cookie — receives every update; the
+// removes exactly this subscription (idempotent). Every subscriber,
+// each tab sharing the session cookie, receives every update; the
 // session's entry is deleted when its last subscriber cancels.
 func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
 	ch, cancel, _ := m.subscribeImpl(sessionID)
@@ -341,7 +341,7 @@ const islandFanoutTopic = "gofastr.islands"
 
 // islandFanoutMsg is the wire shape for a fanned-out update. sessionID must
 // travel inside the payload because the receiving replica delivers by
-// looking up its own streams[sessionID] — it does not know the session
+// looking up its own streams[sessionID], it does not know the session
 // otherwise.
 type islandFanoutMsg struct {
 	SessionID string `json:"s"`
@@ -357,7 +357,7 @@ type islandFanoutMsg struct {
 func (m *Manager) deliver(update IslandUpdate, sessionID string) {
 	// Copy the subscriber channels under the read lock, send outside it.
 	// A concurrent cancel between copy and send just means a buffered
-	// send nobody drains — channels are never closed, so no panic.
+	// send nobody drains, channels are never closed, so no panic.
 	m.mu.RLock()
 	entry, ok := m.streams[sessionID]
 	var chans []chan IslandUpdate
@@ -372,7 +372,7 @@ func (m *Manager) deliver(update IslandUpdate, sessionID string) {
 		select {
 		case ch <- update:
 		default:
-			// Drop for THIS subscriber if its buffer is full — a slow
+			// Drop for THIS subscriber if its buffer is full, a slow
 			// tab must not stall its siblings.
 			m.dropped.Add(1)
 		}
@@ -382,7 +382,7 @@ func (m *Manager) deliver(update IslandUpdate, sessionID string) {
 // publishFanout mirrors update to other replicas via the attached fanout, if
 // any. Best-effort: a dropped real-time message is acceptable (the durable
 // lane is the outbox's job, not the island lane). No-op when no fanout is
-// attached. The enqueue never blocks — callers are HTTP request goroutines
+// attached. The enqueue never blocks, callers are HTTP request goroutines
 // and a stalled backend must not stall them (see fanout.PublishQueue).
 func (m *Manager) publishFanout(sessionID string, update IslandUpdate) {
 	m.mu.RLock()
@@ -405,14 +405,14 @@ func (m *Manager) publishFanout(sessionID string, update IslandUpdate) {
 // session stream (topic "gofastr.islands"). It ALSO wires the cross-replica
 // PRESENCE lane (topic "gofastr.presence") over the same transport so a
 // topic's merged roster reflects every replica's connections, not just this
-// one — see presence_fanout.go. Own-node messages are dropped on both lanes
+// one. See presence_fanout.go. Own-node messages are dropped on both lanes
 // so updates/announcements are never echoed back, and received messages are
 // NEVER re-publishing (no loop). Delivery is lossy best-effort; presence
 // reconverges via periodic full-roster heartbeats.
 //
 // Island delivery-where-connected is fixed here; the manager retains no
 // island objects (callers render from reconstructable state and PushUpdate
-// transports the HTML), so any replica serves any RPC — no sticky routing.
+// transports the HTML), so any replica serves any RPC, no sticky routing.
 // Presence state is fully aggregated across replicas.
 //
 // The returned stop detaches BOTH lanes (cancels subscriptions, stops the

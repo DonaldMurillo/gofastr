@@ -10,7 +10,7 @@ import (
 
 // filterAuthorizedTopics drops topics the AuthorizeTopic hook rejects.
 
-// A nil AuthorizeTopic hook authorizes everything — presence stays public by
+// A nil AuthorizeTopic hook authorizes everything, presence stays public by
 // default (opt-in gating), so existing apps are unaffected.
 func TestAuthorizeTopic_NilHookAllowsAll(t *testing.T) {
 	m := NewManager()
@@ -20,7 +20,7 @@ func TestAuthorizeTopic_NilHookAllowsAll(t *testing.T) {
 	}
 }
 
-// When set, the hook filters the topic list — only authorized topics survive
+// When set, the hook filters the topic list, only authorized topics survive
 // to be joined.
 func TestAuthorizeTopic_FiltersTopics(t *testing.T) {
 	m := NewManager()
@@ -34,7 +34,7 @@ func TestAuthorizeTopic_FiltersTopics(t *testing.T) {
 }
 
 // Composition: an unauthorized topic never reaches the roster or the push-
-// target set — no subscription, no roster emission — while the authorized one
+// target set, no subscription, no roster emission, while the authorized one
 // works normally. Proves the gate happens before roster registration.
 func TestAuthorizeTopic_UnauthorizedTopicHasNoRoster(t *testing.T) {
 	m := NewManager()
@@ -48,7 +48,7 @@ func TestAuthorizeTopic_UnauthorizedTopicHasNoRoster(t *testing.T) {
 	if r := m.PresenceRoster("room:public"); len(r) != 1 {
 		t.Fatalf("authorized topic roster = %d, want 1", len(r))
 	}
-	// The private topic must expose nothing — neither roster (identity leak)
+	// The private topic must expose nothing, neither roster (identity leak)
 	// nor push sessions (existence oracle).
 	if r := m.PresenceRoster("room:secret"); len(r) != 0 {
 		t.Fatalf("SECURITY: unauthorized topic leaked roster: %v", r)
@@ -59,7 +59,7 @@ func TestAuthorizeTopic_UnauthorizedTopicHasNoRoster(t *testing.T) {
 }
 
 // Rejecting every topic yields an empty join (a nil handle from PresenceJoin),
-// which is a safe no-op — Leave on it must not panic.
+// which is a safe no-op, Leave on it must not panic.
 func TestAuthorizeTopic_AllRejectedIsSafe(t *testing.T) {
 	m := NewManager()
 	m.SetAuthorizeTopic(func(_ context.Context, _ string) bool { return false })
@@ -74,7 +74,7 @@ func TestAuthorizeTopic_AllRejectedIsSafe(t *testing.T) {
 // End-to-end through the real SSE entry point: ServeSSEWithPresence must apply
 // the gate BEFORE the join, so an unauthorized topic named via ?presence=
 // yields no roster and no push-target session. This covers the actual
-// production wiring (stream.go), not just the helper — a refactor that moved
+// production wiring (stream.go), not just the helper, a refactor that moved
 // or dropped the filter would fail here.
 func TestServeSSEWithPresence_AuthorizeTopicGate(t *testing.T) {
 	m := NewManager()
@@ -126,7 +126,7 @@ func TestServeSSEWithPresence_AuthorizeTopicGate(t *testing.T) {
 
 // A panicking AuthorizeTopic hook must not leak a subscription. The hook runs
 // BEFORE ConnectSession, so a panic (net/http recovers it) leaves no stream
-// entry behind — no ghost session accumulating pushes. Regression for the
+// entry behind, no ghost session accumulating pushes. Regression for the
 // window where the hook ran after Subscribe but before the Unsubscribe defer.
 func TestServeSSEWithPresence_PanickingHookLeaksNoSubscription(t *testing.T) {
 	m := NewManager()
@@ -138,7 +138,7 @@ func TestServeSSEWithPresence_PanickingHookLeaksNoSubscription(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	// The panic aborts the request; the client gets a 500 or a reset — either
+	// The panic aborts the request; the client gets a 500 or a reset, either
 	// way the handler goroutine unwinds.
 	if resp, err := http.Get(server.URL + "?session=leak-sess&presence=room:x"); err == nil {
 		resp.Body.Close()

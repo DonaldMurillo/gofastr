@@ -139,7 +139,7 @@ func TestConstraintAlphaAndAlnum(t *testing.T) {
 }
 
 func TestConstraintStringRejected(t *testing.T) {
-	// "string" is deliberately not a constraint — it would be a no-op
+	// "string" is deliberately not a constraint, it would be a no-op
 	// alias for unconstrained.
 	a := NewApp("t")
 	defer func() {

@@ -1,7 +1,7 @@
 // Package interactive provides declarative interactivity primitives for
 // GoFastr components. It wraps arbitrary render.HTML with data-fui-*
-// attributes the runtime understands — RPC calls, signal bindings, widget
-// chaining — without writing any JavaScript.
+// attributes the runtime understands, RPC calls, signal bindings, widget
+// chaining, without writing any JavaScript.
 //
 // Usage:
 //
@@ -80,7 +80,7 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 // WithConfirm gates the action behind a PRE-FLIGHT confirmation. Before the
 // RPC is dispatched, the runtime shows a native window.confirm(message)
 // dialog; cancelling aborts the request entirely, so the RPC never fires.
-// Because the gate runs *before* the request — not after it succeeds — it is
+// Because the gate runs *before* the request, not after it succeeds, it is
 // a property of the Action itself, not an OnSuccess effect. Use for
 // destructive actions (delete, revoke, drop):
 //
@@ -91,7 +91,7 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 //
 // window.confirm is native, unthemed, and blocks browser automation. For a
 // design-system-styled confirmation that matches the rest of the app (and is
-// drivable by tests), reach for framework/ui.ConfirmAction instead — it
+// drivable by tests), reach for framework/ui.ConfirmAction instead, it
 // renders a themed alertdialog whose Confirm button carries the RPC.
 //
 // Maps to data-fui-confirm="message".
@@ -100,7 +100,7 @@ func (a Action) WithConfirm(message string) Action {
 	return a
 }
 
-// WithBody attaches a static JSON body to the action — the payload sent
+// WithBody attaches a static JSON body to the action, the payload sent
 // for a non-form RPC (a button click that isn't inside a <form>).
 // Maps to data-fui-rpc-body="<json>". The runtime sends it verbatim as
 // the request body with Content-Type: application/json.
@@ -108,7 +108,7 @@ func (a Action) WithConfirm(message string) Action {
 // Panics if json is not valid JSON (json.Valid), so a malformed body
 // fails loudly at build/render time rather than producing a runtime
 // request the server rejects. For form-backed RPCs the runtime
-// serializes the form fields itself — do not call WithBody there.
+// serializes the form fields itself, do not call WithBody there.
 func (a Action) WithBody(body string) Action {
 	if !json.Valid([]byte(body)) {
 		panic(fmt.Sprintf("interactive: WithBody requires valid JSON, got %q", body))
@@ -192,7 +192,7 @@ func (e navigateEffect) rpcAttrs() map[string]string {
 }
 
 // AfterText replaces the trigger element's text content with text on 2xx RPC
-// success. One-shot — subsequent re-clicks are idempotent via
+// success. One-shot, subsequent re-clicks are idempotent via
 // data-fui-rpc-after-done. Pair with AfterDisable for "Saved ✓" feedback.
 // Maps to data-fui-rpc-after-text="text".
 func AfterText(text string) Effect {
@@ -300,7 +300,7 @@ func Reveal(html render.HTML, animationType string) render.HTML {
 
 func revealCSS(_ style.Theme) string {
 	// While hidden, the direction transform is keyed off the
-	// data-fui-reveal ATTRIBUTE (present the whole time) — reveal.js only
+	// data-fui-reveal ATTRIBUTE (present the whole time), reveal.js only
 	// adds the fui-reveal-<type> CLASS at reveal time, too late to style
 	// the from-state. On reveal, fui-hidden is removed and fui-revealed
 	// adds the transition back to the resting state.
@@ -315,11 +315,11 @@ func revealCSS(_ style.Theme) string {
 
 // ─── Client-side signal mutations (no RPC) ──────────────────────────
 //
-// These mutate signals purely in the browser — no server round-trip.
+// These mutate signals purely in the browser, no server round-trip.
 // Use for counters, toggles, tabs, and other local-only state.
 
 // SetLocal wraps an HTML element so clicking it sets a signal to a
-// fixed value. No RPC is fired — the update is instant.
+// fixed value. No RPC is fired, the update is instant.
 func SetLocal(html render.HTML, signalName, value string) render.HTML {
 	return injectAttr(html, "data-fui-signal-set", signalName+":"+value)
 }
@@ -584,7 +584,7 @@ func (a Action) attrs() map[string]string {
 
 // Attrs returns the data-fui-* attributes this Action would inject, as a
 // plain map[string]string. It is the same map [OnClick]/[OnSubmit] splice
-// into the opening tag — exported so a call site can merge it into an
+// into the opening tag, exported so a call site can merge it into an
 // existing attribute map (an [render.Tag] attrs map or a ui.*Config
 // ExtraAttrs) and let render.Tag's sorted writer place every attribute in
 // the same order a hand-written map would. Prefer this over the wrapper
@@ -603,7 +603,7 @@ func (a Action) Attrs() map[string]string {
 
 // OpenOnClick wraps an HTML element so clicking it opens a registered
 // widget surface. Maps to data-fui-open="<widget>". This is the
-// click-to-open trigger — distinct from [OpenWidget], which opens a
+// click-to-open trigger, distinct from [OpenWidget], which opens a
 // widget only after a successful RPC (data-fui-rpc-open).
 func OpenOnClick(html render.HTML, widget string) render.HTML {
 	return injectAttr(html, "data-fui-open", widget)
@@ -613,13 +613,13 @@ func OpenOnClick(html render.HTML, widget string) render.HTML {
 
 // Toast is the config for a click-fired toast notification. Zero fields
 // are omitted from the emitted JSON, so a Toast{Variant, Title, Body,
-// TTLMs} marshals to exactly {"variant":…,"title":…,"body":…,"ttl":…} —
+// TTLMs} marshals to exactly {"variant":…,"title":…,"body":…,"ttl":…},
 // the shape call sites hand-write. The runtime's toast module
 // (core-ui/runtime/src/toasts.js __gofastr.toast) reads these keys:
 // variant, title, body, ttl, stack.
 type Toast struct {
 	Variant string `json:"variant,omitempty"` // "success" | "warning" | "danger" | "info" | "neutral"; defaults to "info"
-	Title   string `json:"title,omitempty"`   // required by the runtime — a toast with no title is dropped
+	Title   string `json:"title,omitempty"`   // required by the runtime, a toast with no title is dropped
 	Body    string `json:"body,omitempty"`    // optional supporting copy
 	Stack   string `json:"stack,omitempty"`   // named [data-fui-toast-stack] container; empty → the auto stack
 	TTLMs   int    `json:"ttl,omitempty"`     // auto-dismiss delay in ms; 0 → persistent (manual dismiss only)
@@ -642,7 +642,7 @@ func marshalToast(t Toast) string {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(t); err != nil {
-		// Toast only holds strings and an int — Encode cannot fail in
+		// Toast only holds strings and an int, Encode cannot fail in
 		// practice. Surface it loudly rather than emitting nothing.
 		panic(fmt.Sprintf("interactive: failed to marshal toast: %v", err))
 	}
@@ -678,7 +678,7 @@ func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 	return injectAttr(html, "data-fui-pane-close", pane)
 }
 
-// PaneKey labels a pane trigger with the identity of what it opens —
+// PaneKey labels a pane trigger with the identity of what it opens,
 // the ticket id, the record slug, whatever the pane will show. Maps to
 // data-fui-pane-key="<key>".
 //
@@ -697,7 +697,7 @@ func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 // attribute is inert.
 //
 // The key lands in the URL verbatim, so keep it to record identifiers.
-// The server must look it up rather than trusting it — see
+// The server must look it up rather than trusting it. See
 // ui.PaneDeepLink.
 func PaneKey(html render.HTML, key string) render.HTML {
 	return injectAttr(html, "data-fui-pane-key", key)
@@ -723,8 +723,8 @@ func BindHTML(html render.HTML, signal string) render.HTML {
 
 // BindText wraps an HTML element whose textContent tracks a signal
 // (HTML-escaped). Injects data-fui-signal and data-fui-signal-mode="text".
-// This is the default mode — a bare data-fui-signal with no mode behaves
-// identically — but emitting the mode explicitly documents intent.
+// This is the default mode, a bare data-fui-signal with no mode behaves
+// identically, but emitting the mode explicitly documents intent.
 func BindText(html render.HTML, signal string) render.HTML {
 	return bindSignal(html, signal, "text", "")
 }
@@ -737,7 +737,7 @@ func BindAttr(html render.HTML, signal, attr string) render.HTML {
 	// An attribute outside the allow-list executes regardless of the
 	// value bound to it (srcdoc, style, data-behavior, on*, the
 	// privileged data-fui-* family), so the binding is refused rather
-	// than emitted — see SignalAttrAllowed.
+	// than emitted. See SignalAttrAllowed.
 	if !SignalAttrAllowed(attr) {
 		return html
 	}

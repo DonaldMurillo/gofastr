@@ -1,12 +1,12 @@
 package framework
 
-// authmd.go — /auth.md + the agent_auth block (WorkOS "agentic registration"
+// authmd.go: /auth.md + the agent_auth block (WorkOS "agentic registration"
 // profile: workos/auth.md). This is one of isitagentready.com's production
 // scanner checks (authMd). It layers on the OAuth discovery docs:
 //
-//   - GET /auth.md                          — a Markdown procedural manifest
+//   - GET /auth.md:                           a Markdown procedural manifest
 //                                            agents read to authenticate.
-//   - an `agent_auth` block inside          — points agents at the skill
+//   - an `agent_auth` block inside:           points agents at the skill
 //     /.well-known/oauth-authorization-server   (/auth.md) + the identity/
 //                                            claim/events endpoints.
 //
@@ -20,7 +20,7 @@ import (
 
 // AuthMDConfig configures /auth.md and the agent_auth discovery block.
 type AuthMDConfig struct {
-	// Markdown is the /auth.md body — the procedural manifest agents read
+	// Markdown is the /auth.md body, the procedural manifest agents read
 	// (discover → register → claim → exchange → use → revoke). Host-authored.
 	Markdown string
 

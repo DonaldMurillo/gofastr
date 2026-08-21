@@ -23,7 +23,7 @@ import (
 
 // embedSubjectComp renders whoever the request is authenticated as. It is how
 // the tests below tell "rendered as the granted subject" apart from "rendered
-// anonymously" — which is the difference between an authenticated embed and a
+// anonymously", which is the difference between an authenticated embed and a
 // public one, and the thing a cookie leak or a fail-open resolver would break.
 type embedSubjectComp struct{}
 
@@ -41,9 +41,9 @@ func (c *embedSubjectComp) RenderCtx(ctx context.Context) render.HTML {
 	// credential" has to mean in practice: not merely that the handler ignores
 	// one, but that no code downstream of it can see one either. Cookie is the
 	// original case (a SameSite cookie rides a same-site frame); Authorization
-	// and X-API-Key are the same channel — a cached Basic credential or an
+	// and X-API-Key are the same channel, a cached Basic credential or an
 	// API-key header attaches to same-origin subresource fetches automatically
-	// — and the embed routes must strip all three, matching
+	// and the embed routes must strip all three, matching
 	// framework/embed/middleware.go.
 	cookie := "none"
 	auth := "none"
@@ -196,7 +196,7 @@ func TestEmbedShellFramingHeaders(t *testing.T) {
 			t.Errorf("frame-ancestors %q omits allowed origin %q", ancestors, o)
 		}
 	}
-	// Exact origins only — no wildcard, and not the app's own 'none' default.
+	// Exact origins only: no wildcard, and not the app's own 'none' default.
 	if strings.Contains(ancestors, "'none'") || strings.Contains(ancestors, "*") {
 		t.Errorf("frame-ancestors must name exact origins, got %q", ancestors)
 	}
@@ -246,7 +246,7 @@ func TestEmbedShellCarriesRuntimeAndConfig(t *testing.T) {
 
 // The shell must carry the component catalog. Without it the kernel's CSS
 // scanner cannot resolve a data-fui-comp marker to a stylesheet URL, so the
-// frame renders every component's MARKUP with none of its CSS — cards lose
+// frame renders every component's MARKUP with none of its CSS: cards lose
 // their surface, grids collapse to one column, stat cards become bare
 // paragraphs. Every element is present, so a DOM assertion sees nothing wrong;
 // this was caught in a screenshot.
@@ -275,8 +275,8 @@ func TestEmbedUnknownSurfaceIs404(t *testing.T) {
 	}
 }
 
-// An app that hands out no pieces of itself must serve no embed surface at all
-// — not even a 404 that confirms the feature exists in this build.
+// An app that hands out no pieces of itself must serve no embed surface at all,
+// not even a 404 that confirms the feature exists in this build.
 func TestEmbedRoutesAbsentWithoutConfig(t *testing.T) {
 	application := app.NewApp("No Embed")
 	application.RegisterScreen(app.NewScreen("/", &embedSubjectComp{}).WithTitle("Home"), nil)
@@ -354,7 +354,7 @@ func TestEmbedIgnoresSessionCookie(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // The exchange spends a single-use nonce, so it must be unreachable by anything
-// that fires on navigation, prefetch, or an <img> — all of which are GETs.
+// that fires on navigation, prefetch, or an <img>, all of which are GETs.
 func TestEmbedExchangeRejectsGET(t *testing.T) {
 	f := newEmbedFixture(t)
 	for _, path := range []string{"/__gofastr/embed-exchange", "/__gofastr/embed-refresh"} {
@@ -384,7 +384,7 @@ func TestEmbedExchangeIsIdempotent(t *testing.T) {
 	// Compare the GRANT, not the whole body. The body carries expires_in_ms,
 	// derived from the wall clock at write time, so two sequential exchanges
 	// straddling a millisecond differ by one and this failed roughly once in a
-	// thousand runs — reporting "one nonce bought two identities" for two
+	// thousand runs, reporting "one nonce bought two identities" for two
 	// byte-identical grants. TestExchangeIsIdempotentOnTheGrant covers the
 	// replay property itself, across a second boundary so it can actually fail.
 	grantOf := func(rec *httptest.ResponseRecorder) string {
@@ -414,7 +414,7 @@ func TestEmbedExchangeFailuresAreIndistinguishable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MintNonce: %v", err)
 	}
-	// A nonce that is already spent AND past its grant window — the rejection
+	// A nonce that is already spent AND past its grant window, the rejection
 	// class the oracle matters most for, and the one this test used to set up
 	// and then never exercise. GrantTTL is milliseconds here so the window
 	// really closes.
@@ -794,7 +794,7 @@ func TestEmbedWithoutKeysRefuses(t *testing.T) {
 var _ = style.DefaultTheme
 
 // Session middleware runs BEFORE this handler, on the app's own router, and
-// this package does not control that ordering — so stripAmbientCredentials inside the
+// this package does not control that ordering, so stripAmbientCredentials inside the
 // handler is too late to stop a middleware from having already installed a user
 // from a cookie. That happens for real in the same-site framing case
 // (app.acme.com inside www.acme.com), where a Strict cookie really is sent.
@@ -846,16 +846,16 @@ func TestEmbedThemeCapBoundsTheVariantRegistry(t *testing.T) {
 	}
 }
 
-// The cap has to survive a burst, not just a steady state.
+// The cap has to survive a burst, not only a steady state.
 //
-// Checking it and registering cannot be one atomic step — registering renders
-// CSS, far too slow to hold a lock across — so the slot is RESERVED before the
+// Checking it and registering cannot be one atomic step: registering renders
+// CSS, far too slow to hold a lock across, so the slot is RESERVED before the
 // render. Without the reservation, N concurrent requests carrying N distinct
 // themes each read "under the cap" and each register, and a burst is how
 // amplification arrives.
 //
 // In a simultaneous burst every slot is in flight, so there is nothing evictable
-// and the cap refuses — which is also the branch that keeps eviction from
+// and the cap refuses, which is also the branch that keeps eviction from
 // stealing a reservation out from under a request that is mid-render.
 //
 // This drives embedThemeState directly rather than the HTTP handler, with an
@@ -907,7 +907,7 @@ func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 
 // A rejected theme parameter must leave nothing behind. The parameter is
 // attacker-chosen, so caching every rejection would replace one unbounded map
-// with another — and consuming a slot per rejection would let malformed input
+// with another, and consuming a slot per rejection would let malformed input
 // lock a customer out of their own branding.
 func TestEmbedThemeRejectionsConsumeNothing(t *testing.T) {
 	f := newEmbedFixture(t) // MaxVariants: 2
@@ -1002,8 +1002,8 @@ func TestWithFrameAncestors(t *testing.T) {
 }
 
 // None of the embed URLs is content-addressed, so none may carry a long
-// max-age: a cached loader pins a customer's page to an old build — including
-// past a security fix — and a cached shell demand-loads component CSS at hashes
+// max-age: a cached loader pins a customer's page to an old build, including
+// past a security fix, and a cached shell demand-loads component CSS at hashes
 // the new build no longer serves. Same policy as /__gofastr/runtime.js.
 func TestEmbedAssetsAreNotLongCached(t *testing.T) {
 	f := newEmbedFixture(t)
@@ -1029,7 +1029,7 @@ func TestEmbedAssetsAreNotLongCached(t *testing.T) {
 
 // Infrastructure endpoints that gate on the session cookie have to accept an
 // embed grant too. A frame never sends a cookie, so a cookie-only gate meant
-// every widget inside an embed silently did nothing — the catalog 401'd and a
+// every widget inside an embed silently did nothing. The catalog 401'd and a
 // modal trigger became dead DOM. And in a same-site framing an ambient cookie
 // COULD satisfy it, so whether an embed's widgets worked depended on the
 // viewer's unrelated app session.
@@ -1063,7 +1063,7 @@ func TestEmbedGrantOpensTheWidgetCatalog(t *testing.T) {
 // EventSource sends no request headers, so the grant cannot reach the endpoint
 // at all; a grant-authenticated stream is not something the client can ask for.
 // Guards two regressions: a silent "unknown session" that sent developers
-// looking for a session bug that does not exist, and — worse — answering the
+// looking for a session bug that does not exist, and, worse, answering the
 // request on the ambient cookie a SAME-SITE framing still sends, which would
 // stream one identity's island updates into a frame authenticated as another.
 func TestEmbedGrantIsRefusedOnSSE(t *testing.T) {
@@ -1071,7 +1071,7 @@ func TestEmbedGrantIsRefusedOnSSE(t *testing.T) {
 	grant := f.grantFor(t, "reports")
 
 	// A same-site framing really does send a Strict session cookie, and this one
-	// is a REAL minted session whose id matches the requested stream — exactly
+	// is a REAL minted session whose id matches the requested stream, exactly
 	// the request the cookie gate accepts. Presenting a grant must still refuse
 	// it, or the frame would be streaming the ambient viewer's island updates.
 	sess := f.host.CreateSession()
@@ -1109,7 +1109,7 @@ func TestEmbedShellAnnouncesTheSurfacePath(t *testing.T) {
 	}
 }
 
-// The embed routes must honour NO ambient credential — not only the cookie.
+// The embed routes must honour NO ambient credential, not only the cookie.
 // A cached HTTP Basic credential or an API-key header attaches to same-origin
 // subresource fetches automatically, the exact channel the cookie defence
 // exists for, so all three must be stripped before any downstream code runs.
@@ -1137,7 +1137,7 @@ func TestEmbedStripsAuthHeaders(t *testing.T) {
 
 // The content route answers the very next response of the same handshake as the
 // shell, and it used to publish the surface's WHOLE static origin allowlist as
-// frame-ancestors — every customer, on every content response. The grant is
+// frame-ancestors, every customer, on every content response. The grant is
 // bound to exactly one origin, so the directive must name that origin alone.
 // The "reports" surface allows acme.com (X) and shop.acme.com (Y); a grant
 // minted for X must frame as X only, never Y.

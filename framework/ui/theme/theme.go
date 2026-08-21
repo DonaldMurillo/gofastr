@@ -9,7 +9,7 @@ import "github.com/DonaldMurillo/gofastr/core-ui/style"
 // applied on top of the typed style.DefaultTheme(); unset fields keep
 // their defaults.
 //
-// Example — swap primary from indigo to teal in both palettes:
+// Example. Swap primary from indigo to teal in both palettes:
 //
 //	t := theme.Default(theme.Overrides{
 //		Primary: "#0F766E",
@@ -28,7 +28,7 @@ func Default(overrides ...Overrides) style.Theme {
 
 // Overrides is the set of tokens a host can swap to re-skin the
 // framework theme. All fields are optional. Empty strings are
-// ignored — zero-value RadiusXX ints likewise.
+// ignored, zero-value RadiusXX ints likewise.
 type Overrides struct {
 	// Color tokens (CSS hex values).
 	Background, Surface, SurfaceSoft string
@@ -52,11 +52,11 @@ type Overrides struct {
 	// Font families.
 	FontBody, FontHeading, FontMono string
 
-	// Reskin extras — only apply if you really need them.
+	// Reskin extras: only apply if you really need them.
 	RadiusSm, RadiusMd, RadiusLg int // px
 }
 
-// baseTheme is the framework's opinionated default — a clean
+// baseTheme is the framework's opinionated default: a clean
 // neutral palette with indigo primary. Identical shape to
 // style.DefaultTheme(), but framework-ui has its own slight
 // adjustments to colors and fonts.
@@ -97,7 +97,7 @@ func baseTheme() style.Theme {
 	return t
 }
 
-// applyOverrides mutates t in place — only non-zero override fields
+// applyOverrides mutates t in place: only non-zero override fields
 // touch the theme. Token Name preserved; only Value swaps.
 func applyOverrides(t *style.Theme, o Overrides) {
 	setColor := func(c *style.Color, v string) {

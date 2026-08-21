@@ -13,7 +13,7 @@ func TestExpand_BasicSubstitution(t *testing.T) {
 }
 
 func TestExpand_BareDollarVarNotExpanded(t *testing.T) {
-	// Bracket form ONLY — bare $VAR is intentionally left verbatim.
+	// Bracket form ONLY. Bare $VAR is intentionally left verbatim.
 	got := dotenv.Expand("$NAME and ${NAME}", map[string]string{"NAME": "world"}, nil)
 	mustEq(t, got, "$NAME and world")
 }
@@ -82,7 +82,7 @@ func TestExpand_DeepChainBounded(t *testing.T) {
 	// Add a terminator so a depth-bounded result is meaningful.
 	local["K"+strings.Repeat("X", 50)] = "terminus"
 	got := dotenv.Expand("${K}", local, nil)
-	// We do NOT assert the exact result — only that the call returns
+	// We do NOT assert the exact result, only that the call returns
 	// without panic / stack overflow. The depth cap leaves the
 	// deepest unresolved name verbatim.
 	if got == "" || strings.Contains(got, "terminus") {
@@ -101,7 +101,7 @@ func TestExpand_EmptyBraceLeftVerbatim(t *testing.T) {
 	mustEq(t, got, "a${}b")
 }
 
-// PARSER INTEGRATION — confirm parsed double-quoted values expand
+// PARSER INTEGRATION: confirm parsed double-quoted values expand
 // against earlier keys in the same file.
 
 func TestParse_DoubleQuotedExpandsLocal(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 )
 
 // ============================================================================
-// BelongsTo filter — ?author.name=Alice picks only posts whose author matches
+// BelongsTo filter. ?author.name=Alice picks only posts whose author matches
 // ============================================================================
 
 func TestNestedFilter_BelongsTo(t *testing.T) {
@@ -45,7 +45,7 @@ func TestNestedFilter_BelongsTo_Like(t *testing.T) {
 		app := nestedBlogApp(t, db)
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
-		// `_like` is a literal substring at every depth now — the value
+		// `_like` is a literal substring at every depth now, the value
 		// is escaped and wrapped in wildcards by the framework, so a
 		// caller-supplied "%" matches a literal percent sign rather than
 		// acting as a pattern. "Alice" is found by naming part of it.
@@ -70,7 +70,7 @@ func TestNestedFilter_BelongsTo_Like(t *testing.T) {
 }
 
 // ============================================================================
-// HasMany filter — ?comments.body=nice picks parents with a matching child.
+// HasMany filter. ?comments.body=nice picks parents with a matching child.
 // No row duplication (EXISTS, not JOIN).
 // ============================================================================
 
@@ -78,7 +78,7 @@ func TestNestedFilter_HasMany_NoDuplication(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		// Add another comment on p1 so the EXISTS would dup p1 twice under a
-		// naive JOIN — but EXISTS returns p1 once.
+		// naive JOIN, but EXISTS returns p1 once.
 		if _, err := db.Exec(
 			"INSERT INTO comments(id, body, post_id) VALUES ($1, $2, $3)",
 			"c3", "nice as well", "p1"); err != nil {
@@ -99,7 +99,7 @@ func TestNestedFilter_HasMany_NoDuplication(t *testing.T) {
 }
 
 // ============================================================================
-// ManyToMany filter — ?tags.name=go
+// ManyToMany filter. ?tags.name=go
 // ============================================================================
 
 func TestNestedFilter_ManyToMany(t *testing.T) {

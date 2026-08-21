@@ -85,7 +85,7 @@ func TestTypedFirstRunsAfterGet(t *testing.T) {
 	}
 }
 
-// Without the opt-in a typed read still hands back stored values — the
+// Without the opt-in a typed read still hands back stored values, the
 // read-modify-write round trip every typed repo depends on.
 func TestTypedReadWithoutOptInIsRaw(t *testing.T) {
 	ch := maskedRowHandler(t, hook.AfterList)

@@ -12,7 +12,7 @@ import (
 )
 
 // Same entity name registered into two different groups (different versions)
-// must NOT panic — that's the feature this work enables.
+// must NOT panic, that's the feature this work enables.
 func TestMultiVersionSameNameNoPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -95,7 +95,7 @@ func TestVersionedOpenAPI(t *testing.T) {
 	// Exposure is left at its default: CRUD unset means "auto", which is
 	// what an ordinary app declares and what makes the spec emit paths.
 	// (Setting CRUD:false here as a way to avoid needing a DB would make
-	// the test assert the opposite of the contract — the spec deliberately
+	// the test assert the opposite of the contract, the spec deliberately
 	// omits paths for entities that opted out. No DB is needed either way:
 	// EntityOpenAPI reads the registry, not the database.)
 	app.GroupEntity(v1, "posts", entity.EntityConfig{Table: "posts",

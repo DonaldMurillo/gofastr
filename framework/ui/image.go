@@ -35,14 +35,14 @@ const (
 // ImageSource represents a single entry in an image's responsive
 // source set.
 type ImageSource struct {
-	URL   string // image URL — required
-	Width int    // intrinsic pixel width — required (becomes "<url> <width>w")
+	URL   string // image URL: required
+	Width int    // intrinsic pixel width: required (becomes "<url> <width>w")
 }
 
 // OptimizedImageConfig configures a responsive, lazy-loaded image.
 type OptimizedImageConfig struct {
 	Src string // fallback / single-resolution URL (required)
-	Alt string // alt text — required for non-decorative images
+	Alt string // alt text: required for non-decorative images
 
 	// Width and Height are the intrinsic pixel dimensions of the
 	// fallback Src. Setting them is mandatory to reserve layout space
@@ -71,7 +71,7 @@ type OptimizedImageConfig struct {
 	// Fit selects the object-fit treatment (default cover).
 	Fit ImageFit
 
-	// Aspect locks the aspect ratio via a CSS class (CSP-clean —
+	// Aspect locks the aspect ratio via a CSS class (CSP-clean,
 	// no inline style). Setting Width + Height already establishes
 	// the intrinsic ratio; Aspect is for forced ratios distinct from
 	// the source.
@@ -86,7 +86,7 @@ type OptimizedImageConfig struct {
 	//
 	// Produce one with framework/image: BlurHashDataURL(hash, …) to render
 	// a stored BlurHash, or Image.Placeholder() to build an LQIP straight
-	// from the source. A bare BlurHash string is not accepted — it is not
+	// from the source. A bare BlurHash string is not accepted: it is not
 	// an image until it is decoded.
 	//
 	// Values that are not usable inline images (a raw hash, a remote URL,
@@ -103,7 +103,7 @@ type OptimizedImageConfig struct {
 // width/height reservations to eliminate Cumulative Layout Shift.
 //
 // Anti-CLS rule: callers MUST provide Width and Height (intrinsic
-// pixel dimensions of Src). Omitting either panics — the framework
+// pixel dimensions of Src). Omitting either panics: the framework
 // will not silently emit a layout-shifting image.
 func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if cfg.Src == "" {
@@ -111,7 +111,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	}
 	// Drop unsafe schemes on the fallback src and on every Sources URL;
 	// see framework/ui/safety.go. When the src is unsafe we replace it
-	// with the framework's tiny placeholder URL — a 1×1 transparent
+	// with the framework's tiny placeholder URL, a 1×1 transparent
 	// stub the runtime serves. The browser renders nothing, and the
 	// surrounding layout is preserved. Preferable to silently shipping
 	// a `javascript:` URL into <img src>.
@@ -134,7 +134,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		cfg.Sources = filtered
 	}
 	if cfg.Alt == "" && !strings.Contains(cfg.Class, "ui-image--decorative") {
-		// Decorative images must opt in explicitly to skip alt — Alt=""
+		// Decorative images must opt in explicitly to skip alt: Alt=""
 		// is otherwise treated as missing, not "intentionally empty".
 		panic("ui: OptimizedImage requires Alt (or add ui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}

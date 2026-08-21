@@ -12,14 +12,14 @@ import (
 )
 
 // WithMCPControl installs the MUTATING MCP tools that let a connected
-// agent control the running App. Separate from WithMCPIntrospection —
-// which stays strictly read-only — so each surface opts into exactly
+// agent control the running App. Separate from WithMCPIntrospection,
+// which stays strictly read-only, so each surface opts into exactly
 // the trust level its /mcp endpoint warrants:
 //
 //   - Introspection (read-only) is safe wherever disclosure is: docs
 //     sites, staging, local dev.
 //   - Control (mutating) belongs on /mcp endpoints reachable only by
-//     trusted callers — the local dev loop, an authenticated tunnel.
+//     trusted callers: the local dev loop, an authenticated tunnel.
 //     Blueprint-generated apps wire it gated on the dev env for this
 //     reason.
 //
@@ -29,7 +29,7 @@ import (
 //     state persists through the module store and respects dependency
 //     ordering (enabling a module whose dependency is disabled fails).
 //   - app_module_disable: disable a registered module at runtime. Fails
-//     closed if enabled modules depend on it — no cascades.
+//     closed if enabled modules depend on it: no cascades.
 //
 // Code-level changes (screens, entities, handlers) are NOT an MCP
 // concern: that is the `gofastr dev` edit-rebuild-reload loop. MCP
@@ -45,7 +45,7 @@ func WithMCPControl() AppOption {
 // Use it when the endpoint is private wholesale.
 //
 // Without it, /mcp discloses every registered tool's inputSchema to anyone who
-// can reach the route — and for entity CRUD tools those schemas are built from
+// can reach the route, and for entity CRUD tools those schemas are built from
 // live entity definitions, naming every entity and every non-Hidden field.
 // Individual tools can be gated instead with mcp.WithToolGate, which filters
 // the listing per caller rather than closing it for everyone.
@@ -60,7 +60,7 @@ func WithMCPControl() AppOption {
 //	)
 func WithMCPGate(gate func(ctx context.Context) error) AppOption {
 	if gate == nil {
-		panic("framework.WithMCPGate: nil gate — a nil precondition would silently allow every caller")
+		panic("framework.WithMCPGate: nil gate: a nil precondition would silently allow every caller")
 	}
 	return func(a *App) {
 		a.MCP.SetGate(gate)
@@ -88,7 +88,7 @@ func (a *App) registerControlTools() error {
 		},
 		{
 			name:        "app_module_disable",
-			description: "Disable a registered module on the running app. Persists through the module store; the module's routes/tools start refusing. Fails closed when enabled modules depend on it — disable dependents first. Use app_modules to list modules and their current state.",
+			description: "Disable a registered module on the running app. Persists through the module store; the module's routes/tools start refusing. Fails closed when enabled modules depend on it: disable dependents first. Use app_modules to list modules and their current state.",
 			schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -105,7 +105,7 @@ func (a *App) registerControlTools() error {
 		if gate != nil {
 			// WithToolGate, not mcp.Gated: the wrapper only ever reached
 			// tools/call, so an anonymous tools/list still returned these
-			// tools' schemas — telling a stranger the app can be
+			// tools' schemas, telling a stranger the app can be
 			// reconfigured over MCP, and exactly how.
 			opts = append(opts, mcp.WithToolGate(gate))
 		}
@@ -126,7 +126,7 @@ func (a *App) registerControlTools() error {
 // A host wanting more passes auth.MCPRole("admin") instead.
 //
 // Pair it with [mcp.WithToolGate] rather than [mcp.Gated] so the tool also
-// disappears from tools/list for callers who cannot invoke it — the
+// disappears from tools/list for callers who cannot invoke it, the
 // inputSchema is the disclosure, not the call.
 func MCPRequireUser() func(ctx context.Context) error {
 	return requireMCPUser
@@ -135,7 +135,7 @@ func MCPRequireUser() func(ctx context.Context) error {
 // errAuthRequired is the refusal MCPRequireUser returns. It names the fix
 // (send credentials, check the middleware runs on /mcp) without disclosing
 // anything about the tool or the app's state.
-var errAuthRequired = errors.New("this tool requires an authenticated caller — " +
+var errAuthRequired = errors.New("this tool requires an authenticated caller: " +
 	"send the session cookie or Authorization header on the /mcp request, " +
 	"and make sure the app's session middleware runs on the /mcp route")
 
@@ -144,8 +144,8 @@ func requireMCPUser(ctx context.Context) error {
 		return errAuthRequired
 	}
 	// An embed grant resolves to the same context user a session does, so
-	// without this every entity endpoint's MCP twin — and the control tools
-	// that enable and disable modules — is reachable with a credential that
+	// without this every entity endpoint's MCP twin, and the control tools
+	// that enable and disable modules, is reachable with a credential that
 	// lives in a third party's page and can be read by anyone with devtools.
 	// MCP tools act on the caller's behalf; no surface declares that.
 	//
@@ -160,7 +160,7 @@ func requireMCPUser(ctx context.Context) error {
 
 // errEmbedNotAllowed is deliberately distinct from errAuthRequired: the caller
 // IS authenticated, just not with a credential that may drive tools.
-var errEmbedNotAllowed = errors.New("this tool is not reachable from an embedded surface — " +
+var errEmbedNotAllowed = errors.New("this tool is not reachable from an embedded surface: " +
 	"an embed grant is delegated, scoped, and lives in a page the app does not control")
 
 // controlToolGate returns the precondition the MUTATING control tools
@@ -169,8 +169,8 @@ var errEmbedNotAllowed = errors.New("this tool is not reachable from an embedded
 // mcp.Gated and battery/auth's MCPUser/MCPRole existed but had zero
 // production call sites: every shipped tool was ungated. For the
 // read-only introspection tools that is a documented posture; for
-// app_module_enable / app_module_disable — which change what the running
-// app serves — it made a reachable /mcp a control plane for whoever
+// app_module_enable / app_module_disable, which change what the running
+// app serves, it made a reachable /mcp a control plane for whoever
 // found it.
 //
 // The gate asks only for an identity, not a role, because the framework
@@ -180,7 +180,7 @@ var errEmbedNotAllowed = errors.New("this tool is not reachable from an embedded
 //
 // devImplied tools are NOT gated: `gofastr dev` turns them on with no
 // auth configured at all, so a gate would only lock the dev loop out of
-// its own app. Dev exposure is bounded on the other axis instead — the
+// its own app. Dev exposure is bounded on the other axis instead, the
 // listener must be loopback (guardDevMCPBind).
 func controlToolGate(devImplied bool) func(ctx context.Context) error {
 	if devImplied {
@@ -190,7 +190,7 @@ func controlToolGate(devImplied bool) func(ctx context.Context) error {
 }
 
 // routerHasMCPRoute reports whether the host already mounted a POST
-// /mcp route by hand — the dev-implied auto-mount yields to it.
+// /mcp route by hand, the dev-implied auto-mount yields to it.
 func (a *App) routerHasMCPRoute() bool {
 	for _, r := range a.router.Routes() {
 		if r.Pattern == "/mcp" && r.Method == http.MethodPost {
@@ -211,7 +211,7 @@ func (a *App) toolModuleDisable(ctx context.Context, params map[string]any) (any
 func (a *App) toggleModule(ctx context.Context, params map[string]any, enable bool) (any, error) {
 	name, _ := params["name"].(string)
 	if name == "" {
-		return nil, fmt.Errorf("mcp control: `name` is required — call app_modules to list module names")
+		return nil, fmt.Errorf("mcp control: `name` is required: call app_modules to list module names")
 	}
 	var err error
 	if enable {

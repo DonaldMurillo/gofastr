@@ -15,7 +15,7 @@ const (
 	IsolationSandboxOpaque = "sandbox-iframe-opaque"
 
 	// DefaultSandbox is the v1 sandbox policy: scripts only. The same-origin
-	// token is NEVER added — that would de-opaque the frame and collapse the
+	// token is NEVER added, that would de-opaque the frame and collapse the
 	// isolation guarantee.
 	DefaultSandbox = "allow-scripts"
 )
@@ -88,7 +88,7 @@ func (m Manifest) Validate() error {
 	for _, raw := range m.Sandbox {
 		for _, token := range strings.Fields(strings.ToLower(raw)) {
 			if token == "allow-same-origin" {
-				return errors.New("pluginhost: sandbox \"allow-same-origin\" is forbidden — it breaks opaque-origin isolation (protocol-v1.md §1)")
+				return errors.New("pluginhost: sandbox \"allow-same-origin\" is forbidden: it breaks opaque-origin isolation (protocol-v1.md §1)")
 			}
 			norm = append(norm, token)
 		}
@@ -106,7 +106,7 @@ func (m Manifest) Validate() error {
 // AUTHORITATIVE, not advisory: it always includes "allow-scripts" and always
 // strips "allow-same-origin" (and any other same-origin-collapsing token),
 // regardless of what the manifest carries. A mis-configured or tampered
-// manifest therefore cannot produce a de-opaqued frame — the isolation
+// manifest therefore cannot produce a de-opaqued frame, the isolation
 // invariant does not depend on anyone having called [Manifest.Validate].
 func (m Manifest) SandboxString() string {
 	return sanitizeSandboxTokens(m.Sandbox)
@@ -119,7 +119,7 @@ func (m Manifest) SandboxString() string {
 // construction. The opaque-origin guarantee has two carriers: the iframe
 // sandbox attribute, and the `Content-Security-Policy: sandbox allow-scripts`
 // header [AssetServer] emits for the assets IT serves. A cross-origin or
-// scheme-bearing Entry escapes the second one entirely — nothing the host
+// scheme-bearing Entry escapes the second one entirely, nothing the host
 // controls is emitting headers for someone else's document.
 //
 // Rejected: any scheme (`https:`, `javascript:`, `data:`), protocol-relative
@@ -152,11 +152,11 @@ func validateEntry(entry string) error {
 // out of the box and loses the moment the HTML spec adds one. It already
 // had: stripping only allow-same-origin left
 // `allow-popups-to-escape-sandbox` (a popup the plugin opens is fully
-// unsandboxed AND same-origin — window.open('/admin/...') is then an
+// unsandboxed AND same-origin, window.open('/admin/...') is then an
 // ordinary cookie-bearing document), `allow-top-navigation` (retarget the
 // whole tab) and `allow-downloads` (write to the user's disk) all
 // passing. The manifest ships with the third-party plugin, so it is
-// attacker-influenced by construction — this is not a wrong-layer check.
+// attacker-influenced by construction, this is not a wrong-layer check.
 //
 // What is here is what a UI plugin actually needs to render and interact.
 // Adding to this list is a deliberate act; drifting into it is not
@@ -165,7 +165,7 @@ var allowedSandboxTokens = map[string]bool{
 	"allow-scripts":          true,
 	"allow-forms":            true,
 	"allow-modals":           true,
-	"allow-popups":           true, // a popup, still sandboxed — see the escape token below
+	"allow-popups":           true, // a popup, still sandboxed. See the escape token below
 	"allow-pointer-lock":     true,
 	"allow-orientation-lock": true,
 	"allow-presentation":     true,
@@ -178,7 +178,7 @@ var allowedSandboxTokens = map[string]bool{
 //
 // The HTML `sandbox` attribute is ASCII-case-insensitive and whitespace-
 // separated, so each input element is lowercased AND split on whitespace
-// before filtering — otherwise "Allow-Same-Origin" (honoured as
+// before filtering, otherwise "Allow-Same-Origin" (honoured as
 // allow-same-origin by the browser) or a single element like
 // "x allow-same-origin" (tokenised into two) would slip an effective
 // same-origin grant past the filter.

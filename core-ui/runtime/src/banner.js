@@ -1,4 +1,4 @@
-// Banner runtime module — dismissible inline alerts.
+// Banner runtime module, dismissible inline alerts.
 //
 // Loaded on-demand when any [data-fui-banner-dismiss] marker is on
 // the page (or arrives via SPA-nav). Two responsibilities:
@@ -16,7 +16,7 @@
 //
 // Dismissal is recorded in BOTH localStorage (same-tab hide pass) and a
 // cookie (so ui.Banner can skip rendering server-side on the next
-// request — flash-free). Apps needing richer server persistence can
+// request, flash-free). Apps needing richer server persistence can
 // still wire an RPC on the dismiss button.
 
 (function () {
@@ -36,7 +36,7 @@
     catch (_) { /* best-effort */ }
     // Mirror the dismissal into a cookie so the SERVER can skip rendering
     // the banner on the next request (ui.Banner checks it when its Ctx
-    // carries the request) — without this, the dismissed banner paints
+    // carries the request), without this, the dismissed banner paints
     // for a moment before this module's hide pass runs. A UI-preference
     // cookie is strictly-necessary category; one year.
     try {
@@ -56,7 +56,7 @@
     }
   }
 
-  // Single delegated click handler — survives partial-island swaps.
+  // Single delegated click handler, survives partial-island swaps.
   document.addEventListener('click', function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest('[data-fui-banner-dismiss]');
     if (!btn) return;

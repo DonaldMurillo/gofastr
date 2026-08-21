@@ -15,7 +15,7 @@ import (
 //
 // Batteries and plugins call this from Init to attach subsystem collectors
 // (queue depth, outbox lag, webhook failures, …) to the single /metrics
-// surface via RegisterCollector — the same store the HTTP middleware and
+// surface via RegisterCollector, the same store the HTTP middleware and
 // /metrics endpoint already use. There is no second handler to mount and no
 // cross-package import cycle: a battery reaches *Metrics through the App it
 // already holds, and writes its own Prometheus text lines from a collector.
@@ -37,7 +37,7 @@ func (a *App) Metrics() *middleware.Metrics {
 		})
 	}
 	// The transactional outbox is framework-owned (WithOutbox), so its
-	// per-consumer pending/dead-letter counts surface automatically — no
+	// per-consumer pending/dead-letter counts surface automatically, no
 	// battery or wiring needed beyond enabling the outbox + metrics.
 	if a.outbox != nil {
 		m.RegisterCollector("outbox", a.outbox.MetricsCollector())

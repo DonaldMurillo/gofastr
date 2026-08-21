@@ -23,7 +23,7 @@ func TestSPAMerge_GlobalSurvivesNavPageScopedReseeds(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
-	// /b — partial (SPA) returns just the content + the scope-split seed
+	// /b, partial (SPA) returns just the content + the scope-split seed
 	// island. Global g.count seeded 0; page-scoped b.local seeded "B".
 	mux.HandleFunc("/b", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

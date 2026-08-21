@@ -122,7 +122,7 @@ func PermissionMiddleware(
 			if ok {
 				if persist {
 					// Failure to persist is logged (Error event) but
-					// doesn't block the call — user already approved.
+					// doesn't block the call, user already approved.
 					if err := eng.AddPersistentRule(rule); err != nil {
 						_, _ = bus.Publish(control.Error{
 							Reason:  "PermissionPersistFailed",
@@ -138,7 +138,7 @@ func PermissionMiddleware(
 	}
 }
 
-// context-key types — unexported so middleware contracts are explicit.
+// context-key types, unexported so middleware contracts are explicit.
 type originatorContextKey struct{}
 type mutatingContextKey struct{}
 

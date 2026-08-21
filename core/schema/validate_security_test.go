@@ -62,12 +62,12 @@ func TestIntBoundPrecision(t *testing.T) {
 // String Min/Max length constraints bound characters (runes), not UTF-8 bytes.
 func TestStringLengthRuneCount(t *testing.T) {
 	minFive := Field{Name: "code", Type: String, Min: f64(5)}
-	// "👍👍" is 2 runes / 8 bytes — must fail a 5-character minimum.
+	// "👍👍" is 2 runes / 8 bytes, must fail a 5-character minimum.
 	if err := validateField(minFive, "👍👍"); err == nil {
 		t.Error("String Min:5 accepted a 2-character multibyte string (byte count)")
 	}
 	maxThree := Field{Name: "code", Type: String, Max: f64(3)}
-	// "日本語" is 3 runes / 9 bytes — must pass a 3-character maximum.
+	// "日本語" is 3 runes / 9 bytes, must pass a 3-character maximum.
 	if err := validateField(maxThree, "日本語"); err != nil {
 		t.Errorf("String Max:3 rejected a valid 3-character string: %v", err)
 	}

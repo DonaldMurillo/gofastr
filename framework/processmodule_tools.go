@@ -57,7 +57,7 @@ func splitModuleTool(name string) (moduleName, toolID string, ok bool) {
 // [ToolDigest]. The handshake byte-compares this against
 // [ToolDigest.SHA256]; the install tool and tests call this so the bytes
 // agree. The canonical form is the JSON encoding of {id,name,description,
-// input_schema} in that field order — deterministic because struct field
+// input_schema} in that field order, deterministic because struct field
 // order is stable and the child echoes the same shape verbatim.
 func ModuleToolDigest(tool moduleproto.Tool) string {
 	type canon struct {
@@ -153,7 +153,7 @@ func (r *ModuleToolRegistry) ModuleFor(toolName string) (string, bool) {
 
 // GateForModule is the module-tool half of the composite call gate.
 // Disabled module → non-nil error (tool OMITTED from tools/list and
-// refused by tools/call, indistinguishable from uninstalled — design §8
+// refused by tools/call, indistinguishable from uninstalled, design §8
 // "not-enabled → omitted+refused"). Enabled module → nil (tool LISTED;
 // the handler enforces the Ready layer and returns a retryable error when
 // the child is not yet serving). This split mirrors the route gate's
@@ -248,7 +248,7 @@ var moduleToolCallID atomic.Uint64
 // no re-registration), enforces the Ready layer (enabled-but-not-Ready →
 // retryable error), mints a delegation handle from the calling agent's
 // context, and forwards module.tool.call through the same capability
-// broker as module.http — the child's reverse host.* calls are then
+// broker as module.http, the child's reverse host.* calls are then
 // checked as module-grant ∩ caller-authority exactly like a proxied
 // browser request (design §5.1 "same broker as HTTP").
 func (r *ModuleToolRegistry) newToolHandler(moduleName, toolID string) mcp.ToolHandler {
@@ -289,12 +289,12 @@ func decodeModuleToolSchema(raw json.RawMessage) map[string]any {
 // mint so reverse host.* calls re-attach the calling agent's authority.
 //
 // The child's reverse calls are capability-checked by the SAME broker
-// (already installed on the peer at spawn) — there is no second permission
+// (already installed on the peer at spawn), there is no second permission
 // vocabulary for tools (design §5.1 "grants"). The capability intersection
 // (module-grant ∩ caller-authority, incl. the CrossOwnerRead carve-out)
 // therefore governs a tool's host.* calls identically to an HTTP route
 // with the same grants; the forward module.tool.call itself adds no new
-// authority — it is the calling agent's authority, delegated.
+// authority, it is the calling agent's authority, delegated.
 func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleName, toolID string, params map[string]any) (json.RawMessage, error) {
 	sl := s.Slot(moduleName)
 	if sl == nil {
@@ -314,7 +314,7 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 	// authority arrives in ctx (roles / policy / user); MintDelegation
 	// snapshots them, but they are NOT re-attached on the reverse path
 	// (snapshotRequest copies only Cookie/Authorization, which tool calls
-	// lack) — so a tool-sourced reverse call re-dispatches anonymously and
+	// lack), so a tool-sourced reverse call re-dispatches anonymously and
 	// requireScope refuses owner-scoped reads by construction. See the F7
 	// note on requestFromToolCtx.
 	callID := moduleToolCallID.Add(1)
@@ -349,12 +349,12 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 // requestFromToolCtx builds a minimal *http.Request carrying the calling
 // agent's context so [Broker.MintDelegation] can snapshot the module binding
 // (F6) off r.Context(). MCP tool calls arrive with no Cookie/Authorization
-// header — the agent's authority is role/policy based, not session-cookie
-// based — so cookie/auth stay empty. The broker's re-dispatch therefore
+// header, the agent's authority is role/policy based, not session-cookie
+// based, so cookie/auth stay empty. The broker's re-dispatch therefore
 // re-resolves to an ANONYMOUS caller: snapshotRequest copies only
 // Cookie/Authorization and resolveCaller never re-attaches the stashed
 // roles/policy. requireScope then refuses owner-scoped reads by construction.
-// That is the SAFE behavior — do NOT "fix" it by re-attaching the agent's
+// That is the SAFE behavior. Do NOT "fix" it by re-attaching the agent's
 // roles/policy, which would let a tool-sourced reverse call read cross-owner.
 func requestFromToolCtx(ctx context.Context) *http.Request {
 	r := &http.Request{
@@ -366,7 +366,7 @@ func requestFromToolCtx(ctx context.Context) *http.Request {
 }
 
 // callerFromCtx assembles the moduleproto.Caller block for a tool
-// invocation: Subject from the resolved user (diagnostic — the broker
+// invocation: Subject from the resolved user (diagnostic, the broker
 // re-attaches the real identity via the delegation handle, never off the
 // echoed subject), Delegation = the minted handle.
 func callerFromCtx(ctx context.Context, handle string) moduleproto.Caller {

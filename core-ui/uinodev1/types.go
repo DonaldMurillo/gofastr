@@ -7,7 +7,7 @@ package uinodev1
 type Component string
 
 const (
-	// Layout components — accept children.
+	// Layout components: accept children.
 	CompStack   Component = "stack"
 	CompCluster Component = "cluster"
 	CompGrid    Component = "grid"
@@ -15,7 +15,7 @@ const (
 	CompCard    Component = "card"
 	CompDivider Component = "divider"
 
-	// Text components — no children (text comes via props).
+	// Text components: no children (text comes via props).
 	CompHeading   Component = "heading"
 	CompParagraph Component = "paragraph"
 	CompText      Component = "text"
@@ -25,19 +25,19 @@ const (
 	CompSmall     Component = "small"
 	CompBadge     Component = "badge"
 
-	// Read-only data components — no children.
+	// Read-only data components: no children.
 	CompDetailList Component = "detail-list"
 	CompKeyValue   Component = "key-value"
 	CompStatCard   Component = "stat-card"
 	CompDataTable  Component = "data-table"
 
-	// Interactive components — by reference only.
+	// Interactive components: by reference only.
 	// A button carries an ActionRef at the Node level.
 	// A link carries either To (host-relative) in Props or an ActionRef.
 	CompButton Component = "button"
 	CompLink   Component = "link"
 
-	// Media component — no children.
+	// Media component: no children.
 	// Src is a host-relative same-origin path (URL-guarded); Alt is
 	// required non-empty so every module image is accessible.
 	CompImage Component = "image"
@@ -45,7 +45,7 @@ const (
 
 // Node is a single element in a validated ui.node.v1 tree.
 //
-// Props is a sealed union — only the concrete prop types in this file
+// Props is a sealed union, only the concrete prop types in this file
 // implement it. There is no escape hatch: a Bindings/Actions/free-bag
 // node is unrepresentable, and any unknown JSON field rejects the whole
 // tree (see [Validate]).
@@ -53,7 +53,7 @@ type Node struct {
 	// Component is the closed enum value (one of the Comp* constants).
 	Component Component
 	// Props is the typed, per-component prop struct. Never nil for a
-	// decoded node — a component with no fields uses its zero-value
+	// decoded node, a component with no fields uses its zero-value
 	// struct (e.g. DividerProps{}).
 	Props Props
 	// Children is the optional list of child nodes. Only layout
@@ -181,7 +181,7 @@ func (p CardProps) validate(lim Limits) error {
 }
 func (p CardProps) estimatedTextSize() int { return len(p.Title) + len(p.Elevation) }
 
-// DividerProps has no fields — a divider is purely structural.
+// DividerProps has no fields, a divider is purely structural.
 type DividerProps struct{}
 
 func (DividerProps) propsMarker()             {}
@@ -481,7 +481,7 @@ func (p DataTableProps) estimatedTextSize() int {
 // --- Interactive props ---------------------------------------------------
 
 // ButtonProps configures a button. The action is referenced via the
-// Node's ActionRef field (not in props) — a button without an ActionRef
+// Node's ActionRef field (not in props), a button without an ActionRef
 // is rejected by the validator.
 type ButtonProps struct {
 	Label   string `json:"label"`
@@ -524,10 +524,10 @@ func (p LinkProps) estimatedTextSize() int { return len(p.Text) + len(p.To) }
 // --- Media props --------------------------------------------------------
 
 // ImageProps configures an image. Src is a host-relative same-origin path
-// (validated by IsValidHostRelative — design §9 rejects javascript:/data:/
+// (validated by IsValidHostRelative, design §9 rejects javascript:/data:/
 // vbscript:/blob:/file:/off-origin); Alt is required non-empty so every
 // module-supplied image carries accessible alternative text. A module cannot
-// forge dimensions, loading, or srcset — those are host-assigned.
+// forge dimensions, loading, or srcset, those are host-assigned.
 type ImageProps struct {
 	Src string `json:"src"` // required, host-relative same-origin path
 	Alt string `json:"alt"` // required, non-empty accessible description

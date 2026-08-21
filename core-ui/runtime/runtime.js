@@ -1,4 +1,4 @@
-// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: full = kernel+signals+nav+widgets-boot)
+// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: full = kernel+signals+nav+widgets-boot)
 // Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from
 // core-ui/runtime/frag/*.js. This file is the on-disk canonical form the gate
 // tests scan (attrdoc_test.go / integrity_test.go read it via os.ReadFile);
@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-// kernel.js — always-present substrate (spec fragment `kernel`, boot class).
+// kernel.js: always-present substrate (spec fragment `kernel`, boot class).
 // Owns: doc state (DOC_MANIFEST), module loader, same-origin guards, the
 // data-fui-comp CSS scanner, window.__gofastr namespace CREATION (other
 // fragments and demand modules extend it via Object.assign), manifest reads,
@@ -20,12 +20,12 @@
   // DOC_MANIFEST is the frozen inventory of every allowed <html>
   // attribute, <body> class, and <body> singleton id; the table in
   // core-ui/ARCHITECTURE.md ("Global document state") mirrors it and a
-  // parity test (doc_manifest_test.go) fails the build on drift — hard
+  // parity test (doc_manifest_test.go) fails the build on drift, hard
   // rule 5 applied to document-level state. Writes outside the manifest
   // still land (never break the page) but console.warn the offender.
   //
   // Not covered on purpose:
-  //   - data-color-scheme is WRITTEN by colorscheme.js — the separate
+  //   - data-color-scheme is WRITTEN by colorscheme.js, the separate
   //     synchronous <head> bootstrap that must run before first paint
   //     (FOUC). It is enumerated here as documentation only.
   //   - data-fui-static is written by the static exporter (Go), never
@@ -34,19 +34,19 @@
   //     (#fui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
-  // concurrent lockers — a modal over a lightbox, a drawer over a
-  // modal — can't fight over documentElement.style.overflow: the lock
+  // concurrent lockers, a modal over a lightbox, a drawer over a
+  // modal, can't fight over documentElement.style.overflow: the lock
   // releases only when the LAST owner unlocks. (Lock lives on <html>,
   // not <body>: overflow:hidden on <body> breaks position:sticky
   // descendants.)
   //
   // singleton(id, factory) returns the existing body child with that id
   // (SSR-provided or previously created) or creates+appends it once.
-  // reattach() re-appends any created singleton that lost its parent —
+  // reattach() re-appends any created singleton that lost its parent,
   // the SPA full-shell swap calls it after replacing [data-fui-layout],
   // covering layouts that (incorrectly but survivably) nest chrome the
   // runtime hung on <body>.
-  // docEl is the shared <html> handle for the whole core runtime —
+  // docEl is the shared <html> handle for the whole core runtime,
   // every documentElement touch goes through it (keeps the minified
   // bundle inside the 12.5 KB gz budget).
   const docEl = document.documentElement;
@@ -106,7 +106,7 @@
   // data-fui-static on <html> is still written by the static exporter
   // (framework/static.Builder) and read by the widgets demand module
   // (src/widgets.js) for its missing-widget fallback toast. The runtime
-  // itself no longer branches on it — composition selects the `static`
+  // itself no longer branches on it, composition selects the `static`
   // bundle at build time instead of testing the marker at request time.
   // -----------------------------------------------------------------------
   // Component handler registry
@@ -114,7 +114,7 @@
   const handlers = {};
 
   // -----------------------------------------------------------------------
-  // State store — compiled Go components share state through this
+  // State store: compiled Go components share state through this
   // -----------------------------------------------------------------------
   const state = {};
 
@@ -158,7 +158,7 @@
     if (c) window.__gofastr_catalog = c;
   }
 
-  // Signal store seed — server-provided initial values for the signal
+  // Signal store seed: server-provided initial values for the signal
   // bus (core-ui/store). Stashed now; applied to _signals right after
   // the __gofastr namespace is built (below), BEFORE hydration, so
   // getSignal returns the SSR value on first paint instead of undefined.
@@ -192,14 +192,14 @@
   };
 
   // -----------------------------------------------------------------------
-  // Public API — kernel members only. Core fragments and demand modules add
+  // Public API: kernel members only. Core fragments and demand modules add
   // their namespace members via Object.assign. Optional code therefore leaves
   // no dangling references inside this literal.
   // -----------------------------------------------------------------------
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
   window.__gofastr = {
-    /** Global document state module — see the DOC_MANIFEST block at the
+    /** Global document state module. See the DOC_MANIFEST block at the
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
@@ -246,7 +246,7 @@
       if (trimmed.startsWith('data:')) {
         // Allow data:image/* only; everything else (data:text/html,
         // data:application/javascript, etc.) is rejected. NOTE: this
-        // intentionally allows data:image/svg+xml — an SVG in an <img>
+        // intentionally allows data:image/svg+xml, an SVG in an <img>
         // src (the only sink signal-bound `src`/`href` reaches here)
         // renders inertly and does NOT execute its scripts. SVG only runs
         // script when loaded as a *document* (iframe/object/navigation),
@@ -328,7 +328,7 @@
       document.querySelector(selector)?.classList.toggle(cls);
     },
 
-    /** Legacy toast — kept as a forwarding shim so older callers
+    /** Legacy toast, kept as a forwarding shim so older callers
         (string-only arg) continue to work. The real implementation
         is the cfg-object version defined below; it owns the stack
         widget + lifecycle. */
@@ -361,9 +361,9 @@
       //
       // The action compiler rewrites the literal "G.serverAction(" into
       // "G._serverActionFor(<componentId>, ", so every registered action
-      // arrives with an id. A call the compiler could not see — a computed
+      // arrives with an id. A call the compiler could not see, a computed
       // spelling like G["serverAction"](…), an aliased reference, a call
-      // assembled at runtime — keeps this method and posts with an empty
+      // assembled at runtime, keeps this method and posts with an empty
       // componentId, which the server cannot route. That used to be a silent
       // 404 discovered in production; say what actually happened instead.
       //
@@ -396,12 +396,12 @@
 
     /** loadCSS is a no-op kept for external callers that still invoke
      * window.__gofastr.loadCSS(path). The per-screen chunk endpoint
-     * (/__gofastr/css/<path>) now returns 410 GONE — declare CSS per
+     * (/__gofastr/css/<path>) now returns 410 GONE, declare CSS per
      * component via registry.RegisterStyle and the runtime loads
      * /__gofastr/comp/<name>.css from the SSR-emitted <link>. */
     loadCSS(_screenPath) { /* no-op */ },
 
-    // Component CSS — three modes share _pendingLinks + data-fui-style dedup.
+    // Component CSS: three modes share _pendingLinks + data-fui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
     loadComponentCSS(name) {
@@ -416,7 +416,7 @@
       // so component CSS resolves under the same theme as app.css), so pick the
       // separator rather than always using '?'. Concatenating a second '?' put
       // the whole thing in one parameter value, which the server read as an
-      // unknown theme key AND an absent version — silently serving the app
+      // unknown theme key AND an absent version, silently serving the app
       // palette with no immutable caching.
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-fui-style', name);
@@ -461,7 +461,7 @@
     formatFloat: (n, d) => Number(n).toFixed(d),
 
     // -----------------------------------------------------------------
-    // Widgets (core-ui/widget) — overlay UIs that mount on top of any
+    // Widgets (core-ui/widget): overlay UIs that mount on top of any
     // page. mountWidget is the runtime entrypoint used by per-widget
     // bootstrap scripts. The host (Go) builds the WidgetDef → emits a
     // tiny init script that calls __gofastr.mountWidget(cfg, chrome).
@@ -485,11 +485,11 @@
 
     /** Load a split runtime module by name (e.g. "fileupload",
         "popover"). Returns a cached Promise that resolves once the
-        module's IIFE has executed. Safe to call concurrently — the
+        module's IIFE has executed. Safe to call concurrently, the
         first call wins, all callers await the same fetch. */
     loadModule,
 
-    /** Selector for focusable elements inside a modal — used by the
+    /** Selector for focusable elements inside a modal, used by the
         initial-focus pass and the Tab focus trap. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
 
@@ -544,12 +544,12 @@
 
     // _fallbackToast renders an unstyled-but-visible toast notice when
     // the toasts module can't load. No TTL, no animation, no hover
-    // pause — just a labelled live region the user can read and
+    // pause, just a labelled live region the user can read and
     // dismiss with the × button. Uses textContent throughout (no
     // innerHTML) so a malicious title can't inject script.
     _fallbackToast(cfg) {
       if (!cfg || !cfg.title) return null;
-      // Body singleton (doc.MANIFEST) — distinct from the styled
+      // Body singleton (doc.MANIFEST), distinct from the styled
       // [data-fui-toast-stack] container the toasts module owns; the
       // fallback stays deliberately unstyled + module-free.
       const container = doc.singleton('fui-toast-fallback', () => {
@@ -561,7 +561,7 @@
         return c;
       });
       const isAssertive = cfg.variant === 'warning' || cfg.variant === 'danger';
-      // mk: tiny element builder (tag, cssText, textContent) — inline
+      // mk: tiny element builder (tag, cssText, textContent), inline
       // styles + textContent only (no innerHTML) so a malicious title
       // can't inject script. Styling is the bare minimum that reads as
       // a notice; the styled experience lives in the toasts module.
@@ -590,7 +590,7 @@
     },
   };
 
-// signals.js — signal store + binding (spec fragment `signals`, marker class; deps: kernel).
+// signals.js: signal store + binding (spec fragment `signals`, marker class; deps: kernel).
 // Owns: setSignal, signal binding/broadcast, the SSR seed read + application,
 // the signal-set/inc/toggle read-modify-write path, aria injection.
   // isReservedSignalKey rejects the JS object keys that, when used as a
@@ -599,7 +599,7 @@
   //   store["__proto__"] = {…}   // invokes the __proto__ setter
   //   store["constructor"]/["prototype"] // shadow built-ins
   // A seed (full-load or partial) carrying such a key would re-parent the
-  // _signals object — every not-yet-set signal name would then resolve
+  // _signals object, every not-yet-set signal name would then resolve
   // through the attacker object (cross-signal confusion) and setSignal
   // would mutate the shared prototype. Seed keys are server-controlled
   // today; this is advisory-recommended defense-in-depth (strip
@@ -630,7 +630,7 @@
     setSignal(name, value, opts) {
       // Prototype pollution: the reserved-key guard used to live only in
       // the three seed-merge loops, but attribute-controlled keys enter
-      // HERE — data-fui-signal-set/-inc/-toggle, and fetched-JSON keys
+      // HERE, data-fui-signal-set/-inc/-toggle, and fetched-JSON keys
       // from poll.js and widgets.js. `__proto__:POLLUTED` re-parents the
       // store, and because getSignal is `s ? s.value : undefined` EVERY
       // unset signal then reads back the attacker's value. Pure data
@@ -650,7 +650,7 @@
       for (const fn of s.listeners) {
         try { fn(value); } catch (_) {}
       }
-      // Escape the signal name before it enters the selector — a name
+      // Escape the signal name before it enters the selector, a name
       // containing selector metacharacters (e.g. '"]') would otherwise
       // produce an invalid selector and querySelectorAll would THROW,
       // taking setSignal (and every listener it drives) down with it.
@@ -661,24 +661,24 @@
           // The html escape hatch is for TRUSTED HTML *strings* only.
           // On a non-2xx response dispatchRPC broadcasts the auto-built
           // error object {ok:false,status,text} into the signal. That
-          // object is NOT trusted HTML — and applying it here (via
+          // object is NOT trusted HTML, and applying it here (via
           // innerHTML OR textContent) would either execute reflected
           // markup or overwrite the existing trusted region with a
           // JSON blob, corrupting the UI on every failed RPC. The
-          // documented optimistic-UI invariant — "a failed delete
-          // leaves the row/list unchanged" — depends on this no-op.
+          // documented optimistic-UI invariant, "a failed delete
+          // leaves the row/list unchanged", depends on this no-op.
           // Text-mode nodes below still render a human-readable
           // "Error: …" string, so failure feedback is not lost.
           if (typeof value !== 'string') return;
           // A value seeded from location.search is attacker-supplied by
-          // construction — `?x=<img onerror=…>` on any page carrying an
+          // construction, `?x=<img onerror=…>` on any page carrying an
           // html-mode binding of `x`. Render it as text instead. The
           // value still reaches the node; it just stops being markup.
           if (s.untrusted) { node.textContent = value; return; }
           node.innerHTML = value;
           window.__gofastr.scanAndLoadCSS(node);
           // Wire any toast items the freshly-swapped HTML brought in.
-          // Awaits the toasts module — when an island-driven update
+          // Awaits the toasts module, when an island-driven update
           // injects a toast for the first time, the module loads,
           // then _initToasts runs against the new content.
           if (node.querySelector && node.querySelector('[data-fui-toast-id]')) {
@@ -691,7 +691,7 @@
           // The attribute NAME is developer-supplied and server-
           // rendered, so the allow-list that keeps a signal out of
           // `srcdoc` / `style` / `on*` lives in Go, at the emitters
-          // (core-ui/store.SignalAttrAllowed) — refusing to render the
+          // (core-ui/store.SignalAttrAllowed), refusing to render the
           // binding beats warning about it after it shipped, and costs
           // the runtime no bytes. The value guard below still runs on
           // every client-side update.
@@ -706,7 +706,7 @@
           node.setAttribute(attr, v);
           // Tabs (framework/ui.Tabs): when the wrapper's data-active
           // index changes, mirror it into aria-selected on the strip's
-          // role=tab buttons — CSS keys the visual highlight off
+          // role=tab buttons, CSS keys the visual highlight off
           // data-active, but assistive tech reads aria-selected.
           if (attr === 'data-active') {
             node.querySelectorAll('[role="tab"][data-fui-tab-index]').forEach((b) => {
@@ -800,7 +800,7 @@
 
   // Apply the SSR signal seed (stashed above) to the signal store BEFORE
   // hydration. Existing in-memory values win (the seed never clobbers a
-  // value already mutated on the client — relevant for app-global slices
+  // value already mutated on the client, relevant for app-global slices
   // across SPA navigations); fresh names are created with no listeners.
   if (window.__gofastr_signals_seed) {
     const store = window.__gofastr._signals;
@@ -816,16 +816,16 @@
     }
   }
 
-// nav.js — SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
+// nav.js: SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
 // Owns: <a> click hijack, history.pushState, popstate, screen cache,
 // layout-chain-aware swaps (deepest shared layer), updateActiveLink,
 // document.title writes, the navigate() namespace member.
 
   // -----------------------------------------------------------------------
-  // Screen cache — stores rendered screens for instant back-navigation.
+  // Screen cache: stores rendered screens for instant back-navigation.
   // Each entry records the layout LAYER its html renders below ('' = a
   // layout-less page's whole <main>), so replaying it swaps exactly the
-  // right content cell — never a class-name guess, never an unwrap pass.
+  // right content cell, never a class-name guess, never an unwrap pass.
   // -----------------------------------------------------------------------
   const screenCache = new Map(); // path → { html, title, layer }
   // sseMeta reads the live stream-id carrier from a document (default:
@@ -851,7 +851,7 @@
   // identity) and the layer's content cell with data-fui-layout-slot (the
   // swap target). The route manifest carries each route's chain in
   // `layouts` (outermost → innermost). Document order of the key-marked
-  // elements IS the chain order — a wrapper precedes its descendants.
+  // elements IS the chain order, a wrapper precedes its descendants.
   const domChainKeys = () => {
     const out = [];
     for (const el of document.querySelectorAll('[data-fui-layout-key]')) {
@@ -874,7 +874,7 @@
     return (m && m.getAttribute('data-fui-layout-slot')) || '';
   };
   // routeEntry: manifest lookup with trailing-slash tolerance and dynamic
-  // patterns. Pattern awareness matters for chains — a concrete URL of a
+  // patterns. Pattern awareness matters for chains, a concrete URL of a
   // "/:param" route must resolve to that route's chain, not to "no
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
@@ -882,7 +882,7 @@
     const clean = path.split('?')[0].split('#')[0];
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
-    // write "/components" — the server redirects between them, so the
+    // write "/components", the server redirects between them, so the
     // SPA router must accept both forms.
     if (!r && clean !== '/' && !clean.endsWith('/')) r = routes.get(clean + '/');
     if (!r && clean !== '/' && clean.endsWith('/')) r = routes.get(clean.slice(0, -1));
@@ -918,7 +918,7 @@
   // Route through cacheScreen() so the LRU cap is enforced uniformly.
   const initialMain = mainEl();
   if (initialMain) {
-    // Key with the search string too — every later entry (and
+    // Key with the search string too, every later entry (and
     // currentPath) is keyed pathname+search, and invalidate()
     // matches against that form. The layer is <main>'s own slot key:
     // the boot html spans everything below layer 0.
@@ -951,7 +951,7 @@
   const isKnownRoute = (href) => !!routeEntry(resolvePath(href));
 
   // -----------------------------------------------------------------------
-  // Client-side navigation — fetch partial HTML, swap at the deepest
+  // Client-side navigation, fetch partial HTML, swap at the deepest
   // layer the current DOM shares with the target route's layout chain.
   // -----------------------------------------------------------------------
 
@@ -970,10 +970,10 @@
   // call; after any await, a response whose epoch is no longer the
   // latest MUST NOT touch the DOM, currentPath, or history. Without
   // this, a rapid A→B where A's fetch resolves last swaps <main> back
-  // to A's content while the URL bar already says B — and a repeat
+  // to A's content while the URL bar already says B, and a repeat
   // click on B no-ops (fullPath === currentPath), stranding the user.
   let _navEpoch = 0;
-  // Mini toast used by loadPage failures — strict-CSP-clean (no
+  // Mini toast used by loadPage failures, strict-CSP-clean (no
   // inline styles since the .fui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
   const _showNavToast = (msg) => {
@@ -996,7 +996,7 @@
   //     back-then-forward let the BACK nav's settle scroll-to-top land
   //     AFTER the forward nav had restored its position);
   //   - the position check skips the re-correct when ANYTHING scrolled
-  //     since the first write — rAF can be throttled far past the swap
+  //     since the first write, rAF can be throttled far past the swap
   //     (background tabs, loaded CI runners), and a late settle pass was
   //     yanking a user who had already started scrolling back to where
   //     the navigation landed.
@@ -1068,7 +1068,7 @@
   }, { passive: true });
   // Reload restore: manual scrollRestoration leaves a reloaded page at
   // the top; the stored position for this entry id puts it back. A URL
-  // fragment wins — the browser's native hash scroll is already right.
+  // fragment wins, the browser's native hash scroll is already right.
   if (!location.hash && _scrollStore[_entryId]) {
     const p0 = _scrollStore[_entryId];
     requestAnimationFrame(() => window.scrollTo(p0[0], p0[1]));
@@ -1081,11 +1081,11 @@
   // Single choke point for every history write in the runtime (the click
   // hijack, navigate(), RPC X-Gofastr-Push-State, widget/pane deep
   // links, intercepts). Assigns the entry id for scroll restoration,
-  // moves the URL, and keeps currentPath in sync — modules that
+  // moves the URL, and keeps currentPath in sync, modules that
   // pushState'd around the router left currentPath stale, so the next
   // popstate mis-diffed the URL change.
   const _pushURL = (url, { replace = false } = {}) => {
-    // Capture the outgoing entry's position synchronously — the scroll
+    // Capture the outgoing entry's position synchronously, the scroll
     // listener is event-driven and can lag the traversal on slow
     // renderers; this is the last moment the old id is current.
     if (!replace) _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
@@ -1105,7 +1105,7 @@
 
   // swapAtSlot replaces one layer's content cell. Scope rule: swapping
   // the outermost cell (or a layout-less <main>) closes disclosures
-  // document-wide — the user left the page, the hamburger must not float
+  // document-wide, the user left the page, the hamburger must not float
   // over the new one. A deeper swap closes only within its own layer so
   // outer shell state (an open sidebar section) survives sibling nav.
   const swapAtSlot = (slot, html, outermost) => {
@@ -1122,7 +1122,7 @@
   };
 
   // swapShell replaces the whole layout shell (cross-chain navigation: no
-  // shared root). newRoot is the destination page's outermost shell — or
+  // shared root). newRoot is the destination page's outermost shell, or
   // its bare <main> when the destination has no layouts, so leaving a
   // chain for a plain page drops the old chrome instead of keeping it.
   // Delegated chrome handlers survive the swap; no hard reload (hard
@@ -1134,7 +1134,7 @@
     const el = document.importNode(newRoot, true);
     cur.replaceWith(el);
     // Runtime-created body singletons live OUTSIDE the shell, so the
-    // swap normally leaves them alone — but a layout that wrapped one
+    // swap normally leaves them alone, but a layout that wrapped one
     // (or a future whole-body swap) must not silently drop them.
     doc.reattach();
     mergeSeedFromDOM(el);
@@ -1144,12 +1144,12 @@
     return el;
   };
 
-  // Shared tail of every successful swap. root is the swapped element —
+  // Shared tail of every successful swap. root is the swapped element,
   // exposed on the navigate event so teardown-aware modules can scope
   // cleanup to the region that actually changed. Active-link
   // highlighting rides the gofastr:navigate event (src/activelink.js,
-  // idle-loaded) — cosmetic post-nav work carved out of core.
-  // ps is the restore target BOUND TO THIS NAVIGATION — loadPage
+  // idle-loaded), cosmetic post-nav work carved out of core.
+  // ps is the restore target BOUND TO THIS NAVIGATION, loadPage
   // consumes the popstate's pending value at entry, so a superseded
   // back/forward can never leak its position into a later click's
   // finishNav.
@@ -1166,7 +1166,7 @@
   };
 
   /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav.
-      from names the origin route when the caller already moved the URL —
+      from names the origin route when the caller already moved the URL,
       _pushURL syncs currentPath BEFORE loadPage runs on the click path,
       so capturing currentPath here would report the destination as its
       own origin (and X-Gofastr-From would stop naming the real one). */
@@ -1185,7 +1185,7 @@
     const myEpoch = ++_navEpoch;
     const prevPath = from || currentPath;
     currentPath = path;
-    // Consume the popstate's restore target NOW, into this navigation —
+    // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
     // into whichever navigation ran finishNav next.
     let ps = restore;
@@ -1219,7 +1219,7 @@
       }
 
       // Prefetched entry (preload module): same shape as a fetched
-      // partial — swap it in when its layer is live, exactly like the
+      // partial, swap it in when its layer is live, exactly like the
       // screen cache but single-use and TTL-bounded. Post-mutation navs
       // (bypassCache) skip it: it was fetched before the mutation.
       if (!cached && !bypassCache && !forceFull && window.__gofastr._takePrefetched) {
@@ -1240,10 +1240,10 @@
       // Cross-chain nav (no shared root): fetch the FULL page (no
       // navigate header → the server returns the whole document) and
       // replace the shell. Taken when EITHER side has a chain the other
-      // doesn't share — including a chained page leaving for a
+      // doesn't share, including a chained page leaving for a
       // layout-less one, where a partial swap would keep the old chrome
       // around the new content. forceFull is the deploy-skew recovery
-      // path — the server echoed a swap boundary this DOM doesn't have.
+      // path, the server echoed a swap boundary this DOM doesn't have.
       if ((layouts.length > 0 || domChainKeys().length > 0) && (forceFull || sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (myEpoch !== _navEpoch) return;
@@ -1252,14 +1252,14 @@
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (myEpoch !== _navEpoch) return;
         let dest = path;
-        // resolvePath keeps the search string — the cache key and the
+        // resolvePath keeps the search string, the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
         if (dest !== path) { _pushURL(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
-        // The full fetch re-renders chrome under the CURRENT session —
+        // The full fetch re-renders chrome under the CURRENT session,
         // if the server re-minted (restart/rotation/expiry), the fresh
         // head carries the new stream id. Copy it onto the live meta so
         // the SSE reconnect loop recovers here too, not only on the
@@ -1269,7 +1269,7 @@
         const nm = pdoc.querySelector('main');
         const el = swapShell(shellEl(pdoc) || nm);
         if (!el) {
-          // No live shell to replace (layout-less origin) — fall back to
+          // No live shell to replace (layout-less origin), fall back to
           // a whole-main swap; chain markers arrive with the content.
           const m = mainEl();
           if (m) swapAtSlot(m, nm ? nm.innerHTML : '', true);
@@ -1289,7 +1289,7 @@
       if (myEpoch !== _navEpoch) return;
       // Apply a session rollover BEFORE the ok-check: the server re-mints
       // (and names the fresh stream id) on 404 / policy-block partials
-      // too, and the browser has already stored the new cookie — if we
+      // too, and the browser has already stored the new cookie, if we
       // threw first, the meta would keep the dead id and never recover
       // (the next OK nav presents the now-valid cookie, so no header).
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
@@ -1302,7 +1302,7 @@
       window.__gofastr._inval(resp);
 
       // X-Gofastr-Location signals "server policy redirected this
-      // partial — go nav to the new URL instead of trying to swap
+      // partial, go nav to the new URL instead of trying to swap
       // the empty body in place." Set by uihost on a Redirect policy
       // outcome. The fetch above won't see a 303 (we deliberately use
       // 200 + header to survive redirect:'follow').
@@ -1317,7 +1317,7 @@
         _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
         // Keep bypassCache across the redirect: a post-mutation nav
-        // must not serve the redirect target from the screen cache —
+        // must not serve the redirect target from the screen cache,
         // and keep the ORIGINAL origin so the redirect leg's subtree
         // partial renders against where the user actually came from.
         return loadPage(redirectTo, { bypassCache, from: prevPath, restore: ps });
@@ -1341,7 +1341,7 @@
         swapKey = nm?.getAttribute('data-fui-layout-slot') || '';
       }
       // The swap boundary must be live in the DOM; a miss means the
-      // manifest and server disagree (deploy skew) — recover with a
+      // manifest and server disagree (deploy skew), recover with a
       // full-page load of the destination rather than a wrong-cell swap.
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? mainEl() : null);
       if (!slot) {
@@ -1355,7 +1355,7 @@
       finishNav(path, prevPath, false, root, ps);
     } catch (err) {
       if (myEpoch !== _navEpoch) return;
-      // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
+      // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
@@ -1380,12 +1380,12 @@
     // Cancel any in-flight timer from a previous nav so rapid A→B→C
     // navs don't race and leave the live region on the wrong title.
     if (_announceTimer) { clearTimeout(_announceTimer); _announceTimer = 0; }
-    // If the region already holds this title, do nothing — clearing
+    // If the region already holds this title, do nothing, clearing
     // and re-setting would open a 50ms empty-textContent window for
     // a same-title repeat with no upside (AT already announced it).
     if (r.textContent === title) return;
     // Touch the textContent twice (clear, then set) so AT re-announces
-    // when the title actually changes — defensive; cheap.
+    // when the title actually changes, defensive; cheap.
     r.textContent = '';
     _announceTimer = setTimeout(() => {
       r.textContent = title;
@@ -1395,7 +1395,7 @@
 
   // mergeSeedFromDOM applies a partial (SPA-nav) signal seed embedded in
   // freshly-swapped content (#gofastr-signals-partial). Page-scoped names
-  // (data.p) are applied unconditionally — the destination page's fresh
+  // (data.p) are applied unconditionally, the destination page's fresh
   // state. Globals (data.g) are seeded only when first seen, so a value
   // the user already mutated (cart count) survives navigation.
   const mergeSeedFromDOM = (root) => {
@@ -1427,7 +1427,7 @@
   // handled client-side via partial fetch + cache. No hard refresh.
   // This is the Angular-router-style behavior described in
   // core-ui/ARCHITECTURE.md ("Page → page navigation"). In-page state
-  // changes are NOT routes — they go through data-fui-rpc on islands
+  // changes are NOT routes, they go through data-fui-rpc on islands
   // and never hit this handler.
   //
   // Cmd/Ctrl/Shift/Alt-click, target=_blank, external links, and
@@ -1438,7 +1438,7 @@
     const href = anchor.getAttribute('href');
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (!isInternalLink(href)) return;
-    // Skip downloads — <a download> needs the native click to trigger
+    // Skip downloads, <a download> needs the native click to trigger
     // the save dialog; intercepting fetches the bytes silently into
     // the SPA and the file never reaches the user.
     if (anchor.hasAttribute('download')) return;
@@ -1452,13 +1452,13 @@
 
     const fullPath = resolvePath(href);
     if (fullPath === currentPath) {
-      // Already there — let the browser handle the click (focus, scroll, etc.).
+      // Already there, let the browser handle the click (focus, scroll, etc.).
       return;
     }
     e.preventDefault();
     // Eagerly close an enclosing dismissible disclosure (mobile nav
     // hamburger). Without this, the menu floats over stale content
-    // for the entire SPA fetch duration — the user perceives the
+    // for the entire SPA fetch duration, the user perceives the
     // click as "didn't take".
     anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // Preserve the #fragment: resolvePath strips it (path-only is what
@@ -1472,7 +1472,7 @@
     // case; returning true means it took the navigation.
     if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
     // Capture the origin BEFORE _pushURL syncs currentPath to the
-    // destination — loadPage's X-Gofastr-From must name where the user
+    // destination, loadPage's X-Gofastr-From must name where the user
     // came from.
     const origin = currentPath;
     _pushURL(fullPath + navHash);
@@ -1481,7 +1481,7 @@
 
   // Stateful query params describe in-page state (open panes, widget
   // deep links). A history move whose ONLY search diff is stateful must
-  // not refetch the screen — refetching discarded the client-mounted
+  // not refetch the screen, refetching discarded the client-mounted
   // widget, which is why Forward across a deep link never worked. The
   // set is built at popstate time from what the page actually declares:
   // the widget catalog's deepLinkKey/deepLinkParams plus every
@@ -1516,13 +1516,13 @@
   };
 
   // popstate: a URL change via back/forward triggers a screen-partial
-  // re-fetch (cache makes it instant) — unless the diff is purely
+  // re-fetch (cache makes it instant), unless the diff is purely
   // stateful, in which case the deep-link sync below replays the state
   // with zero fetches. Reads history.state, never the event's: the
   // intercept module's synthetic PopStateEvent carries none.
   window.addEventListener('popstate', () => {
     // With manual scrollRestoration the viewport still holds the LEAVING
-    // page's position when popstate fires — record it under the old id
+    // page's position when popstate fires, record it under the old id
     // before switching, so the entry we just left can always restore
     // even if its event-driven capture lagged.
     _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
@@ -1557,7 +1557,7 @@
     // --- Router API ---
 
     /** Programmatically navigate to a path. force re-fetches even when
-        the path is the current page and bypasses the screen cache —
+        the path is the current page and bypasses the screen cache,
         use it after a mutation so the destination reflects new state. */
     navigate(path, { replace = false, force = false } = {}) {
       if (path === currentPath && !force) return;
@@ -1582,7 +1582,7 @@
     /** Drop cached screens so the next visit re-fetches. Selectors:
         "/orders" drops that pathname AND every cached query variant;
         "/orders?page=2" drops exactly that entry; "*" clears all.
-        Root-relative paths only — anything else is ignored. Never
+        Root-relative paths only, anything else is ignored. Never
         touches the live DOM; pair with refresh()/navigate(force) when
         the current screen must re-render too. */
     invalidate(...sels) {
@@ -1600,17 +1600,17 @@
     },
 
     /** Re-fetch and re-render the current screen from the server,
-        bypassing the cache. Goes straight to loadPage — history is not
+        bypassing the cache. Goes straight to loadPage, history is not
         touched, so a #fragment on the URL survives. */
     refresh() { loadPage(currentPath, { bypassCache: true }); },
 
-    // X-Gofastr-Invalidate consumer — takes the whole Response (keeps
+    // X-Gofastr-Invalidate consumer, takes the whole Response (keeps
     // the header literal in one module; the callers in rpc/widgets/
     // intercept stay a few bytes). The value is a JSON string array of
     // selectors, applied on 2xx by nav/RPC/widget/intercept fetches.
     // A malformed value is a producer bug (ui.InvalidateScreens always
     // emits a valid array) and must never break the response that
-    // carried it — ignore it. The Array.isArray gate matters: spreading
+    // carried it, ignore it. The Array.isArray gate matters: spreading
     // a parsed bare string would evict per-character.
     _inval(r) {
       try {
@@ -1628,9 +1628,9 @@
   // Auto-discover registered widgets. The framework runtime is loaded
   // once per page (via /__gofastr/runtime.js); each Mount(r, def) on
   // the server registers in a process-global map; this fetch picks the
-  // list up and mounts every widget. 404 means no widgets registered
-  // — silently skip (the runtime works for plain pages too).
-  // Per-page scoped widget discovery — apps that constrain widgets
+  // list up and mounts every widget. 404 means no widgets registered,
+  // silently skip (the runtime works for plain pages too).
+  // Per-page scoped widget discovery, apps that constrain widgets
   // to specific routes via .Pages / .PagesPrefix / .PagesMatch get
   // a filtered catalog. Widgets with no Routes declared appear on
   // every page (the backwards-compatible default).
@@ -1648,8 +1648,8 @@
 
   // Widget catalog fetch. The live endpoint is session-gated and per-page
   // scoped (?page= filters widgets to the current route). A serverless
-  // export never composes widgets-boot — the `static` composition omits it
-  // and rpc-stub intercepts data-fui-open clicks — so this fetch only ever
+  // export never composes widgets-boot, the `static` composition omits it
+  // and rpc-stub intercepts data-fui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
   fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
@@ -1657,7 +1657,7 @@
     .then(async (list) => {
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime now ships as a split module. Make sure it's
-      // loaded before iterating mounts — covers the case where no
+      // loaded before iterating mounts, covers the case where no
       // [data-fui-widget] marker is present in initial HTML (the
       // marker scanner wouldn't have fired) but server-side
       // registration says there are widgets to mount.
@@ -1685,14 +1685,14 @@
           window.__gofastr._mountByName(item.cfg.name);
         }
         // Open any widget whose deep link matches the current URL. Pure
-        // post-hydration — there's a single-frame window where the page
+        // post-hydration, there's a single-frame window where the page
         // paints without the modal. SSR pre-rendering is a future
         // optimization; correctness (refresh / share / back-button) is
         // already covered by this open-on-boot pass.
         window.__gofastr._syncDeepLinks();
 
         // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise — resolve so queued clicks unblock now
+        // awaiting this Promise, resolve so queued clicks unblock now
         // that the catalog is populated.
         _wcr();
       };
@@ -1704,8 +1704,8 @@
   // The data-fui-open click handler, data-fui-toast click handler, and
   // popstate listener used to live inside the /__gofastr/widgets
   // catalog fetch's .then() callback. That meant on a slow network the
-  // very first click on an open trigger had no handler to receive it
-  // — the catalog hadn't returned yet, so the .then() hadn't run.
+  // very first click on an open trigger had no handler to receive it,
+  // the catalog hadn't returned yet, so the .then() hadn't run.
   //
   // We install them here at boot, before the catalog fetch. Each
   // handler awaits loadModule('widgets') (via the openWidget stub on
@@ -1763,7 +1763,7 @@
   }
   _installEagerWidgetDelegators();
 
-// boot.js — kernel boot tail (always composed LAST, after every other fragment).
+// boot.js: kernel boot tail (always composed LAST, after every other fragment).
 // These declarations run AFTER nav/signals/widgets-boot have loaded because
 // _initialPass() is invoked synchronously here, probes nav's loadPage, and
 // calls _injectSignalAria (signals). Function declarations (loadModule,
@@ -1823,7 +1823,7 @@
     const el = document.querySelector(`[data-widget="${componentId}"]`)
       ?? document.querySelector(`[data-component="${componentId}"]`);
     if (!el) return;
-    // Mark hydrated only once the element was actually found — marking
+    // Mark hydrated only once the element was actually found, marking
     // before the lookup made a too-early call (root not yet in the DOM)
     // permanently block that id's behavior script. Never cleared across
     // navs: the behavior script URL is keyed by id, so process-lifetime
@@ -1832,8 +1832,8 @@
 
     // data-behavior is the most privileged attribute the runtime reads:
     // it becomes a <script src>. Only the one shape the framework emits
-    // is honoured — /__gofastr/widget/<id>.js, written by
-    // core-ui/component/component.go — because any other value turns
+    // is honoured, /__gofastr/widget/<id>.js, written by
+    // core-ui/component/component.go, because any other value turns
     // attribute injection into script execution. CSP is not the answer
     // here: a SAME-origin JS route (an upload store, a generated SDK
     // .js, a plugin asset) executes under `default-src 'self'`.
@@ -1925,7 +1925,7 @@
   // manifest under <script id="gofastr-runtime-modules">. The loader
   // reads it once; if a name is missing from the manifest, we fall
   // back to an un-versioned URL (works in dev, may pollute caches in
-  // prod — the manifest is the source of truth).
+  // prod, the manifest is the source of truth).
   const _moduleManifest = (() => {
     // Live pages assign the global via /__gofastr/manifest.js (loaded
     // before runtime.js); export mode keeps the inline JSON block.
@@ -1975,13 +1975,13 @@
   const _rpcFormFallback = (form) => {
     _rpcUnavailable();
     // Native submit is correct ONLY for a form the browser could have
-    // submitted itself — a data-fui-spa form with an ordinary enctype.
+    // submitted itself, a data-fui-spa form with an ordinary enctype.
     //
     // A data-fui-rpc form targets a JSON API: the resource engine emits it
     // with no enctype at all and rpc.js builds the JSON body, so submitting
     // it natively posts urlencoded (415) or cannot issue its declared
     // PUT/PATCH at all (405). Either way the user is navigated off the page
-    // to a raw error and everything they typed is gone — strictly worse
+    // to a raw error and everything they typed is gone, strictly worse
     // than staying put. An application/json enctype is unsendable natively
     // for the same reason. In those cases the warning is the whole remedy.
     if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) return;
@@ -1993,7 +1993,7 @@
     try { HTMLFormElement.prototype.submit.call(form); } catch (_) {}
   };
   // Widget-scoped listeners live in the widgets MODULE and prevent the
-  // default before awaiting rpc too, so they need the same recovery — the
+  // default before awaiting rpc too, so they need the same recovery, the
   // document bridge deliberately skips anything inside [data-fui-widget]
   // and cannot cover for them.
   window.__gofastr._rpcUnavailable = _rpcUnavailable;
@@ -2080,7 +2080,7 @@
   // === DRAG-TO-DISMISS (bottom-sheet style) ============================
   // Pointer-driven drag-to-close for widgets (DragDismiss /
   // preset.BottomSheet) lives in the split-runtime module at
-  // core-ui/runtime/src/dragdismiss.js — demand-loaded via the
+  // core-ui/runtime/src/dragdismiss.js, demand-loaded via the
   // [data-fui-drag-dismiss="true"] scanner below (SSR-inlined sheets
   // load at boot; dynamically-opened chrome is caught by the
   // MutationObserver scan when it's appended to <body>).
@@ -2109,14 +2109,14 @@
     // focus-on-open, and the opt-in inert focus trap for drawers.
     { name: 'disclosure', selector: 'details[data-fui-disclosure]' },
     { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
-    // SSE: background event stream. Idle-loaded — never blocks first
+    // SSE: background event stream. Idle-loaded, never blocks first
     // interaction; the channel only carries push updates, not user
     // actions. See ROADMAP §8 Phase 5.
     { name: 'sse',        selector: 'meta[name="gofastr-sse"]', idle: true },
     // Widgets: any SSR-inlined widget element or any data-fui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
-    // scanner just covers the marker-on-page path. Idle-loaded —
+    // scanner just covers the marker-on-page path. Idle-loaded,
     // SSR-inlined widget chrome is already on the page; mounting is
     // hydration not first paint. See ROADMAP §8 Phase 5.
     { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
@@ -2277,7 +2277,7 @@
       // rpc-stub owns static-export clicks. The marker table is shared by all
       // compositions, so skip this one entry instead of fetching dead code.
       if (name === 'rpc' && document.__fuiStaticDispatch) continue;
-      // Skip if the module is already loaded — its own internal scanner
+      // Skip if the module is already loaded, its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
       if (window.__gofastr.loadedModules?.[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
@@ -2295,7 +2295,7 @@
   // Phase 5 idle fallback (ROADMAP §8). Modules tagged `idle: true` in
   // `_moduleMarkers` ship after FCP via requestIdleCallback so they
   // never compete with the user's first interaction. Safari < 16.2 and
-  // Firefox < 55 lack rIC — fall back to setTimeout(0) which still
+  // Firefox < 55 lack rIC, fall back to setTimeout(0) which still
   // runs after the current task settles.
   function _scheduleIdleModules(names) {
     const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 0));
@@ -2305,16 +2305,16 @@
   }
   // Re-scan after SPA-nav swaps content. Two phases:
   //
-  //  1. Marker scan — modules that AREN'T loaded yet get fetched when
+  //  1. Marker scan: modules that AREN'T loaded yet get fetched when
   //     their marker appears in the freshly-swapped content. (Fresh
   //     page brings new feature → load on demand.)
   //
-  //  2. Per-module rescan — modules that ARE loaded re-run their
+  //  2. Per-module rescan: modules that ARE loaded re-run their
   //     scanner against the new DOM. Modules opt in by registering
   //     a function on `window.__gofastr._moduleScanners[name]`; the
   //     contract is "wire any new elements inside `root`, idempotent
   //     against already-wired elements". This is how SSR-inlined
-  //     toast stacks on the new page get their TTL timers armed —
+  //     toast stacks on the new page get their TTL timers armed,
   //     without it, `_initToasts` would have run only once at module
   //     load before that DOM existed.
   window.addEventListener('gofastr:navigate', () => {
@@ -2332,7 +2332,7 @@
   });
 
   // Close any open modal widgets on SPA navigation. Toasts/panels
-  // (non-backdrop'd widgets) survive — they're page-independent
+  // (non-backdrop'd widgets) survive, they're page-independent
   // UI like build-progress banners.
   window.addEventListener('gofastr:navigate', () => {
     const G = window.__gofastr;
@@ -2349,7 +2349,7 @@
   // page-scoped widget elsewhere silently bails because the entry is
   // missing from _widgetCatalog.
   //
-  // The fetch is idempotent — entries are MERGED into the catalog
+  // The fetch is idempotent, entries are MERGED into the catalog
   // (existing entries from boot don't get overwritten unless the
   // server returns a changed version). Non-hidden widgets that
   // aren't already mounted are mounted now. Then _syncDeepLinks runs
@@ -2363,7 +2363,7 @@
         if (!Array.isArray(list) || list.length === 0) return;
         const G = window.__gofastr;
         if (!G) return;
-        // Make sure the widgets module is loaded — the initial page
+        // Make sure the widgets module is loaded, the initial page
         // may have had no widgets, so loadModule('widgets') was never
         // triggered and mountWidget isn't on the namespace yet.
         try { await G.loadModule('widgets'); } catch (_) { return; }
@@ -2398,15 +2398,15 @@
     G.scheduleIdleLoads();
   };
 
-  // Event listeners attach unconditionally — they fire only when the
+  // Event listeners attach unconditionally, they fire only when the
   // matching event happens, so installing them before the DOM is parsed
   // is safe. An earlier arrangement gated them inside
   // `if (document.readyState === 'loading')`, which silently disabled
   // them when runtime.js loaded after DOMContentLoaded (late injection,
   // fast parse, dynamic re-init).
 
-  // Disclosure keyboard/AT behaviour — aria-expanded mirroring,
-  // Escape-to-close, menu focus-on-open, and the opt-in focus trap —
+  // Disclosure keyboard/AT behaviour, aria-expanded mirroring,
+  // Escape-to-close, menu focus-on-open, and the opt-in focus trap,
   // lives in the split-runtime module at core-ui/runtime/src/disclosure.js,
   // demand-loaded via the details[data-fui-disclosure] scanner below.
   // Core keeps only the close-on-navigate lines; the `toggle` event they
@@ -2417,7 +2417,7 @@
   // when data-fui-signal-mode is absent or "text"): attr-mode and
   // html-mode bindings must NOT receive role=status because:
   //  - attr-mode: injects into element attributes (e.g. <a href=…>),
-  //    not text — role=status on an <a> is invalid ARIA.
+  //    not text, role=status on an <a> is invalid ARIA.
   //  - html-mode: swaps innerHTML of island wrappers; treating the
   //    entire region as a live region causes a storm of announcements
   //    on every island update. Those regions use their own role/aria.
@@ -2440,8 +2440,8 @@
   // _runMountActions fires component actions marked data-action-mount once,
   // right after hydration. Component clientJS handlers (data-action) only run
   // on user events (click/input/change/submit); a server-rendered island that
-  // must populate itself on load — an entity list fetching its rows, a detail
-  // view fetching one record, a relation <select> fetching its options — opts
+  // must populate itself on load, an entity list fetching its rows, a detail
+  // view fetching one record, a relation <select> fetching its options, opts
   // in by carrying data-action-mount="<actionName>" on a node inside a
   // [data-component]. Re-runs on SPA nav so a swapped-in page repopulates.
   const _runMountActions = (root) => {
@@ -2477,7 +2477,7 @@
     // Active-link highlighting is cosmetic post-nav work carved out of
     // core (level-1 budget): the idle-loaded module applies aria-current
     // on load and keeps it fresh across SPA navs. Skipped in the embed
-    // composition — nav is absent there, and typeof on an undeclared
+    // composition, nav is absent there, and typeof on an undeclared
     // identifier is the one safe probe for a fragment symbol.
     if (typeof loadPage === 'function') {
       (window.requestIdleCallback || ((fn) => setTimeout(fn, 150)))(

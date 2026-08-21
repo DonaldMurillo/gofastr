@@ -66,8 +66,8 @@ func TestDisclosureModuleKeepsA11yBehaviour(t *testing.T) {
 // detach it: swapShell replaces the whole shell subtree (replaceWith),
 // and swapAtSlot writes the cell's innerHTML before its close-open-
 // disclosures sweep can see a drawer that lived inside it. Without a
-// release the inert sticks to every remaining <body> child — out of the
-// focus order AND the accessibility tree — for the life of the tab.
+// release the inert sticks to every remaining <body> child, out of the
+// focus order AND the accessibility tree, for the life of the tab.
 func TestTrapReleasesInertOnDetach(t *testing.T) {
 	// detach is the JS the runtime itself runs, verbatim in shape: the
 	// cross-layout shell replaceWith, and the main-content innerHTML write.

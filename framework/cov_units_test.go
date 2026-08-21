@@ -12,7 +12,7 @@ import (
 )
 
 // ============================================================================
-// audit.go — pure helper branches
+// audit.go: pure helper branches
 // ============================================================================
 
 // defaultRedact returns the same (empty) map unchanged.
@@ -129,7 +129,7 @@ func TestCovBuildDeleteDiff(t *testing.T) {
 }
 
 // ============================================================================
-// typed_hooks.go — helper branches
+// typed_hooks.go: helper branches
 // ============================================================================
 
 // unmarshalHookPayload handles a non-map payload (string id) through JSON.
@@ -218,7 +218,7 @@ func TestCovMarshalMergeError(t *testing.T) {
 }
 
 // ============================================================================
-// typed_hooks.go — typed-hook payload-type error branches (List/Get)
+// typed_hooks.go: typed-hook payload-type error branches (List/Get)
 // ============================================================================
 
 // The typed List/Get hooks return a contract-drift error when the payload
@@ -246,7 +246,7 @@ func TestCovTypedListGetWrongPayload(t *testing.T) {
 }
 
 // ============================================================================
-// i18n.go — Translator accessor
+// i18n.go: Translator accessor
 // ============================================================================
 
 func TestCovTranslatorAccessor(t *testing.T) {

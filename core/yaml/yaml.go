@@ -97,7 +97,7 @@ func stripComment(line string) string {
 
 // maxNestingDepth bounds parser recursion. Each indentation level recurses
 // through parseBlock → parseMap/parseList → parseBlock, so deeply nested
-// input drives unbounded recursion — a stack-exhaustion DoS on any user-
+// input drives unbounded recursion, a stack-exhaustion DoS on any user-
 // supplied YAML. Past the cap we stop recursing and return an error,
 // mirroring core/markdown's maxBlockquoteDepth.
 const maxNestingDepth = 128

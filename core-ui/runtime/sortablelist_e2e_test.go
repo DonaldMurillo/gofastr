@@ -48,7 +48,7 @@ func startSortableServer(t *testing.T, pageHTML string, rpcHandler, conflictHand
 	// Serve the core runtime alongside the module. In production a
 	// module only ever arrives via core's loadModule, and the shared
 	// guards it relies on (same-origin gating on attribute-supplied RPC
-	// URLs) live in core — a module page without core is a shape that
+	// URLs) live in core, a module page without core is a shape that
 	// does not ship.
 	core, err := RuntimeJS()
 	if err != nil {
@@ -178,7 +178,7 @@ func TestSortable_CrossAllowedInGroup(t *testing.T) {
 }
 
 // TestSortable_CrossBlockedDiffGroup: a drag from column A (group g1)
-// to column C (group g2) is blocked — the item stays in column A.
+// to column C (group g2) is blocked, the item stays in column A.
 func TestSortable_CrossBlockedDiffGroup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -232,7 +232,7 @@ func TestSortable_CrossCommitPayload(t *testing.T) {
 
 // TestSortable_SameContainerPayload: a same-container keyboard reorder
 // on a list WITH data-fui-sortable-container POSTs order= + container=
-// (no moved=) — issue #84. The server needs the container id even for
+// (no moved=), issue #84. The server needs the container id even for
 // same-column writes so it can route optimistically.
 func TestSortable_SameContainerPayload(t *testing.T) {
 	if testing.Short() {
@@ -291,7 +291,7 @@ func TestSortable_409FiresConflictPath(t *testing.T) {
 	}
 	conflictHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		// Return fresh items — k2 is now alone in column B (the move
+		// Return fresh items, k2 is now alone in column B (the move
 		// was rejected server-side).
 		fmt.Fprint(w, `<li data-fui-sortable-item data-fui-sort-key="k2" draggable="true" tabindex="0" role="option" aria-label="Drag B1">B1</li>`)
 	}
@@ -306,7 +306,7 @@ func TestSortable_409FiresConflictPath(t *testing.T) {
 		chromedp.Sleep(500*time.Millisecond),
 		// The conflict endpoint should have been fetched. Verify by
 		// checking that column B's innerHTML was replaced (the
-		// conflict response has k2 with aria-label "Drag B1" — same
+		// conflict response has k2 with aria-label "Drag B1", same
 		// key, fresh node).
 		chromedp.Evaluate(`(function(){
 			var colB = document.querySelector('[data-fui-sortable-container="b"]');
@@ -331,13 +331,13 @@ func TestSortable_409FiresConflictPath(t *testing.T) {
 }
 
 // TestSortable_NoVersionNo409Special: without the version attr, a 409
-// is treated like any other non-2xx — the item rolls back to its
+// is treated like any other non-2xx, the item rolls back to its
 // source column (no conflict refetch).
 func TestSortable_NoVersionNo409Special(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
 	}
-	// Same page as the default sortablePage — no version/conflict attrs.
+	// Same page as the default sortablePage, no version/conflict attrs.
 	bc := &bodyCapture{}
 	rpcHandler := func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
@@ -484,7 +484,7 @@ func TestSortable_KeyboardIntoEmptyColumn(t *testing.T) {
 
 // TestSortable_ConflictRefreshEmptyColumn: a 409 whose conflict RPC
 // returns an empty body reconciles the destination to zero items and
-// restores the source snapshot (#82 — authoritative reconciliation
+// restores the source snapshot (#82, authoritative reconciliation
 // can replace a column with an empty response).
 func TestSortable_ConflictRefreshEmptyColumn(t *testing.T) {
 	if testing.Short() {
@@ -551,8 +551,8 @@ const sortableNoContainerPage = `
 <span id="ready">ready</span>`
 
 // TestSortable_SameContainerNoContainer: a same-container reorder on a
-// list WITHOUT data-fui-sortable-container keeps today's exact payload
-// — order= only, no container=/moved= (issue #84 back-compat).
+// list WITHOUT data-fui-sortable-container keeps today's exact payload,
+// order= only, no container=/moved= (issue #84 back-compat).
 func TestSortable_SameContainerNoContainer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -582,7 +582,7 @@ func TestSortable_SameContainerNoContainer(t *testing.T) {
 
 // TestSortable_SameContainerDragWithContainer: the POINTER (drag) path
 // for a same-container reorder on a list WITH a container also includes
-// container= — issue #84 covers both pointer and keyboard.
+// container=, issue #84 covers both pointer and keyboard.
 func TestSortable_SameContainerDragWithContainer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -613,7 +613,7 @@ func TestSortable_SameContainerDragWithContainer(t *testing.T) {
 
 // TestSortable_CrossCommitNoContainer: a cross-container move between
 // lists WITHOUT data-fui-sortable-container still sends the container=
-// field (empty) — cross-container behavior is unchanged by #84.
+// field (empty), cross-container behavior is unchanged by #84.
 func TestSortable_CrossCommitNoContainer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -641,7 +641,7 @@ func TestSortable_CrossCommitNoContainer(t *testing.T) {
 }
 
 // sortableVersionPage: two versioned, conflict-enabled columns (a has
-// k1, b has k2) — the shared fixture for #83 409-body tests.
+// k1, b has k2), the shared fixture for #83 409-body tests.
 const sortableVersionPage = `
 <ol data-fui-sortable data-fui-sortable-rpc="/rpc" data-fui-sortable-group="g1"
     data-fui-sortable-container="a" data-fui-sortable-version="v1"
@@ -798,7 +798,7 @@ func TestSortable_409OversizedFallback(t *testing.T) {
 }
 
 // TestSortable_409HTMLFallback: a 409 with a non-JSON content-type
-// (text/html) is never parsed — generic copy fallback (#83).
+// (text/html) is never parsed, generic copy fallback (#83).
 func TestSortable_409HTMLFallback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -824,7 +824,7 @@ func TestSortable_409HTMLFallback(t *testing.T) {
 }
 
 // TestSortable_409EmptyBodyBackwardCompat: an empty 409 body keeps
-// today's exact behavior — generic copy, conflict refresh still runs.
+// today's exact behavior, generic copy, conflict refresh still runs.
 func TestSortable_409EmptyBodyBackwardCompat(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")

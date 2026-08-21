@@ -63,7 +63,7 @@ func TestNewIsolatedDBCarvesAndDrops(t *testing.T) {
 }
 
 func TestNewIsolatedDBHardFailsWithoutDSN(t *testing.T) {
-	// Smoke check on the error wording — the helper itself uses t.Fatalf
+	// Smoke check on the error wording, the helper itself uses t.Fatalf
 	// internally, so we exercise the validator directly.
 	if err := testkit.ValidateAdminDSN(""); err == nil {
 		t.Fatal("ValidateAdminDSN(\"\") should fail")
@@ -72,7 +72,7 @@ func TestNewIsolatedDBHardFailsWithoutDSN(t *testing.T) {
 	}
 }
 
-// rewriteDBName must REFUSE to silently fall through on parse failure —
+// rewriteDBName must REFUSE to silently fall through on parse failure,
 // previously a parse error returned the original DSN, so the carved
 // conn pointed at the admin/maintenance DB and any migrations or
 // fixture writes hit the operator's `postgres` database.

@@ -148,8 +148,8 @@ func TestRegisterSkipsWhenRoutePreExists(t *testing.T) {
 
 // SSE handler must release the goroutine when the heartbeat Write
 // fails (server going down, client RST). Drives a real heartbeat tick
-// against a writer that errors so the bail path is actually exercised
-// — context cancel is a separate code path and doesn't prove the
+// against a writer that errors so the bail path is actually exercised.
+// Context cancel is a separate code path and doesn't prove the
 // Write-error branch works.
 func TestSSEBailsOnHeartbeatWriteError(t *testing.T) {
 	// Compress the heartbeat so the test runs in milliseconds, not 25s.
@@ -160,7 +160,7 @@ func TestSSEBailsOnHeartbeatWriteError(t *testing.T) {
 	dev.RegisterLiveReload(r)
 
 	req := httptest.NewRequest(http.MethodGet, dev.LiveReloadStreamURL, nil)
-	// Long-lived ctx — we want to prove the handler bails on the
+	// Long-lived ctx: we want to prove the handler bails on the
 	// Write error, NOT on context cancellation. If the handler only
 	// returned via ctx-done, this test would deadlock.
 	req = req.WithContext(context.Background())
@@ -194,8 +194,8 @@ func TestSSEBailsOnHeartbeatWriteError(t *testing.T) {
 }
 
 // countingErrWriter records every Write call. After failFrom is set
-// (to a write-count threshold), subsequent Writes return io.ErrClosedPipe
-// — simulating a dead client connection.
+// (to a write-count threshold), subsequent Writes return io.ErrClosedPipe,
+// simulating a dead client connection.
 type countingErrWriter struct {
 	hdr        http.Header
 	status     int

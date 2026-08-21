@@ -19,7 +19,7 @@ import (
 // insert after the first.
 func TestCreate_AutoIncrementPK_AssignedByDB(t *testing.T) {
 	// "INTEGER PRIMARY KEY" on SQLite aliases the rowid and auto-increments
-	// when the column is omitted from INSERT — exactly what SQLType emits.
+	// when the column is omitted from INSERT, exactly what SQLType emits.
 	dbc := setupDB(t, `CREATE TABLE counters (id INTEGER PRIMARY KEY, label TEXT)`)
 	ent := entity.Define("counters", entity.EntityConfig{
 		Name: "counters", Table: "counters",

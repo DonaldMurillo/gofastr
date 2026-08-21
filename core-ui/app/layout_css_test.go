@@ -22,7 +22,7 @@ func TestSidebarShellHeaderHasBannerChrome(t *testing.T) {
 }
 
 // .layout-body is min-height: 100vh, so adding a banner makes every page
-// taller than the viewport by exactly the header height — every screen
+// taller than the viewport by exactly the header height, every screen
 // scrolls with nothing in the overflow. The body under a sidebar-shell
 // header must subtract the header height. (#187)
 func TestSidebarHeaderOffsetsBodyMinHeight(t *testing.T) {

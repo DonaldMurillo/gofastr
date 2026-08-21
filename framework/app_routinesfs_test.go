@@ -34,8 +34,8 @@ func TestApp_RoutinesFS_RegistersAllDialects(t *testing.T) {
 	}
 }
 
-// TestApp_RoutinesFS_PanicsOnEmptyDir proves the scream-on-misconfig contract
-// — a path that resolves to no .sql files aborts App construction.
+// TestApp_RoutinesFS_PanicsOnEmptyDir proves the scream-on-misconfig contract:
+// a path that resolves to no .sql files aborts App construction.
 func TestApp_RoutinesFS_PanicsOnEmptyDir(t *testing.T) {
 	fsys := fstest.MapFS{
 		"db/routines/README.md": &fstest.MapFile{Data: []byte("nope")},
@@ -56,7 +56,7 @@ func TestApp_RoutinesFS_PanicsOnEmptyDir(t *testing.T) {
 
 // TestApp_RoutinesFS_EndToEndOnSQLite proves the full boot path: load from FS,
 // register, and AutoMigrate against a SQLite DB actually creates the routines.
-// (App.Start is too heavy here — we mirror what Start does for routines.)
+// (App.Start is too heavy here, we mirror what Start does for routines.)
 func TestApp_RoutinesFS_EndToEndOnSQLite(t *testing.T) {
 	db := openTestDB(t, DialectSQLite)
 	fsys := fstest.MapFS{

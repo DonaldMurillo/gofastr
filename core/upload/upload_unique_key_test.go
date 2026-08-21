@@ -36,7 +36,7 @@ func postNamedFile(t *testing.T, h http.HandlerFunc, name, content string) Metad
 // uploads of the same client filename must land at DIFFERENT keys, and
 // the first upload's bytes must survive the second. Keying objects on
 // the sanitized client filename (with LocalStorage.Save opening
-// O_TRUNC) meant user B's report.txt silently overwrote user A's —
+// O_TRUNC) meant user B's report.txt silently overwrote user A's:
 // cross-user data loss with no error anywhere. The auto-CRUD path
 // already solves this with a timestamp + crypto/rand suffix
 // (file.GenerateFilePath); the standalone handler must use the same

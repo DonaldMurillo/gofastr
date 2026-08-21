@@ -8,7 +8,7 @@ import "context"
 //
 // It backs the per-customer shell response: when a Host is constructed with a
 // source, the embed shell reads a customer id off the request and serves ONLY
-// that customer's origins in the CSP frame-ancestors directive — instead of
+// that customer's origins in the CSP frame-ancestors directive, instead of
 // the whole static allowlist on every response. That changes the
 // enumerability trade-off: a caller who guesses another customer's id learns
 // THAT customer's origins, never the whole list, and gains no framing (the
@@ -17,7 +17,7 @@ import "context"
 //
 // Two methods, because the two callers ask different questions. The shell
 // needs the LIST of a customer's origins to build the directive. The grant
-// path — MintNonce, Exchange, VerifyGrant — needs only a yes/no about one
+// path is MintNonce, Exchange, VerifyGrant. It needs only a yes/no about one
 // origin, and it does not know which customer is asking: the app calls
 // MintNonce with an origin, not a customer id.
 //
@@ -35,7 +35,7 @@ import "context"
 type OriginSource interface {
 	// Origins returns the exact origins allowed to frame the named surface
 	// for the named customer, in declaration order. The strings need not be
-	// pre-normalized — ResolveCustomerOrigins normalizes them.
+	// pre-normalized. ResolveCustomerOrigins normalizes them.
 	//
 	// An empty slice or an error fails the shell closed. The customer id is
 	// attacker-chosen (it arrives on an unauthenticated navigation), so a
@@ -48,8 +48,8 @@ type OriginSource interface {
 	// origin, not a customer, so this is what decides whether a
 	// source-managed origin can obtain a credential at all.
 	//
-	// It is on the hot path — VerifyGrant calls it on every embed request
-	// whose origin is not in the static allowlist — so an implementation
+	// It is on the hot path. VerifyGrant calls it on every embed request
+	// whose origin is not in the static allowlist, so an implementation
 	// must be cheap. Cache it; a table scan per request is not acceptable.
 	//
 	// An error fails closed. Origins are compared after NormalizeOrigin, so
@@ -60,7 +60,7 @@ type OriginSource interface {
 
 // maxCustomerIDBytes bounds the attacker-chosen customer id before it reaches
 // the source. The shell route is unauthenticated, so an unbounded id would
-// travel into the app's lookup (and any log line) at request-line length —
+// travel into the app's lookup (and any log line) at request-line length,
 // three orders of magnitude larger than any real identifier.
 const maxCustomerIDBytes = 256
 
@@ -110,7 +110,7 @@ func ResolveCustomerOrigins(ctx context.Context, src OriginSource, surface, cust
 // handing a caller probing with guessed ids.
 var (
 	errOriginSourceUnavailable = originSourceError("embed: no origin source configured")
-	errEmptyCustomerID         = originSourceError("embed: empty customer id — a source requires one; serving no origins")
+	errEmptyCustomerID         = originSourceError("embed: empty customer id: a source requires one; serving no origins")
 	errCustomerIDTooLong       = originSourceError("embed: customer id exceeds the length limit")
 )
 

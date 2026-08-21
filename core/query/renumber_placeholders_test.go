@@ -7,7 +7,7 @@ import (
 // TestWhere_PlaceholdersAreRenumberedPositionally pins the composition
 // contract: renumbering is positional by encounter, so two fragments that
 // each independently emit $1 (exactly what framework/entity's And/Or/Not
-// produce) become $1, $2 across the composed clause — one placeholder per
+// produce) become $1, $2 across the composed clause: one placeholder per
 // argument. A repeated original $N is NOT a back-reference; the caller
 // passes one argument per placeholder.
 func TestWhere_PlaceholdersAreRenumberedPositionally(t *testing.T) {
@@ -26,7 +26,7 @@ func TestWhere_PlaceholdersAreRenumberedPositionally(t *testing.T) {
 // TestWhere_QuotedLiteralNotRenumbered verifies that a $N appearing inside
 // a single-quoted SQL string literal is left untouched. Previously the
 // scanner was quote-blind, so `label = '$5 off' AND x = $1` became
-// `label = '$1 off' AND x = $2` — corrupting the literal value AND
+// `label = '$1 off' AND x = $2`, corrupting the literal value AND
 // misaligning the real placeholder.
 func TestWhere_QuotedLiteralNotRenumbered(t *testing.T) {
 	sqlStr, args := Select("*").From("t").
@@ -45,7 +45,7 @@ func TestWhere_QuotedLiteralNotRenumbered(t *testing.T) {
 // literal: an embedded quote must not prematurely close the literal and
 // expose a later $N to renumbering.
 func TestWhere_EscapedQuoteInLiteral(t *testing.T) {
-	// Inside the literal: 'it''s $9 here' — $9 is data, must survive.
+	// Inside the literal: 'it''s $9 here'. $9 is data, must survive.
 	// Outside: y = $1 is the only real placeholder.
 	sqlStr, args := Select("*").From("t").
 		Where("m = 'it''s $9 here' AND y = $1", "v").Build()

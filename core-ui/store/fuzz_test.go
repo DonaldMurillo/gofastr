@@ -24,7 +24,7 @@ func FuzzScanReferenced(f *testing.F) {
 }
 
 // FuzzValidateName asserts that any name validateName accepts contains
-// only attribute-safe characters — it can never break out of a
+// only attribute-safe characters, it can never break out of a
 // data-fui-* attribute value.
 func FuzzValidateName(f *testing.F) {
 	f.Add("org.companyName")

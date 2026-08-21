@@ -72,9 +72,9 @@ func TestAgentNoSpawnerInCtxIsErrorNotPanic(t *testing.T) {
 }
 
 // TestAgentRefusesPastMaxDepth: an Agent call at depth >= MaxSpawnDepth
-// must NOT trigger another Spawn — it must return an error result so
+// must NOT trigger another Spawn, it must return an error result so
 // the model knows recursion is bounded. Regression for the runaway
-// session bug (sess_01KSDZK5… — 10 Agent spawns chained).
+// session bug (sess_01KSDZK5…, 10 Agent spawns chained).
 func TestAgentRefusesPastMaxDepth(t *testing.T) {
 	sp := &fakeSpawner{answer: "should never run"}
 	// Simulate being CALLED from inside a sub-agent at the max depth.

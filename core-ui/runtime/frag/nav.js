@@ -1,13 +1,13 @@
-// nav.js — SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
+// nav.js: SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
 // Owns: <a> click hijack, history.pushState, popstate, screen cache,
 // layout-chain-aware swaps (deepest shared layer), updateActiveLink,
 // document.title writes, the navigate() namespace member.
 
   // -----------------------------------------------------------------------
-  // Screen cache — stores rendered screens for instant back-navigation.
+  // Screen cache: stores rendered screens for instant back-navigation.
   // Each entry records the layout LAYER its html renders below ('' = a
   // layout-less page's whole <main>), so replaying it swaps exactly the
-  // right content cell — never a class-name guess, never an unwrap pass.
+  // right content cell, never a class-name guess, never an unwrap pass.
   // -----------------------------------------------------------------------
   const screenCache = new Map(); // path → { html, title, layer }
   // sseMeta reads the live stream-id carrier from a document (default:
@@ -33,7 +33,7 @@
   // identity) and the layer's content cell with data-fui-layout-slot (the
   // swap target). The route manifest carries each route's chain in
   // `layouts` (outermost → innermost). Document order of the key-marked
-  // elements IS the chain order — a wrapper precedes its descendants.
+  // elements IS the chain order, a wrapper precedes its descendants.
   const domChainKeys = () => {
     const out = [];
     for (const el of document.querySelectorAll('[data-fui-layout-key]')) {
@@ -56,7 +56,7 @@
     return (m && m.getAttribute('data-fui-layout-slot')) || '';
   };
   // routeEntry: manifest lookup with trailing-slash tolerance and dynamic
-  // patterns. Pattern awareness matters for chains — a concrete URL of a
+  // patterns. Pattern awareness matters for chains, a concrete URL of a
   // "/:param" route must resolve to that route's chain, not to "no
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
@@ -64,7 +64,7 @@
     const clean = path.split('?')[0].split('#')[0];
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
-    // write "/components" — the server redirects between them, so the
+    // write "/components", the server redirects between them, so the
     // SPA router must accept both forms.
     if (!r && clean !== '/' && !clean.endsWith('/')) r = routes.get(clean + '/');
     if (!r && clean !== '/' && clean.endsWith('/')) r = routes.get(clean.slice(0, -1));
@@ -100,7 +100,7 @@
   // Route through cacheScreen() so the LRU cap is enforced uniformly.
   const initialMain = mainEl();
   if (initialMain) {
-    // Key with the search string too — every later entry (and
+    // Key with the search string too, every later entry (and
     // currentPath) is keyed pathname+search, and invalidate()
     // matches against that form. The layer is <main>'s own slot key:
     // the boot html spans everything below layer 0.
@@ -133,7 +133,7 @@
   const isKnownRoute = (href) => !!routeEntry(resolvePath(href));
 
   // -----------------------------------------------------------------------
-  // Client-side navigation — fetch partial HTML, swap at the deepest
+  // Client-side navigation, fetch partial HTML, swap at the deepest
   // layer the current DOM shares with the target route's layout chain.
   // -----------------------------------------------------------------------
 
@@ -152,10 +152,10 @@
   // call; after any await, a response whose epoch is no longer the
   // latest MUST NOT touch the DOM, currentPath, or history. Without
   // this, a rapid A→B where A's fetch resolves last swaps <main> back
-  // to A's content while the URL bar already says B — and a repeat
+  // to A's content while the URL bar already says B, and a repeat
   // click on B no-ops (fullPath === currentPath), stranding the user.
   let _navEpoch = 0;
-  // Mini toast used by loadPage failures — strict-CSP-clean (no
+  // Mini toast used by loadPage failures, strict-CSP-clean (no
   // inline styles since the .fui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
   const _showNavToast = (msg) => {
@@ -178,7 +178,7 @@
   //     back-then-forward let the BACK nav's settle scroll-to-top land
   //     AFTER the forward nav had restored its position);
   //   - the position check skips the re-correct when ANYTHING scrolled
-  //     since the first write — rAF can be throttled far past the swap
+  //     since the first write, rAF can be throttled far past the swap
   //     (background tabs, loaded CI runners), and a late settle pass was
   //     yanking a user who had already started scrolling back to where
   //     the navigation landed.
@@ -250,7 +250,7 @@
   }, { passive: true });
   // Reload restore: manual scrollRestoration leaves a reloaded page at
   // the top; the stored position for this entry id puts it back. A URL
-  // fragment wins — the browser's native hash scroll is already right.
+  // fragment wins, the browser's native hash scroll is already right.
   if (!location.hash && _scrollStore[_entryId]) {
     const p0 = _scrollStore[_entryId];
     requestAnimationFrame(() => window.scrollTo(p0[0], p0[1]));
@@ -263,11 +263,11 @@
   // Single choke point for every history write in the runtime (the click
   // hijack, navigate(), RPC X-Gofastr-Push-State, widget/pane deep
   // links, intercepts). Assigns the entry id for scroll restoration,
-  // moves the URL, and keeps currentPath in sync — modules that
+  // moves the URL, and keeps currentPath in sync, modules that
   // pushState'd around the router left currentPath stale, so the next
   // popstate mis-diffed the URL change.
   const _pushURL = (url, { replace = false } = {}) => {
-    // Capture the outgoing entry's position synchronously — the scroll
+    // Capture the outgoing entry's position synchronously, the scroll
     // listener is event-driven and can lag the traversal on slow
     // renderers; this is the last moment the old id is current.
     if (!replace) _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
@@ -287,7 +287,7 @@
 
   // swapAtSlot replaces one layer's content cell. Scope rule: swapping
   // the outermost cell (or a layout-less <main>) closes disclosures
-  // document-wide — the user left the page, the hamburger must not float
+  // document-wide, the user left the page, the hamburger must not float
   // over the new one. A deeper swap closes only within its own layer so
   // outer shell state (an open sidebar section) survives sibling nav.
   const swapAtSlot = (slot, html, outermost) => {
@@ -304,7 +304,7 @@
   };
 
   // swapShell replaces the whole layout shell (cross-chain navigation: no
-  // shared root). newRoot is the destination page's outermost shell — or
+  // shared root). newRoot is the destination page's outermost shell, or
   // its bare <main> when the destination has no layouts, so leaving a
   // chain for a plain page drops the old chrome instead of keeping it.
   // Delegated chrome handlers survive the swap; no hard reload (hard
@@ -316,7 +316,7 @@
     const el = document.importNode(newRoot, true);
     cur.replaceWith(el);
     // Runtime-created body singletons live OUTSIDE the shell, so the
-    // swap normally leaves them alone — but a layout that wrapped one
+    // swap normally leaves them alone, but a layout that wrapped one
     // (or a future whole-body swap) must not silently drop them.
     doc.reattach();
     mergeSeedFromDOM(el);
@@ -326,12 +326,12 @@
     return el;
   };
 
-  // Shared tail of every successful swap. root is the swapped element —
+  // Shared tail of every successful swap. root is the swapped element,
   // exposed on the navigate event so teardown-aware modules can scope
   // cleanup to the region that actually changed. Active-link
   // highlighting rides the gofastr:navigate event (src/activelink.js,
-  // idle-loaded) — cosmetic post-nav work carved out of core.
-  // ps is the restore target BOUND TO THIS NAVIGATION — loadPage
+  // idle-loaded), cosmetic post-nav work carved out of core.
+  // ps is the restore target BOUND TO THIS NAVIGATION, loadPage
   // consumes the popstate's pending value at entry, so a superseded
   // back/forward can never leak its position into a later click's
   // finishNav.
@@ -348,7 +348,7 @@
   };
 
   /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav.
-      from names the origin route when the caller already moved the URL —
+      from names the origin route when the caller already moved the URL,
       _pushURL syncs currentPath BEFORE loadPage runs on the click path,
       so capturing currentPath here would report the destination as its
       own origin (and X-Gofastr-From would stop naming the real one). */
@@ -367,7 +367,7 @@
     const myEpoch = ++_navEpoch;
     const prevPath = from || currentPath;
     currentPath = path;
-    // Consume the popstate's restore target NOW, into this navigation —
+    // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
     // into whichever navigation ran finishNav next.
     let ps = restore;
@@ -401,7 +401,7 @@
       }
 
       // Prefetched entry (preload module): same shape as a fetched
-      // partial — swap it in when its layer is live, exactly like the
+      // partial, swap it in when its layer is live, exactly like the
       // screen cache but single-use and TTL-bounded. Post-mutation navs
       // (bypassCache) skip it: it was fetched before the mutation.
       if (!cached && !bypassCache && !forceFull && window.__gofastr._takePrefetched) {
@@ -422,10 +422,10 @@
       // Cross-chain nav (no shared root): fetch the FULL page (no
       // navigate header → the server returns the whole document) and
       // replace the shell. Taken when EITHER side has a chain the other
-      // doesn't share — including a chained page leaving for a
+      // doesn't share, including a chained page leaving for a
       // layout-less one, where a partial swap would keep the old chrome
       // around the new content. forceFull is the deploy-skew recovery
-      // path — the server echoed a swap boundary this DOM doesn't have.
+      // path, the server echoed a swap boundary this DOM doesn't have.
       if ((layouts.length > 0 || domChainKeys().length > 0) && (forceFull || sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (myEpoch !== _navEpoch) return;
@@ -434,14 +434,14 @@
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (myEpoch !== _navEpoch) return;
         let dest = path;
-        // resolvePath keeps the search string — the cache key and the
+        // resolvePath keeps the search string, the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
         if (dest !== path) { _pushURL(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
-        // The full fetch re-renders chrome under the CURRENT session —
+        // The full fetch re-renders chrome under the CURRENT session,
         // if the server re-minted (restart/rotation/expiry), the fresh
         // head carries the new stream id. Copy it onto the live meta so
         // the SSE reconnect loop recovers here too, not only on the
@@ -451,7 +451,7 @@
         const nm = pdoc.querySelector('main');
         const el = swapShell(shellEl(pdoc) || nm);
         if (!el) {
-          // No live shell to replace (layout-less origin) — fall back to
+          // No live shell to replace (layout-less origin), fall back to
           // a whole-main swap; chain markers arrive with the content.
           const m = mainEl();
           if (m) swapAtSlot(m, nm ? nm.innerHTML : '', true);
@@ -471,7 +471,7 @@
       if (myEpoch !== _navEpoch) return;
       // Apply a session rollover BEFORE the ok-check: the server re-mints
       // (and names the fresh stream id) on 404 / policy-block partials
-      // too, and the browser has already stored the new cookie — if we
+      // too, and the browser has already stored the new cookie, if we
       // threw first, the meta would keep the dead id and never recover
       // (the next OK nav presents the now-valid cookie, so no header).
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
@@ -484,7 +484,7 @@
       window.__gofastr._inval(resp);
 
       // X-Gofastr-Location signals "server policy redirected this
-      // partial — go nav to the new URL instead of trying to swap
+      // partial, go nav to the new URL instead of trying to swap
       // the empty body in place." Set by uihost on a Redirect policy
       // outcome. The fetch above won't see a 303 (we deliberately use
       // 200 + header to survive redirect:'follow').
@@ -499,7 +499,7 @@
         _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
         // Keep bypassCache across the redirect: a post-mutation nav
-        // must not serve the redirect target from the screen cache —
+        // must not serve the redirect target from the screen cache,
         // and keep the ORIGINAL origin so the redirect leg's subtree
         // partial renders against where the user actually came from.
         return loadPage(redirectTo, { bypassCache, from: prevPath, restore: ps });
@@ -523,7 +523,7 @@
         swapKey = nm?.getAttribute('data-fui-layout-slot') || '';
       }
       // The swap boundary must be live in the DOM; a miss means the
-      // manifest and server disagree (deploy skew) — recover with a
+      // manifest and server disagree (deploy skew), recover with a
       // full-page load of the destination rather than a wrong-cell swap.
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? mainEl() : null);
       if (!slot) {
@@ -537,7 +537,7 @@
       finishNav(path, prevPath, false, root, ps);
     } catch (err) {
       if (myEpoch !== _navEpoch) return;
-      // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
+      // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
@@ -562,12 +562,12 @@
     // Cancel any in-flight timer from a previous nav so rapid A→B→C
     // navs don't race and leave the live region on the wrong title.
     if (_announceTimer) { clearTimeout(_announceTimer); _announceTimer = 0; }
-    // If the region already holds this title, do nothing — clearing
+    // If the region already holds this title, do nothing, clearing
     // and re-setting would open a 50ms empty-textContent window for
     // a same-title repeat with no upside (AT already announced it).
     if (r.textContent === title) return;
     // Touch the textContent twice (clear, then set) so AT re-announces
-    // when the title actually changes — defensive; cheap.
+    // when the title actually changes, defensive; cheap.
     r.textContent = '';
     _announceTimer = setTimeout(() => {
       r.textContent = title;
@@ -577,7 +577,7 @@
 
   // mergeSeedFromDOM applies a partial (SPA-nav) signal seed embedded in
   // freshly-swapped content (#gofastr-signals-partial). Page-scoped names
-  // (data.p) are applied unconditionally — the destination page's fresh
+  // (data.p) are applied unconditionally, the destination page's fresh
   // state. Globals (data.g) are seeded only when first seen, so a value
   // the user already mutated (cart count) survives navigation.
   const mergeSeedFromDOM = (root) => {
@@ -609,7 +609,7 @@
   // handled client-side via partial fetch + cache. No hard refresh.
   // This is the Angular-router-style behavior described in
   // core-ui/ARCHITECTURE.md ("Page → page navigation"). In-page state
-  // changes are NOT routes — they go through data-fui-rpc on islands
+  // changes are NOT routes, they go through data-fui-rpc on islands
   // and never hit this handler.
   //
   // Cmd/Ctrl/Shift/Alt-click, target=_blank, external links, and
@@ -620,7 +620,7 @@
     const href = anchor.getAttribute('href');
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (!isInternalLink(href)) return;
-    // Skip downloads — <a download> needs the native click to trigger
+    // Skip downloads, <a download> needs the native click to trigger
     // the save dialog; intercepting fetches the bytes silently into
     // the SPA and the file never reaches the user.
     if (anchor.hasAttribute('download')) return;
@@ -634,13 +634,13 @@
 
     const fullPath = resolvePath(href);
     if (fullPath === currentPath) {
-      // Already there — let the browser handle the click (focus, scroll, etc.).
+      // Already there, let the browser handle the click (focus, scroll, etc.).
       return;
     }
     e.preventDefault();
     // Eagerly close an enclosing dismissible disclosure (mobile nav
     // hamburger). Without this, the menu floats over stale content
-    // for the entire SPA fetch duration — the user perceives the
+    // for the entire SPA fetch duration, the user perceives the
     // click as "didn't take".
     anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // Preserve the #fragment: resolvePath strips it (path-only is what
@@ -654,7 +654,7 @@
     // case; returning true means it took the navigation.
     if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
     // Capture the origin BEFORE _pushURL syncs currentPath to the
-    // destination — loadPage's X-Gofastr-From must name where the user
+    // destination, loadPage's X-Gofastr-From must name where the user
     // came from.
     const origin = currentPath;
     _pushURL(fullPath + navHash);
@@ -663,7 +663,7 @@
 
   // Stateful query params describe in-page state (open panes, widget
   // deep links). A history move whose ONLY search diff is stateful must
-  // not refetch the screen — refetching discarded the client-mounted
+  // not refetch the screen, refetching discarded the client-mounted
   // widget, which is why Forward across a deep link never worked. The
   // set is built at popstate time from what the page actually declares:
   // the widget catalog's deepLinkKey/deepLinkParams plus every
@@ -698,13 +698,13 @@
   };
 
   // popstate: a URL change via back/forward triggers a screen-partial
-  // re-fetch (cache makes it instant) — unless the diff is purely
+  // re-fetch (cache makes it instant), unless the diff is purely
   // stateful, in which case the deep-link sync below replays the state
   // with zero fetches. Reads history.state, never the event's: the
   // intercept module's synthetic PopStateEvent carries none.
   window.addEventListener('popstate', () => {
     // With manual scrollRestoration the viewport still holds the LEAVING
-    // page's position when popstate fires — record it under the old id
+    // page's position when popstate fires, record it under the old id
     // before switching, so the entry we just left can always restore
     // even if its event-driven capture lagged.
     _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
@@ -739,7 +739,7 @@
     // --- Router API ---
 
     /** Programmatically navigate to a path. force re-fetches even when
-        the path is the current page and bypasses the screen cache —
+        the path is the current page and bypasses the screen cache,
         use it after a mutation so the destination reflects new state. */
     navigate(path, { replace = false, force = false } = {}) {
       if (path === currentPath && !force) return;
@@ -764,7 +764,7 @@
     /** Drop cached screens so the next visit re-fetches. Selectors:
         "/orders" drops that pathname AND every cached query variant;
         "/orders?page=2" drops exactly that entry; "*" clears all.
-        Root-relative paths only — anything else is ignored. Never
+        Root-relative paths only, anything else is ignored. Never
         touches the live DOM; pair with refresh()/navigate(force) when
         the current screen must re-render too. */
     invalidate(...sels) {
@@ -782,17 +782,17 @@
     },
 
     /** Re-fetch and re-render the current screen from the server,
-        bypassing the cache. Goes straight to loadPage — history is not
+        bypassing the cache. Goes straight to loadPage, history is not
         touched, so a #fragment on the URL survives. */
     refresh() { loadPage(currentPath, { bypassCache: true }); },
 
-    // X-Gofastr-Invalidate consumer — takes the whole Response (keeps
+    // X-Gofastr-Invalidate consumer, takes the whole Response (keeps
     // the header literal in one module; the callers in rpc/widgets/
     // intercept stay a few bytes). The value is a JSON string array of
     // selectors, applied on 2xx by nav/RPC/widget/intercept fetches.
     // A malformed value is a producer bug (ui.InvalidateScreens always
     // emits a valid array) and must never break the response that
-    // carried it — ignore it. The Array.isArray gate matters: spreading
+    // carried it, ignore it. The Array.isArray gate matters: spreading
     // a parsed bare string would evict per-character.
     _inval(r) {
       try {

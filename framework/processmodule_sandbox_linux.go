@@ -19,9 +19,9 @@ import (
 // design), so a native seccomp filter is bespoke code. bwrap is the
 // de-facto Linux unprivileged-sandbox CLI and is already the seam the
 // repo's bash tool wires (`framework/experimental/harness/tool/builtins/bash.go`
-// SandboxFn comment) — mirroring it keeps one Linux sandbox story.
+// SandboxFn comment), mirroring it keeps one Linux sandbox story.
 //
-// Honest limits (probed, not assumed — design §6):
+// Honest limits (probed, not assumed, design §6):
 //   - unprivileged userns is disabled on several distros (Debian older
 //     kernels, some RHEL) → bwrap --unshare-user fails → the constructor
 //     reports the backend unavailable or P1/P4 breach → fail closed;
@@ -37,7 +37,7 @@ import (
 // bwrapBackend is the Linux SandboxBackend. It wraps the child exec in a
 // bwrap invocation that unshares net/pid/uts, drops all caps, and bind-
 // mounts the system tree read-only with scratch writable. cgroup-based
-// limits (P6) are NOT applied in v1 — DeclaredProbes omits P6 and the
+// limits (P6) are NOT applied in v1. DeclaredProbes omits P6 and the
 // conformance suite reports it BREACH.
 type bwrapBackend struct {
 	bwrapPath string
@@ -46,8 +46,8 @@ type bwrapBackend struct {
 }
 
 // defaultSandboxBackend returns the Linux bwrap backend, or an
-// unavailable instance if bwrap is not on PATH (the caller —
-// HostSandboxBackend — filters the latter to nil).
+// unavailable instance if bwrap is not on PATH (the caller,
+// HostSandboxBackend, filters the latter to nil).
 func defaultSandboxBackend() SandboxBackend {
 	b := &bwrapBackend{}
 	if p, err := exec.LookPath("bwrap"); err == nil {
@@ -65,7 +65,7 @@ func (b *bwrapBackend) MissingReason() string { return b.missing }
 
 // DeclaredProbes is the honest ceiling: bwrap's flags enforce P1–P5 +
 // P7 WHEN unprivileged userns is enabled (probed at construction). P6
-// (cgroup/prlimit) is NOT enforced in v1 — omitted from the declaration,
+// (cgroup/prlimit) is NOT enforced in v1, omitted from the declaration,
 // and the conformance suite runs P6 anyway and reports BREACH/UNREACHABLE.
 func (b *bwrapBackend) DeclaredProbes() []ProbeID {
 	return []ProbeID{
@@ -101,7 +101,7 @@ func (b *bwrapBackend) Wrap(cmd *exec.Cmd, opts SandboxOpts) error {
 		"--new-session",
 		// P1: distinct PID + UTS namespace (uid mapping needs userns;
 		// if the host disables unprivileged userns, bwrap fails at
-		// Start and the probe records BREACH on P1 — honest).
+		// Start and the probe records BREACH on P1, honest).
 		"--unshare-pid",
 		"--unshare-uts",
 		// P4: no network namespace egress. (When the probe dials, every
@@ -149,7 +149,7 @@ func (b *bwrapBackend) Wrap(cmd *exec.Cmd, opts SandboxOpts) error {
 	cmd.Path = b.bwrapPath
 	cmd.Args = args
 	// Note: P6 (memory/pids/cpu/fd caps) needs cgroup v2 delegation or
-	// prlimit wrapping — NOT applied in v1. The probe reports this
+	// prlimit wrapping. NOT applied in v1. The probe reports this
 	// honestly; see DeclaredProbes.
 	return nil
 }

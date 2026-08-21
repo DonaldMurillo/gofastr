@@ -20,14 +20,14 @@ func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
 // TxFromContext (typed hooks, the various do* helpers, generated repo
 // methods invoked via WithTx) participates atomically.
 //
-// Convenience wrapper for callers that aren't already inside a CRUD hook —
+// Convenience wrapper for callers that aren't already inside a CRUD hook,
 // e.g. seeders, batch jobs, multi-entity write paths that need an explicit
 // boundary. If fn returns an error, the tx rolls back and that error is
 // returned unchanged.
 func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx) error) error {
 	// Join an ambient transaction already in the context (e.g. when InTx is
 	// called from inside a CRUD hook). Opening a second independent tx here
-	// would silently break atomicity — the inner work could commit while the
+	// would silently break atomicity, the inner work could commit while the
 	// outer rolls back, or deadlock against rows the outer tx holds. Defer the
 	// commit/rollback to the outer owner. Mirrors crud.inTx.
 	if tx, ok := db.TxFromContext(ctx); ok {
@@ -41,7 +41,7 @@ func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx)
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	// committed gates the deferred rollback. The defer guarantees the tx is
-	// closed on EVERY exit path — including when fn panics — so the pooled
+	// closed on EVERY exit path, including when fn panics, so the pooled
 	// connection (and any rows it locked) is released. Without it a panic in
 	// fn unwinds past both Rollback and Commit, leaking the connection until
 	// the pool/finalizer reclaims it; repeated panics exhaust MaxOpenConns.

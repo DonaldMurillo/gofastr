@@ -113,7 +113,7 @@ func TestPeerNotifyNoResponse(t *testing.T) {
 //
 // We pin it by having BOTH peers register echo handlers, BOTH peers originate
 // a Call with overlapping ids, and asserting each Call gets its OWN peer's
-// handler response — not the other's.
+// handler response, not the other's.
 func TestPerDirectionIDCorrelation(t *testing.T) {
 	host, child, _, _, cleanup := newPeerPair(t, 0)
 	defer cleanup()
@@ -132,7 +132,7 @@ func TestPerDirectionIDCorrelation(t *testing.T) {
 	}
 
 	// Host issues Call #1 (id=1 on host's counter) to c.echo with "HOST-PAYLOAD".
-	// Child issues Call #1 (id=1 on child's counter — same numeric id!) to h.echo
+	// Child issues Call #1 (id=1 on child's counter, same numeric id!) to h.echo
 	// with "CHILD-PAYLOAD".
 	//
 	// If per-direction correlation is broken (e.g. a shared pending map), one
@@ -337,7 +337,7 @@ func TestPeerInflightCapRejects(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	// Issue 2 calls — they sit in the child handler's select, holding inflight.
+	// Issue 2 calls. They sit in the child handler's select, holding inflight.
 	for range 2 {
 		go func() {
 			_, _ = cappedHost.Call(ctx, "block", nil)
@@ -389,7 +389,7 @@ func TestPeerUnsolicitedRespIsFatal(t *testing.T) {
 	resp := NewSuccessResponse(99999, json.RawMessage(`{}`))
 	body, _ := json.Marshal(resp)
 	body = append(body, '\n')
-	// Write to connA's write side (the side the host READS from). Wait —
+	// Write to connA's write side (the side the host READS from). Wait,
 	// connA is the host's end: it reads from B→A and writes A→B. To inject
 	// into host's read, we need to write to connB. We don't have connB here
 	// (it's still owned by the closed peer B).
@@ -431,7 +431,7 @@ func TestPeerCloseUnblocksCalls(t *testing.T) {
 	host, child, _, _, cleanup := newPeerPair(t, 0)
 	defer cleanup()
 
-	// Child handler that never returns — must be unblocked by Close.
+	// Child handler that never returns; must be unblocked by Close.
 	stop := make(chan struct{})
 	if err := child.Handle("hang", func(ctx context.Context, _ json.RawMessage) (any, error) {
 		// Block until EITHER ctx is cancelled (e.g. child.Close) OR the
@@ -506,7 +506,7 @@ func TestPeerModuleCancelCancels(t *testing.T) {
 
 	select {
 	case <-cancelled:
-		// handler's ctx was cancelled — built-in module.cancel worked.
+		// handler's ctx was cancelled; built-in module.cancel worked.
 	case <-time.After(time.Second):
 		t.Fatal("handler ctx was not cancelled by module.cancel")
 	}
@@ -603,7 +603,7 @@ func TestPeerHandlerReturnsError(t *testing.T) {
 }
 
 // TestPeerEOFIsGraceful: a clean EOF on the read side (no Close signal) does
-// not register a fatal — it just ends the read loop. io.EOF on a healthy
+// not register a fatal; it just ends the read loop. io.EOF on a healthy
 // transport is the normal shutdown signal.
 func TestPeerEOFIsGraceful(t *testing.T) {
 	connX, connY := net.Pipe()
@@ -611,7 +611,7 @@ func TestPeerEOFIsGraceful(t *testing.T) {
 	h := NewPeer(codecX, RoleHost)
 	h.Start()
 
-	// Close the OTHER side — host's read sees EOF.
+	// Close the OTHER side: host's read sees EOF.
 	_ = connY.Close()
 
 	select {

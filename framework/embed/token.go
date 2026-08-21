@@ -16,7 +16,7 @@ import (
 // string be identified at a glance (in a log, a bug report, a customer's page
 // source) as a GoFastr embed credential rather than a session or an API token.
 const (
-	// NoncePrefix marks a single-use handshake nonce — the credential the app
+	// NoncePrefix marks a single-use handshake nonce: the credential the app
 	// author renders into a customer's page.
 	NoncePrefix = "emb_"
 	// GrantPrefix marks the short-lived stateless grant the frame receives in
@@ -34,7 +34,7 @@ const (
 )
 
 // Errors returned by the verify path. They are distinguished so a handler can
-// answer "this was used" differently from "this is not ours" — but note that
+// answer "this was used" differently from "this is not ours", but note that
 // handlers deliberately collapse them into one client-visible response, since
 // telling a caller WHICH check failed is an oracle.
 var (
@@ -175,7 +175,7 @@ func verify(prefix string, key []byte, token string) ([]byte, error) {
 	return payload, nil
 }
 
-// MintNonce signs a single-use handshake nonce. Nothing is stored — the nonce
+// MintNonce signs a single-use handshake nonce. Nothing is stored. The nonce
 // becomes "used" only when the exchange endpoint burns its id.
 func MintNonce(key []byte, surface, subject, origin string, scopes []string, ttl time.Duration, now time.Time) (string, error) {
 	if len(key) == 0 {
@@ -200,7 +200,7 @@ func MintNonce(key []byte, surface, subject, origin string, scopes []string, ttl
 }
 
 // VerifyNonce checks a nonce's signature and expiry. It does NOT check whether
-// the nonce has been used — that is the burn store's job, and the separation is
+// the nonce has been used. That is the burn store's job, and the separation is
 // deliberate: signature verification is pure and testable, burning is I/O.
 func VerifyNonce(key []byte, token string, now time.Time) (Nonce, error) {
 	payload, err := verify(NoncePrefix, key, token)

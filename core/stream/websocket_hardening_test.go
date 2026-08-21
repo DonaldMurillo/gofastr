@@ -59,7 +59,7 @@ func TestWSCheckOriginOverride(t *testing.T) {
 	}
 }
 
-// Finding 7a: slow writer must not pin the writePump forever — a write
+// Finding 7a: slow writer must not pin the writePump forever; a write
 // deadline must apply so the goroutine returns within a bounded time.
 func TestWSSlowWriterReturns(t *testing.T) {
 	bw := &blockingWriter{block: make(chan struct{})}
@@ -156,7 +156,7 @@ func TestWSHugeLengthRejected(t *testing.T) {
 // Finding 13a: control frames must be <=125 bytes per RFC 6455.
 func TestWSOversizeControlFrameRejected(t *testing.T) {
 	mask := [4]byte{0x01, 0x02, 0x03, 0x04}
-	// 126-byte ping frame (using extended length) — invalid for control frames
+	// 126-byte ping frame (using extended length); invalid for control frames
 	var frame bytes.Buffer
 	frame.WriteByte(0x80 | wsopcodePing)
 	frame.WriteByte(0x80 | 126)
@@ -179,7 +179,7 @@ func TestWSOversizeControlFrameRejected(t *testing.T) {
 
 // Finding 13b: unmasked client frames must be rejected per RFC 6455.
 func TestWSUnmaskedClientFrameRejected(t *testing.T) {
-	// Build an unmasked text frame "hello" — client MUST mask
+	// Build an unmasked text frame "hello"; client MUST mask
 	payload := []byte("hello")
 	var frame bytes.Buffer
 	frame.WriteByte(0x80 | wsopcodeText)

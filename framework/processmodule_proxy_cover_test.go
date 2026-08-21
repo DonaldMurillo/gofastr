@@ -18,7 +18,7 @@ import (
 // This file adds unit coverage for the PURE proxy helpers + introspection
 // accessors in processmodule_proxy.go. None of these tests spawn a child;
 // they exercise the helpers directly or against a supervisor with a
-// registered descriptor (no spawn — Register installs the row + slot).
+// registered descriptor (no spawn, Register installs the row + slot).
 
 // ---- servingState ----
 
@@ -214,7 +214,7 @@ func TestProxyHandler_returnsNonNil(t *testing.T) {
 	}
 }
 
-// ---- Info / List / DeclaredRoutes (no spawn — Register installs the slot) ----
+// ---- Info / List / DeclaredRoutes (no spawn, Register installs the slot) ----
 
 func TestInfo_unknownModuleErrors(t *testing.T) {
 	sup := newBareTestSupervisor(t, newTestStore(t), &TrustedProcessRunner{})

@@ -1,10 +1,10 @@
 package ui
 
-// FactBox — one labelled value tile. Single component, two variants:
+// FactBox: one labelled value tile. Single component, two variants:
 //
-//   FactStyleLabelFirst (default) — small uppercase label on top, body-size
+//   FactStyleLabelFirst (default): small uppercase label on top, body-size
 //     value below. For parameters and specs ("Prereqs: Go 1.26+, git").
-//   FactStyleValueFirst — big display value on top, small caption label
+//   FactStyleValueFirst: big display value on top, small caption label
 //     below. For KPIs and counts ("53 docs").
 //
 // Two render functions previously (FactBox + StatTile) were collapsed
@@ -47,7 +47,7 @@ type FactBoxConfig struct {
 }
 
 // FactBox renders one labelled tile. Pair with a CSS grid to lay out
-// multiple — the framework does not provide a grid wrapper, so
+// multiple. The framework does not provide a grid wrapper, so
 // consumers pick their own column template.
 func FactBox(cfg FactBoxConfig) render.HTML {
 	if cfg.Label == "" {
@@ -60,7 +60,7 @@ func FactBox(cfg FactBoxConfig) render.HTML {
 	case FactStyleLabelFirst, FactStyleValueFirst:
 	default:
 		panic("ui: FactBox unknown Style " + string(cfg.Style) +
-			` — pick "" (label-first) or "value-first"`)
+			`. Pick "" (label-first) or "value-first"`)
 	}
 	cls := "ui-fact-box"
 	if cfg.Style != FactStyleLabelFirst {

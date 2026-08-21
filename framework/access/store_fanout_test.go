@@ -109,7 +109,7 @@ func TestGrantStore_FanoutOwnNodeEchoDropped(t *testing.T) {
 }
 
 // TestGrantStore_FanoutIdempotentDuplicateDelivery: delivering the SAME
-// invalidation message twice is still correct — each delivery re-reads
+// invalidation message twice is still correct, each delivery re-reads
 // authoritative DB state, so the policy converges to whatever the DB says
 // regardless of duplication.
 func TestGrantStore_FanoutIdempotentDuplicateDelivery(t *testing.T) {
@@ -165,7 +165,7 @@ func TestGrantStore_FanoutIdempotentDuplicateDelivery(t *testing.T) {
 }
 
 // TestGrantStore_SetFanoutNilIsNoOp: SetFanout(nil) returns a callable stop
-// and never subscribes — single-process deployments stay unaffected.
+// and never subscribes, single-process deployments stay unaffected.
 func TestGrantStore_SetFanoutNilIsNoOp(t *testing.T) {
 	db := newGrantDB(t)
 	ctx := context.Background()
@@ -203,7 +203,7 @@ func TestRolePolicy_ReplaceRole(t *testing.T) {
 		t.Fatal("expected posts:write before replace")
 	}
 
-	// Replace with just read — write must be gone.
+	// Replace with just read, write must be gone.
 	if err := rp.ReplaceRole("editor", access.Permission("posts:read")); err != nil {
 		t.Fatalf("ReplaceRole: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestRolePolicy_ReplaceRoleStrictRejectsUnknown(t *testing.T) {
 	if err := rp.Grant("editor", access.Permission("posts:read")); err != nil {
 		t.Fatalf("Grant: %v", err)
 	}
-	// Replace with a typo — must fail AND leave the existing grant intact.
+	// Replace with a typo, must fail AND leave the existing grant intact.
 	err := rp.ReplaceRole("editor", access.Permission("posts:read"), access.Permission("postz:write"))
 	if err == nil {
 		t.Fatal("expected strict ReplaceRole to reject unknown capability")
@@ -279,7 +279,7 @@ func TestGrantStore_FanoutMergesCodeBaseline(t *testing.T) {
 	}
 
 	policyB := access.NewRolePolicy()
-	// Code-defined baseline grant on B — the kind an app declares at startup.
+	// Code-defined baseline grant on B, the kind an app declares at startup.
 	if err := policyB.Grant("admin", access.Permission("sys:all")); err != nil {
 		t.Fatalf("code grant B: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestGrantStore_FanoutMergesCodeBaseline(t *testing.T) {
 }
 
 // TestGrantStore_RejectsEmptyRole pins that "" (the full-reload fanout
-// sentinel) is never a grantable role — otherwise Grant/Revoke("", p) could
+// sentinel) is never a grantable role, otherwise Grant/Revoke("", p) could
 // be mistaken for a reload-all signal and strand a permission.
 func TestGrantStore_RejectsEmptyRole(t *testing.T) {
 	db := newGrantDB(t)

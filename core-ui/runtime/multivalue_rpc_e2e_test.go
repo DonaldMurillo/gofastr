@@ -16,7 +16,7 @@ import (
 // repeated field names (checkbox group, multi-select) preserves EVERY
 // value in the JSON body. The old encoding `obj[k] = v` was last-wins,
 // silently dropping all but the last value. The fix emits an array when
-// a key repeats and a scalar when it occurs once — matching the
+// a key repeats and a scalar when it occurs once, matching the
 // repeated-key shape the GET + urlencoded paths already produce.
 func TestDispatchRPC_MultiValueFormKeys(t *testing.T) {
 	var mu sync.Mutex

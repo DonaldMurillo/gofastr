@@ -5,7 +5,7 @@ import "testing"
 // Property: a quiet-mode auto-allow must apply to the command that will
 // actually execute, not to a prefix of its text. Prefix-matching the
 // raw shell string let a chained payload ride in behind an allow-listed
-// verb and execute with NO PermissionRequested ever published — the
+// verb and execute with NO PermissionRequested ever published, the
 // human-in-the-loop gate was skipped entirely, with QuietMode on by
 // default.
 func TestQuietModeRejectsChaining(t *testing.T) {
@@ -47,7 +47,7 @@ func TestQuietAllowRequiresWordBoundary(t *testing.T) {
 
 // Property: an approval grants exactly the invocation the human saw.
 // Storing the approved text as a filepath.Match pattern let one click
-// authorize a superset — and with ScopeAlways that widened rule was
+// authorize a superset, and with ScopeAlways that widened rule was
 // persisted to disk and survived restart.
 func TestApprovalDoesNotWiden(t *testing.T) {
 	approved := Rule{Tool: "Bash", ArgvGlob: "git diff *", Action: DecisionAllow}
@@ -78,7 +78,7 @@ func TestApprovalDoesNotWiden(t *testing.T) {
 //
 // The metachar and word-boundary rules above stop a SECOND command being
 // appended, but three entries on the list are launchers and writers in
-// their own right — they need no metacharacter at all:
+// their own right, they need no metacharacter at all:
 //
 //	find . -name x -exec CMD {} +      → arbitrary execution
 //	find . -delete / -fprintf F ...    → deletion / arbitrary file write
@@ -87,7 +87,7 @@ func TestApprovalDoesNotWiden(t *testing.T) {
 //
 // A DecisionAllow publishes no PermissionRequested event, so none of
 // this surfaces to the human at all; two calls chain to code execution.
-// The `*` / `?` glob carve-out must survive — rejecting those would
+// The `*` / `?` glob carve-out must survive, rejecting those would
 // break ordinary reads like `find . -name *.go`.
 func TestQuietAllowRejectsExecFlags(t *testing.T) {
 	execFlags := []string{

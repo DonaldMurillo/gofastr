@@ -33,13 +33,13 @@ import (
 // ============================================================================
 
 // newFeaturesEnv wires the relevant features into a fresh app and starts a
-// real httptest.Server so the codepath includes Go's HTTP stack — not just
+// real httptest.Server so the codepath includes Go's HTTP stack, not just
 // direct ServeHTTP.
 type newFeaturesEnv struct {
 	app     *App
 	server  *httptest.Server
 	client  *http.Client
-	actor   *atomic.Value // string — read by the audit Actor func
+	actor   *atomic.Value // string, read by the audit Actor func
 	postIDs []string      // captured during seed; subtests reference these
 }
 
@@ -321,7 +321,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 func TestE2E_CronFiresInsideApp(t *testing.T) {
 	s := cron.NewScheduler()
 	var fired atomic.Int32
-	// Match every minute so runOnce always triggers — we drive the tick
+	// Match every minute so runOnce always triggers, we drive the tick
 	// manually via runOnce to avoid waiting on the wall clock.
 	if err := s.Register(cron.CronJob{
 		Name: "tick",
@@ -364,7 +364,7 @@ func seedAuthorsAndPosts(t *testing.T, env *newFeaturesEnv) {
 		authorIDs[name] = created["id"].(string)
 	}
 
-	// Posts — Alice owns 2, Bob owns 1. created_at strictly increasing so
+	// Posts: Alice owns 2, Bob owns 1. created_at strictly increasing so
 	// composite cursor walks them in a deterministic order.
 	base := time.Date(2025, 4, 8, 9, 0, 0, 0, time.UTC)
 	postIDs := []string{}

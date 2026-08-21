@@ -1,4 +1,4 @@
-// GoFastr runtime module — Dropdown click-toggle + outside-dismiss
+// GoFastr runtime module, Dropdown click-toggle + outside-dismiss
 //
 // Composes with the existing disclosure infrastructure. Each dropdown
 // trigger has data-fui-dropdown; its panel sibling has

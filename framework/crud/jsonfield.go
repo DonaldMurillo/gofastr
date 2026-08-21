@@ -8,8 +8,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// A schema.JSON field arrives from the wire as a decoded Go value — a
-// map, a slice, a number — and database/sql binds only driver types, so
+// A schema.JSON field arrives from the wire as a decoded Go value, a
+// map, a slice, a number, and database/sql binds only driver types, so
 // handing it a map fails the statement outright ("unsupported type
 // map[string]interface {}, a map"). Every write path therefore runs its
 // values through bindJSONValue, and every read path parses the column
@@ -23,7 +23,7 @@ import (
 // On read, text that does not parse as JSON is returned unchanged, so a
 // legacy TEXT column promoted to schema.JSON keeps serving its rows.
 //
-// Absent and null stay indistinguishable — both leave the column NULL
+// Absent and null stay indistinguishable, both leave the column NULL
 // and read back as JSON null. An empty object is distinct: it is stored
 // as "{}" and reads back as {}.
 
@@ -37,7 +37,7 @@ func (ch *CrudHandler) bindJSONValue(col string, v any) any {
 }
 
 // marshalJSONColumn encodes a decoded JSON value as the text a driver can
-// bind. Strings and byte slices are already JSON text and pass through —
+// bind. Strings and byte slices are already JSON text and pass through,
 // schema.ValidateAll has already rejected a string that is not valid JSON
 // with a 400, so nothing invalid reaches a Postgres JSONB column here.
 // A value that cannot be marshalled is returned as-is so the driver's own
@@ -57,7 +57,7 @@ func marshalJSONColumn(v any) any {
 
 // ensureFieldCache rebuilds the derived field caches when they are absent
 // or stale. CrudHandler is an exported struct, so a caller can construct
-// one directly and never run NewCrudHandler's build — every lookup goes
+// one directly and never run NewCrudHandler's build, every lookup goes
 // through here rather than reading the maps straight.
 func (ch *CrudHandler) ensureFieldCache() {
 	if ch.jsonColumns == nil || ch.jsonWireKeys == nil || ch.visibleFieldSig != ch.fieldCacheSignature() {
@@ -73,7 +73,7 @@ func (ch *CrudHandler) isJSONColumn(col string) bool {
 }
 
 // decodeJSONFields parses every schema.JSON column of a scanned row back
-// into a JSON value, in place. Keys are wire keys — the shape a row has
+// into a JSON value, in place. Keys are wire keys, the shape a row has
 // after scanRow/scanRows applied convertKey.
 func (ch *CrudHandler) decodeJSONFields(row map[string]any) {
 	if row == nil {
@@ -103,7 +103,7 @@ func (ch *CrudHandler) decodeJSONRows(rows []map[string]any) {
 
 // scanOne and scanMany are the handler-bound scanners every read path
 // uses. They wrap the package-level scanners so schema.JSON columns are
-// parsed in exactly one place — a read that scanned directly would return
+// parsed in exactly one place, a read that scanned directly would return
 // the column as an opaque string and break the round trip.
 //
 // They pass the handler's entity down for the same reason: a driver that
@@ -160,8 +160,8 @@ func decodeEntityJSONColumns(ent *entity.Entity, rows []map[string]any) {
 }
 
 // decodeJSONColumn parses one stored column value. Anything that is not
-// JSON text — a NULL, a number the driver already typed, a legacy string
-// that never was JSON — comes back untouched.
+// JSON text, a NULL, a number the driver already typed, a legacy string
+// that never was JSON, comes back untouched.
 func decodeJSONColumn(v any) any {
 	var raw []byte
 	switch t := v.(type) {

@@ -25,7 +25,7 @@ func gateEntity(t *testing.T, name string, cfg entity.EntityConfig) *entity.Enti
 }
 
 // The subquery counts rows without selecting them, so it cannot scope them to
-// the caller. An owner-scoped or multi-tenant target is therefore refused —
+// the caller. An owner-scoped or multi-tenant target is therefore refused,
 // except for a caller who may already read every row, for whom a hit/miss
 // count reveals nothing the target's own list route would not.
 func TestCheckNestedFiltersReadable_ScopedTargets(t *testing.T) {
@@ -59,7 +59,7 @@ func TestCheckNestedFiltersReadable_ScopedTargets(t *testing.T) {
 		}}
 	}
 
-	// Owner id present, but the rows may not be this owner's — refuse.
+	// Owner id present, but the rows may not be this owner's, refuse.
 	prev := owner.GetExtractor()
 	owner.SetExtractor(func(context.Context) (any, bool) { return "u1", true })
 	t.Cleanup(func() { owner.SetExtractor(prev) })
@@ -104,7 +104,7 @@ func TestCheckNestedFiltersReadable_ScopedTargets(t *testing.T) {
 	// A relation naming an entity the registry does not hold. Refusing is
 	// load-bearing twice over: filtering against a table nobody vouched for
 	// would be wrong, and the probe built below the branch dereferences the
-	// resolved target — so falling through would panic rather than merely
+	// resolved target, so falling through would panic rather than merely
 	// permit. Nothing else in this file constructs an unresolvable relation.
 	if err := ch.checkNestedFiltersReadable(context.Background(), filterOn("ghosts")); err == nil {
 		t.Error("a relation naming an unregistered entity was permitted — the subquery would filter against an unvouched table")
@@ -280,7 +280,7 @@ func TestWriteIncludeErrorStatusMapping(t *testing.T) {
 }
 
 // The scope helpers no-op for entities that declare no scope, and for a nil
-// node — the defensive paths every caller relies on.
+// node, the defensive paths every caller relies on.
 func TestRelatedScopeHelpersNoOpWhenUnscoped(t *testing.T) {
 	plain := gateEntity(t, "plain", entity.EntityConfig{
 		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
@@ -300,7 +300,7 @@ func TestRelatedScopeHelpersNoOpWhenUnscoped(t *testing.T) {
 
 // resolveNestedFilters is the in-process twin of the HTTP parser: typed repos
 // reach it through ListAll/CountAll with a NestedFilters spec. It sets the same
-// softDelete and table flags, and neither was exercised — so a soft-deleted
+// softDelete and table flags, and neither was exercised, so a soft-deleted
 // target could be enumerated through a typed repo, and a target whose Name
 // differs from its Table would query the wrong table, both silently.
 func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
@@ -341,7 +341,7 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 
 // eagerScopeFilters is the EagerLoad twin of the include path's
 // applyRelatedOwnerScope / applyRelatedTenantScope. When those learned to
-// exempt cross-scope callers, this one did not — while its own comment still
+// exempt cross-scope callers, this one did not, while its own comment still
 // claimed it mirrored them "exactly". The result: a caller holding
 // AllowCrossOwner got every row through ?include= and an empty relation
 // through EagerLoad.
@@ -366,7 +366,7 @@ func TestEagerScopeFiltersExemptCrossScopeCallers(t *testing.T) {
 	owner.SetExtractor(func(context.Context) (any, bool) { return "u1", true })
 	t.Cleanup(func() { owner.SetExtractor(prev) })
 
-	// The ordinary caller is scoped — that is the IDOR control and it must stay.
+	// The ordinary caller is scoped, that is the IDOR control and it must stay.
 	if got := eagerScopeFilters(context.Background(), ownerScoped); len(got) != 1 {
 		t.Errorf("an ordinary caller got %d owner filters, want 1 — the cross-table control is gone", len(got))
 	}
@@ -391,7 +391,7 @@ func TestEagerScopeFiltersExemptCrossScopeCallers(t *testing.T) {
 	}
 
 	// The declared CrossOwnerRead permission is the third exemption, and it is
-	// read from the TARGET entity — the same shape the include path uses.
+	// read from the TARGET entity, the same shape the include path uses.
 	policy := access.NewRolePolicy()
 	policy.Grant("auditor", "notes:read:all")
 	ctx := access.WithRoles(access.WithPolicy(context.Background(), policy), []string{"auditor"})

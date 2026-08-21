@@ -221,7 +221,7 @@ func TestRunMigrationDownNoTx_Protocol(t *testing.T) {
 	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, []uint64{1})
-	// No ExpectBegin — the down runs directly.
+	// No ExpectBegin. The down runs directly.
 	mock.ExpectExec("UPDATE").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("DROP INDEX CONCURRENTLY i").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("DELETE FROM").WillReturnResult(sqlmock.NewResult(0, 1))
@@ -408,7 +408,7 @@ func TestUpDownStatus_CreateTableError(t *testing.T) {
 		t.Fatal("expected down create-table error")
 	}
 
-	// Status() — no lock.
+	// Status(): no lock.
 	m3, mock3 := newTestMigrator(t)
 	mock3.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnError(errors.New("fail"))
 	if _, err := m3.Status(context.Background()); err == nil {

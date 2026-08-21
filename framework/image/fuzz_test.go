@@ -28,7 +28,7 @@ func FuzzCountGIFFrames(f *testing.F) {
 
 // FuzzReadJPEGOrientation walks the EXIF orientation reader over
 // random bytes. The parser handles JPEG markers, an APP1 segment, and
-// a mini TIFF stream — three nested bounds-check surfaces.
+// a mini TIFF stream, three nested bounds-check surfaces.
 func FuzzReadJPEGOrientation(f *testing.F) {
 	f.Add([]byte{0xFF, 0xD8, 0xFF, 0xE1})
 	f.Add([]byte{0xFF, 0xD8})
@@ -41,8 +41,8 @@ func FuzzReadJPEGOrientation(f *testing.F) {
 	})
 }
 
-// FuzzSniff exercises the format sniffer with random short inputs —
-// the function reads up to the first 12 bytes and must never panic
+// FuzzSniff exercises the format sniffer with random short inputs.
+// The function reads up to the first 12 bytes and must never panic
 // regardless of input shape.
 func FuzzSniff(f *testing.F) {
 	f.Add([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0})

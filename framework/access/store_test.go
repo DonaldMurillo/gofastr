@@ -31,7 +31,7 @@ func TestGrantStore_EnsureSchemaIdempotent(t *testing.T) {
 	if err := store.EnsureSchema(ctx); err != nil {
 		t.Fatalf("first EnsureSchema: %v", err)
 	}
-	// Second call must not error — CREATE TABLE IF NOT EXISTS is idempotent.
+	// Second call must not error. CREATE TABLE IF NOT EXISTS is idempotent.
 	if err := store.EnsureSchema(ctx); err != nil {
 		t.Fatalf("second EnsureSchema: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestGrantStore_GrantUpdatesLivePolicy(t *testing.T) {
 		t.Fatal("expected Can=false before grant")
 	}
 
-	// Grant via store — should flip the live policy.
+	// Grant via store, should flip the live policy.
 	if err := store.Grant(ctx, "editor", "posts:read"); err != nil {
 		t.Fatalf("Grant: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestGrantStore_RevokeRemovesFromBoth(t *testing.T) {
 		t.Fatal("expected Can=true before revoke")
 	}
 
-	// Revoke via store — should remove from DB + live policy.
+	// Revoke via store, should remove from DB + live policy.
 	if err := store.Revoke(ctx, "editor", "posts:write"); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestGrantStore_GrantIdempotent(t *testing.T) {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
 
-	// Grant the same permission twice — ON CONFLICT DO NOTHING makes it a no-op.
+	// Grant the same permission twice. ON CONFLICT DO NOTHING makes it a no-op.
 	if err := store.Grant(ctx, "admin", "posts:read"); err != nil {
 		t.Fatalf("first grant: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestGrantStore_SQLInjectionLiteral(t *testing.T) {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
 
-	// A role string containing SQL metacharacters must be stored literally —
+	// A role string containing SQL metacharacters must be stored literally,
 	// no injection, no statement execution.
 	evil := "x'; DROP TABLE access_grants; --"
 	if err := store.Grant(ctx, evil, "perm:test"); err != nil {
@@ -233,7 +233,7 @@ func TestRolePolicy_PermissionsOfReturnsCopy(t *testing.T) {
 		t.Fatalf("perms = %v, want 2", perms)
 	}
 
-	// Mutate the returned slice — must not affect the policy.
+	// Mutate the returned slice, must not affect the policy.
 	perms[0] = "tampered"
 	again := rp.PermissionsOf("admin")
 	if again[0] != "a:read" {

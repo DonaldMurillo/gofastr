@@ -24,7 +24,7 @@ func llmmdApp(t *testing.T, opts ...AppOption) *App {
 
 // TestLLMMD_PublicWhenPublicOpenAPI pins the banner's promise: the startup
 // banner unmarks /api/llm.md when WithPublicOpenAPI() is set, so the route
-// must actually serve anonymous requests then — llm.md derives from the same
+// must actually serve anonymous requests then, llm.md derives from the same
 // schema information as the OpenAPI spec and shares its exposure class.
 func TestLLMMD_PublicWhenPublicOpenAPI(t *testing.T) {
 	app, cleanup := startApp(t, llmmdApp(t, WithPublicOpenAPI()))

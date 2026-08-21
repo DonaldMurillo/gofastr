@@ -13,13 +13,13 @@ import (
 // reachStopPackages in framework/uihost/embed_actions.go used to list
 // "core-ui/island" as a package the walk refuses to descend into. The stated
 // reason covers core-ui/app only ("a back-reference to the App would make
-// every component reachable"); island.Island is not a host back-reference —
+// every component reachable"); island.Island is not a host back-reference:
 // it is a one-field wrapper, `Component component.Component`, and it is the
 // framework's primary composition primitive for exactly the interactive
 // surfaces an embed hosts.
 //
 // So a root that HOLDS an island (the shape the commit says the value walk
-// handles — "struct fields including unexported ones") is not covered: the
+// handles, "struct fields including unexported ones") is not covered: the
 // walk stops at *island.Island and never reaches the component inside it.
 type islandHoldingParent struct{ isl *island.Island }
 

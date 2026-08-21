@@ -1,4 +1,4 @@
-// Package node is the JSON-clean UI element tree — the serializable
+// Package node is the JSON-clean UI element tree, the serializable
 // description of a screen that renders to HTML via core-ui/noderender.
 //
 // It is a first-party UI primitive. Both the blueprint codegen
@@ -17,7 +17,7 @@ package node
 // ID is a stable per-element handle. Authoring tools (e.g. Kiln) reference
 // it to address the exact element they want to mutate, rather than
 // positional tree paths (which break when siblings shift) or selector
-// queries (which can be ambiguous). The renderer ignores ID — it's pure
+// queries (which can be ambiguous). The renderer ignores ID, it's pure
 // metadata.
 type Node struct {
 	ID       string            `json:"_id,omitempty"`
@@ -29,8 +29,8 @@ type Node struct {
 }
 
 // Action is the canonical declarative effect type. The Kind selects from a
-// closed verb catalog; Params is verb-specific. Treating actions as data —
-// never Go source — is what lets consumers (journals, codegen, MCP tool
+// closed verb catalog; Params is verb-specific. Treating actions as data,
+// never Go source, is what lets consumers (journals, codegen, MCP tool
 // surfaces) round-trip them losslessly.
 type Action struct {
 	Kind   string         `json:"kind"`

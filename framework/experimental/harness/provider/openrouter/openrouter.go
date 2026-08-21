@@ -4,7 +4,7 @@
 // OpenAI Chat Completions wire format. Model catalog comes from
 // /v1/models with TTL caching; pricing metadata feeds the cost
 // dashboard. HTTP-Referer and X-Title are required by some upstream
-// models — we set both unconditionally.
+// models, we set both unconditionally.
 package openrouter
 
 import (

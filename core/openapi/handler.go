@@ -27,7 +27,7 @@ func Handler(spec *Spec) http.Handler {
 	})
 }
 
-// PublicHandler serves the spec without an auth check — use only when
+// PublicHandler serves the spec without an auth check. Use only when
 // the spec is intentionally public. Most apps should prefer [Handler]
 // (auth-gated) or [GatedHandler] (custom predicate).
 func PublicHandler(spec *Spec) http.Handler {
@@ -45,10 +45,10 @@ func PublicHandler(spec *Spec) http.Handler {
 
 // GatedHandler wraps the OpenAPI spec handler in an authorisation
 // predicate. Requests for which allow(r) returns false get 404 (not
-// 401/403 — leaking that an OpenAPI endpoint exists is itself the
+// 401/403: leaking that an OpenAPI endpoint exists is itself the
 // disclosure we're trying to avoid). 404 keeps the existence of the
 // endpoint indistinguishable from a vanilla missing route. The allow
-// predicate is the only auth gate — the wrapped spec handler does NOT
+// predicate is the only auth gate. The wrapped spec handler does NOT
 // re-check the user context.
 //
 // Typical use:
@@ -71,8 +71,8 @@ func GatedHandler(spec *Spec, allow func(*http.Request) bool) http.Handler {
 // DocsHandler returns an http.Handler that serves a minimal,
 // self-contained API spec landing page. The page links to the OpenAPI
 // JSON; viewers like Swagger UI / Insomnia / Stoplight / Postman can
-// load it. Earlier revisions embedded swagger-ui-dist via a public CDN
-// — that pulled the docs page's supply chain into a third-party host
+// load it. Earlier revisions embedded swagger-ui-dist via a public CDN.
+// That pulled the docs page's supply chain into a third-party host
 // (and broke offline / air-gapped deploys), so the CDN reference was
 // removed. Hosts that want the interactive UI can vendor swagger-ui
 // themselves and mount their own handler.

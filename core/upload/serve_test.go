@@ -31,7 +31,7 @@ func saveKey(t *testing.T, storage Storage, key, content string) {
 // TestServeHandlerBlocksTraversal proves path-traversal defense in the
 // Storage backend (sanitizeKey) holds through the HTTP handler: keys
 // with ../, backslashes, and encoded slashes never read a file outside
-// baseDir. The handler performs NO path logic itself — it only
+// baseDir. The handler performs NO path logic itself. It only
 // classifies the typed error the backend returns.
 func TestServeHandlerBlocksTraversal(t *testing.T) {
 	t.Parallel()
@@ -126,7 +126,7 @@ func TestServeHandlerSniffsContentType(t *testing.T) {
 
 // TestServeHandlerNeutralizesHTML verifies stored-XSS defense: an
 // uploaded HTML or SVG body is never served as a browser-renderable
-// type — it is forced to application/octet-stream + attachment.
+// type. It is forced to application/octet-stream + attachment.
 func TestServeHandlerNeutralizesHTML(t *testing.T) {
 	t.Parallel()
 	storage := NewLocalStorage(t.TempDir())

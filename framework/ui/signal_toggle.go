@@ -29,15 +29,15 @@ func signalToggleCSS(_ style.Theme) string {
 // SignalToggleConfig configures a boolean toggle/switch that flips a
 // signal entirely client-side. Unlike the form-based Switch (which
 // wraps a native <input type="checkbox">), SignalToggle uses the
-// runtime's signal system — no form submission, pure JS reactivity.
+// runtime's signal system. No form submission, pure JS reactivity.
 //
 // Clicking the button toggles the named signal; the signal drives both
 // the aria-checked attribute and a visible label.
 type SignalToggleConfig struct {
 	SignalName string             // required unless Slice is set
 	Slice      *store.Slice[bool] // optional; supplies the signal name + initial value, takes precedence
-	Label      string             // optional — aria-label (falls back to the signal name)
-	Class      string             // optional — extra CSS classes
+	Label      string             // optional:  aria-label (falls back to the signal name)
+	Class      string             // optional:  extra CSS classes
 }
 
 // SignalToggle renders a <button role="switch"> that toggles a boolean
@@ -68,14 +68,14 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	}
 	initStr := strconv.FormatBool(initial)
 
-	// Attribute-escape every config-derived string interpolated below —
+	// Attribute-escape every config-derived string interpolated below:
 	// this component builds its markup with Sprintf, so escaping is on
 	// us, not render.Tag.
 	escName := render.Escape(name)
 	escLabel := render.Escape(label)
 	escCls := render.Escape(cls)
 
-	// Build inner children as a single HTML string — static structure.
+	// Build inner children as a single HTML string, static structure.
 	inner := fmt.Sprintf(
 		`<span class="fui-toggle__track"><span class="fui-toggle__thumb"></span></span>`+
 			`<span class="fui-toggle__label" data-fui-signal="%s">%s</span>`,
@@ -83,8 +83,8 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	)
 
 	// Construct the full button element.
-	// data-fui-signal-toggle — click handler flips the signal
-	// data-fui-signal + data-fui-signal-mode="attr" — binds signal value to aria-checked
+	// data-fui-signal-toggle: click handler flips the signal
+	// data-fui-signal + data-fui-signal-mode="attr": binds signal value to aria-checked
 	return render.HTML(fmt.Sprintf(
 		`<button class="%s" data-fui-comp="fui-toggle"`+
 			` data-fui-signal-toggle="%s"`+

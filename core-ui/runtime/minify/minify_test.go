@@ -61,7 +61,7 @@ func TestMinify(t *testing.T) {
 		// --- const → let ---
 		{"const decl", "const a=1;f()", "let a=1;f()"},
 		// (`let[a]` / `let{a}` at statement start still parse as
-		// declarations — the spec forbids an ExpressionStatement from
+		// declarations, the spec forbids an ExpressionStatement from
 		// starting with `let [`.)
 		{"const destructuring obj", "const {a}=x", "let{a}=x"},
 		{"const destructuring arr", "const [a]=x", "let[a]=x"},
@@ -77,7 +77,7 @@ func TestMinify(t *testing.T) {
 		{"trailing comma in object dropped", "x={a:1,}", "x={a:1}"},
 		// A `;` whose previous token is `)` is NEVER dropped: it may be
 		// an empty statement serving as an if/while/for body, and a
-		// scanner can't tell `g();}` from `if(x);}` — both end `);}`.
+		// scanner can't tell `g();}` from `if(x);}`, both end `);}`.
 		// Dropping the latter (`if(x)}`) is a SyntaxError, so the byte
 		// is kept in both (costs one byte on `g();}`, provably sound).
 		{"empty if body semi kept", "function f(){if(x);}", "function f(){if(x);}"},
@@ -98,21 +98,21 @@ func TestMinify(t *testing.T) {
 		{"prefix increment", "++i", "++i"},
 		// `a + +b` with whitespace stays separated.
 		{"binary plus unary plus", "a + +b", "a+ +b"},
-		// `a+++b` lexes as `a++ + b` (maximal munch) — keep verbatim.
+		// `a+++b` lexes as `a++ + b` (maximal munch), keep verbatim.
 		{"triple plus maximal munch", "a+++b", "a+++b"},
 		// --- ASI after postfix ++/-- (defect: a++\nb fused to a++b) ---
 		// A newline after postfix ++/-- before an identifier MUST
-		// survive — otherwise the output is `a++b` (SyntaxError).
+		// survive, otherwise the output is `a++b` (SyntaxError).
 		{"postfix incr newline ident", "a++\nb", "a++\nb"},
 		{"postfix decr newline ident", "a--\nb", "a--\nb"},
 		// `a++\n(b)` already keeps its newline via the prefix-hazard
-		// `(` path — pin it so the broader fix doesn't regress it.
+		// `(` path, pin it so the broader fix doesn't regress it.
 		{"postfix incr newline paren", "a++\n(b)", "a++\n(b)"},
 
 		// --- class body element separation via newline (defect) ---
 		// A space does NOT trigger ASI between class elements, so a
 		// newline separating two fields (or a field and a method) must
-		// survive — `class A{x=1 y=2}` is a SyntaxError.
+		// survive, `class A{x=1 y=2}` is a SyntaxError.
 		{"class field newline field", "class A{x=1\ny=2}", "class A{x=1\ny=2}"},
 		{"class static field newline", "class A{static x=1\nstatic y=2}", "class A{static x=1\nstatic y=2}"},
 		{"class field newline method", "class A{x=1\nm(){}}", "class A{x=1\nm(){}}"},
@@ -160,7 +160,7 @@ func TestMinifyShrinks(t *testing.T) {
 	}
 }
 
-// TestMinifyPreservesStringContent — string + template literal payload
+// TestMinifyPreservesStringContent: string + template literal payload
 // must round-trip byte-for-byte. The only thing the minifier touches
 // inside ${...} is whitespace.
 func TestMinifyPreservesStringContent(t *testing.T) {
@@ -179,7 +179,7 @@ func TestMinifyPreservesStringContent(t *testing.T) {
 	}
 }
 
-// TestMinifyBracesBalanced — sanity: minifier must not eat structural
+// TestMinifyBracesBalanced: sanity: minifier must not eat structural
 // punctuation. Loose check (raw count) but catches catastrophic bugs.
 func TestMinifyBracesBalanced(t *testing.T) {
 	src := `function f(a, b) {

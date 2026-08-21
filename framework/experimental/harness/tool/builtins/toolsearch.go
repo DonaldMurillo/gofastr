@@ -1,6 +1,6 @@
 package builtins
 
-// ToolSearch — the harness's tool-discovery tool. Always available in
+// ToolSearch, the harness's tool-discovery tool. Always available in
 // the base toolset; lets the model ask "what tools do I have for
 // editing files?" instead of being primed with every schema up front.
 //
@@ -36,7 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// ToolSearch tool. Stateless — pulls the registry from the dispatch
+// ToolSearch tool. Stateless, pulls the registry from the dispatch
 // ctx via tool.RegistryFromContext.
 type ToolSearch struct{}
 
@@ -91,7 +91,7 @@ func (ToolSearch) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 	all := reg.List()
 	matches := make([]toolMatch, 0, len(all))
 	for _, t := range all {
-		// Skip ToolSearch itself — model already knows about it.
+		// Skip ToolSearch itself, model already knows about it.
 		if t.Name() == "ToolSearch" {
 			continue
 		}

@@ -19,24 +19,24 @@ import (
 type RedactLevel int
 
 const (
-	// RedactStrict — drop full content; emit kinds + timestamps only.
+	// RedactStrict: drop full content; emit kinds + timestamps only.
 	RedactStrict RedactLevel = iota
-	// RedactStandard — apply the same redactors that ran on write.
+	// RedactStandard: apply the same redactors that ran on write.
 	// (The on-disk events already passed through these; this level
 	// re-applies them to be safe in case a custom redactor was
 	// disabled.)
 	RedactStandard
-	// RedactMaintainer — run a deeper-pass detector on top of the
+	// RedactMaintainer: run a deeper-pass detector on top of the
 	// stored content and include a redaction report in the bundle.
 	RedactMaintainer
 )
 
 // ExportBundle writes a zip archive containing:
 //
-//   - bundle.json     — manifest (session ID, profile, version, redact level)
-//   - events.jsonl    — one canonical event envelope per line
-//   - redactions.txt  — only at RedactMaintainer; counts per pattern
-//   - meta.json       — extra metadata (profile, model, turn count)
+//   - bundle.json:     manifest (session ID, profile, version, redact level)
+//   - events.jsonl:    one canonical event envelope per line
+//   - redactions.txt:  only at RedactMaintainer; counts per pattern
+//   - meta.json:       extra metadata (profile, model, turn count)
 type ExportBundle struct {
 	Store   Store
 	Session ids.SessionID

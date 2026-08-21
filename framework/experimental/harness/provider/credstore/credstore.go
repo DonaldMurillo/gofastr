@@ -2,7 +2,7 @@
 //
 // Per § Credentials: encrypted-file is the primary store (AES-GCM
 // with a passphrase- or machine-bound key). OS keychain integrations
-// are opt-in build-tagged plugins per platform — those live next to
+// are opt-in build-tagged plugins per platform, those live next to
 // this file with `_darwin.go` / `_linux.go` / `_windows.go` suffixes
 // and call back into Store.
 package credstore
@@ -25,7 +25,7 @@ import (
 )
 
 // Store is the credential store interface. Tokens are addressed by a
-// {provider, account} key pair — most providers have one account per
+// {provider, account} key pair, most providers have one account per
 // install (the API key); Copilot's auth flow has an explicit
 // account-per-GitHub-user model.
 type Store interface {
@@ -87,7 +87,7 @@ func NewEncryptedFileStore(path string, key []byte) (*EncryptedFileStore, error)
 // first run and stored in `~/.config/gofastr/harness/salt`).
 //
 // The PBKDF2 iteration count is intentionally high (200k) since
-// unlocking is rare — once per harness boot for interactive use.
+// unlocking is rare, once per harness boot for interactive use.
 func DeriveKey(passphrase, salt []byte) []byte {
 	return pbkdf2.Key(passphrase, salt, 200_000, 32, sha256.New)
 }
@@ -95,7 +95,7 @@ func DeriveKey(passphrase, salt []byte) []byte {
 // MachineKey derives a 32-byte key from machine-stable inputs without
 // any user passphrase. Used for headless/CI where there's no human to
 // type a passphrase. The threat model accepts that anyone with root
-// on the machine can re-derive the same key — that's expected for the
+// on the machine can re-derive the same key, that's expected for the
 // CI use case.
 func MachineKey(hostname string, extra []byte) []byte {
 	h := sha256.New()

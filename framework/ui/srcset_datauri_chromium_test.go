@@ -17,7 +17,7 @@ import (
 // otherwise whitespace-free srcset candidate splits that candidate.
 //
 // The srcset grammar collects a URL as "a sequence of code points that
-// are not ASCII whitespace" — commas included — and only strips commas
+// are not ASCII whitespace", commas included, and only strips commas
 // that TRAIL the token. MDN's "must not contain commas" is authoring
 // advice, not the parse algorithm. This test exists because that
 // distinction decides whether encodeSrcsetURL must percent-encode the
@@ -44,7 +44,7 @@ func TestSrcsetDataURICommaInBrowser(t *testing.T) {
 	defer cancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's:
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -84,7 +84,7 @@ func TestSrcsetDataURICommaInBrowser(t *testing.T) {
 
 // The adversarial reading of the same relaxation: if a comma DID split a
 // candidate, a data: URI whose payload is an absolute URL would smuggle a
-// second, attacker-controlled candidate into the set. It does not — the
+// second, attacker-controlled candidate into the set. It does not. The
 // whole thing stays one URL token, so the only thing the browser can try
 // to load is an undecodable data: URI.
 func TestSrcsetDataURIPayloadIsNotASecondCandidate(t *testing.T) {
@@ -106,7 +106,7 @@ func TestSrcsetDataURIPayloadIsNotASecondCandidate(t *testing.T) {
 	defer cancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's:
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)

@@ -34,7 +34,7 @@ func TestSSE_DataStripsCRandNUL(t *testing.T) {
 }
 
 // TestSSE_SetRetryDropsNonPositive verifies the writer never emits a
-// `retry: 0` (or negative) line — that directive tells EventSource to
+// `retry: 0` (or negative) line; that directive tells EventSource to
 // reconnect with zero delay, an accidental DoS amplifier.
 func TestSSE_SetRetryDropsNonPositive(t *testing.T) {
 	for _, v := range []int{0, -1, -100} {
@@ -83,7 +83,7 @@ func TestSSE_DataInjection(t *testing.T) {
 
 	body := rr.Body.String()
 	// SSE multi-line data is split and prefixed with "data: " per line
-	// So "event: injected" should become "data: event: injected" — safe.
+	// So "event: injected" should become "data: event: injected". Safe.
 	if strings.Contains(body, "event: injected\n") && !strings.Contains(body, "data: event: injected") {
 		t.Errorf("SECURITY: [sse] raw event directive in data not prefixed. Attack: SSE injection via data field.")
 	}

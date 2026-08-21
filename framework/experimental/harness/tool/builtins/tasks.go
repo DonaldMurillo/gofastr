@@ -1,6 +1,6 @@
 package builtins
 
-// TaskList — the harness equivalent of Claude Code's TodoWrite. The
+// TaskList, the harness equivalent of Claude Code's TodoWrite. The
 // model maintains a structured plan as it works through a multi-step
 // task. Each call REPLACES the whole list (the model thinks holistically
 // about what's left); the harness keeps the latest snapshot per session
@@ -51,7 +51,7 @@ var (
 
 // TaskListSnapshot returns the current list for a session. Exported
 // so transports (REST, WS, web sidecar) can surface it without
-// dispatching the tool — the tool is the WRITE path; this is the read.
+// dispatching the tool, the tool is the WRITE path; this is the read.
 func TaskListSnapshot(sess ids.SessionID) ([]TaskItem, time.Time) {
 	taskMu.RLock()
 	defer taskMu.RUnlock()
@@ -76,7 +76,7 @@ type TaskList struct{}
 
 func (TaskList) Name() string { return "TaskList" }
 func (TaskList) Description() string {
-	return "Write or rewrite the agent's task plan. Pass the FULL list every call — it replaces, not appends. " +
+	return "Write or rewrite the agent's task plan. Pass the FULL list every call: it replaces, not appends. " +
 		"Use to break a multi-step task into trackable items, mark the current one in_progress, and mark items completed as you finish them. " +
 		"Each item: content (imperative, what TODO), status (pending|in_progress|completed), activeForm (optional, present-progressive description of the in-flight work)."
 }
@@ -135,7 +135,7 @@ func (TaskList) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (
 	taskUpd[sess] = time.Now()
 	taskMu.Unlock()
 
-	// Echo a compact summary to the model — it doesn't need the full
+	// Echo a compact summary to the model, it doesn't need the full
 	// list back, just confirmation of what's recorded.
 	var lines []string
 	var pending, inProgress, done int

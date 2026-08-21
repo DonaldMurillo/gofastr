@@ -48,7 +48,7 @@ type Engine struct {
 	Tree *CancelTree
 
 	// OnTurnEnd, when non-nil, runs JUST BEFORE the engine publishes
-	// TurnEnded — gives the multiplex a chance to release its
+	// TurnEnded, gives the multiplex a chance to release its
 	// turn-busy slot so subscribers reacting to TurnEnded can
 	// immediately send the next input without hitting TurnInProgress.
 	OnTurnEnd func()
@@ -112,7 +112,7 @@ func (e *Engine) RunTurn(ctx context.Context, originator ids.ClientID, input []c
 		if innerIter > cap {
 			_, _ = e.Bus.Publish(control.Error{
 				Reason: "IterationLimit",
-				Message: fmt.Sprintf("inner loop exceeded %d provider rounds — turn aborted to avoid runaway tool calls",
+				Message: fmt.Sprintf("inner loop exceeded %d provider rounds: turn aborted to avoid runaway tool calls",
 					cap),
 			}, originator)
 			e.publishTurnEnd(turnNo, "iteration_limit", originator, componentTimings, toolTimings)
@@ -203,7 +203,7 @@ func (e *Engine) RunTurn(ctx context.Context, originator ids.ClientID, input []c
 		}
 
 		// Dispatch tool calls. When the model returns N tool_uses in
-		// a single response, fan them out concurrently — the user
+		// a single response, fan them out concurrently, the user
 		// expected sub-agents to run in parallel (sess_01KSE5GG…
 		// showed 3 sequential 60-second Agent calls instead of one
 		// 60-second parallel batch). Order is preserved via the
@@ -341,7 +341,7 @@ func (e *Engine) Spawn(ctx context.Context, systemHint, userPrompt string) (stri
 	}
 	defer subBus.Close()
 	// Always prepend the focus hint, then any caller-supplied hint.
-	// The hint constrains the sub-agent to focused, bounded work —
+	// The hint constrains the sub-agent to focused, bounded work,
 	// without it sub-agents tend to fire 20+ tool calls trying to
 	// be helpful (sess_01KSE3JKR…).
 	sub.History = append(sub.History, provider.Message{
@@ -401,7 +401,7 @@ func isSubAgentCtx(ctx context.Context) bool {
 // metaToolNames are tools that orchestrate the agent loop itself.
 // We hide them from sub-agents so a sub-agent can't re-plan the
 // parent's TaskList or recursively chain more Agent spawns. The
-// registry still has them — but the model never sees the schema
+// registry still has them, but the model never sees the schema
 // in its sub-agent context, so it won't call them.
 var metaToolNames = map[string]bool{
 	"TaskList": true,
@@ -429,7 +429,7 @@ func stripMetaTools(in []provider.ToolSchema) []provider.ToolSchema {
 const maxInnerLoopIterations = 25
 
 // SubAgentMaxIterations is a tighter cap for sub-agent turns
-// (Engine.Spawn). Sub-agents are "do one focused thing" workers —
+// (Engine.Spawn). Sub-agents are "do one focused thing" workers:
 // they should NOT do 20 provider rounds the way a top-level
 // coordinator turn might. 8 leaves room for: plan → 3-4 tool rounds
 // → wrap-up. Anything more is the model getting lost.
@@ -445,7 +445,7 @@ const subAgentFocusHint = "You are a focused sub-agent. Complete ONLY the specif
 // maxToolResultBytesPerBlock is the engine-level defensive cap on
 // any single text block inside a tool result. Tools SHOULD truncate
 // themselves to a sane size, but this guards against any tool that
-// forgets — a single 500KB tool result can silently exceed the
+// forgets, a single 500KB tool result can silently exceed the
 // model's context window and cause an empty next-turn response.
 const maxToolResultBytesPerBlock = 64 << 10 // 64 KiB
 
@@ -474,7 +474,7 @@ func capToolResultContent(blocks []control.ContentBlock) []control.ContentBlock 
 // tool_result messages (also role=user in Anthropic's shape) are
 // part of the same turn and don't bump the counter. This fixes the
 // turn-number leap (e.g. 4 → 7) that happened when a turn made
-// multiple LLM rounds — previously every assistant round counted as
+// multiple LLM rounds, previously every assistant round counted as
 // a turn, so countTurns + 1 ran ahead of reality.
 func countTurns(h []provider.Message) int {
 	n := 0

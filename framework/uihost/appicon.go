@@ -37,7 +37,7 @@ func appIconPath(size int) string {
 //	uihost.New(app, uihost.WithAppIcon(logo))
 //
 // An undecodable source logs a warning and leaves the host without
-// icons (the /favicon.ico 204 fallback still applies) — icons are
+// icons (the /favicon.ico 204 fallback still applies). Icons are
 // decoration, not something worth failing startup over.
 func WithAppIcon(source []byte) Option {
 	return func(ds *UIHost) {
@@ -116,7 +116,7 @@ func (ds *UIHost) reconcileAppIcons() {
 
 // mountAppIcons registers the generated icon routes, including the
 // /favicon.ico alias (PNG bytes; every current browser resolves the
-// icon by Content-Type, not extension). No-op without WithAppIcon —
+// icon by Content-Type, not extension). No-op without WithAppIcon;
 // /favicon.ico then keeps its 204 no-favicon fallback in serveOrRender.
 func (ds *UIHost) mountAppIcons(register func(path string, h http.HandlerFunc)) {
 	if len(ds.appIcons) == 0 {

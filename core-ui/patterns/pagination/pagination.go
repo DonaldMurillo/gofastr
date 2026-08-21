@@ -66,7 +66,7 @@ type Config struct {
 	IslandSignal string
 
 	// IslandEndpoint is the URL the page-change RPC fires at. The HrefPattern's
-	// %d placeholder still encodes the page number — the runtime sends the
+	// %d placeholder still encodes the page number, the runtime sends the
 	// resulting URL as the RPC path. Required when IslandSignal is set.
 	IslandEndpoint string
 
@@ -194,7 +194,7 @@ func prevNextItem(label, kind, pattern string, page int, enabled bool) render.HT
 }
 
 // pageItemRPC renders a page link as a data-fui-rpc button. Used when
-// IslandSignal + IslandEndpoint are set on the Config — a click fires
+// IslandSignal + IslandEndpoint are set on the Config, a click fires
 // the RPC; the response replaces the signal-bound wrapper. See
 // core-ui/ARCHITECTURE.md ("In-page state change" + "URL params are the
 // source of truth").

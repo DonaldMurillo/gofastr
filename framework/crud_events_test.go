@@ -43,7 +43,7 @@ func stubAuthMiddleware(next http.Handler) http.Handler {
 // stubTenantFromHeaderMiddleware mirrors X-Tenant-ID into the
 // handler-resolved tenant slot. The production TenantMiddleware
 // refuses to trust the raw header value (impersonation risk) and only
-// reads handler.GetTenant — so tests that want the legacy
+// reads handler.GetTenant, so tests that want the legacy
 // header-is-tenant behaviour install this in front of it.
 func stubTenantFromHeaderMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +216,7 @@ func TestSSE_FiltersByEntity(t *testing.T) {
 		case ev := <-events:
 			t.Fatalf("expected no event on /posts stream, got %q payload=%s", ev.Type, ev.Data)
 		case <-time.After(300 * time.Millisecond):
-			// good — no leak
+			// good: no leak
 		}
 	})
 }
@@ -272,7 +272,7 @@ func TestSSE_DisconnectUnsubscribes(t *testing.T) {
 }
 
 // ============================================================================
-// Test: tenant scoping — only events for the connection's tenant pass through
+// Test: tenant scoping. Only events for the connection's tenant pass through
 // ============================================================================
 
 func TestSSE_FiltersByTenant(t *testing.T) {
@@ -282,7 +282,7 @@ func TestSSE_FiltersByTenant(t *testing.T) {
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 		app.Use(stubAuthMiddleware)
-		// TenantMiddleware now refuses to trust the raw header — it
+		// TenantMiddleware now refuses to trust the raw header, it
 		// only mirrors handler.GetTenant into the tenant ctx. Inject
 		// the tenant from X-Tenant-ID via handler.SetTenant first so
 		// the existing test pattern (header-as-tenant) keeps working.

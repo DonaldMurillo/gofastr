@@ -38,7 +38,7 @@ type PasswordInputConfig struct {
 
 	// Ctx carries the per-request context used to resolve i18n strings
 	// (show/hide toggle aria-label). When nil, context.Background() is
-	// used and English fallbacks are returned — preserving today's behaviour.
+	// used and English fallbacks are returned, preserving today's behaviour.
 	Ctx context.Context
 }
 

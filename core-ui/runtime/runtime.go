@@ -2,11 +2,11 @@
 //
 // Two surfaces are exposed:
 //
-//   - The core runtime (`runtime.js`) — the one-script substrate for SPA
+//   - The core runtime (`runtime.js`): the one-script substrate for SPA
 //     navigation, signals, widgets, hydration, and demand-module loading.
 //     Served at `/__gofastr/runtime.js`.
 //
-//   - Per-module bundles (`src/<name>.js`) — payloads loaded on demand via
+//   - Per-module bundles (`src/<name>.js`): payloads loaded on demand via
 //     `__gofastr.loadModule(name)`. RPC is prefetched when its marker exists
 //     and awaited by the core delegation bridge; optional UI behaviors use
 //     the same loader.
@@ -103,7 +103,7 @@ func isNonDevEnv(v string) bool {
 
 // Cached minified payloads. Computed lazily on first read so the
 // minify pass runs at most once per source per process; subsequent
-// reads (and there are many — every page render) are pure map lookups.
+// reads (and there are many, every page render) are pure map lookups.
 var (
 	bundleOnce  sync.Once
 	bundleData  string
@@ -122,7 +122,7 @@ var (
 //
 // Composed once at init and cached (bundleOnce in RuntimeJS); the
 // token-aware minifier runs on the composed output, unchanged.
-const iifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: full = kernel+signals+nav+widgets-boot)\n" +
+const iifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: full = kernel+signals+nav+widgets-boot)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from\n" +
 	"// core-ui/runtime/frag/*.js. This file is the on-disk canonical form the gate\n" +
 	"// tests scan (attrdoc_test.go / integrity_test.go read it via os.ReadFile);\n" +
@@ -161,7 +161,7 @@ func composeFull() (string, error) {
 	return composeFragments(iifeHeader, fullFragmentOrder)
 }
 
-// RuntimeJS returns the composed runtime — the single-file IIFE every
+// RuntimeJS returns the composed runtime, the single-file IIFE every
 // page ships by default. Assembled from the fragment files once, then
 // minified (or returned verbatim when RUNTIME_NOMINIFY=1).
 func RuntimeJS() (string, error) {
@@ -200,10 +200,10 @@ func RuntimeSize() int {
 
 // staticIifeHeader is the IIFE wrapper for the `static` composition (SSG
 // export). Same wrapper structure as iifeHeader, but names the static
-// fragment set and omits the on-disk-canonical-form note — only `full`
+// fragment set and omits the on-disk-canonical-form note, only `full`
 // (runtime.js) has an on-disk form the gate tests scan. The static bundle
 // is assembled purely in memory and served by StaticJS().
-const staticIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: static = kernel+rpc-stub+signals+nav+widgets-boot-static)\n" +
+const staticIifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: static = kernel+rpc-stub+signals+nav+widgets-boot-static)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeStatic) from\n" +
 	"// core-ui/runtime/frag/*.js. Served only by the static exporter\n" +
 	"// (framework/static.Builder) for serverless SSG output.\n" +
@@ -218,7 +218,7 @@ const staticIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed:
 var staticFragmentOrder = []string{"kernel", "rpc-stub", "signals", "nav", "widgets-boot-static", "boot"}
 
 // composeStatic assembles the `static` runtime composition for SSG export.
-// Same concatenation shape as composeFull — fragments are embedded JS files
+// Same concatenation shape as composeFull, fragments are embedded JS files
 // joined inside one IIFE so closure semantics are preserved exactly.
 func composeStatic() (string, error) {
 	return composeFragments(staticIifeHeader, staticFragmentOrder)
@@ -259,9 +259,9 @@ func MustStaticJS() string {
 	return js
 }
 
-// embedIifeHeader is the IIFE wrapper for the `embed` composition — the
+// embedIifeHeader is the IIFE wrapper for the `embed` composition, the
 // runtime that ships INSIDE an embedded surface's iframe.
-const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4 — ES2020+ (composed: embed = kernel+signals+widgets-boot+boot-embed)\n" +
+const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: embed = kernel+signals+widgets-boot+boot-embed)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeEmbed) from\n" +
 	"// core-ui/runtime/frag/*.js. Served at /__gofastr/embed-runtime.js and loaded\n" +
 	"// only inside an embed frame.\n" +
@@ -289,7 +289,7 @@ var (
 	embedErr  error
 )
 
-// EmbedJS returns the `embed` runtime composition — the bundle served inside an
+// EmbedJS returns the `embed` runtime composition, the bundle served inside an
 // embedded surface's iframe.
 //
 // Its budget is looser than the core runtime's on purpose: it loads inside a
@@ -360,7 +360,7 @@ func MustEmbedLoaderJS() string {
 	return js
 }
 
-// ColorSchemeJS returns the color-scheme bootstrap script — a tiny
+// ColorSchemeJS returns the color-scheme bootstrap script, a tiny
 // synchronous snippet meant to ship at the TOP of <head> so dark-mode
 // CSS tokens take effect during the same first paint that hits the
 // page. Reads localStorage("gofastr.colorScheme") + the OS

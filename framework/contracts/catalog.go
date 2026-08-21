@@ -8,7 +8,7 @@
 package contracts
 
 // The rule catalog. Every contract GoFastr enforces is declared here, as
-// data, in one file — so "what does this framework actually demand of my
+// data, in one file, so "what does this framework actually demand of my
 // app" is answerable by reading, without running anything and without
 // grepping twelve analyzers.
 //
@@ -57,7 +57,7 @@ func capabilityBlock(c Capability) (int, bool) {
 	return n, ok
 }
 
-// Meta rules — the contract system reporting on itself.
+// Meta rules: the contract system reporting on itself.
 const (
 	RuleSuppressionNoReason    = "GOFASTR0001"
 	RuleSuppressionStale       = "GOFASTR0002"
@@ -241,11 +241,11 @@ func routingRules() []Rule {
 		Title: "Express-style `:param` in a route pattern", Capability: CapRouting, Severity: SeverityError,
 		Summary: "A route pattern uses `:name` for a path parameter instead of `{name}`.",
 		Why: "GoFastr routes through net/http's ServeMux, which uses `{name}`. A `:name` segment is " +
-			"matched **literally** — so `/users/:id` responds to a request for the path `/users/:id` " +
+			"matched **literally**, so `/users/:id` responds to a request for the path `/users/:id` " +
 			"and 404s on `/users/42`. Nothing warns you: the route registers fine, the handler " +
 			"compiles fine, and every real request misses it. This is the single most common habit " +
 			"carried over from Express, Gin, and Chi.",
-		Fix: "Use brace syntax — `/users/{id}` — and read the value with `r.PathValue(\"id\")`. For a trailing catch-all, `{path...}`.",
+		Fix: "Use brace syntax, `/users/{id}`, and read the value with `r.PathValue(\"id\")`. For a trailing catch-all, `{path...}`.",
 		// Not autofixable on purpose: rewriting the pattern alone turns a
 		// loud 404 into a route whose handler still reads the parameter
 		// the old way, which fails quietly. The handler has to change in
@@ -260,9 +260,9 @@ func routingRules() []Rule {
 		Title: "Route has no test", Capability: CapRouting, Severity: SeverityWarn,
 		Summary: "No test file in the module references this route's path.",
 		Why: "An untested route is the one that breaks silently on a refactor. This is the static " +
-			"half of the check — cheap, and it runs without a test run. The runtime half " +
+			"half of the check: cheap, and it runs without a test run. The runtime half " +
 			"(GOFASTR1101) proves the route was actually reached.",
-		Fix: "Add a test that exercises the path. `framework.TestHarness(t, app)` gives you an in-process client — see `gofastr docs testkit`.",
+		Fix: "Add a test that exercises the path. `framework.TestHarness(t, app)` gives you an in-process client; see `gofastr docs testkit`.",
 		Doc: "testkit",
 		Examples: []Example{{
 			Bad:  "r.Handle(\"GET\", \"/reports/monthly\", monthlyReport) // no test file names this path",
@@ -276,13 +276,13 @@ func routingRules() []Rule {
 			"position and focus, and pushes a history entry the user did not ask for. " +
 			"GoFastr models discrete in-page state as islands: the click fires an RPC and the runtime " +
 			"swaps one fragment. This is advisory, and only checked in modules that render UI: the " +
-			"evidence is a path segment's name, and URL-addressable pages are sometimes the point — a " +
+			"evidence is a path segment's name, and URL-addressable pages are sometimes the point: a " +
 			"blog's page 2 wants a URL, and a headless API using `/orders/page/{n}` is just REST. It " +
-			"also only speaks to discrete list state. Continuous, client-owned state — a map viewport's " +
-			"lat/lng/zoom, an animated chart's range, a scrubber position — is neither a route nor an " +
+			"also only speaks to discrete list state. Continuous, client-owned state, like a map viewport's " +
+			"lat/lng/zoom, an animated chart's range, or a scrubber position, is neither a route nor an " +
 			"island: an RPC per pan would be absurd. That state lives in the client signal store, and " +
 			"reflecting it into the URL so the view is shareable is a feature, not a finding.",
-		Fix: "For sort/page/filter/tab, move the state into an island — `core-ui/widget` Builder — and let the server return the new island HTML. For continuous state (maps, charts), keep it in the client signal store. See `gofastr docs interactive-patterns`.",
+		Fix: "For sort/page/filter/tab, move the state into an island, a `core-ui/widget` Builder, and let the server return the new island HTML. For continuous state (maps, charts), keep it in the client signal store. See `gofastr docs interactive-patterns`.",
 		Doc: "interactive-patterns",
 		Examples: []Example{{
 			Caption: "pagination as navigation vs as an island",
@@ -294,7 +294,7 @@ func routingRules() []Rule {
 		Title: "Route method is not uppercase", Capability: CapRouting, Severity: SeverityError,
 		Summary: "A route is registered with a lowercase or mixed-case HTTP method.",
 		Why: "ServeMux compares methods literally. `\"get /x\"` registers without complaint and then " +
-			"answers 405 to every real GET — a dead route that looks registered, with no boot-time " +
+			"answers 405 to every real GET: a dead route that looks registered, with no boot-time " +
 			"error and no log line to find it by.",
 		Fix: `Uppercase the method: "GET", "POST", "PUT", "PATCH", "DELETE".`,
 		Doc: "project-structure", Autofix: true,
@@ -311,7 +311,7 @@ func testingRules() []Rule {
 		Title: "Route never reached by a test", Capability: CapTesting, Severity: SeverityWarn,
 		Summary: "The semantic-coverage manifest records no test request that resolved to this route.",
 		Why: "Line coverage says a function ran. It does not say a request ever reached it through " +
-			"the real router, the real middleware chain, and the real auth check — which is where " +
+			"the real router, the real middleware chain, and the real auth check, which is where " +
 			"routes actually break. A route with 100% line coverage and zero requests is untested.",
 		Fix: "Exercise the route in a test. `framework.TestHarness` records every request it makes into `.gofastr/semantic-coverage.json`; run `go test ./...` once to populate it. For a test that drives the built binary over HTTP instead, set GOFASTR_SEMANTIC_COVERAGE=1 on the server process.",
 		Doc: "testkit",
@@ -324,7 +324,7 @@ func testingRules() []Rule {
 		Title: "Permission never checked by a test", Capability: CapTesting, Severity: SeverityWarn,
 		Summary: "A declared permission was never evaluated during the recorded test run.",
 		Why: "An unexercised permission is an unproven boundary. The common failure is not that " +
-			"the check rejects the wrong person — it is that the check is never reached at all, " +
+			"the check rejects the wrong person. It is that the check is never reached at all, " +
 			"which no line-coverage number can distinguish from passing.",
 		Fix: "Add a test that calls the guarded surface as a principal who lacks the permission, and assert the rejection.",
 		Doc: "access-control",
@@ -339,7 +339,7 @@ func testingRules() []Rule {
 		Why: "Auto-CRUD is generated, so it is easy to assume it works. The parts that break are " +
 			"the app-specific ones bolted to it: hooks, validators, owner scoping, includes. None " +
 			"of those run until the endpoint does.",
-		Fix: "Call the operation through the HTTP surface in a test — a `framework.TestHarness` request records it automatically.",
+		Fix: "Call the operation through the HTTP surface in a test: a `framework.TestHarness` request records it automatically.",
 		Doc: "testkit",
 		Examples: []Example{{
 			Bad:  "app.Entity(\"invoices\", entity.EntityConfig{}) // no test calls DELETE /invoices/{id}",
@@ -352,7 +352,7 @@ func testingRules() []Rule {
 		Why: "A floor that drifts downward one merge at a time is not a floor. This check exists to " +
 			"make the drift a build failure at the moment it happens, rather than a number someone " +
 			"notices a quarter later.",
-		Fix: "Add tests, or lower `contracts.coverage.minimum` deliberately — the change will be visible in review.",
+		Fix: "Add tests, or lower `contracts.coverage.minimum` deliberately: the change will be visible in review.",
 		Doc: "contracts",
 		Examples: []Example{{
 			Bad:  "contracts:\n  coverage:\n    minimum: 90   # profile reports 71%",
@@ -363,7 +363,7 @@ func testingRules() []Rule {
 		Title: "Test disabled without a stated boundary", Capability: CapTesting, Severity: SeverityError,
 		Summary: "A `t.Skip` hides missing coverage rather than marking a lane boundary.",
 		Why: "`t.Skip(\"TODO\")` reports as a pass. The suite stays green while the behaviour it " +
-			"claims to cover is unverified — the most expensive kind of green.",
+			"claims to cover is unverified: the most expensive kind of green.",
 		Fix: "Fix the test, delete it, or state the boundary: an explicit `testing.Short()` guard, an environment-capability skip, or `//gofastr:allow(GOFASTR1105) <why>`.",
 		Doc: "testkit",
 		Examples: []Example{{
@@ -375,10 +375,10 @@ func testingRules() []Rule {
 		Title: "Lifecycle hook never ran", Capability: CapTesting, Severity: SeverityWarn,
 		Summary: "A registered entity lifecycle hook never fired during the recorded test run.",
 		Why: "This is the quietest way a feature stops working. The hook is still registered, " +
-			"the handler it decorates still has coverage, and the suite is still green — but the " +
+			"the handler it decorates still has coverage, and the suite is still green, but the " +
 			"behaviour the hook adds (the audit row, the derived column, the cache bust) has not " +
 			"happened once. Nothing in a line-coverage report can tell you that.",
-		Fix: "Exercise the operation the hook is attached to through the HTTP surface — a `framework.TestHarness` request to the entity's create/update/delete endpoint fires it and records it.",
+		Fix: "Exercise the operation the hook is attached to through the HTTP surface: a `framework.TestHarness` request to the entity's create/update/delete endpoint fires it and records it.",
 		Doc: "hooks-and-transactions",
 		Examples: []Example{{
 			Caption: "registered but never exercised",
@@ -392,10 +392,10 @@ func testingRules() []Rule {
 		Title: "Event subscriber never ran", Capability: CapTesting, Severity: SeverityWarn,
 		Summary: "A handler is subscribed to an event type that was never published during the recorded test run.",
 		Why: "A subscriber is invisible until its event fires. Nothing calls it directly, so it has " +
-			"no callers to follow and no failing test to notice — the notification is simply never " +
+			"no callers to follow and no failing test to notice: the notification is simply never " +
 			"sent, the projection never updated, and the suite stays green. Renaming the event type " +
 			"on the emitting side breaks it silently and identically.",
-		Fix: "Emit the event in a test — usually by exercising the operation that publishes it — so the subscriber runs at least once. If it is only ever emitted by another service, say so with a suppression.",
+		Fix: "Emit the event in a test, usually by exercising the operation that publishes it, so the subscriber runs at least once. If it is only ever emitted by another service, say so with a suppression.",
 		Doc: "events",
 		Examples: []Example{{
 			Caption: "subscribed to a type nothing publishes",
@@ -410,7 +410,7 @@ func testingRules() []Rule {
 		Summary: "A role is granted permissions but no recorded test ever ran a request holding it.",
 		Why: "Granting a role permissions is a claim about who can do what, and the claim is " +
 			"unverified until a request arrives carrying that role. The failure mode is not a " +
-			"role that grants too little — that shows up as a broken feature — it is a role that " +
+			"role that grants too little, which shows up as a broken feature. It is a role that " +
 			"grants too much, which shows up as nothing at all until someone uses it.",
 		Fix: "Add a test that authenticates as the role and exercises what it should and should not reach. `TestApp.AsUser` sets the caller; the role resolver in access.Middleware maps it.",
 		Doc: "access-control",
@@ -427,11 +427,11 @@ func testingRules() []Rule {
 		Summary: "`.gofastr/semantic-coverage.json` does not exist, so the semantic-coverage checks could not run.",
 		Why: "Absence is reported rather than enforced: a fresh clone has never run its tests, and " +
 			"walling off first verify behind a full test run would teach the wrong lesson. Drift " +
-			"(a manifest that exists but misses a route) is the failure worth catching — that is GOFASTR1101.",
+			"(a manifest that exists but misses a route) is the failure worth catching: that is GOFASTR1101.",
 		Fix: "Run `go test ./...` once. Every `framework.TestHarness` request writes to the manifest from then on.",
 		Doc: "testkit",
 		Examples: []Example{{
-			Bad:  "# .gofastr/semantic-coverage.json absent — the testing rules check nothing",
+			Bad:  "# .gofastr/semantic-coverage.json absent: the testing rules check nothing",
 			Good: "go test ./...   # every TestHarness request records into the manifest",
 		}},
 	}}
@@ -443,7 +443,7 @@ func accessibilityRules() []Rule {
 		Title: "Image without alt text", Capability: CapAccessibility, Severity: SeverityError,
 		Summary: "An `html.Image` omits the Alt field.",
 		Why: "A screen reader announces an image with no alt by reading its filename, or skips it " +
-			"silently. Either way the user gets nothing. Omission is also ambiguous — the linter " +
+			"silently. Either way the user gets nothing. Omission is also ambiguous: the linter " +
 			"cannot tell a forgotten alt from a decorative image.",
 		Fix: `Set Alt. Informative image → describe what it shows ("Team photo at launch"). Decorative → explicit empty Alt: "" so it is skipped deliberately.`,
 		Doc: "accessibility", Autofix: false,
@@ -456,7 +456,7 @@ func accessibilityRules() []Rule {
 		Summary: "`.gofastr/semantic-coverage.json` exists but cannot be parsed.",
 		Why: "Absence and corruption are different failures. A missing manifest means the tests " +
 			"have not run yet, which is normal on a fresh clone. A manifest that exists and cannot " +
-			"be read means the record of what the tests covered is untrustworthy — and every " +
+			"be read means the record of what the tests covered is untrustworthy, and every " +
 			"semantic-coverage check silently did not run. Reporting that at the same low severity " +
 			"as absence relaxes enforcement at exactly the moment the evidence is broken.",
 		Fix: "Delete `.gofastr/semantic-coverage.json` and re-run `go test ./...` to rebuild it. " +
@@ -471,7 +471,7 @@ func accessibilityRules() []Rule {
 		Title: "Control without an accessible name", Capability: CapAccessibility, Severity: SeverityError,
 		Summary: "A button or link has no text a screen reader can announce.",
 		Why: `An icon-only button announces as "button". A link labelled "click here" is meaningless ` +
-			"in the link list screen-reader users navigate by — which lists links out of context.",
+			"in the link list screen-reader users navigate by, which lists links out of context.",
 		Fix: `Set Label (buttons) or Text (links) to the action or destination: "Close dialog", "View pricing".`,
 		Doc: "accessibility",
 		Examples: []Example{{
@@ -494,7 +494,7 @@ func accessibilityRules() []Rule {
 		ID: RuleIncompleteFormControl, Slug: "accessibility/incomplete-form-control",
 		Title: "Form control missing required semantics", Capability: CapAccessibility, Severity: SeverityError,
 		Summary: "An input, select, textarea, label, form, or fieldset omits a field assistive tech needs.",
-		Why: "A control with no Name does not submit. A label with no For is not attached to anything — " +
+		Why: "A control with no Name does not submit. A label with no For is not attached to anything: " +
 			"clicking it does nothing and a screen reader announces the field as unlabelled. " +
 			"Placeholder text is not a label: it disappears the moment the user types.",
 		Fix: "Set Type and Name on inputs, For on labels (matching the input id), Method on forms, Legend on fieldsets.",
@@ -508,7 +508,7 @@ func accessibilityRules() []Rule {
 		Title: "Heading without an explicit level", Capability: CapAccessibility, Severity: SeverityError,
 		Summary: "An `html.Heading` omits Level.",
 		Why: "Heading levels form the page outline screen-reader users navigate by. Picking a level " +
-			"to get the font size you want breaks that outline — one h1, no skipped levels. Font size is a styling concern.",
+			"to get the font size you want breaks that outline: one h1, no skipped levels. Font size is a styling concern.",
 		Fix: "Set Level explicitly to the level the outline needs, and size it with the design system's tokens.",
 		Doc: "accessibility",
 		Examples: []Example{{
@@ -537,7 +537,7 @@ func architectureRules() []Rule {
 		Summary: "A package imports one from a layer above it.",
 		Why: "Layering is what keeps a codebase reorganizable. One upward import turns two " +
 			"independently testable halves into one unit, and the next one makes it a cycle. " +
-			"The cost is never visible at the moment the import is added — only months later, when nothing can move.",
+			"The cost is never visible at the moment the import is added, only months later, when nothing can move.",
 		Fix: "Invert the dependency: define the interface the lower layer needs *in* the lower layer, and have the upper layer implement it.",
 		Doc: "project-structure",
 		Examples: []Example{{
@@ -549,7 +549,7 @@ func architectureRules() []Rule {
 		ID: RuleForbiddenImport, Slug: "architecture/forbidden-import",
 		Title: "Forbidden import edge", Capability: CapArchitecture, Severity: SeverityError,
 		Summary: "An import matches a `contracts.architecture.forbid` entry.",
-		Why: "Some edges are banned for reasons no layer ordering expresses — a package that must " +
+		Why: "Some edges are banned for reasons no layer ordering expresses: a package that must " +
 			"stay dependency-free so it can be vendored, or a decoder set that must not be linked " +
 			"into every binary. The ban is only real if something checks it.",
 		Fix: "Remove the import, or route it through the seam the forbid rule's reason names.",
@@ -568,7 +568,7 @@ func securityRules() []Rule {
 		Summary: "A SQL statement is built by string concatenation or Sprintf around request-derived data.",
 		Why: "This is SQL injection. The variable reaches the database as syntax rather than as a " +
 			"value, so a quote in it rewrites the statement. Every ORM in the process is bypassed at that line.",
-		Fix: "Use placeholders — `$1`/`?` — and pass the value as an argument. For a dynamic identifier (table or column name), validate it against a fixed allow-list first.",
+		Fix: "Use placeholders, `$1`/`?`, and pass the value as an argument. For a dynamic identifier (table or column name), validate it against a fixed allow-list first.",
 		Doc: "security",
 		Examples: []Example{{
 			Bad:  `db.Query("SELECT * FROM users WHERE email = '" + req.Email + "'")`,
@@ -591,7 +591,7 @@ func securityRules() []Rule {
 		ID: RuleHTMLConcat, Slug: "security/html-concat",
 		Title: "Untrusted value concatenated into HTML", Capability: CapSecurity, Severity: SeverityError,
 		Summary: "`render.HTML` is called on a concatenated string.",
-		Why: "`render.HTML` means \"this is already safe markup — do not escape it\". Concatenating a " +
+		Why: "`render.HTML` means \"this is already safe markup: do not escape it\". Concatenating a " +
 			"variable into it hands the user's string straight to the browser as markup. That is stored XSS.",
 		Fix: "Use `render.Text` for untrusted values (it escapes), or compose `core-ui/html` elements. If the concatenated half is genuinely a constant, annotate `//gofastr:allow(GOFASTR1403) <why>`.",
 		Doc: "security",
@@ -605,7 +605,7 @@ func securityRules() []Rule {
 		Summary: "An `http.Cookie` is constructed without HttpOnly, Secure, or SameSite.",
 		Why: "A cookie without HttpOnly is readable by any script that gets injected. Without Secure " +
 			"it travels over plain HTTP on the first request after a downgrade. Without SameSite it " +
-			"rides along on cross-site requests — the CSRF token's whole reason for existing.",
+			"rides along on cross-site requests, the CSRF token's whole reason for existing.",
 		Fix: "Set HttpOnly: true, Secure: true, and SameSite: http.SameSiteLaxMode (or Strict). Session cookies minted by `battery/auth` already do this.",
 		Doc: "security", Autofix: true,
 		Examples: []Example{{
@@ -619,7 +619,7 @@ func securityRules() []Rule {
 		Why: "A committed secret is a leaked secret: it is in every clone, every fork, and the reflog " +
 			"after you delete it. Rotating is the only remedy, and rotation is expensive precisely " +
 			"when you discover this.",
-		Fix: "Read it from the environment (`os.Getenv`) or `WithSecret`/`GOFASTR_SECRET`. Test fixtures and public constants are fine — annotate them `// not-a-secret: <why>`.",
+		Fix: "Read it from the environment (`os.Getenv`) or `WithSecret`/`GOFASTR_SECRET`. Test fixtures and public constants are fine: annotate them `// not-a-secret: <why>`.",
 		Doc: "security",
 		Examples: []Example{{
 			Bad:  `apiKey := "sk-live-9f3c2a1b8e7d6c5f4a3b2c1d"`,
@@ -647,7 +647,7 @@ func performanceRules() []Rule {
 		Summary: "A Query/Exec/Get call sits inside a range or for loop.",
 		Why: "This is the N+1: one query to get the list, then one per row. It is invisible with " +
 			"ten rows in development and takes the database down with ten thousand in production.",
-		Fix: "Fetch in one query — `?include=` / eager loading for relations, or an `IN (…)` batch. See `gofastr docs includes`.",
+		Fix: "Fetch in one query: `?include=` / eager loading for relations, or an `IN (…)` batch. See `gofastr docs includes`.",
 		Doc: "includes",
 		Examples: []Example{{
 			Bad:  "for _, o := range orders {\n    o.Customer, _ = repo.GetCustomer(ctx, o.CustomerID)\n}",
@@ -674,7 +674,7 @@ func dataRules() []Rule {
 		Title: "Write result discarded", Capability: CapData, Severity: SeverityError,
 		Summary: "The result and error of a `db.Exec` are both assigned to `_`.",
 		Why: "The write may not have happened. A constraint violation, a closed connection, a " +
-			"read-only replica — all of them return an error here and none of them are visible. " +
+			"read-only replica: all of them return an error here and none of them are visible. " +
 			"The request returns 200 and the data is gone.",
 		Fix: "Handle the error, or state that you mean it: `// best-effort: <why>` on the line or just above it.",
 		Doc: "hooks-and-transactions",
@@ -691,7 +691,7 @@ func entityRules() []Rule {
 		Title: "Entity exposes MCP tools without CRUD routes", Capability: CapEntities, Severity: SeverityError,
 		Summary: "An entity sets MCP without CRUD.",
 		Why: "MCP entity tools dispatch in-process against the app's own router. With CRUD off the " +
-			"routes do not exist, so every tool call 404s — the app boots, the tools list, and nothing works.",
+			"routes do not exist, so every tool call 404s: the app boots, the tools list, and nothing works.",
 		Fix: "Enable CRUD alongside MCP, or drop MCP for this entity.",
 		Doc: "entity-declarations",
 		Examples: []Example{{
@@ -702,7 +702,7 @@ func entityRules() []Rule {
 		ID: RulePublicEntity, Slug: "entities/public-entity",
 		Title: "Entity exposed anonymously", Capability: CapEntities, Severity: SeverityWarn,
 		Summary: "An entity sets Public, opting out of the session requirement on every operation.",
-		Why: "Auto-CRUD is secure by default — every operation requires a session. Public removes " +
+		Why: "Auto-CRUD is secure by default: every operation requires a session. Public removes " +
 			"that for reads *and writes*, so anyone on the internet can create and delete rows unless " +
 			"another gate stops them. That is sometimes exactly right, and it should always be deliberate.",
 		Fix: "Confirm the entity is genuinely public data. If only reads should be, keep Public off and grant read access through `access:` permissions instead.",
@@ -714,16 +714,16 @@ func entityRules() []Rule {
 	}, {
 		ID: RuleCrudWithoutAuth, Slug: "entities/crud-without-auth",
 		Title: "CRUD entity exposed with no auth wired", Capability: CapEntities, Severity: SeverityWarn,
-		Summary: "An entity mounts auto-CRUD routes, but the app wires no auth — so every operation 401s for every caller.",
+		Summary: "An entity mounts auto-CRUD routes, but the app wires no auth, so every operation 401s for every caller.",
 		Why: "Auto-CRUD is secure by default: each operation requires a session. With no auth battery " +
 			"(no auth.New and no SessionMiddleware / RequireAuth / BFF), no request ever carries a user, " +
-			"so the entire CRUD surface is unreachable — the app boots and advertises endpoints that " +
+			"so the entire CRUD surface is unreachable: the app boots and advertises endpoints that " +
 			"always return 401. That is the worst first-contact signal: a curl to the documented URL " +
-			"fails, which reads as broken. It is almost always an oversight, not a decision — wiring " +
+			"fails, which reads as broken. It is almost always an oversight, not a decision. Wiring " +
 			"auth makes signed-in callers reach the API. This complements GOFASTR1903 (auth configured " +
 			"but never mounted): 1903 fires when an auth.New exists with no reader; this fires when no " +
 			"auth battery is present at all.",
-		Fix: "Wire battery/auth — auth.New(auth.AuthConfig{…}) plus fwApp.Use(auth.SessionMiddleware(mgr)) (or auth.BFF) — so authenticated callers reach the routes. If the entity is genuinely public data, set Exposure.Public (GOFASTR1702 then applies). Run `gofastr docs auth`.",
+		Fix: "Wire battery/auth, auth.New(auth.AuthConfig{…}) plus fwApp.Use(auth.SessionMiddleware(mgr)) (or auth.BFF), so authenticated callers reach the routes. If the entity is genuinely public data, set Exposure.Public (GOFASTR1702 then applies). Run `gofastr docs auth`.",
 		Doc: "auth",
 		Examples: []Example{{
 			Bad:  "app.Entity(\"posts\", entity.EntityConfig{Exposure: &entity.ExposureConfig{}}) // CRUD on, not public, no auth wired",
@@ -740,7 +740,7 @@ func renderingRules() []Rule {
 		Why: "Two styling surfaces means every future change has to be made twice and stays consistent " +
 			"by luck. Bespoke CSS also loads in an order you do not control relative to component CSS, " +
 			"so it wins or loses by specificity accident rather than by intent.",
-		Fix: "Compose `framework/ui` components and `core-ui/style` tokens. If the design system genuinely lacks what you need, add the component or token upstream and use it here — that is the fix, not a local rule.",
+		Fix: "Compose `framework/ui` components and `core-ui/style` tokens. If the design system genuinely lacks what you need, add the component or token upstream and use it here. That is the fix, not a local rule.",
 		Doc: "ui-getting-started",
 		Examples: []Example{{
 			Bad:  "const baseCSS = `.my-card { padding: 16px; border-radius: 8px; }`",
@@ -753,7 +753,7 @@ func renderingRules() []Rule {
 		Why: "It throws away the whole document to change one thing: scroll position, focus, form " +
 			"state, and every open island go with it. It also re-downloads and re-parses the CSS and " +
 			"runtime that were already there. Cross-page navigation in GoFastr is client-side with a cache.",
-		Fix: "Let the runtime navigate — a plain `<a href>` is intercepted — or return `X-Gofastr-Location` from the server to redirect after an action.",
+		Fix: "Let the runtime navigate, a plain `<a href>` is intercepted, or return `X-Gofastr-Location` from the server to redirect after an action.",
 		Doc: "runtime-contract",
 		Examples: []Example{{
 			Bad:  `location.href = '/orders'`,
@@ -764,7 +764,7 @@ func renderingRules() []Rule {
 		Title: "Bespoke EventSource on an app surface", Capability: CapRendering, Severity: SeverityError,
 		Summary: "Client code opens its own `EventSource` instead of using the shared SSE bus.",
 		Why: "Browsers cap concurrent connections per origin, so every bespoke stream is one fewer " +
-			"connection for everything else on the page — and the cap is low enough to hit. " +
+			"connection for everything else on the page, and the cap is low enough to hit. " +
 			"GoFastr multiplexes every server push over one bus at `/__gofastr/sse`.",
 		Fix: "Subscribe through the runtime's bus. For passive freshness (dashboards, counters, statuses) use `data-fui-poll` instead: no held connection at all.",
 		Doc: "reactivity",
@@ -777,7 +777,7 @@ func renderingRules() []Rule {
 		Title: "Inline style attribute", Capability: CapRendering, Severity: SeverityError,
 		Summary: "Markup carries a `style=\"…\"` attribute.",
 		Why: "Inline styles beat every stylesheet rule, so the component they are applied to can no " +
-			"longer be restyled or themed — including by the dark-mode tokens. They are also blocked " +
+			"longer be restyled or themed, including by the dark-mode tokens. They are also blocked " +
 			"outright under a strict Content-Security-Policy.",
 		Fix: "Use the component's config or a `core-ui/style` token. A value that genuinely varies per render belongs in a CSS custom property the component reads.",
 		Doc: "theming",
@@ -793,7 +793,7 @@ func permissionRules() []Rule {
 		ID: RuleUnscopedPII, Slug: "permissions/unscoped-pii",
 		Title: "Per-user data exposed without scoping", Capability: CapPermissions, Severity: SeverityError,
 		Summary: "An entity with PII-shaped fields is auto-exposed with no owner field, tenant, or access rule.",
-		Why: "Auto-CRUD requires a session, so this is not anonymous access — it is worse in a way " +
+		Why: "Auto-CRUD requires a session, so this is not anonymous access: it is worse in a way " +
 			"that is easy to miss in review: every logged-in user can read and write every *other* " +
 			"user's row. Enabling auth does not close it; session middleware authenticates the caller " +
 			"without scoping the rows.",
@@ -808,11 +808,11 @@ func permissionRules() []Rule {
 		Summary: "Markup emits a `<script>` block with a body rather than a `src`.",
 		Why: "The framework's default Content-Security-Policy is `default-src 'self'` with no " +
 			"`unsafe-inline`, so the browser refuses to execute the block. Nothing fails at build " +
-			"or render time — the page ships, the script silently never runs, and whatever it wired " +
+			"or render time: the page ships, the script silently never runs, and whatever it wired " +
 			"up is simply missing in production while working in any environment with a laxer policy.",
 		Fix: "Move the body to a file and reference it: `<script src=\"/static/x.js\">`. For behaviour " +
 			"attached to server-rendered markup, prefer the runtime's `data-fui-*` hydration over a " +
-			"script tag at all — see `gofastr docs runtime-contract`.",
+			"script tag at all: see `gofastr docs runtime-contract`.",
 		Doc: "security", Autofix: false,
 		Examples: []Example{{
 			Bad:  "html.Raw(`<script>document.title = \"Orders\"</script>`)",
@@ -823,7 +823,7 @@ func permissionRules() []Rule {
 		Title: "Mutating route with no access declaration", Capability: CapPermissions, Severity: SeverityWarn,
 		Summary: "A POST, PUT, PATCH, or DELETE route declares no middleware, group, or access rule.",
 		Why: "A write endpoint that nothing guards is reachable by anyone who can reach the process. " +
-			"This is the single most common way an internal admin action becomes a public one — not " +
+			"This is the single most common way an internal admin action becomes a public one, not " +
 			"by decision, but by a route added outside the group that carried the guard.",
 		Fix: "Register it inside a guarded `app.Group(...)`, or attach access explicitly. If it is genuinely public (a webhook receiver, a health probe), say so with `//gofastr:allow(GOFASTR1902) <why>`.",
 		Doc: "access-control",
@@ -837,11 +837,11 @@ func permissionRules() []Rule {
 		Summary: "`auth.New(...)` builds an auth manager, but nothing installs a middleware that reads the credential off the request.",
 		Why: "The manager on its own authenticates nobody. Without `auth.SessionMiddleware` (cookie " +
 			"sessions) or `auth.RequireAuth` (bearer tokens) in the chain, no request ever carries a " +
-			"user — so every signed-in caller is treated as anonymous and gets 401, identically to a " +
+			"user, so every signed-in caller is treated as anonymous and gets 401, identically to a " +
 			"real intruder. The app looks configured and the login form works; everything behind it is " +
 			"unreachable. This shipped once from the blueprint generator, which enabled the battery and " +
 			"never mounted the middleware. In a module with several binaries each is checked " +
-			"separately, by import reachability — one app's mount says nothing about another app's " +
+			"separately, by import reachability: one app's mount says nothing about another app's " +
 			"manager, which its binary never links.",
 		Fix: "Add `fwApp.Use(auth.SessionMiddleware(authMgr))` for cookie sessions, or `auth.RequireAuth` on the routes that take bearer tokens. `auth.BFF` mounts the session middleware for you.",
 		Doc: "auth",
@@ -873,9 +873,9 @@ func aiRules() []Rule {
 		Title: "Hand-rolled subsystem a battery provides", Capability: CapAI, Severity: SeverityWarn,
 		Summary: "Code implements auth, email, queueing, storage, or scheduling directly.",
 		Why: "These are the subsystems where a from-scratch version is 80% right and the missing 20% " +
-			"is the security-relevant part — session rotation, retry backoff, signed URLs. The " +
+			"is the security-relevant part: session rotation, retry backoff, signed URLs. The " +
 			"batteries are wired into the app lifecycle, the audit log, and the test harness; a local one is not.",
-		Fix: "Register the battery instead — `gofastr docs overview` lists them. Batteries are composable: keep your custom logic in a hook.",
+		Fix: "Register the battery instead: `gofastr docs overview` lists them. Batteries are composable: keep your custom logic in a hook.",
 		Doc: "overview",
 		Examples: []Example{{
 			Bad:  "hash, _ := bcrypt.GenerateFromPassword(pw, bcrypt.DefaultCost) // hand-rolled auth",
@@ -885,9 +885,9 @@ func aiRules() []Rule {
 		ID: RuleRawSQLOverRepo, Slug: "ai/raw-sql-over-repository",
 		Title: "Raw SQL against an entity's table", Capability: CapAI, Severity: SeverityInfo,
 		Summary: "A raw query targets a table that has a declared entity and a generated repository.",
-		Why: "Raw SQL bypasses every scoping rule the entity declares — soft delete, tenant filter, " +
+		Why: "Raw SQL bypasses every scoping rule the entity declares: soft delete, tenant filter, " +
 			"owner field. A query written before those existed keeps returning rows they were added to hide.",
-		Fix: "Use the entity's typed repository, which applies the scoping. Raw SQL is fine for reporting and migrations — annotate those `//gofastr:allow(GOFASTR2003) <why>`.",
+		Fix: "Use the entity's typed repository, which applies the scoping. Raw SQL is fine for reporting and migrations: annotate those `//gofastr:allow(GOFASTR2003) <why>`.",
 		Doc: "query-dsl",
 		Examples: []Example{{
 			Bad:  "db.Query(\"SELECT * FROM invoices WHERE user_id = ?\", uid) // invoices is a declared entity",

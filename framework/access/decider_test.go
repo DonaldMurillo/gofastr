@@ -10,7 +10,7 @@ import (
 )
 
 // TestCanResource_NoDeciderMatchesCan pins the no-decider contract: with no
-// Decider installed in ctx, CanResource must answer exactly what Can answers —
+// Decider installed in ctx, CanResource must answer exactly what Can answers,
 // so existing RBAC-only wiring is byte-identical. Reported issue #80 requires
 // the seam to leave the hot path untouched when no decider is present.
 func TestCanResource_NoDeciderMatchesCan(t *testing.T) {
@@ -30,7 +30,7 @@ func TestCanResource_NoDeciderMatchesCan(t *testing.T) {
 }
 
 // TestCanResource_AllowDeciderPermits confirms a Decider returning DecisionAllow
-// permits the check even when the role policy would deny (no grant, no role) —
+// permits the check even when the role policy would deny (no grant, no role),
 // the seam lets a resource-aware rule grant access the coarse role policy can't.
 func TestCanResource_AllowDeciderPermits(t *testing.T) {
 	t.Parallel()
@@ -44,7 +44,7 @@ func TestCanResource_AllowDeciderPermits(t *testing.T) {
 }
 
 // TestCanResource_DenyDeciderBlocks confirms a Decider returning DecisionDeny
-// refuses the check even when the role policy would allow — the seam can tighten
+// refuses the check even when the role policy would allow, the seam can tighten
 // below the coarse role policy (e.g. "editor, but not of this project").
 func TestCanResource_DenyDeciderBlocks(t *testing.T) {
 	t.Parallel()
@@ -59,7 +59,7 @@ func TestCanResource_DenyDeciderBlocks(t *testing.T) {
 }
 
 // TestCanResource_AbstainFallsThrough confirms DecisionAbstain defers to the
-// role policy — the decider can opt out of a decision it has no opinion on.
+// role policy, the decider can opt out of a decision it has no opinion on.
 func TestCanResource_AbstainFallsThrough(t *testing.T) {
 	t.Parallel()
 	rp := access.NewRolePolicy()
@@ -88,7 +88,7 @@ func TestCanResource_AbstainFallsThroughDeny(t *testing.T) {
 
 // TestDecider_ReceivesRolesCapAndRef pins the Decider callback contract: it is
 // handed the caller's resolved roles, the capability under check, and the
-// resource Ref — so a resource-aware rule can decide on all three.
+// resource Ref, so a resource-aware rule can decide on all three.
 func TestDecider_ReceivesRolesCapAndRef(t *testing.T) {
 	t.Parallel()
 	rp := access.NewRolePolicy()
@@ -116,7 +116,7 @@ func TestDecider_ReceivesRolesCapAndRef(t *testing.T) {
 }
 
 // TestCanResource_NilContextFailsClosed confirms a nil context fails closed
-// (returns false) rather than panicking — the secure default for an un-wired
+// (returns false) rather than panicking, the secure default for an un-wired
 // call, matching GetRoles/GetPermissions.
 func TestCanResource_NilContextFailsClosed(t *testing.T) {
 	t.Parallel()
@@ -177,7 +177,7 @@ func TestDeciderMiddleware_InstallsDecider(t *testing.T) {
 		return access.DecisionAllow
 	}
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// No policy/roles installed — only the decider. Allow must still permit.
+		// No policy/roles installed, only the decider. Allow must still permit.
 		if !access.CanResource(r.Context(), "teams:update", access.Ref{Type: "teams", ID: "7"}) {
 			t.Error("downstream CanResource should be allowed by the middleware's decider")
 		}

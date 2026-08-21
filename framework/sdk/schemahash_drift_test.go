@@ -63,13 +63,13 @@ func zzRound2PostsConfig() entity.EntityConfig {
 func TestNoDriftForGroupMountedEntity(t *testing.T) {
 	cfg := zzRound2PostsConfig()
 
-	// Generation half — exactly what cmd/gofastr's sdkSchemaHash emits.
+	// Generation half, exactly what cmd/gofastr's sdkSchemaHash emits.
 	// entity.Define applies the same defaults EntityDeclaration.Config() does.
 	manifestHash := SchemaHash([]NamedConfig{
 		{Name: "posts", Config: entity.Define("posts", cfg).Config},
 	})
 
-	// Serving half — one entity, mounted via app.GroupEntity(app.Group("/api/v1"), ...).
+	// Serving half, one entity, mounted via app.GroupEntity(app.Group("/api/v1"), ...).
 	v1 := entity.Define("posts", zzRound2PostsConfig())
 	v1.Version = "/api/v1"
 	reg := &zzRound2Registry{ents: []*entity.Entity{v1}}

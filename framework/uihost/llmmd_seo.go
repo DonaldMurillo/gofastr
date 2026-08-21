@@ -13,7 +13,7 @@ import (
 // SEO field is set (so a screen with no SEO at all gets no front-matter
 // and the underlying ScreenLLMMD output is preserved verbatim).
 //
-// All values are emitted as YAML double-quoted strings — that keeps the
+// All values are emitted as YAML double-quoted strings. That keeps the
 // block trivially machine-parseable and sidesteps every YAML scalar edge
 // case (leading indicators, ':' ambiguity, reserved words). The keys
 // mirror the field names crawlers see in <head>: title, description,
@@ -43,7 +43,7 @@ func screenSEOFrontMatter(title string, s SEO) string {
 	}
 
 	// SEO fields first. The title is prepended only when at least one
-	// SEO field is set — a screen with no SEO at all gets no front-matter
+	// SEO field is set: a screen with no SEO at all gets no front-matter
 	// (preserving the original ScreenLLMMD output verbatim).
 	var lines []string
 	add(&lines, "description", s.Description)
@@ -58,7 +58,7 @@ func screenSEOFrontMatter(title string, s SEO) string {
 		add(&lines, "twitter_card", s.Twitter.Card)
 		add(&lines, "twitter_title", s.Twitter.Title)
 	}
-	// Hreflang alternates — emit the lang tags only (the URLs are
+	// Hreflang alternates: emit the lang tags only (the URLs are
 	// already in the head as <link rel="alternate"> and would just
 	// bloat the front-matter). Drop entries the head itself drops.
 	if langs := safeHreflangLangs(s.Hreflangs); len(langs) > 0 {
@@ -67,7 +67,7 @@ func screenSEOFrontMatter(title string, s SEO) string {
 			lines = append(lines, "  - "+yamlDoubleQuote(l))
 		}
 	}
-	// JSON-LD @type names — derived by marshaling each item the same way
+	// JSON-LD @type names: derived by marshaling each item the same way
 	// seo.Render does and reading the @type field back. Items that fail
 	// to marshal or lack a @type are skipped.
 	if types := extractSchemaTypes(s.Schema); len(types) > 0 {
@@ -100,7 +100,7 @@ func screenSEOFrontMatter(title string, s SEO) string {
 
 // extractSchemaTypes returns the JSON-LD @type name for each Schema.org
 // item, in input order. It marshals each item the same way seo.Render
-// does and reads the top-level @type back out — items that fail to
+// does and reads the top-level @type back out. Items that fail to
 // marshal or carry no @type are skipped. This reuses seo.Thing's public
 // JSON shape rather than introducing a new accessor on the package.
 func extractSchemaTypes(items []seo.Thing) []string {
@@ -122,7 +122,7 @@ func extractSchemaTypes(items []seo.Thing) []string {
 }
 
 // safeHreflangLangs returns the Lang tag of each hreflang entry the head
-// would emit — same filter screenHeadHTML applies (non-empty lang + URL,
+// would emit, same filter screenHeadHTML applies (non-empty lang + URL,
 // safe URL scheme), so the front-matter never advertises a locale the
 // crawler can't actually fetch.
 func safeHreflangLangs(links []HreflangLink) []string {
@@ -139,7 +139,7 @@ func safeHreflangLangs(links []HreflangLink) []string {
 // yamlDoubleQuote renders v as a YAML double-quoted scalar. Backslash,
 // double-quote, newline, and tab are escaped; everything else passes
 // through. The result is always a valid YAML string regardless of v's
-// content (colons, leading indicators, reserved words — all safe).
+// content (colons, leading indicators, reserved words: all safe).
 func yamlDoubleQuote(v string) string {
 	var b strings.Builder
 	b.WriteByte('"')

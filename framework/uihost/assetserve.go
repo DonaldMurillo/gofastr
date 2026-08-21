@@ -9,7 +9,7 @@ import (
 // /__gofastr/* (stylesheets, runtime JS, manifests): strong ETag + 304
 // on every response, and immutable caching exactly when the request's
 // ?v= matches the asset's current hash. An un-versioned (or stale-
-// versioned) request gets no-cache — always revalidated, never wrong —
+// versioned) request gets no-cache, always revalidated and never wrong,
 // but still benefits from the ETag round-trip.
 //
 // private marks per-session assets (compiled actions): shared caches

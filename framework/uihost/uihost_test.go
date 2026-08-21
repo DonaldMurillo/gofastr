@@ -185,7 +185,7 @@ func TestUIHostServesRuntimeJS(t *testing.T) {
 	body := w.Body.String()
 	assertContains(t, body, "__gofastr")
 	// `EventSource` lived in a runtime.js comment until SSE was
-	// extracted to its own module — the minifier correctly strips
+	// extracted to its own module. The minifier correctly strips
 	// comments. Anchor on something that's actually in the code now.
 	assertContains(t, body, "screenCache")
 	ct := w.Header().Get("Content-Type")
@@ -282,7 +282,7 @@ func TestUIHostCreatesSession(t *testing.T) {
 
 func TestPartialNavRemintsInvalidSession(t *testing.T) {
 	// SPA rollover (#112): a partial navigation with a stale/absent
-	// token must re-mint like a full render does — otherwise a restart
+	// token must re-mint like a full render does; otherwise a restart
 	// or expiry leaves islands + SSE 401ing until a hard reload. The
 	// fresh bare id travels in X-Gofastr-Session so the runtime can
 	// rewire the SSE meta.
@@ -318,7 +318,7 @@ func TestPartialNavRemintsInvalidSession(t *testing.T) {
 	}
 
 	// A partial nav to a MISSING route with a stale token must STILL
-	// re-mint + name the fresh id + no-store — the runtime reads the
+	// re-mint + name the fresh id + no-store. The runtime reads the
 	// header before it throws on the 404, so recovery can't hinge on a
 	// later OK response (which would present the now-valid cookie and
 	// send no header). Regression for the round-2 P1.
@@ -372,7 +372,7 @@ func TestSessionTokenPortableAcrossHosts(t *testing.T) {
 // rotation at the host level: a host rotated to a new current key still
 // verifies tokens signed by the previous key (drain window), while a host
 // that only knows the new key rejects them. New tokens are signed with the
-// current key and verify against current-only — the rotation completes.
+// current key and verify against current-only. The rotation completes.
 func TestSessionTokenRotationAcceptsPreviousKey(t *testing.T) {
 	oldKey := []byte("0123456789abcdef0123456789abcdef")
 	newKey := []byte("fedcba9876543210fedcba9876543210")
@@ -389,7 +389,7 @@ func TestSessionTokenRotationAcceptsPreviousKey(t *testing.T) {
 		t.Fatalf("rotated host rejected a token signed by the previous key (= %q, %v)", id, ok)
 	}
 
-	// Host C knows only the new key — the previous key is gone — so the
+	// Host C knows only the new key, the previous key is gone, so the
 	// pre-rotation token must be rejected once the drain window closes.
 	c := newTestUIHost()
 	c.SetSessionKey(newKey)
@@ -470,7 +470,7 @@ func TestUIHostReuseSession(t *testing.T) {
 
 func TestUIHostSessionEndpoint(t *testing.T) {
 	ds := newTestUIHost()
-	// Session minting is POST-only — see CreateSessionGETRejected.
+	// Session minting is POST-only. See CreateSessionGETRejected.
 	req := httptest.NewRequest("POST", "/__gofastr/session", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -605,7 +605,7 @@ func TestUIHostCustomCSS(t *testing.T) {
 	}
 	assertContains(t, cssRec.Body.String(), "body { background: red; }")
 
-	// Old endpoints are removed entirely — 404, not registered.
+	// Old endpoints are removed entirely: 404, not registered.
 	for _, gone := range []string{"/__gofastr/theme.css", "/__gofastr/styles.css"} {
 		req := httptest.NewRequest("GET", gone, nil)
 		rec := httptest.NewRecorder()
@@ -633,12 +633,12 @@ func TestUIHostRouteGraph(t *testing.T) {
 	assertContains(t, page, `"path":"/"`)
 	assertContains(t, page, `"title":"Home"`)
 	assertContains(t, page, `"title":"About"`)
-	// External script reference must not appear — routes ship inline.
+	// External script reference must not appear: routes ship inline.
 	if strings.Contains(page, `src="/__gofastr/routes.js"`) {
 		t.Errorf("page must NOT reference /__gofastr/routes.js — route graph ships inline:\n%s", page)
 	}
 
-	// Old endpoint removed entirely — 404, not registered.
+	// Old endpoint removed entirely: 404, not registered.
 	jsReq := httptest.NewRequest("GET", "/__gofastr/routes.js", nil)
 	jsRec := httptest.NewRecorder()
 	ds.ServeHTTP(jsRec, jsReq)
@@ -738,7 +738,7 @@ func TestUIHostActionsEndpoint(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // The /__gofastr/signal/{id} surface and UIHost.RegisterWidget have been
-// removed — they held dead per-replica state with no production callers.
+// removed. They held dead per-replica state with no production callers.
 // POST /__gofastr/signal/* is now a plain 404 (covered by
 // TestUIHost_RemovedSignalEndpointReturns404 in csrf_body_security_test.go),
 // so no dedicated test is duplicated here.
@@ -851,7 +851,7 @@ func (d *describedHomeComp) Render() render.HTML {
 func (d *describedHomeComp) ScreenTitle() string       { return "Home" }
 func (d *describedHomeComp) ScreenDescription() string { return "Welcome to the test site" }
 
-// silentHomeComp does NOT implement ScreenDescriber — no auto-meta.
+// silentHomeComp does NOT implement ScreenDescriber; no auto-meta.
 type silentHomeComp struct{}
 
 func (s *silentHomeComp) Render() render.HTML {

@@ -131,7 +131,7 @@ func TestDerive_PopulatesDeclaredSiblingColumns(t *testing.T) {
 }
 
 // The columns are optional. With none declared the upload still succeeds and
-// the derived values are simply dropped — that is what makes the feature
+// the derived values are simply dropped, that is what makes the feature
 // additive rather than a schema requirement.
 func TestDerive_SkipsUndeclaredSiblingColumns(t *testing.T) {
 	ch, db := deriveHandler(t, false)

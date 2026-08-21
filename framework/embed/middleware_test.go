@@ -173,7 +173,7 @@ func ctxUser(ctx context.Context) (any, bool) {
 // prefix when spelt literally but escapes it once cleaned.
 //
 // r.URL.Path is percent-decoded, so "/__gofastr/embed/%2e%2e/%2e%2e/admin/delete"
-// arrives as "/__gofastr/embed/../../admin/delete" — it has the embed prefix as
+// arrives as "/__gofastr/embed/../../admin/delete": it has the embed prefix as
 // a raw string but path.Clean collapses it to "/admin/delete", which is not an
 // embed route. Matching the raw path instead of the cleaned one exempted the
 // traversal, and an exemption whose safety depends on another package's
@@ -188,7 +188,7 @@ func TestCSRFExemptRejectsPathTraversal(t *testing.T) {
 
 // The surface prefix is exempt for the two GET routes the framework mounts
 // there and nothing else. A blanket prefix exemption handed CSRF-free status to
-// unsafe methods that do not exist yet — an app mounting its own POST under
+// unsafe methods that do not exist yet: an app mounting its own POST under
 // /__gofastr/embed/ would have inherited an exemption argued only for
 // credential-free handshake endpoints.
 func TestCSRFExemptSurfacePrefixIsSafeMethodsOnly(t *testing.T) {

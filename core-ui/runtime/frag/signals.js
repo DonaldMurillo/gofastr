@@ -1,4 +1,4 @@
-// signals.js — signal store + binding (spec fragment `signals`, marker class; deps: kernel).
+// signals.js: signal store + binding (spec fragment `signals`, marker class; deps: kernel).
 // Owns: setSignal, signal binding/broadcast, the SSR seed read + application,
 // the signal-set/inc/toggle read-modify-write path, aria injection.
   // isReservedSignalKey rejects the JS object keys that, when used as a
@@ -7,7 +7,7 @@
   //   store["__proto__"] = {…}   // invokes the __proto__ setter
   //   store["constructor"]/["prototype"] // shadow built-ins
   // A seed (full-load or partial) carrying such a key would re-parent the
-  // _signals object — every not-yet-set signal name would then resolve
+  // _signals object, every not-yet-set signal name would then resolve
   // through the attacker object (cross-signal confusion) and setSignal
   // would mutate the shared prototype. Seed keys are server-controlled
   // today; this is advisory-recommended defense-in-depth (strip
@@ -38,7 +38,7 @@
     setSignal(name, value, opts) {
       // Prototype pollution: the reserved-key guard used to live only in
       // the three seed-merge loops, but attribute-controlled keys enter
-      // HERE — data-fui-signal-set/-inc/-toggle, and fetched-JSON keys
+      // HERE, data-fui-signal-set/-inc/-toggle, and fetched-JSON keys
       // from poll.js and widgets.js. `__proto__:POLLUTED` re-parents the
       // store, and because getSignal is `s ? s.value : undefined` EVERY
       // unset signal then reads back the attacker's value. Pure data
@@ -58,7 +58,7 @@
       for (const fn of s.listeners) {
         try { fn(value); } catch (_) {}
       }
-      // Escape the signal name before it enters the selector — a name
+      // Escape the signal name before it enters the selector, a name
       // containing selector metacharacters (e.g. '"]') would otherwise
       // produce an invalid selector and querySelectorAll would THROW,
       // taking setSignal (and every listener it drives) down with it.
@@ -69,24 +69,24 @@
           // The html escape hatch is for TRUSTED HTML *strings* only.
           // On a non-2xx response dispatchRPC broadcasts the auto-built
           // error object {ok:false,status,text} into the signal. That
-          // object is NOT trusted HTML — and applying it here (via
+          // object is NOT trusted HTML, and applying it here (via
           // innerHTML OR textContent) would either execute reflected
           // markup or overwrite the existing trusted region with a
           // JSON blob, corrupting the UI on every failed RPC. The
-          // documented optimistic-UI invariant — "a failed delete
-          // leaves the row/list unchanged" — depends on this no-op.
+          // documented optimistic-UI invariant, "a failed delete
+          // leaves the row/list unchanged", depends on this no-op.
           // Text-mode nodes below still render a human-readable
           // "Error: …" string, so failure feedback is not lost.
           if (typeof value !== 'string') return;
           // A value seeded from location.search is attacker-supplied by
-          // construction — `?x=<img onerror=…>` on any page carrying an
+          // construction, `?x=<img onerror=…>` on any page carrying an
           // html-mode binding of `x`. Render it as text instead. The
           // value still reaches the node; it just stops being markup.
           if (s.untrusted) { node.textContent = value; return; }
           node.innerHTML = value;
           window.__gofastr.scanAndLoadCSS(node);
           // Wire any toast items the freshly-swapped HTML brought in.
-          // Awaits the toasts module — when an island-driven update
+          // Awaits the toasts module, when an island-driven update
           // injects a toast for the first time, the module loads,
           // then _initToasts runs against the new content.
           if (node.querySelector && node.querySelector('[data-fui-toast-id]')) {
@@ -99,7 +99,7 @@
           // The attribute NAME is developer-supplied and server-
           // rendered, so the allow-list that keeps a signal out of
           // `srcdoc` / `style` / `on*` lives in Go, at the emitters
-          // (core-ui/store.SignalAttrAllowed) — refusing to render the
+          // (core-ui/store.SignalAttrAllowed), refusing to render the
           // binding beats warning about it after it shipped, and costs
           // the runtime no bytes. The value guard below still runs on
           // every client-side update.
@@ -114,7 +114,7 @@
           node.setAttribute(attr, v);
           // Tabs (framework/ui.Tabs): when the wrapper's data-active
           // index changes, mirror it into aria-selected on the strip's
-          // role=tab buttons — CSS keys the visual highlight off
+          // role=tab buttons, CSS keys the visual highlight off
           // data-active, but assistive tech reads aria-selected.
           if (attr === 'data-active') {
             node.querySelectorAll('[role="tab"][data-fui-tab-index]').forEach((b) => {
@@ -208,7 +208,7 @@
 
   // Apply the SSR signal seed (stashed above) to the signal store BEFORE
   // hydration. Existing in-memory values win (the seed never clobbers a
-  // value already mutated on the client — relevant for app-global slices
+  // value already mutated on the client, relevant for app-global slices
   // across SPA navigations); fresh names are created with no listeners.
   if (window.__gofastr_signals_seed) {
     const store = window.__gofastr._signals;

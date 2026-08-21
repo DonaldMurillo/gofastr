@@ -22,7 +22,7 @@ func listWhere(t *testing.T, ch *CrudHandler, userID, whereJSON string) []map[st
 }
 
 // TestWhereTree_CannotWidenOwnerScope is THE security invariant for #52:
-// a user's OR-group that matches other owners' rows must NOT return them —
+// a user's OR-group that matches other owners' rows must NOT return them,
 // the owner scope is an outer AND clause the OR can never widen past.
 func TestWhereTree_CannotWidenOwnerScope(t *testing.T) {
 	installOwnerExtractor(t)
@@ -47,7 +47,7 @@ func TestWhereTree_FiltersWithinScope(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupOwnerReadInProcHandler(t)
 
-	// alice asks for title = Beta (which is bob's) — she owns no such row,
+	// alice asks for title = Beta (which is bob's), she owns no such row,
 	// so the AND of (owner=alice) AND (title=Beta) is empty.
 	rows := listWhere(t, ch, "alice", `{"field":"title","value":"Beta"}`)
 	if len(rows) != 0 {

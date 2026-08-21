@@ -102,7 +102,7 @@ func TestContinuationLinesAreFlushLeft(t *testing.T) {
 	if len(tui.scrollback) < 3 {
 		t.Fatalf("not split into multiple lines: %v", tui.scrollback)
 	}
-	// Find the "## Section" line — it must NOT start with spaces.
+	// Find the "## Section" line, it must NOT start with spaces.
 	for _, line := range tui.scrollback {
 		if strings.Contains(line, "## Section") {
 			if strings.HasPrefix(line, " ") {

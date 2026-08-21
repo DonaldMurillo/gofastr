@@ -38,7 +38,7 @@ func TestSegmentedControlBasic(t *testing.T) {
 }
 
 // inputTagFor returns the substring spanning a single <input ...> tag
-// containing the literal value="<val>" — used by tests to assert per-input attrs.
+// containing the literal value="<val>", used by tests to assert per-input attrs.
 func inputTagFor(html, val string) string {
 	for _, seg := range strings.Split(html, "<input") {
 		if !strings.Contains(seg, `value="`+val+`"`) {
@@ -124,7 +124,7 @@ func TestSegmentedControlRPC(t *testing.T) {
 // form control (core-ui/runtime/segmented_rpc_e2e_test.go proves that path),
 // which only carries the chosen segment if the radio has a name and value to
 // submit. A radio missing name/value would post an empty selection even after
-// the rpc.js fix — this pins the markup half of the contract.
+// the rpc.js fix: this pins the markup half of the contract.
 func TestSegmentedControlRPCCarriesSelectionContract(t *testing.T) {
 	out := string(SegmentedControl(SegmentedControlConfig{
 		Name:      "view",

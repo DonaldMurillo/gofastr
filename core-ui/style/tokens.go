@@ -12,7 +12,7 @@ import (
 
 // ThemeHash is the canonical content address of a theme: a short digest of
 // the :root custom properties it emits. Two themes that produce identical
-// CSS hash identically, which is exactly the equivalence callers want —
+// CSS hash identically, which is exactly the equivalence callers want,
 // a theme differing only in its Name changes no pixel and should not bust
 // a cache.
 //
@@ -21,7 +21,7 @@ import (
 // the theme itself: CSSCustomProperties() is byte-stable (its lines are
 // sorted), whereas struct field order and unexported state are not.
 //
-// Six bytes is 48 bits — ample for distinguishing the handful of themes a
+// Six bytes is 48 bits, ample for distinguishing the handful of themes a
 // process serves, and short enough to sit in a query string.
 func ThemeHash(t Theme) string {
 	return CSSFingerprint(t.CSSCustomProperties())
@@ -44,8 +44,8 @@ func CSSFingerprint(css string) string {
 var tokenRefRe = regexp.MustCompile(`\{([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)\}`)
 
 // ResolveAll replaces {category.name} references with their CSS-var
-// equivalents. Always emits `var(--<category>-<name>)` — never the
-// literal value — to keep section-level theme overrides working via
+// equivalents. Always emits `var(--<category>-<name>)`, never the
+// literal value, to keep section-level theme overrides working via
 // the CSS cascade.
 //
 // Example: ResolveAll("padding: {spacing.md} {spacing.lg}") →
@@ -98,7 +98,7 @@ func categoryPrefix(category string) string {
 }
 
 // ResolveColor returns `var(--color-<name>)` for a named color.
-// Always a CSS variable reference — never the literal value.
+// Always a CSS variable reference, never the literal value.
 func (t Theme) ResolveColor(name string) string {
 	return "var(--color-" + name + ")"
 }
@@ -133,8 +133,8 @@ func (t Theme) CSSCustomProperties() string {
 // aliasTokenCSS emits derived aliases for token names that framework/ui
 // components reference but ColorSet never declared (--color-muted,
 // --color-warn, --color-surface-hover, …). Before this block existed those
-// references silently used their hardcoded fallbacks — constants tuned for
-// light themes — so dark themes got light-on-light hover states and similar
+// references silently used their hardcoded fallbacks, constants tuned for
+// light themes, so dark themes got light-on-light hover states and similar
 // contrast failures. Each alias resolves through var(), so it tracks the
 // dark-scheme re-declarations automatically; emit once in :root and both
 // schemes are covered. New components should use the canonical ColorSet
@@ -169,7 +169,7 @@ func DarkSchemeCSS(dark map[string]string) string {
 // darkSchemeCSS is DarkSchemeCSS plus the optional dark syntax
 // palette (Theme.DarkCode): code entries emit `--tk-<name>` lines in
 // the same two dark-scheme blocks. The `color` + `background-color`
-// scope lines only accompany a color re-declaration — a code-only
+// scope lines only accompany a color re-declaration, a code-only
 // dark palette shouldn't imply the page itself flips.
 func darkSchemeCSS(dark, code map[string]string) string {
 	if len(dark) == 0 && len(code) == 0 {
@@ -235,8 +235,8 @@ type tokenKV struct {
 	Key, Value string
 }
 
-// walkTokens walks v — recursing into struct fields and dereferencing
-// pointers/interfaces — and appends every emittable typed token as a
+// walkTokens walks v, recursing into struct fields and dereferencing
+// pointers/interfaces, and appends every emittable typed token as a
 // tokenKV. The Key is the CSS custom-property identifier WITHOUT the
 // leading "--" ("color-primary", "spacing-md", "duration-fast",
 // "tk-kw"); the Value is exactly what CSSCustomProperties emits after
@@ -245,7 +245,7 @@ type tokenKV struct {
 // This is the single shared reflection walk. collectTokenDecls (the
 // :root emitter) and ThemeToTokens (the token map) both route through
 // it, which is what guarantees a theme flattened to a map and re-applied
-// reproduces identical CSS — the round-trip property ThemeHash asserts.
+// reproduces identical CSS, the round-trip property ThemeHash asserts.
 // The two flatteners that disagree is precisely the bug the token-map
 // layer exists to prevent, so the walk is shared rather than duplicated.
 func walkTokens(v reflect.Value, out *[]tokenKV) {
@@ -275,7 +275,7 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 // struct, matching exactly what the :root emitter writes as
 // "--<cssVarName>: <cssValue>;". ok is false for any non-token struct
 // (the caller recurses into its fields) and for a token the emitter
-// skips — one with an empty Name, or an optional CodeColor whose Value
+// skips, one with an empty Name, or an optional CodeColor whose Value
 // is unset. Centralizing the var-naming convention and the skip rules
 // in one place keeps emission and the token map in lockstep: changing
 // the prefix for one category here changes it for both consumers at

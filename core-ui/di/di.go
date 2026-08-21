@@ -107,7 +107,7 @@ func (c *Container) Resolve(target any) error {
 // singletons/resolved maps, so the whole method takes the full write
 // lock (c.mu.Lock), mirroring Resolve. Using an RLock here would let
 // two concurrent cold-start injections of the same type write the same
-// map simultaneously — an unrecoverable "concurrent map writes" crash.
+// map simultaneously, an unrecoverable "concurrent map writes" crash.
 func (c *Container) Inject(target any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -10,7 +10,7 @@ import (
 )
 
 // A DismissID banner must not render at all when the request carries the
-// dismissal cookie the runtime writes — server-side skip is what makes
+// dismissal cookie the runtime writes. Server-side skip is what makes
 // dismissal flash-free (localStorage alone hides only after JS runs).
 func TestBannerSkipsRenderOnDismissCookie(t *testing.T) {
 	cfg := BannerConfig{Title: "Notice", Dismissible: true, DismissID: "test-note"}

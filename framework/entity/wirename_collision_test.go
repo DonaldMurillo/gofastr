@@ -12,8 +12,8 @@ import (
 // JSON key cannot address two columns.
 //
 // Left unchecked the CRUD layer keeps whichever field it saw first, so writes
-// land on that column while filters — which resolve the wire key independently
-// — target the other. Reads and writes then disagree with no error anywhere.
+// land on that column while filters, which resolve the wire key independently,
+// target the other. Reads and writes then disagree with no error anywhere.
 //
 // crud.go's refreshFieldCache documented this as "a config error that
 // ValidateWireNames catches at Define". No such function existed; this is that
@@ -50,7 +50,7 @@ func TestValidate_RejectsWireKeyCollision(t *testing.T) {
 		},
 		{
 			// The wire key a bare column actually gets is the CASE-CONVERTED
-			// name — camelCase by default — not the literal column name. A
+			// name, camelCase by default, not the literal column name. A
 			// WireName matching that converted form collides at runtime while
 			// the literal names differ, which is exactly the silent read/write
 			// split this guard exists to stop.

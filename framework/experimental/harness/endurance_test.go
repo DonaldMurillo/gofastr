@@ -1,6 +1,6 @@
 //go:build e2e_real
 
-// Endurance test — drives 1000+ turns through one session with a
+// Endurance test, drives 1000+ turns through one session with a
 // scripted provider and asserts the harness survives without
 // goroutine leaks, monotonic event IDs, or bus deadlocks.
 //
@@ -88,7 +88,7 @@ func TestEndurance_1000TurnsNoLeak(t *testing.T) {
 			delta/(1024*1024), N)
 	}
 
-	// Monotonic IDs: peek at the bus's next ID — should be >= N
+	// Monotonic IDs: peek at the bus's next ID, should be >= N
 	// events emitted.
 	finalID := h.Mux.EngineFor(sess).Bus.NextID()
 	if finalID < uint64(N) {

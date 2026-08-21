@@ -3,7 +3,7 @@ package static
 // Real-browser proof of "static site as an app": export a site with
 // WithPWA, serve the files, let the service worker install (precaching
 // the WHOLE export), then kill the server and navigate to a page the
-// browser has NEVER visited — its real content must render from cache,
+// browser has NEVER visited. Its real content must render from cache,
 // not the offline screen. Mirrors framework/uihost's PWA Chrome e2e
 // (dead listener instead of CDP network emulation, which does not
 // reliably reach service-worker fetches). Gated by -short.
@@ -59,8 +59,8 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 	defer browserCancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
-	// passing a timeout context here would make the browser die when that
+	// browser context so the browser's lifetime is the browser context's.
+	// Passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
 	go func() { started <- chromedp.Run(browserCtx) }()
@@ -105,7 +105,7 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 		t.Fatalf("service worker never took control: %v", err)
 	}
 	// Install is atomic (addAll-equivalent): a controlling worker means
-	// the full precache — including never-visited pages — is in place.
+	// the full precache, including never-visited pages, is in place.
 
 	if err := srv.Close(); err != nil {
 		t.Fatal(err)

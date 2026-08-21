@@ -10,7 +10,7 @@ import (
 )
 
 // A relation may legitimately point at a real table that is not a registered
-// entity — the auth battery self-migrates auth_users, and an app relates to it
+// entity, the auth battery self-migrates auth_users, and an app relates to it
 // by name. parseIncludeTree refuses that shape because every eager-load guard
 // hangs off the target's schema. Nested filters used to trust it instead: the
 // Hidden/NoQuery/declared checks sat inside `if registry.Get(...) == nil`, so
@@ -33,7 +33,7 @@ func TestNestedFilterRefusesUnregisteredTarget(t *testing.T) {
 			entity.BelongsTo("author", "auth_users", "author_id"),
 		},
 	})
-	// A registry that knows posts but NOT auth_users — the shape a
+	// A registry that knows posts but NOT auth_users, the shape a
 	// self-migrating battery produces.
 	reg := stubRegistry{byName: map[string]*entity.Entity{"posts": posts}}
 

@@ -19,14 +19,14 @@ import (
 
 // errSoftDeletedResurrection signals an UpsertOne attempt against a row
 // the soft-delete contract has marked deleted. Upsert would otherwise
-// silently undelete the row — bypassing the compliance / forensic story
+// silently undelete the row, bypassing the compliance / forensic story
 // that motivates soft-delete in the first place.
 var errSoftDeletedResurrection = errors.New("upsert: target row is soft-deleted; restore explicitly before mutating")
 
 // errUpsertForeignRow signals an UpsertOne whose body PK collides with an
 // existing row owned by a different owner / tenant. Without this guard the
 // ON CONFLICT DO UPDATE matches purely by primary key and re-stamps
-// ownership/tenant from the caller's context — a cross-principal takeover.
+// ownership/tenant from the caller's context, a cross-principal takeover.
 var errUpsertForeignRow = errors.New("upsert: target row belongs to a different owner or tenant")
 
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's
@@ -37,7 +37,7 @@ var errUpsertForeignRow = errors.New("upsert: target row belongs to a different 
 // Both Postgres and SQLite 3.24+ support this exact syntax via the
 // EXCLUDED pseudo-table. The framework's BeforeCreate/AfterCreate hooks
 // fire (an upsert that turns into an INSERT is semantically a Create);
-// no Update hooks fire — if you need to distinguish, route through the
+// no Update hooks fire, if you need to distinguish, route through the
 // regular Create/Update endpoints.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
 	req := syntheticRequest(ctx, http.MethodPost, "/")
@@ -69,7 +69,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 	var result map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
-		// Preflight against the pre-existing row (matched by PK only — the
+		// Preflight against the pre-existing row (matched by PK only, the
 		// same key the ON CONFLICT target uses). Three properties are
 		// enforced here, all FAIL-CLOSED:
 		//   1. A row owned by a different owner / tenant must not be taken
@@ -88,7 +88,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// Run the media-URL allow-list (http/https/relative only) before
 		// persisting, matching doCreate/doUpdate. Without it the upsert
 		// path stores a javascript:/data:/../ value verbatim into an
-		// Image/File field — stored XSS once it renders into <img src>.
+		// Image/File field, stored XSS once it renders into <img src>.
 		if err := ch.validateMediaURLs(body); err != nil {
 			return err
 		}
@@ -113,7 +113,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 		// Build the column + value lists, same shape Create uses: auto-gen
 		// fields are always included (the body has the generated value);
-		// ReadOnly/Hidden non-auto fields are skipped — except the
+		// ReadOnly/Hidden non-auto fields are skipped, except the
 		// framework-managed owner column, which InjectOwner stamps above.
 		// The tenant column is ALWAYS skipped here (appended separately
 		// below from the context-derived tenant id). Other ReadOnly/Hidden
@@ -157,7 +157,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		}
 
 		// Build the SET clause for the UPDATE side. Skip pk + auto-generate
-		// fields — those represent identity / immutability.
+		// fields, those represent identity / immutability.
 		setParts := make([]string, 0, len(cols))
 		for _, c := range cols {
 			if c == ch.PrimaryKey {
@@ -187,7 +187,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		sb.WriteString(ch.PrimaryKey)
 		sb.WriteString(") DO ")
 		if len(setParts) == 0 {
-			// No fields to update — just DO NOTHING; RETURNING still picks
+			// No fields to update, just DO NOTHING; RETURNING still picks
 			// the existing row though we have to query it explicitly.
 			sb.WriteString("NOTHING")
 		} else {
@@ -202,7 +202,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if errors.Is(err, sql.ErrNoRows) && len(setParts) == 0 {
 			// DO NOTHING fired against an existing row (nothing to update),
 			// so RETURNING produced zero rows. The contract is "return the
-			// resulting row" — fetch the pre-existing row explicitly by PK.
+			// resulting row", fetch the pre-existing row explicitly by PK.
 			//
 			// Build the fallback through the query builder and apply the same
 			// tenant / owner / soft-delete scopes the normal Get path uses.
@@ -282,7 +282,7 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 	err := ch.DB.QueryRowContext(ctx, q, pk).Scan(ptrs...)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return nil // no existing row — pure insert path, allow.
+		return nil // no existing row, pure insert path, allow.
 	case err != nil:
 		return fmt.Errorf("upsert preflight: %w", err)
 	}

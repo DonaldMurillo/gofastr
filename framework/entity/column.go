@@ -14,7 +14,7 @@ import (
 // DB column name; methods on it produce Condition values that the typed
 // query attaches to its QueryBuilder via Where().
 //
-// Conditions are dialect-agnostic — they always emit "$1" placeholders;
+// Conditions are dialect-agnostic, they always emit "$1" placeholders;
 // the underlying QueryBuilder renumbers them at Build time so a chain of
 // fragments produces "$1 ... $2 ... $3 ..." correctly across both engines.
 
@@ -48,7 +48,7 @@ func (o Order) Apply(qb *query.QueryBuilder) {
 	qb.Order(o.column, o.dir)
 }
 
-// rawColumn is the shared base for every typed column — it's just the DB
+// rawColumn is the shared base for every typed column, it's just the DB
 // column name. Asc/Desc/IsNull/IsNotNull are the operations that work on any
 // type so they live here.
 type rawColumn string

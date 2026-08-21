@@ -38,14 +38,14 @@ var canonicalMethods = map[string]bool{
 // (a matrix parameter, a port in a proxied absolute URL) is not a match.
 var reColonParam = regexp.MustCompile(`/:([A-Za-z_][A-Za-z0-9_]*)`)
 
-// stateSegments are path segments that describe DISCRETE LIST state —
-// sort, page, filter, tab — rather than a resource. That narrowness is
-// the rule's precision: state verbs only, never nouns ("order" was
-// removed because `GET /order/{id}` is a shop's resource route, not
-// sort state), and nothing from the continuous client-owned class (a
-// map's lat/lng/zoom, a chart's range), where a URL is the deliberate,
-// shareable artifact and neither a route nor an island is the answer —
-// that state lives in the client signal store.
+// stateSegments are path segments that describe DISCRETE LIST state,
+// such as sort, page, filter, or tab, rather than a resource. That
+// narrowness is the rule's precision: state verbs only, never nouns
+// ("order" was removed because `GET /order/{id}` is a shop's resource
+// route, not sort state), and nothing from the continuous client-owned
+// class (a map's lat/lng/zoom, a chart's range), where a URL is the
+// deliberate, shareable artifact and neither a route nor an island is
+// the answer. That state lives in the client signal store.
 var stateSegments = map[string]bool{
 	"page": true, "sort": true, "sortby": true,
 	"orderby": true, "filter": true, "tab": true, "perpage": true,
@@ -75,7 +75,7 @@ func checkMethodCase(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		}
 		upper := strings.ToUpper(r.Method)
 		if !canonicalMethods[upper] {
-			// Not a case problem — an unrecognised verb entirely. Still
+			// Not a case problem, an unrecognised verb entirely. Still
 			// worth reporting, with a message that says which it is.
 			d := diag(p, contracts.RuleNonUppercaseVerb, r.File, r.Pos,
 				fmt.Sprintf("route %s %s uses an unrecognised HTTP method", r.Method, r.Pattern))
@@ -84,7 +84,7 @@ func checkMethodCase(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 			continue
 		}
 		d := diag(p, contracts.RuleNonUppercaseVerb, r.File, r.Pos,
-			fmt.Sprintf("route %q %s registers under a non-uppercase method — every real %s request will get 405",
+			fmt.Sprintf("route %q %s registers under a non-uppercase method: every real %s request will get 405",
 				r.Method, r.Pattern, upper))
 		d.Suggestion = fmt.Sprintf("change %q to %q", r.Method, upper)
 		d.Evidence = map[string]string{"method": r.Method, "want": upper, "pattern": r.Pattern}
@@ -101,7 +101,7 @@ func checkColonParams(p *contracts.Pass, table *RouteTable) []contracts.Diagnost
 	var out []contracts.Diagnostic
 	for _, r := range table.Routes {
 		// Screens are matched by core-ui's router, where `:id` is the
-		// native spelling — flagging it there would be telling people to
+		// native spelling. Flagging it there would be telling people to
 		// break working code.
 		if r.Screen {
 			continue
@@ -117,7 +117,7 @@ func checkColonParams(p *contracts.Pass, table *RouteTable) []contracts.Diagnost
 			braced = strings.Replace(braced, "/:"+m[1], "/{"+m[1]+"}", 1)
 		}
 		d := diag(p, contracts.RuleColonPathParam, r.File, r.Pos, fmt.Sprintf(
-			"route %s %s uses `:%s` — ServeMux matches that literally, so requests to a real value 404",
+			"route %s %s uses `:%s`: ServeMux matches that literally, so requests to a real value 404",
 			r.Method, r.RawPattern, names[0]))
 		d.Suggestion = fmt.Sprintf("write %q, and read the value with r.PathValue(%q)", braced, names[0])
 		d.Evidence = map[string]string{
@@ -143,10 +143,11 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		if r.Pattern == "" || strings.Contains(r.Pattern, "{$}") {
 			continue
 		}
-		// Scoped by package. A repository holding several apps — examples,
-		// benchmarks, test fixtures — has many programs that each serve
-		// "/healthz", and none of them collide with each other. Only a
-		// second registration in the same package is a real conflict.
+		// Scoped by package. A repository holding several apps, such as
+		// examples, benchmarks, or test fixtures, has many programs that
+		// each serve "/healthz", and none of them collide with each
+		// other. Only a second registration in the same package is a
+		// real conflict.
 		key := r.Package + "\x00" + r.Method + " " + r.Pattern
 		if _, ok := seen[key]; !ok {
 			order = append(order, key)
@@ -167,7 +168,7 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		}
 		route := first.Method + " " + first.Pattern
 		d := diag(p, contracts.RuleDuplicateRoute, first.File, first.Pos,
-			fmt.Sprintf("%s is registered %d times — also at %s", route, len(sites), strings.Join(others, ", ")))
+			fmt.Sprintf("%s is registered %d times: also at %s", route, len(sites), strings.Join(others, ", ")))
 		d.Evidence = map[string]string{"route": route, "sites": strings.Join(others, ",")}
 		out = append(out, d)
 	}
@@ -175,9 +176,9 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 }
 
 func checkStateRoutes(p *contracts.Pass, table *RouteTable) []contracts.Diagnostic {
-	// The rule's premise — sorting a table is not navigation — is about
-	// browsers: scroll position, focus, history entries. A headless API
-	// has none of those, and `/orders/page/{n}` is an ordinary REST
+	// The rule's premise, that sorting a table is not navigation, is
+	// about browsers: scroll position, focus, history entries. A headless
+	// API has none of those, and `/orders/page/{n}` is an ordinary REST
 	// shape there. Only a module that actually renders UI is speaking
 	// the language this rule polices.
 	if !rendersUI(p) {
@@ -187,8 +188,8 @@ func checkStateRoutes(p *contracts.Pass, table *RouteTable) []contracts.Diagnost
 	for _, r := range table.Routes {
 		for _, seg := range strings.Split(strings.Trim(r.Pattern, "/"), "/") {
 			// Only LITERAL segments carry the rule's evidence. A wildcard
-			// named {page} is a resource identifier — a CMS page slug —
-			// not pagination; stripping the braces before matching erased
+			// named {page} is a resource identifier, a CMS page slug, not
+			// pagination; stripping the braces before matching erased
 			// exactly that distinction.
 			if strings.HasPrefix(seg, "{") {
 				continue
@@ -199,7 +200,7 @@ func checkStateRoutes(p *contracts.Pass, table *RouteTable) []contracts.Diagnost
 				continue
 			}
 			d := diag(p, contracts.RuleStateAsRoute, r.File, r.Pos, fmt.Sprintf(
-				"route %s %s puts %q in the path — that is in-page state, not navigation",
+				"route %s %s puts %q in the path: that is in-page state, not navigation",
 				r.Method, r.Pattern, seg))
 			d.Evidence = map[string]string{"pattern": r.Pattern, "segment": seg}
 			out = append(out, d)
@@ -212,14 +213,14 @@ func checkStateRoutes(p *contracts.Pass, table *RouteTable) []contracts.Diagnost
 // checkUntested is the static half of route coverage: does any test file
 // in the module mention this path at all. It is a weaker claim than
 // GOFASTR1101 (which proves a request reached the route) and it is worth
-// having anyway, because it needs no test run — it catches the route
+// having anyway, because it needs no test run. It catches the route
 // added in the same commit as no test whatsoever.
 func checkUntested(p *contracts.Pass, table *RouteTable) []contracts.Diagnostic {
 	literals := testStringLiterals(p)
 	if len(literals) == 0 {
 		// No test files at all, or none with string literals. Reporting
-		// every route as untested would be technically true and useless —
-		// the project has a bigger problem than this rule describes.
+		// every route as untested would be technically true and useless.
+		// The project has a bigger problem than this rule describes.
 		return nil
 	}
 	var out []contracts.Diagnostic
@@ -229,7 +230,7 @@ func checkUntested(p *contracts.Pass, table *RouteTable) []contracts.Diagnostic 
 		}
 		d := diag(p, contracts.RuleUntestedRoute, r.File, r.Pos,
 			fmt.Sprintf("no test file mentions %s", r.Pattern))
-		d.Suggestion = fmt.Sprintf("add a test that requests %s — testkit.NewApp gives you an in-process client", r.Pattern)
+		d.Suggestion = fmt.Sprintf("add a test that requests %s: testkit.NewApp gives you an in-process client", r.Pattern)
 		d.Evidence = map[string]string{"pattern": r.Pattern, "method": r.Method}
 		out = append(out, d)
 	}
@@ -279,8 +280,8 @@ func routeMentioned(pattern string, literals []string) bool {
 	}
 	prefix = strings.TrimSuffix(prefix, "/")
 	if prefix == "" {
-		// The root route. Only an exact "/" (or a query on it) counts —
-		// otherwise every literal path in the suite would match it.
+		// The root route. Only an exact "/" (or a query on it) counts.
+		// Otherwise every literal path in the suite would match it.
 		for _, l := range literals {
 			if l == "/" || strings.HasPrefix(l, "/?") {
 				return true
@@ -299,7 +300,7 @@ func routeMentioned(pattern string, literals []string) bool {
 
 // replaceLiteralFix builds a single-token replacement edit for a quoted
 // literal on a known line. It returns nil unless the old text appears
-// exactly once on that line — an ambiguous match is not something to
+// exactly once on that line. An ambiguous match is not something to
 // resolve by guessing.
 func replaceLiteralFix(p *contracts.Pass, rel string, line int, oldText, newText, description string) *contracts.SuggestedFix {
 	body, ok := p.Source(rel)

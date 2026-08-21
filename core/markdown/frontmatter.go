@@ -9,7 +9,7 @@ import (
 // the remaining body. If no frontmatter is present, the map is nil and the
 // body is the original input.
 //
-// We deliberately do not parse full YAML — only `key: value` pairs at the
+// We deliberately do not parse full YAML, only `key: value` pairs at the
 // top level. Quoted strings are unwrapped; everything else is kept verbatim.
 // Lists, nested maps, and multi-line strings are not supported; if you need
 // them, write a JSON sidecar or wrap goldmark instead.

@@ -157,7 +157,7 @@ func TestCovShutdownDrainerError(t *testing.T) {
 }
 
 // ============================================================================
-// app.go — Events / HookRegistry lazy creation on a bare App
+// app.go: Events / HookRegistry lazy creation on a bare App
 // ============================================================================
 
 func TestCovEventsLazyCreate(t *testing.T) {

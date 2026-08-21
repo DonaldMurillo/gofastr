@@ -78,7 +78,7 @@ func TestPlaceholderIsNotLazyOrAsync(t *testing.T) {
 	}
 }
 
-// A Placeholder arrives as data — a column an old upload wrote, a hash from
+// A Placeholder arrives as data: a column an old upload wrote, a hash from
 // another client. Bad values degrade to no placeholder; they never take the
 // page down. Contrast with Src/Alt, which are caller-code bugs and panic.
 func TestBadPlaceholderDegradesSilently(t *testing.T) {
@@ -178,7 +178,7 @@ func TestOptimizedImageEscapesSrcsetCommas(t *testing.T) {
 // A generated image (an icon, a chart, a decoded placeholder shown on its
 // own) is legitimately inlined as a data URI. The image sinks pre-filtered
 // with the stricter Resource policy, which silently swapped it for the blank
-// stub — the image looked broken rather than blocked.
+// stub. The image looked broken rather than blocked.
 func TestImageSrcAcceptsRasterDataURL(t *testing.T) {
 	t.Run("OptimizedImage", func(t *testing.T) {
 		out := string(OptimizedImage(OptimizedImageConfig{
@@ -249,7 +249,7 @@ func TestGalleryThumbRejectsUnsafeScheme(t *testing.T) {
 	}
 }
 
-// Avatar has no pre-filter of its own — it relies on html.Image's policy, so
+// Avatar has no pre-filter of its own. It relies on html.Image's policy, so
 // the upstream switch to urlsafe.ImageSource is what makes an inlined avatar
 // work. Pinned here so a future tightening of html.Image does not silently
 // regress it.

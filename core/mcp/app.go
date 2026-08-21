@@ -12,8 +12,8 @@ import (
 const AppResourceMimeType = "text/html;profile=mcp-app"
 
 // AppConfig describes an MCP App: an interactive HTML widget plus the tool
-// that launches it. RegisterApp wires both halves — a `ui://` resource
-// carrying the HTML and a tool whose `_meta` links to it — so the model can
+// that launches it. RegisterApp wires both halves: a `ui://` resource
+// carrying the HTML and a tool whose `_meta` links to it, so the model can
 // call the tool and the host can render the widget.
 type AppConfig struct {
 	// Tool half.
@@ -106,7 +106,7 @@ func (s *Server) RegisterApp(cfg AppConfig) error {
 	for k, v := range cfg.ToolMeta {
 		meta[k] = v
 	}
-	// Clone the caller's nested ui map rather than mutating it in place — a
+	// Clone the caller's nested ui map rather than mutating it in place. A
 	// developer may reuse one shared ToolMeta["ui"] across RegisterApp calls,
 	// and writing resourceUri into their map would bleed between tools.
 	ui := map[string]any{}

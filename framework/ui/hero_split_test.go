@@ -68,7 +68,7 @@ func TestHeroSplitCSSCollapsesAtMobileBreakpoint(t *testing.T) {
 func TestHeroSplitGridChildrenSetMinInlineSizeZero(t *testing.T) {
 	// Load-bearing: without min-inline-size:0 on grid items, intrinsic
 	// content size (long code blocks, wide images) forces the grid
-	// past the viewport. See the home hero — heroCodeBlock would
+	// past the viewport. See the home hero: heroCodeBlock would
 	// blow out the layout without this.
 	css := heroSplitCSS(style.Theme{})
 	if !strings.Contains(css, "min-inline-size: 0") {

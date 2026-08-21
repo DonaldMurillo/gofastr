@@ -10,7 +10,7 @@ import (
 // TestDefaultSkeletonEscapesApostrophes pins the canonical 5-char
 // escaper on the widget chrome attributes (name, role, aria-labelledby,
 // aria-describedby, slot names). The chrome used to carry a private
-// 4-char attribute escaper (no ') — the reduced shape kiln/chat
+// 4-char attribute escaper (no '), the reduced shape kiln/chat
 // documents as a real attribute-breakout XSS class.
 func TestDefaultSkeletonEscapesApostrophes(t *testing.T) {
 	def := Definition{

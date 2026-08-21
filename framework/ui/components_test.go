@@ -60,7 +60,7 @@ func TestSectionEyebrowRendersBeforeHeadingAndIsDecorative(t *testing.T) {
 	s := string(h)
 	mustContain(t, h, "ui-section__eyebrow")
 	mustContain(t, h, "01 / what it generates")
-	// Decorative numeric eyebrow — hidden from the a11y tree so SR users
+	// Decorative numeric eyebrow, hidden from the a11y tree so SR users
 	// don't hear "01 slash what it generates" then the heading.
 	mustContain(t, h, `aria-hidden="true"`)
 	eyebrowIdx := strings.Index(s, "ui-section__eyebrow")
@@ -360,7 +360,7 @@ func TestStatusBadgeDefaultsToNeutral(t *testing.T) {
 	mustContain(t, h, "ui-badge--neutral")
 }
 
-// TestStatusBadgeRejectsUnknownVariant mirrors Button — a typo like
+// TestStatusBadgeRejectsUnknownVariant mirrors Button. A typo like
 // "succes" must panic instead of silently emitting an unmatched class.
 func TestStatusBadgeRejectsUnknownVariant(t *testing.T) {
 	defer func() {
@@ -396,9 +396,9 @@ func TestEmptyStateHeadingLevel(t *testing.T) {
 }
 
 // ─── Callout ───
-// TestCalloutRejectsUnknownVariant mirrors Button/StatusBadge — typo
+// TestCalloutRejectsUnknownVariant mirrors Button/StatusBadge. Typo
 // must panic instead of silently emitting an unmatched class.
-// TestCalloutCSSAvoidsSideStripe — design ban: colored side-stripe
+// TestCalloutCSSAvoidsSideStripe. Design ban: colored side-stripe
 // borders on cards/list items/callouts are a recognizable AI/SaaS
 // template tell. The Callout variant cue must come from a surface
 // tint + a leading icon glyph, never from a `border-inline-start`
@@ -543,7 +543,7 @@ func TestInjectAriaInvalidEscapesID(t *testing.T) {
 }
 
 // injectAttrs must inject aria-describedby even when aria-invalid is
-// already present on the element — idempotence check must cover all attrs.
+// already present on the element. Idempotence check must cover all attrs.
 func TestInjectAttrsDoesNotSkipDescribedByWhenInvalidPresent(t *testing.T) {
 	input := render.HTML(`<input id="test" aria-invalid="true">`)
 	result := string(injectAttrs(input, ` aria-invalid="true" aria-describedby="test-error"`))

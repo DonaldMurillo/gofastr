@@ -2,8 +2,8 @@ package app
 
 // Verifies that layout chrome (sidebar/header/footer) receives the request
 // context during a page render, so context-aware chrome (auth nav, current
-// tenant, etc.) works. Before the fix, Layout.wrap called Component.Render()
-// — dropping ctx — so a ContextComponent in a slot rendered with an empty
+// tenant, etc.) works. Before the fix, Layout.wrap called Component.Render(),
+// dropping ctx, so a ContextComponent in a slot rendered with an empty
 // background context (ContextOnly.Render returns "").
 
 import (

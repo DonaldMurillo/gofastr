@@ -13,7 +13,7 @@ import (
 //
 // Without the manifest in the page, the client-side loader falls back to an
 // un-versioned URL (/__gofastr/runtime/<name>.js with no ?v=) which is then
-// returned with `Cache-Control: ...immutable` — a poison-cache combo. Every
+// returned with `Cache-Control: ...immutable`, a poison-cache combo. Every
 // kiln deploy that changes a split module would leave users on year-stale
 // JS forever.
 //

@@ -15,14 +15,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// "Open reads, gated writes" — a blank Access.Read beside real Create/Update/
-// Delete permissions — is the shape `gofastr generate` recommends in place of
+// "Open reads, gated writes", a blank Access.Read beside real Create/Update/
+// Delete permissions, is the shape `gofastr generate` recommends in place of
 // `public: true`, precisely because Public also grants anonymous writes.
 //
 // framework/crud enforces this correctly when a CrudHandler is exercised
 // directly (see crud/open_read_gated_write_security_test.go). This test drives
-// the same declaration through App — registration, route mounting, and the
-// real middleware chain — which is what every generated app uses and what a
+// the same declaration through App, registration, route mounting, and the
+// real middleware chain, which is what every generated app uses and what a
 // user actually deploys.
 func openReadGatedWriteApp(t *testing.T) *App {
 	t.Helper()
@@ -82,7 +82,7 @@ func TestApp_OpenReadGatedWrite_AnonymousWritesRefused(t *testing.T) {
 	defer stop()
 	ta := TestHarness(t, app)
 
-	// The read half must stay open — that is the reason to declare a blank Read.
+	// The read half must stay open, that is the reason to declare a blank Read.
 	if resp := ta.Get("/api/posts"); resp.Status() != http.StatusOK {
 		t.Fatalf("anonymous GET /api/posts = %d, want 200 (blank Read is open): %s", resp.Status(), resp.Body())
 	}

@@ -40,10 +40,10 @@ func WithGrant(ctx context.Context, g Grant) context.Context {
 // # Why an app needs this
 //
 // The frame renders through the host's own embed routes, which verify the grant
-// themselves. But everything the surface does AFTER first paint — every island
-// RPC, every form post, every poll — targets an ordinary app route. Those routes
-// know nothing about embeds. Without this middleware, an embedded surface paints
-// as its viewer and then acts as nobody:
+// themselves. But everything the surface does AFTER first paint targets an
+// ordinary app route: every island RPC, every form post, every poll. Those
+// routes know nothing about embeds. Without this middleware, an embedded surface
+// paints as its viewer and then acts as nobody:
 //
 //   - Cross-site framing: no cookie is sent and the grant is ignored, so the
 //     handler runs anonymously and the island silently swaps authenticated
@@ -61,7 +61,7 @@ func WithGrant(ctx context.Context, g Grant) context.Context {
 //
 // # What it does
 //
-// A request with no grant header passes through untouched — this is not an
+// A request with no grant header passes through untouched. This is not an
 // authenticator for ordinary traffic.
 //
 // A request carrying a grant header is an embed request, and is handled as one:
@@ -71,7 +71,7 @@ func WithGrant(ctx context.Context, g Grant) context.Context {
 //
 // # Install it OUTERMOST
 //
-// This middleware must run BEFORE any authentication middleware — outside
+// This middleware must run BEFORE any authentication middleware, outside
 // session auth, bearer auth, API-token auth, and anything that derives a tenant
 // from a credential:
 //
@@ -89,7 +89,7 @@ func WithGrant(ctx context.Context, g Grant) context.Context {
 // # Scopes are not enforced here
 //
 // The grant carries the scopes the surface declared, and installing the subject
-// gives the handler that subject's FULL authority — the same as a first-party
+// gives the handler that subject's FULL authority, the same as a first-party
 // request from that user. Nothing about holding a "reports:read" grant stops it
 // reaching an admin route the subject happens to be allowed to use, and a grant
 // lives in a third party's page where anyone with devtools can read it.
@@ -115,7 +115,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			if err != nil {
 				// Refuse rather than fall through anonymously. A caller that
 				// presented a credential and had it rejected must not silently
-				// become a public visitor — that turns an expired grant into a
+				// become a public visitor. That turns an expired grant into a
 				// wrong render instead of an error the frame can act on.
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
@@ -124,13 +124,13 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// What may this grant reach?
 			//
 			// Default-closed: the surface's own Path subtree, /__gofastr/*, and
-			// whatever the surface declared in Reach. Everything else is 403 —
+			// whatever the surface declared in Reach. Everything else is 403,
 			// deliberately NOT a fall-through to anonymous, which would turn a
 			// refused embed into a silently logged-out render, the failure this
 			// middleware's whole design exists to prevent.
 			//
-			// The refusal names the fix, because the alternative failure mode —
-			// "my embed silently doesn't work" — is the one that produced most
+			// The refusal names the fix, because the alternative failure mode,
+			// "my embed silently doesn't work", is the one that produced most
 			// of the bugs this feature has had.
 			surface, known := h.Lookup(g.Surface)
 			if !known || surface == nil {
@@ -138,7 +138,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 			// Decide on the path the ROUTER will dispatch on, not on the
-			// decoded one. See RoutedPath — comparing a normalised string
+			// decoded one. See RoutedPath: comparing a normalised string
 			// against a router that does not normalise let a grant reach
 			// /api/docs/ and an app's own "/{slug}".
 			routed, routable := RoutedPath(r.URL)
@@ -148,7 +148,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			}
 			if !surface.MayReach(routed) {
 				http.Error(w, fmt.Sprintf(
-					"embed surface %q may not reach %s — add it to that surface's Reach "+
+					"embed surface %q may not reach %s: add it to that surface's Reach "+
 						"to allow it, e.g. Reach: []string{%q}",
 					g.Surface, routed, reachSuggestion(routed)), http.StatusForbidden)
 				return
@@ -161,7 +161,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// cookie's user. The bearer and API-key headers for the same
 			// reason: a frame never needs them, and leaving them in place lets
 			// an authenticator running inside this middleware install a second,
-			// unrelated identity over the grant's — or leave its own token
+			// unrelated identity over the grant's, or leave its own token
 			// scopes on the context underneath the grant subject's name.
 			r.Header.Del("Cookie")
 			r.Header.Del("Authorization")
@@ -171,7 +171,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// Installed inside an authenticator, the credentials are already
 			// spent: the header deletions above hit an empty request while the
 			// values the authenticator derived sit on the context, out of
-			// reach — this package does not know the keys other packages use.
+			// reach. This package does not know the keys other packages use.
 			// The observed failure was an embed running as the grant's subject
 			// with the COOKIE user's tenant, which is tenant isolation off.
 			//
@@ -202,7 +202,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			ctx := WithGrant(r.Context(), g)
 			// Belt and braces. The ordering guard above already refuses any
 			// request that arrives with a user or a tenant, so these three
-			// clears are unreachable while it holds — no test can pin them,
+			// clears are unreachable while it holds. No test can pin them,
 			// and one that claims to is asserting nothing. They stay because
 			// the guard is the thing that would have to be wrong, and the
 			// cost of being wrong here is a cross-tenant read.
@@ -217,7 +217,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// Bound the request by the grant's own expiry.
 			//
 			// Verification happens once, at entry. A handler that then holds
-			// the request open — an SSE stream, a long poll — outlives the
+			// the request open, an SSE stream or a long poll, outlives the
 			// credential that authorized it, and the deadline is the entire
 			// answer to "this token lives in a page the app does not control".
 			// A stream was observed still emitting three seconds after a fresh
@@ -229,7 +229,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			}
 
 			// The tenant, if the app can name one for this subject. Installed
-			// from a server-side lookup keyed on the grant's subject — never
+			// from a server-side lookup keyed on the grant's subject, never
 			// from anything the request carried, which is what makes a stolen
 			// grant unable to choose its own tenant.
 			if h.resolveTenant != nil && g.Subject != "" {
@@ -269,7 +269,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 //
 // [Host.Middleware] authenticates an embed request; this decides what that
 // request is allowed to reach. The two are separate because only the app knows
-// which of its routes correspond to which declared scope — the framework has no
+// which of its routes correspond to which declared scope: the framework has no
 // route-to-scope map and inventing one would mean guessing.
 //
 //	app.Use(embeds.Middleware())
@@ -302,7 +302,7 @@ func (h *Host) RequireScope(scope string) func(http.Handler) http.Handler {
 			g, ok := GrantFromContext(r.Context())
 			if !ok {
 				// Not an embed request. If a grant header is nevertheless
-				// present, Middleware did not run on this route — refuse rather
+				// present, Middleware did not run on this route. Refuse rather
 				// than let the caller past a gate that never looked at it.
 				if r.Header.Get(GrantHeader) != "" {
 					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
@@ -325,7 +325,7 @@ func (h *Host) RequireScope(scope string) func(http.Handler) http.Handler {
 // wrong and retrying will not help.
 func misordered(w http.ResponseWriter, what string) {
 	http.Error(w, "embed: Middleware() ran after something that already resolved "+
-		what+" — install it OUTERMOST, before session/bearer/API-token/tenant "+
+		what+": install it OUTERMOST, before session/bearer/API-token/tenant "+
 		"middleware, so the grant's subject is the only identity on the request",
 		http.StatusInternalServerError)
 }
@@ -334,8 +334,8 @@ func misordered(w http.ResponseWriter, what string) {
 // nil pointer.
 //
 // Exported because framework/uihost's embed content route installs a resolved
-// subject on its own — it builds a fresh context rather than going through
-// Middleware — and needs the identical check. Two call sites disagreeing about
+// subject on its own. It builds a fresh context rather than going through
+// Middleware, and needs the identical check. Two call sites disagreeing about
 // what "no user" means is how the content route ended up installing typed nils
 // after Middleware had stopped. A SubjectResolver written as `func(...) (*User, error)` and
 // returning a nil *User produces exactly that: `user != nil` is true, the nil
@@ -353,7 +353,7 @@ func IsNilValue(v any) bool {
 	return false
 }
 
-// reachSuggestion proposes the narrowest Reach entry that would admit p — its
+// reachSuggestion proposes the narrowest Reach entry that would admit p: its
 // first two segments, which is almost always the resource root rather than one
 // record. Advice only; the author decides.
 func reachSuggestion(p string) string {

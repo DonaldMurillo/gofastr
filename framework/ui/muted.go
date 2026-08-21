@@ -18,7 +18,7 @@ func Muted(children ...render.HTML) render.HTML {
 		map[string]string{"class": "ui-muted"}, children...))
 }
 
-// EmptyValue is the canonical "no value here" placeholder — a muted em
+// EmptyValue is the canonical "no value here" placeholder: a muted em
 // dash. Tables and detail views render it for null/empty fields so
 // emptiness reads as deliberate rather than broken.
 func EmptyValue() render.HTML {

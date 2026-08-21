@@ -62,7 +62,7 @@ func TestHSTSExplicitOptOut(t *testing.T) {
 
 // Header value case must not matter: a proxy sending "HTTPS" gets the
 // same HSTS treatment as one sending "https" (uihost already compares
-// case-insensitively — the three call sites must agree).
+// case-insensitively; the three call sites must agree).
 func TestHSTSForwardedProtoCaseInsensitive(t *testing.T) {
 	got := hstsFor(t, SecurityHeadersConfig{}, func(r *http.Request) {
 		r.TLS = nil

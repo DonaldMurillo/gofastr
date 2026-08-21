@@ -9,7 +9,7 @@ import (
 )
 
 // Boot-time additive convergence: AutoMigrate creates missing tables AND adds
-// missing columns to existing tables (ALTER TABLE ADD COLUMN — the same DDL
+// missing columns to existing tables (ALTER TABLE ADD COLUMN, the same DDL
 // the declarative diff emits). It never drops, renames, or retypes; those
 // stay behind an explicit ApplySchemaDiffWithOptions/AllowDestructive apply.
 
@@ -23,7 +23,7 @@ func notesRegistry(cfg entity.EntityConfig) *Registry {
 }
 
 // TestAutoMigrate_AddsMissingColumn is the tutorial walkthrough regression:
-// boot with {title}, add user_id to the declaration, boot again — the column
+// boot with {title}, add user_id to the declaration, boot again, the column
 // must exist and be writable, with no explicit diff-apply step in between.
 func TestAutoMigrate_AddsMissingColumn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
@@ -95,7 +95,7 @@ func TestAutoMigrate_NeverDropsColumns(t *testing.T) {
 }
 
 // TestAutoMigrate_RequiredNewColNullable: a Required field with no default is
-// added NULLABLE (a NOT NULL ADD COLUMN fails on populated tables) — same
+// added NULLABLE (a NOT NULL ADD COLUMN fails on populated tables), same
 // deferral as `migrate diff` / `migrate generate`.
 func TestAutoMigrate_RequiredNewColNullable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
@@ -126,7 +126,7 @@ func TestAutoMigrate_RequiredNewColNullable(t *testing.T) {
 }
 
 // TestAutoMigrate_IndexOnAddedColumn: a new field arriving together with an
-// index on it must work in one boot — the column is added before index DDL.
+// index on it must work in one boot, the column is added before index DDL.
 func TestAutoMigrate_IndexOnAddedColumn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		v1 := notesRegistry(entity.EntityConfig{

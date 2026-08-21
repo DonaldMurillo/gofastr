@@ -123,7 +123,7 @@ func (covFailPlugin) Name() string      { return "cov-fail-plugin" }
 func (covFailPlugin) Init(_ *App) error { return errStored }
 
 // WithBody must retain a marshal error on the TestRequest so Execute can
-// surface it — a test must never run against the real handler with the
+// surface it, a test must never run against the real handler with the
 // wrong (or empty) body just because marshalling failed.
 func TestCovWithBodyMarshalError(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())

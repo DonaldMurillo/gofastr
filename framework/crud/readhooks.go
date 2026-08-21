@@ -14,7 +14,7 @@ import (
 // values. That is the right default for a Go API whose callers are trusted
 // server code: it reads what is in the database, and read-modify-write works.
 //
-// It is the wrong default for one caller — generated screens. A blueprint
+// It is the wrong default for one caller, generated screens. A blueprint
 // app renders its grid and detail page through ListAll/GetOne, to an end
 // user, so `GET /cards` returning "****1111" while the app's own page printed
 // the stored number was a real disclosure.
@@ -24,7 +24,7 @@ import (
 // repo's Get→Update round trip persists the mask over the real column, seed
 // reference resolution stops matching, dashboard aggregates sum masked
 // numerics to zero, and an AfterGet hook that looks up its own entity
-// re-enters itself until the stack is exhausted — which recover() cannot
+// re-enters itself until the stack is exhausted, which recover() cannot
 // catch. All five were observed.
 
 type readHooksKey struct{}
@@ -48,7 +48,7 @@ func withRealRequest(ctx context.Context, r *http.Request) context.Context {
 //
 // The synthetic request carries hookCtx(ctx), not ctx. Hooks are handed the
 // request so they can branch on it, and threading p.Request.Context() into a
-// further read is ordinary style — but that context reaching a hook with the
+// further read is ordinary style, but that context reaching a hook with the
 // opt-in still set is the self-recursion hookCtx exists to prevent, just
 // arriving by the other door. Stripping the ctx argument alone left the
 // synthetic request as a live path back into the same hook: observed at 201
@@ -70,7 +70,7 @@ func (ch *CrudHandler) requestFrom(ctx context.Context) *http.Request {
 //
 // Do not set it on a context handed to a hook: an AfterGet hook that reads
 // its own entity through a hook-applying context recurses until the process
-// dies. HTTP request handling is unaffected — those paths always run hooks.
+// dies. HTTP request handling is unaffected, those paths always run hooks.
 func WithReadHooks(ctx context.Context) context.Context {
 	return context.WithValue(ctx, readHooksKey{}, true)
 }
@@ -84,7 +84,7 @@ func readHooksEnabled(ctx context.Context) bool {
 // hookCtx strips the opt-in before a hook runs, so a hook that reads its own
 // entity gets stored values instead of re-entering itself. Without this the
 // recursion is unbounded and ends in stack exhaustion, which is a fatal
-// runtime error — runHookSafely's recover() cannot catch it.
+// runtime error, runHookSafely's recover() cannot catch it.
 func hookCtx(ctx context.Context) context.Context {
 	return context.WithValue(ctx, readHooksKey{}, false)
 }
@@ -113,7 +113,7 @@ func (ch *CrudHandler) runAfterGet(ctx context.Context, r *http.Request, id stri
 // It is what a write returns when the response hook fails. The alternatives
 // are both wrong: echoing the row serves exactly the values the failed hook
 // was there to mask, and answering 500 tells the caller a write that COMMITTED
-// did not happen — so it retries and creates the row twice, or, in a batch,
+// did not happen, so it retries and creates the row twice, or, in a batch,
 // loses the ids of rows that are already in the table. Reporting the write's
 // outcome truthfully while withholding everything the hook did not get to
 // vouch for keeps both properties. The id is not a secret: it is the row's own
@@ -129,7 +129,7 @@ func (ch *CrudHandler) identityOnly(result map[string]any) map[string]any {
 // hookRequest strips the read-hook opt-in from the request a hook receives.
 //
 // hookCtx covers the ctx ARGUMENT. A hook also gets payload.Request, and
-// threading p.Request.Context() into its own read is ordinary style — so on
+// threading p.Request.Context() into its own read is ordinary style, so on
 // the in-process path, where that request is synthesised from the caller's
 // opted-in context, the hook re-entered itself through it and exhausted the
 // stack. Real HTTP requests never carry the opt-in, so this is a no-op there
@@ -168,7 +168,7 @@ func (ch *CrudHandler) runAfterList(ctx context.Context, r *http.Request, result
 // one map, and must be masked once.
 //
 // A hook may redact in place OR by replacing an element with a projection
-// (`p.Results[i] = redactedCopy`) — both are shapes the typed API documents.
+// (`p.Results[i] = redactedCopy`), both are shapes the typed API documents.
 // The loader has already keyed each row to its parent, so a replacement is
 // folded back into the original map rather than swapped; a hook that changes
 // the ROW COUNT cannot be honoured that way and fails the request instead of
@@ -230,7 +230,7 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 		if len(reg.HooksFor(hook.AfterList)) > 0 {
 			// Snapshot the row pointers BEFORE the hook runs. payload.Results
 			// shares childRows' backing array, so a hook assigning
-			// p.Results[i] overwrites our own slice — comparing the two
+			// p.Results[i] overwrites our own slice, comparing the two
 			// afterwards would find them identical and conclude nothing
 			// changed, which is exactly the silent no-op being fixed.
 			before := append([]map[string]any(nil), childRows...)
@@ -249,13 +249,13 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 			childRows = before
 		}
 		// A to-one relation serialises as a single object, so the surface it
-		// mirrors is GET /child/{id} — which runs AfterGet, not AfterList. An
+		// mirrors is GET /child/{id}, which runs AfterGet, not AfterList. An
 		// app that masks in AfterGet only is entirely consistent with its own
 		// routes and still served the stored value through ?include=author.
 		// Both chains run here rather than one replacing the other: picking by
 		// arity alone would leak the mirror-image case, where the mask lives
 		// in AfterList. A hook registered on both runs twice on these rows, so
-		// masks should be idempotent — the documented ones (assign a constant,
+		// masks should be idempotent, the documented ones (assign a constant,
 		// delete the key) are.
 		toOne := node.Relation.Type == entity.RelHasOne || node.Relation.Type == entity.RelManyToOne
 		if toOne && len(reg.HooksFor(hook.AfterGet)) > 0 {
@@ -289,7 +289,7 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 
 // runResponseHooks applies AfterGet to a write's response body.
 //
-// A create or update returns the row RETURNING produced — every visible
+// A create or update returns the row RETURNING produced, every visible
 // column, including ones the caller never sent. AfterCreate/AfterUpdate run
 // over it, but those are write hooks; a redaction registered on AfterGet does
 // not, so a partial PUT used to echo back stored values for fields that GET
@@ -301,7 +301,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 		return result, nil
 	}
 	// Redact a DEEP copy. The caller has already handed `result` to EmitEvent,
-	// which passes it to an async goroutine that marshals it — the live bus,
+	// which passes it to an async goroutine that marshals it, the live bus,
 	// the fanout tap, the webhook bridge, any Events.On handler. An in-place
 	// hook here would write that map while those read it, which is a
 	// concurrent map read/write: a runtime throw the bus's recover() cannot
@@ -311,7 +311,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 	// A shallow copy is not enough, and shipping one was the same bug wearing
 	// a hat: every nested map and slice stayed shared with the bus's record,
 	// so a hook masking a field INSIDE an embedded object (row["profile"]
-	// ["ssn"] — the ordinary shape for a computed sub-document) wrote straight
+	// ["ssn"], the ordinary shape for a computed sub-document) wrote straight
 	// through the copy into the event lane, deterministically contaminating
 	// it and racing the subscriber that reads it. deepCopyRecord is the same
 	// helper redactEventRecord uses, for the same reason.
@@ -333,7 +333,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 // The parent read path can simply take payload.Results, because it owns the
 // slice it is about to serialise. An include cannot: each row is already
 // referenced from one or more parent rows, so replacing the slice would leave
-// those references pointing at the pre-hook maps — the hook would appear to
+// those references pointing at the pre-hook maps, the hook would appear to
 // run and change nothing, which is the silent-fail-open shape this whole
 // change exists to remove.
 //
@@ -342,13 +342,13 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 // Position was the first attempt: it corrupts the moment a hook reorders,
 // writing each row's contents into a different parent's attachment and, since
 // it mutates originals that later iterations still read as sources, turning
-// [A,B,C] → [C,B,A] into [C,B,C] — one row duplicated, one destroyed, one
+// [A,B,C] → [C,B,A] into [C,B,C], one row duplicated, one destroyed, one
 // attributed to a parent whose own foreign key names a different row, served
 // with a 200.
 //
 // Pointer identity was the second: it recognises a reorder only when the hook
-// mutated in place. The documented alternative — replacing an element with a
-// redacted copy — yields fresh maps, so a hook that projects AND sorts looked
+// mutated in place. The documented alternative, replacing an element with a
+// redacted copy, yields fresh maps, so a hook that projects AND sorts looked
 // like a slice of new rows and folded positionally, reproducing the identical
 // corruption. It also made a legitimate sorting hook a hard 500, which is
 // data-dependent: whether a request works then depends on the stored rows, so
@@ -360,7 +360,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 // matching on it accepts in-place edits, projections, and any ordering, while
 // still refusing the cases that cannot be honoured: a changed row count, a
 // duplicate, a row the loader never produced, or a replacement that dropped
-// its own id. Ordering is a no-op either way — what the client sees comes from
+// its own id. Ordering is a no-op either way, what the client sees comes from
 // the attachment the loader built, which this function never touches.
 //
 // Nothing is mutated until every element has been matched, so a refused
@@ -370,13 +370,13 @@ func reattachHookResults(relation, pkKey string, original, returned []map[string
 		return fmt.Errorf(
 			"include %s: after-list hook changed the row count (%d → %d); "+
 				"an eager-loaded relation cannot drop or add rows because each is already "+
-				"keyed to its parent — filter in the child's own BeforeList, or use Hidden",
+				"keyed to its parent: filter in the child's own BeforeList, or use Hidden",
 			relation, len(original), len(returned))
 	}
 	origAt := make(map[uintptr]int, len(original))
 	// One id can map to SEVERAL rows. eagerLoadManyToMany builds a fresh map
 	// per JOIN row, so a child shared by two parents in the same page arrives
-	// as two distinct maps carrying the same primary key — that is what a
+	// as two distinct maps carrying the same primary key, that is what a
 	// many-to-many IS. A single-valued index kept only the last, so both
 	// replacements resolved to one row, the second tripped the duplicate
 	// refusal, and a documented hook shape 500'd as soon as two parents shared
@@ -414,14 +414,14 @@ func reattachHookResults(relation, pkKey string, original, returned []map[string
 			if !pkUsable {
 				return fmt.Errorf(
 					"include %s: after-list hook replaced a row, but these rows carry no %q to "+
-						"match it against — mutate the row in place instead",
+						"match it against: mutate the row in place instead",
 					relation, pkKey)
 			}
 			v, has := want[pkKey]
 			if !has {
 				return fmt.Errorf(
 					"include %s: after-list hook returned a row without its %q, so it cannot be "+
-						"matched to the parent that references it — keep the id when projecting",
+						"matched to the parent that references it: keep the id when projecting",
 					relation, pkKey)
 			}
 			// First slot for this id that nothing has claimed yet.

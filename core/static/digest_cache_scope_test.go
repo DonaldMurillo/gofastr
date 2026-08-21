@@ -11,8 +11,8 @@ import (
 
 // An embed.FS reports the zero time.Time as the modtime of EVERY file, so a
 // process-wide digest cache keyed on (name, modtime, size) collapses to
-// (name, size). Two handlers over different filesystems — a site embed and
-// an admin embed, both serving "app.css" — would then share an ETag, and
+// (name, size). Two handlers over different filesystems, a site embed and
+// an admin embed, both serving "app.css", would then share an ETag, and
 // the second handler would answer 304 Not Modified for content the client
 // has never seen. The cache is per-handler for exactly this reason.
 func TestDigestCacheDoesNotLeakAcrossHandlers(t *testing.T) {
@@ -78,7 +78,7 @@ func TestDigestCacheServesRepeatRequests(t *testing.T) {
 }
 
 // fs.ValidPath rejects any name that is not valid UTF-8, so os.DirFS and
-// embed.FS answer fs.ErrInvalid — not fs.ErrNotExist — for a URL like /%ff.
+// embed.FS answer fs.ErrInvalid, not fs.ErrNotExist, for a URL like /%ff.
 // That is a malformed request, not a server fault: answering 500 let any
 // client drive a 5xx with a two-character URL, and skipped SPA fallback.
 func TestInvalidPathIsNotAServerError(t *testing.T) {

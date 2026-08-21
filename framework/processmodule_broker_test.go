@@ -28,14 +28,14 @@ import (
 // names ONE property a module CANNOT obtain through the reverse channel and
 // proves it. The broker handlers are invoked the way moduleproto.Peer.
 // serveRequest dispatches them: a bare context.Background() (the codec's
-// inbound ctx carries NO app state — the broker must reconstruct every caller
+// inbound ctx carries NO app state, the broker must reconstruct every caller
 // signal from the delegation handle, which is the whole point of the seam).
 //
 // The gate-only deny tests use an ALWAYS-SUCCEED fake router: if the gate
 // failed to deny, the call would reach the router and return data, so an
 // observed denial + the router never being hit is positive proof the gate
 // fired (not a downstream nil-router refusal). A nil router would deny too
-// and mask a missing gate — exactly the regression these tests must catch.
+// and mask a missing gate, exactly the regression these tests must catch.
 
 // ----- test doubles -----
 
@@ -108,7 +108,7 @@ func brokerRegistry(ents ...*entity.Entity) *Registry {
 
 // fakeSuccessRouter is an http.Handler that ALWAYS returns 200 + a one-row
 // envelope and records that it was reached. A gate that fails to deny lets the
-// call through to here — so (denial && !hit) is positive proof the gate fired.
+// call through to here, so (denial && !hit) is positive proof the gate fired.
 func fakeSuccessRouter(hit *atomic.Bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hit.Store(true)
@@ -185,7 +185,7 @@ func callReverse(t *testing.T, h moduleproto.Handler, params any) (any, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return h(context.Background(), raw) // bare ctx — mimics serveRequest
+	return h(context.Background(), raw) // bare ctx, mimics serveRequest
 }
 
 func wantDenied(t *testing.T, err error) {
@@ -302,7 +302,7 @@ func TestBrokerEntityOutsideGrantDenies(t *testing.T) {
 }
 
 // TestBrokerUnknownEntityDenies: an entity name the registry does not know is
-// denied (fail-closed) — never silently empty, and never reaches the router.
+// denied (fail-closed), never silently empty, and never reaches the router.
 func TestBrokerUnknownEntityDenies(t *testing.T) {
 	reg := brokerRegistry(brokerEntity("articles", "articles", nil))
 	var hit atomic.Bool
@@ -332,7 +332,7 @@ func TestBrokerUnknownHandleDenies(t *testing.T) {
 	wantNotHit(t, &hit)
 }
 
-// TestBrokerReleasedHandleDenies: after release() the handle is gone — a late
+// TestBrokerReleasedHandleDenies: after release() the handle is gone, a late
 // reverse call echoing it is denied and never reaches the router.
 func TestBrokerReleasedHandleDenies(t *testing.T) {
 	reg := brokerRegistry(brokerEntity("articles", "articles", nil))
@@ -398,7 +398,7 @@ func TestBrokerCallerAuthorityDenies(t *testing.T) {
 
 // TestBrokerAmbientOwnerScopedDenies: an ambient (caller-less) reverse read of
 // an owner-scoped entity is denied. No handle ⇒ no owner id in the
-// re-dispatched context ⇒ requireAuthenticated/RequireOwner refuse — the
+// re-dispatched context ⇒ requireAuthenticated/RequireOwner refuse, the
 // safe-by-construction proof that a background module cannot read owner rows.
 func TestBrokerAmbientOwnerScopedDenies(t *testing.T) {
 	policy := access.NewRolePolicy()
@@ -412,7 +412,7 @@ func TestBrokerAmbientOwnerScopedDenies(t *testing.T) {
 	wantDenied(t, err)
 }
 
-// TestBrokerDelegatedReadSucceeds: positive control — module grant + caller
+// TestBrokerDelegatedReadSucceeds: positive control: module grant + caller
 // authority both hold ⇒ the re-dispatch returns the caller's owner-scoped
 // rows ONLY (bob's row is filtered out). Proves the gate is not
 // over-restrictive, so the deny tests above are meaningful denials.
@@ -481,7 +481,7 @@ func TestBrokerTopicOutsideGrantDenies(t *testing.T) {
 	wantDenied(t, err)
 }
 
-// TestBrokerEventEmitsWithGrant: positive control — a topic in the grant set
+// TestBrokerEventEmitsWithGrant: positive control: a topic in the grant set
 // is emitted on the host bus.
 func TestBrokerEventEmitsWithGrant(t *testing.T) {
 	bus := event.NewEventBus()

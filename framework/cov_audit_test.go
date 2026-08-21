@@ -75,7 +75,7 @@ func TestCovAuditDeleteMetaOnly(t *testing.T) {
 		app.WithAuditLog(AuditConfig{})
 
 		// Fire the registered AfterDelete hook directly with a request in
-		// context (auditMeta non-nil) but NO pre-image — hits the
+		// context (auditMeta non-nil) but NO pre-image, hits the
 		// meta-only delete-diff branch (audit.go line 183-185), which the
 		// CRUD path never reaches because doDelete always captures a
 		// pre-image first.

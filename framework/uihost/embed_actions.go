@@ -17,11 +17,11 @@ import (
 // G.serverAction does not work inside a frame: the action registry is
 // app-global, keyed by (componentID, action) with no relationship to any
 // surface, so honouring a grant at /__gofastr/action would let a credential
-// minted for one surface invoke any action registered anywhere — including
+// minted for one surface invoke any action registered anywhere, including
 // from a subject-less public surface. handleServerAction refuses a grant for
 // exactly that reason, and that refusal is correct and stays. The bug this
 // closes is WHEN the developer finds out: at runtime, inside a customer's
-// page. Everything an embed needs instead — island RPC, a form POST, polling —
+// page. Everything an embed needs instead, island RPC, a form POST, polling,
 // works in a frame, so failing at boot costs nothing. (SSE does not; see
 // handleSSE, and framework/docs/content/embed.md.)
 //
@@ -29,14 +29,14 @@ import (
 //
 // The first version of this walk looked up the surface screen's own component
 // id and inspected only that registry. An embeddable root that RENDERS A CHILD
-// passed it — the child registers the action, AutoCompileActions compiles the
+// passed it. The child registers the action, AutoCompileActions compiles the
 // child under its own id, GetActionJS concatenates every compiled registry, and
 // handleEmbedRuntimeJS ships that whole bundle into the frame. The gate saw a
 // clean root while the customer's page got a button that 401s.
 //
 // So the unit is "what actually ships": every COMPILED action registry that
 // contains a server action, matched against every component REACHABLE from the
-// embeddable screen. Both halves are exact at boot — the registries are the
+// embeddable screen. Both halves are exact at boot: the registries are the
 // ones already compiled into actions.js, and reachability is read off the live
 // component values with reflect. Nothing calls Actions a second time.
 func (ds *UIHost) enforceNoServerActionsOnEmbeds() {
@@ -67,7 +67,7 @@ func (ds *UIHost) enforceNoServerActionsOnEmbeds() {
 			}
 			panic(fmt.Sprintf(
 				"uihost: embed surface %q renders screen %q, whose component "+
-					"tree reaches %s — a component with a registered server "+
+					"tree reaches %s: a component with a registered server "+
 					"action %q. G.serverAction is refused inside a frame (the "+
 					"action registry is app-global with no relationship to any "+
 					"surface, so honouring a grant would let a credential minted "+
@@ -76,7 +76,7 @@ func (ds *UIHost) enforceNoServerActionsOnEmbeds() {
 					"CHILD's action fails in the customer's page rather than "+
 					"here. The compiler accepts only the canonical call spelling "+
 					"G.serverAction(...), with no whitespace before '('. Use an "+
-					"island RPC, a form POST, or polling instead — all three work "+
+					"island RPC, a form POST, or polling instead: all three work "+
 					"in a frame.",
 				name, path, off.describe(), off.event,
 			))
@@ -159,14 +159,14 @@ const reachWalkDepth = 64
 // The one that matters is core-ui/app: a component holding a back-reference to
 // the App (or a Screen, or a Layout) would otherwise make every component in
 // the program reachable from every surface, and the gate would panic on
-// anything. Reaching the host graph is not the same as rendering a child — and
+// anything. Reaching the host graph is not the same as rendering a child, and
 // the frame's chrome is fixed (app.EmbedLayout), so a layout's own components
 // never render inside it either. The rest are large runtime graphs with no
 // components in them, skipped to keep the walk cheap.
 //
 // core-ui/island is deliberately NOT here, though it was. island.Island is a
 // one-field wrapper around the component it renders, and islands are the
-// framework's main composition primitive — the blueprint emits
+// framework's main composition primitive: the blueprint emits
 // island.NewIsland(...).Render() for every island block. Stopping at it meant
 // an action-bearing child inside an island was never seen, which is the
 // opposite of a host back-reference: the wrapper's whole purpose is to render
@@ -209,7 +209,7 @@ type reachWalker struct {
 // It walks VALUES, not types: a nil child field contributes nothing, and an
 // interface-typed field contributes the concrete type it actually holds. That
 // is why this gate can be exact where the static analyzer has to be
-// conservative — at boot the tree is built.
+// conservative: at boot the tree is built.
 //
 // Unexported fields are read through reflect without unsafe: the walk only ever
 // asks a Value for its type, its nil-ness and its children, never for
@@ -299,7 +299,7 @@ func (w *reachWalker) walk(v reflect.Value, depth int) {
 			return
 		}
 		// Keys as well as values. A component used as a map KEY has to be
-		// comparable, which rules out any component holding a slice or map —
+		// comparable, which rules out any component holding a slice or map,
 		// but "rare" is not "impossible", and a struct of scalars with a
 		// Render method qualifies. Skipping keys let exactly that shape ship
 		// an action to a customer's frame, so the gate pays the second
@@ -310,7 +310,7 @@ func (w *reachWalker) walk(v reflect.Value, depth int) {
 			w.walk(iter.Value(), depth+1)
 		}
 	default:
-		// A component whose underlying type is not a struct — `type Badge
+		// A component whose underlying type is not a struct: `type Badge
 		// string` with a Render method is legal and does happen. It has no
 		// children to descend into, but it is still a component that can carry
 		// an action registry.

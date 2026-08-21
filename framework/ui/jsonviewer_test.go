@@ -64,7 +64,7 @@ func TestJSONViewerOpenDepthControlsOpen(t *testing.T) {
 	closed := string(JSONViewer(JSONViewerConfig{Value: deep, OpenDepth: 0}))
 	// Root open, inner closed.
 	if strings.Count(closed, "<details  open>") > 1 {
-		// alt format: " open" vs "  open" — fall back to a more general check.
+		// alt format: " open" vs "  open". Fall back to a more general check.
 	}
 	openAll := string(JSONViewer(JSONViewerConfig{Value: deep, OpenDepth: -1}))
 	if strings.Count(openAll, " open>") < 2 {

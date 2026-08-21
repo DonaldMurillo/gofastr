@@ -12,13 +12,13 @@ import (
 // Allow reports whether a plugin action requiring the `required` capability is
 // permitted. It is the intersection of two sides and DEFAULT-DENIES:
 //
-//  1. Module grant — `granted` is the capability set THIS plugin mount was
+//  1. Module grant: `granted` is the capability set THIS plugin mount was
 //     granted by the host. It is the ceiling: a plugin can never exceed its
 //     declared grants, even under a session cookie. A nil/empty `granted`
 //     denies everything. Matching uses auth.ScopeMatch (the same resource:verb
-//     wildcard grammar as token scopes — NOT a weaker parallel matcher), so a
+//     wildcard grammar as token scopes. NOT a weaker parallel matcher), so a
 //     granted "*:*" is the explicit "grant everything" (dev/trusted) form.
-//  2. Caller authority — the request's own scopes must also permit it. A scoped
+//  2. Caller authority: the request's own scopes must also permit it. A scoped
 //     API token restricts BELOW the plugin grant; a session/JWT caller is
 //     unscoped, so the plugin grant is the binding limit.
 //

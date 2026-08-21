@@ -54,7 +54,7 @@ func TestResolveCatchAllMultiSegment(t *testing.T) {
 	}
 }
 
-// A catch-all needs at least one remainder segment — /docs and /docs/ do
+// A catch-all needs at least one remainder segment, /docs and /docs/ do
 // NOT match (documented behavior; keeps it simple).
 func TestResolveCatchAllNeedsRemainder(t *testing.T) {
 	r := NewRouter()
@@ -82,7 +82,7 @@ func TestResolveCatchAllWithParamPrefix(t *testing.T) {
 	}
 }
 
-// Registration order decides precedence — no specificity ranking. A
+// Registration order decides precedence, no specificity ranking. A
 // fixed-length dynamic registered BEFORE a catch-all wins for the
 // segment count they share; the catch-all only takes longer paths.
 func TestResolveFixedLengthBeatsCatchAllByOrder(t *testing.T) {
@@ -109,7 +109,7 @@ func TestResolveFixedLengthBeatsCatchAllByOrder(t *testing.T) {
 }
 
 // Reverse order: catch-all registered first swallows the 2-segment path
-// too (first-match-wins) — order matters, by design.
+// too (first-match-wins), order matters, by design.
 func TestResolveCatchAllFirstWinsSharedCount(t *testing.T) {
 	r := NewRouter()
 	r.Screen(NewScreen("/a/{y...}", &catchScreen{}), nil) // catch-all first

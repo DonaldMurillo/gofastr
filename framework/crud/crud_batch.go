@@ -24,7 +24,7 @@ var errBatchAborted = errors.New("batch aborted")
 // batchResult is one entry in a _batch response. Exactly one of Data, Error,
 // or Skipped will be populated for any given index. When the tx rolled back
 // because a later item failed, earlier successes are still recorded with
-// their constructed Data — but the top-level Committed=false signals that
+// their constructed Data, but the top-level Committed=false signals that
 // nothing was persisted.
 type batchResult struct {
 	Index   int                 `json:"index"`
@@ -43,7 +43,7 @@ type BatchResponse struct {
 // classifyDoErr converts a per-item error into the batchResult fields it
 // represents (Error string + optional Fields map).
 //
-// Validation and BeforeHook errors are surfaced verbatim — they're
+// Validation and BeforeHook errors are surfaced verbatim, they're
 // user-actionable and don't carry driver text. Anything else (driver
 // errors, scan failures, after-hook exceptions) is redacted to a
 // generic "internal error" string so the per-item Error field can't
@@ -96,7 +96,7 @@ func writeBatchResponse(w http.ResponseWriter, resp BatchResponse) {
 // scrubRolledBackData clears the Data field on per-item results whose
 // only error is "the surrounding tx rolled back". The contract: when
 // Committed=false, no per-item Data appears in the response. Errors and
-// Fields stay — they're the actionable parts.
+// Fields stay, they're the actionable parts.
 func scrubRolledBackData(results []batchResult) {
 	for i := range results {
 		results[i].Data = nil
@@ -171,7 +171,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			}
 		}
 
-		// AfterGet over each item body — after the transaction has committed
+		// AfterGet over each item body, after the transaction has committed
 		// and the RAW record has gone to the bus, exactly as the single-record
 		// routes do it. Running it inside the closure (as the first version of
 		// this did) put a read hook in the write transaction: a hook that
@@ -189,7 +189,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 				}
 				body, hookErr := ch.runResponseHooks(r, res.Data)
 				if hookErr != nil {
-					// Degrade this item to its id — the batch is committed, and
+					// Degrade this item to its id, the batch is committed, and
 					// a 500 would lose the ids of rows already in the table.
 					log.Printf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
 					body = ch.identityOnly(res.Data)
@@ -278,7 +278,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			}
 		}
 
-		// AfterGet over each item body — after the transaction has committed
+		// AfterGet over each item body, after the transaction has committed
 		// and the RAW record has gone to the bus, exactly as the single-record
 		// routes do it. Running it inside the closure (as the first version of
 		// this did) put a read hook in the write transaction: a hook that
@@ -296,7 +296,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 				}
 				body, hookErr := ch.runResponseHooks(r, res.Data)
 				if hookErr != nil {
-					// Degrade this item to its id — the batch is committed, and
+					// Degrade this item to its id, the batch is committed, and
 					// a 500 would lose the ids of rows already in the table.
 					log.Printf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
 					body = ch.identityOnly(res.Data)

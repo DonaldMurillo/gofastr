@@ -14,9 +14,9 @@ import (
 
 // This file implements design §6's sandbox conformance contract: the seven
 // observable-outcome probes (P1–P7) a backend MUST enforce before an
-// untrusted module reaches Ready. The contract is defined by outcomes —
+// untrusted module reaches Ready. The contract is defined by outcomes:
 // "the child, run under the candidate backend, attempts the forbidden thing
-// and is denied" — NOT by syscall, because Linux/Darwin/Windows reach the
+// and is denied", NOT by syscall, because Linux/Darwin/Windows reach the
 // same denials by incompatible mechanisms (namespaces vs sandbox-exec vs
 // AppContainer/Job Object). That shape is the only one simultaneously
 // portable, testable, and CI-gateable across the three OSes.
@@ -30,7 +30,7 @@ import (
 //     available backend and asserts the enforceable probes actually
 //     fail-to-breach. When the backend is unavailable on the host (no
 //     bwrap in CI, no sandbox-exec) the test SKIPs with a clear message
-//     naming what's missing — it NEVER passes silently as if enforcement
+//     naming what's missing, it NEVER passes silently as if enforcement
 //     happened.
 //
 // NOTHING is written into the repo tree by the probes. The probe child IS
@@ -55,7 +55,7 @@ const (
 	ProbeNoInheritedSecret
 
 	// ProbeNoInheritedFD is P3: a host fd opened pre-spawn to a secret is
-	// not inherited — the child enumerating fds > 2 finds none.
+	// not inherited, the child enumerating fds > 2 finds none.
 	// (Baseline hygiene: ExtraFiles=nil.)
 	ProbeNoInheritedFD
 
@@ -125,7 +125,7 @@ func (p ProbeID) Title() string {
 type ProbeStatus int
 
 const (
-	// ProbeStatusUnknown is the zero value — a probe that has not been run.
+	// ProbeStatusUnknown is the zero value: a probe that has not been run.
 	ProbeStatusUnknown ProbeStatus = iota
 
 	// ProbeStatusPass means the sandbox DENIED the forbidden action: the
@@ -192,7 +192,7 @@ type ConformanceReport struct {
 
 // Conforms reports whether the backend qualifies for an untrusted module
 // per design §6: Available AND every probe P1–P7 passed. Any failure or
-// unreachable disqualifies — there is no partial conformance, and the
+// unreachable disqualifies, there is no partial conformance, and the
 // supervisor fail-closes rather than silently downgrading to
 // TrustedProcessRunner.
 func (r ConformanceReport) Conforms() bool {
@@ -243,7 +243,7 @@ func (r ConformanceReport) Summary() string {
 
 // SandboxOpts carries the per-module confinement parameters a backend
 // applies when wrapping the child exec. Every field is host-derived from
-// the operator-approved descriptor — the child never supplies these.
+// the operator-approved descriptor, the child never supplies these.
 type SandboxOpts struct {
 	// ScratchDir is the per-module writable working directory. Backends
 	// confine writes here (bwrap --bind, sandbox-exec file-write* subpath,
@@ -273,7 +273,7 @@ type SandboxOpts struct {
 	FdLimit int
 }
 
-// SandboxBackend is the per-OS confinement wrapper (design §6 — v1 is a
+// SandboxBackend is the per-OS confinement wrapper (design §6, v1 is a
 // wrapper command, mirroring framework/experimental/harness/tool/builtins/bash.go's
 // SandboxFn but with the fail-closed seam INVERTED: a nil/nil-error Wrap
 // is mandatory for untrusted modules, and the constructor refuses to
@@ -282,7 +282,7 @@ type SandboxOpts struct {
 // can enforce on this host.
 //
 // The interface is portable; the implementations are not. Go supervises
-// processes portably but cannot confine them portably — stdlib
+// processes portably but cannot confine them portably, stdlib
 // syscall.SysProcAttr exposes Linux namespace/uid-mapping fields but the
 // Darwin and Windows structs lack them entirely, hence the build-tagged
 // split. The split boundary is linux vs not-linux (finer than the repo's
@@ -308,13 +308,13 @@ type SandboxBackend interface {
 	// (scrubbed env, cwd=scratch, own process group); Wrap adds the
 	// OS-enforced denials on top. Returns an error iff the backend cannot
 	// wrap on this host (tool invocation failure, profile generation
-	// failure) — the caller treats that as fail-closed, never as "run
+	// failure), the caller treats that as fail-closed, never as "run
 	// anyway without confinement".
 	Wrap(cmd *exec.Cmd, opts SandboxOpts) error
 
 	// DeclaredProbes returns the probes this backend DECLARES it can
 	// enforce on this host when Available. The conformance runner still
-	// executes each probe to verify the declaration holds — this list
+	// executes each probe to verify the declaration holds, this list
 	// drives the "what we aim to enforce" used for skip messaging when
 	// the backend is unavailable. It is the honest ceiling, not a claim:
 	// if a probe in this list later fails its run, the report records
@@ -330,15 +330,15 @@ const probeEnvName = "GOFASTR_SANDBOX_PROBE"
 
 // Probe-child stdout protocol. The child prints exactly one line:
 //
-//	"PASS"               — the sandbox denied the forbidden action.
-//	"BREACH <detail>"    — the child succeeded in the forbidden action.
-//	"UNREACHABLE <detail>" — the probe could not be meaningfully run.
+//	"PASS":                the sandbox denied the forbidden action.
+//	"BREACH <detail>":     the child succeeded in the forbidden action.
+//	"UNREACHABLE <detail>": the probe could not be meaningfully run.
 //
 // The probe runner parses this line and maps it to a [ProbeStatus]. A
 // child that exits without printing (killed by the sandbox mid-attempt,
 // or crashed) is treated as UNREACHABLE for P6 (the limit may have fired)
 // and FAIL for everything else (the sandbox did not deny the action; it
-// killed the child, which is not the same as a clean denial — surface it).
+// killed the child, which is not the same as a clean denial, surface it).
 const (
 	probeOutPass        = "PASS"
 	probeOutBreach      = "BREACH"
@@ -347,7 +347,7 @@ const (
 
 // RunConformance executes the full P1–P7 probe suite against b on the
 // current host and returns the report. When b is unavailable, every probe
-// is recorded as Unreachable with the backend's MissingReason — this is
+// is recorded as Unreachable with the backend's MissingReason, this is
 // NOT a pass; Conforms() returns false and the supervisor fail-closes.
 //
 // t is used only for scratch-dir provisioning (t.TempDir); pass nil to use
@@ -434,7 +434,7 @@ func runOneProbe(ctx context.Context, b SandboxBackend, p ProbeID, scratch strin
 		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: "setup: " + setupErr.Error()}
 	}
 	// Close any host fds the setup opened (e.g. the P3 secret fd) AFTER
-	// spawning — the runner does not inherit them because ExtraFiles is
+	// spawning, the runner does not inherit them because ExtraFiles is
 	// nil, but the test process should not leak them across the suite.
 	if setup.Cleanup != nil {
 		defer setup.Cleanup()
@@ -442,7 +442,7 @@ func runOneProbe(ctx context.Context, b SandboxBackend, p ProbeID, scratch strin
 
 	cmd := exec.Command(exe)
 	cmd.Dir = probeScratch
-	// Baseline hygiene (§6 — applied by BOTH runners; the probe runner
+	// Baseline hygiene (§6, applied by BOTH runners; the probe runner
 	// applies the same scrub so the suite tests the runner's contract,
 	// not just the backend's): an explicit env containing ONLY what the
 	// probe child needs. The canary planted by setupProbeContext lives
@@ -520,7 +520,7 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 	if timedOut {
 		// P6's whole point is "the limit fires and caps the child". A
 		// timeout on P6 with no clean PASS output is ambiguous; we treat
-		// it as UNREACHABLE rather than silently PASS — the runner should
+		// it as UNREACHABLE rather than silently PASS, the runner should
 		// see a clean PASS line if the limit denied cleanly.
 		detail := "probe timed out after " + probeTimeout.String()
 		if stderr != "" {
@@ -543,7 +543,7 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 }
 
 // denialDetail extracts the diagnostic the child emitted alongside its
-// PASS — usually the errno/string the sandbox returned, which is useful
+// PASS, usually the errno/string the sandbox returned, which is useful
 // for the operator wondering "did this pass because of enforcement or by
 // accident?". Best-effort; empty is fine.
 func denialDetail(p ProbeID, stderr string) string {
@@ -567,7 +567,7 @@ func tailForDetail(s string) string {
 // buildProbeChildEnv assembles the probe child's environment: the minimal
 // allowlist the child binary needs to run, plus the per-probe context the
 // setup planted (canary env name, secret paths, targets). It deliberately
-// does NOT copy os.Environ() — baseline hygiene is the P2 enforcement.
+// does NOT copy os.Environ(), baseline hygiene is the P2 enforcement.
 func buildProbeChildEnv(setup probeSetup) []string {
 	allow := DefaultChildEnvAllowlist()
 	env := make([]string, 0, len(allow)+len(setup.Env)+2)
@@ -602,10 +602,10 @@ type probeSetup struct {
 	ProbeIDEnv string
 
 	// HostUID is the host's uid/gid-equivalent (os.Getuid on Unix,
-	// mapped from the process token on Windows) — P1 compares.
+	// mapped from the process token on Windows). P1 compares.
 	HostUID string
 
-	// HostPID is the probe runner's own pid — P1 tries to signal/proc-read it.
+	// HostPID is the probe runner's own pid. P1 tries to signal/proc-read it.
 	HostPID string
 
 	// Env is the list of GOFASTR_PROBE_* context vars for this probe
@@ -623,7 +623,7 @@ type probeSetup struct {
 // for: a canary env var + secret file (P2), an open fd to a secret (P3),
 // network targets (P4), a host tree path (P5), a fork count (P6). It does
 // NOT set up anything the backend is supposed to provide (mounts, cgroup
-// limits) — those are the backend.Wrap call's job.
+// limits), those are the backend.Wrap call's job.
 func setupProbeContext(p ProbeID, scratch string) (probeSetup, error) {
 	pid := fmt.Sprintf("%d", os.Getpid())
 	uid := hostUIDString()
@@ -742,7 +742,7 @@ func killProcessTree(cmd *exec.Cmd) error {
 // probeChildMaybeRun is the TestMain dispatcher for the probe-child
 // re-exec. When the probeEnvName env var is set, this is a probe child:
 // run the probe body for the requested ProbeID, print the result line to
-// stdout, and os.Exit — never returning to the test runner. Returns true
+// stdout, and os.Exit, never returning to the test runner. Returns true
 // iff the child ran (so TestMain can skip m.Run).
 //
 // It lives here (not beside processModuleChildMain) because the probe
@@ -765,7 +765,7 @@ func probeChildMaybeRun() bool {
 
 // runProbeChildBody is the per-OS probe body dispatcher. It runs the
 // forbidden-action attempt for id, prints exactly one result line to
-// stdout per the probeOut* protocol, and returns the exit code (0 always —
+// stdout per the probeOut* protocol, and returns the exit code (0 always:
 // the printed line is the truth; the exit code is just for hygiene). The
 // Unix and Windows implementations live in processmodule_probe_unix.go /
 // _windows.go.
@@ -793,7 +793,7 @@ func backendName(b SandboxBackend) string {
 //
 // The per-OS files (processmodule_sandbox_linux.go etc.) provide
 // defaultSandboxBackend(); this wrapper exists so a host with no backend
-// compiled in (none currently — every build has exactly one) returns nil
+// compiled in (none currently, every build has exactly one) returns nil
 // rather than panicking, and so tests can inject a fake.
 func HostSandboxBackend() SandboxBackend {
 	b := defaultSandboxBackend()

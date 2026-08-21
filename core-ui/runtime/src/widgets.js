@@ -1,4 +1,4 @@
-// GoFastr runtime module — Widgets
+// GoFastr runtime module, Widgets
 //
 // The widget runtime: mountWidget (chrome + dismiss + modal stack),
 // openWidget / closeWidget / _mountByName / chrome cache. The
@@ -20,8 +20,8 @@
 //   - core's auto-mount loop (the catalog fetch) awaits loadModule('widgets')
 //     before iterating mounts.
 //
-// State stays on window.__gofastr — _widgets, _modalStack,
-// _popoverStack, _signals, _focusSel — so the popover module and
+// State stays on window.__gofastr, _widgets, _modalStack,
+// _popoverStack, _signals, _focusSel, so the popover module and
 // core can still read them.
 (() => {
   'use strict';
@@ -34,7 +34,7 @@
     const entry = NS._widgetCatalog && NS._widgetCatalog[name];
     if (!entry) {
       // Static export + the target widget isn't registered (e.g. a note-only
-      // showcase demo whose modal was never mounted). Don't fail silently —
+      // showcase demo whose modal was never mounted). Don't fail silently,
       // tell the visitor why nothing opened. _fallbackToast is synchronous
       // and already on NS, so no module fetch / async wait.
       if (document.documentElement.hasAttribute('data-fui-static') && NS._fallbackToast) {
@@ -113,7 +113,7 @@
       const cfg = cat[name].cfg;
       if (!cfg.deepLinkKey || !cfg.deepLinkValue) continue;
       // openWidget's pushUrl defaults to falsy, so syncing FROM the URL
-      // cannot write back to it — no explicit opt-out needed.
+      // cannot write back to it, no explicit opt-out needed.
       const hit = url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue;
       if (hit !== !!NS._widgets[name]) {
         if (hit) NS.openWidget(name);
@@ -171,7 +171,7 @@
     const isModal = !!cfg.backdrop;
     const pf = isModal ? document.activeElement : null;
     if (isModal) {
-      // Owner-refcounted viewport lock (NS.doc) — the lock releases only
+      // Owner-refcounted viewport lock (NS.doc), the lock releases only
       // when the LAST owner unlocks, so a second locker (lightbox,
       // drawer) can't release a modal's lock early. NS.doc locks <html>,
       // not <body>: overflow:hidden on <body> turns the body into a
@@ -183,7 +183,7 @@
       NS._modalStack.push(cfg.name);
       Promise.resolve().then(() => {
         // Prefer an explicit [autofocus] element if the slot author
-        // marked one — that's how ui.ConfirmAction opts into focusing
+        // marked one, that's how ui.ConfirmAction opts into focusing
         // the Confirm button instead of Cancel. We also strip the
         // attribute after focusing so the platform's native autofocus
         // pass (which runs when the element next enters the DOM, e.g.
@@ -256,14 +256,14 @@
       }
       // mountWidget starts the widgetlinks load for every deep-linkable
       // widget, so the strip helper is only absent inside the module's
-      // initial in-flight window (milliseconds after an auto-open) —
+      // initial in-flight window (milliseconds after an auto-open),
       // an accepted race; the URL then simply keeps the deep link the
       // user navigated to.
       if (cfg.deepLinkKey && cfg.deepLinkValue && NS._deepLinkStripUrl) NS._deepLinkStripUrl(cfg);
     }
     reg.dismiss = dismiss;
 
-    // Initial state hydration — only when the widget declared signals.
+    // Initial state hydration, only when the widget declared signals.
     if (cfg.statePath) {
       if (!NS._originOK?.(cfg.statePath)) return;
       fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
@@ -278,11 +278,11 @@
         .catch(() => {});
     }
 
-    // Polling freshness — when the widget declares BOTH a statePath
+    // Polling freshness, when the widget declares BOTH a statePath
     // (it has signals) AND a pollMs (Builder.Poll), the runtime
     // re-fetches statePath on the cadence and overwrites each
     // declared signal with the fresh value. Mount hydration above
-    // skips already-set signals; polling intentionally does NOT —
+    // skips already-set signals; polling intentionally does NOT,
     // the whole point is to replace stale values. We still skip the
     // DOM write when setSignal would be a no-op (value unchanged)
     // so bound nodes don't flash/re-layout on every tick.

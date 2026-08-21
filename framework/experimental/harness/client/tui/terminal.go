@@ -96,7 +96,7 @@ type TUI struct {
 	spinnerIdx   int
 	spinnerFrame int
 
-	// search state — Ctrl-R toggles. While searchActive, keys go to
+	// search state. Ctrl-R toggles. While searchActive, keys go to
 	// searchQuery (typed chars append, backspace shrinks, Esc cancels).
 	// searchHits is the recomputed list of matching scrollback indices.
 	searchActive bool
@@ -194,7 +194,7 @@ func (t *TUI) Run(ctx context.Context) error {
 	keys := make(chan []byte, 16)
 	go t.readKeys(runCtx, keys)
 
-	// Spinner ticker — drives the "working…" frame animation while a
+	// Spinner ticker, drives the "working…" frame animation while a
 	// turn is in flight. 100ms is fast enough to look alive without
 	// flooding the terminal.
 	spinTick := time.NewTicker(100 * time.Millisecond)
@@ -246,10 +246,10 @@ func (t *TUI) restore() {
 
 func (t *TUI) enterAltScreen() {
 	// Alt-screen + clear + cursor home + alternate scroll:
-	//   ?1049h  alt screen — own buffer, restored on exit
-	//   ?1007h  alternate scroll mode — the terminal translates
+	//   ?1049h  alt screen: own buffer, restored on exit
+	//   ?1007h  alternate scroll mode: the terminal translates
 	//           scroll-wheel events into Up/Down arrow keys instead
-	//           of sending mouse-button events to us. Crucially this
+	//           of sending mouse-button events to us. This
 	//           leaves CLICK + DRAG owned by the terminal, so the
 	//           user can still select text from the TUI to copy.
 	//           Our existing arrow-key handler picks up the wheel
@@ -320,7 +320,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.dismissSpinner()
 		t.collapseThinkingBurst()
 		t.ensureBlankBefore()
-		// Claude Code-style: `● Tool(args)` — filled circle bullet
+		// Claude Code-style: `● Tool(args)`, filled circle bullet
 		// followed by the function-call notation so args read like
 		// code rather than a JSON dump.
 		t.appendMultiline("● ", fmt.Sprintf("%s(%s)", v.Tool, summarizeArgs(v.Args)))
@@ -360,7 +360,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.assistantOpen = false
 		t.thinkingOpen = false
 	case control.CostIncremented:
-		// Accumulator — every increment adds to the session total.
+		// Accumulator, every increment adds to the session total.
 		t.costUSD += v.USD
 	case control.TurnStarted:
 		// Render the user message from OTHER clients (browser, MCP,
@@ -422,12 +422,12 @@ func (t *TUI) handleKey(bs []byte) bool {
 	if searchOn && len(bs) == 1 {
 		c := bs[0]
 		switch c {
-		case 0x1b: // Esc — cancel search
+		case 0x1b: // Esc: cancel search
 			t.mu.Lock()
 			t.deactivateSearch()
 			t.mu.Unlock()
 			return false
-		case 0x0d: // Enter — accept (just leave search mode, keep hits)
+		case 0x0d: // Enter: accept (just leave search mode, keep hits)
 			t.mu.Lock()
 			t.searchActive = false
 			t.mu.Unlock()
@@ -463,35 +463,35 @@ func (t *TUI) handleKey(bs []byte) bool {
 				return true
 			}
 			return false
-		case 0x09: // Tab — slash-command completion
+		case 0x09: // Tab: slash-command completion
 			t.handleTab()
 			return false
-		case 0x10: // Ctrl-P — previous in history
+		case 0x10: // Ctrl-P: previous in history
 			t.recallHistory(-1)
 			return false
-		case 0x0e: // Ctrl-N — next in history
+		case 0x0e: // Ctrl-N: next in history
 			t.recallHistory(+1)
 			return false
-		case 0x0f: // Ctrl-O — expand the last truncated tool result
+		case 0x0f: // Ctrl-O: expand the last truncated tool result
 			t.mu.Lock()
 			t.expandLastTruncated()
 			t.mu.Unlock()
 			return false
-		case 0x12: // Ctrl-R — incremental scrollback search
+		case 0x12: // Ctrl-R: incremental scrollback search
 			t.mu.Lock()
 			t.activateSearch()
 			t.mu.Unlock()
 			return false
-		case 0x0a: // Ctrl-J / raw LF — insert newline (multi-line input)
+		case 0x0a: // Ctrl-J / raw LF: insert newline (multi-line input)
 			t.mu.Lock()
 			t.input = append(t.input, '\n')
 			t.popupIdx = 0
 			t.mu.Unlock()
 			return false
-		case 0x0d: // Enter (CR) — submit OR popup-complete
+		case 0x0d: // Enter (CR): submit OR popup-complete
 			// If the slash popup is showing real completions (i.e.
 			// there are candidates AND the current input isn't already
-			// an exact candidate name), Enter behaves like Tab —
+			// an exact candidate name), Enter behaves like Tab:
 			// it completes the highlighted candidate. Otherwise Enter
 			// submits as usual. This makes Enter symmetric with Tab
 			// during autocomplete without ever blocking a real submit
@@ -709,7 +709,7 @@ func (t *TUI) handleTab() {
 	}
 	chosen := names[idx]
 	// Append a trailing space so the user types arguments directly.
-	// Namespaces ending in `:` skip the space — they want a sub-verb.
+	// Namespaces ending in `:` skip the space, they want a sub-verb.
 	if !strings.HasSuffix(chosen, ":") {
 		chosen += " "
 	}
@@ -735,7 +735,7 @@ func decodePermissionAnswer(line string) (control.Decision, control.PermitScope,
 }
 
 // ingestAssistantText handles a TextDelta payload. Splits on
-// embedded newlines so each becomes its own scrollback line — the
+// embedded newlines so each becomes its own scrollback line, the
 // model often emits markdown structure (`\n## Heading\n\n- item\n`)
 // in a single delta; rendering with embedded `\n` causes the terminal
 // cursor to wander columns. assistantOpen tracks whether the next
@@ -759,7 +759,7 @@ func (t *TUI) ingestAssistantText(text string) {
 				t.assistantOpen = true
 			}
 		} else {
-			// Continuation lines have no prefix — let the model's
+			// Continuation lines have no prefix, let the model's
 			// own indentation drive the layout.
 			t.scrollback = append(t.scrollback, part)
 		}
@@ -777,7 +777,7 @@ func (t *TUI) ingestThinkingText(text string) {
 	if text == "" || text == "null" {
 		return
 	}
-	// json.RawMessage of a string arrives as `"..."` — unquote.
+	// json.RawMessage of a string arrives as `"..."`, unquote.
 	if unquoted, ok := unjsonString(text); ok {
 		text = unquoted
 	}
@@ -931,7 +931,7 @@ func plural(n int, suffix string) string {
 
 // runeLen returns the display width of s in monospace cells, counting
 // runes (so a multi-byte glyph like '▸' counts as 1). Good enough for
-// our prefix indentation — not a substitute for east-asian-width logic.
+// our prefix indentation, not a substitute for east-asian-width logic.
 func runeLen(s string) int {
 	n := 0
 	for range s {
@@ -1129,7 +1129,7 @@ func (t *TUI) draw() {
 		maxPopup = 8
 	}
 	if maxPopup < 2 {
-		maxPopup = 0 // not enough room — skip the popup on tiny screens
+		maxPopup = 0 // not enough room, skip the popup on tiny screens
 	}
 	if t.modal == nil && maxPopup > 0 {
 		popupItems, popupNames, _ = slashPopupItems(string(t.input), maxPopup)

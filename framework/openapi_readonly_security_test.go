@@ -13,7 +13,7 @@ import (
 // TestFieldToSchema_MarksReadOnly pins that any field the runtime
 // refuses to accept on write (ReadOnly or AutoGenerate) is marked
 // readOnly in the OpenAPI doc. Without this, generated SDKs propose
-// writable bindings for fields the server will reject — and clients
+// writable bindings for fields the server will reject, and clients
 // like Insomnia / Postman cheerfully send them.
 func TestFieldToSchema_MarksReadOnly(t *testing.T) {
 	cases := []schema.Field{

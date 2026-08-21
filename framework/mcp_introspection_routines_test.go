@@ -86,7 +86,7 @@ func TestMCPAppRoutinesReportsMissingLedgerRow(t *testing.T) {
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
-	// Register a routine but DON'T auto-migrate — the ledger has no row.
+	// Register a routine but DON'T auto-migrate, the ledger has no row.
 	app.Routine(migrate.Routine{Name: "never_applied", Up: "DROP VIEW IF EXISTS never_applied;\nCREATE VIEW never_applied AS SELECT 1"})
 	res, err := app.MCP.CallTool(context.Background(), "app_routines", map[string]any{})
 	if err != nil {
@@ -239,14 +239,14 @@ func TestMCPAppRoutines_ReportsAbsentObjectOnPG(t *testing.T) {
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
-	// Register but DO NOT migrate — the pg_proc/pg_views lookup will come
+	// Register but DO NOT migrate, the pg_proc/pg_views lookup will come
 	// back empty.
 	app.Routine(migrate.Routine{
 		Name: "phantom_fn",
 		Up:   "CREATE OR REPLACE FUNCTION phantom_fn() RETURNS int AS $$ SELECT 1 $$ LANGUAGE sql",
 	})
 	// But we DO need the ledger table to exist for the ledger lookup to not
-	// error — run an empty plan that creates it.
+	// error, run an empty plan that creates it.
 	if err := migrate.AutoMigratePlanContext(context.Background(), db,
 		migrate.Plan{Registry: app.Registry, Routines: []migrate.Routine{{
 			Name: "seed",
@@ -254,7 +254,7 @@ func TestMCPAppRoutines_ReportsAbsentObjectOnPG(t *testing.T) {
 		}}}); err != nil {
 		t.Fatalf("seed migrate: %v", err)
 	}
-	// Now introspect — phantom_fn is registered but never applied.
+	// Now introspect, phantom_fn is registered but never applied.
 	res, err := app.MCP.CallTool(context.Background(), "app_routines", map[string]any{})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)

@@ -24,7 +24,7 @@ func nestedYAML(n int) string {
 
 // TestYAML_DeepNestingRejected verifies that nesting deeper than the cap
 // is rejected with an error. Before the fix there was no recursion-depth
-// cap, so this depth parsed successfully (nil error) — an unbounded
+// cap, so this depth parsed successfully (nil error). An unbounded
 // recursion attacker could drive stack exhaustion.
 func TestYAML_DeepNestingRejected(t *testing.T) {
 	_, err := Parse(nestedYAML(200))

@@ -30,17 +30,17 @@ import (
 func TestPartialRedirect_RuntimeFollowsXGofastrLocation(t *testing.T) {
 	application := app.NewApp("e2e")
 
-	// Public landing — minimal HTML with a marker so we can wait on it.
+	// Public landing: minimal HTML with a marker so we can wait on it.
 	application.RegisterScreen(
 		app.NewScreen("/", &textComp{tag: "landing"}).WithTitle("Landing"),
 		nil,
 	)
-	// Public login — what we expect to land on after the redirect.
+	// Public login: what we expect to land on after the redirect.
 	application.RegisterScreen(
 		app.NewScreen("/login", &textComp{tag: "login-page"}).WithTitle("Login"),
 		nil,
 	)
-	// Gated screen — SessionPolicy with default redirect to /login.
+	// Gated screen: SessionPolicy with default redirect to /login.
 	gated := app.NewScreen("/dash", &textComp{tag: "dashboard"}).
 		WithTitle("Dashboard").
 		WithPolicy(app.PolicyFunc(func(ctx context.Context) app.Decision {
@@ -83,13 +83,13 @@ func TestPartialRedirect_RuntimeFollowsXGofastrLocation(t *testing.T) {
 	if strings.Contains(body, "dashboard") {
 		t.Errorf("dashboard body leaked through despite policy redirect, got %q", body)
 	}
-	// Visual evidence — saved to /tmp so a human / next-session agent
+	// Visual evidence: saved to /tmp so a human / next-session agent
 	// can inspect. PNG bytes; non-fatal if write fails.
 	_ = os.WriteFile("/tmp/gofastr-vis-partial-redirect-before.png", beforeShot, 0o644)
 	_ = os.WriteFile("/tmp/gofastr-vis-partial-redirect-after.png", afterShot, 0o644)
 }
 
-// textComp is a minimal component for the e2e harness — renders a div
+// textComp is a minimal component for the e2e harness: renders a div
 // with a data-text marker so chromedp can wait on it.
 type textComp struct{ tag string }
 
@@ -117,8 +117,8 @@ func newE2EChromeForUIHost(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
-	// passing a timeout context here would make the browser die when that
+	// browser context so the browser's lifetime is the browser context's.
+	// Passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
 	go func() { started <- chromedp.Run(browser) }()

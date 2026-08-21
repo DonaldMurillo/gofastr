@@ -94,7 +94,7 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 // the query would span every tenant (a cross-tenant data leak). Honors
 // tenant.AllowCrossTenant for deliberate admin access.
 //
-// Note: owner scope is deliberately NOT gated here — typed repos are trusted
+// Note: owner scope is deliberately NOT gated here, typed repos are trusted
 // in-process code and an owner-less caller (admin/system) legitimately reads
 // across owners (see TestTypedQuery_AdminCallerWithoutOwnerSeesAll). Tenant is
 // a hard isolation boundary; owner is a softer scope-to-me. The HTTP layer
@@ -107,7 +107,7 @@ func (q *TypedQuery[T]) requireTenantCtx(ctx context.Context) error {
 // raw row maps plus the synthetic request the read hooks are handed.
 //
 // Split out of Find so First can run the AfterGet chain over the row map
-// before it is decoded into T — once a row is a struct there is nothing left
+// before it is decoded into T, once a row is a struct there is nothing left
 // for a map-shaped hook to redact.
 func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Request, error) {
 	if err := q.requireTenantCtx(ctx); err != nil {
@@ -132,7 +132,7 @@ func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Re
 			return nil, nil, err
 		}
 		// ctx is threaded through unchanged so applyChildReadHooks sees the
-		// same opt-in the top-level rows get — an included row must not stay
+		// same opt-in the top-level rows get, an included row must not stay
 		// raw while its parent is redacted.
 		if err := q.handler.applyIncludeTree(ctx, raw, nodes); err != nil {
 			return nil, nil, fmt.Errorf("include: %w", err)
@@ -157,7 +157,7 @@ func decodeRows[T any](raw []map[string]any) ([]*T, error) {
 // Find executes the query and decodes results into []*T.
 //
 // Under crud.WithReadHooks the AfterList chain runs before decoding, exactly
-// as ListAll does it — a typed repo backing a rendered page must not show
+// as ListAll does it, a typed repo backing a rendered page must not show
 // stored values the entity's own list endpoint masks. Without the opt-in the
 // rows are stored values, so read-modify-write still round-trips.
 func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
@@ -177,7 +177,7 @@ func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
 // found" with errors.Is.
 //
 // The single-row surface mirrors GET /entity/{id}, so under
-// crud.WithReadHooks it runs AfterGet — the same chain GetOne runs, and the
+// crud.WithReadHooks it runs AfterGet, the same chain GetOne runs, and the
 // same one the HTTP handler runs for a by-id read. It deliberately does NOT
 // also run AfterList: that would redact more than the entity's own routes do
 // and make the two surfaces disagree in the other direction.
@@ -208,7 +208,7 @@ func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
 }
 
 // Count returns the number of rows matching the current filters. Ignores
-// limit/offset/order — pure SELECT COUNT(*) over the same WHERE predicate.
+// limit/offset/order, pure SELECT COUNT(*) over the same WHERE predicate.
 func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	if err := q.requireTenantCtx(ctx); err != nil {
 		return 0, err
@@ -227,7 +227,7 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return n, nil
-	// (legacy comment removed — wrapped COUNT was a workaround for the prior
+	// (legacy comment removed, wrapped COUNT was a workaround for the prior
 	// design that baked filters straight into the SELECT QueryBuilder. Now
 	// that wheres live as Conditions we can build a CountBuilder cleanly.)
 }
@@ -239,7 +239,7 @@ func UnmarshalEntity(m map[string]any, dest any) error {
 	return unmarshalRowToStruct(m, dest)
 }
 
-// MarshalEntity is the inverse — converts a typed entity struct into the
+// MarshalEntity is the inverse, converts a typed entity struct into the
 // snake-cased map[string]any the framework's CRUD primitives expect. Skips
 // fields whose JSON tag carries omitempty if the value is the type's zero,
 // per encoding/json semantics.
@@ -249,7 +249,7 @@ func MarshalEntity(src any) (map[string]any, error) {
 
 // unmarshalRowToStruct converts a snake-cased map (the framework's standard
 // row shape) into a typed struct whose JSON tags are camelCase. Same casing
-// transform the typed-hooks helpers use — kept symmetric so generated repo
+// transform the typed-hooks helpers use, kept symmetric so generated repo
 // code can rely on either path.
 func unmarshalRowToStruct(m map[string]any, dest any) error {
 	camel := casing.MapToCamel(m)
@@ -260,7 +260,7 @@ func unmarshalRowToStruct(m map[string]any, dest any) error {
 	return json.Unmarshal(b, dest)
 }
 
-// marshalStructToRow is the inverse — used by typed repos to feed a *T into
+// marshalStructToRow is the inverse, used by typed repos to feed a *T into
 // CreateOne/UpdateOne, which expect snake-cased map[string]any.
 func marshalStructToRow(src any) (map[string]any, error) {
 	b, err := json.Marshal(src)
@@ -287,7 +287,7 @@ func (q *TypedQuery[T]) Exists(ctx context.Context) (bool, error) {
 
 // UpdateAll applies the same field updates to every row matching the
 // current Where chain and returns the number of rows touched. Ignores
-// Limit/Offset/Order — the underlying SQL is a plain UPDATE with the
+// Limit/Offset/Order, the underlying SQL is a plain UPDATE with the
 // same WHERE predicate that Find would use.
 //
 // Fields are snake-cased map[string]any (the framework's wire shape). For
@@ -303,7 +303,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	ub := query.Update(q.handler.Entity.GetTable())
 	for k, v := range fields {
 		// Don't allow callers to mutate the primary key wholesale via bulk
-		// update — that's almost always a bug.
+		// update, that's almost always a bug.
 		if k == q.handler.PrimaryKey {
 			continue
 		}
@@ -321,7 +321,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	for _, c := range q.wheres {
 		ub.Where(c.SQL(), c.Args()...)
 	}
-	// Soft-deleted rows are logically gone — a bulk UPDATE must not reach
+	// Soft-deleted rows are logically gone, a bulk UPDATE must not reach
 	// them, mirroring the SELECT/Count paths (ApplySoftDeleteFilter).
 	if q.handler.Entity.Config.Scope.SoftDelete {
 		ub.Where("deleted_at IS NULL")
@@ -352,7 +352,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		for _, c := range q.wheres {
 			ub.Where(c.SQL(), c.Args()...)
 		}
-		// Don't re-stamp rows that are already soft-deleted — they're
+		// Don't re-stamp rows that are already soft-deleted, they're
 		// logically gone, and re-touching them would resurrect their
 		// delete timestamp and inflate the affected-row count.
 		ub.Where("deleted_at IS NULL")

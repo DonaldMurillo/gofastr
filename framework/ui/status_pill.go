@@ -1,14 +1,14 @@
 package ui
 
-// StatusPill — a small, non-interactive status kicker: an optional leading
+// StatusPill is a small, non-interactive status kicker: an optional leading
 // dot plus a short mono label in a rounded pill ("● Get started · v0.0.4").
 //
 // Distinct from the two neighbours it sits between:
-//   - StatusBadge  — status-coded label, no dot, sentence case.
-//   - Tag / Chip   — interactive (dismissible / filter link).
+//   - StatusBadge:   status-coded label, no dot, sentence case.
+//   - Tag / Chip:    interactive (dismissible / filter link).
 //
 // StatusPill is purely presentational: a hero kicker, a "pre-alpha" marker,
-// a live-state caption. Two tones — neutral and accent (brand primary, with
+// a live-state caption. Two tones: neutral and accent (brand primary, with
 // a softly glowing dot).
 
 import (
@@ -22,7 +22,7 @@ import (
 type StatusPillTone string
 
 const (
-	// StatusPillNeutral is the muted default — subtle text on the surface.
+	// StatusPillNeutral is the muted default: subtle text on the surface.
 	StatusPillNeutral StatusPillTone = ""
 	// StatusPillAccent uses the brand primary colour with a glowing dot.
 	StatusPillAccent StatusPillTone = "accent"
@@ -47,7 +47,7 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 	case StatusPillNeutral, StatusPillAccent:
 	default:
 		panic("ui: StatusPill unknown Tone " + string(cfg.Tone) +
-			` — pick "" (neutral) or "accent"`)
+			`. Pick "" (neutral) or "accent"`)
 	}
 	cls := "ui-status-pill"
 	if cfg.Tone != StatusPillNeutral {

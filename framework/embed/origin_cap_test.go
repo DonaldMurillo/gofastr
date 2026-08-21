@@ -8,7 +8,7 @@ import (
 
 // The whole allowlist ships in one frame-ancestors directive on every shell
 // response. Past a few hundred customers that directive exceeds the response
-// header limits common in proxies, and the failure is not graceful — the
+// header limits common in proxies, and the failure is not graceful: the
 // surface stops loading for every customer at once, including the ones that
 // worked yesterday. Boot is the only place to catch it.
 func TestOriginListIsCappedAtBoot(t *testing.T) {

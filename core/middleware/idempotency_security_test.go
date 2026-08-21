@@ -37,7 +37,7 @@ func TestIdempotency_StripsHandlerSetCookieFromReplay(t *testing.T) {
 		t.Fatalf("first call should still set its own cookie")
 	}
 
-	// Replay — must NOT carry the handler's session cookie or Authorization.
+	// Replay: must NOT carry the handler's session cookie or Authorization.
 	req2 := httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{}`))
 	req2.Header.Set(IdempotencyKeyHeader, "k1")
 	rr2 := httptest.NewRecorder()
@@ -74,7 +74,7 @@ func TestIdempotency_FingerprintNamespacedByPrincipal(t *testing.T) {
 	srv.ServeHTTP(w1, r1)
 
 	// Bob sends with the SAME key k1. With principal namespacing, the
-	// middleware must NOT replay Alice's response for Bob — that would
+	// middleware must NOT replay Alice's response for Bob; that would
 	// leak her body across tenants.
 	r2 := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{}`))
 	r2.Header.Set(IdempotencyKeyHeader, "k1")
@@ -187,7 +187,7 @@ func TestMemoryStore_MaxEntriesEvictsOldest(t *testing.T) {
 		time.Sleep(1 * time.Millisecond)
 	}
 	// After 5 inserts with cap=3, only the most recent 3 should be present.
-	// The oldest keys (k0, k1) should be evicted — fresh Begin with their
+	// The oldest keys (k0, k1) should be evicted; fresh Begin with their
 	// keys is treated as a NEW claim, not an in-flight return.
 	resp, ok, err := s.Begin(ctx, "k0", "fp")
 	if ok || resp != nil {
@@ -203,7 +203,7 @@ func TestIdempotency_FinishUsesUncancelledContext(t *testing.T) {
 	}))
 
 	// Build a request whose context is already cancelled by the time the
-	// handler returns — simulates a client that disconnected mid-handler.
+	// handler returns; simulates a client that disconnected mid-handler.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/x", strings.NewReader(`{}`))
@@ -227,12 +227,12 @@ func TestIdempotency_FinishUsesUncancelledContext(t *testing.T) {
 // the in-flight claim can expire while the handler is still running. A second
 // caller then re-claims the SAME key under a DIFFERENT fingerprint. If Finish
 // persists by key alone (ignoring which fingerprint owns the row), the first
-// caller's late Finish staples its response onto the second caller's row — and
+// caller's late Finish staples its response onto the second caller's row, and
 // because Begin never rewrites the fingerprint column, the second caller's
 // retry matches the fingerprint and is served the FIRST caller's body. That is a
 // cross-user leak whenever Principal returns a user/tenant id.
 //
-// The fix is a breaking signature change — Finish now takes the fingerprint and
+// The fix is a breaking signature change: Finish now takes the fingerprint and
 // a store MUST refuse to write a row whose fingerprint does not match. The
 // optional-interface alternative was rejected: it leaves every third-party
 // IdempotencyStore silently vulnerable, which is the wrong default for a leak of
@@ -268,7 +268,7 @@ func runFinishOwnClaim(t *testing.T, s IdempotencyStore) {
 	}
 	// 2. A's claim expires while its handler is still running.
 	time.Sleep(80 * time.Millisecond)
-	// 3. User B — same key, DIFFERENT body/fingerprint — re-claims the stale row.
+	// 3. User B, same key, DIFFERENT body/fingerprint, re-claims the stale row.
 	if _, ok, err := s.Begin(ctx, key, fpB); err != nil || ok {
 		t.Fatalf("B re-claim of A's expired claim: ok=%v err=%v", ok, err)
 	}
@@ -281,7 +281,7 @@ func runFinishOwnClaim(t *testing.T, s IdempotencyStore) {
 	if err := s.Finish(ctx, key, fpA, respA); err != nil {
 		t.Fatalf("A Finish: %v", err)
 	}
-	// 5. B's retry must NEVER receive A's response body. Assert on the BODY — a
+	// 5. B's retry must NEVER receive A's response body. Assert on the BODY; a
 	// status-only check would miss the disclosure (A's status can be 200 too).
 	replay, ok, err := s.Begin(ctx, key, fpB)
 	if ok && replay != nil && string(replay.Body) == secretA {
@@ -296,7 +296,7 @@ func runFinishOwnClaim(t *testing.T, s IdempotencyStore) {
 // DELETE once matched on key alone, with no expiry predicate. Under contention
 // two callers can both observe the expired row: the first deletes it and inserts
 // a FRESH claim; the second's key-only DELETE then destroys that FRESH claim and
-// it re-inserts — so BOTH believe they own the key and BOTH run the handler.
+// it re-inserts, so BOTH believe they own the key and BOTH run the handler.
 // That is the double-execution the middleware exists to prevent, and it defeats
 // the ErrInFlight fallback. The DELETE is now expiry-gated
 // (WHERE key = $1 AND expires_at <= $2).
@@ -308,7 +308,7 @@ func runFinishOwnClaim(t *testing.T, s IdempotencyStore) {
 //
 // The in-flight TTL here is deliberately LONG. The seeded row is already
 // expired, so the reclaim path still runs, but a winner's fresh claim cannot
-// legitimately expire mid-race — with a short TTL a slow, loaded runner lets a
+// legitimately expire mid-race; with a short TTL a slow, loaded runner lets a
 // later racer correctly re-claim an expired row, which is the TTL working and
 // is indistinguishable from the bug. A long TTL makes a second fresh claim
 // proof that the DELETE removed a live one.
@@ -402,7 +402,7 @@ func runReclaimOneWinner(t *testing.T, s IdempotencyStore, key string, reseed fu
 				case err == nil && ok:
 					// ok==true (replay) is impossible against a seeded
 					// in-flight row. The store-fault default below sends
-					// err — which is nil here — so the post-loop nil check
+					// err, which is nil here, so the post-loop nil check
 					// never fired and a replay passed silently. Surface a
 					// non-nil error so the race is actually caught.
 					select {

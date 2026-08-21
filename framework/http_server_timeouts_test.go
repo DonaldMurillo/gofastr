@@ -71,7 +71,7 @@ func TestHTTPServerTimeoutsOverride(t *testing.T) {
 }
 
 // TestHTTPServerTimeoutsExplicitZeroDisables: a pointer to 0 is NOT "keep
-// default" — it is an explicit disable (net/http: 0 = no timeout). This
+// default", it is an explicit disable (net/http: 0 = no timeout). This
 // distinction is the entire reason the fields are pointers rather than plain
 // time.Duration, where the zero value could only mean one thing.
 func TestHTTPServerTimeoutsExplicitZeroDisables(t *testing.T) {
@@ -95,8 +95,8 @@ func TestHTTPServerTimeoutsExplicitZeroDisables(t *testing.T) {
 }
 
 // TestHTTPServerTimeoutsShortWriteCutsSlowHandler reproduces the framework's
-// existing behavior — a handler that outlives the server write deadline is
-// severed — using a short knob instead of the real 60s. The timeout middleware
+// existing behavior, a handler that outlives the server write deadline is
+// severed, using a short knob instead of the real 60s. The timeout middleware
 // is removed (DisableRequestTimeout) so the server-level WriteTimeout is the
 // only deadline in play, isolating exactly the knob under test.
 func TestHTTPServerTimeoutsShortWriteCutsSlowHandler(t *testing.T) {
@@ -158,7 +158,7 @@ func TestHTTPServerTimeoutsRaisedLetsSlowHandlerThrough(t *testing.T) {
 }
 
 // TestHTTPServerTimeoutsBeatDisableRequestTimeout: an explicit
-// HTTPServerTimeouts field is authoritative — DisableRequestTimeout zeroes only
+// HTTPServerTimeouts field is authoritative. DisableRequestTimeout zeroes only
 // the read/write fields the host left unset. So a host can drop the timeout
 // middleware (its other effect) yet keep a custom server-level write deadline.
 // The existing TestDisableTimeoutRelaxesServer still holds: with no explicit

@@ -11,7 +11,7 @@ import (
 // process down.
 //
 // This goroutine is framework-owned and has no caller frame to unwind
-// into, so an unrecovered panic here is fatal — no HTTP middleware
+// into, so an unrecovered panic here is fatal. No HTTP middleware
 // recover can see it. In a multi-replica deployment every replica
 // subscribes to the same topic, so one poison payload would take down
 // the whole fleet at once. Dropping the payload and continuing keeps the
@@ -30,7 +30,7 @@ func deliver(fn func([]byte), p []byte) {
 // queue with drop-oldest overflow, running fn on a dedicated goroutine.
 //
 // It is an implementation aid for [Fanout] backends whose transport delivers
-// payloads on a SHARED goroutine — e.g. a single LISTEN/NOTIFY dispatcher
+// payloads on a SHARED goroutine, e.g. a single LISTEN/NOTIFY dispatcher
 // (framework/fanout) or a Redis reader goroutine (NewRedis). Wrapping each
 // subscriber in its own queue preserves the per-subscriber bounded-queue +
 // drop-oldest contract the [Fanout.Subscribe] doc promises, so one slow
@@ -72,7 +72,7 @@ func SubscriberQueue(fn func([]byte), depth int) (send func([]byte), stop func()
 			}
 			// Queue full: drop oldest and retry. Receiving from a buffered
 			// channel needs no concurrent consumer, so this pops a queued
-			// payload even while fn is still running — guaranteeing forward
+			// payload even while fn is still running, guaranteeing forward
 			// progress (no busy-spin) and the drop-oldest contract. stopped
 			// is re-checked every iteration.
 			select {
@@ -87,7 +87,7 @@ func SubscriberQueue(fn func([]byte), depth int) (send func([]byte), stop func()
 	// stop signals the goroutine to exit at its next select and returns
 	// promptly. It does not wait for an in-flight fn (fn must not block per
 	// the Fanout contract; a blocking fn would make any wait deadlock), nor
-	// does it drain queued payloads — this is a lossy lane, so dropping the
+	// does it drain queued payloads. This is a lossy lane, so dropping the
 	// few still-queued messages on unsubscribe is the intended behavior.
 	stop = func() {
 		once.Do(func() { close(stopped) })

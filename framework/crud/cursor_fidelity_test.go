@@ -29,7 +29,7 @@ func cursorFidelityHandler(t *testing.T) *CrudHandler {
 
 // TestCursorPagingServesEveryRowOnce: page through rows whose sort keys
 // include zero-width / bidi codepoints and assert the union of pages is
-// exactly the seeded set — no duplicates, no missing rows. DecodeCursor
+// exactly the seeded set, no duplicates, no missing rows. DecodeCursor
 // used to strip those codepoints, so the keyset resumed BEFORE the
 // stripped row and re-served it (and its predecessors' tail) twice.
 func TestCursorPagingServesEveryRowOnce(t *testing.T) {

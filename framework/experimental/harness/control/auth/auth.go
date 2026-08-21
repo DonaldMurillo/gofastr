@@ -55,7 +55,7 @@ func (c Claims) AllowsCommand(kind string) bool {
 }
 
 // AllowsSession reports whether the token may attach to the given
-// session. An empty Sessions list means "any session" — only
+// session. An empty Sessions list means "any session", only
 // allowed for the bootstrap token.
 func (c Claims) AllowsSession(s ids.SessionID) bool {
 	if len(c.Sessions) == 0 {

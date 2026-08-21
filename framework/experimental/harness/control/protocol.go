@@ -307,7 +307,7 @@ type TurnStarted struct {
 	// clients (browser sidecar attached to the same session as the TUI,
 	// or vice-versa) render the user message without round-tripping
 	// through a separate "echo" event. Optional for backwards
-	// compatibility — older publishers may omit it.
+	// compatibility, older publishers may omit it.
 	Content []ContentBlock `json:"content,omitempty"`
 }
 

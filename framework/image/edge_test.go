@@ -255,7 +255,7 @@ func TestVariantQualityExtremes(t *testing.T) {
 	}
 }
 
-// TestSinkDoesNotRead — sink returns nil without reading. ProcessTo
+// TestSinkDoesNotRead: sink returns nil without reading. ProcessTo
 // reuses one shared bytes.Buffer; second variant overwrites first's bytes.
 func TestSinkDoesNotRead(t *testing.T) {
 	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 32, 32))
@@ -277,7 +277,7 @@ func TestSinkDoesNotRead(t *testing.T) {
 	}
 }
 
-// TestSinkReads1Byte — does the framework recover when sink reads
+// TestSinkReads1Byte: does the framework recover when sink reads
 // only the first byte of variant 1 and then returns nil? Variant 2
 // should still get a fully-written buffer.
 func TestSinkReads1Byte(t *testing.T) {
@@ -307,8 +307,8 @@ func TestSinkReads1Byte(t *testing.T) {
 	}
 }
 
-// TestSinkPanics — does ProcessTo propagate panics? (no recover in
-// framework — so yes.) Just verify the test framework sees a panic.
+// TestSinkPanics: does ProcessTo propagate panics? (no recover in
+// framework, so yes.) Just verify the test framework sees a panic.
 func TestSinkPanics(t *testing.T) {
 	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 32, 32))
 	img := FromImage(src, FormatPNG)

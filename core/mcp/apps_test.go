@@ -229,7 +229,7 @@ func TestResourcesRead_Blob(t *testing.T) {
 
 func TestResourcesRead_ContentsFuncSeesContext(t *testing.T) {
 	// The contents func receives the request context, so a host can self-gate
-	// sensitive resources by inspecting the caller (documented affordance —
+	// sensitive resources by inspecting the caller (documented affordance:
 	// resources are not covered by the tool call gate).
 	s := NewServer()
 	type ctxKey string
@@ -459,7 +459,7 @@ func TestRegisterApp_ToolMetaPreservesUILinkage(t *testing.T) {
 }
 
 func TestRegisterApp_DoesNotMutateCallerMeta(t *testing.T) {
-	// The caller's nested ui map must not be mutated — reusing one shared map
+	// The caller's nested ui map must not be mutated. Reusing one shared map
 	// across RegisterApp calls must not bleed resourceUri between tools.
 	s := NewServer()
 	sharedUI := map[string]any{"preferredSize": "large"}

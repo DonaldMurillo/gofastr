@@ -90,7 +90,7 @@ func TestRoutinesFS_SqliteSuffixSetsDialect(t *testing.T) {
 }
 
 // TestRoutinesFS_RejectsPlainAndDialectCollision: a name with BOTH `foo.sql`
-// and `foo.pg.sql` is an authoring error — pick one.
+// and `foo.pg.sql` is an authoring error, pick one.
 func TestRoutinesFS_RejectsPlainAndDialectCollision(t *testing.T) {
 	fsys := fstest.MapFS{
 		"r/foo.sql":    &fstest.MapFile{Data: []byte("CREATE VIEW foo AS SELECT 1")},
@@ -118,7 +118,7 @@ func TestRoutinesFS_RejectsTwoDialectsForSameName(t *testing.T) {
 	}
 }
 
-// TestRoutinesFS_RejectsEmptyFile: an empty Up file is a scream — silent
+// TestRoutinesFS_RejectsEmptyFile: an empty Up file is a scream: silent
 // no-ops hide misconfiguration.
 func TestRoutinesFS_RejectsEmptyFile(t *testing.T) {
 	fsys := fstest.MapFS{
@@ -177,7 +177,7 @@ func TestRoutinesFS_DeterministicSortedOrder(t *testing.T) {
 }
 
 // TestRoutinesFS_TrimsSurroundingWhitespace: the loader leaves the Up body
-// alone except for trimming — what you wrote is what runs. A trailing
+// alone except for trimming, what you wrote is what runs. A trailing
 // semicolon is preserved (it's part of the SQL).
 func TestRoutinesFS_TrimsSurroundingWhitespace(t *testing.T) {
 	fsys := fstest.MapFS{
@@ -300,7 +300,7 @@ func TestLedger_TableCreatedOnSQLite(t *testing.T) {
 func TestLedger_UpsertsRowAndReportsMatching(t *testing.T) {
 	db := openSQLiteForMigrateTest(t)
 	ctx := context.Background()
-	// SQLite views can't be CREATE OR REPLACE — the SQLite idiom (documented
+	// SQLite views can't be CREATE OR REPLACE: the SQLite idiom (documented
 	// in migrations.md) is DROP IF EXISTS + CREATE so every boot re-runs
 	// idempotently. That's the body shape we exercise here.
 	idempotent := "DROP VIEW IF EXISTS f;\nCREATE VIEW f AS SELECT 1"
@@ -371,7 +371,7 @@ func TestLedger_WritesNewChecksumOnUpChange(t *testing.T) {
 	db := openSQLiteForMigrateTest(t)
 	ctx := context.Background()
 	// SQLite can't CREATE OR REPLACE a function, but it CAN replace a trigger
-	// (DROP IF EXISTS + CREATE) — and a routine body's checksum is independent
+	// (DROP IF EXISTS + CREATE), and a routine body's checksum is independent
 	// of whether the Up actually succeeded in changing the DB object.
 	planA := Plan{Routines: []Routine{{Name: "f", Up: "CREATE VIEW f AS SELECT 1"}}}
 	if err := AutoMigratePlanContext(ctx, db, planA); err != nil {

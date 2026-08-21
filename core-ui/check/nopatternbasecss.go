@@ -14,14 +14,14 @@ import (
 //
 // Pattern packages under core-ui/patterns/* must wire their stylesheet
 // through registry.RegisterStyle so the runtime's data-fui-comp scanner
-// auto-loads it. The legacy contract — exporting a BaseCSS() func that
-// the host app concatenates by hand — leaks the wiring requirement onto
+// auto-loads it. The legacy contract, exporting a BaseCSS() func that
+// the host app concatenates by hand, leaks the wiring requirement onto
 // every consumer and shipped components without their stylesheet (see
 // the 2026-05-19 nestedlist incident).
 //
 // This linter flags any pattern package that still exports a top-level
 // `func BaseCSS() string`. The rule applies only to core-ui/patterns/*
-// packages — elsewhere a BaseCSS export is not a contract violation.
+// packages, elsewhere a BaseCSS export is not a contract violation.
 
 // LintNoPatternBaseCSS walks core-ui/patterns/* (or any subdir of the
 // given root that lives under "patterns") and reports any package that
@@ -55,7 +55,7 @@ func LintNoPatternBaseCSS(root string) (*Result, error) {
 }
 
 // isPatternPackage reports whether the directory is a leaf
-// core-ui/patterns/<name>/ package — i.e. one level under
+// core-ui/patterns/<name>/ package, i.e. one level under
 // .../core-ui/patterns/.
 func isPatternPackage(dir string) bool {
 	parent := filepath.Base(filepath.Dir(dir))

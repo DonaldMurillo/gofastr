@@ -8,7 +8,7 @@ import (
 
 func TestBarChartEmptyRendersEmptyState(t *testing.T) {
 	// No bars is a normal data-bound state (a brand-new user has no rows),
-	// not misuse — it must render a calm empty state, never panic.
+	// not misuse. It must render a calm empty state, never panic.
 	h := string(BarChart(BarChartConfig{}))
 	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
 		t.Errorf("empty BarChart should render the chart empty state:\n%s", h)
@@ -82,7 +82,7 @@ func TestBarChartColorOverridesViaPalette(t *testing.T) {
 }
 
 // Value labels ride above every bar by default so magnitudes are legible
-// without hovering — the primary dashboard-readability fix.
+// without hovering: the primary dashboard-readability fix.
 func TestBarChartValueLabelsOnByDefault(t *testing.T) {
 	h := string(BarChart(BarChartConfig{
 		Bars: []BarChartBar{{Label: "A", Value: 8}, {Label: "B", Value: 12}},
@@ -169,7 +169,7 @@ func TestBarChartLongLabelsWrap(t *testing.T) {
 }
 
 // An unrecognized Color (a bare word like "draft") is not a valid CSS
-// color — an SVG fill="draft" renders black. It must fall back to the
+// color. An SVG fill="draft" renders black. It must fall back to the
 // theme primary class instead of emitting the bad value verbatim.
 func TestBarChartInvalidColorFallsBack(t *testing.T) {
 	h := string(BarChart(BarChartConfig{

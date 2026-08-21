@@ -16,7 +16,7 @@ import (
 // migrate_test.go) only exercised the legacy (default-group, ga==false) path;
 // the group happy paths run against real SQLite in groups_test.go, but the
 // Postgres-dialect branches (upgradePKPostgres, the pg_index/pg_attribute
-// queries) and every error branch are unreachable without a live Postgres —
+// queries) and every error branch are unreachable without a live Postgres,
 // which CI does not have. These tests drive them via sqlmock so CI's
 // (Postgres-free) own-package coverage holds at the floor.
 

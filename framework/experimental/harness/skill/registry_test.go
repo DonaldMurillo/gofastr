@@ -82,7 +82,7 @@ func TestRegistrySupportingFileEscape(t *testing.T) {
 	got, err := r.SupportingFile("x", "scripts/ok.sh")
 	_ = got
 	if err == nil {
-		// file exists — but we wrote it after Load; need to write before for read to succeed.
+		// file exists, but we wrote it after Load; need to write before for read to succeed.
 	}
 
 	// Path escape rejected.

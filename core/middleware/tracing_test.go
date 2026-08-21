@@ -122,7 +122,7 @@ func TestTracing_PropagatesIncomingTrace(t *testing.T) {
 }
 
 // ============================================================================
-// Without a TracerProvider configured we don't blow up — spans go to noop
+// Without a TracerProvider configured we don't blow up; spans go to noop
 // ============================================================================
 
 func TestTracing_NoProviderIsSafe(t *testing.T) {

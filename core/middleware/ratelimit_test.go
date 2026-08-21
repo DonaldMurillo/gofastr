@@ -141,7 +141,7 @@ func TestRateLimit_BudgetHeadersAllowed(t *testing.T) {
 		t.Errorf("RateLimit-Remaining = %q, want 4", got)
 	}
 	// A fresh bucket is missing exactly one token, so reset is a positive
-	// integer (never 0) — assert the invariant, not a timing-sensitive value.
+	// integer (never 0); assert the invariant, not a timing-sensitive value.
 	reset := w.Header().Get("RateLimit-Reset")
 	n, err := strconv.Atoi(reset)
 	if err != nil {
@@ -189,7 +189,7 @@ func TestRateLimit_ResetFullIsZero(t *testing.T) {
 	s := newBucketStore(10, time.Second, 2)
 	now := time.Now()
 
-	// A full (or over-full) bucket reports 0 — the invariant the spec calls out.
+	// A full (or over-full) bucket reports 0, the invariant the spec calls out.
 	if d := s.timeToFull(10, now, now); d != 0 {
 		t.Errorf("full bucket reset = %v, want 0", d)
 	}

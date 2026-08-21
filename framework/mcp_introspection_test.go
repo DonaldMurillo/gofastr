@@ -234,7 +234,7 @@ func TestMCPAppReadinessAllOKReportsReady(t *testing.T) {
 }
 
 // TestMCPAppReadinessNoChecksNotReady pins that an app with no
-// readiness checks registered reports ready=false + a reason — rather
+// readiness checks registered reports ready=false + a reason, rather
 // than silently reporting ready=true, which would hide a wiring miss.
 func TestMCPAppReadinessNoChecksNotReady(t *testing.T) {
 	app := NewApp(WithMCPIntrospection())
@@ -255,7 +255,7 @@ func TestMCPAppReadinessNoChecksNotReady(t *testing.T) {
 }
 
 // TestMCPAppReadinessRedactsEvenWhenVerbose pins that app_readiness
-// does NOT honour the App's verbose-readiness flag — /mcp may have a
+// does NOT honour the App's verbose-readiness flag, /mcp may have a
 // different trust boundary than /readyz, so raw error text must never
 // leak through introspection.
 func TestMCPAppReadinessRedactsEvenWhenVerbose(t *testing.T) {

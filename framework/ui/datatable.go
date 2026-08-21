@@ -14,7 +14,7 @@ import (
 
 // DataTable is a server-rendered list view that composes core-ui's
 // Table + Pagination with framework/ui's EmptyState. It is fully
-// server-driven — sort and pagination are link-based, no JS — and is
+// server-driven. Sort and pagination are link-based, no JS. It is
 // designed for entity-CRUD admin lists where rows are paginated server
 // data.
 //
@@ -59,8 +59,8 @@ const (
 
 // ResponsiveMode selects how a DataTable behaves when its container
 // shrinks below the configured breakpoint. Detection is **container
-// query** based — the table responds to its own container's inline
-// size, not the viewport — so a wide table in a narrow sidebar gets
+// query** based: the table responds to its own container's inline
+// size, not the viewport, so a wide table in a narrow sidebar gets
 // the responsive treatment even when the page itself is wide.
 type ResponsiveMode string
 
@@ -81,7 +81,7 @@ const (
 // one of them: the Pagination field takes a
 // core-ui/patterns/pagination.Config, which renders the page-link nav
 // below the table. The other package, framework/pagination, is the
-// server side of the story — it parses ?limit/?offset/?cursor query
+// server side of the story. It parses ?limit/?offset/?cursor query
 // params and builds cursor tokens for the auto-generated CRUD list
 // endpoints, and never renders HTML. A typical handler uses
 // framework/pagination to slice the data, then feeds the resulting
@@ -121,7 +121,7 @@ type DataTableConfig struct {
 	// config inherits the same island settings automatically (so a single
 	// IslandSignal+IslandEndpoint pair drives both sort and page).
 	//
-	// The signal-bound wrapper is the caller's responsibility — wrap
+	// The signal-bound wrapper is the caller's responsibility: wrap
 	// the DataTable's rendered HTML in:
 	//   <div data-fui-signal="<IslandSignal>" data-fui-signal-mode="html">
 	//     {DataTable(...)}
@@ -141,7 +141,7 @@ type DataTableConfig struct {
 
 	// Ctx carries the per-request context used to resolve i18n strings
 	// (empty-state labels, sort aria-labels, pagination labels). When
-	// nil, English fallbacks are returned — preserving today's behaviour.
+	// nil, English fallbacks are returned, preserving today's behaviour.
 	Ctx context.Context
 
 	ID    string
@@ -161,17 +161,17 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		if c.Key == "" {
 			panic("ui: DataTable Column requires Key")
 		}
-		// Header MAY be empty — common for actions / icon columns
+		// Header MAY be empty, common for actions / icon columns
 		// where the cells are self-evidently labeled. A Sortable
 		// column with an empty Header gets an aria-label derived from
 		// its Key in renderHeader (so the sort control is still
-		// announced) — no panic, graceful a11y degradation.
+		// announced): no panic, graceful a11y degradation.
 		if c.Sortable && cfg.SortHrefPattern == "" {
 			panic("ui: DataTable Column.Sortable requires Config.SortHrefPattern")
 		}
 	}
 
-	// Empty state — composed via the EmptyState semantic component.
+	// Empty state: composed via the EmptyState semantic component.
 	if len(cfg.Rows) == 0 {
 		empty := cfg.Empty
 		if empty.Title == "" {
@@ -186,7 +186,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		}, EmptyState(empty)))
 	}
 
-	// Header — composed via html.TR + html.TH so ARIA scope
+	// Header: composed via html.TR + html.TH so ARIA scope
 	// and column-header semantics come from core-ui.
 	thCells := make([]render.HTML, len(cfg.Columns))
 	for i, col := range cfg.Columns {
@@ -290,7 +290,7 @@ func renderHeader(ctx context.Context, col Column, activeKey string, activeDir S
 	}
 	thAttrs := html.Attrs{}
 	if !col.Sortable {
-		// Empty-header columns (actions / icons) carry no visible label —
+		// Empty-header columns (actions / icons) carry no visible label:
 		// their cells are self-evidently labeled (View/Edit/Delete links).
 		// Hide the empty <th> from the a11y tree so axe's empty-table-header
 		// rule doesn't fire on a header that intentionally has no text, and
@@ -328,7 +328,7 @@ func renderHeader(ctx context.Context, col Column, activeKey string, activeDir S
 
 	// A sortable column with an empty Header (icon/key-only columns)
 	// has no visible text for the sort control, so expose an accessible
-	// label derived from the column Key — otherwise the button/link is
+	// label derived from the column Key. Otherwise the button/link is
 	// announced nameless by screen readers.
 	var sortAriaLabel string
 	if col.Header == "" {

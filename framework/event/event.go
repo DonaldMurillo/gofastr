@@ -78,7 +78,7 @@ type tapHandle struct {
 }
 
 // remoteCtxKey marks a context as carrying a remote-reemit so the fanout
-// tap skips republishing it — the loop guard for AttachFanout.
+// tap skips republishing it, the loop guard for AttachFanout.
 type remoteCtxKey struct{}
 
 // withRemoteReemit returns a context whose tap signal is suppressed: an
@@ -91,8 +91,8 @@ func withRemoteReemit(ctx context.Context) context.Context {
 
 // IsRemote reports whether the event being handled arrived from another
 // replica via an attached fanout. Handlers that DERIVE new events from the
-// events they receive must gate on it — `if event.IsRemote(ctx) { return nil }`
-// — so the derivation runs only on the origin replica; otherwise every replica
+// events they receive must gate on it, `if event.IsRemote(ctx) { return nil }`,
+// so the derivation runs only on the origin replica; otherwise every replica
 // derives its own copy and remote replicas observe duplicates.
 //
 // Locally-emitted events (Emit/EmitAsync/EmitStrict on a normal context) report
@@ -143,7 +143,7 @@ func (eb *EventBus) On(eventType string, handler EventHandler) {
 // Subscribe registers a handler and returns a cancel function. Calling cancel
 // removes the handler. Cancel is safe to call multiple times.
 //
-// A nil handler is refused — the bus never retains a nil subscription, so a
+// A nil handler is refused, the bus never retains a nil subscription, so a
 // later Emit can't crash by invoking nothing. The returned cancel is a no-op
 // in that case.
 func (eb *EventBus) Subscribe(eventType string, handler EventHandler) (cancel func()) {
@@ -187,8 +187,8 @@ func (eb *EventBus) Snapshot(eventType string) []EventHandler {
 // the request that triggered the event. The panic is swallowed (the event bus
 // is fire-and-iterate, not a critical-path return channel); callers that need
 // hard failures should propagate them through the returned error instead. A
-// nil entry — which shouldn't happen given Subscribe's guard, but kept for
-// defense-in-depth against direct map manipulation — is skipped.
+// nil entry, which shouldn't happen given Subscribe's guard, but kept for
+// defense-in-depth against direct map manipulation, is skipped.
 func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
@@ -211,8 +211,8 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 // subscriber as a delivery ERROR (returned to the caller) rather than
 // swallowing it. Emit's swallow protects user transactions when the bus is
 // wired into AfterCreate/AfterUpdate hooks; the transactional outbox relay
-// has the opposite need — a consumer that panics must be retried and
-// eventually dead-lettered, never silently marked dispatched — so it calls
+// has the opposite need, a consumer that panics must be retried and
+// eventually dead-lettered, never silently marked dispatched, so it calls
 func (eb *EventBus) EmitStrict(ctx context.Context, event Event) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
@@ -279,7 +279,7 @@ func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 func emitSafe(ctx context.Context, h EventHandler, event Event) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Swallow the ERROR — see method docs. We deliberately don't
+			// Swallow the ERROR. See method docs. We deliberately don't
 			// surface the panic as an error because callers wire Emit into
 			// AfterCreate / AfterUpdate hooks where any non-nil return
 			// rolls back the user's transaction; a flaky subscriber

@@ -13,8 +13,8 @@ import (
 
 // TestTimeoutStreamingOutlivesDeadline pins the contract documented in
 // framework/docs/content/reactivity.md ("streams outlive the request
-// timeout", issue #159): once a handler flushes — flipping the timeout
-// writer into streaming mode — the deadline must no longer terminate the
+// timeout", issue #159): once a handler flushes, flipping the timeout
+// writer into streaming mode, the deadline must no longer terminate the
 // response. Before the fix, the middleware's parent goroutine returned to
 // net/http at the deadline, which finalized the response underneath the
 // still-streaming handler; the handler's next write (the SSE heartbeat)
@@ -76,7 +76,7 @@ func TestTimeoutStreamingOutlivesDeadline(t *testing.T) {
 // streaming contract: a client disconnect must promptly unwind a streaming
 // handler even when it happens AFTER the request deadline has passed. The
 // handler mimics the SSE stream loop (core-ui/island/stream.go): a one-shot
-// watcher on r.Context() that ignores DeadlineExceeded (issue #159 — the
+// watcher on r.Context() that ignores DeadlineExceeded (issue #159, the
 // timeout firing on a live client) and unwinds only on context.Canceled (a
 // real disconnect). With context.WithTimeout, the deadline permanently
 // freezes ctx.Err() at DeadlineExceeded, so a later disconnect is invisible
@@ -153,8 +153,8 @@ func TestTimeoutStreamDisconnectAfterDeadline(t *testing.T) {
 
 // TestTimeoutHungHandlerStill504s is the control for the streaming
 // exemption: a handler that never flushes and simply hangs must still get
-// its 504 at the deadline — the middleware's slowloris/hung-handler
-// protection — and the client must receive it promptly, not after the
+// its 504 at the deadline, the middleware's slowloris/hung-handler
+// protection, and the client must receive it promptly, not after the
 // handler finally returns.
 func TestTimeoutHungHandlerStill504s(t *testing.T) {
 	release := make(chan struct{})

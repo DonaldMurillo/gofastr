@@ -67,7 +67,7 @@ func TestMetricsBoundsMethodCardinality(t *testing.T) {
 	}
 	m.mu.Unlock()
 
-	// Should be GET + "other" only — two distinct method labels.
+	// Should be GET + "other" only, two distinct method labels.
 	if _, ok := methods["other"]; !ok {
 		t.Fatalf("expected unknown methods collapsed to \"other\"; got methods %v", methods)
 	}
@@ -81,7 +81,7 @@ func TestMetricsBoundsMethodCardinality(t *testing.T) {
 
 // TestMetricsCollectorPanicIsolated pins panic isolation at the collector
 // extension point. A third-party CollectorFunc runs with no recover, and the
-// buffer is flushed only AFTER the loop — so one panicking collector dropped
+// buffer is flushed only AFTER the loop, so one panicking collector dropped
 // the whole /metrics scrape. The property (mirroring hook.runHookSafely):
 // a bad collector is isolated, logged once, and the remaining families still
 // land on the scrape.
@@ -117,7 +117,7 @@ func TestMetricsCollectorPanicIsolated(t *testing.T) {
 // line into the shared exposition buffer before it panics must contribute
 // NOTHING to the scrape. Without a per-collector buffer, the half-written
 // line ("partial_metric{...} " with no value or newline) survived the
-// recover and corrupted the output — a truncated line a Prometheus parser
+// recover and corrupted the output, a truncated line a Prometheus parser
 // rejects, dropping families after it too. The good families still appear.
 //
 // Collectors run in SORTED name order, so the names are chosen to put

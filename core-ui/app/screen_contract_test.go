@@ -11,17 +11,17 @@ import (
 // ---------------------------------------------------------------------------
 // Tests for issue #6: Screen contract cleanup
 //
-// A. Default ScreenType — screens implementing ScreenTitler (ScreenTitle())
+// A. Default ScreenType, screens implementing ScreenTitler (ScreenTitle())
 //    but NOT ScreenTyper (ScreenType()) should default to ScreenPage.
 //
-// B. Nested <main> detection — ValidateScreenOutput flags screens whose
+// B. Nested <main> detection, ValidateScreenOutput flags screens whose
 //    component output contains <main> (since the framework already wraps
 //    ScreenPage in <main>).
 // ---------------------------------------------------------------------------
 
 // --- A. Default ScreenType ---
 
-// minimalScreenSpec implements ONLY ScreenTitle — no ScreenType(), no
+// minimalScreenSpec implements ONLY ScreenTitle, no ScreenType(), no
 // ScreenDescription(). After the fix, Register() should still detect
 // ScreenTitle via the ScreenTitler interface and default to ScreenPage.
 type minimalScreenSpec struct {
@@ -76,7 +76,7 @@ func TestDefaultScreenTypeRenderPage(t *testing.T) {
 }
 
 // TestBareComponentDefaults verifies that a component implementing none
-// of the screen metadata interfaces still works — defaults to ScreenPage
+// of the screen metadata interfaces still works, defaults to ScreenPage
 // with empty title and description.
 func TestBareComponentDefaults(t *testing.T) {
 	// stubComponent has no ScreenTitler, ScreenDescriber, or ScreenTyper
@@ -95,7 +95,7 @@ func TestBareComponentDefaults(t *testing.T) {
 
 // --- B. Nested <main> detection ---
 
-// nestedMainScreen returns HTML containing a <main> element — a common
+// nestedMainScreen returns HTML containing a <main> element, a common
 // mistake since the framework already wraps ScreenPage output in <main>.
 type nestedMainScreen struct{}
 
@@ -144,7 +144,7 @@ func TestNoNestedMainWarningForValidScreen(t *testing.T) {
 }
 
 // TestNestedMainNotFlaggedForDrawer verifies that <main> in a drawer
-// screen's output is NOT flagged — drawers don't get the <main> wrapper.
+// screen's output is NOT flagged, drawers don't get the <main> wrapper.
 func TestNestedMainNotFlaggedForDrawer(t *testing.T) {
 	drawer := NewDrawer("/drawer", &nestedMainScreen{})
 	output := string(drawer.Component.Render())

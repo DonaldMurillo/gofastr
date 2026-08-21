@@ -16,10 +16,10 @@ const htmlImportPath = "github.com/DonaldMurillo/gofastr/core-ui/html"
 // LintA11yFile runs ONLY the accessibility element rules over one Go
 // file: every call to a core-ui/html constructor with a config literal
 // (html.Image(html.ImageConfig{…}), any import alias) is checked for
-// its required a11y fields — Alt on images, Label on buttons and
+// its required a11y fields, Alt on images, Label on buttons and
 // landmarks, For on labels, Legend on fieldsets, ….
 //
-// Unlike [LintFile] it applies to ANY .go file, not just .ui.go — so it
+// Unlike [LintFile] it applies to ANY .go file, not just .ui.go, so it
 // skips the .ui.go sandbox rules (imports, goroutines, channels) and,
 // to avoid false positives on app code, only checks calls it can
 // attribute to the core-ui/html import (same-name local functions and
@@ -59,7 +59,7 @@ func lintA11yFile(fset *token.FileSet, file *ast.File, filename string) *Result 
 		// Shadow-proofing: a local variable named like the alias can make
 		// `html.Button(opts{})` match by identifier alone. Require the
 		// first argument to be a composite literal whose TYPE is
-		// `<alias>.<Elem>Config` — a shadowing variable can never qualify
+		// `<alias>.<Elem>Config`, a shadowing variable can never qualify
 		// a type, so only real core-ui/html calls survive this gate.
 		if !isQualifiedConfigLiteral(call, alias, sel.Sel.Name) {
 			return true
@@ -90,7 +90,7 @@ func isQualifiedConfigLiteral(call *ast.CallExpr, alias, funcName string) bool {
 
 // htmlImportAlias returns the local alias under which file imports
 // core-ui/html, or "" when the file doesn't import it (or dot-imports
-// it — dot imports can't be attributed reliably, so they're skipped).
+// it, dot imports can't be attributed reliably, so they're skipped).
 func htmlImportAlias(file *ast.File) string {
 	for _, imp := range file.Imports {
 		if imp.Path == nil {

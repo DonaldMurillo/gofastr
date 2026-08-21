@@ -16,7 +16,7 @@ import (
 //
 // Bug: parseScopedFilters emitted one ParsedFilter{OpIn} per piped value and
 // filterClause rendered them as ANDed equality (status = $1 AND status = $2),
-// which no single row can satisfy — the include came back empty.
+// which no single row can satisfy, the include came back empty.
 func TestInclude_MultiValueINReturnsAllMatches(t *testing.T) {
 	ddl := `
 CREATE TABLE posts (

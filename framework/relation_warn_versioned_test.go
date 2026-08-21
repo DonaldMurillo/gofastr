@@ -18,8 +18,8 @@ import (
 // Registry.Get(rel.Entity). Registry.Get was changed in this release range to
 // return an AMBIGUITY ERROR when a name has several versions and none is
 // unversioned. The warn path reads any error as "not registered", so an app
-// that mounts its target entity under /api/v1 and /api/v2 — a fully healthy
-// graph — logs "relation target is not a registered entity; ?include= on it
+// that mounts its target entity under /api/v1 and /api/v2, a fully healthy
+// graph, logs "relation target is not a registered entity; ?include= on it
 // will be refused" for every relation pointing at it, on every boot.
 //
 // Same defect class as the eager-load fail-open that the review already fixed

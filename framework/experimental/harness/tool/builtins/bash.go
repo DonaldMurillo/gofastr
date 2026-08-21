@@ -19,7 +19,7 @@ import (
 //   - 2-minute timeout (configurable per-call up to 10 minutes)
 //   - 1 MiB combined stdout+stderr cap
 //   - Default-blocked credential-exfil commands (security, secret-tool,
-//     keyctl, kwalletcli) — defense in depth alongside the permission
+//     keyctl, kwalletcli), defense in depth alongside the permission
 //     middleware. The blocklist runs before any sandbox.
 //
 // Sandbox integration: pluggable via SandboxFn. When non-nil, it
@@ -176,8 +176,8 @@ func leadingCommand(cmd string) string {
 // prefixes (`command`, `env`, `VAR=val`), strips surrounding quotes
 // and leading backslashes, and collapses intra-token quote-splitting
 // (`sec”urity`) so a banned tool hidden behind quoting or substitution
-// is still detected. This is a blocklist heuristic, not a shell parser
-// — the permission middleware remains the authoritative gate.
+// is still detected. This is a blocklist heuristic, not a shell parser,
+// the permission middleware remains the authoritative gate.
 func segmentCommands(cmd string) []string {
 	// Treat command-substitution markers as plain separators: replace
 	// backticks with a separator and the `$(` opener with `(` so the

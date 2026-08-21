@@ -9,7 +9,7 @@ import (
 )
 
 // A transiently failing dialect probe must abort the WithSeed hook path, not
-// silently take the unlocked non-Postgres branch — the same fail-closed
+// silently take the unlocked non-Postgres branch, the same fail-closed
 // invariant AutoMigrate and RunSeeds hold. Two Postgres replicas whose probe
 // hiccuped would otherwise run non-serialized seed hooks.
 func TestSeedHooksAbortWhenDialectUnknown(t *testing.T) {

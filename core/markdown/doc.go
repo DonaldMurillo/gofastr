@@ -1,7 +1,7 @@
 // Package markdown is a small, dependency-free Markdown renderer.
 //
-// It parses a constrained subset of Markdown — enough for project docs and
-// website content — and emits HTML directly. It is not CommonMark-strict;
+// It parses a constrained subset of Markdown, enough for project docs and
+// website content, and emits HTML directly. It is not CommonMark-strict;
 // the goal is predictable output for the inputs we actually write, not
 // edge-case fidelity.
 //

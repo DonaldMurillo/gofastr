@@ -13,7 +13,7 @@ import (
 )
 
 // serverActionScreenComp is a screen component that registers an action whose
-// client handler calls G.serverAction — the one thing that does not work inside
+// client handler calls G.serverAction, the one thing that does not work inside
 // a frame, because the action registry is app-global with no surface
 // relationship. Actions() with component.On makes it InteractiveComponent, so
 // the host compiles (and the boot walk extracts) its actions.
@@ -22,7 +22,7 @@ type serverActionScreenComp struct{}
 func (serverActionScreenComp) Render() render.HTML { return render.HTML("<p>save</p>") }
 
 func (c *serverActionScreenComp) Actions() {
-	// The ClientJS carries G.serverAction( — exactly the call the action
+	// The ClientJS carries G.serverAction(, exactly the call the action
 	// compiler recognises (it rewrites it to G._serverActionFor) and the one
 	// the runtime ships to POST /__gofastr/action, which a frame cannot reach.
 	component.On("save", func(_ *component.ComponentContext) {},
@@ -30,7 +30,7 @@ func (c *serverActionScreenComp) Actions() {
 }
 
 // plainActionScreenComp registers an ordinary client-only action (no
-// G.serverAction). A surface rendering it must boot cleanly — the walk targets
+// G.serverAction). A surface rendering it must boot cleanly: the walk targets
 // the server-action property, not action registration in general.
 type plainActionScreenComp struct{}
 
@@ -173,7 +173,7 @@ func TestEmbedGateRejectsWhitespaceServerActionCall(t *testing.T) {
 
 // childActionComp is registered as a screen of its own AND rendered inside an
 // embeddable root. AutoCompileActions compiles it under its own id, and
-// handleEmbedRuntimeJS ships every compiled registry into the frame — so its
+// handleEmbedRuntimeJS ships every compiled registry into the frame, so its
 // server action reaches the customer's page even though the embeddable root
 // declares none.
 type childActionComp struct{}
@@ -222,7 +222,7 @@ func TestEmbedGateFlagsRenderedChildAction(t *testing.T) {
 		}
 		t.Fatal("Mount accepted an embeddable screen whose rendered child has a registered server action")
 	}
-	// The panic has to name the CHILD, not just the surface — "somewhere in
+	// The panic has to name the CHILD, not only the surface. "Somewhere in
 	// this tree" is not a message anyone can act on.
 	for _, want := range []string{"reports", "/reports", "child-action", "save", "island"} {
 		if !strings.Contains(got, want) {

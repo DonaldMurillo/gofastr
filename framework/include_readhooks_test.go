@@ -17,7 +17,7 @@ import (
 )
 
 // This file drives the REAL router. The first attempt at child read hooks was
-// wired only on App.CrudHandler — the in-process helper — while every mounted
+// wired only on App.CrudHandler, the in-process helper, while every mounted
 // handler is built elsewhere, so the mechanism was inert on every HTTP route.
 // A unit test that set the field by hand passed anyway. Going through
 // App.Entity + the router is what makes that failure impossible to miss.
@@ -162,7 +162,7 @@ func TestIncludeHookSeesRealRequest(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	// Branches on a header — the shape a synthetic request breaks.
+	// Branches on a header, the shape a synthetic request breaks.
 	app.HookRegistry("rr_authors").RegisterHook(hook.AfterList, func(ctx context.Context, data any) error {
 		p, ok := data.(*hook.ListPayload)
 		if !ok || p.Request == nil {
@@ -198,7 +198,7 @@ func TestIncludeHookSeesRealRequest(t *testing.T) {
 }
 
 // newProjectionHookApp registers a child hook that redacts by REPLACING the
-// row with a projection rather than mutating it — the shape the typed API
+// row with a projection rather than mutating it, the shape the typed API
 // documents alongside in-place mutation.
 func newProjectionHookApp(t *testing.T, replace bool, drop bool) *App {
 	t.Helper()
@@ -242,7 +242,7 @@ func newProjectionHookApp(t *testing.T, replace bool, drop bool) *App {
 
 // TestIncludeHonoursProjectionRedaction pins the replacement shape. The
 // loader has already keyed each row to its parent, so simply taking
-// payload.Results would leave the parent pointing at the pre-hook map — the
+// payload.Results would leave the parent pointing at the pre-hook map, the
 // hook would appear to run and change nothing.
 func TestIncludeHonoursProjectionRedaction(t *testing.T) {
 	app := newProjectionHookApp(t, true, false)

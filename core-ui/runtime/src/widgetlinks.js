@@ -30,7 +30,7 @@
     G._pushURL(url.pathname + (query ? '?' + query : '') + url.hash);
   };
 
-  // Pure function exports on the namespace — no DOM to rescan; just
+  // Pure function exports on the namespace, no DOM to rescan; just
   // the loader's loaded flag.
   (G.loadedModules ||= {}).widgetlinks = true;
 })();

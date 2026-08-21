@@ -60,7 +60,7 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 	switch req.Method {
 	case "tools/list", "tools/call", "resources/list", "resources/read":
 		// Server-wide gate over the DATA surface. initialize and ping fall
-		// through uncovered on purpose — see Server.serverGate.
+		// through uncovered on purpose. See Server.serverGate.
 		if err := s.checkServerGate(ctx); err != nil {
 			return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 		}
@@ -82,7 +82,7 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 		// advertise tools always, and resources when any is registered.
 		return s.handleInitialize(req)
 	case "ping":
-		// MCP liveness check — empty result object.
+		// MCP liveness check: empty result object.
 		return newSuccessResponse(req.ID, map[string]any{})
 	default:
 		return Response{

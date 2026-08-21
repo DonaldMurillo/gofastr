@@ -313,7 +313,7 @@ func TestBuildCreateTableSQL_InvalidColumn(t *testing.T) {
 
 // TestMigrateEntity_InvalidTableExisting covers migrateEntity's table-name
 // validation on the existing-table path (a non-empty live column set skips
-// the CREATE — which validates first — and converges additively instead).
+// the CREATE, which validates first, and converges additively instead).
 func TestMigrateEntity_InvalidTableExisting(t *testing.T) {
 	// A live set matching the declared fields yields no column adds, so the
 	// executor is never touched and a nil execQueryer is safe here.
@@ -338,7 +338,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 		t.Error("expected no-fields create error")
 	}
 
-	// A Required field with no default must NOT be added NOT NULL — that would
+	// A Required field with no default must NOT be added NOT NULL, that would
 	// fail on a populated table. The constraint is deferred.
 	reqEnt := rawEnt("e", "e", []schema.Field{
 		{Name: "x", Type: schema.String},
@@ -354,7 +354,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 		}
 	}
 
-	// A Required field WITH a default keeps NOT NULL — existing rows get the
+	// A Required field WITH a default keeps NOT NULL, existing rows get the
 	// default, so the constraint is safe.
 	reqDefEnt := rawEnt("e", "e", []schema.Field{
 		{Name: "x", Type: schema.String},

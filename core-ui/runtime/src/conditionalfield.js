@@ -1,4 +1,4 @@
-// ConditionalField runtime module — show/hide content based on another field's value.
+// ConditionalField runtime module, show/hide content based on another field's value.
 //
 // Loaded on-demand when any [data-fui-comp="ui-conditional-field"] marker
 // is on the page (or arrives via SPA-nav). Responsibilities:
@@ -10,7 +10,7 @@
 //      value matches the WhenValue. Toggle `hidden` attribute and
 //      `aria-hidden` accordingly.
 //
-// No server round-trip — visibility is client-only based on form state.
+// No server round-trip, visibility is client-only based on form state.
 
 (() => {
   'use strict';
@@ -87,7 +87,7 @@
 
   // Enable or disable all form controls inside an element.
   // K-2: Mark controls we disable with data-fui-cond-disabled so we
-  // only re-enable the ones we disabled — not ones the developer set.
+  // only re-enable the ones we disabled, not ones the developer set.
   const toggleDisabled = (container, disabled) => {
     const controls = container.querySelectorAll('input,select,textarea,button');
     for (const c of controls) {

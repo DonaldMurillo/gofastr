@@ -86,7 +86,7 @@ func sanitizeFragment(s string) string {
 		b.WriteByte(c)
 	}
 	out := b.String()
-	// Strip parens — legitimate uses never put them in identifier slots.
+	// Strip parens: legitimate uses never put them in identifier slots.
 	out = strings.NewReplacer("(", " ", ")", " ").Replace(out)
 	// Strip the dangerous SQL meta-sequences.
 	for _, seq := range dangerousSeqs {
@@ -98,7 +98,7 @@ func sanitizeFragment(s string) string {
 // sanitizeColumn is the column-list variant of sanitizeFragment. In
 // addition to the meta-sequence scrub, it collapses every whitespace
 // run to nothing, which neutralises payloads like
-// `name, (SELECT secret FROM api_keys LIMIT 1) AS leaked` — after
+// `name, (SELECT secret FROM api_keys LIMIT 1) AS leaked`. After
 // sanitisation the keywords are mashed together into a single token
 // and cannot form a valid sub-query. Column slots in the builders
 // never carry meaningful whitespace (they're dotted identifiers or
@@ -119,8 +119,8 @@ func sanitizeColumn(s string) string {
 }
 
 // sanitizeDirection clamps an ORDER BY direction to the SQL standard
-// set. Anything outside ASC/DESC (case-insensitive) — including a
-// CRLF-smuggled payload — is dropped to the empty string so the
+// set. Anything outside ASC/DESC (case-insensitive), including a
+// CRLF-smuggled payload, is dropped to the empty string so the
 // builder emits no direction keyword rather than the attacker's text.
 func sanitizeDirection(s string) string {
 	switch strings.ToUpper(strings.TrimSpace(s)) {

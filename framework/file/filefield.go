@@ -26,14 +26,14 @@ var (
 	ErrFileFieldControlBytes  = errors.New("filefield: field contains control bytes")
 )
 
-// MaxFileFieldStringBytes caps the length of any FileField string field
-// — anything past this is rejected at validation time. A legitimate URL,
+// MaxFileFieldStringBytes caps the length of any FileField string field,
+// anything past this is rejected at validation time. A legitimate URL,
 // MIME, or storage ref does not need 8 KB.
 const MaxFileFieldStringBytes = 8 * 1024
 
 // MaxProcessFileSize caps the in-memory size of a single upload read by
 // [ProcessFileField]. The default protects callers that haven't wired a
-// stricter limit elsewhere from unbounded memory consumption — a hostile
+// stricter limit elsewhere from unbounded memory consumption, a hostile
 // client can otherwise stream gigabytes into RAM.
 const MaxProcessFileSize int64 = 32 << 20 // 32 MiB
 
@@ -62,24 +62,24 @@ type FileField struct {
 
 // Validate enforces invariants on a FileField that came from an untrusted
 // source (typically JSON unmarshal in a CRUD body). It is NOT called
-// automatically — callers that accept FileField as request input should
+// automatically, callers that accept FileField as request input should
 // call it before persisting or rendering. The constructors in this
 // package (ProcessFileField) already produce valid FileFields.
 //
 // Rejected inputs:
-//   - URL with javascript:, vbscript:, or data: scheme — would XSS when
+//   - URL with javascript:, vbscript:, or data: scheme, would XSS when
 //     rendered as href/src by a downstream consumer.
-//   - URL, StorageRef, or Filename containing `..` segments — would
+//   - URL, StorageRef, or Filename containing `..` segments, would
 //     escape the storage root on a vulnerable filesystem backend, and
 //     Filename reaches `Content-Disposition: attachment; filename=…`.
 //   - Any C0 control byte or DEL in URL, Filename, or StorageRef. These
 //     are persisted and later echoed into a response header, an HTML
 //     attribute, or a log line, each of which a CR/LF splits. MimeType
 //     is covered by its charset filter, which admits no control byte.
-//   - MimeType containing characters outside the MIME-safe set —
+//   - MimeType containing characters outside the MIME-safe set,
 //     normal MIME types are `type/subtype` with letters, digits,
 //     `+`, `-`, `.`; angle brackets / quotes indicate an XSS attempt.
-//   - Size < 0 — unsigned conventions require non-negative.
+//   - Size < 0, unsigned conventions require non-negative.
 //   - Any string field over MaxFileFieldStringBytes.
 func (f *FileField) Validate() error {
 	if f == nil {
@@ -111,7 +111,7 @@ func (f *FileField) Validate() error {
 		return fmt.Errorf("%w: filename %q", ErrFileFieldTraversal, f.Filename)
 	}
 	// Checked after the scheme guard so a control byte smuggled into a
-	// javascript: URL still reports as ErrFileFieldURLScheme — that is the
+	// javascript: URL still reports as ErrFileFieldURLScheme, that is the
 	// actionable diagnosis, and TestFileField_RejectsJavaScriptScheme pins it.
 	for name, v := range map[string]string{
 		"url":         f.URL,
@@ -193,7 +193,7 @@ func stripControlBytes(s string) string {
 }
 
 // hasTraversal reports whether s contains a `..` segment. We're
-// deliberately strict — any `..` substring counts, even one tucked
+// deliberately strict, any `..` substring counts, even one tucked
 // inside a filename, because a downstream join may interpret it as a
 // segment.
 func hasTraversal(s string) bool {
@@ -202,7 +202,7 @@ func hasTraversal(s string) bool {
 
 // isSafeMIMEString reports whether s is shaped like a real MIME type
 // (letters, digits, and the small punctuation set used by IANA names).
-// Empty is treated as safe — Validate handles required-field semantics
+// Empty is treated as safe. Validate handles required-field semantics
 // at a higher layer.
 func isSafeMIMEString(s string) bool {
 	if s == "" {
@@ -237,7 +237,7 @@ func isSafeMIMEString(s string) bool {
 //     <style, <link, javascript:) only in the leading 512 bytes. Executable
 //     magic bytes (MZ for PE, 0x7fELF for ELF, Mach-O headers) are also
 //     rejected. The filename extension and any client-supplied
-//     Content-Type are ignored — attackers can lie about both.
+//     Content-Type are ignored, attackers can lie about both.
 //
 // The ctx parameter should come from the HTTP request so cancellation and
 // deadlines are respected during slow uploads.
@@ -266,7 +266,7 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 
 	data := buf.Bytes()
 
-	// Sniff content from the bytes themselves — never trust the filename
+	// Sniff content from the bytes themselves, never trust the filename
 	// or any supplied Content-Type.
 	if err := rejectUnsafeContent(data); err != nil {
 		return nil, err
@@ -335,7 +335,7 @@ func (a readerAdapter) Read(p []byte) (int, error) { return a.r.Read(p) }
 // rejectUnsafeContent inspects an upload's bytes and returns
 // [ErrFileFieldUnsafeContent] when the content matches a known-dangerous
 // shape. We do this in addition to [http.DetectContentType] because the
-// stdlib sniffer is permissive — e.g. an SVG body with a leading `<svg`
+// stdlib sniffer is permissive, e.g. an SVG body with a leading `<svg`
 // tag is reported as text/plain, but rendered as active content by any
 // browser that resolves the extension or sniffs harder.
 //
@@ -343,9 +343,9 @@ func (a readerAdapter) Read(p []byte) (int, error) { return a.r.Read(p) }
 //
 //   - HARD tokens (hardActiveTokens) are matched across the WHOLE body
 //     case-insensitively, regardless of sniffed type. They never
-//     legitimately appear in raster/PDF/font bytes, so a match anywhere —
+//     legitimately appear in raster/PDF/font bytes, so a match anywhere,
 //     including past the 512-byte sniff window or behind valid raster
-//     magic (the GIFAR polyglot class) — is markup and is rejected.
+//     magic (the GIFAR polyglot class), is markup and is rejected.
 //   - SOFT tokens (softActiveTokens) are matched only in the 512-byte sniff
 //     window and only when the content does not sniff as a confirmed-inert
 //     binary. They genuinely appear in EXIF/XMP/comment metadata of real
@@ -357,7 +357,7 @@ func rejectUnsafeContent(data []byte) error {
 		head = head[:512]
 	}
 
-	// Executable magic bytes — PE/COFF (MZ), ELF, Mach-O (both 32- and
+	// Executable magic bytes. PE/COFF (MZ), ELF, Mach-O (both 32- and
 	// 64-bit, both endians). None of these have a legitimate reason to
 	// be uploaded into a content field by default.
 	if len(head) >= 2 && head[0] == 'M' && head[1] == 'Z' {
@@ -374,7 +374,7 @@ func rejectUnsafeContent(data []byte) error {
 		}
 	}
 
-	// HARD active-content tokens — scan the WHOLE body. These (<script,
+	// HARD active-content tokens, scan the WHOLE body. These (<script,
 	// <svg, <iframe, <html, <!doctype, <object, <embed, <base) never
 	// legitimately appear in raster/PDF/font bytes, so a match anywhere is
 	// markup: a polyglot that leads with valid raster magic and stashes its
@@ -388,7 +388,7 @@ func rejectUnsafeContent(data []byte) error {
 		}
 	}
 
-	// SOFT active-content tokens — keep the windowed, binary-skipped scan.
+	// SOFT active-content tokens, keep the windowed, binary-skipped scan.
 	// These (<img, <?xml, <style, <link, javascript:) genuinely turn up in
 	// EXIF/XMP/comment metadata of real raster images and in PDF/font
 	// streams, so scanning the whole body for them would false-positive. We
@@ -419,11 +419,11 @@ func rejectUnsafeContent(data []byte) error {
 
 // isConfirmedInertBinary reports whether http.DetectContentType
 // classifies head as a binary type that can never be rendered as active
-// HTML/SVG markup — raster images, PDF, fonts, archives, and audio/video.
+// HTML/SVG markup, raster images, PDF, fonts, archives, and audio/video.
 // It gates only the SOFT active-content token scan: the HARD scan runs
 // over the whole body regardless, so a polyglot that leads with valid
-// raster magic cannot stash its markup past the sniff window. Crucially
-// this NEVER returns true for SVG, HTML, XML, plain text, or unknown
+// raster magic cannot stash its markup past the sniff window.
+// It NEVER returns true for SVG, HTML, XML, plain text, or unknown
 // content (application/octet-stream).
 func isConfirmedInertBinary(head []byte) bool {
 	ct := http.DetectContentType(head)
@@ -572,7 +572,7 @@ func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) e
 // Example: "uploads/posts/avatar/photo_1683398400000000000_3f9a1c2b.png"
 //
 // The path carries a crypto/rand component in addition to the timestamp so
-// that two uploads of the same filename to the same field never collide —
+// that two uploads of the same filename to the same field never collide,
 // uniqueness must not depend on clock resolution. Without it, two requests
 // landing within the same nanosecond (or the same clock tick on platforms
 // whose clock does not advance every nanosecond) would resolve to the same

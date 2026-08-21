@@ -22,7 +22,7 @@ type htmlComp string
 
 func (c htmlComp) Render() render.HTML { return render.HTML(c) }
 
-// panicComp panics on Render — used to test component panic safety.
+// panicComp panics on Render, used to test component panic safety.
 type panicComp struct {
 	msg string
 }
@@ -103,7 +103,7 @@ func TestSecurity_IslandID_NewlineInjection(t *testing.T) {
 
 func TestSecurity_IslandID_EventHandlerInjection(t *testing.T) {
 	t.Parallel()
-	// Event handler attributes injected via island ID — render.Escape escapes quotes
+	// Event handler attributes injected via island ID, render.Escape escapes quotes
 	// so the attribute value is contained; the text appears escaped, not as a real attribute.
 	isl := island.NewIsland(`x" onmouseover="alert(document.cookie)`, htmlComp("safe"))
 
@@ -113,7 +113,7 @@ func TestSecurity_IslandID_EventHandlerInjection(t *testing.T) {
 	if strings.Contains(out, `onmouseover=`) && !strings.Contains(out, `&quot;`) {
 		t.Errorf("SECURITY: [injection] event handler injected via island ID: %s", out)
 	}
-	// Count data-island attribute occurrences — must be exactly one.
+	// Count data-island attribute occurrences, must be exactly one.
 	count := strings.Count(out, `data-island=`)
 	if count != 1 {
 		t.Errorf("SECURITY: [injection] expected exactly 1 data-island attribute, got %d in: %s", count, out)
@@ -123,7 +123,7 @@ func TestSecurity_IslandID_EventHandlerInjection(t *testing.T) {
 
 func TestSecurity_IslandID_StyleInjection(t *testing.T) {
 	t.Parallel()
-	// CSS injection via island ID — render.Escape escapes quotes so the injected
+	// CSS injection via island ID, render.Escape escapes quotes so the injected
 	// style and extra data-island appear inside the attribute VALUE, not as real attrs.
 	// In HTML parsing, &quot; inside a double-quoted attribute value does NOT terminate the attribute.
 	isl := island.NewIsland(`x" style="display:none" data-island="real`, htmlComp("hidden"))
@@ -188,7 +188,7 @@ func TestSecurity_IslandID_NullBytes(t *testing.T) {
 func TestSecurity_SSE_PushUpdateWithMaliciousHTML(t *testing.T) {
 	t.Parallel()
 	// PushUpdate with script tags in HTML must pass through without sanitization
-	// at the transport layer — the framework trusts the server side.
+	// at the transport layer, the framework trusts the server side.
 	// But the data must be structurally valid (correct island ID, correct session).
 	mgr := island.NewManager()
 	_, cancelSub4 := mgr.Subscribe("evil-sess")
@@ -199,7 +199,7 @@ func TestSecurity_SSE_PushUpdateWithMaliciousHTML(t *testing.T) {
 		HTML:     `<script>steal()</script>`,
 	}, "evil-sess")
 
-	// Verify the update arrived intact — framework does not sanitize server output.
+	// Verify the update arrived intact, framework does not sanitize server output.
 	// The security boundary is that only the server can call PushUpdate.
 	t.Logf("NOTE: Server-to-client transport does not sanitize HTML (trust boundary is server-side)")
 }

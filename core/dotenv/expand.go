@@ -3,7 +3,7 @@ package dotenv
 import "strings"
 
 // Expand performs ${VAR} substitution in s, drawing values from local
-// first then envFn. Bracket form ONLY — bare $VAR is left verbatim
+// first then envFn. Bracket form ONLY. Bare $VAR is left verbatim
 // (less ambiguous, fewer footguns).
 //
 // Hardening:
@@ -14,10 +14,10 @@ import "strings"
 //   - `\${...}` literal-escape is the parser's job, not Expand's:
 //     unescapeDouble strips the `\$` to `$` so Expand sees just `$`,
 //     which doesn't form a `${`-prefix and is therefore left alone.
-//   - Malformed `${...` without closing `}` is left verbatim — better
+//   - Malformed `${...` without closing `}` is left verbatim, better
 //     than silently dropping bytes.
 //
-// envFn may be nil — in that case the only lookup source is local.
+// envFn may be nil. In that case the only lookup source is local.
 func Expand(s string, local map[string]string, envFn func(string) (string, bool)) string {
 	return expandWithDepth(s, local, envFn, map[string]struct{}{}, 0)
 }
@@ -33,7 +33,7 @@ func expandWithDepth(s string, local map[string]string, envFn func(string) (stri
 	i := 0
 	for i < len(s) {
 		// `\$` is an escape: emit a literal $ and DO NOT treat the
-		// next char as part of an expansion marker. Order matters —
+		// next char as part of an expansion marker. Order matters:
 		// check this before the ${ probe below.
 		if i+1 < len(s) && s[i] == '\\' && s[i+1] == '$' {
 			b.WriteByte('$')
@@ -44,13 +44,13 @@ func expandWithDepth(s string, local map[string]string, envFn func(string) (stri
 		if i+1 < len(s) && s[i] == '$' && s[i+1] == '{' {
 			end := strings.IndexByte(s[i+2:], '}')
 			if end < 0 {
-				// No closing brace — emit the rest verbatim.
+				// No closing brace: emit the rest verbatim.
 				b.WriteString(s[i:])
 				return b.String()
 			}
 			name := s[i+2 : i+2+end]
 			if name == "" {
-				// Empty ${} — keep literal.
+				// Empty ${}: keep literal.
 				b.WriteString("${}")
 			} else {
 				b.WriteString(lookup(name, local, envFn, visited, depth))

@@ -60,7 +60,7 @@ func JSON[T any](s *Store, name string, def T) *Slice[T] { return declare(s, nam
 // named dependency signals changes, the runtime runs the JS reducer
 // registered under reducer (window.__gofastr._reducers[reducer]) over the
 // current dep values and broadcasts the result to this slice's consumers.
-// The reducer is a host-provided JS function (CSP-safe — no eval). The
+// The reducer is a host-provided JS function (CSP-safe, no eval). The
 // computed value is derived, so it is never part of the SSR seed.
 //
 //	var Greeting = store.Computed[string](Org, "greeting", "greet", "org.companyName")
@@ -102,7 +102,7 @@ func declare[T any](s *Store, name string, def T) *Slice[T] {
 
 // register records a declaration. Identical re-declaration is idempotent
 // (shared package-level decls, test re-runs); a conflicting default
-// panics — two producers must not claim one name with different values.
+// panics, two producers must not claim one name with different values.
 func register(name string, scope Scope, def any) {
 	regMu.Lock()
 	defer regMu.Unlock()

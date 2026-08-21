@@ -44,7 +44,7 @@ func NewRegistry() *Registry {
 // The key is (Config.Name, Version). The same name may be registered under
 // multiple Versions (e.g. "posts" at "/api/v1" and "/api/v2"); registering
 // the same (name, version) pair twice is an error. An entity with an empty
-// Version — the App.Entity path — keeps the historical behaviour: at most
+// Version, the App.Entity path, keeps the historical behaviour: at most
 // one per name.
 func (r *Registry) Register(ent *entity.Entity) error {
 	if ent == nil {
@@ -75,7 +75,7 @@ func (r *Registry) Register(ent *entity.Entity) error {
 	// share one physical table, so they MUST agree on which table it is
 	// (F5), whether the framework manages its DDL (F10), and at most one
 	// may declare a Seed (F11). These are pairwise, incremental, and fire
-	// at registration so the author sees the conflict at app.Entity — not
+	// at registration so the author sees the conflict at app.Entity, not
 	// at boot when the union consumer runs.
 	if err := r.checkVersionCompat(key, ent); err != nil {
 		return err
@@ -85,7 +85,7 @@ func (r *Registry) Register(ent *entity.Entity) error {
 	// name share one DB table (the table is derived from the name, or set
 	// to the same value explicitly). A column both versions declare MUST
 	// have a physically compatible definition, or the DDL emitted at boot
-	// would depend on which version migrate happened to see first — a
+	// would depend on which version migrate happened to see first, a
 	// silent correctness trap that surfaces as a runtime SQL error long
 	// after boot succeeded. Catch it here, at registration, with a message
 	// that names both versions so the author can find the conflict. The
@@ -113,7 +113,7 @@ func (r *Registry) Register(ent *entity.Entity) error {
 //  2. Otherwise, if exactly one versioned entity is registered under name,
 //     it is returned (the common "one version so far" case).
 //  3. If multiple versions exist and none is unversioned, Get returns an
-//     error — picking one silently would be a correctness trap. Callers that
+//     error, picking one silently would be a correctness trap. Callers that
 //     need a specific version must use GetVersioned.
 func (r *Registry) Get(name string) (*entity.Entity, error) {
 	r.mu.RLock()
@@ -246,7 +246,7 @@ func (r *Registry) SetDB(db *sql.DB) {
 // two entities sharing a table both emit DDL for it, so an incompatible column
 // leaves the surviving schema dependent on map iteration order. That is true
 // whether they differ by version (same name, /api/v1 vs /api/v2) or by name
-// ("posts" and "postsLegacy" both on table "posts" — the shape people reached
+// ("posts" and "postsLegacy" both on table "posts", the shape people reached
 // for before the registry became version-aware, and still reachable today).
 //
 // Unmanaged entities are exempt on both sides: migrate never emits DDL for a
@@ -260,7 +260,7 @@ func (r *Registry) checkColumnConflicts(newKey entityKey, newEnt *entity.Entity)
 	newTable := newEnt.GetTable()
 	for k, existing := range r.entities {
 		if k == newKey {
-			continue // same (name, version) — already rejected by the duplicate-key check
+			continue // same (name, version), already rejected by the duplicate-key check
 		}
 		if existing.Config.Unmanaged || existing.GetTable() != newTable {
 			continue
@@ -269,7 +269,7 @@ func (r *Registry) checkColumnConflicts(newKey entityKey, newEnt *entity.Entity)
 			return err
 		}
 		// F6: a mandatory (NOT NULL, no default, no auto-gen) column exclusive
-		// to one entity breaks the other's writes — the shared table gains a
+		// to one entity breaks the other's writes, the shared table gains a
 		// column the other version can never supply.
 		if err := conflictingMandatoryFields(existing, newEnt); err != nil {
 			return err
@@ -294,11 +294,11 @@ func (r *Registry) checkColumnConflicts(newKey entityKey, newEnt *entity.Entity)
 // compatible, or when the two entities share no column names.
 //
 // Two versions of one entity share one DB table, so a column both
-// declare MUST produce identical DDL — a divergence would make the
+// declare MUST produce identical DDL, a divergence would make the
 // emitted schema depend on which version migrate saw first. The
 // comparison covers exactly the field attributes that reach the DDL:
 //
-//   - the rendered SQL TYPE  (derived from migrate.SQLType — catches Type,
+//   - the rendered SQL TYPE  (derived from migrate.SQLType, catches Type,
 //     RawType, AND String.Max which selects VARCHAR(n); the single source
 //     of truth for the column's physical type, so it can never drift from
 //     the emitted DDL the way a hand-listed attribute set would)
@@ -308,7 +308,7 @@ func (r *Registry) checkColumnConflicts(newKey entityKey, newEnt *entity.Entity)
 //   - Default                     (DEFAULT value)
 //   - primary-key-ness            (PRIMARY KEY constraint)
 //
-// Deliberately NOT compared — these are wire/validation concerns that
+// Deliberately NOT compared: these are wire/validation concerns that
 // never reach the DDL, exactly like the Exclude/Rename projections
 // apiversions.ApplyToEntityConfig produces:
 //
@@ -329,13 +329,13 @@ func conflictingColumns(a, b *entity.Entity) error {
 	for _, fb := range b.Config.Fields {
 		fa, ok := byName[strings.ToLower(fb.Name)]
 		if !ok {
-			continue // column only b declares — additive, handled by the union
+			continue // column only b declares, additive, handled by the union
 		}
 		if columnSchemaEqual(fa, a.PrimaryKey, fb, b.PrimaryKey) {
 			continue
 		}
 		return fmt.Errorf(
-			"registry: entity %q (table %q): column %q is declared with an incompatible schema across versions — "+
+			"registry: entity %q (table %q): column %q is declared with an incompatible schema across versions: "+
 				"%s declares %s, %s declares %s; two versions share one table so the column definitions must match exactly "+
 				"(type, nullability, uniqueness, default, auto/PK). Make both versions identical or rename the column in one version",
 			a.Config.Name, a.Config.Table, fb.Name,
@@ -348,7 +348,7 @@ func conflictingColumns(a, b *entity.Entity) error {
 
 // columnSchemaEqual reports whether two same-named fields produce identical
 // physical DDL. The rendered SQL TYPE is the single source of truth: it is
-// derived from migrate.SQLType — the same function migration emits — so the
+// derived from migrate.SQLType, the same function migration emits, so the
 // comparison catches Type, RawType, AND String.Max (VARCHAR(n)) divergences,
 // and can never drift from the DDL the way a hand-listed attribute set would.
 // Both dialects are compared as a belt-and-braces guard against a future
@@ -381,7 +381,7 @@ func columnSchemaEqual(a schema.Field, aPK string, b schema.Field, bPK string) b
 // describeColumnSchema renders a human-readable summary of the physical
 // DDL attributes the conflict check compares, for the error message. The
 // type is rendered via migrate.SQLType so the diagnostic shows the real
-// physical type — including a VARCHAR(n) length — matching what
+// physical type, including a VARCHAR(n) length, matching what
 // columnSchemaEqual compares.
 func describeColumnSchema(f schema.Field, isPK bool) string {
 	var b strings.Builder
@@ -454,7 +454,7 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 		// non-representative version's table.
 		if existing.GetTable() != newEnt.GetTable() {
 			return fmt.Errorf(
-				"registry: entity %q is registered with conflicting tables across versions — "+
+				"registry: entity %q is registered with conflicting tables across versions: "+
 					"%s uses table %q, %s uses table %q; versions of one entity share one table. "+
 					"Use distinct entity names if you need distinct tables",
 				newEnt.Config.Name,
@@ -466,7 +466,7 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 		// version's columns would never be created.
 		if existing.Config.Unmanaged != newEnt.Config.Unmanaged {
 			return fmt.Errorf(
-				"registry: entity %q (table %q) mixes managed and unmanaged versions — "+
+				"registry: entity %q (table %q) mixes managed and unmanaged versions: "+
 					"%s is %s, %s is %s; versions of one entity must agree on who owns the DDL",
 				newEnt.Config.Name, newEnt.GetTable(),
 				versionLabel(existing.Version), managedLabel(existing.Config.Unmanaged),
@@ -487,7 +487,7 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 		// compared for equality (they are funcs), so the second is ambiguous.
 		if existing.Config.Seed != nil && newEnt.Config.Seed != nil {
 			return fmt.Errorf(
-				"registry: entity %q declares a Seed in multiple versions — "+
+				"registry: entity %q declares a Seed in multiple versions: "+
 					"%s and %s; at most one version may seed a shared table",
 				newEnt.Config.Name,
 				versionLabel(existing.Version), versionLabel(newEnt.Version))
@@ -503,7 +503,7 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 // SoftDelete are the predicates CRUD adds to every SELECT/UPDATE/DELETE;
 // Access, Public and CrossOwnerRead are the gates it runs before issuing one.
 // Letting any of them differ makes the weaker version a bypass of the stronger
-// one — read another tenant's rows through /api/v2, read another user's rows
+// one, read another tenant's rows through /api/v2, read another user's rows
 // through the version without OwnerField, hard-delete rows the soft-delete
 // version expects to restore, skip the RBAC permission the other version
 // requires, or read the whole table anonymously through a version that
@@ -518,7 +518,7 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 func checkRowIsolationCompat(existing, newEnt *entity.Entity) error {
 	mismatch := func(setting, existingVal, newVal string) error {
 		return fmt.Errorf(
-			"registry: entity %q (table %q) mixes %s across versions — "+
+			"registry: entity %q (table %q) mixes %s across versions: "+
 				"%s is %s, %s is %s; versions of one entity share one table, so they must agree "+
 				"on which rows a request may see. Use distinct entity names if the versions really "+
 				"need different row scoping",
@@ -629,7 +629,7 @@ func softDeleteLabel(on bool) string {
 // other. Two entities sharing a table both write to it; a NOT NULL column
 // with no default that one version cannot supply turns every complete,
 // valid request through that version into a database constraint violation.
-// The check is symmetric — both directions are examined (F6).
+// The check is symmetric, both directions are examined (F6).
 func conflictingMandatoryFields(a, b *entity.Entity) error {
 	if err := findExclusiveMandatory(a, b); err != nil {
 		return err
@@ -652,7 +652,7 @@ func findExclusiveMandatory(have, lack *entity.Entity) error {
 			continue
 		}
 		return fmt.Errorf(
-			"registry: entity %q (table %q): column %q is %s in %s but absent in %s — "+
+			"registry: entity %q (table %q): column %q is %s in %s but absent in %s: "+
 				"a NOT NULL column with no default cannot be supplied by the other version's writes. "+
 				"Give it a default, make it auto-generated, or declare it in both versions",
 			have.Config.Name, have.Config.Table, f.Name,
@@ -663,7 +663,7 @@ func findExclusiveMandatory(have, lack *entity.Entity) error {
 }
 
 // isMandatoryColumn reports whether a field produces a NOT NULL column with
-// no DEFAULT on any dialect — the column shape that breaks inserts which
+// no DEFAULT on any dialect, the column shape that breaks inserts which
 // omit it. Required alone is not enough: an auto-generation path (AutoUUID,
 // AutoTimestamp, AutoIncrement) or an explicit Default supplies the value, so
 // the column is safe to omit from a write.
@@ -672,7 +672,7 @@ func isMandatoryColumn(f schema.Field) bool {
 }
 
 // conflictingIndices rejects a named index that two entities sharing a table
-// declare with physically different definitions — different columns,
+// declare with physically different definitions, different columns,
 // expression, uniqueness, or column ordering. The merge keeps the first
 // declaration; a silent divergence would violate the other version's declared
 // invariant (e.g. v2 declares the index UNIQUE while v1 does not) (F8).
@@ -694,7 +694,7 @@ func conflictingIndices(a, b *entity.Entity) error {
 		}
 		if !indexSchemaEqual(prev, idx) {
 			return fmt.Errorf(
-				"registry: entity %q (table %q): index %q is declared with incompatible definitions across versions — "+
+				"registry: entity %q (table %q): index %q is declared with incompatible definitions across versions: "+
 					"%s declares %s, %s declares %s; a named index on a shared table must be identical "+
 					"(columns, expression, uniqueness, ordering)",
 				b.Config.Name, b.Config.Table, n,
@@ -755,7 +755,7 @@ func describeIndex(idx entity.Index) string {
 
 // conflictingRelations rejects a foreign-key column (or a same-named
 // logical relation) that two entities sharing a table declare with
-// different physical targets — different relation type, target entity,
+// different physical targets, different relation type, target entity,
 // target key, or pivot table. The merge keeps the first relation; a silent
 // divergence would make the DDL reference the wrong table (e.g. v1 points
 // owner_id at users, v2 at teams) (F9).
@@ -777,7 +777,7 @@ func conflictingRelations(a, b *entity.Entity) error {
 		}
 		if !relationSchemaEqual(prev, rel) {
 			return fmt.Errorf(
-				"registry: entity %q (table %q): relation on %q is declared with incompatible definitions across versions — "+
+				"registry: entity %q (table %q): relation on %q is declared with incompatible definitions across versions: "+
 					"%s declares %s, %s declares %s; a foreign-key column on a shared table must reference the same target "+
 					"(relation type, target table, target key)",
 				b.Config.Name, b.Config.Table, relationDisplayColumn(rel),

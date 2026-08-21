@@ -17,10 +17,10 @@ import (
 // request. Span name is "HTTP {method} {route}" where route is the matched
 // pattern (r.Pattern from Go 1.22+ ServeMux). Attributes recorded:
 //
-//	http.method     — request method
-//	http.route      — the route pattern (fallback "unmatched")
-//	http.status_code — final response status
-//	http.target     — request URL path
+//	http.method:      request method
+//	http.route:       the route pattern (fallback "unmatched")
+//	http.status_code: final response status
+//	http.target:      request URL path
 //
 // Distributed-trace context is extracted from W3C traceparent / tracestate
 // headers so spans from upstream services chain correctly. Outgoing
@@ -28,7 +28,7 @@ import (
 // configured.
 //
 // Without a configured TracerProvider (the otel default), this middleware
-// is essentially a no-op — spans are created against a no-op tracer that
+// is essentially a no-op; spans are created against a no-op tracer that
 // drops everything. Callers wire up Jaeger / OTLP / etc. via the standard
 // otel.SetTracerProvider.
 func Tracing() Middleware {

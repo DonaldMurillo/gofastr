@@ -7,7 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
-// safeResourceURL is safeURL for URLs the BROWSER fetches on its own —
+// safeResourceURL is safeURL for URLs the BROWSER fetches on its own:
 // <source src>, <link href>. It drops mailto:/tel:, which are
 // meaningful on an anchor the user activates and a caller mistake on a
 // subresource.
@@ -16,7 +16,7 @@ func safeResourceURL(u string) string {
 }
 
 // safeImageURL is safeResourceURL for <img src> and image srcsets, which
-// additionally accept an inline raster data: URI — a generated image or a
+// additionally accept an inline raster data: URI: a generated image or a
 // low-fidelity placeholder is a legitimate thing to inline, and the media
 // types urlsafe.ImageSource admits cannot carry script.
 //
@@ -32,7 +32,7 @@ func safeImageURL(u string) string {
 // control bytes. Returns a fresh Attrs so the caller's map is not
 // mutated. Nil input yields nil.
 //
-// ExtraAttrs is a legitimate escape hatch — it lets callers add
+// ExtraAttrs is a legitimate escape hatch: it lets callers add
 // data-* / aria-* / hx-* / dir / lang etc. without a typed knob per
 // case. The escape hatch stops at on-event handlers because those
 // turn the escape hatch into a stored-XSS primitive when the host

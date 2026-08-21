@@ -7,7 +7,7 @@ import "strings"
 // because `*` is overloaded with bullet markers and we'd false-positive.
 //
 // The line may already carry a marker (← / → / 🤔 / ⚙ / ✓ / ✗) that
-// colorizeMarker handled — we leave those alone and only style the
+// colorizeMarker handled, we leave those alone and only style the
 // content after the marker.
 func renderMarkdownInline(line string) string {
 	// If colorizeMarker already wrapped the leading marker in a

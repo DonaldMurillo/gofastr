@@ -13,7 +13,7 @@ import (
 //
 // [ColorPicker] pairs a swatch with a LABEL, which is the right shape for a
 // form asking "pick a colour". It is the wrong shape when the exact value
-// matters and has to be readable, typed and pasted — a theme token, a brand
+// matters and has to be readable, typed and pasted: a theme token, a brand
 // hex, a chart series colour. Those need both affordances on one row, and the
 // text input is the source of truth: a swatch alone cannot express "inherit",
 // "transparent", or a var() reference, and cannot be pasted from a brand guide.
@@ -26,21 +26,21 @@ type ColorFieldConfig struct {
 	// Value is the authoritative value, placed in the text input verbatim.
 	Value string
 	// SwatchValue is what the native colour input shows. It differs from
-	// Value whenever Value is not a plain hex — the native control cannot
+	// Value whenever Value is not a plain hex: the native control cannot
 	// represent "transparent" or "var(--x)" and silently falls back to black,
 	// so the caller resolves a display colour itself.
 	SwatchValue string
 	// TextID is the id of the text input, for a label's `for`.
 	TextID string
 	// SwatchLabel is the accessible name for the swatch, which has no visible
-	// label of its own. Required — an unlabelled colour input is announced as
+	// label of its own. Required. An unlabelled colour input is announced as
 	// nothing.
 	SwatchLabel string
 	// TextLabel is the accessible name for the text input. Defaults to
 	// SwatchLabel.
 	//
 	// BOTH inputs need a name. The text input is the one carrying the value, so
-	// leaving it unnamed is the worse of the two omissions — and it is the easy
+	// leaving it unnamed is the worse of the two omissions, and it is the easy
 	// one to miss, because a caller that wraps this in its own <label for=…>
 	// sees a labelled control while a caller that does not ships a critical axe
 	// violation. Set aria-label or aria-labelledby in TextAttrs to take over.
@@ -56,7 +56,7 @@ type ColorFieldConfig struct {
 // ColorField renders the swatch + text-input row.
 func ColorField(cfg ColorFieldConfig) render.HTML {
 	if cfg.SwatchLabel == "" {
-		panic("ui: ColorField requires SwatchLabel — a colour input with no accessible name is announced as nothing")
+		panic("ui: ColorField requires SwatchLabel. A colour input with no accessible name is announced as nothing")
 	}
 	swatch := html.Attrs{
 		"type":       "color",

@@ -40,7 +40,7 @@ type FilterChip struct {
 	// is expected to deduce the filter from DismissPath alone.
 	DismissBody string
 
-	// Variant maps to StatusVariant — defaults to neutral. Use to
+	// Variant maps to StatusVariant: defaults to neutral. Use to
 	// surface filter kind (info chips for tags, success for "active"
 	// status filters, etc).
 	Variant StatusVariant
@@ -65,7 +65,7 @@ type FilterChipBarConfig struct {
 	Label string
 
 	// RPCSignal, when set, is broadcast on every chip dismiss AND
-	// on Clear all — so the bar swaps itself with the server's
+	// on Clear all, so the bar swaps itself with the server's
 	// re-rendered HTML.
 	RPCSignal string
 

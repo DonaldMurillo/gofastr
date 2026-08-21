@@ -35,7 +35,7 @@ func constraintOK(seg, val string) bool {
 }
 
 // validConstraints is the registration-time allowlist. There is
-// deliberately no "string" constraint — every param is a string, so it
+// deliberately no "string" constraint, every param is a string, so it
 // would be an unconstrained no-op under a misleading name.
 var validConstraints = map[string]bool{"int": true, "uuid": true, "alpha": true, "alnum": true}
 
@@ -70,7 +70,7 @@ func isAllAlnum(s string) bool {
 }
 
 // isAllDigits reports whether s is one or more ASCII digits (the "int"
-// constraint). An empty value never matches — a dynamic segment must bind.
+// constraint). An empty value never matches, a dynamic segment must bind.
 func isAllDigits(s string) bool {
 	if s == "" {
 		return false

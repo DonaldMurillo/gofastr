@@ -103,7 +103,7 @@ func TestCovHarnessVerbsAndBuilder(t *testing.T) {
 }
 
 // ============================================================================
-// battery.go — error / edge branches
+// battery.go: error / edge branches
 // ============================================================================
 
 // Register rejects an invalid name.
@@ -220,7 +220,7 @@ func TestCovRegistrySetDBPropagates(t *testing.T) {
 	// SetDB walks the loop body (line 105-107) over the registered entity.
 	r.SetDB(nil) // nil is fine; we only need the loop to execute
 	// Register after SetDB(db) would propagate db; cover the loop with a
-	// fresh registry + a non-nil-ish path is unnecessary — loop ran above.
+	// fresh registry + a non-nil-ish path is unnecessary, loop ran above.
 }
 
 // ============================================================================
@@ -240,7 +240,7 @@ func TestCovSetFlagStoreAfterUse(t *testing.T) {
 }
 
 // ============================================================================
-// app.go — option / accessor branches
+// app.go: option / accessor branches
 // ============================================================================
 
 // WithLogger stores the provided logger (the .Store branch, line 218).

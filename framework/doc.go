@@ -1,7 +1,7 @@
 // Package framework is the public surface of the GoFastr framework.
 //
-// It contains the App spine — App, Plugin, Registry, lifecycle, typed
-// hooks, the in-memory test harness — plus thin re-exports of every
+// It contains the App spine: App, Plugin, Registry, lifecycle, typed
+// hooks, the in-memory test harness, plus thin re-exports of every
 // subpackage's public API so callers can keep writing framework.Entity,
 // framework.NewCrudHandler, framework.AutoMigrate, etc.
 //

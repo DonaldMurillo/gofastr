@@ -5,13 +5,13 @@
 //
 // The interface (Helper) admits two implementations:
 //
-//  1. InProcess — default for v0.1: the helper runs in the same
+//  1. InProcess, default for v0.1: the helper runs in the same
 //     process, reading from credstore.Store. Convenient for boot
 //     and tests; the agent's Bash tool can still in principle
 //     exfiltrate by reading the same credstore file (defense in
 //     depth comes from the Bash blocklist + redaction middleware).
 //
-//  2. Subprocess — landed in a later phase: a separate process
+//  2. Subprocess, landed in a later phase: a separate process
 //     holding tokens and serving sign-requests over a Unix socket.
 //     Agent has no in-memory access to tokens.
 //
@@ -74,7 +74,7 @@ func (h *InProcess) AttachAuth(req *http.Request, provider, account string) erro
 	return ErrUnknownProvider
 }
 
-// Heartbeat implements Helper. InProcess always returns nil — the
+// Heartbeat implements Helper. InProcess always returns nil, the
 // "helper" is just a method receiver, so it's healthy as long as the
 // host process is.
 func (h *InProcess) Heartbeat() error { return nil }

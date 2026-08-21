@@ -13,7 +13,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// WithPublicOpenAPI opens the raw spec — the docs landing page that
+// WithPublicOpenAPI opens the raw spec, the docs landing page that
 // exists to browse that spec must follow it. A public spec with a 401
 // browse page is a contract split down the middle of one feature.
 func TestPublicOpenAPIOpensDocsPage(t *testing.T) {
@@ -69,7 +69,7 @@ func TestDocsPageGatedByDefault(t *testing.T) {
 	}
 }
 
-// The startup banner must not advertise "Swagger UI" — the handler
+// The startup banner must not advertise "Swagger UI", the handler
 // serves a static API-docs landing page, not Swagger.
 func TestBannerSaysAPIDocsNotSwagger(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())

@@ -13,7 +13,7 @@ import (
 // CrudRoutePatterns is a second copy of the route list RegisterCrudRoutes
 // mounts, and App.TryEntity pre-flights endpoint collisions against it
 // before anything is registered. A route added to the registration and not
-// to the pattern list silently reopens that gap — an endpoint could shadow
+// to the pattern list silently reopens that gap, an endpoint could shadow
 // the new route, pass validation, and panic mid-commit with the entity
 // already in the registry. This pins the two together.
 func TestCrudRoutePatternsMatchRegistration(t *testing.T) {

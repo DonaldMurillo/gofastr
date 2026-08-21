@@ -157,7 +157,7 @@ func (s *SQLStore) Delete(key string) error {
 	return err
 }
 
-// All returns every defined flag — used by admin tooling.
+// All returns every defined flag, used by admin tooling.
 //
 // SECURITY: as with [MemoryStore.All], the rows carry each flag's raw
 // Users / Tenants allow-lists. Gate this behind admin auth; cohort
@@ -229,7 +229,7 @@ func orEmpty(xs []string) []string {
 }
 
 // decodeJSONList accepts empty string as "no entries" but returns an
-// error for malformed payloads — silent JSON failures previously left
+// error for malformed payloads. Silent JSON failures previously left
 // allow lists empty and silently changed flag behavior.
 func decodeJSONList(s string, dst *[]string) error {
 	if s == "" {
@@ -239,7 +239,7 @@ func decodeJSONList(s string, dst *[]string) error {
 }
 
 // reservedSQLIdents are tokens we refuse as table names regardless of
-// character class — naming a table after a reserved word or a real
+// character class: naming a table after a reserved word or a real
 // system table is almost always a configuration mistake and can
 // silently no-op CREATE TABLE IF NOT EXISTS against a real table.
 var reservedSQLIdents = map[string]struct{}{
@@ -263,7 +263,7 @@ func safeIdent(name string) bool {
 	if name == "" || len(name) > 64 {
 		return false
 	}
-	// Require a leading letter or underscore — leading-digit names like
+	// Require a leading letter or underscore: leading-digit names like
 	// "1tbl" survive otherwise and break some dialect parsers.
 	first := rune(name[0])
 	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {

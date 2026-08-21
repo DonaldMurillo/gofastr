@@ -18,7 +18,7 @@ func TestManifestValidateRejectsAllowSameOrigin(t *testing.T) {
 
 func TestManifestValidateRequiresAllowScriptsWhenSandboxSpecified(t *testing.T) {
 	// An empty sandbox is normalised by the broker; but a non-empty sandbox
-	// without allow-scripts could never boot its JS — reject it.
+	// without allow-scripts could never boot its JS, reject it.
 	m := Manifest{
 		Entry:   "/p/editor.html",
 		Sandbox: []string{},
@@ -147,7 +147,7 @@ func TestNewClientModule_ValidatesManifest(t *testing.T) {
 }
 
 // The JS sink (sandboxFor in host/pluginhost.js) is the one that actually sets
-// the iframe attribute — it MUST be authoritative too, mirroring SandboxString.
+// the iframe attribute, it MUST be authoritative too, mirroring SandboxString.
 // This pins the source so a regression to `manifest.sandbox.join(" ")` is
 // caught without a browser.
 func TestBrokerJS_SandboxForIsAuthoritative(t *testing.T) {
@@ -190,7 +190,7 @@ func TestManifestValidate_CaseAndWhitespaceSameOrigin(t *testing.T) {
 // filter stripped exactly one token, allow-same-origin, and the manifest
 // ships WITH the third-party plugin, so it is attacker-influenced by
 // construction. `allow-popups` + `allow-popups-to-escape-sandbox` gives
-// the plugin a popup that is fully unsandboxed AND same-origin —
+// the plugin a popup that is fully unsandboxed AND same-origin,
 // window.open('/admin/...') opens an ordinary cookie-bearing document,
 // which is the isolation invariant gone. allow-top-navigation and
 // allow-downloads passed too.

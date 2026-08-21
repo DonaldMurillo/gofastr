@@ -172,7 +172,7 @@ func TestCursor_InvalidCursor_400(t *testing.T) {
 }
 
 // ============================================================================
-// Test: No cursor key → falls back to offset (crud.ListResponse) — regression pin
+// Test: No cursor key → falls back to offset (crud.ListResponse), regression pin
 // ============================================================================
 
 func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
@@ -255,7 +255,7 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 		}.WithTimestamps(false))
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
-		// First page — should be ordered by created_at ASC, not by id.
+		// First page, should be ordered by created_at ASC, not by id.
 		first := decodeCursorPage(t, ta.Get("/events?cursor=&limit=3").Body())
 		if len(first.Data) != 3 {
 			t.Fatalf("expected 3 items, got %d", len(first.Data))
@@ -269,7 +269,7 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 			}
 		}
 
-		// Walk the cursor — must finish at 5 rows, label order preserved.
+		// Walk the cursor, must finish at 5 rows, label order preserved.
 		cursor := first.Cursor
 		seen := append([]string{}, want...)
 		for hops := 0; hops < 5 && cursor != ""; hops++ {
@@ -295,7 +295,7 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 }
 
 // ============================================================================
-// Test: composite cursor — ORDER BY (created_at DESC, id DESC) with tuple
+// Test: composite cursor. ORDER BY (created_at DESC, id DESC) with tuple
 // comparison handles ties on the leading column gracefully.
 // ============================================================================
 

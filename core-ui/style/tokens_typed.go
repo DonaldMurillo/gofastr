@@ -10,7 +10,7 @@ import (
 // Every theme token (color, spacing, shadow, …) is a struct carrying
 // both a Name (used to derive the CSS custom property identifier)
 // and a Value (the concrete value). Each type exposes a .CSS()
-// method that emits `var(--<category>-<name>)` — a reference, never
+// method that emits `var(--<category>-<name>)`, a reference, never
 // the literal value, so the CSS cascade can override the variable at
 // any subtree (section-level theme override).
 //
@@ -18,7 +18,7 @@ import (
 // constructing image-generation payloads, exporting tokens to JSON
 // for design tools, computing derived colors at startup, etc.
 //
-// Each category has its own type — distinct from each other so the
+// Each category has its own type, distinct from each other so the
 // compiler catches accidentally passing a Color where Spacing was
 // expected.
 
@@ -131,7 +131,7 @@ func (f FontSize) CSS() string    { return varRef("text", f.Name) }
 func (f FontSize) String() string { return f.CSS() }
 
 // CodeColor is a syntax-highlight palette token. It emits
-// `var(--tk-<name>)` — the --tk-* variables the framework
+// `var(--tk-<name>)`, the --tk-* variables the framework
 // highlighter's .tk-* spans (ui.CodeBlock, markdown code fences)
 // read. Unlike the other token groups the Code group is OPTIONAL:
 // a zero CodeColor is skipped by validation and never emitted, and

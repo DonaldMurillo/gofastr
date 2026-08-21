@@ -1,4 +1,4 @@
-// TableOfContents runtime module — walk the target region, emit a
+// TableOfContents runtime module, walk the target region, emit a
 // <li><a> for every <h2>/<h3> with an id, and track which heading is
 // currently in view via IntersectionObserver.
 //
@@ -40,7 +40,7 @@
       list.appendChild(li);
     });
 
-    // IntersectionObserver — when a heading is in the upper half of
+    // IntersectionObserver, when a heading is in the upper half of
     // the viewport, mark its TOC link active.
     const links = {};
     navEl.querySelectorAll('.ui-toc__link[data-fui-toc-for]').forEach(function (a) {
@@ -74,7 +74,7 @@
     });
   }
 
-  // Initial pass — wait one rAF so the page DOM has settled.
+  // Initial pass, wait one rAF so the page DOM has settled.
   requestAnimationFrame(function () { scan(document); });
   window.addEventListener('gofastr:navigate', function () {
     // Disconnect all active IntersectionObservers before the page DOM

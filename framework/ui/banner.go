@@ -12,7 +12,7 @@ import (
 )
 
 // bannerDismissCookiePrefix matches the runtime's STORAGE_PREFIX in
-// src/banner.js — the dismissal is mirrored into a cookie under the same
+// src/banner.js: the dismissal is mirrored into a cookie under the same
 // key so the server can skip rendering a dismissed banner.
 const bannerDismissCookiePrefix = "gofastr.banner-dismiss."
 
@@ -20,7 +20,7 @@ const bannerDismissCookiePrefix = "gofastr.banner-dismiss."
 //
 // A persistent in-page status strip. Different from Toast (transient,
 // floating) and Notification (record-bound). Banner is for global
-// status — maintenance notices, billing alerts, deprecation warnings,
+// status: maintenance notices, billing alerts, deprecation warnings,
 // "you're impersonating" admin reminders.
 
 // BannerVariant picks the color / icon family.
@@ -43,11 +43,11 @@ type BannerConfig struct {
 	Variant BannerVariant
 	// Dismissible adds an X button. When DismissID is set the runtime
 	// records the dismissal in localStorage AND a same-name cookie; when
-	// Ctx also carries the request (app.WithRequest — layouts and screens
+	// Ctx also carries the request (app.WithRequest, layouts and screens
 	// get this automatically), Banner sees the cookie and renders nothing
-	// at all on later requests — no flash of a dismissed banner before
+	// at all on later requests, no flash of a dismissed banner before
 	// the runtime's hide pass. (Richer server-side persistence is still
-	// up to the app — Banner doesn't ship its own RPC.)
+	// up to the app. Banner doesn't ship its own RPC.)
 	Dismissible bool
 	DismissID   string
 	// Action is an optional inline call-to-action (a Link or Button
@@ -76,7 +76,7 @@ func Banner(cfg BannerConfig) render.HTML {
 		// recognized
 	default:
 		panic("ui: Banner unknown Variant " + string(cfg.Variant) +
-			` — pick one of: "" (info), success, warn, danger`)
+			`. Pick one of: "" (info), success, warn, danger`)
 	}
 	ctx := cfg.Ctx
 	if ctx == nil {

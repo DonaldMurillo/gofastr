@@ -1,10 +1,10 @@
 // Package urlsafe holds the one URL-scheme allow-list every surface that
 // renders a caller-supplied URL runs through.
 //
-// It exists because the same ~40-line guard had been re-derived five times
-// — framework/ui.safeURL, framework/uihost.isSafeHeadURL,
+// It exists because the same ~40-line guard had been re-derived five times:
+// framework/ui.safeURL, framework/uihost.isSafeHeadURL,
 // framework/crud.isSafeMediaURL, framework/experimental/apiversions, and
-// core-ui/patterns/combobox.safePushHref — while core-ui/html, the layer
+// core-ui/patterns/combobox.safePushHref, while core-ui/html, the layer
 // all of them render through, had none. Copies drift; a copy that does not
 // exist is worse. New URL sinks call this package rather than growing a
 // sixth copy.
@@ -25,7 +25,7 @@ const (
 
 	// Resource is for URLs the browser fetches on its own: <source src>,
 	// <script src>, <link href>, and head/meta URLs. Accepts http and
-	// https plus relative references — nothing else.
+	// https plus relative references, nothing else.
 	Resource
 
 	// ImageSource is Resource plus inline raster `data:` URIs, for the one
@@ -41,7 +41,7 @@ const (
 )
 
 // imageDataMediaTypes is the allow-list of media types ImageSource accepts
-// in a data: URI. Raster only — see the ImageSource doc comment.
+// in a data: URI. Raster only. See the ImageSource doc comment.
 var imageDataMediaTypes = []string{
 	"image/jpeg",
 	"image/png",
@@ -76,12 +76,12 @@ func OK(u string, p Policy) bool {
 		return false
 	}
 	// Browsers normalize '\' to '/' at the authority boundary for special
-	// schemes, so `\\host`, `\/host` and `/\host` all resolve to `//host`
-	// — the protocol-relative form rejected just below. `/\host` is the
+	// schemes, so `\\host`, `\/host` and `/\host` all resolve to `//host`,
+	// the protocol-relative form rejected just below. `/\host` is the
 	// dangerous spelling: it starts with '/', so it would otherwise pass
 	// the relative-reference check and read as same-origin to anyone
 	// eyeballing it. No reference this package should pass contains a
-	// backslash, so reject it outright — the same posture as
+	// backslash, so reject it outright, the same posture as
 	// core-ui/app.redirect and core-ui/uinodev1.IsValidHostRelative.
 	if strings.IndexByte(trimmed, '\\') >= 0 {
 		return false
@@ -111,7 +111,7 @@ func OK(u string, p Policy) bool {
 			return true
 		}
 	}
-	// No colon at all — a bare relative reference like "logo.png".
+	// No colon at all, a bare relative reference like "logo.png".
 	return true
 }
 

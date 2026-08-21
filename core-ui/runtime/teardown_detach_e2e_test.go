@@ -38,7 +38,7 @@ func TestAnimate_TearsDownOnNonNavigateDetach(t *testing.T) {
 		chromedp.Poll(`(window.__gofastr?._signals?.["a"]?.listeners?.length ?? -1) >= 1`,
 			nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
 		chromedp.Evaluate(`window.__gofastr._signals["a"].listeners.length`, &before),
-		// Detach via innerHTML swap on the parent — the island/poll/signal
+		// Detach via innerHTML swap on the parent, the island/poll/signal
 		// swap path. NO gofastr:navigate fires.
 		chromedp.Evaluate(`document.getElementById('host').innerHTML='<span>swapped</span>'`, nil),
 		chromedp.Sleep(400*time.Millisecond),
@@ -55,7 +55,7 @@ func TestAnimate_TearsDownOnNonNavigateDetach(t *testing.T) {
 }
 
 // TestComputed_TearsDownOnNonNavigateDetach: same shape for a computed
-// node — its recompute closure must leave the dependency signal's
+// node, its recompute closure must leave the dependency signal's
 // listeners when the node is swapped away without a navigate.
 func TestComputed_TearsDownOnNonNavigateDetach(t *testing.T) {
 	body := `<div id="host"><div id="c" data-fui-computed="echo" data-fui-computed-deps="a" data-fui-signal="total">0</div></div>`

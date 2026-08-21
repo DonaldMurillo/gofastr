@@ -11,7 +11,7 @@ import (
 // MinExpectedTopics is the manifest floor: if a doc is accidentally
 // deleted in a rebase, the embed FS is silently smaller and the count
 // regresses below this floor. Set to the EXACT current doc count so a
-// single deletion fails the test — not a wide cushion that hides drift.
+// single deletion fails the test, not a wide cushion that hides drift.
 //
 // Adding a doc raises the count above the floor and still passes; no
 // bump is needed. Lower this only when intentionally removing a doc,
@@ -102,7 +102,7 @@ func TestSearchFindsKnownTerm(t *testing.T) {
 // commonMistakesExempt lists the docs that deliberately ship WITHOUT a
 // "## Common mistakes" closing section. Every other content/*.md is a
 // guide and the gate below requires the callout. To add a new doc
-// without one, add it here WITH a reason — silence is not an option.
+// without one, add it here WITH a reason. Silence is not an option.
 var commonMistakesExempt = map[string]string{
 	"README":   "docs index page — meta, not a guide",
 	"overview": "the map of the docs — index, not a guide",
@@ -276,7 +276,7 @@ func TestSearchRejectsShortTerm(t *testing.T) {
 
 // TestSearchWithLimit pins the operator-facing cap: when a caller
 // explicitly asks for at most N hits, the function returns no more
-// than N — capping unbounded responses for clients with strict
+// than N, capping unbounded responses for clients with strict
 // payload budgets (MCP, narrow context).
 func TestSearchWithLimit(t *testing.T) {
 	hits, _ := SearchWithLimit("entity", 5)

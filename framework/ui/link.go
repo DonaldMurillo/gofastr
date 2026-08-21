@@ -12,14 +12,14 @@ import (
 type LinkVariant string
 
 const (
-	// LinkInline is a normal in-flow text link — primary-colored, hover
+	// LinkInline is a normal in-flow text link: primary-colored, hover
 	// underline, no min-height. Use this for links in prose.
 	LinkInline LinkVariant = ""
-	// LinkAction is a row-action / list-item link — 44×44 tap target
+	// LinkAction is a row-action / list-item link: 44×44 tap target
 	// (WCAG 2.5.5) and inline-flex centering. Use this when the link
 	// sits in a table row, list, or toolbar alongside Button siblings.
 	LinkAction LinkVariant = "action"
-	// LinkMuted is a subdued text-muted link — for "see all", "view
+	// LinkMuted is a subdued text-muted link, for "see all", "view
 	// details" affordances that should not compete with primary CTAs.
 	LinkMuted LinkVariant = "muted"
 )
@@ -35,7 +35,7 @@ type LinkConfig struct {
 }
 
 // Link renders an anchor with a typed variant. The component owns its
-// CSS — the .ui-link class works without any app-level overrides.
+// CSS. The .ui-link class works without any app-level overrides.
 //
 // Defaults to LinkInline. Picking LinkAction gives the link a 44×44
 // minimum tap area so it can stand next to a Button in a row action
@@ -52,7 +52,7 @@ func Link(cfg LinkConfig) render.HTML {
 		// recognized
 	default:
 		panic("ui: Link unknown Variant " + string(cfg.Variant) +
-			` — pick one of: "" (inline), action, muted`)
+			`. Pick one of: "" (inline), action, muted`)
 	}
 	cls := "ui-link"
 	if cfg.Variant != LinkInline {

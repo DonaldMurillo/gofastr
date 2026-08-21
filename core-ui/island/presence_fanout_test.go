@@ -27,7 +27,7 @@ func (d *dropFirstN) Publish(ctx context.Context, topic string, payload []byte) 
 		if d.dropped < d.Drop {
 			d.dropped++
 			d.mu.Unlock()
-			return nil // swallow — simulate a message lost in transit
+			return nil // swallow, simulate a message lost in transit
 		}
 		d.mu.Unlock()
 	}
@@ -60,7 +60,7 @@ func twoManagersOnOneBus(t *testing.T, heartbeat, ttl time.Duration) (a, b *Mana
 	return ra, rb, bus, sa, sb
 }
 
-// TestPresenceFanoutJoinVisibleCrossReplica — a join on replica A makes the
+// TestPresenceFanoutJoinVisibleCrossReplica: a join on replica A makes the
 // member appear in replica B's roster (immediate announce on join).
 func TestPresenceFanoutJoinVisibleCrossReplica(t *testing.T) {
 	a, b, _, stopA, stopB := twoManagersOnOneBus(t, 50*time.Millisecond, 200*time.Millisecond)
@@ -76,7 +76,7 @@ func TestPresenceFanoutJoinVisibleCrossReplica(t *testing.T) {
 	})
 }
 
-// TestPresenceFanoutLeaveDropsCrossReplica — a leave on A removes the member
+// TestPresenceFanoutLeaveDropsCrossReplica: a leave on A removes the member
 // from B's roster (immediate announce of the shrunk roster).
 func TestPresenceFanoutLeaveDropsCrossReplica(t *testing.T) {
 	a, b, _, stopA, stopB := twoManagersOnOneBus(t, 50*time.Millisecond, 200*time.Millisecond)
@@ -95,7 +95,7 @@ func TestPresenceFanoutLeaveDropsCrossReplica(t *testing.T) {
 	})
 }
 
-// TestPresenceFanoutDeathExpiresByTTL — when replica A goes silent (crash
+// TestPresenceFanoutDeathExpiresByTTL, when replica A goes silent (crash
 // sim: heartbeat halted, no graceful leave), B drops A's members within TTL.
 func TestPresenceFanoutDeathExpiresByTTL(t *testing.T) {
 	a, b, _, stopA, stopB := twoManagersOnOneBus(t, 20*time.Millisecond, 80*time.Millisecond)
@@ -117,7 +117,7 @@ func TestPresenceFanoutDeathExpiresByTTL(t *testing.T) {
 	})
 }
 
-// TestPresenceFanoutGracefulLeavePrompt — stop() on A sends a graceful leave
+// TestPresenceFanoutGracefulLeavePrompt: stop() on A sends a graceful leave
 // so B drops A's members promptly (well within TTL).
 func TestPresenceFanoutGracefulLeavePrompt(t *testing.T) {
 	a, b, _, stopA, stopB := twoManagersOnOneBus(t, 50*time.Millisecond, 5*time.Second)
@@ -139,7 +139,7 @@ func TestPresenceFanoutGracefulLeavePrompt(t *testing.T) {
 	})
 }
 
-// TestPresenceFanoutHeartbeatReconverges — a dropped immediate announcement
+// TestPresenceFanoutHeartbeatReconverges: a dropped immediate announcement
 // is healed by the next periodic heartbeat (lossy self-healing).
 func TestPresenceFanoutHeartbeatReconverges(t *testing.T) {
 	f := fanout.NewInProcess()
@@ -168,7 +168,7 @@ func TestPresenceFanoutHeartbeatReconverges(t *testing.T) {
 	})
 }
 
-// TestPresenceFanoutOnChangeFiresOnRemote — B's OnPresenceChange fires when
+// TestPresenceFanoutOnChangeFiresOnRemote: B's OnPresenceChange fires when
 // a remote merge changes B's merged roster (the push-propagation contract).
 func TestPresenceFanoutOnChangeFiresOnRemote(t *testing.T) {
 	a, b, _, stopA, stopB := twoManagersOnOneBus(t, 50*time.Millisecond, 200*time.Millisecond)
@@ -200,7 +200,7 @@ func TestPresenceFanoutOnChangeFiresOnRemote(t *testing.T) {
 	})
 }
 
-// TestPresenceFanoutMergedRosterDedup — the same user connected on both
+// TestPresenceFanoutMergedRosterDedup: the same user connected on both
 // replicas appears as ONE member in the merged roster (dedup is by UserID,
 // matching the local-only dedup invariant).
 func TestPresenceFanoutMergedRosterDedup(t *testing.T) {
@@ -221,7 +221,7 @@ func TestPresenceFanoutMergedRosterDedup(t *testing.T) {
 	})
 }
 
-// TestPresenceFanoutNoFanoutByteIdentical — with no fanout attached,
+// TestPresenceFanoutNoFanoutByteIdentical: with no fanout attached,
 // PresenceRoster behaves exactly as the single-replica implementation: only
 // local connections, identical output shape (sorted, empty-topic → nil).
 func TestPresenceFanoutNoFanoutByteIdentical(t *testing.T) {
@@ -250,7 +250,7 @@ func TestPresenceFanoutNoFanoutByteIdentical(t *testing.T) {
 	}
 }
 
-// TestPresenceFanoutStopDetachesCleanly — after stop, no presence goroutine
+// TestPresenceFanoutStopDetachesCleanly: after stop, no presence goroutine
 // leaks and remote state is cleared; a subsequent SetFanout re-attaches.
 func TestPresenceFanoutStopDetachesCleanly(t *testing.T) {
 	a, _, _, stopA, stopB := twoManagersOnOneBus(t, 50*time.Millisecond, 200*time.Millisecond)
@@ -278,7 +278,7 @@ func TestPresenceFanoutStopDetachesCleanly(t *testing.T) {
 	}
 }
 
-// TestPresenceFanoutRosterExcludesExpired — an expired remote entry does not
+// TestPresenceFanoutRosterExcludesExpired: an expired remote entry does not
 // appear in PresenceRoster even before the sweep runs (read-time filtering).
 func TestPresenceFanoutRosterExcludesExpired(t *testing.T) {
 	a, b, _, stopA, stopB := twoManagersOnOneBus(t, 50*time.Millisecond, 200*time.Millisecond)
@@ -312,7 +312,7 @@ func TestPresenceFanoutRosterExcludesExpired(t *testing.T) {
 	}
 }
 
-// TestPresenceFanoutAnnouncementCarriesNoSessionID — the on-wire announcement
+// TestPresenceFanoutAnnouncementCarriesNoSessionID: the on-wire announcement
 // contains ONLY the same identity fields PresenceRoster exposes; it never
 // leaks session ids or anything else (identity safety).
 func TestPresenceFanoutAnnouncementCarriesNoSessionID(t *testing.T) {
@@ -344,7 +344,7 @@ func TestPresenceFanoutAnnouncementCarriesNoSessionID(t *testing.T) {
 	if strings.Contains(string(captured), "sess-secret") {
 		t.Errorf("announcement leaked session id: %s", captured)
 	}
-	// Must carry the roster identity (UserID + DisplayName) — the same data
+	// Must carry the roster identity (UserID + DisplayName), the same data
 	// PresenceRoster already exposes.
 	if !strings.Contains(string(captured), "u1") || !strings.Contains(string(captured), "Alice") {
 		t.Errorf("announcement missing server-derived identity: %s", captured)

@@ -11,8 +11,8 @@ import (
 
 // Router maps paths to screens and layouts.
 // Supports both exact paths ("/about") and dynamic patterns
-// ("/products/:slug"). The "{slug}" brace syntax — used by the
-// blueprint, the REST/entity routers, and the entity docs — is also
+// ("/products/:slug"). The "{slug}" brace syntax, used by the
+// blueprint, the REST/entity routers, and the entity docs, is also
 // accepted and normalized to ":slug" at registration (see
 // normalizeRoutePath). Both forms match identically.
 type Router struct {
@@ -62,37 +62,37 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 		// as completely as it shadows a dynamic screen (checked below):
 		// ResolveRedirect runs before screen resolution, so /old/special
 		// would 308 away forever with its screen never rendering. Same
-		// overlap test, same voice — the exact-screen side was simply
+		// overlap test, same voice, the exact-screen side was simply
 		// never wired up.
 		exactSegs := strings.Split(strings.Trim(screen.Path, "/"), "/")
 		for _, pr := range r.patternRedir {
 			if patternsOverlap(pr.segments, exactSegs) {
-				panic("app: screen " + screen.Path + " overlaps a registered redirect — " +
-					"redirects are consulted before screens, so the screen would be unreachable on shared URLs")
+				panic("app: screen " + screen.Path + " overlaps a registered redirect. " +
+					"Redirects are consulted before screens, so the screen would be unreachable on shared URLs")
 			}
 		}
 		r.screens[screen.Path] = screen
 		return
 	}
 
-	// Dynamic route — parse + validate segments.
+	// Dynamic route, parse + validate segments.
 	parts := strings.Split(strings.Trim(screen.Path, "/"), "/")
 	paramNames := validateDynamicSegments(screen.Path, parts)
 	// Fail loud at registration: a dynamic route whose component does
 	// not implement ParamSetter would have its params silently dropped
-	// at request time (SetParams is never called). Boot-time only —
+	// at request time (SetParams is never called). Boot-time only,
 	// mirrors the render-time panic voice in framework/ui/variants.go.
 	if len(paramNames) > 0 {
 		if _, ok := screen.Component.(ParamSetter); !ok {
 			panic("app: route " + screen.Path + " is dynamic but " +
 				fmt.Sprintf("%T", screen.Component) +
-				" does not implement SetParams — params would be silently dropped")
+				" does not implement SetParams. Params would be silently dropped")
 		}
 	}
 	for _, pr := range r.patternRedir {
 		if patternsOverlap(pr.segments, parts) {
-			panic("app: screen " + screen.Path + " overlaps a registered redirect — " +
-				"redirects are consulted before screens, so the screen would be unreachable on shared URLs")
+			panic("app: screen " + screen.Path + " overlaps a registered redirect. " +
+				"Redirects are consulted before screens, so the screen would be unreachable on shared URLs")
 		}
 	}
 	r.dynamic = append(r.dynamic, dynamicRoute{
@@ -133,7 +133,7 @@ func (r *Router) DefaultLayout(layout *Layout) {
 }
 
 // GetDefaultLayout returns the layout currently set as the default for
-// screens that don't declare one. May return nil. Read-only accessor —
+// screens that don't declare one. May return nil. Read-only accessor,
 // uihost's not-found path wraps a synthesized 404 component in this
 // layout so the error page shares chrome with the rest of the site.
 func (r *Router) GetDefaultLayout() *Layout {
@@ -146,7 +146,7 @@ func (r *Router) GetDefaultLayout() *Layout {
 //
 // Exact-map matches win; among dynamic routes, registration order
 // decides precedence (first-match-wins). There is no specificity
-// ranking — register more specific patterns first.
+// ranking, register more specific patterns first.
 func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 	// Exact match first
 	if s, ok := r.screens[path]; ok {
@@ -169,7 +169,7 @@ func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 // (":name*") consumes one or more remainder segments joined with "/".
 // Catch-all routes require at least one remainder segment (so "/docs"
 // does not match "/docs/{p...}"). Param values are the raw matched
-// text — no URL decoding — consistent with single-segment params.
+// text, no URL decoding, consistent with single-segment params.
 func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 	lastIdx := len(segments) - 1
 	catchAll := lastIdx >= 0 && isCatchAllSeg(segments[lastIdx])
@@ -214,9 +214,9 @@ func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 	return params, true
 }
 
-// validateDynamicSegments applies the dynamic-route registration rules —
+// validateDynamicSegments applies the dynamic-route registration rules,
 // catch-all must be final, no constraint on a catch-all, constraint names
-// must be in the allowlist — panicking with pathLabel in the message on
+// must be in the allowlist, panicking with pathLabel in the message on
 // any violation, and returns the declared param names. Shared by screen
 // registration and RedirectPattern so a redirect's from-pattern obeys the
 // exact same grammar as a route.
@@ -228,26 +228,26 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 		}
 		if isCatchAllSeg(p) && i != len(parts)-1 {
 			panic("app: route " + pathLabel +
-				" — catch-all segment \"" + p + "\" must be the final segment")
+				": catch-all segment \"" + p + "\" must be the final segment")
 		}
 		if c := segConstraint(p); c != "" {
 			if strings.Contains(p, "*") {
 				panic("app: route " + pathLabel +
-					" — a constraint is not allowed on a catch-all segment (\"" + p + "\")")
+					": a constraint is not allowed on a catch-all segment (\"" + p + "\")")
 			}
 			if !validConstraints[c] {
 				panic("app: route " + pathLabel +
-					" — unknown constraint :" + c + " (supported: int, uuid, alpha, alnum)")
+					" has unknown constraint :" + c + " (supported: int, uuid, alpha, alnum)")
 			}
 		}
 		name := segParamName(p)
 		// A dot in the extracted name means malformed syntax slipped
-		// through normalization — e.g. "{p...:int}", where the ellipsis
+		// through normalization, e.g. "{p...:int}", where the ellipsis
 		// must come LAST ("{p:int...}", itself rejected above). Fail with
 		// the real problem instead of registering a garbage param name.
 		if strings.Contains(name, ".") {
 			panic("app: route " + pathLabel +
-				" — malformed dynamic segment \"" + p + "\" (catch-all ellipsis goes last: \"{name...}\")")
+				": malformed dynamic segment \"" + p + "\" (catch-all ellipsis goes last: \"{name...}\")")
 		}
 		paramNames = append(paramNames, name)
 	}
@@ -304,12 +304,12 @@ func segParamName(seg string) string {
 func ParamName(seg string) string { return segParamName(seg) }
 
 // RenderRaw renders a screen by path with no policy resolution and no
-// request context. INTENDED FOR INTERNAL/SSG USE ONLY — callers in
+// request context. INTENDED FOR INTERNAL/SSG USE ONLY, callers in
 // HTTP-serving code should use App.RenderPageResult, which evaluates
 // the Policy chain before invoking Load and Render.
 //
-// Composition is the same resolved layout chain RenderPageResult uses —
-// including the router's default layout — so statically rendered output
+// Composition is the same resolved layout chain RenderPageResult uses,
+// including the router's default layout, so statically rendered output
 // is structurally identical to the SSR output for the same route. (It
 // previously skipped the default layout and double-wrapped <main>,
 // making SSG output diverge from what the server served.)
@@ -319,7 +319,7 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	// Per-request fresh instance — SetParams/Render mutations stay
+	// Per-request fresh instance, SetParams/Render mutations stay
 	// isolated to this call. See Screen.newInstance for the rationale.
 	comp := screen.newInstance()
 	if len(params) > 0 {
@@ -363,7 +363,7 @@ func (r *Router) Screens() map[string]*Screen {
 // router, and the group's layout is applied.
 //
 // When the runtime navigates between siblings in the same group, only
-// the inner content is swapped — the layout shell is DOM-stable.
+// the inner content is swapped, the layout shell is DOM-stable.
 func (r *Router) ScreenGroup(sg *ScreenGroup) {
 	for _, screen := range sg.AllScreens() {
 		r.Screen(screen, screen.Layout)

@@ -48,7 +48,7 @@ func TestRangeSliderEmitsTwoInputs(t *testing.T) {
 func TestRangeSliderSwapsCrossedValues(t *testing.T) {
 	h := string(RangeSlider(RangeSliderConfig{
 		Name: "x", Label: "x", Min: 0, Max: 100,
-		ValueLow: 80, ValueHigh: 20, // crossed — should auto-swap
+		ValueLow: 80, ValueHigh: 20, // crossed, should auto-swap
 	}))
 	// After swap: lo=20, hi=80.
 	if !strings.Contains(h, `value="20"`) || !strings.Contains(h, `value="80"`) {

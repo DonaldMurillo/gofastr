@@ -73,7 +73,7 @@ func TestMatchGlob(t *testing.T) {
 		{"testdata", "a/testdatax/b.go", false},
 		{"cmd/", "cmd/a/b.go", true},
 		// `**` matches zero segments, so the pattern covers the tree root
-		// as well as its contents — see matchGlob's doc comment.
+		// as well as its contents. See matchGlob's doc comment.
 		{"core/**", "core", true},
 		{"core/**", "core/router/x.go", true},
 		{"a/*/c", "a/b/c", true},
@@ -181,7 +181,7 @@ contracts:
 
 // "Visible opt-outs" is the config's whole posture, and the footer's job
 // is "what did config change". Per-rule and per-capability exemptions
-// were the two relaxation forms the list omitted — an exempt path is a
+// were the two relaxation forms the list omitted, an exempt path is a
 // place a rule cannot fire, which is exactly what the footer exists to
 // say out loud.
 func TestRelaxationsListEveryExemptionForm(t *testing.T) {
@@ -299,7 +299,7 @@ func g() { trip() }
 }
 
 // A block-comment directive with code after it on the same line trails
-// that code — it does not cover the next line. Classifying any line that
+// that code. It does not cover the next line. Classifying any line that
 // STARTS with a comment as standalone waived the wrong line and then
 // reported the directive stale at the very line where its match sits.
 func TestLeadingBlockDirectiveCoversItsOwnLine(t *testing.T) {
@@ -389,7 +389,7 @@ func TestRunRejectsUndeclaredRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An analyzer that emits a rule it did not declare must have the
-	// finding dropped and the breach reported — otherwise the catalog
+	// finding dropped and the breach reported. Otherwise the catalog
 	// stops describing what can actually fire.
 	smuggler := &Analyzer{
 		Name:  "test-smuggler",
@@ -442,7 +442,7 @@ func TestReportApplyRejectsStaleEdit(t *testing.T) {
 
 func TestReportApplyRejectsChangedContent(t *testing.T) {
 	// A file edited since analysis but still long enough passes every
-	// bounds check — and a stale offset silently applied is a corrupted
+	// bounds check, and a stale offset silently applied is a corrupted
 	// source file. When the edit records what it expects to replace, the
 	// mismatch is caught by content, not length.
 	dir := t.TempDir()
@@ -487,7 +487,7 @@ func TestReportApplyRejectsChangedContent(t *testing.T) {
 
 func TestReportApplyRefusesAnEditThatBreaksParsing(t *testing.T) {
 	// A short Old ("}") can match a coincidental byte after the file moved
-	// underneath the report — every bounds and content check passes, and
+	// underneath the report, every bounds and content check passes, and
 	// the edit lands inside something else. When a file that PARSED
 	// before the edit no longer parses after it, the edit is what broke
 	// it, and writing that to disk is corruption reported as success.
@@ -697,7 +697,7 @@ func TestFormatSARIFDeclaresItsUriBase(t *testing.T) {
 	// Artifact URIs are relative to the ANALYSED root, which is not
 	// necessarily the repository root. Without a declared base a consumer
 	// assumes repo-root and maps every annotation onto a path that does
-	// not exist — silently, which is the worst way to be wrong.
+	// not exist, silently, which is the worst way to be wrong.
 	rule, _ := LookupRule(RuleIgnoredExec)
 	report := &Report{
 		Root: "/work/app/sub",
@@ -773,7 +773,7 @@ func TestFormatTextIsPlainWithoutColor(t *testing.T) {
 
 func TestFormatTextReportsRelaxations(t *testing.T) {
 	// A clean run that is clean because rules were switched off must say
-	// so — otherwise a passing report is not evidence of anything.
+	// so. Otherwise a passing report is not evidence of anything.
 	report := &Report{FailOn: SeverityError, Relaxations: []string{"capability security → off"}}
 	report.summarize()
 	out := FormatText(report, TextOptions{})
@@ -1128,7 +1128,7 @@ func TestDiagnosticsSortWorstFirst(t *testing.T) {
 		{Severity: SeverityError, Capability: CapRouting, File: "a.go", Line: 5, RuleID: "GOFASTR1001"},
 	}
 	sortDiagnostics(ds)
-	// Severity first, then capability order, then location — the order
+	// Severity first, then capability order, then location: the order
 	// someone works through a report in.
 	if ds[0].RuleID != "GOFASTR1001" || ds[1].RuleID != "GOFASTR1401" {
 		t.Fatalf("errors did not lead, and in capability order: %+v", ds)
@@ -1140,7 +1140,7 @@ func TestDiagnosticsSortWorstFirst(t *testing.T) {
 
 func TestDedupeKeepsFirstOccurrence(t *testing.T) {
 	// Two analyzers legitimately reach the same conclusion about the same
-	// place — routing and permissions both look at an unguarded route.
+	// place, routing and permissions both look at an unguarded route.
 	ds := dedupe([]Diagnostic{
 		{RuleID: "A", File: "a.go", Line: 1, Message: "same"},
 		{RuleID: "A", File: "a.go", Line: 1, Message: "same"},
@@ -1177,7 +1177,7 @@ func TestAnalyzerCapabilitiesDerivedFromRules(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------
-// Baseline — the adoption ratchet
+// Baseline: the adoption ratchet
 // ----------------------------------------------------------------------
 
 func baselineReport(files map[string]int) *Report {
@@ -1248,7 +1248,7 @@ func TestBaselineDoesNotAbsorbNewFindings(t *testing.T) {
 		t.Error("a new finding beyond the accepted count must still fail")
 	}
 
-	// Same rule, a DIFFERENT file — nothing accepted there.
+	// Same rule, a DIFFERENT file: nothing accepted there.
 	elsewhere := baselineReport(map[string]int{RuleUnguardedMutation + "|other.go": 1})
 	if res := elsewhere.ApplyBaseline(b); res.Accepted != 0 {
 		t.Errorf("a finding in an unlisted file was absorbed: %d", res.Accepted)
@@ -1287,7 +1287,7 @@ func TestBaselineReportsPaidDownDebt(t *testing.T) {
 
 func TestBaselineKeepsTheWorstFindingVisible(t *testing.T) {
 	// When a bucket overflows, the finding left showing should be the
-	// most severe — not whichever happened to sort last.
+	// most severe, not whichever happened to sort last.
 	r := &Report{FailOn: SeverityWarn}
 	for _, sev := range []Severity{SeverityWarn, SeverityError} {
 		rule, _ := LookupRule(RuleUnguardedMutation)
@@ -1457,7 +1457,7 @@ func mustPass(t *testing.T, dir string, cfg *Config) *Pass {
 // A custom prefix that merely STARTS with "GOFASTR" is still a custom
 // prefix. HasPrefix alone routed GOFASTRA123 into the block check, where
 // TrimPrefix left "A123" and Atoi panicked the host app at init with
-// "unparsable number" — describing neither the rule nor a prohibition.
+// "unparsable number", describing neither the rule nor a prohibition.
 // Block discipline belongs to GOFASTR + digits, exactly.
 func TestGofastrLookalikePrefixIsALegalCustomPrefix(t *testing.T) {
 	r := Rule{
@@ -1500,8 +1500,8 @@ func TestCustomPrefixSkipsTheBlockCheckGofastrKeepsIt(t *testing.T) {
 	RegisterRules(ok) // must not panic: custom prefixes have no blocks
 }
 
-// Only matches nothing for an unknown name — the safe default for a
-// fixer — but silence about it is a library-caller trap: a typo'd custom
+// Only matches nothing for an unknown name, the safe default for a
+// fixer, but silence about it is a library-caller trap: a typo'd custom
 // rule ID produced an empty, PASSING scope. The CLI and MCP validate
 // names before calling; a direct caller now gets the analyzer-error
 // contract instead ("a check that could not execute has proven nothing").
@@ -1519,7 +1519,7 @@ func TestOnlyReportsAnUnknownRuleName(t *testing.T) {
 	}
 }
 
-// tripRun runs the real pipeline — Run with suppressions live — over a
+// tripRun runs the real pipeline, Run with suppressions live, over a
 // tree whose only analyzer emits GOFASTR1403 on every line containing
 // `trip()`. The baseline/suppression interaction cannot be tested through
 // baselineReport: the hole under test is exactly that suppression is
@@ -1572,7 +1572,7 @@ var registerOnce sync.Once
 func TestSuppressedFindingKeepsItsBaselineSlot(t *testing.T) {
 	// The ratchet's promise is count-based: N accepted occurrences of a
 	// rule in a file, and occurrence N+1 fails. Suppressing one of the N
-	// must not hand its slot to a brand-new finding — otherwise adding a
+	// must not hand its slot to a brand-new finding. Otherwise adding a
 	// //gofastr:allow to baselined debt quietly widens what the gate
 	// accepts, with the count balancing so nothing ever says so.
 	b := NewBaseline(tripRun(t, `package a
@@ -1614,7 +1614,7 @@ func f() {
 // The meta rule that polices suppressions must itself honour the
 // suppression and exemption contract. Its findings were appended after
 // the filtering loop without either check, so GOFASTR0002 was the one
-// rule in the catalog that could not be waived locally — and the waiver
+// rule in the catalog that could not be waived locally, and the waiver
 // directive was itself reported stale.
 func TestStaleSuppressionIsWaivableLikeAnyFinding(t *testing.T) {
 	registerTripAnalyzer()
@@ -1651,7 +1651,7 @@ func TestStaleSuppressionIsWaivableLikeAnyFinding(t *testing.T) {
 		t.Fatalf("premise: stale findings = %d, want 1", got)
 	}
 
-	// A file-scoped waiver silences it — and must not itself be stale.
+	// A file-scoped waiver silences it, and must not itself be stale.
 	waived := run(t, map[string]string{
 		"a.go": "package a\n\n//gofastr:allow-file(GOFASTR0002) vendored tree, directives kept for upstream\n\n" +
 			"//gofastr:allow(GOFASTR1403) no longer trips\nfunc f() {}\n",
@@ -1675,7 +1675,7 @@ func TestStaleSuppressionIsWaivableLikeAnyFinding(t *testing.T) {
 
 // The slot guarantee has to hold for GOFASTR0002 itself. The stale
 // two-pass has its own suppression branch, and that branch skipped the
-// suppressedAt recording the main loop does — so waiving a baselined
+// suppressedAt recording the main loop does, so waiving a baselined
 // stale directive freed its slot, and a brand-new unwaived stale
 // directive in the same file was absorbed behind a balanced count.
 func TestWaivedStaleDirectiveKeepsItsBaselineSlot(t *testing.T) {
@@ -1747,7 +1747,7 @@ func TestApplyBaselineIsSingleShot(t *testing.T) {
 
 // The slot guarantee cannot depend on the current run's fail floor. A
 // baseline recorded under --strict holds warn-severity entries; a later
-// non-strict run still applies them — and if warn suppressions were not
+// non-strict run still applies them, and if warn suppressions were not
 // tracked there, a suppressed warn finding freed its slot and the next
 // new warn finding was displayed as accepted debt instead of as itself.
 func TestSuppressedSlotHoldsAcrossFailOnMismatch(t *testing.T) {
@@ -1788,7 +1788,7 @@ func f() {
 
 func TestSuppressedSlotIsReportedAsOverAccepting(t *testing.T) {
 	// Once a baselined finding is suppressed, a re-recorded baseline
-	// would no longer include it — the entry is dead weight. Saying so is
+	// would no longer include it, the entry is dead weight. Saying so is
 	// the same nudge that keeps paid-down debt from ossifying.
 	b := NewBaseline(tripRun(t, `package a
 
@@ -1901,13 +1901,13 @@ func TestChangedFilesListsUncommittedAndUntracked(t *testing.T) {
 
 func TestBaselineRecordsOnlyGatingFindings(t *testing.T) {
 	// A baseline exists to unblock a gate. Recording a finding that
-	// cannot fail the run is not merely noise in the file — the entry
+	// cannot fail the run is not merely noise in the file, the entry
 	// absorbs that finding on every later run, so an informational signal
 	// the project deliberately kept visible disappears instead.
 	//
 	// This bit for real: the semantic-coverage rules are
 	// environment-dependent, so this repository downgraded them to info
-	// rather than let them gate — and `--baseline-write` then silenced
+	// rather than let them gate, and `--baseline-write` then silenced
 	// the very findings the downgrade was meant to keep in view.
 	r := &Report{FailOn: SeverityWarn}
 	gating, _ := LookupRule(RuleUnguardedMutation)
@@ -1939,7 +1939,7 @@ func TestBaselineRecordsOnlyGatingFindings(t *testing.T) {
 
 func TestConfigCanEscalateNotOnlyRelax(t *testing.T) {
 	// The docs describe config as "only ever relaxes", which is the
-	// posture for *defaults* — nothing is enforced less than declared
+	// posture for *defaults*: nothing is enforced less than declared
 	// unless someone writes it down. But a team wanting a rule to be
 	// STRICTER than the catalog default is a legitimate, visible choice,
 	// and every test until now only exercised the downward direction.
@@ -1973,7 +1973,7 @@ func TestConfigCanEscalateNotOnlyRelax(t *testing.T) {
 func TestPanickingAnalyzerDoesNotKillTheRun(t *testing.T) {
 	// Twelve analyzers run concurrently over one pass. If any one of them
 	// can take the process down, a single bad rule makes the whole tool
-	// unusable — so a panic is caught, attributed, and the other eleven
+	// unusable, so a panic is caught, attributed, and the other eleven
 	// still report. A half-report beats no report.
 	Register(&Analyzer{
 		Name: "test-panicker", Doc: "panics on purpose",

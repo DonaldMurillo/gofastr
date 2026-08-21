@@ -9,7 +9,7 @@ import (
 // Zero-width and bidi codepoints have no visible glyph but rearrange or
 // hide the surrounding text. In a cursor *field name* that gates a SQL
 // ORDER BY, a parser that sees "name" and a downstream allow-list that
-// sees "na​me" disagree silently — exactly the homograph confusion that
+// sees "na​me" disagree silently, exactly the homograph confusion that
 // makes cursor injection possible. stripControls must remove them.
 var invisibleCodepoints = []struct {
 	name string
@@ -41,7 +41,7 @@ func TestDecodeCursor_StripsInvisibles(t *testing.T) {
 				t.Fatalf("invisible %U survived in field: field=%q", tc.r, field)
 			}
 		})
-		// Values are bound SQL args, not identifiers — they decode
+		// Values are bound SQL args, not identifiers, they decode
 		// verbatim so the keyset round-trip stays lossless. Stripping
 		// here made a row whose sort key contains the codepoint resume
 		// paging before itself and get served twice.

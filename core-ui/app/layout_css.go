@@ -2,7 +2,7 @@ package app
 
 // LayoutBaseCSS returns the structural CSS for the layout shells the app
 // package emits (.layout-body, the sidebar row, and the WithContainer centered
-// column). It's owned here — next to the markup it styles — and injected once by
+// column). It's owned here, next to the markup it styles, and injected once by
 // the UI host, so neither apps nor generators ship layout CSS of their own. All
 // colors/widths reference theme tokens (--color-*, --ui-layout-*), overridable
 // per app.
@@ -114,7 +114,7 @@ func LayoutBaseCSS() string {
 }
 
 // InterceptOverlayCSS returns the chrome for an intercepted route's
-// overlay — the drawer or sheet that a soft navigation from a declared
+// overlay, the drawer or sheet that a soft navigation from a declared
 // origin presents instead of a full page (see intercept.go).
 //
 // It lives here, beside the layout shells, for the same reason they do:
@@ -126,7 +126,7 @@ func LayoutBaseCSS() string {
 // Every value is a theme token, so the overlay inherits an app's palette,
 // spacing, and radii without an override. Presentation keys off
 // data-fui-intercept-as, which the SERVER sets from the registered
-// ScreenType — the client cannot pick its own chrome.
+// ScreenType, the client cannot pick its own chrome.
 func InterceptOverlayCSS() string {
 	return `/* Intercepted-route overlay: a scrim over the page that stays
    mounted underneath, with the screen render docked to an edge. */

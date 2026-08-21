@@ -78,7 +78,7 @@ func TestLoggerIsAppLocal(t *testing.T) {
 
 // TestSetLoggerAffectsMiddleware pins the App-local logger contract:
 // middleware constructed with LoggingFn(app.Logger) picks up the
-// latest SetLogger value per request — no chain rewiring needed.
+// latest SetLogger value per request, no chain rewiring needed.
 //
 // The framework's DefaultMiddleware no longer includes LoggingFn (so
 // battery/log can own access logging without duplication), so this
@@ -143,7 +143,7 @@ func TestSetLoggerNilPanics(t *testing.T) {
 	app.SetLogger(nil)
 }
 
-// TestWithLoggerNilPanics is the option-path counterpart — keeps the
+// TestWithLoggerNilPanics is the option-path counterpart, keeps the
 // "logger is always non-nil" contract from drifting if WithLogger is
 // later refactored to lazy-eval the option.
 func TestWithLoggerNilPanics(t *testing.T) {

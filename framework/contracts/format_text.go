@@ -21,7 +21,7 @@ type TextOptions struct {
 
 // FormatText renders a report for a terminal. The shape is deliberate:
 // findings grouped by rule rather than by file, because the unit of
-// *action* is the rule — you learn it once and then fix every instance —
+// *action* is the rule, you learn it once and then fix every instance,
 // while a file-grouped list makes the reader re-derive the lesson at each
 // stop.
 func FormatText(r *Report, opts TextOptions) string {
@@ -29,7 +29,7 @@ func FormatText(r *Report, opts TextOptions) string {
 	c := colorizer{on: opts.Color}
 
 	if len(r.Diagnostics) == 0 {
-		fmt.Fprintf(&b, "  %s %s\n", c.green("✓"), "Contracts verified — no findings.")
+		fmt.Fprintf(&b, "  %s %s\n", c.green("✓"), "Contracts verified: no findings.")
 		writeQuietFooter(&b, r, c)
 		if opts.Timings {
 			writeTimings(&b, r, c)
@@ -135,7 +135,7 @@ func writeSummary(b *strings.Builder, r *Report, c colorizer) {
 }
 
 // writeQuietFooter states what the run did not check. A verify that
-// passes because half of it was switched off should say so — the whole
+// passes because half of it was switched off should say so: the whole
 // point of "no hidden behavior" is that a clean report is trustworthy.
 func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 	if r.Suppressed > 0 {
@@ -150,14 +150,14 @@ func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 		// The ratchet: debt that was paid stays recorded as accepted
 		// until someone re-records, which would let new findings hide in
 		// the slack. Saying so is what keeps the baseline shrinking.
-		fmt.Fprintf(b, "  %s %d baseline entr%s now over-accepting — re-record with %s\n",
+		fmt.Fprintf(b, "  %s %d baseline entr%s now over-accepting: re-record with %s\n",
 			c.green("·"), r.BaselineFixed,
 			map[bool]string{true: "y is", false: "ies are"}[r.BaselineFixed == 1],
 			c.bold("gofastr verify --baseline-write"))
 	}
 	// A file the parser rejected produced no findings from any analyzer.
 	// Saying so is the difference between "these files are clean" and
-	// "nobody could read these files" — mid-edit that is expected, in CI
+	// "nobody could read these files", mid-edit that is expected, in CI
 	// it is the whole story.
 	if r.Unparsed > 0 {
 		fmt.Fprintf(b, "  %s %d file%s could not be parsed and %s not checked\n",
@@ -166,7 +166,7 @@ func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 	}
 	if r.OutsideChange > 0 {
 		// A narrowed run must never read as a whole-repository all-clear.
-		fmt.Fprintf(b, "  %s %d finding%s outside the changed files — run without %s for the full picture\n",
+		fmt.Fprintf(b, "  %s %d finding%s outside the changed files: run without %s for the full picture\n",
 			c.yellow("·"), r.OutsideChange, plural(r.OutsideChange), c.bold("--changed"))
 	}
 	if len(r.Relaxations) > 0 {
@@ -184,7 +184,7 @@ func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 		fmt.Fprintf(b, "  %s only checked: %s\n", c.yellow("·"), strings.Join(names, ", "))
 	}
 	if len(r.Errors) > 0 {
-		fmt.Fprintf(b, "\n  %s %d analyzer(s) failed to run — this report is incomplete:\n",
+		fmt.Fprintf(b, "\n  %s %d analyzer(s) failed to run: this report is incomplete:\n",
 			c.red("✗"), len(r.Errors))
 		for _, e := range r.Errors {
 			fmt.Fprintf(b, "      %s\n", e)
@@ -273,7 +273,7 @@ func (c colorizer) severity(s Severity) string {
 	}
 }
 
-// FormatExplain renders one catalog entry in full — the `--explain` view
+// FormatExplain renders one catalog entry in full: the `--explain` view
 // and the body of the `contracts_explain` MCP tool.
 func FormatExplain(r Rule, color bool) string {
 	c := colorizer{on: color}
@@ -286,7 +286,7 @@ func FormatExplain(r Rule, color bool) string {
 	for _, ex := range r.Examples {
 		b.WriteString("\n")
 		if ex.Caption != "" {
-			fmt.Fprintf(&b, "%s — %s\n", c.bold("Example"), ex.Caption)
+			fmt.Fprintf(&b, "%s: %s\n", c.bold("Example"), ex.Caption)
 		} else {
 			fmt.Fprintf(&b, "%s\n", c.bold("Example"))
 		}

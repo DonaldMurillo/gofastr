@@ -58,7 +58,7 @@ func TestInjection_SQLCommentPayload(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, url, nil)
 			filters, err := ParseFilters(req, fields)
 
-			// ParseFilters returns filters without SQL validation —
+			// ParseFilters returns filters without SQL validation,
 			// the security boundary is at the query builder layer.
 			// This test documents that raw values pass through.
 			if err != nil && tc.wantErr {
@@ -162,7 +162,7 @@ func TestInjection_OversizedINList(t *testing.T) {
 // TestSort_RepeatedFieldBounded verifies that a single request cannot
 // generate an unbounded ORDER BY clause by repeating an allow-listed
 // ?sort= param thousands of times. Without a cap, N copies of
-// ?sort=title produce N "ORDER BY title" fragments — oversized SQL,
+// ?sort=title produce N "ORDER BY title" fragments, oversized SQL,
 // parse-CPU burn, and statement-cache pollution from one small request.
 func TestSort_RepeatedFieldBounded(t *testing.T) {
 	fields := []schema.Field{
@@ -189,7 +189,7 @@ func TestSort_RepeatedFieldBounded(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodGet, "/?"+strings.Join(q, "&"), nil)
 		sorts, err := ParseSort(req, fields)
-		// Either fail closed (preferred) or cap — never emit thousands.
+		// Either fail closed (preferred) or cap, never emit thousands.
 		if err == nil && len(sorts) > 16 {
 			t.Errorf("SECURITY: [filter_sort] repeated ?sort=title produced %d clauses (want cap <=16 or a rejection). Attack: unbounded ORDER BY via repeated param.", len(sorts))
 		}
@@ -290,7 +290,7 @@ func TestSearchWildcardEscaped(t *testing.T) {
 }
 
 // TestSearchSQLPayloadParameterized proves that SQL injection payloads in
-// the search term never appear in the emitted SQL — they go into bound
+// the search term never appear in the emitted SQL, they go into bound
 // args, not the SQL string. The only SQL in a Condition is the fixed
 // LOWER(field) LIKE $N ESCAPE pattern.
 func TestSearchSQLPayloadParameterized(t *testing.T) {
@@ -318,7 +318,7 @@ func TestSearchSQLPayloadParameterized(t *testing.T) {
 
 // TestUnknownFilterKeyIsBounded pins the cost ceiling on the "did you mean"
 // suggestion path. The unrecognized filter key is a query-param NAME straight
-// off the request URL — unauthenticated, no body — and nearestField runs
+// off the request URL, unauthenticated, no body, and nearestField runs
 // fuzzy.Levenshtein over it against every field name, so cost is
 // len(key) × Σ len(fieldNames) (~225ms/MiB measured over 30 fields). With
 // Go's default 1 MiB MaxHeaderBytes that is a per-GET CPU spike an

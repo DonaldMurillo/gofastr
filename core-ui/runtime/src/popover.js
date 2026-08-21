@@ -1,4 +1,4 @@
-// GoFastr runtime module — Popover anchoring
+// GoFastr runtime module, Popover anchoring
 //
 // Positions a freshly-opened popover-style widget next to its trigger
 // element. Auto-flips when the preferred side would overflow the
@@ -59,7 +59,7 @@
       const tr = trigger.getBoundingClientRect();
       // Set the anchored marker BEFORE measuring so the chrome's
       // border + shadow + max-inline-size are reflected in the
-      // bounding rect — without this the measurement is from the
+      // bounding rect, without this the measurement is from the
       // un-styled chrome and the placement misses by a few pixels.
       if (!root.hasAttribute('data-fui-popover-side')) {
         root.setAttribute('data-fui-popover-side', 'bottom');
@@ -107,7 +107,7 @@
       root.style.right = 'auto';
       root.style.bottom = 'auto';
       root.setAttribute('data-fui-popover-side', chosen);
-      // Arrow offset — distance from popover's anchored edge to the
+      // Arrow offset, distance from popover's anchored edge to the
       // center of the trigger, so the arrow always sits below the
       // originating button regardless of clamping.
       if (chosen === 'top' || chosen === 'bottom') {
@@ -119,7 +119,7 @@
       }
     };
     place();
-    // Reposition on viewport resize AND on scroll — the popover is
+    // Reposition on viewport resize AND on scroll, the popover is
     // position:fixed, so without these the trigger moves under the
     // page scroll while the popover stays glued to the viewport.
     // Listeners run via requestAnimationFrame so we get one place()

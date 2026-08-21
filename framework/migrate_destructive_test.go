@@ -91,7 +91,7 @@ func TestApplySchemaDiff_RefusesDestructive(t *testing.T) {
 		if n != 0 {
 			t.Fatalf("expected 0 changes applied, got %d", n)
 		}
-		// The safe ADD must NOT have run — the gate rejects before the tx.
+		// The safe ADD must NOT have run, the gate rejects before the tx.
 		cols, _ := migrate.ReadLiveColumns(context.Background(), db, "posts", migrate.DetectDialect(db))
 		if _, ok := cols["views"]; ok {
 			t.Error("safe ADD COLUMN ran despite the destructive change blocking the set")
@@ -125,8 +125,8 @@ func TestApplySchemaDiff_AllowsDestructiveOptIn(t *testing.T) {
 }
 
 // TestApplySchemaDiff_DestructivePreservesData: a DROP COLUMN is refused without
-// opt-in (data fully intact), and when opted-in removes only that column —
-// every row and every OTHER column's data survives. Real data, both dialects.
+// opt-in (data fully intact), and when opted-in removes only that column.
+// Every row and every OTHER column's data survives. Real data, both dialects.
 func TestApplySchemaDiff_DestructivePreservesData(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
 		requireDropColumn(t, db, dialect)

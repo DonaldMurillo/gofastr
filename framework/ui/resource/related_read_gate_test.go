@@ -10,7 +10,7 @@ import (
 // resolve the RELATED entity's rows to display labels, reverse-relation
 // sections list its rows outright, and dashboard aggregates count over them.
 // Each of those is a read of a different entity, governed by that entity's
-// posture — not the screen's.
+// posture, not the screen's.
 //
 // Gating only the screen's own entity left the hole one hop out: a public
 // screen with a relation column to a gated entity served the gated entity's
@@ -55,7 +55,7 @@ func TestRelationLabelsRespectRelatedEntityGate(t *testing.T) {
 	if strings.Contains(html, "Jane Author") {
 		t.Errorf("list rendered the related entity's display value while that entity refuses reads:\n%s", html)
 	}
-	// The screen's own rows must still render — only the relation cell is
+	// The screen's own rows must still render. Only the relation cell is
 	// degraded, and it renders muted rather than falling back to the raw
 	// foreign key (see TestGatedRelationRendersMutedNotTheRawID).
 	if !strings.Contains(html, "Hello") {
@@ -159,7 +159,7 @@ func TestEveryRenderEntryPointRefusesAGatedEntity(t *testing.T) {
 }
 
 // The CREATE form deliberately does not require read access to the entity
-// being created — but it still resolves relation pickers, which read a
+// being created. But it still resolves relation pickers, which read a
 // DIFFERENT entity.
 func TestCreateFormDoesNotLeakGatedRelationOptions(t *testing.T) {
 	gatedOwners := &gatedSource{
@@ -236,7 +236,7 @@ func TestGatedRelatedSectionIsHiddenNotAnnounced(t *testing.T) {
 // predicate answers TRUE for an anonymous caller, while the full read posture
 // answers FALSE because auto-CRUD still requires a session.
 //
-// A stub whose two gates agree cannot detect which one the code consults —
+// A stub whose two gates agree cannot detect which one the code consults:
 // preferring the narrow gate would keep every other test green while reopening
 // exactly this hole.
 type defaultPostureSource struct{ stubSource }
@@ -293,7 +293,7 @@ func (r *recordAwareSource) CanReadRecordScoped(_ context.Context, id string) bo
 // The HTTP read-one route passes the path id into the permission check, so a
 // decider can allow the listing and deny one row. A screen that asked the
 // collection-level question would render a record GET /api/<entity>/{id}
-// refuses — the two surfaces disagreeing about the same record.
+// refuses, the two surfaces disagreeing about the same record.
 func TestDetailAndEditFormHonourPerRecordDenial(t *testing.T) {
 	src := &recordAwareSource{
 		stubSource: stubSource{rows: []map[string]any{
@@ -321,7 +321,7 @@ func TestDetailAndEditFormHonourPerRecordDenial(t *testing.T) {
 	}
 }
 
-// narrowOnlySource implements the OLD predicate and not the new one — the
+// narrowOnlySource implements the OLD predicate and not the new one: the
 // compatibility branch canRead/canReadCrud fall back to. No other stub reaches
 // it, so the fallback shipped unexercised: a source built before CanReadScoped
 // existed must still be consulted rather than silently treated as public.
@@ -352,7 +352,7 @@ func TestNarrowOnlySourceStillGatesViaTheFallback(t *testing.T) {
 	}
 }
 
-// And a source implementing NEITHER predicate is ungated by design — the
+// And a source implementing NEITHER predicate is ungated by design, the
 // documented compatibility contract for custom listers that front no entity.
 func TestSourceWithNoPredicateIsUngatedByDesign(t *testing.T) {
 	cfg := Config{
@@ -367,14 +367,14 @@ func TestSourceWithNoPredicateIsUngatedByDesign(t *testing.T) {
 }
 
 // relatedRelationLabels resolves the FK columns of a reverse-relation
-// section's rows — an invoice listed under a customer still showing its plan
+// section's rows, an invoice listed under a customer still showing its plan
 // name. It got the same gate as its twin relationLabels in this change, but
 // only the twin was tested: four tests cover the grid-cell resolver and none
 // covered this one, so the code read as tested while the detail-page path
 // could serve a gated entity's labels with nothing failing.
 //
 // The section itself is READABLE here. Only the third entity its rows point at
-// is gated, which is what isolates this resolver — a gated section would be
+// is gated, which is what isolates this resolver: a gated section would be
 // omitted wholesale by an earlier guard and this function would never run.
 func TestGatedRelationInsideARelatedSectionRendersMuted(t *testing.T) {
 	gatedPlans := &gatedSource{
@@ -410,7 +410,7 @@ func TestGatedRelationInsideARelatedSectionRendersMuted(t *testing.T) {
 	}
 
 	gated := build(gatedPlans)
-	// The section is readable, so its own rows must still render — otherwise
+	// The section is readable, so its own rows must still render, otherwise
 	// this test would pass for the wrong reason (nothing rendered at all).
 	if !strings.Contains(gated, "INV-1") {
 		t.Fatalf("the readable related section did not render its rows, so the label resolver never ran:\n%s", gated)
@@ -418,7 +418,7 @@ func TestGatedRelationInsideARelatedSectionRendersMuted(t *testing.T) {
 	if strings.Contains(gated, "Enterprise") {
 		t.Errorf("a related section resolved display labels from an entity the caller may not read:\n%s", gated)
 	}
-	// Muted, not the raw foreign key — the same contract the grid cells hold.
+	// Muted, not the raw foreign key, the same contract the grid cells hold.
 	if strings.Contains(gated, "pl1") {
 		t.Errorf("the gated relation fell back to the raw foreign key instead of rendering muted:\n%s", gated)
 	}

@@ -21,7 +21,7 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	t.Helper()
 	db := openTestDB(t, dialect)
 
-	// Create tables — TIMESTAMP is portable across both engines (DATETIME is
+	// Create tables. TIMESTAMP is portable across both engines (DATETIME is
 	// SQLite-only).
 	for _, table := range []string{
 		`CREATE TABLE IF NOT EXISTS users (
@@ -70,7 +70,7 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	crud.RegisterCrudRoutes(app.Router(), crud.NewCrudHandler(postsEntity, db), "/posts")
 
 	spec := EntityOpenAPI(app.Registry, "Conformance API", "1.0.0")
-	// The conformance tests fetch the spec without authenticating —
+	// The conformance tests fetch the spec without authenticating,
 	// openapi.Handler now 401s anonymous callers, so use the explicit
 	// public variant for the in-test spec ingestion. Production code
 	// that wants the gated handler keeps using openapi.Handler.
@@ -165,7 +165,7 @@ func TestE2E_Conformance_ListPosts_ResponseMatchesSpec(t *testing.T) {
 			t.Fatal("spec missing GET /posts 200 response")
 		}
 
-		// 3. Spec says response is oneOf [ListResponse, CursorPage] — pick the
+		// 3. Spec says response is oneOf [ListResponse, CursorPage], pick the
 		// offset variant (which has "page") for conformance against the body
 		// returned without a ?cursor query.
 		schema := getSpecResponseSchema(t, specDoc, "/posts", "get", "200")

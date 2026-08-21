@@ -30,7 +30,7 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 }
 
 // EntityEndpointRoutePath is EntityEndpointPath with the app's API prefix
-// applied — the path the endpoint is actually mounted at.
+// applied, the path the endpoint is actually mounted at.
 //
 // A relative Endpoint.Path is documented as resolving against the entity's
 // table path. Under WithAPIPrefix that table path is prefixed, so the endpoint
@@ -45,7 +45,7 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 // used to use the latter, because the spec carried the prefix in its `servers`
 // entry and its paths were prefix-relative by construction. Path keys are now
 // absolute (see EntityOpenAPI), so the documented endpoint path has to be the
-// mounted one — and routing through the same helper is what keeps the escape
+// mounted one, and routing through the same helper is what keeps the escape
 // hatch behaving identically in both.
 func EntityEndpointRoutePath(ent *entity.Entity, path, apiPrefix string) string {
 	relative := !strings.HasPrefix(strings.TrimSpace(path), "/")
@@ -67,7 +67,7 @@ func convertColonParams(path string) string {
 }
 
 // objectSchema is the shapeless fallback emitted when an Endpoint declares no
-// typed Input/Output schema — identical to the historical default.
+// typed Input/Output schema, identical to the historical default.
 func objectSchema() map[string]any { return map[string]any{"type": "object"} }
 
 // EndpointInputSchema returns the JSON-Schema object describing an endpoint's

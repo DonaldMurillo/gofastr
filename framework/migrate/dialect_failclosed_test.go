@@ -11,7 +11,7 @@ import (
 // TestAutoMigratePlan_DialectDetectFailClosed is the red-first test for the
 // fail-closed dialect-detection invariant (v0.62): when the version() probe
 // fails transiently on every retry, AutoMigrate MUST return an error naming
-// dialect detection — not log a warning and assume SQLite. A routine-only
+// dialect detection, not log a warning and assume SQLite. A routine-only
 // Postgres app whose probe transiently fails would otherwise be classified as
 // SQLite, skipping every PG routine and the cross-replica advisory lock.
 //
@@ -19,7 +19,7 @@ import (
 // taken or a transaction is opened.
 func TestAutoMigratePlan_DialectDetectFailClosed(t *testing.T) {
 	db, m := mock(t)
-	// version() fails transiently on every attempt — driver/transport noise,
+	// version() fails transiently on every attempt, driver/transport noise,
 	// not the deterministic "no such function" SQLite returns.
 	transient := errors.New("connection reset by peer")
 	for range 3 {
@@ -47,7 +47,7 @@ func TestAutoMigratePlan_DialectDetectFailClosed(t *testing.T) {
 
 // TestAutoMigratePlan_BadDSNActionableError is the red-first test for the
 // bad-DSN error quality: when the configured database cannot be opened
-// (SQLite SQLITE_CANTOPEN — "unable to open database file"), the boot error
+// (SQLite SQLITE_CANTOPEN, "unable to open database file"), the boot error
 // must (a) name the underlying cause and (b) point the operator at the
 // database connection / DATABASE_URL rather than printing a misleading
 // "assuming SQLite" warning.
@@ -80,8 +80,8 @@ func TestAutoMigratePlan_BadDSNActionableError(t *testing.T) {
 // TestAutoMigratePlan_LockAcquireConnErrorActionable covers the "remaining
 // path" from the bad-DSN assessment: detection succeeds, but a later
 // open/acquire inside the migration fails with a connection-class error. The
-// surfaced error must carry actionable reachability context, not just the raw
-// driver text.
+// surfaced error must carry actionable reachability context, not merely the
+// raw driver text.
 func TestAutoMigratePlan_LockAcquireConnErrorActionable(t *testing.T) {
 	db, m := mock(t)
 	// Detection resolves to SQLite via the deterministic "no such function"
@@ -127,8 +127,8 @@ func TestDetectDialectStrict_TransientFailureErrors(t *testing.T) {
 	}
 }
 
-// A Postgres error that merely QUOTES one of the deterministic phrases —
-// e.g. authentication failure for a role literally named "syntax error" —
+// A Postgres error that merely QUOTES one of the deterministic phrases,
+// e.g. authentication failure for a role literally named "syntax error",
 // must not be read as "this engine has no version(), so it is SQLite".
 // Misreading it resolves a Postgres outage into a confident SQLite answer.
 func TestProbeClassifier_QuotedPhraseIsNotDeterministic(t *testing.T) {

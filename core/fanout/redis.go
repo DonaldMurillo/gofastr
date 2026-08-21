@@ -40,7 +40,7 @@ func (r *redisFanout) Publish(ctx context.Context, topic string, payload []byte)
 
 // Subscribe registers fn for the topic's Redis channel. The user callback is
 // wrapped in a [SubscriberQueue] so it runs on a dedicated goroutine with a
-// bounded, drop-oldest queue — preserving the per-subscriber contract the
+// bounded, drop-oldest queue, preserving the per-subscriber contract the
 // [Fanout] interface promises, so one slow subscriber cannot stall the Redis
 // reader goroutine (which fans out to every subscriber on this topic).
 func (r *redisFanout) Subscribe(topic string, fn func(payload []byte)) (cancel func(), err error) {

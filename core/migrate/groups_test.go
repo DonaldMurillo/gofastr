@@ -19,7 +19,7 @@ func mustReg(t *testing.T, m *Migrator, mig Migration) {
 	}
 }
 
-// seqOrder reads the `who` column of the seq table in insertion order — the
+// seqOrder reads the `who` column of the seq table in insertion order, the
 // observable proof of the (version, group) apply sequence.
 func seqOrder(t *testing.T, db *sql.DB) []string {
 	t.Helper()
@@ -388,7 +388,7 @@ func TestLegacyTableUpgradedToGroups(t *testing.T) {
 
 // TestLegacyTableCollisionAllowedAfterUpgrade verifies the core uniqueness
 // property: after upgrading a legacy table, two groups can each own a version 1
-// without corrupting the tracking table — the exact hazard the composite key
+// without corrupting the tracking table, the exact hazard the composite key
 // exists to prevent.
 func TestLegacyTableCollisionAllowedAfterUpgrade(t *testing.T) {
 	m, db := newSQLiteMigrator(t)
@@ -397,7 +397,7 @@ func TestLegacyTableCollisionAllowedAfterUpgrade(t *testing.T) {
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("Up default: %v", err)
 	}
-	// Now add knowledge v1 — same version number, different group.
+	// Now add knowledge v1. Same version number, different group.
 	mustReg(t, m, Migration{Group: "knowledge", Version: 1, Name: "kb", Up: "CREATE TABLE kb (id INTEGER)", Down: "DROP TABLE kb"})
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("Up with colliding version across groups: %v", err)
@@ -416,7 +416,7 @@ func TestLegacyTableCollisionAllowedAfterUpgrade(t *testing.T) {
 
 // TestDeregisteredGroupDoesNotBrickUp verifies that after a group was applied
 // (table upgraded, ('knowledge', N) row present), a later run that no longer
-// registers that group reads the table's real group values — not the legacy
+// registers that group reads the table's real group values, not the legacy
 // path that scans Group="" for every row. Without table-state detection the
 // knowledge row is misattributed to the default group, collides with/shadows
 // the default-group row in the migKey map, and Up() returns a false
@@ -430,7 +430,7 @@ func TestDeregisteredGroupDoesNotBrickUp(t *testing.T) {
 		t.Fatalf("Up both: %v", err)
 	}
 
-	// Phase 2: fresh Migrator on the SAME db — only default v1 registered.
+	// Phase 2: fresh Migrator on the SAME db. Only default v1 registered.
 	// The knowledge group is de-registered (module disabled / file deleted).
 	m2 := New(db, WithDialect(DialectSQLite))
 	mustReg(t, m2, Migration{Version: 1, Name: "core", Up: "CREATE TABLE f1a (id INT)", Down: "DROP TABLE f1a"})
@@ -470,7 +470,7 @@ func TestDeregisteredGroupDoesNotShadowNewDefaultVersion(t *testing.T) {
 		t.Fatalf("Up: %v", err)
 	}
 
-	// Phase 2: fresh Migrator — default v1 + NEW default v2 registered.
+	// Phase 2: fresh Migrator. Default v1 + NEW default v2 registered.
 	m2 := New(db, WithDialect(DialectSQLite))
 	mustReg(t, m2, Migration{Version: 1, Name: "core", Up: "CREATE TABLE f1c (id INT)", Down: "DROP TABLE f1c"})
 	mustReg(t, m2, Migration{Version: 2, Name: "core2", Up: "CREATE TABLE f1e (id INT)", Down: "DROP TABLE f1e"})
@@ -612,7 +612,7 @@ func TestStatusUnknownGroupEmptyNotError(t *testing.T) {
 
 func TestDownNotBrickedByUnregisteredDirty(t *testing.T) {
 	// A de-registered (disabled) module's dirty row must not block another
-	// group's rollback — Down scopes its dirty scan to registered groups,
+	// group's rollback. Down scopes its dirty scan to registered groups,
 	// mirroring checkIntegrity. Recovery for the disabled module is Force.
 	m, db := newSQLiteMigrator(t)
 	ctx := context.Background()
@@ -626,7 +626,7 @@ func TestDownNotBrickedByUnregisteredDirty(t *testing.T) {
 	}
 
 	// Fresh migrator WITHOUT the knowledge group registered. Its dirty row
-	// must not block, and its rows must not be rollback candidates — the
+	// must not block, and its rows must not be rollback candidates. The
 	// unscoped Down rolls back the default group's row.
 	m2 := New(db, WithDialect(DialectSQLite))
 	mustReg(t, m2, Migration{Version: 1, Name: "core", Up: "CREATE TABLE dnb (id INT)", Down: "DROP TABLE dnb"})
@@ -675,8 +675,8 @@ func TestStatusNeverAddsGroupColumn(t *testing.T) {
 }
 
 func TestDefaultAliasSelectsDefaultGroup(t *testing.T) {
-	// "default" addresses the default ("") group in selections — the only
-	// CLI syntax for it — and is reserved as a registered group name.
+	// "default" addresses the default ("") group in selections. It is the only
+	// CLI syntax for it, and it is reserved as a registered group name.
 	m, db := newSQLiteMigrator(t)
 	ctx := context.Background()
 	mustReg(t, m, Migration{Version: 1, Name: "core", Up: "CREATE TABLE dal (id INT)", Down: "DROP TABLE dal"})

@@ -45,7 +45,7 @@ func runTesting(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1106 / 1101 / 1102 / 1103 — the semantic-coverage manifest.
+// GOFASTR1106 / 1101 / 1102 / 1103: the semantic-coverage manifest.
 // ----------------------------------------------------------------------
 
 func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
@@ -77,7 +77,7 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 			return []contracts.Diagnostic{{
 				RuleID:  contracts.RuleNoCoverageManifest,
 				File:    semcov.FileName,
-				Message: "no semantic-coverage manifest — the route, permission, and entity coverage checks did not run",
+				Message: "no semantic-coverage manifest: the route, permission, and entity coverage checks did not run",
 			}}
 		}
 		// A manifest that exists but cannot be read is corruption, not
@@ -226,7 +226,7 @@ func declaredPermissions(p *contracts.Pass) map[string]permSite {
 		})
 	}
 	// Entity access blocks declare permissions too, and they are the ones
-	// most likely to go unexercised — nothing in the app calls them
+	// most likely to go unexercised. Nothing in the app calls them
 	// explicitly, so only a request can prove them.
 	for _, e := range Entities(p) {
 		for _, perm := range e.AccessPermissions {
@@ -250,13 +250,13 @@ func looksLikePermission(s string) bool {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1105 — disabled tests.
+// GOFASTR1105: disabled tests.
 // ----------------------------------------------------------------------
 
 // laneBoundaryPhrases mark a skip that describes an executable boundary
 // rather than missing coverage: a capability the machine lacks, a lane
 // the run opted out of. The reason is printed in test output, so the
-// absence is visible rather than hidden — which is the whole distinction
+// absence is visible rather than hidden, which is the whole distinction
 // this rule draws.
 var laneBoundaryPhrases = []string{
 	"not set", "unavailable", "not available", "requires /bin/sh",
@@ -321,7 +321,7 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 				return true
 			}
 			out = append(out, diag(p, contracts.RuleDisabledTest, f.Rel, n.Pos(),
-				"this skip defers work rather than marking a lane boundary — the suite reports it as a pass"))
+				"this skip defers work rather than marking a lane boundary: the suite reports it as a pass"))
 			return true
 		})
 	}
@@ -346,7 +346,7 @@ func guardedByShort(lines []string, lineNo int) bool {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1104 — line coverage floor.
+// GOFASTR1104: line coverage floor.
 // ----------------------------------------------------------------------
 
 // coverageProfiles are the conventional locations a `go test

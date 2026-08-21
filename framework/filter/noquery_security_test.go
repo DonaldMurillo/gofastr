@@ -20,7 +20,7 @@ func noQueryFields() []schema.Field {
 
 // TestNoQueryFieldNoPredicate pins that a NoQuery column can never become a
 // WHERE predicate. A field masked on the way out but left filterable is
-// recoverable a character at a time from row presence — the same oracle the
+// recoverable a character at a time from row presence, the same oracle the
 // Hidden exclusion blocks, against a field that must stay in the response.
 func TestNoQueryFieldNoPredicate(t *testing.T) {
 	queries := []string{
@@ -82,7 +82,7 @@ func TestNoQueryWhereRejected(t *testing.T) {
 }
 
 // TestNoQueryErrorNamesFieldHiddenDoesNot pins the deliberate asymmetry. A
-// Hidden field must be indistinguishable from an absent one — its existence is
+// Hidden field must be indistinguishable from an absent one, its existence is
 // the secret. A NoQuery field is in the response, so naming it in the error
 // discloses nothing and tells the developer what actually went wrong.
 func TestNoQueryErrorNamesFieldHiddenDoesNot(t *testing.T) {
@@ -113,7 +113,7 @@ func TestNoQueryErrorNamesFieldHiddenDoesNot(t *testing.T) {
 }
 
 // TestNoQueryLenientDropsSilently pins that Lenient mode keeps its
-// drop-don't-reject contract for NoQuery keys — and still builds no predicate.
+// drop-don't-reject contract for NoQuery keys, and still builds no predicate.
 func TestNoQueryLenientDropsSilently(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?card_like=4111&title=x", nil)
 	filters, err := ParseFilters(req, noQueryFields(), Lenient())
@@ -133,7 +133,7 @@ func TestNoQueryLenientDropsSilently(t *testing.T) {
 // A WireName is the key clients are told to send, and the filter parser
 // resolves it to the column before building the WHERE clause. That resolution
 // runs BEFORE the NoQuery refusal is consulted, so registering the alias in
-// the allow-set — as the plain path does — would make the wire key a way
+// the allow-set, as the plain path does, would make the wire key a way
 // straight around the guard. Neither the aliasing work nor the NoQuery work
 // has this hole alone; only both in one tree.
 func TestNoQueryRefusedUnderItsWireName(t *testing.T) {

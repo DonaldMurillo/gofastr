@@ -64,7 +64,7 @@ func TestScreenLLMMD_InheritsSEOFrontMatter(t *testing.T) {
 		}
 	}
 
-	// The SAME values must appear in the HTML head — that's the parity
+	// The SAME values must appear in the HTML head: that's the parity
 	// contract.
 	htmlBody, _ := getBody(t, srv.URL+"/products")
 	for _, want := range []string{
@@ -85,7 +85,7 @@ func TestScreenLLMMD_InheritsSEOFrontMatter(t *testing.T) {
 }
 
 // TestScreenLLMMD_NoSEOOmitsFrontMatter asserts that a screen with no
-// SEO declarations produces no front-matter block — preserving the
+// SEO declarations produces no front-matter block, preserving the
 // original ScreenLLMMD output verbatim.
 func TestScreenLLMMD_NoSEOOmitsFrontMatter(t *testing.T) {
 	a := app.NewApp("no-seo")

@@ -63,7 +63,7 @@ func TestFormRepeaterMinItemsDisablesRemove(t *testing.T) {
 	}
 }
 
-// D-2: MinItems must not exceed MaxItems — creates impossible state
+// D-2: MinItems must not exceed MaxItems: creates impossible state
 // where both add and remove are permanently disabled.
 func TestFormRepeaterPanicOnMinExceedsMax(t *testing.T) {
 	defer func() {
