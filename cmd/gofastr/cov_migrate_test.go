@@ -126,9 +126,24 @@ func TestGetGroupsNormal(t *testing.T) {
 	}
 }
 
+// covT_isolateEnvResolution clears the ambient environment that
+// getMigrateDBURL consults, so a test asserting file precedence measures the
+// files it wrote rather than whatever the developer happens to have exported.
+//
+// A developer with `export DATABASE_URL=…` ran these against a different
+// database than CI did: the process env outranks every file, so the assertion
+// that .env.local beats .env never reached either file. The test failed for a
+// reason that had nothing to do with the rule it names.
+func covT_isolateEnvResolution(t *testing.T) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("APP_ENV", "")
+}
+
 func TestGetMigrateDBURLFromEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
+	covT_isolateEnvResolution(t)
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=fromenv\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -253,6 +268,7 @@ func TestGetMigrateDBURLFromProcessEnv(t *testing.T) {
 func TestGetMigrateDBURLPrefersEnvLocal(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
+	covT_isolateEnvResolution(t)
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=from-dot-env\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -270,6 +286,7 @@ func TestGetMigrateDBURLPrefersEnvLocal(t *testing.T) {
 func TestGetMigrateDBURLHonoursAppEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
+	covT_isolateEnvResolution(t)
 	t.Setenv("APP_ENV", "staging")
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=from-dot-env\n"), 0o644); err != nil {
 		t.Fatal(err)
