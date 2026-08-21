@@ -1167,6 +1167,41 @@ func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDe
 // checks below): a typo in a read posture must fail the build here, at the
 // YAML location, not surface as a panic at app registration or, worse, as a
 // predicate that silently matches nothing.
+// requireScalarString reads a scalar node, refusing any other node kind.
+//
+// stringValue answers "" for a list or a map, which is fine for a cosmetic
+// field and wrong for a security posture: `unrestricted: [posts:review]`
+// decoded to the empty string, and an empty Unrestricted is the WEAKEST
+// setting there is, lifting the read scope for every signed-in caller instead
+// of only the permission holder. A posture that a YAML shape silently widens
+// is the failure this whole decode path exists to prevent, so the shape is an
+// error rather than a default.
+func requireScalarString(node *coreyaml.Node, context, key string) (string, error) {
+	if node == nil {
+		return "", nil
+	}
+	if node.Kind != coreyaml.Scalar {
+		return "", fmt.Errorf("%s: %q must be a single value, got a %s", context, key, yamlKindName(node.Kind))
+	}
+	if node.Value == nil {
+		return "", nil
+	}
+	return fmt.Sprint(node.Value), nil
+}
+
+// yamlKindName names a node kind for an error message.
+func yamlKindName(k coreyaml.Kind) string {
+	switch k {
+	case coreyaml.Scalar:
+		return "value"
+	case coreyaml.List:
+		return "list"
+	case coreyaml.Map:
+		return "map"
+	}
+	return "node"
+}
+
 func decodeEntityReadScope(node *coreyaml.Node, context string) (*fwentity.ReadScopeDeclaration, error) {
 	if node == nil {
 		return nil, nil
@@ -1193,10 +1228,22 @@ func decodeEntityReadScope(node *coreyaml.Node, context string) (*fwentity.ReadS
 			if err := rejectUnknownKeys(pm, map[string]bool{"field": true, "op": true, "value": true, "values": true}, predContext); err != nil {
 				return nil, err
 			}
+			predField, err := requireScalarString(pm["field"], predContext, "field")
+			if err != nil {
+				return nil, err
+			}
+			predOp, err := requireScalarString(pm["op"], predContext, "op")
+			if err != nil {
+				return nil, err
+			}
+			predValue, err := requireScalarString(pm["value"], predContext, "value")
+			if err != nil {
+				return nil, err
+			}
 			pred := fwentity.RowPredicateDeclaration{
-				Field:  stringValue(pm["field"]),
-				Op:     stringValue(pm["op"]),
-				Value:  stringValue(pm["value"]),
+				Field:  predField,
+				Op:     predOp,
+				Value:  predValue,
 				Values: stringListValue(pm["values"]),
 			}
 			// The framework re-validates at registration (entity.Define) and
@@ -1226,12 +1273,16 @@ func decodeEntityReadScope(node *coreyaml.Node, context string) (*fwentity.ReadS
 			filter = append(filter, pred)
 		}
 	}
-	if len(filter) == 0 && stringValue(m["unrestricted"]) == "" {
-		return nil, fmt.Errorf("%s declares no filter and no unrestricted — it filters nothing; remove the block or add a filter", context)
+	unrestricted, err := requireScalarString(m["unrestricted"], context, "unrestricted")
+	if err != nil {
+		return nil, err
+	}
+	if len(filter) == 0 && unrestricted == "" {
+		return nil, fmt.Errorf("%s declares no filter and no unrestricted, so it filters nothing; remove the block or add a filter", context)
 	}
 	return &fwentity.ReadScopeDeclaration{
 		Filter:       filter,
-		Unrestricted: stringValue(m["unrestricted"]),
+		Unrestricted: unrestricted,
 	}, nil
 }
 

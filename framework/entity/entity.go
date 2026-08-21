@@ -500,6 +500,23 @@ func Define(name string, config EntityConfig) *Entity {
 	// declared predicate would answer it. All four checks fire here, at
 	// definition, naming the field.
 	if rs := config.Exposure.ReadScope; rs != nil && len(rs.Filter) > 0 {
+		// Two `in` predicates on ONE column are refused. Predicates AND, so
+		// `status in [draft] AND status in [published]` is unsatisfiable and
+		// can only be a mistake, but the renderer coalesces adjacent same-field
+		// IN runs into a single IN list, which turns that AND into an OR and
+		// serves EVERY row. A posture that silently widens is the one shape
+		// this must never accept, so it fails at definition instead. Combine
+		// the values into one predicate, or use neq / not_in to exclude.
+		seenIn := map[string]bool{}
+		for _, p := range rs.Filter {
+			if p.Op != "in" {
+				continue
+			}
+			if seenIn[p.Field] {
+				panic(fmt.Sprintf("entity %q: ReadScope declares two %q predicates on field %q; they AND to nothing and render as a single widened IN list. Combine the values into one predicate", name, "in", p.Field))
+			}
+			seenIn[p.Field] = true
+		}
 		for _, p := range rs.Filter {
 			var found *schema.Field
 			for i := range config.Fields {

@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -111,4 +112,68 @@ func TestReadScopePanicNamesField(t *testing.T) {
 			Filter: []RowPredicate{{Field: "stauts", Value: "published"}},
 		}},
 	})
+}
+
+// Predicates AND, so two `in` predicates on one column are unsatisfiable and
+// can only be a mistake. The renderer coalesces adjacent same-field IN runs
+// into a single IN list, which turns that AND into an OR and serves EVERY row.
+// A posture that silently WIDENS is the one shape registration must never
+// accept, so it fails at definition.
+func TestReadScopeRefusesTwoInPredicatesOnOneField(t *testing.T) {
+	cfg := EntityConfig{
+		Fields: []schema.Field{{Name: "status", Type: schema.String}},
+		Exposure: &ExposureConfig{Public: true, ReadScope: &ReadScopeConfig{
+			Filter: []RowPredicate{
+				{Field: "status", Op: "in", Values: []string{"draft"}},
+				{Field: "status", Op: "in", Values: []string{"published"}},
+			},
+		}},
+	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("two `in` predicates on one column were accepted; they render as a widened IN list that serves every row")
+		}
+		if !strings.Contains(fmt.Sprint(r), "status") {
+			t.Errorf("the panic should name the field, got %v", r)
+		}
+	}()
+	Define("notes", cfg.WithTimestamps(false))
+}
+
+// The combinations that remain legitimate must still register. `not_in` ANDs
+// correctly across predicates (NOT IN (a) AND NOT IN (b) is NOT IN (a, b)), and
+// a different operator on the same column is a real narrowing.
+func TestReadScopeAllowsLegitimateSameFieldCombinations(t *testing.T) {
+	cases := map[string][]RowPredicate{
+		"two not_in on one field": {
+			{Field: "status", Op: "not_in", Values: []string{"draft"}},
+			{Field: "status", Op: "not_in", Values: []string{"archived"}},
+		},
+		"in plus neq on one field": {
+			{Field: "status", Op: "in", Values: []string{"draft", "published"}},
+			{Field: "status", Op: "neq", Value: "draft"},
+		},
+		"in on two different fields": {
+			{Field: "status", Op: "in", Values: []string{"published"}},
+			{Field: "kind", Op: "in", Values: []string{"post"}},
+		},
+	}
+	for name, preds := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := EntityConfig{
+				Fields: []schema.Field{
+					{Name: "status", Type: schema.String},
+					{Name: "kind", Type: schema.String},
+				},
+				Exposure: &ExposureConfig{Public: true, ReadScope: &ReadScopeConfig{Filter: preds}},
+			}
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("a legitimate declaration was refused: %v", r)
+				}
+			}()
+			Define("notes_"+name, cfg.WithTimestamps(false))
+		})
+	}
 }

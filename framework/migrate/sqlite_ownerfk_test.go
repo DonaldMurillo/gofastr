@@ -422,3 +422,214 @@ func TestRewrittenDDLIsValidSQLite(t *testing.T) {
 		}
 	}
 }
+
+// SQLite stores the CREATE TABLE text verbatim in sqlite_master, comments and
+// all, and a hand-written legacy migration is exactly where a comment turns up.
+// A comma inside one is not a column separator, and reading it as one split a
+// definition in two: the following column was absorbed as type words of a
+// phantom column, and the result was DDL SQLite ACCEPTS. That is the dangerous
+// shape, because the rebuild then reports success on a mangled table.
+func TestRepairSurvivesSQLCommentsInStoredDDL(t *testing.T) {
+	cases := map[string]string{
+		"line comment with a comma": `CREATE TABLE tasks (
+			id      TEXT PRIMARY KEY, -- the pk, obviously
+			user_id TEXT NOT NULL,
+			title   TEXT,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+		"comment above the owner column": `CREATE TABLE tasks (
+			id      TEXT PRIMARY KEY,
+			-- the owner, stamped from the session
+			user_id TEXT NOT NULL REFERENCES users(id),
+			title   TEXT
+		)`,
+		"block comment holding a comma and a keyword": `CREATE TABLE tasks (
+			id      TEXT PRIMARY KEY,
+			/* user_id, title: FOREIGN KEY (title) REFERENCES nope(id) */
+			user_id TEXT NOT NULL,
+			title   TEXT,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+		"comment naming a column that does not exist": `CREATE TABLE tasks (
+			id      TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL, -- references users(id), historically
+			title   TEXT,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+	}
+	for name, ddl := range cases {
+		t.Run(name, func(t *testing.T) {
+			db := legacyDB(t, `CREATE TABLE users (id TEXT PRIMARY KEY)`, ddl,
+				`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`)
+			ctx := context.Background()
+			stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(stale) != 1 {
+				t.Fatalf("the owner key was not found: %+v", stale)
+			}
+			if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+				t.Fatalf("repair: %v", err)
+			}
+
+			// Every column survives. The phantom-column split loses one.
+			cols := map[string]bool{}
+			rows, err := db.Query(`SELECT name FROM pragma_table_info('tasks')`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for rows.Next() {
+				var n string
+				if err := rows.Scan(&n); err != nil {
+					t.Fatal(err)
+				}
+				cols[n] = true
+			}
+			rows.Close()
+			for _, want := range []string{"id", "user_id", "title"} {
+				if !cols[want] {
+					t.Errorf("column %q did not survive the rebuild; columns = %v", want, cols)
+				}
+			}
+			if len(cols) != 3 {
+				t.Errorf("rebuild produced %d columns, want 3 — a comment was read as a column definition: %v", len(cols), cols)
+			}
+			// The row is intact and creates work again.
+			var title string
+			if err := db.QueryRow(`SELECT title FROM tasks WHERE id='t1'`).Scan(&title); err != nil || title != "kept" {
+				t.Errorf("row lost in the rebuild: title=%q err=%v", title, err)
+			}
+			if _, err := db.Exec("PRAGMA foreign_keys=on"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`INSERT INTO tasks (id, user_id, title) VALUES ('t2','auth-user-2','new')`); err != nil {
+				t.Errorf("create still refused after the repair: %v", err)
+			}
+		})
+	}
+}
+
+// The rewriter must hand back everything that is not the foreign key, byte for
+// byte. Tokenizing the remainder to strip ON DELETE / DEFERRABLE and rejoining
+// it collapsed whitespace inside whatever followed, so a quoted DEFAULT came
+// out of the rebuild holding a different string than the one declared. A
+// repair that quietly edits a stored value is worse than the constraint it
+// removes.
+func TestRepairPreservesLiteralsAfterAnInlineForeignKey(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (
+			id      TEXT PRIMARY KEY,
+			user_id TEXT REFERENCES users(id) ON DELETE CASCADE DEFAULT 'guest  account',
+			note    TEXT DEFAULT 'two  spaces' CHECK (note <> 'a  b')
+		)`,
+	)
+	ctx := context.Background()
+	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("owner key not found: %+v", stale)
+	}
+	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+
+	var ddl string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'`).Scan(&ddl); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"'guest  account'", "'two  spaces'", "'a  b'"} {
+		if !strings.Contains(ddl, want) {
+			t.Errorf("the rebuild altered the literal %q:\n%s", want, ddl)
+		}
+	}
+	// And the stored value really is the declared one.
+	if _, err := db.Exec(`INSERT INTO tasks (id) VALUES ('t1')`); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := db.QueryRow(`SELECT user_id FROM tasks WHERE id='t1'`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "guest  account" {
+		t.Errorf("default stored as %q, want %q — the rewrite collapsed whitespace inside a quoted literal", got, "guest  account")
+	}
+}
+
+// A composite key that merely INCLUDES the owner column is not the stale
+// shape. The framework never emitted one, and it is doing real work on its
+// other columns. Reporting it made AutoMigrate warn that "every create fails"
+// about a constraint that is working, and made `--apply` abort on a healthy
+// schema telling the operator to rebuild the table by hand. The scanner and
+// the rewriter have to agree on what is stale, or the report describes tables
+// the repair then refuses.
+func TestFindStaleOwnerFKIgnoresACompositeKey(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE memberships (user_id TEXT, org TEXT, PRIMARY KEY (user_id, org))`,
+		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, org TEXT,
+			FOREIGN KEY (user_id, org) REFERENCES memberships(user_id, org))`,
+	)
+	stale, err := FindStaleOwnerForeignKeys(context.Background(), db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 0 {
+		t.Errorf("a composite key including the owner column was reported as stale: %+v", stale)
+	}
+}
+
+// A single-column key on the owner column IS the stale shape, alongside a
+// composite one on the same table. Without this the fix above could simply
+// stop reporting anything and still pass the test before it.
+func TestFindStaleOwnerFKStillFindsTheSingleColumnKey(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE memberships (user_id TEXT, org TEXT, PRIMARY KEY (user_id, org))`,
+		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, org TEXT,
+			FOREIGN KEY (user_id, org) REFERENCES memberships(user_id, org),
+			FOREIGN KEY (user_id) REFERENCES users(id))`,
+	)
+	stale, err := FindStaleOwnerForeignKeys(context.Background(), db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("want exactly the single-column owner key, got %+v", stale)
+	}
+	if stale[0].References != "users" {
+		t.Errorf("reported the composite key's target %q instead of the stale key's", stale[0].References)
+	}
+}
+
+// The pragma restore has to run on EVERY exit from the repair, not just the
+// happy one. The dangerous window is after enforcement is turned off and
+// before it is turned back on: sql.Conn.Close returns a connection to the pool
+// rather than destroying it, so leaving that window with the pragma off hands
+// the next writer an unenforced connection, and with MaxOpenConns(1) the next
+// writer is guaranteed to get it.
+//
+// Driven through a rebuild that fails after the pragma is off, by naming a
+// table that does not exist. Deterministic, where cancelling mid-copy is not.
+func TestRepairRestoresEnforcementOnTheFailurePath(t *testing.T) {
+	db := legacyDB(t, `CREATE TABLE users (id TEXT PRIMARY KEY)`)
+	err := RepairStaleOwnerForeignKeys(context.Background(), db, []StaleOwnerFK{
+		{Entity: "ghosts", Table: "ghosts", Column: "user_id", References: "users"},
+	})
+	if err == nil {
+		t.Fatal("repairing a table that does not exist reported success")
+	}
+
+	// MaxOpenConns(1), so this is the connection the repair ran on. Asserted
+	// through the pragma rather than a write, because the fixture deliberately
+	// seeds with enforcement off.
+	var on int
+	if qerr := db.QueryRow("PRAGMA foreign_keys").Scan(&on); qerr != nil {
+		t.Fatal(qerr)
+	}
+	if on != 1 {
+		t.Error("SECURITY: a failed repair returned a connection to the pool with foreign key enforcement off")
+	}
+}

@@ -9,10 +9,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
@@ -586,5 +588,190 @@ func TestReadScope_EveryOperatorFiltersRealRows(t *testing.T) {
 				t.Errorf("signed-in list returned %d rows, want all 3 — the blank unrestricted lift is not working", len(sEnv.Data))
 			}
 		})
+	}
+}
+
+// The `_events` SSE feed is a read surface, and it was the one this change set
+// missed. It filters emitted payloads rather than building a query, so the
+// "one builder feeds every read sink" design had no seam to reach it: the
+// filter checked entity, tenant and owner, and passed the full record through.
+//
+// The consequence is the exact disclosure the 404-not-403 rule exists to
+// prevent. A caller who gets 404 from GET /notes/<draft-id> and an empty list
+// from GET /notes received the whole draft record here the moment an editor
+// saved it.
+func TestReadScope_EventsFeedHidesScopedRecords(t *testing.T) {
+	ddl := `CREATE TABLE notes (id TEXT PRIMARY KEY, status TEXT, body TEXT);`
+	cfg := makeEntityConfig("notes", "notes", "", []schema.Field{
+		{Name: "status", Type: schema.String},
+		{Name: "body", Type: schema.String},
+	})
+	cfg.Exposure = &entity.ExposureConfig{
+		Public:    true,
+		ReadScope: &entity.ReadScopeConfig{Filter: []entity.RowPredicate{{Field: "status", Value: "published"}}},
+	}
+	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	// Anonymous subscriber: the read scope applies, so only published records
+	// may reach them.
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("GET", "/notes/_events", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() { ch.EventStream()(rec, req); close(done) }()
+	time.Sleep(50 * time.Millisecond)
+
+	ch.EmitEvent(context.Background(), event.EntityCreated,
+		map[string]any{"id": "pub-1", "status": "published", "body": "visible"})
+	ch.EmitEvent(context.Background(), event.EntityCreated,
+		map[string]any{"id": "draft-1", "status": "draft", "body": "secret draft"})
+	// A delete carries only the primary key, so the scope cannot be evaluated
+	// and it must be withheld: learning a row existed and was deleted is the
+	// same disclosure as learning it exists.
+	ch.EmitEvent(context.Background(), event.EntityDeleted,
+		map[string]any{"id": "draft-2"})
+	time.Sleep(120 * time.Millisecond)
+	cancel()
+	<-done
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "pub-1") {
+		t.Errorf("the published record was withheld from an anonymous subscriber; the scope is too tight:\n%s", body)
+	}
+	if strings.Contains(body, "draft-1") || strings.Contains(body, "secret draft") {
+		t.Errorf("SECURITY: [read-scope] the events feed served a draft record to a caller who gets 404 for it everywhere else:\n%s", body)
+	}
+	if strings.Contains(body, "draft-2") {
+		t.Errorf("SECURITY: [read-scope] a delete event disclosed a row the caller may not read:\n%s", body)
+	}
+}
+
+// The other half: a caller the scope does not restrict keeps the whole feed.
+// A fix that simply muted the feed for scoped entities would pass the test
+// above and break every legitimate subscriber.
+func TestReadScope_EventsFeedIntactForUnrestrictedCaller(t *testing.T) {
+	ddl := `CREATE TABLE notes (id TEXT PRIMARY KEY, status TEXT, body TEXT);`
+	cfg := makeEntityConfig("notes", "notes", "", []schema.Field{
+		{Name: "status", Type: schema.String},
+		{Name: "body", Type: schema.String},
+	})
+	cfg.Exposure = &entity.ExposureConfig{
+		Public:    true,
+		ReadScope: &entity.ReadScopeConfig{Filter: []entity.RowPredicate{{Field: "status", Value: "published"}}},
+	}
+	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	ctx, cancel := context.WithCancel(signedIn("u1"))
+	req := httptest.NewRequest("GET", "/notes/_events", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() { ch.EventStream()(rec, req); close(done) }()
+	time.Sleep(50 * time.Millisecond)
+
+	ch.EmitEvent(context.Background(), event.EntityCreated,
+		map[string]any{"id": "draft-1", "status": "draft", "body": "editor sees this"})
+	time.Sleep(120 * time.Millisecond)
+	cancel()
+	<-done
+
+	if !strings.Contains(rec.Body.String(), "draft-1") {
+		t.Errorf("a signed-in caller lost the draft event; the blank unrestricted lift does not reach the feed:\n%s", rec.Body.String())
+	}
+}
+
+// readScopeAllowsRecord is the only read-scope evaluator that runs in Go
+// rather than in SQL, so its operators cannot be covered by the query tests.
+// Every branch decides whether a caller sees a row on a push surface, and the
+// unevaluable cases have to fail CLOSED: withholding a record the caller may
+// actually read is a bug, but showing one they may not is a disclosure.
+func TestReadScopeAllowsRecordEveryBranch(t *testing.T) {
+	mk := func(preds ...entity.RowPredicate) *CrudHandler {
+		cfg := makeEntityConfig("notes", "notes", "", []schema.Field{
+			{Name: "status", Type: schema.String},
+			{Name: "user_id", Type: schema.String},
+		})
+		cfg.Exposure = &entity.ExposureConfig{
+			Public:    true,
+			ReadScope: &entity.ReadScopeConfig{Filter: preds},
+		}
+		return &CrudHandler{Entity: entity.Define("notes", cfg), JSONCase: "camel"}
+	}
+	pub := map[string]any{"id": "n1", "status": "published"}
+	draft := map[string]any{"id": "n2", "status": "draft"}
+
+	cases := []struct {
+		name   string
+		ch     *CrudHandler
+		record any
+		want   bool
+	}{
+		{"eq matches", mk(entity.RowPredicate{Field: "status", Op: "eq", Value: "published"}), pub, true},
+		{"eq rejects", mk(entity.RowPredicate{Field: "status", Op: "eq", Value: "published"}), draft, false},
+		{"empty op is eq", mk(entity.RowPredicate{Field: "status", Value: "published"}), pub, true},
+		{"neq matches", mk(entity.RowPredicate{Field: "status", Op: "neq", Value: "draft"}), pub, true},
+		{"neq rejects", mk(entity.RowPredicate{Field: "status", Op: "neq", Value: "draft"}), draft, false},
+		{"in matches", mk(entity.RowPredicate{Field: "status", Op: "in", Values: []string{"published", "archived"}}), pub, true},
+		{"in rejects", mk(entity.RowPredicate{Field: "status", Op: "in", Values: []string{"published"}}), draft, false},
+		{"not_in matches", mk(entity.RowPredicate{Field: "status", Op: "not_in", Values: []string{"draft"}}), pub, true},
+		{"not_in rejects", mk(entity.RowPredicate{Field: "status", Op: "not_in", Values: []string{"draft"}}), draft, false},
+		// Every predicate must hold: the second one decides this row.
+		{"all predicates must hold", mk(
+			entity.RowPredicate{Field: "status", Value: "published"},
+			entity.RowPredicate{Field: "user_id", Value: "u1"},
+		), pub, false},
+		// Fail-closed cases.
+		{"record is not a map", mk(entity.RowPredicate{Field: "status", Value: "published"}), "not-a-map", false},
+		{"record omits the column", mk(entity.RowPredicate{Field: "status", Value: "published"}), map[string]any{"id": "n3"}, false},
+		{"unknown operator", unknownOpHandler(), pub, false},
+		// No scope declared: everything passes, and nothing dereferences a nil.
+		{"no read scope", &CrudHandler{Entity: entity.Define("plain", makeEntityConfig("plain", "plain", "", nil))}, pub, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.ch.readScopeAllowsRecord(tc.record); got != tc.want {
+				t.Errorf("readScopeAllowsRecord = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// unknownOpHandler builds a handler whose read scope carries an operator
+// entity.Define refuses, by setting it AFTER validation. The branch is
+// unreachable through the declaration path, which is the point: it is the
+// backstop for a config that reached the evaluator some other way, and a
+// backstop nobody has watched fire is not one.
+func unknownOpHandler() *CrudHandler {
+	cfg := makeEntityConfig("notes", "notes", "", []schema.Field{{Name: "status", Type: schema.String}})
+	cfg.Exposure = &entity.ExposureConfig{
+		Public:    true,
+		ReadScope: &entity.ReadScopeConfig{Filter: []entity.RowPredicate{{Field: "status", Op: "eq", Value: "x"}}},
+	}
+	ent := entity.Define("notes", cfg)
+	ent.Config.Exposure.ReadScope.Filter[0].Op = "bogus"
+	return &CrudHandler{Entity: ent, JSONCase: "camel"}
+}
+
+// The payload carries WIRE keys, which differ from column names whenever
+// JSONCase or an explicit WireName applies. Looking up only the column name
+// found nothing on a camelCase payload, which fails closed and would have
+// silenced the feed for every scoped entity with a snake_case column.
+func TestReadScopeAllowsRecordFindsTheWireKey(t *testing.T) {
+	cfg := makeEntityConfig("notes", "notes", "", []schema.Field{{Name: "review_state", Type: schema.String}})
+	cfg.Exposure = &entity.ExposureConfig{
+		Public: true,
+		ReadScope: &entity.ReadScopeConfig{
+			Filter: []entity.RowPredicate{{Field: "review_state", Value: "published"}},
+		},
+	}
+	ch := &CrudHandler{Entity: entity.Define("notes", cfg), JSONCase: "camel"}
+	if !ch.readScopeAllowsRecord(map[string]any{"id": "n1", "reviewState": "published"}) {
+		t.Error("a camelCase payload was withheld: the column name was looked up but not the wire key")
+	}
+	if ch.readScopeAllowsRecord(map[string]any{"id": "n2", "reviewState": "draft"}) {
+		t.Error("a draft row passed under its wire key")
 	}
 }

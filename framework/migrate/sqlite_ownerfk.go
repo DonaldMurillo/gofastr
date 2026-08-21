@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"strings"
 
@@ -94,6 +95,9 @@ func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol str
 		return nil, err
 	}
 	var out []string
+	byKey := map[string][]string{}
+	refOf := map[string]string{}
+	var order []string
 	for rows.Next() {
 		// The column set of this pragma has grown across SQLite versions, so
 		// scan positionally into a slice sized to what the driver reports
@@ -110,11 +114,34 @@ func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol str
 		for i, c := range cols {
 			byName[strings.ToLower(c)] = fmt.Sprintf("%v", vals[i])
 		}
-		if strings.EqualFold(byName["from"], ownerCol) {
-			out = append(out, byName["table"])
+		// A composite key spans several rows sharing one id, so the columns
+		// are collected per key and judged together below.
+		id := byName["id"]
+		byKey[id] = append(byKey[id], byName["from"])
+		refOf[id] = byName["table"]
+		order = append(order, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, id := range order {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		// ONLY a key whose entire column list is the owner column. A composite
+		// key that merely includes it is doing real work on the other columns
+		// and is not the stale shape: the framework never emitted one, and
+		// ddlWithoutForeignKeyOn deliberately refuses to rewrite it. Reporting
+		// it here made AutoMigrate warn that "every create fails" about a
+		// constraint that is working, and made `--apply` abort on a healthy
+		// schema with an error telling the operator to rebuild by hand.
+		if len(byKey[id]) == 1 && strings.EqualFold(byKey[id][0], ownerCol) {
+			out = append(out, refOf[id])
 		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // RepairStaleOwnerForeignKeys rebuilds each affected table without the stale
@@ -166,19 +193,33 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 		return fmt.Errorf("disable foreign keys for the rebuild: %w", err)
 	}
 	// Restoring the pragma is not optional: this connection goes back to the
-	// pool and would serve every later write with enforcement silently off —
+	// pool and would serve every later write with enforcement silently off,
 	// the exact condition v0.67 exists to end, reintroduced by the tool meant
-	// to fix it. If the restore fails there is no way to make the connection
-	// safe, so it is destroyed instead of returned: a closed connection cannot
-	// serve anything, which is the fail-closed answer.
+	// to fix it.
+	//
+	// Two things make that harder than it looks.
+	//
+	// The restore runs on a context that cannot be cancelled. Using the
+	// caller's ctx meant a cancelled repair skipped the restore entirely and
+	// handed the pool a connection with enforcement off, which is the worst
+	// outcome of the three and the easiest to trigger: cancel during the row
+	// copy.
+	//
+	// And sql.Conn.Close does NOT destroy a connection, it returns it to the
+	// pool. An earlier version of this comment claimed otherwise. Retiring a
+	// connection is what driver.ErrBadConn from Raw is for, so a connection
+	// whose pragma could not be restored is marked bad and never serves
+	// another query.
 	restore := func() error {
-		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=on"); err != nil {
+		if _, err := conn.ExecContext(context.WithoutCancel(ctx), "PRAGMA foreign_keys=on"); err == nil {
+			return nil
+		} else {
 			closed = true
+			bad := conn.Raw(func(any) error { return driver.ErrBadConn })
 			cerr := conn.Close()
 			return fmt.Errorf("could not re-enable foreign keys after the rebuild (%w); "+
-				"the connection was discarded so it cannot serve unenforced writes (close: %v)", err, cerr)
+				"the connection was retired so it cannot serve unenforced writes (retire: %v, close: %v)", err, bad, cerr)
 		}
-		return nil
 	}
 
 	for _, s := range tables {
@@ -399,13 +440,34 @@ func ddlWithoutForeignKeyOn(createSQL, ownerCol, newName string) (string, bool, 
 	return ddl, true, nil
 }
 
+// stripLeadingComments removes comment runs from the front of a column or
+// constraint definition, so the identifier checks below see the definition
+// itself.
+//
+// Splitting on top-level commas leaves a comment that preceded a definition
+// attached to the FRONT of it, and both callers identify a definition by its
+// first token. Without this, `-- owner\n user_id TEXT REFERENCES users(id)`
+// reads as a definition named "--" and its inline key is never found, which
+// the caller reports as "could not locate it in the stored DDL" and refuses.
+// Fail-closed, but a refusal on a table the rewriter can handle.
+func stripLeadingComments(item string) string {
+	for {
+		trimmed := strings.TrimLeft(item, " \t\n\r")
+		next := skipInert(trimmed, 0)
+		if next == 0 || trimmed == "" {
+			return trimmed
+		}
+		item = trimmed[next:]
+	}
+}
+
 // isTableLevelFKOn reports whether item is a table constraint of the form
 // [CONSTRAINT name] FOREIGN KEY (ownerCol) REFERENCES … — and only when the
 // key's column list is exactly ownerCol. A composite key that happens to
 // include the owner column is left alone: dropping it would remove a
 // constraint on the other columns too, which nobody asked for.
 func isTableLevelFKOn(item, ownerCol string) bool {
-	rest := item
+	rest := stripLeadingComments(item)
 	if up := strings.ToUpper(rest); strings.HasPrefix(up, "CONSTRAINT") {
 		// Skip "CONSTRAINT <name>".
 		fields := strings.Fields(rest)
@@ -439,7 +501,7 @@ func isTableLevelFKOn(item, ownerCol string) bool {
 // the target, its optional column list, and any ON DELETE / ON UPDATE /
 // DEFERRABLE modifiers — belongs to the key and goes with it.
 func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
-	fields := strings.Fields(item)
+	fields := strings.Fields(stripLeadingComments(item))
 	if len(fields) == 0 || !strings.EqualFold(unquoteIdent(fields[0]), ownerCol) {
 		return item, false
 	}
@@ -462,42 +524,61 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 			rest = rest[end+1:]
 		}
 	}
-	// Drop the key's own modifiers; anything else on the line is kept.
-	rest = strings.TrimSpace(rest)
+	// Drop the key's own modifiers, keeping anything else on the line VERBATIM.
+	//
+	// Consumed by advancing an index over the original text, never by
+	// strings.Fields plus a rejoin. Tokenizing collapses whitespace inside a
+	// quoted literal that follows: `ON DELETE CASCADE DEFAULT 'guest  account'`
+	// rejoined as `DEFAULT 'guest account'`, and the rebuilt table silently
+	// stored a different default than the one it was asked to preserve.
+	rest = strings.TrimLeft(rest, " \t\n\r")
 	for {
 		up := strings.ToUpper(rest)
+		var n int // words to consume
 		switch {
 		case strings.HasPrefix(up, "ON DELETE "), strings.HasPrefix(up, "ON UPDATE "):
-			rest = strings.TrimSpace(rest[len("ON DELETE "):])
-			// The action itself is one or two words (CASCADE, SET NULL, NO ACTION).
-			f := strings.Fields(rest)
-			if len(f) > 0 {
-				n := 1
-				if strings.EqualFold(f[0], "SET") || strings.EqualFold(f[0], "NO") {
-					n = 2
-				}
-				rest = strings.TrimSpace(strings.Join(f[min(n, len(f)):], " "))
+			// "ON", the action word, then one or two words of action.
+			f := strings.Fields(up)
+			n = 3
+			if len(f) > 2 && (f[2] == "SET" || f[2] == "NO") {
+				n = 4
 			}
-			continue
-		case strings.HasPrefix(up, "DEFERRABLE"), strings.HasPrefix(up, "NOT DEFERRABLE"):
-			f := strings.Fields(rest)
-			rest = strings.TrimSpace(strings.Join(f[min(1, len(f)):], " "))
-			continue
-		case strings.HasPrefix(up, "INITIALLY "):
-			f := strings.Fields(rest)
-			rest = strings.TrimSpace(strings.Join(f[min(2, len(f)):], " "))
-			continue
-		case strings.HasPrefix(up, "MATCH "):
-			f := strings.Fields(rest)
-			rest = strings.TrimSpace(strings.Join(f[min(2, len(f)):], " "))
-			continue
+		case strings.HasPrefix(up, "NOT DEFERRABLE"):
+			n = 2
+		case strings.HasPrefix(up, "DEFERRABLE"):
+			n = 1
+		case strings.HasPrefix(up, "INITIALLY "), strings.HasPrefix(up, "MATCH "):
+			n = 2
+		default:
+			n = 0
 		}
-		break
+		if n == 0 {
+			break
+		}
+		rest = strings.TrimLeft(consumeWords(rest, n), " \t\n\r")
 	}
+	rest = strings.TrimRight(rest, " \t\n\r")
 	if rest != "" {
 		return head + " " + rest, true
 	}
 	return head, true
+}
+
+// consumeWords returns s with its first n whitespace-separated words removed,
+// preserving the remainder byte for byte. Unlike strings.Fields plus a join it
+// cannot alter whitespace inside what is left, which matters because what is
+// left may be a quoted DEFAULT or CHECK whose spacing is part of the value.
+func consumeWords(s string, n int) string {
+	i := 0
+	for w := 0; w < n; w++ {
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+			i++
+		}
+		for i < len(s) && s[i] != ' ' && s[i] != '\t' && s[i] != '\n' && s[i] != '\r' {
+			i++
+		}
+	}
+	return s[i:]
 }
 
 // unquoteIdent strips the four quoting styles SQLite accepts on an identifier.
@@ -524,7 +605,7 @@ func unquoteIdent(s string) string {
 func indexAtDepthZero(s string, c byte) int {
 	depth := 0
 	for i := 0; i < len(s); i++ {
-		if skip := skipQuoted(s, i); skip > i {
+		if skip := skipInert(s, i); skip > i {
 			i = skip - 1
 			continue
 		}
@@ -549,7 +630,7 @@ func indexAtDepthZero(s string, c byte) int {
 func matchingParen(s string, open int) int {
 	depth := 0
 	for i := open; i < len(s); i++ {
-		if skip := skipQuoted(s, i); skip > i {
+		if skip := skipInert(s, i); skip > i {
 			i = skip - 1
 			continue
 		}
@@ -572,7 +653,7 @@ func splitTopLevel(body string) []string {
 	var out []string
 	start, depth := 0, 0
 	for i := 0; i < len(body); i++ {
-		if skip := skipQuoted(body, i); skip > i {
+		if skip := skipInert(body, i); skip > i {
 			i = skip - 1
 			continue
 		}
@@ -599,7 +680,7 @@ func indexKeywordAtDepthZero(s, keyword string) int {
 	depth := 0
 	up := strings.ToUpper(s)
 	for i := 0; i < len(s); i++ {
-		if skip := skipQuoted(s, i); skip > i {
+		if skip := skipInert(s, i); skip > i {
 			i = skip - 1
 			continue
 		}
@@ -629,11 +710,34 @@ func isIdentByte(c byte) bool {
 	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
-// skipQuoted returns the index just past the quoted run starting at i, or i if
-// no quote starts there. SQLite doubles a quote character to escape it.
-func skipQuoted(s string, i int) int {
+// skipInert returns the index just past the run starting at i that carries no
+// SQL structure, or i if no such run starts there. Two kinds qualify: a quoted
+// identifier or literal, and a comment.
+//
+// Comments matter as much as quotes and were the omission. SQLite stores the
+// CREATE TABLE text verbatim in sqlite_master, comments included, and a comma
+// inside `-- the pk, obviously` split one column definition into two: the
+// following column was absorbed as type words of a phantom column, and the
+// result was DDL SQLite accepts. A rewriter for real user tables cannot read
+// punctuation it does not know is inert.
+//
+// SQLite doubles a quote character to escape it; a -- comment runs to the
+// newline; a block comment runs to the closing delimiter and does not nest.
+func skipInert(s string, i int) int {
 	if i >= len(s) {
 		return i
+	}
+	if s[i] == '-' && i+1 < len(s) && s[i+1] == '-' {
+		if nl := strings.IndexByte(s[i:], '\n'); nl >= 0 {
+			return i + nl // leave the newline in place: it separates tokens
+		}
+		return len(s)
+	}
+	if s[i] == '/' && i+1 < len(s) && s[i+1] == '*' {
+		if end := strings.Index(s[i+2:], "*/"); end >= 0 {
+			return i + 2 + end + 2
+		}
+		return len(s)
 	}
 	var closer byte
 	switch s[i] {

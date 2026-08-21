@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -42,11 +43,23 @@ const (
 // predicate on a Bool column binds a Go bool, exactly as a caller's
 // ?field=true filter would (filter.ParseFiltersValues); a raw "true"
 // string binds TEXT against SQLite's INTEGER storage and matches nothing.
-func readScopeFilters(ctx context.Context, ent *entity.Entity) []filter.ParsedFilter {
-	if ent == nil {
+// entityReadScope returns the entity's declared read scope, or nil when it has
+// none.
+//
+// Exposure is a POINTER and is not always populated: a CrudHandler built
+// directly in a test, or an entity registered without an exposure block, leaves
+// it nil. Reaching through it unguarded panicked the SSE feed the moment the
+// read-scope check was called there unconditionally, on an entity that declares
+// no scope at all. Every caller goes through here.
+func entityReadScope(ent *entity.Entity) *entity.ReadScopeConfig {
+	if ent == nil || ent.Config.Exposure == nil {
 		return nil
 	}
-	rs := ent.Config.Exposure.ReadScope
+	return ent.Config.Exposure.ReadScope
+}
+
+func readScopeFilters(ctx context.Context, ent *entity.Entity) []filter.ParsedFilter {
+	rs := entityReadScope(ent)
 	if rs == nil || len(rs.Filter) == 0 || readScopeUnrestricted(ctx, ent) {
 		return nil
 	}
@@ -92,7 +105,12 @@ func readScopeFilters(ctx context.Context, ent *entity.Entity) []filter.ParsedFi
 // filter. The signal is handler.GetUser, the same one requireAuthenticated
 // uses, not an editor role.
 func readScopeUnrestricted(ctx context.Context, ent *entity.Entity) bool {
-	rs := ent.Config.Exposure.ReadScope
+	rs := entityReadScope(ent)
+	if rs == nil {
+		// No scope to lift. Answering "unrestricted" keeps every caller of
+		// this predicate on the cheap path for an entity that declares none.
+		return true
+	}
 	if rs.Unrestricted != "" {
 		return access.Can(ctx, access.Permission(rs.Unrestricted))
 	}
@@ -131,9 +149,14 @@ func renderReadScope(preds []filter.ParsedFilter, qualifier string, startIdx int
 		switch f.Op {
 		case filter.OpIn:
 			// Coalesce the adjacent same-field run the builder emitted for
-			// one declared `in` predicate into a single IN (...). Runs from
-			// different sources are never merged here because only the
-			// builder's output reaches this renderer.
+			// one declared `in` predicate into a single IN (...).
+			//
+			// This is only safe because entity.Define refuses two `in`
+			// predicates on one column: without that, the builder emits two
+			// adjacent runs on the same field, this merges them, and the
+			// declared AND becomes an OR that serves every row. The guard
+			// lives at definition rather than here because the widening is
+			// invisible at this layer, which sees a flat list either way.
 			phs := []string{fmt.Sprintf("$%d", idx)}
 			args = append(args, f.BindValue())
 			idx++
@@ -198,4 +221,70 @@ func (ch *CrudHandler) ApplyReadScope(qb *query.QueryBuilder, r *http.Request) {
 // table's.
 func (ch *CrudHandler) ApplyReadScopeCount(cb *query.CountBuilder, r *http.Request) {
 	applyReadScopeWhere(func(sql string, args ...any) { cb.Where(sql, args...) }, readScopeFilters(r.Context(), ch.Entity))
+}
+
+// readScopeAllowsRecord reports whether a caller under this entity's read scope
+// may see one emitted record.
+//
+// Every other read surface narrows rows in SQL. The `_events` SSE feed cannot:
+// it filters payloads that a writer already produced, so there is no query to
+// add a predicate to and the declared filter has to be evaluated against the
+// row itself.
+//
+// It evaluates the DECLARED predicates rather than the ParsedFilters
+// readScopeFilters emits. Those flatten an `in` into one filter per value for
+// the SQL renderer to coalesce back into a single IN, and AND-ing them here
+// would read `in: [a, b]` as "a AND b", which matches nothing.
+//
+// Fail closed on anything it cannot evaluate: a record that is not a map, a
+// column the record does not carry, or an operator it does not know. A delete
+// event carries only the primary key, so a restricted caller stops seeing
+// deletes for a scoped entity, which is correct. Learning that a row existed
+// and was deleted is the same disclosure as learning it exists.
+func (ch *CrudHandler) readScopeAllowsRecord(record any) bool {
+	rs := entityReadScope(ch.Entity)
+	if rs == nil || len(rs.Filter) == 0 {
+		return true
+	}
+	row, ok := record.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, p := range rs.Filter {
+		v, found := row[p.Field]
+		if !found {
+			// The payload carries wire keys, which differ from column names
+			// whenever JSONCase or an explicit WireName applies.
+			v, found = row[ch.convertKey(p.Field)]
+		}
+		if !found {
+			return false
+		}
+		// fmt.Sprint on both sides, matching the owner filter above it: the
+		// same value arrives as int64 locally and float64 after the fanout
+		// bridge's JSON round trip, and a typed comparison would drop every
+		// cross-replica event.
+		got := fmt.Sprint(v)
+		switch p.Op {
+		case "", "eq":
+			if got != p.Value {
+				return false
+			}
+		case "neq":
+			if got == p.Value {
+				return false
+			}
+		case "in":
+			if !slices.Contains(p.Values, got) {
+				return false
+			}
+		case "not_in":
+			if slices.Contains(p.Values, got) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }

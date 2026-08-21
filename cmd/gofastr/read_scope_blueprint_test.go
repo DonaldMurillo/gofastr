@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -458,5 +459,69 @@ func TestExampleReadScopeBoots(t *testing.T) {
 	}
 	if !sawUnapproved {
 		t.Error("signed-in /api/testimonials did not serve the seeded unapproved testimonial")
+	}
+}
+
+// A YAML shape that is not a scalar must be an error, never a default.
+//
+// stringValue answers "" for a list or a map, and an empty `unrestricted` is
+// the WEAKEST setting there is: it lifts the read scope for every signed-in
+// caller instead of only the permission holder. So `unrestricted:
+// [posts:review]`, which reads as a perfectly ordinary typo, silently traded a
+// permission gate for "anyone with an account". An empty `op` means eq, so the
+// same shape on an operator quietly turns neq into eq.
+//
+// A posture the decoder silently widens is the failure this whole path exists
+// to prevent, which is why these are decode errors and not registration ones.
+//
+// `field` as a nested list is not covered: the YAML parser rejects that
+// indentation before the decoder is reached, which is fail-closed for a
+// different reason. The decoder guards it anyway.
+func TestReadScopeRefusesNonScalarNodes(t *testing.T) {
+	cases := map[string]string{
+		"unrestricted as a list": `
+    read_scope:
+      unrestricted:
+        - content:review
+      filter:
+        - field: status
+          value: published`,
+		"unrestricted as a map": `
+    read_scope:
+      unrestricted:
+        perm: content:review
+      filter:
+        - field: status
+          value: published`,
+		"op as a list": `
+    read_scope:
+      filter:
+        - field: status
+          op:
+            - neq
+          value: draft`,
+		"value as a list": `
+    read_scope:
+      filter:
+        - field: status
+          value:
+            - published`,
+	}
+	for name, block := range cases {
+		t.Run(name, func(t *testing.T) {
+			bp := "app:\n  name: t\n  module: example.com/t\nentities:\n  - name: posts\n    crud: true\n    fields:\n      - name: status\n        type: string" + block + "\n"
+			dir := t.TempDir()
+			path := filepath.Join(dir, "gofastr.yml")
+			if err := os.WriteFile(path, []byte(bp), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := decodeBlueprintFile(path)
+			if err == nil {
+				t.Fatal("a non-scalar node was accepted; it decodes to the empty string, which is the weakest posture")
+			}
+			if !strings.Contains(err.Error(), "single value") {
+				t.Errorf("the error should say the key needs a single value, got: %v", err)
+			}
+		})
 	}
 }
