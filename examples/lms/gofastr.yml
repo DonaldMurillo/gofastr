@@ -73,18 +73,18 @@ entities:
         foreign_key: instructor_id
 
   - name: courses
-    crud: true
     # Course catalog — the public marketing pages list these. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # read_scope narrows the anonymous read to published courses; drafts
+    # and archived courses stay invisible until an editor flips the status.
+    # A blank unrestricted lifts the filter for any caller with a session,
+    # which is "signed in", not a staff role.
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
     access:
       read:
       create: catalog:write
@@ -191,18 +191,16 @@ entities:
         foreign_key: course_id
 
   - name: modules
-    crud: true
     # Part of the public course outline. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # read_scope keeps draft modules (status defaults draft) out of the
+    # anonymous outline; any signed-in caller sees them.
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
     access:
       read:
       create: catalog:write
@@ -247,17 +245,15 @@ entities:
     # Part of the public course outline. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # read_scope keeps draft lessons (status defaults draft) out of the
+    # anonymous outline; any signed-in caller sees them.
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
     access:
       read:
-      create: catalog:write
       update: catalog:write
       delete: catalog:admin
     mcp: true
@@ -720,6 +716,19 @@ seed:
         is_free: true
         duration_hours: 8
         estimated_duration_weeks: 2
+      # Draft on purpose (status defaults draft): the anonymous catalog must
+      # not list it; a signed-in editor can finish writing it.
+      - title: Building AI Agents
+        slug: building-ai-agents
+        instructor_id: "@instructors.email=sarah@learnhub.dev"
+        subtitle: Tool-use patterns for language models
+        description: Draft outline covering tool calling, planning loops, and evaluation harnesses.
+        category: Backend Development
+        level: intermediate
+        price: 59.99
+        is_free: false
+        duration_hours: 16
+        estimated_duration_weeks: 4
   - entity: modules
     rows:
       - title: Getting Started with HTML
@@ -732,6 +741,31 @@ seed:
         description: Make your web pages look beautiful
         position: 2
         status: published
+      # Draft module (status defaults draft): the anonymous outline omits it.
+      # It sits on a PUBLISHED course on purpose: seed @references resolve
+      # through the read-scoped list path, so a row pointing at the draft
+      # course above could not resolve its course_id at seed time.
+      - title: Tool Calling Basics
+        course_id: "@courses.slug=intro-web-dev"
+        description: Calling functions from a language model
+        position: 3
+  - entity: lessons
+    rows:
+      - title: What is HTML
+        module_id: "@modules.title=Getting Started with HTML"
+        lesson_type: text
+        content: Tags, elements, and the structure of a page.
+        duration_minutes: 12
+        position: 1
+        status: published
+      # Draft lesson (status defaults draft): the anonymous outline omits it.
+      # Like the draft module, it hangs off a PUBLISHED parent so its seed
+      # reference resolves through the read-scoped list path.
+      - title: "Tool Calling Basics: First Script"
+        module_id: "@modules.title=Getting Started with HTML"
+        lesson_type: video
+        duration_minutes: 20
+        position: 1
   - entity: students
     rows:
       - name: Alice Johnson

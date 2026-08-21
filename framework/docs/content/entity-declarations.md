@@ -218,6 +218,11 @@ entities:
       create: posts:write
       update: posts:write
       delete: posts:admin
+    read_scope:      # which ROWS a caller reads; see "Row-level read scoping"
+      filter:
+        - field: status
+          op: eq
+          value: published
     public: false   # default; see "Default CRUD authentication" below
     crud: true
     mcp: true
@@ -757,6 +762,67 @@ silently serve every row.
 
 An entity with no `ReadScope` (or an empty `Filter`) is untouched: a
 true no-op for every existing entity.
+
+### Blueprint spelling (`read_scope:`)
+
+In a `gofastr.yml` blueprint the same scope is declared under the entity,
+beside `access:` (or nested under `exposure:`; the two spellings must
+agree if both appear). This is the `posts` entity of
+`examples/portfolio/gofastr.yml`, trimmed to the relevant keys:
+
+```yaml
+entities:
+  - name: posts
+    crud: true
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
+    access:
+      read:            # blank: anonymous callers may read the entity
+      create: content:write
+      update: content:write
+      delete: content:admin
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: status
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+```
+
+Anonymous callers get published rows only; any caller with a session reads
+every row. To name a permission instead, set `unrestricted:`:
+
+```yaml
+    read_scope:
+      unrestricted: content:review
+      filter:
+        - field: approved
+          op: eq
+          value: "true"
+```
+
+A boolean predicate takes the string `"true"` or `"false"`; the framework
+binds it as the column's bool type, exactly as `?approved=true` would.
+Quote it in YAML so it stays a string.
+
+The blueprint decoder validates the block where a typo matters, and fails
+the generate with the YAML location: unknown keys at any level, an `op`
+outside `eq`/`neq`/`in`/`not_in`, `value` and `values` together, a
+predicate with no `field`, an undeclared or `Hidden` `field`, and a
+`read_scope:` that declares neither a filter nor an `unrestricted`. The
+framework re-checks at registration; the decode check exists so a broken
+posture fails at `gofastr generate`, not at app boot.
+
+One seed caveat: seed rows resolve `@entity.field=value` references
+through the read-scoped list path. A seed row cannot reference a row the
+scope hides: the lookup finds nothing and the insert fails its foreign
+key at boot. Seed draft demo rows on published parents, or not
+at all.
 
 ## Free-text search (`SearchFields` + `?q=`)
 

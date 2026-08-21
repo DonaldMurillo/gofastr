@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -601,7 +602,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			"access": true, "public": true, "timestamps": true, "crud": true,
 			"mcp": true, "cursor_field": true, "cursor_fields": true,
 			"max_list_limit": true, "indices": true, "properties": true,
-			"renames": true,
+			"renames": true, "read_scope": true,
 		}
 		if err := rejectUnknownKeys(m, allowed, context); err != nil {
 			return nil, nil, err
@@ -638,11 +639,15 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		if err != nil {
 			return nil, nil, err
 		}
+		flatReadScope, err := decodeEntityReadScope(m["read_scope"], context+".read_scope")
+		if err != nil {
+			return nil, nil, err
+		}
 		exposure, err := decodeEntityExposure(m["exposure"], context+".exposure")
 		if err != nil {
 			return nil, nil, err
 		}
-		decl.Exposure, err = mergeEntityExposureDeclaration(decl.Name, m, exposure, flatAccess, context)
+		decl.Exposure, err = mergeEntityExposureDeclaration(decl.Name, m, exposure, flatAccess, flatReadScope, context)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -690,6 +695,27 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			}
 			if found.Type != "string" && found.Type != "text" {
 				return nil, nil, fmt.Errorf("blueprint: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
+			}
+		}
+		// read_scope fields are checked here for the same reason search_fields
+		// are: entity.Define panics at registration, which for a blueprint
+		// means a generated app that dies at boot. Failing at decode names the
+		// entity and the column now.
+		if rs := entityDeclarationExposure(decl).ReadScope; rs != nil {
+			for _, p := range rs.Filter {
+				var found *framework.FieldDeclaration
+				for j := range decl.Fields {
+					if decl.Fields[j].Name == p.Field {
+						found = &decl.Fields[j]
+						break
+					}
+				}
+				if found == nil {
+					return nil, nil, fmt.Errorf("blueprint: entity %q read_scope field %q is not a declared field", decl.Name, p.Field)
+				}
+				if found.Hidden {
+					return nil, nil, fmt.Errorf("blueprint: entity %q read_scope field %q is Hidden (a predicate on a masked column leaks its values through the row set)", decl.Name, p.Field)
+				}
 			}
 		}
 		var cursorFields []string
@@ -839,13 +865,14 @@ func mergeEntityExposureDeclaration(
 	root map[string]*coreyaml.Node,
 	grouped *fwentity.ExposureDeclaration,
 	flatAccess *fwentity.AccessDeclaration,
+	flatReadScope *fwentity.ReadScopeDeclaration,
 	context string,
 ) (*fwentity.ExposureDeclaration, error) {
 	groupMap, err := optionalEntityGroupMap(root["exposure"], context+".exposure")
 	if err != nil {
 		return nil, err
 	}
-	keys := []string{"crud", "mcp", "public", "access"}
+	keys := []string{"crud", "mcp", "public", "access", "read_scope"}
 	if grouped == nil && !hasEntityDeclarationKey(root, keys...) {
 		return nil, nil
 	}
@@ -878,6 +905,14 @@ func mergeEntityExposureDeclaration(
 			return nil, entityDeclarationConflict(name, "access", "exposure.access", flatAccess, grouped.Access)
 		}
 		grouped.Access = flatAccess
+	}
+	if flatReadScope != nil {
+		// ReadScopeDeclaration holds slices, so != cannot compare it; a
+		// shallow-but-wrong conflict must still be a hard error like access.
+		if groupMap["read_scope"] != nil && (grouped.ReadScope == nil || !reflect.DeepEqual(*flatReadScope, *grouped.ReadScope)) {
+			return nil, entityDeclarationConflict(name, "read_scope", "exposure.read_scope", flatReadScope, grouped.ReadScope)
+		}
+		grouped.ReadScope = flatReadScope
 	}
 	return grouped, nil
 }
@@ -970,7 +1005,7 @@ func decodeEntityExposure(node *coreyaml.Node, context string) (*fwentity.Exposu
 	if err != nil {
 		return nil, err
 	}
-	if err := rejectUnknownKeys(m, map[string]bool{"crud": true, "mcp": true, "public": true, "access": true}, context); err != nil {
+	if err := rejectUnknownKeys(m, map[string]bool{"crud": true, "mcp": true, "public": true, "access": true, "read_scope": true}, context); err != nil {
 		return nil, err
 	}
 	var crud *bool
@@ -982,7 +1017,11 @@ func decodeEntityExposure(node *coreyaml.Node, context string) (*fwentity.Exposu
 	if err != nil {
 		return nil, err
 	}
-	return &fwentity.ExposureDeclaration{CRUD: crud, MCP: boolValue(m["mcp"]), Public: boolValue(m["public"]), Access: access}, nil
+	readScope, err := decodeEntityReadScope(m["read_scope"], context+".read_scope")
+	if err != nil {
+		return nil, err
+	}
+	return &fwentity.ExposureDeclaration{CRUD: crud, MCP: boolValue(m["mcp"]), Public: boolValue(m["public"]), Access: access, ReadScope: readScope}, nil
 }
 
 func entityDeclarationScope(decl framework.EntityDeclaration) fwentity.ScopeDeclaration {
@@ -1119,6 +1158,80 @@ func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDe
 		Create: stringValue(m["create"]),
 		Update: stringValue(m["update"]),
 		Delete: stringValue(m["delete"]),
+	}, nil
+}
+
+// decodeEntityReadScope decodes an entity's `read_scope:` map — the row
+// filter mirroring EntityConfig.Exposure.ReadScope. nil node = no row
+// filtering. Every level is strict (rejectUnknownKeys plus the op/arity
+// checks below): a typo in a read posture must fail the build here, at the
+// YAML location, not surface as a panic at app registration or, worse, as a
+// predicate that silently matches nothing.
+func decodeEntityReadScope(node *coreyaml.Node, context string) (*fwentity.ReadScopeDeclaration, error) {
+	if node == nil {
+		return nil, nil
+	}
+	m, err := expectMap(node, context)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectUnknownKeys(m, map[string]bool{"unrestricted": true, "filter": true}, context); err != nil {
+		return nil, err
+	}
+	var filter []fwentity.RowPredicateDeclaration
+	if fn := m["filter"]; fn != nil {
+		list, err := expectList(fn, context+".filter")
+		if err != nil {
+			return nil, err
+		}
+		for i, item := range list {
+			predContext := fmt.Sprintf("%s.filter[%d]", context, i)
+			pm, err := expectMap(item, predContext)
+			if err != nil {
+				return nil, err
+			}
+			if err := rejectUnknownKeys(pm, map[string]bool{"field": true, "op": true, "value": true, "values": true}, predContext); err != nil {
+				return nil, err
+			}
+			pred := fwentity.RowPredicateDeclaration{
+				Field:  stringValue(pm["field"]),
+				Op:     stringValue(pm["op"]),
+				Value:  stringValue(pm["value"]),
+				Values: stringListValue(pm["values"]),
+			}
+			// The framework re-validates at registration (entity.Define) and
+			// panics; failing here instead turns a boot-time crash into a
+			// generate-time error that names the YAML path.
+			if pred.Field == "" {
+				return nil, fmt.Errorf("%s.field is required (a predicate with no column matches nothing)", predContext)
+			}
+			switch pred.Op {
+			case "", "eq", "neq":
+				if pred.Value == "" && len(pred.Values) == 0 {
+					return nil, fmt.Errorf("%s: op %q needs a value (eq/neq compare one value; empty means eq)", predContext, pred.Op)
+				}
+				if len(pred.Values) > 0 {
+					return nil, fmt.Errorf("%s: op %q must not set values (only in/not_in take a list)", predContext, pred.Op)
+				}
+			case "in", "not_in":
+				if len(pred.Values) == 0 {
+					return nil, fmt.Errorf("%s: op %q requires a non-empty values list", predContext, pred.Op)
+				}
+				if pred.Value != "" {
+					return nil, fmt.Errorf("%s: op %q must not also set value (value and values are mutually exclusive)", predContext, pred.Op)
+				}
+			default:
+				return nil, fmt.Errorf("%s.op is %q; must be one of eq, neq, in, not_in (empty means eq)", predContext, pred.Op)
+			}
+			filter = append(filter, pred)
+		}
+	}
+	if len(filter) == 0 && stringValue(m["unrestricted"]) == "" {
+		return nil, fmt.Errorf("%s declares no filter and no unrestricted — it filters nothing; remove the block or add a filter", context)
+	}
+	return &fwentity.ReadScopeDeclaration{
+		Filter:       filter,
+		Unrestricted: stringValue(m["unrestricted"]),
 	}, nil
 }
 

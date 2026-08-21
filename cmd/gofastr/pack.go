@@ -200,6 +200,23 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			putStr(acc, "delete", e.Exposure.Access.Delete)
 			exposure["access"] = acc
 		}
+		if e.Exposure.ReadScope != nil {
+			rs := map[string]any{}
+			putStr(rs, "unrestricted", e.Exposure.ReadScope.Unrestricted)
+			if len(e.Exposure.ReadScope.Filter) > 0 {
+				preds := make([]any, len(e.Exposure.ReadScope.Filter))
+				for i, p := range e.Exposure.ReadScope.Filter {
+					pm := map[string]any{}
+					putStr(pm, "field", p.Field)
+					putStr(pm, "op", p.Op)
+					putStr(pm, "value", p.Value)
+					putStrs(pm, "values", p.Values)
+					preds[i] = pm
+				}
+				rs["filter"] = preds
+			}
+			exposure["read_scope"] = rs
+		}
 		m["exposure"] = exposure
 	}
 	putStrs(m, "search_fields", e.SearchFields)
@@ -651,6 +668,8 @@ var (
 	indexOrder      = []string{"name", "columns", "unique"}
 	navOrder        = []string{"label", "href", "icon", "role", "items"}
 	accessOrder     = []string{"auth", "role", "read", "create", "update", "delete"}
+	readScopeOrder  = []string{"unrestricted", "filter"}
+	predicateOrder  = []string{"field", "op", "value", "values"}
 	dbOrder         = []string{"driver", "url"}
 	authOrder       = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
 	adminOrder      = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
@@ -680,6 +699,10 @@ func orderFor(key string) []string {
 		return navOrder
 	case "access":
 		return accessOrder
+	case "read_scope":
+		return readScopeOrder
+	case "filter":
+		return predicateOrder
 	case "db":
 		return dbOrder
 	case "auth":
@@ -1072,6 +1095,20 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 			decl.Pagination = pagination
 		}
 	}
+	if v, ok := cfg["SearchFields"]; ok {
+		decl.SearchFields = astStringSlice(v)
+	}
+	// Timestamps is emitted as a .WithTimestamps(bool) builder call, not a
+	// struct field — recover it from the unwrapped builder args. (Fall back
+	// to a struct field for forward-compat if a future generator inlines it.)
+	if args, ok := builders["WithTimestamps"]; ok && len(args) == 1 {
+		b := astBool(args[0])
+		decl.Timestamps = &b
+	} else if v, ok := cfg["Timestamps"]; ok {
+		if b, ok := astPtrCallBool(v); ok {
+			decl.Timestamps = &b
+		}
+	}
 	if v, ok := cfg["Exposure"]; ok {
 		x := fieldVals(v)
 		exposure := &framework.ExposureDeclaration{MCP: astBool(x["MCP"]), Public: astBool(x["Public"])}
@@ -1085,22 +1122,27 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 				Update: astString(a["Update"]), Delete: astString(a["Delete"]),
 			}
 		}
-		if exposure.CRUD != nil || exposure.MCP || exposure.Public || exposure.Access != nil {
-			decl.Exposure = exposure
+		if rsExpr, ok := x["ReadScope"]; ok {
+			r := fieldVals(rsExpr)
+			rs := &framework.ReadScopeDeclaration{Unrestricted: astString(r["Unrestricted"])}
+			if filterExpr, ok := r["Filter"]; ok {
+				inner, _ := unwrapBuilderCalls(filterExpr)
+				if cl, ok := inner.(*ast.CompositeLit); ok {
+					for _, item := range cl.Elts {
+						p := fieldVals(item)
+						rs.Filter = append(rs.Filter, framework.RowPredicateDeclaration{
+							Field: astString(p["Field"]), Op: astString(p["Op"]),
+							Value: astString(p["Value"]), Values: astStringSlice(p["Values"]),
+						})
+					}
+				}
+			}
+			if rs.Unrestricted != "" || len(rs.Filter) > 0 {
+				exposure.ReadScope = rs
+			}
 		}
-	}
-	if v, ok := cfg["SearchFields"]; ok {
-		decl.SearchFields = astStringSlice(v)
-	}
-	// Timestamps is emitted as a .WithTimestamps(bool) builder call, not a
-	// struct field — recover it from the unwrapped builder args. (Fall back
-	// to a struct field for forward-compat if a future generator inlines it.)
-	if args, ok := builders["WithTimestamps"]; ok && len(args) == 1 {
-		b := astBool(args[0])
-		decl.Timestamps = &b
-	} else if v, ok := cfg["Timestamps"]; ok {
-		if b, ok := astPtrCallBool(v); ok {
-			decl.Timestamps = &b
+		if exposure.CRUD != nil || exposure.MCP || exposure.Public || exposure.Access != nil || exposure.ReadScope != nil {
+			decl.Exposure = exposure
 		}
 	}
 	if v, ok := cfg["Properties"]; ok {

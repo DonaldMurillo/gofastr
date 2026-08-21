@@ -1251,6 +1251,9 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 		if literal := renderAccessLiteral(decl.Exposure.Access); literal != "" {
 			sb.WriteString("\t\t\tAccess: " + literal + ",\n")
 		}
+		if literal := renderReadScopeLiteral(decl.Exposure.ReadScope); literal != "" {
+			sb.WriteString("\t\t\tReadScope: " + literal + ",\n")
+		}
 		sb.WriteString("\t\t},\n")
 	}
 	if paginationDeclHasContent(decl.Pagination) {
@@ -1306,15 +1309,21 @@ func scopeDeclHasContent(s *fwentity.ScopeDeclaration) bool {
 }
 
 func exposureDeclHasContent(e *fwentity.ExposureDeclaration) bool {
-	return e != nil && (e.CRUD != nil || e.MCP || e.Public || e.Access != nil)
+	return e != nil && (e.CRUD != nil || e.MCP || e.Public || e.Access != nil || readScopeDeclHasContent(e.ReadScope))
 }
 
 func paginationDeclHasContent(p *fwentity.PaginationDeclaration) bool {
 	return p != nil && (p.CursorField != "" || len(p.CursorFields) > 0 || p.MaxListLimit != 0)
 }
 
-// renderAccessLiteral renders an entity's per-operation RBAC declaration as
-// a framework.AccessControl composite literal for the generated register.go.
+// readScopeDeclHasContent is the ReadScope half of exposureDeclHasContent: an
+// all-zero ReadScope must emit nothing, or a blueprint that declares
+// `read_scope: {}` would round-trip as a non-nil scope where the author wrote
+// a no-op — and pack would re-emit it forever after.
+func readScopeDeclHasContent(rs *fwentity.ReadScopeDeclaration) bool {
+	return rs != nil && (rs.Unrestricted != "" || len(rs.Filter) > 0)
+}
+
 // Returns "" when access is nil or every operation is un-gated, so the
 // generated registration stays byte-identical for blueprints without RBAC.
 func renderAccessLiteral(access *fwentity.AccessDeclaration) string {
@@ -1338,6 +1347,43 @@ func renderAccessLiteral(access *fwentity.AccessDeclaration) string {
 		return ""
 	}
 	return "framework.AccessControl{" + strings.Join(parts, ", ") + "}"
+}
+
+// renderReadScopeLiteral renders an entity's read_scope declaration as a
+// framework.ReadScopeConfig composite literal for the generated register.go.
+// Returns "" when the scope is nil or all-zero, so a blueprint without one
+// stays byte-identical.
+func renderReadScopeLiteral(rs *fwentity.ReadScopeDeclaration) string {
+	if !readScopeDeclHasContent(rs) {
+		return ""
+	}
+	var parts []string
+	if rs.Unrestricted != "" {
+		parts = append(parts, fmt.Sprintf("Unrestricted: %q", rs.Unrestricted))
+	}
+	if len(rs.Filter) > 0 {
+		var preds []string
+		for _, p := range rs.Filter {
+			var pv []string
+			pv = append(pv, fmt.Sprintf("Field: %q", p.Field))
+			if p.Op != "" {
+				pv = append(pv, fmt.Sprintf("Op: %q", p.Op))
+			}
+			if p.Value != "" {
+				pv = append(pv, fmt.Sprintf("Value: %q", p.Value))
+			}
+			if len(p.Values) > 0 {
+				vals := make([]string, 0, len(p.Values))
+				for _, v := range p.Values {
+					vals = append(vals, fmt.Sprintf("%q", v))
+				}
+				pv = append(pv, "Values: []string{"+strings.Join(vals, ", ")+"}")
+			}
+			preds = append(preds, "framework.RowPredicate{"+strings.Join(pv, ", ")+"}")
+		}
+		parts = append(parts, "Filter: []framework.RowPredicate{"+strings.Join(preds, ", ")+"}")
+	}
+	return "&framework.ReadScopeConfig{" + strings.Join(parts, ", ") + "}"
 }
 
 func renderIndexLiteral(idx framework.Index) string {
