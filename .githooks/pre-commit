@@ -1,5 +1,5 @@
 #!/bin/sh
-# GoFastr pre-commit hook — CI's "build · vet · test" job, locally.
+# GoFastr pre-commit hook: CI's "build · vet · test" job, locally.
 #
 # Runs the same blocking steps as .github/workflows/ci.yml's first job
 # (build, gofmt on tracked files, vet, the deterministic test sweep,
@@ -37,7 +37,7 @@ echo ""
 go build ./...
 pass "go build ./..."
 
-# ---- 2. Format check (tracked files only — gen/ and scratch dirs are
+# ---- 2. Format check (tracked files only, gen/ and scratch dirs are
 #          not ours to police) ----
 gofmt_output=$(git ls-files '*.go' | xargs gofmt -l)
 if [ -n "$gofmt_output" ]; then
@@ -89,11 +89,11 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
     for pattern in $secret_patterns; do
       [ -z "$pattern" ] && continue
       # A line carrying "not-a-secret: <why>" (or the older
-      # "nosecret:" spelling — `make secret-scan` accepts both) is a
+      # "nosecret:" spelling, `make secret-scan` accepts both) is a
       # reviewed false
       # positive (e.g. code that RENDERS an env template, test
       # fixtures). The annotation lives in the diff, so every
-      # exemption is visible to review — unlike --no-verify, which
+      # exemption is visible to review, unlike --no-verify, which
       # skips every check invisibly and is banned.
       matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:" || true)
       if [ -n "$matches" ]; then
@@ -157,12 +157,12 @@ fi
 # ---- 7. Contracts on the uncommitted change ----
 # --changed, not the whole tree: a pre-commit hook that prints findings
 # from code you did not touch is a hook people bypass. The analysis still
-# runs whole-tree, so a duplicate route introduced here is still caught —
+# runs whole-tree, so a duplicate route introduced here is still caught,
 # only the reporting narrows to what is uncommitted.
 #
 # "Uncommitted", not "staged": --changed diffs the working tree against
 # HEAD, so a file with only unstaged edits is included too. That is the
-# better trap — a finding in the half you left unstaged is one you are
+# better trap, a finding in the half you left unstaged is one you are
 # about to walk away from, and this is the last moment it is in your
 # face.
 #

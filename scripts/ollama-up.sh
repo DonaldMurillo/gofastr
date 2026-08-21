@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bring up the local Ollama service and ensure the default embedding
-# model is pulled. Idempotent — running it twice is a no-op when
+# model is pulled. Idempotent, running it twice is a no-op when
 # everything is already in place.
 #
 # Usage:
@@ -8,10 +8,10 @@
 #   OLLAMA_MODEL=mxbai-embed-large scripts/ollama-up.sh
 #
 # Exit codes:
-#   0 — ollama is up and the model is pulled
-#   1 — docker missing or compose up failed
-#   2 — ollama did not become healthy within the timeout
-#   3 — model pull failed
+#   0: ollama is up and the model is pulled
+#   1: docker missing or compose up failed
+#   2: ollama did not become healthy within the timeout
+#   3: model pull failed
 set -euo pipefail
 
 MODEL="${OLLAMA_MODEL:-nomic-embed-text}"

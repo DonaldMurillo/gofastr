@@ -1,5 +1,5 @@
 # Release publisher for a release tag. The ONLY normal way a GitHub release is
-# created here is this workflow — never a manual `gh release create`.
+# created here is this workflow, never a manual `gh release create`.
 #
 # Supported flow (the ONLY supported flow):
 #   1. merge the release PR to main,
@@ -11,7 +11,7 @@
 # The gate (locally testable via cmd/gofastr/release_gate_test.go) refuses to
 # publish unless:
 #   - no release for the tag already exists (a manual `gh release create`
-#     bypassed the gate — the old flow documented exactly that, and the old
+#     bypassed the gate, the old flow documented exactly that, and the old
 #     "already exists" check ran only AFTER the CI gate),
 #   - the tag commit IS the current head of main (not a stale re-tag, not an
 #     unmerged-PR commit), and
@@ -95,7 +95,7 @@ jobs:
       # The publish gate. Everything testable lives in the script (stubbed
       # gh/git); this step only invokes it. On failure it emits ::error::
       # naming the exact cause (pre-existing release / unmerged SHA / stale
-      # SHA / red or missing check) and the workflow stops — no release.
+      # SHA / red or missing check) and the workflow stops, no release.
       - name: Run the publish gate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
