@@ -121,6 +121,9 @@ func (d *EntityDeclaration) UnmarshalJSON(data []byte) error {
 			func() error {
 				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "access", &d.Exposure.Access)
 			},
+			func() error {
+				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "read_scope", &d.Exposure.ReadScope)
+			},
 		} {
 			if err := merge(); err != nil {
 				return err

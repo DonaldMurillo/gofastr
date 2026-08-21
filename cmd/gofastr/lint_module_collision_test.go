@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -61,14 +62,21 @@ func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 // stops colliding is a reader copying it out of the repo into a build error the
 // warning no longer covers.
 func TestShippedExampleBlueprintsAreTheCollidingCase(t *testing.T) {
-	paths := exampleBlueprints(t)
+	// Globbed here rather than through exampleBlueprints, which SKIPS on an
+	// empty match. A skip reads as a pass, so a broken glob would have retired
+	// this rule's entire fixture set silently. These blueprints are committed;
+	// finding none of them is a failure, not a reason to stand down.
+	paths, err := filepath.Glob("../../examples/*/gofastr.yml")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
 	if len(paths) == 0 {
-		t.Fatal("no shipped blueprints found — this rule has no fixtures")
+		t.Fatal("no shipped blueprints found: this rule has no fixtures and proves nothing")
 	}
 	for _, path := range paths {
-		bp, err := loadBlueprint(path)
-		if err != nil {
-			t.Fatalf("load %s: %v", path, err)
+		bp, lerr := loadBlueprint(path)
+		if lerr != nil {
+			t.Fatalf("load %s: %v", path, lerr)
 		}
 		findings := lintModuleCollision(bp)
 		if len(findings) != 1 {

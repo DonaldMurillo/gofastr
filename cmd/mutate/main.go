@@ -39,10 +39,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -518,34 +521,45 @@ func truncate(s string) string {
 // rule it broke. This tool rewrites real source files in place; the one thing
 // it must never do is start work on a set of files it has mis-parsed.
 func packageFiles(pkg string) (string, []string, error) {
-	// -f prints one record per package, so a count of records is a count of
-	// packages regardless of how many files each one holds.
-	out, err := exec.Command("go", "list", "-f", "{{.Dir}}\n{{range .GoFiles}}{{.}}\n{{end}}{{\"\\x00\"}}", pkg).Output()
+	// -json, not -f with newline-delimited fields. `go list -f` prints Dir and
+	// GoFiles as raw values, so the parser had to split on "\n" and a path
+	// containing one produced a file list that is not the package's. This tool
+	// WRITES the files it is handed, so a mis-parsed set is the one input it
+	// must never act on, and JSON removes the ambiguity rather than guarding
+	// against it.
+	out, err := exec.Command("go", "list", "-json", pkg).Output()
 	if err != nil {
 		return "", nil, fmt.Errorf("go list %s: %w", pkg, err)
 	}
-	records := strings.Split(string(out), "\x00")
-	// A trailing empty record follows the last separator.
-	var pkgs []string
-	for _, rec := range records {
-		if strings.TrimSpace(rec) != "" {
-			pkgs = append(pkgs, rec)
+	type listPkg struct {
+		Dir     string
+		GoFiles []string
+	}
+	// A wildcard emits one JSON object per package, concatenated.
+	dec := json.NewDecoder(bytes.NewReader(out))
+	var pkgs []listPkg
+	for {
+		var p listPkg
+		if err := dec.Decode(&p); err == io.EOF {
+			break
+		} else if err != nil {
+			return "", nil, fmt.Errorf("go list %s: parse: %w", pkg, err)
 		}
+		pkgs = append(pkgs, p)
 	}
 	if len(pkgs) == 0 {
 		return "", nil, fmt.Errorf("no Go packages matched %s", pkg)
 	}
 	if len(pkgs) > 1 {
-		var dirs []string
-		for _, rec := range pkgs {
-			dirs = append(dirs, strings.SplitN(strings.TrimSpace(rec), "\n", 2)[0])
+		dirs := make([]string, 0, len(pkgs))
+		for _, p := range pkgs {
+			dirs = append(dirs, p.Dir)
 		}
 		return "", nil, fmt.Errorf("pattern %s matches %d packages (%s) — mutate rewrites source in place and takes one package at a time; name it directly",
 			pkg, len(dirs), strings.Join(dirs, ", "))
 	}
-	lines := strings.Split(strings.TrimSpace(pkgs[0]), "\n")
-	if len(lines) < 2 {
+	if len(pkgs[0].GoFiles) == 0 {
 		return "", nil, fmt.Errorf("no Go files in %s", pkg)
 	}
-	return lines[0], lines[1:], nil
+	return pkgs[0].Dir, pkgs[0].GoFiles, nil
 }

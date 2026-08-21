@@ -346,6 +346,14 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	if _, err := app.DB.Exec(`INSERT INTO notes (id, body, owner_id, board_id) VALUES ('n1','someone secret note','u-other','b1')`); err != nil {
 		t.Fatal(err)
 	}
+	// A note the SIGNED-IN caller does own, on the same board. Without it the
+	// narrowed subquery matches nothing for u-self whatever it does, so the
+	// hit/miss equality below would hold just as well for a subquery that is
+	// inert, or one that collapsed to `1 = 0` for every caller. The positive
+	// control is what tells those apart from real narrowing.
+	if _, err := app.DB.Exec(`INSERT INTO notes (id, body, owner_id, board_id) VALUES ('n2','my own note','u-self','b1')`); err != nil {
+		t.Fatal(err)
+	}
 
 	if got := ta.Get("/api/notes").Status(); got != http.StatusUnauthorized && got != http.StatusForbidden {
 		t.Fatalf("GET /api/notes = %d, want 401/403 — the owner-scoped baseline this test rests on", got)
@@ -381,6 +389,13 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	// predicate reached another owner's row.
 	if strings.Contains(sHit.Body(), "b1") {
 		t.Errorf("the signed-in filter matched a board through another owner's note:\n%s", sHit.Body())
+	}
+	// The positive control: the same caller filtering on their OWN note must
+	// reach the board. This is the arm that fails if the narrowing is inert.
+	own := signedIn.Get("/api/boards?notes.body=my+own+note")
+	if own.Status() != http.StatusOK || !strings.Contains(own.Body(), "b1") {
+		t.Errorf("a signed-in owner could not reach a board through their OWN note (= %d): the subquery matches nothing for anyone, so the assertions above prove nothing:\n%s",
+			own.Status(), own.Body())
 	}
 
 	// Anonymous is refused earlier and for a different reason: an owner-scoped

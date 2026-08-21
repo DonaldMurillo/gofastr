@@ -633,3 +633,73 @@ func TestRepairRestoresEnforcementOnTheFailurePath(t *testing.T) {
 		t.Error("SECURITY: a failed repair returned a connection to the pool with foreign key enforcement off")
 	}
 }
+
+// A view over the rebuilt table stopped the repair dead. Modern ALTER TABLE
+// RENAME re-resolves every object naming the table, and by the rename the
+// original has been dropped, so SQLite fails the transaction with
+// `error in view <name>: no such table`. The table was left intact, so this
+// was a refusal rather than corruption, but a repair that cannot run on a
+// schema with a view is not a repair path.
+func TestRepairSurvivesADependentView(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, title TEXT,
+			FOREIGN KEY (user_id) REFERENCES users(id))`,
+		`CREATE VIEW open_tasks AS SELECT id, title FROM tasks`,
+		`CREATE INDEX idx_tasks_title ON tasks(title)`,
+		`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+	)
+	ctx := context.Background()
+	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("owner key not found: %+v", stale)
+	}
+	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+		t.Fatalf("a dependent view blocked the repair: %v", err)
+	}
+
+	// The view still resolves against the replacement table.
+	var title string
+	if err := db.QueryRow(`SELECT title FROM open_tasks WHERE id='t1'`).Scan(&title); err != nil {
+		t.Fatalf("the view no longer resolves after the rebuild: %v", err)
+	}
+	if title != "kept" {
+		t.Errorf("view returned %q, want kept", title)
+	}
+	// And the repair did its job.
+	if _, err := db.Exec("PRAGMA foreign_keys=on"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO tasks (id, user_id, title) VALUES ('t2','auth-user-2','new')`); err != nil {
+		t.Errorf("create still refused after the repair: %v", err)
+	}
+}
+
+// legacy_alter_table changes how every later ALTER on the connection behaves,
+// and the connection goes back to the pool, so it has to be restored on the
+// way out just like foreign_keys. Leaving it on is a quieter defect than an
+// unenforced key: nothing fails until someone renames a table.
+func TestRepairRestoresLegacyAlterTable(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
+	)
+	ctx := context.Background()
+	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+		t.Fatal(err)
+	}
+	var legacy int
+	if err := db.QueryRow("PRAGMA legacy_alter_table").Scan(&legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy != 0 {
+		t.Error("legacy_alter_table was left on for the pooled connection; a later rename will not update its references")
+	}
+}

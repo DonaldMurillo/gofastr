@@ -113,12 +113,18 @@ func childEnv(mode childMode, extra map[string]string) []string {
 func descriptorForChild(t *testing.T, mode childMode) framework.ProcessModuleDescriptor {
 	t.Helper()
 	path, sha := buildChildArtifact(t)
-	surface, _ := framework.ComputeSurfaceSHA256(framework.ProcessModuleDescriptor{
+	surface, surfaceErr := framework.ComputeSurfaceSHA256(framework.ProcessModuleDescriptor{
 		Name: "demo", Version: "1.0.0",
 		Routes:          []framework.RouteDeclaration{{ID: "echo", Method: "GET", Path: "/echo"}},
 		RequestedGrants: []access.Permission{"articles:read"},
 		TrustTier:       framework.TrustTrusted,
 	})
+	if surfaceErr != nil {
+		// A failure here yields the zero digest, which the handshake then
+		// compares against the child's real one: the test would fail as a
+		// digest mismatch and send the reader looking at the protocol.
+		t.Fatalf("ComputeSurfaceSHA256: %v", surfaceErr)
+	}
 	d := framework.ProcessModuleDescriptor{
 		Name:            "demo",
 		Version:         "1.0.0",
@@ -410,21 +416,6 @@ func TestSupervisor_Disabled404_EnableDown503(t *testing.T) {
 	if !hit503 {
 		t.Logf("note: did not observe the enable-time 503 window (spawn was fast)")
 	}
-}
-
-// waitForStateOn is waitForState parameterized by supervisor.
-func waitForStateOn(t *testing.T, sup *framework.ProcessModuleSupervisor, name string, want framework.ProcessState, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		info, err := sup.Info(name)
-		if err == nil && info.State == want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	info, _ := sup.Info(name)
-	t.Fatalf("waitForStateOn %p %q: want %s, last=%s", sup, name, want, info.State)
 }
 
 // ============================================================================

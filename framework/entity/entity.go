@@ -540,6 +540,12 @@ func Define(name string, config EntityConfig) *Entity {
 				if len(p.Values) == 0 {
 					panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q requires a non-empty Values", name, p.Op, p.Field))
 				}
+				// A stray Value alongside Values is ignored by the builder, so
+				// the author's intent and the enforced posture differ with
+				// nothing reporting it. The mirror of the eq/neq check above.
+				if p.Value != "" {
+					panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q must leave Value empty (it takes Values); the stray Value %q would be silently ignored", name, p.Op, p.Field, p.Value))
+				}
 			default:
 				panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q must be one of eq, neq, in, not_in (empty means eq)", name, p.Op, p.Field))
 			}

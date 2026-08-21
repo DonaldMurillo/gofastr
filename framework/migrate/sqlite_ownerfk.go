@@ -192,6 +192,20 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=off"); err != nil {
 		return fmt.Errorf("disable foreign keys for the rebuild: %w", err)
 	}
+	// legacy_alter_table=ON for the duration, because a VIEW that references
+	// the table stops the rebuild dead without it. Modern ALTER TABLE RENAME
+	// re-resolves every object that names the table, and at the point of the
+	// rename the original has already been dropped, so SQLite fails the whole
+	// transaction with `error in view <name>: no such table`. Reproduced with
+	// a one-line view over the rebuilt table.
+	//
+	// Legacy rename is the documented mode for exactly this procedure: it
+	// renames the table and leaves referencing objects alone, which is what we
+	// want since the replacement takes the original's name and the view
+	// resolves against it again afterwards.
+	if _, err := conn.ExecContext(ctx, "PRAGMA legacy_alter_table=ON"); err != nil {
+		return fmt.Errorf("enable legacy_alter_table for the rebuild: %w", err)
+	}
 	// Restoring the pragma is not optional: this connection goes back to the
 	// pool and would serve every later write with enforcement silently off,
 	// the exact condition v0.67 exists to end, reintroduced by the tool meant
@@ -211,9 +225,18 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 	// whose pragma could not be restored is marked bad and never serves
 	// another query.
 	restore := func() error {
-		if _, err := conn.ExecContext(context.WithoutCancel(ctx), "PRAGMA foreign_keys=on"); err == nil {
+		// legacy_alter_table goes back first and unconditionally: it changes
+		// how every later ALTER on this pooled connection behaves, and leaving
+		// it on is a quieter defect than an unenforced key because nothing
+		// fails until someone renames a table.
+		restoreCtx := context.WithoutCancel(ctx)
+		_, legacyErr := conn.ExecContext(restoreCtx, "PRAGMA legacy_alter_table=OFF")
+		if _, err := conn.ExecContext(restoreCtx, "PRAGMA foreign_keys=on"); err == nil && legacyErr == nil {
 			return nil
 		} else {
+			if err == nil {
+				err = legacyErr
+			}
 			closed = true
 			bad := conn.Raw(func(any) error { return driver.ErrBadConn })
 			cerr := conn.Close()

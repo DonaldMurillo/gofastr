@@ -359,3 +359,50 @@ func TestPackageFilesResolvesOnePackage(t *testing.T) {
 		}
 	}
 }
+
+// `go list -f` prints GoFiles as raw newline-delimited values, so a Go file
+// whose NAME contains a newline split into two bogus entries and the tool then
+// read and wrote paths that are not in the package. It writes the files it is
+// handed, so acting on a mis-parsed set is the one thing it must never do.
+//
+// Only the filename half of this is reachable: the go command refuses a
+// package directory containing a newline outright ("invalid package
+// directory"), so Dir can never carry one. It reports such a FILENAME without
+// complaint, which is what makes structured output necessary rather than
+// merely tidier.
+func TestPackageFilesHandlesANewlineInAFilename(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Skipf("the filesystem refuses this name: %v", err)
+		}
+	}
+	write("go.mod", "module oddmod\n\ngo 1.27.0\n")
+	write("a.go", "package odd\n\nfunc A() int { return 1 }\n")
+	write("b\nc.go", "package odd\n\nfunc B() int { return 2 }\n")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	gotDir, files, err := packageFiles(".")
+	if err != nil {
+		t.Fatalf("packageFiles: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("files = %q, want the two real files: the newline split one name into two", files)
+	}
+	// The decisive check: every returned name must be a file that exists in
+	// the reported directory. A line-wise parse yields names that do not, and
+	// the tool would read and write them.
+	for _, f := range files {
+		if _, err := os.Stat(filepath.Join(gotDir, f)); err != nil {
+			t.Errorf("returned file %q does not exist under %q: the tool would act on a path outside the package", f, gotDir)
+		}
+	}
+}

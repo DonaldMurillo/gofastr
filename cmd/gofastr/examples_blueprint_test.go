@@ -413,14 +413,13 @@ func firstRowDisplayValues(t *testing.T, baseURL, restPath string) (bool, []stri
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	// Status before shape. The caller reached this exact route and got 200 a
-	// moment ago, so anything else here is the app changing under the gate —
+	// Status before shape. This function issues the FIRST request to restPath
+	// (its caller has not read it yet), so the status is unknown until now and
 	// and a 500 body is HTML, which the decode below reports as "a body this
 	// gate cannot parse". That message sends the reader to the envelope
 	// format when the real fault is the route.
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET %s = %d on the second read, having answered 200 on the first:\n%s",
-			restPath, resp.StatusCode, truncateForLog(raw))
+		t.Fatalf("GET %s = %d:\n%s", restPath, resp.StatusCode, truncateForLog(raw))
 	}
 	// Decode loosely first: a renamed or restructured envelope unmarshals
 	// cleanly into a typed struct and leaves Data empty, which is

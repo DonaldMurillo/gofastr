@@ -218,7 +218,7 @@ narrow them by selecting; instead it carries the same owner and tenant
 predicates the include and eager paths apply. The result is that
 `?comments.body=x` counts exactly the comments you could list yourself:
 
-```
+```text
 GET /api/posts?comments.body=my+note      → your posts with that comment
 GET /api/posts?comments.body=their+note   → 0 rows, identical to a value
                                             that exists nowhere

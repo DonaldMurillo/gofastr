@@ -127,7 +127,12 @@ entities:
     # default and a screen may not render rows the API refuses. Boards
     # inherit their project's visibility; they carry no flag of their own.
     access:
-      read:
+      # Project-scoped: a row here names a project the caller may not be
+      # able to read. Gated to match tasks and comments, because a
+      # blank read: here served private project structure to anonymous
+      # callers through this entity's own CRUD route while projects
+      # itself was narrowed by read_scope.
+      read: projects:read
       create: projects:write
       update: projects:write
       delete: projects:admin
@@ -171,7 +176,12 @@ entities:
     # default and a screen may not render rows the API refuses. Columns
     # carry no visibility flag; the board and project decide reach.
     access:
-      read:
+      # Project-scoped: a row here names a project the caller may not be
+      # able to read. Gated to match tasks and comments, because a
+      # blank read: here served private project structure to anonymous
+      # callers through this entity's own CRUD route while projects
+      # itself was narrowed by read_scope.
+      read: projects:read
       create: projects:write
       update: projects:write
       delete: projects:admin
@@ -330,7 +340,12 @@ entities:
     # default and a screen may not render rows the API refuses. Join rows
     # carry no visibility flag of their own.
     access:
-      read:
+      # Project-scoped: a row here names a project the caller may not be
+      # able to read. Gated to match tasks and comments, because a
+      # blank read: here served private project structure to anonymous
+      # callers through this entity's own CRUD route while projects
+      # itself was narrowed by read_scope.
+      read: projects:read
       create: projects:write
       update: projects:write
       delete: projects:admin

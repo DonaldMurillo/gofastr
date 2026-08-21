@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -174,6 +175,109 @@ func TestReadScopeAllowsLegitimateSameFieldCombinations(t *testing.T) {
 				}
 			}()
 			Define("notes_"+name, cfg.WithTimestamps(false))
+		})
+	}
+}
+
+// read_scope has a flat spelling at the entity root as well as a grouped one
+// under `exposure:`, exactly like access. The guard that creates Exposure
+// already named read_scope, but the merge loop beside it did not, so a flat
+// declaration decoded to an Exposure with a nil ReadScope.
+//
+// The posture vanished silently, which is the worst way for this to fail: the
+// blueprint says the rows are filtered, the app serves all of them, and
+// nothing anywhere reports a problem.
+func TestFlatReadScopeSurvivesDecoding(t *testing.T) {
+	raw := []byte(`{
+		"name": "posts",
+		"crud": true,
+		"read_scope": {
+			"unrestricted": "content:review",
+			"filter": [{"field": "status", "op": "eq", "value": "published"}]
+		},
+		"fields": [{"name": "status", "type": "string"}]
+	}`)
+	var d EntityDeclaration
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.Exposure == nil {
+		t.Fatal("a flat read_scope did not create an Exposure")
+	}
+	if d.Exposure.ReadScope == nil {
+		t.Fatal("a flat read_scope decoded to a nil ReadScope: the posture is silently dropped and every row is served")
+	}
+	if got := d.Exposure.ReadScope.Unrestricted; got != "content:review" {
+		t.Errorf("Unrestricted = %q, want content:review", got)
+	}
+	if n := len(d.Exposure.ReadScope.Filter); n != 1 {
+		t.Fatalf("Filter has %d predicates, want 1", n)
+	}
+	if f := d.Exposure.ReadScope.Filter[0]; f.Field != "status" || f.Value != "published" {
+		t.Errorf("predicate = %+v, want status eq published", f)
+	}
+	// And it reaches the Config the framework actually enforces.
+	cfg, err := d.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Exposure == nil || cfg.Exposure.ReadScope == nil || len(cfg.Exposure.ReadScope.Filter) != 1 {
+		t.Errorf("Config lost the read scope: %+v", cfg.Exposure)
+	}
+}
+
+// The grouped spelling keeps working, and declaring BOTH must be a conflict
+// rather than a silent winner, which is what merging through the shared helper
+// buys.
+func TestGroupedReadScopeAndConflictDetection(t *testing.T) {
+	grouped := []byte(`{
+		"name": "posts",
+		"exposure": {"crud": true, "read_scope": {"filter": [{"field": "status", "value": "published"}]}},
+		"fields": [{"name": "status", "type": "string"}]
+	}`)
+	var g EntityDeclaration
+	if err := json.Unmarshal(grouped, &g); err != nil {
+		t.Fatal(err)
+	}
+	if g.Exposure == nil || g.Exposure.ReadScope == nil {
+		t.Fatal("the grouped spelling lost its read scope")
+	}
+
+	both := []byte(`{
+		"name": "posts",
+		"read_scope": {"filter": [{"field": "status", "value": "published"}]},
+		"exposure": {"read_scope": {"filter": [{"field": "status", "value": "draft"}]}},
+		"fields": [{"name": "status", "type": "string"}]
+	}`)
+	var b EntityDeclaration
+	err := json.Unmarshal(both, &b)
+	if err == nil {
+		t.Errorf("declaring read_scope flat AND grouped was accepted; one silently wins and the other is a lie: %+v", b.Exposure.ReadScope)
+	}
+}
+
+// The mirror of the eq-with-Values check: a stray Value alongside Values on
+// in/not_in is ignored by the builder, so the declaration and the enforced
+// posture differ with nothing reporting it.
+func TestReadScopeRefusesStrayValueOnIn(t *testing.T) {
+	for _, op := range []string{"in", "not_in"} {
+		t.Run(op, func(t *testing.T) {
+			cfg := EntityConfig{
+				Fields: []schema.Field{{Name: "status", Type: schema.String}},
+				Exposure: &ExposureConfig{Public: true, ReadScope: &ReadScopeConfig{
+					Filter: []RowPredicate{{Field: "status", Op: op, Value: "stray", Values: []string{"published"}}},
+				}},
+			}
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatalf("op %q accepted a stray Value that the builder ignores", op)
+				}
+				if !strings.Contains(fmt.Sprint(r), "stray") {
+					t.Errorf("the panic should quote the ignored value, got %v", r)
+				}
+			}()
+			Define("notes_stray_"+op, cfg.WithTimestamps(false))
 		})
 	}
 }
