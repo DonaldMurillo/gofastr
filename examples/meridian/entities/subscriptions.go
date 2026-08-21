@@ -274,7 +274,7 @@ func registerSubscriptions(app *framework.App) {
 		{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
 		{Name: "plan_id", Type: schema.Relation, Required: true, To: "plans"},
 		{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
-		{Name: "mrr", Type: schema.Decimal, Default: "0", Min: new(float64(0))},
+		{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
 		{Name: "started_on", Type: schema.Date},
 		{Name: "renews_on", Type: schema.Date},
 		{Name: "user_id", Type: schema.String, Hidden: true},
@@ -282,7 +282,7 @@ func registerSubscriptions(app *framework.App) {
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
 			{Type: framework.RelManyToOne, Name: "plan", Entity: "plans", ForeignKey: "plan_id"},
-		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Properties: map[string]any{"label": "Subscriptions"},
+		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Subscriptions"},
 	})
 	_ = Subscriptions{}
 }

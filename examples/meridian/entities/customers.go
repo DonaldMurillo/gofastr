@@ -261,13 +261,13 @@ func extractCustomersRecord(ev framework.Event, entityName string) (*Customers, 
 // registerCustomers registers the "customers" entity with app.
 func registerCustomers(app *framework.App) {
 	app.Entity("customers", framework.EntityConfig{Fields: []schema.Field{
-		{Name: "name", Type: schema.String, Required: true, Max: new(float64(120))},
+		{Name: "name", Type: schema.String, Required: true, Max: floatPtr(120)},
 		{Name: "email", Type: schema.String, Required: true, Unique: true},
-		{Name: "company", Type: schema.String, Max: new(float64(120))},
+		{Name: "company", Type: schema.String, Max: floatPtr(120)},
 		{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
-		{Name: "mrr", Type: schema.Decimal, Default: "0", Min: new(float64(0))},
+		{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
 		{Name: "user_id", Type: schema.String, Hidden: true},
-	}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Indices: []framework.Index{
+	}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Indices: []framework.Index{
 		{Name: "idx_customers_email", Columns: []string{"email"}, Unique: true},
 	},
 		Properties: map[string]any{"label": "Customers"},
