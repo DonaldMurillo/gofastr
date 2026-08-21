@@ -232,7 +232,7 @@ func TestAccounts_Unlink_OAuthOnlyUserCannotUnlinkLast(t *testing.T) {
 
 // TestAccounts_Unlink_PasswordUserCanUnlinkAll pins the new rule: a user
 // who has both a real password AND OAuth links can unlink down to zero
-// OAuth without locking themselves out — they still have password login.
+// OAuth without locking themselves out, they still have password login.
 // This is the case the old links-only rule got wrong.
 func TestAccounts_Unlink_PasswordUserCanUnlinkAll(t *testing.T) {
 	_, r, sess := setupAccountsTestWithPassword(t, true, "google")
@@ -277,7 +277,7 @@ func TestAccounts_Unlink_RefusesLast(t *testing.T) {
 		t.Fatalf("first unlink: %d", w.Code)
 	}
 
-	// Now unlink the last one — must refuse to avoid locking the user out.
+	// Now unlink the last one, must refuse to avoid locking the user out.
 	req2 := httptest.NewRequest(http.MethodDelete, "/auth/unlink/google", nil)
 	req2.AddCookie(&http.Cookie{Name: "session_id", Value: sess})
 	w2 := httptest.NewRecorder()

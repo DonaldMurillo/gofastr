@@ -113,8 +113,8 @@ func TestOrdinaryExpressionsStillCompile(t *testing.T) {
 // TestMinMaxMixedNumericTypes pins that the numeric fold stays
 // type-monotone: one float operand must force the float path for the
 // whole argument list. The int case used to re-set the all-int flag, so a
-// float argument followed by an int returned intValues[0] — a zero that
-// was never assigned — silently defeating a `min(...) > 0` guard.
+// float argument followed by an int returned intValues[0], a zero that
+// was never assigned, silently defeating a `min(...) > 0` guard.
 func TestMinMaxMixedNumericTypes(t *testing.T) {
 	scope := expr.MapScope{"i": 7, "f": 1.5}
 	for src, want := range map[string]float64{

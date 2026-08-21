@@ -8,7 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
 
-// Document declares one named, route-addressable print document — the
+// Document declares one named, route-addressable print document, the
 // print-battery equivalent of a screen/route. Each document mounts a
 // chrome-free, print-friendly HTML route (and, when a PDFRenderer is
 // configured, a sibling PDF route).
@@ -27,7 +27,7 @@ type Document struct {
 	// when Name is unsuitable). For per-request titles set TitleFunc.
 	Title string
 
-	// TitleFunc, when non-nil, overrides Title per request — e.g.
+	// TitleFunc, when non-nil, overrides Title per request, e.g.
 	// "Invoice #1042". The returned string is HTML-escaped by the shell.
 	TitleFunc func(r *http.Request) string
 
@@ -38,7 +38,7 @@ type Document struct {
 	// (panic-safe, RenderCtx-aware).
 	//
 	// Return ErrNotFound to render a clean 404; any other error renders a
-	// clean 500 status page — never a stack trace. Required.
+	// clean 500 status page, never a stack trace. Required.
 	Build func(r *http.Request) (component.Component, error)
 
 	// Page overrides the battery default PageConfig for this document

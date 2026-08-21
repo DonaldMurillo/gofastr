@@ -33,8 +33,8 @@ func TestDevSummaryIsCompactAndActionable(t *testing.T) {
 	w := newDevContractWatch(".")
 	out := w.summarise(devReport(t, 2))
 
-	// The dev loop gets the rule ID and location, not the full reasoning —
-	// that is what `gofastr verify` is for, and repeating it every save
+	// The dev loop gets the rule ID and location, not the full reasoning.
+	// That is what `gofastr verify` is for, and repeating it every save
 	// would bury the loop.
 	if !strings.Contains(out, contracts.RuleUnguardedMutation) {
 		t.Errorf("summary omits the rule ID:\n%s", out)
@@ -181,7 +181,7 @@ func writeWatchTree(t *testing.T, extra map[string]string) string {
 
 // The failure class under test below: the analysis itself failing. Every
 // silent `return` in analyse leaves the loop printing nothing while the
-// analyzers have not actually looked — which reads as "clean".
+// analyzers have not actually looked, which reads as "clean".
 
 func TestWatcherReportsAnUnreadableTree(t *testing.T) {
 	w := newDevContractWatch(filepath.Join(t.TempDir(), "does-not-exist"))

@@ -108,7 +108,7 @@ func newE2EApp(t *testing.T) *e2eApp {
 	// Pick a free 127.0.0.1 port per test so concurrent / serial e2e
 	// runs don't collide on a stale TIME_WAIT from the previous test's
 	// listener. `pollAddr` accounts for isolation runtime port-remapping
-	// in worktrees — without it we'd poll the bind address but the app
+	// in worktrees, without it we'd poll the bind address but the app
 	// would actually be listening on a remapped port.
 	bindAddr, pollAddr := pickFreeAddr(t)
 	baseURL := "http://" + pollAddr

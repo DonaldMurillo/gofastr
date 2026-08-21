@@ -3,8 +3,8 @@
 //
 // Freeze emits two artifacts:
 //
-//	<dir>/gofastr.yml — current one-shot blueprint for owned-Go generation.
-//	<dir>/world.json  — lossless authoring snapshot, including declarative
+//	<dir>/gofastr.yml: current one-shot blueprint for owned-Go generation.
+//	<dir>/world.json: lossless authoring snapshot, including declarative
 //	                    actions that graduate as owned-Go handler stubs.
 package freeze
 
@@ -51,7 +51,7 @@ func writeBlueprint(w *world.World, dir string) error {
 func writeWorldSnapshot(w *world.World, dir string) error {
 	// Same substitution as gofastr.yml: the snapshot lands in a
 	// directory that is about to be committed, so it carries env
-	// references rather than the credentials themselves. Copy first —
+	// references rather than the credentials themselves. Copy first,
 	// the caller's live world must not be mutated by freezing it.
 	snapshot := *w
 	snapshot.App.Auth.JWTSecret = envRef(w.App.Auth.JWTSecret, "JWT_SECRET")
@@ -63,7 +63,7 @@ func writeWorldSnapshot(w *world.World, dir string) error {
 	}
 	// 0600: world.json is the complete IR, which includes whatever the
 	// session configured. gofastr.yml gets env references instead of
-	// values, but the snapshot is the raw world — owner-only.
+	// values, but the snapshot is the raw world, owner-only.
 	path := filepath.Join(dir, "world.json")
 	if err := os.WriteFile(path, append(buf, '\n'), 0o600); err != nil {
 		return err

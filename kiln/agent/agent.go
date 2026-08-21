@@ -49,7 +49,7 @@ type Turn struct {
 }
 
 // StreamEvent is an optional incremental notification while a turn is
-// being produced — text chunk, tool-call start, etc.
+// being produced: text chunk, tool-call start, etc.
 type StreamEvent struct {
 	Kind string // "text" | "tool_call_start" | "tool_call_done" | "stop"
 	Text string

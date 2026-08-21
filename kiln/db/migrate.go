@@ -13,7 +13,7 @@ import (
 // Migrate brings the live SQLite schema in sync with the registry.
 // framework.AutoMigrate now converges columns itself (additive ADD
 // COLUMN on existing tables), so alignColumns below is a belt-and-
-// braces second pass that predates that — it stays because it is
+// braces second pass that predates that, it stays because it is
 // idempotent (a column the framework already added is simply found)
 // and keeps kiln's rebuild independent of the framework's diff path.
 //
@@ -25,7 +25,7 @@ func Migrate(d *sql.DB, registry *framework.Registry) error {
 	// correctly rejects a BelongsTo to an unknown entity, but for the live
 	// runtime that would brick the rebuild on a transient forward reference.
 	// Defer (drop) any BelongsTo whose target isn't registered yet; a later
-	// rebuild — once the target entity is added — re-derives it from the
+	// rebuild, once the target entity is added, re-derives it from the
 	// world and includes it. This mutates only the transient rebuild
 	// registry, never the durable world, so freeze still emits the relation.
 	deferDanglingRelations(registry)
@@ -112,7 +112,7 @@ func alterAddColumn(table string, f schema.Field) string {
 	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", table, col)
 }
 
-// Mirror of framework's sqlType / sqlDefault — kept private to avoid
+// Mirror of framework's sqlType / sqlDefault, kept private to avoid
 // importing framework's unexported helpers.
 func sqlType(f schema.Field) string {
 	switch f.Type {

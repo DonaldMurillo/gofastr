@@ -2,7 +2,7 @@ package chat
 
 import "github.com/DonaldMurillo/gofastr/core-ui/style"
 
-// widgetTheme returns the canonical theme — the chat widget defines
+// widgetTheme returns the canonical theme, the chat widget defines
 // its own kiln-* visual tokens via kilnVars() (emitted as a literal
 // :root augmentation) since they aren't part of the typed canonical
 // palette.
@@ -35,7 +35,7 @@ func kilnVars() string {
 }
 
 // widgetCSS builds the widget stylesheet using the framework's stylesheet
-// builder. No bespoke .css files — everything goes through theme tokens.
+// builder. No bespoke .css files, everything goes through theme tokens.
 //
 // Translucent control-panel feel: backdrop-blur over a glassy background,
 // soft borders, subtle elevation. Designed not to compete with the host
@@ -237,7 +237,7 @@ func widgetCSS() string {
 	// Color-code tool-call rows by category via the data-tool
 	// attribute so a long log distinguishes mutations from plans
 	// from reads at a glance. Subtle left-border tint, never
-	// background — keeps the log uniform-looking.
+	// background, keeps the log uniform-looking.
 	ss.Rule(`.kiln-msg-tool[data-tool^="add_"], .kiln-msg-tool[data-tool^="update_"], .kiln-msg-tool[data-tool^="delete_"]`).
 		Set("border-left", "2px solid rgba(120, 170, 255, 0.45)", "padding-left", "6px").
 		End()
@@ -617,7 +617,7 @@ func widgetCSS() string {
 	// .kiln-log-wrap is the flex middle child of .kiln-panel and the
 	// scroll-anchor target. Needs flex:1 + min-height:0 so its
 	// .kiln-log child (overflow-y:auto) actually constrains under
-	// the panel's max-height — without min-height:0 the wrap pushes
+	// the panel's max-height, without min-height:0 the wrap pushes
 	// content past the panel and nothing scrolls.
 	ss.Rule(".kiln-log-wrap").
 		Set(
@@ -872,7 +872,7 @@ func widgetCSS() string {
 	ss.Rule(".kiln-status-error").Set("color", "{colors.kiln-bad}").End()
 
 	// --- plan card (Approve/Reject) ----------------------------------
-	// Distinct row that surfaces a proposed plan — shows the steps,
+	// Distinct row that surfaces a proposed plan, shows the steps,
 	// the destructive targets, and Approve/Reject buttons until the
 	// user decides. Decision collapses to a status line.
 	ss.Rule(".kiln-msg-plan").
@@ -1063,7 +1063,7 @@ func widgetCSS() string {
 }
 
 // baseCSS is loaded by every Kiln-rendered page so agent-built UIs are
-// readable during build mode. The freeze step does NOT include this —
+// readable during build mode. The freeze step does NOT include this,
 // users' real apps bring their own stylesheets.
 func baseCSS() string {
 	prefix := kilnVars()

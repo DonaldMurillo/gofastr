@@ -58,7 +58,7 @@ func TestInMemorySchedulerCarriesOptionsToJob(t *testing.T) {
 
 func TestInMemorySchedulerOmittedOptionsDefault(t *testing.T) {
 	// dispatchDue applies the MaxAttempts=3 default itself so the Job
-	// handed to Enqueue is always non-zero — matching the pre-options
+	// handed to Enqueue is always non-zero, matching the pre-options
 	// behaviour even for custom Queue implementations.
 	rq := &recordQueue{}
 	sched := NewScheduler(rq)
@@ -276,7 +276,7 @@ func TestDurableSchedulerMigratesScheduleOptionsColumns(t *testing.T) {
 	db := openDurableSchedulerDB(t)
 	q := newDurableTestQueue(t, db)
 	// Create the schedules table by hand with the schema that shipped BEFORE
-	// per-schedule options — no lane / priority / max_attempts columns. The
+	// per-schedule options, no lane / priority / max_attempts columns. The
 	// version column IS included so ensureScheduleVersionColumn does not run
 	// first and mask the options-migration path.
 	oldSchema := `CREATE TABLE queue_scheduler_schedules (
@@ -314,11 +314,11 @@ func TestDurableSchedulerMigratesScheduleOptionsColumns(t *testing.T) {
 // Lane routing: a scheduled job whose Lane is reserved is claimed by the
 // reserved-lane worker; a worker dedicated to a DIFFERENT lane cannot claim
 // it. This proves the per-schedule Lane flows end-to-end through DBQueue's
-// existing lane-isolation machinery — no second retry/backoff impl needed.
+// existing lane-isolation machinery, no second retry/backoff impl needed.
 // ============================================================================
 
 func TestScheduledBulkLaneJobClaimedByBulkWorker(t *testing.T) {
-	// openDurableSchedulerDB sets MaxOpenConns(8) — required for the durable
+	// openDurableSchedulerDB sets MaxOpenConns(8), required for the durable
 	// scheduler's transactions to coexist with the worker pool's dequeues
 	// (the newSQLiteDB helper pins a single connection and the worker's
 	// polling dequeue can stall behind the scheduler's tx).
@@ -344,7 +344,7 @@ func TestScheduledBulkLaneJobClaimedByBulkWorker(t *testing.T) {
 		t.Fatalf("new scheduler: %v", err)
 	}
 	// Anchor the schedule an hour in the past so the fired tick's
-	// scheduled_at lands BEHIND wall-clock — the bulk worker's polling
+	// scheduled_at lands BEHIND wall-clock, the bulk worker's polling
 	// dequeue compares scheduled_at against time.Now(), so a future tick
 	// would never become eligible within the test's window.
 	now := time.Now().UTC()
@@ -374,7 +374,7 @@ func TestScheduledBulkLaneJobClaimedByBulkWorker(t *testing.T) {
 func TestScheduledBulkLaneJobNotClaimableByOtherLaneWorker(t *testing.T) {
 	db := openDurableSchedulerDB(t)
 	// Only an "urgent" lane worker: NO shared workers, NO bulk worker. A
-	// bulk-lane scheduled job must stay pending — the urgent worker cannot
+	// bulk-lane scheduled job must stay pending, the urgent worker cannot
 	// claim another lane's job.
 	q, err := NewDBQueue(db, WithWorkers(0), WithDBLaneWorkers("urgent", 1))
 	if err != nil {
@@ -402,7 +402,7 @@ func TestScheduledBulkLaneJobNotClaimableByOtherLaneWorker(t *testing.T) {
 	// Anchor the schedule an hour in the past so the fired tick's
 	// scheduled_at lands BEHIND wall-clock. The urgent worker's polling
 	// dequeue gates on scheduled_at <= now, so a future tick would never
-	// become eligible for ANY worker and the test would pass vacuously —
+	// become eligible for ANY worker and the test would pass vacuously,
 	// masking a broken lane router. Mirror the positive test's anchoring.
 	now := time.Now().UTC()
 	base := now.Add(-time.Hour)
@@ -424,7 +424,7 @@ func TestScheduledBulkLaneJobNotClaimableByOtherLaneWorker(t *testing.T) {
 	}
 	q.Close()
 
-	// The job must still be pending — proving lane isolation routed it away
+	// The job must still be pending, proving lane isolation routed it away
 	// from the only available worker.
 	stats, err := q.Stats(context.Background())
 	if err != nil {

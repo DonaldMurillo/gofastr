@@ -8,7 +8,7 @@ import (
 )
 
 // Plugin is the [framework.Plugin] adapter for the semantic-search battery. It
-// owns no state of its own — callers construct an [Index] and hand it
+// owns no state of its own, callers construct an [Index] and hand it
 // to [NewPlugin], which then registers /semantic/* routes on the app's
 // router during framework.App.Init.
 //
@@ -44,7 +44,7 @@ func (p *Plugin) WithPrefix(prefix string) *Plugin {
 // WithAuthToken requires clients of the mounted routes to present this bearer
 // token ("Authorization: Bearer <token>"), verified in constant time. This is
 // the production auth mode; without it (and without [Plugin.WithInsecureNoAuth])
-// the mounted routes fail closed — every request is rejected.
+// the mounted routes fail closed, every request is rejected.
 func (p *Plugin) WithAuthToken(token string) *Plugin {
 	p.authToken = token
 	p.insecure = false
@@ -53,7 +53,7 @@ func (p *Plugin) WithAuthToken(token string) *Plugin {
 
 // WithInsecureNoAuth disables authentication on the mounted routes. It is the
 // only way to serve them without a token and is intended for local development
-// only — never in production. Prefer [Plugin.WithAuthToken].
+// only, never in production. Prefer [Plugin.WithAuthToken].
 func (p *Plugin) WithInsecureNoAuth() *Plugin {
 	p.insecure = true
 	return p

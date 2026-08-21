@@ -16,7 +16,7 @@ import (
 
 // sdkFixtureDecls covers the shapes the SDK emitters must handle: a plain
 // entity with an enum and a HIDDEN field (which must never surface in any
-// generated file — the SDKs are downloadable), and a search + soft-delete
+// generated file, since the SDKs are downloadable), and a search + soft-delete
 // entity with a custom table name.
 func sdkFixtureDecls() []framework.EntityDeclaration {
 	return []framework.EntityDeclaration{
@@ -122,7 +122,7 @@ func TestSDKJSTypedSurface(t *testing.T) {
 		// Bracket, not dot: `this.<name> = …` is a JS statement position, and the
 		// name comes from a developer entity declaration that no syntax gate
 		// checks (there is no JS parser in the Go stdlib). See
-		// TestClientJSQuotesEmittedNames. `client.posts` still resolves — only
+		// TestClientJSQuotesEmittedNames. `client.posts` still resolves. Only
 		// the emitted assignment form changed.
 		"this[\"posts\"] = new Resource(this, \"posts\")",
 		"this[\"docFiles\"] = new Resource(this, \"doc_files\")",
@@ -152,7 +152,7 @@ func TestSDKJSTypedSurface(t *testing.T) {
 }
 
 // Every resource property assigned in client.js must be declared in
-// client.d.ts — the twin-walk guarantee.
+// client.d.ts: the twin-walk guarantee.
 func TestSDKJSDeclarationsInSync(t *testing.T) {
 	got := renderedSDK(t)
 	js, dts := got["js/client.js"], got["js/client.d.ts"]
@@ -302,7 +302,7 @@ entities:
 	generateProject([]string{"--from=gofastr.yml"})
 	runGenerateSDK(nil)
 
-	// Regenerating in place must succeed — drift refresh is the whole point.
+	// Regenerating in place must succeed. Drift refresh is the whole point.
 	runGenerateSDK(nil)
 
 	zipPath := filepath.Join(dir, "gen", "sdk", "dist", sdk.GoArtifact)

@@ -191,7 +191,7 @@ func TestMemoryQueue_WithHandlerTimeout_SlowJobCompletes(t *testing.T) {
 
 	select {
 	case <-done:
-		// Handler completed successfully — timeout was long enough.
+		// Handler completed successfully, timeout was long enough.
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("handler did not complete within the configured timeout window")
 	}
@@ -224,7 +224,7 @@ func TestMemoryQueue_WithHandlerTimeout_ShortTimeoutCancels(t *testing.T) {
 
 	select {
 	case <-cancelled:
-		// Context was cancelled due to short timeout — expected.
+		// Context was cancelled due to short timeout, expected.
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("handler was not cancelled within the short timeout window")
 	}

@@ -29,8 +29,8 @@ screens:
 `
 }
 
-// The generator must not emit bespoke CSS classes (.mrd-*, .gofastr-*) —
-// the exact regression CLAUDE.md documents as fixed 2026-06. Charts with
+// The generator must not emit bespoke CSS classes (.mrd-*, .gofastr-*). The
+// exact regression CLAUDE.md documents as fixed 2026-06. Charts with
 // titles compose ui.Card; muted placeholders compose ui.EmptyValue.
 func TestGeneratorEmitsNoBespokeClasses(t *testing.T) {
 	dir := t.TempDir()
@@ -53,7 +53,7 @@ func TestGeneratorEmitsNoBespokeClasses(t *testing.T) {
 	}
 }
 
-// line_chart must render a real chart — it used to pass validation and
+// line_chart must render a real chart. It used to pass validation and
 // then silently disappear into a noderender comment.
 func TestLineChartRenders(t *testing.T) {
 	dir := t.TempDir()

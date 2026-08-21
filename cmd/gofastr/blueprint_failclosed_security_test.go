@@ -8,7 +8,7 @@ import (
 
 // Property family: a blueprint flag whose FALSE value is the permissive state
 // must never be reached by silent coercion. If the decoder cannot tell what the
-// author meant, it fails the generate — it does not guess "off".
+// author meant, it fails the generate. It does not guess "off".
 //
 // This is the same shape as the screen-layout finding in
 // emitter_output_context_security_test.go (an unvalidated config value silently
@@ -17,7 +17,7 @@ import (
 //
 // boolValue is the lax decoder: anything that is not the bool true or the
 // literal string "true" becomes false. core/yaml is YAML 1.2, so it does NOT
-// type `yes` / `on` / `y` / `1` as booleans — they arrive as strings and coerce
+// type `yes` / `on` / `y` / `1` as booleans; they arrive as strings and coerce
 // to false. Those spellings are the most common way a human (or an agent
 // transcribing a spec, which is a documented GoFastr workflow) writes "true" in
 // YAML.
@@ -73,7 +73,7 @@ func TestProtectiveBoolsRejectYamlTruthy(t *testing.T) {
 			t.Run(s.name+"/"+v, func(t *testing.T) {
 				bp, err := decodeBlueprintString(s.yaml(v))
 				if err != nil {
-					return // rejected at the boundary — the point
+					return // rejected at the boundary, which is the point
 				}
 				// Accepted. That is only OK if it was read as TRUE.
 				if !protectiveFlagIsSet(t, bp, s.name) {

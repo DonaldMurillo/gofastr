@@ -11,7 +11,7 @@ import (
 
 // Scope rejections use the canonical flat error envelope
 // {"error": "<message>", "success": false, "code": 403} with a JSON
-// content type — the shape the generated SDKs and sdkdocs document.
+// content type, the shape the generated SDKs and sdkdocs document.
 func TestScopeErrorFlatEnvelope(t *testing.T) {
 	reject := func(t *testing.T, h http.Handler, req *http.Request) {
 		t.Helper()

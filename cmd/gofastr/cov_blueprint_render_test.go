@@ -190,7 +190,7 @@ func TestRenderBlueprintFilesRichShape(t *testing.T) {
 		}
 	}
 	// Generated apps must render node trees via the leaf core-ui/noderender
-	// package (core-ui/html + core/render + core-ui/node only), NOT kiln/render —
+	// package (core-ui/html + core/render + core-ui/node only), NOT kiln/render,
 	// which drags Kiln's authoring engine (kiln/expr, kiln/effect, framework)
 	// into a shipped app.
 	if !strings.Contains(screens, "core-ui/noderender") {
@@ -256,7 +256,7 @@ func TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 	}
 	// The generated app is now a flat `package main` at the root. Building it
 	// whole exercises the screens' node-renderer path, which is what renders
-	// node trees — and lets us assert the authoring engine never leaks into a
+	// node trees, and lets us assert the authoring engine never leaks into a
 	// shipped app. (Entity-less apps still ship the entities/register.go seam
 	// and import <module>/entities, so go.mod below must match app.module.)
 	dir := t.TempDir()

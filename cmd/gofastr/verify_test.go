@@ -305,7 +305,7 @@ func wire(r *router.Router) {
 }
 
 // ----------------------------------------------------------------------
-// Baseline — the adoption ratchet, through the CLI
+// Baseline: the adoption ratchet, through the CLI
 // ----------------------------------------------------------------------
 
 // unguardedModule is a project with two findings the strict gate catches.
@@ -333,7 +333,7 @@ func wire(r *router.Router) {
 func TestVerifyBaselineRatchet(t *testing.T) {
 	dir := unguardedModule(t)
 
-	// Strict fails before there is a baseline — that is the wall an
+	// Strict fails before there is a baseline. That is the wall an
 	// existing codebase hits, and the reason the feature exists.
 	if _, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--strict"}); code != 1 {
 		t.Fatalf("strict exit before baseline = %d, want 1", code)
@@ -350,7 +350,7 @@ func TestVerifyBaselineRatchet(t *testing.T) {
 		t.Fatalf("baseline file not written: %v", err)
 	}
 
-	// Same code, same run — now it passes.
+	// Same code, same run: now it passes.
 	out, code = captureVerify(t, []string{"--root", dir, "--no-vet", "--strict"})
 	if code != 0 {
 		t.Fatalf("strict exit after baseline = %d, want 0\n%s", code, out)
@@ -395,7 +395,7 @@ func TestVerifyBaselineStillFailsOnANewFinding(t *testing.T) {
 // The suppressed-slot guarantee has to survive narrowing. Only() drops
 // the suppression identities with the other run-wide counters, so when
 // --rule narrowed the report BEFORE the baseline was applied, the freed
-// slot absorbed a brand-new finding and the run exited 0 — on exactly
+// slot absorbed a brand-new finding and the run exited 0, on exactly
 // the invocation the dev loop advertises (`verify --rule X --fix`).
 func TestVerifyRuleFilterHonoursSuppressedSlots(t *testing.T) {
 	dir := unguardedModule(t)
@@ -435,7 +435,7 @@ func TestVerifyRuleFilterHonoursSuppressedSlots(t *testing.T) {
 
 // A narrowed report must not carry whole-run baseline arithmetic: with
 // the baseline applied to the Only() copy, entries for every OTHER rule
-// went unconsumed and were reported as "over-accepting" — nudging the
+// went unconsumed and were reported as "over-accepting", nudging the
 // user to re-record away debt that is still very much live.
 func TestVerifyRuleFilterDoesNotMisreportOtherRulesDebt(t *testing.T) {
 	dir := writeModule(t, map[string]string{
@@ -491,7 +491,7 @@ func TestVerifyBaselineWriteRejectsNarrowedRuns(t *testing.T) {
 	}
 }
 
-// In --json mode, stdout IS the document — on every path. Operational
+// In --json mode, stdout IS the document on every path. Operational
 // failures used to print prose there (fail writes to stdout), so the
 // consumer most likely to parse the output got a corrupt document on
 // exactly the runs that went wrong. A failure now ships AS the document:
@@ -544,7 +544,7 @@ func TestVerifyJSONFixFailureCarriesPartialWrites(t *testing.T) {
 }
 
 // A failing tree in --sarif mode must not end on the green "SARIF
-// written" line alone — the exit code says it failed, and the terminal
+// written" line alone. The exit code says it failed, and the terminal
 // should too.
 func TestVerifySarifModeStatesTheVerdictOnFailure(t *testing.T) {
 	dir := unguardedModule(t)
@@ -559,7 +559,7 @@ func TestVerifySarifModeStatesTheVerdictOnFailure(t *testing.T) {
 }
 
 // The failure half of --baseline-write went through failRun; the SUCCESS
-// half still printed prose to stdout in --json mode — the one remaining
+// half still printed prose to stdout in --json mode, the one remaining
 // path where a JSON consumer got an unparseable document on a run that
 // worked.
 func TestVerifyJSONBaselineWriteEmitsJSON(t *testing.T) {
@@ -600,7 +600,7 @@ func TestVerifySarifIsWrittenAlongsideJSON(t *testing.T) {
 	}
 }
 
-// Apply writes file by file and stops at the first refusal — so a fix
+// Apply writes file by file and stops at the first refusal, so a fix
 // pass that fails may already have rewritten earlier files. Exiting with
 // only the error reports a clean failure over a half-changed tree.
 func TestVerifyFixReportsPartialWritesOnFailure(t *testing.T) {
@@ -669,7 +669,7 @@ func TestVerifyBaselineReportsPaidDownDebt(t *testing.T) {
 
 func TestVerifyExplicitMissingBaselineIsAnError(t *testing.T) {
 	// An explicit --baseline naming a file that is not there is a typo or
-	// a bad path, not "run without a baseline" — passing silently would
+	// a bad path, not "run without a baseline". Passing silently would
 	// turn the gate off exactly when someone thought they had enabled it.
 	dir := unguardedModule(t)
 	out, code := captureVerify(t, []string{
@@ -695,7 +695,7 @@ func TestVerifyWithoutABaselineIsNotNagged(t *testing.T) {
 // TestAuditLintPointsAtVerify pins the pointer between the two overlapping
 // commands. `audit lint` predates the contract system and knows nothing
 // about gofastr.contracts.yml or //gofastr:allow, so it reports findings
-// verify deliberately exempts — a project running both gets two answers
+// verify deliberately exempts. A project running both gets two answers
 // to the same question, and nothing said which one is authoritative.
 func TestAuditLintPointsAtVerify(t *testing.T) {
 	dir := writeModule(t, map[string]string{
@@ -741,7 +741,7 @@ func f(db *sql.DB, id string) {
 	if !strings.Contains(out, "gofastr.contracts.yml") {
 		t.Errorf("audit lint does not say WHY verify is authoritative (it honours config):\n%s", out)
 	}
-	// The findings must still print — this is a pointer, not a removal.
+	// The findings must still print. This is a pointer, not a removal.
 	if !strings.Contains(out, "ignored-exec") {
 		t.Errorf("audit lint stopped reporting its findings:\n%s", out)
 	}
@@ -749,7 +749,7 @@ func f(db *sql.DB, id string) {
 
 // --rule narrows the report. The footer, the exit code and Passed are all
 // derived from the diagnostics, so a narrowed report that keeps the full
-// run's tallies prints its findings under "0 error(s)" and exits 0 — a
+// run's tallies prints its findings under "0 error(s)" and exits 0, a
 // silent pass on a run that just failed.
 func TestVerifyRuleFilterNarrowsReportAndExitCode(t *testing.T) {
 	dir := t.TempDir()
@@ -835,7 +835,7 @@ func main() {
 }
 
 // --json used to skip the vet stage entirely, so the consumer most likely
-// to act on the output — an agent — was the only one that got a report on
+// to act on the output, an agent, was the only one that got a report on
 // code that does not build, with nothing in the payload admitting it.
 func TestVerifyJSONRunsVetAndReportsIt(t *testing.T) {
 	dir := t.TempDir()
@@ -911,7 +911,7 @@ func TestVerifyJSONRecordsASkippedVet(t *testing.T) {
 		t.Errorf("skip reason = %q, want --no-vet", doc.Vet.Skipped)
 	}
 	// A skipped stage has no verdict. Emitting `"passed": false` on a
-	// skip is the "we did not check" reading as "it failed" — a consumer
+	// skip is the "we did not check" reading as "it failed". A consumer
 	// keying on vet.passed alone would fail every --no-vet run.
 	var raw struct {
 		Vet map[string]any `json:"vet"`
@@ -922,7 +922,7 @@ func TestVerifyJSONRecordsASkippedVet(t *testing.T) {
 	if _, present := raw.Vet["passed"]; present {
 		t.Errorf("a skipped vet stage carries a passed verdict: %v", raw.Vet)
 	}
-	// The analyzers still ran — only the precondition was skipped.
+	// The analyzers still ran. Only the precondition was skipped.
 	if len(doc.Diagnostics) == 0 {
 		t.Error("--no-vet suppressed the analyzers too")
 	}
@@ -1038,7 +1038,7 @@ func TestVerifyFixExplainsAnUnfixableRule(t *testing.T) {
 	}
 }
 
-// Naming three rules where two are fixable must still fix those two — the
+// Naming three rules where two are fixable must still fix those two. The
 // notice is advisory, not a refusal.
 func TestVerifyFixWithMixedRulesStillFixesTheFixableOnes(t *testing.T) {
 	dir := t.TempDir()
@@ -1065,7 +1065,7 @@ func TestVerifyFixWithMixedRulesStillFixesTheFixableOnes(t *testing.T) {
 // a mechanical fix" would be false; the message has to distinguish them.
 func TestVerifyFixReportsFixablesOutsideTheChange(t *testing.T) {
 	// The CHANGED file must hold only an unfixable finding, and the
-	// untouched one a fixable finding — otherwise the fix lands in the
+	// untouched one a fixable finding. Otherwise the fix lands in the
 	// changed file and this branch never runs.
 	dir := t.TempDir()
 	run := func(args ...string) {
@@ -1085,7 +1085,7 @@ func TestVerifyFixReportsFixablesOutsideTheChange(t *testing.T) {
 	write("go.mod", "module example.com/chg\n\ngo 1.26\n")
 	// Fixable (lowercase verb), never touched by the change.
 	write("untouched.go", "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\nfunc u(r *router.Router) { r.Handle(\"post\", \"/u\", nil) }\n")
-	// Unfixable (colon param) — GOFASTR1002 deliberately has no autofix.
+	// Unfixable (colon param): GOFASTR1002 deliberately has no autofix.
 	write("changed.go", "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\nfunc c(r *router.Router) { r.Handle(\"GET\", \"/c/:id\", nil) }\n")
 	run("init", "-q")
 	run("config", "user.email", "t@example.com")

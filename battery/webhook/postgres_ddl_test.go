@@ -11,7 +11,7 @@ import (
 // The outbound and inbound stores dialect-switch their timestamp columns but
 // hardcoded the payload column as BLOB. Postgres has no BLOB type, so
 // NewSQLStore/NewSQLInboundStore failed at ensureTables against every Postgres
-// app — the battery was unusable on the dialect it is most likely deployed on.
+// app, the battery was unusable on the dialect it is most likely deployed on.
 //
 // These construct against a real server rather than asserting on the DDL
 // string: the property is "the emitted schema is one Postgres accepts", and
@@ -33,8 +33,8 @@ func TestSQLStoreConstructsOnPostgres(t *testing.T) {
 	if err := store.AddSubscriber(ctx, sub); err != nil {
 		t.Fatalf("AddSubscriber: %v", err)
 	}
-	// The payload column is the one that was mistyped — prove bytes survive a
-	// round-trip, not just that the CREATE TABLE parsed.
+	// The payload column is the one that was mistyped, prove bytes survive a
+	// round-trip, not only that the CREATE TABLE parsed.
 	del := Delivery{ID: "d1", SubscriberID: "s1", Event: "a", Payload: []byte(`{"k":"v"}`), Status: "pending", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	if err := store.AddDelivery(ctx, del); err != nil {
 		t.Fatalf("AddDelivery: %v", err)

@@ -49,7 +49,7 @@ type Credentials struct {
 //     local account:
 //     - account HAS a password → REFUSED (409): the user must log in with
 //     their password and add the provider via the authenticated link flow
-//     (GET /auth/oauth/{provider}/link) — protects the local credential
+//     (GET /auth/oauth/{provider}/link), protects the local credential
 //     from IdP-email takeover.
 //     - account is PASSWORDLESS → AUTO-LINK + login (safe migration: a prior
 //     OAuth-created account re-binds to the same verified identity).

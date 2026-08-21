@@ -13,7 +13,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 )
 
-// runVerify is `gofastr verify` — one pipeline that answers "is this a
+// runVerify is `gofastr verify`: one pipeline that answers "is this a
 // good GoFastr application", where `go build` and `go vet` only answer
 // "does it compile" and "is anything obviously wrong".
 //
@@ -47,9 +47,9 @@ func runVerify(args []string) {
 	// A baseline is "the debt this whole tree accepts". Recording it from
 	// a narrowed run would silently erase every other rule's entries, and
 	// the next full verify/build fails on findings the team had already
-	// signed off — so the combination is refused, not reinterpreted.
+	// signed off, so the combination is refused, not reinterpreted.
 	if opts.baselineWrite && (len(opts.rules) > 0 || len(opts.capabilities) > 0 || len(opts.analyzers) > 0) {
-		failRun(opts.json, "--baseline-write records the whole tree's accepted debt; combined with --rule or a capability filter it would erase every other rule's entries — run it without filters")
+		failRun(opts.json, "--baseline-write records the whole tree's accepted debt; combined with --rule or a capability filter it would erase every other rule's entries. Run it without filters")
 		osExit(2)
 		return
 	}
@@ -73,10 +73,10 @@ func runVerify(args []string) {
 
 	// `go vet` runs first and its failure is fatal. A contract report on
 	// code the compiler already rejects is noise at best and misleading at
-	// worst — half the analyzers cannot parse what they need.
+	// worst: half the analyzers cannot parse what they need.
 	//
 	// This runs in --json mode too. It used to be skipped there, which
-	// meant the consumer most likely to act on the output — an agent —
+	// meant the consumer most likely to act on the output, an agent,
 	// was the only one that got a report on code that does not build,
 	// with nothing in the payload admitting it.
 	vet := &contracts.VetResult{}
@@ -98,7 +98,7 @@ func runVerify(args []string) {
 			if opts.json {
 				emitVetFailureJSON(opts.root, cfg, vet)
 			} else {
-				fail("go vet found issues — fix those first")
+				fail("go vet found issues: fix those first")
 			}
 			osExit(1)
 			return
@@ -126,7 +126,7 @@ func runVerify(args []string) {
 	// and misreported other rules' baseline entries as over-accepting.
 	for _, name := range opts.rules {
 		if _, ok := contracts.LookupRule(name); !ok {
-			failRun(opts.json, "unknown rule %q — run `gofastr verify --list` to see the catalog", name)
+			failRun(opts.json, "unknown rule %q: run `gofastr verify --list` to see the catalog", name)
 			osExit(2)
 			return
 		}
@@ -153,8 +153,8 @@ func runVerify(args []string) {
 		}
 	}
 
-	// The changed-file set is resolved before the fix stage, not just
-	// before reporting. --changed --fix in a pre-commit hook used to
+	// The changed-file set is resolved before the fix stage rather than
+	// only before reporting. --changed --fix in a pre-commit hook used to
 	// rewrite the whole tree and then report only the changed files, so
 	// an unrelated file was edited without appearing in the output the
 	// user was reading.
@@ -167,7 +167,7 @@ func runVerify(args []string) {
 			return
 		}
 		if files == nil {
-			noteWarn("--changed: %s is not a git repository — reporting everything", opts.root)
+			noteWarn("--changed: %s is not a git repository: reporting everything", opts.root)
 		} else {
 			changedFiles = files
 		}
@@ -178,7 +178,7 @@ func runVerify(args []string) {
 		// Say up front when nothing CAN be fixed. Without this the user
 		// asks to fix a rule, gets the finding back unchanged, and cannot
 		// tell whether the tool failed or the rule simply has no
-		// mechanical fix — which is what `contracts_fix` over MCP has
+		// mechanical fix, which is what `contracts_fix` over MCP has
 		// always said outright.
 		noteUnfixableRules(opts.rules, noteWarn, note)
 
@@ -190,13 +190,13 @@ func runVerify(args []string) {
 		}
 		applied, applyErr := fixScope.OnlyFiles(changedFiles).Apply()
 		if applyErr != nil {
-			// Apply writes file by file and stops at the first refusal —
+			// Apply writes file by file and stops at the first refusal:
 			// the files before it are already rewritten, and an error
 			// alone would report a clean failure over a half-changed
 			// tree. In the message rather than a notice, so the JSON
 			// mode's exit-2 path carries it too.
 			if len(applied) > 0 {
-				failRun(opts.json, "%v — %s", applyErr, partialWriteNote(applied))
+				failRun(opts.json, "%v: %s", applyErr, partialWriteNote(applied))
 			} else {
 				failRun(opts.json, "%v", applyErr)
 			}
@@ -230,18 +230,18 @@ func runVerify(args []string) {
 			// Distinguish "nothing is fixable" from "nothing in scope is
 			// fixable". With --changed the fix is narrowed to the changed
 			// files, so fixable findings can exist and still not be
-			// touched — saying none carry a fix would be false.
+			// touched; saying none carry a fix would be false.
 			switch {
 			case changedFiles != nil && len(fixScope.Fixable()) > 0:
 				n := len(fixScope.Fixable())
-				note("nothing to fix in the changed files — %d fixable finding%s elsewhere; run without --changed to apply them.",
+				note("nothing to fix in the changed files: %d fixable finding%s elsewhere; run without --changed to apply them.",
 					n, map[bool]string{true: " sits", false: "s sit"}[n == 1])
 			default:
 				// "In scope", not "in this report": the fix pass runs
 				// before the baseline is applied (paying down accepted
 				// debt is allowed), so findings it looked at may not be
 				// visible in the report printed below.
-				note("nothing to fix — nothing in scope carries a mechanical fix, baselined debt included; `gofastr verify --explain <rule>` writes out the fix to apply by hand.")
+				note("nothing to fix: nothing in scope carries a mechanical fix, baselined debt included; `gofastr verify --explain <rule>` writes out the fix to apply by hand.")
 			}
 		}
 	}
@@ -260,7 +260,7 @@ func runVerify(args []string) {
 			osExit(2)
 			return
 		}
-		// The success half of this path must keep stdout parseable too —
+		// The success half of this path must keep stdout parseable too:
 		// the failure half already ships through failRun.
 		if opts.json {
 			data, marshalErr := json.Marshal(map[string]any{
@@ -271,7 +271,7 @@ func runVerify(args []string) {
 				fmt.Println(string(data))
 			}
 		} else {
-			success("baseline written to %s — %d finding(s) accepted", baselineFile, b.Total())
+			success("baseline written to %s: %d finding(s) accepted", baselineFile, b.Total())
 			info("New findings will now fail; these will not. Re-record as you pay the debt down.")
 		}
 		return
@@ -285,7 +285,7 @@ func runVerify(args []string) {
 		return
 	}
 	if baseline == nil && opts.baselineSet {
-		failRun(opts.json, "baseline %s does not exist — record one with `gofastr verify --baseline-write`", baselineFile)
+		failRun(opts.json, "baseline %s does not exist: record one with `gofastr verify --baseline-write`", baselineFile)
 		osExit(2)
 		return
 	}
@@ -294,7 +294,7 @@ func runVerify(args []string) {
 	}
 
 	// Narrowing happens last, so a finding is only hidden by --changed or
-	// --rule after the baseline has had its say — applied to a narrowed
+	// --rule after the baseline has had its say; applied to a narrowed
 	// copy, the baseline lost the suppression identities that keep a
 	// suppressed finding's slot occupied, and counted every other rule's
 	// entries as over-accepting. The analysis itself always ran
@@ -314,7 +314,7 @@ func runVerify(args []string) {
 	report.Notices = notices
 	report.Fixed = fixed
 
-	// SARIF is a FILE destination, not a stdout format — it is written
+	// SARIF is a FILE destination, not a stdout format; it is written
 	// whenever asked for, whatever stdout carries. Inside the format
 	// switch, `--json --sarif out.sarif` silently dropped the file.
 	if opts.sarifPath != "" {
@@ -343,10 +343,10 @@ func runVerify(args []string) {
 		}
 		fmt.Println(string(data))
 	case opts.sarifPath != "":
-		// The success line above plus, on failure, the verdict — a
+		// The success line above plus, on failure, the verdict: a
 		// failing run must not end on a green line alone.
 		if !report.Passed() {
-			fail("%d error(s), %d warning(s) — details in %s",
+			fail("%d error(s), %d warning(s): details in %s",
 				report.Counts.Errors, report.Counts.Warnings, opts.sarifPath)
 		}
 	default:
@@ -371,7 +371,7 @@ func printVerifyOutcome(report *contracts.Report, fixed bool) {
 		return
 	}
 	fmt.Println()
-	fail("%d error(s), %d warning(s) — see above.", report.Counts.Errors, report.Counts.Warnings)
+	fail("%d error(s), %d warning(s): see above.", report.Counts.Errors, report.Counts.Warnings)
 	if n := len(report.Fixable()); n > 0 && !fixed {
 		info("%d finding(s) can be fixed mechanically: gofastr verify --fix", n)
 	}
@@ -459,7 +459,7 @@ func listRules(asJSON bool, capabilities []contracts.Capability) {
 		fmt.Println(string(data))
 		return
 	}
-	fmt.Printf("\n%s — %d rules\n", bold("GoFastr contracts"), len(rules))
+	fmt.Printf("\n%s: %d rules\n", bold("GoFastr contracts"), len(rules))
 	current := contracts.Capability("")
 	for _, r := range rules {
 		if r.Capability != current {
@@ -562,7 +562,7 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 				}
 			}
 		case strings.HasPrefix(arg, "-"):
-			return opts, fmt.Errorf("unknown flag %s — run `gofastr verify --help`", arg)
+			return opts, fmt.Errorf("unknown flag %s: run `gofastr verify --help`", arg)
 		default:
 			// A bare word is a capability filter. A path is only accepted
 			// as the root when it is not also a capability name, which is
@@ -587,7 +587,7 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 
 func printVerifyUsage() {
 	fmt.Printf(`
-%s — check the app against the GoFastr contract
+%s: check the app against the GoFastr contract
 
 %s:
   gofastr verify [capability...] [flags]
@@ -603,7 +603,7 @@ severity unless a gofastr.contracts.yml relaxes it, or a
 
 %s:
   --list             Print the rule catalog and exit
-  --explain <rule>   Print one rule in full — why it matters and how to fix it
+  --explain <rule>   Print one rule in full: why it matters and how to fix it
   --json             Machine-readable report (every diagnostic carries its rule)
   --sarif <file>     Write SARIF 2.1.0 for code scanning / IDE integration
   --fix              Apply the mechanical fixes, then re-verify
@@ -615,7 +615,7 @@ severity unless a gofastr.contracts.yml relaxes it, or a
                      Bare form = uncommitted work; with a ref = everything
                      since the fork point with it (e.g. --changed=main).
                      The analysis still runs whole-tree, so cross-file
-                     findings are still found — only reporting narrows.
+                     findings are still found; only reporting narrows.
   --strict           Warnings fail the run too
   --config <file>    Config file (default: gofastr.contracts.yml, or a
                      contracts: block in gofastr.yml)
@@ -644,7 +644,7 @@ severity unless a gofastr.contracts.yml relaxes it, or a
 
 // failRun reports an operational failure of the verify run. In text mode
 // it is fail(); in --json mode stdout IS the document on every path, so
-// the failure ships AS the document — `{"error": "..."}` — with the
+// the failure ships AS the document, `{"error": "..."}`, with the
 // prose copied to stderr for a human watching a pipeline log. fail()
 // writes to stdout, and prose in front of a document a consumer is
 // parsing corrupts it on exactly the runs that went wrong.
@@ -684,7 +684,7 @@ func noteUnfixableRules(names []string, noteWarn, note func(string, ...any)) {
 		if !ok || rule.Autofix {
 			continue
 		}
-		noteWarn("%s (%s) has no autofix — it has to be applied by hand.", rule.ID, rule.Slug)
+		noteWarn("%s (%s) has no autofix: it has to be applied by hand.", rule.ID, rule.Slug)
 		note("why: gofastr verify --explain %s", rule.ID)
 	}
 }

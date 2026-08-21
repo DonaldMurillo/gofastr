@@ -225,7 +225,7 @@ func TestCacheMiddleware_PreservesHeaders(t *testing.T) {
 		w.Write([]byte(`{"ok":true}`))
 	}))
 
-	// First request — MISS
+	// First request: MISS
 	req1 := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 	rec1 := httptest.NewRecorder()
 	handler.ServeHTTP(rec1, req1)
@@ -240,7 +240,7 @@ func TestCacheMiddleware_PreservesHeaders(t *testing.T) {
 		t.Errorf("first request status: got %d, want 201", rec1.Code)
 	}
 
-	// Second request — HIT
+	// Second request: HIT
 	req2 := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)

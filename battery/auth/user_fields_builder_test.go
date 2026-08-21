@@ -40,7 +40,7 @@ func TestUserEntityFieldsWithDoesNotMutateCanon(t *testing.T) {
 }
 
 // UserEntityFields is assignable to []schema.Field without explicit
-// conversion. The compiler enforces this — if it fails, hosts that
+// conversion. The compiler enforces this, if it fails, hosts that
 // pass auth.UserEntityFields() to entity.EntityConfig.Fields break.
 func TestUserEntityFieldsAssignableToSchemaSlice(t *testing.T) {
 	var slice []schema.Field = UserEntityFields()

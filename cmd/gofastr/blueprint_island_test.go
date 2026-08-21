@@ -10,7 +10,7 @@ import (
 // must sort and paginate as an ISLAND (a data-fui-rpc swap of just the table),
 // never a full document/route navigation. The resource engine's island mode
 // needs the list's Config to carry an island path AND a TableHandler mounted
-// at that path — exactly the wiring examples/meridian/app.go does for its
+// at that path, exactly the wiring examples/meridian/app.go does for its
 // customers list. Without it, sort headers + pagination emit plain <a href>
 // links that full-navigate (Hard rule 1 violation).
 func TestGeneratedEntityListIsIsland(t *testing.T) {
@@ -85,7 +85,7 @@ func TestGeneratedIslandCarriesScreenPolicy(t *testing.T) {
 	}
 }
 
-// Two screens showing the same entity refine it differently — different
+// Two screens showing the same entity refine it differently: different
 // columns, a search box on one. One shared endpoint cannot serve both: a sort
 // click on the filtered page would come back unfiltered. Each screen gets its
 // own endpoint serving its own refined config.
@@ -204,8 +204,8 @@ screens:
 }
 
 // Island endpoints derive from toSnakeCase(screen name) + entity. Two
-// screens that normalize to the same slug — or one screen listing an
-// entity twice — collapse to a single endpoint, and the generator emitted
+// screens that normalize to the same slug, or one screen listing an
+// entity twice, collapse to a single endpoint, and the generator emitted
 // ONE mount while silently dropping the other placement's refined config
 // and its access policy. Both cases must be rejected at generate time.
 func TestBlueprintRejectsCollidingIslandPaths(t *testing.T) {

@@ -75,7 +75,7 @@ func runThemeEdit(args []string) {
 
 	base := uitheme.Default()
 
-	// Stand up the in-process core-ui app — no framework.App, no DB. The
+	// Stand up the in-process core-ui app: no framework.App, no DB. The
 	// gallery screen is a pure Component that iterates gallery.Grouped()
 	// and renders each Demo closure. UIHost.New takes a core-ui/app.App
 	// (not a framework.App); framework/uihost/themevariant_test.go does
@@ -97,7 +97,7 @@ func runThemeEdit(args []string) {
 	// actually got, which for the default "127.0.0.1:0" is only known after
 	// net.Listen picks the ephemeral port. Same posture as harness_http.go.
 	// A bare ":8090" means "port 8090 on this machine", and that is what the
-	// operator wants — but a WILDCARD bind puts the tool on every interface,
+	// operator wants, but a WILDCARD bind puts the tool on every interface,
 	// and this tool serves an unauthenticated page carrying its own bearer
 	// token and writes a Go file to disk. Resolve the friendly form to loopback
 	// rather than either refusing it or honouring it.
@@ -130,8 +130,8 @@ func runThemeEdit(args []string) {
 	// Freshly random, NOT deriveListenerSecret(). That function returns
 	// sha256("harness-http:" || GOFASTR_HARNESS_MACHINE_KEY) when the machine
 	// key is set, and those exact bytes are the HMAC key signing every harness
-	// control-plane token. This page is served with no authentication at all —
-	// it has to be, it is where the token comes from — so publishing that value
+	// control-plane token. This page is served with no authentication at all.
+	// It has to be: it is where the token comes from. So publishing that value
 	// handed the harness signing key to any local process, any other user on
 	// the box, any browser extension with 127.0.0.1 permission, and any
 	// screenshot in a bug report. Nothing here needs a token that survives a
@@ -203,15 +203,15 @@ func loopbackifyThemeAddr(addr string) string {
 // error, in sequence. loopbackifyThemeAddr returns its input unchanged when
 // SplitHostPort fails, and the non-loopback refusal was written
 // `if host, _, err := net.SplitHostPort(addr); err == nil && !isLoopbackHost(host)`
-// — so an unparseable address skipped the refusal via the `err == nil` and went
+// So an unparseable address skipped the refusal via the `err == nil` and went
 // straight to net.Listen.
 //
 // The address that does this is the empty string. `net.SplitHostPort("")` fails
 // ("missing port in address"), and `net.Listen("tcp", "")` binds EVERY
 // interface. It arrives the ordinary way: `gofastr theme edit --addr=$THEME_ADDR`
-// in a Makefile with the variable unset. The result was the editor — an
+// in a Makefile with the variable unset. The result was the editor, an
 // unauthenticated page carrying its own bearer token, over an endpoint that
-// rewrites a Go file on disk — published to the network, verified end to end on
+// rewrites a Go file on disk, published to the network, verified end to end on
 // a real LAN interface.
 //
 // A bind address that cannot be parsed is now a refusal, not a default.
@@ -256,7 +256,7 @@ type themeEditServer struct {
 	// outPath. Without it the no-force guard refused the second Write of a
 	// session: the first created the file, and the second saw the file the
 	// tool itself had just written and reported "already exists; pass --force"
-	// — about a file thirty seconds old, with no recovery but a restart that
+	// about a file thirty seconds old, with no recovery but a restart that
 	// loses every edit.
 	wroteDigest [32]byte
 
@@ -265,7 +265,7 @@ type themeEditServer struct {
 	token   string
 
 	mu sync.Mutex
-	// previewKey is the variant the preview iframe should load — the WORKING
+	// previewKey is the variant the preview iframe should load, the WORKING
 	// theme's, so a refresh mid-session does not silently drop back to the app
 	// palette while the controls show edited values.
 	previewKey string
@@ -295,7 +295,7 @@ func (s *themeEditServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // applyToken applies one token edit to the working theme, re-registers the
 // variant, and returns the content-addressed hash the preview swaps its
 // app.css link to. On an invalid value ApplyTokens returns an error and the
-// working theme is untouched — the boundary rejects, it does not sanitise.
+// working theme is untouched. The boundary rejects, it does not sanitise.
 func (s *themeEditServer) applyToken(key, value string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -306,7 +306,7 @@ func (s *themeEditServer) applyToken(key, value string) (string, error) {
 	// ApplyTokens is not the boundary the written file has to survive.
 	// app.WithTheme calls MustValidate at boot, and the two disagree: the
 	// spacing, radius and z-index setters accept 0 while Validate rejects it.
-	// So a single keystroke — "0" in a number field — produced a green
+	// So a single keystroke, "0" in a number field, produced a green
 	// "updated" status, wrote a theme.go, and panicked the operator's app on
 	// the next run.
 	if err := updated.Validate(); err != nil {
@@ -532,12 +532,12 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 }
 
 // tokenControlType classifies a ThemeToTokens key into the input type the
-// controls page renders. Derived purely from the key prefix — the same
-// prefix walkTokens/tokenPair use — so a token added to style.Theme later
+// controls page renders. Derived purely from the key prefix, the same
+// prefix walkTokens/tokenPair use, so a token added to style.Theme later
 // gets a usable control automatically. "color" tokens get a colour picker,
 // integer-px and unitless-integer tokens get number inputs, everything else
 // (fonts, shadows, durations, easings, font-sizes, code colours) gets a
-// text input. An unrecognised prefix falls through to "text" — never hidden.
+// text input. An unrecognised prefix falls through to "text", never hidden.
 func tokenControlType(key string) string {
 	base := strings.TrimPrefix(key, "dark.")
 	switch {
@@ -556,8 +556,8 @@ func tokenControlType(key string) string {
 // dropped and CSP frame-ancestors widened from 'none' to 'self'. Without
 // this the UIHost's SecurityHeaders middleware (X-Frame-Options: DENY,
 // frame-ancestors 'none') blocks the /preview page from loading inside the
-// controls page's <iframe>. The threat those headers exist for — a
-// cross-origin attacker framing the page — is already defeated by loopback
+// controls page's <iframe>. The threat those headers exist for, a
+// cross-origin attacker framing the page, is already defeated by loopback
 // binding + host pinning; this is a dev-only loopback tool.
 type frameFriendlyWriter struct {
 	rw      http.ResponseWriter
@@ -645,7 +645,7 @@ func (g *galleryPreviewScreen) Render() render.HTML {
 // contrastProbeHTML emits a hidden region of elements whose computed
 // styles resolve the token pairs the WCAG contrast check measures. Each
 // probe carries a data-cp attribute naming the pair so the page JS can find
-// it and read getComputedStyle().color + .backgroundColor — the browser
+// it and read getComputedStyle().color + .backgroundColor. The browser
 // resolves every colour space (hex, oklch, color-mix) natively, which is
 // why the check runs in the browser and not in Go.
 //
@@ -666,12 +666,12 @@ func contrastProbeHTML() render.HTML {
 // contrastPair is one foreground/background combination the checker measures.
 //
 // The colours live in a STYLESHEET, not in a style attribute. The preview is
-// served by a real UIHost under the framework's default CSP — default-src
-// 'self', no 'unsafe-inline' — so an inline style attribute is discarded by the
-// browser. Every probe then measured the inherited text colour against a
-// transparent background, ratio() came out around 20:1 for all of them, and the
-// tool reported "no issues" for every theme ever loaded. A checker that cannot
-// fail is worse than no checker: it is an assurance.
+// served by a real UIHost under the framework's default CSP, which is
+// default-src 'self' with no 'unsafe-inline'. An inline style attribute is
+// discarded by the browser. Every probe then measured the inherited text
+// colour against a transparent background, ratio() came out around 20:1 for
+// all of them, and the tool reported "no issues" for every theme ever loaded.
+// A checker that cannot fail is worse than no checker: it is an assurance.
 type contrastPair struct{ name, slug, fg, bg string }
 
 var contrastPairs = buildContrastPairs()
@@ -695,14 +695,14 @@ func buildContrastPairs() []contrastPair {
 	// target, which is exactly why it must actually be measured.
 	//
 	// The fill's foreground is var(--color-primary-fg), because that is what the
-	// design system paints there — `.ui-button--danger` and `.ui-badge--danger`
+	// design system paints there: `.ui-button--danger` and `.ui-badge--danger`
 	// both set `color: var(--color-primary-fg)` on a `--color-danger`
 	// background, and styles_components.go says so explicitly: "Themes that
 	// override --color-danger own keeping >=4.5:1 against --color-primary-fg."
 	//
 	// Hardcoding #ffffff here measured a pair the UI never renders. In the
 	// default dark scheme --color-primary-fg is #111827 and the status tones are
-	// light, so the probe reported four failures — white on #F87171 at 2.77:1 —
+	// light, so the probe reported four failures, white on #F87171 at 2.77:1,
 	// for text nothing paints. A checker that invents failures is as useless as
 	// one that cannot report them; both teach the operator to ignore it.
 	for _, tone := range []string{"danger", "success", "warning", "info"} {
@@ -748,7 +748,7 @@ func sortStrings(s []string) {
 	}
 }
 
-// openBrowser tries to open the OS default browser at url. Best-effort —
+// openBrowser tries to open the OS default browser at url. Best-effort:
 // a failure logs a hint and returns; the URL is already printed so the user
 // can open it manually.
 func openBrowser(url string) {

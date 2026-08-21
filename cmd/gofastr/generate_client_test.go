@@ -70,8 +70,8 @@ func TestRenderClient_HonoursCustomTable(t *testing.T) {
 // PATCH must distinguish "field absent" from "field set to its zero value"
 // (false, 0, ""). A value-typed Input with json:",omitempty" cannot: both
 // cases marshal away. The generator must emit a dedicated <Entity>Patch
-// struct whose fields are pointers — nil omits the field, a non-nil pointer
-// sets it even when it points at a zero value — and Patch<Entity> takes it.
+// struct whose fields are pointers: nil omits the field, a non-nil pointer
+// sets it even when it points at a zero value. Patch<Entity> takes it.
 func TestRenderClient_PatchStructUsesPointers(t *testing.T) {
 	crud := true
 	tsOff := false
@@ -203,7 +203,7 @@ func TestRenderClient_WatchSSE(t *testing.T) {
 
 // integrationTestSource is the Go test that gets dropped into the temp module
 // to drive the generated client against a real httptest server. Kept as a
-// raw constant (with %s placeholders intentionally avoided — the file is
+// raw constant (with %s placeholders intentionally avoided, since the file is
 // self-contained and references the generated package via the temp module's
 // own import path "example.com/cli/gen/entities/client").
 const integrationTestSource = `package integration_test
@@ -293,7 +293,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		t.Fatalf("patch: %v", err)
 	}
 	// PATCH must set fields to their zero values (0, false). A value-typed
-	// Input with json:",omitempty" cannot express this — both "absent" and
+	// Input with json:",omitempty" cannot express this: both "absent" and
 	// "set to zero" marshal away, so the server would see an empty body.
 	// The pointer-based Patch keeps non-nil pointers even when they point at
 	// a zero value, so the server applies the update. Title is left nil here

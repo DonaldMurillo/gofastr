@@ -23,14 +23,14 @@ import (
 // the plan card interpolates them into a SINGLE-quoted attribute
 // (data-fui-rpc-body='{"plan_id":"…"}'). escAttr escapes " < > & but not ',
 // so a plan_id containing ' breaks out of the attribute and injects real
-// attributes onto the Approve/Reject buttons — the exact UI a human uses to
+// attributes onto the Approve/Reject buttons, the exact UI a human uses to
 // gate destructive ops. propose_plan accepts any non-empty unique plan_id
 // (protocol.go ProposePlan), so nothing upstream bounds the value.
 func TestPlanCardAttrBreakoutIsNeutralized(t *testing.T) {
 	hostile := []string{
 		// attribute breakout with a click handler on the Approve button
 		"p' onclick='alert(1)//",
-		// hover-fired variant — no click needed
+		// hover-fired variant, no click needed
 		"p' onmouseover='alert(1)//",
 		// focus variant with autofocus chain
 		"p' onfocus='alert(1)' autofocus='1",
@@ -46,7 +46,7 @@ func TestPlanCardAttrBreakoutIsNeutralized(t *testing.T) {
 		out := b.String()
 		// Check ATTRIBUTE NAMES, not raw substrings. A bare ' or the text
 		// "onclick=" sitting in an element's text content (the plan title
-		// echoes the id verbatim) is inert — only a real attribute is the
+		// echoes the id verbatim) is inert, only a real attribute is the
 		// vulnerability, and a substring search cannot tell them apart.
 		for _, name := range attrNames(out) {
 			if strings.HasPrefix(name, "on") || name == "autofocus" {
@@ -91,7 +91,7 @@ func TestPlanCardAttrBreakoutIsNeutralized(t *testing.T) {
 // whether it is inside a tag and skips over quoted attribute VALUES, so
 // payload text that is correctly escaped inside a value can never be
 // misread as an attribute name. That skipping is exactly the property
-// under test — if escaping regresses, the injected name becomes visible
+// under test. If escaping regresses, the injected name becomes visible
 // here.
 func attrNames(doc string) []string {
 	var names []string
@@ -215,7 +215,7 @@ func TestStatusDoesNotLeakWorldSecrets(t *testing.T) {
 // raw text. X-Forwarded-* used to select it, which gave a header direct
 // reach into the document; kiln binds loopback and is served directly, so
 // nothing legitimately sets those headers and the trust was unearned. The
-// host now comes from r.Host (pinned by the listener — see
+// host now comes from r.Host (pinned by the listener, see
 // rebind_security_test.go) and is escaped on the way out.
 func TestHostBaseIgnoresForwardedHeaders(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/anything", nil)
@@ -229,7 +229,7 @@ func TestHostBaseIgnoresForwardedHeaders(t *testing.T) {
 	if strings.Contains(html, "h.example") {
 		t.Errorf("SECURITY: X-Forwarded-Host still selects the base URL:\n%.600s", html)
 	}
-	// The pinned Host — not the forwarded one — is what renders.
+	// The pinned Host, not the forwarded one, is what renders.
 	if !strings.Contains(html, "http://localhost:8765/kiln/tool/add_entity") {
 		t.Errorf("base URL not built from r.Host:\n%.600s", html)
 	}
@@ -250,7 +250,7 @@ func TestHostBaseEscapesHost(t *testing.T) {
 // strings through escHTML, which was a 3-char escaper (no quotes).
 // A text node can't break out with ' alone, but maintaining two escaper
 // shapes in one file is exactly the drift that produced the plan-card
-// bug above — pin the 5-char contract on the text path too.
+// bug above, pin the 5-char contract on the text path too.
 func TestChatTextEscapesApostrophes(t *testing.T) {
 	var b strings.Builder
 	renderChatEvent(&b, &journal.ChatEvent{

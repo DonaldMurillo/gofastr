@@ -102,7 +102,7 @@ func TestCleanSurfaceNotFlagged(t *testing.T) {
 }
 
 // TestNonEmbeddableServerActionNotFlagged: a component with a server action
-// that is NOT on any embeddable surface must not trip the gate — the gate
+// that is NOT on any embeddable surface must not trip the gate. The gate
 // targets reachability from an embed.Surface, not server actions in general.
 func TestNonEmbeddableServerActionNotFlagged(t *testing.T) {
 	if got := loadFindings(t, "notembeddable"); len(got) != 0 {
@@ -221,7 +221,7 @@ type replacement struct{ from, to string }
 
 // mutateFixture rewrites relPath on disk by applying each replacement exactly
 // once, in order, and asserts each one actually changed the content. An edit
-// whose `from` is absent is a silent no-op — exactly the failure mode that
+// whose `from` is absent is a silent no-op, exactly the failure mode that
 // makes a mutated test indistinguishable from an inert one, which has bitten
 // this repo before. The before/after occurrence count of each `to` is logged so
 // the test output proves the mutation landed. It returns the original bytes.
@@ -258,7 +258,7 @@ func restore(t *testing.T, relPath string, orig []byte) {
 }
 
 // TestMutationCleanBecomesFlagged: turning the clean surface's setState action
-// into a server action must produce exactly one finding — proving the clean
+// into a server action must produce exactly one finding, proving the clean
 // case passed because it had no server action, not because detection is inert.
 func TestMutationCleanBecomesFlagged(t *testing.T) {
 	const rel = "testdata/src/clean/clean.go"
@@ -273,7 +273,7 @@ func TestMutationCleanBecomesFlagged(t *testing.T) {
 }
 
 // TestMutationBadBecomesClean: removing the bad surface's server action must
-// drop the finding count to zero — proving the finding was due to the
+// drop the finding count to zero, proving the finding was due to the
 // G.serverAction token, not a side effect.
 func TestMutationBadBecomesClean(t *testing.T) {
 	const rel = "testdata/src/bad/bad.go"
@@ -289,7 +289,7 @@ func TestMutationBadBecomesClean(t *testing.T) {
 
 // TestMutationNonEmbeddableBecomesFlagged: putting the notembeddable component
 // (which already registers a server action) onto an embeddable surface must
-// produce a finding — proving reachability from an embed.Surface, not the
+// produce a finding. That proves reachability from an embed.Surface, not the
 // action itself, is what the gate keys on. Two edits land the surface: the
 // fembed import and the Surface declaration that replaces RegisterScreen.
 func TestMutationNonEmbeddableBecomesFlagged(t *testing.T) {

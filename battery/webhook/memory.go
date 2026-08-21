@@ -151,7 +151,7 @@ func (m *MemoryStore) DueDeliveries(_ context.Context, now time.Time, limit int)
 
 // ClaimDueDeliveries reserves rows under the store's write lock and
 // pushes their NextAttemptAt to now+leasePeriod so a concurrent
-// claimer sees them as not-yet-due. Single-process by design — the
+// claimer sees them as not-yet-due. Single-process by design, the
 // memory store can't span instances, but exposing the same interface
 // keeps Manager wiring uniform across store backends.
 func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {

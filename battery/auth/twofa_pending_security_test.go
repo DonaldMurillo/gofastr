@@ -14,7 +14,7 @@ import (
 // Property: a session in the PendingTwoFactor (pre-step-up) state must not
 // reach any 2FA self-service endpoint except /2fa/challenge. The pending
 // state proves only the password, so it must not be able to disable, re-
-// enroll, or refresh the second factor — doing so would defeat 2FA with
+// enroll, or refresh the second factor, doing so would defeat 2FA with
 // the password alone (full account takeover).
 //
 // Surfaces: /2fa/disable, /2fa/enroll, /2fa/verify, /2fa/backup-codes.
@@ -96,7 +96,7 @@ func setupP17WithMagicLink(t *testing.T) (*AuthManager, *TwoFAPlugin, *MagicLink
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	magic := NewMagicLinkPlugin(MagicLinkConfig{})
 	// DevMode so send-verification does not fail closed on a missing
-	// EmailSender — a 503 would hide whether the step-up check fired.
+	// EmailSender, a 503 would hide whether the step-up check fired.
 	verify := NewEmailVerificationPlugin(EmailVerificationConfig{DevMode: true, BaseURL: "http://localhost"})
 	mgr.Use(core)
 	mgr.Use(twofa)
@@ -124,18 +124,18 @@ func setupP17WithMagicLink(t *testing.T) (*AuthManager, *TwoFAPlugin, *MagicLink
 
 // TestTwoFA_EveryLoginPathMintsPending pins that every path that mints a
 // session marks it PendingTwoFactor when the user has a second factor
-// enabled — not just the password path.
+// enabled, not only the password path.
 //
 // Attack: enforcement reads the negative flag PendingTwoFactor, and that
-// flag is set in exactly one place — markPendingIfTwoFactorEnabled,
+// flag is set in exactly one place, markPendingIfTwoFactorEnabled,
 // called only from loginHandler. Magic-link verify and the OAuth callback
 // create their session directly, so both hand back a session with
 // PendingTwoFactor=false, which every gate treats as fully authenticated.
 // The bypass is persistent, too: such a session can call
 // POST /auth/2fa/disable and remove the factor for good.
 //
-// The property — "a session minted for a 2FA-enrolled user is never fully
-// privileged until the factor is proven" — is asserted at each minting
+// The property, "a session minted for a 2FA-enrolled user is never fully
+// privileged until the factor is proven", is asserted at each minting
 // surface rather than with more cases at one surface. TestPendingTwoFA_*
 // above covers what a correctly-pending session may then do.
 func TestTwoFA_EveryLoginPathMintsPending(t *testing.T) {
@@ -196,8 +196,8 @@ func TestTwoFA_EveryLoginPathMintsPending(t *testing.T) {
 // Attack: requireStepUpUser refuses only sessions carrying
 // PendingTwoFactor. A session minted BEFORE the user enrolled has that
 // flag false forever, so it stays "stepped up" for its whole lifetime and
-// can disable a factor it never proved. Reading TwoFactorVerified — the
-// positive flag the challenge handler sets — is what makes this a real
+// can disable a factor it never proved. Reading TwoFactorVerified, the
+// positive flag the challenge handler sets, is what makes this a real
 // step-up. Enrolling should also not leave sibling sessions privileged.
 func TestTwoFA_StepUpNeedsVerifiedFlag(t *testing.T) {
 	mgr, twofa, _, r := setupP17WithMagicLink(t)
@@ -230,7 +230,7 @@ func TestTwoFA_StepUpNeedsVerifiedFlag(t *testing.T) {
 //
 // Attack: the handler resolves the session without consulting
 // PendingTwoFactor, so a half-authenticated session (password proven,
-// factor not) can drive verification-email sends — an email-bombing
+// factor not) can drive verification-email sends, an email-bombing
 // primitive aimed at someone else's address.
 func TestSendVerificationNeedsStepUp(t *testing.T) {
 	_, _, _, r := setupP17WithMagicLink(t)
@@ -252,7 +252,7 @@ func TestSendVerificationNeedsStepUp(t *testing.T) {
 // so an attacker requests one for THEIR OWN account and gets a victim to
 // click it. The verify endpoint was a GET that minted a session
 // outright, so the victim's browser silently ended up signed into the
-// attacker's account — everything they typed next landed there. The
+// attacker's account, everything they typed next landed there. The
 // GET is invisible to rejectCrossSiteForm, and the usual browser-binding
 // fixes do not apply: a binding cookie breaks cross-device links (request
 // on a laptop, open on a phone) and refusing Sec-Fetch-Site: cross-site
@@ -308,7 +308,7 @@ func TestMagicLinkVerifyNeedsConfirmation(t *testing.T) {
 }
 
 // A cross-site POST cannot skip the confirmation the interstitial exists
-// to force — otherwise the attacker just auto-submits the form from
+// to force, otherwise the attacker just auto-submits the form from
 // their own page with the token they already hold.
 func TestMagicLinkConfirmRejectsCrossSite(t *testing.T) {
 	_, _, magic, r := setupP17WithMagicLink(t)

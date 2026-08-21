@@ -95,8 +95,8 @@ func TestDurableSchedulerRetentionPrunesOnlySafeOldOccurrences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// done-job is completed by a worker the way production does it —
-	// claimed (Dequeue) then Acked — so its row is gone and retention may
+	// done-job is completed by a worker the way production does it,
+	// claimed (Dequeue) then Acked, so its row is gone and retention may
 	// prune its occurrence. Ack alone must not remove a never-claimed
 	// pending row (parity with Redis/Memory, where Ack of nothing claimed
 	// is a no-op).

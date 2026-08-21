@@ -20,7 +20,7 @@ type ConsoleMode int
 const (
 	// ConsoleAuto is the zero value: the console sink is attached only
 	// when stderr is a terminal and NO_COLOR is unset. This is the
-	// "zero-config dev color, nothing in prod" behavior — Config{}
+	// "zero-config dev color, nothing in prod" behavior, Config{}
 	// gives a local developer a colorized stderr feed without leaking
 	// ANSI into journald / container logs where stderr is captured, not
 	// shown.
@@ -44,7 +44,7 @@ type ConsoleOpts struct {
 
 	// Color forces color on (true) or off (false). When nil (default),
 	// color is enabled only when Writer is a terminal and NO_COLOR is
-	// unset — so piping to a file or through `cat` drops the ANSI codes
+	// unset, so piping to a file or through `cat` drops the ANSI codes
 	// and the output stays greppable.
 	Color *bool
 
@@ -60,7 +60,7 @@ type ConsoleOpts struct {
 //
 // It parses the JSON the fanout emits (see the Sink.Write contract) so
 // it can apply level colors, bold the message, and dim the timestamp.
-// Attr order is preserved via token decoding — operators see fields in
+// Attr order is preserved via token decoding, operators see fields in
 // the order the code emitted them, not json's randomized map order.
 //
 // If the entry is not a JSON object the raw bytes are written verbatim
@@ -69,7 +69,7 @@ type ConsoleOpts struct {
 //
 // Concurrency: safe for concurrent use. Write serializes on a mutex so
 // concurrent entries don't interleave on the terminal. After Close,
-// Write returns ErrSinkClosed — consistent with the other sinks so the
+// Write returns ErrSinkClosed, consistent with the other sinks so the
 // fanout's post-Stop drop counter advances correctly.
 func ConsoleSink(opts ConsoleOpts) Sink {
 	w := opts.Writer
@@ -261,7 +261,7 @@ func padLevel(level string) string {
 // Strings are shown bare when simple (no spaces, '=', quotes, control
 // chars) and JSON-quoted otherwise; numbers/bools/null/objects/arrays
 // are passed through as compact JSON. Multi-line values (e.g. panic
-// stacks) keep their newlines escaped so each entry stays one line —
+// stacks) keep their newlines escaped so each entry stays one line,
 // the full unescaped value is always available in the file sink.
 func formatValue(raw json.RawMessage) string {
 	if len(raw) == 0 {

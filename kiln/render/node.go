@@ -135,7 +135,7 @@ func renderLeaf(n world.Node, children []render.HTML) render.HTML {
 //
 // The runtime's delegator builds `fetch('/kiln/tool/' + attr)` with no
 // encodeURIComponent (core-ui/runtime frag/rpc.js), and dispatch is gated
-// only on a data-fui-trusted ancestor — which worldScreen.Render puts around
+// only on a data-fui-trusted ancestor, which worldScreen.Render puts around
 // the entire agent-authored tree. core-ui/noderender allows data-kiln-tool
 // through its data-* rule on the stated grounds that "the delegator
 // additionally requires a data-fui-trusted ancestor, which this IR cannot
@@ -144,8 +144,8 @@ func renderLeaf(n world.Node, children []render.HTML) render.HTML {
 // value has to be checked at ingestion.
 //
 // Unchecked, a tool name of "../../api/posts" has its dot-segments removed
-// by the URL parser and the click becomes a same-origin POST to /api/posts —
-// carrying the operator's cookies and the page's CSRF token — against routes
+// by the URL parser and the click becomes a same-origin POST to /api/posts,
+// carrying the operator's cookies and the page's CSRF token, against routes
 // the kiln tool API does not otherwise expose. "x?y=z" and "x#f" inject a
 // query and a fragment the same way.
 //
@@ -170,9 +170,9 @@ func safeToolName(name string) bool {
 }
 
 // safeHref filters an agent-authored href before it reaches a design-system
-// component. The components disagree on what to do with a hostile scheme —
+// component. The components disagree on what to do with a hostile scheme,
 // ui.Card drops to "#" while ui.LinkButton panics (framework/ui:
-// components.go) — and a panic on the typed path 500s the page on every
+// components.go), and a panic on the typed path 500s the page on every
 // request until the IR is edited. Both contracts are right for a Go author
 // passing a literal; neither is right for request-authored IR, so the
 // scheme decision happens here instead. Mirrors the degrade-don't-panic

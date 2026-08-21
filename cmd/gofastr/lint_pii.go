@@ -7,15 +7,15 @@ package main
 // entity is auto-exposed (crud defaults on, or mcp: true), declares
 // PII-shaped fields, and has no owner_field / multi_tenant / non-blank
 // access, every row is readable and writable by every OTHER authenticated
-// user on the generated API — cross-user exposure, not anonymous access.
+// user on the generated API: cross-user exposure, not anonymous access.
 // (Auto-CRUD itself is secure-by-default: an entity with none of
 // owner_field/access/public already requires a session for every
-// operation — see framework/crud's requireAuthenticated and
+// operation. See framework/crud's requireAuthenticated and
 // EntityConfig.Public, issue #65. This lint's remaining concern is the
 // narrower "logged-in user A can read/write user B's row" gap that only
 // owner_field/access/multi_tenant close.) Blueprint auth alone does NOT
 // close that gap: enabling auth only mounts pass-through
-// SessionMiddleware — it authenticates the caller but does not scope rows
+// SessionMiddleware: it authenticates the caller but does not scope rows
 // to them.
 //
 // Severity by surface:
@@ -25,7 +25,7 @@ package main
 //     the Go-source rules
 //
 // A SEPARATE lint (lintPublicEntities, same file) flags `public: true`
-// entities — the actual anonymous-access surface post-#65, since Public
+// entities, the actual anonymous-access surface post-#65, since Public
 // is a deliberate full opt-out of the session requirement.
 
 import (
@@ -60,7 +60,7 @@ type piiFinding struct {
 // pass-through, so auth alone leaves the rows world-readable.
 func (f piiFinding) Message() string {
 	return fmt.Sprintf(
-		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping — set owner_field: <column> for per-user rows, add access: permissions (RBAC), or set multi_tenant: true",
+		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping. Set owner_field: <column> for per-user rows, add access: permissions (RBAC), or set multi_tenant: true",
 		f.Entity, strings.Join(f.Fields, ", "))
 }
 
@@ -102,19 +102,19 @@ type unscopedFinding struct {
 
 // Message spells out the exposure and every remedy. Unlike the PII rule
 // this is informational: genuinely public data (a blog's posts) is a
-// legitimate shape — but letting every OTHER authenticated user read and
+// legitimate shape, but letting every OTHER authenticated user read and
 // overwrite it almost never is, so the warning fires until the entity
 // says how it's governed. This entity already requires a session for
-// every operation (auto-CRUD's secure-by-default gate) — the exposure
+// every operation (auto-CRUD's secure-by-default gate); the exposure
 // here is cross-user, not anonymous: any signed-in caller can read,
 // create, update, and delete any row.
 func (f unscopedFinding) Message() string {
 	return fmt.Sprintf(
-		"entity %q is exposed via auto-CRUD/MCP with no per-user scoping — every authenticated user can read, create, update, and delete every OTHER user's row (a session is already required to reach it — this is cross-user exposure). Set owner_field: <column> for per-user rows, access: permissions (RBAC) to gate by role, or multi_tenant: true",
+		"entity %q is exposed via auto-CRUD/MCP with no per-user scoping: every authenticated user can read, create, update, and delete every OTHER user's row (a session is already required to reach it: this is cross-user exposure). Set owner_field: <column> for per-user rows, access: permissions (RBAC) to gate by role, or multi_tenant: true",
 		f.Entity)
 }
 
-// publicFinding is one entity flagged by lintPublicEntities — a
+// publicFinding is one entity flagged by lintPublicEntities, a
 // blueprint-declared `public: true` opt-out. Unlike unscopedFinding this
 // IS the anonymous-access surface: Public is a deliberate, full bypass of
 // the session requirement (issue #65), not an oversight, so the message
@@ -123,12 +123,12 @@ type publicFinding struct {
 	Entity string
 }
 
-// Message names the entity and spells out exactly what "public" grants —
-// anonymous READ and WRITE, not just read — so `gofastr generate`'s
+// Message names the entity and spells out exactly what "public" grants,
+// anonymous READ and WRITE rather than read alone, so `gofastr generate`'s
 // warning can't be mistaken for "this entity is merely readable".
 func (f publicFinding) Message() string {
 	return fmt.Sprintf(
-		"entity %q is public: true — anonymous callers can read, create, update, AND delete every row (not just read). Confirm this is intentional; entities that want public reads with gated writes should use access: (a blank read: + a real create: permission) instead",
+		"entity %q is public: true, anonymous callers can read, create, update, AND delete every row (not just read). Confirm this is intentional; entities that want public reads with gated writes should use access: (a blank read: + a real create: permission) instead",
 		f.Entity)
 }
 
@@ -138,7 +138,7 @@ func (f publicFinding) Message() string {
 //
 //	ambiguous import: found package <path> in multiple modules
 //
-// The in-repo example blueprints legitimately declare such paths — they are
+// The in-repo example blueprints legitimately declare such paths; they are
 // generated inside this module, where the local package wins. Copying one out
 // to learn from it (the documented way to start from an example) produces a
 // build that cannot be repaired by any go.mod edit, and the generator used to
@@ -154,7 +154,7 @@ type moduleCollisionFinding struct {
 
 func (f moduleCollisionFinding) Message() string {
 	return fmt.Sprintf(
-		"app.module %q sits inside the framework's own module (%s), so the generated code and the framework both claim that package path — `go build` fails with \"ambiguous import\" and no go.mod edit fixes it. This works only inside the GoFastr repo itself. Set app.module to a path you own (for example \"local/%s\" while experimenting, or your repo's path).",
+		"app.module %q sits inside the framework's own module (%s), so the generated code and the framework both claim that package path: `go build` fails with \"ambiguous import\" and no go.mod edit fixes it. This works only inside the GoFastr repo itself. Set app.module to a path you own (for example \"local/%s\" while experimenting, or your repo's path).",
 		f.Module, frameworkModulePath, lastPathSegment(f.Module))
 }
 
@@ -176,10 +176,10 @@ func lastPathSegment(module string) string {
 }
 
 // lintPublicEntities returns one finding per blueprint entity declaring
-// `public: true` — the full, deliberate opt-out from auto-CRUD's
+// `public: true`, the full, deliberate opt-out from auto-CRUD's
 // secure-by-default session requirement. Every one of these is genuinely
 // reachable by an anonymous caller, so `gofastr generate` always surfaces
-// the list (never blocks — Public is an intentional declaration, not a
+// the list (never blocks: Public is an intentional declaration, not a
 // mistake to error on).
 func lintPublicEntities(bp Blueprint) []publicFinding {
 	var out []publicFinding
@@ -192,7 +192,7 @@ func lintPublicEntities(bp Blueprint) []publicFinding {
 }
 
 // lintUnscopedEntities returns one finding per auto-exposed entity with NO
-// scoping mechanism at all — the superset of lintUnscopedPII that doesn't
+// scoping mechanism at all: the superset of lintUnscopedPII that doesn't
 // depend on field names. Warned at generate time; never blocks.
 func lintUnscopedEntities(bp Blueprint) []unscopedFinding {
 	var out []unscopedFinding
@@ -203,7 +203,7 @@ func lintUnscopedEntities(bp Blueprint) []unscopedFinding {
 			continue
 		}
 		// Public: true already carries its own, more accurate warning
-		// (lintPublicEntities) — this entity requires no session at all,
+		// (lintPublicEntities): this entity requires no session at all,
 		// so unscopedFinding.Message()'s "a session is already required"
 		// claim would be false for it.
 		if scope.OwnerField != "" || scope.MultiTenant || hasAccessGate(exposure.Access) || exposure.Public {
@@ -215,7 +215,7 @@ func lintUnscopedEntities(bp Blueprint) []unscopedFinding {
 }
 
 // hasAccessGate reports whether the access declaration actually gates at
-// least one operation — an access: map with only blank entries gates
+// least one operation: an access: map with only blank entries gates
 // nothing and must not count as a remedy.
 func hasAccessGate(a *fwentity.AccessDeclaration) bool {
 	if a == nil {
@@ -270,13 +270,13 @@ func splitFieldTokens(name string) []string {
 
 // blueprintRootCandidates are the conventional blueprint file names probed
 // by `gofastr audit lint` at the audited root. Arbitrary *.yml files are
-// NOT decoded — a project root full of CI configs must not break the lint
+// NOT decoded; a project root full of CI configs must not break the lint
 // walk or masquerade as a blueprint.
 var blueprintRootCandidates = []string{"gofastr.yml", "gofastr.yaml", "gofastr.json"}
 
 // lintBlueprintPIIRoot adapts lintUnscopedPII to the audit-lint surface:
 // it decodes the conventional blueprint file(s) at root (silently skipping
-// files that do not parse — `gofastr validate` owns those errors), merges
+// files that do not parse; `gofastr validate` owns those errors), merges
 // them so the lint sees the whole declared app, and attributes each
 // finding to the file declaring the entity.
 func lintBlueprintPIIRoot(root string) []LintFinding {

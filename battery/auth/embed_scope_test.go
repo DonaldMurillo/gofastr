@@ -13,7 +13,7 @@ import (
 //
 // The embed middleware deletes Authorization and X-API-Key, so TokenMiddleware
 // never runs and no token scopes are ever set on the context. Every gate built
-// on TokenScopes then read "not token-authenticated" as "session — full user
+// on TokenScopes then read "not token-authenticated" as "session, full user
 // capability", and a grant minted for a read-only reporting surface passed
 // RequireScope("orders:write") and RequireAPIScopes on a DELETE.
 func TestGrantScopesGateLikeTokenScopes(t *testing.T) {
@@ -91,7 +91,7 @@ func TestGrantScopesGateLikeTokenScopes(t *testing.T) {
 }
 
 // A session is still unscoped. Sessions carry full user capability and the
-// scope model is a token-level restriction only — breaking that would 403 every
+// scope model is a token-level restriction only, breaking that would 403 every
 // ordinary logged-in visitor.
 func TestSessionsRemainUnscoped(t *testing.T) {
 	if !HasScope(t.Context(), "anything:at-all") {

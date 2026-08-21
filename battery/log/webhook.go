@@ -61,7 +61,7 @@ type webhookSink struct {
 
 	// Rate-limit stderr emissions of "give up" / "4xx" messages so a
 	// persistently broken receiver doesn't drown stderr (which may go
-	// to systemd-journald with its own rate limiter — that limiter
+	// to systemd-journald with its own rate limiter, that limiter
 	// would then drop legitimate logs from elsewhere in the process).
 	lastWarnAt   atomic.Int64 // unix nano
 	warnInterval time.Duration
@@ -148,13 +148,13 @@ func (s *webhookSink) Write(entry []byte) error {
 func (s *webhookSink) Dropped() uint64 { return s.dropped.Load() }
 
 // GaveUp returns the running count of batches given up after exhausting
-// MaxRetries — log volume that NEVER reached the downstream receiver.
+// MaxRetries, log volume that NEVER reached the downstream receiver.
 func (s *webhookSink) GaveUp() uint64 { return s.gaveUp.Load() }
 
 // Close signals the worker goroutine to flush + exit and waits for it.
 // Cancels any in-flight HTTP retry via the closed channel; bounded to
 // the current attempt's Timeout, then immediate exit. Concurrent /
-// repeated Close calls are safe — only the first signals the worker.
+// repeated Close calls are safe, only the first signals the worker.
 func (s *webhookSink) Close() error {
 	s.closeOnce.Do(func() { close(s.closed) })
 	<-s.done
@@ -295,7 +295,7 @@ func isRetryable(err error) bool {
 	if errors.As(err, &r) {
 		return true
 	}
-	// Network errors (timeout, refused) — http.Client returns *url.Error.
+	// Network errors (timeout, refused), http.Client returns *url.Error.
 	// Treat all transport errors as retryable.
 	return err != nil && !errors.As(err, &nonRetryableError{})
 }

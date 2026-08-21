@@ -21,7 +21,7 @@ func openDBQueue(t *testing.T, workers int) (*sql.DB, *DBQueue) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	// SQLite ":memory:" with the default pool size races against itself —
+	// SQLite ":memory:" with the default pool size races against itself,
 	// limit to 1 conn so writers serialise on the single in-memory page.
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })

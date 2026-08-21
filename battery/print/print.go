@@ -20,7 +20,7 @@ import (
 const autoPrintSuffix = "/__autoprint.js"
 
 // printCSP is the Content-Security-Policy for print routes. It is the
-// strict default PLUS style-src 'unsafe-inline' — the shell emits
+// strict default PLUS style-src 'unsafe-inline', the shell emits
 // server-generated inline <style> blocks (@page rules, the print base).
 // Scripts stay 'self' only (the auto-print script is the external file
 // served from autoPrintSuffix), so no script injection vector is opened.
@@ -37,7 +37,7 @@ type Config struct {
 	DefaultPage PageConfig
 
 	// DefaultAccess gates documents whose Access is nil. Defaults to
-	// RequireAuth — so per-user documents are never world-readable
+	// RequireAuth, so per-user documents are never world-readable
 	// unless a document explicitly opts into Public.
 	DefaultAccess AccessPolicy
 
@@ -49,13 +49,13 @@ type Config struct {
 
 	// BaseURL is the canonical, host-configured origin of the app (e.g.
 	// "https://app.example.com"), used ONLY on the PDF path to make the
-	// app.css link absolute so headless Chromium — which renders an
-	// in-memory data: document with no origin — can fetch the tokens.
+	// app.css link absolute so headless Chromium, which renders an
+	// in-memory data: document with no origin, can fetch the tokens.
 	// It is deliberately NOT derived from the request Host header, which
 	// is client-controlled and would otherwise let a spoofed Host point
 	// the server-side fetch at an arbitrary/internal address (SSRF).
 	// When empty, the PDF app.css link stays relative (and simply won't
-	// resolve in the data: document — PDFs render with the print base
+	// resolve in the data: document. PDFs render with the print base
 	// only). The HTML path never needs this.
 	BaseURL string
 
@@ -100,10 +100,10 @@ func New(cfg Config) *Battery {
 
 // Document declares a printable document. Returns the battery for
 // chaining. Panics on a duplicate name, an invalid declaration, or a
-// call after Init — documents are immutable once routes are mounted.
+// call after Init, documents are immutable once routes are mounted.
 func (b *Battery) Document(doc Document) *Battery {
 	if b.mounted {
-		panic("print: Document called after Init — declare documents before RegisterBattery/Start")
+		panic("print: Document called after Init: declare documents before RegisterBattery/Start")
 	}
 	if doc.Name == "" {
 		panic("print: Document.Name is required")
@@ -136,7 +136,7 @@ func (b *Battery) Name() string { return "print" }
 
 // ReservedEmbedPrefixes reports the prefix this battery actually mounted. Each
 // request under it spawns headless Chrome, so a grant living in a stranger's
-// page must never reach it — an unbounded amplification primitive behind a
+// page must never reach it, an unbounded amplification primitive behind a
 // credential anyone with devtools can read. See framework.EmbedReserving.
 func (b *Battery) ReservedEmbedPrefixes() []string {
 	if b.cfg.PathPrefix == "" {
@@ -234,7 +234,7 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 		case forPDF && b.cfg.BaseURL != "":
 			// A data:-URL document (headless Chromium) can't resolve a
 			// relative link, so make it absolute against the host-
-			// configured canonical origin — NOT the request Host header.
+			// configured canonical origin, NOT the request Host header.
 			in.AppCSSHref = b.cfg.BaseURL + b.cfg.AppCSSURL
 		case forPDF:
 			// No trusted base configured: keep it relative. It won't
@@ -256,7 +256,7 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 // ordinary error so a misbehaving host closure yields a clean 500 status
 // page (honoring the battery's "never a stack trace" contract) instead of
 // crashing the handler goroutine. The panic value is intentionally NOT
-// folded into the error message (it could carry sensitive data) — the
+// folded into the error message (it could carry sensitive data), the
 // returned error is non-sentinel, so writeBuildError maps it to 500.
 func safeBuild(doc *Document, r *http.Request) (comp component.Component, err error) {
 	defer func() {

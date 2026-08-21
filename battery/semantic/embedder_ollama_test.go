@@ -164,7 +164,7 @@ func TestOllamaEmbedderFallsBackToOldSingleEmbeddingShape(t *testing.T) {
 }
 
 // TestOllamaEmbedder_DimRaceFree exercises the lazy dim cache under concurrent
-// Embed (writer) and Dim (reader) with Dim left unset — the exact shape the
+// Embed (writer) and Dim (reader) with Dim left unset, the exact shape the
 // previous int field raced on. Run with -race; it must be clean.
 func TestOllamaEmbedder_DimRaceFree(t *testing.T) {
 	srv := fakeOllamaServer(t, 32)

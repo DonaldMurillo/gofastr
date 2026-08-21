@@ -49,7 +49,7 @@ func TestQueueMetricsCollector(t *testing.T) {
 	}
 }
 
-// TestQueueMetricsCollector_StatsError emits nothing when Stats errors — a
+// TestQueueMetricsCollector_StatsError emits nothing when Stats errors, a
 // transient DB failure must never break /metrics.
 func TestQueueMetricsCollector_StatsError(t *testing.T) {
 	fake := &fakeBrowsable{err: errors.New("db is down")}

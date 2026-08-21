@@ -26,7 +26,7 @@ import (
 
 // newTestServer builds a themeEditServer backed by a real in-process UIHost
 // (the same wiring runThemeEdit uses, minus the network listener). No DB,
-// no framework.App — UIHost.New takes a core-ui/app.App directly.
+// no framework.App: UIHost.New takes a core-ui/app.App directly.
 func newTestServer(t *testing.T) *themeEditServer {
 	t.Helper()
 	outDir := filepath.Join(t.TempDir(), "theme")
@@ -50,7 +50,7 @@ func newTestServer(t *testing.T) *themeEditServer {
 
 // The acceptance test: editing a token through the server registers a
 // variant whose served app.css carries the new value. This is worth more
-// than a screenshot — it proves the live-preview swap path
+// than a screenshot; it proves the live-preview swap path
 // (ApplyTokens → RegisterThemeVariant → /__gofastr/app.css?t=<key>) lands
 // the edited token in the CSS the browser fetches.
 func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
@@ -75,7 +75,7 @@ func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
 	if !strings.Contains(body, "--color-primary: #FF0000") {
 		t.Fatalf("variant CSS does not carry the edited value:\n%s", truncate(body, 400))
 	}
-	// The variant must be served immutable — the content-addressed URL is
+	// The variant must be served immutable: the content-addressed URL is
 	// the cache-busting contract.
 	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
 		t.Errorf("variant Cache-Control = %q, want immutable", cc)
@@ -102,7 +102,7 @@ func TestThemeEditApplyRejectsInvalidValue(t *testing.T) {
 	}
 }
 
-// An unknown key is an error too — a typo in a theme edit must be reported,
+// An unknown key is an error too: a typo in a theme edit must be reported,
 // not silently ignored.
 func TestThemeEditApplyRejectsUnknownKey(t *testing.T) {
 	srv := newTestServer(t)
@@ -152,7 +152,7 @@ func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	// %q renders #00FF00 as "#00FF00" — a double-quoted literal. The raw
+	// %q renders #00FF00 as "#00FF00", a double-quoted literal. The raw
 	// value must appear; a backtick literal would have been an injection
 	// risk.
 	if !strings.Contains(string(src), `"#00FF00"`) {
@@ -160,7 +160,7 @@ func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
 	}
 }
 
-// goLiteralBreakers are the byte sequences that end a Go string literal —
+// goLiteralBreakers are the byte sequences that end a Go string literal,
 // the same set blueprint_emitter_injection_test.go uses. A raw backtick
 // literal has no escape mechanism, so one backtick closes it; an
 // interpreted literal ends at an unescaped quote and never spans a newline.
@@ -174,7 +174,7 @@ var themeEditLiteralBreakers = []string{
 
 // The injection test the brief requires: no theme-derived string may
 // terminate the Go literal it is emitted into. Theme values are free-form
-// CSS (oklch expressions, font stacks with embedded quotes) — exactly the
+// CSS (oklch expressions, font stacks with embedded quotes), exactly the
 // risky shape. %q escapes every breaking byte, so even a value crafted to
 // break out stays data. We bypass ApplyTokens (which would reject these)
 // and drive the payloads through the EMITTER directly, because the
@@ -189,7 +189,7 @@ func TestThemeEditWritebackInjectionSafety(t *testing.T) {
 			// string-valued token field", of roughly fifty-five. Reflection
 			// makes the claim true and keeps it true: a field added to
 			// style.Theme later is covered without anyone remembering to add a
-			// line here. The map KEYS and the theme Name go in too — both are
+			// line here. The map KEYS and the theme Name go in too; both are
 			// emitted, and neither was exercised.
 			th := uitheme.Default()
 			injectEveryThemeString(reflect.ValueOf(&th).Elem(), payload)
@@ -208,7 +208,7 @@ func TestThemeEditWritebackInjectionSafety(t *testing.T) {
 // assertThemePayloadStayedData parses the emitted file and fails if the
 // marker became syntax rather than data. Parsing is the decisive check: an
 // injected `func PWN()` is valid Go, so "does it compile" passes it. The
-// question is whether "PWN" appears as an IDENTIFIER — inside a string
+// question is whether "PWN" appears as an IDENTIFIER: inside a string
 // literal it is just the value the theme asked for. Modeled on
 // blueprint_emitter_injection_test.go's assertPayloadStayedData.
 func assertThemePayloadStayedData(t *testing.T, src []byte) {
@@ -232,7 +232,7 @@ func assertThemePayloadStayedData(t *testing.T, src []byte) {
 }
 
 // tokenControlType classifies a ThemeToTokens key into the input type the
-// controls page renders. The classification is by key prefix — adding a
+// controls page renders. The classification is by key prefix: adding a
 // new token type to style.Theme still gets a usable text input (never
 // hidden).
 func TestTokenControlType(t *testing.T) {
@@ -284,7 +284,7 @@ func TestThemeEditControlsPageContainsTokenControls(t *testing.T) {
 	}
 }
 
-// The HTTP apply endpoint requires the bearer token — without it, a
+// The HTTP apply endpoint requires the bearer token: without it, a
 // cross-origin page cannot drive edits even if it passes the Host guard.
 func TestThemeEditApplyRequiresBearerToken(t *testing.T) {
 	srv := newTestServer(t)
@@ -314,7 +314,7 @@ func TestThemeEditWritebackHTTP(t *testing.T) {
 }
 
 // The Host guard rejects a request whose Host header is not one of the
-// pinned loopback authorities — the DNS-rebinding defence.
+// pinned loopback authorities, the DNS-rebinding defence.
 func TestThemeEditHostGuard(t *testing.T) {
 	srv := newTestServer(t)
 	rec := httptest.NewRecorder()
@@ -466,15 +466,15 @@ func TestThemeEditChromeHasNoBespokeClasses(t *testing.T) {
 	if strings.Contains(body, "<style") {
 		t.Errorf("chrome ships an inline <style> block; all styling must come from /__gofastr/app.css")
 	}
-	// No inline style="..." attribute either — the design system's variants
+	// No inline style="..." attribute either: the design system's variants
 	// drive every visual state through class/data-fui-comp markers.
 	if loc := regexp.MustCompile(`style="[^"]*"`).FindStringIndex(body); loc != nil {
 		t.Errorf("chrome has an inline style=\"…\" attribute at byte %d — bespoke CSS by another name:\n...%s...",
 			loc[0], truncate(body[loc[0]:], 200))
 	}
 
-	// The chrome must be pinned to the framework's default theme — linking
-	// /__gofastr/app.css with no ?t= query — so the controls stay usable even
+	// The chrome must be pinned to the framework's default theme, linking
+	// /__gofastr/app.css with no ?t= query, so the controls stay usable even
 	// when the operator sets --color-text: transparent in the working theme.
 	// (The working theme only lives in the preview iframe, which swaps to
 	// /__gofastr/app.css?t=<hash> via swapPreviewCSS.)
@@ -684,7 +684,7 @@ func TestSortStrings(t *testing.T) {
 // A wildcard bind must still accept the Host a browser actually sends.
 //
 // net.Listen(":8090") reports "[::]:8090", and pinning the guard to that
-// literal made every request 403 — including from the URL the tool prints, and
+// literal made every request 403, including from the URL the tool prints, and
 // from the `--addr=:8090` invocation the theming docs give as an example. The
 // tool was unusable in its own documented form.
 func TestLoopbackGuardsAcceptAWildcardBind(t *testing.T) {
@@ -747,7 +747,7 @@ func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
 
 // The package clause is the one string the emitter writes as an IDENTIFIER
 // rather than through %q, so a directory name that is not a Go identifier used
-// to make Write fail every time — with a 500 carrying the entire generated file
+// to make Write fail every time, with a 500 carrying the entire generated file
 // and nothing written to disk.
 func TestPackageNameForPathIsAlwaysALegalIdentifier(t *testing.T) {
 	root := t.TempDir()
@@ -774,7 +774,7 @@ func TestPackageNameForPathIsAlwaysALegalIdentifier(t *testing.T) {
 }
 
 // Attribute values are HTML, not Go literals. %q renders a double quote as \",
-// which HTML does not treat as an escape — the attribute simply ends early. Not
+// which HTML does not treat as an escape; the attribute simply ends early. Not
 // reachable with the default theme, which is exactly why it is a trap: the
 // label two lines above used htmlEscape correctly while the value beside it
 // did not.
@@ -834,7 +834,7 @@ func injectEveryThemeString(v reflect.Value, payload string) {
 }
 
 // The reflection walk has to actually reach the fields it claims to. A walk
-// that silently visited nothing would make the injection test vacuous — the
+// that silently visited nothing would make the injection test vacuous, the
 // exact failure mode the hand-written list had, just harder to see.
 func TestInjectEveryThemeStringReachesNestedFields(t *testing.T) {
 	th := uitheme.Default()
@@ -1107,13 +1107,13 @@ func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 }
 
 // The bearer token must not be the harness's HMAC signing key. The controls
-// page is served with no authentication — it is where the token comes from —
-// so publishing a machine-persistent signing key there hands it to any local
-// process, any other user on the box, and any screenshot in a bug report.
+// page is served with no authentication, and it is where the token comes
+// from, so publishing a machine-persistent signing key there hands it to any
+// local process, any other user on the box, and any screenshot in a bug report.
 //
 // This pins the property by reading the token the SERVER ACTUALLY SERVES in
-// its <meta name="theme-edit-token"> tag — the same bytes any unauthenticated
-// localhost reader can lift off the page — and asserting those bytes are not
+// its <meta name="theme-edit-token"> tag, the same bytes any unauthenticated
+// localhost reader can lift off the page, and asserting those bytes are not
 // the harness signing key. The previous test only compared two values it
 // generated itself and so passed even when runThemeEdit published the signing
 // key verbatim (proven by mutation: replacing newThemeEditToken with
@@ -1149,7 +1149,7 @@ func TestThemeEditTokenIsNotTheHarnessSigningKey(t *testing.T) {
 
 	// The load-bearing assertion: the bytes the page serves must not be the
 	// harness signing key. The exact regression the comment at the call site
-	// describes is runThemeEdit setting srv.token = hex(deriveListenerSecret()) —
+	// describes is runThemeEdit setting srv.token = hex(deriveListenerSecret()),
 	// publishing the HMAC key on an unauthenticated page.
 	if tok == signingKey {
 		t.Fatalf("the theme editor's served bearer token equals the harness signing key.\n" +

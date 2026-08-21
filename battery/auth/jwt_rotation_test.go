@@ -39,7 +39,7 @@ func TestJWT_KeyRotationAcceptsPreviousSecret(t *testing.T) {
 }
 
 // TestJWT_KeyRotationRejectsWhenPreviousMissing: a token whose secret is
-// neither current nor listed as previous is rejected — the drain window
+// neither current nor listed as previous is rejected, the drain window
 // closes.
 func TestJWT_KeyRotationRejectsWhenPreviousMissing(t *testing.T) {
 	oldSecret := "old-signing-secret-aaaaaaaaaaaaa"
@@ -59,7 +59,7 @@ func TestJWT_KeyRotationRejectsWhenPreviousMissing(t *testing.T) {
 
 // TestJWT_KeyRotationSignsWithCurrent: a freshly-minted JWT (signed by the
 // current secret) validates against a JWTAuth that knows only the current
-// secret — the operator can drop the old key once the window drains.
+// secret, the operator can drop the old key once the window drains.
 func TestJWT_KeyRotationSignsWithCurrent(t *testing.T) {
 	newSecret := "new-signing-secret-bbbbbbbbbbbbb"
 
@@ -170,7 +170,7 @@ func TestJWTConfig_RotationWiredFromAuthConfig(t *testing.T) {
 }
 
 // TestJWTConfig_ProdModeRejectsPreviousOnly: production mode with an empty
-// JWTSecret must fail closed even when JWTPreviousSecrets is set — a
+// JWTSecret must fail closed even when JWTPreviousSecrets is set, a
 // verify-only configuration is not a valid signing setup.
 func TestJWTConfig_ProdModeRejectsPreviousOnly(t *testing.T) {
 	mgr := New(AuthConfig{

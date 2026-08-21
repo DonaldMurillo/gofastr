@@ -19,7 +19,7 @@ type RedisClient interface {
 	RPop(ctx context.Context, key string) (string, error)
 	// HGet returns the value stored at field in the hash at key. Like RPop,
 	// a missing hash or field MUST be reported as ErrRedisEmpty (map the
-	// driver's nil-sentinel, e.g. redis.Nil) — the queue relies on it to
+	// driver's nil-sentinel, e.g. redis.Nil), the queue relies on it to
 	// make Ack/Nack of a non-claimed job an idempotent no-op instead of a
 	// hard error: a missing claim is normal (already completed, or the
 	// lease expired and another worker took it) and must not be mistaken
@@ -31,7 +31,7 @@ type RedisClient interface {
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	HDel(ctx context.Context, key string, fields ...string) error
 	// Del removes one or more keys entirely. RedisQueue's own lease
-	// protocol never calls it — per-job bookkeeping uses HDel — but it
+	// protocol never calls it, per-job bookkeeping uses HDel, but it
 	// stays in the adapter contract for callers that hold a RedisClient
 	// and need whole-key cleanup.
 	Del(ctx context.Context, keys ...string) error
@@ -78,7 +78,7 @@ type RedisQueue struct {
 	now func() time.Time
 
 	// staleClaims counts completions (Ack/Nack) rejected because the claim
-	// token they presented no longer matches the processing entry — i.e. the
+	// token they presented no longer matches the processing entry, i.e. the
 	// job was re-claimed by another worker after this claimant's visibility
 	// timeout expired. Atomic: workers on different goroutines complete
 	// independently. Read via StaleClaimCount; a rising value means worker
@@ -142,7 +142,7 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) error {
 // fails, the popped payload is pushed back onto the main list so the job is
 // re-delivered later instead of being permanently lost in the gap. (An atomic
 // RPOPLPUSH-style move would close the window entirely, but the RedisClient
-// interface exposes no single-round-trip move primitive — error propagation
+// interface exposes no single-round-trip move primitive, error propagation
 // that leaves the job on the queue is the safe option within this interface.)
 //
 // Attempts are bumped at claim, matching DBQueue: a worker that crashes before
@@ -174,7 +174,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// Bound the type-miss drain: without a server-side filter a rare-type
 		// request could otherwise RPop the entire list into process memory
 		// (OOM). When the bound is hit, re-enqueue what we drained and report
-		// no job — the caller retries.
+		// no job, the caller retries.
 		if len(skipped) >= maxSkipDrain {
 			if rerr := requeueSkipped(skipped); rerr != nil {
 				return Job{}, rerr
@@ -230,7 +230,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		if job.Attempts > job.MaxAttempts {
 			// Exhausted: dead-letter instead of redelivering, then keep
 			// looking so a following eligible job can still be handed out.
-			// The job is already off the main list — a failed DLQ push
+			// The job is already off the main list, a failed DLQ push
 			// must restore it there and surface the error, or the job
 			// vanishes (the same no-silent-loss contract as the
 			// pop→processing transition below; the claim-time bump keeps
@@ -254,8 +254,8 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		bumped, _ := json.Marshal(job)
 
 		// Track in processing queue for visibility timeout. The job was
-		// already RPop'd off the main list, so a failure here MUST restore it
-		// — otherwise the pop→processing transition loses the job permanently
+		// already RPop'd off the main list, so a failure here MUST restore it.
+		// Otherwise the pop→processing transition loses the job permanently
 		// (it is neither on the main list nor visible to Reclaim).
 		visTimeout := time.Duration(q.visibilityTimeout.Load())
 		jobData, _ := json.Marshal(map[string]interface{}{
@@ -321,7 +321,7 @@ func (q *RedisQueue) currentClaim(ctx context.Context, jobID string) (current Jo
 
 // ownsClaim reports whether the completion being presented (job) matches the
 // current processing entry for that ID. A mismatch means the presenter's
-// visibility timeout expired and another worker re-claimed the job — their
+// visibility timeout expired and another worker re-claimed the job, their
 // completion must not touch the newer claim. Counts a rejected completion in
 // q.staleClaims so the fencing is observable, and returns false. A missing
 // entry surfaces as found=false for the caller to treat as an idempotent
@@ -339,7 +339,7 @@ func (q *RedisQueue) ownsClaim(job, current Job, found bool) bool {
 
 // Ack removes the job's processing entry after successful handling. The
 // claim is fenced by Job.ClaimToken: an Ack from a worker whose visibility
-// timeout already expired (the job was re-claimed elsewhere) is a no-op —
+// timeout already expired (the job was re-claimed elsewhere) is a no-op,
 // deleting the newer claimant's entry would make the job unreclaimable
 // if that claimant then crashed. Acking an ID nothing is claimed
 // under (already acked) is an idempotent no-op.
@@ -349,7 +349,7 @@ func (q *RedisQueue) Ack(ctx context.Context, job Job) error {
 		return fmt.Errorf("ack: %w", err)
 	}
 	if !q.ownsClaim(job, current, found) {
-		return nil // stale claim (counted) or nothing claimed — no-op
+		return nil // stale claim (counted) or nothing claimed, no-op
 	}
 	return q.client.HDel(ctx, q.processingQueue, job.ID)
 }
@@ -366,11 +366,11 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 		return fmt.Errorf("nack: %w", err)
 	}
 	if !q.ownsClaim(claimed, job, found) {
-		return nil // stale claim (counted) or nothing claimed — no-op
+		return nil // stale claim (counted) or nothing claimed, no-op
 	}
 
 	// Attempts were bumped at claim (Dequeue), so the processing entry
-	// already carries the post-claim count — Nack only decides retry vs
+	// already carries the post-claim count. Nack only decides retry vs
 	// dead-letter. Bumping here too would double-count and let a poison
 	// message that only ever crashes before Nack evade MaxAttempts.
 	dest := q.queueName
@@ -381,7 +381,7 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 	// Write the job to its next home BEFORE dropping the processing entry.
 	// The processing hash is the only durable copy of a claimed job: deleting
 	// it first and then failing this push left the job on no list and
-	// invisible to Reclaim — silently lost.
+	// invisible to Reclaim, silently lost.
 	//
 	// The reverse order can duplicate instead: if the push lands and the HDel
 	// fails, Reclaim re-delivers the job once its visibility timeout expires.
@@ -431,7 +431,7 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 
 // Replay implements [Replayable]: it pulls a terminally-failed job off the
 // dead-letter list and re-enqueues it onto the main queue with its attempts
-// counter reset, so it gets a full set of retries again. It is idempotent —
+// counter reset, so it gets a full set of retries again. It is idempotent,
 // replaying an unknown job ID is a no-op (returns nil), matching DBQueue.Replay.
 //
 // The entry is LPush'd back onto the main queue first and only removed from the
@@ -456,7 +456,7 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 		}
 
 		// Reset for a fresh set of retries, then re-marshal. ClaimToken is
-		// cleared too — it identified a claim that is now terminal; the next
+		// cleared too, it identified a claim that is now terminal; the next
 		// Dequeue mints a fresh one.
 		job.Attempts = 0
 		job.ClaimToken = ""
@@ -476,7 +476,7 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 		return nil
 	}
 
-	// No matching dead-lettered job — idempotent no-op.
+	// No matching dead-lettered job, idempotent no-op.
 	return nil
 }
 
@@ -560,7 +560,7 @@ var (
 	_ Replayable = (*RedisQueue)(nil)
 )
 
-// Close is a no-op for RedisQueue — the caller manages the Redis connection.
+// Close is a no-op for RedisQueue, the caller manages the Redis connection.
 func (q *RedisQueue) Close() error {
 	return nil
 }

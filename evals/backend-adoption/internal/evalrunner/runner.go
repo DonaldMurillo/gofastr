@@ -20,7 +20,7 @@ const ginVersion = "v1.11.0"
 // Pinned modules the non-GoFastr lanes get in go.mod. Shared with the
 // resolvability test: a version that stops resolving (as happened when the
 // sqlite driver swap carried the old mattn version onto a path that isn't a
-// module) makes every baseline lane — and so the whole eval — unrunnable.
+// module) makes every baseline lane, and so the whole eval, unrunnable.
 const (
 	sqliteRequirement = "modernc.org/sqlite@v1.55.0"
 	cryptoRequirement = "golang.org/x/crypto@v0.52.0"

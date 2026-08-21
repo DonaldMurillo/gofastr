@@ -9,7 +9,7 @@ import (
 )
 
 // TestSQLiteHostileTableNameRejected verifies that hostile table names are
-// rejected at construction via core/query.SafeIdent — before any SQL is
+// rejected at construction via core/query.SafeIdent, before any SQL is
 // ever generated.
 func TestSQLiteHostileTableNameRejected(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")

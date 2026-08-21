@@ -38,8 +38,8 @@ func TestOIDCSec_EmailVerified_True(t *testing.T) {
 }
 
 // TestOIDCSec_EmailVerified_False: an explicit email_verified=false claim
-// surfaces as EmailVerified=false. This is the takeover-prevention signal
-// — resolveOAuthUser's unverified-email arm falls through to a fresh
+// surfaces as EmailVerified=false. This is the takeover-prevention signal.
+// resolveOAuthUser's unverified-email arm falls through to a fresh
 // create rather than matching an existing account.
 func TestOIDCSec_EmailVerified_False(t *testing.T) {
 	f := newFakeIdP(t)
@@ -62,7 +62,7 @@ func TestOIDCSec_EmailVerified_False(t *testing.T) {
 
 // TestOIDCSec_EmailVerified_MissingDefaultsFalse: an absent claim defaults
 // to false. The OIDC spec does not require email_verified, so the safe
-// default is "unverified" — a missing assertion is never a verified email.
+// default is "unverified", a missing assertion is never a verified email.
 func TestOIDCSec_EmailVerified_MissingDefaultsFalse(t *testing.T) {
 	f := newFakeIdP(t)
 	f.claims = cloneClaims(baseClaims(f))
@@ -179,7 +179,7 @@ func TestOIDCSec_EmailVerified_CustomClaim(t *testing.T) {
 // (the unique-email constraint then blocks the fresh-create too).
 //
 // This is the test that would catch a regression re-introducing
-// email-trust on unverified OIDC emails — the original vulnerability.
+// email-trust on unverified OIDC emails, the original vulnerability.
 func TestOIDCSec_UnverifiedEmailCannotTakeoverPasswordAccount(t *testing.T) {
 	// Build a fake IdP whose id_token carries an UNVERIFIED email that
 	// collides with the victim's existing account.

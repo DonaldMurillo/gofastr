@@ -3,7 +3,7 @@
 // Live tests for battery/semantic against a real Ollama server.
 //
 // These tests are gated by the `live` build tag so the default
-// `go test ./...` skips them entirely — they require a running Ollama
+// `go test ./...` skips them entirely, they require a running Ollama
 // (or compatible) server reachable at $OLLAMA_URL (default
 // http://localhost:11434) with $OLLAMA_MODEL pulled (default
 // nomic-embed-text).
@@ -19,7 +19,7 @@
 //     detection.
 //   - Semantic similarity: paraphrases have higher cosine than
 //     unrelated pairs. This is the property the stub embedder cannot
-//     satisfy — it is the whole reason we run live tests.
+//     satisfy, it is the whole reason we run live tests.
 //   - End-to-end retrieval: a small corpus + a paraphrase query
 //     surfaces the right document at rank #1, both with and without
 //     hybrid keyword fusion.
@@ -112,7 +112,7 @@ func TestLive_SemanticSimilarity(t *testing.T) {
 
 	// Paraphrase cosine should noticeably exceed cross-intent cosine.
 	// The margin we require is intentionally modest (0.05) so the test
-	// is robust across embedding models — the *shape* (paraphrase >
+	// is stable across embedding models. The *shape* (paraphrase >
 	// cross) is what matters, not the absolute values.
 	if simAuth < crossA+0.05 {
 		t.Errorf("auth paraphrase (%.4f) should be > auth↔cache cross (%.4f) + 0.05", simAuth, crossA)
@@ -161,7 +161,7 @@ func TestLive_IndexRetrievalParaphrase(t *testing.T) {
 
 	// Property asserted: the expected doc shows up in top-K, not
 	// necessarily at exactly rank #1. Real embedders disagree with
-	// human intuition on close calls — "memoize" → "cache" is the
+	// human intuition on close calls, "memoize" → "cache" is the
 	// human inference, but nomic-embed-text reads "remember/recall"
 	// closer to "search" semantics. Top-K membership is the meaningful
 	// property; strict #1 is wishful thinking against a real model.
@@ -170,7 +170,7 @@ func TestLive_IndexRetrievalParaphrase(t *testing.T) {
 		hybrid               bool
 		k                    int
 	}{
-		// Pure-paraphrase queries (no keyword overlap) — vector-only
+		// Pure-paraphrase queries (no keyword overlap), vector-only
 		// path. Asserts the embedder can map intent to topic. Pick
 		// phrasings the model is known to map well; "memoize" /
 		// "remember" pulls toward search/recall semantics on
@@ -179,7 +179,7 @@ func TestLive_IndexRetrievalParaphrase(t *testing.T) {
 		{"vec: upload → storage (top-3)", "let users upload images to my backend", "storage", false, 3},
 		{"vec: avoid recompute → cache (top-3)", "store database query results in memory to avoid hitting the database twice", "cache", false, 3},
 
-		// Mixed paraphrase + literal-word queries — hybrid path adds
+		// Mixed paraphrase + literal-word queries, hybrid path adds
 		// keyword signal where the words actually overlap.
 		{"hybrid: cache battery → cache (top-2)", "configuring the cache battery for Redis", "cache", true, 2},
 		{"hybrid: auth middleware → auth (top-2)", "the auth middleware for session credentials", "auth", true, 2},
@@ -292,7 +292,7 @@ func TestLive_PersistenceSurvivesProcessRestart(t *testing.T) {
 	}
 
 	// Phase 2: reopen with a freshly-constructed embedder pointing at the
-	// same model — fingerprint must match.
+	// same model, fingerprint must match.
 	e2 := NewOllamaEmbedder(OllamaConfig{
 		BaseURL: os.Getenv("OLLAMA_URL"),
 		Model:   os.Getenv("OLLAMA_MODEL"),

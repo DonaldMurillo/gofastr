@@ -46,11 +46,11 @@ screens:
 	return validateBlueprint(bp)
 }
 
-// group_by is the chart's LABEL. groupCounts reads rows raw — the dashboard
-// aggregates are meant to compute over stored values — and prints each
-// distinct value as a bar or slice caption, so a masked column renders
-// verbatim on the page while the API masks it. Not an oracle: the whole value
-// set, on whatever route the screen sits on.
+// group_by is the chart's LABEL. groupCounts reads rows raw, because the
+// dashboard aggregates are meant to compute over stored values, and prints
+// each distinct value as a bar or slice caption, so a masked column renders
+// verbatim on the page while the API masks it. Not an oracle: the whole
+// value set, on whatever route the screen sits on.
 func TestChartGroupByRefusesMaskedColumn(t *testing.T) {
 	for _, kind := range []string{"bar_chart", "pie_chart", "line_chart"} {
 		err := r5Blueprint(t, `      - kind: `+kind+`
@@ -112,8 +112,8 @@ func TestChartGroupByAcceptsOrdinaryColumn(t *testing.T) {
 }
 
 // timestamps: true adds created_at/updated_at, which are therefore never in
-// decl.Fields. The search guard rejected them as "not defined", which was both
-// a regression — these were working search columns — and a false statement.
+// decl.Fields. The search guard rejected them as "not defined", which was
+// both a regression and a false statement: these were working search columns.
 func TestSearchAcceptsFrameworkManagedColumns(t *testing.T) {
 	for _, col := range []string{"id", "created_at", "updated_at", "label"} {
 		err := r5Blueprint(t, `      - kind: entity_list
@@ -138,9 +138,10 @@ func TestSearchStillRefusesMaskedColumn(t *testing.T) {
 	}
 }
 
-// entity.Define panics on a Hidden or no_query keyset column — correct, since
-// the cursor token carries its value — but a generated app that dies at boot
-// is a far worse diagnostic than the error search_fields gets at decode time.
+// entity.Define panics on a Hidden or no_query keyset column. That is
+// correct, since the cursor token carries its value. But a generated app
+// that dies at boot is a far worse diagnostic than the error search_fields
+// gets at decode time.
 func TestCursorFieldRefusesMaskedColumnAtDecode(t *testing.T) {
 	yaml := `
 app:
@@ -194,7 +195,7 @@ entities:
 // blueprintFieldSystem answers "is this a system column NAME"; validating a
 // screen needs "does this entity HAVE that column". created_at/updated_at
 // exist only under timestamps:, deleted_at under soft_delete:, tenant_id under
-// multi_tenant: — so accepting the name unconditionally let a screen reference
+// multi_tenant:, so accepting the name unconditionally let a screen reference
 // a column the table lacks, turning a named generate-time error into a runtime
 // SQL failure.
 func TestSearchRejectsSystemColumnsTheEntityLacks(t *testing.T) {
@@ -370,9 +371,10 @@ screens:
 }
 
 // deleted_at exists only under soft_delete:, tenant_id only under
-// multi_tenant:. Both arms of the system-column gate were unreachable from any
-// test — replacing their bodies with a panic left the whole package green — so
-// the round-6 bug was fixed for created_at and left live for its two siblings.
+// multi_tenant:. Both arms of the system-column gate were unreachable from
+// any test: replacing their bodies with a panic left the whole package
+// green, so the round-6 bug was fixed for created_at and left live for its
+// two siblings.
 func TestScreenColumnsGateOnSoftDeleteAndTenancy(t *testing.T) {
 	build := func(entityBody, search string) string {
 		return `

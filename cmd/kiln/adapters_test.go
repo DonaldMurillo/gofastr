@@ -17,7 +17,7 @@ func TestResolveAdapter(t *testing.T) {
 		{"empty is none", "", false, ""},
 		{"explicit none", "none", false, ""},
 
-		// Custom command — always resolvable to a built adapter (whether
+		// Custom command: always resolvable to a built adapter (whether
 		// the binary is installed is the runtime concern).
 		{"custom freeform cmd", "/bin/echo hi", true, "/bin/echo"},
 	}
@@ -86,7 +86,7 @@ func TestAdapterAutoOrderPrefersOMP(t *testing.T) {
 	}
 }
 
-// pi has no auto-discovery for ~/.claude/skills/ — its adapter must
+// pi has no auto-discovery for ~/.claude/skills/; its adapter must
 // inject --skill <path> when the kiln skill file exists. Without it
 // pi has no idea about the kiln tool API and just hallucinates Go
 // code instead of calling add_entity / add_page / etc.
@@ -111,7 +111,7 @@ func TestPiAdapterIncludesSkillFlag(t *testing.T) {
 
 // codex has no --skill flag, so the adapter prepends the kiln contract
 // + skill to the prompt as a tagged block. The contract is what tells
-// the model "files on disk are not the app — only the world IR is".
+// the model "files on disk are not the app; only the world IR is".
 func TestCodexAdapterPrependsSkillToPrompt(t *testing.T) {
 	if kilnSkillPath() == "" {
 		t.Skip("kiln skill not installed at ~/.claude/skills/kiln/SKILL.md")
@@ -191,8 +191,8 @@ func TestClaudeCodeAdapterEnforcesKilnContract(t *testing.T) {
 }
 
 // pi already had --skill + /tmp/kiln-pi/ + --tools bash. The remaining
-// gap was the contract preamble — telling pi explicitly that files on
-// disk don't matter — which now rides at the head of the user prompt.
+// gap was the contract preamble, telling pi explicitly that files on
+// disk don't matter, which now rides at the head of the user prompt.
 func TestPiAdapterIncludesContractPreamble(t *testing.T) {
 	a := adapters["pi"]
 	argv := a.BuildArgs("real prompt")
@@ -220,7 +220,7 @@ func TestKilnContractPreambleMentionsTheBoundary(t *testing.T) {
 
 // When the user passes --agent as a freeform string that happens to
 // equal a built-in adapter's exact spawn command, classify it as that
-// named adapter — not "custom". Otherwise the gear modal can't mark a
+// named adapter, not "custom". Otherwise the gear modal can't mark a
 // "current" radio (curName=="custom" matches none of the listed
 // adapter rows), and the user sees an unselected list.
 //
@@ -234,7 +234,7 @@ func TestResolveAdapterFreeformMatchesBuiltin(t *testing.T) {
 	for name, want := range adapters {
 		// Build the adapter's natural spawn command (argv minus the
 		// trailing prompt) and feed it back through resolveAdapter as
-		// a single string — the same path --agent "<freeform>" takes.
+		// a single string, the same path --agent "<freeform>" takes.
 		argv := want.BuildArgs("")
 		prefix := argv[:len(argv)-1]
 		if anyTokenHasWhitespace(prefix) {
@@ -276,7 +276,7 @@ func joinArgv(argv []string) string {
 
 func TestResolveAdapterUnknownName(t *testing.T) {
 	// Names that aren't in the registry and aren't shell-cmd-shaped
-	// (single token) should NOT resolve to "custom" — that would be
+	// (single token) should NOT resolve to "custom"; that would be
 	// confusing. They go through the freeform path which then fails
 	// the Detect check at runtime.
 	a, ok := resolveAdapter("not-a-real-agent-name-xyz")

@@ -10,7 +10,7 @@ import (
 // actually evaluates. An action whose Kind is not in this set is
 // advertised-but-unimplemented; the journal rejects it at authoring time
 // (see [ValidateAction]) so it can never land in the world IR and silently
-// no-op — or 500 — when a hook, route, or page element tries to fire it.
+// no-op, or 500, when a hook, route, or page element tries to fire it.
 //
 // Keep this set in sync with the dispatch switches in kiln/effect (Run and
 // Resolve). The set lives here, in the leaf world package, because every

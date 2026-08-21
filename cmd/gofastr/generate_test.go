@@ -71,7 +71,7 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	}
 
 	// register.go is the fixed seam: it declares RegisterAll and the
-	// registrar slice, but carries NO entity name — adding an entity never
+	// registrar slice, but carries NO entity name. Adding an entity never
 	// edits it. Owned scaffold carries no "DO NOT EDIT" header (it's yours to
 	// edit). See framework/ARCHITECTURE.md.
 	register := byName["register.go"]
@@ -88,8 +88,8 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 		t.Fatalf("register.go must hold no app.Entity call (it's the seam):\n%s", register)
 	}
 
-	// Everything for the "posts" entity — model, columns, repo, events, and
-	// its registration — lives in one self-contained posts.go.
+	// Everything for the "posts" entity lives in one self-contained posts.go:
+	// model, columns, repo, events, and its registration.
 	posts := byName["posts.go"]
 	for _, want := range []string{
 		`app.Entity("posts", framework.EntityConfig{`,

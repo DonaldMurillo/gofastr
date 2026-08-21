@@ -54,7 +54,7 @@ func TestOMPCompactWriterFlushKeepsUnterminatedFinalLine(t *testing.T) {
 }
 
 // A destination write error must be sticky: Flush after a failed (possibly
-// partial) line write must NOT re-emit the line — duplicated partial bytes
+// partial) line write must NOT re-emit the line, duplicated partial bytes
 // would corrupt the log evidence someone inspects to debug the failed run.
 func TestOMPCompactWriterErrorIsSticky(t *testing.T) {
 	failing := &failAfterWriter{limit: 4}
@@ -163,7 +163,7 @@ func TestApplyAgentOptionsUsesBackendModelAliases(t *testing.T) {
 func TestCodexSwitchNeedsExplicitModel(t *testing.T) {
 	// There is no baked-in codex model alias: codex catalogs vary per
 	// install and model IDs are provenance. Switching a claude/opus suite
-	// agent to codex must not carry "opus" into a codex invocation — it
+	// agent to codex must not carry "opus" into a codex invocation, it
 	// must clear the model and fail validation until a --*-model is given.
 	cfg := AgentConfig{Backend: "claude", Program: "claude", Model: "opus", Effort: "high"}
 	applyAgentOptions(&cfg, "codex", "", nil, "")

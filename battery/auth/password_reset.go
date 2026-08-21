@@ -29,7 +29,7 @@ type PasswordResetConfig struct {
 	// emailed to the user (e.g. "https://app.example.com").
 	BaseURL string
 
-	// TokenTTL is the reset link's lifetime. Default: 1h. Short by design —
+	// TokenTTL is the reset link's lifetime. Default: 1h. Short by design,
 	// reset tokens are a transient secret and short lifetimes limit the
 	// damage if logs / referer headers leak them.
 	TokenTTL time.Duration
@@ -40,7 +40,7 @@ type PasswordResetConfig struct {
 	EmailSender EmailSender
 
 	// TokenStore persists pending reset tokens. Defaults to in-memory (does
-	// not survive restart / scale across replicas) — set a durable store
+	// not survive restart / scale across replicas), set a durable store
 	// (e.g. NewSQLMagicLinkTokenStore(db)) in production.
 	TokenStore MagicLinkTokenStore
 
@@ -50,7 +50,7 @@ type PasswordResetConfig struct {
 	BodyTemplate func(url string) string
 
 	// DevMode logs the reset URL when EmailSender is nil. NEVER enable in
-	// production — anyone with log read access then resets arbitrary
+	// production, anyone with log read access then resets arbitrary
 	// passwords. The log entry uses hashed identifiers to limit exposure,
 	// but the URL itself is the secret.
 	DevMode bool
@@ -115,7 +115,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// ALWAYS return 200 — even when email is empty or unknown — so the
+	// ALWAYS return 200, even when email is empty or unknown, so the
 	// response can't be used to enumerate registered accounts.
 	defer func() {
 		w.Header().Set("Content-Type", "application/json")
@@ -132,9 +132,9 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	user, _, err := store.FindByEmail(r.Context(), body.Email)
 	if err != nil {
 		// Either ErrUserNotFound (don't leak) or transport error (don't
-		// leak either — operator monitors for transport failures via
+		// leak either, operator monitors for transport failures via
 		// metrics, not via the user-facing response).
-		// Unknown email OR transport error — record the request anyway so
+		// Unknown email OR transport error, record the request anyway so
 		// probing is visible in the audit trail. UserID stays empty
 		// (anti-enumeration); the response is identical either way.
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -181,7 +181,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		}
 	case p.cfg.DevMode:
 		// SECURITY: do not log the live reset URL. The URL embeds the
-		// raw token, which is a takeover credential — anyone with read
+		// raw token, which is a takeover credential, anyone with read
 		// access to dev logs could replay it. email_hash + token_hash give
 		// enough signal to correlate with the rendered email body.
 		slog.Info("password-reset dev",
@@ -218,7 +218,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 
 	// Validate everything that can fail BEFORE consuming the single-use token.
 	// RedeemToken atomically deletes the token, so any failure after it strands
-	// the user — they'd have to restart the whole forgot-password flow for a new
+	// the user, they'd have to restart the whole forgot-password flow for a new
 	// emailed token. The token is only burned once the inputs are known-good and
 	// immediately before SetPassword.
 	setter, ok := p.mgr.UserStore().(PasswordSetter)
@@ -261,7 +261,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 
 	// Revoke every pre-existing session for this user. A credential that was
 	// compromised before the reset must not retain access through an already-
-	// issued cookie — the whole point of a reset is to lock the attacker out.
+	// issued cookie, the whole point of a reset is to lock the attacker out.
 	// Stores that don't implement SessionUserPurger leave the window open; log
 	// that so the gap is visible rather than silent.
 	if purger, ok := p.mgr.SessionStore().(SessionUserPurger); ok {

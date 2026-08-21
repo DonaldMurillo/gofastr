@@ -20,7 +20,7 @@ const maxAuthBodyBytes = 1 << 20 // 1 MiB
 // Content-Type or carry a non-JSON Content-Type (text/plain, etc.).
 // Without this check, an attacker can smuggle a credential/token JSON
 // body cross-origin from a context the browser would otherwise refuse
-// to mark as a "JSON request" — bypassing the CORS preflight that
+// to mark as a "JSON request", bypassing the CORS preflight that
 // protects state-changing endpoints from drive-by submissions.
 func isJSONContentType(ct string) bool {
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
@@ -44,7 +44,7 @@ func isJSONContentType(ct string) bool {
 // On success, returns true.
 //
 // Centralising this means every auth handler gets the same DoS protection,
-// the same content-type strictness, and the same error contract — see
+// the same content-type strictness, and the same error contract, see
 // handler_limits_test.go and content_type_security_test.go.
 func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if !isJSONContentType(r.Header.Get("Content-Type")) {

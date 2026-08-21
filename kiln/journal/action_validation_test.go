@@ -9,8 +9,8 @@ import (
 
 // The descriptor enum and agent prompt used to advertise create_entity and
 // respond_query, but kiln/effect implemented neither. An action whose kind
-// kiln can't run must be rejected when it enters the world IR — at authoring
-// time — not deferred to a 500 from a hook or route that was never wired.
+// kiln can't run must be rejected when it enters the world IR, at authoring
+// time, not deferred to a 500 from a hook or route that was never wired.
 // These tests pin the scream; they use literal kind strings so they do not
 // depend on the (now-deleted) const aliases.
 

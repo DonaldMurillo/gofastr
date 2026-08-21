@@ -14,12 +14,12 @@ import (
 )
 
 // Property: when a user has 2FA enabled but the pending-2FA mark cannot be
-// established — the session store doesn't implement SessionPendingMarker,
-// the checker errors, or the mark call fails — login must fail CLOSED.
+// established, the session store doesn't implement SessionPendingMarker,
+// the checker errors, or the mark call fails, login must fail CLOSED.
 // Otherwise a custom SessionStore silently downgrades every 2FA-enrolled
 // account to password-only auth.
 
-// baseOnlySessionStore implements SessionStore and nothing else — the
+// baseOnlySessionStore implements SessionStore and nothing else, the
 // shape of a host-supplied Redis/DB store that never heard of the
 // optional pending-marker extension.
 type baseOnlySessionStore struct{ inner *MemorySessionStore }
@@ -37,7 +37,7 @@ func (s *baseOnlySessionStore) Cleanup(ctx context.Context) (int, error) {
 	return s.inner.Cleanup(ctx)
 }
 
-// errorCheckerPlugin reports "I couldn't determine 2FA state" — the DB
+// errorCheckerPlugin reports "I couldn't determine 2FA state", the DB
 // being down must not mean "no second factor required".
 type errorCheckerPlugin struct{}
 

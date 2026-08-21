@@ -31,7 +31,7 @@ import (
 //
 // When the GOFASTR_URL environment variable is set, query and stats
 // hit that server's /semantic/* endpoints instead of opening a local
-// index. index/watch/clear are always local — long-lived mutations
+// index. index/watch/clear are always local: long-lived mutations
 // should run alongside the server, not through it.
 func runSemantic(args []string) {
 	if len(args) == 0 {
@@ -61,7 +61,7 @@ func runSemantic(args []string) {
 
 func printSemanticHelp() {
 	fmt.Printf(`
-%s — semantic search for the project at cwd
+%s: semantic search for the project at cwd
 
 %s:
   gofastr semantic <subcommand> [args]
@@ -110,7 +110,7 @@ func localSnapshotDir() string {
 //   - SEMANTIC_BACKEND=ollama  → OllamaEmbedder (real semantic, requires
 //     a running Ollama-compatible server)
 //   - anything else            → StubEmbedder (deterministic, no setup,
-//     low retrieval quality — fine for dev/tests)
+//     low retrieval quality, fine for dev/tests)
 //
 // SEMANTIC_BACKEND is preferred; EMBED_BACKEND is read as a deprecated
 // fallback and warns on stderr.

@@ -67,7 +67,7 @@ func auditDeps(root string) ([]AuditFinding, error) {
 		}
 		fs, perr := parseFile(path)
 		if perr != nil {
-			// Parse errors aren't fatal — we want the audit to keep
+			// Parse errors aren't fatal. We want the audit to keep
 			// going even when the project is mid-edit.
 			return nil
 		}
@@ -226,7 +226,7 @@ func runAudit(args []string) {
 		fmt.Println("Subcommands:")
 		fmt.Println("  deps    List packages that perform init-time global registrations")
 		fmt.Println("  lint    Scan for AI-typical mistakes (ignored Exec, missing CSRF, render.HTML concat, t.Skip, …)")
-		fmt.Println("          SUPERSEDED by `gofastr verify security data` — see below")
+		fmt.Println("          SUPERSEDED by `gofastr verify security data`: see below")
 		fmt.Println("  a11y    Accessibility audit: static lint of core-ui/html usage, or a full")
 		fmt.Println("          axe-core scan of a running app with --url (see `gofastr audit a11y --help`)")
 		fmt.Println()
@@ -236,7 +236,7 @@ func runAudit(args []string) {
 		fmt.Println("browser scan (`a11y --url`) and the dependency report (`deps`).")
 	}
 	// `audit --help` (or a help flag on deps/lint) prints the usage and
-	// exits 0 — asking for help is not a usage error. a11y owns its
+	// exits 0. Asking for help is not a usage error. a11y owns its
 	// flags and prints its own richer help.
 	if len(args) > 0 && args[0] != "a11y" {
 		for _, a := range args {
@@ -274,11 +274,11 @@ func runAudit(args []string) {
 		}
 		// `audit lint` predates the contract system and knows nothing
 		// about gofastr.contracts.yml or //gofastr:allow, so it reports
-		// findings verify deliberately exempts — a project running both
+		// findings verify deliberately exempts. A project running both
 		// gets two answers to the same question. Say which one is
 		// authoritative rather than leaving that to be discovered.
 		warn("`gofastr audit lint` is superseded by `gofastr verify security data`.")
-		info("verify covers these rules with a reason, a fix, and an example per finding —")
+		info("verify covers these rules with a reason, a fix, and an example per finding,")
 		info("and honours gofastr.contracts.yml + //gofastr:allow, which this scan does not.")
 		fmt.Println()
 		fmt.Print(formatLintReport(findings))

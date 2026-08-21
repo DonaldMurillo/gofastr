@@ -101,7 +101,7 @@ func TestApplyInvalidEntryDoesNotPersist(t *testing.T) {
 		t.Fatalf("Apply 1: %v", err)
 	}
 
-	// Duplicate add — should fail.
+	// Duplicate add, should fail.
 	dup := newEntry(t, "2", time.Now(), journal.KindWorldEdit, journal.OpAddEntity, journal.AddEntityPayload{Entity: posts})
 	if err := l.Apply(dup); err == nil {
 		t.Fatal("duplicate add_entity should error")
@@ -176,7 +176,7 @@ func TestSSEHandlerStreamsEvents(t *testing.T) {
 
 	// Per-test client whose transport closes idle conns at cleanup. The
 	// process-wide http.DefaultClient pools per-Transport, so connections
-	// from finished tests stay open until the keep-alive timer fires —
+	// from finished tests stay open until the keep-alive timer fires,
 	// under parallel package execution that burns the macOS 49152-65535
 	// ephemeral range faster than TIME_WAIT clears (15s), and outbound
 	// dials surface as "can't assign requested address".

@@ -11,7 +11,7 @@ import (
 
 // Register registers every Kiln tool against an MCP server.
 // The same Tools surface that backs the native agent loop and the
-// chat panel handles dispatch — the MCP layer is purely a transport.
+// chat panel handles dispatch, the MCP layer is purely a transport.
 func Register(srv *mcpcore.Server, tools *protocol.Tools) error {
 	if srv == nil {
 		return fmt.Errorf("kiln/agent/mcp: nil server")

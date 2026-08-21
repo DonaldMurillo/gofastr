@@ -18,7 +18,7 @@ func TestRedisStart_AutoReclaimStranded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Enqueue then dequeue — puts the job into the processing hash but
+	// Enqueue then dequeue, puts the job into the processing hash but
 	// never Ack/Nack so it simulates a crashed worker.
 	_ = q.Enqueue(ctx, Job{ID: "stranded", Type: "x"})
 	job, err := q.Dequeue(ctx)
@@ -33,7 +33,7 @@ func TestRedisStart_AutoReclaimStranded(t *testing.T) {
 	q.Start(ctx, 20*time.Millisecond)
 
 	// Poll until the visibility timeout has expired and a reclaim tick has
-	// re-delivered the job — bounded wait, fails with a message on timeout.
+	// re-delivered the job, bounded wait, fails with a message on timeout.
 	waitFor(t, func() bool {
 		got, err := q.Dequeue(ctx)
 		return err == nil && got.ID == "stranded"

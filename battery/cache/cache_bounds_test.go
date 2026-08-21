@@ -47,7 +47,7 @@ func TestMemoryCacheLRUKeepsRecent(t *testing.T) {
 		t.Fatalf("Get a: %v", err)
 	}
 
-	// Insert "d" — this should evict the least-recently-used, which is "b".
+	// Insert "d", this should evict the least-recently-used, which is "b".
 	_ = c.Set(ctx, "d", 4, 0)
 
 	if c.Len() > cap {

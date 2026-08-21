@@ -8,7 +8,7 @@ import "testing"
 // pre-existing note shapes into build failures:
 //
 //  1. a component-typed value from another package appearing anywhere in a
-//     Render body — including island.Island, the framework's own composition
+//     Render body, including island.Island, the framework's own composition
 //     primitive, which componentsInRenderBodies now notes; and
 //  2. an interface-typed component field, which walkComponentType has always
 //     noted.

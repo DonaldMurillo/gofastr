@@ -23,7 +23,7 @@ import (
 //
 // Hand-rolled (stdlib-only, per repo policy): JWK parsing, JWKS caching, and
 // compact-JWT signature verification for RS256/ES256. This is the crypto core
-// of the OIDC provider — see oidc.go for the provider/discovery plumbing.
+// of the OIDC provider. See oidc.go for the provider/discovery plumbing.
 
 const (
 	jwksMaxBody      = 1 << 20 // 1 MiB cap on a JWKS response
@@ -66,7 +66,7 @@ type jwksCache struct {
 	fetchedAt time.Time
 	// forcedByKid rate-limits rotation refetches PER kid. A single global
 	// timestamp would let one unknown kid's spent slot block every other
-	// kid's refetch for the whole window — so a token signed by a freshly
+	// kid's refetch for the whole window, so a token signed by a freshly
 	// rotated key would be rejected for minutes even though a refetch would
 	// resolve it. Keyed per kid, each unknown kid gets its own slot.
 	forcedByKid map[string]time.Time
@@ -156,7 +156,7 @@ type rawJWK struct {
 	Y   string `json:"y"`
 }
 
-// parseJWKS parses a JWKS document. Unparsable keys are skipped — an IdP may
+// parseJWKS parses a JWKS document. Unparsable keys are skipped, an IdP may
 // advertise keys for algorithms we don't use; it is only an error if NO usable
 // key remains.
 func parseJWKS(body []byte) (*jwksSet, error) {
@@ -189,7 +189,7 @@ func parseJWKS(body []byte) (*jwksSet, error) {
 // `use` of anything but "sig" (an encryption key must never verify
 // signatures, even if it could), and a declared `alg` other than the
 // family algorithm we verify with (a PS256/RS512 key must not silently
-// verify RS256 — the key's own binding wins).
+// verify RS256, the key's own binding wins).
 func parseJWK(k rawJWK) (oidcKey, bool) {
 	if k.Use != "" && k.Use != "sig" {
 		return oidcKey{}, false
@@ -260,7 +260,7 @@ func buildECKey(crv, xB64, yB64 string) (*ecdsa.PublicKey, error) {
 	x := new(big.Int).SetBytes(xBytes)
 	y := new(big.Int).SetBytes(yBytes)
 	curve := elliptic.P256()
-	// Validate the point is actually on the curve — a crafted off-curve point
+	// Validate the point is actually on the curve, a crafted off-curve point
 	// could otherwise let an attacker pick a weak subgroup.
 	if !curve.IsOnCurve(x, y) {
 		return nil, errors.New("oidc: ec point not on P-256")
@@ -273,7 +273,7 @@ func buildECKey(crv, xB64, yB64 string) (*ecdsa.PublicKey, error) {
 // verifyIDToken verifies a compact OIDC id_token's signature against the IdP's
 // JWKS and then its claims, returning the parsed claims on success.
 //
-// Order matters — all of this runs BEFORE the claims are trusted:
+// Order matters, all of this runs BEFORE the claims are trusted:
 //  1. exactly three dot-separated parts, base64url-decodable header/payload/sig;
 //  2. alg pinned to RS256 or ES256 (rejects "none", HS256, case variants);
 //  3. key resolved from JWKS by kid (with one rate-limited rotation refetch);
@@ -297,7 +297,7 @@ func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI strin
 	if err := json.Unmarshal(headerBytes, &hdr); err != nil {
 		return nil, errors.New("oidc: malformed id_token header")
 	}
-	// Algorithm allowlist — exact match. Rejects "none", HS256 and case
+	// Algorithm allowlist, exact match. Rejects "none", HS256 and case
 	// variants BEFORE any key lookup, closing the classic alg-confusion attack
 	// where an HMAC token is "verified" against an RSA key's public bytes.
 	if hdr.Alg != "RS256" && hdr.Alg != "ES256" {
@@ -332,7 +332,7 @@ func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI strin
 		}
 	case "ES256":
 		// JOSE encodes EC signatures as raw R||S, each padded to the curve
-		// order size (32 bytes for P-256) — NOT ASN.1/DER. Reject anything that
+		// order size (32 bytes for P-256), NOT ASN.1/DER. Reject anything that
 		// is not exactly 64 bytes.
 		if len(sig) != 64 {
 			return nil, fmt.Errorf("oidc: es256 signature must be 64 raw bytes, got %d", len(sig))

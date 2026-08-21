@@ -27,7 +27,7 @@ func openDBQueueWithLeaseLogging(t *testing.T) (*sql.DB, *DBQueue, *bytes.Buffer
 // Surface: DBQueue dequeue / eligibleWhere lease reclaim + dead-letter sweep.
 //
 // Dequeue increments attempts at claim, and the reclaim clause requires
-// attempts < max_attempts — so an expired lease on the final attempt matches
+// attempts < max_attempts, so an expired lease on the final attempt matches
 // no path: not re-delivered, never Nacked (so never 'failed'), invisible to
 // Replay. A lease expiry on the final attempt is the crash equivalent of a
 // terminal Nack and must land in the same dead-letter state.
@@ -40,7 +40,7 @@ func openDBQueueWithLeaseLogging(t *testing.T) (*sql.DB, *DBQueue, *bytes.Buffer
 func TestDBFinalAttemptLeaseExpiryDeadLetters(t *testing.T) {
 	db, q, buf := openDBQueueWithLeaseLogging(t)
 	// Fake clock: no workers are running, so the single test goroutine is the
-	// only reader of q.now — lease expiry is asserted by advancing the clock,
+	// only reader of q.now, lease expiry is asserted by advancing the clock,
 	// not by sleeping.
 	now := time.Now()
 	q.now = func() time.Time { return now }
@@ -56,7 +56,7 @@ func TestDBFinalAttemptLeaseExpiryDeadLetters(t *testing.T) {
 	if job.Attempts != 1 {
 		t.Fatalf("attempts after claim = %d, want 1 (the final attempt)", job.Attempts)
 	}
-	// Worker "crashes" — never Ack/Nack.
+	// Worker "crashes", never Ack/Nack.
 
 	// Before the lease expires nothing may change (clock is frozen; no race).
 	if _, err := q.Dequeue(ctx); !errors.Is(err, ErrNoJob) {
@@ -96,7 +96,7 @@ func TestDBFinalAttemptLeaseExpiryDeadLetters(t *testing.T) {
 		t.Fatalf("stats = %v, want failed=1 claimed=0", stats)
 	}
 
-	// Replay can rescue it — attempts reset, immediately claimable again.
+	// Replay can rescue it, attempts reset, immediately claimable again.
 	if err := q.Replay(ctx, "critical"); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestDBFinalAttemptLeaseExpiryDeadLetters(t *testing.T) {
 // TestLateAckKeepsDeadLetterRow pins Ack's contract against the sweep: Ack
 // retires a job only while its claim is live (status='claimed'). A worker
 // whose lease expired on the final attempt may wake long after the sweep
-// dead-lettered its job and report success — that Ack must be a no-op, not a
+// dead-lettered its job and report success, that Ack must be a no-op, not a
 // DELETE.
 //
 // Why no-op rather than delete, even though the work did finish: the sweep
@@ -134,7 +134,7 @@ func TestDBFinalAttemptLeaseExpiryDeadLetters(t *testing.T) {
 // operator's sanctioned cleanup is Replay, which makes the row claimable so
 // a live worker Ack deletes it through the normal route. This also matches
 // RedisQueue, where a stale claim's Ack is a fenced no-op and the
-// dead-letter entry survives — the unfenced DB backend is the one that most
+// dead-letter entry survives, the unfenced DB backend is the one that most
 // needs the conservative delete.
 func TestLateAckKeepsDeadLetterRow(t *testing.T) {
 	db, q, _ := openDBQueueWithLeaseLogging(t)
@@ -175,7 +175,7 @@ func TestLateAckKeepsDeadLetterRow(t *testing.T) {
 	}
 
 	// The operator reconciles explicitly: Replay makes the row claimable, and
-	// the OWNING claim's Ack still retires it — the predicate fences stale
+	// the OWNING claim's Ack still retires it, the predicate fences stale
 	// completions only, not live ones.
 	if err := q.Replay(ctx, "lateacker"); err != nil {
 		t.Fatalf("replay: %v", err)
@@ -213,7 +213,7 @@ func TestDBNonFinalLeaseExpiryStillReclaims(t *testing.T) {
 	if _, err := q.Dequeue(ctx); err != nil {
 		t.Fatalf("first dequeue: %v", err)
 	}
-	// Crash on attempt 1 of 3 — must be re-delivered, not dead-lettered.
+	// Crash on attempt 1 of 3, must be re-delivered, not dead-lettered.
 	now = now.Add(time.Minute + time.Second)
 	reclaimed, err := q.Dequeue(ctx)
 	if err != nil {

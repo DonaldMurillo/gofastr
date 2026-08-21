@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// defaultSMTPDialTimeout bounds the TCP+TLS connect — and, as the
-// connection's I/O deadline, the whole SMTP exchange — when SMTPConfig.
+// defaultSMTPDialTimeout bounds the TCP+TLS connect, and, as the
+// connection's I/O deadline, the whole SMTP exchange, when SMTPConfig.
 // DialTimeout is unset. A black-holed or stalling SMTP host would
 // otherwise block the calling worker forever (the DBQueue's single
 // default worker especially).
@@ -98,7 +98,7 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	recipients := append(append(email.To, email.CC...), email.BCC...)
 
 	// Connect to the server with a bounded dial. smtp.Dial / tls.Dial
-	// ignore ctx and never time out on their own — a black-holed host
+	// ignore ctx and never time out on their own, a black-holed host
 	// would otherwise wedge the worker forever.
 	timeout := s.config.DialTimeout
 	if timeout <= 0 {
@@ -116,7 +116,7 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	if err != nil {
 		return fmt.Errorf("%w: smtp dial failed: %v", ErrSendFailed, err)
 	}
-	// The deadline covers the WHOLE SMTP exchange, not just the dial:
+	// The deadline covers the WHOLE SMTP exchange, not only the dial:
 	// net/smtp has no timeouts of its own, so a server that accepts the
 	// connection and then stalls (never sends the 220 greeting, wedges
 	// mid-exchange) would otherwise hang the worker forever.
@@ -152,7 +152,7 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 				return fmt.Errorf("%w: starttls failed: %v", ErrSendFailed, err)
 			}
 		} else if !s.config.AllowCleartext {
-			return fmt.Errorf("%w: server does not advertise STARTTLS and AllowCleartext is false — refusing to send in cleartext (set SMTPConfig.AllowCleartext to override)", ErrSendFailed)
+			return fmt.Errorf("%w: server does not advertise STARTTLS and AllowCleartext is false: refusing to send in cleartext (set SMTPConfig.AllowCleartext to override)", ErrSendFailed)
 		}
 	}
 
@@ -199,7 +199,7 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 }
 
 // buildMessage constructs the raw email message bytes. It refuses
-// to serialise an Email whose header fields contain CR or LF —
+// to serialise an Email whose header fields contain CR or LF,
 // without that check, a To/From/Subject/custom-header value of
 // `"foo\r\nBcc: victim@e.com"` would smuggle an extra Bcc onto the
 // outgoing message (classic SMTP header injection).
@@ -411,13 +411,13 @@ func quoteParamValue(s string) string {
 }
 
 // assertNoHeaderInjection returns an error if value contains CR, LF, or
-// NUL — the only bytes that can terminate a header line in SMTP's
+// NUL, the only bytes that can terminate a header line in SMTP's
 // "Field: value\r\n" framing and let following bytes appear as a new
 // header. The field name is included in the error so the caller can
 // log which input was rejected.
 func assertNoHeaderInjection(field, value string) error {
 	if strings.ContainsAny(value, "\r\n\x00") {
-		return fmt.Errorf("%w: header %q contains illegal control character (CR/LF/NUL — refusing to send to prevent SMTP header injection)",
+		return fmt.Errorf("%w: header %q contains illegal control character (CR/LF/NUL): refusing to send to prevent SMTP header injection",
 			ErrSendFailed, field)
 	}
 	return nil

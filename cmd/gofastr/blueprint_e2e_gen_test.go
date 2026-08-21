@@ -95,7 +95,7 @@ func TestE2ETemplateSQLiteKeepsFileDSN(t *testing.T) {
 
 // TestE2ETemplatePostgresProvisionsDB asserts a postgres blueprint provisions a
 // throwaway database from TEST_POSTGRES_DSN and skips when Postgres is
-// unreachable — instead of handing the postgres driver a SQLite file DSN it
+// unreachable, instead of handing the postgres driver a SQLite file DSN it
 // cannot open (issue #68: the old template always used `DATABASE_URL=file:`).
 func TestE2ETemplatePostgresProvisionsDB(t *testing.T) {
 	got := e2eTestGo(t, "postgres")
@@ -113,7 +113,7 @@ func TestE2ETemplatePostgresProvisionsDB(t *testing.T) {
 // TestE2ETemplatePostgresCompiles generates a full postgres-driver app and
 // type-checks its packages under `go test -short`. -short skips TestE2E, but
 // still COMPILES e2e_test.go (including the postgres provisioning helper),
-// proving the generated postgres template is valid, linkable Go — the
+// proving the generated postgres template is valid, linkable Go: the
 // regression guard for issue #68's postgres defect.
 func TestE2ETemplatePostgresCompiles(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -148,7 +148,7 @@ func TestE2ETemplatePostgresCompiles(t *testing.T) {
 		}
 	}
 	// -short skips the emitted e2e_test.go (which builds + boots the binary);
-	// this proves the generated postgres packages — e2e_test.go included —
+	// this proves the generated postgres packages, e2e_test.go included,
 	// compile, including the lib/pq-linked driver and the provisioning helper.
 	cmd := exec.Command("go", "test", "-short", "-mod=mod", "./gen/entities", "./gen")
 	cmd.Dir = dir

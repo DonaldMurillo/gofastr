@@ -33,7 +33,7 @@ func TestEnterCodegenProjectDir(t *testing.T) {
 // The runner collected codegen.Context.Diagnostics and nothing read them, so an
 // extension answering {"diagnostics":[{"severity":"error",...}]} had its
 // refusal discarded and `gofastr generate` reported success. A diagnostic is
-// the protocol's only way to say "the input is wrong" — a non-zero exit means
+// the protocol's only way to say "the input is wrong"; a non-zero exit means
 // something else ("the process broke"), so dropping it converted a refusal into
 // a silent pass.
 func TestErrorDiagnosticFailsGeneration(t *testing.T) {
@@ -52,7 +52,7 @@ func TestErrorDiagnosticFailsGeneration(t *testing.T) {
 		t.Error("an error diagnostic must fail the run")
 	}
 	// Diagnostics reach a terminal, so they get the same scrub the child's raw
-	// stderr does — an extension does not get to rewrite the operator's window
+	// stderr does; an extension does not get to rewrite the operator's window
 	// title through a JSON field either.
 	if got := scrubTerminalOutput("a\x1b]0;pwned\x07b\x7fc"); got != "a]0;pwnedbc" {
 		t.Errorf("scrubTerminalOutput left escape bytes: %q", got)

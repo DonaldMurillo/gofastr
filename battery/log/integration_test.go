@@ -293,7 +293,7 @@ func TestOneAccessEntryPerRequest(t *testing.T) {
 
 // TestAccessLogEmittedOnPanic pins the contract that an http.access
 // entry is written even when the handler panics. Without it, the
-// observability gap hits exactly when you most need the log — the
+// observability gap hits exactly when you most need the log, the
 // caller doesn't see method/path/status for the broken request.
 func TestAccessLogEmittedOnPanic(t *testing.T) {
 	sink := &memSink{}
@@ -333,7 +333,7 @@ func TestAccessLogEmittedOnPanic(t *testing.T) {
 // framework's middleware.Recovery() also in the chain. Both review
 // passes claimed framework Recovery would catch first; in fact
 // log-recovery is registered LATER via app.Use, which places it
-// INSIDE framework Recovery — so it catches first.
+// INSIDE framework Recovery, so it catches first.
 func TestPluginRecoveryFiresWithDefaultsOn(t *testing.T) {
 	sink := &memSink{}
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))

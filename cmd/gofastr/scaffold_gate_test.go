@@ -16,7 +16,7 @@ import (
 // entities/entities.go with the declaration the page shows, and
 // anonymous CRUD answers 401 (secure by default). This test runs the
 // real init, builds the scaffolded app against the working tree, boots
-// it, and asserts those claims — so the scaffold can't drift away from
+// it, and asserts those claims, so the scaffold can't drift away from
 // the page that teaches it.
 func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	if testing.Short() {
@@ -40,7 +40,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	}
 	appDir := filepath.Join(work, "blog")
 
-	// The sample entity is what /get-started shows — pin its shape.
+	// The sample entity is what /get-started shows: pin its shape.
 	entSrc, err := os.ReadFile(filepath.Join(appDir, "entities", "entities.go"))
 	if err != nil {
 		t.Fatalf("scaffold lost entities/entities.go: %v", err)
@@ -77,7 +77,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 		"DATABASE_URL=file:"+filepath.Join(appDir, "gate.db"),
 	)
 	// syncBuffer, not bytes.Buffer: os/exec copies the child's output from its
-	// own goroutines until Wait returns, and Wait runs in t.Cleanup — so every
+	// own goroutines until Wait returns, and Wait runs in t.Cleanup, so every
 	// read of this below races the copier. The package already has the
 	// mutex-guarded writer for exactly this.
 	var output syncBuffer
@@ -118,7 +118,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	}
 
 	// Secure by default: the sample entity has no Public/Access/OwnerField,
-	// so anonymous CRUD refuses — the 401 /get-started demonstrates.
+	// so anonymous CRUD refuses: the 401 /get-started demonstrates.
 	for _, probe := range []struct {
 		method, path string
 	}{{"GET", "/posts"}, {"POST", "/posts"}} {
@@ -167,7 +167,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	// through the same router and Exposure as the REST routes, so anonymous
 	// access must fail here exactly as it failed above. A tools/call that
 	// succeeded while GET /posts returned 401 would mean a second, unguarded
-	// authorization path — the failure this assertion exists to catch.
+	// authorization path: the failure this assertion exists to catch.
 	_, callBody := mcpCall(t, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"posts_list","arguments":{}}}`)
 	if !strings.Contains(callBody, "401") || !strings.Contains(callBody, "authentication required") {
 		t.Fatalf("anonymous MCP posts_list did not answer the REST route's 401 — MCP must not bypass entity auth:\n%s", callBody)

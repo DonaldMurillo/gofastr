@@ -79,7 +79,7 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 	chatSrv := chat.New(l, tools)
 	chatSrv.Mount(l.Aux())
 	chat.MountPanel(l.Aux(), l, tools, func() any {
-		// Stub agent state for the integration tests — at least one
+		// Stub agent state for the integration tests, at least one
 		// installed adapter so the modal list isn't empty. Reads
 		// in_flight + current from package-level test atomics so
 		// tests can simulate turns and adapter switches.
@@ -144,7 +144,7 @@ func newChrome(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -227,7 +227,7 @@ func TestBrowser_ExternalAddEntityShowsInWidget(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 	// Wait for the panel poll loop to apply its first /state fetch
-	// (pollStatus.ticks — the poll-era analog of the old SSE-open flag).
+	// (pollStatus.ticks, the poll-era analog of the old SSE-open flag).
 	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
 	defer pollCancel()
 	for {
@@ -467,7 +467,7 @@ func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 
 	// The runtime's submit handler posts JSON to /api/notes.
 	// Verify the row landed by polling the CRUD listing directly with
-	// the test's HTTP client — no need to fight the reload race.
+	// the test's HTTP client, no need to fight the reload race.
 	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		body, err := httpGet(t, urlBase+"/api/notes")
@@ -480,10 +480,10 @@ func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 }
 
 // httpGet is a tiny helper for tests that want to bypass chromedp.
-// Reads the full response — earlier 4KB cap silently truncated bodies
+// Reads the full response, earlier 4KB cap silently truncated bodies
 // large enough to hide the "paths" section of OpenAPI specs. Uses a
 // per-test transport so connections release at t.Cleanup instead of
-// staying in the process-wide DefaultClient pool — see http_client_test.go
+// staying in the process-wide DefaultClient pool. See http_client_test.go
 // for the parallelism rationale.
 func httpGet(t *testing.T, url string) (string, error) {
 	t.Helper()
@@ -623,7 +623,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 		t.Fatalf("banner already active before any edit")
 	}
 
-	// Trigger an external add_entity — SSE should flash the banner.
+	// Trigger an external add_entity. SSE should flash the banner.
 	res := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name: "tickets",
 		Fields: []world.Field{
@@ -672,7 +672,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	}
 	// The synthetic system row injected by world_edit reads "✦ add_entity";
 	// the *summarized* row is the call entry from the journal which uses
-	// summarizeArgs(args) — name=tickets fields=2.
+	// summarizeArgs(args): name=tickets fields=2.
 	allRows := []string{}
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`Array.from(document.querySelectorAll(".kiln-msg-tool")).map(el=>el.textContent)`, &allRows),
@@ -765,7 +765,7 @@ func TestBrowser_ApprovePlanButton(t *testing.T) {
 		t.Fatalf("click approve: %v", err)
 	}
 
-	// Plan should journal as approved — poll session.Plans.
+	// Plan should journal as approved, poll session.Plans.
 	approvedDeadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(approvedDeadline) {
 		plans := tools.Live().Session().Plans
@@ -848,7 +848,7 @@ func TestBrowser_HTTPDispatchJournalsToolCallAndResult(t *testing.T) {
 	}
 
 	// Wait for both rows to land. The dispatch is a raw server-side HTTP
-	// POST (no client RPC, so no pollNow) — the panel reflects it only on
+	// POST (no client RPC, so no pollNow), the panel reflects it only on
 	// its 2s±10% /state poll, hence the cadence-headroom window.
 	deadline := time.Now().Add(5 * time.Second)
 	var rows []string
@@ -910,7 +910,7 @@ func TestBrowser_ResetSessionButton(t *testing.T) {
 		t.Fatalf("click reset: %v", err)
 	}
 
-	// Wait for the journal to be wiped — poll session state.
+	// Wait for the journal to be wiped, poll session state.
 	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		if len(tools.Live().Session().World.Entities) == 0 &&
@@ -931,7 +931,7 @@ func TestBrowser_ResetSessionButton(t *testing.T) {
 //
 // The kiln chat server in startKiln doesn't wire the runtime adapter
 // store (that lives in cmd/kiln). For the widget side, we just verify
-// the modal opens and renders the correct chrome — backend coverage of
+// the modal opens and renders the correct chrome, backend coverage of
 // /kiln/agent is in cmd/kiln tests. This catches the click-handler →
 // modal-render → buttons-present chain.
 func TestBrowser_AgentConfigModalOpens(t *testing.T) {
@@ -976,13 +976,13 @@ func TestBrowser_AgentConfigModalOpens(t *testing.T) {
 
 // --- (13) New core-ui/widget-driven panel mounts cleanly ----------
 //
-// Exercises chat.MountPanel — the framework-driven kiln panel. The
+// Exercises chat.MountPanel, the framework-driven kiln panel. The
 // runtime is now served at /__gofastr/runtime.js and auto-discovers
 // every registered widget via /__gofastr/widgets.
 func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	urlBase, _ := startKiln(t)
 
-	// Shared framework runtime — single URL, idempotent IIFE, fetches
+	// Shared framework runtime: single URL, idempotent IIFE, fetches
 	// the widget list at startup.
 	resp, err := kilnGet(t, urlBase+"/__gofastr/runtime.js")
 	if err != nil || resp.StatusCode != 200 {
@@ -996,7 +996,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 		}
 	}
 
-	// Widget discovery — runtime fetches this; one entry per registered
+	// Widget discovery, runtime fetches this; one entry per registered
 	// widget, with cfg + chrome HTML inline.
 	resp, err = kilnGet(t, urlBase+"/__gofastr/widgets")
 	if err != nil || resp.StatusCode != 200 {
@@ -1004,7 +1004,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 	listBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	// Registry is metadata-only — chrome HTML (including kiln-log-wrap,
+	// Registry is metadata-only, chrome HTML (including kiln-log-wrap,
 	// kiln-input, RPC paths) lives at /core-ui/widget/<name>/chrome.
 	for _, want := range []string{
 		`"name":"kiln-panel"`,
@@ -1082,7 +1082,7 @@ func TestBrowser_EmptySendDoesNotPoisonLog(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-send`, chromedp.ByQuery),
-		// Click Send with an empty input — fires real submit event.
+		// Click Send with an empty input, fires real submit event.
 		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 	); err != nil {
@@ -1143,7 +1143,7 @@ func TestBrowser_SendMessageUpdatesLogViaSSE(t *testing.T) {
 }
 
 // TestBrowser_GearOpenedModalIsActuallyVisible: opening the modal isn't
-// enough — the user has to actually see a styled card. Catches the case
+// enough, the user has to actually see a styled card. Catches the case
 // where the framework chrome mounts but the host's slot CSS classes
 // aren't loaded, leaving a transparent modal that looks like nothing.
 func TestBrowser_GearOpenedModalIsActuallyVisible(t *testing.T) {
@@ -1237,7 +1237,7 @@ func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
 }
 
 // TestBrowser_GearOpenedModalListsAgents: the modal must actually show
-// the agent CLI rows after opening — not just the styled card. Catches
+// the agent CLI rows after opening, not just the styled card. Catches
 // the "Loading…" placeholder never being replaced (Signal not wired or
 // no provider passed to MountPanel).
 func TestBrowser_GearOpenedModalListsAgents(t *testing.T) {
@@ -1370,7 +1370,7 @@ func TestBrowser_ApplyAgentClosesModal(t *testing.T) {
 
 // After a successful chat send the textarea should clear so the next
 // keystroke starts a fresh prompt. Otherwise pressing Send again
-// resubmits the same text — surprising and dangerous (re-fires the
+// resubmits the same text, surprising and dangerous (re-fires the
 // agent on the same prompt). The fix is framework-level: the
 // data-fui-rpc-reset opt-in on the form tells the runtime to call
 // form.reset() after a 2xx ack.
@@ -1515,7 +1515,7 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 }
 
 // The empty-state landing page shows a curl example. Previously the
-// example hardcoded http://localhost:8765 — wrong on any non-default
+// example hardcoded http://localhost:8765, wrong on any non-default
 // port. Should render the actual server origin so users can copy the
 // example directly into their terminal.
 func TestBrowser_LandingPageCurlUsesActualHost(t *testing.T) {
@@ -1621,7 +1621,7 @@ func TestBrowser_RuntimeScrollBottomOnUpdate(t *testing.T) {
 }
 
 // And the kiln chat panel must opt in via the attribute on its log
-// container — otherwise even a working runtime feature won't help
+// container, otherwise even a working runtime feature won't help
 // users in the actual chat UI. The framework serves the panel's
 // chrome HTML at /core-ui/widget/<name>/chrome (registry is
 // metadata-only); assert the attribute is on the rendered chrome.
@@ -1674,7 +1674,7 @@ func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
 		time.Sleep(80 * time.Millisecond)
 	}
 
-	// Add an entity — pill should re-render to "1 entity" within 2s.
+	// Add an entity, pill should re-render to "1 entity" within 2s.
 	res := tools.AddEntity(context.Background(), protocol.AddEntityArgs{
 		Entity: &world.Entity{Name: "notes", Fields: []world.Field{
 			{Name: "title", Type: "string", Required: true},
@@ -1699,14 +1699,14 @@ func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
 }
 
 // Reset is destructive (truncates journal + drops DB schema). The
-// header ↺ button must NOT directly reset — it must open a confirm
+// header ↺ button must NOT directly reset, it must open a confirm
 // modal. Cancel from the modal preserves the world; Confirm wipes.
 func TestBrowser_ResetButtonAsksForConfirmation(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
 	ctx, cancel := newChrome(t)
 	defer cancel()
 
-	// Seed a chat message — should survive a Cancel and disappear on Confirm.
+	// Seed a chat message, should survive a Cancel and disappear on Confirm.
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "do not lose me"})
 
 	// Click ↺ → modal opens with Cancel + Reset buttons.
@@ -1827,7 +1827,7 @@ func TestBrowser_SendButtonDisabledWhileInputEmpty(t *testing.T) {
 	t.Errorf("Send button stayed enabled after send cleared the input")
 }
 
-// Esc closes any open modal — keyboard users shouldn't have to mouse
+// Esc closes any open modal, keyboard users shouldn't have to mouse
 // over to Cancel. preset.Modal sets CloseOnEscape, the runtime wires
 // the keydown listener; this test pins that wiring against
 // regressions for both kiln modals (gear + reset-confirm).
@@ -1944,7 +1944,7 @@ func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
 }
 
 // Pressing Enter (no Shift) inside the chat textarea submits the
-// form — standard chat UX. Shift+Enter still inserts a newline.
+// form, standard chat UX. Shift+Enter still inserts a newline.
 func TestBrowser_EnterSubmitsChat(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
 	ctx, cancel := newChrome(t)
@@ -1974,7 +1974,7 @@ func TestBrowser_EnterSubmitsChat(t *testing.T) {
 		t.Errorf("textarea did not clear after Enter-submit: %q", val)
 	}
 
-	// Shift+Enter must NOT submit — it inserts a newline.
+	// Shift+Enter must NOT submit, it inserts a newline.
 	if err := chromedp.Run(ctx,
 		chromedp.Focus(`.kiln-input`, chromedp.ByQuery),
 		chromedp.SendKeys(`.kiln-input`, "line1"),
@@ -2226,7 +2226,7 @@ func TestBrowser_PagePrefixRendersAsChip(t *testing.T) {
 }
 
 // Header agent chip reflects the current adapter and updates live
-// when the user (or the API) switches via /kiln/agent — driven by
+// when the user (or the API) switches via /kiln/agent, driven by
 // the agent_changed SSE Notify.
 func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
@@ -2426,7 +2426,7 @@ func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
 	}
 
 	// Force the EventSources to error by killing the page's connections
-	// via JS — call .close() and dispatch a synthetic 'error'.
+	// via JS, call .close() and dispatch a synthetic 'error'.
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`
 		(function(){
 			document.body.classList.remove('fui-sse-up');
@@ -2460,7 +2460,7 @@ func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Simulate a Cmd+K keydown via JS — chromedp.KeyEvent doesn't
+	// Simulate a Cmd+K keydown via JS, chromedp.KeyEvent doesn't
 	// reliably set metaKey across platforms.
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`
 		(function(){
@@ -2531,7 +2531,7 @@ func TestBrowser_TurnDividersBetweenTurns(t *testing.T) {
 }
 
 // When no agent is configured, the header chip is rendered as a
-// clickable button that opens the gear modal directly — the user
+// clickable button that opens the gear modal directly, the user
 // has a one-click path to fix the problem from where they notice it.
 func TestBrowser_NoAgentChipOpensSettings(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
@@ -2605,7 +2605,7 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 	testInFlight.Store(true)
 	l.Notify("agent_turn_started", "pi")
 
-	// Resolved tool: hit /kiln/tool — journals call + result.
+	// Resolved tool: hit /kiln/tool, journals call + result.
 	resp, err := kilnPost(t, urlBase+"/kiln/tool/add_entity", "application/json",
 		strings.NewReader(`{"entity":{"name":"r","fields":[{"name":"x","type":"string"}]}}`))
 	if err != nil {
@@ -2754,7 +2754,7 @@ func TestBrowser_ChatRowsHaveTimestampTitle(t *testing.T) {
 	var title string
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
 		`document.querySelector('.kiln-msg-user').getAttribute('title')`, &title))
-	// Format: "Mon 15:04:05.000" — short check on shape.
+	// Format: "Mon 15:04:05.000", short check on shape.
 	if len(title) < 10 || !strings.Contains(title, ":") {
 		t.Errorf("expected timestamp-shaped title attr, got %q", title)
 	}
@@ -2978,7 +2978,7 @@ func TestBrowser_WorldEndpointReturnsIndentedJSON(t *testing.T) {
 }
 
 // Pressing Esc inside the chat textarea wipes the typed value
-// (without affecting modals — only triggered when the textarea
+// (without affecting modals, only triggered when the textarea
 // is the focused element with a non-empty value).
 func TestBrowser_EscClearsChatInput(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
@@ -3173,7 +3173,7 @@ func TestBrowser_PlanCardShowsRelativeProposeTime(t *testing.T) {
 }
 
 // Gear modal surfaces an install hint when no agent CLIs are
-// detected — otherwise the modal looks like a list of broken
+// detected, otherwise the modal looks like a list of broken
 // options with no obvious next step.
 func TestBrowser_GearModalShowsInstallHintWhenNoAdaptersInstalled(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
@@ -3305,7 +3305,7 @@ func TestBrowser_DraftPromptPersistsAcrossReload(t *testing.T) {
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
 		chromedp.SendKeys(`.kiln-input`, "draft surviving reload"),
-		// Reload — the value should persist.
+		// Reload, the value should persist.
 		chromedp.Reload(),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
 	); err != nil {
@@ -3468,7 +3468,7 @@ func TestBrowser_HelpButtonOpensShortcutsModal(t *testing.T) {
 // Regression: chat log must actually scroll when content overflows
 // the panel. Earlier, .kiln-log-wrap was a non-flex item so its
 // child .kiln-log (overflow-y:auto, flex:1) had no height
-// constraint and grew to fit content — pushing the log past the
+// constraint and grew to fit content, pushing the log past the
 // panel's max-height with no visible scrollbar.
 func TestBrowser_LongChatLogScrollsInsidePanel(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)

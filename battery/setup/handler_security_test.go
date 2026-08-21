@@ -9,7 +9,7 @@ import (
 )
 
 // Property: the wizard must not execute a step while the completion
-// probe's answer is UNKNOWN — a Complete predicate that returns an
+// probe's answer is UNKNOWN, a Complete predicate that returns an
 // error means the framework cannot tell whether the app is already
 // set up, so running bootstrap steps (e.g. AdminStep → CreateUser)
 // in that state can mint a second admin on an already-configured app.

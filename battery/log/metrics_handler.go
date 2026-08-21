@@ -16,8 +16,8 @@ import (
 // totals, which matches Prometheus's counter semantics. Operators
 // pair this with the framework's other surfaces (auth metrics,
 // queue stats, etc.) on the same endpoint by writing a small
-// composite handler that calls each plugin's MetricsHandler in turn
-// — there is no global registry to coordinate with.
+// composite handler that calls each plugin's MetricsHandler in turn.
+// There is no global registry to coordinate with.
 func (p *Plugin) MetricsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

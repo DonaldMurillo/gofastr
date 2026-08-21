@@ -60,7 +60,7 @@ func (s *FlatStore) Add(_ context.Context, chunks []Chunk) error {
 
 // RemoveDoc deletes every chunk belonging to docID. It performs a
 // stable, in-place compaction so retained chunks keep their relative
-// order — useful when persistence writes the underlying slice in
+// order, useful when persistence writes the underlying slice in
 // insertion order.
 func (s *FlatStore) RemoveDoc(_ context.Context, docID string) error {
 	s.mu.Lock()
@@ -132,7 +132,7 @@ func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, t
 	if len(hits) > top {
 		hits = hits[:top]
 	}
-	// Vectors are intentionally retained here — downstream retrieval
+	// Vectors are intentionally retained here, downstream retrieval
 	// stages (MMR diversity, reranking) need them. The Index strips
 	// vectors right before returning to the caller.
 	return hits, nil

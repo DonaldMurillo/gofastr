@@ -180,8 +180,8 @@ func (s *DurableScheduler) ensureScheduleOptionsColumns() error {
 // uses ADD COLUMN IF NOT EXISTS, and the SQLite path scans PRAGMA
 // table_info first so we only ALTER when the column is actually missing
 // (matching ensureScheduleVersionColumn / ensureScheduleOptionsColumns).
-// The column is additive NOT NULL DEFAULT ”, so existing rows — and
-// interval schedules, which never consult tz — evaluate exactly as before.
+// The column is additive NOT NULL DEFAULT ”, so existing rows, and
+// interval schedules, which never consult tz, evaluate exactly as before.
 func (s *DurableScheduler) ensureScheduleTZColumn() error {
 	table := s.queue.schedulerSchedulesTable()
 	if s.queue.dialect == dialectPostgres {

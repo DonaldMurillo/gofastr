@@ -1,4 +1,4 @@
-// Package admin is the back-office battery for GoFastr apps — stock operator
+// Package admin is the back-office battery for GoFastr apps, stock operator
 // screens on top of the data and controls the framework already exposes. It is
 // NOT read-only: today it owns queue/audit ops dashboards, full entity CRUD
 // (proxied through each entity's own CrudHandler so validation, owner/tenant
@@ -6,7 +6,7 @@
 // role→permission and user→role RBAC screens, and the process-module operator
 // lifecycle (enable / disable / bump-generation / per-grant revoke).
 //
-// Every surface — SSR screens and RPC/form routes alike — is behind the admin
+// Every surface, SSR screens and RPC/form routes alike, is behind the admin
 // default-deny gate (b.gate), which requires an authenticated admin (role
 // "admin" by default, or whatever Config.Authorize decides). Unauthenticated
 // requests are 401 (or redirected to Config.LoginPath); authenticated-but-
@@ -97,7 +97,7 @@ type Config struct {
 
 	// Entities lists the entity names to expose as editable CRUD screens
 	// under <PathPrefix>/e/<table>. When empty (default) NOTHING is
-	// exposed — an admin dropped into an app must name what it manages.
+	// exposed, an admin dropped into an app must name what it manages.
 	// Set AllEntities for the whole-back-office behavior. Naming an
 	// entity explicitly also works for a CRUD=false one, if you really
 	// mean to. Screens proxy to each entity's own CrudHandler, so
@@ -105,7 +105,7 @@ type Config struct {
 	// as on the JSON API.
 	Entities []string
 
-	// AllEntities exposes EVERY registered entity whose CRUD is enabled —
+	// AllEntities exposes EVERY registered entity whose CRUD is enabled,
 	// the explicit "generate the whole back-office" opt-in (previously the
 	// implicit default when Entities was empty). CRUD-disabled entities
 	// (e.g. battery/auth's users/sessions, which ship CRUD=false) are
@@ -113,10 +113,10 @@ type Config struct {
 	// Entities is non-empty.
 	AllEntities bool
 
-	// Authorize gates every admin surface — both the SSR screens (via the UI
+	// Authorize gates every admin surface, both the SSR screens (via the UI
 	// host's policy chain) and the RPC/form routes (via middleware). It returns
 	// true to allow the request. When nil, the default authorizer requires an
-	// authenticated user that holds the AdminRole (see below) — a user whose
+	// authenticated user that holds the AdminRole (see below), a user whose
 	// GetRoles() []string includes it. Supply a custom predicate to override
 	// the role check entirely (e.g. a permission lookup, an allow-list).
 	Authorize func(ctx context.Context) bool
@@ -130,7 +130,7 @@ type Config struct {
 
 	// LoginPath, when set, redirects an UNAUTHENTICATED GET to a configured
 	// login page (`LoginPath?next=<requested path>`) instead of returning a
-	// bare 401. An authenticated user lacking the admin role still gets 403 —
+	// bare 401. An authenticated user lacking the admin role still gets 403,
 	// they're signed in, just not allowed. Empty (default) keeps the 401.
 	LoginPath string
 
@@ -148,7 +148,7 @@ type Config struct {
 	// Auth is the auth manager used for the user→role assignment screen.
 	// When set, the user roles screen is active at <PathPrefix>/rbac/users.
 	// The underlying UserStore must implement UserLister (for listing) and
-	// UpdateRoles (for assignment) — EntityUserStore does both.
+	// UpdateRoles (for assignment). EntityUserStore does both.
 	Auth *auth.AuthManager
 
 	// EffectiveRoles optionally resolves additional roles for the user roles
@@ -162,12 +162,12 @@ type Config struct {
 	// state (404-vs-503 surfaced in copy) plus enable/disable, bump-generation
 	// (the circuit-reset / recovery lever, design §8), and per-grant revoke.
 	// When nil, the screen is not mounted and the route 404s. Wire it with
-	// app.ProcessModules() — the real *framework.ProcessModuleSupervisor
+	// app.ProcessModules(), the real *framework.ProcessModuleSupervisor
 	// satisfies the processModuleController interface.
 	ProcessModules processModuleController
 
 	// Logger receives operational warnings a handler can't surface to the
-	// caller — notably a security/compliance audit-row write failing AFTER
+	// caller, notably a security/compliance audit-row write failing AFTER
 	// its mutation already committed (grant, revoke, role-assign, module
 	// lifecycle). The mutation is not rolled back (it took effect), but a
 	// lost audit record is a silent security gap, so it MUST be logged.
@@ -183,7 +183,7 @@ type Battery struct {
 	registry *framework.Registry // set at Init; enables the entity CRUD screens
 	db       *sql.DB             // effective DB for entity CRUD (cfg.DB or app.DB)
 	host     *uihost.UIHost      // the app's mounted UI host (entity screens render through it)
-	screens  *appui.App          // host.App — where entity CRUD screens register
+	screens  *appui.App          // host.App, where entity CRUD screens register
 	router   *router.Router      // the framework router (entity RPC/form/delete routes)
 	flash    *flashStore         // short-lived form re-render payloads (validation errors + values)
 }
@@ -227,12 +227,12 @@ func (b *Battery) logger() *slog.Logger {
 
 // authorized reports whether the current request may use the admin. The
 // default (no Authorize configured) requires an authenticated user that holds
-// the configured AdminRole — secure by default. A custom Authorize overrides
+// the configured AdminRole, secure by default. A custom Authorize overrides
 // the role check entirely.
 func (b *Battery) authorized(ctx context.Context) bool {
 	// BEFORE the custom hook, not after. A host that supplies its own
-	// Authorize — which is exactly what the comment below recommends for a
-	// different role model — otherwise gets no embed refusal at all, and past
+	// Authorize, which is exactly what the comment below recommends for a
+	// different role model, otherwise gets no embed refusal at all, and past
 	// this gate every admin route runs under a wildcard access policy. Whether
 	// an embed may drive the back office is not the host's call to make.
 	if _, embedded := embed.GrantFromContext(ctx); embedded {
@@ -243,7 +243,7 @@ func (b *Battery) authorized(ctx context.Context) bool {
 	}
 	// Require a NON-NIL user. battery/auth's SessionMiddleware seeds a nil user
 	// on every request (so GetCurrentUser works) and only fills it in when
-	// authenticated — so `ok` alone is true even for anonymous callers. The
+	// authenticated, so `ok` alone is true even for anonymous callers. The
 	// nil check is what actually gates anonymous callers out.
 	u, ok := handler.GetUser(ctx)
 	if !ok || u == nil {
@@ -251,7 +251,7 @@ func (b *Battery) authorized(ctx context.Context) bool {
 	}
 	// Secure by default: an authenticated user is NOT automatically an admin.
 	// Require the AdminRole via the structural GetRoles interface (battery/auth's
-	// User satisfies it). A user that can't prove a role is denied — set a custom
+	// User satisfies it). A user that can't prove a role is denied, set a custom
 	// Config.Authorize to use a different model.
 	rh, ok := u.(interface{ GetRoles() []string })
 	if !ok {
@@ -329,7 +329,7 @@ func (b *Battery) RegisterRoutes(r *router.Router) {
 	guard := func(h http.HandlerFunc) http.Handler { return hdr(b.gate(h)) }
 
 	// Stylesheet served from a same-origin route rather than an inline <style>
-	// block — the battery's strict CSP (default-src 'self', no 'unsafe-inline')
+	// block, the battery's strict CSP (default-src 'self', no 'unsafe-inline')
 	// would otherwise block inline styles in the browser, rendering the admin
 	// unstyled. Ungated: it carries no data and lets the 401 page degrade
 	// gracefully. SecurityHeaders still applies.
@@ -341,7 +341,7 @@ func (b *Battery) RegisterRoutes(r *router.Router) {
 	r.Get(b.cfg.PathPrefix+"/audit", guard(b.handleAudit))
 
 	// RBAC management screens + RPC routes. Same admin gate as every other
-	// surface — an authenticated non-admin gets 403 on both the GET screens
+	// surface, an authenticated non-admin gets 403 on both the GET screens
 	// and the POST RPCs. Wired only when Policy/GrantStore/Auth are set.
 	if b.cfg.Policy != nil {
 		r.Get(b.cfg.PathPrefix+"/rbac/roles", guard(b.handleRBACRoles))
@@ -433,7 +433,7 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r.URL.Query().Get("limit"), b.cfg.QueueListLimit)
 	jobs, err := b.cfg.Queue.ListJobs(r.Context(), status, limit)
 	if err != nil {
-		// Don't echo err.Error() — driver text leaks DSNs, IPs, secrets.
+		// Don't echo err.Error(), driver text leaks DSNs, IPs, secrets.
 		b.writePage(w, b.cfg.Title, "Queue",
 			adminError("Could not load queue jobs. Check the server logs for details."))
 		return
@@ -455,7 +455,7 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleQueueReplay re-queues a dead-lettered job. Mutating + gated: it is
-// registered behind b.gate (admin-only) and the form carries the CSRF token —
+// registered behind b.gate (admin-only) and the form carries the CSRF token,
 // an ungated replay would be a privilege-escalation / job-amplification vector.
 func (b *Battery) handleQueueReplay(w http.ResponseWriter, r *http.Request) {
 	rq, ok := b.cfg.Queue.(queue.Replayable)
@@ -484,7 +484,7 @@ func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r.URL.Query().Get("limit"), b.cfg.AuditListLimit)
 	rows, err := b.queryAudit(r.Context(), limit)
 	if err != nil {
-		// Don't echo err.Error() — driver text leaks DSNs, schema, secrets.
+		// Don't echo err.Error(), driver text leaks DSNs, schema, secrets.
 		b.writePage(w, b.cfg.Title, "Audit log",
 			adminError("Could not load audit rows. Check the server logs for details."))
 		return
@@ -531,7 +531,7 @@ func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error)
 // The standalone ops pages (queue / audit / rbac / modules / overview) skip
 // the host UI host: they emit their own HTML document and pull ALL styling
 // from the single registry-served stylesheet (handleCSS → registry.All()),
-// exactly the battery/setup pattern. There is NO bespoke CSS string here —
+// exactly the battery/setup pattern. There is NO bespoke CSS string here,
 // every visual comes from a registered component (DataTable, StatCard,
 // FilterToolbar, Tag, Button, …) or from the registered ui-admin sheet
 // (styles.go), which also owns the .layout-admin shell these pages reuse.
@@ -567,7 +567,7 @@ func (b *Battery) writePage(w http.ResponseWriter, title, pageName string, body 
 
 // handleCSS serves the combined admin stylesheet: theme :root tokens + the
 // CSS for EVERY registered component (ui-admin plus every framework/ui
-// component the ops pages compose — DataTable, StatCard, FilterToolbar, Tag,
+// component the ops pages compose, DataTable, StatCard, FilterToolbar, Tag,
 // Button, …). registry.All() is the single styling surface, so the admin
 // ships zero bespoke CSS strings. Mirrors battery/setup's serveCSS.
 func (b *Battery) handleCSS(w http.ResponseWriter, _ *http.Request) {
@@ -630,7 +630,7 @@ func (b *Battery) navHTML(current string) render.HTML {
 		items = append(items, ui.Link(cfg))
 	}
 	// ui.Stack does the column layout. Without it the <nav> was a bare
-	// block and the links rendered as one inline run of text — no
+	// block and the links rendered as one inline run of text, no
 	// stacking, no gap, no hit targets. Composing the primitive keeps the
 	// layout in the design system rather than in a bespoke .admin-nav rule.
 	return render.Tag("nav", map[string]string{"class": "admin-nav"},
@@ -644,7 +644,7 @@ func adminSection(heading string, body render.HTML) render.HTML {
 }
 
 // adminError renders a page-level error flash as a ui.Callout (inline danger
-// alert — the danger variant carries role=alert automatically). Replaces the
+// alert, the danger variant carries role=alert automatically). Replaces the
 // old <p class="err"> markup.
 func adminError(msg string) render.HTML {
 	return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(msg))
@@ -689,17 +689,17 @@ func auditSummary(prefix string, total int, wired bool) render.HTML {
 }
 
 // statCard renders one metric tile. label is the small caption, value the
-// prominent number — matching ui.StatCard's Label/Value semantics.
+// prominent number, matching ui.StatCard's Label/Value semantics.
 func statCard(label string, value int) render.HTML {
 	return ui.StatCard(ui.StatCardConfig{Label: label, Value: strconv.Itoa(value)})
 }
 
-// queueFilters renders the queue status filter as a ui.FilterToolbar — the
+// queueFilters renders the queue status filter as a ui.FilterToolbar, the
 // design-system's URL-driven (GET <form>) facet control. A single pill facet
 // over status; submitting navigates to ?status=<value>, so it works on these
 // standalone pages with zero JavaScript.
 func queueFilters(prefix, current string, stats queue.JobStats) render.HTML {
-	// DBQueue's terminal state is 'failed', in-progress 'claimed' — it never
+	// DBQueue's terminal state is 'failed', in-progress 'claimed', it never
 	// writes 'dead', so a 'dead' chip was a permanently-empty filter.
 	opts := []ui.FacetOption{{Label: "All", Value: ""}}
 	for _, k := range []string{"pending", "claimed", "failed"} {

@@ -97,8 +97,8 @@ func signES256Raw(t *testing.T, key *ecdsa.PrivateKey, signingInput []byte) []by
 	return out
 }
 
-// signES256DER produces an ASN.1/DER EC signature (the WRONG encoding for JOSE
-// — used only by the negative suite).
+// signES256DER produces an ASN.1/DER EC signature (the WRONG encoding for JOSE.
+// Used only by the negative suite).
 func signES256DER(t *testing.T, key *ecdsa.PrivateKey, signingInput []byte) []byte {
 	t.Helper()
 	h := sha256.Sum256(signingInput)
@@ -114,7 +114,7 @@ func signES256DER(t *testing.T, key *ecdsa.PrivateKey, signingInput []byte) []by
 }
 
 // encodeECSignatureDER builds the ASN.1 SEQUENCE{ INTEGER(r), INTEGER(s) } used
-// by X.509 — hand-rolled to avoid pulling crypto/x509 + ecdsa-specific helpers.
+// by X.509, hand-rolled to avoid pulling crypto/x509 + ecdsa-specific helpers.
 func encodeECSignatureDER(r, s *big.Int) ([]byte, error) {
 	mkInt := func(v *big.Int) []byte {
 		b := v.Bytes()

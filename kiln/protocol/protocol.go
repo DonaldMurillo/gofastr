@@ -78,7 +78,7 @@ type UpdateEntityArgs struct {
 type DeleteEntityArgs struct {
 	Name string `json:"name"`
 	// PlanID names an approved plan whose Targets list contains
-	// {op:"delete_entity",name:<Name>}. Required — destructive ops do not
+	// {op:"delete_entity",name:<Name>}. Required, destructive ops do not
 	// run without a plan-approved authorization.
 	PlanID string `json:"plan_id,omitempty"`
 }
@@ -111,13 +111,13 @@ type DeletePageArgs struct {
 //
 // Patch.Op is one of:
 //
-//	"set_props"        — merge Patch.SetProps into the element's props
-//	"replace_props"    — replace the element's props in full with SetProps
-//	"replace_subtree"  — replace the element + its children with Patch.Element
-//	"remove"           — drop the element from its parent (root not allowed)
-//	"insert_before"    — insert Patch.Element as a sibling before this one
-//	"insert_after"     — insert Patch.Element as a sibling after this one
-//	"append_child"     — append Patch.Element as a child of this element
+//	"set_props"        : merge Patch.SetProps into the element's props
+//	"replace_props"    : replace the element's props in full with SetProps
+//	"replace_subtree"  : replace the element + its children with Patch.Element
+//	"remove"           : drop the element from its parent (root not allowed)
+//	"insert_before"    : insert Patch.Element as a sibling before this one
+//	"insert_after"     : insert Patch.Element as a sibling after this one
+//	"append_child"     : append Patch.Element as a child of this element
 //
 // IfMatch, when set, is compared against Page.Version. Mismatch returns
 // {ok:false,kind:"conflict",hint:"refetch"} so the agent re-reads the
@@ -377,7 +377,7 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 		return invalid("missing page or page.path")
 	}
 	if args.Page.Tree.Kind == "" {
-		return invalid("page.tree.kind must be set (e.g. \"div\") — the tree is the root element and nothing renders without a kind").
+		return invalid("page.tree.kind must be set (e.g. \"div\"): the tree is the root element and nothing renders without a kind").
 			withHint(`minimal page: {"path":"/x","tree":{"kind":"div","children":[{"kind":"heading","props":{"level":1,"text":"Hello"}}]}}`)
 	}
 	if err := validatePageTree(args.Page.Tree); err != nil {
@@ -401,7 +401,7 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 	// can address any subtree without positional paths or selector
 	// queries. User-provided IDs are preserved.
 	world.AssignNodeIDs(&args.Page.Tree, world.NewElementID)
-	// First version is 1 — agents read this back via /kiln/world and
+	// First version is 1, agents read this back via /kiln/world and
 	// pass it as if_match on update_page_element to detect drift.
 	args.Page.Version = 1
 	return t.applyEdit(journal.OpAddPage, journal.AddPagePayload{Page: args.Page})
@@ -416,10 +416,10 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 		return invalid("missing path")
 	}
 	if args.ElementID == "" {
-		return invalid("missing element_id — fetch the page from /kiln/world/pages.<path> and copy the target element's _id field")
+		return invalid("missing element_id: fetch the page from /kiln/world/pages.<path> and copy the target element's _id field")
 	}
 	if args.Patch.Op == "" {
-		return invalid("missing patch.op — one of set_props, replace_props, replace_subtree, remove, insert_before, insert_after, append_child")
+		return invalid("missing patch.op: one of set_props, replace_props, replace_subtree, remove, insert_before, insert_after, append_child")
 	}
 	current, exists := t.live.Session().World.Pages[args.Path]
 	if !exists {
@@ -428,7 +428,7 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 	// Optimistic concurrency: if the agent provided a baseline version
 	// and the page has moved on, reject so the agent re-reads.
 	if args.IfMatch != nil && *args.IfMatch != current.Version {
-		return conflict("page %q has version %d, if_match=%d — refetch and retry",
+		return conflict("page %q has version %d, if_match=%d: refetch and retry",
 			args.Path, current.Version, *args.IfMatch).
 			withHint("GET $KILN_URL/kiln/world to read the new tree, then re-emit the patch with the current _id and version")
 	}
@@ -509,7 +509,7 @@ func applyPageElementPatch(target, parent *world.Node, idx int, patch PageElemen
 		// Preserve the element's _id so the same handle keeps
 		// referring to the same logical slot in the tree. The
 		// agent's intent is "swap the contents", not "swap the
-		// identity" — and re-using the id avoids breaking future
+		// identity", and re-using the id avoids breaking future
 		// patches the agent has staged.
 		newNode := *patch.Element
 		newNode.ID = target.ID
@@ -551,7 +551,7 @@ func applyPageElementPatch(target, parent *world.Node, idx int, patch PageElemen
 		return Result{OK: true}
 
 	default:
-		return invalid("unknown patch.op %q — one of set_props, replace_props, replace_subtree, remove, insert_before, insert_after, append_child", patch.Op)
+		return invalid("unknown patch.op %q: one of set_props, replace_props, replace_subtree, remove, insert_before, insert_after, append_child", patch.Op)
 	}
 }
 
@@ -669,7 +669,7 @@ func (t *Tools) ApprovePlan(_ context.Context, args ApprovePlanArgs) Result {
 		return notFound("plan %q not found", args.PlanID)
 	}
 	if plan.Rejected {
-		return conflict("plan %q was rejected — propose a new plan", args.PlanID)
+		return conflict("plan %q was rejected: propose a new plan", args.PlanID)
 	}
 	if plan.Approved {
 		return ok(map[string]any{"plan_id": args.PlanID, "already": true})
@@ -736,7 +736,7 @@ func (t *Tools) ResetSession(_ context.Context, _ ResetSessionArgs) Result {
 	}
 	// Notify so the panel re-fetches chat_html immediately. Without
 	// this the UI shows stale items until something else fires an
-	// SSE event — felt to the user like "Reset didn't work."
+	// SSE event, felt to the user like "Reset didn't work."
 	t.live.Notify("session_reset", "")
 	return ok(nil)
 }
@@ -793,14 +793,14 @@ func (t *Tools) applyEntry(kind journal.Kind, op journal.Op, payload any) Result
 // telling the agent how to comply.
 func (t *Tools) requirePlan(planID string, target journal.PlanTarget) Result {
 	if planID == "" {
-		return needsPlan(target, "no plan_id supplied — call propose_plan listing this destructive op in `targets`, then await user approval")
+		return needsPlan(target, "no plan_id supplied: call propose_plan listing this destructive op in `targets`, then await user approval")
 	}
 	plan, exists := t.live.Session().Plans[planID]
 	if !exists {
 		return needsPlan(target, fmt.Sprintf("plan %q not found", planID))
 	}
 	if plan.Rejected {
-		return needsPlan(target, fmt.Sprintf("plan %q was rejected — propose a new plan", planID))
+		return needsPlan(target, fmt.Sprintf("plan %q was rejected: propose a new plan", planID))
 	}
 	if !plan.Approved {
 		return needsPlan(target, fmt.Sprintf("plan %q is not yet approved by the user", planID))
@@ -813,14 +813,14 @@ func (t *Tools) requirePlan(planID string, target journal.PlanTarget) Result {
 		}
 	}
 	if !matched {
-		return needsPlan(target, fmt.Sprintf("plan %q does not list this op in `targets` — propose a plan that includes %+v", planID, target))
+		return needsPlan(target, fmt.Sprintf("plan %q does not list this op in `targets`: propose a plan that includes %+v", planID, target))
 	}
 	// Consumption is read from the session, which derives it from the
 	// journal. It used to live in a per-process map here, so every restart
-	// re-armed every already-spent plan — the record of what an approval had
+	// re-armed every already-spent plan, the record of what an approval had
 	// been used for did not survive the thing it was protecting.
 	if t.live.Session().Consumed[planID][target.Op+":"+target.Name] {
-		return needsPlan(target, fmt.Sprintf("plan %q already consumed for this target — propose a new plan", planID))
+		return needsPlan(target, fmt.Sprintf("plan %q already consumed for this target: propose a new plan", planID))
 	}
 	return Result{OK: true}
 }

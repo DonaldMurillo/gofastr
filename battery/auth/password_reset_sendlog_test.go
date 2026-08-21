@@ -24,8 +24,8 @@ func (failingResetSender) Send(_ context.Context, _, _ string) error {
 }
 
 // A failing EmailSender in the forgot-password flow must (a) keep the
-// anti-enumeration silent-200 response to the client — the response must
-// never reveal that delivery broke — and (b) leave a server-side log
+// anti-enumeration silent-200 response to the client, the response must
+// never reveal that delivery broke, and (b) leave a server-side log
 // record so an operator can see the reset pipeline is broken. Before the
 // fix the send error was discarded with `_ =` and nothing was logged, so
 // a production deploy with a misconfigured sender silently lost every

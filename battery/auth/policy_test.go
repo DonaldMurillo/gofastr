@@ -256,7 +256,7 @@ func TestSessionPolicy_NextPathEdgeCases(t *testing.T) {
 // RolePolicy on an anonymous request blocks with 403 (not redirect),
 // because the user can't satisfy a role check by visiting /login.
 // Sessionless requests fail the SessionFrom precondition and fall into
-// the configured failure outcome — default Block(403).
+// the configured failure outcome, default Block(403).
 func TestRolePolicy_AnonHitsBlockDefault(t *testing.T) {
 	a := app.NewApp("t")
 	a.RegisterScreen(
@@ -274,7 +274,7 @@ func TestRolePolicy_AnonHitsBlockDefault(t *testing.T) {
 }
 
 // TestRolePolicy_AnonRedirectWhenOptedIn pins that the operator can
-// override the default block by passing WithRedirect — anon hits a
+// override the default block by passing WithRedirect, anon hits a
 // role-gated route, gets redirected to login (with next= chain).
 func TestRolePolicy_AnonRedirectWhenOptedIn(t *testing.T) {
 	a := app.NewApp("t")

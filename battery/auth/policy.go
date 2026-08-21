@@ -11,7 +11,7 @@ import (
 )
 
 // SessionFrom returns the user loaded into ctx by SessionMiddleware (or
-// RequireAuth). ok is false when the request is anonymous — no session,
+// RequireAuth). ok is false when the request is anonymous, no session,
 // expired session, store outage, etc. Safe to call from any Render or
 // RenderCtx path; never panics, never touches the DB.
 //
@@ -87,7 +87,7 @@ func NoNext() RedirectOpt {
 
 // WithRenderAlt sets the failure outcome to rendering an alt component
 // instead of the screen's own. factory MUST return a FRESH instance
-// every call — the framework invokes it once per request and the
+// every call, the framework invokes it once per request and the
 // returned component is then mutated by SetParams / Inject / Load
 // under the screen lock. A shared singleton is a cross-user data leak.
 //
@@ -141,7 +141,7 @@ func SessionPolicy(opts ...PolicyOption) app.Policy {
 //
 // instead of the literal []string{...}. The asymmetry with the
 // sibling middleware auth.RequireRole(roles ...string) is forced by
-// Go's no-double-variadic rule — RolePolicy needs to accept option
+// Go's no-double-variadic rule. RolePolicy needs to accept option
 // values after the role list, so the roles can't themselves be
 // variadic.
 func Roles(roles ...string) []string {
@@ -152,7 +152,7 @@ func Roles(roles ...string) []string {
 
 // RolePolicy returns an app.Policy that allows requests where the
 // loaded user has at least one of the given roles. Default failure
-// outcome is Block(403). Implies SessionPolicy — an anonymous request
+// outcome is Block(403). Implies SessionPolicy, an anonymous request
 // fails the role check and produces the configured failure outcome.
 //
 // Pair with the Roles helper for ergonomic literal lists:

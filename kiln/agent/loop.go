@@ -27,7 +27,7 @@ type Loop struct {
 	// ContextHook is called once per turn with the most recent user
 	// message text. Its return value is prepended to the provider's
 	// System prompt (separated by a blank line). It is the integration
-	// point for retrieval-augmented context — see [NewSemanticContextHook]
+	// point for retrieval-augmented context. See [NewSemanticContextHook]
 	// for the wiring against a battery/semantic index.
 	ContextHook func(ctx context.Context, userText string) string
 

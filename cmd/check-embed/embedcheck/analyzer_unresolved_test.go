@@ -3,7 +3,7 @@ package embedcheck
 import "testing"
 
 // The boot-time reachability walk in framework/uihost/embed_actions.go cannot
-// see a child a component BUILDS in Render() — the child does not exist as a
+// see a child a component BUILDS in Render(). The child does not exist as a
 // value until Render runs (pinned by TestBootWalkCannotSeeRenderBuiltChild).
 // The analyzer is the gate that covers that shape, so for a render-built child
 // it must produce EITHER a finding OR an unresolved note. Silence means both
@@ -25,7 +25,7 @@ func TestSeesRenderBuiltChild(t *testing.T) {
 }
 
 // The cross-package spelling of the same shape: the child is BUILT in Render()
-// AND lives in another package — the two conditions 6ed8667a names as the
+// AND lives in another package, the two conditions 6ed8667a names as the
 // boot walk's blind spot and static analysis's give-up point respectively.
 // Silence from both means an action-bearing component ships into the frame
 // with no warning at build time and no panic at boot.
@@ -47,7 +47,7 @@ func TestNotesCrossPackageRenderBuiltChild(t *testing.T) {
 
 // The island shape: the root HOLDS the child, but inside an island.Island.
 // The boot walk descends into island wrappers (they are composition, not a
-// host back-reference), and the analyzer covers it too — belt and braces for
+// host back-reference), and the analyzer covers it too, belt and braces for
 // the framework's main composition primitive.
 func TestSeesIslandWrappedChild(t *testing.T) {
 	findings, notes := loadAll(t, "islandchild")
@@ -66,13 +66,13 @@ func TestSeesIslandWrappedChild(t *testing.T) {
 }
 
 // The decisive combination: an island wrapper AND a child type from another
-// package. The analyzer cannot produce a FINDING here — it has no syntax tree
-// for the child's Actions() — so the only thing that can stop this shipping is
+// package. The analyzer cannot produce a FINDING here; it has no syntax tree
+// for the child's Actions(), so the only thing that can stop this shipping is
 // the note, which now fails `gofastr build`.
 //
 // This is the case that justifies making notes fatal. Before, the analyzer
 // emitted a note, the build ignored it, and the boot walk was cited as the
-// covering gate — but the boot walk reads built VALUES and cannot see a child
+// covering gate, but the boot walk reads built VALUES and cannot see a child
 // constructed inside Render(). Both were quiet at once.
 func TestNotesIslandCrossPackageChild(t *testing.T) {
 	findings, notes := loadAll(t, "islandxpkg")
@@ -91,7 +91,7 @@ func TestNotesIslandCrossPackageChild(t *testing.T) {
 // can see. Everything else is advisory, because the boot walk reads live
 // values and covers it.
 //
-// Failing on every note was tried and reverted — it rejected clean island
+// Failing on every note was tried and reverted. It rejected clean island
 // surfaces, interface-typed fields the analyzer had already resolved, and the
 // fixture named for false positives, with no remedy available.
 func TestOnlyRenderBuiltCrossPackageBlocks(t *testing.T) {

@@ -138,7 +138,7 @@ func TestDeleteEntityRequiresApprovedPlan(t *testing.T) {
 		t.Fatalf("approved plan should authorize delete, got %+v", res)
 	}
 
-	// 4) Replay attempt: re-add posts and try the same plan again — must block.
+	// 4) Replay attempt: re-add posts and try the same plan again, must block.
 	if r := tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: posts}); !r.OK {
 		t.Fatal("re-add: ", r)
 	}

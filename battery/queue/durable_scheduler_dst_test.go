@@ -32,7 +32,7 @@ func dstScheduler(t *testing.T, owner string) *DurableScheduler {
 
 // Fall-back: America/New_York repeats the 01:00–02:00 wall-clock hour on
 // 2026-11-01 (02:00 EDT -> 01:00 EST). A "daily at 01:30" schedule fires
-// ONCE that day — at the first occurrence (01:30 EDT, 05:30 UTC) — like
+// ONCE that day, at the first occurrence (01:30 EDT, 05:30 UTC), like
 // vixie cron, not twice.
 func TestCronFallBackFiresOnce(t *testing.T) {
 	s := dstScheduler(t, "fallback")
@@ -56,7 +56,7 @@ func TestCronFallBackFiresOnce(t *testing.T) {
 	drainPending(t, s.queue)
 
 	// Heartbeat at the repeated 01:30 (EST, 06:30 UTC): the wall clock
-	// shows 01:30 again, but the schedule already ran today — no second
+	// shows 01:30 again, but the schedule already ran today, no second
 	// fire (vixie parity).
 	repeatedHalfHour := time.Date(2026, 11, 1, 6, 30, 0, 0, time.UTC)
 	if err := s.RunOnce(context.Background(), repeatedHalfHour); err != nil {
@@ -69,7 +69,7 @@ func TestCronFallBackFiresOnce(t *testing.T) {
 
 // Spring-forward: America/New_York skips 02:00–03:00 on 2026-03-08. A
 // "daily at 02:00" schedule fires ONCE that day, at the transition instant
-// (03:00 EDT, 07:00 UTC) — like vixie cron — instead of silently skipping
+// (03:00 EDT, 07:00 UTC), like vixie cron, instead of silently skipping
 // the whole day.
 func TestCronSpringForwardFiresAtTransition(t *testing.T) {
 	s := dstScheduler(t, "springfwd")

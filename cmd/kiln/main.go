@@ -63,7 +63,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `kiln — Kiln runtime
+	fmt.Fprint(os.Stderr, `kiln: Kiln runtime
 
 Usage:
   kiln agent [omp-args…]  Turnkey: start kiln serve, install skill, exec OMP/GLM-5.2
@@ -76,7 +76,7 @@ Usage:
 
 Flags:
   --addr value          HTTP listen address (default "127.0.0.1:8765",
-                          loopback-only; the tool API is unauthenticated —
+                          loopback-only; the tool API is unauthenticated:
                           pass 0.0.0.0:8765 to expose it deliberately)
   --journal path        Path to JSONL journal (default: .kiln.session.jsonl)
   --agent value         Spawn an agent per chat_user event:
@@ -121,16 +121,16 @@ func parseFlags(args []string) runOptions {
 	// co-located host on a shared LAN rewrite the in-memory app. An
 	// operator who wants to expose the runtime must opt in explicitly,
 	// e.g. --addr 0.0.0.0:8765.
-	addr := fs.String("addr", "127.0.0.1:8765", "HTTP listen address (loopback by default; the tool API is unauthenticated — pass 0.0.0.0:8765 to expose it deliberately)")
+	addr := fs.String("addr", "127.0.0.1:8765", "HTTP listen address (loopback by default; the tool API is unauthenticated: pass 0.0.0.0:8765 to expose it deliberately)")
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal path (use :memory: to disable persistence)")
 	noHTTP := fs.Bool("no-http", false, "Skip the HTTP server in stdio modes")
 	keepDB := fs.Bool("keep-db", false, "Don't delete the ephemeral SQLite on exit")
 	allowCustom := fs.Bool("allow-custom-agent", false, "Permit POST /kiln/agent name=\"custom\" to choose the spawned command. Off by default: it is request-borne argv selection, i.e. remote code execution for anything that can reach the tool API.")
 	agentCmd := fs.String("agent", "", `Agent to spawn on each chat_user event. Accepts:
-  omp | claude-code | pi | codex — built-in adapter (uses your existing CLI auth)
-  auto                       — pick the first installed from the list above
-  none                       — explicitly run no agent (default if unset)
-  "<freeform cmd>"           — custom: e.g. "omp -p --model glm-5.2"
+  omp | claude-code | pi | codex  built-in adapters (BYO auth)
+  auto                       : pick the first installed from the list above
+  none                       : explicitly run no agent (default if unset)
+  "<freeform cmd>"           : custom, e.g. "omp -p --model glm-5.2"
 KILN_URL is injected into the env so the agent can drive the runtime.`)
 	_ = fs.Parse(args)
 	return runOptions{addr: *addr, journal: *journalPath, noHTTP: *noHTTP, keepDB: *keepDB, agentCmd: *agentCmd, allowCustom: *allowCustom}
@@ -211,7 +211,7 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	chat.MountPanel(l.Aux(), l, tools, func() any { return agentState(store) })
 	l.SetFallbackFunc(chat.HostHTMLForLive(l))
 
-	// MCP over HTTP — Kiln's tool surface (add_entity, undo, etc.) at
+	// MCP over HTTP: Kiln's tool surface (add_entity, undo, etc.) at
 	// /mcp; framework per-entity tools (auto-registered when an entity
 	// has mcp:true) at /mcp/app, served from the current rebuilt app.
 	mcpSrv, err := kilnmcp.NewServer(tools)
@@ -262,16 +262,16 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		go runAgentWatcher(ctx, logger, l, tools, store, opts.addr)
 		switch opts.agentCmd {
 		case "":
-			logger.Printf("agent:     (none — pass --agent auto to pick an installed CLI,")
+			logger.Printf("agent:     (none: pass --agent auto to pick an installed CLI,")
 			logger.Printf("            or --agent omp|claude-code|pi|codex to be explicit)")
 		case "auto":
 			logger.Printf("agent:     auto-detect found nothing on PATH (omp, claude-code, pi, codex)")
-			logger.Printf("           — install one or pass --agent \"<full cmd>\"")
+			logger.Printf("           : install one or pass --agent \"<full cmd>\"")
 		case "none":
-			logger.Printf("agent:     (none — explicit)")
+			logger.Printf("agent:     (none: explicit)")
 		default:
 			logger.Printf("agent:     %q is not a known adapter and its binary isn't on PATH", opts.agentCmd)
-			logger.Printf("           — pass --agent omp|claude-code|pi|codex|auto|none")
+			logger.Printf("           : pass --agent omp|claude-code|pi|codex|auto|none")
 		}
 	}
 
@@ -296,17 +296,17 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 
 // originGuard refuses cross-origin browser-driven state changes. Kiln's tool
 // API (POST /kiln/tool/{name}, /kiln/agent, /mcp) mutates the in-memory world
-// with no auth — loopback bind is the primary control, but that alone does not
+// with no auth; loopback bind is the primary control, but that alone does not
 // stop a malicious web page (or DNS-rebinding) in the user's browser from
 // POSTing to localhost. We allow requests with NO Origin (curl, MCP/ACP
-// clients, the agent — non-browsers) and same-origin browser requests; a
+// clients, the agent; non-browsers) and same-origin browser requests; a
 // cross-origin Origin on an unsafe method is refused with 403.
 func originGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Host pinning comes first and applies to EVERY method,
 		// including GET.
 		//
-		// sameOrigin below compares Origin to r.Host — but under DNS
+		// sameOrigin below compares Origin to r.Host, but under DNS
 		// rebinding the attacker controls both sides, so they match and
 		// the check passes. A page on evil.test whose DNS flips to
 		// 127.0.0.1 reaches this listener with Host: evil.test:8765;
@@ -344,7 +344,7 @@ func isLoopbackBindAddr(addr string) bool {
 		host = addr
 	}
 	if host == "" {
-		return false // ":8765" — all interfaces
+		return false // ":8765": all interfaces
 	}
 	return isLoopbackAuthority(host)
 }
@@ -406,13 +406,13 @@ func printBanner(logger *log.Logger, addr string, stdioMode bool) {
 	if len(host) > 0 && host[0] == ':' {
 		host = "localhost" + host
 	}
-	logger.Printf("Kiln runtime ready — widget floats on every URL")
+	logger.Printf("Kiln runtime ready: widget floats on every URL")
 	logger.Printf("  open:     http://%s/", host)
 	logger.Printf("  events:   http://%s/.kiln/events", host)
 	logger.Printf("  tool API: POST http://%s/kiln/tool/{name}", host)
 	logger.Printf("  MCP HTTP: http://%s/mcp", host)
 	if stdioMode {
-		logger.Printf("  stdio transport active — JSON-RPC frames on stdin/stdout")
+		logger.Printf("  stdio transport active: JSON-RPC frames on stdin/stdout")
 	}
 }
 

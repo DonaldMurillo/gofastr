@@ -17,7 +17,7 @@ import (
 
 // Postgres integration tests for PostgresSearch. Postgres comes from
 // $TEST_POSTGRES_DSN if set; otherwise an ephemeral testcontainer. If neither
-// is reachable the suite skips — it never fails for lack of a database (same
+// is reachable the suite skips, it never fails for lack of a database (same
 // convention as battery/auth/entity_store_pg_test.go).
 //
 // Each test gets its own throwaway schema on the shared instance, so they run
@@ -236,7 +236,7 @@ func TestPostgresTypeFilter(t *testing.T) {
 	}
 }
 
-// TestPostgresFieldEqualsTenantScope: two docs same text, different tenant —
+// TestPostgresFieldEqualsTenantScope: two docs same text, different tenant,
 // the parity case shared with the Memory backend.
 func TestPostgresFieldEqualsTenantScope(t *testing.T) {
 	ctx := context.Background()
@@ -346,7 +346,7 @@ func TestPostgresEmptyQuery(t *testing.T) {
 	if len(res) != 1 || res[0].Document.ID != "2" {
 		t.Fatalf("scoped match-all: %#v", res)
 	}
-	// Pure punctuation is NOT empty — its terms sanitize away and match nothing.
+	// Pure punctuation is NOT empty, its terms sanitize away and match nothing.
 	res, err = idx.Search(ctx, Query{Text: "!!! ???"})
 	if err != nil {
 		t.Fatal(err)
@@ -423,7 +423,7 @@ func TestPostgresLanguageStemming(t *testing.T) {
 
 func TestPostgresHyphenatedQueryTerm(t *testing.T) {
 	// Hyphens survive sanitizeTsTerm, and compound tokens interact with the
-	// ":*" prefix suffix inside to_tsquery — make sure that combination never
+	// ":*" prefix suffix inside to_tsquery, make sure that combination never
 	// errors and still matches.
 	ctx := context.Background()
 	idx := newSearchIndex(t, nil)

@@ -1,8 +1,8 @@
 // Package effect runs declarative actions described by world.Action.
 //
 // Effects are the runtime side of Kiln's "no Go code from the agent"
-// stance: every behavior the agent can author — validators, hooks,
-// computed defaults, audit emits — is one of a closed set of action
+// stance: every behavior the agent can author: validators, hooks,
+// computed defaults, audit emits, is one of a closed set of action
 // kinds whose parameters are themselves expressions. effect.Run is the
 // single dispatcher.
 package effect

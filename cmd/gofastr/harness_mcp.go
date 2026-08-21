@@ -39,7 +39,7 @@ func runHarnessMCP(args []string) {
 	_ = fs.Parse(args)
 
 	// Load repo-local secrets (gitignored) before reading any env vars.
-	// Shell env still wins — this is the fallback for cases where the
+	// Shell env still wins. This is the fallback for cases where the
 	// MCP client (Claude Code, Codex) doesn't pass env through.
 	_, _ = secrets.LoadRepo()
 

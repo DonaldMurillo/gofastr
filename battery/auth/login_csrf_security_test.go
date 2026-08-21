@@ -12,7 +12,7 @@ import (
 )
 
 // Property: login/register form posts are refused when the browser says
-// they came from another site. Login CSRF needs no pre-existing cookie —
+// they came from another site. Login CSRF needs no pre-existing cookie,
 // an attacker's page silently logs the victim into an attacker-controlled
 // account, capturing anything the victim then does. SameSite cookies
 // don't cover it, so the endpoints check Origin/Sec-Fetch-Site.
@@ -68,7 +68,7 @@ func TestLoginFormSameOriginAllowed(t *testing.T) {
 }
 
 func TestLoginFormNoOriginAllowed(t *testing.T) {
-	// Non-browser clients (curl, tests) send no Origin — must pass.
+	// Non-browser clients (curl, tests) send no Origin, must pass.
 	r := setupLoginCSRF(t)
 	w := postAuthForm(r, "/auth/login", nil)
 	if w.Code != http.StatusSeeOther {
@@ -101,7 +101,7 @@ func TestLoginFormCrossSiteFetchMetadataRejected(t *testing.T) {
 
 // Real browsers send Origin: null on a top-level same-origin form
 // navigation (opaque origin), with Sec-Fetch-Site: same-origin. That is
-// a LEGITIMATE login and must be allowed — Fetch Metadata is authoritative.
+// a LEGITIMATE login and must be allowed. Fetch Metadata is authoritative.
 func TestLoginFormNullOriginSameSiteAllowed(t *testing.T) {
 	r := setupLoginCSRF(t)
 	w := postAuthForm(r, "/auth/login", map[string]string{

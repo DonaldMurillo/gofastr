@@ -7,7 +7,7 @@ import (
 )
 
 // MemoryInboundStore is the in-process InboundStore. Envelopes live in a
-// map guarded by a single mutex — suitable for single-instance apps and
+// map guarded by a single mutex, suitable for single-instance apps and
 // tests; nothing is persistent. Mirrors MemoryStore's conventions: a mutex,
 // a map, upsert-on-add, nil-pointer-on-miss.
 type MemoryInboundStore struct {
@@ -71,7 +71,7 @@ func (m *MemoryInboundStore) ListEnvelopes(_ context.Context, status string, lim
 // SeenDedupeKey reports whether a key was already persisted for source.
 // Empty key returns (false, nil) without scanning.
 //
-// NOTE: linear scan with no DB constraint — this is the race window the
+// NOTE: linear scan with no DB constraint, this is the race window the
 // SQL store documents too: a concurrent request between SeenDedupeKey and
 // AddEnvelope can still double-insert. Acceptable for single-instance use;
 // the SQL store's index makes the lookup cheap but the check-then-insert

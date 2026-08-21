@@ -11,8 +11,8 @@ import (
 
 // Real-Postgres end-to-end of the `gofastr migrate` CLI. The rest of the CLI
 // migrate tests run against SQLite or exercise the postgres branch only as a
-// negative (unreachable server); this drives the production path — up, status,
-// down — against a live Postgres database.
+// negative (unreachable server); this drives the production path against a
+// live Postgres database: up, status, down.
 func TestRunMigratePostgresRoundTrip(t *testing.T) {
 	dsn := pgtest.FreshDatabaseDSN(t) // skips if no Postgres
 	dbFlag := "--db-url=" + dsn

@@ -10,7 +10,7 @@ import (
 )
 
 // runMigrateGenerate turns a change to the entity declarations into a reviewable,
-// reversible, versioned migration file — the offline declarative workflow.
+// reversible, versioned migration file: the offline declarative workflow.
 //
 //	gofastr migrate generate <name> --from=<blueprint.yml> [--migrations=dir]
 //	                                [--snapshot=path] [--driver=name]
@@ -61,8 +61,8 @@ func runMigrateGenerate(args []string) {
 		reg.Register(framework.Define(decl.Name, cfg))
 	}
 
-	// Both generation paths — this CLI and a host binary calling
-	// framework.GenerateMigrationFile with its own compiled registry — go
+	// Both generation paths, this CLI and a host binary calling
+	// framework.GenerateMigrationFile with its own compiled registry, go
 	// through one implementation, so the file naming, directive layout and
 	// snapshot format cannot drift apart.
 	path, err := framework.GenerateMigrationFile(
@@ -80,7 +80,7 @@ func runMigrateGenerate(args []string) {
 		osExit(1)
 	}
 	if path == "" {
-		success("Schema is up to date — nothing to generate.")
+		success("Schema is up to date: nothing to generate.")
 		return
 	}
 
@@ -88,7 +88,7 @@ func runMigrateGenerate(args []string) {
 	info("Review it, commit it, then run `gofastr migrate up`.")
 	if body, err := os.ReadFile(path); err == nil &&
 		!strings.Contains(string(body), "-- +migrate Down") {
-		info("Note: this migration has no Down section (no safe inverse) — it is not reversible.")
+		info("Note: this migration has no Down section (no safe inverse): it is not reversible.")
 	}
 }
 
@@ -119,7 +119,7 @@ func parseMigrateGenOptions(args []string) migrateGenOptions {
 		case strings.HasPrefix(arg, "--group="):
 			opts.group = strings.TrimPrefix(arg, "--group=")
 		case strings.HasPrefix(arg, "--"):
-			// unknown flag — ignore
+			// unknown flag: ignore
 		default:
 			if opts.name == "" {
 				opts.name = arg

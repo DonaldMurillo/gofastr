@@ -228,7 +228,7 @@ func TestReinitRefreshesOnboarding(t *testing.T) {
 	}
 	project := filepath.Join(work, "reinitapp")
 
-	// Reinit on clean project — should succeed silently
+	// Reinit on clean project: should succeed silently
 	reinitCmd := exec.Command(bin, "init", ".", "--reinit")
 	reinitCmd.Dir = project
 	reinitOut, err := reinitCmd.CombinedOutput()
@@ -274,7 +274,7 @@ func TestReinitPreservesModifiedClaudeMD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Reinit without --force — should NOT overwrite
+	// Reinit without --force: should NOT overwrite
 	reinitCmd := exec.Command(bin, "init", ".", "--reinit")
 	reinitCmd.Dir = project
 	out, err := reinitCmd.CombinedOutput()
@@ -313,7 +313,7 @@ func TestReinitForceOverwritesModifiedClaudeMD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Reinit WITH --force — should overwrite
+	// Reinit WITH --force: should overwrite
 	reinitCmd := exec.Command(bin, "init", ".", "--reinit", "--force")
 	reinitCmd.Dir = project
 	out, err := reinitCmd.CombinedOutput()

@@ -2,8 +2,8 @@ package main
 
 // End-to-end HMR-readiness gate for the blueprint surface: a generated app
 // run under `gofastr dev` must serve the livereload client, expose the SSE
-// endpoint, and rebuild+serve edited content — the same contract the init
-// scaffold already proves in dev_e2e_test.go. Gated by -short (slow — two Go
+// endpoint, and rebuild+serve edited content, the same contract the init
+// scaffold already proves in dev_e2e_test.go. Gated by -short (slow: two Go
 // compiles + a dev-watch loop).
 
 import (
@@ -52,7 +52,7 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 		t.Fatalf("go mod tidy: %v\n%s", err, output)
 	}
 
-	// Boot the generated app under `gofastr dev` — the path the guidance
+	// Boot the generated app under `gofastr dev`, the path the guidance
 	// funnels users to, and the only one that enables livereload.
 	bin := buildGofastrBinary(t)
 	port := nextE2EPort(t)
@@ -135,7 +135,7 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 			b, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
 			if strings.Contains(string(b), marker) {
-				return // rebuilt and serving the edit — HMR loop alive
+				return // rebuilt and serving the edit, HMR loop alive
 			}
 		}
 		time.Sleep(500 * time.Millisecond)

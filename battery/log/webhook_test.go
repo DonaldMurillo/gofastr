@@ -132,7 +132,7 @@ func TestWebhookCloseIsRaceSafe(t *testing.T) {
 }
 
 // TestWebhookWriteAfterClose pins that the sink is safe to call after
-// shutdown — derived loggers held past Stop don't crash, and don't
+// shutdown, derived loggers held past Stop don't crash, and don't
 // silently accumulate entries that never ship.
 func TestWebhookWriteAfterClose(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +153,7 @@ func TestWebhookWriteAfterClose(t *testing.T) {
 }
 
 // TestWebhookCloseInterruptsRetry pins that a Close mid-retry returns
-// quickly even when the server is wedged — without this, App.Stop would
+// quickly even when the server is wedged, without this, App.Stop would
 // block for up to (Timeout × MaxRetries).
 func TestWebhookCloseInterruptsRetry(t *testing.T) {
 	// Server: always 503 (retryable), holds the connection.

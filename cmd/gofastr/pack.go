@@ -26,7 +26,7 @@ func decodeBlueprintString(yml string) (Blueprint, error) {
 }
 
 // =============================================================================
-// pack.go — a lossy app→blueprint snapshot. encodeBlueprintYAML serializes a Blueprint
+// pack.go: a lossy app→blueprint snapshot. encodeBlueprintYAML serializes a Blueprint
 // back to gofastr.yml; the AST readers (further down) reconstruct a Blueprint
 // from a generated app's Go source so `gofastr pack <dir>` recovers the
 // authoring YAML. The invariant the round-trip test gates:
@@ -233,7 +233,7 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 		fields := make([]any, 0, len(e.Fields))
 		for _, f := range e.Fields {
 			// Drop the hidden owner column the generator synthesizes from
-			// owner_field — the author never wrote it, so packing it back
+			// owner_field: the author never wrote it, so packing it back
 			// would diverge from the source blueprint.
 			if e.Scope != nil && e.Scope.OwnerField != "" && f.Name == e.Scope.OwnerField && f.Hidden {
 				continue
@@ -527,7 +527,7 @@ func writeScalarInline(sb *strings.Builder, v any) {
 	}
 }
 
-// formatYAMLFloat keeps a float a float on re-parse — the parser only types a
+// formatYAMLFloat keeps a float a float on re-parse: the parser only types a
 // scalar as float64 when it contains ".eE", so 99.0 must print as "99.0".
 func formatYAMLFloat(f float64) string {
 	s := strconv.FormatFloat(f, 'g', -1, 64)
@@ -572,7 +572,7 @@ func quoteYAMLString(s string) string {
 }
 
 // needsQuote reports whether emitting s bare would re-parse as a non-string (or
-// break the line/map grammar). Conservative but minimal — keeps the output close
+// break the line/map grammar). Conservative but minimal: keeps the output close
 // to hand-written YAML while guaranteeing string values survive the round-trip.
 func needsQuote(s string) bool {
 	if s == "" {
@@ -595,7 +595,7 @@ func needsQuote(s string) bool {
 	if strings.ContainsAny(s[:1], "&*!|>'\"%@`#?: -") {
 		return true
 	}
-	// Flow indicators are special ANYWHERE, not just at the front, because
+	// Flow indicators are special ANYWHERE rather than only at the front, because
 	// writeFlowList emits scalars inside `[a, b]`. An interior comma there is
 	// an ITEM SEPARATOR: "open,closed" emitted bare re-parses as two items,
 	// which breaks the exact-inverse contract this file's banner claims for
@@ -700,7 +700,7 @@ func orderFor(key string) []string {
 }
 
 // =============================================================================
-// AST readers — reconstruct a Blueprint from a generated app's Go source.
+// AST readers: reconstruct a Blueprint from a generated app's Go source.
 // The generator emits a known, finite grammar; these readers reverse it.
 // =============================================================================
 
@@ -814,7 +814,7 @@ func astAny(e ast.Expr) any {
 		}
 		return t.Name
 	case *ast.CompositeLit:
-		// Detect a map by element shape — nested literals inside
+		// Detect a map by element shape: nested literals inside
 		// []map[string]any{...} have an elided (nil) Type, so KeyValueExpr
 		// elements are the reliable signal.
 		isMap := false
@@ -843,7 +843,7 @@ func astAny(e ast.Expr) any {
 }
 
 // unwrapBuilderCalls peels trailing fluent builder method calls off a config
-// expression — e.g. EntityConfig{...}.WithTimestamps(true) — returning the
+// expression such as EntityConfig{...}.WithTimestamps(true), returning the
 // underlying value and a map of methodName→args for each builder peeled. The
 // generator emits some EntityConfig settings (Timestamps) as method calls
 // rather than struct fields, so pack recovers them from here rather than from
@@ -1093,7 +1093,7 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 		decl.SearchFields = astStringSlice(v)
 	}
 	// Timestamps is emitted as a .WithTimestamps(bool) builder call, not a
-	// struct field — recover it from the unwrapped builder args. (Fall back
+	// struct field: recover it from the unwrapped builder args. (Fall back
 	// to a struct field for forward-compat if a future generator inlines it.)
 	if args, ok := builders["WithTimestamps"]; ok && len(args) == 1 {
 		b := astBool(args[0])
@@ -1256,7 +1256,7 @@ func packReadRelations(e ast.Expr) []framework.Relation {
 // A `return <name>` is followed back to the composite literal that `name` was
 // assigned. Once a sidebar had to resolve its auth control per request, its
 // builder stopped being a single `return ui.SidebarConfig{…}` and became
-// `cfg := ui.SidebarConfig{…}` … `return cfg` — at which point this returned
+// `cfg := ui.SidebarConfig{…}` … `return cfg`, at which point this returned
 // an *ast.Ident, every caller's type assertion to *ast.CompositeLit failed,
 // and pack silently reconstructed an empty nav. Silently, because a failed
 // assertion here returns "no nav found", which is indistinguishable from an
@@ -1281,7 +1281,7 @@ func returnValue(file *ast.File, fn string) ast.Expr {
 }
 
 // assignedLiteral finds the composite literal assigned to name in body, taking
-// the LAST assignment so a later rebind wins — the same answer the running
+// the LAST assignment so a later rebind wins; the same answer the running
 // program produces.
 func assignedLiteral(body []ast.Stmt, name string) ast.Expr {
 	var found ast.Expr
@@ -1486,7 +1486,7 @@ func packReadApp(dir string) (BlueprintApp, error) {
 }
 
 // packReadDotEnv parses a generated .env into a map using the SAME
-// parser the generated app boots with (core/dotenv) — a private
+// parser the generated app boots with (core/dotenv); a private
 // re-implementation here silently diverged on quoted values, so pack
 // read back a different secret than the app ran with. Missing or
 // unparseable file → empty map.
@@ -1504,7 +1504,7 @@ func packReadDotEnv(path string) map[string]string {
 }
 
 // packPWADisplay maps a generated uihost.PWADisplay* constant name back
-// to the blueprint's display string — the reverse of
+// to the blueprint's display string, the reverse of
 // blueprintPWADisplayConst. Unknown/absent → "" (the omitted default).
 func packPWADisplay(constName string) string {
 	switch constName {
@@ -1605,7 +1605,7 @@ type screenReg struct {
 // to the legacy aggregated layout (screens.go structs + app.go registrations)
 // so apps generated before the per-screen split still pack. In both layouts
 // synthesized /new + /{id}/edit form screens (body is a resource Form call)
-// are dropped — they weren't authored.
+// are dropped: they weren't authored.
 func packReadScreens(dir string) ([]BlueprintScreen, error) {
 	if screens, err := packReadPerScreenFiles(dir); err != nil {
 		return nil, err
@@ -1614,7 +1614,7 @@ func packReadScreens(dir string) ([]BlueprintScreen, error) {
 	}
 	// The screens_register.go seam is emitted for every per-file-layout app,
 	// even one with zero screens. Its presence means the layout is per-file
-	// and simply has no authored screens — do NOT fall through to the legacy
+	// and simply has no authored screens; do NOT fall through to the legacy
 	// reader (which expects a screens.go that this layout never writes).
 	if _, err := os.Stat(filepath.Join(dir, "screens_register.go")); err == nil {
 		return nil, nil
@@ -1822,7 +1822,7 @@ func packReadLegacyScreens(dir string) ([]BlueprintScreen, error) {
 		return nil, err
 	}
 	regs := packReadScreenRegs(appFile)
-	// A legacy app with no screens never emitted screens.go — that's zero
+	// A legacy app with no screens never emitted screens.go; that's zero
 	// authored screens, not an error.
 	if _, statErr := os.Stat(filepath.Join(dir, "screens.go")); os.IsNotExist(statErr) {
 		return nil, nil
@@ -2073,7 +2073,7 @@ func isSynthesizedBody(body []BlueprintBlock) bool {
 // reverses.
 //
 // Two root shapes are accepted. The generator emits
-// `html.Div(html.DivConfig{…}, children…)` — the design system's 1:1 tag
+// `html.Div(html.DivConfig{…}, children…)`, the design system's 1:1 tag
 // primitive. Apps generated before that switch (and hand-written screens
 // that never moved) use `render.Tag("div", attrs, children…)`. pack has to
 // read both or it silently returns no blocks for the other one, which is
@@ -2167,7 +2167,7 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool
 	case "ui.Section":
 		return reverseSection(call, helpers), true
 	case "ui.Card":
-		// A titled chart is emitted as ui.Card(Heading, <chart>) — reverse
+		// A titled chart is emitted as ui.Card(Heading, <chart>): reverse
 		// it back to the chart block, not a card, with the heading as its
 		// title. A plain card has no chart child.
 		if len(call.Args) > 1 {
@@ -2308,7 +2308,7 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 		// recursive zero-arg helper (a() returns a()) can't loop
 		// forever. 32 is far beyond any real helper chain depth;
 		// returning not-reversible is the safe fallback (the screen
-		// just isn't packed — it stays as authored Go).
+		// just isn't packed; it stays as authored Go).
 		if hops > 32 {
 			return BlueprintBlock{}, false
 		}
@@ -2325,7 +2325,7 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 		}
 		s, ok := c.Fun.(*ast.SelectorExpr)
 		if !ok {
-			// customersList().List(ctx) — the chain was extracted into a
+			// customersList().List(ctx): the chain was extracted into a
 			// package-local zero-arg helper (shared by the screen and the
 			// island endpoint). Follow the hop and keep walking.
 			if id, isIdent := c.Fun.(*ast.Ident); isIdent && len(c.Args) == 0 {
@@ -2389,7 +2389,7 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 	case "Detail":
 		b.Kind = "entity_detail"
 	case "Form":
-		// synthesized create/edit form screen — mark so it can be dropped.
+		// synthesized create/edit form screen: mark so it can be dropped.
 		if len(call.Args) == 2 && astString(call.Args[1]) == "" {
 			b.Kind = "entity_create"
 		} else {
@@ -2586,7 +2586,7 @@ func reverseRenderTag(call *ast.CallExpr) (BlueprintBlock, bool) {
 }
 
 // reverseChartCall recognizes the three chart emission shapes and returns
-// the corresponding blueprint block (without a title — the caller sets it
+// the corresponding blueprint block (without a title; the caller sets it
 // from a wrapping ui.Card heading when present):
 //
 //	ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, e, g), …})
@@ -2704,7 +2704,7 @@ func packBlueprint(dir string) (Blueprint, error) {
 	return bp, nil
 }
 
-// runPack implements `gofastr pack [app-dir] [-o out.yml]` — a lossy
+// runPack implements `gofastr pack [app-dir] [-o out.yml]`: a lossy
 // best-effort snapshot, not a round-trip inverse of generate. It reconstructs
 // a gofastr.yml from a generated app's Go source.
 func runPack(args []string) {
@@ -2720,7 +2720,7 @@ func runPack(args []string) {
 		case "-h", "--help":
 			info("Usage: gofastr pack [app-dir] [-o out.yml]")
 			info("Reconstructs a best-effort gofastr.yml from a generated app's Go source")
-			info("(entities, app config, theme, screens, nav, seed). Lossy — not a round-trip")
+			info("(entities, app config, theme, screens, nav, seed). Lossy: not a round-trip")
 			info("inverse of `gofastr generate`; hand-written handlers/hooks/business logic")
 			info("are not recovered. See framework/ARCHITECTURE.md (\"pack is one-way\").")
 			return
@@ -2741,11 +2741,11 @@ func runPack(args []string) {
 	// DATABASE_URL from the app's .env so the packed blueprint round-trips
 	// (see the comment on packReadDotEnv). That reverses the generator's
 	// own "secrets never land in committed source" rule, which
-	// TestBlueprintNeverInlinesSecrets pins — and unlike `.env`, an
+	// TestBlueprintNeverInlinesSecrets pins, and unlike `.env`, an
 	// arbitrary `-o` path is not covered by the generated .gitignore. Warn
 	// loudly and write 0600 rather than 0644.
 	if secretsInBlueprint(bp) {
-		warn("pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url) — do NOT commit it")
+		warn("pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
 	}
 	if out == "" {
 		fmt.Print(yml)

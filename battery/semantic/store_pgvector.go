@@ -29,7 +29,7 @@ import (
 // The store implements the [chunkLister] capability (ChunkIDsForDoc /
 // ChunkByID / AllChunks) so it composes with hybrid/keyword retrieval through
 // [Open]. It deliberately does NOT implement [snapshotter]: a Postgres table
-// IS the durable copy, so the gob snapshot path is meaningless — pairing this
+// IS the durable copy, so the gob snapshot path is meaningless, pairing this
 // store with Options.Path fails closed at Open with an actionable error.
 //
 // No third-party pgvector Go driver is required. Vectors are encoded in
@@ -96,7 +96,7 @@ func NewPgVector(db *sql.DB, cfg PgVectorConfig) (*PgVectorStore, error) {
 }
 
 // EnsureSchema creates the vector extension and chunks table if they do not
-// already exist. Idempotent — safe to call on every boot.
+// already exist. Idempotent, safe to call on every boot.
 //
 // The vector extension requires a one-time CREATE EXTENSION, which on managed
 // Postgres (RDS, Cloud SQL, …) is a superuser privilege the app role often
@@ -109,7 +109,7 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 		// extension, but it may already be present. Fall through and let
 		// CREATE TABLE decide. Anything else is a real failure.
 		if pqCode(err) != "42501" {
-			return fmt.Errorf("semantic: create vector extension: %w — an admin may need to run: CREATE EXTENSION vector;", err)
+			return fmt.Errorf("semantic: create vector extension: %w. An admin may need to run: CREATE EXTENSION vector;", err)
 		}
 	}
 	// The embedding column dimension is the only interpolated value here;
@@ -129,7 +129,7 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 		// 42704 = undefined_object: the "vector" type does not exist,
 		// meaning the extension is not installed in this database.
 		if pqCode(err) == "42704" {
-			return errors.New("semantic: pgvector extension is not installed in this database — an admin must run: CREATE EXTENSION vector;")
+			return errors.New("semantic: pgvector extension is not installed in this database: an admin must run: CREATE EXTENSION vector;")
 		}
 		return fmt.Errorf("semantic: create pgvector table: %w", err)
 	}
@@ -286,7 +286,7 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 // Stats returns a snapshot of store state. Docs is the distinct doc_id count;
 // Chunks is the row count. Dim/Model come from config. The counts are read
 // with a background context + short timeout because the [Store] interface
-// gives Stats no ctx — a failed/missing table yields zero counts rather than
+// gives Stats no ctx, a failed/missing table yields zero counts rather than
 // an error, matching FlatStore's "never error from Stats" behaviour.
 func (s *PgVectorStore) Stats() Stats {
 	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)

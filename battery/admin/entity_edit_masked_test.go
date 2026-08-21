@@ -3,8 +3,8 @@ package admin
 // The edit form sits between two failures that pull in opposite directions:
 // prefilling from a hooked read writes the MASK back over the stored column,
 // and prefilling from a raw read shows an admin a value the API masks. Both
-// have shipped. These tests pin the resolution — masked columns render empty
-// and write-only — plus the value formatting that broke on the way here.
+// have shipped. These tests pin the resolution, masked columns render empty
+// and write-only, plus the value formatting that broke on the way here.
 
 import (
 	"context"
@@ -83,7 +83,7 @@ func TestEditFormDoesNotPrefillMaskedValue(t *testing.T) {
 	if !strings.Contains(body, maskedHint) {
 		t.Errorf("a masked column should render empty with the write-only hint %q; got:\n%s", maskedHint, body)
 	}
-	// The mask must not be prefilled either — submitting it would overwrite
+	// The mask must not be prefilled either, submitting it would overwrite
 	// the stored column with "****1111", which is the failure the raw read was
 	// introduced to fix.
 	if strings.Contains(body, `value="****1111"`) {
@@ -134,7 +134,7 @@ func TestEditFormMaskedFieldIsWriteOnly(t *testing.T) {
 
 // Multi-word on purpose. GetOne returns JSON casing (`cardNumber`) while the
 // form looks columns up by schema name (`card_number`), so a masked-set keyed
-// on the wrong side marks nothing masked — and only ever fails on multi-word
+// on the wrong side marks nothing masked, and only ever fails on multi-word
 // columns, which a single-word fixture cannot show.
 func TestEditFormMasksMultiWordColumn(t *testing.T) {
 	db := newDB(t)
@@ -190,7 +190,7 @@ func TestEditFormPrefillsUnmaskedValues(t *testing.T) {
 }
 
 // getRowForEdit reads through the in-process API, which hands back what the
-// driver scanned — a time.Time for date/timestamp columns, where the old JSON
+// driver scanned, a time.Time for date/timestamp columns, where the old JSON
 // round-trip produced a string. fmt.Sprint renders Go's default layout, the
 // validator rejects it on submit, and the user's other edits go with it.
 func TestEditFormRendersTimestampsAsRFC3339(t *testing.T) {
@@ -254,8 +254,8 @@ func formValue(body, name string) string {
 	return rest[:k]
 }
 
-// A checkbox cannot express "unchanged" — unchecked and absent look identical
-// — and formToJSON emitted a bool either way, so a masked bool was written
+// A checkbox cannot express "unchanged", unchecked and absent look identical,
+// and formToJSON emitted a bool either way, so a masked bool was written
 // back as false on EVERY save, including one that touched only another field.
 // is_admin / is_active / published are exactly the columns an app masks.
 func TestMaskedBoolIsNotClobberedOnSave(t *testing.T) {
@@ -406,7 +406,7 @@ func TestCellTextHandlesNilTimePointer(t *testing.T) {
 
 // controlFor extracts the rendered control carrying name="<field>", so an
 // assertion cannot be satisfied by a DIFFERENT masked field elsewhere on the
-// page — which is how the first masked-bool test passed with the bool branch
+// page, which is how the first masked-bool test passed with the bool branch
 // deleted (its sibling enum emitted the same marker).
 func controlFor(body, field string) string {
 	marker := `name="` + field + `"`

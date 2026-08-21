@@ -188,7 +188,7 @@ type ompCompactWriter struct {
 	// and is being streamed raw until its newline arrives.
 	passthrough bool
 	// err is sticky: after a destination write fails (possibly partially),
-	// nothing may be re-emitted — a Flush retry would duplicate the line's
+	// nothing may be re-emitted, a Flush retry would duplicate the line's
 	// already-written prefix and corrupt the log evidence.
 	err error
 }

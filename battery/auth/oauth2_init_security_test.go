@@ -10,7 +10,7 @@ import (
 )
 
 // OAuth2Plugin.Init must fail closed when the configured UserStore is not
-// an OAuthLinker. The legacy email-trust fallback is gone — without a
+// an OAuthLinker. The legacy email-trust fallback is gone, without a
 // durable (provider, provider_id) → user_id store, the OAuth callback
 // cannot bind identity safely, and an IdP emitting an unverified email
 // could otherwise sign in as an existing account. Production must refuse
@@ -20,7 +20,7 @@ func (minimumNonLinkerStore) UpdateRoles(context.Context, string, []string) erro
 }
 
 // minimumNonLinkerStore implements auth.UserStore and nothing else. The
-// methods never run in these tests — Init only type-asserts.
+// methods never run in these tests. Init only type-asserts.
 type minimumNonLinkerStore struct{}
 
 func (minimumNonLinkerStore) FindByEmail(context.Context, string) (auth.User, string, error) {
@@ -35,9 +35,9 @@ func (minimumNonLinkerStore) CreateUser(context.Context, string, string, []strin
 
 // stubDurableSessions is a non-memory SessionStore used by tests that must
 // pass AuthManager.Init's production session-store gate (which rejects the
-// default *MemorySessionStore) so they can isolate a DIFFERENT gate — the
+// default *MemorySessionStore) so they can isolate a DIFFERENT gate, the
 // OAuth2-linker gate here, or the in-memory-2FA gate in
-// memory_store_warn_test.go — without setting AllowInMemoryStores, which
+// memory_store_warn_test.go, without setting AllowInMemoryStores, which
 // would also bypass those gates. Methods are stubs: these tests call Init
 // only, never serve a session.
 type stubDurableSessions struct{}
@@ -67,14 +67,14 @@ func prodOAuth2Manager(store auth.UserStore) *auth.AuthManager {
 
 // TestOAuth2Plugin_Init_FailsClosedWithoutLinker: production Init must
 // refuse to boot when the UserStore is not an OAuthLinker. This is the
-// load-bearing gate — without it, every host on the recommended
+// load-bearing gate, without it, every host on the recommended
 // EntityUserStore would silently fall back to email-trust.
 func TestOAuth2Plugin_Init_FailsClosedWithoutLinker(t *testing.T) {
 	mgr := prodOAuth2Manager(minimumNonLinkerStore{})
 	if err := mgr.Init(nil); err == nil {
 		t.Fatal("production Init must fail closed when UserStore is not an OAuthLinker")
 	} else {
-		// The message must name the cause and the fix — a generic "init
+		// The message must name the cause and the fix, a generic "init
 		// failed" leaves the operator guessing.
 		msg := err.Error()
 		for _, want := range []string{"OAuthLinker", "NewEntityUserStore", "AllowInMemoryStores"} {
@@ -87,7 +87,7 @@ func TestOAuth2Plugin_Init_FailsClosedWithoutLinker(t *testing.T) {
 
 // TestOAuth2Plugin_Init_AllowedInDevMode: DevMode keeps the no-linker path
 // reachable so the rest of the OAuth plumbing (redirect, state, callback
-// errors) stays unit-testable. The path logs a WARN rather than failing —
+// errors) stays unit-testable. The path logs a WARN rather than failing,
 // resolveOAuthUser itself still returns errOAuthNoLinker at request time
 // (pinned in oauth2_resolve_security_test.go).
 func TestOAuth2Plugin_Init_AllowedInDevMode(t *testing.T) {
@@ -103,7 +103,7 @@ func TestOAuth2Plugin_Init_AllowedInDevMode(t *testing.T) {
 
 // TestOAuth2Plugin_Init_AllowedWithInMemoryAck: AllowInMemoryStores is the
 // production opt-in for a deliberate single-node deployment. It downgrades
-// the failure to a WARN — the host has acknowledged the risk.
+// the failure to a WARN, the host has acknowledged the risk.
 func TestOAuth2Plugin_Init_AllowedWithInMemoryAck(t *testing.T) {
 	mgr := auth.New(auth.AuthConfig{
 		JWTSecret:           "test-secret",
@@ -116,7 +116,7 @@ func TestOAuth2Plugin_Init_AllowedWithInMemoryAck(t *testing.T) {
 	}
 }
 
-// TestOAuth2Plugin_Init_PassesWithLinker: sanity — when the store DOES
+// TestOAuth2Plugin_Init_PassesWithLinker: sanity, when the store DOES
 // implement OAuthLinker (EntityUserStore, the recommended production
 // store), production Init succeeds. Without this gate the fail-closed
 // branch could false-positive on a correctly-wired host.
@@ -129,7 +129,7 @@ func TestOAuth2Plugin_Init_PassesWithLinker(t *testing.T) {
 }
 
 // linkerUserStore is the smallest store that satisfies auth.UserStore AND
-// auth.OAuthLinker — used by TestOAuth2Plugin_Init_PassesWithLinker to
+// auth.OAuthLinker, used by TestOAuth2Plugin_Init_PassesWithLinker to
 // confirm the gate admits a correctly-wired host.
 type linkerUserStore struct{ minimumNonLinkerStore }
 

@@ -8,7 +8,7 @@ import (
 )
 
 // Bug: `gofastr init` scaffolds the sample posts entity with only
-// Exposure{CRUD: true}, so the first documented curl answers 401 — and
+// Exposure{CRUD: true}, so the first documented curl answers 401, and
 // until these tests, no scaffold-generated surface (entity file, printed
 // next steps, AGENTS.md) named the escape hatches: `Public: true` for
 // anonymous access, or battery/auth for a real login flow. Secure by

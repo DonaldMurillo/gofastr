@@ -175,8 +175,8 @@ func (p *Plugin) toolFilter(_ context.Context, params map[string]any) (any, erro
 		}
 	}
 
-	// Walk newest→oldest so the limit cap takes the most recent matches
-	// — matches log_recent's chronology contract.
+	// Walk newest→oldest so the limit cap takes the most recent matches.
+	// Matches log_recent's chronology contract.
 	out := make([]map[string]any, 0, limit)
 	for i := len(pool) - 1; i >= 0 && len(out) < limit; i-- {
 		e := pool[i]
@@ -363,7 +363,7 @@ func levelAtLeast(entry map[string]any, min slog.Level) bool {
 // MCP server, so no route middleware ever runs for it.
 //
 // Under `gofastr dev` there is no auth to satisfy, so a gate would only lock
-// the developer's own agent out — the same call framework's control tools
+// the developer's own agent out, the same call framework's control tools
 // make. Dev exposure is bounded by the loopback bind instead.
 func (p *Plugin) setLevelGate() func(ctx context.Context) error {
 	if p.mutationDevImplied {

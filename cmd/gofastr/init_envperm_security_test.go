@@ -15,7 +15,7 @@ import (
 // The pre-existing case is the one that matters: os.WriteFile applies its
 // mode only when it CREATES a file, so `gofastr init .` in a directory that
 // already holds a 0644 .env would have truncated it, written the secrets in,
-// and left it world-readable — the permission argument silently doing
+// and left it world-readable, the permission argument silently doing
 // nothing on exactly the path where it was needed.
 func TestEnvFileIsOwnerOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {

@@ -2,7 +2,7 @@ package auth
 
 import "github.com/DonaldMurillo/gofastr/framework/datexport"
 
-// The auth battery's right-to-be-forgotten registrations — the erase-plane
+// The auth battery's right-to-be-forgotten registrations, the erase-plane
 // mirror of export.go. Registering from init() means any app that imports
 // battery/auth has its auth tables reached by App.EraseUserData, so a user
 // erasure is complete. The framework centralizes all raw write behind one
@@ -11,7 +11,7 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 // These erasers are registered under the canonical table names:
 //
 //   - auth_sessions: EraseDelete by user_id. A user's sessions are pure
-//     credential state — they are hard-deleted, revoking every active session
+//     credential state, they are hard-deleted, revoking every active session
 //     as part of the erasure.
 //   - auth_users: EraseDelete by id (the primary key IS the user id). The auth
 //     battery's tables are created with raw DDL and carry NO foreign-key
@@ -31,8 +31,8 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 //     user id. This closes the gap where a magic link minted before an erasure
 //     and redeemed after it re-created the erased account.
 //
-// API tokens (auth_api_tokens) are named credentials, not per-user rows —
-// the table has no user column — so a host that scopes tokens to users
+// API tokens (auth_api_tokens) are named credentials, not per-user rows,
+// the table has no user column, so a host that scopes tokens to users
 // registers its own eraser for the actual column.
 //
 // The audit trail is deliberately NOT registered as an eraser. It is the
@@ -69,7 +69,7 @@ func init() {
 	// (auth_users.id → email) ONCE per erasure, before the tx. The
 	// magic-link token table is keyed by email, so its eraser declares
 	// IdentityEmail and the framework binds the resolved email instead of
-	// the user id — closing the gap where an in-flight magic link survived
+	// the user id, closing the gap where an in-flight magic link survived
 	// an erasure and re-created the account. The token table is created
 	// lazily by NewSQLMagicLinkTokenStore; a host on the in-memory store has
 	// no such table, so this eraser is a no-op (skipped at erase time).

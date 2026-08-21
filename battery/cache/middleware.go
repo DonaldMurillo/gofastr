@@ -57,7 +57,7 @@ func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Han
 // CacheMiddlewareWithLimit is CacheMiddleware with an explicit cap on the
 // response size that may be buffered for caching. A response exceeding
 // maxBodyBytes is streamed to the client and never stored. Pass 0 for
-// unbounded buffering (the pre-cap behaviour — not recommended in production).
+// unbounded buffering (the pre-cap behaviour, not recommended in production).
 func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,8 +77,8 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// X-Gofastr-Embed is in the list because an embed grant is an app
 			// credential exactly like the other two: framework/embed's
 			// middleware resolves it into a user before the handler runs. It
-			// carries no cookie and no Authorization by construction — the whole
-			// point of the design — so a grant-authenticated response looked
+			// carries no cookie and no Authorization by construction, the whole
+			// point of the design, so a grant-authenticated response looked
 			// anonymous to this check and was stored under the shared
 			// method/host/path/query key, then served to a different grant
 			// subject as a HIT without the handler ever running.
@@ -114,7 +114,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 				}
 			}
 
-			// Cache miss — capture the response into a buffer (not the client),
+			// Cache miss, capture the response into a buffer (not the client),
 			// up to maxBodyBytes. Beyond that the recorder streams straight to
 			// the client and marks overflow.
 			rec := &responseRecorder{
@@ -336,7 +336,7 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 		return r.w.Write(b)
 	}
 	if r.maxBytes > 0 && r.body.Len()+len(b) > r.maxBytes {
-		// Over the cap — give up on caching this response and switch to
+		// Over the cap, give up on caching this response and switch to
 		// streaming. Flush headers + already-buffered bytes to the client,
 		// then write this chunk and everything after straight through.
 		r.overflow = true

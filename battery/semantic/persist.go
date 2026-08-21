@@ -16,7 +16,7 @@ import (
 const snapshotVersion = 1
 
 // snapshotHeader is the first gob value in a snapshot file. The model
-// fingerprint is checked at load time — refusing to mix vectors from
+// fingerprint is checked at load time, refusing to mix vectors from
 // different models is more important than convenience here.
 type snapshotHeader struct {
 	Version    int
@@ -107,7 +107,7 @@ func (s *FlatStore) LoadSnapshot(path string) error {
 	}
 	// The store can be constructed with dim=0 when the embedder defers
 	// dimension discovery to first use (OllamaEmbedder probes lazily).
-	// In that case adopt the snapshot's dim — it's the source of truth.
+	// In that case adopt the snapshot's dim, it's the source of truth.
 	// A non-zero store dim that disagrees with the snapshot is still a
 	// loud refusal.
 	if header.Model != s.model || (s.dim != 0 && header.Dim != s.dim) {
@@ -154,7 +154,7 @@ type ModelMismatchError struct {
 
 func (e *ModelMismatchError) Error() string {
 	return fmt.Sprintf(
-		"semantic: snapshot embedded with model=%q dim=%d, store configured with model=%q dim=%d — re-index after model changes",
+		"semantic: snapshot embedded with model=%q dim=%d, store configured with model=%q dim=%d: re-index after model changes",
 		e.SnapshotModel, e.SnapshotDim, e.StoreModel, e.StoreDim,
 	)
 }
@@ -177,8 +177,8 @@ type walEntry struct {
 	Chunks []Chunk
 }
 
-// wal is a tiny append-only write-ahead log. It is not high-performance
-// — one fsync per write — but it is correct and easy to reason about,
+// wal is a tiny append-only write-ahead log. It is not high-performance.
+// One fsync per write, but it is correct and easy to reason about,
 // and at 100k chunks the snapshot path dominates throughput anyway.
 type wal struct {
 	mu   sync.Mutex

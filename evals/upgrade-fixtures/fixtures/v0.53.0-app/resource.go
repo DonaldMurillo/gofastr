@@ -42,7 +42,7 @@ type RelSource struct {
 }
 
 // ResFilter is one facet-filter dimension on the list screen: a column the
-// user can narrow the list by. Type is "enum", "bool", or "relation" — it
+// user can narrow the list by. Type is "enum", "bool", or "relation", it
 // selects both the facet control (pills vs select) and how options are
 // sourced (Values for enums, yes/no for bools, related rows for relations).
 type ResFilter struct {
@@ -52,7 +52,7 @@ type ResFilter struct {
 	Values []string // enum: the allowed values
 }
 
-// Transition is a status-change workflow action shown on a detail page — a
+// Transition is a status-change workflow action shown on a detail page, a
 // button that PUTs {status: Status} to the entity, then refreshes (Mark paid).
 type Transition struct {
 	Label   string
@@ -173,7 +173,7 @@ func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[strin
 		}
 		// WithReadHooks: the DISPLAY value becomes the visible label on the
 		// grid and detail page, so it must show the mask. Only the id is used
-		// for lookup, and a picker submits the id — so redacting the label
+		// for lookup, and a picker submits the id, so redacting the label
 		// cannot write a masked value back.
 		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
 		if err != nil {
@@ -264,7 +264,7 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	cols := make([]ui.Column, 0, len(c.Fields)+1)
 	for _, f := range c.Fields {
 		// A NoQuery column still shows its value, but ?sort= on it is a 400
-		// that blanks the grid — so it renders unsortable.
+		// that blanks the grid, so it renders unsortable.
 		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: !f.NoQuery}
 		if resNumeric(f.Type) {
 			col.Align = "end"
@@ -428,7 +428,7 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id string) render.HTML {
 	// WithReadHooks: these rows are rendered to an end user, same as List and
 	// Detail. relatedRelationLabels and the dashboard aggregates below stay
-	// raw on purpose — they resolve ids and compute over stored values.
+	// raw on purpose, they resolve ids and compute over stored values.
 	rows, err := rl.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{
 		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
 		Limit:   10,
@@ -477,7 +477,7 @@ func relatedRelationLabels(ctx context.Context, rels map[string]RelSource) map[s
 		}
 		// WithReadHooks: the DISPLAY value becomes the visible label on the
 		// grid and detail page, so it must show the mask. Only the id is used
-		// for lookup, and a picker submits the id — so redacting the label
+		// for lookup, and a picker submits the id, so redacting the label
 		// cannot write a masked value back.
 		rows, err := rel.Crud.ListAll(framework.WithReadHooks(ctx), framework.ListOptions{Limit: 1000})
 		if err != nil {

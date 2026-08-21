@@ -4,7 +4,7 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 
 // The auth battery owns physical tables that live OUTSIDE the framework entity
 // registry (created with raw DDL in entity_store.go). Registering them here
-// from init() — mirroring framework/agentsinv — means any app that imports
+// from init(), mirroring framework/agentsinv, means any app that imports
 // battery/auth has its auth tables included in App.ExportData, so a data
 // dump/restore is complete. The framework centralizes all raw read/write
 // behind one SafeIdent-guarded path; this registration is purely declarative.

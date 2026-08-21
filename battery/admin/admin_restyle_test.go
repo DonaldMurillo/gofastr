@@ -12,8 +12,8 @@ import (
 
 // admin_restyle_test.go pins the "one styling surface" contract (CLAUDE.md
 // Hard rule 7) for the standalone ops pages: the admin battery must ship ZERO
-// bespoke CSS — no `const baseCSS` served outside the registry, no unprefixed
-// generic selectors — and must compose framework/ui components (DataTable,
+// bespoke CSS, no `const baseCSS` served outside the registry, no unprefixed
+// generic selectors, and must compose framework/ui components (DataTable,
 // StatCard, FilterToolbar, Tag, …) whose own registered styles do the work.
 //
 // These assertions are RED against the pre-restyle tree (which serves a
@@ -116,7 +116,7 @@ func TestAdmin_RolesRenderViaUIComponentsAndDropOrphanBadges(t *testing.T) {
 	if !strings.Contains(body, `data-fui-comp="ui-data-table"`) {
 		t.Errorf("roles must render ui.DataTable; got %s", trunc(body, 300))
 	}
-	// Orphan badge classes (never had CSS) must be gone — replaced by ui.Tag.
+	// Orphan badge classes (never had CSS) must be gone, replaced by ui.Tag.
 	if strings.Contains(body, `class="badge"`) || strings.Contains(body, "badge-remove") {
 		t.Errorf("roles must drop orphan .badge/.badge-remove in favor of ui.Tag; got %s", trunc(body, 400))
 	}

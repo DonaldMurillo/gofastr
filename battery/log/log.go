@@ -32,7 +32,7 @@ type Config struct {
 	//
 	// Order matters on shutdown: sinks close in the order they appear
 	// here. Put fast/local sinks (file) LAST so they outlive slow
-	// remote sinks (webhook) — operators grep'ing the file during an
+	// remote sinks (webhook), operators grep'ing the file during an
 	// in-flight shutdown will see fresh entries longer that way.
 	Sinks []Sink
 
@@ -55,13 +55,13 @@ type Config struct {
 	// Console controls an optional human-readable colorized sink on
 	// stderr, intended for local development. The zero value
 	// (ConsoleAuto) attaches the sink only when stderr is a terminal
-	// and NO_COLOR is unset — so Config{} gives every local dev a
+	// and NO_COLOR is unset, so Config{} gives every local dev a
 	// colorized feed without leaking ANSI into prod (journald,
 	// containers) where stderr is captured, not shown. Set ConsoleOn
 	// to force the sink on regardless of TTY, or ConsoleOff to
 	// disable it. Coloring always follows TTY + NO_COLOR, so even
 	// forced-on output stays greppable when piped. The file/webhook
-	// sinks are unaffected — console is purely additive.
+	// sinks are unaffected, console is purely additive.
 	Console ConsoleMode
 
 	// EnableMCP installs a RingSink + MCP tools (log_recent, log_filter,
@@ -72,7 +72,7 @@ type Config struct {
 	//
 	// In the dev loop (GOFASTR_DEV set by `gofastr dev`; opt-out via
 	// GOFASTR_DEV_MCP=0) the tools auto-enable regardless of this
-	// field — see Init.
+	// field. See Init.
 	EnableMCP bool
 
 	// MCPRingSize is the ring buffer capacity used when EnableMCP is
@@ -108,7 +108,7 @@ type Plugin struct {
 	// over *Plugin) can read it.
 	ring *RingSink
 
-	// level holds the current minimum level — a pointer to a slog.LevelVar
+	// level holds the current minimum level, a pointer to a slog.LevelVar
 	// so log_set_level can mutate it without re-wiring the handler.
 	level *slog.LevelVar
 
@@ -126,7 +126,7 @@ type Plugin struct {
 	// `gofastr dev` turned mutation on, not because the host asked. Those
 	// tools are NOT auth-gated: the dev loop has no auth configured at all,
 	// so a gate would only lock the developer's agent out of its own app.
-	// Dev exposure is bounded on the other axis instead — the listener must
+	// Dev exposure is bounded on the other axis instead, the listener must
 	// be loopback (framework's guardDevMCPBind).
 	mutationDevImplied bool
 }
@@ -171,7 +171,7 @@ func (p *Plugin) Logger() *slog.Logger { return p.logger }
 
 // Metrics is a point-in-time snapshot of counters surfaced by the log
 // plugin. Operators can scrape these via /metrics, /readyz, or any
-// other surface — the values are atomic loads, cheap and lock-free.
+// other surface, the values are atomic loads, cheap and lock-free.
 type Metrics struct {
 	// PostStopDrops counts log entries discarded because they arrived
 	// after sinks were closed (worker goroutines or stop hooks logging
@@ -211,12 +211,12 @@ func (p *Plugin) Metrics() Metrics {
 //
 // Router late-binding means the panic-recovery and access-log middleware
 // installed here wrap routes registered before this plugin was added,
-// not just routes added later — there is no ordering footgun.
+// not only routes added later. There is no ordering footgun.
 func (p *Plugin) Init(app *framework.App) error {
 	cfg := p.cfg
 
 	// In the dev loop (GOFASTR_DEV, opt-out GOFASTR_DEV_MCP=0) the MCP
-	// debug tools auto-enable, mutation included — the same reasoning
+	// debug tools auto-enable, mutation included, the same reasoning
 	// as the framework's dev-implied introspection/control: `gofastr
 	// dev` is a local trusted loop whose primary consumer is the
 	// developer's own agent. Production never sets GOFASTR_DEV, so the
@@ -280,7 +280,7 @@ func (p *Plugin) Init(app *framework.App) error {
 
 	// Swap the App's logger so middleware.LoggingFn(app.Logger) and any
 	// other code calling app.Logger() routes through our sinks. Scoped to
-	// this App — no slog.Default rewiring, no stdlib log side effects.
+	// this App, no slog.Default rewiring, no stdlib log side effects.
 	app.SetLogger(p.logger)
 	// Take the metrics handle so the framework-owned collectors (DB pool,
 	// outbox) attach to the single /metrics surface with no extra wiring.
@@ -295,7 +295,7 @@ func (p *Plugin) Init(app *framework.App) error {
 	// status that recovery wrote (500) on a panic. With the reverse
 	// ordering the defer would fire mid-unwind and log status=200 even
 	// when the response was a 500. These sit INSIDE the framework's
-	// default Recovery + Logging — log-recovery catches first because
+	// default Recovery + Logging, log-recovery catches first because
 	// it's the innermost recover.
 	app.Use(router.Middleware(accessMiddleware(p.logger, cfg.TrustForwardedFor)))
 
@@ -432,7 +432,7 @@ func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 		return nil
 	}
 
-	// Snapshot sinks under the lock then release it before writing —
+	// Snapshot sinks under the lock then release it before writing,
 	// each sink has its own synchronization (fileSink.mu, webhookSink's
 	// queue mu), so holding h.mu across a wedged disk write would
 	// serialize EVERY slog call in the process. The slice header is
@@ -452,7 +452,7 @@ func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 		if err := s.Write(cp); err != nil {
 			// slog.Logger.LogAttrs ignores handler errors (stdlib
 			// contract). Fall back to stderr so a wedged sink isn't
-			// silent — operators need at least one path to see that
+			// silent, operators need at least one path to see that
 			// logging is broken. ErrSinkClosed is expected post-Stop
 			// and gets a quieter shape.
 			if errors.Is(err, ErrSinkClosed) {
@@ -517,7 +517,7 @@ func (h *fanoutHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-// close flushes and closes every sink. Idempotent guard not provided —
+// close flushes and closes every sink. Idempotent guard not provided,
 // App.Stop calls it once. Surfaces the post-Stop drop counter so an
 // operator chasing missing shutdown logs has at least one signal.
 func (h *fanoutHandler) close() error {

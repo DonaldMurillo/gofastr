@@ -14,8 +14,8 @@ import (
 // Dim buckets with a sign derived from a second hash, and the result is
 // L2-normalized.
 //
-// It is NOT a real embedding model — there is no semantic similarity
-// across paraphrases or synonyms — but it is fast, allocation-light,
+// It is NOT a real embedding model, there is no semantic similarity
+// across paraphrases or synonyms, but it is fast, allocation-light,
 // and produces high cosine similarity for documents that share tokens,
 // which is enough to test the retrieval pipeline end-to-end.
 type StubEmbedder struct {

@@ -11,7 +11,7 @@ import (
 )
 
 // SQLite FTS5 integration tests for SQLiteFTS. These tests open an in-memory
-// SQLite database and probe FTS5 availability at runtime — if the
+// SQLite database and probe FTS5 availability at runtime, if the
 // mattn/go-sqlite3 driver was compiled without the sqlite_fts5 build tag,
 // every test skips individually so the default `go test ./...` stays green.
 //
@@ -168,7 +168,7 @@ func TestSQLiteTypeFilter(t *testing.T) {
 	}
 }
 
-// TestSQLiteFieldEqualsTenantScope: two docs same text, different tenant —
+// TestSQLiteFieldEqualsTenantScope: two docs same text, different tenant,
 // the parity case shared with the Memory and Postgres backends.
 func TestSQLiteFieldEqualsTenantScope(t *testing.T) {
 	ctx := context.Background()
@@ -198,7 +198,7 @@ func TestSQLiteFieldEqualsTenantScope(t *testing.T) {
 // TestSQLiteFieldEqualsStringOnly is the shared matching rule: a field whose
 // value is not a string never satisfies a FieldEquals pair, even if its
 // fmt.Sprint form would match. The SQLite backend encodes this as
-// json_extract vs a TEXT parameter — values of different JSON storage
+// json_extract vs a TEXT parameter, values of different JSON storage
 // classes are never equal in SQLite.
 func TestSQLiteFieldEqualsStringOnly(t *testing.T) {
 	ctx := context.Background()
@@ -314,7 +314,7 @@ func TestSQLiteEmptyQuery(t *testing.T) {
 	if len(res) != 1 || res[0].Document.ID != "2" {
 		t.Fatalf("scoped match-all: %#v", res)
 	}
-	// Pure punctuation is NOT empty — its terms sanitize away and match nothing.
+	// Pure punctuation is NOT empty, its terms sanitize away and match nothing.
 	res, err = idx.Search(ctx, Query{Text: "!!! ???"})
 	if err != nil {
 		t.Fatal(err)

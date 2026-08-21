@@ -13,7 +13,7 @@ type buildOptions struct {
 	noEmbedCheck bool
 	// noContracts skips the contract analyzers. The gate only fails on
 	// error-severity findings, so this exists for a build that must ship
-	// while a rule is being addressed — not as a routine flag.
+	// while a rule is being addressed, not as a routine flag.
 	noContracts bool
 	// allowUnverifiedEmbeds downgrades check-embed's unresolved notes from
 	// fatal back to advisory, without disabling the check the way

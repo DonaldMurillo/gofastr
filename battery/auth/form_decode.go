@@ -24,7 +24,7 @@ func bareContentType(r *http.Request) string {
 //
 // This answers "how should I decode the body and shape the response",
 // NOT "may a cross-site page have sent this". Use isForgeableRequest for
-// the latter — the two sets differ, and conflating them is what let a
+// the latter, the two sets differ, and conflating them is what let a
 // text/plain login CSRF through.
 func isFormRequest(r *http.Request) bool {
 	ct := bareContentType(r)
@@ -32,7 +32,7 @@ func isFormRequest(r *http.Request) bool {
 }
 
 // isForgeableRequest reports whether a cross-site page could have sent
-// this request WITHOUT a CORS preflight — i.e. whether it is a CORS
+// this request WITHOUT a CORS preflight, i.e. whether it is a CORS
 // "simple request" and therefore a viable CSRF vehicle.
 //
 // The set is the three simple content types plus the absent header:
@@ -43,7 +43,7 @@ func isFormRequest(r *http.Request) bool {
 // application/json and every other type are NOT forgeable: a cross-site
 // POST carrying one is preflighted, and the framework answers no
 // preflight for auth routes. That exemption is deliberate and load
-// bearing — a legitimate SPA on another origin talks to these routes
+// bearing, a legitimate SPA on another origin talks to these routes
 // with JSON through an explicitly configured CORS middleware, and
 // gating it here would break that.
 func isForgeableRequest(r *http.Request) bool {
@@ -63,7 +63,7 @@ func isForgeableRequest(r *http.Request) bool {
 // On any other decode error, writes 400 and returns ok=false.
 //
 // SECURITY: this intentionally does NOT decode a "roles" field.
-// /auth/register is an anonymous endpoint — honoring client-supplied
+// /auth/register is an anonymous endpoint, honoring client-supplied
 // roles would let any visitor self-promote to admin via a single POST
 // (or a CSRF-style cross-origin form submission). Roles are assigned
 // server-side in the handler from a configured default.
@@ -123,10 +123,10 @@ func emailWithinLimit(w http.ResponseWriter, email string) bool {
 
 // successRedirect returns the redirect target for a form-based auth
 // flow. A trusted ?next= override is honored only when it parses as a
-// safe same-origin relative path — defending against open-redirect via
+// safe same-origin relative path, defending against open-redirect via
 //   - protocol-relative ("//evil.example")
 //   - absolute URLs ("https://evil.example", "javascript:...")
-//   - backslash bypass ("/\evil.example" — browsers normalise \ to /)
+//   - backslash bypass ("/\evil.example", browsers normalise \ to /)
 //   - control chars / CRLF (header injection)
 //
 // Anything not matching the safe-relative shape falls back to `fallback`.
@@ -151,7 +151,7 @@ func successRedirect(r *http.Request, fallback string) string {
 // Critically, the check runs against BOTH the raw input (for the
 // shape rules) AND the decoded `u.Path` (for percent-encoded
 // backslash / control chars / //). Without the second pass, an
-// attacker can supply `next=/%5Cevil.example/x` — the raw string
+// attacker can supply `next=/%5Cevil.example/x`, the raw string
 // has no literal '\' so the surface checks pass, then the browser
 // decodes %5C to '\' and normalises to '/', landing on
 // //evil.example/x cross-origin.
@@ -181,7 +181,7 @@ func isSafeRelativePath(p string) bool {
 	}
 	// Re-check the DECODED path: %5C → \, %00 → NUL, %0d%0a → CRLF.
 	// Any of these in the decoded form is just as dangerous as in
-	// the raw form — browsers decode before navigating.
+	// the raw form, browsers decode before navigating.
 	if strings.ContainsAny(u.Path, "\\\x00\r\n\t") {
 		return false
 	}
@@ -200,7 +200,7 @@ func isSafeRelativePath(p string) bool {
 //
 // atomic.Pointer wrapping makes concurrent writers (multi-app processes,
 // test-parallelism toggles) race-free per the Go memory model. A bare
-// string assignment is NOT atomic in Go — torn-string reads can panic
+// string assignment is NOT atomic in Go, torn-string reads can panic
 // on bounds-check when the length is updated before the data pointer.
 var defaultLoginErrorPath atomic.Pointer[string]
 
@@ -231,7 +231,7 @@ func getDefaultLoginErrorPath() string {
 
 // writeFormAuthError responds to a form-encoded auth request with a 303
 // redirect back to the referring page with an ?error= query string.
-// Only same-origin Referers are honored — a cross-origin Referer would
+// Only same-origin Referers are honored, a cross-origin Referer would
 // otherwise turn the auth endpoint into a phishing relay.
 //
 // When no usable Referer is available, falls back to
@@ -258,7 +258,7 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, msg 
 
 // safeReferer returns the request's Referer when its host matches the
 // request's own Host (same-origin), otherwise "". The Referer's query
-// string is dropped — propagating attacker-controlled query params
+// string is dropped, propagating attacker-controlled query params
 // from the Referer into the redirect Location is a state-confusion
 // vector (the attacker plants `?return=evil` on the referring page,
 // the auth-error redirect echoes it, the login page reads `?return=`

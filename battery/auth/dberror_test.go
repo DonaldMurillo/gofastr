@@ -12,7 +12,7 @@ import (
 
 // flakyUserStore returns a transient error from FindByEmail/FindByID.
 // Used to verify handlers don't conflate "transient DB error" with
-// "user does not exist" — the auto-create path must NOT fire on a
+// "user does not exist", the auto-create path must NOT fire on a
 // generic error.
 type flakyUserStore struct {
 	err          error
@@ -33,7 +33,7 @@ func (s *flakyUserStore) CreateUser(_ context.Context, email, _ string, _ []stri
 }
 func (s *flakyUserStore) FindByOAuth(_ context.Context, _, _ string) (User, error) {
 	// Mirror FindByEmail's failure mode so resolveOAuthUser's linker lookup
-	// also fails loudly — never conflated with "not found".
+	// also fails loudly, never conflated with "not found".
 	return nil, s.err
 }
 func (s *flakyUserStore) LinkOAuth(_ context.Context, _, _, _ string) error {

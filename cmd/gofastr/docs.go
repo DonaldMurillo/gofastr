@@ -17,8 +17,8 @@ import (
 //	gofastr docs --grep <term>      search across every topic
 //
 // The docs are embedded into the binary at build time, so this command
-// always speaks for the version of the framework you have installed —
-// no GitHub / module-cache fetch needed.
+// always speaks for the version of the framework you have installed.
+// No GitHub / module-cache fetch needed.
 func runDocs(args []string) {
 	// --grep / -g
 	for i := 0; i < len(args); i++ {
@@ -65,7 +65,7 @@ func runDocsList() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		osExit(1)
 	}
-	fmt.Printf("%s framework docs (%d topics) — `gofastr docs <topic>` to read one\n\n",
+	fmt.Printf("%s framework docs (%d topics); `gofastr docs <topic>` to read one\n\n",
 		bold("GoFastr"), len(topics))
 	maxName := 0
 	for _, t := range topics {
@@ -81,7 +81,7 @@ func runDocsList() {
 		// Trim long summaries to fit ~120-col terminals.
 		const lineCap = 100
 		if len(summary) > lineCap {
-			// Back off to a rune boundary — a byte slice can land mid-rune
+			// Back off to a rune boundary. A byte slice can land mid-rune
 			// and emit invalid UTF-8 to the terminal.
 			cut := lineCap
 			for cut > 0 && !utf8.RuneStart(summary[cut]) {
@@ -123,7 +123,7 @@ func runDocsGrep(term string) {
 }
 
 func printDocsHelp() {
-	fmt.Print(`gofastr docs — browse framework docs
+	fmt.Print(`gofastr docs: browse framework docs
 
 Usage:
   gofastr docs                  List every topic
@@ -131,7 +131,7 @@ Usage:
   gofastr docs --grep <term>    Search across every topic
   gofastr docs --list           List every topic (same as no args)
 
-The docs are embedded at build time — they always describe the framework
+The docs are embedded at build time: they always describe the framework
 version this binary was built against.
 `)
 }
@@ -148,8 +148,8 @@ func pluralS(n int) string {
 //
 // It scans s directly, rune by rune, rather than locating the match in
 // strings.ToLower(s) and slicing the original. strings.ToLower is not
-// length-preserving — U+0130 'İ' lowers to a single-byte 'i', shrinking
-// 2 bytes to 1 — so the two strings' byte offsets diverge and the old
+// length-preserving. U+0130 'İ' lowers to a single-byte 'i', shrinking
+// 2 bytes to 1, so the two strings' byte offsets diverge and the old
 // `s[i+idx : i+idx+len(term)]` either sliced mid-rune (emitting invalid
 // UTF-8) or ran past the end. `gofastr docs --grep 'entİty'` panicked
 // with "slice bounds out of range".

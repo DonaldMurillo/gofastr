@@ -89,7 +89,7 @@ type CandidateResult struct {
 	BuilderDuration         float64         `json:"builder_duration_seconds,omitempty"`
 	BuilderTokens           int64           `json:"builder_tokens,omitempty"`
 	// BuilderCLICalls / BuilderUsedDevServer come from the PATH shim's
-	// invocation log — a non-deterministic funnel signal: the harness
+	// invocation log, a non-deterministic funnel signal: the harness
 	// prompt names no command, so a `gofastr dev` here means the builder
 	// discovered the hot-reload loop from the generated guidance alone.
 	BuilderCLICalls      int  `json:"builder_cli_calls"`
@@ -101,7 +101,7 @@ type CandidateResult struct {
 	BuilderDocsSearches      []string `json:"builder_docs_searches,omitempty"`
 	BuilderDocsTopics        []string `json:"builder_docs_topics,omitempty"`
 	BuilderUsedCapabilityMap bool     `json:"builder_used_capability_map"`
-	// BuilderUsedMCP greps the builder's transcript for /mcp traffic — a
+	// BuilderUsedMCP greps the builder's transcript for /mcp traffic, a
 	// soft behavioral signal that the builder discovered the app's MCP
 	// debug loop (introspection/log tools) from guidance alone.
 	BuilderUsedMCP bool `json:"builder_used_mcp"`

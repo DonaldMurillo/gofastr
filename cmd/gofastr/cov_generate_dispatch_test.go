@@ -100,6 +100,6 @@ func TestProjectRelativePath(t *testing.T) {
 }
 
 // NOTE: runOnce / runGenerateWatch exec os.Executable() (the gofastr
-// binary) and the watch loop polls forever — exercising them in-process
+// binary) and the watch loop polls forever. Exercising them in-process
 // would re-enter the test binary or block. They are recorded as hard
 // paths rather than forced.

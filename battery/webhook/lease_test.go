@@ -29,7 +29,7 @@ func TestSQLStore_ClaimDueDeliveriesIsExclusive(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	// Simulate two workers — only ONE should win the claim.
+	// Simulate two workers, only ONE should win the claim.
 	a, err := store.ClaimDueDeliveries(ctx, now, 10, 30*time.Second)
 	if err != nil {
 		t.Fatalf("claim A: %v", err)
@@ -102,6 +102,6 @@ var (
 	_ LeasedStore = (*MemoryStore)(nil)
 )
 
-// Helper used by the SQL test variants — must match the DB the existing
+// Helper used by the SQL test variants, must match the DB the existing
 // openSQLStore uses (sqlite).
 var _ = sql.ErrNoRows

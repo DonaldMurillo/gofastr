@@ -23,7 +23,7 @@ type tokenMiddlewareOpts struct {
 
 // WithTokenPrefix sets the plaintext marker this middleware recognizes
 // (default TokenPrefix, "gfsk_"). Pair it with the same TokenSpec.Prefix at
-// issue time — hosts that brand their credentials must brand both sides or
+// issue time, hosts that brand their credentials must brand both sides or
 // every authenticated request passes through unrecognized.
 func WithTokenPrefix(prefix string) TokenMiddlewareOption {
 	if !tokenPrefixPattern.MatchString(prefix) {
@@ -53,7 +53,7 @@ const lastUsedTouchInterval = 60 * time.Second
 // TokenMiddleware authenticates `Authorization: Bearer gfsk_…` requests.
 //
 // Non-gfsk_ bearer tokens and requests without the header pass through
-// UNTOUCHED (the session/JWT middleware handle those) — it does NOT clear
+// UNTOUCHED (the session/JWT middleware handle those), it does NOT clear
 // an existing ctx user in that case. A gfsk_-prefixed credential that fails
 // validation proceeds ANONYMOUSLY with the ctx user CLEARED (mirroring
 // SessionMiddleware's anon semantics), never falling back to a prior
@@ -61,7 +61,7 @@ const lastUsedTouchInterval = 60 * time.Second
 //
 // Validation order:
 //  1. Extract bearer; if it doesn't start with gfsk_, pass through.
-//  2. hash := sha256(credential); FindByHash (uniform timing — no string
+//  2. hash := sha256(credential); FindByHash (uniform timing, no string
 //     comparison against stored plaintext anywhere).
 //  3. Unknown hash / RevokedAt set / ExpiresAt passed → anonymous (cleared)
 //     + audit token.auth_failed (reason ∈ unknown|revoked|expired; token
@@ -83,7 +83,7 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 			cred := extractBearerToken(r)
 
 			// (1) A credential that doesn't carry our token prefix is none of
-			// our business — leave ctx exactly as the outer middleware left it.
+			// our business, leave ctx exactly as the outer middleware left it.
 			if !strings.HasPrefix(cred, o.prefix) {
 				next.ServeHTTP(w, r)
 				return
@@ -106,7 +106,7 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 				// closed-vocabulary fail reasons, so it clears the user and
 				// logs rather than emitting a fabricated reason.
 				if log != nil {
-					log.Warn("api-token: store lookup failed — request degraded to anonymous", "err", err.Error())
+					log.Warn("api-token: store lookup failed: request degraded to anonymous", "err", err.Error())
 				}
 				next.ServeHTTP(w, r.WithContext(handler.SetUser(ctx, nil)))
 				return
@@ -126,7 +126,7 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 			}
 
 			// (4) Resolve owner principal. A non-empty failReason means the
-			// owner couldn't be established (missing or disabled) — audit it
+			// owner couldn't be established (missing or disabled), audit it
 			// with the precise reason and proceed anonymous+cleared.
 			principal, failReason := resolveTokenOwner(ctx, t, users, accounts, log)
 			if failReason != "" {
@@ -136,8 +136,8 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 			}
 
 			// (5) Success. Alongside the owner and scopes, expose the token's
-			// own ID — per-token metering/quotas/audit need to attribute the
-			// request to the SPECIFIC credential, not just its owner.
+			// own ID, per-token metering/quotas/audit need to attribute the
+			// request to the SPECIFIC credential, not only its owner.
 			newCtx := handler.SetUser(ctx, principal)
 			newCtx = WithTokenScopes(newCtx, t.Scopes)
 			newCtx = WithTokenID(newCtx, t.ID)
@@ -145,7 +145,7 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 				// Synchronous + best-effort: the write is fast (indexed PK
 				// UPDATE) and happens at most once per token per 60s. Doing
 				// it synchronously (rather than fire-and-forget) makes the
-				// throttle EFFECTIVE for rapid requests — the next lookup
+				// throttle EFFECTIVE for rapid requests, the next lookup
 				// sees the fresh last_used_at and skips. The error is
 				// ignored: last_used is observability, never auth state.
 				_ = tokens.TouchLastUsed(r.Context(), t.ID, time.Now().UTC())
@@ -158,7 +158,7 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 // resolveTokenOwner loads the principal for a valid token. It returns
 // (principal, "") on success. On failure it returns (nil, reason) where
 // reason is the closed-vocabulary token.auth_failed code
-// (owner_missing|owner_disabled) the caller emits — keeping the reason
+// (owner_missing|owner_disabled) the caller emits, keeping the reason
 // taxonomy in one place. A transport error during lookup is treated as
 // owner_missing (fail closed) and logged at debug.
 func resolveTokenOwner(ctx context.Context, t *APIToken, users UserStore, accounts ServiceAccountStore, log *slog.Logger) (User, string) {
@@ -234,12 +234,12 @@ func emitTokenEvent(sink AuditSink, ctx context.Context, r *http.Request, kind, 
 // API tree for token-authenticated callers, so a token minted with
 // ["customers:*"] really is limited to customers. The required scope is
 // derived from the route: the first path segment after apiPrefix is the
-// resource (the entity table), and the HTTP method maps to the verb —
+// resource (the entity table), and the HTTP method maps to the verb,
 // GET/HEAD need "<resource>:read", everything else "<resource>:write".
 // Subroutes (/{id}, /_batch, /_events, /llm.md) inherit the resource.
 //
 // Session/JWT callers (no token on the request) pass through unscoped, as
-// do paths outside apiPrefix — this only *narrows* what a token may do,
+// do paths outside apiPrefix, this only *narrows* what a token may do,
 // mirroring HasScope semantics. Mount once, after TokenMiddleware:
 //
 //	app.Use(auth.TokenMiddleware(users, accounts, tokens))
@@ -268,12 +268,12 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 			// after the API prefix, skipping version-like segments (v1, v2,
 			// v1.2) so that /api/v1/posts and /api/v2/posts both map to the
 			// same scope resource "posts". Version is an API-surface concern,
-			// not an authorization one — a token scoped to posts:read can read
+			// not an authorization one, a token scoped to posts:read can read
 			// posts at any version. Per-version authorization uses RequireScope.
 			//
 			// A version-like segment is only skipped when a real segment
 			// follows it. An entity whose table is genuinely version-shaped
-			// ("v1", "v2" — legal, since Table only has to match [A-Za-z0-9_])
+			// ("v1", "v2", legal, since Table only has to match [A-Za-z0-9_])
 			// would otherwise leave resource empty, and the empty case falls
 			// through unchecked: an authorization bypass, not a naming quirk.
 			segs := make([]string, 0, 4)
@@ -309,7 +309,7 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 
 // RequireScope returns middleware that 403s token-authenticated requests
 // lacking the scope. Non-token requests (sessions/JWT) pass through
-// unscoped — sessions carry full user capability; scopes are an additional
+// unscoped, sessions carry full user capability; scopes are an additional
 // token-level restriction only.
 func RequireScope(scope string) middleware.Middleware {
 	return func(next http.Handler) http.Handler {

@@ -20,8 +20,8 @@
 // component.Server(...) and ActionDef.Server look like the marker but are dead
 // API: Server(...) has one call site in the whole repo (a unit test), and On()
 // never sets ActionDef.Server nor does the compiler read it. Keying on either
-// would record a *declaration* rather than the property — the exact failure
-// mode issue #150 rejected a marker interface for — so they are deliberately
+// would record a *declaration* rather than the property. That is the exact
+// failure mode issue #150 rejected a marker interface for, so they are
 // not matched.
 //
 // # Reachability, and where each step gives up
@@ -30,13 +30,13 @@
 // component tree it renders is a Go value graph. findFindings resolves as much
 // of it as go/analysis + go/types honestly can, per package:
 //
-//  1. embed.Surface{...} composite literals — identified by resolved type, so a
+//  1. embed.Surface{...} composite literals, identified by resolved type, so a
 //     same-named struct elsewhere is never mistaken for one.
 //  2. The Screen field → the app.NewScreen(path, comp) call that built it,
 //     following one level of identifier → initializer within the package.
 //  3. comp → its concrete named type, following an identifier whose declared
 //     type is the component.Component interface back to its initializer.
-//  4. the WHOLE component tree reachable from that type, not just the root:
+//  4. the WHOLE component tree reachable from that type rather than the root alone:
 //     struct fields (including embedded ones, and through pointers, slices,
 //     arrays and maps), concrete components handed to the constructor
 //     expression that built the root, and concrete components named in the
@@ -46,8 +46,8 @@
 //     G.serverAction call outside JavaScript comments and strings.
 //
 // Step 4 is why the root is not the unit. A root that renders a child ships the
-// CHILD's compiled actions to the frame — every compiled registry travels in one
-// bundle — so a gate that inspected only the root passed a surface whose button
+// CHILD's compiled actions to the frame. Every compiled registry travels in one
+// bundle, so a gate that inspected only the root passed a surface whose button
 // 401s in the customer's page.
 //
 // # Where it stops, and why it says so
@@ -56,20 +56,20 @@
 // component type whose Actions() body lives in another package, a component
 // produced by calling a function value, ClientJS that is not a string literal,
 // or a registration nested inside a function literal. Each of those is reported
-// as an [Unresolved] — NOT as silence. A gate that quietly gives up reads
+// as an [Unresolved], NOT as silence. A gate that quietly gives up reads
 // exactly like a gate that checked and found nothing, which is how the
 // rendered-child hole survived a release.
 //
 // Most Unresolved notes are advisory: the boot walk in framework/uihost reads
-// live component VALUES, so a child held in a field — through an interface, a
-// map key, or an island wrapper — is checked at Mount. One class is not, and
+// live component VALUES, so a child held in a field, through an interface, a
+// map key, or an island wrapper, is checked at Mount. One class is not, and
 // carries Blocking: a child built inside Render() whose type lives in another
 // package. It does not exist as a value when the walk runs, and its Actions()
 // body is not in this syntax tree, so neither gate can vouch for it and
 // `gofastr build` stops.
 //
 // Failing on EVERY note was tried and reverted. It rejected clean island
-// surfaces — the shape the blueprint emits for every island block — plus
+// surfaces, the shape the blueprint emits for every island block, plus
 // interface-typed fields the analyzer had already resolved and the fixture
 // named for false positives, and the advertised remedy ("hold the child in a
 // field") is impossible for a wrapper.
@@ -130,13 +130,13 @@ func runPass(pass *analysis.Pass) (any, error) {
 // Unresolved is one place the static walk could not follow, on the path from an
 // embeddable surface to the components it renders.
 //
-// It is never a violation — the surface may well be clean. It exists so that
+// It is never a violation. The surface may well be clean. It exists so that
 // "I found nothing" and "I could not look" are not the same output.
 //
 // Most notes are advisory, because the boot-time walk in
 // framework/uihost/embed_actions.go covers what they describe: it reads live
-// component VALUES, so a child held in a field — including through an
-// interface, a map key, or an island wrapper — is checked at Mount.
+// component VALUES, so a child held in a field, including through an
+// interface, a map key, or an island wrapper, is checked at Mount.
 //
 // Blocking is the exception: a child CONSTRUCTED inside Render() whose type
 // lives in another package is visible to neither gate. It does not exist as a
@@ -154,7 +154,7 @@ type Unresolved struct {
 // Format renders the human-facing note.
 func (u Unresolved) Format() string {
 	return fmt.Sprintf(
-		"embed surface %q: %s — check-embed cannot prove this surface is free of "+
+		"embed surface %q: %s: check-embed cannot prove this surface is free of "+
 			"server actions, and the boot walk cannot cover a child that does not "+
 			"exist until Render runs. Hold the child in a field instead of "+
 			"building it in Render, or move its type into this package, so the "+
@@ -180,7 +180,7 @@ func (f Finding) Format() string {
 			"embed grant would let a credential minted for one surface invoke any "+
 			"action in the app). The compiler accepts only the canonical spelling "+
 			"G.serverAction(...), with no whitespace before '('. Use an island RPC, "+
-			"a form POST, or polling instead — all three work in a frame.",
+			"a form POST, or polling instead: all three work in a frame.",
 		f.Surface, f.Component, f.Action)
 }
 
@@ -258,12 +258,12 @@ const maxReachDepth = 12
 //
 // Three sources feed the walk, and each answers a shape real code uses:
 //
-//   - struct fields — a root that holds its children (the shape the boot gate
+//   - struct fields: a root that holds its children (the shape the boot gate
 //     caught shipping a child's action to a frame);
-//   - the construction expression — `app.NewScreen("/x", NewPanel(&child{}))`,
+//   - the construction expression: `app.NewScreen("/x", NewPanel(&child{}))`,
 //     where the concrete child is an argument and the field that stores it is
 //     interface-typed;
-//   - the root's Render / RenderCtx body — `return c.child.Render()`, and any
+//   - the root's Render / RenderCtx body: `return c.child.Render()`, and any
 //     child built inline there.
 func (r *resolver) reachableComponents(root *types.Named, rootExpr ast.Expr, note, blockingNote func(token.Pos, string)) []*types.Named {
 	var out []*types.Named
@@ -419,7 +419,7 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(
 				return true
 			}
 			// A named INTERFACE (component.Component itself) is not a child
-			// built here — it is the static type of one held elsewhere, and
+			// built here. It is the static type of one held elsewhere, and
 			// walkComponentType already notes it as runtime-chosen. Noting it
 			// again would double every interface-typed field.
 			if _, isIface := named.Underlying().(*types.Interface); isIface {
@@ -429,8 +429,8 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(
 			// descends THROUGH them into the child they hold (island is in
 			// neither reachStopPackages nor this list), so the child is
 			// covered at Mount and there is nothing to warn about. Noting
-			// them turned every island-rendering surface — the shape the
-			// blueprint emits for every island block — into a build failure.
+			// them turned every island-rendering surface, the shape the
+			// blueprint emits for every island block, into a build failure.
 			if renderWrapperPackages[named.Obj().Pkg().Path()] {
 				return true
 			}
@@ -453,7 +453,7 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(
 	return out
 }
 
-// hasRenderMethod reports whether t (or *t) declares Render — the one method
+// hasRenderMethod reports whether t (or *t) declares Render, the one method
 // every component has. Used instead of types.Implements against
 // component.Component so a package that declares a component without importing
 // core-ui/component is still followed.
@@ -600,7 +600,7 @@ func (r *resolver) followScreen(expr ast.Expr, seen map[types.Object]bool) ast.E
 }
 
 // screenFromCallChain handles app.NewScreen(...) and method chains on its
-// result (WithTitle, WithPolicy, WithDescription, … — all return *Screen). The
+// result (WithTitle, WithPolicy, WithDescription, …; all return *Screen). The
 // base of the chain is the NewScreen call, so a method-call receiver is
 // unwrapped until it is reached.
 func (r *resolver) screenFromCallChain(call *ast.CallExpr) ast.Expr {
@@ -746,7 +746,7 @@ type actionNote struct {
 // the registrations it could not decide about.
 //
 // It skips function literals because their bodies do not execute merely by
-// being declared — but a skipped body that CONTAINS a server action is reported
+// being declared, but a skipped body that CONTAINS a server action is reported
 // as unresolved rather than passed over, because an immediately-invoked literal
 // executes and this walk cannot tell the two apart. The compiled-registry boot
 // gate is what covers them.

@@ -37,8 +37,8 @@ const maxDepth = 256
 // maxNodes caps the total AST size. maxDepth alone is not enough: the
 // precedence loops (parseOr/parseAnd/parseAdd/parseMul) and the postfix
 // chain iterate rather than recurse, so `1+1+1+…` and `a.b.c.d…` build a
-// LEFT-DEEP tree of depth O(n) while the parser's own recursion — and
-// therefore its depth counter — stays flat. The crash lands later, in the
+// LEFT-DEEP tree of depth O(n) while the parser's own recursion, and
+// therefore its depth counter, stays flat. The crash lands later, in the
 // recursive evaluator, as a goroutine stack overflow: a FATAL runtime
 // error recover() cannot catch, so no middleware can contain it.
 //

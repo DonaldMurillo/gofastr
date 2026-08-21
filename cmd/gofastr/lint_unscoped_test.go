@@ -7,11 +7,11 @@ import (
 )
 
 // Any auto-exposed entity with no per-user scoping is cross-user read/
-// write/delete — every authenticated user can touch every row — not just
-// the ones with PII-shaped names. The generator warns on every one of
-// them so "notes"/"journal_entries"/"balances" can't slip through the
-// fixed PII token list. (Auto-CRUD already requires a session by default
-// — issue #65 — so this is NOT anonymous exposure; see
+// write/delete: every authenticated user can touch every row. That applies
+// to entities without PII-shaped names too. The generator warns on every
+// one of them so "notes"/"journal_entries"/"balances" can't slip through
+// the fixed PII token list. (Auto-CRUD already requires a session by default,
+// issue #65, so this is NOT anonymous exposure; see
 // TestLintPublicEntitiesFlagsPublicTrue for the entity that IS.)
 func TestLintUnscopedFlagsNonPIIEntities(t *testing.T) {
 	dir := t.TempDir()
@@ -62,7 +62,7 @@ entities:
 // TestLintPublicEntitiesFlagsPublicTrue pins the actual anonymous-access
 // surface post-#65: only `public: true` entities are genuinely open to
 // anonymous callers. Everything lintUnscopedEntities flags above already
-// requires a session — this lint is the complementary one that doesn't.
+// requires a session. This lint is the complementary one that doesn't.
 func TestLintPublicEntitiesFlagsPublicTrue(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")

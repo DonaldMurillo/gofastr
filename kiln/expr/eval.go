@@ -261,8 +261,8 @@ func equals(l, r any) bool {
 	// Comparing two interface values panics at runtime when either dynamic
 	// type is uncomparable (slice, map, func). Those arrive routinely here:
 	// a list literal, or any JSON array decoded into []any. The panic is not
-	// containable — kiln's applyRoutes installs raw http.HandlerFuncs and
-	// panic recovery is an opt-in catalog entry the world must declare — so
+	// containable, kiln's applyRoutes installs raw http.HandlerFuncs and
+	// panic recovery is an opt-in catalog entry the world must declare, so
 	// guard the comparison instead. Uncomparable operands are not equal.
 	//
 	// reflect covers every shape reachable from a world IR (JSON scalars,

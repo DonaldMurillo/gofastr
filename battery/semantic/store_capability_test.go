@@ -13,8 +13,8 @@ var (
 	_ chunkLister = (*FlatStore)(nil)
 )
 
-// bareStore implements only the required Store interface — not snapshotter or
-// chunkLister — to exercise Open()'s fail-closed guards.
+// bareStore implements only the required Store interface, not snapshotter or
+// chunkLister, to exercise Open()'s fail-closed guards.
 type bareStore struct{}
 
 func (bareStore) Add(context.Context, []Chunk) error      { return nil }

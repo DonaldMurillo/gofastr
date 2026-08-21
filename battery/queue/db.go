@@ -18,7 +18,7 @@ import (
 // DBQueue is a SQL-backed queue. Jobs persist in a single table; Dequeue
 // claims a row atomically so multiple consumers can race safely.
 //
-// Postgres uses FOR UPDATE SKIP LOCKED — the canonical pattern for queue
+// Postgres uses FOR UPDATE SKIP LOCKED, the canonical pattern for queue
 // fan-out without distributed locks. SQLite uses a SERIALIZABLE-friendly
 // SELECT-then-UPDATE inside a tx; the table-level lock SQLite takes on
 // BEGIN IMMEDIATE serialises writers naturally.
@@ -35,7 +35,7 @@ type DBQueue struct {
 	stop           chan struct{}
 	stopped        chan struct{}
 
-	// started records whether Start launched the supervisor goroutine — the
+	// started records whether Start launched the supervisor goroutine, the
 	// only thing that ever closes stopped. Close waits on stopped, so without
 	// this flag a queue that was constructed and abandoned (a startup sequence
 	// that failed after NewDBQueue, a test that only enqueued) blocked forever
@@ -119,7 +119,7 @@ func WithWorkers(n int) DBQueueOption {
 // WithDBHandlerTimeout caps a single handler invocation's wall-clock
 // budget. The job's context is cancelled at the deadline, so a
 // black-holed dependency (an SMTP host that never responds, a hung HTTP
-// call) can't wedge a worker forever — critical with the default single
+// call) can't wedge a worker forever, critical with the default single
 // worker, where one stuck job stalls the entire queue. Zero (default)
 // means no timeout; set it whenever handlers touch the network. (Named
 // distinctly from the MemoryQueue's WithHandlerTimeout because both live
@@ -131,7 +131,7 @@ func WithDBHandlerTimeout(d time.Duration) DBQueueOption {
 // WithDBLogger sets the logger used for handler-failure (WARN) and
 // dead-letter (ERROR) records emitted from the worker loop. Defaults to
 // slog.Default(); passing nil restores the default. Without it a failing
-// handler dead-letters silently — you lose the job and the reason.
+// handler dead-letters silently, you lose the job and the reason.
 func WithDBLogger(l *slog.Logger) DBQueueOption {
 	return func(q *DBQueue) {
 		if l == nil {
@@ -149,8 +149,8 @@ func WithLeaseTimeout(d time.Duration) DBQueueOption {
 }
 
 // WithBackoff enables exponential retry backoff. On a Nack with retries
-// remaining, scheduled_at is advanced by base*2^(attempts-1) — so the first
-// retry waits ~base, the second ~2*base, and so on — capped at max. A
+// remaining, scheduled_at is advanced by base*2^(attempts-1), so the first
+// retry waits ~base, the second ~2*base, and so on, capped at max. A
 // non-positive base disables backoff (jobs retry immediately, the default).
 // A non-positive max means uncapped. The delay computation is
 // [core/backoff].Exponential, shared with the outbox relay.
@@ -369,7 +369,7 @@ func (q *DBQueue) handlerTypes() []string {
 
 // eligibleTypes returns registered job types whose gate (if set) allows
 // processing, so gated types are excluded before Dequeue and their rows are
-// never claimed — eliminating the claim/release churn of grabbing a job only
+// never claimed, eliminating the claim/release churn of grabbing a job only
 // to release it. Both the handler map snapshot and the gate are read under
 // the read lock so the result is consistent and race-free against concurrent
 // SetGate/RegisterHandler. The captured gate function value is then invoked
@@ -399,7 +399,7 @@ func (q *DBQueue) Enqueue(ctx context.Context, job Job) error {
 
 // Dequeue claims the highest-priority eligible job in a single atomic step.
 // Returns ErrNoJob when nothing is ready (no pending row whose scheduled_at
-// has passed). Claims from ANY lane — dedicated lane workers use the
+// has passed). Claims from ANY lane, dedicated lane workers use the
 // internal dequeue with a lane filter instead.
 func (q *DBQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
 	return q.dequeue(ctx, "", types)
@@ -411,7 +411,7 @@ func (q *DBQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
 func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job, error) {
 	// A lease that expired on the job's FINAL attempt is not reclaimable
 	// (eligibleWhere requires attempts < max_attempts for re-delivery) and
-	// never reaches Nack — without this sweep the row would sit in 'claimed'
+	// never reaches Nack, without this sweep the row would sit in 'claimed'
 	// forever: invisible to Stats-as-failed, ListJobs("failed"), and Replay.
 	// Lease expiry on the final attempt is the crash equivalent of a terminal
 	// Nack, so route it to the same dead-letter state.
@@ -430,7 +430,7 @@ func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job
 // permitted attempt from 'claimed' to 'failed'. It runs before every claim
 // (the same "reclaim happens inside Dequeue" model as the eligibleWhere
 // lease-expiry clause), so a running worker loop sweeps stranded rows on its
-// next poll. Each swept job is logged at ERROR — a job that vanished because
+// next poll. Each swept job is logged at ERROR, a job that vanished because
 // its worker crashed must not disappear silently.
 func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 	cutoff := q.now().UTC().Add(-q.leaseTimeout())
@@ -462,7 +462,7 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 	for _, s := range found {
 		// Re-check the full predicate inside the UPDATE: between the SELECT
 		// and now another path (Ack, Nack, release) may have transitioned the
-		// row — the sweep must never dead-letter a claim that is no longer
+		// row, the sweep must never dead-letter a claim that is no longer
 		// expired-and-final.
 		res, err := q.db.ExecContext(ctx, fmt.Sprintf(
 			`UPDATE %s SET status='failed'
@@ -583,19 +583,19 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (stri
 	return strings.Join(parts, " AND "), args
 }
 
-// Ack permanently removes the job — work is done, no replay needed. The
+// Ack permanently removes the job, work is done, no replay needed. The
 // DELETE is qualified with status='claimed' so it retires only a live claim:
-// a row the dead-letter sweep has already adjudicated ('failed' — lease
+// a row the dead-letter sweep has already adjudicated ('failed', lease
 // expired on the final attempt) survives a late Ack from the crashed worker.
 // The work may well have completed, but the sweep already logged the
-// dead-letter at ERROR and Stats counted a failure — deleting the record
+// dead-letter at ERROR and Stats counted a failure, deleting the record
 // afterwards would strand that signal with no way to reconcile it. The
 // operator reconciles explicitly via Replay, which makes the row claimable
 // again so a live claim's Ack deletes it through this same path. This
 // mirrors RedisQueue, where a stale claim's Ack is a fenced no-op.
 //
 // DBQueue has no per-claim fencing (no ClaimToken column), so a stale Ack
-// that lands while a re-claimant holds the row still deletes that claim —
+// that lands while a re-claimant holds the row still deletes that claim,
 // within the at-least-once contract, as before.
 func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 	_, err := q.db.ExecContext(ctx,
@@ -644,7 +644,7 @@ func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 }
 
 // Replay implements [Replayable]: it resets a terminally-failed job to pending
-// so a worker picks it up again — attempts cleared, scheduled immediately. The
+// so a worker picks it up again, attempts cleared, scheduled immediately. The
 // `AND status='failed'` clause makes it idempotent and safe: replaying an
 // unknown, pending, running, or claimed job matches no row and is a no-op, so
 // it can never double-run an in-flight job or resurrect a non-terminal one.
@@ -719,7 +719,7 @@ func (q *DBQueue) Stats(ctx context.Context) (JobStats, error) {
 	return out, rows.Err()
 }
 
-// Compile-time interface assertions — catching a missing implementation at build
+// Compile-time interface assertions, catching a missing implementation at build
 // time rather than waiting for the test binary to be compiled and linked.
 var (
 	_ Queue      = (*DBQueue)(nil)
@@ -877,7 +877,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		default:
 		}
 		// Filter gated types out of the eligible set BEFORE Dequeue so
-		// gated jobs are never claimed — eliminating the claim/release
+		// gated jobs are never claimed, eliminating the claim/release
 		// churn that would otherwise fire every ~100ms. When every
 		// registered type is gated (or none are registered yet) there is
 		// nothing to claim; back off and retry.
@@ -890,7 +890,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		}
 		job, err := q.dequeue(ctx, lane, types)
 		if err != nil {
-			// ErrNoJob is the steady state — sleep briefly and retry.
+			// ErrNoJob is the steady state, sleep briefly and retry.
 			if wait() {
 				return
 			}
@@ -898,7 +898,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		}
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
-			// No handler — drop the row so it doesn't loop forever.
+			// No handler, drop the row so it doesn't loop forever.
 			_ = q.Ack(ctx, job)
 			continue
 		}
@@ -918,7 +918,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		if err := q.runHandler(ctx, h, job); err != nil {
 			// job.Attempts was bumped by Dequeue before the handler ran, so it
 			// already equals the DB value Nack consults (attempts >=
-			// max_attempts) — this is the exact terminal predicate, not an
+			// max_attempts), this is the exact terminal predicate, not an
 			// off-by-one estimate.
 			q.logger.Warn("queue: handler failed",
 				"job_id", job.ID,

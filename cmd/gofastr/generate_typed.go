@@ -15,7 +15,7 @@ func renderEntityColumns(decl framework.EntityDeclaration) string {
 	var sb strings.Builder
 	sb.WriteString("// ====== " + struct_ + " column references ======\n\n")
 	sb.WriteString("var (\n")
-	// Always emit an ID column (PK) — the framework auto-adds it on Define.
+	// Always emit an ID column (PK): the framework auto-adds it on Define.
 	sb.WriteString(fmt.Sprintf("\t%sID = framework.NewUUIDColumn(\"id\")\n", struct_))
 	for _, field := range decl.Fields {
 		if field.Name == "id" {
@@ -23,7 +23,7 @@ func renderEntityColumns(decl framework.EntityDeclaration) string {
 		}
 		// A typed column exists to be put in a WHERE or ORDER BY. Emitting
 		// one for a NoQuery field hands the developer a compiling, running
-		// way to query the very column the HTTP surface refuses — TypedQuery
+		// way to query the very column the HTTP surface refuses. TypedQuery
 		// applies conditions straight to the builder without re-checking the
 		// schema. Leave it out; the field is still readable on the struct.
 		if field.NoQuery {
@@ -37,7 +37,7 @@ func renderEntityColumns(decl framework.EntityDeclaration) string {
 
 	// Include name constants per relation.
 	if len(decl.Relations) > 0 {
-		sb.WriteString("// " + struct_ + " include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).\n")
+		sb.WriteString("// " + struct_ + " include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).\n")
 		sb.WriteString("const (\n")
 		for _, rel := range decl.Relations {
 			sb.WriteString(fmt.Sprintf("\t%sIncl%s = %q\n",
@@ -63,7 +63,7 @@ func columnConstructor(value string) string {
 	case "uuid", "relation":
 		return "framework.NewUUIDColumn"
 	default:
-		// String, Text, Enum, JSON, Image, File all get StringColumn — they're
+		// String, Text, Enum, JSON, Image, File all get StringColumn: they're
 		// all stored as TEXT and queried by string equality / LIKE.
 		return "framework.NewStringColumn"
 	}
@@ -100,7 +100,7 @@ func On%sUpdated(app *framework.App, fn func(ctx context.Context, row *%s) error
 }
 
 // On%sDeleted subscribes to entity.deleted events scoped to %q. Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func On%sDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
@@ -122,7 +122,7 @@ func On%sDeleted(app *framework.App, fn func(ctx context.Context, id string) err
 		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
 		struct_, decl.Name, struct_, decl.Name,
 	))
-	// Record extractor for this entity. One per struct type — identical shape
+	// Record extractor for this entity. One per struct type: identical shape
 	// but they differ in the returned *T, and codegen can't share via
 	// interface without reflection.
 	sb.WriteString(fmt.Sprintf(`// extract%sRecord unmarshals an event payload's "record" field into a
@@ -175,7 +175,7 @@ func New%sRepo(app *framework.App) *%sRepo {
 	return &%sRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *%sRepo) Handler() *framework.CrudHandler { return r.handler }
 

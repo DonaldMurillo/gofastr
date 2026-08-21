@@ -1,13 +1,13 @@
 // check-csp:ignore-file
 //
 // This file emits the local theme editor's inline bootstrap script. The
-// editor's JS genuinely has nowhere else to live — it is per-session glue
+// editor's JS genuinely has nowhere else to live: it is per-session glue
 // between the controls page and the preview iframe, and a separate asset
 // pipeline for ~100 lines of bootstrap would cost more than it saved. The
 // check-csp:ignore-file marker above is the CSP linter's exemption for that
 // inline <script>; cmd/gofastr/harness_http.go carries the same marker for
-// the same reason. Everything else in this file — the chrome's structural
-// markup and its styling — composes framework/ui + core-ui components and
+// the same reason. Everything else in this file, the chrome's structural
+// markup and its styling, composes framework/ui + core-ui components and
 // links /__gofastr/app.css for the framework's default theme. No bespoke
 // CSS ships here.
 package main
@@ -31,7 +31,7 @@ import (
 func (s *themeEditServer) serveControlsPage(w http.ResponseWriter, r *http.Request) {
 	// The WORKING theme, not the base one. Rendering the base meant a browser
 	// refresh mid-session showed the original values in every swatch while the
-	// server held the edited ones — and Write then emitted values the operator
+	// server held the edited ones, and Write then emitted values the operator
 	// could not see. The JSON endpoint always read `working`; only the HTML
 	// render disagreed.
 	controls := renderTokenControls(s.currentTokens())
@@ -46,7 +46,7 @@ func (s *themeEditServer) serveControlsPage(w http.ResponseWriter, r *http.Reque
 	// open could iframe this one and clickjack the Write button into
 	// overwriting their theme file.
 	// frame-ancestors and base-uri only. The page carries one inline
-	// <script> (the editor's bootstrap glue — see the file header), so a
+	// <script> (the editor's bootstrap glue; see the file header), so a
 	// default-src policy would break the tool rather than protect it. Framing
 	// is the threat that was actually open.
 	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'none'")
@@ -81,7 +81,7 @@ func renderTokenControls(tokens map[string]string) string {
 		}
 		// Open the two most-edited groups by default; collapse the rest.
 		// Carrying the count in the summary text keeps the chrome clear of
-		// bespoke badge markup — the count is what the operator scans for.
+		// bespoke badge markup: the count is what the operator scans for.
 		parts = append(parts, ui.Collapsible(ui.CollapsibleConfig{
 			Summary: fmt.Sprintf("%s (%d)", g.Name, len(g.Tokens)),
 			Open:    g.Name == "Colors" || g.Name == "Colors (dark)",
@@ -166,14 +166,14 @@ func tokenGroupName(key string) string {
 
 // renderOneControl emits the labelled input(s) for a single token. Colour
 // tokens get a colour-picker swatch alongside the text input (the text
-// input is the source of truth — the picker is a convenience that writes
+// input is the source of truth; the picker is a convenience that writes
 // hex back to it). Integer-px tokens strip the "px" suffix for display and
 // the JS re-appends it on submit.
 //
 // Each row is a ui-form-field: the design system's stylesheet styles every
 // descendant input/select/textarea via [data-fui-comp="ui-form-field"] input,
 // so we get label spacing, focus rings, and the is-error affordance for free
-// — no per-control CSS. The token key is carried on data-token (so the
+// with no per-control CSS. The token key is carried on data-token (so the
 // editor JS can find each control by key) and data-field on the wrapper (so
 // the JS can flip is-error without selecting on a bespoke class).
 func renderOneControl(t tokenControl) render.HTML {
@@ -230,7 +230,7 @@ func renderOneControl(t tokenControl) render.HTML {
 		"for":   id,
 	}, render.Text(t.Key))
 
-	// Empty error span — the JS fills this on apply failure. data-err-for is
+	// Empty error span: the JS fills this on apply failure. data-err-for is
 	// the JS's lookup key; the design system's ui-form-field__error class
 	// colours it via the --color-danger token.
 	errSpan := render.Tag("span", map[string]string{
@@ -247,7 +247,7 @@ func renderOneControl(t tokenControl) render.HTML {
 }
 
 // controlInputID derives a stable, HTML-legal id from a token key. Used as
-// the <input id> the label's for= points at — the design system's form-field
+// the <input id> the label's for= points at; the design system's form-field
 // stylesheet doesn't require it, but label association is a basic
 // accessibility contract.
 func controlInputID(key string) string {
@@ -284,7 +284,7 @@ func colorSwatchValue(v string) string {
 // (ui.Stack, ui.Cluster, ui.Button, the ui-callout variant surface) plus the
 // framework's ui.Workbench inspector shell. The chrome
 // LINKS /__gofastr/app.css with no ?t= query, so it renders against the
-// host app's DEFAULT theme — pinning the controls to known-good tokens even
+// host app's DEFAULT theme, pinning the controls to known-good tokens even
 // when the operator has set --color-text: transparent in the working theme.
 // The working theme only lives in the preview iframe, which swaps to
 // /__gofastr/app.css?t=<hash> via swapPreviewCSS.
@@ -317,7 +317,7 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		Justify: ui.JustifyBetween,
 	}, title, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, schemeBtn, writeBtn))
 
-	// Status line — a Callout the JS updates by swapping its variant class.
+	// Status line: a Callout the JS updates by swapping its variant class.
 	// ui-callout--<success|danger|warning|info|neutral> recolours the leading
 	// glyph via the --color-* tokens, so the chrome needs no per-status CSS.
 	statusBox := render.Tag("div", map[string]string{
@@ -328,7 +328,7 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		"data-fui-comp": "ui-callout",
 	}, render.Tag("div", map[string]string{"class": "ui-callout__body"}, render.Text("")))
 
-	// Contrast panel — JS fills this. Same Callout shape; the JS swaps to
+	// Contrast panel: JS fills this. Same Callout shape; the JS swaps to
 	// ui-callout--warning when findings exist, hidden when none.
 	contrastBox := render.Tag("div", map[string]string{
 		"id":            "te-contrast",
@@ -356,7 +356,7 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 
 	// ui.Workbench is the design system's two-pane inspector shell: a rail
 	// that scrolls on its own beside a pane that fills the rest, with an
-	// iframe in the pane filling it edge to edge. It was added for this — the
+	// iframe in the pane filling it edge to edge. It was added for this: the
 	// alternative was a rail with no scroll (a 2300px page) beside a preview
 	// collapsed to the iframe's default ~300x150 box, which is what deleting
 	// the old bespoke stylesheet without an upstream replacement produced.
@@ -372,7 +372,7 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 	// hand-assembled page, not a registered screen), so the host never learns
 	// which components it used and app.css carries none of their CSS. Scan the
 	// rendered markup for component markers and link the host's own bundle
-	// endpoint for exactly those — the same endpoint a screen's <link> uses.
+	// endpoint for exactly those, the same endpoint a screen's <link> uses.
 	// Without this the chrome renders as unstyled HTML: no split, no scroll,
 	// an iframe collapsed to its default box.
 	used := registry.Scan(string(bodyInner))
@@ -420,7 +420,7 @@ const themeEditChromeJS = `
   var applyQueue = Promise.resolve();
   // pendingError holds the most recent apply failure (validation or
   // transport). It is cleared by a successful apply and read by
-  // flushPendingEdits — a racing Write must propagate the failure and
+  // flushPendingEdits: a racing Write must propagate the failure and
   // block /__theme/writeback, instead of resolving the queue as if all
   // was well and overwriting the file with the previous theme.
   var pendingError = null;
@@ -466,7 +466,7 @@ const themeEditChromeJS = `
     if (!input) return;
     // Flip the design system's is-error class on the wrapping form-field.
     // The variant CSS ([data-fui-comp="ui-form-field"].is-error input)
-    // recolours the input border via --color-danger — no bespoke invalid
+    // recolours the input border via --color-danger: no bespoke invalid
     // class needed.
     var field = input.closest('[data-field]');
     if (field) field.classList.add('is-error');
@@ -485,7 +485,7 @@ const themeEditChromeJS = `
 
   // Apply one token edit: POST /__theme/apply, swap the preview's app.css
   // link to the returned variant hash, re-run the contrast check. No iframe
-  // reload — swapping the link href re-fetches only app.css and the browser
+  // reload: swapping the link href re-fetches only app.css and the browser
   // re-resolves every var() reference against the new :root values.
   function applyEdit(key, value) {
     return fetch('/__theme/apply', {
@@ -501,8 +501,8 @@ const themeEditChromeJS = `
         var msg = key + ': ' + data.error;
         setStatus(msg, 'err');
         // REJECT so a racing Write (flushPendingEdits) sees the failure and
-        // blocks /__theme/writeback. Resolving normally here — the previous
-        // behaviour — let the Write handler overwrite the file with the
+        // blocks /__theme/writeback. Resolving normally here, the previous
+        // behaviour, let the Write handler overwrite the file with the
         // PREVIOUS theme while the control still showed the typed-but-
         // rejected value. The error carries themeValidation so the Write
         // handler knows applyEdit already set the status (don't overwrite).
@@ -510,7 +510,7 @@ const themeEditChromeJS = `
         err.themeValidation = true;
         throw err;
       }
-      // A successful apply clears any prior failure — the working theme on
+      // A successful apply clears any prior failure: the working theme on
       // the server now matches what the operator sees, so a subsequent Write
       // is safe to proceed.
       pendingError = null;
@@ -529,7 +529,7 @@ const themeEditChromeJS = `
       return applyEdit(key, value);
     }).catch(function(e) {
       // Absorb the rejection into applyQueue so the NEXT keystroke's apply
-      // can still fire — without this, one bad value would poison the queue
+      // can still fire: without this, one bad value would poison the queue
       // for the rest of the session. Record the failure in pendingError so
       // a racing Write sees it and blocks the writeback.
       if (e && e.themeValidation) {
@@ -554,13 +554,13 @@ const themeEditChromeJS = `
   //
   // Swapping an href starts a fetch; computed styles keep reporting the old
   // sheet until it lands. Measuring immediately after the swap therefore
-  // measured the PREVIOUS theme — so an edit that broke contrast was checked
+  // measured the PREVIOUS theme: so an edit that broke contrast was checked
   // against the values it replaced and reported clean. The retry loop could not
   // see it either: the old sheet is perfectly measurable, just wrong.
   // lastRequestedHash is the variant hash the most recent swapPreviewCSS
   // asked the iframe to load. appliedHash is the hash whose sheet has
   // actually applied (signalled by the link's load event). The check uses
-  // the two together to tell which generation it measured — the readiness
+  // the two together to tell which generation it measured: the readiness
   // sentinel only proves "a sheet applied" and reads identical
   // black-on-white for every theme, so without these the panel could not
   // tell a stale reading (the OLD theme still applied during a slow swap)
@@ -575,15 +575,15 @@ const themeEditChromeJS = `
     var href = '/__gofastr/app.css?t=' + encodeURIComponent(hash);
     lastRequestedHash = hash;
     if (link.getAttribute('href') === href) {
-      // Already showing this exact sheet — record the generation and fire.
+      // Already showing this exact sheet: record the generation and fire.
       appliedHash = hash;
       if (then) then();
       return;
     }
     if (then) {
       // Two paths fire the callback:
-      //   1. the link's load event — the new sheet has landed and applied;
-      //   2. a 1.5s fallback — covers cached sheets that apply in some
+      //   1. the link's load event: the new sheet has landed and applied;
+      //   2. a 1.5s fallback: covers cached sheets that apply in some
       //      browsers without dispatching load.
       //
       // The previous code locked out the load event after whichever fired
@@ -591,12 +591,12 @@ const themeEditChromeJS = `
       // first, the late load was ignored, and the contrast check measured
       // the PREVIOUS theme and reported clean for the new one. The load
       // listener MUST stay armed past the fallback so a late load re-fires
-      // the callback — and the load event is the only path that updates
+      // the callback: and the load event is the only path that updates
       // appliedHash, so checkScheme can distinguish stale from current.
       var timer = setTimeout(function() {
         // Cached-sheet workaround. The new sheet may have applied without
         // a load event; fire the callback so the check runs. We deliberately do
-        // NOT set appliedHash=hash here — on a slow network the new sheet
+        // NOT set appliedHash=hash here: on a slow network the new sheet
         // has not applied yet and stamping it would let checkScheme publish
         // a reading of the OLD sheet. If this is the cached-sheet case the
         // load event will fire too and stamp the hash; if it is the
@@ -606,11 +606,11 @@ const themeEditChromeJS = `
       link.addEventListener('load', function() {
         clearTimeout(timer);
         appliedHash = hash;  // the load event is the source of truth
-        then();  // always re-run — late loads must trigger a fresh check
+        then();  // always re-run: late loads must trigger a fresh check
       }, { once: true });
       link.addEventListener('error', function() {
         clearTimeout(timer);
-        // Fetch failed — the OLD sheet is still applied. Don't update
+        // Fetch failed: the OLD sheet is still applied. Don't update
         // appliedHash. Re-run the check so it doesn't stay frozen on a
         // reading from the previous swap.
         then();
@@ -641,7 +641,7 @@ const themeEditChromeJS = `
 
   // Flush every debounced edit and wait for the apply queue to drain. The Go
   // writeBack reads only s.working, so a Write that beat the 300 ms debounce
-  // emitted the theme WITHOUT the operator's last keystroke — the value
+  // emitted the theme WITHOUT the operator's last keystroke: the value
   // typed into the control silently never reached the file. Flushing the
   // timers fires the queued applies, and awaiting applyQueue guarantees they
   // have landed in s.working before the writeback POST leaves the browser.
@@ -718,8 +718,8 @@ const themeEditChromeJS = `
   // Converts ANY CSS colour the browser understands into sRGB bytes.
   //
   // Hand-parsing three numbers out of the computed value is wrong twice over.
-  // getComputedStyle does not promise rgb() — Chromium hands back oklch(...)
-  // and oklab(...) verbatim — so "oklch(1 0 0)" (white) parsed as [1,0,0]
+  // getComputedStyle does not promise rgb(): Chromium hands back oklch(...)
+  // and oklab(...) verbatim: so "oklch(1 0 0)" (white) parsed as [1,0,0]
   // (nearly black) and a 21:1 pair was reported as failing at 1.00:1. And the
   // theme's own values ARE oklch, which is the whole reason this check runs in
   // a browser instead of in Go.
@@ -785,7 +785,7 @@ const themeEditChromeJS = `
   //
   // Readiness is decided by ONE sentinel probe whose colours are literals, not
   // var() references. A pair that resolves transparent is a real answer (the
-  // element inherits the page background), not evidence of a missing sheet —
+  // element inherits the page background), not evidence of a missing sheet:
   // treating it as the latter aborted the whole check whenever any scheme had
   // a transparent background, and the panel then kept whatever it last showed.
   function checkScheme(scheme) {
@@ -796,7 +796,7 @@ const themeEditChromeJS = `
     if (!probes.length) return null;
 
     // Verify the iframe is showing the generation we asked for. The
-    // readiness sentinel below only proves "some sheet applied" — it reads
+    // readiness sentinel below only proves "some sheet applied": it reads
     // literal black-on-white under BOTH the old and new themes, so without
     // this guard the panel measured the PREVIOUS theme's already-applied
     // sheet during a slow swap and certified the old values as the new
@@ -856,7 +856,7 @@ const themeEditChromeJS = `
       runContrastCheckInner(attempt);
     } catch (e) {
       // Never fail silently. A hidden panel reads as "no contrast problems",
-      // so an exception in here does not just lose the check — it asserts a
+      // so an exception in here does not just lose the check: it asserts a
       // clean bill of health. Say what happened instead.
       renderContrastError(String((e && e.message) || e));
     }
@@ -912,7 +912,7 @@ const themeEditChromeJS = `
   //
   // The preview page is server-rendered with the app theme; the working theme
   // lives in a registered variant. Without this a reload showed edited values in
-  // every control beside a preview that had silently reverted — the same
+  // every control beside a preview that had silently reverted: the same
   // stale-state bug as rendering the controls from the base theme, one level
   // out.
   frame.addEventListener('load', function() {

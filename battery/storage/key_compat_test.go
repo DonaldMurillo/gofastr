@@ -12,8 +12,8 @@ import (
 // were accepted before the Windows-portability rules landed, so real
 // deployments have objects stored under them.
 var unportableButExistingKeys = []string{
-	"exports/2026-08-02T12:00:00Z.json", // ISO timestamp — colons
-	"user:123/avatar.png",               // namespaced key — colon
+	"exports/2026-08-02T12:00:00Z.json", // ISO timestamp, colons
+	"user:123/avatar.png",               // namespaced key, colon
 	"reports/NUL",                       // reserved Windows device name
 	"archive/backup.",                   // trailing dot
 }
@@ -21,7 +21,7 @@ var unportableButExistingKeys = []string{
 // TestExistingKeysStayReadableAndDeletable pins the compatibility contract:
 // tightening key rules must not orphan data. Save may refuse an unportable
 // key, but Get/Exists/Delete must still reach an object that is already on
-// disk — otherwise the tightening silently makes stored data unreachable
+// disk, otherwise the tightening silently makes stored data unreachable
 // AND unremovable, with no migration path.
 func TestExistingKeysStayReadableAndDeletable(t *testing.T) {
 	dir := t.TempDir()
@@ -76,7 +76,7 @@ func TestSaveStillRejectsUnportableKeys(t *testing.T) {
 	}
 }
 
-// TestTraversalRejectedOnEveryOperation — the security rules are NOT
+// TestTraversalRejectedOnEveryOperation, the security rules are NOT
 // write-only. They must hold on every code path.
 func TestTraversalRejectedOnEveryOperation(t *testing.T) {
 	ls := NewLocalStorage(t.TempDir())

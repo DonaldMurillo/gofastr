@@ -7,7 +7,7 @@ import (
 )
 
 // entity_detail renders .Detail(ctx, s.id) and the resource list links to
-// BasePath+"/"+id — a detail screen whose route has no {id} param renders an
+// BasePath+"/"+id. A detail screen whose route has no {id} param renders an
 // empty record and its "View" link matches no registered route. The validator
 // must reject it and say what to change.
 func TestEntityDetailRequiresIDInRoute(t *testing.T) {

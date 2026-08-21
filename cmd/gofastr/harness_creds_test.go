@@ -41,7 +41,7 @@ func TestHarnessCreds_AddRetrieve(t *testing.T) {
 	covT_capStdout(t, func() {
 		runHarnessCreds([]string{"add", "zai", "default", "z-secret-value"})
 	})
-	// List — should print the stored entry.
+	// List; should print the stored entry.
 	out := covT_capStdout(t, func() {
 		runHarnessCreds([]string{"list"})
 	})

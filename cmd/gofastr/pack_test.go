@@ -18,8 +18,8 @@ const meridianDir = "../../examples/meridian"
 const meridianYML = "../../examples/meridian/gofastr.yml"
 
 // ensureMeridianEnv materializes the gitignored .env the generator emits
-// alongside the meridian app. A fresh checkout doesn't have it — the seed
-// password lives ONLY there, by design — so packing the committed tree
+// alongside the meridian app. A fresh checkout doesn't have it; the seed
+// password lives ONLY there, by design, so packing the committed tree
 // cannot recover the blueprint's secrets without it. Leaves an existing
 // .env (a developer's own generate output) untouched.
 func ensureMeridianEnv(t *testing.T, bp Blueprint) {
@@ -56,7 +56,7 @@ func TestPack_ReadEntities(t *testing.T) {
 }
 
 // firstBlueprintDiff walks two values and returns a description of the first
-// path where they differ — far more useful than a giant DeepEqual dump.
+// path where they differ, far more useful than a giant DeepEqual dump.
 func firstBlueprintDiff(a, b any) string {
 	if d := diffValue(reflect.ValueOf(a), reflect.ValueOf(b), "blueprint"); d != "" {
 		return d
@@ -223,7 +223,7 @@ func c() interface{} { return b() }
 	}
 	helpers := packHelperReturns(f)
 
-	// Construct a().List(ctx) — the call shape reverseEntityResource walks.
+	// Construct a().List(ctx): the call shape reverseEntityResource walks.
 	selfRef := &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
 			X:   &ast.CallExpr{Fun: &ast.Ident{Name: "a"}},
@@ -250,14 +250,14 @@ func c() interface{} { return b() }
 		}(call)
 		select {
 		case <-done:
-			// returned — bound works
+			// returned: bound works
 		case <-time.After(3 * time.Second):
 			t.Fatalf("%s: reverseBlock hung (hop-depth bound missing)", name)
 		}
 	}
 }
 
-// materializeBlueprint renders bp to a temp dir and returns the dir — the
+// materializeBlueprint renders bp to a temp dir and returns the dir: the
 // on-disk shape gofastr pack reads back.
 func materializeBlueprint(t *testing.T, bp Blueprint) string {
 	t.Helper()
@@ -281,7 +281,7 @@ func materializeBlueprint(t *testing.T, bp Blueprint) string {
 // TestPack_TimestampsEntityRoundTrips guards that an entity declared with
 // timestamps: true survives generate→pack. The generator emits the config as
 // EntityConfig{...}.WithTimestamps(true), so pack must see through the method
-// wrapper to recover the fields — otherwise the whole entity config is lost.
+// wrapper to recover the fields. Otherwise the whole entity config is lost.
 func TestPack_TimestampsEntityRoundTrips(t *testing.T) {
 	ts := true
 	bp := Blueprint{
@@ -410,8 +410,8 @@ func TestPack_ScreenlessAppRoundTrips(t *testing.T) {
 // packReadNav reads sidebarConfig's AST, so it depends on the SHAPE the
 // generator emits. When the sidebar started resolving its auth control per
 // request, that builder changed from a single `return ui.SidebarConfig{…}` to
-// `cfg := ui.SidebarConfig{…}` … `return cfg`, and the reader — which asserted
-// the returned expression was a composite literal — began reporting no nav at
+// `cfg := ui.SidebarConfig{…}` … `return cfg`, and the reader, which asserted
+// the returned expression was a composite literal, began reporting no nav at
 // all. It reported it silently: "no nav" and "nav could not be read" are the
 // same answer.
 //
@@ -424,7 +424,7 @@ func TestPackReadsNavFromAGeneratedAuthApp(t *testing.T) {
 			Name: "Navy", Module: "example.com/navy",
 			DBDriver: "sqlite", DBURL: "file:navy.db",
 			// Auth on is what makes the generator emit the per-request
-			// builder — the shape that broke the reader.
+			// builder, the shape that broke the reader.
 			Auth: BlueprintAuth{Enabled: true},
 		},
 		Entities: []framework.EntityDeclaration{{

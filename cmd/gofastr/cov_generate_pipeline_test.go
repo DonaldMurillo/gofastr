@@ -26,7 +26,7 @@ func TestGenerateFromBlueprintWritesFiles(t *testing.T) {
 	// Blueprint output lands under the resolved output dir (--out=gen here).
 	matches, _ := filepath.Glob(filepath.Join(dir, "gen", "**", "*.go"))
 	if len(matches) == 0 {
-		// Fall back to a recursive walk — layout may nest deeper.
+		// Fall back to a recursive walk; layout may nest deeper.
 		found := false
 		_ = filepath.Walk(filepath.Join(dir, "gen"), func(p string, info os.FileInfo, err error) error {
 			if err == nil && strings.HasSuffix(p, ".go") {
@@ -120,7 +120,7 @@ func TestFileSetFromGeneratedFilesFormatsGo(t *testing.T) {
 }
 
 func TestRenderGeneratedProjectEndpointsRejected(t *testing.T) {
-	// Endpoints require Go handlers — codegen must refuse them.
+	// Endpoints require Go handlers; codegen must refuse them.
 	decls := []framework.EntityDeclaration{{
 		Name:      "users",
 		Fields:    []framework.FieldDeclaration{{Name: "email", Type: "string"}},

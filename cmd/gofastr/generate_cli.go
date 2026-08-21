@@ -15,12 +15,12 @@ import (
 // app's HTTP API: a standalone, stdlib-only `package main` under --out
 // (default cmd/<binary>/, so `go install <module>/cmd/<binary>@latest`
 // produces a correctly-named binary) that imports only the app's generated
-// entities/client package. It is the terminal twin of the typed client — every selected
+// entities/client package. It is the terminal twin of the typed client: every selected
 // entity gets list/get/create/update/patch/delete, the _batch verbs, and a
 // live `watch` (SSE), plus login/logout commands that store a scoped API
 // token. Like the blueprint, generation is one-shot owned code: it refuses
-// to overwrite (--force escapes), except custom.go — the dev-owned extension
-// seam — which is only ever created when absent.
+// to overwrite (--force escapes), except custom.go, the dev-owned extension
+// seam, which is only ever created when absent.
 
 // cliVerbs is the full verb set, in help order.
 var cliVerbs = []string{
@@ -29,7 +29,7 @@ var cliVerbs = []string{
 }
 
 // cliReservedFlags are flag names owned by the CLI itself on entity verbs;
-// a field whose derived flag collides fails generation (no auto-renaming —
+// a field whose derived flag collides fails generation (no auto-renaming;
 // the developer renames the field or excludes the entity).
 var cliReservedFlags = map[string]bool{
 	"url": true, "token": true, "o": true, "json": true, "param": true,
@@ -64,7 +64,7 @@ type cliField struct {
 	Values     []string
 }
 
-// cliEntity is the derived per-entity model — the shared manifest shape a
+// cliEntity is the derived per-entity model: the shared manifest shape a
 // future SDK generator (issue #86) should consume rather than re-deriving
 // from raw declarations.
 type cliEntity struct {
@@ -117,7 +117,7 @@ func runGenerateCLI(args []string) {
 	}
 	modulePath, moduleRoot := findEnclosingGoMod(abs)
 	if modulePath == "" {
-		fail("no enclosing go.mod — the generated CLI imports your entities/client package by module path")
+		fail("no enclosing go.mod: the generated CLI imports your entities/client package by module path")
 		osExit(1)
 		return
 	}
@@ -128,7 +128,7 @@ func runGenerateCLI(args []string) {
 	if opts.binary == "" {
 		opts.binary = strings.ToLower(filepath.Base(abs))
 	}
-	// Default layout is cmd/<binary>/ — the standard installable-main
+	// Default layout is cmd/<binary>/, the standard installable-main
 	// convention, so `go install <module>/cmd/<binary>@latest` (public
 	// modules) names the binary correctly.
 	if opts.outDir == "" {
@@ -154,7 +154,7 @@ func runGenerateCLI(args []string) {
 	}
 
 	// custom.go is the dev-owned seam: created when absent, NEVER
-	// overwritten — not even under --force.
+	// overwritten, not even under --force.
 	kept := files[:0]
 	for _, f := range files {
 		if f.name == "custom.go" {
@@ -175,7 +175,7 @@ func runGenerateCLI(args []string) {
 		}
 		if len(conflicts) > 0 {
 			sort.Strings(conflicts)
-			cerr := fmt.Errorf("generate cli is one-shot and would overwrite existing files: %s — re-run with --force to regenerate (custom.go is always preserved)", strings.Join(conflicts, ", "))
+			cerr := fmt.Errorf("generate cli is one-shot and would overwrite existing files: %s. Re-run with --force to regenerate (custom.go is always preserved)", strings.Join(conflicts, ", "))
 			if opts.json {
 				printGeneratedErrorsJSON(cerr)
 				osExit(1)
@@ -222,8 +222,8 @@ func runGenerateCLI(args []string) {
 	success("Generated %d file(s) in %s", len(files), opts.outDir)
 	fmt.Println()
 	fmt.Println("  Next steps:")
-	fmt.Printf("    go build -o %s ./%s   — build the CLI\n", spec.Binary, opts.outDir)
-	fmt.Printf("    ./%s login --url https://your-app.example.com --with-token   — store a scoped API token\n", spec.Binary)
+	fmt.Printf("    go build -o %s ./%s   : build the CLI\n", spec.Binary, opts.outDir)
+	fmt.Printf("    ./%s login --url https://your-app.example.com --with-token   : store a scoped API token\n", spec.Binary)
 	fmt.Println("    custom.go is yours: add or override commands there; regens never touch it")
 }
 
@@ -338,7 +338,7 @@ func parseVerbSelection(s string) ([]string, map[string][]string, error) {
 	return nil, per, nil
 }
 
-// cliEntityMatches reports whether a selection name refers to decl — by
+// cliEntityMatches reports whether a selection name refers to decl, by
 // entity name, table, or the kebab command form.
 func cliEntityMatches(decl framework.EntityDeclaration, name string) bool {
 	n := strings.ToLower(strings.TrimSpace(name))
@@ -367,7 +367,7 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	if err != nil {
 		return cliSpec{}, err
 	}
-	// Selection names must all resolve to a declared entity — a typo'd
+	// Selection names must all resolve to a declared entity: a typo'd
 	// --only silently generating everything (or nothing) is a trap.
 	for _, sel := range [][]string{opts.only, opts.exclude} {
 		for _, name := range sel {
@@ -395,13 +395,13 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	// header comment of the generated main.go, where a newline would put the
 	// remainder at statement position. Today that is only reachable from argv,
 	// so it is the operator injecting code into their own project rather than a
-	// privilege boundary — not a vulnerability. The guard is here because the
+	// privilege boundary, not a vulnerability. The guard is here because the
 	// sibling generator IS config-readable: `generate sdk` takes its name from a
 	// discovered gofastr.codegen.yml, and if `generate cli` ever grows the same
 	// convenience this stops being operator-only without anyone noticing.
 	for _, r := range binary {
 		if r < 0x20 || r == 0x7f {
-			return cliSpec{}, fmt.Errorf("--binary %q contains a control character — it becomes a file name and a Go identifier's value", binary)
+			return cliSpec{}, fmt.Errorf("--binary %q contains a control character: it becomes a file name and a Go identifier's value", binary)
 		}
 	}
 
@@ -447,14 +447,14 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 		spec.Entities = append(spec.Entities, ent)
 	}
 	if len(spec.Entities) == 0 {
-		return cliSpec{}, fmt.Errorf("selection matches no entities — nothing to generate")
+		return cliSpec{}, fmt.Errorf("selection matches no entities: nothing to generate")
 	}
 	return spec, nil
 }
 
 // cliReservedCommands are command words (and scaffold file basenames) the
 // generated CLI owns: an entity whose command form collides would either
-// shadow a built-in command at dispatch or emit a duplicate filename —
+// shadow a built-in command at dispatch or emit a duplicate filename,
 // including custom.go, whose create-if-absent handling would then silently
 // stop regenerating that entity.
 var cliReservedCommands = map[string]bool{
@@ -464,7 +464,7 @@ var cliReservedCommands = map[string]bool{
 
 // buildEntityModel derives the shared per-entity model (struct name, route
 // table, wire/snake field names, filterability) that both the generated CLI
-// and the generated SDKs (`gofastr generate sdk`) consume. It never fails —
+// and the generated SDKs (`gofastr generate sdk`) consume. It never fails.
 // CLI-specific validation (reserved commands, flag collisions) lives in
 // buildCLIEntity.
 func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntity {
@@ -488,7 +488,7 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		switch typ {
 		case "image", "file":
 			// Uploads are multipart, which the generated client doesn't
-			// speak yet — the whole field stays off the CLI surface.
+			// speak yet; the whole field stays off the CLI surface.
 			continue
 		}
 		f := cliField{
@@ -520,7 +520,7 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
 	ent := buildEntityModel(decl, verbs)
 	if cliReservedCommands[ent.Command] {
-		return cliEntity{}, fmt.Errorf("entity %q: its command form %q collides with a CLI built-in — exclude it with --exclude=%s, or rename the table", decl.Name, ent.Command, decl.Name)
+		return cliEntity{}, fmt.Errorf("entity %q: its command form %q collides with a CLI built-in. Exclude it with --exclude=%s, or rename the table", decl.Name, ent.Command, decl.Name)
 	}
 	seen := map[string]string{} // flag name → field, to catch duplicates
 	for _, f := range ent.Fields {
@@ -533,10 +533,10 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 		}
 		for _, name := range flags {
 			if cliReservedFlags[name] {
-				return cliEntity{}, fmt.Errorf("entity %q: field %q derives CLI flag --%s, which is reserved — rename the field, or exclude the entity with --exclude=%s", decl.Name, f.Snake, name, decl.Name)
+				return cliEntity{}, fmt.Errorf("entity %q: field %q derives CLI flag --%s, which is reserved. Rename the field, or exclude the entity with --exclude=%s", decl.Name, f.Snake, name, decl.Name)
 			}
 			if prev, dup := seen[name]; dup {
-				return cliEntity{}, fmt.Errorf("entity %q: fields %q and %q both derive CLI flag --%s — rename one", decl.Name, prev, f.Snake, name)
+				return cliEntity{}, fmt.Errorf("entity %q: fields %q and %q both derive CLI flag --%s: rename one", decl.Name, prev, f.Snake, name)
 			}
 			seen[name] = f.Snake
 		}
@@ -619,7 +619,7 @@ func renderCLIMain(spec cliSpec) string {
 	fmt.Fprintf(&sb, `// %s is a terminal client for your app's HTTP API, generated by
 // `+"`gofastr generate cli%s`"+`. The code is yours to own and edit; to
 // regenerate from the current entity set, re-run that command with --force
-// (custom.go — your extension seam — is never overwritten).
+// (custom.go, your extension seam, is never overwritten).
 package main
 
 import (
@@ -646,7 +646,7 @@ type command struct {
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-// commandMap merges customCommands() over the generated set — a custom
+// commandMap merges customCommands() over the generated set: a custom
 // entry with a generated name replaces it.
 func commandMap() map[string]command {
 	cmds := map[string]command{}
@@ -772,7 +772,7 @@ func configPath() (string, error) {
 }
 
 // loadConfig returns the stored config, or the zero value when there is
-// none — a missing or unreadable file is not an error, it just means the
+// none: a missing or unreadable file is not an error, it just means the
 // caller falls through to flags/env.
 func loadConfig() storedConfig {
 	var cfg storedConfig
@@ -865,7 +865,7 @@ func runLogin(args []string) int {
 	} else {
 		// No termios in the stdlib, so interactive input echoes; warn and
 		// point at the pipe-friendly path.
-		fmt.Fprintf(os.Stderr, "Paste an API token minted in the app (input will echo — prefer --with-token via a pipe): ")
+		fmt.Fprintf(os.Stderr, "Paste an API token minted in the app (input will echo, so prefer --with-token via a pipe): ")
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil && line == "" {
 			fmt.Fprintln(os.Stderr, err)
@@ -883,7 +883,7 @@ func runLogin(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("Logged in to %s — config stored at %s\n", cfg.URL, path)
+	fmt.Printf("Logged in to %s. Config stored at %s\n", cfg.URL, path)
 	return 0
 }
 
@@ -903,7 +903,7 @@ func runLogout(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Println("Logged out — stored token removed. Revoke it in the app to invalidate it server-side.")
+	fmt.Println("Logged out. Stored token removed. Revoke it in the app to invalidate it server-side.")
 	return 0
 }
 `
@@ -1024,7 +1024,7 @@ func apiFail(err error) int {
 	if errors.As(err, &apiErr) {
 		fmt.Fprintln(os.Stderr, apiErr.Error())
 		if apiErr.Status == 401 || apiErr.Status == 403 {
-			fmt.Fprintf(os.Stderr, "auth failed — mint a token in the app and run ` + "`%s login`" + `\n", binaryName)
+			fmt.Fprintf(os.Stderr, "auth failed: mint a token in the app and run ` + "`%s login`" + `\n", binaryName)
 			return 4
 		}
 		return 1
@@ -1121,8 +1121,8 @@ func readJSONArrayArg(v string) (json.RawMessage, int) {
 
 // doBatch sends a _batch request. The server answers a rolled-back batch
 // with 400 and the same {committed, results[]} envelope, so that case is
-// decoded and returned as a response — printBatch then surfaces it on
-// stdout and exit code 1 — rather than treated as a transport error.
+// decoded and returned as a response; printBatch then surfaces it on
+// stdout and exit code 1, rather than treated as a transport error.
 func doBatch(g *global, method, path string, body any) (client.BatchResponse, int) {
 	var resp client.BatchResponse
 	if err := g.client.Do(g.ctx, method, path, body, &resp); err != nil {
@@ -1149,7 +1149,7 @@ func printBatch(resp client.BatchResponse) int {
 	return 0
 }
 
-// paramFlags collects repeatable --param key=value pairs — the escape hatch
+// paramFlags collects repeatable --param key=value pairs: the escape hatch
 // for query params the generated flags don't cover (e.g. created_at_gt on
 // timestamp-managed columns).
 type paramFlags struct {
@@ -1176,7 +1176,7 @@ import (
 	client "` + spec.ClientImport + `"
 )
 
-// This file is yours — ` + "`gofastr generate cli --force`" + ` never overwrites it.
+// This file is yours: ` + "`gofastr generate cli --force`" + ` never overwrites it.
 
 // customCommands is merged OVER the generated command set: an entry whose
 // name matches a generated command ("` + exampleCommandName(spec) + `") replaces it, and new
@@ -1187,7 +1187,7 @@ func customCommands() []command {
 }
 
 // configureClient runs on every request-bearing command right after the
-// client is built — set default headers via a custom c.HTTP transport,
+// client is built: set default headers via a custom c.HTTP transport,
 // tweak timeouts, or point at a mock during tests.
 func configureClient(c *client.Client) {}
 `
@@ -1323,7 +1323,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	}
 	if has("batch-delete") {
 		fmt.Fprintf(&sb, `// run%sBatchDelete deletes the positional ids in one transaction. Ids may
-// appear before or after flags — flag.Parse stops at the first positional,
+// appear before or after flags: flag.Parse stops at the first positional,
 // so the trailing ones are collected from fs.Args().
 func run%sBatchDelete(args []string) int {
 	var ids []string
@@ -1495,9 +1495,9 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 	fmt.Fprintf(sb, "\t\tprintListTable([]string{%s}, []string{%s}, resp.Data)\n",
 		quoteList(headers), quoteList(keys))
 	sb.WriteString(`		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows — next cursor: %s\n", len(resp.Data), resp.Cursor)
+			fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), resp.Cursor)
 		} else {
-			fmt.Printf("page %d/%d — %d total\n", resp.Page, resp.TotalPages, resp.Total)
+			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
 		}
 		return 0
 	}

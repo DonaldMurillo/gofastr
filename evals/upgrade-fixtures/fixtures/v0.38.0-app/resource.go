@@ -40,7 +40,7 @@ type RelSource struct {
 }
 
 // ResFilter is one facet-filter dimension on the list screen: a column the
-// user can narrow the list by. Type is "enum", "bool", or "relation" — it
+// user can narrow the list by. Type is "enum", "bool", or "relation", it
 // selects both the facet control (pills vs select) and how options are
 // sourced (Values for enums, yes/no for bools, related rows for relations).
 type ResFilter struct {
@@ -50,7 +50,7 @@ type ResFilter struct {
 	Values []string // enum: the allowed values
 }
 
-// Transition is a status-change workflow action shown on a detail page — a
+// Transition is a status-change workflow action shown on a detail page, a
 // button that PUTs {status: Status} to the entity, then refreshes (Mark paid).
 type Transition struct {
 	Label   string

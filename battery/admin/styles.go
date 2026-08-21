@@ -1,13 +1,13 @@
 package admin
 
-// The admin ships its own stylesheet so it looks finished in ANY host — a bare
+// The admin ships its own stylesheet so it looks finished in ANY host, a bare
 // uihost only emits theme TOKENS, not element styling. Every value here is a
 // theme variable (--color-*, --spacing-*, --radii-*, --font-*) with a sane
 // fallback, so an app restyles the whole back-office by setting its theme; no
 // app-local CSS required. The sheet is a registered component (served as
 // /__gofastr/comp/ui-admin.css and injected after host CSS, so it wins
 // equal-specificity), loaded automatically wherever the `ui-admin` marker
-// appears — every admin screen is wrapped via adminStyle.WrapHTML.
+// appears, every admin screen is wrapped via adminStyle.WrapHTML.
 //
 // Layout knobs an app can override on its theme without touching this file:
 //   --admin-rail   width of the desktop nav rail (default 15rem)

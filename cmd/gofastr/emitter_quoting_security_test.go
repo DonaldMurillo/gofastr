@@ -18,7 +18,7 @@ import (
 // model this file inherits (an agent authors gofastr.yml from natural-language
 // requirements, so every IR string is transcribed text). This file is the
 // exhaustive complement: every remaining string-bearing IR field the entity and
-// screen emitters read. Same rubric as the sibling — reject at validate, or
+// screen emitters read. Same rubric as the sibling: reject at validate, or
 // refuse in the emitter, or emit inertly.
 //
 // The 2026-08-04 sweep found exactly one failing site out of the ~60 below
@@ -326,7 +326,7 @@ func irQuotingSites(payload string) []irSite {
 // Fixed at the choke point: sdkSpec.Header scrubs each interpolated value
 // through sdkCommentSafe, which covers all four comment syntaxes at once
 // rather than per emitter. The escape payload below therefore has to survive
-// nothing — it must come out inert everywhere.
+// nothing; it must come out inert everywhere.
 func TestSDKHeaderCannotEscapeComment(t *testing.T) {
 	spec := func() sdkSpec {
 		decl := framework.EntityDeclaration{
@@ -380,13 +380,13 @@ func TestSDKHeaderCannotEscapeComment(t *testing.T) {
 // assertStampStayedInert requires every PWN-bearing line to still be inside the
 // comment the stamp was written into.
 //
-// Scope note: this checks the client artifacts only — client.js and client.d.ts
+// Scope note: this checks the client artifacts only, client.js and client.d.ts
 // (served from the app's own origin at <base>/sdk/client.js as
 // application/javascript, so an escape there is same-origin script execution)
 // and client.go (compiled by the consumer). The READMEs are deliberately NOT
 // swept: they interpolate spec.App into heading and prose positions on purpose,
 // no route serves them (sdkdocs registers /sdk/client.js, /sdk/client.d.ts and
-// the zip — never the README), and the value there is the developer's own app
+// the zip, never the README), and the value there is the developer's own app
 // name in a file in their own tree. Asserting on prose interpolation would be a
 // wrong-layer test. The stamp comment inside them is covered because Header()
 // is the single choke point all four artifacts share.
@@ -448,7 +448,7 @@ func TestSDKModulePathRejectsDirectives(t *testing.T) {
 //
 // Severity, honestly: what this reliably produces is generated Go that does not
 // compile, NOT injected code. The depth pass tried to build a payload yielding
-// valid Go and could not — the two identifier sites land in the same file and
+// valid Go and could not: the two identifier sites land in the same file and
 // demand contradictory syntax (a struct field vs. a spec inside `const (` that
 // is prefixed with "TicketsIncl"), so satisfying one breaks the other. That is
 // an argument, not a proof of impossibility, which is why the fix is the guard

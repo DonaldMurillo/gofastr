@@ -25,7 +25,7 @@ import (
 // TestLivereloadSSEFiresOnConnect verifies that connecting to /__livereload
 // immediately emits an SSE "ready" event with a build ID. This is the first
 // message the browser's EventSource receives and confirms the SSE handshake
-// works end-to-end through a real HTTP server (not just a recorder).
+// works end-to-end through a real HTTP server (rather than a recorder).
 func TestLivereloadSSEFiresOnConnect(t *testing.T) {
 	r := router.New()
 	dev.RegisterLiveReload(r)
@@ -97,7 +97,7 @@ func TestLivereloadSSEDetectsServerRestart(t *testing.T) {
 		t.Fatalf("GET /__livereload: %v", err)
 	}
 
-	// Read in background — server close should cause an error/EOF.
+	// Read in background; server close should cause an error/EOF.
 	errCh := make(chan error, 1)
 	go func() {
 		_, readErr := io.ReadAll(resp.Body)
@@ -206,7 +206,7 @@ func TestLivereloadHeartbeatKeepsConnectionAlive(t *testing.T) {
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
-			// Context deadline or connection close — expected exit path.
+			// Context deadline or connection close: expected exit path.
 			break
 		}
 		trimmed := strings.TrimSpace(line)
@@ -232,7 +232,7 @@ func TestLivereloadHeartbeatKeepsConnectionAlive(t *testing.T) {
 	}
 }
 
-// ─── Test 5: Full SSE lifecycle — connect, heartbeat, server stop ──────────
+// ─── Test 5: Full SSE lifecycle: connect, heartbeat, server stop ──────────
 
 // TestLivereloadFullLifecycle exercises the complete SSE lifecycle in one
 // test: connect → ready event → heartbeats → server shutdown → connection
@@ -324,7 +324,7 @@ func TestLivereloadFullLifecycle(t *testing.T) {
 	select {
 	case ev := <-events:
 		if ev.err == nil {
-			// A clean EOF is acceptable — the server closed the connection.
+			// A clean EOF is acceptable; the server closed the connection.
 			if ev.line == "" {
 				t.Fatal("expected error or EOF after server shutdown, got empty line")
 			}
@@ -469,7 +469,7 @@ location.reload = function() { window.__reloadCalled = true; };
 	defer browserCancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's;
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -565,14 +565,14 @@ location.reload = function() { window.__reloadCalled = true; };
 func TestReloadChannelDebounces(t *testing.T) {
 	reload := make(chan struct{}, 1)
 
-	// Queue first signal — succeeds.
+	// Queue first signal: succeeds.
 	select {
 	case reload <- struct{}{}:
 	default:
 		t.Fatal("first send should succeed")
 	}
 
-	// Queue second signal — channel full, should hit default (no-op).
+	// Queue second signal: channel full, should hit default (no-op).
 	hitDefault := false
 	select {
 	case reload <- struct{}{}:
@@ -584,19 +584,19 @@ func TestReloadChannelDebounces(t *testing.T) {
 		t.Fatal("expected to hit default branch on second send")
 	}
 
-	// Drain — get exactly one signal.
+	// Drain: get exactly one signal.
 	select {
 	case <-reload:
 	default:
 		t.Fatal("expected to drain one signal")
 	}
 
-	// Channel now empty — no more signals.
+	// Channel now empty; no more signals.
 	select {
 	case <-reload:
 		t.Fatal("should not have a second signal — debounce means one rebuild only")
 	default:
-		// correct — empty
+		// correct: empty
 	}
 }
 
@@ -606,7 +606,7 @@ func TestChangedIgnoresUnmodifiedFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
 	prev := scanModTimes(dir)
-	// Same scan immediately — mod times should be identical.
+	// Same scan immediately; mod times should be identical.
 	curr := scanModTimes(dir)
 	if changed(prev, curr) {
 		t.Fatal("changed() = true for identical mod times — false positive rebuild")
@@ -617,7 +617,7 @@ func TestChangedIgnoresUnmodifiedFiles(t *testing.T) {
 // (syntax error) returns false without starting a server.
 func TestBuildAndServeReturnsFalseOnBuildError(t *testing.T) {
 	dir := t.TempDir()
-	// Write invalid Go — will fail to build.
+	// Write invalid Go: will fail to build.
 	writeDevFile(t, filepath.Join(dir, "main.go"), "package main\nfunc invalid syntax here{")
 
 	var mu sync.Mutex

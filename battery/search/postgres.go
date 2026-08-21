@@ -23,7 +23,7 @@ import (
 // fields may be promoted to weights 'B'..'D' via PostgresConfig.WeightedFields
 // so a hit in, say, a document's title outranks one in its body. Structured
 // fields are also stored as JSONB, which powers Query.FieldEquals containment
-// filtering — the tenant/owner/permission scoping hook.
+// filtering, the tenant/owner/permission scoping hook.
 //
 // Prefix matching is built in: the final query term is suffixed with ":*" so
 // command-palette / search-as-you-type queries ("pagin" → "pagination") work
@@ -49,7 +49,7 @@ type PostgresConfig struct {
 	Table string
 
 	// Language is the tsvector text-search configuration name. Defaults to
-	// "english". Validated at construction against ^[a-z_]+$ — only lowercase
+	// "english". Validated at construction against ^[a-z_]+$, only lowercase
 	// letters and underscores survive, so a caller cannot smuggle SQL here.
 	Language string
 
@@ -61,7 +61,7 @@ type PostgresConfig struct {
 }
 
 // langRe bounds the tsvector configuration name to a safe allowlist. Only
-// lowercase ASCII letters and underscores are accepted — no quotes, spaces,
+// lowercase ASCII letters and underscores are accepted, no quotes, spaces,
 // semicolons, or anything that could break out of the regconfig cast.
 var langRe = regexp.MustCompile(`^[a-z_]+$`)
 
@@ -113,7 +113,7 @@ func NewPostgres(db *sql.DB, cfg PostgresConfig) (*PostgresSearch, error) {
 }
 
 // EnsureSchema creates the table and its GIN index if they do not already
-// exist. Idempotent — safe to call on every boot.
+// exist. Idempotent, safe to call on every boot.
 func (p *PostgresSearch) EnsureSchema(ctx context.Context) error {
 	createTable := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id     TEXT PRIMARY KEY,
@@ -200,7 +200,7 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
 	// query matches every document (score 0, Type/FieldEquals filters still
 	// applied), while a query whose terms all sanitize away (pure
-	// punctuation) matches nothing — the same split Memory gets from
+	// punctuation) matches nothing, the same split Memory gets from
 	// normalizeTerms + its score==0 skip.
 	if len(strings.Fields(q.Text)) == 0 {
 		return p.searchAll(ctx, q)
@@ -212,7 +212,7 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 	}
 
 	// The tsquery must be parsed with the SAME text-search configuration the
-	// tsv column was built with — to_tsquery($1) alone would use the
+	// tsv column was built with, to_tsquery($1) alone would use the
 	// database's default config and silently mis-stem every non-default
 	// language (index "corriendo" under spanish → lexeme 'corr'; an
 	// english-parsed query for "corría" never matches it).
@@ -264,7 +264,7 @@ ORDER BY ts_rank(tsv, q) DESC, id ASC%s`,
 }
 
 // searchAll is the empty-query path: every document (score 0) that passes
-// the Type/FieldEquals filters, ordered by id for a stable page walk —
+// the Type/FieldEquals filters, ordered by id for a stable page walk,
 // the same result Memory produces when normalizeTerms yields no terms.
 func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, error) {
 	args := []any{}
@@ -349,12 +349,12 @@ func scanSearchRows(rows *sql.Rows) ([]Result, error) {
 //   - Split on whitespace.
 //   - From each term, keep only letters, digits, underscore, and hyphen
 //     ([\pL\pN_-]); everything else is dropped (this strips every to_tsquery
-//     operator — '&', '|', '!', ':', '(', ')' — and SQL metacharacters).
+//     operator, '&', '|', '!', ':', '(', ')', and SQL metacharacters).
 //   - Lowercase and trim leading/trailing '-'/'_' so a term can never be
 //     pure punctuation.
 //   - Drop empties.
 //   - Dedupe (case-insensitive after lowercasing) and cap at maxQueryTerms so
-//     an attacker-controlled query cannot amplify cost — the same bound
+//     an attacker-controlled query cannot amplify cost, the same bound
 //     Memory applies.
 //   - If nothing survives, return "" (caller short-circuits to empty results).
 //   - Join the survivors with " & " (AND semantics, matching Memory) and
