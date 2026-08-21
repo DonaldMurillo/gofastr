@@ -42,7 +42,7 @@ func TestBuildTsQuery(t *testing.T) {
 func TestBuildTsQueryBounded(t *testing.T) {
 	// Build a query of far more distinct terms than the cap.
 	var b []byte
-	for i := 0; i < maxQueryTerms*4; i++ {
+	for i := range maxQueryTerms * 4 {
 		b = append(b, 't')
 		b = append(b, byte('a'+i%26))
 		b = append(b, byte('0'+i%10))

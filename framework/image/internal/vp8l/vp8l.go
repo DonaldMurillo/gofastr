@@ -119,9 +119,9 @@ func isUniform(m image.Image, w, h int, bounds image.Rectangle) bool {
 func nrgbaUniform(m *image.NRGBA, w, h int, bounds image.Rectangle) bool {
 	off0 := m.PixOffset(bounds.Min.X, bounds.Min.Y)
 	r0, g0, b0, a0 := m.Pix[off0], m.Pix[off0+1], m.Pix[off0+2], m.Pix[off0+3]
-	for y := 0; y < h; y++ {
+	for y := range h {
 		off := m.PixOffset(bounds.Min.X, bounds.Min.Y+y)
-		for x := 0; x < w; x++ {
+		for x := range w {
 			i := off + x*4
 			if m.Pix[i] != r0 || m.Pix[i+1] != g0 || m.Pix[i+2] != b0 || m.Pix[i+3] != a0 {
 				return false
@@ -134,9 +134,9 @@ func nrgbaUniform(m *image.NRGBA, w, h int, bounds image.Rectangle) bool {
 func rgbaUniform(m *image.RGBA, w, h int, bounds image.Rectangle) bool {
 	off0 := m.PixOffset(bounds.Min.X, bounds.Min.Y)
 	r0, g0, b0, a0 := m.Pix[off0], m.Pix[off0+1], m.Pix[off0+2], m.Pix[off0+3]
-	for y := 0; y < h; y++ {
+	for y := range h {
 		off := m.PixOffset(bounds.Min.X, bounds.Min.Y+y)
-		for x := 0; x < w; x++ {
+		for x := range w {
 			i := off + x*4
 			if m.Pix[i] != r0 || m.Pix[i+1] != g0 || m.Pix[i+2] != b0 || m.Pix[i+3] != a0 {
 				return false
@@ -241,8 +241,8 @@ const predictorBits = 3
 // the uniform predictor mode used across every block of the sub-image.
 func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle, mode int) {
 	pixels := make([][4]uint8, 0, w*h)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			r, g, b, a := sampleRGBA8(m, bounds.Min.X+x, bounds.Min.Y+y)
 			pixels = append(pixels, [4]uint8{g, r, b, a})
 		}

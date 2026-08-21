@@ -51,13 +51,13 @@ func TestFrameworkPkgsDontImportRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list %s/...: %v\n%s", root, err, out)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		pkg, deps, ok := strings.Cut(line, ": ")
 		if !ok || pkg == root || outOfContract(pkg) {
 			continue
 		}
 		hasRoot := false
-		for _, dep := range strings.Fields(deps) {
+		for dep := range strings.FieldsSeq(deps) {
 			if dep == root {
 				hasRoot = true
 			}
@@ -107,7 +107,7 @@ func TestUIHostDoesNotLinkFrameworkUI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list -deps framework/uihost: %v\n%s", err, out)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.TrimSpace(line) == banned {
 			t.Errorf("framework/uihost depends on %s — the host renders screens "+
 				"it is handed; components stay above it", banned)
@@ -126,12 +126,12 @@ func TestCoreUIDoesNotImportFramework(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list core-ui/...: %v\n%s", err, out)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		pkg, deps, ok := strings.Cut(line, ": ")
 		if !ok {
 			continue
 		}
-		for _, dep := range strings.Fields(deps) {
+		for dep := range strings.FieldsSeq(deps) {
 			if dep == banned || strings.HasPrefix(dep, banned+"/") {
 				t.Errorf("%s depends on %s — core-ui sits below framework; "+
 					"invert the edge or move the code up", pkg, dep)

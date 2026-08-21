@@ -192,10 +192,11 @@ authenticated agent whose request passes the policy sees the full docs.
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
 JSON-RPC + GET Server-Sent Events), replacing the manual
 `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the ten tools that read the running app's state
+`WithMCPIntrospection()`, the eleven tools that read the running app's state
 are reachable at the canonical endpoint the agent card advertises:
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
-`app_readiness`, `app_routines`, `framework_docs_list`, `framework_docs_get`,
+`app_readiness`, `app_goroutine_leaks`, `app_routines`, `framework_docs_list`,
+`framework_docs_get`,
 `framework_docs_search`. Alongside them sits the contract catalog
 (`contracts_list`, `contracts_explain`, `contracts_capabilities`), which
 describes what the framework requires of the app's own code. Under

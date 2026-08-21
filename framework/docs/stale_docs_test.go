@@ -249,8 +249,8 @@ func changelogVersions(t *testing.T) []changelogSection {
 	var out []changelogSection
 	cur := -1
 	for _, line := range lines {
-		if strings.HasPrefix(line, "## [") {
-			name, _, ok := strings.Cut(strings.TrimPrefix(line, "## ["), "]")
+		if after, ok := strings.CutPrefix(line, "## ["); ok {
+			name, _, ok := strings.Cut(after, "]")
 			if !ok || name == "Unreleased" {
 				cur = -1
 				continue
@@ -277,7 +277,7 @@ func upgradeRegistryBreaking(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
 	cur := ""
-	for _, line := range strings.Split(readRepo(t, "cmd/gofastr/upgrades.yml"), "\n") {
+	for line := range strings.SplitSeq(readRepo(t, "cmd/gofastr/upgrades.yml"), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if v, ok := strings.CutPrefix(trimmed, "- version:"); ok {
 			cur = strings.TrimSpace(v)

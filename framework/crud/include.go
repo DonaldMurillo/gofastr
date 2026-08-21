@@ -89,8 +89,16 @@ type IncludeNode struct {
 	Relation entity.Relation       // relation declared on the parent entity
 	Target   *entity.Entity        // the entity Reached by following Relation
 	Filters  []filter.ParsedFilter // scoped filters applied during eager-load
-	Children []*IncludeNode        // deeper includes, e.g. for "author.profile" the "profile" child of "author"
-	childMap map[string]*IncludeNode
+	// ReadScopes carries the TARGET's Exposure.ReadScope predicates, set by
+	// applyRelatedReadScope. It is deliberately a SEPARATE slice from
+	// Filters: Filters are caller-controlled and rendered with IN-run
+	// coalescing, so merging a scope `status_in=[published]` with a caller's
+	// `include=rel(status_in=draft)` would coalesce the two runs into one
+	// IN list, OR where the declaration demands AND, and serve the drafts
+	// the scope exists to hide.
+	ReadScopes []filter.ParsedFilter
+	Children   []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
+	childMap   map[string]*IncludeNode
 }
 
 // parseIncludeTree splits comma-separated dotted include paths and resolves
@@ -331,7 +339,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		{"_like", filter.OpLike}, {"_in", filter.OpIn},
 	}
 	var out []filter.ParsedFilter
-	for _, kv := range strings.Split(raw, ",") {
+	for kv := range strings.SplitSeq(raw, ",") {
 		kv = strings.TrimSpace(kv)
 		if kv == "" {
 			continue
@@ -344,8 +352,8 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		field := key
 		op := filter.OpEq
 		for _, s := range suffixes {
-			if strings.HasSuffix(key, s.suffix) {
-				field = strings.TrimSuffix(key, s.suffix)
+			if before, ok := strings.CutSuffix(key, s.suffix); ok {
+				field = before
 				op = s.op
 				break
 			}
@@ -369,8 +377,8 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			if n := strings.Count(value, "|") + 1; n > maxScopedINEntries {
 				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, n, maxScopedINEntries)
 			}
-			vals := strings.Split(value, "|")
-			for _, v := range vals {
+			vals := strings.SplitSeq(value, "|")
+			for v := range vals {
 				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v}.Coerced(colType[field]))
 			}
 		} else {
@@ -405,8 +413,7 @@ func writeIncludeError(w http.ResponseWriter, surface string, err error) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var forbidden *includeForbiddenError
-	if errors.As(err, &forbidden) {
+	if forbidden, ok := errors.AsType[*includeForbiddenError](err); ok {
 		// The refusal the target entity's own list route would give for an
 		// RBAC or session failure. It is not byte-for-byte parity in every
 		// posture: an owner-scoped target skips the session check here (see
@@ -478,6 +485,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 	for _, node := range nodes {
 		applyRelatedOwnerScope(ctx, node)
 		applyRelatedTenantScope(ctx, node)
+		applyRelatedReadScope(ctx, node)
 		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), ch.PrimaryKey, node, ids, loaded, budget); err != nil {
 			if errors.Is(err, errIncludeBudget) {
 				return err
@@ -554,6 +562,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 	for _, node := range children {
 		applyRelatedOwnerScope(ctx, node)
 		applyRelatedTenantScope(ctx, node)
+		applyRelatedReadScope(ctx, node)
 		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), pk, node, ids, loaded, budget); err != nil {
 			if errors.Is(err, errIncludeBudget) {
 				return err
@@ -870,6 +879,25 @@ func applyRelatedTenantScope(ctx context.Context, node *IncludeNode) {
 		Op:    filter.OpEq,
 		Value: tenant.GetTenantID(ctx),
 	}}, node.Filters...)
+}
+
+// applyRelatedReadScope attaches the TARGET's Exposure.ReadScope predicates
+// to the include node, the read-scope sibling of applyRelatedOwnerScope /
+// applyRelatedTenantScope. Without it, `?include=posts` on another entity
+// serves the drafts the posts entity's own route hides; the include path is
+// exactly where cross-table leaks live.
+//
+// The predicates land in node.ReadScopes, NOT node.Filters: Filters render
+// with IN-run coalescing against caller-controlled scoped filters, and a
+// coalesced run would OR the scope's values with the caller's instead of
+// ANDing them (see IncludeNode.ReadScopes). An unrestricted caller (the
+// ReadScope's own rule) gets no predicates at all, and an entity without a
+// ReadScope is untouched.
+func applyRelatedReadScope(ctx context.Context, node *IncludeNode) {
+	if node == nil || node.Target == nil {
+		return
+	}
+	node.ReadScopes = readScopeFilters(ctx, node.Target)
 }
 
 // wireConverterFor returns the JSON-key converter for the entity a relation

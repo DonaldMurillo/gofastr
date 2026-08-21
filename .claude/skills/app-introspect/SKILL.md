@@ -33,6 +33,7 @@ was launched.
 | `app_modules`           | List modules with manifest metadata (version, deps, migration group), enabled state, and owned surface counts. |
 | `app_config`            | AppConfig snapshot: `name`, `json_case`, `debug_endpoints`, `no_llmmd`, `request_timeout_ms`, `disable_request_timeout`. |
 | `app_readiness`         | Run all registered readiness checks; same set `/readyz` consults, invokable programmatically. |
+| `app_goroutine_leaks`   | Count + stacks of goroutines the runtime has PROVEN leaked (Go's `goroutineleak` profile, GC-fresh). Zero is healthy; a growing count means a worker/stream is being abandoned. |
 | `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/skipped_for_dialect/unknown; `skipped_for_dialect` means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
 | `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary).              |
 | `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`).                      |

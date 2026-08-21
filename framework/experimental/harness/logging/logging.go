@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,20 +114,20 @@ func (l *Logger) ApplyOverrides(spec string) error {
 	if spec == "" {
 		return nil
 	}
-	for _, part := range strings.Split(spec, ",") {
+	for part := range strings.SplitSeq(spec, ",") {
 		p := strings.TrimSpace(part)
 		if p == "" {
 			continue
 		}
-		eq := strings.Index(p, "=")
-		if eq < 0 {
+		before, after, ok := strings.Cut(p, "=")
+		if !ok {
 			return fmt.Errorf("logging: bad override %q (want component=level)", p)
 		}
-		lvl, err := ParseLevel(strings.TrimSpace(p[eq+1:]))
+		lvl, err := ParseLevel(strings.TrimSpace(after))
 		if err != nil {
 			return err
 		}
-		l.SetComponentLevel(strings.TrimSpace(p[:eq]), lvl)
+		l.SetComponentLevel(strings.TrimSpace(before), lvl)
 	}
 	return nil
 }
@@ -159,9 +160,7 @@ func (l *Logger) Log(level Level, msg string, fields map[string]any) {
 	if l.component != "" {
 		rec["component"] = l.component
 	}
-	for k, v := range fields {
-		rec[k] = v
-	}
+	maps.Copy(rec, fields)
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return

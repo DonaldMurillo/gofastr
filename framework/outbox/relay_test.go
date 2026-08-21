@@ -121,9 +121,9 @@ func TestRelay_FailingConsumer_GoesDead(t *testing.T) {
 	o.backoffMax = 5 * time.Millisecond
 	ctx := context.Background()
 
-	var calls int32
+	var calls atomic.Int32
 	o.Consume("flaky", "flaky", func(_ context.Context, _ event.Event) error {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return errors.New("handler unavailable")
 	})
 
@@ -141,7 +141,7 @@ func TestRelay_FailingConsumer_GoesDead(t *testing.T) {
 	if d.LastError == "" {
 		t.Error("LastError empty, want the handler error")
 	}
-	if got := atomic.LoadInt32(&calls); got != 3 {
+	if got := calls.Load(); got != 3 {
 		t.Errorf("handler invoked %d times, want 3", got)
 	}
 	// A dead delivery leaves no pending → parent completes.
@@ -157,9 +157,9 @@ func TestRelay_PanickingConsumer_GoesDead(t *testing.T) {
 	o.backoffMax = 5 * time.Millisecond
 	ctx := context.Background()
 
-	var calls int32
+	var calls atomic.Int32
 	o.Consume("boom", "boom", func(_ context.Context, _ event.Event) error {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		panic("consumer exploded")
 	})
 
@@ -177,7 +177,7 @@ func TestRelay_PanickingConsumer_GoesDead(t *testing.T) {
 	if d.LastError == "" {
 		t.Error("LastError empty, want the recovered panic")
 	}
-	if got := atomic.LoadInt32(&calls); got != 3 {
+	if got := calls.Load(); got != 3 {
 		t.Errorf("handler invoked %d times, want 3", got)
 	}
 	// The delivery must NOT have been marked dispatched at any point.
@@ -310,14 +310,14 @@ func TestRelay_StopDuringBacklog(t *testing.T) {
 	db, o := openOutbox(t, WithBatchSize(1), WithPollInterval(time.Hour))
 	ctx := context.Background()
 
-	var delivered int32
+	var delivered atomic.Int32
 	o.Consume("slow", "slow", func(_ context.Context, _ event.Event) error {
-		atomic.AddInt32(&delivered, 1)
+		delivered.Add(1)
 		time.Sleep(50 * time.Millisecond)
 		return nil
 	})
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		tx, _ := db.BeginTx(ctx, nil)
 		o.Append(ctx, tx, "slow", map[string]any{"i": i})
 		tx.Commit()
@@ -327,7 +327,7 @@ func TestRelay_StopDuringBacklog(t *testing.T) {
 
 	// Let the drain get going, then stop mid-backlog.
 	deadline := time.Now().Add(3 * time.Second)
-	for atomic.LoadInt32(&delivered) < 2 && time.Now().Before(deadline) {
+	for delivered.Load() < 2 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	begin := time.Now()
@@ -337,7 +337,7 @@ func TestRelay_StopDuringBacklog(t *testing.T) {
 	if elapsed > time.Second {
 		t.Fatalf("stop() took %v mid-backlog, want prompt return", elapsed)
 	}
-	if got := atomic.LoadInt32(&delivered); got >= 40 {
+	if got := delivered.Load(); got >= 40 {
 		t.Fatalf("relay drained %d/50 rows before stopping — stop was ignored during backlog", got)
 	}
 }
@@ -346,14 +346,14 @@ func TestRelay_DrainsFullBatch(t *testing.T) {
 	db, o := openOutbox(t, WithBatchSize(2))
 	ctx := context.Background()
 
-	var delivered int32
+	var delivered atomic.Int32
 	o.Consume("bulk", "bulk", func(_ context.Context, _ event.Event) error {
-		atomic.AddInt32(&delivered, 1)
+		delivered.Add(1)
 		return nil
 	})
 
 	// Enqueue more rows than one batch, the relay must keep pumping.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		tx, _ := db.BeginTx(ctx, nil)
 		o.Append(ctx, tx, "bulk", map[string]any{"i": i})
 		tx.Commit()
@@ -364,12 +364,12 @@ func TestRelay_DrainsFullBatch(t *testing.T) {
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&delivered) == 5 {
+		if delivered.Load() == 5 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if got := atomic.LoadInt32(&delivered); got != 5 {
+	if got := delivered.Load(); got != 5 {
 		t.Fatalf("delivered %d events, want 5", got)
 	}
 }

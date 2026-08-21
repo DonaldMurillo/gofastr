@@ -101,7 +101,10 @@ func (d *EntityDeclaration) UnmarshalJSON(data []byte) error {
 			}
 		}
 	}
-	if d.Exposure != nil || declarationHasAny(root, "crud", "mcp", "public", "access") {
+	// read_scope is an exposure concern with its own flat spelling, exactly
+	// like access: a row filter deciding WHICH rows a caller may read, beside
+	// the permission deciding whether they may read the entity at all.
+	if d.Exposure != nil || declarationHasAny(root, "crud", "mcp", "public", "access", "read_scope") {
 		if d.Exposure == nil {
 			d.Exposure = &ExposureDeclaration{}
 		}
@@ -207,10 +210,11 @@ type PaginationDeclaration struct {
 
 // ExposureDeclaration is the JSON/YAML-friendly shape of ExposureConfig.
 type ExposureDeclaration struct {
-	CRUD   *bool              `json:"crud,omitempty"`
-	MCP    bool               `json:"mcp,omitempty"`
-	Public bool               `json:"public,omitempty"`
-	Access *AccessDeclaration `json:"access,omitempty"`
+	CRUD      *bool                 `json:"crud,omitempty"`
+	MCP       bool                  `json:"mcp,omitempty"`
+	Public    bool                  `json:"public,omitempty"`
+	Access    *AccessDeclaration    `json:"access,omitempty"`
+	ReadScope *ReadScopeDeclaration `json:"read_scope,omitempty"`
 }
 
 // AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl,
@@ -223,6 +227,26 @@ type AccessDeclaration struct {
 	Create string `json:"create,omitempty"`
 	Update string `json:"update,omitempty"`
 	Delete string `json:"delete,omitempty"`
+}
+
+// ReadScopeDeclaration is the JSON/YAML-friendly mirror of ReadScopeConfig —
+// the row filter narrowing WHICH rows a caller may read, as opposed to
+// Access, which decides whether they may read the entity at all. Unrestricted
+// names a permission that lifts the filter; empty means any caller with a
+// session reads every row while an anonymous caller gets the filter.
+type ReadScopeDeclaration struct {
+	Filter       []RowPredicateDeclaration `json:"filter,omitempty"`
+	Unrestricted string                    `json:"unrestricted,omitempty"`
+}
+
+// RowPredicateDeclaration is the JSON/YAML-friendly mirror of RowPredicate.
+// Op is one of "eq" (the default; empty means eq), "neq", "in", "not_in".
+// Single-value ops carry Value; "in"/"not_in" carry Values.
+type RowPredicateDeclaration struct {
+	Field  string   `json:"field"`
+	Op     string   `json:"op,omitempty"`
+	Value  string   `json:"value,omitempty"`
+	Values []string `json:"values,omitempty"`
 }
 
 // FieldDeclaration is a JSON-friendly schema.Field.
@@ -285,6 +309,13 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 				Update: d.Exposure.Access.Update, Delete: d.Exposure.Access.Delete,
 			}
 		}
+		// Deep-copy like Pagination.CursorFields: sharing the declaration's
+		// slice would let a later mutation of one silently move the other.
+		if d.Exposure.ReadScope != nil {
+			rs := &ReadScopeConfig{Unrestricted: d.Exposure.ReadScope.Unrestricted}
+			rs.Filter = append([]RowPredicate(nil), readScopePredicates(d.Exposure.ReadScope.Filter)...)
+			exposure.ReadScope = rs
+		}
 	}
 	cfg := EntityConfig{
 		Name:         d.Name,
@@ -302,6 +333,23 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		Renames:      d.Renames,
 	}
 	return cfg, nil
+}
+
+// readScopePredicates converts the declaration shape into the config shape,
+// copying each Values slice so the declaration and the config never share
+// backing arrays.
+func readScopePredicates(preds []RowPredicateDeclaration) []RowPredicate {
+	if len(preds) == 0 {
+		return nil
+	}
+	out := make([]RowPredicate, 0, len(preds))
+	for _, p := range preds {
+		out = append(out, RowPredicate{
+			Field: p.Field, Op: p.Op, Value: p.Value,
+			Values: append([]string(nil), p.Values...),
+		})
+	}
+	return out
 }
 
 // Field converts a JSON field declaration into schema.Field.

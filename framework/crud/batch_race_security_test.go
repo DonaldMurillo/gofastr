@@ -18,19 +18,18 @@ import (
 func TestBatchRace_ConcurrentCreatePreservesOwner(t *testing.T) {
 
 	const iterations = 100
-	for iter := 0; iter < iterations; iter++ {
+	for range iterations {
 		ch, db := setupSecurityTestHandler(t, makeEntityConfig("race_notes", "race_notes", "user_id", []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "content", Type: schema.String},
 		}), `CREATE TABLE race_notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, content TEXT)`)
 
-		concurrency := runtime.GOMAXPROCS(0) * 10
-		if concurrency > 20 {
-			concurrency = 20 // cap for test runtime
-		}
+		concurrency := min(runtime.GOMAXPROCS(0)*10,
+			// cap for test runtime
+			20)
 
 		var wg sync.WaitGroup
-		for i := 0; i < concurrency; i++ {
+		for i := range concurrency {
 			wg.Add(1)
 			go func(userIdx int) {
 				defer wg.Done()
@@ -77,7 +76,7 @@ func TestBatchRace_ConcurrentCreatePreservesOwner(t *testing.T) {
 func TestBatchRace_ConcurrentDeleteScopedToOwner(t *testing.T) {
 
 	const iterations = 50
-	for iter := 0; iter < iterations; iter++ {
+	for range iterations {
 		ch, db := setupSecurityTestHandler(t, makeEntityConfig("race_del", "race_del", "user_id", []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "content", Type: schema.String},

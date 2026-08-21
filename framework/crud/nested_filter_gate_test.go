@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,31 +25,35 @@ func gateEntity(t *testing.T, name string, cfg entity.EntityConfig) *entity.Enti
 	return entity.Define(name, cfg.WithTimestamps(false))
 }
 
-// The subquery counts rows without selecting them, so it cannot scope them to
-// the caller. An owner-scoped or multi-tenant target is therefore refused,
-// except for a caller who may already read every row, for whom a hit/miss
-// count reveals nothing the target's own list route would not.
-func TestCheckNestedFiltersReadable_ScopedTargets(t *testing.T) {
+// The subquery counts rows without selecting them, so it cannot narrow them by
+// selecting — it has to carry the caller's owner and tenant predicates instead.
+// This test pins both halves of that: which targets are refused outright, and
+// which scope predicates each permitted one comes back carrying. A permitted
+// target with no predicate is the count oracle, so "permitted" alone is not the
+// assertion.
+func TestScopeNestedFiltersForCaller_ScopedTargets(t *testing.T) {
+	// Public on every target here: the baseline SESSION gate refuses first
+	// otherwise, and the test would pass for the wrong reason. The rule under
+	// test is which rows a permitted target is narrowed to — "may they read it
+	// at all" is pinned separately, by
+	// TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets.
 	ownerScoped := gateEntity(t, "notes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
-	// Public so the only thing that can refuse is the scoped-target rule under
-	// test. Left default-posture, the BASELINE SESSION gate refuses first and
-	// the test would pass for the wrong reason.
 	multiTenant := gateEntity(t, "tnotes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{MultiTenant: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	plain := gateEntity(t, "pnotes", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 
 	reg := stubRegistry{byName: map[string]*entity.Entity{
 		"notes": ownerScoped, "tnotes": multiTenant, "pnotes": plain,
 	}}
 	parent := gateEntity(t, "boards", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	ch := &CrudHandler{Entity: parent, Registry: &reg}
 
@@ -58,47 +63,77 @@ func TestCheckNestedFiltersReadable_ScopedTargets(t *testing.T) {
 			Field:    "body",
 		}}
 	}
+	// scopesFor runs the gate and returns the predicates it attached, failing
+	// the test if the target was refused.
+	scopesFor := func(t *testing.T, ctx context.Context, target string) []filter.ParsedFilter {
+		t.Helper()
+		nf := filterOn(target)
+		if err := ch.scopeNestedFiltersForCaller(ctx, nf); err != nil {
+			t.Fatalf("target %q was refused: %v", target, err)
+		}
+		return nf[0].scopes
+	}
+	wantScope := func(t *testing.T, got []filter.ParsedFilter, col, val string) {
+		t.Helper()
+		for _, sc := range got {
+			if sc.Field == col {
+				if sc.Value != val {
+					t.Errorf("scope on %q binds %q, want %q", col, sc.Value, val)
+				}
+				return
+			}
+		}
+		t.Errorf("no scope predicate on %q — the EXISTS clause counts every row, which is the oracle: %+v", col, got)
+	}
 
-	// Owner id present, but the rows may not be this owner's, refuse.
 	prev := owner.GetExtractor()
 	owner.SetExtractor(func(context.Context) (any, bool) { return "u1", true })
 	t.Cleanup(func() { owner.SetExtractor(prev) })
 
-	if err := ch.checkNestedFiltersReadable(context.Background(), filterOn("notes")); err == nil {
-		t.Error("an owner-scoped target was permitted — the EXISTS clause cannot narrow rows to the caller, so the count is an oracle")
-	} else if !strings.Contains(err.Error(), "notes") {
-		t.Errorf("the refusal should name the target entity, got %v", err)
+	// An owner filtering across a relation is a legitimate query, and it used
+	// to be refused outright. It is permitted now — narrowed to their rows.
+	wantScope(t, scopesFor(t, context.Background(), "notes"), "owner_id", "u1")
+
+	// A cross-owner caller may already list the target wholesale, so narrowing
+	// would remove a capability without protecting anything.
+	if got := scopesFor(t, owner.AllowCrossOwner(context.Background()), "notes"); len(got) != 0 {
+		t.Errorf("a cross-owner caller had the subquery narrowed: %+v", got)
 	}
 
-	// A cross-owner caller may already list the target wholesale.
-	if err := ch.checkNestedFiltersReadable(owner.AllowCrossOwner(context.Background()), filterOn("notes")); err != nil {
-		t.Errorf("a cross-owner caller was refused; the count reveals nothing they cannot already list: %v", err)
-	}
-
-	// Tenant: present-but-possibly-foreign refuses; cross-tenant is exempt.
+	// Tenant behaves the same way on its own axis.
 	tctx := tenant.SetTenantID(context.Background(), "tenant-a")
-	if err := ch.checkNestedFiltersReadable(tctx, filterOn("tnotes")); err == nil {
-		t.Error("a multi-tenant target was permitted for an ordinary tenant caller")
-	}
-	if err := ch.checkNestedFiltersReadable(tenant.AllowCrossTenant(context.Background()), filterOn("tnotes")); err != nil {
-		t.Errorf("a cross-tenant caller was refused: %v", err)
+	wantScope(t, scopesFor(t, tctx, "tnotes"), "tenant_id", "tenant-a")
+	if got := scopesFor(t, tenant.AllowCrossTenant(context.Background()), "tnotes"); len(got) != 0 {
+		t.Errorf("a cross-tenant caller had the subquery narrowed: %+v", got)
 	}
 
-	// The two axes are independent, and this is the case that was missing: a
-	// grant on ONE axis must not clear the other's refusal. With the exemption
-	// written as a single OR across all three markers, a caller holding only
-	// AllowCrossOwner cleared the refusal for a multi-tenant target and the
-	// count oracle came back across tenants.
-	if err := ch.checkNestedFiltersReadable(owner.AllowCrossOwner(context.Background()), filterOn("tnotes")); err == nil {
-		t.Error("a cross-OWNER grant cleared the refusal for a MULTI-TENANT target — reading every owner's rows says nothing about reading another tenant's")
-	}
-	if err := ch.checkNestedFiltersReadable(tenant.AllowCrossTenant(context.Background()), filterOn("notes")); err == nil {
-		t.Error("a cross-TENANT grant cleared the refusal for an OWNER-SCOPED target — the grants are on different axes")
-	}
+	// The two axes are independent, and this is the case that keeps being got
+	// wrong: a grant on ONE axis must not lift the other's narrowing. Under the
+	// old blanket refusal this showed up as "permitted"; it now shows up as a
+	// missing predicate, which is the same bug one layer down.
+	wantScope(t, scopesFor(t, owner.AllowCrossOwner(tctx), "tnotes"), "tenant_id", "tenant-a")
+	wantScope(t, scopesFor(t, tenant.AllowCrossTenant(context.Background()), "notes"), "owner_id", "u1")
 
-	// An unscoped, readable target is unaffected.
-	if err := ch.checkNestedFiltersReadable(context.Background(), filterOn("pnotes")); err != nil {
-		t.Errorf("an unscoped public target was refused: %v", err)
+	// No owner in context. CanReadScoped refuses first — an owner-scoped entity
+	// with nobody to scope to is not readable — so a caller with no identity
+	// never reaches the narrowing at all.
+	owner.SetExtractor(func(context.Context) (any, bool) { return nil, false })
+	if err := ch.scopeNestedFiltersForCaller(context.Background(), filterOn("notes")); err == nil {
+		t.Error("a caller with no owner was permitted to filter across an owner-scoped target")
+	}
+	// And if that gate ever loosened, the narrowing itself is the backstop: the
+	// predicate binds the empty value, which matches no real row. Asserted on
+	// the builder directly, because the branch above means the gate cannot
+	// reach it — an unreachable fail-closed path is still worth pinning, since
+	// the whole oracle is what sits behind it.
+	if got := eagerScopeFilters(context.Background(), ownerScoped); len(got) != 1 || got[0].Value != "" {
+		t.Errorf("an ownerless caller must be narrowed to the empty value, got %+v", got)
+	}
+	owner.SetExtractor(func(context.Context) (any, bool) { return "u1", true })
+
+	// An unscoped, readable target carries nothing.
+	if got := scopesFor(t, context.Background(), "pnotes"); len(got) != 0 {
+		t.Errorf("an unscoped public target gained predicates: %+v", got)
 	}
 
 	// A relation naming an entity the registry does not hold. Refusing is
@@ -106,14 +141,104 @@ func TestCheckNestedFiltersReadable_ScopedTargets(t *testing.T) {
 	// would be wrong, and the probe built below the branch dereferences the
 	// resolved target, so falling through would panic rather than merely
 	// permit. Nothing else in this file constructs an unresolvable relation.
-	if err := ch.checkNestedFiltersReadable(context.Background(), filterOn("ghosts")); err == nil {
+	if err := ch.scopeNestedFiltersForCaller(context.Background(), filterOn("ghosts")); err == nil {
 		t.Error("a relation naming an unregistered entity was permitted — the subquery would filter against an unvouched table")
 	} else if !strings.Contains(err.Error(), "ghosts") {
 		t.Errorf("the refusal should name the unresolvable target, got %v", err)
 	}
 }
 
-func boolPtrGate(b bool) *bool { return &b }
+// A target the caller may not read AT ALL is still refused. Narrowing answers
+// "which rows", never "may they look" — an entity behind a read permission
+// stays refused however well the subquery is scoped.
+func TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets(t *testing.T) {
+	gated := gateEntity(t, "secrets", entity.EntityConfig{
+		Exposure: &entity.ExposureConfig{
+			CRUD:   new(true),
+			Access: entity.AccessControl{Read: "secrets:read"},
+		},
+	})
+	reg := stubRegistry{byName: map[string]*entity.Entity{"secrets": gated}}
+	parent := gateEntity(t, "boards", entity.EntityConfig{
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
+	})
+	ch := &CrudHandler{Entity: parent, Registry: &reg}
+	nf := []nestedFilter{{
+		Relation: entity.Relation{Type: entity.RelHasMany, Name: "secrets", Entity: "secrets", ForeignKey: "board_id"},
+		Field:    "body",
+	}}
+	err := ch.scopeNestedFiltersForCaller(context.Background(), nf)
+	if err == nil {
+		t.Fatal("a target behind a read permission was permitted")
+	}
+	if !strings.Contains(err.Error(), "secrets") {
+		t.Errorf("the refusal should name the target, got %v", err)
+	}
+}
+
+// The predicate has to reach the SQL, qualified against the target's table and
+// bound as a placeholder, in every relation shape. A scope attached to the
+// struct but dropped on the way to SQL is the same oracle with a passing unit
+// test above it.
+func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
+	shapes := []struct {
+		name string
+		rel  entity.Relation
+	}{
+		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: "note_id"}},
+		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"}},
+		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: "board_id"}},
+		{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
+	}
+	for _, sh := range shapes {
+		t.Run(sh.name, func(t *testing.T) {
+			nf := nestedFilter{
+				Relation: sh.rel, Field: "body", Op: filter.OpEq, Value: "x", table: "note_rows",
+				scopes: []filter.ParsedFilter{
+					{Field: "owner_id", Op: filter.OpEq, Value: "u1"},
+					{Field: "tenant_id", Op: filter.OpEq, Value: "t1"},
+				},
+			}
+			sql, args := buildExistsSubquery("boards", "id", nf)
+			for _, want := range []string{`"note_rows"."owner_id" = $`, `"note_rows"."tenant_id" = $`} {
+				if !strings.Contains(sql, want) {
+					t.Errorf("missing %q — the subquery counts every row:\n%s", want, sql)
+				}
+			}
+			// Every placeholder must be backed by an arg at its own position,
+			// or QueryBuilder renumbers against a shorter list and binds the
+			// wrong value into the scope.
+			if len(args) != 3 {
+				t.Fatalf("args = %v, want both scope values plus the filter value", args)
+			}
+			// Order matters and is not the order the struct lists them in:
+			// QueryBuilder renumbers positionally by encounter, so args must
+			// follow the order the placeholders appear in the SQL. The scope
+			// clauses are emitted first, so their values come first.
+			for i, want := range []any{"u1", "t1", "x"} {
+				if args[i] != want {
+					t.Errorf("args[%d] = %v, want %v — placeholder $%d binds the wrong value", i, args[i], want, i+1)
+				}
+				if !strings.Contains(sql, fmt.Sprintf("$%d", i+1)) {
+					t.Errorf("no $%d in the SQL for args[%d]:\n%s", i+1, i, sql)
+				}
+			}
+		})
+	}
+	// A scope column that is not a plain identifier must match nothing rather
+	// than be dropped: dropping it widens the subquery back to every row.
+	nf := nestedFilter{
+		Relation: entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"},
+		Field:    "body", Op: filter.OpEq, Value: "x", table: "notes",
+		scopes: []filter.ParsedFilter{{Field: "owner_id; DROP TABLE notes --", Op: filter.OpEq, Value: "u1"}},
+	}
+	if sql, _ := buildExistsSubquery("boards", "id", nf); sql != "1 = 0" {
+		t.Errorf("an unsafe scope column produced %q, want an unconditionally-false predicate", sql)
+	}
+}
+
+//go:fix inline
+func boolPtrGate(b bool) *bool { return new(b) }
 
 // Relation.Entity is the registry key; the SQL must name the resolved target's
 // table. resolvedTable falls back to the key only when no target resolved,
@@ -172,11 +297,11 @@ func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
 func TestRelatedScopeHelpersHonourCrossScopeMarkers(t *testing.T) {
 	ownerTarget := gateEntity(t, "onotes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	tenantTarget := gateEntity(t, "tnotes2", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{MultiTenant: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 
 	prev := owner.GetExtractor()
@@ -217,12 +342,12 @@ func TestRelatedScopeHelpersHonourCrossScopeMarkers(t *testing.T) {
 func TestCheckIncludeReadableRecursesAndRefuses(t *testing.T) {
 	gated := gateEntity(t, "secrets", entity.EntityConfig{
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrGate(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "secrets:read"},
 		},
 	})
 	open := gateEntity(t, "opens", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	ch := &CrudHandler{Entity: open}
 
@@ -283,7 +408,7 @@ func TestWriteIncludeErrorStatusMapping(t *testing.T) {
 // node, the defensive paths every caller relies on.
 func TestRelatedScopeHelpersNoOpWhenUnscoped(t *testing.T) {
 	plain := gateEntity(t, "plain", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	node := &IncludeNode{Target: plain}
 	applyRelatedOwnerScope(context.Background(), node)
@@ -308,12 +433,12 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 	target := gateEntity(t, "notes", entity.EntityConfig{
 		Table:    "note_rows",
 		Scope:    &entity.ScopeConfig{SoftDelete: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Fields:   []schema.Field{{Name: "body", Type: schema.String}},
 	})
 	reg := stubRegistry{byName: map[string]*entity.Entity{"notes": target}}
 	parent := gateEntity(t, "boards", entity.EntityConfig{
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
 		},
@@ -348,18 +473,18 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 func TestEagerScopeFiltersExemptCrossScopeCallers(t *testing.T) {
 	ownerScoped := gateEntity(t, "notes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	tenantScoped := gateEntity(t, "tnotes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{MultiTenant: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	granted := gateEntity(t, "gnotes", entity.EntityConfig{
 		Scope: &entity.ScopeConfig{
 			OwnerField:     "owner_id",
 			CrossOwnerRead: "notes:read:all",
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 
 	prev := owner.GetExtractor()

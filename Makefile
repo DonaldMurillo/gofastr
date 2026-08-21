@@ -313,7 +313,7 @@ vulncheck:
 		echo "    Install with the repo's OWN toolchain, not whatever go install picks:"; \
 		echo "    a govulncheck built by an older Go cannot load this module's packages"; \
 		echo "    and reports 'package requires newer Go version' for every one of them."; \
-		echo "    GOTOOLCHAIN=go$$(awk '/^go /{print $$2; exit}' go.mod) go install golang.org/x/vuln/cmd/govulncheck@v1.1.4"; \
+		echo "    GOTOOLCHAIN=go$$(awk '/^go /{print $$2; exit}' go.mod) go install golang.org/x/vuln/cmd/govulncheck@v1.7.0"; \
 		exit 1; \
 	fi
 

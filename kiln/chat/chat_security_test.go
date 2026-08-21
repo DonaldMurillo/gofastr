@@ -61,11 +61,11 @@ func TestPlanCardAttrBreakoutIsNeutralized(t *testing.T) {
 	renderPlanCard(&b, &journal.Plan{PlanID: `p" onclick="alert(1)`, ProposedAt: time.Now()}, true)
 	out := b.String()
 	const marker = `data-fui-rpc-body='`
-	start := strings.Index(out, marker)
-	if start < 0 {
+	_, after, ok := strings.Cut(out, marker)
+	if !ok {
 		t.Fatalf("rpc-body attribute missing:\n%s", out)
 	}
-	rest := out[start+len(marker):]
+	rest := after
 	end := strings.Index(rest, `'`)
 	if end < 0 {
 		t.Fatalf("unterminated rpc-body attribute:\n%s", out)

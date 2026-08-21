@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -375,11 +376,11 @@ func (pe *panelEnv) buildStatusHTML() string {
 	if err != nil {
 		return "agent is building…"
 	}
-	for i := len(entries) - 1; i >= 0; i-- {
-		if entries[i].Kind == journal.KindWorldEdit {
-			return "applying " + render.Escape(string(entries[i].Op)) + "…" +
+	for _, entrie := range slices.Backward(entries) {
+		if entrie.Kind == journal.KindWorldEdit {
+			return "applying " + render.Escape(string(entrie.Op)) + "…" +
 				`<span class="kiln-build-revision" aria-hidden="true">` +
-				render.Escape(entries[i].Timestamp.Format(time.RFC3339Nano)) + `</span>`
+				render.Escape(entrie.Timestamp.Format(time.RFC3339Nano)) + `</span>`
 		}
 	}
 	return "agent is building…"
@@ -507,9 +508,9 @@ func (pe *panelEnv) agentLabel() string {
 // most recent user chat event, or 0. Run under Live.ReadSession, the
 // chat slice is session-reachable and must not escape.
 func lastUserMessageMillisLocked(chat []journal.ChatEvent) int64 {
-	for i := len(chat) - 1; i >= 0; i-- {
-		if chat[i].Kind == journal.KindChatUser {
-			return chat[i].Timestamp.UnixMilli()
+	for _, c := range slices.Backward(chat) {
+		if c.Kind == journal.KindChatUser {
+			return c.Timestamp.UnixMilli()
 		}
 	}
 	return 0
@@ -559,8 +560,8 @@ func quickstartExamplesLocked(w *world.World) []string {
 // Run under Live.ReadSession, the chat slice must not escape.
 func toolCountsLocked(chat []journal.ChatEvent) (calls, pending int) {
 	lastUser := -1
-	for i := len(chat) - 1; i >= 0; i-- {
-		if chat[i].Kind == journal.KindChatUser {
+	for i, c := range slices.Backward(chat) {
+		if c.Kind == journal.KindChatUser {
 			lastUser = i
 			break
 		}

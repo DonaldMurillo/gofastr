@@ -54,6 +54,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	filter.ApplyToCountQuery(countQb, filters)
 	ch.ApplyTenantScopeCount(countQb, r)
 	ch.ApplyOwnerScopeCount(countQb, r)
+	ch.ApplyReadScopeCount(countQb, r)
 	// Soft-delete's ?trashed= gate authorizes against the REQUEST user, so it
 	// must read r.Context(), not the DB-operation ctx (which callers may seed
 	// with a different identity for in-process execution). The buffered List()
@@ -78,6 +79,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	filter.ApplyToQuery(qb, filters)
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
+	ch.ApplyReadScope(qb, r)
 	ch.applySoftDeleteFilterQ(qb, q, r.Context())
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },

@@ -34,7 +34,7 @@ func TestRateLimit_BurstThenDenied(t *testing.T) {
 	req.RemoteAddr = "10.0.0.1:1234"
 
 	// First 3 succeed (burst).
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		w = httptest.NewRecorder()
 		h.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {

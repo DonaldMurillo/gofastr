@@ -201,18 +201,18 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 		}
 		rpcAttr = ` data-fui-rpc="` + render.Escape(it.RPC) + `" data-fui-rpc-method="` + render.Escape(method) + `"`
 	}
-	extra := ""
+	var extra strings.Builder
 	for k, v := range it.ExtraAttrs {
 		// render.Attr validates the key against the same allow-list as
 		// every other ExtraAttrs consumer: render.Escape alone doesn't
 		// touch spaces, so a key like `x onclick` would smuggle a live
 		// event handler into the tag. Unsafe keys are dropped.
 		if a := render.Attr(k, v); a != "" {
-			extra += ` ` + a
+			extra.WriteString(` ` + a)
 		}
 	}
 	b.WriteString(`<` + tag + ` class="` + render.Escape(cls) + `" ` + openExtra +
-		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra + `>`)
+		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra.String() + `>`)
 	if it.Icon != "" {
 		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 	}

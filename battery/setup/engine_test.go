@@ -216,7 +216,7 @@ func TestSecretNeverPrefilled(t *testing.T) {
 // submissions don't both execute the step, the mutex + Complete
 // re-check must serialize them.
 func TestConcurrentStepExecution_OneRun(t *testing.T) {
-	var runCount int64
+	var runCount atomic.Int64
 	// Complete returns false until the step has run; then true.
 	completed := int32(0)
 
@@ -226,7 +226,7 @@ func TestConcurrentStepExecution_OneRun(t *testing.T) {
 				Name:   "create",
 				Fields: []Field{{Name: "x", EnvVar: "CONCURRENT_X"}},
 				Run: func(_ context.Context, _ map[string]string) error {
-					atomic.AddInt64(&runCount, 1)
+					runCount.Add(1)
 					atomic.StoreInt32(&completed, 1)
 					return nil
 				},
@@ -240,16 +240,14 @@ func TestConcurrentStepExecution_OneRun(t *testing.T) {
 
 	// Two concurrent calls to runStepSerialized for the same step.
 	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 2 {
+		wg.Go(func() {
 			_ = r.runStepSerialized(context.Background(), 0, cfg.Steps[0], map[string]string{"x": "v"})
-		}()
+		})
 	}
 	wg.Wait()
 
-	if got := atomic.LoadInt64(&runCount); got != 1 {
+	if got := runCount.Load(); got != 1 {
 		t.Fatalf("expected step.Run called exactly once, got %d", got)
 	}
 }
@@ -305,7 +303,7 @@ func containsStr(s, substr string) bool {
 // once. The fix advances currentStep inside runStepSerialized's lock so
 // there is no window between run and advance.
 func TestConcurrentStepExecution_IntermediateStep(t *testing.T) {
-	var runCount int64
+	var runCount atomic.Int64
 	done := false
 
 	r := New(Config{
@@ -313,7 +311,7 @@ func TestConcurrentStepExecution_IntermediateStep(t *testing.T) {
 		Complete:     func(_ context.Context) (bool, error) { return done, nil },
 		Steps: []Step{
 			{Name: "first", Fields: []Field{{Name: "A"}}, Run: func(_ context.Context, _ map[string]string) error {
-				atomic.AddInt64(&runCount, 1)
+				runCount.Add(1)
 				return nil
 			}},
 			{Name: "second", Fields: []Field{{Name: "B"}}, Run: func(_ context.Context, _ map[string]string) error {
@@ -324,16 +322,14 @@ func TestConcurrentStepExecution_IntermediateStep(t *testing.T) {
 	h := r.Handler(func() {}, nil, nil)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 20 {
+		wg.Go(func() {
 			doPost(h, "/setup", "A=value", nil)
-		}()
+		})
 	}
 	wg.Wait()
 
-	if got := atomic.LoadInt64(&runCount); got != 1 {
+	if got := runCount.Load(); got != 1 {
 		t.Fatalf("expected step1.Run called exactly once, got %d", got)
 	}
 }
@@ -361,7 +357,7 @@ func TestRender_NoHandRolledClasses(t *testing.T) {
 	assertDesignSystemClasses := func(page, body string) {
 		t.Helper()
 		for _, m := range classRe.FindAllStringSubmatch(body, -1) {
-			for _, cls := range strings.Fields(m[1]) {
+			for cls := range strings.FieldsSeq(m[1]) {
 				if strings.HasPrefix(cls, "ui-") || strings.HasPrefix(cls, "fui-") {
 					continue
 				}

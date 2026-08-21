@@ -100,9 +100,11 @@ already done.
 
 Adds `framework_docs_list`, `framework_docs_get`,
 `framework_docs_search`, `app_routes`, `app_plugins`, `app_batteries`,
-`app_modules`, `app_config`, `app_readiness`, `app_routines` to the app's MCP
+`app_modules`, `app_config`, `app_readiness`, `app_goroutine_leaks`,
+`app_routines` to the app's MCP
 endpoint so a connected agent can answer "what routes exist" / "is the app
-ready" / "did my routine body change land" without leaving the session.
+ready" / "is anything leaking goroutines" / "did my routine body change
+land" without leaving the session.
 
 It also adds the contract catalog tools `contracts_list`,
 `contracts_explain`, and `contracts_capabilities`, so an agent can read what

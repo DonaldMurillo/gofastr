@@ -10,9 +10,9 @@ running GoFastr app via MCP. For deep recipes, jump to:
 
 - `.claude/skills/log-debug/SKILL.md` covers the four `log_*` tools
   (recent entries, structured filter, metrics, level mutation).
-- `.claude/skills/app-introspect/SKILL.md` covers the ten introspection
+- `.claude/skills/app-introspect/SKILL.md` covers the eleven introspection
   tools: `app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
-  `app_config`, `app_readiness`, `app_routines`, plus `framework_docs_list` /
+  `app_config`, `app_readiness`, `app_goroutine_leaks`, `app_routines`, plus `framework_docs_list` /
   `framework_docs_get` / `framework_docs_search` for the embedded
   framework docs, and `contracts_list` / `contracts_explain` /
   `contracts_capabilities` for the rules `gofastr verify` enforces. Under
@@ -31,6 +31,7 @@ running GoFastr app via MCP. For deep recipes, jump to:
 | "What plugins / batteries are loaded?"      | `app_plugins`, `app_batteries` (app-introspect)          |
 | "What modules are enabled?"                 | `app_modules` (app-introspect)                           |
 | "Did my routine body change propagate?"     | `app_routines` (app-introspect); ledger_state=drifted flags it |
+| "Is anything leaking goroutines?"           | `app_goroutine_leaks` (app-introspect)                   |
 | "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
 | "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |
 | "Why did `gofastr verify` flag this?"       | `contracts_explain`: the rule's why, fix, and example    |

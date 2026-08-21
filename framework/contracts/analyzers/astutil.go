@@ -268,7 +268,7 @@ func stripComments(src string) string {
 	var b strings.Builder
 	b.Grow(len(src))
 	inBlock := false
-	for _, line := range strings.Split(src, "\n") {
+	for line := range strings.SplitSeq(src, "\n") {
 		out := line
 		if inBlock {
 			if i := strings.Index(out, "*/"); i >= 0 {

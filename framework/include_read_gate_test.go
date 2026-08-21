@@ -36,7 +36,7 @@ func includeGateApp(t *testing.T) *App {
 	app.Entity("owners", EntityConfig{
 		Fields: []schema.Field{{Name: "email", Type: schema.String}},
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrInc(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "owners:read"},
 		},
 	})
@@ -49,12 +49,13 @@ func includeGateApp(t *testing.T) *App {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	return app
 }
 
-func boolPtrInc(b bool) *bool { return &b }
+//go:fix inline
+func boolPtrInc(b bool) *bool { return new(b) }
 
 func TestIncludeRespectsTargetEntityReadGate(t *testing.T) {
 	app := includeGateApp(t)
@@ -124,7 +125,7 @@ func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
 	app := NewApp(WithConfig(AppConfig{Name: "incok", APIPrefix: "/api"}), WithDB(db))
 	app.Entity("owners", EntityConfig{
 		Fields:   []schema.Field{{Name: "email", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("notes", EntityConfig{
 		Fields: []schema.Field{
@@ -134,7 +135,7 @@ func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -182,7 +183,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 			{Name: "owner_id", Type: schema.Relation, To: "owners"},
 		},
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrInc(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "profiles:read"},
 		},
 	})
@@ -192,7 +193,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelHasOne, Name: "profile", Entity: "profiles", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("notes", EntityConfig{
 		Fields: []schema.Field{
@@ -202,7 +203,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -299,10 +300,17 @@ func TestIncludeGateAppliesToReadOneAndCursor(t *testing.T) {
 
 // An owner-scoped target is the case the first version of this gate missed.
 // It used a narrow predicate that skipped owner and tenant, on the reasoning
-// that the include path scopes rows per node, true there, false here:
-// buildExistsSubquery emits no owner, tenant, or soft-delete predicate, so
-// `?rel.field=` counts across every owner's rows while the target's own route
-// answers 401.
+// that the include path scopes rows per node. That was true there and false
+// here, because buildExistsSubquery emitted no owner or tenant predicate at
+// all, so `?rel.field=` counted across every owner's rows while the target's
+// own route answered 401.
+//
+// The subquery now carries the caller's owner predicate, so a signed-in owner
+// gets 200 with only their own rows counted rather than a blanket 403. The
+// property under test is unchanged and is the only one that matters: a guess
+// that hits another owner's row must be indistinguishable from a guess that
+// hits nothing. Status alone is too weak an assertion for that now, since both
+// answers are 200 — the BODIES have to match too.
 func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -319,7 +327,7 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 			{Name: "board_id", Type: schema.Relation, To: "boards"},
 		},
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	// Public parent that relates to it.
 	app.Entity("boards", EntityConfig{
@@ -327,7 +335,7 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -346,14 +354,13 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 
 	// A right guess and a wrong one must be indistinguishable, and that has to
 	// hold for a SIGNED-IN caller too, not just an anonymous one. CanReadScoped
-	// only establishes that the caller has an owner; the EXISTS subquery counts
-	// rows without selecting them, so it cannot narrow to that owner. An
-	// owner-bearing caller would otherwise enumerate every other owner's rows
-	// one guess at a time.
+	// only establishes that the caller has an owner; it is the owner predicate
+	// inside the subquery that decides which rows the count can see. Without
+	// it an owner-bearing caller enumerates every other owner's rows one guess
+	// at a time.
 	// A caller who genuinely HAS an owner: without registering an extractor the
-	// probe would fail owner resolution and 403 for the wrong reason, which
-	// cannot distinguish "refused because the subquery can't scope" from
-	// "refused because there is no owner".
+	// probe would fail owner resolution and refuse for the wrong reason, which
+	// cannot distinguish "narrowed to nothing" from "no owner at all".
 	prev := owner.GetExtractor()
 	owner.SetExtractor(func(ctx context.Context) (any, bool) {
 		if u, ok := handler.GetUser(ctx); ok && u != nil {
@@ -366,22 +373,28 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	signedIn := ta.AsUser(struct{ ID string }{ID: "u-self"})
 	sHit := signedIn.Get("/api/boards?notes.body=someone+secret+note")
 	sMiss := signedIn.Get("/api/boards?notes.body=not+the+value")
-	if sHit.Status() != sMiss.Status() {
-		t.Errorf("signed-in nested filter answers %d for a correct guess and %d for a wrong one — the count is an oracle over other owners' rows",
-			sHit.Status(), sMiss.Status())
+	if sHit.Status() != sMiss.Status() || sHit.Body() != sMiss.Body() {
+		t.Errorf("signed-in nested filter distinguishes a correct guess from a wrong one, so the count is an oracle over another owner's rows.\nhit  %d %s\nmiss %d %s",
+			sHit.Status(), sHit.Body(), sMiss.Status(), sMiss.Body())
 	}
-	if sHit.Status() != http.StatusForbidden {
-		t.Errorf("signed-in nested filter on an owner-scoped target = %d, want 403 — the subquery cannot scope these rows, so the filter must be refused", sHit.Status())
+	// n1 belongs to u-other, so the narrowed subquery matches nothing and the
+	// board must not come back. A 200 that still contained b1 would mean the
+	// predicate reached another owner's row.
+	if strings.Contains(sHit.Body(), "b1") {
+		t.Errorf("the signed-in filter matched a board through another owner's note:\n%s", sHit.Body())
 	}
 
+	// Anonymous is refused earlier and for a different reason: an owner-scoped
+	// entity with nobody to scope to is not readable at all, so CanReadScoped
+	// rejects before any narrowing happens.
 	hit := ta.Get("/api/boards?notes.body=someone+secret+note")
 	miss := ta.Get("/api/boards?notes.body=not+the+value")
 	if hit.Status() != miss.Status() {
-		t.Errorf("nested filter on an owner-scoped target answers %d for a correct guess and %d for a wrong one — the row count is an oracle over rows the target's route refuses",
+		t.Errorf("anonymous nested filter answers %d for a correct guess and %d for a wrong one — the row count is an oracle over rows the target's route refuses",
 			hit.Status(), miss.Status())
 	}
 	if hit.Status() != http.StatusForbidden {
-		t.Errorf("nested filter on an owner-scoped target = %d, want 403", hit.Status())
+		t.Errorf("anonymous nested filter on an owner-scoped target = %d, want 403", hit.Status())
 	}
 }
 
@@ -403,14 +416,14 @@ func TestNestedFilterHidesSoftDeletedTargetRows(t *testing.T) {
 			{Name: "pub_id", Type: schema.Relation, To: "spubs"},
 		},
 		Scope:    &entity.ScopeConfig{SoftDelete: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("spubs", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "snotes", Entity: "snotes", ForeignKey: "pub_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -459,7 +472,7 @@ func TestNestedFilterHidesSoftDeletedTargetRows(t *testing.T) {
 }
 
 // A caller who may already read every row of the target learns nothing from a
-// hit/miss count, so the blanket refusal must not apply to them, refusing
+// hit/miss count, so the subquery must not be narrowed for them. Narrowing
 // would remove a capability without protecting anything. The exemption is the
 // same pair the routes honour.
 func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
@@ -482,14 +495,14 @@ func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
 			// grants cross-owner reads and the refusal is unconditional.
 			CrossOwnerRead: "notes:read:all",
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	app.Entity("boards", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	// What a generated app installs: the policy travels on the request
 	// context, so crossOwnerReadGranted sees it through the real HTTP chain
@@ -529,10 +542,14 @@ func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
 
 	ta := TestHarness(t, app)
 
-	// An ordinary owner is refused (the oracle case).
+	// An ordinary owner is narrowed to their own rows, so n1 (owned by u-other)
+	// stays invisible. This is the oracle case the exemption must not widen.
 	ordinary := ta.AsUser(xoUser{id: "u-self"}).Get("/api/boards?notes.body=someone+note")
-	if ordinary.Status() != http.StatusForbidden {
-		t.Fatalf("an ordinary owner = %d, want 403 — the oracle case this exemption must not widen", ordinary.Status())
+	if ordinary.Status() != http.StatusOK {
+		t.Fatalf("an ordinary owner = %d, want 200: %s", ordinary.Status(), ordinary.Body())
+	}
+	if strings.Contains(ordinary.Body(), "b1") {
+		t.Fatalf("an ordinary owner reached another owner's note through the subquery:\n%s", ordinary.Body())
 	}
 
 	// The caller holding the entity's declared CrossOwnerRead keeps the
@@ -586,7 +603,7 @@ func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
 	app.Entity("authors", EntityConfig{
 		Table:    "acct_authors",
 		Fields:   []schema.Field{{Name: "name", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("articles", EntityConfig{
 		Fields: []schema.Field{
@@ -596,7 +613,7 @@ func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "author", Entity: "authors", ForeignKey: "author_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -648,7 +665,7 @@ func TestIncludeGateRefusesADefaultPostureTarget(t *testing.T) {
 	// a session for every operation.
 	app.Entity("profiles", EntityConfig{
 		Fields:   []schema.Field{{Name: "email", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	app.Entity("notes", EntityConfig{
 		Fields: []schema.Field{
@@ -658,7 +675,7 @@ func TestIncludeGateRefusesADefaultPostureTarget(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "profile", Entity: "profiles", ForeignKey: "profile_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()

@@ -29,8 +29,8 @@ func firstSSEData(resp *http.Response, ch chan<- string) {
 	sc := bufio.NewScanner(resp.Body)
 	for sc.Scan() {
 		line := sc.Text()
-		if strings.HasPrefix(line, "data: ") {
-			ch <- strings.TrimPrefix(line, "data: ")
+		if after, ok := strings.CutPrefix(line, "data: "); ok {
+			ch <- after
 			return
 		}
 	}
@@ -183,7 +183,7 @@ func TestSSEBrokerPublishNonBlockingOnStall(t *testing.T) {
 	go func() {
 		// Publish is called from request/emit paths; the fanout mirror must
 		// never wait on the backend.
-		for i := 0; i < 50; i++ {
+		for range 50 {
 			b.Publish("ev", "data")
 		}
 		close(done)

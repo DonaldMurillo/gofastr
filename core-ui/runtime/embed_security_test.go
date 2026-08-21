@@ -114,7 +114,6 @@ func TestEmbedSourceGateRejectsEveryMutation(t *testing.T) {
 	controls = append(controls, livenessEmbedSourceControls...)
 	sources := readEmbedControlSources(t)
 	for _, control := range controls {
-		control := control
 		t.Run(control.name, func(t *testing.T) {
 			mutated := map[string]string{
 				"embed-loader.js":    sources["embed-loader.js"],
@@ -148,7 +147,7 @@ func TestSandboxNeverGrantsTopNavigation(t *testing.T) {
 		"allow-popups":                   true,
 		"allow-popups-to-escape-sandbox": true,
 	}
-	for _, tok := range strings.Fields(m[1]) {
+	for tok := range strings.FieldsSeq(m[1]) {
 		if !allowed[tok] {
 			t.Fatalf("sandbox grants %q. Adding a token widens what the frame may do to the "+
 				"page hosting it; anything top-navigation-shaped hands it the customer's page. "+

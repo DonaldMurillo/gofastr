@@ -84,6 +84,7 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScope(qb, req)
 	q.handler.ApplyOwnerScope(qb, req)
+	q.handler.ApplyReadScope(qb, req)
 	q.handler.ApplySoftDeleteFilter(qb, req)
 	return qb
 }
@@ -220,6 +221,7 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScopeCount(cb, req)
 	q.handler.ApplyOwnerScopeCount(cb, req)
+	q.handler.ApplyReadScopeCount(cb, req)
 	q.handler.ApplySoftDeleteFilterCount(cb, req)
 	sqlStr, args := cb.Build()
 	var n int

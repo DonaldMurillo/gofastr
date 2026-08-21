@@ -111,8 +111,7 @@ func Handler(cfg Config) http.HandlerFunc {
 		// Parse multipart form. Use a small fixed in-memory threshold so
 		// large parts spill predictably; do NOT pass MaxSize here.
 		if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
-			var maxBytesErr *http.MaxBytesError
-			if errors.As(err, &maxBytesErr) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
 				return
 			}

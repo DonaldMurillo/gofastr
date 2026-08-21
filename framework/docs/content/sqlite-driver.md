@@ -43,9 +43,28 @@ remaining relations were enforced while nothing enforced them.
 The same entity declarations on Postgres did enforce them, which meant
 one schema had two different guarantees depending on the database.
 
-Turn it off with `_pragma=foreign_keys(0)` if an existing database
-accumulated rows that point at nothing. Those rows surface as errors on
-the next write that touches them.
+An upgrade note. Releases before the foreign-key default also emitted the
+owner-column clause itself, and a database created by them still carries
+it: every create on that table fails, because the column holds the session
+identity, which never has a matching row in the table the key names.
+SQLite has no DROP CONSTRAINT, so `gofastr migrate repair` rebuilds the
+affected tables instead:
+
+```bash
+gofastr migrate repair --from=gofastr.yml --db-url=file:app.db          # report
+gofastr migrate repair --from=gofastr.yml --db-url=file:app.db --apply  # rebuild
+```
+
+The rebuild works from each table's own stored DDL, so rows, column
+defaults, indices, and other constraints all survive. Boot logs a warning
+naming each affected table until it is repaired.
+
+`_pragma=foreign_keys(0)` exists for the other legacy problem: a database
+that accumulated rows pointing at nothing while nothing enforced the keys.
+Those rows surface as errors on the next write that touches them. Read the
+rows, fix or delete them, and treat the pragma as a temporary measure for
+that cleanup, not a fix: it disables enforcement for the whole database,
+including the relations that are doing real work.
 
 ### Timestamps use SQLite's own text layout
 
@@ -115,6 +134,13 @@ errors on writes touching rows that already point at nothing, which is
 existing corruption becoming visible rather than a new failure. Read the
 rows, fix or delete them, then remove any `_pragma=foreign_keys(0)` you
 added while cleaning up.
+
+**Reaching for the pragma when an upgraded database rejects every create.**
+A pre-foreign-keys release may have left a key on an entity's owner
+column, and the resulting error names the constraint, not the cause. Run
+`gofastr migrate repair --from=<blueprint> --apply` to rebuild the table
+without it. Disabling foreign keys would only hide the problem, and it
+turns off the keys that belong there too.
 
 **Deleting a parent before its children.** `AutoMigrate` declares no
 `ON DELETE` action and `entity.Relation` cannot express one, so nothing

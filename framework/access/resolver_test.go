@@ -101,11 +101,9 @@ func TestResolverSingleFlight(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make(chan []string, 20)
 	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results <- resolver.Resolve(ctx)
-		}()
+		})
 	}
 	<-started
 	close(release)

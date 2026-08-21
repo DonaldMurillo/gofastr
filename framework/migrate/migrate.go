@@ -80,7 +80,7 @@ func DetectDialectStrict(db *sql.DB) (Dialect, error) {
 func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
 	const attempts = 3
 	var lastErr error
-	for i := 0; i < attempts; i++ {
+	for i := range attempts {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		var v string
 		err := db.QueryRowContext(ctx, "SELECT version()").Scan(&v)
@@ -438,6 +438,27 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		return nil
 	}); err != nil {
 		return fmt.Errorf("migrate: %w", wrapConnErr(err))
+	}
+	// Post-migration scan for the pre-v0.67 owner-column foreign key. A
+	// database created by those releases may still carry one, and with
+	// foreign_keys now on, every create on the table fails with a bare
+	// constraint error that names neither the cause nor the fix. A warning,
+	// not an error: an app that creates no rows is otherwise fine, and
+	// failing its boot on migration day would trade a loud write failure for
+	// a dead app.
+	if dialect == DialectSQLite {
+		stale, scanErr := FindStaleOwnerForeignKeys(ctx, db, plan.Registry)
+		if scanErr != nil {
+			slog.Warn("migrate: could not scan for stale owner-column foreign keys", "err", scanErr)
+		}
+		for _, s := range stale {
+			slog.Warn("migrate: table still carries the pre-v0.67 foreign key on its owner column; every create on it fails while it remains",
+				"table", s.Table,
+				"column", s.Column,
+				"references", s.References,
+				"fix", "gofastr migrate repair --from=<blueprint.yml> --db-url=<url> --apply",
+			)
+		}
 	}
 	return nil
 }

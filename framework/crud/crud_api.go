@@ -135,6 +135,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
+	ch.ApplyReadScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
 
 	sqlStr, args := qb.Build()
@@ -208,6 +209,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
+	ch.ApplyReadScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
@@ -366,6 +368,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScopeCount(cb, req)
 	ch.ApplyOwnerScopeCount(cb, req)
+	ch.ApplyReadScopeCount(cb, req)
 	ch.ApplySoftDeleteFilterCount(cb, req)
 	applyNestedFilters(
 		func(sql string, args ...any) { cb.Where(sql, args...) },

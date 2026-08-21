@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -132,10 +133,8 @@ func (w *Watcher) scan(ctx context.Context, roots []string) error {
 			}
 			name := d.Name()
 			if d.IsDir() {
-				for _, ex := range w.opts.ExcludeDirs {
-					if name == ex {
-						return fs.SkipDir
-					}
+				if slices.Contains(w.opts.ExcludeDirs, name) {
+					return fs.SkipDir
 				}
 				return nil
 			}

@@ -129,7 +129,7 @@ func TestCarouselVisiblePerViewClampedAndApplied(t *testing.T) {
 
 func TestCarouselVirtualScrollPlaceholdersAndManifest(t *testing.T) {
 	slides := make([]CarouselSlide, 0, 12)
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		slides = append(slides, CarouselSlide{Content: render.HTML("<img src='img" + strconv.Itoa(i) + ".jpg' alt=''>")})
 	}
 	h := string(Carousel(CarouselConfig{
@@ -190,7 +190,7 @@ func TestCarouselConcurrentRenderUniqueIDs(t *testing.T) {
 	const N = 32
 	ids := make([]string, N)
 	done := make(chan int, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		go func(i int) {
 			h := string(Carousel(CarouselConfig{
 				Label:  "x",
@@ -198,18 +198,18 @@ func TestCarouselConcurrentRenderUniqueIDs(t *testing.T) {
 			}))
 			// Extract id="ui-carousel-…" substring.
 			marker := `id="ui-carousel-`
-			start := strings.Index(h, marker)
-			if start < 0 {
+			_, after, ok := strings.Cut(h, marker)
+			if !ok {
 				ids[i] = ""
 			} else {
-				rest := h[start+len(marker):]
+				rest := after
 				end := strings.Index(rest, `"`)
 				ids[i] = rest[:end]
 			}
 			done <- i
 		}(i)
 	}
-	for i := 0; i < N; i++ {
+	for range N {
 		<-done
 	}
 	seen := make(map[string]bool, N)

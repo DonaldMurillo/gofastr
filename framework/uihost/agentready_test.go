@@ -13,7 +13,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-func boolp(b bool) *bool { return &b }
+//go:fix inline
+func boolp(b bool) *bool { return new(b) }
 
 // newAgentReadyHost builds a standalone UIHost with the given options,
 // mirroring the seed_test harness.
@@ -217,7 +218,7 @@ func TestRobots_AIBotBlock(t *testing.T) {
 	// allowAIBots merges into the robots config regardless of option order.
 	ds := newAgentReadyHost(
 		WithRobots(RobotsConfig{}),
-		WithAgentReady(AgentReadyConfig{AllowAIBots: boolp(true)}),
+		WithAgentReady(AgentReadyConfig{AllowAIBots: new(true)}),
 	)
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
@@ -242,7 +243,7 @@ func TestRobots_AIBotBlock(t *testing.T) {
 func TestRobots_AIBotAllow_InheritsHostDisallow(t *testing.T) {
 	ds := newAgentReadyHost(
 		WithRobots(RobotsConfig{Disallow: []string{"/__gofastr/", "/private"}}),
-		WithAgentReady(AgentReadyConfig{AllowAIBots: boolp(true)}),
+		WithAgentReady(AgentReadyConfig{AllowAIBots: new(true)}),
 	)
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
@@ -253,20 +254,20 @@ func TestRobots_AIBotAllow_InheritsHostDisallow(t *testing.T) {
 		t.Fatal("GPTBot missing from robots.txt")
 	}
 	rest := body[gpt:]
-	disallowIdx := strings.Index(rest, "Disallow: /__gofastr/")
-	if disallowIdx < 0 {
+	before, _, ok := strings.Cut(rest, "Disallow: /__gofastr/")
+	if !ok {
 		t.Fatalf("GPTBot does not inherit the host Disallow (shadowing bug):\n%s", body)
 	}
 	// A blank line between GPTBot and the Disallow would mean a separate
 	// group, the shadowing bug. Same group = only User-agent lines between.
-	if strings.Contains(rest[:disallowIdx], "\n\n") {
+	if strings.Contains(before, "\n\n") {
 		t.Errorf("blank line splits GPTBot into its own group (shadowing):\n%s", body)
 	}
 }
 func TestRobots_AIBotDeny(t *testing.T) {
 	ds := newAgentReadyHost(
 		WithRobots(RobotsConfig{}),
-		WithAgentReady(AgentReadyConfig{AllowAIBots: boolp(false)}),
+		WithAgentReady(AgentReadyConfig{AllowAIBots: new(false)}),
 	)
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)

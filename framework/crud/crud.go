@@ -2,7 +2,6 @@ package crud
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -524,8 +524,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		// Filtering across a relation reads that relation's rows, so its
 		// entity's posture applies, without this the row count is an oracle
-		// for values in a column the related entity refuses to serve.
-		if err := ch.checkNestedFiltersReadable(r.Context(), nested); err != nil {
+		// for values in a column the related entity refuses to serve. This
+		// call both refuses the targets the caller may not read and narrows
+		// the ones they may to their own rows. The `nested` slice is mutated
+		// in place, and every downstream sink (count, data, cursor, stream)
+		// reads the same slice.
+		if err := ch.scopeNestedFiltersForCaller(r.Context(), nested); err != nil {
 			writeIncludeError(w, "list", err)
 			return
 		}
@@ -632,6 +636,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToCountQuery(countQb, filters)
 		ch.ApplyTenantScopeCount(countQb, r)
 		ch.ApplyOwnerScopeCount(countQb, r)
+		ch.ApplyReadScopeCount(countQb, r)
 		ch.applySoftDeleteFilterCountQ(countQb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
@@ -653,6 +658,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToQuery(qb, filters)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
+		ch.ApplyReadScope(qb, r)
 		ch.applySoftDeleteFilterQ(qb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
@@ -867,6 +873,10 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		qb.Where(ch.PrimaryKey+" = $1", id)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
+		// A row outside the read scope must 404, not 403: the filter lives
+		// in the WHERE clause, so the row is simply not found: the caller
+		// must not learn it exists. Same shape as the owner-scope path.
+		ch.ApplyReadScope(qb, r)
 		ch.ApplySoftDeleteFilter(qb, r)
 		for _, c := range getPayload.Where {
 			qb.Where(c.SQL, c.Args...)
@@ -1098,13 +1108,11 @@ var (
 // Sentinel and typed errors are translated to specific status codes; anything
 // else becomes a 500.
 func writeCRUDError(w http.ResponseWriter, err error) {
-	var bhe *beforeHookError
-	if errors.As(err, &bhe) {
+	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, bhe.Error())
 		return
 	}
-	var ve *ValidationError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*ValidationError](err); ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]any{
@@ -1114,8 +1122,7 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	var tme *tenantMissingError
-	if errors.As(err, &tme) {
+	if tme, ok := errors.AsType[*tenantMissingError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, tme.Error())
 		return
 	}
@@ -1244,10 +1251,7 @@ func explicitOffsetValues(q url.Values) (int, bool) {
 func listLimitCap(entityMax int) int {
 	limitCap := 100
 	if entityMax > 0 {
-		limitCap = entityMax
-		if limitCap > streamListThreshold {
-			limitCap = streamListThreshold
-		}
+		limitCap = min(entityMax, streamListThreshold)
 	}
 	return limitCap
 }
@@ -1457,12 +1461,7 @@ func generateFieldValue(strategy schema.AutoGenerate) any {
 
 // generateUUID creates a new random UUID v4 string.
 func generateUUID() string {
-	var uuid [16]byte
-	rand.Read(uuid[:])
-	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
+	return uuid.NewV4().String()
 }
 
 // compile-time check

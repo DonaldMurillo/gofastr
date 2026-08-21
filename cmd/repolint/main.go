@@ -421,7 +421,7 @@ func lintFrontDoor(root string) ([]finding, error) {
 }
 
 func latestReleaseMinor(changelog string) string {
-	for _, line := range strings.Split(changelog, "\n") {
+	for line := range strings.SplitSeq(changelog, "\n") {
 		if !strings.HasPrefix(line, "## [") || strings.HasPrefix(line, "## [Unreleased]") {
 			continue
 		}
@@ -689,33 +689,14 @@ func lintExampleOrigins(root string) ([]finding, error) {
 			rel = path
 		}
 		seen := map[string]bool{}
-		inBlockComment := false
-		for i, line := range strings.Split(string(body), "\n") {
-			trimmed := strings.TrimSpace(line)
-			// Track /* */ regions. A URL discussed in a block comment is prose
-			// exactly like a // comment, and flagging it made the rule fire on
-			// text that emits nothing.
-			if inBlockComment {
-				if idx := strings.Index(line, "*/"); idx >= 0 {
-					inBlockComment = false
-					line = line[idx+2:]
-				} else {
-					continue
-				}
-			}
-			if idx := strings.Index(line, "/*"); idx >= 0 {
-				if end := strings.Index(line[idx:], "*/"); end < 0 {
-					inBlockComment = true
-				}
-				line = line[:idx]
-			}
-			if strings.HasPrefix(trimmed, "//") {
-				continue // prose, not an emitted URL
-			}
-			// A trailing comment on a code line is prose too. But "//" also
-			// appears inside every URL scheme, so only an unescaped "//" that
-			// is NOT preceded by ":" starts a comment.
-			line = stripTrailingLineComment(line)
+		var lex goLexState
+		for i, raw := range strings.Split(string(body), "\n") {
+			// A URL discussed in a comment is prose, not something the example
+			// emits, so only the code on the line is scanned. One pass strips
+			// both comment forms, because the three lexical contexts define
+			// each other away and cannot be recognised in sequence.
+			var line string
+			line, lex = stripGoComments(raw, lex)
 			for _, m := range exampleAbsoluteURLRe.FindAllStringSubmatch(line, -1) {
 				host := m[1]
 				if allowedExampleHost(host) || seen[host] {
@@ -752,7 +733,7 @@ func moduleIs(root, module string) (bool, error) {
 		}
 		return false, err
 	}
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "module") {
 			continue
@@ -775,22 +756,55 @@ func moduleIs(root, module string) (bool, error) {
 	return false, nil
 }
 
-// stripTrailingLineComment removes a trailing // comment from a line of Go.
+// goLexState carries the lexical context that survives a newline in Go source:
+// a block comment and a raw string literal are the only two constructs that do.
+type goLexState struct {
+	inBlockComment bool
+	inRawString    bool
+}
+
+// stripGoComments returns the code on one line of Go source with both comment
+// forms removed, plus the lexical state the next line starts in.
 //
-// String literals are tracked, and that is what protects "https://host": a
-// "//" inside a string is content, not a comment, and a URL in Go source is
-// always inside one. An earlier version instead kept any "//" preceded by a
-// colon, on the theory that a URL scheme has one and a comment does not. But
-// a label, `case`, or `default` may be followed immediately by a comment with
-// no space (`default:// note` is valid Go), so that rule left those comments
-// unstripped and let prose inside them read as emitted code.
-func stripTrailingLineComment(line string) string {
+// The three contexts, line comment, block comment and string literal, have to
+// be recognised in a single left-to-right pass, because each one turns the
+// others'
+// delimiters into ordinary text. Scanning for one before the others is what
+// made the previous version under-report: it looked for "/*" with a plain
+// strings.Index before it had considered "//" or a quote, so `// see /* here`
+// and `s := "/*"` each opened a block comment that never closed, and every
+// remaining line in the file was skipped. A lint that stops reading reports the
+// same "no findings" as a lint that read everything and found nothing.
+//
+// String literals are also what protect "https://host": a "//" inside a string
+// is content, not a comment, and a URL in Go source is always inside one. An
+// earlier version instead kept any "//" preceded by a colon, on the theory that
+// a URL scheme has one and a comment does not. But a label, `case`, or
+// `default` may be followed immediately by a comment with no space
+// (`default:// note` is valid Go), so that rule left those comments unstripped
+// and let prose inside them read as emitted code.
+func stripGoComments(line string, st goLexState) (string, goLexState) {
+	var code strings.Builder
 	var quote byte
+	if st.inRawString {
+		quote = '`'
+	}
 	for i := 0; i < len(line); i++ {
 		c := line[i]
+		if st.inBlockComment {
+			if c == '*' && i+1 < len(line) && line[i+1] == '/' {
+				st.inBlockComment = false
+				i++
+			}
+			continue
+		}
 		if quote != 0 {
+			code.WriteByte(c)
 			if c == '\\' && quote != '`' {
-				i++ // skip the escaped character
+				if i+1 < len(line) {
+					code.WriteByte(line[i+1])
+				}
+				i++ // an escaped quote does not close the literal
 				continue
 			}
 			if c == quote {
@@ -800,13 +814,26 @@ func stripTrailingLineComment(line string) string {
 		}
 		if c == '"' || c == '\'' || c == '`' {
 			quote = c
+			code.WriteByte(c)
 			continue
 		}
-		if c == '/' && i+1 < len(line) && line[i+1] == '/' {
-			return line[:i]
+		if c == '/' && i+1 < len(line) {
+			if line[i+1] == '/' {
+				st.inRawString = false
+				return code.String(), st
+			}
+			if line[i+1] == '*' {
+				st.inBlockComment = true
+				i++
+				continue
+			}
 		}
+		code.WriteByte(c)
 	}
-	return line
+	// Only a raw string carries across the newline; an interpreted one left
+	// open here is a syntax error the compiler reports, not our problem.
+	st.inRawString = quote == '`'
+	return code.String(), st
 }
 
 // lintCommandBinariesIgnored checks that every cmd/<name> has a root-level
@@ -837,7 +864,7 @@ func lintCommandBinariesIgnored(root string) ([]finding, error) {
 	// total as the one state where there is no problem. body stays nil and
 	// every command falls through to the report below.
 	ignored := map[string]bool{}
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		// Skipping blanks and comments is tidiness, not correctness: neither
 		// can match a command name once the leading "/" is trimmed, so a

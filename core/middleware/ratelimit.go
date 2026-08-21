@@ -197,10 +197,7 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 		// token, minus the time already elapsed into the current tick, rounded
 		// up to at least a second.
 		perToken := s.rate / time.Duration(s.refill)
-		retry := perToken - now.Sub(b.lastSeen)
-		if retry < time.Second {
-			retry = time.Second
-		}
+		retry := max(perToken-now.Sub(b.lastSeen), time.Second)
 		return false, retry, 0, s.timeToFull(0, b.lastSeen, now)
 	}
 	b.tokens--

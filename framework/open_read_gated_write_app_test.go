@@ -36,7 +36,7 @@ func openReadGatedWriteApp(t *testing.T) *App {
 	app.Entity("users", EntityConfig{
 		Fields: []schema.Field{{Name: "email", Type: schema.String}},
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrGated(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "users:read", Create: "users:write", Update: "users:write", Delete: "users:admin"},
 		},
 	})
@@ -51,7 +51,7 @@ func openReadGatedWriteApp(t *testing.T) *App {
 		Scope: &entity.ScopeConfig{SoftDelete: true},
 		Exposure: &entity.ExposureConfig{
 			MCP:  true,
-			CRUD: boolPtrGated(true),
+			CRUD: new(true),
 			Access: entity.AccessControl{
 				Read:   "", // open by declaration
 				Create: "posts:write",
@@ -74,7 +74,8 @@ func openReadGatedWriteApp(t *testing.T) *App {
 	return app
 }
 
-func boolPtrGated(b bool) *bool { return &b }
+//go:fix inline
+func boolPtrGated(b bool) *bool { return new(b) }
 
 func TestApp_OpenReadGatedWrite_AnonymousWritesRefused(t *testing.T) {
 	app := openReadGatedWriteApp(t)

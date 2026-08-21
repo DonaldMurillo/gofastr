@@ -124,7 +124,7 @@ func TestGenerateFilePath_NoCollision(t *testing.T) {
 	t.Parallel()
 	const n = 1000
 	seen := make(map[string]struct{}, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		p := file.GenerateFilePath("users", "avatar", "photo.png")
 		if !strings.HasPrefix(p, "uploads/users/avatar/photo_") || !strings.HasSuffix(p, ".png") {
 			t.Fatalf("unexpected path shape: %q", p)

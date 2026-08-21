@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -174,9 +175,9 @@ func (j *cookieJar) do(r *router.Router, method, path string, body any, remote s
 }
 
 func (j *cookieJar) sessionCookieValue() string {
-	for i := len(j.cookies) - 1; i >= 0; i-- {
-		if j.cookies[i].Name == "session_id" && j.cookies[i].Value != "" {
-			return j.cookies[i].Value
+	for _, v := range slices.Backward(j.cookies) {
+		if v.Name == "session_id" && v.Value != "" {
+			return v.Value
 		}
 	}
 	return ""

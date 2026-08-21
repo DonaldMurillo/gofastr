@@ -92,9 +92,9 @@ func TestManager_SuccessfulDeliverySignsBody(t *testing.T) {
 }
 
 func TestManager_NonMatchingEventIsNotDelivered(t *testing.T) {
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
+		hits.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -115,7 +115,7 @@ func TestManager_NonMatchingEventIsNotDelivered(t *testing.T) {
 	}
 
 	time.Sleep(50 * time.Millisecond)
-	if atomic.LoadInt32(&hits) != 0 {
+	if hits.Load() != 0 {
 		t.Fatalf("subscriber received non-matching event")
 	}
 }
@@ -161,9 +161,9 @@ func TestManager_RetriesOnFailureThenDead(t *testing.T) {
 }
 
 func TestManager_SuccessfulDeliveryStopsRetrying(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -190,7 +190,7 @@ func TestManager_SuccessfulDeliveryStopsRetrying(t *testing.T) {
 		return len(dl) == 1 && dl[0].Status == StatusSuccess
 	}, time.Second, "no successful delivery")
 	time.Sleep(40 * time.Millisecond)
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("should have stopped retrying after success; got %d calls", got)
 	}
 }

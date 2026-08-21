@@ -52,7 +52,7 @@ func postsConfig() entity.EntityConfig {
 	return entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true, Max: f64(200)},
+			{Name: "title", Type: schema.String, Required: true, Max: new(float64(200))},
 			{Name: "body", Type: schema.Text},
 			{Name: "published", Type: schema.Bool},
 			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
@@ -68,7 +68,8 @@ func notesConfig() entity.EntityConfig {
 	}.WithTimestamps(false)
 }
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }
 
 // newHostedApp builds a framework App with the given entities migrated AND a
 // mounted UI host, the configuration the entity admin requires.

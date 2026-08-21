@@ -379,8 +379,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 	result, err := s.invokeHandler(ctx, t, params)
 	if err != nil {
-		var rpcErr *RPCError
-		if errors.As(err, &rpcErr) {
+		if rpcErr, ok := errors.AsType[*RPCError](err); ok {
 			return nil, rpcErr
 		}
 		return nil, &RPCError{

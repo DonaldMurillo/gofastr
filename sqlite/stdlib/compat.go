@@ -133,8 +133,8 @@ func hasForeignKeysChoice(query string) bool {
 // modernc ignores _time_format entirely when it is set.
 func withCompatDefaults(dsn string) string {
 	query := ""
-	if i := strings.IndexByte(dsn, '?'); i >= 0 {
-		query = dsn[i+1:]
+	if _, after, ok := strings.Cut(dsn, "?"); ok {
+		query = after
 	}
 	out := dsn
 	add := func(param string) {

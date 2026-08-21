@@ -357,14 +357,12 @@ func (r *resolver) walkComponentType(cur *types.Named, push func(*types.Named), 
 				walk(x.Underlying(), depth+1, pos, label)
 			}
 		case *types.Struct:
-			for i := 0; i < x.NumFields(); i++ {
-				f := x.Field(i)
+			for f := range x.Fields() {
 				walk(f.Type(), depth+1, f.Pos(), fmt.Sprintf("field %s.%s", owner, f.Name()))
 			}
 		}
 	}
-	for i := 0; i < st.NumFields(); i++ {
-		f := st.Field(i)
+	for f := range st.Fields() {
 		walk(f.Type(), 0, f.Pos(), fmt.Sprintf("field %s.%s", owner, f.Name()))
 	}
 }
@@ -478,8 +476,8 @@ func isMethod(obj types.Object) bool {
 }
 
 func interfaceHasRender(x *types.Interface) bool {
-	for i := 0; i < x.NumMethods(); i++ {
-		if x.Method(i).Name() == "Render" {
+	for method := range x.Methods() {
+		if method.Name() == "Render" {
 			return true
 		}
 	}
@@ -487,8 +485,8 @@ func interfaceHasRender(x *types.Interface) bool {
 }
 
 func signatureMakesComponent(sig *types.Signature) bool {
-	for i := 0; i < sig.Results().Len(); i++ {
-		t := sig.Results().At(i).Type()
+	for v := range sig.Results().Variables() {
+		t := v.Type()
 		if iface, ok := t.Underlying().(*types.Interface); ok {
 			if interfaceHasRender(iface) {
 				return true

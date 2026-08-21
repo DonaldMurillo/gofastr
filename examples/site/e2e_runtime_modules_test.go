@@ -37,7 +37,7 @@ import (
 func collectRuntimeModuleURLs(ctx context.Context) (*sync.Map, func()) {
 	urls := &sync.Map{}
 	cancel := func() {}
-	chromedp.ListenTarget(ctx, func(ev interface{}) {
+	chromedp.ListenTarget(ctx, func(ev any) {
 		switch e := ev.(type) {
 		case *network.EventRequestWillBeSent:
 			if strings.Contains(e.Request.URL, "/__gofastr/runtime/") {
@@ -79,7 +79,7 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 	// should not load. (toasts + sse load legitimately because of
 	// site-wide widgets above.)
 	for _, mod := range []string{"fileupload", "menu"} {
-		urls.Range(func(k, _ interface{}) bool {
+		urls.Range(func(k, _ any) bool {
 			u := k.(string)
 			if strings.Contains(u, "/runtime/"+mod+".js") {
 				t.Errorf("home page should NOT fetch %s module; got %s", mod, u)
@@ -110,7 +110,7 @@ func TestE2E_RuntimeSplit_FileuploadLoadsOnMarker(t *testing.T) {
 	}
 
 	found := false
-	urls.Range(func(k, _ interface{}) bool {
+	urls.Range(func(k, _ any) bool {
 		if strings.Contains(k.(string), "/runtime/fileupload.js") {
 			found = true
 		}
@@ -118,7 +118,7 @@ func TestE2E_RuntimeSplit_FileuploadLoadsOnMarker(t *testing.T) {
 	})
 	if !found {
 		var listed []string
-		urls.Range(func(k, _ interface{}) bool { listed = append(listed, k.(string)); return true })
+		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
 		t.Errorf("/components/fileupload should fetch fileupload module; runtime urls observed: %v", listed)
 	}
 }
@@ -144,7 +144,7 @@ func TestE2E_RuntimeSplit_DrawerLoadsOnMarker(t *testing.T) {
 	}
 
 	found := false
-	urls.Range(func(k, _ interface{}) bool {
+	urls.Range(func(k, _ any) bool {
 		if strings.Contains(k.(string), "/runtime/") {
 			found = true
 		}
@@ -152,7 +152,7 @@ func TestE2E_RuntimeSplit_DrawerLoadsOnMarker(t *testing.T) {
 	})
 	if !found {
 		var listed []string
-		urls.Range(func(k, _ interface{}) bool { listed = append(listed, k.(string)); return true })
+		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
 		t.Errorf("/components/drawer should fetch at least one runtime module; urls observed: %v", listed)
 	}
 }
@@ -178,7 +178,7 @@ func TestE2E_RuntimeSplit_ToastsLoadOnMarker(t *testing.T) {
 	}
 
 	found := false
-	urls.Range(func(k, _ interface{}) bool {
+	urls.Range(func(k, _ any) bool {
 		if strings.Contains(k.(string), "/runtime/toasts.js") {
 			found = true
 		}
@@ -417,7 +417,7 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 	}
 
 	found := false
-	urls.Range(func(k, _ interface{}) bool {
+	urls.Range(func(k, _ any) bool {
 		if strings.Contains(k.(string), "/runtime/fileupload.js") {
 			found = true
 		}
@@ -516,7 +516,7 @@ func TestE2E_RuntimeSplit_HoverPrefetch(t *testing.T) {
 	}
 
 	found := false
-	urls.Range(func(k, _ interface{}) bool {
+	urls.Range(func(k, _ any) bool {
 		if strings.Contains(k.(string), "/runtime/popover.js") {
 			found = true
 		}
@@ -524,7 +524,7 @@ func TestE2E_RuntimeSplit_HoverPrefetch(t *testing.T) {
 	})
 	if !found {
 		var listed []string
-		urls.Range(func(k, _ interface{}) bool { listed = append(listed, k.(string)); return true })
+		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
 		t.Errorf("pointerover on data-fui-prefetch element should fetch the popover module; runtime urls observed: %v", listed)
 	}
 }

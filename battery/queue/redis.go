@@ -15,7 +15,7 @@ import (
 // This is an interface so callers can inject any Redis client (go-redis, redigo, etc.)
 // without this package importing a specific driver.
 type RedisClient interface {
-	LPush(ctx context.Context, key string, values ...interface{}) error
+	LPush(ctx context.Context, key string, values ...any) error
 	RPop(ctx context.Context, key string) (string, error)
 	// HGet returns the value stored at field in the hash at key. Like RPop,
 	// a missing hash or field MUST be reported as ErrRedisEmpty (map the
@@ -25,7 +25,7 @@ type RedisClient interface {
 	// lease expired and another worker took it) and must not be mistaken
 	// for a backend outage.
 	HGet(ctx context.Context, key, field string) (string, error)
-	HSet(ctx context.Context, key string, values ...interface{}) error
+	HSet(ctx context.Context, key string, values ...any) error
 	// HGetAll returns every field→value pair in the hash. Used by Reclaim to
 	// scan the processing hash for expired in-flight jobs.
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
@@ -42,7 +42,7 @@ type RedisClient interface {
 	// LRem removes up to count occurrences of value from the list at key and
 	// returns the number removed. Used by Replay to pull one entry off the
 	// dead-letter list.
-	LRem(ctx context.Context, key string, count int64, value interface{}) (int64, error)
+	LRem(ctx context.Context, key string, count int64, value any) (int64, error)
 }
 
 // ErrRedisEmpty is the sentinel a RedisClient implementation returns (or
@@ -258,7 +258,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// Otherwise the pop→processing transition loses the job permanently
 		// (it is neither on the main list nor visible to Reclaim).
 		visTimeout := time.Duration(q.visibilityTimeout.Load())
-		jobData, _ := json.Marshal(map[string]interface{}{
+		jobData, _ := json.Marshal(map[string]any{
 			"job":       string(bumped),
 			"expiresAt": q.now().Add(visTimeout).UnixNano(),
 		})

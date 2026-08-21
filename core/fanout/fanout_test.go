@@ -175,7 +175,7 @@ func TestInProcessOrderedDelivery(t *testing.T) {
 	defer cancel()
 	_ = stop
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if err := f.Publish(context.Background(), "ord", []byte{byte(i)}); err != nil {
 			t.Fatalf("Publish %d: %v", i, err)
 		}
@@ -235,7 +235,7 @@ func TestInProcessOverflowDropOldest(t *testing.T) {
 	// Publish far more than the queue can hold; none of these should block.
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			_ = f.Publish(context.Background(), "t", []byte{byte(i)})
 		}
 		close(done)

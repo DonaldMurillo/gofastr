@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -25,13 +26,7 @@ import (
 func (ch *CrudHandler) cursorFields() []string {
 	if len(ch.Entity.Config.Pagination.CursorFields) > 0 {
 		fields := append([]string{}, ch.Entity.Config.Pagination.CursorFields...)
-		hasPK := false
-		for _, f := range fields {
-			if f == ch.PrimaryKey {
-				hasPK = true
-				break
-			}
-		}
+		hasPK := slices.Contains(fields, ch.PrimaryKey)
 		if !hasPK {
 			fields = append(fields, ch.PrimaryKey)
 		}
@@ -73,6 +68,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	filter.ApplyToQuery(qb, filters)
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
+	ch.ApplyReadScope(qb, r)
 	ch.ApplySoftDeleteFilter(qb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },

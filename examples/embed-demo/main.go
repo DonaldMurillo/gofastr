@@ -30,6 +30,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -118,10 +119,8 @@ func (s *demoSource) Allows(_ context.Context, _, origin string) (bool, error) {
 	// boot-listed, so a real impl indexes origin -> customer and caches. The
 	// demo has one customer, so any origin it lists is allowed.
 	for _, list := range s.origins {
-		for _, o := range list {
-			if o == origin {
-				return true, nil
-			}
+		if slices.Contains(list, origin) {
+			return true, nil
 		}
 	}
 	return false, nil

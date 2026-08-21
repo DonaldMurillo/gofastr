@@ -27,14 +27,14 @@ func testPrincipal(r *http.Request) string {
 }
 
 func TestIdempotency_BypassesSafeMethods(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}))
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set(IdempotencyKeyHeader, "k")
 		rr := httptest.NewRecorder()
@@ -43,15 +43,15 @@ func TestIdempotency_BypassesSafeMethods(t *testing.T) {
 			t.Fatalf("GET %d: got %d", i, rr.Code)
 		}
 	}
-	if got := atomic.LoadInt32(&calls); got != 3 {
+	if got := calls.Load(); got != 3 {
 		t.Fatalf("expected 3 handler invocations for GET, got %d", got)
 	}
 }
 
 func TestIdempotency_NoKey_OptionalPasses(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.WriteHeader(http.StatusCreated)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"a":1}`))
@@ -61,7 +61,7 @@ func TestIdempotency_NoKey_OptionalPasses(t *testing.T) {
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("got %d", rr.Code)
 	}
-	if atomic.LoadInt32(&calls) != 1 {
+	if calls.Load() != 1 {
 		t.Fatalf("handler should have run")
 	}
 }
@@ -223,9 +223,9 @@ func TestIdempotency_BodyTooLargeBypassesCleanly(t *testing.T) {
 func TestIdempotency_ConcurrentReturnsInFlight(t *testing.T) {
 	start := make(chan struct{})
 	release := make(chan struct{})
-	var concurrent int32
+	var concurrent atomic.Int32
 	h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&concurrent, 1)
+		concurrent.Add(1)
 		start <- struct{}{}
 		<-release
 		w.WriteHeader(http.StatusOK)
@@ -261,9 +261,9 @@ func TestIdempotency_ConcurrentReturnsInFlight(t *testing.T) {
 
 func TestIdempotency_StoreFailureFailsClosedByDefault(t *testing.T) {
 	bad := failingStore{err: errors.New("backend down")}
-	var calls int32
+	var calls atomic.Int32
 	h := Idempotency(IdempotencyConfig{Store: bad, Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.WriteHeader(http.StatusCreated)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
@@ -273,7 +273,7 @@ func TestIdempotency_StoreFailureFailsClosedByDefault(t *testing.T) {
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("default behaviour must fail closed on store error; got %d", rr.Code)
 	}
-	if atomic.LoadInt32(&calls) != 0 {
+	if calls.Load() != 0 {
 		t.Fatalf("handler must NOT run on store failure when fail-closed")
 	}
 }

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -55,9 +56,7 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 
 	children := []render.HTML{}
 	if cfg.Prefix != "" {

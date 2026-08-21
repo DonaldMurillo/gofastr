@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -40,7 +41,7 @@ type Server struct {
 	// callCounter is a monotonic ID source for tool_call envelopes
 	// journaled by the HTTP dispatcher. Atomic so concurrent HTTP
 	// requests can each get a unique id without locking.
-	callCounter int64
+	callCounter atomic.Int64
 }
 
 // New constructs a chat Server.
@@ -241,7 +242,7 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 	// the JSON marshal below.
 	want := map[string]bool{}
 	if raw := r.URL.Query().Get("fields"); raw != "" {
-		for _, f := range strings.Split(raw, ",") {
+		for f := range strings.SplitSeq(raw, ",") {
 			f = strings.TrimSpace(f)
 			if f != "" {
 				want[f] = true
@@ -289,8 +290,8 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 
 		if want["last_user"] || want["last_assistant"] {
 			var lastUser, lastAssistant *journal.ChatEvent
-			for i := len(sess.Chat) - 1; i >= 0; i-- {
-				e := sess.Chat[i]
+			for _, e := range slices.Backward(sess.Chat) {
+
 				if lastUser == nil && e.Kind == journal.KindChatUser {
 					cp := e
 					lastUser = &cp
@@ -322,10 +323,7 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if want["recent"] {
-			start := len(sess.Chat) - recentN
-			if start < 0 {
-				start = 0
-			}
+			start := max(len(sess.Chat)-recentN, 0)
 			out["recent"] = sess.Chat[start:]
 		}
 
@@ -456,7 +454,7 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) nextCallID() string {
-	n := atomic.AddInt64(&s.callCounter, 1)
+	n := s.callCounter.Add(1)
 	return fmt.Sprintf("c%d-%d", time.Now().UnixNano(), n)
 }
 
@@ -465,7 +463,7 @@ func (s *Server) nextCallID() string {
 // envelope kinds (KindToolCall, KindToolResult), the underlying tool
 // dispatch journals world_edit / plan_* entries through protocol.Tools.
 func (s *Server) applyEntry(kind journal.Kind, payload any) error {
-	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddInt64(&s.callCounter, 1))
+	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), s.callCounter.Add(1))
 	entry, err := journal.NewEntry(id, time.Now().UTC(), kind, "", payload)
 	if err != nil {
 		return err

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -359,8 +360,8 @@ func clientIP(r *http.Request) string {
 	if addr == "" {
 		return ""
 	}
-	if i := strings.LastIndex(addr, ":"); i >= 0 {
-		return addr[:i]
+	if host, _, ok := strings.CutLast(addr, ":"); ok {
+		return host
 	}
 	return addr
 }
@@ -467,9 +468,7 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 		return defaultRedact(row)
 	}
 	copied := make(map[string]any, len(row))
-	for k, v := range row {
-		copied[k] = v
-	}
+	maps.Copy(copied, row)
 	var out map[string]any
 	panicked := false
 	func() {

@@ -41,7 +41,7 @@ func (m *mockRedis) LRange(_ context.Context, key string, start, stop int64) ([]
 // LRem removes up to count occurrences of value from the list at key.
 // This mock implements the count > 0 case (remove from head toward tail),
 // which is all RedisQueue.Replay needs. Returns the number removed.
-func (m *mockRedis) LRem(_ context.Context, key string, count int64, value interface{}) (int64, error) {
+func (m *mockRedis) LRem(_ context.Context, key string, count int64, value any) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var target string

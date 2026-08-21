@@ -136,7 +136,7 @@ func TestLoopMaxTurnsCap(t *testing.T) {
 	tools, _ := setupAgent(t)
 	// Provider keeps emitting tool calls forever, loop should cap.
 	prov := &fakeProvider{turns: nil}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		prov.turns = append(prov.turns, agent.Turn{ToolCalls: []agent.ToolCall{{CallID: "c", Name: "world_get", Args: map[string]any{}}}})
 	}
 	loop := &agent.Loop{Provider: prov, Tools: tools, MaxTurns: 3}

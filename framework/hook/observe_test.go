@@ -120,14 +120,12 @@ func TestExecuteHooksIsConcurrencySafeWithAnObserver(t *testing.T) {
 	reg.RegisterHook(BeforeList, func(ctx context.Context, data any) error { return nil })
 
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 32 {
+		wg.Go(func() {
 			if err := reg.ExecuteHooks(context.Background(), BeforeList, nil); err != nil {
 				t.Errorf("execute: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

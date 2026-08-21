@@ -159,7 +159,7 @@ func TestRouter_ConcurrentRegistration(t *testing.T) {
 	}))
 
 	done := make(chan bool)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		go func() {
 			r.Use(func(next http.Handler) http.Handler { return next })
 			req := httptest.NewRequest(http.MethodGet, "/ping", nil)
@@ -168,7 +168,7 @@ func TestRouter_ConcurrentRegistration(t *testing.T) {
 			done <- true
 		}()
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		<-done
 	}
 }
@@ -378,7 +378,7 @@ func TestRedirectStillRedirectsWhenLive(t *testing.T) {
 func TestUnmatchedPathWorkIsBounded(t *testing.T) {
 	r := New()
 	const routes = 300
-	for i := 0; i < routes; i++ {
+	for i := range routes {
 		r.Get(fmt.Sprintf("/route%d/{id}", i), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	}
 	miss := httptest.NewRequest(http.MethodGet, "/nope", nil)

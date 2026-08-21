@@ -20,16 +20,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
-// This file holds the wave-2a supervisor integration tests. The seven
-// mandatory scenarios from the brief are each pinned by a named test:
+// This file holds the wave-2a supervisor integration helpers and the
+// scenarios that could NOT move to framework/processmoduletest for the
+// CI race gate split (issue #208). The movable scenarios moved there;
+// these stayed because each reaches unexported supervisor internals and
+// exporting seams for them would be API that exists only for tests:
 //
-//   - TestSupervisor_KillMidCallBuffered503  (kill -9 mid module.http)
-//   - TestSupervisor_Disabled404_EnableDown503 (two-layer gate)
-//   - TestSupervisor_HandshakeMismatchFailed  (terminal Failed, no restart)
-//   - TestSupervisor_CircuitOpensAndGenResets (5 crashes/60s + gen bump)
-//   - TestSupervisor_StoreUnreachableDrains   (lease TTL → drain + 503)
-//   - TestSupervisor_RemoteToggleCrossReplica (two supervisors, one store)
-//   - TestSupervisor_UntrustedNoSandbox       (constructor error)
+//   - TestSupervisor_KillMidCallBuffered503  (Slot's live child handle)
+//   - TestSupervisor_StoreUnreachableDrains  (the store's raw db handle)
+//   - TestSupervisor_RemoteToggleCrossReplica (moduleSlot construction)
+//
+// The helpers below (child artifact, env, descriptor, supervisors) are
+// shared with the framework-root cover tests and with these scenarios.
 //
 // The child process is the test binary itself, re-executed under an env
 // guard (GOFASTR_PROCESS_MODULE_CHILD=…). The child wires a moduleproto
@@ -205,27 +207,6 @@ func safeLogf(t *testing.T) func(string, ...any) {
 	}
 }
 
-// ---- Test 1: untrusted tier with no sandbox → constructor error ----
-
-func TestSupervisor_UntrustedNoSandbox(t *testing.T) {
-	store := newTestStore(t)
-	sup := newBareTestSupervisor(t, store, &TrustedProcessRunner{})
-	d := descriptorForChild(t, childModeEcho)
-	d.TrustTier = TrustUntrusted
-	_, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"})
-	if err == nil {
-		t.Fatal("untrusted descriptor with no sandbox must fail Register")
-	}
-	var use *UntrustedNoSandboxError
-	if !errors.As(err, &use) {
-		t.Fatalf("want UntrustedNoSandboxError, got %T(%v)", err, err)
-	}
-	// Module never reached Ready.
-	if sl := sup.Slot(d.Name); sl != nil {
-		t.Errorf("untrusted module should not be registered in a slot")
-	}
-}
-
 // envRunner wraps a Runner and appends fixed env entries to every
 // ChildSpec before delegating. Used by tests to pass the child-mode env
 // var through the supervisor's spawn path without supervisor changes.
@@ -253,83 +234,6 @@ func waitForState(t *testing.T, sup *ProcessModuleSupervisor, name string, want 
 	}
 	info, _ := sup.Info(name)
 	t.Fatalf("waitForState %q: want %s, last=%s", name, want, info.State)
-}
-
-// ---- Test 2: handshake digest mismatch → terminal Failed, NO restart ----
-
-func TestSupervisor_HandshakeMismatchFailed(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
-		// Re-exec guard: the child runs [processModuleChildMain].
-		return
-	}
-	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeBadDigest)
-	d := descriptorForChild(t, childModeBadDigest)
-	// Surface digest mismatch: the descriptor says X, the child echoes Y
-	// (childModeBadDigest). The handshake must terminate the module.
-	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	sup.StartLoops()
-	if err := sup.Enable(context.Background(), d.Name); err != nil {
-		t.Fatalf("enable: %v", err)
-	}
-	// Must land in Failed (terminal), not loop Crashed → Backoff → Starting.
-	waitForState(t, sup, d.Name, StateFailed, 5*time.Second)
-	// Wait another spawn-deadline and confirm no restart attempt.
-	time.Sleep(300 * time.Millisecond)
-	info, _ := sup.Info(d.Name)
-	if info.State != StateFailed {
-		t.Errorf("after wait: state = %s, want Failed (no restart)", info.State)
-	}
-	if info.RestartCount != 0 {
-		t.Errorf("restart count = %d, want 0 (integrity faults do not charge)", info.RestartCount)
-	}
-}
-
-// ---- Test 3: circuit opens after 5 crashes, generation bump resets ----
-
-func TestSupervisor_CircuitOpensAndGenResets(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
-		return
-	}
-	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeCrashExit)
-	d := descriptorForChild(t, childModeCrashExit)
-	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	sup.StartLoops()
-	if err := sup.Enable(context.Background(), d.Name); err != nil {
-		t.Fatalf("enable: %v", err)
-	}
-	// The child exits immediately on every spawn; the supervisor will
-	// charge the circuit 5 times within CircuitWindow and open it.
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		info, _ := sup.Info(d.Name)
-		if info.CircuitOpen {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	info, _ := sup.Info(d.Name)
-	if !info.CircuitOpen {
-		t.Fatalf("circuit should be open after 5 crashes; restarts=%d", info.RestartCount)
-	}
-	if info.RestartCount < 5 {
-		t.Errorf("restart count = %d, want >= 5", info.RestartCount)
-	}
-	// Generation bump resets the circuit (design §8).
-	if _, err := sup.BumpGeneration(context.Background(), d.Name); err != nil {
-		t.Fatalf("bump: %v", err)
-	}
-	// Allow a reconcile pass.
-	time.Sleep(100 * time.Millisecond)
-	info, _ = sup.Info(d.Name)
-	if info.CircuitOpen {
-		t.Errorf("generation bump must reset circuit; still open (restarts=%d)", info.RestartCount)
-	}
 }
 
 // ---- Test 4: kill -9 mid module.http → buffered 503, restart counted ----
@@ -384,81 +288,6 @@ func TestSupervisor_KillMidCallBuffered503(t *testing.T) {
 	}
 	// Supervisor should restart and the host must stay healthy.
 	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
-}
-
-// ---- Test 5: disabled → 404; enabled-but-down → 503 + Retry-After ----
-
-func TestSupervisor_Disabled404_EnableDown503(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
-		return
-	}
-	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeEcho)
-	d := descriptorForChild(t, childModeEcho)
-	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	sup.StartLoops()
-	// Disabled (default): the route gate would 404. We cannot easily drive
-	// the gate from this test (it lives in the router); we assert that the
-	// supervisor's proxy is NOT reachable by checking state is
-	// InstalledDisabled and Info reports disabled.
-	info, _ := sup.Info(d.Name)
-	if info.State != StateInstalledDisabled {
-		t.Errorf("freshly registered module state = %s, want InstalledDisabled", info.State)
-	}
-
-	// Enable, but the proxy hit during the Starting window must 503.
-	if err := sup.Enable(context.Background(), d.Name); err != nil {
-		t.Fatalf("enable: %v", err)
-	}
-	// Drive the proxy immediately, before Ready lands, to catch the
-	// enabled-but-not-Ready 503 window (decision D). If the spawn is
-	// too fast to observe, the test logs and continues.
-	hit503 := false
-	for range 10 {
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/echo", nil)
-		sup.serveProxy(d.Name, "echo", rec, req)
-		if rec.Code == http.StatusServiceUnavailable {
-			hit503 = true
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	// Wait for Ready, then verify a successful proxy call.
-	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
-	okRec := httptest.NewRecorder()
-	okReq := httptest.NewRequest(http.MethodGet, "/echo", nil)
-	sup.serveProxy(d.Name, "echo", okRec, okReq)
-	if okRec.Code != http.StatusOK {
-		t.Errorf("ready proxy: status = %d, want 200", okRec.Code)
-	}
-
-	// Disable: drain the child. While DrainingDisable or after, proxy → 503.
-	if err := sup.Disable(context.Background(), d.Name); err != nil {
-		t.Fatalf("disable: %v", err)
-	}
-	// Wait for the drain to land.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		info, _ := sup.Info(d.Name)
-		if info.State == StateInstalledDisabled {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	disabledRec := httptest.NewRecorder()
-	disabledReq := httptest.NewRequest(http.MethodGet, "/echo", nil)
-	sup.serveProxy(d.Name, "echo", disabledRec, disabledReq)
-	// serveProxy is invoked AFTER the route gate would have 404'd. With
-	// the gate bypassed (direct call), a not-Ready module returns 503.
-	if disabledRec.Code != http.StatusServiceUnavailable {
-		t.Errorf("disabled proxy: status = %d, want 503", disabledRec.Code)
-	}
-	if !hit503 {
-		t.Logf("note: did not observe the enable-time 503 window (spawn was fast)")
-	}
 }
 
 // ---- Test 6: store unreachable past lease TTL → drained, 503 ----

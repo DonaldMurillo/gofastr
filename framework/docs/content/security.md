@@ -414,14 +414,15 @@ entity registers; the auth battery self-migrates `auth_users`. Trusting
 the column name there meant any column of that table could be
 predicated on. `?include=` has always refused the same shape.
 
-A nested filter is also refused whenever the target entity declares
-`Scope.OwnerField` or `Scope.MultiTenant`, even for a caller who may read that
-entity. The filter compiles to an `EXISTS` clause that counts rows without
-selecting them, so it cannot scope them to the caller, and the resulting row
-count would confirm values in other owners' or tenants' rows one guess at a
-time. A caller holding a cross-owner or cross-tenant grant is exempt, since
-they can already list the target wholesale. See
-[access control](access-control.md).
+A nested filter on a target that declares `Scope.OwnerField` or
+`Scope.MultiTenant` carries the caller's owner and tenant predicates into the
+`EXISTS` subquery. The clause counts rows without selecting them, so without
+those predicates it counts every row in the target table and the parent's row
+count confirms values in other owners' or tenants' rows one guess at a time.
+The predicates come from the same builder the include and eager paths use, so
+the three surfaces answer alike. A caller holding a cross-owner or cross-tenant
+grant gets no predicate on that axis, since they can already list the target
+wholesale; the axes are independent. See [access control](access-control.md).
 
 Both gates are HTTP-only. An in-process caller, such as a typed repo passing
 `ListOptions.NestedFilters` or `ApplyIncludes` outside a request, is server
@@ -510,6 +511,18 @@ for every operation on an entity that declares none of `OwnerField`,
    a workaround for a 401 during development. An entity that wants
    public reads but gated writes uses `Access` instead (a blank
    `Read` + a real `Create` permission).
+
+The read posture has two questions, and `Public` answers only the first
+(may this caller read the entity). **Which rows** they see is
+`Exposure.ReadScope`: declared predicates on the entity's own columns,
+applied to every read surface (List, Get, count, cursor, stream,
+`?include=`, `?rel.field=`, the in-process API, typed queries), lifted for
+a caller holding the `Unrestricted` permission, or, when it is empty, for
+any signed-in caller. That empty-`Unrestricted` form is the "anonymous
+visitors see published rows, signed-in editors see drafts" posture, and it
+is deliberately weak: any signed-in user, not an editor role. Writes are
+not filtered by it. See
+[entity-declarations](entity-declarations.md) → "Row-level read scoping".
 
 Because entity MCP tools dispatch through the router, this gate governs
 them automatically; no separate `mcp.WithToolGate`/`auth.MCPUser` wiring

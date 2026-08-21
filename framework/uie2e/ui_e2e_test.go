@@ -9,7 +9,7 @@
 // followed → next page sees the user in context → scoped CRUD returns
 // only owned rows. The four scenarios below are the ones a security
 // auditor will re-prove first; failure here means a real-world bypass.
-package framework_test
+package uie2e
 
 import (
 	"context"
@@ -563,7 +563,7 @@ func TestUIE2E_AuthForm_BackslashRedirectBlocked(t *testing.T) {
 	}
 	srvURL, _ := url.Parse(fx.URL())
 	if !strings.EqualFold(u.Host, srvURL.Host) {
-		t.Fatalf("CROSS-ORIGIN REDIRECT OCCURRED — open-redirect bypass: host=%q want %q (full URL: %q)",
+		t.Fatalf("CROSS-ORIGIN REDIRECT OCCURRED, open-redirect bypass: host=%q want %q (full URL: %q)",
 			u.Host, srvURL.Host, finalURL)
 	}
 }

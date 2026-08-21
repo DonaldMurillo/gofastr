@@ -194,6 +194,13 @@ func TestStart_SetsHTTPServerTimeouts(t *testing.T) {
 				<-done
 				t.Fatalf("SECURITY: [server] http.Server started with zero timeouts: readHeader=%s read=%s write=%s idle=%s", srv.ReadHeaderTimeout, srv.ReadTimeout, srv.WriteTimeout, srv.IdleTimeout)
 			}
+			if srv.MaxHeaderValueCount != 0 {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = app.Shutdown(shutdownCtx)
+				<-done
+				t.Fatalf("SECURITY: [server] MaxHeaderValueCount overridden to %d — zero means the stdlib cap (http.DefaultMaxHeaderValueCount = 500); raising it re-opens header-count amplification", srv.MaxHeaderValueCount)
+			}
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			_ = app.Shutdown(shutdownCtx)

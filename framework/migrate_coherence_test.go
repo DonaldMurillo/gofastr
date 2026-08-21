@@ -38,7 +38,7 @@ func TestCoherence_AllFieldTypesRoundTrip(t *testing.T) {
 			Table: "widget",
 			Fields: []schema.Field{
 				{Name: "s", Type: schema.String},
-				{Name: "smax", Type: schema.String, Max: f64(120)},
+				{Name: "smax", Type: schema.String, Max: new(float64(120))},
 				{Name: "txt", Type: schema.Text},
 				{Name: "i", Type: schema.Int},
 				{Name: "fl", Type: schema.Float},
@@ -162,4 +162,5 @@ func keysOf(m map[string]string) []string {
 	return out
 }
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }

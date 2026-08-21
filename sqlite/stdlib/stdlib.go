@@ -12,15 +12,14 @@ package stdlib
 
 import (
 	"database/sql"
+	"slices"
 
 	modernsqlite "modernc.org/sqlite"
 )
 
 func init() {
-	for _, name := range sql.Drivers() {
-		if name == "sqlite3" {
-			return
-		}
+	if slices.Contains(sql.Drivers(), "sqlite3") {
+		return
 	}
 	// modernc keeps user-defined functions, collations, connection hooks,
 	// and virtual-table registrations on its package-level registered Driver.

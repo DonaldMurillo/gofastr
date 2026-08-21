@@ -30,7 +30,7 @@ func Bind(r *http.Request, dst any) error {
 	}
 
 	rv := reflect.ValueOf(dst)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return errors.New("bind: destination must be a non-nil pointer")
 	}
 
@@ -133,7 +133,7 @@ func bindBody(r *http.Request, dst any) error {
 // case-folded variants) and rejects duplicate keys.
 func validateBodyKeys(body []byte, dst any) error {
 	rv := reflect.ValueOf(dst)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return nil
 	}
 	rv = rv.Elem()
@@ -190,13 +190,12 @@ func jsonTagSet(t reflect.Type) map[string]struct{} {
 }
 
 func collectJSONTags(t reflect.Type, out map[string]struct{}) {
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		tag := f.Tag.Get("json")
 		if tag == "-" {
 			continue
 		}
-		name := strings.SplitN(tag, ",", 2)[0]
+		name, _, _ := strings.Cut(tag, ",")
 
 		// Anonymous embedded struct with no explicit json name:
 		// encoding/json promotes its EXPORTED fields into the parent
@@ -206,7 +205,7 @@ func collectJSONTags(t reflect.Type, out map[string]struct{}) {
 		// the recursive call.
 		if f.Anonymous && name == "" {
 			ft := f.Type
-			if ft.Kind() == reflect.Ptr {
+			if ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {
@@ -332,7 +331,7 @@ func bindHeaders(r *http.Request, rv reflect.Value) error {
 // setField sets a reflect.Value from a string, converting to the appropriate type.
 func setField(fv reflect.Value, s string) error {
 	// Handle pointer types
-	if fv.Kind() == reflect.Ptr {
+	if fv.Kind() == reflect.Pointer {
 		pt := reflect.New(fv.Type().Elem())
 		if err := setField(pt.Elem(), s); err != nil {
 			return err

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -37,39 +38,38 @@ func TestUpgradeAppliesWriteTimeoutDefault(t *testing.T) {
 // Item 1a (behavioral): a frozen peer must not pin writeFrame forever
 // when caller passes WriteTimeout=0 (the default path).
 func TestWriteTimeoutDefaultStopsBlockedPeer(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping ~12s timing test in short mode")
-	}
-	block := make(chan struct{})
-	bw := &blockingWriter{block: block}
-	// Note: when the caller passed 0 we expect Upgrade to have defaulted
-	// it. Here we simulate the post-Upgrade state by setting 10s.
-	conn := &WebSocketConn{
-		conn:       bw,
-		sendBuffer: make(chan []byte, 1),
-		closed:     make(chan struct{}),
-		config:     WSConfig{WriteTimeout: 10 * time.Second},
-	}
-
-	done := make(chan error, 1)
-	go func() { done <- conn.writeFrame(wsopcodeText, []byte("x")) }()
-
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("expected timeout error, got nil")
+	synctest.Test(t, func(t *testing.T) {
+		block := make(chan struct{})
+		bw := &blockingWriter{block: block}
+		// Note: when the caller passed 0 we expect Upgrade to have defaulted
+		// it. Here we simulate the post-Upgrade state by setting 10s —
+		// fake time inside the bubble, so the timeout elapses instantly.
+		conn := &WebSocketConn{
+			conn:       bw,
+			sendBuffer: make(chan []byte, 1),
+			closed:     make(chan struct{}),
+			config:     WSConfig{WriteTimeout: 10 * time.Second},
 		}
-	case <-time.After(12 * time.Second):
+
+		done := make(chan error, 1)
+		go func() { done <- conn.writeFrame(wsopcodeText, []byte("x")) }()
+
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("expected timeout error, got nil")
+			}
+		case <-time.After(12 * time.Second):
+			t.Fatal("writeFrame did not respect WriteTimeout — pinned forever")
+		}
 		close(block)
-		t.Fatal("writeFrame did not respect WriteTimeout — pinned forever")
-	}
-	close(block)
+	})
 }
 
 // Item 1b: RequireMask must be unexported. Caller-visible config struct
 // must not expose it (so callers can't accidentally disable masking).
 func TestWSConfigNoRequireMaskField(t *testing.T) {
-	tp := reflect.TypeOf(WSConfig{})
+	tp := reflect.TypeFor[WSConfig]()
 	if _, ok := tp.FieldByName("RequireMask"); ok {
 		t.Fatal("WSConfig.RequireMask must be unexported — Upgrade overrides it anyway")
 	}
@@ -324,7 +324,7 @@ func TestBroadcastSkipsDeadConn(t *testing.T) {
 
 	conn.Close()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		hub.Broadcast([]byte("x"))
 	}
 
@@ -341,7 +341,7 @@ func TestBroadcastSkipsDeadConn(t *testing.T) {
 // concurrent OnClose() registration during Close() can't race. The
 // callback must fire exactly once.
 func TestOnCloseRaceFiresOnce(t *testing.T) {
-	for trial := 0; trial < 10; trial++ {
+	for trial := range 10 {
 		conn := &WebSocketConn{
 			conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
 			sendBuffer: make(chan []byte, 1),

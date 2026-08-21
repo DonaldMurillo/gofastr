@@ -90,7 +90,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 	if sampleN <= 1 {
 		return LoggingFn(getLogger)
 	}
-	var counter uint64
+	var counter atomic.Uint64
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -118,7 +118,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			}
 
 			// Sample 1-in-N normal requests
-			n := atomic.AddUint64(&counter, 1)
+			n := counter.Add(1)
 			if n%uint64(sampleN) == 1 {
 				logger.Info("request",
 					"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),

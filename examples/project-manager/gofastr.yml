@@ -29,14 +29,14 @@ entities:
     # Listed on the app home screen. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # read_scope narrows the anonymous read to public projects (is_public
+    # defaults false). A blank unrestricted lifts the filter for any caller
+    # with a session, which is "signed in", not a team role.
+    read_scope:
+      filter:
+        - field: is_public
+          op: eq
+          value: "true"
     access:
       read:
       create: projects:write
@@ -124,15 +124,8 @@ entities:
     crud: true
     # Listed on the boards screen. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
-    # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # default and a screen may not render rows the API refuses. Boards
+    # inherit their project's visibility; they carry no flag of their own.
     access:
       read:
       create: projects:write
@@ -175,15 +168,8 @@ entities:
     crud: true
     # Board structure, read with the board. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
-    # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # default and a screen may not render rows the API refuses. Columns
+    # carry no visibility flag; the board and project decide reach.
     access:
       read:
       create: projects:write
@@ -311,15 +297,8 @@ entities:
     crud: true
     # Read alongside tasks. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
-    # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # default and a screen may not render rows the API refuses. Labels
+    # carry no visibility flag; every row is usable.
     access:
       read:
       create: projects:write
@@ -348,15 +327,8 @@ entities:
     crud: true
     # Read alongside tasks. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
-    # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # default and a screen may not render rows the API refuses. Join rows
+    # carry no visibility flag of their own.
     access:
       read:
       create: projects:write
@@ -574,11 +546,19 @@ seed:
         description: Complete redesign of the company website with new branding
         status: active
         color: "#3B82F6"
+        # is_public puts this project on the anonymous home screen.
+        is_public: true
+      # Both seeded projects are public because later seed rows reference
+      # them (@projects.key=...) and seed references resolve through the
+      # read-scoped list path, where a private project is invisible. Flip
+      # is_public to false in the admin to take one private: it disappears
+      # from anonymous reads the moment you do.
       - name: Mobile App
         key: MOB
         description: Native mobile app for iOS and Android
         status: planning
         color: "#10B981"
+        is_public: true
   - entity: boards
     rows:
       - name: Web Board

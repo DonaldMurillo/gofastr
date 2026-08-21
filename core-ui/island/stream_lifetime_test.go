@@ -52,8 +52,7 @@ func TestSSEStreamOutlivesRequestDeadline(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"?session=deadline", nil)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -103,8 +102,7 @@ func TestSSEHeartbeatKeepsIdleStreamAlive(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mgr.ServeSSE))
 	defer server.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"?session=heartbeat", nil)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -147,8 +145,7 @@ func TestSSEStreamBoundReclaimsStream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mgr.ServeSSE))
 	defer server.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"?session=bound", nil)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -242,8 +239,7 @@ func TestSSEStreamBoundReclaimsNoGoroutineLeak(t *testing.T) {
 	// the number.
 	baseline := runtime.NumGoroutine()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"?session=noleak", nil)
 	if err != nil {
 		t.Fatalf("request: %v", err)

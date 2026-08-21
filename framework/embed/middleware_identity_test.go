@@ -161,7 +161,7 @@ func TestTypedNilSubjectIsNotInstalledAsAUser(t *testing.T) {
 
 func containsFold(vals []string, want string) bool {
 	for _, v := range vals {
-		for _, part := range strings.Split(v, ",") {
+		for part := range strings.SplitSeq(v, ",") {
 			if strings.EqualFold(strings.TrimSpace(part), want) {
 				return true
 			}

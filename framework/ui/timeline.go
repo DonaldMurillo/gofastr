@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -62,9 +64,7 @@ func Timeline(cfg TimelineConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 
 	items := make([]render.HTML, 0, len(cfg.Events))
 	for _, e := range cfg.Events {

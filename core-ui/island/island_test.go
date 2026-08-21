@@ -185,11 +185,11 @@ func TestServeSSE(t *testing.T) {
 			t.Errorf("expected 'event: island' in SSE output, got %q", body)
 		}
 
-		idx := strings.Index(body, "data: ")
-		if idx < 0 {
+		_, after, ok := strings.Cut(body, "data: ")
+		if !ok {
 			t.Fatal("expected 'data: ' in SSE output")
 		}
-		jsonStr := body[idx+6:]
+		jsonStr := after
 		if nl := strings.Index(jsonStr, "\n"); nl >= 0 {
 			jsonStr = jsonStr[:nl]
 		}

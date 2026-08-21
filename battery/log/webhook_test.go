@@ -36,7 +36,7 @@ func TestWebhookBatchesAndPosts(t *testing.T) {
 		BatchSize:     3,
 		BatchInterval: time.Hour, // size-triggered only
 	})
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_ = s.Write([]byte(`{"i":` + string(rune('0'+i)) + `}`))
 	}
 	// Wait for the batch to flush.
@@ -96,7 +96,7 @@ func TestWebhookCloseFlushesPending(t *testing.T) {
 		BatchSize:     1000,
 		BatchInterval: time.Hour,
 	})
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_ = s.Write([]byte(`{"k":1}`))
 	}
 	_ = s.Close()
@@ -207,7 +207,7 @@ func TestWebhookDroppedCounterAdvances(t *testing.T) {
 	}).(*webhookSink)
 	defer s.Close()
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		_ = s.Write([]byte(`{"k":1}`))
 	}
 	if s.Dropped() == 0 {
@@ -237,7 +237,7 @@ func TestWebhookDropsOldestWhenQueueFull(t *testing.T) {
 	// Write more than QueueSize; should not panic, should not block.
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			_ = s.Write([]byte(`{"k":1}`))
 		}
 		close(done)

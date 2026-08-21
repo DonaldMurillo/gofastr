@@ -17,8 +17,8 @@ import (
 func testIconPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
 	img := stdimage.NewNRGBA(stdimage.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			img.Set(x, y, color.NRGBA{R: 30, G: 90, B: 200, A: 255})
 		}
 	}

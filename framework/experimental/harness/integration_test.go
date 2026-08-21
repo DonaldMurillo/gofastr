@@ -84,8 +84,7 @@ allow_project_hooks = false
 	}
 	defer c.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sub := c.Subscribe(ctx)
 
 	if err := c.Send(context.Background(), control.SendInput{
@@ -153,8 +152,7 @@ allow_project_hooks = false
 	_ = h.Mux.Attach(sess, c)
 	defer c.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sub := c.Subscribe(ctx)
 
 	_ = c.Send(context.Background(), control.SendInput{

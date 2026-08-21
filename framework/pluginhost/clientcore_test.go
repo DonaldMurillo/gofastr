@@ -36,7 +36,7 @@ func TestBrokerJS_ValidatesMessageSource(t *testing.T) {
 // ALLOWED_SANDBOX; prose mentioning the token is inert.
 func TestBrokerJS_NeverEmitsAllowSameOrigin(t *testing.T) {
 	js := string(brokerJSBytes)
-	for _, line := range strings.Split(js, "\n") {
+	for line := range strings.SplitSeq(js, "\n") {
 		code := strings.TrimSpace(line)
 		if idx := strings.Index(code, "//"); idx >= 0 {
 			code = strings.TrimSpace(code[:idx]) // strip trailing comment

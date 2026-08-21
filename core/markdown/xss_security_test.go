@@ -67,9 +67,9 @@ func TestMarkdown_HeadingIDSanitized(t *testing.T) {
 	if strings.Contains(html, `<script>`) {
 		t.Errorf("SECURITY: [markdown] heading ID contains unescaped HTML: %s. Attack: XSS via heading ID attribute.", html)
 	}
-	idStart := strings.Index(html, `id="`)
-	if idStart >= 0 {
-		after := html[idStart+len(`id="`):]
+	_, after, ok := strings.Cut(html, `id="`)
+	if ok {
+		after := after
 		idEnd := strings.Index(after, `"`)
 		if idEnd > 0 {
 			id := after[:idEnd]

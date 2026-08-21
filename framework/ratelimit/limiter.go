@@ -409,8 +409,8 @@ func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http
 func ClientIP(r *http.Request, trustXFF bool) string {
 	if trustXFF {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if comma := strings.IndexByte(xff, ','); comma >= 0 {
-				return strings.TrimSpace(xff[:comma])
+			if before, _, ok := strings.Cut(xff, ","); ok {
+				return strings.TrimSpace(before)
 			}
 			return strings.TrimSpace(xff)
 		}

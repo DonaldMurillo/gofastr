@@ -42,10 +42,7 @@ func TestStatic_ServesLargeFileUntruncated(t *testing.T) {
 	written := sha256.New()
 	mw := io.MultiWriter(fout, written)
 	for remaining := size; remaining > 0; {
-		n := len(block)
-		if remaining < n {
-			n = remaining
-		}
+		n := min(remaining, len(block))
 		if _, err := mw.Write(block[:n]); err != nil {
 			fout.Close()
 			t.Fatalf("write: %v", err)

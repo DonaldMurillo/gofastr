@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -67,7 +69,7 @@ func TestMultipleWorkers(t *testing.T) {
 
 	q.Start()
 
-	for i := 0; i < numJobs; i++ {
+	for i := range numJobs {
 		err := q.Enqueue(context.Background(), Job{Type: "work"})
 		if err != nil {
 			t.Fatalf("Enqueue %d: %v", i, err)
@@ -83,68 +85,72 @@ func TestMultipleWorkers(t *testing.T) {
 }
 
 func TestRetryOnFailure(t *testing.T) {
-	q := NewMemoryQueue(1)
+	synctest.Test(t, func(t *testing.T) {
+		q := NewMemoryQueue(1)
 
-	var attempts atomic.Int32
-	q.RegisterHandler("retry-me", func(ctx context.Context, job Job) error {
-		a := attempts.Add(1)
-		// Fail the first two attempts, succeed on the third.
-		if a < 3 {
-			return fmt.Errorf("transient error (attempt %d)", a)
+		var attempts atomic.Int32
+		q.RegisterHandler("retry-me", func(ctx context.Context, job Job) error {
+			a := attempts.Add(1)
+			// Fail the first two attempts, succeed on the third.
+			if a < 3 {
+				return fmt.Errorf("transient error (attempt %d)", a)
+			}
+			return nil
+		})
+
+		q.Start()
+
+		err := q.Enqueue(context.Background(), Job{
+			Type:        "retry-me",
+			MaxAttempts: 3,
+		})
+		if err != nil {
+			t.Fatalf("Enqueue: %v", err)
 		}
-		return nil
+
+		// Retries re-enqueue asynchronously, so Close alone can't be used as the
+		// barrier (it would race the re-enqueue). Poll until the third attempt.
+		waitFor(t, func() bool { return attempts.Load() >= 3 }, 5*time.Second,
+			"job was not retried to the 3rd attempt")
+		q.Close()
+
+		if got := attempts.Load(); got != 3 {
+			t.Errorf("expected 3 attempts, got %d", got)
+		}
 	})
-
-	q.Start()
-
-	err := q.Enqueue(context.Background(), Job{
-		Type:        "retry-me",
-		MaxAttempts: 3,
-	})
-	if err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
-
-	// Retries re-enqueue asynchronously, so Close alone can't be used as the
-	// barrier (it would race the re-enqueue). Poll until the third attempt.
-	waitFor(t, func() bool { return attempts.Load() >= 3 }, 5*time.Second,
-		"job was not retried to the 3rd attempt")
-	q.Close()
-
-	if got := attempts.Load(); got != 3 {
-		t.Errorf("expected 3 attempts, got %d", got)
-	}
 }
 
 func TestMaxAttemptsExceeded(t *testing.T) {
-	q := NewMemoryQueue(1)
+	synctest.Test(t, func(t *testing.T) {
+		q := NewMemoryQueue(1)
 
-	var attempts atomic.Int32
-	q.RegisterHandler("always-fail", func(ctx context.Context, job Job) error {
-		attempts.Add(1)
-		return fmt.Errorf("permanent failure")
+		var attempts atomic.Int32
+		q.RegisterHandler("always-fail", func(ctx context.Context, job Job) error {
+			attempts.Add(1)
+			return fmt.Errorf("permanent failure")
+		})
+
+		q.Start()
+
+		err := q.Enqueue(context.Background(), Job{
+			Type:        "always-fail",
+			MaxAttempts: 3,
+		})
+		if err != nil {
+			t.Fatalf("Enqueue: %v", err)
+		}
+
+		// Poll until MaxAttempts is reached, then Close (which drains anything
+		// still queued) and assert no extra attempt happened.
+		waitFor(t, func() bool { return attempts.Load() >= 3 }, 5*time.Second,
+			"job did not reach MaxAttempts")
+		q.Close()
+
+		// Should have been attempted exactly MaxAttempts times then dropped.
+		if got := attempts.Load(); got != 3 {
+			t.Errorf("expected 3 attempts (MaxAttempts), got %d", got)
+		}
 	})
-
-	q.Start()
-
-	err := q.Enqueue(context.Background(), Job{
-		Type:        "always-fail",
-		MaxAttempts: 3,
-	})
-	if err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
-
-	// Poll until MaxAttempts is reached, then Close (which drains anything
-	// still queued) and assert no extra attempt happened.
-	waitFor(t, func() bool { return attempts.Load() >= 3 }, 5*time.Second,
-		"job did not reach MaxAttempts")
-	q.Close()
-
-	// Should have been attempted exactly MaxAttempts times then dropped.
-	if got := attempts.Load(); got != 3 {
-		t.Errorf("expected 3 attempts (MaxAttempts), got %d", got)
-	}
 }
 
 func TestCloseDrainsPendingJobs(t *testing.T) {
@@ -162,7 +168,7 @@ func TestCloseDrainsPendingJobs(t *testing.T) {
 
 	q.Start()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_ = q.Enqueue(context.Background(), Job{Type: "slow"})
 	}
 
@@ -203,7 +209,7 @@ func TestJobPriorityOrdering(t *testing.T) {
 
 	// Collect jobs in priority order.
 	var order []string
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		job, err := q.Dequeue(context.Background())
 		if err != nil {
 			t.Fatalf("Dequeue %d: %v", i, err)
@@ -224,36 +230,36 @@ func TestJobPriorityOrdering(t *testing.T) {
 }
 
 func TestSchedulerFiresAtInterval(t *testing.T) {
-	q := NewMemoryQueue(1)
+	synctest.Test(t, func(t *testing.T) {
+		q := NewMemoryQueue(1)
 
-	var executed atomic.Int32
-	q.RegisterHandler("scheduled", func(ctx context.Context, job Job) error {
-		executed.Add(1)
-		return nil
+		var executed atomic.Int32
+		q.RegisterHandler("scheduled", func(ctx context.Context, job Job) error {
+			executed.Add(1)
+			return nil
+		})
+
+		q.Start()
+
+		sched := NewScheduler(q)
+		sched.Every(20*time.Millisecond).Job("scheduled", json.RawMessage(`{}`)).Register()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			sched.Start(ctx)
+		})
+
+		// Poll until at least 2 interval firings have been executed, instead of
+		// trusting a fixed window to contain N ticks on a loaded machine.
+		waitFor(t, func() bool { return executed.Load() >= 2 }, 5*time.Second,
+			"scheduler did not fire at least twice")
+		cancel()
+		wg.Wait()
+		q.Close()
 	})
-
-	q.Start()
-
-	sched := NewScheduler(q)
-	sched.Every(20*time.Millisecond).Job("scheduled", json.RawMessage(`{}`)).Register()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sched.Start(ctx)
-	}()
-
-	// Poll until at least 2 interval firings have been executed, instead of
-	// trusting a fixed window to contain N ticks on a loaded machine.
-	waitFor(t, func() bool { return executed.Load() >= 2 }, 5*time.Second,
-		"scheduler did not fire at least twice")
-	cancel()
-	wg.Wait()
-	q.Close()
 }
 
 func TestDequeueByType(t *testing.T) {
@@ -303,7 +309,7 @@ func newMockRedis() *mockRedis {
 	}
 }
 
-func (m *mockRedis) LPush(_ context.Context, key string, values ...interface{}) error {
+func (m *mockRedis) LPush(_ context.Context, key string, values ...any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, v := range values {
@@ -333,7 +339,7 @@ func (m *mockRedis) RPop(_ context.Context, key string) (string, error) {
 	return val, nil
 }
 
-func (m *mockRedis) HSet(_ context.Context, key string, values ...interface{}) error {
+func (m *mockRedis) HSet(_ context.Context, key string, values ...any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.hashes[key] == nil {
@@ -377,9 +383,7 @@ func (m *mockRedis) HGetAll(_ context.Context, key string) (map[string]string, e
 		return map[string]string{}, nil
 	}
 	out := make(map[string]string, len(h))
-	for k, v := range h {
-		out[k] = v
-	}
+	maps.Copy(out, h)
 	return out, nil
 }
 

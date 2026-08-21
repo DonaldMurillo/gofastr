@@ -27,7 +27,7 @@ func TestBannerMarksAuthGatedRoutes(t *testing.T) {
 	app.printStartupBanner("127.0.0.1:8080", "test", true, true, "")
 	got := out.String()
 
-	for _, line := range strings.Split(got, "\n") {
+	for line := range strings.SplitSeq(got, "\n") {
 		switch {
 		case strings.Contains(line, "/posts"):
 			if !strings.Contains(line, "requires auth") {
@@ -52,7 +52,7 @@ func TestBannerPublicOpenAPIUnmarked(t *testing.T) {
 
 	app.printStartupBanner("127.0.0.1:8080", "test", true, true, "")
 
-	for _, line := range strings.Split(out.String(), "\n") {
+	for line := range strings.SplitSeq(out.String(), "\n") {
 		if strings.Contains(line, "/openapi.json") || strings.Contains(line, "/api/docs/") || strings.Contains(line, "/api/llm.md") {
 			if strings.Contains(line, "requires auth") {
 				t.Errorf("public API surface wrongly marked auth-gated: %q", line)
@@ -71,7 +71,7 @@ func TestStartupBannerVersionedEntityPathAndLabel(t *testing.T) {
 	g := app.Group("/v2")
 	app.GroupEntity(g, "widgets", EntityConfig{
 		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
-		Exposure: &ExposureConfig{CRUD: boolPtr(false)},
+		Exposure: &ExposureConfig{CRUD: new(false)},
 	}.WithTimestamps(false))
 	var out bytes.Buffer
 	app.startupOutput = &out
