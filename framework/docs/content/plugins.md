@@ -1,8 +1,8 @@
 # Plugins
 
-A plugin is a small Go value that bundles related additions to an `App` —
+A plugin is a small Go value that bundles related additions to an `App`:
 routes, middleware, hooks, MCP tools, logger swap, anything an App can
-host — and registers them in **one** call. Plugins exist so a feature
+host. It registers them in **one** call. Plugins exist so a feature
 can be shipped as a single package and dropped into any GoFastr app
 without touching `main`.
 
@@ -31,13 +31,13 @@ func (MyPlugin) Init(app *framework.App) error {
 }
 ```
 
-There are no optional interfaces — no `HasRoutes`, `HasMiddleware`,
+There are no optional interfaces: no `HasRoutes`, `HasMiddleware`,
 `HasHooks`, `HasTools`. The router resolves its middleware chain
 late-bound per request, so middleware added from `Init` wraps routes
 registered earlier (e.g. by `Mount`). There is no ordering footgun to
 dodge.
 
-Directly registered MCP tools do NOT pass through route middleware —
+Directly registered MCP tools do NOT pass through route middleware;
 the handler runs as-is for any caller who can reach `/mcp`. To
 auth-gate one, register it with `mcp.WithToolGate` and a precondition;
 battery/auth ships ready-made gates that read the identity the app's
@@ -50,11 +50,11 @@ app.MCP.RegisterTool("reports_rebuild", "Rebuild the reports cache", schema,
 ```
 
 `WithToolGate` also **hides the tool from `tools/list`** for callers who
-cannot invoke it — the `inputSchema` is a disclosure in its own right. The
+cannot invoke it: the `inputSchema` is a disclosure in its own right. The
 older `mcp.Gated(gate, handler)` wrapper still works but only reaches
 `tools/call`, so the schema stayed visible to everyone; prefer the option.
 
-(Entity CRUD tools don't need this — they re-dispatch through the
+(Entity CRUD tools don't need this; they re-dispatch through the
 router and inherit HTTP auth, owner scoping, and RBAC wholesale.)
 
 ## Init lifecycle
@@ -67,7 +67,7 @@ router and inherit HTTP auth, owner scoping, and RBAC wholesale.)
   in-memory; the call is idempotent. `framework.TestHarness(t, app)`
   invokes it automatically.
 
-`RegisterPlugin` after `InitPlugins` panics — the new plugin would
+`RegisterPlugin` after `InitPlugins` panics: the new plugin would
 never get to run, which would silently break the caller's expectations.
 
 A plugin's `Init` panic (or an error return) is caught and attributed
@@ -94,15 +94,15 @@ func (MyPlugin) Init(app *framework.App) error {
 }
 ```
 
-For shutdown hooks that must run AFTER every other plugin's OnStop —
-e.g. the logging plugin's "close every sink" hook — use `OnStopFirst`:
+For shutdown hooks that must run AFTER every other plugin's OnStop,
+e.g. the logging plugin's "close every sink" hook, use `OnStopFirst`:
 it prepends to the hook list, so the reverse-order Shutdown iteration
 runs it last. `battery/log` uses this so log sinks are still open while
 other shutdown code emits its final entries.
 
 `OnStart` runs *before* the port binds. To run code only once the HTTP
-listener is actually up — a startup banner, a "register with service
-discovery" call — use `App.OnReady`:
+listener is actually up, e.g. a startup banner or a "register with service
+discovery" call, use `App.OnReady`:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -118,9 +118,9 @@ app.OnReady(func(addr string) {
 `OnReady` hooks fire after every Start phase (auto-migrate, seeds,
 plugin init, OnStart hooks) AND the bind itself succeeded, just before
 the server accepts its first connection. The `addr` argument is the
-listener's resolved address — starting on `":0"` delivers the real
+listener's resolved address; starting on `":0"` delivers the real
 port. Hooks run in registration order, take no error return, and must
-not block. If any Start phase fails, `OnReady` never fires — so a
+not block. If any Start phase fails, `OnReady` never fires, so a
 banner printed here can't lie about a server that never came up.
 Blueprint-generated apps and `gofastr init` scaffolds print their
 startup banner this way. The framework's own `server ready` banner follows
@@ -131,7 +131,7 @@ a bind failure emits no readiness banner.
 
 `App.Start` runs auto-migration as one of its first phases, so a
 `db.Exec("INSERT …")` written in `main()` *before* `Start()` fails with
-`no such table` — the table doesn't exist yet. `App.WithSeed` registers
+`no such table`: the table doesn't exist yet. `App.WithSeed` registers
 seed logic to run at the right moment instead:
 
 ```go
@@ -158,10 +158,10 @@ respects shutdown.
 Across replicas, `WithSeed` hooks acquire the SAME seed advisory lock as
 the per-entity phase (distinct from the migration lock), so two replicas
 booting at once cannot run a hook concurrently. `WithSeed` hooks have no
-ledger — they serialize-per-boot but still run on every replica, so keep
+ledger: they serialize-per-boot but still run on every replica, so keep
 them idempotent (`INSERT … ON CONFLICT DO NOTHING`). (Exception: a
 `MaxOpenConns(1)` Postgres pool skips the lock with a WARN and is not
-coordinated across replicas — keep the pool above 1 connection.)
+coordinated across replicas; keep the pool above 1 connection.)
 
 Use `WithSeed` for app-level or cross-entity seed logic; use
 `EntityConfig.Seed` (idempotent, ledger-tracked) for per-entity fixtures.
@@ -232,7 +232,7 @@ callers can distinguish "not yet wired" from "wired but disabled".
 
 ### Typed lookups: `PluginGetAs` / `GetAs`
 
-`Get` returns the bare `Plugin` (or `Battery`) interface — you'd then
+`Get` returns the bare `Plugin` (or `Battery`) interface; you'd then
 hand-write a type assertion and an error path. The generic helpers do
 both in one call and return a typed error when the assertion fails:
 
@@ -261,7 +261,7 @@ dereference. Prefer these over `Get(...)` + a manual assert.
   the wiring before returning.
 - **Calling `app.Use` from `OnStart`**. The router IS race-safe for
   concurrent Use+ServeHTTP, but middleware added there only wraps
-  requests that arrive AFTER the Use returns — operationally
+  requests that arrive AFTER the Use returns, which is operationally
   surprising. Stay in `Init` for chain composition.
 - **Naming a plugin with whitespace / control chars / very long
   strings**. `RegisterPlugin` rejects these with a clear error; pick

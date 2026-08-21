@@ -42,7 +42,7 @@ For any breaking or migration-relevant change:
 
 ## Common mistakes
 
-- Treating “pre-v1” as permission for silent breakage.
+- Treating "pre-v1" as permission for silent breakage.
 - Deprecating without naming the replacement or earliest removal release.
 - Removing a compatibility path before `gofastr upgrade` can guide consumers.
 - Assuming experimental APIs carry the same stability promise as public APIs.

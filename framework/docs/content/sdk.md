@@ -1,8 +1,8 @@
 # Ship your API as SDKs
 
 `gofastr generate sdk` turns your app's HTTP API into downloadable client
-SDKs — a standalone, stdlib-only **Go module** and a zero-dependency
-**JS/TS client** (one handrolled ESM `client.js` plus `client.d.ts`) —
+SDKs, a standalone, stdlib-only **Go module** and a zero-dependency
+**JS/TS client** (one handrolled ESM `client.js` plus `client.d.ts`),
 and `framework/sdkdocs` serves them from the app itself behind a public
 docs site with a live per-entity API reference.
 
@@ -13,7 +13,7 @@ gofastr generate sdk
 
 Like `generate cli`, the entity set comes from your project source
 (`entities/*.go`), not a blueprint. Unlike the CLI (one-shot owned code),
-SDK output is **generator-owned and regenerates in place** — when the docs
+SDK output is **generator-owned and regenerates in place**: when the docs
 site warns that downloads drifted from the live schema, the fix is
 re-running the command.
 
@@ -29,7 +29,7 @@ gen/sdk/
 `dist/` is what the app serves: the Go SDK zipped (entries under
 `<app>-sdk/`), the two JS files verbatim, and a `manifest.json` recording
 sizes, sha256 hashes, the entity set, and a schema hash (see Drift
-detection). Archives are deterministic — regenerating an unchanged schema
+detection). Archives are deterministic: regenerating an unchanged schema
 produces byte-identical output.
 
 Hidden fields never appear in any generated file: the SDKs are public
@@ -54,7 +54,7 @@ go mod edit -replace local/myapp-sdk=./myapp-sdk
 
 ### The JS/TS SDK
 
-Two plain files, no npm packaging, no build step — publishing to a
+Two plain files, no npm packaging, no build step; publishing to a
 registry is your business, not the generator's (add your own
 package.json if you want it on npm). `client.js` is directly importable
 from disk **or straight from the running app's URL**; `client.d.ts` types
@@ -69,7 +69,7 @@ await api.posts.patch(id, { views: 0 });   // JS objects are presence-faithful
 await api.posts.watch((event, data) => console.log(event), { signal });
 ```
 
-`watch` uses fetch streaming (not `EventSource` — it can't send the
+`watch` uses fetch streaming (not `EventSource`: it can't send the
 Authorization header). Batch rollbacks (HTTP 400 with a decodable
 envelope) resolve normally with `committed: false`. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
@@ -93,7 +93,7 @@ gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>]
 
 Defaults can live in `gofastr.codegen.yml` as a generator entry named
 `sdk` (flags win). The same entry runs under `gofastr generate --config`
-via the built-in in-process generator — the first generator that ships
+via the built-in in-process generator, the first generator that ships
 built into the codegen registry:
 
 ```yaml
@@ -113,7 +113,7 @@ codegen:
 `framework/sdkdocs` mounts a public docs site (default `/docs/api`) with
 install guides (tabbed Go / JS-TS / curl snippets via `ui.CodeTabs`),
 download buttons, an auth guide (minting `gfsk_` tokens), an errors
-reference, and one live reference page per entity — fields, endpoints,
+reference, and one live reference page per entity: fields, endpoints,
 query params, and examples rendered **from the live registry on every
 request**, so the reference cannot drift from the running API.
 
@@ -140,7 +140,7 @@ nonexistent one. Opt in with an explicit `Entities` allow-list or
 with `Policy`. Hidden fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
-`client.js` (inline — importable from the URL), `client.d.ts`, and
+`client.js` (inline: importable from the URL), `client.d.ts`, and
 `manifest.json`. Responses carry `Cache-Control: no-cache` plus an ETag
 from the manifest hash, so stable URLs revalidate for free.
 
@@ -149,7 +149,7 @@ from the manifest hash, so stable URLs revalidate for free.
 Both halves compute the same schema hash over the covered entities
 (`framework/sdk.SchemaHash`). The generator records it in the manifest;
 the site recomputes it from the live registry. A mismatch logs one WARN
-and shows a banner on every docs page — downloads keep working (a stale
+and shows a banner on every docs page; downloads keep working (a stale
 SDK beats none), and re-running `gofastr generate sdk` clears it. A
 manifest from a different gofastr version downgrades the check to an
 "unknown provenance" note instead of a false stale warning.
@@ -173,18 +173,18 @@ Files the export already produced (or the user static dir) always win.
   and the artifact downloads mount on the app host (`/docs/api/...`);
   only API calls live under `APIPrefix` (`/api/posts`). The SDK
   `baseURL` must include the prefix; the download URLs must not.
-- **Filtering with camelCase names.** `?statusId_gte=` matches nothing —
+- **Filtering with camelCase names.** `?statusId_gte=` matches nothing:
   filter/sort query params and validation-error `fields` keys are the
   snake_case column names. The JS SDK exports `<entity>Fields`
   constants; the Go README shows the same rule.
 - **Hand-editing `gen/sdk/` output.** Unlike `generate cli`'s
-  `custom.go` seam, SDK output has no owned files — every regeneration
+  `custom.go` seam, SDK output has no owned files: every regeneration
   overwrites in place. Wrap the generated client from your own package
   instead.
 
 ## Not covered (v1)
 
-Custom entity `Endpoints` get no typed methods — both SDKs expose the
+Custom entity `Endpoints` get no typed methods: both SDKs expose the
 `Do`/`do` escape hatch and the reference pages list them. Multipart
 uploads (Image/File fields) aren't available in the generated SDKs,
 matching the CLI. Servers reconfigured to snake_case responses (`WithJSONCase`) should set

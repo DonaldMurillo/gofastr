@@ -1,18 +1,18 @@
-# GoFastr Static Site Example
+# GoFastr static site example
 
-A multi-page static website served from a folder of HTML files. Zero JavaScript framework — just HTML, CSS, and GoFastr's static file server.
+A multi-page static website served from a folder of HTML files. Zero JavaScript framework: just HTML, CSS, and GoFastr's static file server.
 
 ## Architecture
 
-- **Pages**: Regular HTML files in the `pages/` directory — edit them like any static site
+- **Pages**: Regular HTML files in the `pages/` directory. Edit them like any static site
 - **Serving**: GoFastr's `core/static` module serves files with ETag caching and MIME detection
 - **No build step**: Drop HTML/CSS files in `pages/`, they're served as-is
 
-## File Structure
+## File structure
 
 ```
 examples/static-site/
-├── main.go              # Go server — mounts the pages/ folder
+├── main.go              # Go server, mounts the pages/ folder
 ├── pages/
 │   ├── index.html       # Landing page (/)
 │   ├── about.html       # About page (/about.html)
@@ -29,7 +29,7 @@ go run main.go
 # Open http://localhost:3070
 ```
 
-## Adding Pages
+## Adding pages
 
 Just create a new `.html` file in `pages/` and link to it:
 

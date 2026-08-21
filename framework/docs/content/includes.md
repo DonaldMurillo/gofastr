@@ -2,7 +2,7 @@
 
 The `?include=` query parameter eager-loads related entities in a
 single response, avoiding N+1 queries. The framework runs one
-follow-up query per relation per nesting level — never one per parent
+follow-up query per relation per nesting level, never one per parent
 row.
 
 ## Quickstart
@@ -17,7 +17,7 @@ curl 'http://localhost:8080/posts?include=author,comments'
 # Nested:
 curl 'http://localhost:8080/posts?include=author.profile,comments.replies'
 
-# Scoped — only published comments:
+# Scoped: only published comments
 curl 'http://localhost:8080/posts?include=comments(status=published)'
 
 # Scoped with operators:
@@ -54,12 +54,12 @@ filter   := field ("_gt"|"_gte"|"_lt"|"_lte"|"_like"|"_in")? "=" value
 
 `include` understands every relation declared on the entity:
 
-- `HasOne` / `BelongsTo` — attaches a single object (`null` if missing).
-- `HasMany` — attaches an array (`[]` if empty).
-- `ManyToMany` — attaches an array via the join table declared in the
+- `HasOne` / `BelongsTo`: attaches a single object (`null` if missing).
+- `HasMany`: attaches an array (`[]` if empty).
+- `ManyToMany`: attaches an array via the join table declared in the
   relation.
 
-Every relation named in an `?include=` — nested or top-level — must
+Every relation named in an `?include=`, nested or top-level, must
 resolve to an entity registered with the framework's `Registry`. The
 target's declaration is what drives the Hidden-column scrub, owner and
 tenant scoping, the soft-delete filter, and the scoped-filter field
@@ -82,7 +82,7 @@ filters:
 | `_gte`   | `>=`            |
 | `_lt`    | `<`             |
 | `_lte`   | `<=`            |
-| `_like`  | literal `contains` — `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
+| `_like`  | literal `contains`: `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
 | `_in`    | `IN (...)` (pipe-separated values)  |
 
 Filters validate against the **target** entity's fields, not the
@@ -95,13 +95,13 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
   Loading `comments` for 50 posts is 1 query, not 50.
 - Soft-deleted rows in the related entity are excluded (the include
   honours the target entity's `SoftDelete` config).
-- Multi-tenant scoping is applied to includes — if both parent and
+- Multi-tenant scoping is applied to includes. If both parent and
   child are tenant-scoped, the child query filters on the same tenant.
 - Result key casing matches the entity's `JSONCase` setting
   (`camel` or `snake`); nested rows are deep-converted.
 - Includes are bounded. A single path may take at most **4** relation
   hops, and one request's includes may materialise at most **20,000**
-  related-row references in total. Either limit is a **400** — narrow
+  related-row references in total. Either limit is a **400**. Narrow
   the include or reduce the page size. Without them a short path over a
   self-referencing relation multiplies at every hop.
 - Nullable foreign keys (optional relations) are supported: a parent
@@ -114,12 +114,12 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
 > rows and Hidden columns and scopes related rows to the ctx owner and
 > tenant automatically. The exported `EagerLoad` helper
 > (`framework.EagerLoad`) only does so when you pass the optional
-> `entity.Registry` argument — `EagerLoad(ctx, db, ent, rels, ids, registry)`
-> — which lets it resolve each relation's target to apply the
+> `entity.Registry` argument, `EagerLoad(ctx, db, ent, rels, ids, registry)`,
+> which lets it resolve each relation's target to apply the
 > `deleted_at IS NULL` filter, exclude Hidden fields, and AND in the
 > owner (`OwnerField`) and tenant (`MultiTenant`) predicates from ctx,
 > exactly as the include path does. With no user or tenant in ctx those
-> predicates match nothing — fail closed. Always pass the registry when
+> predicates match nothing, so the helper fails closed. Always pass the registry when
 > loading relations whose targets are soft-deletable, carry Hidden
 > columns, are owner-scoped, or are multi-tenant; without it the helper
 > returns unscrubbed, unscoped rows.
@@ -131,26 +131,26 @@ keep memory bounded. Combining `?stream=true` with `?include=` is
 refused with **400** rather than silently returning rows without their
 relations. Drop one of the two. (When a list auto-streams because the
 requested `limit` is very large, the framework instead falls back to
-the buffered path so includes still resolve — only the explicit
+the buffered path so includes still resolve. Only the explicit
 `?stream=true` opt-in 400s.)
 
 ## Errors
 
-- `unknown include "x"` — the named relation does not exist on the
+- `unknown include "x"`: the named relation does not exist on the
   entity at that depth.
-- `streaming list does not support include` — `?stream=true` was
+- `streaming list does not support include`: `?stream=true` was
   combined with `?include=`.
-- `relation "y" targets entity "z", which is not registered` — a
+- `relation "y" targets entity "z", which is not registered`: a
   segment named a relation whose target is not in the registry.
-- `include "x" requires an entity registry` — the handler has no
+- `include "x" requires an entity registry`: the handler has no
   `Registry` set, so no target can be resolved. Framework apps wire
   this automatically; a hand-built `crud.NewCrudHandler` must set
   `.Registry`.
-- `include "x" is N relations deep; the maximum is 4` — the path
+- `include "x" is N relations deep; the maximum is 4`: the path
   exceeded the depth cap.
-- `include exceeds the maximum number of related rows` — the assembled
+- `include exceeds the maximum number of related rows`: the assembled
   response would carry more than 20,000 related-row references.
-- `scoped field "x" not on target entity` — the filter referenced a
+- `scoped field "x" not on target entity`: the filter referenced a
   field that does not exist on the target's schema.
 
 ## Common mistakes
@@ -160,18 +160,18 @@ the buffered path so includes still resolve — only the explicit
 - **Filtering with the wrong field name.** Scoped filters validate
   against the target, not the parent. Use the target's column names.
 - **Including through unregistered entities.** Register every entity
-  the relations point at — including tables a battery self-migrates,
+  the relations point at, including tables a battery self-migrates,
   such as the auth battery's user table. An unregistered target is
   refused, not loaded unscrubbed.
 - **Expecting `?include=` to control SELECT projection.** It does
-  not — use field projections separately. Includes only attach
+  not. Use field projections separately. Includes only attach
   related data.
 
 
 ## Authorization
 
 An include is a read of the RELATED entity's rows, so that entity's own posture
-governs it — not the entity in the path.
+governs it, not the entity in the path.
 
 `?include=rel` answers **403** when the caller may not read the target, naming
 the entity that failed:
@@ -182,7 +182,7 @@ the entity that failed:
 
 The check runs at every depth, so `?include=comments.author` cannot reach a
 gated `author` through a readable `comments`, and it runs before any rows are
-loaded — including before the shortcut for an empty parent, so the answer never
+loaded, including before the shortcut for an empty parent, so the answer never
 depends on whether the parent table happens to have rows.
 
 Owner and tenant scoping are applied differently: the eager loaders scope the
@@ -196,8 +196,8 @@ owner's rows; a caller marked cross-tenant sees every tenant's. Neither lifts
 the other, so a target carrying both scopes needs both grants to see every row.
 Soft-deleted rows are hidden regardless.
 
-This applies to requests arriving over HTTP. In-process callers — the
-programmatic API, typed repos, seeds, jobs — are trusted server-side code and
+This applies to requests arriving over HTTP. In-process callers such as the
+programmatic API, typed repos, seeds, and jobs are trusted server-side code and
 skip these AUTHORIZATION checks, exactly as the baseline session requirement is
 an HTTP concern.
 
@@ -215,7 +215,7 @@ Filtering across a relation whose target declares `Scope.OwnerField` or
 `Scope.MultiTenant` is **refused with 403**, for every caller except one that
 may already read every row of that target. The filter compiles to an `EXISTS`
 clause that counts rows without selecting them, so it cannot narrow them to the
-caller — and the resulting row count would otherwise confirm values in other
+caller, and the resulting row count would otherwise confirm values in other
 owners' or other tenants' rows, one guess at a time. To filter by a scoped
 entity's field, query that entity's own list route (which scopes correctly) and
 filter the parent by the ids it returns.

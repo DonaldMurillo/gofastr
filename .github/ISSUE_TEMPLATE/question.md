@@ -10,7 +10,7 @@ labels: question
 
 **What did you try?**
 
-<!-- Blueprint snippet, code, or command — plus what the docs
+<!-- Blueprint snippet, code, or command, plus what the docs
      (`gofastr docs` or framework/docs/content/) said, if you looked. -->
 
 **Versions**

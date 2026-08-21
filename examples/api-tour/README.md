@@ -21,10 +21,10 @@ posts + two comments + one profile. Re-runs are idempotent.
 # Single relation
 curl 'http://localhost:8080/posts/post-1?include=comments'
 
-# Nested — author and the author's profile in one response
+# Nested: author and the author's profile in one response
 curl 'http://localhost:8080/posts/post-1?include=author.profile,comments'
 
-# On list — every row gets the same expansion, batched into one query per
+# On list, every row gets the same expansion, batched into one query per
 # relation regardless of result size (no N+1).
 curl 'http://localhost:8080/posts?include=author.profile'
 ```
@@ -49,7 +49,7 @@ not primary key.
 ### Atomic batch endpoints
 
 ```bash
-# Create three posts atomically — if any fails, all roll back
+# Create three posts atomically. If any fails, all roll back
 curl -X POST http://localhost:8080/posts/_batch \
   -H 'Content-Type: application/json' \
   -d '{"items":[

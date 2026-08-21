@@ -1,6 +1,6 @@
 # Screens, layouts, and layout chains
 
-A screen is one route's content. A layout is the chrome around it —
+A screen is one route's content. A layout is the chrome around it:
 header, sidebar, footer. This page covers how layouts nest, what the
 server renders for each level, and how the client swaps only the part
 of the page that changes on navigation.
@@ -41,11 +41,11 @@ layer, and the guides layer. Rules that shape the chain:
 
 - A group's screens inherit the group layout; `group.Screen(s, other)`
   replaces it for that one screen. The group boundary is kept, so the
-  route is still a sibling of the others for navigation purposes — but
+  route is still a sibling of the others for navigation purposes, but
   its layer compares as different, and navigating to it re-renders the
   shell (see keys below).
 - `SubGroup(prefix, nil)` inherits the parent's layout. The inherited
-  layer renders once — the level still exists as an addressable marker,
+  layer renders once. The level still exists as an addressable marker,
   it just adds no duplicate chrome.
 - `Standalone()` on a group suppresses the app default layout for
   everything under it. Use it when a feature ships its own full shell
@@ -114,7 +114,7 @@ the screen. Search and pagination parameters are screen identity and
 refetch as before.
 
 Modules that write in-page state into the URL must go through
-`__gofastr._pushURL(url)` — a raw `history.pushState` leaves the router
+`__gofastr._pushURL(url)`. A raw `history.pushState` leaves the router
 unaware of the change and breaks both behaviors above.
 
 ## Common mistakes

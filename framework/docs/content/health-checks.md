@@ -4,8 +4,8 @@ Every `framework.App` exposes two probes wired during `Start`:
 
 | Endpoint   | Status   | Purpose                                  |
 |------------|----------|------------------------------------------|
-| `/healthz` | Liveness | "Is the process up?" — always returns 200 |
-| `/readyz`  | Readiness | "Should it receive traffic?" — 200 / 503 |
+| `/healthz` | Liveness | "Is the process up?" Always returns 200 |
+| `/readyz`  | Readiness | "Should it receive traffic?" 200 / 503 |
 
 Both endpoints set `Cache-Control: no-store`. They sit ahead of the
 default middleware chain, so a hung downstream check or a recovered
@@ -39,7 +39,7 @@ Content-Type: application/json
 
 If any check returns a non-nil error, status flips to `not_ready`
 and the response code becomes `503 Service Unavailable`. Load
-balancers should drain the instance — the process is still up but
+balancers should drain the instance: the process is still up but
 its dependencies aren't.
 
 All checks run in parallel under a 5-second overall deadline.
@@ -80,8 +80,8 @@ inside your battery type does not produce an ambiguous selector.
 
 ## Verbose error reporting (opt-in)
 
-By default, `/readyz` reports failures with `"error": "check failed"`
-— it does **not** include the underlying `error.Error()` string. The
+By default, `/readyz` reports failures with `"error": "check failed"`.
+It does **not** include the underlying `error.Error()` string. The
 probe is typically reachable without authentication, and raw error
 strings frequently leak internal IPs (`dial tcp 10.0.3.17:5432:
 connect: connection refused`), connection strings, or other
@@ -99,7 +99,7 @@ app := framework.NewApp(framework.WithVerboseReadiness())
 ```
 
 The status field still distinguishes `"ok"`, `"error"`, and
-`"timeout"` regardless of verbose mode — only the human-readable
+`"timeout"` regardless of verbose mode. Only the human-readable
 `error` value differs.
 
 ## Timeouts and ctx-ignoring checks
@@ -109,7 +109,7 @@ with `WithReadinessTimeout`). Each check runs in its own goroutine
 under `recover()`, so a panicking check marks that row as
 `"error"` without taking the process down. A check that ignores
 `ctx.Done()` and runs past the deadline is reported as
-`"timeout"` immediately — the response does not wait for the
+`"timeout"` immediately. The response does not wait for the
 straggler.
 
 <!-- gofastr:compile
@@ -129,7 +129,7 @@ app := framework.NewApp(
 - **Don't put expensive work in `/readyz`.** It's polled often. A
   check should return in well under a second.
 - **Don't make `/healthz` conditional.** Liveness should fail only
-  when the process itself is wedged — file `/readyz` failures
+  when the process itself is wedged. File `/readyz` failures
   there and orchestrators will restart pods unnecessarily.
 - **Don't gate `/readyz` behind auth.** Probes from k8s, Fly, ELB
   are anonymous. If you've installed broad auth middleware, mount

@@ -2,7 +2,7 @@
 
 > Read this before adding, moving, or extracting any package under
 > `framework/experimental/harness/`. The harness is intentionally narrow at the core
-> and extensible at the edges — the rules below explain *why* each layer
+> and extensible at the edges: the rules below explain *why* each layer
 > exists, what is locked, and how to add new behavior without growing
 > the loop.
 
@@ -22,8 +22,8 @@ same protocol is exposed over four peer transports (`inproc`, `rest`,
 `ws`, `mcp`-server) so external TUIs, IDE plugins, scripts, other
 language clients, remote machines, or other agents (Claude Code,
 Codex, Cursor) can drive the same engine. The harness has two preset
-profiles selected at boot — `--framework` (work *on* GoFastr) and
-default (work *with* GoFastr) — each a bundle of skills, MCP servers,
+profiles selected at boot, `--framework` (work *on* GoFastr) and
+default (work *with* GoFastr), each a bundle of skills, MCP servers,
 tools, permissions, and a system-prompt header. Third-party Go
 dependencies are forbidden; only stdlib and `golang.org/x/*` are
 allowed. The agent loop is small on purpose; everything that is not
@@ -39,7 +39,7 @@ engine itself knows about *clients*, never about transports.
 - **No third-party Go dependencies.** `golang.org/x/*` (Go-team
   subrepos) is acceptable; everything outside stdlib + x/* is not.
   This includes the TUI (rolled by hand) and MCP (both client and
-  server, from scratch). See § Build order — the cost of these
+  server, from scratch). See § Build order; the cost of these
   decisions is acknowledged and accepted.
 - **No bundled language-model SDK.** Raw HTTP per provider.
 - **No vendor-specific instruction format as primary.** AGENTS.md
@@ -47,7 +47,7 @@ engine itself knows about *clients*, never about transports.
   GEMINI.md, .windsurfrules, .github/copilot-instructions.md are
   read if present and appended, never the source of truth.
 - **No "MVP-shaped" cut corners that would block a later
-  capability** — but **interfaces ≠ implementations**. Every
+  capability**, but **interfaces ≠ implementations**. Every
   interface listed in this doc is designed up front; packages are
   placeholder-empty until their build-order phase. See § Build order.
 - **No replace-directives or pinned framework SHAs** for the
@@ -66,10 +66,10 @@ engine itself knows about *clients*, never about transports.
    event subscriber, or a plugin registration, it lives outside the
    loop. No exceptions.
 2. **No third-party imports.** Stdlib and `golang.org/x/*` only. The
-   import boundary is policed by `go.mod` review. The inverse boundary —
+   import boundary is policed by `go.mod` review. The inverse boundary,
    the framework root must not import the experimental harness (so an
    entire agent runtime never lands in every host app that links the
-   framework, and no root→harness→framework cycle forms) — is enforced
+   framework, and no root→harness→framework cycle forms), is enforced
    by a layering test, `layering_test.go` →
    `TestFrameworkRootDoesNotImportHarness`, using the same `go list
    -deps` shape as the `framework/ui` and `framework/crud` layering
@@ -117,14 +117,14 @@ engine itself knows about *clients*, never about transports.
 11. **Every client has an `identity_class` set at attach time:
     `human` or `agent`.** Permission prompts (and any future
     consent-shaped event) honor the distinction. An `agent` client
-    cannot self-approve a permission for a turn it originated —
+    cannot self-approve a permission for a turn it originated:
     `AnswerPermission` from the same `Client.ID()` that originated
     the turn is rejected. By default, at least one `human` ack is
     required; `--auto-approve` bypasses, honestly named.
 12. **Every byte from outside the trust boundary is untrusted
     content.** AGENTS.md, SKILL.md, MCP-server-supplied tool
     descriptions and resource bodies, fetched web pages, tool
-    results — all are wrapped in clearly-delimited prompt sections
+    results, all are wrapped in clearly-delimited prompt sections
     (`<untrusted-...>...</untrusted-...>`) with a standing
     instruction to never follow instructions inside those tags.
 13. **Trust-on-first-use for code-adjacent files loaded into prompts
@@ -133,15 +133,15 @@ engine itself knows about *clients*, never about transports.
     is stored on the parsed object (`skillmd.Skill.SHA256`, the
     context `Section` hash) so callers can compare it across runs.
     **That hash computation is all that is built today.** The full TOFU
-    gate — interactive ack with diff on new/changed files, the
+    gate, which covers interactive ack with diff on new/changed files, the
     `~/.config/gofastr/harness/approved.lock` approval store, the
     bulk-ack / `dir-trust` policy for user-owned directories, the
     per-file review for project-local files, diff-class detection
     (metadata-only vs code-adjacent vs executable-changes), and the
-    `--allow-project-hooks` per-hook ack — is **not built yet**. The
+    `--allow-project-hooks` per-hook ack, is **not built yet**. The
     design intent below is kept so the shape stays stable, but nothing
     in `harness.New()` blocks boot, persists approvals, or classifies
-    diffs today. See § Maturity — not-yet-built.
+    diffs today. See § Maturity for what is not built yet.
     - **Bulk-ack policy (intent, not built).** Files from user-owned
       directories (`~/.config/gofastr/harness/`,
       `framework/experimental/harness/skills/` built-ins) would be
@@ -165,7 +165,7 @@ engine itself knows about *clients*, never about transports.
       project-local hooks ever. Today hooks load with no ack gate.
 14. **`Command` and `Event` are closed sealed unions.** Plugins
     extend via tools, events-via-subscription, and slash commands
-    in their own namespaces — *not* new wire-protocol verbs. The
+    in their own namespaces, *not* new wire-protocol verbs. The
     set of verbs is fixed in `control/protocol.go`; any extension
     that needs to ride the wire goes through the `CustomCommand` /
     `CustomEvent` open verbs whose payload is plugin-defined JSON.
@@ -178,7 +178,7 @@ engine itself knows about *clients*, never about transports.
 
 ---
 
-## Maturity — what is and isn't built
+## Maturity: what is and isn't built
 
 This document is the **design** for the harness. Much of it is
 aspirational: it describes the target shape so the interfaces stay
@@ -222,7 +222,7 @@ audited against this matrix.
 - **External client over `rest`/`ws` from the same user account.**
   Identity class `human` by default; may be downgraded.
 - **External agent over `mcp` (stdio or HTTP).** Identity class
-  `agent`. Confused-deputy hazard — see below.
+  `agent`. Confused-deputy hazard; see below.
 - **Project-local code:** AGENTS.md, SKILL.md under `<repo>/`,
   hooks under `<repo>/.gofastr/harness/`, MCP servers spawned by
   the active profile. **Treated as untrusted unless approved
@@ -236,8 +236,8 @@ audited against this matrix.
 
 - Provider tokens (Copilot, ZAI, OpenRouter) in the keychain or
   encrypted-file store, plus *in-memory* during a session.
-- The session log at `~/.local/share/gofastr/harness/sessions.db`
-  — every `TextDelta`, `ToolResult`, and tool argv.
+- The session log at `~/.local/share/gofastr/harness/sessions.db`:
+  every `TextDelta`, `ToolResult`, and tool argv.
 - Repo contents the agent can `Read` (incl. `.env`, secrets).
 - The user's home directory (`Bash` reach).
 - Capability tokens for attach.
@@ -277,7 +277,7 @@ audited against this matrix.
   `169.254.169.254`) and re-validates the target on every redirect hop,
   failing closed. The test-only `WebFetch.AllowPrivateHosts` field
   disables the preflight so unit tests can reach `httptest` loopback
-  servers — never set it in production.
+  servers; never set it in production.
 - Untrusted content (rule 12) is the prompt-injection defense.
 - TOFU (rule 13) is the supply-chain defense.
 
@@ -289,20 +289,20 @@ audited against this matrix.
   OS-level binary signing).
 - Bash escapes from `sandbox-exec` (sandbox is best-effort).
 - The agent being prompt-injected into doing something harmful
-  *within* its allowlist (no protection — the allowlist is the
+  *within* its allowlist (no protection; the allowlist is the
   policy boundary).
 
 ---
 
 ## Build order
 
-The non-goal "no MVP-shaped cut corners" stands — every interface
+The non-goal "no MVP-shaped cut corners" stands: every interface
 listed in this doc exists from day one. But interface ≠ implementation;
 packages can ship as **placeholder-empty** until their phase, and the
 implementation order below is the contract for what must actually
 work when.
 
-### v0.1 — demonstrably correct slice
+### v0.1: demonstrably correct slice
 
 The smallest end-to-end path that proves the architecture: one
 provider, one transport, three tools, one client, full safety
@@ -347,11 +347,11 @@ posture.
   subscriptions, prompts, capability negotiation, session
   resumption.
 - Background tasks, scheduler, cron.
-- `RoutingProvider` (multi-model per turn — added as a `Provider`
+- `RoutingProvider` (multi-model per turn, added as a `Provider`
   composition, not middleware).
 - `delegate` tool (sync-only, blocks parent; see § Future
   extensions for the explicit scope).
-- Conformance suite (`control/conformance/`) — cross-transport
+- Conformance suite (`control/conformance/`): cross-transport
   parity tests.
 
 ### v0.4+
@@ -495,7 +495,7 @@ context agentsmd/fallback readers.
 
 ## The agent loop
 
-The loop is small but it does have a small amount of policy — calling
+The loop is small but it does have a small amount of policy; calling
 it "150 lines of pure orchestration" was overstated. The honest list:
 
 1. **Accept input** from the multiplexer (`SendInput`, `ToolResult`
@@ -505,8 +505,8 @@ it "150 lines of pure orchestration" was overstated. The honest list:
    middleware chain. Middleware injects: system prompt header,
    AGENTS.md content, skill metadata + activated skill bodies,
    selected memory entries, history (possibly compacted), tool
-   schemas, cache hints. The loop never assembles content directly
-   — that's how middleware stays the place to extend.
+   schemas, cache hints. The loop never assembles content directly;
+   that's how middleware stays the place to extend.
 3. **Send to the provider** and parse the stream into typed events.
    Emit each event onto the bus.
 4. **Dispatch tool calls** through the tool middleware chain.
@@ -520,10 +520,10 @@ it "150 lines of pure orchestration" was overstated. The honest list:
    - A `Yield` content block appeared in the response (explicit
      end-turn signal from a provider that supports it).
 
-Everything else — permission prompts, cost accounting, compaction,
-skill injection, AGENTS.md injection, memory injection, hook firing,
-diff preview, MCP tool resolution — is middleware or an event
-subscriber.
+Everything else is middleware or an event subscriber: permission
+prompts, cost accounting, compaction, skill injection, AGENTS.md
+injection, memory injection, hook firing, diff preview, MCP tool
+resolution.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -554,7 +554,7 @@ subscriber.
 
 ---
 
-## Extensibility — the five seams
+## Extensibility: the five seams
 
 Every extension point is one of these five. New ideas land in a seam,
 not in the core.
@@ -616,11 +616,11 @@ Default `ask` policy without affordances produces ~18 prompts per
 non-trivial turn. The permission middleware presents the user with
 **four choices** per `PermissionRequested` event, not two:
 
-1. **Allow once** — answer this call only.
-2. **Allow this argv-glob for the session** — remember
+1. **Allow once**: answer this call only.
+2. **Allow this argv-glob for the session**: remember
    `Tool:argv-glob` (e.g. `Bash:grep *`, `Bash:find . -name *`)
    for the duration of the `EngineRun`.
-3. **Allow this tool for the session** — remember `Tool:*`
+3. **Allow this tool for the session**: remember `Tool:*`
    broadly.
 4. **Deny.**
 
@@ -641,7 +641,7 @@ Read, Glob, Ls (anywhere under the repo)
 Never prompts for these. `--strict-permissions` disables the
 preset for users who want every call gated.
 
-Session-scoped allows persist for the `EngineRun` only — they
+Session-scoped allows persist for the `EngineRun` only; they
 never carry across sessions or persist to disk. The user can
 promote a session-scoped allow to a profile-level rule via
 `/permissions:promote <rule>`.
@@ -687,24 +687,24 @@ abstraction.
 | `Transport` | Control-plane wire transport | inproc, rest, ws, mcpserver | Wire semantics differ (backpressure, framing, reconnect) |
 | `Client` | Anything that drives the engine | tui, web, external (rest/ws/mcp) | Identity class + subscription patterns vary |
 | `ToolSource` | Tools the registry exposes | builtins, mcpclient, user-plugin | Lifecycle differs (in-proc vs external process) |
-| `SessionStore` | Session log + replay | sqlite | One impl today; second impl (postgres) would force redesign anyway — kept honest as a swap point |
+| `SessionStore` | Session log + replay | sqlite | One impl today; second impl (postgres) would force redesign anyway; kept honest as a swap point |
 
 **Deliberately not interfaces** (concrete types or config lists):
 
-- **Skills** — one loader (`skill/skillmd`). No second loader designed.
-- **Project context** — a config list of `(path, label)` tuples
+- **Skills**: one loader (`skill/skillmd`). No second loader designed.
+- **Project context**: a config list of `(path, label)` tuples
   processed by `context/reader.go`. AGENTS.md and fallback files
   are six entries in that list, not six implementations.
-- **Memory** — one file-backed implementation. A server-backed
+- **Memory**: one file-backed implementation. A server-backed
   store would force a different shape.
-- **Credentials** — encrypted-file is the primary type;
+- **Credentials**: encrypted-file is the primary type;
   keychain helpers are opt-in build-tagged plugins, not pluggable
   via an interface seam.
-- **Permission policy** — one engine with allow/ask/deny rules
+- **Permission policy**: one engine with allow/ask/deny rules
   parameterized by config. Not two implementations.
 
 Switching one of the five real interfaces happens via
-`profile.With(...)` or `Plugin.Register` — never a fork of the
+`profile.With(...)` or `Plugin.Register`, never a fork of the
 engine.
 
 ### 5. Plugin contract
@@ -717,7 +717,7 @@ type Plugin interface {
 
 A plugin can: register request/tool middleware, subscribe to events,
 register a `ToolSource`, register a `Transport`, register a `Provider`,
-register slash commands (in a namespace it owns — see § Slash
+register slash commands (in a namespace it owns; see § Slash
 commands), add permission rules, contribute hooks.
 
 Profiles are lists of plugins. New profile = new TOML file referencing
@@ -745,7 +745,7 @@ type Provider interface {
 (`provider/zai/zai.go` static catalog, GLM-5.1 flagship and listed
 first): `glm-5.1`, `glm-4.6`, `glm-4.5-air`, `glm-z1`. Endpoint:
 `api.z.ai/api/paas/v4` (Coding Plan keys must use the dedicated
-`api.z.ai/api/coding/paas/v4` endpoint — set `ZAI_CODING_PLAN=1`).
+`api.z.ai/api/coding/paas/v4` endpoint; set `ZAI_CODING_PLAN=1`).
 
 **OpenRouter.** OpenAI-compatible. API key in credstore. Model
 catalog from `openrouter.ai/api/v1/models` (cached locally with TTL;
@@ -754,7 +754,7 @@ pricing metadata feeds the cost dashboard). Endpoint:
 `HTTP-Referer` and `X-Title` for analytics; some upstream models
 require them.
 
-### v0.2 — GitHub Copilot (deferred for reason)
+### v0.2: GitHub Copilot (deferred for reason)
 
 Copilot's chat API is **reverse-engineered**, not a documented public
 API. Token-exchange shape and `Copilot-Integration-Id` whitelist have
@@ -768,10 +768,10 @@ subtly from official OpenAI in tool-call delta accumulation and
 3. Poll `github.com/login/oauth/access_token` for the GH token
 4. Exchange via `api.github.com/copilot_internal/v2/token` → short-lived
    Copilot token (must be refreshed; respect `endpoints.api` in the
-   response — GitHub has moved this for some users)
+   response; GitHub has moved this for some users)
 5. Use Copilot token against `api.githubcopilot.com/chat/completions`
    with `Editor-Version`, `Copilot-Integration-Id` headers
-6. Model catalog from `api.githubcopilot.com/models` — but per-call
+6. Model catalog from `api.githubcopilot.com/models`, but per-call
    availability differs from the catalog
 
 When Copilot lands it will **not** default the `--framework` profile to
@@ -801,13 +801,13 @@ honest limits on this canonicalization:**
   whatever the upstream takes. The "cache-breakpoint placement"
   middleware is therefore provider-aware, not generic.
 
-These limits are not implementation laziness — they reflect that the
+These limits are not implementation laziness; they reflect that the
 providers genuinely differ at the semantic layer and pretending
 otherwise produces silent bugs.
 
 ---
 
-## MCP discovery — two modes
+## MCP discovery: two modes
 
 Both modes are spec-compliant; the difference is when the harness
 calls `tools/list` and `tools/get_schema`.
@@ -884,7 +884,7 @@ The three-tier progressive disclosure:
 | 2 | Body of `SKILL.md` | When the agent invokes the skill or a trigger fires. |
 | 3 | Files in `scripts/`, `references/`, `assets/` | On explicit reference from tier 2. |
 
-Activation triggers are declared in frontmatter (`triggers:` —
+Activation triggers are declared in frontmatter (`triggers:`;
 filename globs, keyword patterns) or invoked explicitly by the user
 via `/skill-name`.
 
@@ -896,7 +896,7 @@ Skill search paths (in order, last wins):
 
 ---
 
-## Control plane — engine as a service
+## Control plane: engine as a service
 
 The engine is a headless service. It never directly draws to a
 terminal, opens a window, or speaks a vendor protocol. Anything that
@@ -928,7 +928,7 @@ type CustomCommand    struct {
 // From engine → client. Closed sealed union; plugins use CustomEvent.
 type Event interface{ isEvent() }
 type CustomEvent      struct { Namespace, Kind string; Payload json.RawMessage }
-// see § Extensibility — Event bus for the built-in list
+// see § Extensibility: Event bus for the built-in list
 ```
 
 ### Transports
@@ -962,7 +962,7 @@ The four transports phase as follows:
 
 `rest` is the broadest-compat path; `ws` is preferred for interactive
 clients (low-latency event push, no SSE buffering quirks); `mcpserver`
-is the path for agent-driving-agent — any tool that speaks MCP can
+is the path for agent-driving-agent: any tool that speaks MCP can
 pilot a harness session without writing harness-specific code.
 
 Each transport must pass the `control/conformance/` cross-transport
@@ -1026,7 +1026,7 @@ GoFastr framework profile of the harness itself) can drive a session
 without harness-specific bindings. Phasing: stdio in v0.2, streamable
 HTTP in v0.3.
 
-- **stdio** (v0.2) — clients spawn the harness as a subprocess via
+- **stdio** (v0.2): clients spawn the harness as a subprocess via
   `gofastr harness mcp`. The harness exits when stdin closes.
   Capability token passed via env var `GOFASTR_HARNESS_TOKEN` (not
   argv, so it never appears in `ps`). On first run from a new
@@ -1034,7 +1034,7 @@ HTTP in v0.3.
   harness prompts the user out-of-band on their TTY to authorize
   the spawn. Authorizations persist in
   `~/.config/gofastr/harness/mcp-parents.lock`.
-- **streamable HTTP** (v0.3) — exposed at `/mcp` on the same
+- **streamable HTTP** (v0.3): exposed at `/mcp` on the same
   listener as `rest`/`ws`. Bearer token in `Authorization`; auth
   and TLS rules identical to `ws`.
 
@@ -1046,13 +1046,13 @@ capability visible in MCP UI:
 | Tool name | Maps to Command |
 |---|---|
 | `harness.list_sessions` | (read) |
-| **`harness.run_agent_with_shell_access`** | `SendInput` — runs the inner agent which can invoke Bash, Read, Write, WebFetch. Outer agent allowlisting this tool is allowlisting RCE-via-LLM. |
+| **`harness.run_agent_with_shell_access`** | `SendInput`: runs the inner agent which can invoke Bash, Read, Write, WebFetch. Outer agent allowlisting this tool is allowlisting RCE-via-LLM. |
 | `harness.cancel_turn` | `CancelTurn` |
 | `harness.answer_permission` | `AnswerPermission` (rejected if originator's `ID()` matches; agents cannot self-approve) |
 | `harness.set_model` | `SetModel` |
 | `harness.enter_plan_mode` / `harness.exit_plan_mode` | `EnterPlanMode` / `ExitPlanMode` |
 | `harness.end_session` | (DELETE /sessions/{id}) |
-| `harness.wait_for_turn` | synchronous helper — sends input + blocks until `TurnEnded` |
+| `harness.wait_for_turn` | synchronous helper: sends input + blocks until `TurnEnded` |
 
 Session lifecycle verbs (`CreateSession`, `AttachSession`,
 `DetachSession`) have no MCP tools: session construction lives in the
@@ -1112,7 +1112,7 @@ turning into a confused-deputy hazard.
 #### Observability of agent-driven sessions
 
 A session driven by an outer agent has identity-class enforcement
-that *blocks the agent from self-approving* — meaning a
+that *blocks the agent from self-approving*, meaning a
 `PermissionRequested` event has nowhere to land unless a human
 client is attached. The harness handles this proactively:
 
@@ -1149,7 +1149,7 @@ it never sees how clients are wired.
   `control/multiplex`).
 - **Total ordering.** `SendInput` from any client is queued at the
   multiplexer with a monotonic timestamp set at queue-arrival.
-  Transports never establish ordering directly — they all feed the
+  Transports never establish ordering directly; they all feed the
   multiplexer.
 - **No mid-turn input.** A second `SendInput` arriving while a turn
   is in progress is rejected with
@@ -1161,7 +1161,7 @@ it never sees how clients are wired.
 - **Permission arbitration.** `PermissionRequested` broadcasts to
   all clients with the `OriginatorID` field set. `AnswerPermission`
   is **rejected** if the answering client's `ID()` equals the
-  `OriginatorID` (agents cannot self-approve their own turn) — see
+  `OriginatorID` (agents cannot self-approve their own turn); see
   hard rule 11. By default, at least one client with
   `IdentityClass = human` must answer; multiple human acks for the
   same call after the first are no-ops (first-wins, last-loses for
@@ -1170,15 +1170,15 @@ it never sees how clients are wired.
 - **Detach is non-destructive.** The `EngineRun` continues; events
   for the originator's turn keep streaming to remaining clients.
   If no client remains, the engine continues to completion and the
-  log captures everything — re-attach replays from
+  log captures everything; re-attach replays from
   `lastEventId`.
 
 ### Listening and binding
 
 - **Default:** engine listens only on a Unix socket at
   `~/.local/share/gofastr/harness/control.sock` with mode `0600`.
-  Filesystem perms are **not** treated as authentication — see
-  Authentication below; a capability token is still required.
+  Filesystem perms are **not** treated as authentication; see
+  Authentication below. A capability token is still required.
 - **`--listen 127.0.0.1:PORT`**: bind a loopback port for browser /
   IDE / external-MCP clients. Capability token required.
   Additional defenses against same-origin-policy bypasses (DNS
@@ -1227,7 +1227,7 @@ explicit claim set:
 ```
 
 - `sessions`: which `SessionID`s the token may attach to (empty
-  array = none; absent = all — only allowed for the initial
+  array = none; absent = all, only allowed for the initial
   bootstrap token).
 - `commands`: which `Command` verbs the token can issue.
 - `identity_class`: `human` or `agent`. Set at token mint;
@@ -1245,7 +1245,7 @@ desired claim set. The harness picks a **confirmation channel**
 from this priority list, and surfaces in the response which channel
 was chosen (so the requester knows where to look):
 
-1. An already-attached `human`-class client (TUI or bundled web) —
+1. An already-attached `human`-class client (TUI or bundled web):
    the 6-digit code appears as a modal **inside the existing
    trusted client**. This works when the user is on the web tab
    only (no visible TTY).
@@ -1259,7 +1259,7 @@ was chosen (so the requester knows where to look):
 
 The requester must POST the code back within 60 s to receive the
 token. This blocks the simplest "any process running as the user
-mints tokens" attack — the attacker needs concurrent visibility of
+mints tokens" attack: the attacker needs concurrent visibility of
 one of the user's trusted clients.
 
 For headless/CI use, a pre-provisioned token file
@@ -1273,19 +1273,19 @@ repo or stored as a CI secret.
 
 The full CI setup uses three pre-provisioned artifacts:
 
-1. **`ci-token.json`** (mode `0400`) — capability token with
+1. **`ci-token.json`** (mode `0400`): capability token with
    claims scoped to whatever the CI job needs to do. Bound to a
    specific session ID for one-shot runs.
-2. **`approved.lock`** — generated locally once via `gofastr
+2. **`approved.lock`**: generated locally once via `gofastr
    harness ack --emit-lockfile` and committed to the repo (or
    stored as a CI secret). Subsequent CI runs read this and skip
    TOFU prompts.
-3. **`GOFASTR_HARNESS_MACHINE_KEY`** — env var holding the
+3. **`GOFASTR_HARNESS_MACHINE_KEY`**: env var holding the
    credstore key, passed as a CI secret. Replaces the passphrase
    prompt for the encrypted credential store. The value must decode
    to exactly 32 bytes; three encodings are accepted: 32 raw bytes,
    64 hex characters, or base64 (standard/URL, padded or not). A
-   value that does not decode to 32 bytes is rejected loudly — the
+   value that does not decode to 32 bytes is rejected loudly; the
    harness never silently falls back to a weaker secret.
 
 CI engineers verify acks without launching the agent loop using:
@@ -1294,12 +1294,12 @@ CI engineers verify acks without launching the agent loop using:
 gofastr harness verify-ack             # exits non-zero on hash drift
 ```
 
-(`verify-ack` is specified here but not yet wired into `cmd/gofastr` —
+(`verify-ack` is specified here but not yet wired into `cmd/gofastr`;
 today the CLI dispatches only the `mcp` and `creds` subcommands, and
 anything else starts an interactive session.)
 
 Drift between the lockfile and live content **fails the CI run
-explicitly** with the changed file paths in the error — never
+explicitly** with the changed file paths in the error, never
 silently approves.
 
 #### Revocation
@@ -1313,13 +1313,13 @@ and checked on every request. Revocation API:
 | Transport | Auth | Notes |
 |---|---|---|
 | `inproc` | trust boundary = process | No token; engine and client share memory |
-| `rest` over Unix socket | token + `0600` perms | Token required even on socket — perms are defense in depth, not authentication |
+| `rest` over Unix socket | token + `0600` perms | Token required even on socket; perms are defense in depth, not authentication |
 | `rest` / `ws` over TCP loopback | token + `Host`/`Origin` checks + custom header | Defends against DNS rebinding |
 | `rest` / `ws` over LAN | token + TLS | Token bound to specific sessions |
 | `mcpserver` stdio | token via env var + parent attestation | Token never in argv |
 | `mcpserver` HTTP | token in `Authorization` | Same as TCP transport |
 
-Per-session capability tokens are the unit of sharing — handing a
+Per-session capability tokens are the unit of sharing: handing a
 token to a teammate or an IDE plugin grants attach rights to one
 session without exposing the rest of the harness.
 
@@ -1329,7 +1329,7 @@ session without exposing the rest of the harness.
 
 The control protocol is the harness's **long-term API**. Every external client (IDE plugin, TS SDK, Python client,
 mobile app, agents driving us over MCP) commits to its shape. This
-section is normative — implementers MUST follow it, and the
+section is normative; implementers MUST follow it, and the
 `control/conformance/` suite tests against it.
 
 ### Handshake (required before any other command)
@@ -1414,8 +1414,8 @@ Transport-specific framing:
 | MCP resource bodies | **Ignore unknown** |
 
 Field-name reservations:
-- `x_*` — vendor / plugin extensions
-- `_*` — engine internal, off-the-wire
+- `x_*`: vendor / plugin extensions
+- `_*`: engine internal, off-the-wire
 - No other prefix is reserved.
 
 ### Token claim versioning
@@ -1460,7 +1460,7 @@ semantics:
   continues live.
 - If `since` is **older than the TTL window** (event content has
   expired), server emits a `StreamGap{from, to, reason: "ttl"}`
-  event first, then the available range — never silently skip.
+  event first, then the available range, never silently skip.
 - If the `EngineRun` has shut down, re-attach to the `LogID`
   spawns a new `EngineRun`; events with `id > since` replay from
   the log; live stream begins once the new run accepts input.
@@ -1494,12 +1494,12 @@ Plugins are **compiled in**. The `Plugin` interface is a clean
 internal seam for composition, not a binary-distribution API. Go's
 `plugin.Open` is rejected for ABI fragility. Adding a third-party
 capability to a running harness uses **MCP server** as the
-distribution channel — `ToolSource` consumes it, the harness
+distribution channel: `ToolSource` consumes it, the harness
 adds permissions, the plugin author ships a separate binary
 checked by sha256 pinning in the profile.
 
 `docs/harness-clients/` will ship reference SDKs (TS, Python, VS
-Code skeleton) that drive the harness via the control protocol —
+Code skeleton) that drive the harness via the control protocol;
 those are *clients*, not plugins.
 
 ### Conformance suite is normative
@@ -1526,7 +1526,7 @@ v0.2 feature flags.
 
 - **In-memory transport for PR-gating.** A `net.Pipe`-backed
   transport adapter runs the conformance scenarios without the
-  kernel network stack — fast, deterministic, no port-reuse
+kernel network stack: fast, deterministic, no port-reuse
   races. PR CI runs this matrix on every change.
 - **Real-socket smoke nightly.** One pass per platform
   (macOS / Linux / Windows) of the same scenarios against actual
@@ -1534,7 +1534,7 @@ v0.2 feature flags.
   backpressure, socket EOF semantics, ephemeral exhaustion).
   Not PR-gating; failures open a tracking issue.
 - **Fake clock.** Disconnect/reconnect/timeout scenarios use an
-  `internal/clock` interface (stdlib-only — define an interface,
+  `internal/clock` interface (stdlib-only; define an interface,
   inject a real or fake implementation). No wall-clock waits in
   PR-gating tests.
 - **Flake budget.** Any single conformance test flaking >0.5%
@@ -1548,7 +1548,7 @@ v0.2 feature flags.
   feasible.
 - 1.0+: SemVer-strict. Breaking changes require a major bump.
 - A deprecation that lands in v(N) is removable in v(N+1) but not
-  earlier, providing one full release cycle of overlap.
+  earlier, which provides one full release cycle of overlap.
 - Migration tools ship in the same release that introduces a
   breaking change.
 
@@ -1727,7 +1727,7 @@ keys (`AKIA…`), GitHub PATs (`ghp_…`, `github_pat_…`),
 `-----BEGIN .* KEY-----`, `Bearer [A-Za-z0-9-_\.]+`, JWT-shaped
 tokens, common cloud-provider key prefixes. Matched substrings are
 replaced with `«redacted:KIND»` markers and the original is
-discarded — not stored anywhere.
+discarded, not stored anywhere.
 
 **TTL.** Full-content events (`TextDelta`, `ToolResult` body,
 `ToolCallStarted.Args`) are retained for 30 days by default. After
@@ -1755,7 +1755,7 @@ with `«ttl-expired»`. Configurable per-profile.
   tool_use blocks without colliding with the original conversation
   if both branches are later compared.
 - **Replay = step-through.** Powers a debugging UI by replaying
-  from the log. **Does not re-execute** — provider calls are not
+  from the log. **Does not re-execute**: provider calls are not
   re-issued. Cache state and live MCP connections are
   non-replayable; replay shows what happened, not "what would
   happen again." Re-execution under different conditions is a
@@ -1790,7 +1790,7 @@ platform:
   `golang.org/x/sys/windows`.
 
 Provider tokens are held in a **credential-helper subprocess**
-(`provider/helper/`) — a separate process that holds the unlocked
+(`provider/helper/`): a separate process that holds the unlocked
 secrets and signs provider requests on the harness's behalf. The
 agent process never sees the raw token, and the agent's Bash tool
 cannot exfiltrate it from the harness's own memory.
@@ -1800,7 +1800,7 @@ Per § Threat model, the default Bash permission preset **blocks**
 the obvious credential-exfiltration paths via the agent's own
 tools.
 
-#### First-run setup — `gofastr harness creds`
+#### First-run setup: `gofastr harness creds`
 
 On first run, provider API keys must be stored in the credstore
 before starting the harness. The `gofastr harness creds` subcommand
@@ -1829,10 +1829,10 @@ gofastr harness creds delete openrouter default
 ```
 
 **Key resolution** (same priority order as `gofastr harness`):
-1. `GOFASTR_HARNESS_MACHINE_KEY` env var — 32-byte key in raw, hex,
+1. `GOFASTR_HARNESS_MACHINE_KEY` env var: 32-byte key in raw, hex,
    or base64 encoding. Used for CI/headless where no passphrase prompt
    is possible.
-2. `GOFASTR_HARNESS_PASSPHRASE` env var — derives a key via
+2. `GOFASTR_HARNESS_PASSPHRASE` env var: derives a key via
    PBKDF2-SHA256 with a per-install salt at
    `~/.config/gofastr/harness/salt`.
 3. A built-in dev passphrase (warns loudly; suitable for local
@@ -1851,17 +1851,17 @@ machines; env vars suit ephemeral CI environments.
 
 XDG layout:
 
-- `~/.config/gofastr/harness/config.toml` — global defaults
-- `~/.config/gofastr/harness/approved.lock` — TOFU file hashes
-- `~/.config/gofastr/harness/mcp-parents.lock` — TOFU parent-process
+- `~/.config/gofastr/harness/config.toml`: global defaults
+- `~/.config/gofastr/harness/approved.lock`: TOFU file hashes
+- `~/.config/gofastr/harness/mcp-parents.lock`: TOFU parent-process
   hashes for stdio MCP-server transport
-- `~/.local/share/gofastr/harness/sessions.db` — session store (encrypted)
-- `~/.local/share/gofastr/harness/memory/` — auto-memory
-- `~/.local/share/gofastr/harness/control.sock` — Unix socket
-- `~/.local/state/gofastr/harness/log/` — harness's own logs
+- `~/.local/share/gofastr/harness/sessions.db`: session store (encrypted)
+- `~/.local/share/gofastr/harness/memory/`: auto-memory
+- `~/.local/share/gofastr/harness/control.sock`: Unix socket
+- `~/.local/state/gofastr/harness/log/`: harness's own logs
   (one file per day: `harness-YYYYMMDD.log`)
-- `~/.local/state/gofastr/harness/revocations.db` — revoked token jtis
-- `<repo>/.gofastr/harness/` — project-local overrides (skills,
+- `~/.local/state/gofastr/harness/revocations.db`: revoked token jtis
+- `<repo>/.gofastr/harness/`: project-local overrides (skills,
   hooks, project profile)
 
 ---
@@ -1872,7 +1872,7 @@ A profile is a TOML file that lists which plugins to activate and
 how to configure them. Two preset profiles ship:
 
 ```toml
-# profile/framework.toml — working on GoFastr itself
+# profile/framework.toml: working on GoFastr itself
 schema_version = 1                                      # see § Protocol versioning
 name = "framework"
 default_model = "openrouter:anthropic/claude-sonnet-4"   # Copilot lands in v0.2; not the default until 30d stable
@@ -1909,7 +1909,7 @@ allow_project_hooks = false
 ```
 
 ```toml
-# profile/default.toml — working with GoFastr (downstream apps)
+# profile/default.toml: working with GoFastr (downstream apps)
 schema_version = 1
 name = "default"
 default_model = "zai:glm-5.1"
@@ -1944,7 +1944,7 @@ Override: `--profile <path>`.
 ### Mid-session profile switching
 
 `/profiles:framework` (or any other profile) **does not morph the
-running session** — that would produce a model that's mid-thought
+running session**; that would produce a model that's mid-thought
 in one system prompt and mid-tool-schema in another. Instead, the
 command:
 
@@ -1965,15 +1965,15 @@ that the model may be incoherent across the boundary.
 
 ### Trust gates on profile-loaded content
 
-- **MCP server binaries** — `sha256` is required when the profile is
+- **MCP server binaries**: `sha256` is required when the profile is
   loaded from project scope; optional but recommended in user/global
   profiles. Refusal to spawn on mismatch.
-- **Skills** — every `SKILL.md` is SHA-256 hashed at first load (rule
+- **Skills**: every `SKILL.md` is SHA-256 hashed at first load (rule
   13); changes prompt a diff and a re-ack.
-- **Context sources** — every `AGENTS.md` / `CLAUDE.md` / etc. is
+- **Context sources**: every `AGENTS.md` / `CLAUDE.md` / etc. is
   also TOFU'd. Nested `AGENTS.md` files discovered during walk-up
   are individually ack'd.
-- **Hooks** — `~/.config/gofastr/harness/hooks/*` are user-owned and
+- **Hooks**: `~/.config/gofastr/harness/hooks/*` are user-owned and
   trusted. `<repo>/.gofastr/harness/hooks/*` are off unless
   `--allow-project-hooks` is set AND each hook has been ack'd via
   TOFU. Hook commands appear in the diff at ack time.
@@ -1988,24 +1988,24 @@ in-process composition). What actually runs today:
 
 1. **Subcommand.** Parses flags, loads the profile (on-disk TOML, or the
    `go:embed` fallback), resolves XDG paths, loads repo secrets into env.
-2. **`New()` — context.** Builds the context `Reader` over
+2. **`New()`**: context. Builds the context `Reader` over
    `context_sources`. Files are read and **SHA-256 hashed**, but there is
-   **no TOFU ack gate** — nothing blocks boot or persists approvals
+   **no TOFU ack gate**: nothing blocks boot or persists approvals
    (rule 13 / Maturity).
-3. **`New()` — skills.** Scans the skill search paths and loads tier-1
+3. **`New()`**: skills. Scans the skill search paths and loads tier-1
    metadata; each `SKILL.md` is hashed. Again, **no ack gate**.
-4. **`New()` — tools + permissions.** Registers the built-in tool packs
+4. **`New()`**: tools + permissions. Registers the built-in tool packs
    from the profile; starts the permission engine and loads its
-   persistent allowlist. **No MCP servers spawn** — `mcpclient` exists
+   persistent allowlist. **No MCP servers spawn**: `mcpclient` exists
    but is not wired into `New()`, and profile `mcp_servers` are not yet
    honored.
-5. **`New()` — credentials + providers.** Opens the encrypted-file
+5. **`New()`**: credentials + providers. Opens the encrypted-file
    credstore, starts the in-process credential helper, and constructs
    the OpenRouter + ZAI providers (key resolution: credstore → env).
-6. **`New()` — stores + hooks.** Opens the SQLite session log, the
+6. **`New()`**: stores + hooks. Opens the SQLite session log, the
    file-based memory store, and the hook runner; wires the resource
    catalog. `New()` returns.
-7. **Subcommand — control plane + clients.** The subcommand (not `New`)
+7. **Subcommand**: control plane + clients. The subcommand (not `New()`)
    starts the control-plane transports and the bundled TUI/web client,
    then drives turns.
 
@@ -2031,7 +2031,7 @@ user-scoped log + Unix socket path. v0.1 commits to
 - The first invocation in a user session binds the Unix socket and
   becomes the engine.
 - Subsequent `gofastr harness` invocations detect the existing
-  socket and **run as `inproc` clients** of the existing engine —
+  socket and **run as `inproc` clients** of the existing engine:
   no second engine process, no SQLite WAL contention, no
   duplicate credential helpers.
 - Sessions are tagged with `working_dir`. `/sessions:list` shows
@@ -2097,7 +2097,7 @@ On child-process exit:
   exponential backoff (1s, 2s, 4s).
 - On give-up, emit `MCPServerDown{name, reason, attempts}`.
 - Tools registered by the down server enter **degraded** state in
-  the registry — still listed (so the model doesn't hallucinate
+  the registry, still listed (so the model doesn't hallucinate
   their absence), but `Run` returns a structured
   `«mcp-server-unavailable»` ToolResult that the model can plan
   around.
@@ -2148,7 +2148,7 @@ middleware, a `Provider` composition, or a backend swap. Each is
 labeled with the seam it uses so we don't pretend a feature is free
 when it isn't.
 
-- **Multi-model per turn — `RoutingProvider` composition, NOT
+- **Multi-model per turn: `RoutingProvider` composition, NOT
   middleware.** A `Provider` that wraps `{router, executors[]}`.
   Routing decisions stay inside the composition; cache-control,
   thinking-block provider-binding, token counting, and
@@ -2156,42 +2156,42 @@ when it isn't.
   Tried as middleware first; middleware is monomorphic
   (one-request-to-one-provider) and broke on every cross-provider
   concern.
-- **Parallel tool calls** — ToolMiddleware that dispatches to N
+- **Parallel tool calls**: ToolMiddleware that dispatches to N
   concurrent workers and aggregates the results. Engine sees one
   `ToolResult` per `ToolCall` either way.
-- **Cost budgets** — event subscriber on `CostIncremented` plus a
+- **Cost budgets**: event subscriber on `CostIncremented` plus a
   RequestMiddleware that aborts when the cap is exceeded.
-- **Distributed sessions** — v0.2+ via `ws` and v0.3+ via
+- **Distributed sessions**: v0.2+ via `ws` and v0.3+ via
   `mcpserver` HTTP. Laptop client attaches to a server-hosted
   engine by URL + capability token; engine is unchanged.
-- **Mobile / phone client** — a thin React Native app speaking the
+- **Mobile / phone client**: a thin React Native app speaking the
   same `ws` protocol; no engine work.
-- **IDE plugins** (VS Code, JetBrains, Neovim) — each is a `Client`
+- **IDE plugins** (VS Code, JetBrains, Neovim): each is a `Client`
   implementation on top of `rest`/`ws`/`mcpserver`.
-- **Collaborative editing** — already a capability the moment
+- **Collaborative editing**: already a capability the moment
   multi-attach lands; the only new code is a UI affordance showing
   "who's here" using existing `OriginatorID`.
-- **Headless CI mode** — pre-provision a token file, attach a
+- **Headless CI mode**: pre-provision a token file, attach a
   script client, drive a fixed prompt, capture exit from
   `TurnEnded`. No new transport.
-- **Self-modifying skills** — a built-in tool that writes SKILL.md
+- **Self-modifying skills**: a built-in tool that writes SKILL.md
   files plus an event subscriber that re-runs the skill registry
   scan. New skills go through the TOFU gate before activation.
-- **Container-sandboxed execution** — ToolMiddleware that wraps
+- **Container-sandboxed execution**: ToolMiddleware that wraps
   Bash calls in `docker`/`podman`/`bwrap`/`sandbox-exec`.
-- **Pi-style cheap-model delegation** — a `delegate` built-in tool
+- **Pi-style cheap-model delegation**: a `delegate` built-in tool
   that instantiates a **child `EngineRun`** with a cheaper
   `Provider`. **Scoped sync-only in v0.x**: the tool blocks the
   parent turn; child events are not surfaced to parent clients
   (the child has its own log and attach point if observation is
   needed). A general parent/child `EngineGraph` model (cancellation
   propagation, event fan-in, multi-session ownership) is a v1+
-  topic — calling out the limit now keeps `delegate` honest as a
+  topic; calling out the limit now keeps `delegate` honest as a
   middleware-shaped extension.
-- **Replay / time-travel debugging UI** — a `Client` implementation
+- **Replay / time-travel debugging UI**: a `Client` implementation
   that drives from a session log instead of a live engine. Renders
   the same events; sends no commands.
-- **Vision / audio** — `Provider` extension; canonical form already
+- **Vision / audio**: `Provider` extension; canonical form already
   supports image content blocks. Tool middleware handles base64
   packaging.
 
@@ -2256,7 +2256,7 @@ verify = "/skills:verify-before-claim"
 ```
 
 Aliases are themselves TOFU-tracked (a malicious alias is a
-code-exec hazard — `evil = "/skills:exfiltrate"`). Aliases never
+code-exec hazard; `evil = "/skills:exfiltrate"`). Aliases never
 expand to built-in commands (no shadowing); conflicts at load time
 are rejected with a clear error.
 
@@ -2317,7 +2317,7 @@ Plugin-introduced errors use `Reason: Custom:<namespace>:<code>`
 with a `string` payload field the client surfaces verbatim.
 
 Two of the remediation strings above reference `gofastr harness token`
-and `gofastr harness ack` — specified subcommands that are not yet
+and `gofastr harness ack`, specified subcommands that are not yet
 wired into `cmd/gofastr` (which today dispatches only `mcp` and
 `creds`).
 
@@ -2328,7 +2328,7 @@ wired into `cmd/gofastr` (which today dispatches only `mcp` and
 Distinct from the session event log (which is per-conversation,
 encrypted, redacted). The harness emits its own operational logs to:
 
-- `~/.local/state/gofastr/harness/log/harness-YYYYMMDD.log` —
+- `~/.local/state/gofastr/harness/log/harness-YYYYMMDD.log`:
   rolling daily file, plaintext, structured (one JSON object per
   line: `{ts, level, component, msg, fields…}`).
 - stderr when `--log-to-stderr` is set.
@@ -2343,7 +2343,7 @@ The raw-provider-request debug mode is a per-session toggle:
 session-scoped file at `~/.local/state/gofastr/harness/debug/<SessionID>.jsonl`.
 Dumps are written **before** the redaction middleware on the way in
 and **after** it on the way out, so the debug file contains
-unredacted traffic — protected by `0600` mode and the same keychain
+unredacted traffic, protected by `0600` mode and the same keychain
 encryption as the session log.
 
 ---
@@ -2358,21 +2358,21 @@ encryption as the session log.
 | `mcpclient/` | The MCP wire protocol spec |
 | `skill/` | https://agentskills.io/specification |
 | `context/` | https://agents.md/ |
-| `control/` | This doc § Control plane — especially auth, multi-client, Threat model |
+| `control/` | This doc § Control plane, especially auth, multi-client, Threat model |
 | `control/multiplex/` | This doc § Multi-client semantics |
-| `control/mcpserver/` | MCP spec **plus** this doc § MCP server API — note the renamed tool and identity-class rules |
+| `control/mcpserver/` | MCP spec **plus** this doc § MCP server API, note the renamed tool and identity-class rules |
 | `control/auth/` | This doc § Threat model and § Authentication |
 | `client/tui/` | This doc § TUI; `golang.org/x/term` package docs |
 | `client/web/` | `core-ui/ARCHITECTURE.md` (the UI runtime is what the web client dogfoods) |
-| `session/` | This doc § Persistence — particularly redaction and TTL |
-| `profile/` | This doc § Profiles — particularly trust gates |
-| `hook/` | This doc § Profiles — trust gates and `--allow-project-hooks` |
+| `session/` | This doc § Persistence, particularly redaction and TTL |
+| `profile/` | This doc § Profiles, particularly trust gates |
+| `hook/` | This doc § Profiles, trust gates and `--allow-project-hooks` |
 
 ---
 
 ## End
 
-This document is the harness contract — every system it describes is
+This document is the harness contract: every system it describes is
 implemented in `framework/experimental/harness/` and exercised by tests. There is
 no separate roadmap; future capabilities live in this doc or they do
 not exist.

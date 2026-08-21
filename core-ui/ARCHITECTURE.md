@@ -1,4 +1,4 @@
-# GoFastr UI Architecture
+# GoFastr UI architecture
 
 > **Read this before writing any UI, runtime, or `framework/uihost` code.**
 > Misunderstanding the model has caused multiple round-trips of rework.
@@ -8,24 +8,24 @@
 
 ## The model in one paragraph
 
-Every page is **server-rendered (SSR)** on first request — full HTML, full
+Every page is **server-rendered (SSR)** on first request: full HTML, full
 data, no skeleton, no client-side data fetch on initial load. The browser
 receives the rendered page and `runtime.js` **hydrates** the existing DOM:
 attaches event listeners, signal bindings, SSE streams. After hydration,
 **page-to-page navigation is client-side** (Angular-router style: pushState,
-partial fetch, swap content, with cache so back is instant — no hard
+partial fetch, swap content, with cache so back is instant, no hard
 refreshes). **Interactions that change state inside the current page are
 handled by islands**: a click triggers an RPC to the server-side island
 handler, which returns the updated island HTML; the runtime swaps just
 that island's content. The rest of the page stays put. **Passive freshness
 is polled**: a region with `data-fui-poll` (or a widget with
-`Builder.Poll`) re-fetches server-rendered HTML on an interval — no held
+`Builder.Poll`) re-fetches server-rendered HTML on an interval. No held
 connection, no cross-replica infrastructure. **Server-pushed updates**
 (e.g. another user changed something) flow through signals + SSE to update
-bound DOM nodes without any client action — reserved for semantics that
+bound DOM nodes without any client action, reserved for semantics that
 need the connection itself (presence, collaboration, sub-second updates),
-never for anything a poll or an RPC covers. The full escalation ladder —
-client signals → RPC → poll → SSE push — is
+never for anything a poll or an RPC covers. The full escalation ladder
+of client signals → RPC → poll → SSE push is
 `framework/docs/content/reactivity.md`; the interactive layer is stateless
 (sessions are signed tokens, state lives in the DB or the client signal
 store), so any replica serves any request.
@@ -37,7 +37,7 @@ store), so any replica serves any request.
 | Scenario | What runs | What's on the wire |
 |---|---|---|
 | **Initial load** of any URL | Full SSR via `framework/uihost` → `app.RenderPage` → `Screen.Load(ctx)` → `Screen.Render()` | One HTML response with everything inline |
-| **Page → page navigation** (`/a` → `/b`) | Client-side router intercepts `<a>` click, fetches partial via `X-Gofastr-Navigate: 1` + `X-Gofastr-From: /a`, swaps the content cell of the deepest layout layer the two routes share (`X-Gofastr-Swap` names it), caches the previous page for instant back. No shared root → full fetch + shell swap | One small partial HTML response — only the screen content plus whatever layout layers actually differ; shared chrome never re-sent |
+| **Page → page navigation** (`/a` → `/b`) | Client-side router intercepts `<a>` click, fetches partial via `X-Gofastr-Navigate: 1` + `X-Gofastr-From: /a`, swaps the content cell of the deepest layout layer the two routes share (`X-Gofastr-Swap` names it), caches the previous page for instant back. No shared root → full fetch + shell swap | One small partial HTML response: only the screen content plus whatever layout layers actually differ; shared chrome never re-sent |
 | **In-page state change** (sort, paginate, expand a row, open a tab) | Click on an island element → RPC to the island's handler → server returns new island HTML → runtime swaps just the island's slot | One small RPC response with the changed island HTML |
 | **Passive freshness** (a counter, a status, a dashboard that should stay roughly current) | `data-fui-poll` region (or `Builder.Poll` widget) → interval GET of a server-rendered fragment → runtime swaps the region | One small GET per interval; no connection held, any replica answers |
 | **Server-pushed update** (background event, another user's action) | Server renders fresh island HTML and calls `Manager.PushUpdate` → `island` SSE frame → runtime swaps the matching `[data-island="…"]` region | SSE frames over a single long-lived connection |
@@ -53,45 +53,45 @@ An island is a **server-rendered, server-driven component** with its own
 RPC endpoints and (optionally) signal bindings. It owns:
 
 1. Its rendered HTML (SSR).
-2. Its server-side state (in the DB — the interactive layer is stateless, so never in process RAM; any replica serves any request).
+2. Its server-side state (in the DB: the interactive layer is stateless, so never in process RAM; any replica serves any request).
 3. Its update logic (handlers that re-render and respond).
 
 Pagination is an island. A sortable table is an island. A "favorite" toggle
 on a card is an island. A page header that needs to react to user-scope
 changes is an island. **Inline content that never changes** (a static
-heading, a piece of marketing copy, a footer) is **not** an island — it's
+heading, a piece of marketing copy, a footer) is **not** an island. It's
 just rendered HTML.
 
 The framework primitives live in:
 
-- `core-ui/widget` — the builder API (`widget.New(name).Mount(...).Slot(...).Signal(...).RPC(...).RPCWithSignal(...)`)
-- `core-ui/node` — the JSON-clean UI element tree (`Node`, `Action`, tree
+- `core-ui/widget`: the builder API (`widget.New(name).Mount(...).Slot(...).Signal(...).RPC(...).RPCWithSignal(...)`)
+- `core-ui/node`: the JSON-clean UI element tree (`Node`, `Action`, tree
   helpers). A dependency-free, serializable description of a screen. Both the
   blueprint codegen (`cmd/gofastr`) and Kiln's World IR (`kiln/world`, which
   type-aliases `node.Node`/`node.Action`) compose it; neither owns it. The IR
-  used to live under `kiln/`, forcing first-party callers to import the Kiln
-  namespace — it was moved down into `core-ui` so the dependency points the
+  used to live under `kiln/`, which forced first-party callers to import the
+  Kiln namespace. It was moved down into `core-ui` so the dependency points the
   right way (Kiln consumes core-ui, like any other caller).
-- `core-ui/noderender` — walks a node tree and emits HTML via
+- `core-ui/noderender`: walks a node tree and emits HTML via
   `core-ui/html`. Two entry points, split by trust. `RenderNode` (and
   `RenderKind`, which renders one element from pre-rendered children)
   treats the IR as UNTRUSTED and strips `data-action`, `data-action-*`,
-  and `data-param-*` — the attributes `frag/boot.js` resolves into a
+  and `data-param-*`, the attributes `frag/boot.js` resolves into a
   `__gofastr.trigger()` call at hydration and on every `gofastr:navigate`,
   so an untrusted IR naming them picks a compiled server action and its
   arguments. `data-island` is refused outright: it is the SSE swap target,
   so naming it lets an element impersonate a registered island.
-  `RenderTrustedNode` and `RenderTrustedKind` are the first-party pair —
-  they keep the action attributes — and are what the blueprint generator
+  `RenderTrustedNode` and `RenderTrustedKind` are the first-party pair.
+  They keep the action attributes and are what the blueprint generator
   emits. The attribute name alone cannot tell a trusted tree from an
   untrusted one, so the caller picks the entry point; picking `RenderNode`
   for first-party IR silently drops every action attribute.
-- `core-ui/island` — the runtime-side island manager (registration, SSE push, slot lookup)
-- `core-ui/interactive` — declarative interactivity primitives (`OnClick/OnSubmit` wrapping for in-page RPC, signal binding, widget chaining)
-- `core-ui/runtime/runtime.js` — the client-side hydration runtime
+- `core-ui/island`: the runtime-side island manager (registration, SSE push, slot lookup)
+- `core-ui/interactive`: declarative interactivity primitives (`OnClick/OnSubmit` wrapping for in-page RPC, signal binding, widget chaining)
+- `core-ui/runtime/runtime.js`: the client-side hydration runtime
   (minified at first read in production; see
   [`runtime-minification.md`](../framework/docs/content/runtime-minification.md))
-- `core-ui/runtime/minify` — token-aware Go JS minifier that
+- `core-ui/runtime/minify`: token-aware Go JS minifier that
   shrinks every embedded runtime source on first read
 
 ---
@@ -99,19 +99,19 @@ The framework primitives live in:
 ## Runtime primitives (the wiring)
 
 The runtime understands a small set of `data-fui-*` attributes on the
-hydrated DOM. **You don't write JavaScript** — you compose these on the
+hydrated DOM. **You don't write JavaScript**. You compose these on the
 server side and the runtime does the work.
 
 | Attribute | Purpose |
 |---|---|
-| `data-fui-rpc="<path>"` | Click on the element (or submit of a `<form data-fui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-fui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this — place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. |
+| `data-fui-rpc="<path>"` | Click on the element (or submit of a `<form data-fui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-fui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. |
 | `data-fui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-fui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-fui-rpc-close` | Containing widget closes on 2xx |
 | `data-fui-rpc-reset` | Containing form resets on 2xx |
 | `data-fui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
-| `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page — the RPC mutated server state, so the destination must be fetched fresh |
-| `data-fui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders — e.g. a Reset button inside a confirm modal refreshing the chat panel. |
+| `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page: the RPC mutated server state, so the destination must be fetched fresh |
+| `data-fui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders, e.g. a Reset button inside a confirm modal refreshing the chat panel. |
 | `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`). `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-fui-signal-attr`. |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
@@ -119,7 +119,7 @@ server side and the runtime does the work.
 | `data-fui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
 | `data-fui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. |
 | `data-fui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. When the wrapper's `data-active` attribute is updated through a signal (`data-fui-signal-mode="attr"`), the core runtime also mirrors the new index into `aria-selected` on every `[role="tab"][data-fui-tab-index]` descendant so assistive tech tracks the selection, not just the CSS highlight. |
-| `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe — the reducer is a real function the host registers (no `eval`). |
+| `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe: the reducer is a real function the host registers (no `eval`). |
 | `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
 | `data-fui-compute` | Loads the `compute` demand module, which exposes `window.__gofastr.compute`. It is a trigger marker only; worker name, function, and payload stay in the imperative `compute.task(...)` call. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
@@ -127,19 +127,19 @@ server side and the runtime does the work.
 | `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
 | `data-fui-rpc-trigger="input"` | On a `<form data-fui-rpc=…>`, dispatch the RPC on every `input` event from any control inside, after a debounce window. |
 | `data-fui-rpc-debounce-ms="<ms>"` | Debounce window for `data-fui-rpc-trigger="input"`. Default 250. |
-| `data-fui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot — idempotent on re-click via `data-fui-rpc-after-done`. |
+| `data-fui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot, idempotent on re-click via `data-fui-rpc-after-done`. |
 | `data-fui-rpc-after-disable` | On 2xx RPC, mark the trigger as `aria-disabled="true"` and (for `<button>`/`<input>`) set `disabled=true` permanently. Use with `after-text` for "Saved ✓" / "Revealed ✓" feedback. |
 | `data-fui-rpc-scroll-to="<selector>"` | On 2xx RPC, smooth-scroll the matching element into view. Use to direct the user's eye at newly-inserted content. |
 | `data-fui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-fui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
 | `data-fui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle `<link>` to list the components it covers. The runtime reads it at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
 | `data-fui-layout="<name>"` | Set by EVERY layout layer on its wrapper `<div>` with the layout's name (e.g. `app`, `marketing`). Emit-only since the layout-chain rewrite: it is the CSS/debug contract (`.layout-<name>` pairing), and the runtime's swap decisions read `data-fui-layout-key` instead. |
 | `data-fui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
-| `data-fui-layout-slot="<key>"` | On the layer's content cell — the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell. |
+| `data-fui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell. |
 | `data-fui-disclosure` | Marks a `<details>` element as a dismissible disclosure (mobile hamburger nav, popover, etc.). The runtime closes it automatically on SPA navigation and when Escape is pressed anywhere on the page (native `<details>` only handles Escape when the `<summary>` itself has focus). Add `data-fui-disclosure-persist` only for shell-owned controls whose expanded state must survive in-shell navigation. |
-| `data-fui-disclosure-trap` | Opt-in modifier on a `data-fui-disclosure` `<details>` element: when open, the runtime sets `inert` on every sibling so focus is trapped inside the disclosure body. Use for mobile drawer / full-sheet popover patterns that need modal-style focus containment (vs. the default non-trapping inline disclosure). The `inert` is released when the disclosure closes, when it is **detached** from the DOM, and on `gofastr:navigate` — a detached `<details>` fires no `toggle`, so both SPA swap paths (layout-shell replace, `<main>` innerHTML write) would otherwise strand every other `<body>` child out of the focus order and the accessibility tree. |
+| `data-fui-disclosure-trap` | Opt-in modifier on a `data-fui-disclosure` `<details>` element: when open, the runtime sets `inert` on every sibling so focus is trapped inside the disclosure body. Use for mobile drawer / full-sheet popover patterns that need modal-style focus containment (vs. the default non-trapping inline disclosure). The `inert` is released when the disclosure closes, when it is **detached** from the DOM, and on `gofastr:navigate`. A detached `<details>` fires no `toggle`, so both SPA swap paths (layout-shell replace, `<main>` innerHTML write) would otherwise strand every other `<body>` child out of the focus order and the accessibility tree. |
 | `data-fui-disclosure-persist` | Opt-out modifier for a shell-owned disclosure that should retain its open state across in-shell SPA navigation. Independent of `data-fui-disclosure-trap`. |
 | `data-fui-action="<name>"` | Marks an element as a server-action trigger. Used together with `data-fui-rpc` to dispatch a named action. |
-| `data-fui-widget="<name>"` | Marks a registered widget instance — the runtime mounts behavior on it after first paint. |
+| `data-fui-widget="<name>"` | Marks a registered widget instance: the runtime mounts behavior on it after first paint. |
 | `data-fui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-fui-open` to make the floating surface dismissible. |
 | `data-fui-style="<name>"` | Set on the runtime-injected `<link rel="stylesheet">` so duplicates are dedup'd by component name. |
 | `data-fui-shortcut-click="<chord>"` / `data-fui-shortcut-focus="<chord>"` | Global keyboard shortcut: e.g. `Meta+K` or `/` focuses or clicks the target element. |
@@ -152,9 +152,9 @@ server side and the runtime does the work.
 | `data-fui-copy-announce="<msg>"` | Overrides the announcement text written into the matching `data-fui-copy-status` element on copy success. |
 | `data-fui-copy-toast="<json>"` | When set on a `data-fui-copy-text-from` button, the runtime dispatches a toast via `window.__gofastr.toast(<json>)` on copy success. Use for "Copied to clipboard" notifications without per-button JS. |
 | `data-fui-os` *(on `<html>`)* | Set by the runtime at boot to `"mac"` or `"other"` based on best-effort platform detection. Used by `framework/ui.ShortcutHint` to display platform-correct mod-key glyphs purely in CSS (no per-component JS). Functional shortcut matching does not depend on this attribute. |
-| `data-fui-static` *(on `<html>`)* | Injected **only** by the static exporter (`framework/static.Builder`) onto `<html>`. When present, the runtime enters static mode: it fetches the dumped catalog file (`/__gofastr/widgets.json`) instead of the live session-gated endpoint, and a `data-fui-rpc` click/submit surfaces a "Needs the Go server" notice (via the CSP-clean `#fui-nav-toast` mini toast) instead of firing a dead request — so a visitor who tries a server-backed demo learns why it's inert and how to run it locally. `data-fui-open` is **not** gated — overlays resolve against the widget catalog + chrome HTML the exporter dumps as query-free files, so navigation surfaces (command palette, section-menu drawers) work. Client-only features (theme toggle, copy, signal mutations) are unaffected. Live pages never carry it, so every static-mode guard is a no-op in the normal server-backed app. |
-| `data-fui-static-options` *(on a combobox listbox `<ul>`)* | Set by `core-ui/patterns/combobox` when the combobox carries a static `Options` list (no RPC). The combobox runtime module filters the inline `<li role="option">` rows client-side on input — hide non-matches, show all when the query clears — instead of firing a search endpoint. Use for small fixed command sets (docs/nav palette) so search works on a serverless export with no backend. Because the option rows render visible at SSR, the input ships `aria-expanded="true"` so the SSR state matches reality and the module's Escape / outside-click dismissal works before the first keystroke. An option's `Href` (written to `data-fui-push-state`) is scheme-filtered at render time — `javascript:` and friends are dropped. |
-| `data-fui-infinite-scroll="<rpc-path>"` | Marks an infinite-scroll wrapper. The runtime POSTs to `<rpc-path>` (form-encoded body with `cursor=<token>`) when the contained `data-fui-infinite-sentinel` enters the viewport, then appends the HTML response into the items container. Pair with `data-fui-infinite-cursor`, `data-fui-infinite-items` (optional, CSS selector — default the wrapper itself), and `data-fui-infinite-root-margin` (default `200px`). Response carries `X-Gofastr-Infinite-Cursor: <next>` for the next call; empty/missing → end of feed, sentinel removed, observer disconnected. `aria-busy` toggles during fetch. |
+| `data-fui-static` *(on `<html>`)* | Injected **only** by the static exporter (`framework/static.Builder`) onto `<html>`. When present, the runtime enters static mode: it fetches the dumped catalog file (`/__gofastr/widgets.json`) instead of the live session-gated endpoint, and a `data-fui-rpc` click/submit surfaces a "Needs the Go server" notice (via the CSP-clean `#fui-nav-toast` mini toast) instead of firing a dead request, so a visitor who tries a server-backed demo learns why it's inert and how to run it locally. `data-fui-open` is **not** gated: overlays resolve against the widget catalog + chrome HTML the exporter dumps as query-free files, so navigation surfaces (command palette, section-menu drawers) work. Client-only features (theme toggle, copy, signal mutations) are unaffected. Live pages never carry it, so every static-mode guard is a no-op in the normal server-backed app. |
+| `data-fui-static-options` *(on a combobox listbox `<ul>`)* | Set by `core-ui/patterns/combobox` when the combobox carries a static `Options` list (no RPC). The combobox runtime module filters the inline `<li role="option">` rows client-side on input, hiding non-matches and showing all again when the query clears, instead of firing a search endpoint. Use for small fixed command sets (docs/nav palette) so search works on a serverless export with no backend. Because the option rows render visible at SSR, the input ships `aria-expanded="true"` so the SSR state matches reality and the module's Escape / outside-click dismissal works before the first keystroke. An option's `Href` (written to `data-fui-push-state`) is scheme-filtered at render time: `javascript:` and friends are dropped. |
+| `data-fui-infinite-scroll="<rpc-path>"` | Marks an infinite-scroll wrapper. The runtime POSTs to `<rpc-path>` (form-encoded body with `cursor=<token>`) when the contained `data-fui-infinite-sentinel` enters the viewport, then appends the HTML response into the items container. Pair with `data-fui-infinite-cursor`, `data-fui-infinite-items` (optional, CSS selector, default the wrapper itself), and `data-fui-infinite-root-margin` (default `200px`). Response carries `X-Gofastr-Infinite-Cursor: <next>` for the next call; empty/missing → end of feed, sentinel removed, observer disconnected. `aria-busy` toggles during fetch. |
 | `data-fui-infinite-sentinel` | Marks the IntersectionObserver target inside an infinite-scroll wrapper. The sentinel is removed when end-of-feed is reached. |
 | `data-fui-infinite-cursor="<token>"` | Initial cursor token on the infinite-scroll wrapper. Updated in-place after every fetch. |
 | `data-fui-infinite-items="<selector>"` | Optional CSS selector identifying the child container into which new items are appended. Defaults to the wrapper itself. |
@@ -167,7 +167,7 @@ server side and the runtime does the work.
 | `data-fui-scroll-bottom-on-update` | A signal-bound scroll container auto-scrolls to the bottom on each update (chat / log views). |
 | `data-fui-tick-elapsed="<unix-ms>"` | Element's text updates once per second with the elapsed human-readable interval since the given epoch. |
 | `data-fui-rpc-body="<json>"` | Static JSON body for `data-fui-rpc` requests that don't come from a `<form>`. |
-| `data-fui-rpc-after-done` | Internal marker — set by the runtime after a one-shot `after-text` / `after-disable` fires so re-clicks are idempotent. |
+| `data-fui-rpc-after-done` | Internal marker: set by the runtime after a one-shot `after-text` / `after-disable` fires so re-clicks are idempotent. |
 | `data-fui-deeplink="<k1=v1&k2=v2>"` | On a `data-fui-open` button: per-click overrides for the opened widget's declared `DeepLinkParams`. The runtime mirrors the pairs into the widget's signals on open AND pushes them onto the URL (alongside the widget's `DeepLinkKey=DeepLinkValue`) so refresh / share / back-button preserve the open modal AND its data. Used for row-level "Edit user 42" flows. |
 | `data-fui-toast="<json>"` | On a clickable element: clicking fires a toast with the given config (variant/title/body/ttl/stack). The runtime's global click delegator parses + dispatches via `__gofastr.toast()`. |
 | `data-fui-toast-id="<id>"` | Marks one item inside a `preset.ToastStack` rendered list. The value is the toast id assigned by `__gofastr.toast()`; click-to-dismiss targets it. |
@@ -178,19 +178,19 @@ server side and the runtime does the work.
 | `data-fui-toast-fallback` | Marks the degraded inline container core injects when the `toasts` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
 | `data-fui-menu` | Marks a `<details data-fui-disclosure>` as a `framework/ui.Menu` dropdown. The runtime focuses the first `[role=menuitem]` when the disclosure opens; arrow keys / Home / End / type-ahead navigate within the panel; Tab closes the menu and lets focus escape naturally. |
 | `data-fui-menu-panel` | Emitted by `framework/ui.Menu` on the `role="menu"` panel `<div>`. No runtime or CSS consumer today (the menu module scopes by `data-fui-menu` + `.ui-menu__panel`); emit-only structural marker. |
-| `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary — `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
+| `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-fui-fileupload` | Marks the drag-drop zone surrounding a `framework/ui.FileUpload` `<input type="file">`. The runtime wires dragover/dragleave/drop handlers that forward dropped File objects into the input's `files` property and dispatch a `change` event so form RPC pipelines fire uniformly whether the user clicked-to-pick or dragged-to-drop. |
-| `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side — `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances — popovers are click-driven and don't deep-link. |
+| `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
 | `data-fui-banner-dismiss` | On the X button inside a `framework/ui.Banner`: clicking sets `hidden` on the nearest `[data-fui-comp="ui-banner"]` ancestor. The runtime delegates the click globally so dismissal survives partial-island swaps. |
 | `data-fui-scrollspy` | Marks a scrollspy container. The runtime observes section heading targets via IntersectionObserver and tags the matching `data-fui-scrollspy-target` link with `aria-current="true"` as the user scrolls. |
 | `data-fui-scrollspy-target` | On a nav link inside a scrollspy: the value identifies the section heading the link tracks. Updated to `aria-current="true"` when its target enters the active band. |
 | `data-fui-optimistic-idle` / `data-fui-optimistic-success` / `data-fui-optimistic-endpoint` / `data-fui-optimistic-method` | On an OptimisticAction button: the runtime flips the visible label between the idle and success copy as it dispatches a fetch to the endpoint+method, rolling back on error. Used by `framework/ui.OptimisticAction` for "Save / Saved!" patterns without per-button JS. |
-| `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`, `framework/ui/toggleaction.go`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` (same method) if set — with NO untoggle endpoint configured the button flips back to idle locally without issuing any request. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
+| `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`, `framework/ui/toggleaction.go`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` (same method) if set. With NO untoggle endpoint configured the button flips back to idle locally without issuing any request. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
 | `data-fui-toggle-idle` / `data-fui-toggle-committed` | Markers on the two label spans inside a ToggleAction button. The runtime shows/hides them as the button transitions between idle and committed states. SSR ships the initial visible state. |
-| `data-fui-toggle-group="<key>"` | Joins a ToggleAction button to a client-side mutex: committing any button with the same group key optimistically reverts the previously-committed sibling (no extra RPC — the server stays the source of truth and a later navigation refreshes from server state). Maps from `ToggleActionConfig.Group`. |
-| `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy — the runtime polls `window.__gofastr.sseStatus.lastEventAt` (kept current by the SSE module on every frame) and, on a `gofastr:sse-status` reconnect, re-probes `health` so the banner can dismiss. |
+| `data-fui-toggle-group="<key>"` | Joins a ToggleAction button to a client-side mutex: committing any button with the same group key optimistically reverts the previously-committed sibling (no extra RPC: the server stays the source of truth and a later navigation refreshes from server state). Maps from `ToggleActionConfig.Group`. |
+| `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy. The runtime polls `window.__gofastr.sseStatus.lastEventAt` (kept current by the SSE module on every frame) and, on a `gofastr:sse-status` reconnect, re-probes `health` so the banner can dismiss. |
 | `data-fui-network-retry-demo-trigger` / `data-fui-network-retry-demo-recover` | Demo-only attributes (`examples/site` NetworkRetryBanner page): trigger forces the banner into the failed state for screenshot/dev purposes; recover restores it. Not used in production wiring. |
-| `data-fui-banner-dismiss-id="<id>"` | Optional companion to `data-fui-banner-dismiss`. When set, the dismissal is recorded in `localStorage` under `gofastr.banner-dismiss.<id>` and the same banner is auto-hidden on every subsequent page load until the key is cleared. Use for "deprecation notice — got it" banners. |
+| `data-fui-banner-dismiss-id="<id>"` | Optional companion to `data-fui-banner-dismiss`. When set, the dismissal is recorded in `localStorage` under `gofastr.banner-dismiss.<id>` and the same banner is auto-hidden on every subsequent page load until the key is cleared. Use for "got it"-style deprecation notices. |
 | `data-fui-slider-mirror` | On an `<input type="range">` inside a `framework/ui.Slider`: opt the slider into runtime value-mirroring. The slider module listens for `input` events on these elements and writes the current value into the associated `<output for="<id>">` so the displayed number tracks the thumb as the user drags. Auto-emitted when `SliderConfig.ShowValue` is true. |
 | `data-fui-number-step="<delta>"` | On a button inside a `framework/ui.NumberInput`: clicking the button increments the linked `<input type="number">` by `<delta>` (signed). Honors the input's `min` / `max` / `step` and dispatches an `input` + `change` event after writing the new value so form-RPC pipelines see the change. Pair with `data-fui-number-for`. |
 | `data-fui-number-for="<input-id>"` | On a `data-fui-number-step` button: the id of the `<input type="number">` it controls. |
@@ -226,15 +226,15 @@ server side and the runtime does the work.
 | `data-fui-cond-disabled` | Runtime-written marker on controls disabled by `framework/ui.ConditionalField`; it lets the runtime distinguish fields it disabled from fields that were already disabled by the app. |
 | `data-fui-toc="<selector>"` | On a `framework/ui.TableOfContents` nav: the runtime walks the matching content region after first paint and emits an `<li><a>` per `<h2>` / `<h3>` with an `id`. Active-section tracking via IntersectionObserver. Pair with `data-fui-toc-levels`. |
 | `data-fui-toc-levels="<csv>"` | Optional comma-separated list of heading levels to harvest (default `"2,3"`). |
-| `data-fui-toc-for="<heading-id>"` | Internal — set by the TOC runtime on each emitted `<a>` linking it back to its source heading. Used by the active-section tracker. |
+| `data-fui-toc-for="<heading-id>"` | Internal: set by the TOC runtime on each emitted `<a>` linking it back to its source heading. Used by the active-section tracker. |
 | `data-fui-sortable` | Marks the `<ol>` of a `core-ui/patterns/sortablelist` as reorderable. Pair with `data-fui-sortable-rpc`. |
 | `data-fui-sortable-rpc="<path>"` | POST endpoint that receives the commit after every successful reorder; non-2xx response reverts the DOM. Same-container reorders send `order=<comma-separated-keys>` plus `container=<id>` when the source list carries `data-fui-sortable-container` (#84) and `version=<token>` when versioned. Cross-container drops add `moved=<key>` and always carry `container=` (empty if unconfigured). |
-| `data-fui-sortable-item` | Marks an `<li>` as a drag-and-drop item inside a `data-fui-sortable` list. Pair with `data-fui-sort-key` and (typically) `draggable="true"` + `tabindex="0"`. Keyboard: Space grabs / drops; Arrow Up/Down moves within a column; Arrow Left/Right moves to an adjacent column (same group, including an empty one — #82); Esc cancels. A `data-fui-sortable` list may legally hold zero items (empty Kanban column) and remains a valid drop target. |
+| `data-fui-sortable-item` | Marks an `<li>` as a drag-and-drop item inside a `data-fui-sortable` list. Pair with `data-fui-sort-key` and (typically) `draggable="true"` + `tabindex="0"`. Keyboard: Space grabs / drops; Arrow Up/Down moves within a column; Arrow Left/Right moves to an adjacent column (same group, including an empty one, #82); Esc cancels. A `data-fui-sortable` list may legally hold zero items (empty Kanban column) and remains a valid drop target. |
 | `data-fui-sort-key="<key>"` | Stable identifier the server uses to apply the new order. |
 | `data-fui-sortable-group="<id>"` | Board id shared by linked `data-fui-sortable` columns (kanban). Lists with the same non-empty group id allow cross-container drag and keyboard moves between them; lists with no group (or different groups) stay isolated. Back-compat: existing single lists have no group → unchanged behavior. |
-| `data-fui-sortable-container="<id>"` | Per-column id emitted on each `data-fui-sortable` `<ol>` of a linked board. Sent as the `container` body field in EVERY commit from that list — same-container reorders included (#84) — so the server can route the write without inferring the column from the key set. Distinct from `data-fui-sortable-group` (the board id) because a board has one group but N containers — the server needs both to route the write. Lists without this attr keep the legacy payload (no `container` field on same-container commits; empty `container=` on cross-container commits). |
-| `data-fui-sortable-version="<token>"` | Optional optimistic-concurrency token. When set, appended as a `version` body field to every commit POST. A 409 response then fires the conflict path (refetch `data-fui-sortable-conflict` HTML) instead of a blanket rollback. Without this attr, 409 is treated like any other non-2xx (rollback) — back-compat. |
-| `data-fui-sortable-conflict="<rpc>"` | GET endpoint refetched on a 409 response (only when `data-fui-sortable-version` is set). The response body replaces the destination list's `innerHTML` — server-rendered reconciliation (an empty body reconciles the column to zero items, #82). Before refetching, the runtime reads the 409 response body under hard safety bounds (#83): Content-Type MUST be `application/json`, at most ~4 KB is read, the body MUST parse as `{"error":{"code","message":<string>}}`, and `error.message` is capped at ~300 chars. When a valid message is present it is surfaced through the polite `aria-live` region (replacing the generic copy) and the framework toast surface (`__gofastr.toast`) when wired; any malformed / oversized / non-JSON / empty body falls back to today's generic copy. Without this attr, a 409 falls back to rollback + a `console.warn`. |
+| `data-fui-sortable-container="<id>"` | Per-column id emitted on each `data-fui-sortable` `<ol>` of a linked board. Sent as the `container` body field in EVERY commit from that list, same-container reorders included (#84), so the server can route the write without inferring the column from the key set. Distinct from `data-fui-sortable-group` (the board id) because a board has one group but N containers: the server needs both to route the write. Lists without this attr keep the legacy payload (no `container` field on same-container commits; empty `container=` on cross-container commits). |
+| `data-fui-sortable-version="<token>"` | Optional optimistic-concurrency token. When set, appended as a `version` body field to every commit POST. A 409 response then fires the conflict path (refetch `data-fui-sortable-conflict` HTML) instead of a blanket rollback. Without this attr, 409 is treated like any other non-2xx (rollback), the back-compat behavior. |
+| `data-fui-sortable-conflict="<rpc>"` | GET endpoint refetched on a 409 response (only when `data-fui-sortable-version` is set). The response body replaces the destination list's `innerHTML`: server-rendered reconciliation (an empty body reconciles the column to zero items, #82). Before refetching, the runtime reads the 409 response body under hard safety bounds (#83): Content-Type MUST be `application/json`, at most ~4 KB is read, the body MUST parse as `{"error":{"code","message":<string>}}`, and `error.message` is capped at ~300 chars. When a valid message is present it is surfaced through the polite `aria-live` region (replacing the generic copy) and the framework toast surface (`__gofastr.toast`) when wired; any malformed / oversized / non-JSON / empty body falls back to today's generic copy. Without this attr, a 409 falls back to rollback + a `console.warn`. |
 | `data-fui-shortcut-target="<selector>"` | Optional companion to a page-level `data-fui-shortcut-focus` on a non-focusable wrapper: when the chord fires, the runtime focuses the element matched by this selector instead of the wrapper itself. Used by `framework/ui.GlobalSearch` where the chord lives on the wrapper but the focus target is the inner `<input>`. |
 | `data-fui-lightbox="<name>"` | On the slot wrapper of a `framework/ui.Lightbox`: identifies the open viewer for the runtime. Pair with optional `data-fui-lightbox-nav="true"` to enable Prev/Next + ArrowLeft/Right keyboard nav across siblings sharing `data-fui-lightbox-group`. |
 | `data-fui-lightbox-nav="true"` | On the lightbox slot wrapper: opts into the runtime's arrow-key + Prev/Next button navigation. |
@@ -249,25 +249,25 @@ server side and the runtime does the work.
 | `data-fui-carousel-loop="true"` | Wrap-around: Next on the last slide goes to first, Prev on the first goes to last. |
 | `data-fui-carousel-defer="<idx>"` | On a virtual-scroll carousel slide that hasn't been hydrated yet. The runtime IntersectionObserves the slide and swaps in the real HTML from the matching `<script data-fui-carousel-deferred-for>` entry the first time it enters the viewport (plus one read-ahead window). The attribute is removed on hydration. |
 | `data-fui-carousel-deferred-for="<carousel-id>"` | On the `<script type="application/json">` element that ships alongside a virtual-scroll carousel. The script body is a JSON map of slide index → HTML; the runtime parses it to hydrate placeholder slides on demand. |
-| `data-fui-popover-side` | Written by the runtime onto the anchored popover's widget root after placement — value is the final chosen side (`"top"`, `"bottom"`, `"left"`, `"right"`, post auto-flip). CSS uses it to position the directional arrow (`::before`) and to apply the anchored chrome (border, shadow, max-inline/block-size). Cleared on dismiss. |
+| `data-fui-popover-side` | Written by the runtime onto the anchored popover's widget root after placement: value is the final chosen side (`"top"`, `"bottom"`, `"left"`, `"right"`, post auto-flip). CSS uses it to position the directional arrow (`::before`) and to apply the anchored chrome (border, shadow, max-inline/block-size). Cleared on dismiss. |
 | `data-fui-popover-trigger` | Written by the runtime onto the originating trigger button while its anchored popover is open. The runtime also adds the `.is-popover-trigger-active` class so the trigger can be highlighted while its popover is the currently-active surface. Both are stripped on dismiss or when the popover re-anchors to a different trigger. |
 | `data-fui-prefetch="<module>"` | On any element: opt the page into hover/focus-prefetch of a split runtime module (e.g. `data-fui-prefetch="fileupload"`). On the first `pointerover` or `focusin` (capture phase, once per element) the runtime fires `__gofastr.loadModule(<module>)` so the module is ready by the time the user clicks. Multiple modules can be listed space-separated. Used to keep typical pages on `core.js` only while still feeling instant on interaction. See `framework/docs/content/runtime-minification.md` for the size story. |
-| `data-fui-screen-group="<prefix>"` | On the `.fui-screen-group` wrapper div around each group layer. Since the layout-chain rewrite the swap logic no longer keys on it (chains carry group identity in `data-fui-layout-key`); the runtime still reads it in one place — locating the outermost shell element for a cross-chain shell replacement — and it remains the CSS/introspection contract for group boundaries. The prefix matches the group's URL prefix (trailing slash). |
+| `data-fui-screen-group="<prefix>"` | On the `.fui-screen-group` wrapper div around each group layer. Since the layout-chain rewrite the swap logic no longer keys on it (chains carry group identity in `data-fui-layout-key`); the runtime still reads it in one place, locating the outermost shell element for a cross-chain shell replacement, and it remains the CSS/introspection contract for group boundaries. The prefix matches the group's URL prefix (trailing slash). |
 | `data-fui-pane-host` | Emitted by `framework/ui.PaneHost` on its root `<div>` (alongside `data-fui-comp="ui-pane-host"`). Marker the demand-loaded `panehost` runtime module scans for to wire open/close/swap triggers and the responsive overlay-drawer collapse. |
 | `data-fui-pane="primary\|secondary\|tertiary"` | Emitted by `PaneHost` on each of its three slot children. The runtime addresses a pane by this value when opening/closing it; CSS keys the open-state grid columns and the overlay-drawer chrome off the combination of the root's open modifier classes and this slot marker. |
 | `data-fui-pane-open="secondary\|tertiary"` | On a button: click opens the named side pane (reveals the column, hands focus to the pane's first focusable, remembers the trigger for restore). The trigger resolves its host via the nearest `[data-fui-pane-host]` ancestor, or via `data-fui-pane-host-target` for triggers outside the host. |
 | `data-fui-pane-close="secondary\|tertiary"` | On a button: click hides the named pane and restores focus to the element that opened it. Value may be omitted (bare attribute) to close the topmost open pane. |
-| `data-fui-pane-swap="secondary\|tertiary"` | On a button: click opens the named pane AND closes the other secondary/tertiary sibling — the "opening a link fills the third pane instead of navigating" flow that swaps which side pane is shown. |
+| `data-fui-pane-swap="secondary\|tertiary"` | On a button: click opens the named pane AND closes the other secondary/tertiary sibling, the "opening a link fills the third pane instead of navigating" flow that swaps which side pane is shown. |
 | `data-fui-pane-host-target="<id>"` | On an open/close/swap trigger that lives OUTSIDE its `[data-fui-pane-host]` ancestor: the `id` of the host the trigger drives. Without it the runtime resolves the host by `closest('[data-fui-pane-host]')`. |
 | `data-fui-pane-mode="overlay"` | Written by the `panehost` runtime module onto the host when `matchMedia('(max-width: 768px)')` matches AND a pane is open. CSS flips the open pane to a fixed overlay drawer (backdrop scrim via `::before`, right edge, full height) and the module applies a focus trap + scroll lock + ESC/backdrop-to-close. Cleared when the viewport widens or the pane closes. |
-| `data-fui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set — opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` replays the state by re-clicking the matching `[data-fui-pane-key]`. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink` — without that a shared link paints the pane closed and opens it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
-| `data-fui-pane-key="<key>"` | On a pane-open/swap trigger (`interactive.PaneKey`): the identity of what the pane will show — a record id or slug. Read only on hosts carrying `data-fui-pane-deeplink`; it supplies the `<key>` half of the query value and is the selector `popstate` uses to find the trigger to replay. An unkeyed trigger still opens its pane but leaves the URL alone. The value lands in the URL verbatim, so the server must look it up, never reflect it. |
+| `data-fui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set: opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` replays the state by re-clicking the matching `[data-fui-pane-key]`. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink`. Without that a shared link paints the pane closed and opens it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
+| `data-fui-pane-key="<key>"` | On a pane-open/swap trigger (`interactive.PaneKey`): the identity of what the pane will show, a record id or slug. Read only on hosts carrying `data-fui-pane-deeplink`; it supplies the `<key>` half of the query value and is the selector `popstate` uses to find the trigger to replay. An unkeyed trigger still opens its pane but leaves the URL alone. The value lands in the URL verbatim, so the server must look it up, never reflect it. |
 | `data-fui-intercept-overlay` | Written by the demand-loaded `intercept` module on the container it appends to `<body>` for an intercepted route. Holds the screen render the server returned as an overlay variant; the scrim and docking come from `app.InterceptOverlayCSS()`, which the host injects only when some route declares an intercept. Removed on close. |
-| `data-fui-intercept-as="drawer\|sheet"` | On the same container: which presentation the SERVER chose, mirrored from the `X-Gofastr-Overlay` response header (itself derived from the registered `app.InterceptFrom` ScreenType). CSS keys the docking edge off it. The client never picks its own chrome — a forged request can change the wrapper element and nothing else, since policy, params, Load, and content are identical on the canonical and overlay paths. |
+| `data-fui-intercept-as="drawer\|sheet"` | On the same container: which presentation the SERVER chose, mirrored from the `X-Gofastr-Overlay` response header (itself derived from the registered `app.InterceptFrom` ScreenType). CSS keys the docking edge off it. The client never picks its own chrome: a forged request can change the wrapper element and nothing else, since policy, params, Load, and content are identical on the canonical and overlay paths. |
 | `data-fui-intercept-close` | On a button inside intercepted overlay content: click closes the overlay. Closing routes through `history.back()`, so the button, ESC, and the backdrop all resolve to the same history move and the page underneath is never refetched. |
 | `data-wizard-steps="<n>"` | On the `<form>` wrapper of a `Wizard` component. The runtime uses this to know the total number of steps for navigation. |
-| `data-fui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). Driven by the demand-loaded `runtime/src/dragdismiss.js` module (the marker itself is the load trigger — present at boot for SSR-inlined sheets; dynamically-opened chrome is caught by the MutationObserver scan). Drag starts only from the `data-fui-drag-handle` bar; the module follows pointer Y movement with `transform: translateY` and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-fui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
-| `data-fui-plugin="<name>"` | Mount marker emitted by `framework/pluginhost.MountMarker` for a heavy-JS plugin. The host broker (`framework/pluginhost/host/pluginhost.js`, served at its own route — NOT part of runtime.js) scans for it and mounts the plugin's sandboxed opaque-origin iframe in place. |
+| `data-fui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). Driven by the demand-loaded `runtime/src/dragdismiss.js` module (the marker itself is the load trigger: present at boot for SSR-inlined sheets; dynamically-opened chrome is caught by the MutationObserver scan). Drag starts only from the `data-fui-drag-handle` bar; the module follows pointer Y movement with `transform: translateY` and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-fui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
+| `data-fui-plugin="<name>"` | Mount marker emitted by `framework/pluginhost.MountMarker` for a heavy-JS plugin. The host broker (`framework/pluginhost/host/pluginhost.js`, served at its own route, NOT part of runtime.js) scans for it and mounts the plugin's sandboxed opaque-origin iframe in place. |
 | `data-fui-plugin-docid="<id>"` | On the plugin mount marker: the persistence key the plugin instance edits; adapters echo it in save RPCs. |
 | `data-fui-plugin-doc` | On the plugin mount marker: server-rendered initial document JSON (HTML-escaped) handed to the plugin in the `init` protocol event. |
 | `data-fui-plugin-minheight="<css>"` | On the plugin mount marker: initial iframe height before the plugin's first `resize` event. |
@@ -275,24 +275,24 @@ server side and the runtime does the work.
 | `data-fui-plugin-for="<json,md>"` | Plugin-defined extension attribute (wysiwyg): names the hidden form fields the host adapter mirrors `docChanged` content into. Plugins may add namespaced `data-fui-plugin-*` extras via `MountConfig.Attributes`; document them in the owning plugin. |
 | `data-fui-drag-handle="true"` | On the visible drag-handle bar rendered at the top of a drag-dismiss-enabled widget. Marks the affordance for cursor styling; the actual pointer logic is delegated from the widget root. |
 | `data-fui-zoomed` | Written by the runtime onto a `.ui-lightbox__full` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back and on lightbox close. |
-| `data-behavior="/__gofastr/widget/<id>.js"` | On a `[data-widget]` / `[data-component]` root: the behaviour script the runtime appends as `<script src>` on first hydration. **The runtime's most privileged attribute** — it is a script-loading sink, so the value is matched against exactly the shape `core-ui/component` emits and anything else is refused with a console warning. Never hand-write it. |
+| `data-behavior="/__gofastr/widget/<id>.js"` | On a `[data-widget]` / `[data-component]` root: the behaviour script the runtime appends as `<script src>` on first hydration. **The runtime's most privileged attribute**: it is a script-loading sink, so the value is matched against exactly the shape `core-ui/component` emits and anything else is refused with a console warning. Never hand-write it. |
 | `data-widget="<id>"` | Widget root marker. Names the widget for hydration, chrome lookup, and `X-FUI-Widget` on scoped RPCs. |
 | `data-component="<id>"` | Component island root marker. The hydration counterpart of `data-widget` for non-widget islands; `data-action` handlers resolve their component id by walking up to it. |
 | `data-bind="<key>"` | Two-way input binding: the runtime mirrors the element's value into the named state key on `input`. |
-| `data-fui-trusted` | Marks a server-emitted region as trusted to host the legacy `data-kiln-tool` click/submit delegators. Without this ancestor (or `<body class="kiln-app">`), the legacy delegator refuses to dispatch — preventing stored-XSS content from forging authenticated kiln-tool POSTs. Apply only to chrome you fully control. |
+| `data-fui-trusted` | Marks a server-emitted region as trusted to host the legacy `data-kiln-tool` click/submit delegators. Without this ancestor (or `<body class="kiln-app">`), the legacy delegator refuses to dispatch, which prevents stored-XSS content from forging authenticated kiln-tool POSTs. Apply only to chrome you fully control. |
 | `data-fui-sidebar` | Emitted by `framework/ui.Sidebar` on its root. The sidebar runtime scopes collapse state and controls to this element. |
 | `data-fui-sidebar-collapse` | On a collapsible sidebar's toggle button. Demand-loads the sidebar module, toggles the compact rail, and keeps `aria-expanded` synchronized. |
 | `data-fui-sidebar-storage="<key>"` | On a collapsible sidebar root. Names the local-storage key used to restore its collapsed state across navigation and reloads. |
 | `data-fui-z-tier="<tier>"` | Emitted by `framework/ui.Sticky` with the layering tier from `StickyConfig.ZIndexTier` (`sticky` default, or `dropdown`/`modal`/`popover`/`toast` matching the theme's `ZIndexSet` tokens). CSS-only consumer: the `ui-sticky` stylesheet keys `z-index: var(--z-<tier>)` off this attribute so a sticky toolbar can layer above/below other surfaces without bespoke CSS. |
-| `data-fui-poll="<duration>"` | Marks an element for the demand-loaded `poll` runtime module. On the interval (Go-duration syntax: `"5s"`, `"30s"`, `"1m"`, compound `"1m30s"`) the module GETs `data-fui-poll-src` and swaps the response HTML into the element's `innerHTML` through the same `innerHTML + scanAndLoadCSS` path `html`-mode signal regions use — one region-swap pipeline, not a second one. Clamp: intervals below 5s are raised to 5s so a typo can't DoS the server. ±10% jitter per tick desynchronises a page full of polls; pauses while `document.hidden` and fetches immediately on regain; doubles the interval (capped at 5× base) on fetch failure and resets to base on the next success. The marker is idempotent (`__fuiPollWired` guard); timers self-teardown when the element leaves the DOM and are reclaimed on SPA navigation via the `_moduleScanners.poll` hook. Terminal state (#192): a handler that wants the poll to stop after this tick sets the `X-Gofastr-Poll-Stop: 1` response header — the runtime applies the response body (so the terminal state renders) and then tears down the timer, so no further fetches land. A swapped-in replacement that omits `data-fui-poll` (or carries `data-fui-poll="off"`/`"0"`) is not (re)wired — those values parse to NaN — so an island swap that replaces the whole region element also ends the poll. Pair with `data-fui-poll-src`. |
-| `data-fui-poll-src="<url>"` | The GET endpoint the `poll` runtime module fetches on each `data-fui-poll` tick. The response body replaces the parent element's `innerHTML`. Same-origin by default (`credentials: 'same-origin'`); the endpoint should return an HTML fragment, not a full document. Every successful applied tick (page-level here, widget-level `Builder.Poll` alike) increments the shared liveness observable `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }` — one object mutated in place, the poll analog of `sseStatus`); an HTTP-error response counts as a failure and triggers the back-off. Terminal state (#192): the response may carry `X-Gofastr-Poll-Stop` (truthy: `1`/`true`/`yes`/`on`) to end the poll after applying this tick — the runtime honors it on both the page-level and widget (`Builder.Poll`) paths; for widgets the `/state` handler emits it when `Builder.PollTerminal` reports terminal. |
+| `data-fui-poll="<duration>"` | Marks an element for the demand-loaded `poll` runtime module. On the interval (Go-duration syntax: `"5s"`, `"30s"`, `"1m"`, compound `"1m30s"`) the module GETs `data-fui-poll-src` and swaps the response HTML into the element's `innerHTML` through the same `innerHTML + scanAndLoadCSS` path `html`-mode signal regions use: one region-swap pipeline, not a second one. Clamp: intervals below 5s are raised to 5s so a typo can't DoS the server. ±10% jitter per tick desynchronises a page full of polls; pauses while `document.hidden` and fetches immediately on regain; doubles the interval (capped at 5× base) on fetch failure and resets to base on the next success. The marker is idempotent (`__fuiPollWired` guard); timers self-teardown when the element leaves the DOM and are reclaimed on SPA navigation via the `_moduleScanners.poll` hook. Terminal state (#192): a handler that wants the poll to stop after this tick sets the `X-Gofastr-Poll-Stop: 1` response header. The runtime applies the response body (so the terminal state renders) and then tears down the timer, so no further fetches land. A swapped-in replacement that omits `data-fui-poll` (or carries `data-fui-poll="off"`/`"0"`) is not (re)wired, since those values parse to NaN, so an island swap that replaces the whole region element also ends the poll. Pair with `data-fui-poll-src`. |
+| `data-fui-poll-src="<url>"` | The GET endpoint the `poll` runtime module fetches on each `data-fui-poll` tick. The response body replaces the parent element's `innerHTML`. Same-origin by default (`credentials: 'same-origin'`); the endpoint should return an HTML fragment, not a full document. Every successful applied tick (page-level here, widget-level `Builder.Poll` alike) increments the shared liveness observable `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }`, one object mutated in place, the poll analog of `sseStatus`); an HTTP-error response counts as a failure and triggers the back-off. Terminal state (#192): the response may carry `X-Gofastr-Poll-Stop` (truthy: `1`/`true`/`yes`/`on`) to end the poll after applying this tick. The runtime honors it on both the page-level and widget (`Builder.Poll`) paths; for widgets the `/state` handler emits it when `Builder.PollTerminal` reports terminal. |
 
 
 For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`.
 Adding a new attribute requires updating this table, adding a runtime
 test, AND assigning it an owning fragment in
 `core-ui/runtime/fragments.go` (see [§ Fragments](#fragments-runtime-composition)
-below) — the build fails on an unassigned attribute, so the map cannot
+below). The build fails on an unassigned attribute, so the map cannot
 drift ahead of the source.
 
 **Component-action attributes** (the compiled `data-action` family, distinct
@@ -300,7 +300,7 @@ from the `data-fui-*` runtime primitives above): `data-action="<name>"` on an
 element inside a `[data-component]` binds the named compiled action to that
 element's click (and `data-action-<event>` / `data-action-type` to
 input/change/submit). `data-action-mount="<name>"` fires the named action
-*once on hydration* (and again after each SPA nav) — the hook a server-rendered
+*once on hydration* (and again after each SPA nav), the hook a server-rendered
 island uses to populate itself on load, since the other triggers are
 user-event-driven. Any `data-param-*` on the element flows into the handler's
 `params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`.
@@ -312,13 +312,13 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
 | `X-Gofastr-Push-State: <path>` | Apply via `history.pushState` after the RPC succeeds (URL update without re-fetch) |
 | `X-Gofastr-Partial: true` | Body is a screen-partial (used by the cross-page nav path) |
 | `X-Gofastr-Swap: <layer key>` | Names the layout layer the partial body renders BELOW (see `data-fui-layout-key`). The runtime swaps the matching `data-fui-layout-slot` cell and records the key on the cache entry so a replay swaps the same cell. Emitted when the navigation request carried `X-Gofastr-From` and the two routes share an addressable chain prefix; a key the DOM doesn't have (deploy skew) makes the runtime recover with a full-page load. Absent → the body is bare screen content for the whole `<main>`. |
-| `X-Gofastr-Title: <text>` | Percent-encoded title — `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) |
-| `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders — never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching — `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
+| `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) |
+| `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders, never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 
 **Screen cache + invalidation.** The router keeps a 20-entry LRU of
 rendered screens keyed by `pathname+search` (the initial page included)
-so back/forward is instant. Eviction never re-renders the visible page —
-an RPC that changed what the *current* screen shows should return island
+so back/forward is instant. Eviction never re-renders the visible page.
+An RPC that changed what the *current* screen shows should return island
 HTML or use `data-fui-rpc-navigate`; the header exists for screens you
 are **not** on (an admin action that stales `/pricing`, a create that
 stales every page of a list). The JS mirrors are
@@ -326,9 +326,9 @@ stales every page of a list). The JS mirrors are
 and `__gofastr.refresh()` (re-fetch and re-render the current screen,
 bypassing the cache). Scope is per tab: the header only reaches the tab
 whose request carried it, and an evicted entry costs nothing until that
-tab actually navigates — surfaces that must stay fresh across tabs
+tab actually navigates. Surfaces that must stay fresh across tabs
 belong on the polling rung (`data-fui-poll`), not on cache eviction.
-The embed composition ships no nav fragment, hence no cache — the
+The embed composition ships no nav fragment, hence no cache, so the
 header is a no-op there by construction.
 
 **The flow for an in-page update** (e.g. clicking "page 2" on a pagination island):
@@ -354,7 +354,7 @@ exactly where it was.
 
 ### Fragments (runtime composition)
 
-Every `data-fui-*` attribute is owned by exactly one **fragment** — the
+Every `data-fui-*` attribute is owned by exactly one **fragment**: the
 unit the runtime composer (spec: `SPEC-runtime-composer.md`; declaration:
 `core-ui/runtime/fragments.go`) includes or omits per composition. The goal
 is the same as the component-CSS pipeline: ship only the JavaScript a page
@@ -366,15 +366,15 @@ optimization knob:
 
 - **Marker** (`rpc`, `signals`, `compute`, and every `src/*.js` demand
   module). Behavior is triggered by a `data-fui-*` marker in the DOM, so a
-  composition that omits the fragment self-heals — the kernel's
+  composition that omits the fragment self-heals: the kernel's
   `_scanForModules` sees the marker and demand-loads it. Safe to omit by
   default; a resolution miss cannot strand a marker.
 - **Boot** (`kernel`, `nav`, `widgets-boot`, `sse`, `boot-embed`). These
-  install listeners or fetch at boot with no marker to recover from —
+  install listeners or fetch at boot with no marker to recover from:
   `nav`'s `<a>` hijack, `widgets-boot`'s `/__gofastr/widgets` catalog fetch,
   `sse`'s `EventSource`. Omitting one is a deliberate, manifest-driven SSR
   decision (exactly as `intercept` already is at `_scanForModules`). A boot
-  fragment can NEVER be made marker-driven — that is the silent-failure
+  fragment can NEVER be made marker-driven: that is the silent-failure
   case, a button that does nothing with no error. `kernel` is always
   present (the substrate: module loader, the `data-fui-comp` CSS scanner,
   doc state, `window.__gofastr`).
@@ -383,15 +383,15 @@ Ownership, not reference, decides the map: an attribute belongs to the
 fragment or module whose code implements its handler. The ~55 attributes
 that appear in BOTH `runtime.js` and a `src/*.js` module are core's
 load/dispatch glue (`_scanForModules`, `dispatchRPC`'s widget-scoping
-reads), not ownership — an attribute owned by a `src/<name>.js` module maps
+reads), not ownership. An attribute owned by a `src/<name>.js` module maps
 to that module. `data-fui-compute` is the one overlap to note: it is owned
 by the `compute` core fragment (which step 2 extracts from today's
 `src/compute.js`), not by the module of the same name.
 
 ### Global document state (`__gofastr.doc`)
 
-Persistent state on `<html>`/`<body>` — attributes, classes, and
-runtime-created body children — goes through ONE module: `doc`, defined
+Persistent state on `<html>`/`<body>`, meaning attributes, classes, and
+runtime-created body children, goes through ONE module: `doc`, defined
 at the top of `runtime.js` and exposed as `window.__gofastr.doc`. Its
 frozen `MANIFEST` enumerates every allowed name; the table below mirrors
 it and `core-ui/runtime/doc_manifest_test.go` fails the build when they
@@ -401,29 +401,29 @@ manifest still land (the guard never breaks the page) but emit a
 
 The API: `setHtmlAttr(name, v)` / `removeHtmlAttr(name)` for `<html>`
 attributes; `bodyClass(name, on)` for `<body>` classes;
-`lockScroll(owner)` / `unlockScroll(owner)` / `scrollLocked()` — an
+`lockScroll(owner)` / `unlockScroll(owner)` / `scrollLocked()`: an
 owner-refcounted viewport lock (a `Set` of owners; the
 `documentElement.style.overflow` lock releases only when the LAST owner
 unlocks, so a lightbox over a modal, or any second locker, can't release
-the lock early); `singleton(id, factory)` — returns the existing body
+the lock early); `singleton(id, factory)`, which returns the existing body
 child with that id (SSR-provided elements are adopted without invoking
 the factory) or creates and appends it once; `appendBody(el)` for
-non-singleton body children (widget chrome, backdrops); and `reattach()`
-— re-appends any runtime-created singleton that lost its parent, called
+non-singleton body children (widget chrome, backdrops); and `reattach()`,
+which re-appends any runtime-created singleton that lost its parent, called
 by the SPA cross-chain swap after it replaces the layout shell.
 
 | Surface | Name | Writer | Consumer |
 |---|---|---|---|
 | `<html>` attr | `aria-busy` | core runtime during an in-flight SPA-nav fetch (`doc.setHtmlAttr`), removed when the nav settles | CSS can show a progress strip via `[aria-busy="true"]`; assistive tech hears "busy" |
-| `<html>` attr | `data-color-scheme` | `colorscheme.js` — the separate SYNCHRONOUS `<head>` bootstrap (plus the theme toggle via `window.__gofastr_colorScheme.set`). It must stay a separate sync script so dark tokens apply before first paint (FOUC); it runs before `runtime.js` exists, so it writes directly. Enumerated in the manifest as documentation | every `--color-*` token block; `<meta name="color-scheme">` mirrors it for UA controls |
+| `<html>` attr | `data-color-scheme` | `colorscheme.js`, the separate SYNCHRONOUS `<head>` bootstrap (plus the theme toggle via `window.__gofastr_colorScheme.set`). It must stay a separate sync script so dark tokens apply before first paint (FOUC); it runs before `runtime.js` exists, so it writes directly. Enumerated in the manifest as documentation | every `--color-*` token block; `<meta name="color-scheme">` mirrors it for UA controls |
 | `<html>` attr | `data-fui-os` | core runtime at boot (`doc.setHtmlAttr`) | `framework/ui.ShortcutHint` CSS picks ⌘ vs Ctrl glyphs |
-| `<html>` attr | `data-fui-static` | the static exporter (`framework/static.Builder`), server-side only — the runtime never writes it. Enumerated as documentation | runtime static-mode guards read it at boot |
+| `<html>` attr | `data-fui-static` | the static exporter (`framework/static.Builder`), server-side only. The runtime never writes it. Enumerated as documentation | runtime static-mode guards read it at boot |
 | `<body>` class | `fui-sse-down` | NOT written by core-ui (the per-widget SSE block that owned it is gone). Kiln's dev-mode reload client (`kiln/live/reload.go`) toggles it on its EventSource `error`; app surfaces should read `window.__gofastr.sseStatus` / `pollStatus` instead | CSS connection-state styling (kiln panel dot) |
-| `<body>` class | `fui-sse-up` | same as `fui-sse-down` — kiln dev-mode reload client only | CSS connection-state styling |
-| `<body>` singleton | `fui-backtotop-sentinel` | backtotop module (`doc.singleton`) — one shared scroll sentinel for every BackToTop button | its own IntersectionObserver |
-| `<body>` singleton | `fui-nav-toast` | core `_showNavToast` (`doc.singleton`) — nav-failure / static-mode notices | user-visible mini toast; styled by `.fui-nav-toast` in `frameworkBuiltinCSS`; e2e tests target `#fui-nav-toast` |
-| `<body>` singleton | `fui-toast-fallback` | core `_fallbackToast` (`doc.singleton`) — the degraded, unstyled toast region used when the toasts module fails to load. Distinct from the styled toast stack by design | user-visible fallback notices; carries `data-fui-toast-fallback` for tests/CSS |
-| `<body>` singleton | `fui-toast-stack-auto` | toasts module `NS.toast` (`doc.singleton`) — created only when the page has no SSR `[data-fui-toast-stack]` container | toast items; carries `data-fui-toast-stack="__auto"` |
+| `<body>` class | `fui-sse-up` | same as `fui-sse-down`: kiln dev-mode reload client only | CSS connection-state styling |
+| `<body>` singleton | `fui-backtotop-sentinel` | backtotop module (`doc.singleton`): one shared scroll sentinel for every BackToTop button | its own IntersectionObserver |
+| `<body>` singleton | `fui-nav-toast` | core `_showNavToast` (`doc.singleton`): nav-failure / static-mode notices | user-visible mini toast; styled by `.fui-nav-toast` in `frameworkBuiltinCSS`; e2e tests target `#fui-nav-toast` |
+| `<body>` singleton | `fui-toast-fallback` | core `_fallbackToast` (`doc.singleton`): the degraded, unstyled toast region used when the toasts module fails to load. Distinct from the styled toast stack by design | user-visible fallback notices; carries `data-fui-toast-fallback` for tests/CSS |
+| `<body>` singleton | `fui-toast-stack-auto` | toasts module `NS.toast` (`doc.singleton`): created only when the page has no SSR `[data-fui-toast-stack]` container | toast items; carries `data-fui-toast-stack="__auto"` |
 
 The viewport scroll lock (`documentElement.style.overflow`) is also
 owned by `doc` but is keyed by owner, not name: the widgets module locks
@@ -437,19 +437,19 @@ Deliberately NOT wrapped: transient DOM that exists only within one
 synchronous operation (the copy module's clipboard `<textarea>`), and
 pure reads (`#fui-route-announce` is SSR-provided; the runtime only
 writes its text). Per-widget body children (chrome, backdrops) are
-transient per-widget elements, not singletons — they go through
+transient per-widget elements, not singletons. They go through
 `doc.appendBody` and are removed on dismiss.
 
 ### Pane-host layout (`framework/ui.PaneHost`)
 
-`PaneHost` is a layout shell — an always-visible **primary** pane plus
+`PaneHost` is a layout shell: an always-visible **primary** pane plus
 one or two openable side panes (`secondary`, `tertiary`). It owns the
 PANE LIFECYCLE (show/hide, focus handoff on open, focus restore on
 close, and a responsive collapse), not content loading. SSR emits the
 primary plus any side panes; a side pane closed at first paint carries
 `hidden` and the host carries an open modifier class per open pane, so
 first paint matches server state (Hard Rule 6) and the CSS grid columns
-derive purely from those classes — no inline style.
+derive purely from those classes, no inline style.
 
 Open/close/swap is in-page state, never a URL route (Hard Rule 1).
 Triggers are attribute-driven (`data-fui-pane-open` / `-close` /
@@ -457,12 +457,12 @@ Triggers are attribute-driven (`data-fui-pane-open` / `-close` /
 `closePane` / `swapPane`. To fill a pane from a link, use the EXISTING
 `data-fui-rpc` + `data-fui-rpc-signal` rail broadcasting into a
 `data-fui-signal` + `data-fui-signal-mode="html"` region inside the
-pane — `PaneHost` does not fetch.
+pane. `PaneHost` does not fetch.
 
 URL round-tripping is opt-in per host: set `PaneHostConfig.DeepLinkParam`
 and label each trigger with `interactive.PaneKey`. Opening writes
 `?<param>=<pane>:<key>`, closing strips it, and Back replays the state by
-re-clicking the matching trigger — so the RPC that fills the pane runs
+re-clicking the matching trigger, so the RPC that fills the pane runs
 again and the content comes back with it, not just the open column. This
 does not make a pane a route: the parameter records in-page state so
 refresh and share reproduce it, which is the same thing widget deep
@@ -474,7 +474,7 @@ pane closed, then pops it open after hydration.
 ### Intercepting routes (`app.InterceptFrom`)
 
 One detail screen, two presentations. `/products/42` is an ordinary
-page registration and stays the canonical render — hard load, refresh,
+page registration and stays the canonical render: hard load, refresh,
 external link, and any soft navigation from elsewhere all render it in
 full. A soft navigation that started on the declared origin route
 presents the same render as a drawer or sheet over that page, which
@@ -486,7 +486,7 @@ The split is decided on the SERVER. The runtime sends
 and agrees only when the target screen declared it. Agreement is
 signalled by `X-Gofastr-Overlay: drawer|sheet`, and no header means the
 client falls back to the ordinary `<main>` swap. `X-Gofastr-From` is
-client-controlled and never trusted as an instruction — a forged value
+client-controlled and never trusted as an instruction: a forged value
 can change the wrapper element and nothing else, because routing,
 policy, params, `Load`, and content are identical on both paths.
 
@@ -495,7 +495,7 @@ Costs stay off pages that don't use it. The route manifest carries
 module only when some entry has one, and the UI host injects
 `app.InterceptOverlayCSS()` under the same condition.
 
-Intercepted HTML never enters the screen cache — the cache is keyed by
+Intercepted HTML never enters the screen cache. The cache is keyed by
 path and holds canonical page renders, so storing an overlay variant
 would poison a later direct visit. Closing routes through
 `history.back()`, so Back, Escape, the backdrop, and any
@@ -522,7 +522,7 @@ CSS.
 ### Shared state: the signal store (`core-ui/store`)
 
 The signal bus is stringly-typed and starts empty. `core-ui/store` layers a
-typed, server-declared API on top and — crucially — **seeds initial values
+typed, server-declared API on top and **seeds initial values
 into the client store at SSR**, so `getSignal` returns the server value on
 first paint instead of `undefined`. A `Slice[T]` is a *renderer*: declaring
 it registers a seed, and its `Bind`/`BindAttr`/`BindHTML` helpers emit both
@@ -550,9 +550,9 @@ client-side with no per-consumer round-trip.
   from fragments (`core-ui/runtime/frag/*.js`, see [§ Fragments](#fragments-runtime-composition)):
   the `kernel` fragment assigns `window.__gofastr` as a fresh object during
   boot, and `rpc`/`signals`/`nav` extend it via `Object.assign`. A
-  `_reducers` property set before the IIFE runs is therefore replaced —
-  register after `runtime.js` so it survives. (The contract is unchanged
-  from the pre-split "assigns wholesale" wording; the reason is the same —
+  `_reducers` property set before the IIFE runs is therefore replaced.
+  Register after `runtime.js` so it survives. (The contract is unchanged
+  from the pre-split "assigns wholesale" wording; the reason is the same:
   the kernel fragment's `window.__gofastr = {…}` line is the fresh-object
   assignment that overwrites anything set earlier.)
 
@@ -578,7 +578,7 @@ Both responses are immutable for one year. SSR emits the inert
 `#gofastr-compute-assets` JSON manifest beside
 `#gofastr-runtime-modules`; the `compute` demand module uses it to build
 versioned URLs. A page opts in with the single `data-fui-compute` marker.
-That marker only loads the module — it does not declare a task or construct
+That marker only loads the module. It does not declare a task or construct
 DOM. Island/widget code calls `window.__gofastr.compute.task(worker, fn,
 payload)`, `wasmURL(name)`, and `dispose(worker)`.
 
@@ -609,13 +609,13 @@ NetworkRetryBanner, app code) sees updates without re-reading:
 
 | Field | Updated when |
 | --- | --- |
-| `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error` and on `pagehide` (the transport closes when the page hides — bfcache entry or unload — and reconnects on `pageshow.persisted`, so a navigated-away page never hoards one of the tab's ~6 per-host connections) |
+| `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error` and on `pagehide` (the transport closes when the page hides, bfcache entry or unload, and reconnects on `pageshow.persisted`, so a navigated-away page never hoards one of the tab's ~6 per-host connections) |
 | `window.__gofastr.sseStatus.lastEventAt` | every received `island` frame and on `open` (a `Date.now()` ms timestamp) |
 | `window.__gofastr.sseStatus.retryCount` | incremented on each transport error, reset to 0 on `open` |
 
 Connect/disconnect transitions also dispatch
 `document.dispatchEvent(new CustomEvent('gofastr:sse-status', { detail: sseStatus }))`.
-Per-frame updates only touch `lastEventAt` silently — no event is
+Per-frame updates only touch `lastEventAt` silently. No event is
 fired per message, to avoid a notification storm. The `gofastr:`
 prefix matches the existing `gofastr:navigate` convention. The
 NetworkRetryBanner reads `lastEventAt` for its silence trigger and
@@ -625,7 +625,7 @@ listens for the event to re-probe its health endpoint on reconnect.
 
 Presence rosters aggregate across `serve` replicas over the existing
 `core/fanout` transport, on a dedicated `gofastr.presence` topic parallel
-to the `gofastr.islands` invalidation lane — same transport, disjoint
+to the `gofastr.islands` invalidation lane: same transport, disjoint
 topics, disjoint payload shapes. Invalidations stay event-style and
 lossy; presence is lossy *self-healing state*: each replica broadcasts
 its full local roster per topic on join/leave and on a 15 s heartbeat,
@@ -642,7 +642,7 @@ The contract points that must not drift:
   deduplicated by identity; with no fanout configured it is
   byte-identical to the single-replica result.
 - Announcements carry ONLY what `PresenceRoster` already exposes
-  (`UserID`, `DisplayName`) — never session ids. There is still no
+  (`UserID`, `DisplayName`), never session ids. There is still no
   ungated HTTP roster endpoint.
 - Remote replicas are capped per topic (512) so a forged-replica-id
   flood cannot grow the table unboundedly.
@@ -651,11 +651,11 @@ The contract points that must not drift:
 
 A process module (framework #37) never emits HTML/CSS/JS or `data-fui-*`.
 It returns a `ui.node.v1` JSON tree; `core-ui/uinodev1.Validate` produces a
-typed `*Tree` — closed component enum, typed scalar props (no
+typed `*Tree`: closed component enum, typed scalar props (no
 `map[string]any`), host-relative URL-guarded, depth/size-capped. Then
 `framework/uihost/uinoderender.Renderer` maps that tree to `framework/ui` +
-`core-ui/html` primitives, assigning **every** id/class/ARIA/variant and
-every `data-fui-rpc` URL itself — the module supplies none. ActionRefs
+`core-ui/html` primitives and assigns **every** id/class/ARIA/variant and
+every `data-fui-rpc` URL itself. The module supplies none. ActionRefs
 resolve host-side through an injected resolver (actionRef → installed route
 id → namespaced URL); an unknown ref fails the whole render closed rather
 than emitting a guessed URL.
@@ -665,7 +665,7 @@ IR, through which a third party could forge the trusted `data-fui-*`
 attributes `runtime.js` acts on via its `extraAttrs` passthrough). The
 closed wire type makes that forgery **unrepresentable**, not merely denied:
 `Bindings`, `Actions`, and free prop bags have no place to live in the
-typed tree. A validated tree may never panic the renderer — the two named
+typed tree. A validated tree may never panic the renderer: the two named
 hazards (`html.Section` requiring a label, `ui.DataTable` panicking on empty
 columns) are guarded, not `recover`'d, so a real component bug surfaces
 rather than hides.
@@ -678,7 +678,7 @@ the rest of this document:
 
 - **Chrome injection.** `WithPWA` adds `<link rel="manifest">` (+ a
   `theme-color` meta when configured) to `<head>` and an external
-  `<script src="/__gofastr/pwa/register.js" defer>` before `</body>` —
+  `<script src="/__gofastr/pwa/register.js" defer>` before `</body>`:
   no inline JS, same CSP posture as `runtime.js`. Routes mounted:
   `/manifest.webmanifest`, `/service-worker.js` (root-scoped),
   `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`.
@@ -689,16 +689,16 @@ the rest of this document:
   for custom mounts) and ignores non-GET, so island RPCs, SSE streams,
   sessions, and auth always hit the network untouched. Documents are
   network-first and never cached (SSR HTML can be personalized); only
-  the versioned app-shell precache (runtime, split modules under their
-  `?v=<hash>` URLs, app.css, offline page + its per-component
-  stylesheets — never the comp-bundle, whose names-set is per-page —
-  icons, declared extras) lives in Cache Storage, and nothing is added
-  at runtime. Matching is exact: `?v=` content-addressed URLs are
+  the versioned app-shell precache lives in Cache Storage, and nothing
+  is added at runtime. The precache holds the runtime, split modules
+  under their `?v=<hash>` URLs, app.css, the offline page + its
+  per-component stylesheets, icons, and declared extras, never the
+  comp-bundle, whose names-set is per-page. Matching is exact: `?v=` content-addressed URLs are
   cache-first (immutable), everything else is network-first with the
   cache as offline fallback, so post-deploy HTML never pairs with the
   old deployment's runtime/CSS.
 - **The offline screen renders through the document shell but NOT the
-  app layout** — it is precached at install time, so nothing
+  app layout**: it is precached at install time, so nothing
   personalized may render into it.
 - **Updates never force a reload.** No `skipWaiting`; a waiting worker
   dispatches `gofastr:pwa-update` on `window` (via register.js) and
@@ -724,8 +724,8 @@ work the moment you drop a `<form>` into the page.
 | `data-fui-spa` (no/urlencoded enctype) | `application/x-www-form-urlencoded`               | `r.ParseForm()` + `r.PostFormValue`  |
 | `data-fui-rpc="/some/endpoint"`        | Per the RPC contract (see Widgets section)        | RPC handler                          |
 
-Every other form — no special attribute, default or `urlencoded` or
-`multipart/form-data` enctype — is **NOT intercepted**. The browser
+Every other form, with no special attribute and a default or `urlencoded`
+or `multipart/form-data` enctype, is **NOT intercepted**. The browser
 submits it the standard way: POST body matches enctype, Set-Cookie
 headers apply, 303→Location is followed, file inputs upload natively.
 
@@ -735,7 +735,7 @@ When the interceptor IS active and the handler responds with a `30x`
 + `Location` header, the runtime navigates to the location via the
 SPA navigator (no hard refresh between same-app pages), falling back
 to `window.location.assign`. For the non-intercepted default path,
-redirect-following is the browser's own job — same result.
+redirect-following is the browser's own job, same result.
 
 ```go
 http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
@@ -744,14 +744,14 @@ http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 ### Cookie-set + redirect: the canonical auth flow
 
 ```go
-// /auth/login form handler — battery/auth ships this out of the box.
+// /auth/login form handler. battery/auth ships this out of the box.
 http.SetCookie(w, sessionCookie)
 http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
 ```
 
 The runtime preserves the cookie and follows the redirect, so a form
 POST to `/auth/login` from an SSR login page lands the user on the
-next screen without a hard refresh — and without the host needing
+next screen without a hard refresh, and without the host needing
 client-side glue.
 
 ## The three failure modes (do not repeat)
@@ -764,7 +764,7 @@ Future agents: **if you find yourself doing one of these, stop and re-read this 
 
 That breaks the model for two reasons:
 - **State-change interactions** like pagination should NOT be `<a href="?p=2">` links at all. They are island RPCs. The fact that I built pagination as a route-changing link is the root cause; "fixing" the link interception only papered over it.
-- **Cross-page navigation** (a real `/a` → `/b`) IS supposed to be intercepted (Angular-router style with cache). Don't disable that to "fix" pagination — pagination wasn't a route in the first place.
+- **Cross-page navigation** (a real `/a` → `/b`) IS supposed to be intercepted (Angular-router style with cache). Don't disable that to "fix" pagination. Pagination wasn't a route in the first place.
 
 ### Failure 2: "Make every interaction a server round-trip via full nav"
 > Symptom: clicking a sort header reloads the entire page.
@@ -787,23 +787,23 @@ server do the math.
 > rules; hand-rolled `<div class="…">` structure; overriding a component's
 > internals from outside via a CSS var or descendant selector.
 
-Caught 2026-06 building the Meridian flagship — ~70 bespoke rules accreted
+Caught 2026-06 building the Meridian flagship: ~70 bespoke rules accreted
 in the generator before anyone noticed, half of them re-implementing or
 working around components that already existed (`ui.Grid`, `ui.Stack`,
 `ui.ThemeToggle`) and a token that already existed (`--font-heading`).
 
 Why it's seductive and why it's wrong: a generator's (or page's) local
 success metric is "does this surface look right?", and inline CSS
-satisfies it **instantly**. The cost — CSS duplicated from the design
-system, only *this* surface gets it, divergence from every other surface —
-is invisible until someone asks "why does the generator ship CSS?". Each
+satisfies it **instantly**. The cost stays invisible until someone asks
+"why does the generator ship CSS?": CSS duplicated from the design
+system, only *this* surface gets it, divergence from every other surface. Each
 addition is individually defensible ("I need a container → add container
 CSS"); the **sum** is drift. There is no single wrong step, so a per-step
 instinct won't catch it. The tripwire is the *cumulative* shape: a
 `*BaseCSS` string that keeps growing, an invented `.mrd-`/`.gofastr-`
 class, a raw property where a `var(--*)` token belongs.
 
-The fix is **One styling surface** — see below. Treat a surface that needs
+The fix is **One styling surface**, described below. Treat a surface that needs
 CSS the components don't provide as a *design-system gap to fill upstream*,
 not a patch. The blueprint composing the design system is the system's
 completeness test: when it can't, you found the gap.
@@ -817,12 +817,12 @@ completeness test: when it can't, you found the gap.
   user-action-via-SSE), so connection-pool concerns stay manageable.
 - **Scalability**: HTTP/2 multiplexes RPCs; a paginating user fires ~1
   request per click. SSE per session is one long-lived connection only
-  for the genuine push channel — it is NOT how user actions reach the
+  for the genuine push channel. It is NOT how user actions reach the
   server. Mixing the two is fine; do not collapse them.
 - **Server is source of truth**: pagination math, sort comparators,
-  filtering rules, validation — all live in Go. The client never
+  filtering rules, and validation all live in Go. The client never
   re-implements them. JS code shipped to the browser stays small and
-  generic — not by being tiny in source (the runtime is ~7,400 lines of
+  generic, not by being tiny in source (the runtime is ~7,400 lines of
   vanilla JS: a core `runtime.js` plus per-feature split modules under
   `core-ui/runtime/src/`), but by being carved and budgeted: a page
   loads `core.js` (≤12.5 KB gzipped, enforced by
@@ -836,13 +836,13 @@ completeness test: when it can't, you found the gap.
 
   The budget policy: 12.5 KB sits under TCP's initial congestion window
   (~14 KB ≈ 10 packets), so the core arrives in the first round trip on
-  a cold connection — that cliff is what the number protects; smaller
+  a cold connection. That cliff is what the number protects; smaller
   buys nothing, bigger costs an RTT. When a budget trips, **carve a
-  feature into a demand module — never raise the line.** Carving
+  feature into a demand module, never raise the line.** Carving
   candidates are features only some pages use (SSE status chrome,
   flash-on-update, tabs aria mirroring); nav and island RPC must stay
   in core, because a demand module costs one extra request at first
-  use — fine for drag-dismiss, fatal for the click path.
+  use: fine for drag-dismiss, fatal for the click path.
 - **Hydration on SSR**: the first paint is a fully-rendered, accessible,
   scrape-able HTML document. Clients without JS get the same content,
   just without the interactivity layer. SEO + accessibility come for free.
@@ -856,10 +856,10 @@ completeness test: when it can't, you found the gap.
 ### How to build a page
 
 1. Implement `component.Component` (`Render() render.HTML`). Optionally also:
-   - `app.ScreenTitler` / `app.ScreenDescriber` / `app.ScreenTyper` — individual optional interfaces so `app.Register(path, comp, layout)` reads just the metadata the component declares. Implement one, two, or all three (the combined `app.ScreenSpec` embeds all three for convenience). `ScreenTyper` defaults to `ScreenPage` when not implemented.
-   - `app.ScreenLoader` — `Load(ctx) error` runs once per request after DI injection, before render
-   - `app.ParamSetter` — `SetParams(map[string]string)` receives route params from dynamic paths
-   (`Screen` itself is a struct value the router holds — not the interface you implement on your component.)
+   - `app.ScreenTitler` / `app.ScreenDescriber` / `app.ScreenTyper`: individual optional interfaces so `app.Register(path, comp, layout)` reads just the metadata the component declares. Implement one, two, or all three (the combined `app.ScreenSpec` embeds all three for convenience). `ScreenTyper` defaults to `ScreenPage` when not implemented.
+   - `app.ScreenLoader`: `Load(ctx) error` runs once per request after DI injection, before render
+   - `app.ParamSetter`: `SetParams(map[string]string)` receives route params from dynamic paths
+   (`Screen` itself is a struct value the router holds, not the interface you implement on your component.)
 2. Inside Render, compose `core-ui/html` (1:1 tag primitives) +
    `core-ui/patterns` (accordion, tabs, pagination…) + `framework/ui`
    (semantic components like PageHeader, FormField, DataTable).
@@ -895,15 +895,15 @@ The flow:
 1. **Initial load** (`/customers?p=2`):
    `Screen.Load(ctx)` reads `app.QueryFromContext(ctx).Get("p")` and
    pre-builds the island in its page-2 state. SSR ships fully-rendered
-   page 2. The user can refresh and get exactly this — no JS required.
+   page 2. The user can refresh and get exactly this, no JS required.
 
 2. **Click "page 3" inside the island**:
    - The button is `data-fui-rpc="/islands/customers/page" data-fui-rpc-method="POST"`.
    - The RPC handler reads `{"page": 3}`, mutates server-side state,
      renders the new rows, and returns the HTML.
    - **The handler also returns an `X-Gofastr-Push-State: ?p=3` header.**
-     The runtime applies it via `history.pushState` — URL becomes
-     `?p=3` — but **does not** trigger a fetch. Just URL update + island swap.
+     The runtime applies it via `history.pushState`. The URL becomes
+     `?p=3` but the runtime **does not** trigger a fetch. Just URL update + island swap.
    - Result: URL and DOM are now consistent. Bookmark works. Share works.
 
 3. **Browser back**:
@@ -918,7 +918,7 @@ The flow:
      stored scroll position is restored after the swap.
    - This means popstate triggers a full screen-partial re-fetch, not
      a per-island patch. It's coarser than the click path but it's
-     simpler and correct — and it's still way cheaper than a hard
+     simpler and correct, and it's still way cheaper than a hard
      reload.
 
 4. **Refresh / share / bookmark**: trivially correct because step 1
@@ -934,7 +934,7 @@ triggers a screen-partial fetch.*
 
 ## Theme
 
-The framework's design tokens live in `core-ui/style.Theme` — a
+The framework's design tokens live in `core-ui/style.Theme`, a
 **typed Go struct** with a fixed canonical field set: `Colors`,
 `Spacing`, `Radii`, `Fonts`, `Breakpoints`, `Shadows`, `ZIndex`,
 `Durations`, `Typography`. Every token carries a `Name` (the CSS
@@ -952,16 +952,16 @@ t.Colors.Primary.Value   // → "#4F46E5"
 **Components always emit `var(--*)` references.** Build-time
 resolution of `{tokens.text}` to literal hex values has been
 removed; every reference is a CSS variable indirection. This is
-required for section-level theme overrides via the CSS cascade —
+required for section-level theme overrides via the CSS cascade:
 a parent `.fui-theme-<hash> { --color-text: #f4f4f5 }` overrides
 every descendant's `var(--color-text)` automatically. The hash is
 content-derived from the overridden tokens (see `RegisterThemeOverride`),
-so apps don't pick the class name — they pass an override struct and
+so apps don't pick the class name. They pass an override struct and
 get a stable hash back.
 
 ### Overriding tokens
 
-Apps mutate fields directly — there's no MergeThemes helper:
+Apps mutate fields directly. There's no MergeThemes helper:
 
 ```go
 t := style.DefaultTheme()
@@ -998,7 +998,7 @@ Per-tenant subtree theming? Use `style.RegisterThemeOverride` +
 `ui.Themed`:
 
 ```go
-// Register at package init — content-addressed, so re-registering
+// Register at package init: content-addressed, so re-registering
 // the same theme returns the same handle and ships CSS only once.
 var Dark = style.RegisterThemeOverride(func() style.Theme {
     t := style.DefaultTheme()
@@ -1018,10 +1018,10 @@ ui.Themed(Dark,
 The framework emits one `.fui-theme-<hash> { --color-…: …; }` block
 in `app.css` for every registered override. The wrapped `<div
 class="fui-theme-<hash>">` scopes the override via CSS variable
-cascade — no per-component changes, no inline `<style>`, no extra
+cascade: no per-component changes, no inline `<style>`, no extra
 HTTP requests beyond the always-present app.css.
 
-### app.css — one asset, one request
+### app.css: one asset, one request
 
 The framework serves a single `/__gofastr/app.css` per app:
 theme :root custom properties concatenated with `WithCustomCSS`
@@ -1034,16 +1034,16 @@ references surface clearly.)
 
 ## Component CSS
 
-Every component-owned stylesheet ships as a real `<link>` —
-**never inline** — loaded lazily per-component, dedup'd globally,
+Every component-owned stylesheet ships as a real `<link>`,
+**never inline**, loaded lazily per-component, dedup'd globally,
 and **always scoped** to `[data-fui-comp="<name>"]`. There is no
 "unscoped component CSS"; global rules (resets, typography, theme
 tokens) live in `theme.css` / `WithCustomCSS`.
 
 ### One styling surface (who ships CSS, and who must not)
 
-There is exactly one place each kind of styling lives. Nothing else —
-no app, no battery, no generator, no page — ships CSS:
+There is exactly one place each kind of styling lives. Nothing else
+ships CSS: no app, no battery, no generator, no page.
 
 | Styling | Lives in | Mechanism |
 | --- | --- | --- |
@@ -1053,16 +1053,16 @@ no app, no battery, no generator, no page — ships CSS:
 | Colors / fonts / dark scheme | `core-ui/style` | theme tokens (`--color-*`, `--font-*`, `Theme.DarkColors`) |
 
 **The blueprint generator and every app ship ZERO bespoke CSS.** They
-*compose* the design system — `ui.Hero`, `ui.Grid`, `ui.DetailList`,
-`ui.AuthCard`, `ui.Form`, `ui.SiteHeader{Drawer: Sheet}`,
-`app.NewLayout().WithContainer()` — and inherit all styling from it. Proof
+*compose* the design system and inherit all styling from it: `ui.Hero`,
+`ui.Grid`, `ui.DetailList`, `ui.AuthCard`, `ui.Form`,
+`ui.SiteHeader{Drawer: Sheet}`, `app.NewLayout().WithContainer()`. Proof
 the system is cohesive and composable: a generated app's `BlueprintBaseCSS()`
 returns `""`.
 
 When a surface needs styling the design system doesn't provide, the fix is
 **upstream**: add or extend a component / layout / token, then compose it.
 Never inline CSS, never a `*BaseCSS` string of rules, never override a
-component's internals from outside — give the component a config/variant
+component's internals from outside. Give the component a config/variant
 instead (`SiteHeaderConfig.Drawer`, `Layout.WithContainer`,
 `FormConfig.ExtraAttrs`, a new theme token). See "Failure 4" above.
 
@@ -1079,7 +1079,7 @@ scans newly inserted DOM (cross-page swap, island response, widget
 mount) and lazy-loads any new component's CSS as a `<link>` once
 per session, dedup'd by `data-fui-style="<name>"`. The browser
 caches the stylesheet by URL (`/__gofastr/comp/<name>.css?v=<hash>`)
-under `immutable` headers in prod — content-addressed via the
+under `immutable` headers in prod, content-addressed via the
 component's CSS hash, so a deploy that changes the sheet busts the
 URL automatically.
 
@@ -1092,8 +1092,8 @@ URL automatically.
 | `LoadPrewarm`| 0 (deferred)               | `LoadAuto` plus a throttled `requestIdleCallback` prefetch (serialized, one in flight). Use for components that are likely soon (a hotkey-opened palette). |
 
 All three converge on `loadComponentCSS(name)`. The function is
-**synchronous** — no `await` between the existence check and
-`appendChild`, plus a `_pendingLinks` guard — so promoting a
+**synchronous**: no `await` between the existence check and
+`appendChild`, plus a `_pendingLinks` guard, so promoting a
 component across modes or having two scans race never produces a
 duplicate request.
 
@@ -1120,8 +1120,8 @@ The host SSR-embeds an inert JSON block in `<head>`:
 
 The runtime reads `JSON.parse(document.getElementById('gofastr-catalog').textContent)`
 at boot, so `loadComponentCSS` can resolve a marker name to a URL.
-This is strict-CSP-clean (no inline JS, no separate script src) —
-the legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
+This is strict-CSP-clean (no inline JS, no separate script src).
+The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### Adding a styled component
 
@@ -1160,10 +1160,10 @@ combobox, disclosure, infinitescroll, multiselect, nestedlist,
 pagination, progress, skeleton, sortablelist, tabs, tree) uses
 `registry.RegisterStyle` and wraps its top-level rendered element
 with `Style.WrapHTML(...)`. Class selectors stay class-based
-(`.accordion`, `.tabs`, `.nested-list`) — the marker only signals
+(`.accordion`, `.tabs`, `.nested-list`); the marker only signals
 to the auto-loader "fetch this stylesheet". No host setup required.
 
-**Legacy `BaseCSS() string` exports are forbidden** — host apps used
+**Legacy `BaseCSS() string` exports are forbidden**: host apps used
 to import each pattern and concatenate `BaseCSS()` into their custom
 CSS via `WithCustomCSS`, but a single forgotten concat shipped a
 component without any styling on the page (the 2026-05-19 nestedlist
@@ -1194,8 +1194,8 @@ func Render(cfg Config) render.HTML {
 const baseCSS = `.foo { ... }`
 ```
 
-**Registration names are bare.** A pattern's `RegisterStyle` name — and the
-matching `data-fui-comp` value its CSS scopes to — is the package name
+**Registration names are bare.** A pattern's `RegisterStyle` name, and the
+matching `data-fui-comp` value its CSS scopes to, is the package name
 verbatim (`accordion`, `breadcrumbs`, `multiselect`, `sortablelist`), not an
 `ui-`-prefixed alias. The prefix matches no convention in the repo and only
 hides which package owns the stylesheet.
@@ -1223,41 +1223,41 @@ the inline `<script id="gofastr-catalog">` JSON block and `/__gofastr/comp/<name
 
 ```
 core-ui/
-  app/         — screen + router + layout + request-in-context helpers
+  app/         : screen + router + layout + request-in-context helpers
                  (the URL → rendered page pipeline)
-  di/          — dependency injection container (used by app)
-  html/        — semantic HTML primitives, 1:1 with HTML tags
+  di/          : dependency injection container (used by app)
+  html/        : semantic HTML primitives, 1:1 with HTML tags
                  (Div, Button, Heading, Form, Table…)
-  patterns/    — composed UI patterns (not 1:1 with HTML):
+  patterns/    : composed UI patterns (not 1:1 with HTML):
                  accordion, breadcrumbs, combobox, disclosure,
                  infinitescroll, multiselect, nestedlist, pagination,
                  progress, scrollspy, skeleton, sortablelist, tabs, tree
-  component/   — Component / InteractiveComponent interfaces (the contract
+  component/   : Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
-  interactive/ — declarative data-fui-* attribute builders (RPC, signal
+  interactive/ : declarative data-fui-* attribute builders (RPC, signal
                  bindings, widget chaining) that wrap render.HTML with no JS
-  node/        — the JSON-clean serializable UI element tree (first-party IR;
+  node/        : the JSON-clean serializable UI element tree (first-party IR;
                  dependency-free, composed by blueprint codegen and Kiln)
-  noderender/  — walks a node.Node tree and emits HTML via core-ui/html
+  noderender/  : walks a node.Node tree and emits HTML via core-ui/html
                  (treats the IR as untrusted; see RenderTrustedNode)
-  uinodev1/    — the closed ui.node.v1 wire type + validator for
+  uinodev1/    : the closed ui.node.v1 wire type + validator for
                  process-isolated third-party modules (makes runtime-attribute
                  forgery unrepresentable, unlike the first-party node IR)
-  compute/     — process-global Web Worker + WebAssembly asset registry
-  widget/      — island/widget builder + registration
-  widget/preset/ — opinionated mounting shortcuts:
+  compute/     : process-global Web Worker + WebAssembly asset registry
+  widget/      : island/widget builder + registration
+  widget/preset/ : opinionated mounting shortcuts:
                  Modal, Drawer, Popover, ToastStack, Toast, Banner,
                  FloatingPanel, BottomSheet
-  widget/theme/ — page-level theme tokens + utility classes
-  registry/    — process-global catalog of components whose CSS ships as real
+  widget/theme/ : page-level theme tokens + utility classes
+  registry/    : process-global catalog of components whose CSS ships as real
                  stylesheets loaded on demand (RegisterStyle → *Style handle)
-  store/       — typed shared client state (Slices) seeded into the signal bus
+  store/       : typed shared client state (Slices) seeded into the signal bus
                  at SSR; the server-declared reactive-value primitive
-  island/      — runtime-side island manager
-  seo/         — typed Schema.org structs → JSON-LD blocks for rich results
-  urlsafe/     — the single URL-scheme allow-list every URL sink runs through
-  runtime/     — runtime.js (client) + Go embed wrapper
-  runtime/src/ — code-split runtime modules (loaded on demand):
+  island/      : runtime-side island manager
+  seo/         : typed Schema.org structs → JSON-LD blocks for rich results
+  urlsafe/     : the single URL-scheme allow-list every URL sink runs through
+  runtime/     : runtime.js (client) + Go embed wrapper
+  runtime/src/ : code-split runtime modules (loaded on demand):
                  animate, animatedcounter, backtosop, banner, carousel,
                  combobox, compute, computed, conditionalfield, copy,
                  dragdismiss, dropdown, dropzone, fileupload,
@@ -1267,21 +1267,21 @@ core-ui/
                  reveal, scrollspy, searchinput, shortcut, slider,
                  sortablelist, sse, taginput, textarea, themeswitch,
                  toasts, toc, toggleaction, tree, widgets
-  runtime/colorscheme.js — dark/light mode bootstrap (runs sync in <head>
+  runtime/colorscheme.js : dark/light mode bootstrap (runs sync in <head>
                  before CSS parses, reads localStorage + OS hint,
                  sets data-color-scheme on <html>)
-  style/       — theme structs, stylesheet builder, token resolution
-  check/       — .ui.go linter + the no-pattern-BaseCSS / no-inline-* guards
+  style/       : theme structs, stylesheet builder, token resolution
+  check/       : .ui.go linter + the no-pattern-BaseCSS / no-inline-* guards
 
 framework/
-  uihost/      — wires core-ui app onto framework.App router; serves
+  uihost/      : wires core-ui app onto framework.App router; serves
                  runtime.js, app.css (the legacy theme.css / styles.css
                  paths return 410 Gone); handles SSE; client-side
                  navigation partial-fetch endpoint
-  static/      — SSG builder (renders every screen at build time)
-  ui/          — opinionated semantic components on top of core-ui
+  static/      : SSG builder (renders every screen at build time)
+  ui/          : opinionated semantic components on top of core-ui
                  (see full list in the cheat sheet below)
-  ui/theme/    — canonical framework theme tokens
+  ui/theme/    : canonical framework theme tokens
 ```
 
 ---
@@ -1295,12 +1295,12 @@ framework/
 5. **Never** add new `data-fui-*` attributes without updating this doc and the runtime test suite.
 6. **Always** start with `Screen.Load(ctx)` reading initial state (route params, query) and SSR-ing the first paint correctly.
 7. **Always** prefer composing existing widget/preset shortcuts over building a new island from scratch.
-8. **Modals + drawers can deep-link.** Toasts and dropdowns intentionally cannot. If you find yourself wanting a `?toast=…` URL, stop — toasts are ephemeral by definition.
-9. **Animation durations and easings live on the theme** (`Theme.Durations`, `Theme.Easings`). Never hard-code `transition: transform 0.3s ease` in component CSS — read `var(--duration-…)` / `var(--easing-…)` so a single theme tweak retunes every surface.
-9b. **One styling surface — apps and generators ship ZERO CSS.** All styling lives in the design system (component CSS via `registry.RegisterStyle`, layouts via `core-ui/app`, tokens via `core-ui/style`). A surface needing styling the components don't provide is a gap to fix *upstream*, never an inline rule, a `*BaseCSS` string, an invented `.mrd-`/`.gofastr-` class, or a property where a `var(--*)` token belongs. See "Failure 4" + "One styling surface". Survey `framework/ui`/`core-ui` for an existing primitive before hand-rolling.
-10. **State-changing fetches from runtime modules must forward the page's CSRF token.** Read `document.querySelector('meta[name="csrf-token"]')` once per fetch and set `X-CSRF-Token` on the request. `OptimisticAction`'s runtime is the canonical example. Apps verify the token server-side; the runtime doesn't enforce — it just makes the value reachable so each call site doesn't re-implement the lookup.
+8. **Modals + drawers can deep-link.** Toasts and dropdowns intentionally cannot. If you find yourself wanting a `?toast=…` URL, stop: toasts are ephemeral by definition.
+9. **Animation durations and easings live on the theme** (`Theme.Durations`, `Theme.Easings`). Never hard-code `transition: transform 0.3s ease` in component CSS; read `var(--duration-…)` / `var(--easing-…)` so a single theme tweak retunes every surface.
+9b. **One styling surface: apps and generators ship ZERO CSS.** All styling lives in the design system (component CSS via `registry.RegisterStyle`, layouts via `core-ui/app`, tokens via `core-ui/style`). A surface needing styling the components don't provide is a gap to fix *upstream*, never an inline rule, a `*BaseCSS` string, an invented `.mrd-`/`.gofastr-` class, or a property where a `var(--*)` token belongs. See "Failure 4" + "One styling surface". Survey `framework/ui`/`core-ui` for an existing primitive before hand-rolling.
+10. **State-changing fetches from runtime modules must forward the page's CSRF token.** Read `document.querySelector('meta[name="csrf-token"]')` once per fetch and set `X-CSRF-Token` on the request. `OptimisticAction`'s runtime is the canonical example. Apps verify the token server-side. The runtime doesn't enforce; it just makes the value reachable so each call site doesn't re-implement the lookup.
 11. **Async runtime modules set `aria-busy="true"` + `disabled` on the trigger during in-flight RPCs.** Without it, keyboard Enter/Space fires duplicate submits and screen readers don't announce the state change. Clear both on commit / idle / error. `OptimisticAction` and `NetworkRetryBanner` follow this contract.
-12. **Per-instance state lives in a `WeakMap` keyed by the wrapper element** — never module-globals. Multiple instances of the same widget on one page (or two banners, two scrollspies) is a normal scenario; assuming "one per page" is a bug that lands a code review later. Track active instances in a sibling `Set` so SPA-nav teardown can disconnect observers / clear timers without leaking.
+12. **Per-instance state lives in a `WeakMap` keyed by the wrapper element**: never module-globals. Multiple instances of the same widget on one page (or two banners, two scrollspies) is a normal scenario; assuming "one per page" is a bug that lands a code review later. Track active instances in a sibling `Set` so SPA-nav teardown can disconnect observers / clear timers without leaking.
 13. **Runtime modules `disconnect()`/`clearInterval()` per-instance state on `gofastr:navigate`.** SPA navigation replaces the page DOM; the old wrapper becomes detached but the IO / interval keeps a strong ref to its targets until explicitly torn down. Walk the active-instance Set, clean up, then re-scan.
 
 ---
@@ -1390,7 +1390,7 @@ your need:
 | Section break | `framework/ui.Divider` | Native `<hr>` for plain horizontal dividers; `role="separator"` for vertical or labelled (e.g. "OR" between auth options). |
 | Hover/focus hint on a control | `framework/ui.Tooltip` | CSS-only reveal, `aria-describedby` auto-wired. No JavaScript. |
 | Dismissible banner | `framework/ui.Banner` | Full-width banner with optional `localStorage`-persisted dismiss (`data-fui-banner-dismiss-id`). |
-| Pill — filter chip / applied filter / selection | `framework/ui.Tag` | Status variants, optional `Href` (filter link) or `Dismiss` (× RPC). Distinct from `StatusBadge` (read-only). |
+| Pill: filter chip / applied filter / selection | `framework/ui.Tag` | Status variants, optional `Href` (filter link) or `Dismiss` (× RPC). Distinct from `StatusBadge` (read-only). |
 | Active filter chip toolbar | `framework/ui.FilterChipBar` | Toolbar of removable filter chips. Optional "Clear all" action. Island-driven, signal-swapped. |
 | Copy-to-clipboard button | `framework/ui.CopyButton` | Targets any element by CSS selector. Label swap on success. SR announcement via `data-fui-copy-status`. |
 
@@ -1399,7 +1399,7 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Responsive lazy-loaded imagery | `framework/ui.OptimizedImage` | `<picture>` + `srcset`, lazy by default, mandatory `Width`+`Height` to eliminate CLS. |
-| Low-fidelity image placeholder | `Placeholder` on `framework/ui.OptimizedImage` / `PipelineImage` | Takes an inline raster `data:` URI (from `framework/image.BlurHashDataURL` or `Image.Placeholder`) and renders it as a stacked `<img>` behind the real one, positioned by static CSS. Zero JS: a per-instance value cannot go into CSS here (inline style attributes are blocked by the CSP and the `noinlinestyles` linter, and a data URI cannot be enumerated into a class), so an element is the only mechanism. Unusable values are dropped rather than fatal — a placeholder is data, not a caller bug. |
+| Low-fidelity image placeholder | `Placeholder` on `framework/ui.OptimizedImage` / `PipelineImage` | Takes an inline raster `data:` URI (from `framework/image.BlurHashDataURL` or `Image.Placeholder`) and renders it as a stacked `<img>` behind the real one, positioned by static CSS. Zero JS: a per-instance value cannot go into CSS here (inline style attributes are blocked by the CSP and the `noinlinestyles` linter, and a data URI cannot be enumerated into a class), so an element is the only mechanism. Unusable values are dropped rather than fatal: a placeholder is data, not a caller bug. |
 | Overlapping avatar stack | `framework/ui.AvatarGroup` | Readable 10% negative-margin stack with compact corner presence dots and an adaptive-surface "+N" overflow indicator. Size propagates to children. |
 | Animated number counter | `framework/ui.AnimatedCounter` | Ticks from → to on scroll-into-view. Respects `prefers-reduced-motion`. |
 | Text link (inline / action / muted) | `framework/ui.Link` | Three variants: inline prose link, 44px action link, subdued muted link. |

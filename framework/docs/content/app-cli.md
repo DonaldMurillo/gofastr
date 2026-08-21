@@ -1,7 +1,7 @@
 # Ship your API as a CLI
 
 `gofastr generate cli` turns your app's HTTP API into a branded terminal
-client you distribute to *your* customers — the `stripe`/`gh` experience
+client you distribute to *your* customers: the `stripe`/`gh` experience
 for the app you built. The output is a standalone, stdlib-only
 `package main` that imports exactly one thing: your generated
 `entities/client` package. Customers authenticate with a scoped API
@@ -15,12 +15,12 @@ go build ./cmd/myapp
 ```
 
 The generator reads the entity set from your project source
-(`entities/*.go`, the same recovery machinery `gofastr pack` trusts) —
-no blueprint or YAML involved. It needs an enclosing `go.mod` to derive
+(`entities/*.go`, the same recovery machinery `gofastr pack` trusts).
+No blueprint or YAML is involved. It needs an enclosing `go.mod` to derive
 the client import path.
 
 The output is pure stdlib Go, so it builds for every platform Go
-targets — cross-compile releases with `GOOS`/`GOARCH`
+targets. Cross-compile releases with `GOOS`/`GOARCH`
 (`GOOS=windows GOARCH=amd64 go build ./cmd/myapp`), and the config file
 lands in each OS's native config dir (`os.UserConfigDir`). The default
 output directory is `cmd/<binary>/`, the standard installable-main
@@ -57,7 +57,7 @@ group usage and exits 2. `version` prints the binary name.
 
 Per verb:
 
-- **list** — an equality filter flag per field (`--status active`,
+- **list**: an equality filter flag per field (`--status active`,
   comma list = IN), range flags (`--views-gt/-gte/-lt/-lte`) on
   numeric/date/timestamp fields, `--<field>-like` on text fields,
   plus `--sort`, `--page`/`--limit`, `--cursor` (keyset), `--include`,
@@ -65,16 +65,16 @@ Per verb:
   anything else. `-q` appears only when the entity declares
   `SearchFields`; `--trashed` only with `SoftDelete`. `-o table`
   renders an aligned table instead of JSON.
-- **create / update / patch** — per-field flags OR `--json`
+- **create / update / patch**: per-field flags OR `--json`
   (inline, `@file`, or `-` for stdin); the two are mutually exclusive.
   Field flags are presence-faithful: only explicitly-set flags enter
   the body (via `flag.FlagSet.Visit`), so `--published=false` really
-  sends `false` — the payload is built as a raw map, never squeezed
+  sends `false`. The payload is built as a raw map, never squeezed
   through a struct with `omitempty`.
-- **batch-create / batch-update** — `--json` with an array, sent
+- **batch-create / batch-update**: `--json` with an array, sent
   through the atomic `_batch` routes; the `{committed, results[]}`
   envelope prints verbatim and a rollback exits 1.
-- **watch** — subscribes to `GET {entity}/_events` and prints one
+- **watch**: subscribes to `GET {entity}/_events` and prints one
   `{"event":…,"data":…}` line per server event until interrupted.
   No auto-reconnect: wrap it in a shell loop if you need one.
 
@@ -86,7 +86,7 @@ Connection resolution, in order: `--url`/`--token` flags →
 
 ## Auth: scoped API tokens
 
-The CLI sends `Authorization: Bearer gfsk_…` on every request — wire
+The CLI sends `Authorization: Bearer gfsk_…` on every request. Wire
 [`auth.TokenMiddleware`](auth.md#service-accounts--scoped-api-tokens)
 alongside your session middleware, mount `auth.NewTokensPlugin` so
 logged-in users can mint their own scoped tokens in the app, and add
@@ -101,7 +101,7 @@ or CSRF handling. The customer flow:
 
 `--with-token` reads stdin so the token never echoes or lands in shell
 history; the interactive prompt warns that input echoes (the stdlib has
-no termios). `logout` deletes the stored token — revoke it in the app
+no termios). `logout` deletes the stored token. Revoke it in the app
 to invalidate it server-side.
 
 ## Choosing what to expose
@@ -118,20 +118,20 @@ gofastr generate cli --verbs='posts=list,get;comments=*'
 Selection names match the entity name, table, or kebab command form; a
 typo fails generation rather than silently generating everything.
 Verbs: `list get create update patch delete batch-create batch-update
-batch-delete watch`. Excluded entities and verbs render nothing — there
+batch-delete watch`. Excluded entities and verbs render nothing, so there
 is no dead code to strip. The chosen selection is echoed in the
 generated `main.go` header so a later `--force` regen can reproduce it.
 
 Other flags: `--out=cmd/<binary>` (target directory), `--binary=<name>` (command
 name; defaults to the project directory, and drives the env-var
-prefix), `--api-prefix=api` (must match your `AppConfig.APIPrefix` —
+prefix), `--api-prefix=api` (must match your `AppConfig.APIPrefix`:
 it's baked into the client's base URL so customers pass a bare server
 URL), `--dry-run`, `--json`.
 
 ## Extending and regenerating
 
 Generation is one-shot owned code: re-running refuses to overwrite and
-`--force` regenerates — **except `custom.go`, which is only ever
+`--force` regenerates, **except `custom.go`, which is only ever
 created when absent**. That file is the extension seam:
 
 - `customCommands()` is merged over the generated command table; an
@@ -139,13 +139,14 @@ created when absent**. That file is the extension seam:
   a new name adds one. Wrap rather than replace by calling the
   generated run function (`runPostsList(...)`) from your own.
 - `configureClient(c *client.Client)` runs before every request-bearing
-  command — install a custom `http.Transport`, default headers, retries.
+  command. Use it to install a custom `http.Transport`, default headers,
+  or retries.
 - Custom server endpoints are reachable via the client's raw
   `Do(ctx, method, path, body, out)` escape hatch.
 
 Fields with `hidden: true` never appear; `read_only` fields appear as
 list filters but not as mutation flags. Image/file fields are excluded
-entirely — the generated client doesn't speak multipart yet. A field
+entirely. The generated client doesn't speak multipart yet. A field
 whose name collides with a reserved flag (`sort`, `page`, `json`,
 `url`, …) fails generation with the entity and field named: rename the
 field or exclude the entity.
@@ -172,11 +173,11 @@ field or exclude the entity.
   regenerable.
 - **Expecting `--published false` to parse.** Bool field flags follow
   stdlib `flag` semantics: bare `--published` sets true, and the
-  explicit-value form needs `=` — `--published=false`. The space form
+  explicit-value form needs `=`, as in `--published=false`. The space form
   treats `false` as a positional and stops flag parsing.
 
 ## Sibling: SDKs
 
-`gofastr generate sdk` is the library twin of this command — a
+`gofastr generate sdk` is the library twin of this command: a
 downloadable Go module and JS/TS client for the same API, hosted by the
 app itself behind a live docs site. See [sdk](sdk.md).

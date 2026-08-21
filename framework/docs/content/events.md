@@ -33,10 +33,10 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 - Backpressure: each client has a bounded buffer. The default broker
   keeps emitters non-blocking by dropping the oldest queued event when a
   client cannot keep up, so the subscriber retains the latest events.
-  This is intentional — SSE is for push notifications, not durable
+  This is intentional: SSE is for push notifications, not durable
   delivery. Use a real queue for that.
 - Clients that prefer delivery over emitter latency can opt in with
-  `?slow=block` or `X-SSE-Slow: block` — but only on a broker whose host
+  `?slow=block` or `X-SSE-Slow: block`, but only on a broker whose host
   set `SSEBrokerConfig.AllowClientSlowMode`. Without that, the parameter
   is ignored and the subscriber gets oldest-drop. A blocking subscriber
   stalls the publisher's goroutine and therefore every other subscriber,
@@ -45,13 +45,13 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   `live-dashboards.md`.
 - `subscriber_id` is honoured. A reconnect replaces an existing
   subscriber only when the broker can identify the caller through
-  `SSEBrokerConfig.Principal` — a subscriber id is a client-chosen
+  `SSEBrokerConfig.Principal`. A subscriber id is a client-chosen
   label, not an identity. With no `Principal` the broker evicts nothing,
   so a reconnect does not drop the previous entry, and one client cannot
   evict another's stream by guessing its id. `MaxSubscribers` is exact:
   past the cap `Subscribe` rejects rather than evicting. A client whose
   previous connection is half-open keeps its seat until the next
-  heartbeat write fails and that stream unregisters itself — which
+  heartbeat write fails and that stream unregisters itself, which
   reclaims the seat for every client, including the ones that send no
   `subscriber_id`. See `live-dashboards.md` for the `Principal`
   rationale.
@@ -95,7 +95,7 @@ unsubscribe := app.Events().Subscribe(framework.EntityCreated,
 defer unsubscribe()
 ```
 
-`app.Events()` is a method that returns the in-process `*EventBus` —
+`app.Events()` is a method that returns the in-process `*EventBus`,
 the same bus the SSE stream subscribes to.
 
 In-process subscribers are not subject to the 32-event SSE buffer;
@@ -105,20 +105,20 @@ handler will not block other subscribers.
 ## When NOT to use SSE
 
 SSE is **push only**. Responses to user actions (clicks, form submits,
-filter changes) must come back over the request that triggered them —
+filter changes) must come back over the request that triggered them,
 never via SSE. The framework's island runtime enforces this rule on
 the UI side; the same rule applies to your own clients.
 
 SSE is the last rung of the reactivity ladder. Reach for client
 signals, RPC, and polling first; reserve SSE for product semantics
-that need the connection — presence, collaborative editing,
+that need the connection: presence, collaborative editing,
 sub-second internal dashboards. See [Reactivity model](reactivity.md)
 for the full ladder and the decision criteria.
 
 ## See also
 
 - [Live dashboards](live-dashboards.md) composes this push lane into a realistic ops dashboard, with the delivery-semantics decision table.
-- [Reactivity model](reactivity.md) — the four ways to make a page change after first paint; SSE is the last rung.
+- [Reactivity model](reactivity.md) covers the four ways to make a page change after first paint; SSE is the last rung.
 - [UI capability map](ui-capability-map.md) distinguishes realtime UI invalidation from durable workflow delivery.
 - [Presence](presence.md) uses the same push lane for self-healing rosters.
 - [Horizontal scaling](scaling.md) covers fanout and replica topology.
@@ -129,7 +129,7 @@ for the full ladder and the decision criteria.
   If your client needs to know "did my POST succeed?", read the POST
   response. SSE is for the broadcast to *other* clients.
 - **Counting on every event arriving.** Backpressure may drop events.
-  Use SSE for "something changed, refetch" — not for state machine
+  Use SSE for "something changed, refetch", not for state machine
   transitions.
 - **Forgetting `Cache-Control` on a proxy.** Some reverse proxies
   buffer responses; set `X-Accel-Buffering: no` on nginx, etc.
@@ -160,13 +160,13 @@ island push both work regardless of which replica holds the connection.
 Backends: `framework/fanout.NewPostgres` (uses the DB you already have;
 payloads over the NOTIFY size limit spill to a small fallback table)
 and `core/fanout.NewRedis` (bring-your-own client, mirroring
-`cache.RedisClient`). The fanout is caller-owned — close it after the
+`cache.RedisClient`). The fanout is caller-owned: close it after the
 app shuts down.
 
-**Semantics change under fanout — the bus becomes a broadcast.** Every
+**Semantics change under fanout: the bus becomes a broadcast.** Every
 `On`/`Subscribe` handler fires on **every** replica for every event.
 That is exactly right for UI push (each replica notifies its own
-connected clients) and exactly wrong for side effects — a handler that
+connected clients) and exactly wrong for side effects: a handler that
 sends an email would send it N times. Per-event work belongs on the
 durable lane (`WithOutboxConsumer`), which delivers to each consumer
 once regardless of replica count.
@@ -174,8 +174,8 @@ once regardless of replica count.
 Two rules for handlers under fanout:
 
 - **Derive on the origin only.** A handler that emits a *new* event in
-  response to one it received must gate on `event.IsRemote(ctx)` —
-  otherwise every replica derives its own copy and subscribers see
+  response to one it received must gate on `event.IsRemote(ctx)`.
+  Otherwise every replica derives its own copy and subscribers see
   duplicates:
 
   ```go
@@ -211,7 +211,7 @@ at-least-once semantics.
 > **independently**. `StartRelay` lost its `bus` argument; durable
 > delivery now requires declaring named consumers via
 > `framework.WithOutboxConsumer`. **Drain in-flight outbox rows before
-> upgrading** — the new relay ignores the old parent `dead`/single-row
+> upgrading**: the new relay ignores the old parent `dead`/single-row
 > state (the DDL only adds the child `event_outbox_delivery` table; there
 > is no automatic backfill of pre-upgrade rows).
 
@@ -223,7 +223,7 @@ other:
 - **Real-time lane (best-effort, ephemeral).** The live event bus is
   notified post-commit by `EmitEvent`, feeding SSE streams and ephemeral
   `On`/`Subscribe` handlers. This happens whether or not an outbox is
-  configured. It is lossy by design — a crash here drops the in-memory
+  configured. It is lossy by design: a crash here drops the in-memory
   signal, but the durable lane still guarantees delivery.
 - **Durable lane (per-consumer, tracked).** When an outbox is configured,
   the relay delivers each committed row to the consumers declared via
@@ -281,13 +281,13 @@ handler)` + `ob.StartRelay(ctx)`.
   alone: `Event.ID` is the outbox row id and is the *same* for every
   consumer's delivery of that row, so a dedup store keyed on `Event.ID`
   alone that is shared across consumers would let one consumer's success
-  suppress another's delivery — breaking sibling isolation.
+  suppress another's delivery, breaking sibling isolation.
 - **Sibling isolation.** Each (row, consumer) pair has its own delivery
   row, retried and dead-lettered independently. One consumer that errors
   or panics never blocks its siblings or fails the whole row. A parent row
   is marked `dispatched` once it has no `pending` deliveries left (all
   `dispatched`/`dead`/`abandoned`) **and** it is older than the handler
-  grace — it may complete with some deliveries dead; `Replay` /
+  grace. It may complete with some deliveries dead; `Replay` /
   `ReplayConsumer` resurrects them.
 - **Completion is age-gated.** A parent is not marked `dispatched` until it
   is older than `WithHandlerGrace` (default 15m), even once every current
@@ -295,7 +295,7 @@ handler)` + `ob.StartRelay(ctx)`.
   consumer safe: the added consumer's delivery row is created by an
   up-to-date replica on its own poll, and a parent completed too early
   would let the relay skip it forever (expand only touches `pending`
-  parents). **Delivery to consumers is unaffected and prompt** — only the
+  parents). **Delivery to consumers is unaffected and prompt**: only the
   parent's `dispatched` bookkeeping (and retention/GC) lags by the grace.
 - **Dead-letter & replay.** A delivery that returns an error **or
   panics** (the relay reports a panicking consumer as a delivery error
@@ -305,7 +305,7 @@ handler)` + `ob.StartRelay(ctx)`.
   `ReplayConsumer(rowID, name)` resets one.
 - **Removed consumers are abandoned (time-based, not snapshot-based).** A
   delivery whose consumer has no handler on *any* replica is
-  `abandoned` — settled terminal so it can't orphan the parent — but only
+  `abandoned`, settled terminal so it can't orphan the parent, but only
   once it is older than the **handler grace** (`WithHandlerGrace`, default
   15m). This is deliberately time-based: a lagging replica in a rolling
   deploy never abandons a *newly-added* consumer's fresh deliveries (the
@@ -313,7 +313,7 @@ handler)` + `ob.StartRelay(ctx)`.
   consumer's deliveries age out and abandon everywhere. The grace **must
   exceed your rolling-deploy overlap window plus worst-case clock skew**
   between replicas (delivery/parent timestamps are written on one replica
-  and compared on another) — keep a floor of a few minutes. Re-adding a
+  and compared on another). Keep a floor of a few minutes. Re-adding a
   removed consumer resumes delivery for events staged from the re-add
   forward automatically; events abandoned during the gap are recovered
   with `ReplayConsumer`.
@@ -322,11 +322,11 @@ handler)` + `ob.StartRelay(ctx)`.
   once older than the handler grace (deliveries are expanded oldest-first,
   so an old parent with none has no consumer anywhere). Events staged more
   than the grace before a type's *first* consumer is added are not
-  back-delivered — a retention-style boundary. If **no** consumer is
+  back-delivered, a retention-style boundary. If **no** consumer is
   declared at all, the relay logs a Warn at start.
 - **Retention (optional).** `WithRetention(d)` makes the relay purge
   fully-settled (`dispatched`) parent rows and their deliveries once older
-  than `d`. Pending, dead, and abandoned rows are never purged — and a
+  than `d`. Pending, dead, and abandoned rows are never purged, and a
   dispatched parent still carrying a dead or abandoned delivery is
   retained with it, so `Replay` keeps the payload and `last_error` it
   needs. Retention is not a dead-letter TTL: such a parent lives until
@@ -338,7 +338,7 @@ handler)` + `ob.StartRelay(ctx)`.
   once at Info on recovery.
 - **Data shape.** `Data` is stored as JSON and unmarshalled into a
   `map[string]any` before delivery, so **`Data` must marshal to a JSON
-  object** — a struct or map. A scalar/array fails to unmarshal and the
+  object**, a struct or map. A scalar/array fails to unmarshal and the
   delivery is retried then marked `dead`; wrap such values in a map.
   Numbers arrive as `float64` (JSON has no separate integer type).
 - **Table creation.** `WithOutbox` creates its tables on demand at
@@ -379,4 +379,4 @@ handler)` + `ob.StartRelay(ctx)`.
 - **Multi-replica safe.** The claim takes a lease (`claimed_until`) at
   the delivery grain, so a relay that dies mid-batch releases only its
   claimed deliveries after the lease expires and another relay reclaims
-  them — no double-processing beyond the at-least-once caveat.
+  them. There is no double-processing beyond the at-least-once caveat.

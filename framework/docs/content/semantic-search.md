@@ -74,8 +74,8 @@ The snapshot's header records the embedder's `Name()` and `Dim()`. Reopening wit
 
 `Options.Keyword` injects a `KeywordBackend`. Two implementations ship:
 
-- **`MemoryKeyword`** — in-process BM25-flavoured backend. Zero deps. Recommended default.
-- **`WrapSearchBackend(b search.Backend)`** — adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
+- **`MemoryKeyword`**: in-process BM25-flavoured backend. Zero deps. Recommended default.
+- **`WrapSearchBackend(b search.Backend)`**: adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
 
 When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
 
@@ -83,15 +83,15 @@ When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top
 
 `Query.MMRLambda ∈ [0, 1]` runs Maximal Marginal Relevance over the candidate set:
 
-- `λ = 0` — collapse to pure relevance order (no diversity).
-- `λ = 0.3` — useful default; trims near-duplicates without sacrificing relevance.
-- `λ = 1` — pick the most-diverse-from-already-picked items regardless of query.
+- `λ = 0`: collapse to pure relevance order (no diversity).
+- `λ = 0.3`: useful default; trims near-duplicates without sacrificing relevance.
+- `λ = 1`: pick the most-diverse-from-already-picked items regardless of query.
 
 MMR needs the candidate vectors; the store keeps them on the chunks until the very end of the pipeline, then strips them before returning.
 
 ## Reranking
 
-`Options.Reranker` is the second-stage scorer hook. The package ships **no** built-in reranker. Setting `Query.Rerank=true` without `Options.Reranker` is an error — silent quality loss is not allowed.
+`Options.Reranker` is the second-stage scorer hook. The package ships **no** built-in reranker. Setting `Query.Rerank=true` without `Options.Reranker` is an error; silent quality loss is not allowed.
 
 A reranker receives the original query text and the candidate hits; it returns a reordered slice with its own scores. Typical wiring is a cross-encoder model behind an HTTP endpoint:
 
@@ -135,7 +135,7 @@ gofastr semantic clear
 ```
 
 The CLI indexes with the deterministic **stub** embedder unless you say
-otherwise, which is fine for wiring a pipeline and useless for real retrieval —
+otherwise, which is fine for wiring a pipeline and useless for real retrieval,
 and nothing on disk says which one produced a snapshot. Select the real one per
 invocation:
 
@@ -153,7 +153,7 @@ Switching backends changes the vectors, so the next `query` against a snapshot
 built by the other embedder returns a `ModelMismatchError` rather than quietly
 poor results.
 
-When `GOFASTR_URL` is set, `query` and `stats` are dispatched to that running server's `/semantic/*` routes. `index`, `watch`, and `clear` are always local — they mutate state and we don't want two writers fighting for the same file.
+When `GOFASTR_URL` is set, `query` and `stats` are dispatched to that running server's `/semantic/*` routes. `index`, `watch`, and `clear` are always local: they mutate state and we don't want two writers fighting for the same file.
 
 ## HTTP routes
 
@@ -164,7 +164,7 @@ with `WithAuthToken` (or `Plugin.WithAuthToken`) and send
 `Authorization: Bearer <token>`; the comparison is constant-time.
 `WithInsecureDisabledAuth()` turns auth off for local development only.
 
-The statuses below are what an *authenticated* caller sees — without a
+The statuses below are what an *authenticated* caller sees; without a
 valid token every one of them is 401.
 
 | Method | Path | Body | Status |
@@ -192,7 +192,7 @@ mux.Handle("/semantic/", http.StripPrefix("/semantic",
 
 ## Agent inventory
 
-Importing `battery/semantic` registers a snippet in `agentsinv` (the process-wide agent-onboarding registry). Any binary that blank-imports the package — including the built `gofastr` CLI — will include the semantic entry in the generated `AGENTS.md` output from `gofastr agents sync`. The snippet lives in `battery/semantic/agents.md` and describes when to use the battery, the import path, and the key anti-patterns.
+Importing `battery/semantic` registers a snippet in `agentsinv` (the process-wide agent-onboarding registry). Any binary that blank-imports the package, including the built `gofastr` CLI, will include the semantic entry in the generated `AGENTS.md` output from `gofastr agents sync`. The snippet lives in `battery/semantic/agents.md` and describes when to use the battery, the import path, and the key anti-patterns.
 
 ## Kiln integration
 
@@ -226,13 +226,13 @@ The live suite (in `battery/semantic/live_test.go`, guarded by `//go:build live`
 | Test | What it verifies |
 | --- | --- |
 | `TestLive_OllamaProbe` | Server reachable, model returns embeddings, dim auto-detected. |
-| `TestLive_SemanticSimilarity` | Paraphrase pairs cluster; cross-intent pairs don't — the property the stub embedder cannot satisfy. |
+| `TestLive_SemanticSimilarity` | Paraphrase pairs cluster; cross-intent pairs don't; the property the stub embedder cannot satisfy. |
 | `TestLive_IndexRetrievalParaphrase` | A 6-doc corpus + a paraphrase query surfaces the right doc at rank #1, both vec-only and hybrid. |
 | `TestLive_MMRImprovesDiversityOnNearDuplicates` | MMR top-3 on a near-duplicate corpus surfaces ≥2 distinct topics. |
 | `TestLive_PersistenceSurvivesProcessRestart` | Snapshot + reopen with a fresh embedder instance preserves retrieval. Model fingerprint must match. |
 | `TestLive_WatcherFeedsRealEmbedder` | Polling watcher round-trips files through a real embedder. |
 
-`make semantic-live` refuses to run if `http://localhost:11434/api/tags` doesn't respond — it tells you to `make ollama-up` first.
+`make semantic-live` refuses to run if `http://localhost:11434/api/tags` doesn't respond; it tells you to `make ollama-up` first.
 
 ## Scale targets
 
@@ -248,8 +248,8 @@ Numbers above are from the `BenchmarkEmbed_*` family in `battery/semantic/bench_
 
 Two are wired:
 
-- **`StubEmbedder`** — deterministic FNV bag-of-words, no deps, low retrieval quality. Fine for tests and offline development. Not a real model.
-- **`OllamaEmbedder`** — HTTP client against a locally running Ollama-compatible server. Default `nomic-embed-text` (768-dim) gives real semantic retrieval. Recommended production default.
+- **`StubEmbedder`**: deterministic FNV bag-of-words, no deps, low retrieval quality. Fine for tests and offline development. Not a real model.
+- **`OllamaEmbedder`**: HTTP client against a locally running Ollama-compatible server. Default `nomic-embed-text` (768-dim) gives real semantic retrieval. Recommended production default.
 
 For anything else (OpenAI Embeddings API, a private microservice, a CGO-bound model), implement the three-method `Embedder` interface and pass it via `Options.Embedder`. The rest of the package is embedder-agnostic.
 
@@ -274,13 +274,13 @@ if err := embedder.Probe(ctx); err != nil {
 
 ## Durable store (pgvector)
 
-The default [FlatStore] is in-process: fast, zero-dep, and the right choice for a single-replica app. Its limitation (called out above under "Why this is in-process by default") is that the index lives in one process's RAM. When you need a **shared, durable** index — multiple app replicas hitting the same vectors, or survival across restarts with no snapshot/WAL plumbing — use `PgVectorStore`, a [Store] backed by a Postgres table with a [pgvector](https://github.com/pgvector/pgvector) embedding column.
+The default [FlatStore] is in-process: fast, zero-dep, and the right choice for a single-replica app. Its limitation (called out above under "Why this is in-process by default") is that the index lives in one process's RAM. A **shared, durable** index means multiple app replicas hitting the same vectors, or survival across restarts with no snapshot/WAL plumbing. When you need that, use `PgVectorStore`, a [Store] backed by a Postgres table with a [pgvector](https://github.com/pgvector/pgvector) embedding column.
 
 ```go
 embedder := semantic.NewOllamaEmbedder(semantic.OllamaConfig{Model: "nomic-embed-text"})
 
 store, err := semantic.NewPgVector(db, semantic.PgVectorConfig{
-    Dim:   embedder.Dim(), // REQUIRED — pgvector columns are fixed-dim
+    Dim:   embedder.Dim(), // REQUIRED: pgvector columns are fixed-dim
     Table: "embed_chunks",  // optional, defaults to "embed_chunks"
 })
 if err != nil { return err }
@@ -299,26 +299,26 @@ idx, err := semantic.Open(semantic.Options{
 CREATE INDEX ON embed_chunks USING hnsw (embedding vector_cosine_ops);
 ```
 
-**Extension note.** `EnsureSchema` runs `CREATE EXTENSION IF NOT EXISTS vector`. On managed Postgres (RDS, Cloud SQL) that is a one-time superuser action the app role often lacks — pre-install it once as admin. If the `vector` type is genuinely absent, `EnsureSchema` fails closed with an actionable error rather than proceeding.
+**Extension note.** `EnsureSchema` runs `CREATE EXTENSION IF NOT EXISTS vector`. On managed Postgres (RDS, Cloud SQL) that is a one-time superuser action the app role often lacks: pre-install it once as admin. If the `vector` type is genuinely absent, `EnsureSchema` fails closed with an actionable error rather than proceeding.
 
-**No snapshot, no `Path`.** A Postgres table *is* the durable copy, so `PgVectorStore` deliberately does not implement the gob-snapshot capability. Pairing it with `Options.Path` fails closed at `Open` with an error — do not set `Path` with this store.
+**No snapshot, no `Path`.** A Postgres table *is* the durable copy, so `PgVectorStore` deliberately does not implement the gob-snapshot capability. Pairing it with `Options.Path` fails closed at `Open` with an error; do not set `Path` with this store.
 
 **Honest trade-off.** `FlatStore` brute-force-scans a memory slice (~3 ms / 100k chunks on M-class, no network hop). `PgVectorStore` pays a Postgres round-trip per query but gains durability, multi-replica sharing, and a growth path to ANN indexing. Use `FlatStore` until the in-process limitation bites; switch when it does.
 
 ## Limitations and follow-ups
 
-- The watcher does not honour `.gitignore` — only an explicit `ExcludeDirs` list. Glob-level ignore parsing is deferred.
+- The watcher does not honour `.gitignore`; only an explicit `ExcludeDirs` list. Glob-level ignore parsing is deferred.
 - Two store backends ship: `FlatStore` (in-process, brute-force, default) and `PgVectorStore` (durable Postgres+pgvector, multi-replica). Out-of-process ANN services (dedicated HNSW/IVF servers) remain out of scope until benchmarks show brute-force losing; an HNSW index on the pgvector table covers the scale path today.
 - Multiple named indexes per process are not supported; the design is one index per app, mirroring the `Options.Keyword` and `Options.Path` shape.
 
 ## Common mistakes
 
 - **Switching embedders over an existing snapshot.** `Open` refuses
-  with a `*ModelMismatchError` — vectors from different models are
+  with a `*ModelMismatchError`: vectors from different models are
   silently catastrophic for retrieval, so mixing is not allowed. To
   change models: drop the snapshot directory and re-index from source.
 - **Setting `Hybrid: true` without `Options.Keyword`.** It silently
-  degrades to vector-only — no error, just no keyword leg in the
+  degrades to vector-only: no error, just no keyword leg in the
   fusion. Wire `MemoryKeyword` (or `WrapSearchBackend`) if you want
   hybrid to actually be hybrid.
 - **Setting `Rerank: true` without `Options.Reranker`.** Hard error:
@@ -326,10 +326,10 @@ CREATE INDEX ON embed_chunks USING hnsw (embedding vector_cosine_ops);
   loss. Implement the `Reranker` interface (typically a cross-encoder
   behind HTTP) before opting in.
 - **Expecting real retrieval quality from `StubEmbedder`.** It's a
-  deterministic FNV bag-of-words for tests and offline development —
+  deterministic FNV bag-of-words for tests and offline development;
   paraphrases will not cluster. Use `OllamaEmbedder` (or your own
   `Embedder`) for anything a user sees.
 - **Pointing `index`/`watch`/`clear` at a running server.** Those
-  subcommands are always local, even with `GOFASTR_URL` set — only
+  subcommands are always local, even with `GOFASTR_URL` set: only
   `query` and `stats` dispatch to the server. Two writers on one
   snapshot directory is exactly what the split prevents.

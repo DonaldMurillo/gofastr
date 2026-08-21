@@ -12,8 +12,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ### Added
 
 - **`make mutate` finds guards no test distinguishes.** It breaks each
-  conditional in a package one at a time — once so it can never fire, once so
-  it always fires — and reports the ones the suite does not notice. A survivor
+  conditional in a package one at a time, once so it can never fire and once so
+  it always fires, and reports the ones the suite does not notice. A survivor
   is usually a test whose fixture trips several refusal conditions at once, so
   removing any one of them changes nothing; seven such tests were found by hand
   in a single review cycle, and this reproduces those findings mechanically.
@@ -43,9 +43,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   ONE record. It matters when a resource-aware `Decider` allows the listing and
   denies a row: the collection-level predicate would let a detail screen render
   a record the read-one route refuses.
-- **`CrudHandler.CanReadScoped(ctx)`** answers an entity's whole read posture —
-  owner scoping, tenant scoping, the baseline session requirement, and RBAC —
-  as a boolean with no HTTP response. It is what any surface reading the same
+- **`CrudHandler.CanReadScoped(ctx)`** answers an entity's whole read posture as
+  a boolean with no HTTP response: owner scoping, tenant scoping, the baseline
+  session requirement, and RBAC. It is what any surface reading the same
   rows outside the CRUD routes should call. See
   [access control](framework/docs/content/access-control.md).
 - **CI runs the race detector** over the packages that coordinate goroutines
@@ -59,10 +59,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   blueprint is now driven past `GET /`: for each entity it compares the REST
   list route's authorization posture against the same entity's MCP tool, and
   requires that a screen for an entity whose REST list is refused renders the
-  refusal rather than rows — checked positively, so a leak through any
+  refusal rather than rows, checked positively, so a leak through any
   renderer fails it, not only one shaped like a data table.
 - **Three repo lint rules.** `cmd-binary-not-ignored` fails when a `cmd/<name>`
-  has no root-level `.gitignore` entry — `go build ./cmd/<name>` from the root
+  has no root-level `.gitignore` entry. `go build ./cmd/<name>` from the root
   drops the binary at `/<name>`, and the hand-written list of names had already
   rotted twice, most recently letting this change set's own 3.4 MB `/mutate`
   sit untracked. `front-door-missing` keeps the README linking the
@@ -70,14 +70,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   hostname which is neither reserved for documentation nor actually served.
 - **`gofastr validate` reports a colliding `app.module`.** A module path inside
   the framework's own module produces code that cannot build outside this
-  repository. Nothing surfaced it before — `generate` even printed that same
+  repository. Nothing surfaced it before. `generate` even printed that same
   colliding path in its "Next steps" as the remedy.
 
 ### Fixed
 
 - **BREAKING: foreign keys were never enforced on SQLite.** SQLite ignores
   `FOREIGN KEY` constraints unless `foreign_keys` is enabled per connection,
-  and it is off by default — in the driver GoFastr ships, in
+  and it is off by default: in the driver GoFastr ships, in
   `mattn/go-sqlite3`, and in SQLite itself. `AutoMigrate` emits a
   `FOREIGN KEY` clause for every declared relation, so an app read as though
   referential integrity held while a create that set `author_id` to an id
@@ -88,19 +88,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `_pragma=foreign_keys(1)`.
   **Upgrade:** a write that references a row which does not exist now fails
   instead of succeeding, and so does deleting a row that other rows still
-  reference — `AutoMigrate` declares no `ON DELETE` action and
+  reference. `AutoMigrate` declares no `ON DELETE` action and
   `entity.Relation` cannot express one, so children must be deleted before
   their parent. Any app already holding dangling references will see errors on
   writes that touch them. Setting `_pragma=foreign_keys(0)` in the DSN restores
   the old behavior while the data is cleaned up; `_foreign_keys=0` and `_fk=0`
   work too, as does any spelling SQLite's PRAGMA grammar accepts
   (`foreign_keys(0)`, `foreign_keys = 0`, `foreign_keys=0`, with any whitespace
-  or percent-encoding). A DSN that names the pragma without assigning it — a
-  bare `_pragma=foreign_keys`, which reads rather than sets — still receives
+  or percent-encoding). A DSN that names the pragma without assigning it, a
+  bare `_pragma=foreign_keys`, reads rather than sets, and still receives
   the default.
   **One upgrade case is worth checking before you flip this on.** If an entity
   declares the same column as both `Scope.OwnerField` and a relation, older
-  `AutoMigrate` wrote a `FOREIGN KEY` for it — and the framework stamps that
+  `AutoMigrate` wrote a `FOREIGN KEY` for it, and the framework stamps that
   column from the session identity, which lives in the auth battery's table
   rather than in the related entity. The constraint was one the framework
   violated on every create, and SQLite tolerated it only because nothing was
@@ -110,7 +110,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the table is rebuilt without the key. `evals/upgrade-fixtures` carries a real
   v0.53.0 app in exactly this shape and proves that upgrade path.
   This does not close the *permission* half of the same gap: nothing yet checks
-  that the caller may read the row a relation column points at — see
+  that the caller may read the row a relation column points at. See
   [security](framework/docs/content/security.md).
 - **BREAKING: the in-house SQLite engine is removed.** `gofastr/sqlite` held a
   second, from-scratch SQLite that six `*_pure_sqlite_test.go` suites ran
@@ -137,21 +137,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `framework/ui/resource`'s `List`, `Table`, `Detail`, and pre-filled edit
   `Form` read rows directly, so they never entered the route middleware that
   enforces an entity's posture. A generated app whose `users` entity declared
-  `read: users:read` answered 403 on `GET /api/users` and 200 — with every
-  row's email in the HTML — on the `GET /users` screen the same blueprint
+  `read: users:read` answered 403 on `GET /api/users` and 200, with every
+  row's email in the HTML, on the `GET /users` screen the same blueprint
   generated. The same gap served every row of a default-posture entity, whose
-  JSON route answers 401. All four now check the read posture — `CanReadScoped` for
-  `List`/`Table`, `CanReadRecordScoped` for `Detail` and the edit `Form` — and
+  JSON route answers 401. All four now check the read posture, `CanReadScoped` for
+  `List`/`Table`, `CanReadRecordScoped` for `Detail` and the edit `Form`, and
   render an access notice instead of the rows. **An app whose screens rendered entity
   rows without a session will now show that notice.** To render for a
   sessionless visitor the entity has to be readable by one: `Public`, or
-  `Access` with a blank `read:`. `Scope.OwnerField` does not help here — a
+  `Access` with a blank `read:`. `Scope.OwnerField` does not help here. A
   caller with no owner in context still fails the check, so the notice stays
   and only owners see rows.
 - **`?rel.field=` filtered the wrong table when an entity's name and table
   differ.** The `EXISTS` clause named the relation's registry KEY as its table,
-  while every check the filter performs — declared fields, hidden columns, soft
-  delete, the owner/tenant refusal — is made against the RESOLVED target. An
+  while every check the filter performs is made against the RESOLVED target:
+  declared fields, hidden columns, soft delete, the owner/tenant refusal. An
   entity declaring `Table` different from its name (or a versioned
   registration) therefore validated one table and queried another: silently
   wrong rows where a same-named table existed, a 500 where it did not. The
@@ -160,7 +160,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **A cross-owner include returned almost nothing instead of everything.**
   `applyRelatedOwnerScope` unconditionally pinned the owner column to the
   request's owner, with no branch for the cross-owner postures that
-  `ApplyOwnerScope` honours — `owner.AllowCrossOwner` and the entity's
+  `ApplyOwnerScope` honours: `owner.AllowCrossOwner` and the entity's
   `CrossOwnerRead` permission. A caller holding either saw every row on the
   routes and only their own through `?include=`. Same defect as the tenant one
   below, in the sibling helper.
@@ -168,17 +168,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `applyRelatedTenantScope` unconditionally pinned `tenant_id` to the request's
   tenant, with no branch for the cross-tenant posture that `RequireTenant` and
   `ApplyTenantScope` both honour. An admin reading across tenants got an empty
-  relation rather than the rows they are entitled to — fail-closed, but
-  contradicting the documented contract.
+  relation rather than the rows they are entitled to. That is fail-closed, but
+  contradicts the documented contract.
 - **An include's authorization answer depended on whether the parent table had
   rows.** The posture check sat below an early return for an empty parent, so
   the same request answered 200 while the table was empty and 403 once a row
-  existed — a table-emptiness oracle, and inconsistent with the nested-filter
+  existed, a table-emptiness oracle, and inconsistent with the nested-filter
   check, which refuses before it queries anything. The check now runs first.
 - **BREAKING: `?include=` and `?rel.field=` reached past an entity's read gate.** An
   eager-load is a read of the RELATED entity, and the CRUD route applied every
-  other guard that hangs off the include target — the hidden-column scrub,
-  owner scope, tenant scope, soft delete — but never its `Exposure.Access`. So
+  other guard that hangs off the include target, the hidden-column scrub,
+  owner scope, tenant scope, soft delete, but never its `Exposure.Access`. So
   `GET /api/posts?include=author` returned whole rows of an entity whose own
   route answers 403, `?include=comments.author` dumped the table in one
   request, and the same held through `?fields=` and cursor pagination. Nested filters were the quieter half: `?author.email=…` did not
@@ -189,41 +189,41 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   owner-scoped or multi-tenant: the `EXISTS` clause counts rows without
   selecting them, so it cannot narrow them to the caller, and a signed-in owner
   or a wrong-tenant caller could otherwise enumerate everyone else's rows one
-  guess at a time — except for a caller who may already read every row of that
+  guess at a time, except for a caller who may already read every row of that
   target (`owner.AllowCrossOwner`, `CrossOwnerRead`, `tenant.AllowCrossTenant`),
   for whom the count reveals nothing new. To filter by a scoped entity's field,
   query that entity's own list route and filter the parent by the ids it
   returns. The subquery now also hides soft-deleted rows, which every other read
-  surface already hid — trashed values were enumerable the same way. An *include* targeting an entity you can read is
+  surface already hid. Trashed values were enumerable the same way. An *include* targeting an entity you can read is
   unaffected. A nested *filter* additionally requires the target to be neither
   owner-scoped nor multi-tenant: an ordinary owner filtering their own rows
   gets 403 and must use the target's own list route, while a caller holding a
   cross-owner or cross-tenant grant is exempt.
   **Upgrade:** a request that previously returned 200 now returns 403 when it
-  includes or filters across an entity the caller may not read — most often a
+  includes or filters across an entity the caller may not read, most often a
   default-posture entity reached from a `Public` one. Declare the related
   entity as readable by that caller: `Public`, or a blank `read:` beside real
   write permissions. `Scope.OwnerField` does NOT restore the old answer for an
-  anonymous caller — the nested-filter gate still refuses, and an include
+  anonymous caller. The nested-filter gate still refuses, and an include
   returns 200 with zero related rows because the owner scope matches nothing.
 - **The same screens served RELATED entities' rows.** Gating a screen on its
   own entity was not enough. Relation columns resolve the related entity's rows
   to display labels, reverse-relation sections list them outright, and
-  dashboard `StatValue`/`groupCounts` aggregate over them — none checked the
+  dashboard `StatValue`/`groupCounts` aggregate over them. None checked the
   related entity's posture, so a public screen with a relation to a gated
   entity served that entity's display values, on the full page and the island
   fragment alike. `groupCounts` was the sharpest: it returns the grouped
   column's distinct values, so grouping a gated entity by `email` published the
   addresses. Each related read is now gated on the related entity: a relation
-  the caller may not read renders muted — never the raw foreign key, which
-  would be useless to a reader and disclose an internal id — a
+  the caller may not read renders muted, never the raw foreign key, which
+  would be useless to a reader and disclose an internal id. A
   reverse-relation section is omitted rather than announced (a notice on a
   public page tells every visitor which entities exist), and an aggregate
   reports no data.
 - **Generated apps showed "Sign out" to anonymous visitors.** The app shell's
   sidebar footer was built once at registration, so it could not see the
   session. It now resolves per request, and offers "Sign in" only when a screen
-  actually hosts the login form — six of the seven shipped blueprints never
+  actually hosts the login form. Six of the seven shipped blueprints never
   route `/login`.
 - **Four example blueprints declare their public content read-open.**
   `examples/{portfolio,project-manager,lms}` moved their content entities
@@ -241,11 +241,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   entities had to declare a posture. They now use a blank `read:` with named
   write permissions, the same shape as `examples/blog`, on both the blueprint
   and its runnable Go twin. `public: true` would have opened anonymous
-  `DELETE` on the catalog and on user-submitted reviews — the exposure
-  `gofastr generate` warns about on every run — which is not a tradeoff a
+  `DELETE` on the catalog and on user-submitted reviews, the exposure
+  `gofastr generate` warns about on every run, which is not a tradeoff a
   storefront example should be teaching in a release whose subject is closing
-  read holes. The shape the example actually wants — anonymous read, any
-  signed-in user writes — still cannot be expressed: a blank `read:` alone
+  read holes. The shape the example actually wants, anonymous read with any
+  signed-in user writing, still cannot be expressed: a blank `read:` alone
   leaves `AccessControl` empty (so `Declared()` is false and the session
   requirement still applies), and naming a permission does not help because a
   generated app grants permissions only to the admin role. Admin-gated writes
@@ -254,7 +254,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Documented that a blueprint's `nav: role:` is visibility, not access
   control.** It hides the sidebar link; it does not gate the route. A blueprint
   screen cannot declare a role of its own, so a plain generated screen at a
-  role-gated href answers 200 to anyone who types the URL — and every screen
+  role-gated href answers 200 to anyone who types the URL, and every screen
   path appears in the route manifest embedded in each page. The docs previously
   said "the route stays protected regardless", which is only true when the
   destination has its own gate (entity `access:`, or the admin battery).
@@ -265,23 +265,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   single build-time variable.
 - **`DATABASE_URL` in the scaffolded `.env` was ignored.** The scaffold read it
   before `.env` was loaded, so `PORT` applied and the database silently did
-  not — the app opened a different database than the file named.
+  not. The app opened a different database than the file named.
 - **Three more places loaded a shorter dotenv list than `NewApp` does.**
   `dotenv.Apply` never overwrites a variable that is already set, so anything
   reading a shorter list first pins the lower-precedence file's value and
   `NewApp`'s higher-precedence `.env.<APP_ENV>` can no longer win. Blueprint-
   generated `main.go` and the two generated test files loaded
   `.env.local, .env`; `gofastr migrate` resolved `DATABASE_URL` from `.env`
-  alone, ignoring `.env.local` — the *highest*-precedence file and the
-  documented place to point a checkout at a local database — so the CLI
+  alone, ignoring `.env.local`, the *highest*-precedence file and the
+  documented place to point a checkout at a local database, so the CLI
   migrated one database while the app it was migrating for opened another.
   All four now load `framework.DefaultDotEnvPaths()`.
 - **`gofastr pack` silently lost the sidebar nav of every auth-enabled app.**
   It reconstructs nav by reading `sidebarConfig`'s AST and required the
   function to be a single `return ui.SidebarConfig{…}`. Once that builder
   resolved its auth control per request it became `cfg := ui.SidebarConfig{…}`
-  … `return cfg`, the reader's type assertion failed, and pack reported no nav
-  — indistinguishable from an app that declares none. It now follows a
+  … `return cfg`, the reader's type assertion failed, and pack reported no nav,
+  indistinguishable from an app that declares none. It now follows a
   returned identifier back to the literal assigned to it.
 - **Meridian's sidebar showed "Sign out" to everyone.** The app shell built
   its sidebar footer once at registration with a hardcoded sign-out control,
@@ -298,7 +298,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Mixed-case `Content-Type` defeated the multipart body cap.**
   `isMultipart` matched the `multipart/form-data` prefix case-sensitively
   while the content-type gate parsed per RFC 9110, so
-  `Multipart/Form-Data` requests passed the gate but took the JSON path —
+  `Multipart/Form-Data` requests passed the gate but took the JSON path,
   and its 1 MiB cap. Both checks now parse the media type the same way.
 - **`pagination.OffsetForPage` panicked on a zero page size.** The
   overflow guard divided by `limit`; `limit == 0` is now clamped to
@@ -321,7 +321,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Job` returned by `Dequeue`.
 - **A worker crash on a job's final attempt stranded it forever.**
   `DBQueue` reclaimed expired leases only while `attempts <
-  max_attempts`, but `Dequeue` had already incremented `attempts` — so a
+  max_attempts`, but `Dequeue` had already incremented `attempts`, so a
   crash on the last permitted attempt left the row `claimed` with
   nothing able to see it, including `Replay`. An expired lease on the
   final attempt is now dead-lettered and logged.
@@ -330,7 +330,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   could wake, `Ack`, and erase the very row that made the failure visible
   to `Stats`, `ListJobs("failed")`, and `Replay`. It now matches
   `status='claimed'`. The route from `failed` to gone is `Replay`, claim,
-  `Ack` — the same path an operator already used. This also aligns the
+  `Ack`, the same path an operator already used. This also aligns the
   three backends: `MemoryQueue` and `RedisQueue` already no-op an `Ack`
   for a job they do not have claimed.
 - **Multipart uploads over 1 MiB always failed.** The CRUD write
@@ -387,7 +387,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   record, so each `HelpURI` was dead. It points at the published docs
   site.
 - **Eight documentation claims contradicted the code.** `multi-tenant.md`
-  taught reading the tenant from a request header — `TenantMiddleware`
+  taught reading the tenant from a request header. `TenantMiddleware`
   ignores any client header precisely because trusting one lets a caller
   impersonate a tenant, so the page described a vulnerability the code
   refuses to have. Also corrected: the webhook secret codec default,
@@ -411,7 +411,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`gofastr generate` reports every schema error at once.** Fixing a
   blueprint was a serial guess-and-recompile loop because validation
   stopped at the first bad key. Unknown top-level keys also get a
-  location hint — `auth:` at the root suggests `app.auth:`.
+  location hint: `auth:` at the root suggests `app.auth:`.
 - **The doc-example compile gate covers 85 blocks, up from 2.** Blocks
   opt in with a `gofastr:compile` directive, using the same mechanism as
   before.
@@ -433,10 +433,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `pluginhost` → `battery/auth` carve-out pinned), `uihost` never links
   `framework/ui`, and `core-ui` never imports `framework`.
 - Direct tests and a 98.0 coverage floor for `framework/datexport`, the
-  registry behind `ExportData` / `ImportData` / `EraseUserData` —
+  registry behind `ExportData` / `ImportData` / `EraseUserData`,
   previously covered only from the consumer side.
 - **`battery/log` grew a JSON sink.** `log.JSONSink` writes one JSON
-  object per line to stdout (or any writer) — the container pattern where
+  object per line to stdout (or any writer), the container pattern where
   the platform ships the stream. It reuses the fanout's slog encoding
   byte-for-byte and emits each entry in a single `Write`, so a collector
   never sees a torn line.
@@ -474,11 +474,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   semcov), the current intra-layer import edges, and why-it-stays rows
   for the root files added since the last refresh.
 - README's documentation list now links the auth reference, access
-  control, the runtime contract, and the browsable docs index — the
+  control, the runtime contract, and the browsable docs index. The
   most-asked topics were previously unreachable from the front door.
 - **`OwnerField` without a declared field no longer loses the owner.**
   `entity.Define` now injects the owner column (hidden, read-only) when
-  the declaration omits it — symmetric with the `tenant_id` injection and
+  the declaration omits it, symmetric with the `tenant_id` injection and
   matching what the blueprint generator always did. Before, AutoMigrate
   never created the column: an authenticated create returned 201 while
   silently persisting a row no owner scope could ever reclaim, and the
@@ -504,19 +504,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   both dialects across the whole filter surface: flat filters, `?where=`
   predicate trees, nested relation filters (`?author.active=true`),
   scoped includes (`?include=posts(published=true)`), and the admin/
-  resource bool facet — the last one is the Yes/No filter every
+  resource bool facet. The last one is the Yes/No filter every
   blueprint-generated app ships.
 - **A fresh scaffold explains its 401s.** The generated entity carries a
   comment naming the two ways out of secure-by-default (`Public: true`
   or `battery/auth`), and `gofastr init`'s next steps plus the generated
-  AGENTS.md say the same — the unblock was previously README-only
+  AGENTS.md say the same. The unblock was previously README-only
   knowledge.
 - **`gofastr migrate status` explains inline migrations.** On apps the
   CLI itself scaffolds (which register migrations in Go and apply them at
   boot), the missing-`migrations/` error now describes both systems and
   what to do, instead of a bare "directory not found".
-- **One HTML escaper.** Seven hand-rolled escapers — two shipping the
-  no-apostrophe shape documented as a past attribute-breakout XSS — now
+- **One HTML escaper.** Seven hand-rolled escapers, two shipping the
+  no-apostrophe shape documented as a past attribute-breakout XSS, now
   delegate to `core/render.Escape`, with per-package tests pinning that
   apostrophes are escaped. No live vulnerability existed; the class is
   gone.
@@ -531,7 +531,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 - **One backoff implementation.** New `core/backoff` (`Exponential`,
   `At`) replaces four copies across `framework/outbox`, `battery/queue`,
-  `battery/webhook`, and `battery/log` — the log sink's uncapped inline
+  `battery/webhook`, and `battery/log`. The log sink's uncapped inline
   doubling converged to the capped canonical curve.
 - **One casing table in the CLI.** `cmd/gofastr`'s five converters merged
   into one file with correct acronym handling: `HTTPServer` snake-cases
@@ -553,9 +553,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   The old shape was legal OpenAPI and deliberately chosen. It was also the one
   shape that misleads a reader who takes `paths` at face value, and that reader
   is this framework's stated audience: the 2026-07-26 backend eval reproduced
-  the confusion twice — in its agent *and* in its deterministic grader, which
+  the confusion twice, in its agent *and* in its deterministic grader, which
   both concluded "the document does not describe the live `/api/tickets` path"
-  — and ranked fixing it the highest-leverage change available. Custom
+  , and ranked fixing it the highest-value change available. Custom
   `Endpoints` are documented at their mounted path too, via the same
   `EntityEndpointRoutePath` the router uses, so the absolute-path escape hatch
   behaves identically in both. Pinned by
@@ -576,20 +576,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   it unconditionally, instead of being predicted from the policy captured when
   the delegation was minted. The re-dispatch runs the full middleware chain and
   re-resolves authority, so the old check could pass judgement on a context the
-  query never used. This matches what the broker already documented — a
+  query never used. This matches what the broker already documented: a
   delegated user who legitimately holds `CrossOwnerRead` in their own session
-  cannot exercise it through a module — but it is a behavior change for a host
+  cannot exercise it through a module. It is still a behavior change for a host
   that relied on the carve-out silently not applying.
 
 ### Added
 
-- **`gofastr docs backend-capability-map` — one page from job to primitive to
+- **`gofastr docs backend-capability-map`: one page from job to primitive to
   proof.** The 2026-07-26 backend eval measured GoFastr at 313,579 cold-start
   tokens against Gin's 72,172 (4.35×) for 48% fewer lines of application code:
   the compression is real, and finding the primitive is what costs. Its sixth
   next-move was "one short capability map and exact verification commands
   before deep topical docs". `ui-capability-map.md` already did that for the
-  UI lane; the backend lane — where the tokens actually went — had nothing.
+  UI lane; the backend lane, where the tokens actually went, had nothing.
 
   One row per job (scope rows to a user, add auth, run background work, prove
   the API works), naming the symbols to compose, a command that verifies it,
@@ -602,7 +602,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   package (it caught two wrong references while being written), every doc link
   must resolve to an embedded topic, and every `gofastr <sub>` must be in the
   CLI's dispatch table. The verification commands were run against a live
-  scaffold rather than assumed — which is how the page came to state that
+  scaffold rather than assumed. That is how the page came to state that
   `/openapi.json` and `/api/llm.md` answer 401 by default, that `/metrics`
   404s until `WithMetrics()`, and that a granular option placed before
   `WithConfig` is silently zeroed by it.
@@ -620,8 +620,8 @@ failing against the unfixed code first.
   to an IPv4 destination read as public. `64:ff9b::a9fe:a9fe` is cloud
   instance metadata behind NAT64, and it passed both guards that use this
   predicate: webhook subscriber registration and the harness's webfetch, at
-  registration *and* at dial time. A static AAAA record is enough — no
-  rebinding — and on an IPv6-only subnet with NAT64 (the documented AWS and
+  registration *and* at dial time. A static AAAA record is enough, with no
+  rebinding, and on an IPv6-only subnet with NAT64 (the documented AWS and
   GCP pattern) the translator forwards to `169.254.169.254`. NAT64
   (`64:ff9b::/96` and `64:ff9b:1::/48`), 6to4, and IPv4-compatible addresses
   are now classified by the IPv4 they carry. Public embeddings stay external,
@@ -629,7 +629,7 @@ failing against the unfixed code first.
 
 - **A panicking fanout subscriber killed every replica.**
   `SubscriberQueue` ran the callback bare on a framework-owned goroutine.
-  Nothing can recover a panic there — no caller frame, no middleware — so one
+  No caller frame and no middleware can recover a panic there, so one
   poison payload took down every process subscribed to the topic. Subscribers
   are an extension point, and the framework already recovers around those in
   `hook.runHookSafely`; the same rule now applies here. Proven by a test that
@@ -637,15 +637,15 @@ failing against the unfixed code first.
 
 - **Rate-limit keys were attacker-chosen and unbounded.** `maxKeys` capped how
   many keys the in-memory limiter tracked, never how large one could be. The
-  per-account login limiter keys on the submitted email — deliberately, so
-  account existence cannot be probed — so the 1 MiB body cap was the only
+  per-account login limiter keys on the submitted email, deliberately, so that
+  account existence cannot be probed. That left the 1 MiB body cap as the only
   bound, and one unauthenticated POST could park ~1 MiB for a full block
   duration. Keys past 256 bytes now fold to a digest, and an address longer
   than RFC 5321 allows is rejected before it becomes a key.
 
 - **Key-flood eviction lifted the attacker's own lockout.** The limiter's
   low-water shed sorted by ascending `blockedUntil`, which is creation order
-  once every block shares one duration — so the oldest block, the one predating
+  once every block shares one duration, so the oldest block, the one predating
   the flood, went first. Burn the login budget, spray keys, walk free. Eviction
   now sheds unblocked entries first, then the newest blocks.
 
@@ -663,7 +663,7 @@ failing against the unfixed code first.
 
 - **Kiln: four holes on the agent-facing surface.** `escAttr` did not escape
   `'` while the panel emits single-quoted attributes, so a model-chosen
-  `plan_id` planted a live event handler on the operator's Approve button —
+  `plan_id` planted a live event handler on the operator's Approve button,
   the control gating destructive world edits. `/kiln/status` returned
   `Auth.JWTSecret` and `Admin.SeedPassword` unredacted under `?fields=world`
   and `?fields=app`, while `serveWorld` twenty lines away redacted both.
@@ -673,7 +673,7 @@ failing against the unfixed code first.
   never proxied.
 
 - **The admin rendered stored media URLs without a scheme check.** Image `src`
-  and File `href` came straight from the column value — the last two dynamic
+  and File `href` came straight from the column value, the last two dynamic
   URL sinks in the repo not routed through `urlsafe`. Writes are validated, so
   this is defense in depth, but seeds, migrations, and hook-written rows never
   meet that check. Worth noting that `download` does not defuse a `javascript:`
@@ -694,8 +694,8 @@ failing against the unfixed code first.
 ### Fixed
 
 - **An option placed before `WithConfig` is no longer discarded in silence.**
-  `WithConfig` replaces the whole `AppConfig` — deliberate, since a merge
-  could not tell an explicit zero from an unset field — but the discard was
+  `WithConfig` replaces the whole `AppConfig`. That is deliberate, since a merge
+  could not tell an explicit zero from an unset field, but the discard was
   invisible: `gofastr init` scaffolded `WithConfig` last, so pasting
   `framework.WithPublicOpenAPI()` at the natural spot next to `WithDB` did
   nothing, with no error. The scaffold now emits `WithConfig` first (any
@@ -713,14 +713,14 @@ failing against the unfixed code first.
   outbound `http.Client` call including `battery/auth`'s OAuth2 provider), and
   three more. CI resolves its toolchain from `go-version-file: go.mod`, so the
   directive is the pin. `CONTRIBUTING.md` and `deploy.md` were updated in the
-  same commit — the last time they drifted from `go.mod` it took a release to
+  same commit. The last time they drifted from `go.mod` it took a release to
   notice.
 
   Three temp modules that `replace` gofastr with the checkout hardcoded the old
   directive, which Go rejects (a module may not declare a `go` version below a
   dependency's). Two now read the repo's own go.mod, and the upgrade-fixture
-  harness rewrites the directive the same way it already rewrote the `replace`
-  — so a committed fixture stays an honest snapshot of the app its version
+  harness rewrites the directive the same way it already rewrote the `replace`,
+  so a committed fixture stays an honest snapshot of the app its version
   generated and a future bump touches neither.
 
 - **`battery/print/chromepdf` went stale on a root dependency bump.** The
@@ -728,7 +728,7 @@ failing against the unfixed code first.
   root, so raising `golang.org/x/image` in the root left its own go.mod/go.sum
   behind and `go build` refused with a bare "updates to go.mod needed". Its
   go.sum was also still carrying the entire testcontainers/Docker closure this
-  release removed from the root graph — 84 lines of it. Re-tidied.
+  release removed from the root graph, 84 lines of it. Re-tidied.
 
 - **A process module's migrations failed on every deploy after the first.**
   `provisionModuleSchemaRole` creates the module's restricted Postgres role
@@ -744,14 +744,14 @@ failing against the unfixed code first.
 
   The `ALTER ROLE` now re-asserts `LOGIN PASSWORD` alongside the flags. The
   DDL is split into `moduleSchemaRoleStmts` so the invariant is pinned by an
-  ordinary unit test rather than one that needs a live server — the defect
+  ordinary unit test rather than one that needs a live server. The defect
   survived precisely because it was only reachable with a *pre-existing* role,
   and CI handed every test process a throwaway Postgres container where no
   role ever pre-existed. Sharing one server is what exposed it.
 
 - **The in-house SQLite engine is documented.** `sqlite/` holds a
-  from-scratch SQLite — pager, B-tree, parser, file format, ~7k lines plus as
-  many again in tests — that nothing outside this repo should ever import. It
+  from-scratch SQLite that nothing outside this repo should ever import:
+  pager, B-tree, parser, file format, ~7k lines plus as many again in tests. It
   had no doc topic, no ROADMAP entry, and no README mention, so the only way
   to learn what it was for was to read it. `gofastr docs sqlite-engine` now
   states the split plainly: applications get modernc.org/sqlite as `sqlite3`
@@ -760,12 +760,12 @@ failing against the unfixed code first.
   an implementation that shares no code with the one it was developed on.
   `sqlite/BENCHMARKS.md` is marked as the 2025-05-15 snapshot it is, and
   `sqlite/driver_name_test.go` fails if the engine ever claims the `sqlite3`
-  name — the day it does, the whole suite starts validating the wrong engine
+  name. The day it does, the whole suite starts validating the wrong engine
   while every app still ships modernc.
 
 - **Every app built on GoFastr inherited the Docker client stack.**
-  `testcontainers-go` was a direct require in the root `go.mod` — used only to
-  spawn `postgres:16-alpine` for this repo's own tests — and Go hands a
+  `testcontainers-go` was a direct require in the root `go.mod`, used only to
+  spawn `postgres:16-alpine` for this repo's own tests, and Go hands a
   module's requirements to everything that imports it. A hello-world scaffold
   therefore resolved 95 modules and 178 `go.sum` lines, pulling `go-winio`,
   `go-ansiterm`, `plan9stats`, `perfstat`, `purego`, `wmi`, `go-ole` and
@@ -776,7 +776,7 @@ failing against the unfixed code first.
   branch behind it was removed rather than hidden, because `go mod tidy` walks
   every build configuration and a build tag would have kept the require. CI
   supplies the DSN from a `pgvector/pgvector:pg16` service, and
-  `docker-compose.yml` gained a matching `postgres` service — `make
+  `docker-compose.yml` gained a matching `postgres` service: `make
   postgres-up` starts it, `make test-pg` starts it and runs against it. One
   image covers the plain-SQL suites and `battery/semantic`'s pgvector store
   alike. The fail-closed `PGTEST_REQUIRED` canary now also guards this wiring:
@@ -795,7 +795,7 @@ failing against the unfixed code first.
 - **`gofastr generate --from=` outside a Go module recommended a command that
   could not run.** It reported plain success and led its next steps with
   `go mod tidy`, which fails with a raw `go.mod file not found in current
-  directory or any parent` before anything else happens — the generated code
+  directory or any parent` before anything else happens. The generated code
   imports itself by module path, so nothing it wrote could build yet. The
   adjacent case (a `go.mod` declaring a *different* module) already failed with
   the exact remedy; the absent case now warns and prints the runnable
@@ -812,7 +812,7 @@ failing against the unfixed code first.
   block, so the `"context"` condition could not see it; and the screen walker
   set `needs.resource` only for blocks declaring filters or transitions, while
   `blueprintEntityListConfigExpr` attaches an island policy to *every*
-  entity_list — `resource.PublicIsland()` on an ungated screen. The walker now
+  entity_list, `resource.PublicIsland()` on an ungated screen. The walker now
   asks `blueprintIslandPolicyExpr`, the emitter's own helper, instead of
   guessing alongside it.
 
@@ -829,7 +829,7 @@ failing against the unfixed code first.
 - **An idempotent request could be answered with another caller's response.**
   When a handler outran the in-flight TTL and a second request re-claimed the
   same `Idempotency-Key`, the first handler's `Finish` wrote its response into
-  the second's row while leaving that row's fingerprint in place — so the
+  the second's row while leaving that row's fingerprint in place, so the
   retry passed the fingerprint check and was served a body it never asked for.
   With `Principal` set to a tenant id, as the configuration documents, that
   crosses users. Proven by execution before it was fixed. The expired-claim
@@ -838,8 +838,8 @@ failing against the unfixed code first.
   row.
 - **A process module could read entities outside its approved grant.** Every
   key of a module's filter object was forwarded into the CRUD list query, so
-  `include=` eager-loaded a second entity the grant never named — with no row
-  scoping at all when that entity declares no owner and no tenant — and
+  `include=` eager-loaded a second entity the grant never named, with no row
+  scoping at all when that entity declares no owner and no tenant, and
   `trashed=true` surfaced soft-deleted rows. Filter keys are now allow-listed
   against the resolved entity's declared, non-hidden, queryable fields, which
   is what the code claimed to do. Delegation handles are also bound to the
@@ -847,7 +847,7 @@ failing against the unfixed code first.
   error instead of silently producing a constant.
 - **`/api/llm.md` listed every entity to any signed-in caller.** The index was
   rendered once at startup and gated on a session, while the per-entity
-  document it links to runs the full scope chain — the schema is the
+  document it links to runs the full scope chain. The schema is the
   disclosure, not the rows. It is now rendered per request and filtered to the
   entities that caller can list.
 - **`SearchInput` and `FilterToolbar` put their `Action` into a form without
@@ -863,13 +863,13 @@ failing against the unfixed code first.
   ran an edit-distance pass over an unbounded, unauthenticated query-parameter
   name; the suggestion is now skipped past a sane length and the plain error is
   returned.
-- **One panicking metrics collector no longer drops the whole scrape** — each
+- **One panicking metrics collector no longer drops the whole scrape**: each
   runs isolated, matching how the hook runner already treats third-party
   callbacks.
 - **Magic-link tokens are erased with the user.** `EraseUserData` gained a
   declarative identity seam: a battery can key an eraser on a resolved
   identity, such as the user's email, instead of the user id. Magic-link
-  tokens are keyed by email and so survived an erasure — a link minted before
+  tokens are keyed by email and so survived an erasure: a link minted before
   it and redeemed after created a fresh account for the erased address. Shipped
   as a documented limitation in v0.63.0; it is closed now. 2FA secrets and
   OAuth links are erased too.
@@ -890,19 +890,19 @@ failing against the unfixed code first.
   `http.Server`. Fields are `*time.Duration`: nil keeps the defaults
   (10s/60s/60s/120s), an explicit 0 disables that deadline, matching
   `net/http`. A request that needs longer than the old hardcoded 60s cap now
-  has a knob. SSE is unaffected — streams already survive the write deadline
+  has a knob. SSE is unaffected. Streams already survive the write deadline
   via `EventSource` reconnect. The resolved values appear in the `app_config`
   MCP tool. See `gofastr docs deploy`.
 - **A poll can stop.** A server response carrying `X-Gofastr-Poll-Stop: 1`
-  ends that region's `data-fui-poll` cadence after the body is applied —
-  widgets declare it with `Builder.PollTerminal(func() bool)`. A job-status
+  ends that region's `data-fui-poll` cadence after the body is applied.
+  Widgets declare it with `Builder.PollTerminal(func() bool)`. A job-status
   widget that reaches `completed` stops hitting the server. No new DOM
   attributes; a swapped-in fragment without the poll marker (or with
   `"off"`/`"0"`) also never re-wires. See `gofastr docs reactivity`.
 - **Subsystem metrics at `/metrics`.** The metrics endpoint now reports DB
   pool stats (`sql.DBStats`), queue depth and dead-letter counts per lane,
   outbox pending/dead-letter per consumer, webhook delivery/failure counts,
-  and a slow-query counter — each family appears when its subsystem is
+  and a slow-query counter. Each family appears when its subsystem is
   wired. Batteries register through `App.Metrics().RegisterCollector`. The
   panic-recovery middleware routes through a new `log.ErrorReporter` seam
   (slog default; an HTTP JSON sink ships for Slack-style collectors), and
@@ -910,14 +910,14 @@ failing against the unfixed code first.
 - **Secrets rotate without a mass logout.** `GOFASTR_SECRET` verification
   accepts previous keys from `GOFASTR_SECRET_PREVIOUS` (or
   `framework.WithSecretRotation(current, previous...)`); the auth battery
-  accepts `AuthConfig.JWTPreviousSecrets`. Embedded surfaces rotate too —
+  accepts `AuthConfig.JWTPreviousSecrets`. Embedded surfaces rotate too:
   outstanding handshake nonces and frame grants verify against the previous
   keys. New tokens always sign with the current secret; an explicit
   `WithSecret` or previous-less `WithSecretRotation` closes the window even
   when `GOFASTR_SECRET_PREVIOUS` is still in the environment; production
   mode still refuses a previous-only config. The drain procedure is in
   `gofastr docs deploy`.
-- **`App.EraseUserData` — the erasure half of GDPR.** Hard-deletes a user's
+- **`App.EraseUserData`: the erasure half of GDPR.** Hard-deletes a user's
   rows across every `OwnerField`-scoped entity and registered battery tables
   (auth users, sessions, 2FA secrets, and OAuth links), anonymizes the actor
   on audit rows instead of deleting them, and returns a per-table report.
@@ -925,9 +925,9 @@ failing against the unfixed code first.
   `ON DELETE CASCADE` do not roll the erasure back; a blank user id is
   refused rather than matching every unowned row. Idempotent, with a dry-run
   mode. Batteries declare erasure the same way they declare export. Magic-link
-  tokens are keyed by email rather than user id and are not reached — see the
+  tokens are keyed by email rather than user id and are not reached. See the
   note in `gofastr docs data-export`.
-- **`framework/ratelimit` — the auth limiter, extracted for any route.**
+- **`framework/ratelimit`: the auth limiter, extracted for any route.**
   The sliding-window limiter that guarded login/register/password-reset is
   now a package with `Middleware()` (per-IP) and `MiddlewareByKey(fn)`;
   `battery/auth` keeps its behavior through a thin wrapper. Limits are
@@ -935,11 +935,11 @@ failing against the unfixed code first.
   topic: `gofastr docs rate-limit`.
 - **`gofastr verify`: `entities/crud-without-auth`.** Warns when an entity
   exposes CRUD routes while the app wires no auth and the entity is not
-  `Public` — the state where every advertised route answers 401. The
+  `Public`, the state where every advertised route answers 401. The
   catalog is now 50 rules.
 - **Historical upgrades are proven in CI.** Two generated apps pinned to
   v0.38.0 and v0.53.0 (with committed pre-upgrade databases) are upgraded to
-  the current tree, built, booted, and exercised over HTTP — migrations over
+  the current tree, built, booted, and exercised over HTTP: migrations over
   existing rows, login, owner isolation, OpenAPI, and one island RPC. The
   shipped `gofastr upgrade` detector must flag the pre-upgrade source, and a
   negative test proves a skipped migration step fails the build.
@@ -952,7 +952,7 @@ failing against the unfixed code first.
   `AutoMigrate` (and `MigrateEntity`, `DiffSchema`, `RunSeeds`, the
   `WithSeed` hook path, and the process-module store and migration
   coordinator) now return an error naming the probe failure instead of
-  assuming SQLite — a guess there skipped the cross-replica advisory lock
+  assuming SQLite. A guess there skipped the cross-replica advisory lock
   and every Postgres-only routine. `migrate.DetectDialectStrict` is the
   exported fail-closed probe for coordination decisions; `DetectDialect`
   keeps its signature for callers that only pick DDL types. The probe
@@ -963,14 +963,14 @@ failing against the unfixed code first.
 - **The release gate is a tested script with an exact manifest.**
   `scripts/release-gate.sh` (stubbed and tested against nine failure
   fixtures) replaces the inline workflow poll. Every check in
-  `scripts/release-required-checks.txt` — all ten blocking CI checks — must
+  `scripts/release-required-checks.txt`, all ten blocking CI checks, must
   complete green on the tagged SHA, the tag must equal the current main
   head (an unmerged or stale commit cannot publish), and a pre-existing
   release for the tag fails the gate. A repo test pins the manifest to
   ci.yml's job names, so a CI rename breaks the build instead of the gate.
   The supported flow is merge → tag push; the workflow is the publisher.
   The tag name is shape-validated once and passed through the environment,
-  never spliced into a step's shell source — Git accepts command-substitution
+  never spliced into a step's shell source. Git accepts command-substitution
   syntax in tag names. Check runs fold newest-first across all pages, so a red
   re-run of an already-green check blocks the release; tag and main head are
   re-verified immediately before publishing.
@@ -980,11 +980,11 @@ failing against the unfixed code first.
   duplicate of the identical pipeline is gone. CI itself got faster: the Go
   build/test cache persists per commit, so packages whose sources and
   dependencies are unchanged skip re-execution, and each browser e2e suite
-  runs on its own runner — the browser-e2e wall clock drops from the
+  runs on its own runner. The browser-e2e wall clock drops from the
   ~28-minute serial sum to the slowest suite (~13 minutes).
 - **`battery/print/chromepdf` is a nested module.** Same import path, own
   `go.mod`/`go.sum`, excluded from the root module's `./...`. The root Go
-  floor stays 1.26 — `chromedp` is also a direct dependency of the CLI's
+  floor stays 1.26. `chromedp` is also a direct dependency of the CLI's
   accessibility audit and `framework/testkit/axetest`, and deploy.md
   wrongly attributed the floor to the print battery.
 - **Coverage floors extend to the UI and auth plane.** `framework/ui`,
@@ -994,7 +994,7 @@ failing against the unfixed code first.
 ### Fixed
 
 - **`gofastr dev --addr` reaches the app again.** The dev runner passed
-  `--addr` as argv, but generated scaffolds read only the `PORT` env var —
+  `--addr` as argv, but generated scaffolds read only the `PORT` env var,
   so the child bound the committed `.env` default while the banner printed
   the requested address. The runner now injects `PORT=<addr>` into the
   child environment (a stale parent-shell `PORT` is dropped).
@@ -1004,8 +1004,8 @@ failing against the unfixed code first.
   routes and the non-public API surface are now annotated
   `(requires auth …)`.
 - **Generated seeding no longer re-runs on a failed count.** The blueprint
-  seed hook treated a `CountAll` error as "not seeded" and inserted again —
-  a transient read failure could duplicate seed rows. A count error now
+  seed hook treated a `CountAll` error as "not seeded" and inserted again.
+  A transient read failure could duplicate seed rows. A count error now
   aborts startup naming the entity. Regenerate to pick it up.
 - **`app-cli.md` build path matches the generated directory** (`cmd/<binary>/`),
   and deploy.md's Go-version note names the real source of the 1.26 floor.
@@ -1020,29 +1020,29 @@ failing against the unfixed code first.
   fails the rollout instead of surfacing as later request errors. Blueprint
   seeding is fail-fast for the same reason: a seed row that fails (or an
   entity with no handler) aborts startup naming the entity, where it used to
-  be logged and skipped — and never retried, since the idempotency check
+  be logged and skipped, and never retried, since the idempotency check
   marks a partially-seeded entity as done. Regenerate to pick both up.
 
 ### Fixed
 
 - **A release tag now requires green CI on the exact tagged commit.** CI runs
   on `v*` tag pushes, and the release workflow refuses to publish until every
-  blocking check on the tag SHA has completed successfully — it previously
+  blocking check on the tag SHA has completed successfully. It previously
   checked only that a changelog section existed, which is how v0.61.0
   published while its build·vet·test check was red.
 - **The Postgres CI canary cannot skip in required mode.** The URL-shape
   guards in `pgtest.DB` / `FreshDatabaseDSN` / `UnusedDSN` ran after the
-  fail-closed choke point and still skipped, so a non-URL `TEST_POSTGRES_DSN`
-  — the documented override — silently turned the canary green.
+  fail-closed choke point and still skipped, so a non-URL `TEST_POSTGRES_DSN`,
+  the documented override, silently turned the canary green.
 - **The backend-adoption eval runs again.** The Gin and stdlib baseline lanes
-  required `gofastr/sqlite/stdlib@v1.14.44` — mattn's version carried onto a
-  path that is not a module during the driver swap — so lane setup failed
+  required `gofastr/sqlite/stdlib@v1.14.44`, mattn's version carried onto a
+  path that is not a module during the driver swap, so lane setup failed
   before any trial. They now pin `modernc.org/sqlite`, and a test fails when
   any baseline requirement stops resolving.
 - **Required markers sit on the label line.** `ui.Select`, `ui.RadioGroup`,
   and `ui.CheckboxGroup` joined the `*` as a sibling of their
   `<label>`/`<legend>` inside a grid container, so it rendered as its own row
-  under the label text — unlike `ui.FormField`, which keeps it inline. The
+  under the label text, unlike `ui.FormField`, which keeps it inline. The
   marker now renders inside the label/legend, and the select and toggle
   stylesheets carry its red color and spacing themselves instead of relying
   on `ui-form-field`'s scoped rule happening to be on the page. (#188)
@@ -1058,7 +1058,7 @@ failing against the unfixed code first.
   `soft_delete:` and `multi_tenant:` keys and `app.auth.enabled` now demand a
   real `true`/`false`, exactly like their grouped `scope.*` twins. A YAML-1.1
   truthy such as `multi_tenant: yes` decoded to *false*, silently dropping
-  tenant scoping — and `enabled: yes` left the whole app public with no
+  tenant scoping, and `enabled: yes` left the whole app public with no
   login. `gofastr validate` and `generate` both reject the spelling with an
   error naming the key.
 - **Detail screens must put `{id}` in their route.** The blueprint validator
@@ -1070,7 +1070,7 @@ failing against the unfixed code first.
   regenerated ecommerce flagship serves them with an e2e guard that follows a
   real View link.
 - **Directory-mode blueprints keep their seeds.** `gofastr generate
-  --from=<dir>` merged every section except `seed:` — multi-file blueprints
+  --from=<dir>` merged every section except `seed:`. Multi-file blueprints
   silently lost all seed data.
 - **Generated apps no longer mount a dead delete-confirmation widget.**
   Soft-delete entities emitted a `ui.ConfirmAction` nothing referenced, aimed
@@ -1078,7 +1078,7 @@ failing against the unfixed code first.
   that works, and now it's the only one emitted.
 - **`gofastr init --db=` validates its value.** An unknown driver (say
   `--db=mysql`) used to silently scaffold a SQLite project that only looked
-  configured; it now errors listing the accepted values — `sqlite`,
+  configured; it now errors listing the accepted values: `sqlite`,
   `postgres`, aliases `sqlite3`/`postgresql`.
 - **Example seeds no longer skip rows silently.** The ecommerce reviews
   (missing required product reference), lms courses (missing instructor),
@@ -1088,7 +1088,7 @@ failing against the unfixed code first.
   every category has products.
 - **SSE streams no longer die at the request timeout.** The Timeout
   middleware returned to net/http at the deadline even when the response
-  was already streaming, finalizing the response under the live handler —
+  was already streaming, finalizing the response under the live handler,
   so every SSE connection older than the 30s default died with a recovered
   heartbeat panic and a silent client reconnect, violating the documented
   "streams outlive the request timeout" contract. Once a handler flushes
@@ -1097,7 +1097,7 @@ failing against the unfixed code first.
   non-streaming handlers keep their 504 at the deadline.
 - **Navigated-away pages no longer hoard SSE connections.** The SSE client
   module never closed its EventSource on navigation, and Chrome keeps
-  bfcached pages' sockets open — so hard-navigating six SSE-bearing pages
+  bfcached pages' sockets open, so hard-navigating six SSE-bearing pages
   exhausted the tab's per-host connection budget and the seventh page never
   loaded. The transport now closes on `pagehide` and reconnects on a
   bfcache restore (`pageshow.persisted`). This had been masked by the
@@ -1105,7 +1105,7 @@ failing against the unfixed code first.
 - **The harness ws control channel could lose an entire turn's events.** The
   event pump subscribed to the bus in its own goroutine after the read loop
   was already accepting commands, so a turn dispatched before the
-  subscription registered broadcast to nobody — the intermittent
+  subscription registered broadcast to nobody, the intermittent
   `TestWSHandshakeAndCommand` CI failure. Subscription now happens before the
   read loop starts.
 - **Meridian's auth footers match the generator again** (#185): the
@@ -1135,8 +1135,8 @@ failing against the unfixed code first.
   `migrate.GenerateMigrationFile(plan, name, opts)` diffs a migration
   Plan against the committed snapshot and writes the next numbered
   migration, updating the snapshot. `App.MigrationPlan()` returns the
-  Plan `Start` auto-migrates from — the entity registry plus every
-  registered routine and view — so an app whose schema lives in owned
+  Plan `Start` auto-migrates from, the entity registry plus every
+  registered routine and view, so an app whose schema lives in owned
   Go (the blueprint deleted, as the architecture intends) can emit
   reviewable migrations instead of choosing between boot-time
   auto-migrate and hand-written SQL. `gofastr migrate generate` now
@@ -1150,7 +1150,7 @@ failing against the unfixed code first.
   as a function.
 - **Support tiers for every package.** `stability` classifies each
   package Stable, Provisional, Experimental, Internal, or Excluded, and
-  `TestEveryPackageIsClassified` fails when a package has none — a new
+  `TestEveryPackageIsClassified` fails when a package has none, so a new
   top-level tree cannot ship unclassified. Nothing is Stable before
   v1.0.0: the supported surface is Provisional, meaning documented and
   covered by the deprecation window, not frozen. `docs/public-api.md`
@@ -1158,8 +1158,8 @@ failing against the unfixed code first.
 - **Column renames in blueprints.** An entity's `renames:` key (old
   column → new column) reaches `EntityConfig.Renames`, so the schema
   diff emits `RENAME COLUMN` instead of a data-losing drop plus add.
-  Renames were Go-declaration-only, which left the blueprint — the only
-  input the standalone migration generator reads — unable to express the
+  Renames were Go-declaration-only, which left the blueprint, the only
+  input the standalone migration generator reads, unable to express the
   difference. Both sides are checked as column identifiers, the new name
   must be a declared field, and the old name must not be.
 - **Embedded doc examples are compiled.** `TestDocExamplesCompile`
@@ -1174,7 +1174,7 @@ failing against the unfixed code first.
 - **A blueprint relation name is now checked as an identifier.** It was
   the last name in the blueprint IR without that guard, while the entity
   emitter puts it in struct-field position and inside a backtick
-  `json:"…"` tag — a raw literal with no escape mechanism — and the
+  `json:"…"` tag, a raw literal with no escape mechanism, and the
   typed-column emitter puts it in const-identifier position. Every
   crafted value we tried produced Go that does not parse rather than Go
   that runs, so this is a corrupt-output bug we are treating as a code
@@ -1187,7 +1187,7 @@ failing against the unfixed code first.
   newline in `--module` appended `replace` directives to the shipped
   SDK's `go.mod`, which runs arbitrary code in every repo that builds
   it. The header is sanitized at its one choke point, closing a comment
-  escape into `client.js` — served as `application/javascript`, so
+  escape into `client.js`, served as `application/javascript`, so
   same-origin script execution.
 - **Codegen command extensions get an allowlisted environment.** An
   extension is a binary named by whichever `gofastr.codegen.yml` is in
@@ -1201,8 +1201,8 @@ failing against the unfixed code first.
   from it and from diagnostic messages (CWE-150; an OSC 52 sequence can
   write the system clipboard, planting a command the developer later
   pastes). stdout and stderr are capped at 16 MiB, and an extension
-  holding a pipe open can no longer hang the generate indefinitely —
-  cancellation was previously unreachable because the command was
+  holding a pipe open can no longer hang the generate indefinitely.
+  Cancellation was previously unreachable because the command was
   started with a background context.
 - An extension's `severity: error` diagnostic was collected and read by
   nobody, so an extension could not reject its input. It now fails the
@@ -1211,8 +1211,8 @@ failing against the unfixed code first.
   `app.theme` and `app.theme.dark` values were emitted as direct struct
   assignments, which bypass every setter, so a value carrying `;` or `}`
   closed the `:root` block and appended rules to the stylesheet the UI
-  host and the admin battery serve as `text/css`. That is CSS injection
-  — `url()` exfiltration and attribute-selector reads — and becomes XSS
+  host and the admin battery serve as `text/css`. That is CSS injection,
+  `url()` exfiltration and attribute-selector reads, and becomes XSS
   if any surface ever inlines that sheet in a `<style>` element.
   `theming.md` already named this exact anti-pattern under "Common
   mistakes". `style.ValidateColorValue` is now exported so the generator
@@ -1226,16 +1226,16 @@ failing against the unfixed code first.
   with the renderer.
 - `gofastr pack` no longer invents list items. `needsQuote` tested for a
   comma only as a scalar's first byte, so an interior comma was emitted
-  bare into a flow list — where it separates items — and an enum value
+  bare into a flow list, where it separates items, and an enum value
   like `open,closed` round-tripped into two values.
 - A typo in a screen's `layout:` silently rendered the screen inside the
   authenticated app shell instead of failing; anything that was not
   `marketing` mapped to the app layout.
-- **BREAKING (validation) — six blueprint booleans that gate access now
+- **BREAKING (validation): six blueprint booleans that gate access now
   reject anything but `true`/`false`.** `core/yaml` implements YAML 1.2,
   where `yes`, `on`, `y`, and `1` are strings rather than booleans, so
   `access: {auth: yes}` read as **false** and registered the screen with
-  no policy at all — publicly reachable, with no error to say so.
+  no policy at all, publicly reachable, with no error to say so.
   `scope.multi_tenant: yes` dropped tenant scoping identically, and a
   field's `hidden`, `no_query`, or `read_only` failed open the same way.
   The six now error; keys where false is the inert direction (`public`,
@@ -1247,19 +1247,19 @@ failing against the unfixed code first.
   object-key and statement positions (`this.<name> = new Resource(…)`),
   and those names are not identifier-constrained on the way in. It now
   emits `this[<name>]` with quoted keys. Consumer-visible behavior is
-  unchanged. `client.d.ts` keeps unquoted names deliberately — type
+  unchanged. `client.d.ts` keeps unquoted names deliberately: type
   declarations are never executed.
 
 ### Fixed
 
 - A declared `Index.Expression` was dropped by the entity emitter, so an
-  expression index came out with no key at all — a `Unique` index on an
+  expression index came out with no key at all. A `Unique` index on an
   expression silently did not constrain anything.
 - `migrate.GenerateMigrationFile` validates a group name before writing
   anything, and fails loudly rather than silently dropping the group if
   the `-- +migrate Up` anchor it stamps against is absent. The CLI
   validated `--group`; the library path did not.
-- The first-run guide's setup example did not compile — it passed `app`
+- The first-run guide's setup example did not compile. It passed `app`
   to `setup.HealthStep` a line before declaring it.
 - The cron guide said the scheduler had no distributed coordination and
   every replica fired every job, while `Scheduler.WithLeaderElection`
@@ -1303,18 +1303,18 @@ failing against the unfixed code first.
   load. `App.RenderPartialFromResult` is the Go entry point.
 - **Route prefetch.** `app.Preload(app.PreloadHover|PreloadVisible|
   PreloadEager)` on a registration lets the client fetch the route's
-  partial before the click — on link hover/focus, when a link scrolls
+  partial before the click: on link hover/focus, when a link scrolls
   into view, or at idle. Prefetched entries live in a 4-entry,
   30-second cache the router checks before fetching; `invalidate()`
   selectors evict them; requests carry `X-Gofastr-Prefetch: 1` and
   skip session minting; routes that would open as overlays are never
-  prefetched. Ships as the `preload` demand module — apps that never
+  prefetched. Ships as the `preload` demand module. Apps that never
   declare a mode load none of it.
 - **Scroll restoration.** History entries carry an id, positions are
   captured per entry (and persisted to `sessionStorage`), and Back,
   Forward, and reload land where the user left instead of at the top.
 - **State-aware history.** A Back/Forward whose only URL change is
-  in-page state — a widget deep-link or pane parameter — replays that
+  in-page state, a widget deep-link or pane parameter, replays that
   state with zero fetches instead of re-rendering the screen, which
   used to discard the mounted widget (the v0.44.0 known issue; Forward
   across a deep link now works). Search/filter/page params still
@@ -1332,23 +1332,23 @@ failing against the unfixed code first.
 
 ### Changed
 
-- **BREAKING** — `app.RouteEntry.Layout` (a single, innermost layout
+- **BREAKING**: `app.RouteEntry.Layout` (a single, innermost layout
   name) is now `Layouts` (the layer-key chain) plus a `Preload` mode;
   the client route manifest's `layout` field is now `layouts` and the
   dead `cssChunk` field is gone. Anything reading the old fields must
   switch to the chain.
-- **BREAKING** — `data-fui-layout` is emitted on every layout layer
+- **BREAKING**: `data-fui-layout` is emitted on every layout layer
   (was: outermost only) and is emit-only; the runtime's swap decisions
   read `data-fui-layout-key`/`-slot`. `data-fui-screen-group` remains
   emitted but no longer drives swap decisions.
-- **BREAKING** — static export (`Router.RenderRaw`) now composes the
+- **BREAKING**: static export (`Router.RenderRaw`) now composes the
   same layout chain as live SSR, including the default layout, and no
   longer double-wraps `<main>`. Exported HTML for grouped screens
   changes shape accordingly.
-- **BREAKING** — a `SubGroup` inheriting its parent's layout renders
+- **BREAKING**: a `SubGroup` inheriting its parent's layout renders
   that layout once (the level keeps an addressable marker) instead of
   emitting a duplicate nested shell.
-- **BREAKING** — live pages externalize the component catalog and
+- **BREAKING**: live pages externalize the component catalog and
   runtime-module manifest into one content-addressed
   `/__gofastr/manifest.js` (loaded before `runtime.js`) instead of
   inlining ~3 KB gz of JSON into every page head. Static export and
@@ -1356,24 +1356,24 @@ failing against the unfixed code first.
   inline `#gofastr-catalog` / `#gofastr-runtime-modules` elements on
   live pages should read `window.__gofastr_catalog` /
   `window.__gofastr_runtime_modules`.
-- **BREAKING** — live pages stop referencing the whole-app
+- **BREAKING**: live pages stop referencing the whole-app
   `/__gofastr/actions.js` concat. SSR emits one content-addressed
   script per compiled action registry present on the page, and the
   `actionloader` demand module fetches the rest on navigation.
   `/__gofastr/widget/{id}.js` is now session-gated like the concat
   (it was previously ungated) and served private+immutable. The
   concat endpoint remains for static export and embeds.
-- **BREAKING** — `style.Contribute` fragments are frozen into
+- **BREAKING**: `style.Contribute` fragments are frozen into
   `app.css` at first render; a later contribution logs a warning and
   does not ship. Contribute at package init or before `Mount`.
-- **BREAKING** — modules that write in-page state to the URL must use
+- **BREAKING**: modules that write in-page state to the URL must use
   `__gofastr._pushURL`; a raw `history.pushState` around the router
   leaves `currentPath` stale and breaks scroll restore and the
   stateful-popstate diff. `history.state` now carries `{__fui: <id>}`.
 - `app.ComposeLayouts` is internalized; layout composition goes
   through the chain renderer.
 - Active-link highlighting (`aria-current`, `data-fui-match-prefix`)
-  moved from the core runtime to the idle-loaded `activelink` module —
+  moved from the core runtime to the idle-loaded `activelink` module.
   SSR renders the initial state, so only the first client-side nav's
   highlight can lag by a frame. Core `runtime.js` is 12,313 B gz@6 /
   14,220 B gz@1 against the 12,800 / 14,336 budget lines.
@@ -1384,15 +1384,15 @@ failing against the unfixed code first.
 ### Fixed
 
 - Client-side navigation to a dynamic route (`/items/:id`) in a
-  different layout silently swapped the new screen into the old shell
-  — the manifest lookup was literal-path only and missed patterns.
+  different layout silently swapped the new screen into the old shell.
+  The manifest lookup was literal-path only and missed patterns.
 - Leaving a layout for a layout-less page kept the old chrome around
   the new content.
 - SPA navigation dropped the `<article>` wrapper on article screens,
   so Reader Mode support lasted only until the first client-side
   visit.
 - Runtime-module preload hints were `rel="modulepreload"` for scripts
-  the loader injects as classic scripts — the preloaded response was
+  the loader injects as classic scripts. The preloaded response was
   never reused, so every hinted module downloaded twice. Hints are now
   `rel="preload" as="script"`.
 - A hydration request racing DOM insertion marked the component id
@@ -1406,18 +1406,18 @@ failing against the unfixed code first.
 
 ### Added
 
-- **`gofastr verify` — contracts and semantic analysis.** A single
+- **`gofastr verify`: contracts and semantic analysis.** A single
   pipeline that answers "is this still an idiomatic GoFastr application",
   where `go build` answers "does it compile" and `go vet` answers "is
   anything obviously wrong". It discovers the route table, entity
   declarations, permission strings, and rendering surface, then reports
-  where they no longer hold — with the reason and the fix attached to
+  where they no longer hold, with the reason and the fix attached to
   every finding. See `gofastr docs contracts`.
 
   49 rules at launch spanning twelve capabilities: `routing`, `permissions`,
   `security`, `data`, `entities`, `architecture`, `rendering`,
   `accessibility`, `performance`, `testing`, `ai`, `meta`. Each is also a
-  filter — `gofastr verify routing security` runs two of them.
+  filter: `gofastr verify routing security` runs two of them.
 
   Rules are data, not error strings: every one carries a stable ID
   (`GOFASTR1002`), the consequence, the remedy, and a bad/good example
@@ -1426,16 +1426,16 @@ failing against the unfixed code first.
   closest-match suggestions rather than silence.
 
   Two of the routing rules catch failures that are otherwise silent.
-  `GOFASTR1002` finds Express-style `:id` in a ServeMux pattern — it
+  `GOFASTR1002` finds Express-style `:id` in a ServeMux pattern, which
   registers cleanly and 404s every real request. `GOFASTR1005` finds a
-  lowercase method — it registers cleanly and 405s every real request.
+  lowercase method, which registers cleanly and 405s every real request.
   Neither produces a boot error or a log line today.
 
-- **`GOFASTR1903` — auth configured but never mounted.** `auth.New(...)`
+- **`GOFASTR1903`: auth configured but never mounted.** `auth.New(...)`
   builds a manager; without `auth.SessionMiddleware`, `auth.RequireAuth`,
   or `auth.BFF` in the chain, no request ever carries a user, so every
   signed-in caller gets 401 identically to a real intruder. The app looks
-  configured and the login form works. This is not hypothetical — it
+  configured and the login form works. This is not hypothetical: it
   shipped from the blueprint generator, which enabled the battery and
   never mounted the middleware. In a module with several binaries each is
   checked separately, by import reachability: one app's mount says
@@ -1445,8 +1445,8 @@ failing against the unfixed code first.
   at its declared severity; there is no opt-in. The two ways to say no
   both leave a trace: `//gofastr:allow(RULE) reason` waives one instance
   (a directive with no reason, an unknown rule, or one that stops matching
-  anything is itself a finding), and `gofastr.contracts.yml` — or a
-  `contracts:` block in `gofastr.yml` — relaxes a rule, a capability, or a
+  anything is itself a finding), and `gofastr.contracts.yml`, or a
+  `contracts:` block in `gofastr.yml`, relaxes a rule, a capability, or a
   path. Every relaxation is printed in the report footer, so a run that
   passes because half of it was switched off says so.
 
@@ -1454,26 +1454,26 @@ failing against the unfixed code first.
   statement ran; it cannot say a request ever reached a route through the
   real router, middleware chain, and auth check. `framework.TestHarness`
   now records six dimensions a suite genuinely exercised into
-  `.gofastr/semantic-coverage.json` — routes (by registered pattern, not
+  `.gofastr/semantic-coverage.json`: routes (by registered pattern, not
   request path), permissions, roles held, entity CRUD operations,
-  lifecycle hook firings, and published event types — and the `testing`
+  lifecycle hook firings, and published event types. The `testing`
   rules diff that against the discovered surface. Automatic for suites already using the harness;
   `framework.RecordSemanticCoverage(t, app)` for anything else;
   `GOFASTR_NO_SEMANTIC_COVERAGE` opts out. A missing manifest reports at
-  info level and does not fail — a manifest that exists but misses a
+  info level and does not fail. A manifest that exists but misses a
   route does.
 
   Two distinctions carry the weight. A permission **denial** counts as
   coverage: a test asserting a rejection proves the boundary at least as
   well as one asserting a grant, and the failure worth catching is a
   check never reached at all. A hook firing is recorded only when
-  something is *registered* for that lifecycle point — `ExecuteHooks`
+  something is *registered* for that lifecycle point: `ExecuteHooks`
   runs on every CRUD operation regardless, so crediting the call would
   hand every entity full hook coverage on its first request.
 
   `GOFASTR_SEMANTIC_COVERAGE=1` turns recording on for a *serving*
   process, so an integration test that builds the binary and drives it
-  over real HTTP still counts — that shape never touches the test harness,
+  over real HTTP still counts. That shape never touches the test harness,
   and every route it exercised was previously invisible. The e2e test
   `gofastr generate` emits sets it.
 
@@ -1486,13 +1486,13 @@ failing against the unfixed code first.
   rename on the emitting side leaves the subscriber compiling, the suite
   green, and the notification never sent.
 
-- **`access.SetObserver`, `hook.SetObserver`, `event.SetObserver`** —
+- **`access.SetObserver`, `hook.SetObserver`, `event.SetObserver`**:
   evaluation, firing, and emission callbacks, the same inversion
   `router.SetServeHook` uses. Test tooling installs them;
   `framework/access`, `framework/hook`, and `framework/event` stay
   dependency-free leaves and production pays one atomic load per check.
 
-- **Baselines — the adoption ratchet.** `gofastr verify --baseline-write`
+- **Baselines: the adoption ratchet.** `gofastr verify --baseline-write`
   records every current finding into `.gofastr-contracts-baseline.json`;
   subsequent runs pass on that debt and fail on anything added. Without
   it, strict-by-default and an existing codebase pull against each other:
@@ -1500,13 +1500,13 @@ failing against the unfixed code first.
   tool off or downgrade every rule to warn.
 
   Counts are keyed by (rule, file) rather than by line, so a reformat does
-  not invalidate the baseline — moving a finding within a file keeps it
+  not invalidate the baseline: moving a finding within a file keeps it
   accepted, adding one more does not. When findings are fixed the report
   says which entries are now over-accepting, because that slack is exactly
   where a new finding could hide; re-recording is what makes it a ratchet
   rather than a mute button.
 
-  Only *gating* findings are recorded — anything below the run's fail-on
+  Only *gating* findings are recorded: anything below the run's fail-on
   severity is skipped, because an entry for a finding that cannot fail the
   run would absorb it on every later run and silence a signal the project
   deliberately kept visible.
@@ -1516,31 +1516,31 @@ failing against the unfixed code first.
   errors and a change adding fifty unguarded mutations would have passed.
 
   Its config downgrades the semantic-coverage rules to `info`. Those
-  record *which tests ran*, which differs by environment — CI excludes
-  some chromedp packages and runs Postgres suites a laptop skips — so
+  record *which tests ran*, which differs by environment, CI excludes
+  some chromedp packages and runs Postgres suites a laptop skips, so
   gating a shared CI on a recorded baseline of them is flaky by
   construction. Verified rather than assumed: halving the manifest's
   recorded routes turned `verify --strict` from exit 0 into exit 1 before
   the downgrade, and leaves it at 0 after.
 
-- **`--changed` — verify only what this change touched.** `gofastr verify
+- **`--changed`: verify only what this change touched.** `gofastr verify
   --changed` reports findings in uncommitted files (including untracked
   ones); `--changed=main` reports everything since the branch forked, from
   the fork point rather than the tip. The pre-commit, dev-loop, and
   PR-review question is the same narrower one, and a whole-tree report
   answers a different question.
 
-  The analysis still runs over the whole tree — the route table, entity
-  list, and coverage manifest are only meaningful whole — so a duplicate
+  The analysis still runs over the whole tree, because the route table, entity
+  list, and coverage manifest are only meaningful whole, so a duplicate
   route introduced by editing one file is still found. Only reporting
   narrows, and the run states how many findings it withheld.
 
   The repository's `.githooks/pre-commit` uses it, so a commit that adds a
-  contract finding fails locally before CI sees it — with a report scoped
+  contract finding fails locally before CI sees it, with a report scoped
   to the files that commit touches.
 
 - **`gofastr dev` reports contract findings after each reload**, scoped to
-  what changed — the practical approximation of the RFC's inline-diagnostics
+  what changed, the practical approximation of the RFC's inline-diagnostics
   goal. It runs *behind* the restart, never before it: a second added to
   every save is the difference between a loop people use and one they turn
   off. The output is one line per finding with the rule ID, capped and
@@ -1554,12 +1554,12 @@ failing against the unfixed code first.
   `originalUriBaseIds`: artifact URIs are relative to that root, which is
   not necessarily the repository root, and without the declaration a
   consumer assumes repo-root and maps every annotation onto a path that
-  does not exist — silently. `--fix` applies the
+  does not exist, silently. `--fix` applies the
   mechanical fixes and re-verifies. Fixes are gofmt-ed after application,
   so an edit only has to be syntactically correct rather than reproduce
-  the surrounding indentation — which is what makes inserting fields into
+  the surrounding indentation. That is what makes inserting fields into
   a multi-line composite literal safe. A file's original line endings
-  survive: gofmt emits LF, so CRLF is restored afterwards — without that,
+  survive: gofmt emits LF, so CRLF is restored afterwards. Without that,
   a one-line fix in a Windows working tree rewrote every line in the file. `GOFASTR1005` (uppercase the
   method), `GOFASTR1404` (add the missing cookie attributes), and
   `GOFASTR0002` (delete a stale suppression) ship fixes. Every edit
@@ -1585,7 +1585,7 @@ failing against the unfixed code first.
 - **MCP contract tools, dev loop.** Under `gofastr dev`, `contracts_verify`
   runs the analyzers over the app's source and returns structured
   findings, and `contracts_fix` applies one rule's autofixes and reports
-  the files it changed — so an agent can verify, explain, and fix without
+  the files it changed, so an agent can verify, explain, and fix without
   shelling out. Both touch local source files, so neither is registered
   outside the dev loop: a production `/mcp` does not gate them, it does
   not have them.
@@ -1595,7 +1595,7 @@ failing against the unfixed code first.
   run: an empty diagnostic list on a tree that will not compile means
   "could not look", not "nothing found".
 
-- **`check.ScanInlineScriptsIn`** (`core-ui/check`) — a per-file entry
+- **`check.ScanInlineScriptsIn`** (`core-ui/check`): a per-file entry
   point for the inline-script linter, so callers that already hold a
   parsed AST (the contracts pass, on every dev-loop save) can lint
   without re-reading and re-parsing the tree.
@@ -1608,13 +1608,13 @@ failing against the unfixed code first.
   use their own uppercase prefix (`ACME101`); the `GOFASTR` namespace and
   its per-capability number blocks stay reserved for the built-in
   catalog, so a suppression written today cannot collide with a future
-  release. A worked example — a project gate command with its own rule —
+  release. A worked example, a project gate command with its own rule,
   is in `gofastr docs contracts` under "Your own rules".
 ### Fixed
 
 - The `examples/ecommerce` flagship test no longer regenerates the committed
   example into the working tree. It ran the generator with `--force` in the
-  repo directory, so a suite run rewrote tracked `app/` files — dirtying the
+  repo directory, so a suite run rewrote tracked `app/` files, dirtying the
   tree before a commit, and silently reverting if anyone ran
   `git checkout -- examples/`. It now emits into a gitignored scratch package
   inside the module, the same arrangement `examples/meridian` already used.
@@ -1630,12 +1630,12 @@ failing against the unfixed code first.
 - **A Go map or slice `Default` on a `schema.JSON` field emitted invalid DDL**
   (`framework/migrate`). `SQLDefault` had no arm for the shapes such a default
   naturally takes, so a map fell to the `fmt.Sprintf("%v")` fallback and
-  rendered `DEFAULT 'map[a:1]'` — which Postgres rejects on a `JSONB` column,
+  rendered `DEFAULT 'map[a:1]'`, which Postgres rejects on a `JSONB` column,
   failing `AutoMigrate` at boot. SQLite's column is `TEXT`, so the same
   declaration stored the literal text and looked fine: the identical dialect
   split as #174. The value was already correct in the two other places it is
-  used — `schema.validateJSON` accepts maps and slices, and
-  `crud.marshalJSONColumn` marshals them on the insert path — so only the DDL
+  used: `schema.validateJSON` accepts maps and slices, and
+  `crud.marshalJSONColumn` marshals them on the insert path. Only the DDL
   rendering was wrong. It now marshals to JSON *before* quoting, which keeps
   the deliberate literal-escaping intact rather than replacing it. (#178)
 
@@ -1644,8 +1644,8 @@ failing against the unfixed code first.
 ### Breaking
 
 - **BREAKING: a malformed field `Default` now fails registration.** The change
-  surfaces an existing bug rather than creating one — the declaration was
-  already broken, it just failed per-request instead of at boot — but an app
+  surfaces an existing bug rather than creating one: the declaration was
+  already broken, it just failed per-request instead of at boot. But an app
   that starts today can stop starting, so treat it as breaking. `App.Entity`
   panics as it already does for other declaration errors (relation without
   `To`, duplicate fields, wire-key collisions); `TryEntity` returns the error.
@@ -1656,14 +1656,14 @@ failing against the unfixed code first.
 - **Field `Default` values are validated at registration** (`framework/entity`).
   A `Default` is the value `crud.doCreate` substitutes for a field the request
   body omitted, and it reached the driver through the same column as a
-  client-sent value but through none of the same checks — `ValidateAll` ran
+  client-sent value but through none of the same checks: `ValidateAll` ran
   over the body and the `Default` was applied afterwards. A caller who *sent*
   the bad value got a 400 naming the field; a caller who *omitted* it got a
   500 with nothing actionable in it. `Entity.Validate` now runs
   `schema.Validate` over every `Default`, so a malformed one fails the
   declaration at boot with the field named. The clearest case was
   `{Type: schema.JSON, Default: "draft"}`: 500 against Postgres `JSONB`, and
-  stored unchanged in SQLite's `TEXT` — the same declaration broken on one
+  stored unchanged in SQLite's `TEXT`, the same declaration broken on one
   dialect and silently fine on the other. Auto-generated fields are exempt
   (their `Default` is never an insert value; it survives only as the column's
   DDL `DEFAULT`). Two Go spellings a JSON body cannot produce are normalized
@@ -1683,7 +1683,7 @@ one. Sessions were the worst: modernc binds `time.Time` in Go's `String()`
 format, which no parser in the repo accepts, so every stored session read back
 as the zero time and looked expired. The browser E2E suites had stopped running
 on macOS at the same time and reported `PASS` while skipping, which is why it
-went unnoticed — both are fixed here.
+went unnoticed. Both are fixed here.
 
 This release also carries the migration work (`SERIAL`, type-change detection,
 column renames), cron leader election, argon2id hashing, and Reader Mode.
@@ -1695,7 +1695,7 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
   generated apps import it. `mattn/go-sqlite3` is out of `go.mod`. A host
   that still imports `mattn/go-sqlite3` keeps cgo and wins the `sqlite3`
   name, because whichever package registers it first is the one that
-  stays — drop the import.
+  stays. Drop the import.
   Timestamps bind with `_time_format=sqlite`, which is byte-identical to
   what mattn wrote, so existing database files read back unchanged and no
   migration is needed. `busy_timeout` defaults to mattn's 5000ms rather
@@ -1767,7 +1767,7 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
 - SSE streams no longer die at the request timeout (issue #159). A live
   subscriber was cut at `middleware.Timeout`'s 30s deadline, and the naive
   fix (clearing the connection's read/write deadlines, reverted in #158)
-  stranded streams instead — exhausting the browser's per-origin connection
+  stranded streams instead, exhausting the browser's per-origin connection
   pool. The stream loop now ignores the request context's
   `DeadlineExceeded` (the timeout firing on a still-connected client) while
   unwinding on a real `context.Canceled` (client disconnect); a heartbeat
@@ -1787,7 +1787,7 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
 - A `schema.JSON` field is writable through the generated CRUD routes. The
   handler bound the decoded Go value straight to the driver, so every create
   or update that populated one failed with a 500 (`unsupported type
-  map[string]interface {}, a map`) — leaving the field unreachable through any
+  map[string]interface {}, a map`), leaving the field unreachable through any
   supported interface. Values are now marshalled on write and parsed on read,
   so a JSON document round-trips as a document on create, update, get, list,
   cursor pages, `?stream=true`, and `?include=` rows. A string still means
@@ -1796,8 +1796,8 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
   column that used to arrive as a string now arrives parsed. (#170)
 - `/openapi.json` no longer advertises CRUD paths for entities with
   `Exposure.CRUD: false`. The router honoured the opt-out and the spec did
-  not, so the spec documented a management API the server answered 404 for —
-  worst exactly where the opt-out was deliberate — and generated SDKs shipped
+  not, so the spec documented a management API the server answered 404 for,
+  worst exactly where the opt-out was deliberate, and generated SDKs shipped
   methods that could not work. Only the generated surface goes: the entity's
   schema component stays, and so do hand-written `Endpoints` (the router
   mounts those whether or not auto-CRUD is on). An unset `CRUD` still means
@@ -1824,21 +1824,21 @@ column renames), cron leader election, argon2id hashing, and Reader Mode.
 - The Meridian canary's Customers list-island now states its policy
   explicitly (`WithIslandPolicy(authPolicy("/login", ""))`), matching the
   contract `gofastr generate` emits on every island, instead of leaning on
-  `TableHandler`'s nil-policy sign-in fallback — which silently stops gating
+  `TableHandler`'s nil-policy sign-in fallback, which silently stops gating
   the rows the moment the screen gains a role. (#160)
 
 ### Security
 
 - `Argon2Hasher.Verify` rejects resource-exhaustion parameters parsed from a
   stored hash (memory up to ~4 TiB, unbounded time) before invoking
-  `argon2.IDKey` — a malicious or corrupted password-hash row could otherwise
+  `argon2.IDKey`. A malicious or corrupted password-hash row could otherwise
   allocate gigabytes or peg a CPU on every verify (per-login DoS). Legitimate
   hashes sit far below the caps.
 
 ## [0.55.0] - 2026-07-31
 
-Five independent analyses of the whole framework — three in-repo passes
-plus two external models, none given the others' findings — turned up
+Five independent analyses of the whole framework, three in-repo passes
+plus two external models with none given the others' findings, turned up
 bugs the v0.54 sweep did not reach. This release fixes all of them, each
 with a test that failed first. A three-model review of the resulting
 branch then found four more, including a regression this wave itself had
@@ -1914,7 +1914,7 @@ atomicity and the static ETag cache. Those are fixed here as well.
   with no policy the handler still requires sign-in.
 - **BREAKING: generated island endpoints moved to
   `/api/tables/<screen>/<entity>`.** They were one per entity, mounted on
-  the bare registry entry — so two screens showing the same entity shared
+  the bare registry entry, so two screens showing the same entity shared
   one endpoint, and a sort click on a filtered list came back unfiltered.
   Each screen now gets its own endpoint serving that screen's refined
   config behind that screen's policy.
@@ -1924,8 +1924,8 @@ atomicity and the static ETag cache. Those are fixed here as well.
   `crud.CrudRoutePatterns`) and compares wildcard SHAPE, so a screen at
   `/posts/{slug}` and an endpoint shadowing `/posts/_batch` are both
   caught during validation. Declarations that previously panicked
-  mid-commit — leaving the entity in the registry and its CRUD routes
-  mounted — now return an error having registered nothing.
+  mid-commit, leaving the entity in the registry and its CRUD routes
+  mounted, now return an error having registered nothing.
 - **BREAKING: `RedisClient.RPop` must report an empty list as
   `queue.ErrRedisEmpty`.** `Dequeue` used to treat any `RPop` error as an
   empty queue, which masked a backend outage as an idle worker. It now
@@ -1942,8 +1942,8 @@ atomicity and the static ETag cache. Those are fixed here as well.
 
 - **`DisableRequestTimeout` also drops the server read/write timeouts.**
   Setting it removed the middleware deadline but left the server's fixed
-  60s limits in place, so a request that legitimately runs longer — an
-  upload over a minute — was still cut off.
+  60s limits in place, so a request that legitimately runs longer, such as an
+  upload over a minute, was still cut off.
 - **`TryEntity` rejects a declaration without publishing part of it.**
   Entity validation, the CRUD/MCP contract, route collisions (including
   custom endpoint paths), and MCP tool names are all checked before the
@@ -2019,7 +2019,7 @@ atomicity and the static ETag cache. Those are fixed here as well.
   two handlers over different filesystems serving a same-name, same-size
   file shared an ETag and answered `304` for content the client had never
   seen. A path that is not valid UTF-8 (`/%ff`) is now a 404 rather than a
-  500 — `fs.ValidPath` rejects it as `fs.ErrInvalid`, which any client
+  500. `fs.ValidPath` rejects it as `fs.ErrInvalid`, which any client
   could use to drive a 5xx.
 - **SQL placeholders inside string literals are left alone.** The
   renumberer understood `'…'` but not `$$…$$`, `$tag$…$tag$`, or the
@@ -2044,7 +2044,7 @@ atomicity and the static ETag cache. Those are fixed here as well.
   gone; the network machinery (dispatch, CSRF, form encoding, abort
   controllers, response-header effects, the kiln tool POST) now lives in
   `src/rpc.js`, and the core bundle fell from 14,338 to 12,368 gzip bytes
-  — from 2 bytes over the 14,336-byte initial congestion window to nearly
+  , from 2 bytes over the 14,336-byte initial congestion window to nearly
   2 KB under it. A page carrying `[data-fui-rpc]` or `[data-kiln-tool]`
   starts fetching the module at boot, fire-and-forget, so it is normally
   resident before the first click; core keeps one delegated bridge that
@@ -2053,7 +2053,7 @@ atomicity and the static ETag cache. Those are fixed here as well.
   through to a native submit. A module that never arrives (a host serving
   `runtime.js` but not `/__gofastr/runtime/<name>.js`, or a network blip)
   warns rather than swallowing the action, and a non-JSON intercepted form
-  falls back to a native submit — prevented-then-never-dispatched would
+  falls back to a native submit. Prevented-then-never-dispatched would
   lose the submission silently, which could not happen while RPC was
   compiled into core. Static exports keep `rpc-stub` and never request the
   module. Client-only signal mutations
@@ -2063,7 +2063,7 @@ atomicity and the static ETag cache. Those are fixed here as well.
   public Go API changed.
 - Generated blueprint apps sort and paginate list screens through the
   resource island endpoint rather than a full page navigation, and no
-  longer emit `.gofastr-entity-*` or `.detail-*` markup — the dead
+  longer emit `.gofastr-entity-*` or `.detail-*` markup. The dead
   client-JS list and detail renderers are deleted.
 - `battery/admin` composes `ui.DataTable`, `ui.StatCard`,
   `ui.FilterToolbar`, and `ui.Tag`; its second stylesheet (a `baseCSS`
@@ -2093,7 +2093,7 @@ atomicity and the static ETag cache. Those are fixed here as well.
   teaching APIs this release deletes: `widgets.md` opened its quickstart
   with `Builder.RPCWithSignal` and listed `Definition.Bootstrap`, and
   `presence.md` and `live-dashboards.md` assigned to
-  `Manager.AuthorizeTopic` / `OnPresenceChange`, now setters — the
+  `Manager.AuthorizeTopic` / `OnPresenceChange`, now setters. The
   roster-disclosure remediation snippet on the security page was among
   the samples that did not compile. Also: `isolation.md` pointed at
   `gofastr.yml` when `gofastr.isolation.yml` wins the discovery order, so
@@ -2108,8 +2108,8 @@ atomicity and the static ETag cache. Those are fixed here as well.
   the README twice called `/api/docs/` "Swagger UI", the claim this
   release renamed the handler to stop making.
 - `gofastr test` and `gofastr build` document the flags they actually
-  parse — the help advertised `-v`, `-count N`, `-race`, `-run <regex>`
-  and a bare `-o <output>` that the parsers ignore or reject — and
+  parse, where the help advertised `-v`, `-count N`, `-race`, `-run <regex>`
+  and a bare `-o <output>` that the parsers ignore or reject, and
   `gofastr init` names `gofastr.isolation.yml` in its created-files list
   instead of the `gofastr.yml` it does not write.
 
@@ -2118,7 +2118,7 @@ atomicity and the static ETag cache. Those are fixed here as well.
 The zero-carryover release: a three-agent deep analysis of the whole
 framework at v0.53 concluded the feature surface is complete but the
 contract is not freeze-ready, and this release clears everything the
-analysis found — every deprecated field, every dead exported surface,
+analysis found: every deprecated field, every dead exported surface,
 every advertised-but-unimplemented behavior, and every place the docs
 contradicted the code. Every behavioral fix landed with a test that
 failed first.
@@ -2127,7 +2127,7 @@ failed first.
 
 - **BREAKING: the generated resource engine is a framework package.**
   Blueprint apps used to own a ~946-line generated `resource.go`
-  containing generic list/detail/form/filter/pagination machinery — a
+  containing generic list/detail/form/filter/pagination machinery, a
   private fork that framework fixes could never reach. The engine now
   lives once in `framework/ui/resource` (Config/Field/Relation/Filter/
   Transition/RelatedList + a per-app Registry), and the generated
@@ -2144,14 +2144,14 @@ failed first.
   `framework.AutoMigrate`, `framework.NewCrudHandler`, `framework.Define`) are
   now real wrapper functions with identical signatures. Assigning to them
   (`framework.X = myReplacement`) or taking their address (`&framework.X`) no
-  longer compiles — global mutation of the public API is gone. Plain call sites
+  longer compiles. Global mutation of the public API is gone. Plain call sites
   `framework.X(...)` are unchanged.
 - **BREAKING: `WithConfig` replaces `AppConfig` wholesale.** It no longer
   merges field-by-field into prior options. Later options win (including
   granular setters placed after it), and a field `WithConfig` leaves at the zero
   value becomes the zero value, not "keep whatever a previous option set".
 - **BREAKING: removed deprecated UI shims.** `framework/ui.BaseCSS()` (a no-op),
-  `framework/ui.ClusterConfig.Wrap` (ignored — `NoWrap` is authoritative), and
+  `framework/ui.ClusterConfig.Wrap` (ignored, `NoWrap` is authoritative), and
   `interactive.Confirm` (use `Action.WithConfirm`) are deleted.
 - **BREAKING: pattern component names are bare.** `disclosure`, `multiselect`,
   and `sortablelist` register under their package names instead of
@@ -2168,7 +2168,7 @@ failed first.
   `OwnerField`, `CrossOwnerRead` → `Scope`; `CursorField`,
   `CursorFields`, `MaxListLimit` → `Pagination`; `CRUD`, `MCP`,
   `Public`, `Access` → `Exposure`. The fields were deprecated through
-  the v0.40 line and — worse — were still the canonical runtime
+  the v0.40 line and, worse, were still the canonical runtime
   representation: normalization copied the groups into them and the
   runtime read the flat copies. The inversion makes the groups the
   resolved model. Blueprint YAML flat keys (`owner_field:`,
@@ -2179,7 +2179,7 @@ failed first.
 - **BREAKING: `EntityConfig.Timestamps` is `*bool`.** A literal
   `false` used to silently mean "default true" because an unexported
   set-bit carried the real value; only `WithTimestamps(false)` worked.
-  The visible value is now the semantic value — nil defaults to true —
+  The visible value is now the semantic value, with nil defaulting to true,
   so the struct survives copying, serialization, and generic
   construction.
 - **BREAKING: the agent harness moved to
@@ -2195,10 +2195,10 @@ failed first.
   `core/upload.Metadata` (`originalName`, `mimeType`, `uploadedAt`)
   and `framework/file.FileField` (`mimeType`, `storageRef`) join the
   camelCase wire convention. The persisted `<field>_variants` column
-  format deliberately stays snake_case — it is a stored database
+  format deliberately stays snake_case: it is a stored database
   format, and renaming its keys would orphan existing rows.
 - **BREAKING: dead exported surface is deleted.** `battery/storage`'s
-  `BackendFactory` registry (`Register`/`New`/`NewBattery` — `New`
+  `BackendFactory` registry (`Register`/`New`/`NewBattery`, where `New`
   always errored "no backend registered"), the unwirable
   `battery/experimental` redis stores, the harness's orphan providers
   (`failover`, `routing`, `copilot`), its inert plugin seam and stub
@@ -2214,7 +2214,7 @@ failed first.
   form; the parser accepted only the space-separated form, silently
   ignoring `--addr=:9000`.
 - **`gofastr init` emits the flat owned layout the scaffold-and-own
-  contract documents** — `main.go` + `screens.go` at the root, no
+  contract documents**: `main.go` + `screens.go` at the root, no
   `screens/` subpackage, no `gen/` directory, Owned headers on every
   scaffold file.
 - **Kiln no longer advertises actions it cannot run.** The agent tool
@@ -2222,7 +2222,7 @@ failed first.
   nothing executed them. They are gone from the schema and the node
   catalog, and journal application now rejects any unsupported action
   kind at authoring time with an error naming it. Dropped entity
-  endpoints — previously silently nulled — log a warning naming the
+  endpoints, previously silently nulled, log a warning naming the
   endpoint and why.
 - **`TestRequest.WithBody` cannot silently run the wrong body.** A
   JSON marshal failure is retained and surfaced by `Execute` as a
@@ -2246,7 +2246,7 @@ failed first.
 
 The eleven pre-existing bugs the v0.52.0 review pass found in shipped code
 but deliberately left out of that release, plus a security audit of the
-packages no previous pass had ever read — kiln's expression and render
+packages no previous pass had ever read: kiln's expression and render
 layers, the module wire protocol, the router, config, i18n, migrations,
 file handling, and the SDK and pack tooling. Every fix landed with a test
 that failed first.
@@ -2255,13 +2255,13 @@ that failed first.
 
 - **BREAKING: a module's reverse calls now carry only the delegation
   handle.** `EntityQueryParams`, `EntityMutationParams`,
-  `SearchQueryParams` and `EventEmitParams` take a `moduleproto.CallerRef`
-  — `Delegation` and nothing else — in place of `moduleproto.Caller`.
+  `SearchQueryParams` and `EventEmitParams` take a `moduleproto.CallerRef`,
+  `Delegation` and nothing else, in place of `moduleproto.Caller`.
   `Caller` travels in both directions: outbound the host fills it, inbound
   the child writes it, and the child is the untrusted party. A broker
   reading a child-supplied `Subject` or `Tenant` and dispatching under it
-  is a confused deputy. The shipped `Broker` never did — it resolves from
-  `Delegation` alone — so nothing was exploitable, but a comment telling
+  is a confused deputy. The shipped `Broker` never did, since it resolves from
+  `Delegation` alone, so nothing was exploitable, but a comment telling
   future authors not to trust those fields is weak protection while the
   fields sit on the decoded struct. Anyone implementing a process module
   gets a compile error and drops the two fields from the reverse call; the
@@ -2271,8 +2271,8 @@ that failed first.
   straight to the mux, so a path needing completion or dot-segment
   cleaning bypassed the gate the 404 and 405 branches both honour. Against
   a gate rejecting everything, `/admin/panel/` answered 404 while
-  `/admin/panel` answered 307 — the disabled-module existence leak the
-  gate's contract explicitly promises not to produce — and `//admin/panel/`,
+  `/admin/panel` answered 307, the disabled-module existence leak the
+  gate's contract explicitly promises not to produce, and `//admin/panel/`,
   `/admin/./panel/` and `/x/../admin/panel/` reached it too. Those
   responses also carried no security headers, recovery, timeout, request
   logging, CORS or rate limiting, and Go's 307 preserves method and body,
@@ -2292,14 +2292,14 @@ that failed first.
   was always correct.
 - **A kiln expression could kill the process.** The depth guard counted
   only grouping and prefix recursion, so a flat `1+1+1…` chain built a
-  depth-O(n) tree and overflowed the stack during eval — fatal, and
+  depth-O(n) tree and overflowed the stack during eval. That is fatal, and
   `recover()` cannot catch it. Comparing two uncomparable operands
   (`[1] == [2]`) panicked outright. Both are bounded now, and `Compile`
   caps source size.
 - **The CSRF exemption keyed on the decoded path.** The mux matches the
   escaped path segment-wise, so `POST /api%2f..%2f..%2fadmin/wipe`
-  presented `/api/../../admin/wipe` to the skipper — granting the `/api`
-  exemption — while dispatch went to whatever wildcard route matched.
+  presented `/api/../../admin/wipe` to the skipper, granting the `/api`
+  exemption, while dispatch went to whatever wildcard route matched.
 - **`required:"true"` was satisfied by an empty value.** A var that exists
   but is blank reports `("", true)`, so a blank `SECRET=`, a ConfigMap key
   with no value, or a secret-manager miss silently produced an empty
@@ -2341,21 +2341,21 @@ that failed first.
   drops the row and `SetTwoFA`'s INSERT arm recreates it at version 0. A
   consume in flight during a disable-and-re-enrol passed its CAS against
   the new row and overwrote the freshly issued code sheet with the stale
-  one — new codes silently dead, old sheet still working. The CAS now also
+  one: new codes silently dead, old sheet still working. The CAS now also
   predicates on the raw `backup_codes` bytes that round's SELECT returned.
   Bytes compared against themselves are formatting-proof, so the
   non-canonical-row case that ruled out a re-marshal comparison does not
   apply. `MemoryTwoFAStore` was never affected; the two stores agree again.
 - **A revoked RBAC grant survived on every peer replica and came back on
   restart.** Each replica rebuilds a role as `baseline ∪ DB`, where
-  `baseline` is the code-declared grants it captured at its own boot — so a
+  `baseline` is the code-declared grants it captured at its own boot, so a
   revoke took effect locally and was merged back by every peer's next
   reconcile, and by any replica that booted later. `Revoke` now writes a
   revocation tombstone (`<grants-table>_revoked`, created by
   `EnsureSchema`, no migration needed); every reload and every `LoadInto`
   computes `(baseline ∪ DB) − tombstones`, so the revoke propagates and
   survives boots even for grants declared in code. Re-granting via
-  `GrantStore.Grant` deletes the tombstone — the one way to un-revoke. A
+  `GrantStore.Grant` deletes the tombstone, the one way to un-revoke. A
   permission both granted and tombstoned resolves to revoked: fail closed.
   A new `transitionMu` serialises Grant/Revoke/reload/LoadInto so a reload
   that read a stale DB snapshot can no longer overwrite a newer local
@@ -2366,13 +2366,13 @@ that failed first.
   as exhaustive; a `MultiTenant` or `OwnerField` target loaded every
   tenant's and every owner's rows. It now ANDs in the same owner and
   tenant predicates the `?include=` path applies, from the same ctx
-  sources, with the same fail-closed empty-ctx behavior — and, like the
+  sources, with the same fail-closed empty-ctx behavior and, like the
   include path, never consults `CrossOwnerRead` for related rows. Zero
   callers in the repo; this was an exported-API footgun for host apps.
 - **The embed routes stripped only the cookie.** `framework/embed`'s
-  middleware deletes `Cookie`, `Authorization`, and `X-API-Key` — cached
+  middleware deletes `Cookie`, `Authorization`, and `X-API-Key`, since cached
   Basic credentials attach `Authorization` to same-origin subresource
-  fetches, the exact channel the cookie defence exists for — but the
+  fetches, the exact channel the cookie defence exists for. But the
   uihost embed routes deleted `Cookie` alone. `stripAmbientCredentials`
   now strips all three, so the two surfaces agree on what "no ambient
   credential" means.
@@ -2380,13 +2380,13 @@ that failed first.
   The shell resolves per-customer origins precisely so `frame-ancestors`
   does not enumerate every customer; the content response of the same
   handshake then used the static list. It now names exactly
-  `grant.Origin` — the one origin the verified grant was minted for.
+  `grant.Origin`, the one origin the verified grant was minted for.
 
 ### Fixed
 
 - **Sibling apps on one origin deleted each other's PWA caches.** The
   cache prefix joined slugs with `-` and `pwaSlug` maps `/`, space, `-`,
-  `_` all to `-` — so app "Acme"'s activate prefix was a prefix of "Acme
+  `_` all to `-`, so app "Acme"'s activate prefix was a prefix of "Acme
   Docs"'s cache names, static exports at `/gofastr` and `/gofastr-docs` on
   one `user.github.io` wiped each other's offline mode, and `/a/b` vs
   `/ab` collapsed to the same prefix outright. Cache names now carry a
@@ -2394,18 +2394,18 @@ that failed first.
   (`gofastr-pwa-<slug>.<12hex>.<version>`; the static hash covers the raw
   basePath before slugging), so no app's delete-prefix can prefix a
   sibling's cache name. Activate also reaps the orphaned old-format own
-  cache — the all-hex remainder test keeps sibling old caches safe.
+  cache. The all-hex remainder test keeps sibling old caches safe.
 - **One auth-gated screen aborted the whole static export**, leaving a
   partially written OutDir; marketing pages plus one `/dashboard` behind
   auth could not be exported at all. `RenderStaticPage` now returns a
   typed `PolicyBlockedError` for Redirect/Block decisions and the builder
-  skips the route with a WARN naming path and decision — mirroring the
+  skips the route with a WARN naming path and decision, mirroring the
   llm.md loop, which already handled gated screens gracefully. RenderAlt
   screens export their alternate, as before. Skipped pages never enter
   `res.Pages`, so the static service worker's precache cannot 404 on them.
 - **A push-only WebSocket was closed by its own keepalive.** `awaitingPong`
   cleared only inside `readFrame`, which ran only when the app called
-  `Read()` — a server that only pushes never did, so a healthy connection
+  `Read()`. A server that only pushes never did, so a healthy connection
   whose peer answered every Ping was force-closed every
   `ReadIdleTimeout + PongTimeout` (70s at defaults). An internal read pump
   now owns all socket reads from Upgrade: control frames are processed
@@ -2413,10 +2413,10 @@ that failed first.
   the pump, concurrent `Read` callers became safe, and `Close()`'s
   handshake completes as soon as the peer reciprocates instead of burning
   `CloseTimeout`. The keepalive skips its tick while a message handoff to
-  a slow consumer is pending — a stalled app is not a dead peer.
+  a slow consumer is pending: a stalled app is not a dead peer.
 - **Retention deleted dead-letters and silently disarmed `Replay`.**
   `completeParent` marks a parent dispatched with dead/abandoned
-  deliveries outstanding (by design — they await Replay), and
+  deliveries outstanding (by design, they await Replay), and
   `purgeExpired` deleted by parent status alone, taking the dead-letter,
   its `last_error`, and the parent payload with it: an operator who fixed
   a consumer and called `ReplayConsumer` got nil and nothing replayed.
@@ -2425,14 +2425,14 @@ that failed first.
   promised. Retention is not a dead-letter TTL.
 - **A stale success resurrected a terminal outbox delivery.**
   `markDeliveryDispatched` guarded on `status<>'dispatched'` while both
-  failure updates had been fixed to `status='pending'` — so a worker with
+  failure updates had been fixed to `status='pending'`, so a worker with
   an expired lease could flip a dead or abandoned delivery to dispatched,
   clearing `last_error` and burying the dead-letter as a clean first-try
   success. Now symmetric: only pending settles; dead and abandoned are
   terminal until an explicit `Replay`.
 - **WebSocket close-code echo obeys RFC 6455 §7.4.1.** The peer's first
-  two Close bytes were stored and echoed verbatim, so 1005/1006 — codes
-  reserved as never-on-the-wire — could appear in our Close frame and turn
+  two Close bytes were stored and echoed verbatim, so 1005/1006, codes
+  reserved as never-on-the-wire, could appear in our Close frame and turn
   a clean close into a 1002 from a strict peer; an illegal 1-byte Close
   body read as "no status". Received codes are sanitized at capture:
   reserved, sub-1000, and undefined-range codes echo as 1002, a bodyless
@@ -2444,7 +2444,7 @@ Security and correctness fixes across everything v0.42.0 through v0.51.0
 shipped. Five entries are BREAKING; `gofastr upgrade` lists the ones that
 touch your project, with the change to make in each.
 
-Two of them stop an app at startup rather than at runtime — a registration
+Two of them stop an app at startup rather than at runtime: a registration
 panic when two versions of one entity disagree about who reaches its rows,
 and another when a pattern redirect covers an exact screen. Both used to be
 silent.
@@ -2455,7 +2455,7 @@ silent.
   sign-in.** `rejectCrossSiteForm` only ran for `x-www-form-urlencoded` and
   `multipart/form-data` bodies. `text/plain` is the third enctype an HTML form
   can send and needs no CORS preflight, and `verifyHandler` reads its token
-  from the query string — so an attacker could auto-submit their OWN magic-link
+  from the query string, so an attacker could auto-submit their OWN magic-link
   token from their page and land the victim's browser in the attacker's
   account, which is precisely what the confirmation step exists to prevent. The
   guard now keys on whether a cross-site page could have sent the request at all
@@ -2464,7 +2464,7 @@ silent.
   cross-origin SPA reaching these routes through configured CORS depends on it.
 - **`EagerLoad` disabled every hidden-column scrub when a relation target had
   two API versions.** It called `registry.Get`, discarded the error, and treated
-  a nil target as "no columns to hide" — turning off the `Hidden` scrub and the
+  a nil target as "no columns to hide", turning off the `Hidden` scrub and the
   soft-delete filter together. `framework/entity`'s own doc comment already said
   `Get` is unsafe for relation targets and to use `ResolveTarget`; it now does,
   against the source entity's version, and fails closed when the target cannot
@@ -2472,17 +2472,17 @@ silent.
 - **BREAKING: untrusted IR could name the attributes the runtime dispatches actions
   from.** `core-ui/noderender` treated `data-action*` and `data-param-*` as inert
   host markers while `frag/boot.js` was resolving the nearest `[data-component]`
-  and calling `__gofastr.trigger()` with them — at hydration for
+  and calling `__gofastr.trigger()` with them: at hydration for
   `data-action-mount`, and again on every `gofastr:navigate`, with the IR
   choosing the arguments. `RenderNode`/`RenderKind` now strip them, and
   `RenderTrustedNode`/`RenderTrustedKind` are the first-party entry points the
-  blueprint generator uses. `data-island` is refused outright — it is the SSE
+  blueprint generator uses. `data-island` is refused outright: it is the SSE
   swap target, which is hydration identity.
 - **BREAKING: versions of one entity may no longer disagree about who reaches
   its rows.** Two versions share one physical table, so a tenant-scoped v1
   beside an unscoped v2 meant v2 read what v1 hid. The registry now rejects a
-  mismatch in `MultiTenant`, `OwnerField`, or `SoftDelete` — the predicates
-  CRUD adds to every statement — and in `Public`, `Access`, or
+  mismatch in `MultiTenant`, `OwnerField`, or `SoftDelete`, the predicates
+  CRUD adds to every statement, and in `Public`, `Access`, or
   `CrossOwnerRead`, the gates it runs before issuing one. A v2 declaring
   `Public: true` beside a session-required v1 made the whole table anonymously
   readable; a v2 with a blank `Access` block skipped the permission v1
@@ -2490,8 +2490,8 @@ silent.
   a field is presentation, visibility of a row is authorization.
 - **`VerifyAuthEntitiesPrivate` went quiet on exactly the apps that need it.**
   It called `reg.Get(name)`, which reports an ambiguity error once a name is
-  mounted under several versions with none unversioned — which is what
-  `App.GroupEntity` produces — and that error was indistinguishable from "not
+  mounted under several versions with none unversioned, which is what
+  `App.GroupEntity` produces, and that error was indistinguishable from "not
   found". A versioned app exposing its users table through auto-CRUD got the
   "entity not registered" hint instead of the warning. It now audits every
   version registered under the name, and names the mount in the warning.
@@ -2519,14 +2519,14 @@ silent.
   routes.
 - **Event records no longer alias containers reached through a pointer.** The
   reflective deep copy skipped every pointer; a hook injecting `*map[string]any`
-  still shared storage with the record handed to the event goroutine — the
+  still shared storage with the record handed to the event goroutine, the
   concurrent-map-write race the copy was written to prevent.
 - **Both embed server-action gates follow the rendered component tree.** An
   embeddable root whose CHILD registered `G.serverAction` passed the build-time
   analyzer and the boot walk, and failed only in the customer's page. The boot
-  walk no longer stops at `core-ui/island` — a one-field wrapper around the
+  walk no longer stops at `core-ui/island`, a one-field wrapper around the
   component it renders, and the shape the blueprint emits for every island
-  block, so stopping there hid the child the wrapper exists to render — and it
+  block, so stopping there hid the child the wrapper exists to render. It also
   now walks map keys as well as values. The analyzer reports what it cannot
   follow statically instead of passing silently, and `gofastr build` prints
   those notes. One class of note fails the build: a child built inside
@@ -2539,14 +2539,14 @@ silent.
 - **A versioned relation target no longer degrades the admin screens or
   contradicts the startup warning.** `App.warnUnresolvableRelations` and both
   relation lookups in `battery/admin` called `Registry.Get`, which errors on a
-  name mounted under several versions — so the framework warned that
+  name mounted under several versions, so the framework warned that
   `?include=` would be refused on a relation the request path resolves fine,
   and the admin's relation labels silently fell back to raw UUIDs and its
   pickers to bare text inputs. All three now use `entity.ResolveTarget`
   against the source entity's version, the same call `framework/crud` makes.
 - **The SDK schema hash no longer reports drift that regenerating cannot
   clear.** The route-group prefix was part of the hash identity, and
-  `App.GroupEntity` stamps that prefix as the entity's `Version` — so every
+  `App.GroupEntity` stamps that prefix as the entity's `Version`, so every
   app using a route group saw a permanent drift banner. Where a thing is
   mounted is routing, not schema. Versions that project to the same schema now
   collapse, compared on their canonical JSON rather than `fmt.Sprint`, which
@@ -2566,7 +2566,7 @@ silent.
   `toggle`, leaving every other `<body>` child out of the focus order and the
   accessibility tree for the life of the tab.
 - **A wildcard CORS response strips `Access-Control-Allow-Credentials` even when
-  the handler writes nothing** — an ordinary shape for an empty `DELETE` — and
+  the handler writes nothing**, an ordinary shape for an empty `DELETE`, and
   while a panicking handler unwinds to `Recovery`. The strip is now keyed on
   the `Access-Control-Allow-Origin` value actually on the response rather than
   the one in config, because a downstream handler can replace it: a handler
@@ -2580,12 +2580,12 @@ silent.
 - **Only a pending outbox delivery may record a handler failure.** Both
   `markDeliveryFailure` updates guarded on `status<>'dispatched'`, so a worker
   whose lease had expired could overwrite a dead or abandoned delivery with a
-  fresh `last_error` and push it back to pending — resurrecting a delivery an
+  fresh `last_error` and push it back to pending, resurrecting a delivery an
   operator had already triaged. They now guard on `status='pending'`; every
   other state is terminal until an explicit `Replay`.
 - **A local RBAC revoke is no longer undone by the next reconcile.**
   `GrantStore` rebuilds each role as `baseline ∪ DB`, where `baseline` is the
-  code-declared grants captured at boot — so revoking a permission that was
+  code-declared grants captured at boot, so revoking a permission that was
   seeded in code took effect in memory and then came back on the next
   peer-driven reload. `Revoke` now narrows the baseline as well. (Peers that
   captured their own baseline at boot still merge it back; that half is
@@ -2597,23 +2597,23 @@ silent.
 
 - **`SSEBrokerConfig.Principal`** decides who may evict a subscriber id. The
   principal used to be `RemoteAddr`'s host, which behind any reverse proxy is
-  the proxy for every request — so all callers collapsed into one principal and
+  the proxy for every request, so all callers collapsed into one principal and
   `?subscriber_id=<victim>` dropped a stranger's stream. With no `Principal` the
   broker now evicts nothing, which costs nothing: subscriber ids address no one
   (delivery is a broadcast) and a dropped connection already unregisters.
-  `MaxSubscribers` stays exact — past the cap `Subscribe` rejects. A half-open
+  `MaxSubscribers` stays exact: past the cap `Subscribe` rejects. A half-open
   connection keeps its seat until the next heartbeat write fails and that
   stream unregisters itself, which reclaims seats for every client rather than
   only the ones that send a `subscriber_id` (none of the framework's own do).
 - **BREAKING: `ConfirmPageData.CSRFField` is required for a custom `ConfirmPage`.** The
   default magic-link confirmation page rendered no `_csrf` field, so with
-  `auth.CSRF()` mounted — which `WithBFFPosture` does app-wide — its own button
+  `auth.CSRF()` mounted, which `WithBFFPosture` does app-wide, its own button
   returned 403 and passwordless sign-in was unreachable. `ConfirmPageData` had
   no request and no context, so a custom page could not supply one either.
 - **The runtime gzip budget is 12.5 KB, measured at gzip level 6.** It was 12 KB
   measured at level 9, which nothing ships at: GoFastr installs no compression
   middleware, so the wire bytes come from a proxy at its own setting. The same
-  artifact measures 12287 at level 9 and 12317 at level 6 — the code did not
+  artifact measures 12287 at level 9 and 12317 at level 6: the code did not
   grow, the ruler was wrong.
 - **The fragment symbol gate compares against a checked-in manifest**
   (`core-ui/runtime/frag/SYMBOLS.txt`) instead of `git show HEAD:runtime.js`.
@@ -2628,7 +2628,7 @@ silent.
 - The gallery catalog is 141 entries, not 139 (`catalog.go`, `gallery.go`,
   `agents.md`, and the v0.49.0 note all said 139).
 - `framework/gallery/agents.md` documented `gallery.CodeSnippets["button"]`,
-  which does not exist and never compiled — the accessor is
+  which does not exist and never compiled. The accessor is
   `CodeSnippet(slug)`, and the map is private on purpose.
 - `component-build`'s skill told maintainers to mirror registry fields into
   `core-ui/runtime/runtime.js`, a generated file, so the edit would not ship.
@@ -2651,7 +2651,7 @@ silent.
 - `api-versioning.md` promised "four structural invariants" and listed them by
   count, which went stale as soon as one was added. It now reads as a rule, and
   covers row reachability and the gate in front of it.
-- `events.md` and `live-dashboards.md` document `SSEBrokerConfig.Principal` —
+- `events.md` and `live-dashboards.md` document `SSEBrokerConfig.Principal`:
   what it must return, and why leaving it nil costs nothing.
 - `framework/gallery/agents.md` pointed agents at `NoteOnlySlugs`, which is not
   exported. The accessor is `IsNoteOnly(slug)`.
@@ -2675,19 +2675,19 @@ navigation event that never reached them.
   `ui.InvalidateScreens`).** The runtime keeps a 20-entry per-tab LRU of
   rendered screens for instant back/forward; until now nothing could evict
   an entry, so after a mutation the back button showed pre-mutation state.
-  A handler names the screens it staled — `ui.InvalidateScreens(w,
-  "/orders")` — and the runtime drops them when the response resolves 2xx.
+  A handler names the screens it staled, `ui.InvalidateScreens(w,
+  "/orders")`, and the runtime drops them when the response resolves 2xx.
   - Selectors: `"/orders"` evicts that pathname plus every cached query
     variant (`/orders?page=2`, …); `"/orders?page=2"` evicts exactly that
-    entry; `"*"` clears the cache. No prefix matching — `"/orders"` never
+    entry; `"*"` clears the cache. No prefix matching: `"/orders"` never
     touches `/orders/42`. The header value is a JSON string array
     (commas are legal in query values) and accumulates across calls like
     `AddToast`. Paths with control characters are rejected: DEL survives
     JSON encoding un-escaped, and Go's HTTP/2 writer silently discards a
     header with an invalid value.
-  - Consumed on every 2xx mutation or navigation dispatch — RPC, widget
+  - Consumed on every 2xx mutation or navigation dispatch: RPC, widget
     RPC, nav partials, full-shell fetches, intercepted nav,
-    toggle/optimistic actions, sortable reorders — never on poll replies,
+    toggle/optimistic actions, sortable reorders. Never on poll replies,
     and before `X-Gofastr-Location`, so a mutated-and-redirected response
     evicts first and the redirect target is fetched fresh.
   - Eviction never re-renders the visible page; pair with
@@ -2709,10 +2709,10 @@ navigation event that never reached them.
   bound at initial load worked; after a SPA navigation swapped in fresh
   DOM they were inert until a hard reload. All twenty now listen on
   `window`. The one test covering a navigate-dismissal simulated the
-  event on `document` — matching the broken listener instead of the
-  runtime — and now dispatches on `window`.
+  event on `document`, matching the broken listener instead of the
+  runtime, and now dispatches on `window`.
 - The initial page was cached under `pathname` without its query string,
-  while every other cache key (and `currentPath`) is `pathname+search` —
+  while every other cache key (and `currentPath`) is `pathname+search`, so
   landing on `/orders?page=2` cached page-2 HTML under `/orders`.
 - A redirect-followed cross-layout fetch dropped the redirect target's
   query string from both the URL bar and the cache key
@@ -2723,14 +2723,14 @@ navigation event that never reached them.
 
 ## [0.50.0] - 2026-07-28
 
-Closes [#150](https://github.com/DonaldMurillo/gofastr/issues/150) — every gap
+Closes [#150](https://github.com/DonaldMurillo/gofastr/issues/150): every gap
 v0.49.0 shipped embeddable surfaces with.
 
 Onboarding a customer is now a row in your table rather than a config change and
 a deploy: a domain typed into your settings page is framed *and* granted without
 a restart. Multi-tenant entities compose with embeds. A surface that would rely
 on `G.serverAction` fails at `gofastr build`, and at boot if the build gate could
-not see it — never in a customer's page. And a surface carries the screen it
+not see it, never in a customer's page. And a surface carries the screen it
 renders instead of a path string, which is what let the last two be checked at
 all.
 
@@ -2738,7 +2738,7 @@ all.
 
 - **BREAKING: `embed.Surface` carries a screen, not a path string.** `Surface.Path`
   (a `string`) is replaced by `Surface.Screen` (a screen value). A surface
-  renders a screen, and the screen — not a string the framework resolves — is
+  renders a screen, and the screen, not a string the framework resolves, is
   the link to the component tree, so a human, a static analyzer, and the
   boot-time server-action walk can all follow it. Pass the same `*app.Screen`
   you register:
@@ -2758,13 +2758,13 @@ all.
   first.** Every caller must thread a context through: the grant path consults
   the `OriginSource` (and any store) on each call, and a context is how a
   deadline and a trace ride along. Add `ctx` (or `r.Context()`) as the first
-  argument — `MintNonce(ctx, surface, subject, origin, scopes)`,
+  argument: `MintNonce(ctx, surface, subject, origin, scopes)`,
   `VerifyGrant(ctx, token)`, `Refresh(ctx, token)`. `gofastr upgrade` flags
   every call site.
 
 ### Added
 
-- **`embed.Config.ResolveTenant`** — multi-tenant entities behind an embed.
+- **`embed.Config.ResolveTenant`**: multi-tenant entities behind an embed.
   `Middleware()` clears the tenant along with every other ambient identity
   value, because inheriting the *cookie* user's tenant is a cross-tenant read.
   It then had no way to install the right one, so a multi-tenant entity behind a
@@ -2776,19 +2776,19 @@ all.
   },
   ```
   The tenant comes from that lookup **on the grant's subject**, never from
-  anything the request carried — a stolen grant cannot pick its own tenant. A
+  anything the request carried: a stolen grant cannot pick its own tenant. A
   resolver error fails the request closed. Nil behaves exactly as before.
-- **`embed.OriginSource`** — runtime origin management, the thing that makes a
+- **`embed.OriginSource`**: runtime origin management, the thing that makes a
   white-label embed a product rather than a deploy pipeline. An app implements
   it against its own table; the shell serves only the requesting customer's
   origins in `frame-ancestors`, and the grant path (`MintNonce`, `Exchange`,
   `VerifyGrant`) consults it for origins the static list does not know.
-  - The static allowlist is checked first — a map lookup, and all an app
+  - The static allowlist is checked first: a map lookup, and all an app
     without a source ever pays.
   - `Allows` is on the hot path (`VerifyGrant` calls it per request for
     non-static origins). Cache it.
   - Removing a customer takes effect on the **next request**, not when their
-    grant expires — the same property de-listing a static origin has.
+    grant expires, the same property de-listing a static origin has.
   - A source error, an unknown customer, or an over-size list all fail closed to
     `frame-ancestors 'none'`. An outage must not become an open framing policy.
   - Two consequences of per-customer responses, both improvements: your customer
@@ -2798,18 +2798,18 @@ all.
     it onto the frame URL (bounded and encoded), and the shell reads it as the
     `customer` query param to resolve that customer's origins. Without that
     forwarding an `OriginSource` app serves `frame-ancestors 'none'` for every
-    customer, so the row you added is never reached — framing and granting a new
+    customer, so the row you added is never reached. Framing and granting a new
     domain with no restart works only because the loader carries the id.
 - **`check-embed`**, a build gate wired into `gofastr build` beside `check-csp`
   and the accessibility gate. It resolves `embed.Surface{…}` → `app.NewScreen`
   → the component type → its `On(...)` registrations, and fails naming the
-  surface, component and action. It reports only what it can prove — a screen
+  surface, component and action. It reports only what it can prove: a screen
   built in a loop, or a component in another package, it stays silent about,
   because the boot walk already covers those and a false positive in a build
   gate is worse than a miss.
 - **Boot-time refusal of a server action on an embeddable surface.** `G.serverAction`
   is refused inside a frame (the action registry is app-global with no
-  relationship to any surface), and that refusal stays — but the developer now
+  relationship to any surface), and that refusal stays, but the developer now
   learns about it at boot. `uihost` walks each declared surface's screen on
   `Mount` and panics if the component registers an action whose client handler
   calls `G.serverAction`, naming the surface, the component and the action and
@@ -2851,7 +2851,7 @@ palette per request without mutating process-global state.
     doesn't load".
   - `embeds.RequireScope("reports:read")` gates the routes an embed may reach.
     `Middleware()` installs the grant's subject with that subject's full
-    authority — including any admin role it holds — and a grant lives in a third
+    authority, including any admin role it holds, and a grant lives in a third
     party's page where devtools can read it, so the surface's declared scopes
     have to be enforceable somewhere. The framework has no route-to-scope map
     and does not invent one; the app names the pairing. Ordinary first-party
@@ -2870,7 +2870,7 @@ palette per request without mutating process-global state.
     looks like one (`*.acme.com`) is rejected at config time rather than
     compared literally.
   - `frame-ancestors` lists every allowed origin, because no `Origin` header
-    is sent on a navigation GET — at the moment the header is written the
+    is sent on a navigation GET: at the moment the header is written the
     server does not know who is framing it. The browser enforces against the
     real ancestor chain.
   - Embed routes **discard cookies** before any handler reads one. Inside a
@@ -2878,13 +2878,13 @@ palette per request without mutating process-global state.
     `www.acme.com` is same-site and a Strict cookie does ride along; honouring
     it would hand a signed-in user's session to a third party's frame.
   - `BurnStore` is pluggable with a SQL implementation for multi-replica
-    deployments. Embeds require an app secret — unlike sessions there is no
+    deployments. Embeds require an app secret. Unlike sessions, there is no
     per-boot fallback, because a nonce that fails to verify is gone and it was
     rendered into a page the app cannot re-render.
   - **`embeds.Middleware()`** authenticates the island RPCs the surface fires
     after first paint. Those target ordinary app routes, which know nothing
     about embeds; without it a surface paints as its viewer and then acts as
-    nobody — or, in a same-site framing, as whoever the cookie says. It also
+    nobody, or, in a same-site framing, as whoever the cookie says. It also
     exempts grant-carrying requests from CSRF, which they have to be: no cookie
     is ever sent from inside a frame, so a double-submit check has nothing to
     compare and would 403 every embed interaction.
@@ -2896,40 +2896,40 @@ palette per request without mutating process-global state.
     `AllowTokens` allowlist and a cap on distinct registered variants.
   - `examples/embed-demo` runs both halves on two ports, which is the only way
     to exercise the parts that exist because of the origin boundary.
-- **`gofastr theme edit`** — a local theme configurator. Controls are generated
+- **`gofastr theme edit`**: a local theme configurator. Controls are generated
   from `style.ThemeToTokens`, so a token added later gets a usable control
   without touching the tool. The preview is the real component gallery served
   by a real `UIHost`, and an edit swaps `app.css?t=<key>` with no page reload.
   Contrast is checked in the browser via `getComputedStyle`, which resolves
-  `oklch()` — the repo's only prior contrast code was hex-only and returned 0
+  `oklch()`. The repo's only prior contrast code was hex-only and returned 0
   for the colours real themes actually use. Write-back regenerates `theme.go`
   whole, with an injection test modelled on the blueprint emitter's.
 - **API versioning that works.** The entity registry is keyed on
   `(name, version)`, so `app.GroupEntity(v1, "posts", …)` beside
   `app.GroupEntity(v2, "posts", …)` finally does what
   `framework/docs/content/api-versioning.md` has described. It used to panic.
-- **`schema.Field.WireName`** — a JSON key alias that leaves the DB column
+- **`schema.Field.WireName`**: a JSON key alias that leaves the DB column
   untouched, so a v2 can rename a field on the wire without a migration.
   Honoured on every read path: filters, sorts, includes and nested filters all
   accept the wire name and rewrite it to the column.
 - **Runtime compositions.** `core-ui/runtime/runtime.js` is now assembled in Go
   from `frag/*.js` inside one IIFE. Three compositions ship: `full`, `static`
-  (SSG export — 19% smaller, retires the `_staticMode` request-time branch),
+  (SSG export, 19% smaller, retires the `_staticMode` request-time branch),
   and `embed`. **Edit the fragments, never `runtime.js`.**
-- **Per-request theming** — `UIHost.AppCSSFor(theme)` and
+- **Per-request theming**: `UIHost.AppCSSFor(theme)` and
   `RegisterThemeVariant`, served at `/__gofastr/app.css?t=<key>`. A request
   names a pre-registered key; it never describes a theme, which is what makes
   CSS injection unrepresentable and bounds cache cardinality.
-- **`framework/gallery`** — the 141-entry component catalog, extracted from
+- **`framework/gallery`**: the 141-entry component catalog, extracted from
   `examples/site` so a CLI binary can render it. It now also ships the layout
   classes its own demos emit (`ContributeCSS`), which the docs site had been
   defining on its behalf.
-- **`app.EmbedLayout()`** — a chrome-less layout: the `<main>` landmark and
+- **`app.EmbedLayout()`**: a chrome-less layout: the `<main>` landmark and
   nothing else.
-- **`ui.Workbench`** — a viewport-height inspector shell: a fixed-width rail
+- **`ui.Workbench`**: a viewport-height inspector shell: a fixed-width rail
   that scrolls on its own beside a pane that fills the rest, with an `<iframe>`
   in the pane filled edge to edge. It stacks below 720px.
-- **`ui.ColorField`** — a colour swatch beside a text input holding the same
+- **`ui.ColorField`**: a colour swatch beside a text input holding the same
   value, as one control. The text input is the source of truth, so `transparent`,
   `inherit` and `var(--x)` survive; a native colour input silently falls back to
   black for all three. Use `ui.ColorPicker` when a swatch plus a label is
@@ -2948,7 +2948,7 @@ palette per request without mutating process-global state.
   `~/.gofastr/embed` snapshot directory all move together, as does
   `kiln/agent.NewEmbedContextHook`, now `agent.NewSemanticContextHook`.
   `gofastr upgrade` carries the entry.
-### Documented late — API versioning shipped in 0.48.0
+### Documented late: API versioning shipped in 0.48.0
 
 These landed in the 0.48.0 tag with no release note, including a breaking
 change. Recording them here rather than leaving them undocumented.
@@ -2974,14 +2974,14 @@ last one, all in the new embed surface.
   the percent-decoded path and cleaned it; `net/http`'s `ServeMux` matches on
   the escaped one, where `%2e%2e` and `%2F` are ordinary bytes inside a single
   segment. `GET /api/docs/%2e%2e/%2e%2e/reports` therefore cleaned into the
-  surface's own subtree, passed the gate, and dispatched to `/api/docs/` — a
+  surface's own subtree, passed the gate, and dispatched to `/api/docs/`, a
   prefix `reservedPrefixes` exists to keep grants away from. `RoutedPath` now
   decodes segment by segment and refuses any path whose segments do not survive
   decoding intact, so the gate and the router read the same string. Cleaning
   cannot fix this class: normalising one of the two strings is what opens it.
 - **`Surface.Path` was not validated against reserved prefixes.** `Reach:
   []string{"/auth"}` failed at boot with a clear error while `Path: "/auth"`
-  booted clean and handed every grant the whole auth battery — and `Path` is
+  booted clean and handed every grant the whole auth battery, and `Path` is
   the field an author reaches for. Both now get the same check. This also fixes
   a trailing slash silently disabling a surface's own subtree.
 - **A relocated battery lost its protection.** The reserved list could only
@@ -2991,7 +2991,7 @@ last one, all in the new embed surface.
   and surfaces are re-validated once everything is mounted.
 - **`auth.HasScope` gave an embed grant full user capability.** The embed
   middleware deletes `Authorization` and `X-API-Key`, so `TokenMiddleware` never
-  ran and no token scopes were set — which every scope gate read as "session,
+  ran and no token scopes were set, which every scope gate read as "session,
   unscoped". A grant declaring `orders:read` passed `RequireScope("orders:write")`
   and deleted through `RequireAPIScopes`. `TokenScopes` now reports the grant's
   own scopes, which are already in the same `resource:verb` grammar.
@@ -3002,7 +3002,7 @@ last one, all in the new embed surface.
   native links and forms are cancelled in the capture phase with a visible
   notice and an `onError` event. `target="_blank"` links open a new tab.
 - **`Middleware()` cleared the user but not the tenant.** Installed inside a
-  tenant resolver — the documented-wrong order, enforced by nothing — an embed
+  tenant resolver, the documented-wrong order that nothing enforced, an embed
   ran as the grant's subject with the cookie user's tenant. It now refuses such
   a request outright with a message naming the fix.
 - **A grant-authenticated response carried no cacheability signal.** No
@@ -3021,7 +3021,7 @@ last one, all in the new embed surface.
   comment claiming otherwise has been corrected.
 - **The origin allowlist was unbounded.** All of it ships in one
   `frame-ancestors` directive on every shell response, and a few hundred
-  customers exceeds common proxy header limits — which breaks the surface for
+  customers exceeds common proxy header limits, which breaks the surface for
   every customer at once. Refused at boot past 4 KiB, with the arithmetic in the
   message.
 - Smaller: `crud.Redispatch` dropped the grant header, so reach and expiry were
@@ -3033,7 +3033,7 @@ last one, all in the new embed surface.
 - **The component *bundle* CSS ignored the requested theme.** The
   single-component handler was converted to per-request theming and the bulk one
   was not, so a component whose `StyleFn` reads `style.Theme` directly kept
-  painting the base palette under a requested variant — the theme editor could
+  painting the base palette under a requested variant. The theme editor could
   write a theme its operator had never actually seen.
 - **A stalled embed request left the panel loading forever.** The parent's
   watchdog was cancelled on `ready`, before the exchange and content load, and
@@ -3043,7 +3043,7 @@ last one, all in the new embed surface.
   which hands one identity to every visitor of that copy.
 - **Hidden-column oracle in nested filters.** `include.go` and
   `nested_filter.go` resolved a relation target with `Registry.Get`, which
-  preferred the unversioned entity — so a v1 request adopted an unversioned
+  preferred the unversioned entity, so a v1 request adopted an unversioned
   declaration's `Hidden` set and scopes. Worse, the nested-filter check was
   wrapped in `err == nil`, so version ambiguity disabled it entirely and
   `?author.password_hash_like=` became a substring oracle over other users'
@@ -3054,7 +3054,7 @@ last one, all in the new embed surface.
   segment is now only skipped when a real segment follows.
 - **`isValidColor` accepted `rgb(0 0 0) URL(...)`.** Prefix-plus-balance is not
   a grammar; a value must now close its function call at the end of the value,
-  and nested functions come from an allow-list — a deny-list misses
+  and nested functions come from an allow-list: a deny-list misses
   `image-set()`, `cross-fade()` and `element()`, all reachable through a
   `var()` fallback.
 - **`CrudHandlerForEntity` never set `BasePath`** and accepted an unregistered
@@ -3065,12 +3065,12 @@ last one, all in the new embed surface.
   discards; the colour regex was written with a doubled backslash inside a Go
   raw string, so JavaScript saw a literal backslash and it never matched
   anything; and the check ran before the stylesheet it measures had applied. It
-  also read `color-mix()` output — which Chromium serializes as
-  `color(srgb 0.95 …)` — as 8-bit RGB, turning a light tint into black and
+  also read `color-mix()` output, which Chromium serializes as
+  `color(srgb 0.95 …)`, as 8-bit RGB, turning a light tint into black and
   inventing four failures. Colours are now converted by the browser itself, a
   pair it cannot convert is reported rather than skipped, and a check that
   throws says so instead of rendering an empty (clean-looking) panel.
-- **`gofastr theme edit --addr=:8090` — the form the docs gave as an example —
+- **`gofastr theme edit --addr=:8090`, the form the docs gave as an example,
   refused every request.** The wildcard bind reports its address as `[::]:8090`,
   which no browser sends, so the Host pin rejected everything including the URL
   the tool printed. A bare `:port` now resolves to loopback, and an explicit
@@ -3078,14 +3078,14 @@ last one, all in the new embed surface.
   write-back endpoint rewrites a Go file, and a Host pin does not stop a direct
   TCP client.
 - **Widgets inside an embedded surface silently did nothing.** The catalog
-  endpoint gated on the session cookie, which a frame never sends — so a modal
+  endpoint gated on the session cookie, which a frame never sends, so a modal
   or drawer trigger was dead DOM cross-site, while a same-site framing answered
   it from the viewer's unrelated app session. It accepts an embed grant now, and
   discovery names the surface's own route so `.Pages()` scoping applies.
 - **Everything else gated on the session cookie was still shut to a frame.**
   Fixing the widget catalog fixed one endpoint out of four. `actions.js` and the
   server-action endpoint gated the same way, and nothing emitted `actions.js`
-  into the frame at all — so `__gofastr.register` was never called, `handlers`
+  into the frame at all, so `__gofastr.register` was never called, `handlers`
   stayed empty for the life of the frame, and the failure was silent in both
   directions: every `data-action-mount` node rendered and never filled (that is
   every generated entity list and every relation `<select>`), while every
@@ -3096,7 +3096,7 @@ last one, all in the new embed surface.
   further along.
 - **The widget catalog answered any grant with any page.** `embedGrantOK` only
   checked that the token verified, so a grant minted for a public surface could
-  ask for `?page=/admin` — or omit the parameter and read the unfiltered
+  ask for `?page=/admin`, or omit the parameter and read the unfiltered
   registry. The grant's own surface path is substituted for whatever the caller
   asked for.
 - **`GrantFromContext` was empty on the first render.** Only the island RPCs
@@ -3121,14 +3121,14 @@ last one, all in the new embed surface.
   anything whose `StyleFn` read theme values directly stayed the app's.
 - **An expired grant made the frame anonymous instead of failing.** Clearing the
   grant stopped the header being sent, and a request with no header is an
-  ordinary anonymous request the server passes straight through — so a dashboard
+  ordinary anonymous request the server passes straight through, so a dashboard
   polling every 30s quietly swapped its authenticated numbers for the logged-out
   render while still reporting `data-fui-embed-state="ready"`. The dead token is
   kept so the server answers 401, and the new `expired` state says so.
 - **`history.pushState` from inside a frame wrote to the customer's back
   button.** Removing the nav fragment removed navigation but not push-state, so
   widget deep links, pane deep links and `X-Gofastr-Push-State` responses each
-  appended to the *top-level* page's session history — two entries per modal
+  appended to the *top-level* page's session history: two entries per modal
   open and close. The frame's `pushState`/`replaceState` are inert.
 - **A grant could survive a cross-origin redirect.** Same-origin was decided
   from the URL given to `fetch`, and a redirect changes the origin after that
@@ -3136,13 +3136,13 @@ last one, all in the new embed surface.
   requests now refuse to follow redirects.
 - **Reloading a frame bricked it permanently.** The loader handed the nonce over
   exactly once, but a frame re-runs its document on "Reload frame" and on some
-  bfcache restores — leaving it waiting forever with an empty root and nothing
+  bfcache restores, leaving it waiting forever with an empty root and nothing
   in either console. The loader answers every `ready` (the exchange is idempotent
   by design), and the frame gives up with an error after 15s rather than
   spinning.
 - **The documented snippet had no error surface.** `onError` was reachable only
-  through the programmatic API, so a spent nonce — a cached customer page, a Back
-  button — produced a blank 150px box with the explanation trapped in a
+  through the programmatic API, so a spent nonce, from a cached customer page or a Back
+  button, produced a blank 150px box with the explanation trapped in a
   cross-origin console. The auto-mount path reports failures, and names the
   missing attribute when `data-surface` or `data-token` is empty.
 - `VerifyNonce`/`VerifyGrant` accepted an empty HMAC key where the minting side
@@ -3151,48 +3151,48 @@ last one, all in the new embed surface.
 - `GrantMaxAge == GrantTTL` passed the boot guard and produced exactly the
   failure that guard names: every grant born at its deadline, every refresh
   clamped back to it, no forward progress.
-- **SECURITY — `gofastr theme edit` published the harness signing key.** Its
+- **SECURITY: `gofastr theme edit` published the harness signing key.** Its
   bearer token was `deriveListenerSecret()`, which returns the same bytes that
   HMAC every harness control-plane token when `GOFASTR_HARNESS_MACHINE_KEY` is
-  set — emitted into a `<meta>` tag on a page served with no authentication,
+  set, and it was emitted into a `<meta>` tag on a page served with no authentication,
   because that page is where the token comes from. Any local process, any other
   user on the machine, or any screenshot in a bug report carried it away, and
   the machine key is stable across restarts. The token is now per-session
   random, which is all this listener ever needed.
-- **SECURITY — the framework MCP gate admitted an embed grant.** The previous
+- **SECURITY: the framework MCP gate admitted an embed grant.** The previous
   release note claimed this was closed; it patched `battery/auth`'s
   `MCPUser`/`MCPRole`, which have no production call sites. The gate actually
   wired to every entity endpoint's MCP twin and to the module enable/disable
   control tools is `framework`'s own, and it was untouched. Both now refuse.
 - **`battery/admin`'s embed refusal sat below the custom-`Authorize` early
-  return**, so an app supplying its own authorize hook — what the surrounding
-  comment recommends for a different role model — got no refusal at all.
+  return**, so an app supplying its own authorize hook, what the surrounding
+  comment recommends for a different role model, got no refusal at all.
 - **`RequireAuth` admitted subject-less grants and `RequireRole` admitted any
   grant.** A public surface's grant has no subject, so passing it through
   handed handlers a request with no user while implying one was verified; and a
   grant scoped to one surface satisfied `RequireRole("admin")` whenever its
   subject held the role.
 - **`gofastr theme edit` wrote theme files that panicked the app at boot.**
-  `style.ApplyTokens` accepts a zero spacing, radius or z-index; `Theme.Validate`
-  — which `app.WithTheme` runs at startup — rejects them. One keystroke in a
+  `style.ApplyTokens` accepts a zero spacing, radius or z-index; `Theme.Validate`,
+  which `app.WithTheme` runs at startup, rejects them. One keystroke in a
   number field produced a green "updated", a written `theme.go`, and a panic on
   the next run. Edits are now validated against the boundary the artifact has
   to survive.
 - **The theme editor's Write button worked exactly once per session.** The
   no-`--force` guard re-ran on every write and refused the second one, citing a
-  file the tool itself had written seconds earlier — with no recovery but a
+  file the tool itself had written seconds earlier, with no recovery but a
   restart that discarded every edit. A file this session wrote is now its own to
   rewrite.
 - **The contrast checker's readiness gate could not fail.** It tested that the
   sentinel's colours were *parseable* rather than that they were the literal
   black-on-white it declares, and `getComputedStyle` always yields a parseable
-  colour — so a slow stylesheet swap measured an unstyled document, scored ~21:1
+  colour, so a slow stylesheet swap measured an unstyled document, scored ~21:1
   on every pair, and reported a clean theme it had never measured.
-- **SECURITY — idempotency replayed one embed subject's response to another.**
+- **SECURITY: idempotency replayed one embed subject's response to another.**
   The idempotency middleware is installed by `NewApp`, so it runs outside
   `embeds.Middleware()` and before any grant is verified: every embed request
   looked anonymous and shared one key namespace. Two grant holders sending the
-  same `Idempotency-Key` — `order-1` is enough — meant the second received the
+  same `Idempotency-Key`, `order-1` is enough, meant the second received the
   first's stored response and its own handler never ran. The namespace is now
   bound to the grant.
 - **JWT-protected routes 401'd every embed request.** `embeds.Middleware()`
@@ -3202,7 +3202,7 @@ last one, all in the new embed surface.
   refused.
 - **The contrast checker invented failures it should never have reported.** It
   hardcoded `#ffffff` as the foreground on status fills, but the design system
-  paints `var(--color-primary-fg)` there — `.ui-button--danger` sets exactly
+  paints `var(--color-primary-fg)` there: `.ui-button--danger` sets exactly
   that, and `styles_components.go` says so. In the default dark scheme that
   token is `#111827` and the status tones are light, so the tool reported four
   failures (white on `#F87171` at 2.77:1) for text nothing renders. Measured
@@ -3211,8 +3211,8 @@ last one, all in the new embed surface.
   no more than one that never fires.
 - **Two concurrent requests for the same customer theme could drop the
   variant.** The second resolved its own copy and released it immediately,
-  reasoning that the key is a content address so both land on the same one —
-  true, except when the duplicate arrived first: its register took the refcount
+  reasoning that the key is a content address so both land on the same one.
+  That is true, except when the duplicate arrived first: its register took the refcount
   0→1 and its release took it 1→0, deleting the variant before the owner had
   registered anything, and the frame rendered unthemed under a `?t=` pointing at
   nothing. The duplicate now waits for the owner instead, bounded so a failed
@@ -3222,8 +3222,8 @@ last one, all in the new embed surface.
   endpoints, and whatever the surface lists in the new `Surface.Reach`.
   Everything else answers 403.
 
-  The previous default — a grant reaches every route the app author has not
-  explicitly gated — is not a property anyone can hold, because the framework
+  The previous default, a grant reaching every route the app author has not
+  explicitly gated, is not a property anyone can hold, because the framework
   and its batteries mount `/mcp`, `{auth}/tokens` and `/admin/*` themselves.
   Each of those had to be patched individually as it was discovered, and the
   patch set was not converging. `Reach` is validated at boot: `"/"` is refused,
@@ -3235,16 +3235,16 @@ last one, all in the new embed surface.
 - **A stalled nonce claim can no longer mint a second grant.** Verification
   happens before the burn and is not atomic with it, so a request that verified
   a nonce and then stalled past its retention deadline could land after `Prune`
-  removed the winning row and insert a fresh one. The row is still written — it
-  is the tombstone, and withholding it would leave the nonce spendable — but no
+  removed the winning row and insert a fresh one. The row is still written, because it
+  is the tombstone and withholding it would leave the nonce spendable, but no
   usable grant comes back. `PruneGrace` keeps rows a further five minutes so a
   fast pruner cannot delete one a slow verifier still needs.
-- **SECURITY — an embed grant could mint a permanent `*:*` API token.**
+- **SECURITY: an embed grant could mint a permanent `*:*` API token.**
   `POST {auth}/tokens` refuses API-token callers precisely so a scoped token
   cannot escape its own leash; an embed grant is a third credential with the
   same property and the gate did not know it existed. A credential deliberately
-  bounded to one surface, one origin and a 12-hour deadline — and living in a
-  third party's JavaScript — could exchange itself for an unscoped, never-
+  bounded to one surface, one origin and a 12-hour deadline, and living in a
+  third party's JavaScript, could exchange itself for an unscoped, never-
   expiring one. The same classification gap opened `battery/admin` (past whose
   gate a wildcard access policy is installed, so any admin who viewed an
   embedded surface left an admin credential on someone else's website) and
@@ -3252,12 +3252,12 @@ last one, all in the new embed surface.
 - **The documented middleware order erased the grant's identity.**
   `embeds.Middleware()` installs the subject and deletes the cookie; the
   `SessionMiddleware` inside it then found no cookie, took its anonymous branch
-  and cleared the user — so the wiring the docs prescribe produced a handler
+  and cleared the user, so the wiring the docs prescribe produced a handler
   that saw nobody, losing owner-scoped CRUD, policies, tenancy and audit.
 - **A refused grant still fell back to a session cookie on two widget routes.**
   The shared gate was fixed for this; the catalog and the widget-session
-  predicate were not, so an expired embed — which the runtime keeps sending on
-  purpose — was answered as the viewer's unrelated logged-in user, skipping the
+  predicate were not, so an expired embed, which the runtime keeps sending on
+  purpose, was answered as the viewer's unrelated logged-in user, skipping the
   per-surface scoping.
 - **A combobox selection destroyed the embed.** Modules fall back to a hard
   `location.href` when `__gofastr.navigate` is absent, which inside a frame is
@@ -3294,28 +3294,28 @@ last one, all in the new embed surface.
   unrelated logged-in session. A presented credential's verdict is now final.
 - **An embed grant could invoke any server action in the app.** The action
   registry is keyed app-globally with no relationship to a surface, so a grant
-  minted for one surface reached every registered action — including from a
+  minted for one surface reached every registered action, including from a
   surface with no subject. `/__gofastr/action` requires a session again;
   wiring it for embeds needs the app to say which surfaces may invoke what.
 - A refused refresh treated every non-OK status as fatal, so one 502/503 during
   a rolling deploy permanently expired every open frame on every customer page.
   Only 401/403 end a grant now; anything else backs off and retries.
 - A form submit whose handler answered a redirect failed silently inside a
-  frame — the rejection landed in a bare `catch {}`. It now logs and raises a
+  frame: the rejection landed in a bare `catch {}`. It now logs and raises a
   toast, and the limitation is documented.
-- The loader had no watchdog, so the most common integration mistake — the
-  customer's origin missing from the surface's allowlist — showed as an empty
+- The loader had no watchdog, so the most common integration mistake, the
+  customer's origin missing from the surface's allowlist, showed as an empty
   box with nothing in either console, because the blocked frame never runs the
   script that would have reported it.
 - The frame's fetch wrapper now sets `credentials: 'omit'`, making "no cookie
   reaches an embed request" true at the source rather than assumed.
 - `TestEmbedExchangeIsIdempotent` compared whole response bodies including a
   wall-clock `expires_in_ms`, so it failed roughly once in a thousand runs with
-  the message "one nonce bought two identities" — for two byte-identical grants.
+  the message "one nonce bought two identities", for two byte-identical grants.
 ## [0.48.0] - 2026-07-27
 
 `AfterGet` and `AfterList` are documented as the way to mask a field on
-the way out — "redact fields, drop rows" — and they worked on `GET /x`
+the way out, "redact fields, drop rows", and they worked on `GET /x`
 and `GET /x/{id}`. Six other paths did not. The filter surface never saw
 the mask, so the stored value was recoverable a character at a time from
 which rows came back:
@@ -3334,30 +3334,30 @@ renders its own screens through. All are closed.
 
 ### Added
 
-- **`schema.Field.NoQuery`** — a column that stays in API responses but
+- **`schema.Field.NoQuery`**: a column that stays in API responses but
   is refused by every wire query surface: flat filters, `?sort=`, `?where=`
   predicate trees, nested `?rel.field=` filters, scoped `?include=`
   filters, and the DSL. The in-process Go API (`ListAll`, `CountAll`,
-  `TypedQuery.Where`/`Order`) is not gated — a caller-built filter on a
+  `TypedQuery.Where`/`Order`) is not gated: a caller-built filter on a
   NoQuery column still runs there, so server-side read-modify-write and
   aggregates keep working (stored values stay the default for the Go API,
   as the next entry spells out). `Hidden` already closed this by removing
   the column from responses; `NoQuery` is for values the caller must still
   see in a reduced form. Declarations use `no_query: true`. The rejection
-  names the field, unlike `Hidden`'s — a `NoQuery` column is visible in
+  names the field, unlike `Hidden`'s: a `NoQuery` column is visible in
   the response, so its existence is not a secret worth protecting and a
   precise error saves a developer hunting for a typo.
-- **`crud.WithReadHooks(ctx)`** (also `framework.WithReadHooks`) — makes
+- **`crud.WithReadHooks(ctx)`** (also `framework.WithReadHooks`): makes
   an in-process read apply `AfterList`/`AfterGet`. Generated blueprint
   list, detail, and related-list screens use it, so an app's own pages
   show what its API shows. Stored values stay the default for the Go API,
   which is what keeps read-modify-write, seed lookups and aggregates
   correct. The context handed to a hook has the flag stripped, so a hook
   that reads its own entity cannot re-enter itself.
-- **`crud.CrudHandler.ChildHooks`** — resolves another entity's hook
+- **`crud.CrudHandler.ChildHooks`**: resolves another entity's hook
   registry by name so `?include=` rows run the read hooks of the entity
   they belong to. `framework.App` wires it on every mounted handler.
-- **`webhook.WithBridgeRedactor`** — transforms an event before the
+- **`webhook.WithBridgeRedactor`**: transforms an event before the
   webhook bridge POSTs it to subscriber URLs. The bridge is an outbound
   delivery to third parties and has no handler to run read hooks through,
   so masked fields would otherwise leave the server there in full.
@@ -3374,7 +3374,7 @@ renders its own screens through. All are closed.
   applied to `GET /children` but not to the same row one hop away. The
   child's `AfterList` now runs over the attached rows, after key
   conversion so the hook sees the keys its own endpoint returns, plus its
-  `AfterGet` for a to-one relation — that serialises as a single object,
+  `AfterGet` for a to-one relation: that serialises as a single object,
   so the surface it mirrors is `GET /child/{id}`, and an app masking only
   there was still serving the stored value through `?include=`.
 - **`_events` published stored values.** The record is captured from the
@@ -3388,7 +3388,7 @@ renders its own screens through. All are closed.
   `AfterGet` now runs over the response body.
 - **The admin edit form wrote masks back over stored values.** It
   prefilled through the HTTP `Get` handler, which runs `AfterGet`, then
-  posted every field back on submit — so editing one field persisted the
+  posted every field back on submit, so editing one field persisted the
   mask over every other. Pre-existing. It now reads the row twice and
   treats any column the hook rewrites as write-only: rendered empty with
   a hint, kept as stored unless an admin types a new value. Reading raw
@@ -3399,8 +3399,8 @@ renders its own screens through. All are closed.
   `NoQuery`/declared-column checks all sat inside `if registry.Get(...)
   == nil`, and `isSafeIdentifier` only constrains the SHAPE of a name, so
   the column went into an `EXISTS` predicate unvalidated. A relation may
-  legitimately point at a table no entity registers — the auth battery
-  self-migrates `auth_users` — which made `?author.password_hash_like=`
+  legitimately point at a table no entity registers, such as the auth battery's
+  self-migrated `auth_users`, which made `?author.password_hash_like=`
   a working oracle over a column that is in no response. `?include=`
   already refused that shape; nested filters now match it, in-process
   callers included.
@@ -3408,12 +3408,12 @@ renders its own screens through. All are closed.
   runs on a copy because the raw record has already gone to the async
   event goroutine, but the copy was one level deep, so a hook masking a
   field inside an embedded object wrote through the shared nested map
-  into the bus, the fanout tap and the webhook bridge — and raced
+  into the bus, the fanout tap and the webhook bridge, and raced
   whichever subscriber was reading it, which is a runtime throw
   `recover()` cannot catch. The copy is now reflective rather than a
   list of named types: the containers that matter are the ones an
   application's hook injects, and a hand-written type switch covers only
-  the shapes its author thought of — `[]byte`, `[]string`,
+  the shapes its author thought of: `[]byte`, `[]string`,
   `map[string]string` and `[][]map[string]any` were all still shared.
 - **The read-hook opt-in survived into `payload.Request.Context()`.**
   `hookCtx` strips it from the context argument, but on the in-process
@@ -3423,12 +3423,12 @@ renders its own screens through. All are closed.
 - **A child `AfterList` that reordered rows corrupted the `?include=`
   payload.** The fold paired the hook's output with the loader's rows by
   index, so a permutation attributed each record to the wrong parent
-  and — because it mutates rows later iterations still read as sources —
+  and, because it mutates rows later iterations still read as sources,
   duplicated one and destroyed another: `[A,B,C]` came back `[C,B,C]`.
   The fold now matches rows by PRIMARY KEY, so sorting `Results`
   (ordinary list-hook behaviour, and correct on the child's own route) is
-  a no-op rather than either a corruption or a 500 — the order a client
-  sees comes from the attachment, which the fold never touches — and a
+  a no-op rather than either a corruption or a 500, since the order a client
+  sees comes from the attachment, which the fold never touches, and a
   hook that projects *and* reorders folds correctly too. A many-to-many
   child shared by two parents arrives as two distinct maps carrying one
   id, so the index is multi-valued and each replacement claims a distinct
@@ -3443,19 +3443,19 @@ renders its own screens through. All are closed.
   back, where it was replacing a per-item error report with an opaque
   500.
 - **`?cursor=&sort=<NoQuery>` answered 200** where `?sort=<NoQuery>`
-  answers 400. Keyset mode ignores `?sort=` — the cursor fields control
-  `ORDER BY` — but it returned before the sort was parsed, so appending
+  answers 400. Keyset mode ignores `?sort=` because the cursor fields control
+  `ORDER BY`, but it returned before the sort was parsed, so appending
   one empty parameter skipped the refusal. The sort is still ignored in
   keyset mode; it is now validated first, so any `?sort=` the offset path
   rejects (an unknown column as well as a masked one) is rejected here
   too.
 - **The admin edit form mangled `date` and `timestamp` values.** Reading
-  through the in-process API returns what the driver scanned — a
-  `time.Time`, where the old JSON round trip produced a string — and the
+  through the in-process API returns what the driver scanned, a
+  `time.Time` where the old JSON round trip produced a string, and the
   cell formatter had no case for it, so the input rendered Go's default
   layout, failed RFC 3339 validation on submit, and took the user's
   other edits down with it. `date` columns render `yyyy-mm-dd`, which is
-  the only value `<input type="date">` accepts — RFC 3339 there blanks
+  the only value `<input type="date">` accepts. RFC 3339 there blanks
   the control and the save wipes the column.
 - **A masked `bool`, `enum`, or foreign key was overwritten on save.**
   The write-only contract held only for text inputs: a checkbox cannot
@@ -3469,7 +3469,7 @@ renders its own screens through. All are closed.
 - **A blueprint screen could name a framework-managed column the entity
   does not have.** `created_at`/`updated_at` exist only under
   `timestamps:`, `deleted_at` under `soft_delete:`, `tenant_id` under
-  `multi_tenant:` — the validator treated the NAME as proof of
+  `multi_tenant:`. The validator treated the NAME as proof of
   existence, so a `search:` or `group_by` on one passed generate and
   failed as an anonymous SQL error at runtime.
 - **The DSL selected `Hidden` columns.** `BuildDSLQuery` projected
@@ -3506,7 +3506,7 @@ renders its own screens through. All are closed.
   chart. `group_by` was not validated as a column at all, so a typo
   silently grouped every row into one bucket. `search:` was previously
   unvalidated; `id`, the `timestamps:`/`soft_delete:` stamps, and
-  relation-derived foreign keys all stay valid — none is in
+  relation-derived foreign keys all stay valid: none is in
   `decl.Fields`, and rejecting them broke blueprints that generated
   before.
 - **BREAKING: blueprint `cursor_field`/`cursor_fields` reject `hidden`
@@ -3516,7 +3516,7 @@ renders its own screens through. All are closed.
 - Generated CLI filter flags, the JS SDK `<entity>Fields` constant,
   typed column constants, OpenAPI filter parameters, MCP list-tool
   arguments, `llm.md`, and the SDK docs examples all omit `NoQuery`
-  columns — each previously advertised a filter the server answers with
+  columns. Each previously advertised a filter the server answers with
   400. The columns stay in output structs, input and patch structs, and
   mutation flags: a field can be writable without being queryable.
 - `SchemaHash` covers `NoQuery`, so flipping it moves the hash and the
@@ -3532,7 +3532,7 @@ Register a mask on **both** `AfterGet` and `AfterList`. Each response
 path runs the hook matching the shape it serves, exactly as the entity's
 own routes do, so a mask that exists on only one of them has a gap on the
 paths that use the other. A to-one `?include=` consequently runs the
-child's `AfterGet` once per distinct attached row — rows are deduplicated
+child's `AfterGet` once per distinct attached row. Rows are deduplicated
 by identity and bounded by the page size, but a hook that queries the
 database is doing that per row, where `AfterList` did it once. A hook
 registered on both surfaces runs twice on those rows, so keep masks
@@ -3541,8 +3541,8 @@ truncating are not.
 
 On `?include=`, a child hook may redact in place or by replacing a row
 with a projection; both are folded back into the attached row. It may not
-change the row count — the loader has already keyed each row to its
-parent — so a dropping hook fails the request rather than serving the
+change the row count: the loader has already keyed each row to its
+parent, so a dropping hook fails the request rather than serving the
 rows it tried to remove. Filter in the child's `BeforeList` instead.
 Sorting `Results` is harmless and has no effect on the payload; keep the
 id when projecting, since that is what identifies the row.
@@ -3551,7 +3551,7 @@ Three surfaces stay raw on purpose. `?stream=true` refuses when an
 `AfterList` hook is registered rather than bypassing it. The durable
 outbox row stores the unredacted record, since it is server-side state
 used for replay. And `webhook.Bridge` POSTs to third-party URLs with no
-handler to redact through — `webhook.WithBridgeRedactor` is available for
+handler to redact through. `webhook.WithBridgeRedactor` is available for
 apps that need it.
 
 `Hidden` is unaffected throughout: it is enforced in the SQL projection,
@@ -3568,10 +3568,10 @@ were present.
 
 ### Added
 
-- **`framework.WithImagePipeline` — uploads now derive their own renditions
+- **`framework.WithImagePipeline`: uploads now derive their own renditions
   and BlurHash.** Previously the generate half of the story was entirely
   BYO: nothing in the framework or any battery ever called `VariantSet`, so
-  "when does a BlurHash get made?" had one answer — whenever you hand-wrote
+  "when does a BlurHash get made?" had one answer: whenever you hand-wrote
   the call in an upload handler. Now declaring a `schema.Image` field is
   enough. Every upload on that field produces the configured renditions
   plus a BlurHash (and optionally an LQIP), stores the renditions beside
@@ -3579,25 +3579,25 @@ were present.
   declares: `<field>_blurhash`, `<field>_placeholder`, `<field>_variants`.
   Undeclared columns are skipped, so adopting one means adding the column
   and nothing else.
-- **`framework.WithImagePipelineFor(entity, field, deriver)`** — per-field
+- **`framework.WithImagePipelineFor(entity, field, deriver)`**: per-field
   override of the app-wide pipeline, since an avatar (portrait components,
   reject animated) and a hero cover (wide renditions) cannot share one
   config. An explicit `nil` opts a single field out without unpicking the
   default.
-- **`framework/imagefield`** — the adapter implementing
+- **`framework/imagefield`**: the adapter implementing
   `file.ImageDeriver` over `image.VariantSet`. A separate package on
   purpose: `framework/crud` is in the dependency graph of nearly every
   app, so a direct edge to `framework/image` would link every image
   decoder plus the WebP encoder into every binary. The dependency is
   inverted through an interface and only apps calling
-  `WithImagePipeline` pay for the codecs — enforced by a `go list -deps`
+  `WithImagePipeline` pay for the codecs, enforced by a `go list -deps`
   test, not a comment.
 - **`file.ImageDeriver` / `file.ImageDerivatives` / `file.DerivedVariant`**
   plus `file.WithImageDeriver` on `ProcessFileField`, for callers driving
   uploads directly. `FileField` gains an `Image` field carrying the
-  derived metadata, and `FileField.Validate` now checks it — derived
+  derived metadata, and `FileField.Validate` now checks it: derived
   references reach the same sinks as the primary file.
-- **`image.DecodeBlurHash` + `image.BlurHashDataURL`** — the missing half
+- **`image.DecodeBlurHash` + `image.BlurHashDataURL`**: the missing half
   of the BlurHash story. Store the ~28-char hash in a column at upload
   time; call `BlurHashDataURL` at render time to turn it back into an
   inline image. `DecodeBlurHash` returns a pipeline `*Image`, so it chains
@@ -3605,10 +3605,10 @@ were present.
   length, alphabet, and component count are validated before any pixel
   buffer is allocated, and output dimensions are capped at
   `MaxBlurHashRenderSize` (128 px).
-- **Placeholder memoisation** — `SetBlurHashCacheSize` /
+- **Placeholder memoisation**: `SetBlurHashCacheSize` /
   `FlushBlurHashCache` / `BlurHashCacheLen`. A list view would otherwise
   re-decode the same handful of hashes on every request.
-- **`urlsafe.ImageSource` policy** — `Resource` plus inline raster `data:`
+- **`urlsafe.ImageSource` policy**: `Resource` plus inline raster `data:`
   URIs, for the one sink where those are a feature rather than a mistake:
   `<img src>`. `data:image/svg+xml` is excluded (SVG is a markup
   surface), as is every non-image media type. `Resource` itself is
@@ -3618,11 +3618,11 @@ were present.
 
 - **`OptimizedImage` / `PipelineImage` render the placeholder as a real
   stacked `<img>`** behind the image, positioned by static CSS. No
-  JavaScript, no `attr()`, no per-instance CSS — an inline `style`
+  JavaScript, no `attr()`, no per-instance CSS: an inline `style`
   attribute is blocked by both the default CSP and the repo's
   `noinlinestyles` linter, so an element is the only mechanism available.
 - **`Placeholder` takes an inline raster `data:` URI. BREAKING.** A bare
-  BlurHash string is no longer accepted — it is not an image until it is
+  BlurHash string is no longer accepted. It is not an image until it is
   decoded. Bad values (a raw hash, a remote URL, a non-raster `data:` URI)
   are dropped and the image renders without a placeholder rather than
   panicking, matching how `PipelineImage` already treats missing intrinsic
@@ -3636,11 +3636,11 @@ were present.
   The components pre-filtered `Src`/`Fallback`/`Sources` with
   `urlsafe.Resource`, which rejects `data:`, so a generated or inlined
   image rendered as "broken" rather than "blocked". Every `<img src>` sink
-  now uses `safeImageURL` — `OptimizedImage`, `PipelineImage`, and
+  now uses `safeImageURL`: `OptimizedImage`, `PipelineImage`, and
   `Gallery`'s thumbnails. `Avatar` has no pre-filter of its own and is
   fixed by the `html.Image` policy change; a test pins that. Caught by
   looking at a screenshot, not by any test.
-- **`PipelineImage` applied no URL allow-list at all** — `OptimizedImage`
+- **`PipelineImage` applied no URL allow-list at all**: `OptimizedImage`
   ran `safeResourceURL` on its `Src` and every `Sources` URL; its sibling
   ran it on neither `Fallback` nor `Sources`, despite rendering storage
   URLs that routinely originate in user data.
@@ -3657,7 +3657,7 @@ were present.
 ### Internal
 
 - A `go list -deps` gate enforces that `framework/ui` never imports
-  `framework/image` — previously only a comment. The edge would put every
+  `framework/image`, previously only a comment. The edge would put every
   image decoder plus the WebP encoder in the binary of any host that
   renders any UI at all.
 - A `go list -deps` gate likewise keeps `framework/crud` and
@@ -3679,11 +3679,11 @@ were present.
 
 The v0.43.0 audit backlog (#135) closed, three filed issues fixed (#138,
 #139, #141), and the first audit of surfaces the previous passes had never
-opened (#136 — partially; its two concrete bugs are fixed and four of its
+opened (#136, partially; its two concrete bugs are fixed and four of its
 listed surfaces audited, but most of its never-opened list is still never
 opened, and one pass does not clear a surface by this repo's gate).
 
-Same shape as 0.45.0: **guard drift** — a check one path has and its
+Same shape as 0.45.0: **guard drift**, a check one path has and its
 sibling skips. Three of the findings below are the *same* property
 (a schema is a disclosure even when the data behind it is refused) showing
 up on three different surfaces.
@@ -3692,7 +3692,7 @@ up on three different surfaces.
 
 - **`tools/list` no longer hands the schema to callers who cannot call
   the tool.** `mcp.Gated` wraps a *handler*, so it only ever reached
-  `tools/call` — an unauthenticated POST came back with every tool's
+  `tools/call`. An unauthenticated POST came back with every tool's
   `inputSchema`, and for entity CRUD tools those are built from live
   entity definitions: every entity name, every non-`Hidden` field, its
   type and full enum set. New `mcp.WithToolGate` registration option runs
@@ -3702,16 +3702,16 @@ up on three different surfaces.
 - **`framework.WithMCPGate` + `framework.MCPRequireUser`** close the whole
   `/mcp` data surface (`tools/list`, `tools/call`, `resources/list`,
   `resources/read`) in one call. `initialize` and `ping` stay open by
-  design — they carry only the protocol version, capability booleans and
+  design: they carry only the protocol version, capability booleans and
   the server name.
 - **`Endpoint.MCPHandler` twins require an authenticated caller by
   default. BREAKING.** An `Endpoint` has two front doors for one
   operation: `Handler` inherits the route's middleware chain, `MCPHandler`
-  does not — so an endpoint behind `auth.RequireRole("editor")` was
+  does not, so an endpoint behind `auth.RequireRole("editor")` was
   role-checked over HTTP and ungated over MCP. New `Endpoint.MCPGate` for
   something stricter, `Endpoint.MCPPublic: true` to opt out.
 - **`log_set_level` is gated.** It mutates the running app's
-  observability — an anonymous caller could flip it to DEBUG, or to ERROR
+  observability: an anonymous caller could flip it to DEBUG, or to ERROR
   to go quiet before doing something else. Dev-implied registration stays
   ungated (the dev loop has no auth to satisfy; its exposure is bounded by
   the loopback bind instead), but an app that set `AllowMCPMutation`
@@ -3722,14 +3722,14 @@ up on three different surfaces.
   200 on the schema. **BREAKING** for a caller that has a session but not
   the read permission.
 - **The plugin iframe sandbox sanitizer is an allow-list on both sides.**
-  v0.45.0 flipped the Go half; `host/pluginhost.js` — the sink that
-  actually sets the attribute — was still a one-token deny-list, so
+  v0.45.0 flipped the Go half; `host/pluginhost.js`, the sink that
+  actually sets the attribute, was still a one-token deny-list, so
   `allow-popups-to-escape-sandbox`, `allow-top-navigation` and
   `allow-downloads` all passed it. **BREAKING** for a manifest asking for
   those.
 - **`Manifest.Entry` must be a same-origin absolute path.** It was an
   unvalidated arbitrary URL, and the opaque-origin guarantee has two
-  carriers — the sandbox attribute and the `CSP: sandbox` header
+  carriers: the sandbox attribute and the `CSP: sandbox` header
   `AssetServer` emits for assets *it* serves. A cross-origin entry escapes
   the second entirely. Dual-enforced in Go and in the JS broker.
 - **A blueprint entity `table:` must be an identifier.** It reaches two
@@ -3737,27 +3737,27 @@ up on three different surfaces.
   client emits it into Go string literals, and the runtime interpolates it
   into DDL. `name:` was already constrained to a Go identifier; `table:`
   was the way around that. Found by a property sweep over every IR field
-  the emitters read — the tail of the injection class from #134.
+  the emitters read. The tail of the injection class from #134.
 - **Kiln enforces its semantic guards during replay, not only at the tool
   call. BREAKING journal format.** The journal is replayed at boot and by
   `kiln freeze`; it recorded *what* was deleted but not that anyone
   approved it, so a hand-authored `.kiln.session.jsonl` installed world
   state the API refuses. Destructive entries now carry the authorizing
   `plan_id` and replay re-checks approval, target match and single-use.
-  Plan consumption moved from a per-process map — which replay never
-  rebuilt, so a restart re-armed every spent approval — onto the session.
+  Plan consumption moved onto the session; the previous per-process map
+  was never rebuilt by replay, so a restart re-armed every spent approval.
 - **CORS's wildcard writer forwards `Flush` and `Hijack`.** Every other
   wrapper in `core/middleware` does, with a test pinning it;
   `stripCredsWriter` did not, so behind `AllowedOrigins: ["*"]` the SSE
-  bus lost its `Flusher` (a hard failure — the SSE constructor
+  bus lost its `Flusher` (a hard failure; the SSE constructor
   type-asserts it) and WebSocket upgrade lost its `Hijacker`. `Flush` now
   strips the credentials header too, and `Vary` is appended rather than
   clobbering an upstream `Vary: Accept-Encoding`.
 - **`core-ui/urlsafe` is now genuinely the single URL guard.** v0.45.0
-  claimed this and delivered one call site. The remaining six —
-  `framework/ui`, `framework/uihost`, `framework/crud`,
+  claimed this and delivered one call site. The remaining six now call
+  it: `framework/ui`, `framework/uihost`, `framework/crud`,
   `framework/experimental/apiversions`, and the `tree` / `nestedlist` /
-  `breadcrumbs` pattern builders — now call it, `framework/ui` splits
+  `breadcrumbs` pattern builders. `framework/ui` splits
   anchor vs subresource policy (`mailto:` on an `<img src>` is dropped),
   and a `repolint` rule fails the build if a seventh copy appears.
 
@@ -3766,12 +3766,12 @@ up on three different surfaces.
 - **`WithAPIPrefix` applies to `EntityConfig.Endpoints`** (#139). A
   relative `Endpoint.Path` is documented as resolving against the entity
   table path, but the prefix was applied only to the generated CRUD
-  routes — so an app using both had its API split across two prefixes with
+  routes, so an app using both had its API split across two prefixes with
   no warning. Absolute paths still bypass the prefix. **BREAKING** for an
   app relying on the unprefixed mount.
 - **`webhook.NewSQLStore` works on Postgres** (#141). Both stores
   dialect-switched their timestamp columns but hardcoded `payload BLOB`,
-  and Postgres has no `BLOB` type — so the outbound webhook battery could
+  and Postgres has no `BLOB` type, so the outbound webhook battery could
   not be constructed against the dialect it is most likely deployed on.
 - **`queue.DBQueue.Close()` returns when `Start` was never called**
   (#141). It waited on a channel only `Start`'s goroutine closes, so a
@@ -3783,31 +3783,31 @@ up on three different surfaces.
   routes lived at `/api/widgets`. Fail-closed (a 404), but the tools were
   simply broken for every grouped entity.
 - **`RouteGroup.Prefix()` composes nested prefixes.** It returned only its
-  own segment, so `app.Group("/api").Group("/v2")` reported `/v2` — and
+  own segment, so `app.Group("/api").Group("/v2")` reported `/v2`, and
   both the route-collision pre-flight and the MCP dispatch above were
   checking a path that does not exist.
 
 ### Added
 
-- **`upload.RangeGetter`** (#138) — an optional capability a `Storage`
+- **`upload.RangeGetter`** (#138): an optional capability a `Storage`
   backend implements to expose seekable reads, so `upload.ServeHandler`
   answers `Range:` requests with a 206 instead of the whole body. Local
   and memory backends implement it; S3 declines (a network backend would
-  have to buffer the whole object to `Seek` — use `WithPresigner`).
+  have to buffer the whole object to `Seek`; use `WithPresigner`).
   `Storage.Get` keeps its narrow `io.ReadCloser` contract.
-- **`mcp.Server.ListToolsFor(ctx)`** — the caller-filtered listing.
+- **`mcp.Server.ListToolsFor(ctx)`**: the caller-filtered listing.
   `ListTools()` stays unfiltered for in-process introspection and is
   documented as never safe to serve to a remote caller.
 
 ## [0.45.0] - 2026-07-25
 
-A full security pass — two-profile audit, 30 findings, every one fixed
+A full security pass: two-profile audit, 30 findings, every one fixed
 with a test that failed on the bug path first. The shape of the whole
 audit is **guard drift**: a check one code path has and its sibling
 skips. Fixing the shape mattered more than fixing each instance, so four
 duplicated guards collapsed into single definitions.
 
-Most entries below are BREAKING. That is deliberate — the framework is
+Most entries below are BREAKING. That is deliberate: the framework is
 young enough that the right default is worth more than compatibility with
 a wrong one.
 
@@ -3818,8 +3818,8 @@ a wrong one.
   anyway, dropping every guard keyed off it: the Hidden-column scrub,
   owner scope, tenant scope, the soft-delete filter, and the
   scoped-filter field allow-list. The blueprint emits exactly the arming
-  config — `auth.NewEntityUserStore(db, "auth_users")` is a self-migrated
-  table holding `password_hash` that is never registered — so a generated
+  config, `auth.NewEntityUserStore(db, "auth_users")` is a self-migrated
+  table holding `password_hash` that is never registered, so a generated
   entity with a writable author FK let any caller read another user's
   row and iterate the FK to dump the table.
 - **`?include=` is bounded.** No depth cap, node budget, or LIMIT
@@ -3828,7 +3828,7 @@ a wrong one.
   references, with shared subtrees converted once instead of once per
   parent.
 - **Two-factor enforcement covers every login path.** It read the
-  negative flag `PendingTwoFactor`, set in exactly one place — the
+  negative flag `PendingTwoFactor`, set in exactly one place: the
   password handler. Magic-link verify and the OAuth callback minted
   sessions the enforcement never saw, so both yielded a fully-privileged
   session for a 2FA-enrolled user, which could then disable the factor.
@@ -3838,7 +3838,7 @@ a wrong one.
   for its whole life. The 2FA self-service endpoints now require
   `TwoFactorVerified`.
 - **The OAuth callback is bound to the browser that started the flow**,
-  and **a magic link no longer signs you in on click** — it renders a
+  and **a magic link no longer signs you in on click**; it renders a
   confirmation naming the account. Both were GETs minting a session from
   a credential an attacker can hold, so an attacker could sign a victim
   into the *attacker's* account.
@@ -3858,7 +3858,7 @@ a wrong one.
   client, which sets Host freely.
 - **Harness quiet mode cannot auto-allow a command that spawns a process
   or writes a file** (`find -exec`, `find -delete`, `rg --pre`,
-  `git --output=`) — an auto-allow publishes no permission request, so
+  `git --output=`). An auto-allow publishes no permission request, so
   none of it surfaced.
 - **`gofastr generate` stops looking for a config at the repo root**, and
   a *discovered* config's `command` extension needs an explicit opt-in. A
@@ -3870,9 +3870,9 @@ a wrong one.
   `jwt_secret` and `seed_password` verbatim, linked from every page;
   freeze wrote them into `gofastr.yml` and dropped `world.json` at 0644.
 - **PDF rendering has a network gate**, and the print CSP is emitted
-  in-document. The renderer navigated a `data:` URL — which has no
-  headers, so the route's CSP never applied — with unrestricted network
-  access, and fetched bytes are rendered into the downloaded PDF.
+  in-document. The renderer navigated a `data:` URL with unrestricted
+  network access; a `data:` URL has no headers, so the route's CSP
+  never applied. Fetched bytes are rendered into the downloaded PDF.
 - **`_like` means literal substring at every depth.** Nested filters
   passed the value through as a raw pattern while the top level escaped
   it, so the same parameter meant two things.
@@ -3885,13 +3885,13 @@ a wrong one.
   `X-Forwarded-Host` was trusted and reflected into the `Link:` header
   naming the MCP endpoint.
 - **One shared guard replaces four drifted copies each:**
-  `core-ui/urlsafe` (URL schemes — `core-ui/html` had none at all),
-  `core/netguard` (internal addresses — the webhook copy missed CGNAT and
+  `core-ui/urlsafe` (URL schemes; `core-ui/html` had none at all),
+  `core/netguard` (internal addresses; the webhook copy missed CGNAT and
   IPv4-mapped IPv6), `AuthManager.MintSession`, and the runtime's
   `_originOK`.
 - **Supply chain:** `govulncheck` pinned, `actions/checkout` SHA-pinned
   in release.yml, `permissions: contents: read` at the top of ci.yml, and
-  `make secret-scan` widened past `*.go` to yml/json/env/sh/Dockerfile —
+  `make secret-scan` widened past `*.go` to yml/json/env/sh/Dockerfile;
   a credential in any of those was never scanned. The two secret gates
   also disagreed on their exemption marker, so a fixture annotated for
   one tripped the other.
@@ -3919,7 +3919,7 @@ those possible.
 
 ### Added
 
-- **Intercepting routes** — `app.InterceptFrom("/products",
+- **Intercepting routes**: `app.InterceptFrom("/products",
   app.ScreenDrawer)` as a registration option makes a detail screen
   present as a drawer or sheet over its list when reached by a soft
   navigation from that list, while staying an ordinary page for a hard
@@ -3929,24 +3929,24 @@ those possible.
   `X-Gofastr-Intercept` plus where it navigated from, the framework
   re-resolves that origin against the route table, and only agreement
   produces `X-Gofastr-Overlay`. A forged origin header changes the
-  wrapper element and nothing else — policy, params, `Load`, and content
+  wrapper element and nothing else: policy, params, `Load`, and content
   are identical on both paths. Closing routes through `history.back()`,
   so Back, Escape, the backdrop, and `data-fui-intercept-close` are one
   path and the list underneath is never refetched. Costs nothing on apps
   that don't use it: the demand module and `app.InterceptOverlayCSS()`
   both load only when a route declares an intercept. Fixture:
   `/examples/catalog`.
-- **PaneHost deep-linking** — `PaneHostConfig.DeepLinkParam` plus
+- **PaneHost deep-linking**: `PaneHostConfig.DeepLinkParam` plus
   `interactive.PaneKey` round-trip pane state through the URL
   (`?pane=secondary:4021`). Opening writes it, closing strips it, and
   Back replays the state by re-clicking the matching trigger, so the RPC
   runs again and the pane returns **filled** rather than empty. The
   server owns first paint: `ui.PaneDeepLink` parses the parameter so a
   screen can render the pane open and populated in the first response.
-  Opt-in throughout — a host without `DeepLinkParam` emits no marker and
+  Opt-in throughout: a host without `DeepLinkParam` emits no marker and
   no existing `PaneHost` changes behavior. An unkeyed trigger opens its
   pane without touching the URL.
-- **Blueprint build gate for meridian** —
+- **Blueprint build gate for meridian**:
   `examples/meridian/blueprint_gate_test.go` generates `gofastr.yml`
   into a scratch package and compiles it, so the blueprint cannot rot
   into one that no longer produces a buildable app.
@@ -3955,7 +3955,7 @@ those possible.
 
 - **`gofastr generate --force` says what it destroys.** It previously
   skipped the conflict check entirely and discarded hand edits in
-  silence — the mechanism behind #131. It now compares each target with
+  silence, which was the mechanism behind #131. It now compares each target with
   the bytes it is about to write and names every file that differs. It
   warns rather than refuses, because `examples/ecommerce` regenerates
   with `--force` by design.
@@ -4008,7 +4008,7 @@ fix ships with a `_security_test.go` that fails against the old code.
   `SetAllowedOrigins` and `SetRequireLoopbackHost`; dev pins loopback.
 - **`kiln serve` no longer accepts request-borne agent commands.**
   `POST /kiln/agent` with `name="custom"` supplied the entire argv of a
-  spawned process — unauthenticated code execution for anything that
+  spawned process: unauthenticated code execution for anything that
   could reach the tool API. Now behind `--allow-custom-agent`.
   `originGuard` additionally pins `Host` to loopback on a loopback bind,
   closing the rebinding path to the same surface.
@@ -4028,7 +4028,7 @@ fix ships with a `_security_test.go` that fails against the old code.
   rules only.
 - **Blueprint spec strings can no longer escape emitted Go or CSS.** The
   generated e2e test interpolated enum values and field names into a
-  backtick raw literal, which has no escape mechanism — the injected
+  backtick raw literal, which has no escape mechanism; the injected
   code was valid Go, compiled, and ran at `go test` time. Sinks now use
   `%q`, field names are validated, and font families are allow-listed
   before reaching the emitted stylesheet.
@@ -4037,8 +4037,8 @@ fix ships with a `_security_test.go` that fails against the old code.
   key (accepting looser shapes is an upgrade-desync primitive behind a
   pooling proxy). Frame payloads are read incrementally with a deadline
   instead of allocating the peer-declared length up front. Fragmented
-  messages are reassembled — previously a `FIN=0` text frame delivered
-  half a message as if whole — and reserved opcodes are rejected.
+  messages are reassembled; previously a `FIN=0` text frame delivered
+  half a message as if whole. Reserved opcodes are rejected.
 - **`memory.Save` validates entry names**, which became filenames under
   the store root.
 - **Harness `ws`/`rest` origin defaults flipped to deny.** An empty
@@ -4050,14 +4050,14 @@ fix ships with a `_security_test.go` that fails against the old code.
 
 ### Changed
 
-- **BREAKING** — `?slow=block` / `X-SSE-Slow` is ignored unless the
+- **BREAKING**: `?slow=block` / `X-SSE-Slow` is ignored unless the
   broker sets `SSEBrokerConfig.AllowClientSlowMode`. `deliver` walks
   subscribers on the publisher's goroutine, so a request-selected block
   mode let one unauthenticated subscriber stall every other subscriber
   and the calling handler. `BlockTimeout` (default 5s) bounds the stall
   even when enabled; `MaxSubscribers` caps concurrency by rejecting
   newcomers rather than evicting incumbents.
-- **BREAKING** — `subscriber_id` only replaces an existing SSE
+- **BREAKING**: `subscriber_id` only replaces an existing SSE
   subscriber when the reconnect comes from the same caller. Previously
   `?subscriber_id=<victim>` dropped the victim's stream.
 - `widget.Definition.RequireSession` gates `/state` and `/chrome` for
@@ -4067,20 +4067,20 @@ fix ships with a `_security_test.go` that fails against the old code.
 ### Added
 
 - CI runs a blocking `security` job (`govulncheck` + secret scan +
-  `go mod verify`) on every PR **and** weekly on a schedule — an
+  `go mod verify`) on every PR **and** weekly on a schedule: an
   advisory can land against a dependency nobody touched, which is
   exactly how GO-2026-5158 went unnoticed.
 - `core/mcp.Server.SetAllowedHosts` / `SetAllowedOrigins` /
-  `SetRequireLoopbackHost` — pin the authorities and browser origins the
+  `SetRequireLoopbackHost`: pin the authorities and browser origins the
   MCP transport answers on. `SetRequireLoopbackHost` is the port-agnostic
   form used by `gofastr dev`; `SetAllowedOrigins` is the escape hatch for
   tunnels (ngrok, Codespaces).
 - `widget.Definition.RequireSession` plus `widget.SetSessionCheck` /
-  `widget.SessionCheck` — the host-installed predicate the gate
+  `widget.SessionCheck`: the host-installed predicate the gate
   consults. `framework/uihost` installs it at `Mount`, so the gate works
   out of the box; a host that mounts widgets itself must install one or
   every gated widget stays closed.
-- `permission.Rule.Glob` — opts a rule into `filepath.Match` semantics.
+- `permission.Rule.Glob`: opts a rule into `filepath.Match` semantics.
   Rules are matched literally without it.
 - `SSEBrokerConfig.AllowClientSlowMode`, `BlockTimeout`,
   `MaxSubscribers`.
@@ -4095,7 +4095,7 @@ navigation, and policy-aware markdown everywhere.
 
 ### Added
 
-- **Catch-all route segments** — `site.Register("/docs/{path...}", …)`
+- **Catch-all route segments**: `site.Register("/docs/{path...}", …)`
   (or `:path*`) captures one or more trailing segments into a single
   joined param delivered via `SetParams`. Must be the final segment; at
   least one remainder segment is required; registration order remains
@@ -4103,45 +4103,45 @@ navigation, and policy-aware markdown everywhere.
   matcher stay in sync. The example site's per-slug docs registration
   loop is now a single catch-all with `StaticPaths` (same URL set for
   export, sitemap, llm.md, and the strict axe-coverage manifest).
-- **Typed param constraints** — `{id:int}`, `{id:uuid}`,
+- **Typed param constraints**: `{id:int}`, `{id:uuid}`,
   `{handle:alpha}`, `{handle:alnum}` restrict what a segment matches;
   a non-matching value falls through to the next route. There is
   deliberately no `string` constraint (it would be an unconstrained
   no-op). Constraints are enforced server-side; the client matcher
   treats them as plain dynamic segments and lets the server 404.
-- **Declarative redirects** — `App.Redirect(from, to)` and
+- **Declarative redirects**: `App.Redirect(from, to)` and
   `App.RedirectPattern("/old/{id}", "/new/{id}")` with param
   passthrough. Hard GETs get a permanent 308; SPA navigation follows
   via `X-Gofastr-Location`; chains collapse to one hop and cycles fail
   closed. Open-redirect hardening covers the registered target AND the
   substituted result (backslash, `//host`, scheme forms). A redirect
-  whose pattern *overlaps* a dynamic screen (any shared URL — param
+  whose pattern *overlaps* a dynamic screen (any shared URL; param
   names are irrelevant) panics at registration in either order, because
   redirects are consulted before screens. Redirect entries appear in
   `Routes()` (`RedirectTo`) and the client route manifest (`redirect`);
   static export, sitemap, and llm.md skip them.
-- **Fail-loud `SetParams` guard** — registering a dynamic route whose
+- **Fail-loud `SetParams` guard**: registering a dynamic route whose
   component doesn't implement `SetParams` now panics at boot, naming
   the path and component type. Params were previously dropped silently.
-- **Per-URL llm.md for dynamic routes** — `app.ScreenLLMMDForPath`
+- **Per-URL llm.md for dynamic routes**: `app.ScreenLLMMDForPath`
   builds the same per-request instance the page render uses (SetParams
   → DI → Load), so `/products/42/llm.md` (live, gated by
   `WithPublicLLMMD`), the static export, and markdown content
   negotiation all serve that page's real title, SEO front matter, and
   content instead of one generic pattern doc.
-- **Post-Load titles and SEO on dynamic routes** — `RenderResult` now
+- **Post-Load titles and SEO on dynamic routes**: `RenderResult` now
   carries the effective post-Load `Title` and the loaded `Component`;
   SPA partials send the loaded title via `X-Gofastr-Title`, and the
   HTML head's meta description / SEO bundle resolve against the loaded
   instance (live and static export). Dynamic pages no longer show a
   stale tab title on in-app navigation or a missing meta description.
-- **Typed interactive wiring (#129)** — `core-ui/interactive` gains
+- **Typed interactive wiring (#129)**: `core-ui/interactive` gains
   `Action.WithBody` (validated JSON body), `Action.Attrs()` (merge
   typed wiring into an existing attrs map byte-identically),
   `OpenOnClick`, `ToastOnClick` (+ typed `Toast`), `OpenPaneOnClick` /
   `ClosePaneOnClick`, and `BindText` / `BindHTML` / `BindAttr` signal
   region bindings. The blueprint generator, `battery/admin`, and the
-  examples now emit typed wiring — generated apps teach the typed form —
+  examples now emit typed wiring, so generated apps teach the typed form,
   and a repolint gate bans raw `"data-fui-rpc"` literals in the
   generator and batteries. Emitted HTML is byte-identical (documented
   inert deltas only).
@@ -4149,10 +4149,10 @@ navigation, and policy-aware markdown everywhere.
 ### Fixed
 
 - **Policy-gated screens no longer leak through markdown surfaces.**
-  Every llm.md surface — per-screen handlers, the dynamic-route
+  Every llm.md surface now evaluates the screen's policy chain
+  with the live request: per-screen handlers, the dynamic-route
   fallback, markdown negotiation, the `/llm-pages.md` index, and the
-  static export — now evaluates the screen's policy chain with the
-  live request. A non-Allow decision serves a metadata-free withheld
+  static export. A non-Allow decision serves a metadata-free withheld
   doc (route path and type only); the index lists gated screens
   path-only. Previously a gated screen's rendered content, title,
   description, and SEO bundle could be read via its llm.md sibling.
@@ -4163,11 +4163,11 @@ navigation, and policy-aware markdown everywhere.
   whole page), and the scaffolded example palette's `text-muted` was
   corrected. The blueprint's axe gate is green on every page in both
   color schemes.
-- **Generator emits `SetParams` for every dynamic screen** — including
+- **Generator emits `SetParams` for every dynamic screen**: including
   static-body screens and `:colon`-syntax routes (both previously
   panicked at boot under the new guard), reading the record param
   (`id` when declared, else the last param) rather than the first.
-- **SSG no longer silently skips dynamic routes** — the static builder
+- **SSG no longer silently skips dynamic routes**: the static builder
   warns, naming the route and the `StaticPaths` fix, when a dynamic
   route can't be expanded.
 - **Route manifest ordering is deterministic** (redirect entries were
@@ -4188,15 +4188,15 @@ navigation, and policy-aware markdown everywhere.
 ## [0.41.0] - 2026-07-23
 
 Readiness and UI contracts: the long-deferred DX roadmap items ship
-together — a one-option secure browser-auth posture, grouped entity
-sub-configs, typed form fields, both-order collision diagnostics — plus
+together: a one-option secure browser-auth posture, grouped entity
+sub-configs, typed form fields, both-order collision diagnostics, plus
 a widget-runtime module split that deletes every size-budget override,
 and the docs that make the v1 gate concrete (stability policy, external
 pilot program).
 
 ### Added
 
-- **`auth.WithBFFPosture(mgr, cfg)` — cookie-only browser auth in one
+- **`auth.WithBFFPosture(mgr, cfg)`: cookie-only browser auth in one
   option.** Cookie-only login (no JWT in the body), `__Host-session`
   upgrade of the dev cookie name, exact-origin allowlist + credentialed
   CORS on the API prefix (composes with `WithAPIPrefix` in either
@@ -4204,18 +4204,18 @@ pilot program).
   automation tokens pass, and global CSRF with exactly the auth logout
   route exempt (that handler enforces same-origin submission itself, so
   the static `ui.SignOut` form keeps working). See `gofastr docs auth`.
-- **Grouped `EntityConfig` sub-configs** — `Scope`, `Pagination`, and
+- **Grouped `EntityConfig` sub-configs**: `Scope`, `Pagination`, and
   `Exposure` pointer groups (plus declaration mirrors and blueprint
   `scope:`/`pagination:`/`exposure:` keys) make the semantic
   relationships between the 17+ flat fields visible. Grouped values are
-  authoritative — including at the App layer, so `Exposure.CRUD=&false`
+  authoritative, including at the App layer, so `Exposure.CRUD=&false`
   really skips route mounting. Flat fields keep compiling through the
   documented compatibility window.
-- **Typed form-field wrappers** — `ui.TextField`, `ui.NumberField`,
+- **Typed form-field wrappers**: `ui.TextField`, `ui.NumberField`,
   `ui.DateField` compose `FormField` + `html.Input` with typed
   Required/Placeholder/bounds/Error config and the ARIA wiring; a form
   built with them has zero `html.Attrs` literals at the call site.
-- **Collapsible sidebar variants** — persistent, collapsible
+- **Collapsible sidebar variants**: persistent, collapsible
   (local-storage persisted via `data-fui-sidebar-storage`), and
   off-canvas; the toggle demand-loads the sidebar runtime module and
   keeps `aria-expanded` synchronized.
@@ -4225,25 +4225,25 @@ pilot program).
   framework release; `init`/`generate`/`validate` answer `--help` with
   their own usage.
 - **API stability policy** (`gofastr docs stability`) and the
-  **external pilot program** (`docs/pilot-program.md`) — the v1 gate's
+  **external pilot program** (`docs/pilot-program.md`): the v1 gate's
   paperwork, written down and linked from the roadmap.
 
 ### Changed
 
-- **Widget runtime split into demand-loaded modules** — widgethelpers /
+- **Widget runtime split into demand-loaded modules**: widgethelpers /
   widgetfocus / widgetlinks carry the optional behaviors, so a basic
   modal stops paying for every form helper. Every gzip-budget override
   is deleted; core is back under 12KB. All split modules follow the
   full self-registration contract (scanner + loaded flag), so remounted
   widgets and poll-swapped content re-wire correctly.
 - **Entity/screen collision diagnostics fire in both registration
-  orders** — mountables expose `RoutePatterns()` and `Mount` pre-checks
+  orders**: mountables expose `RoutePatterns()` and `Mount` pre-checks
   them against entity CRUD space, so screen-mounted-second gets the
   same actionable message as entity-registered-second.
-- **`gofastr audit lint` precision** — AST-based `t.Skip` detection,
+- **`gofastr audit lint` precision**: AST-based `t.Skip` detection,
   statement-anchored SQL rule, `csrf-exempt:`/`safe-html:` annotations;
   zero findings on both repo examples.
-- **Composed-page a11y on the example site** — one main landmark,
+- **Composed-page a11y on the example site**: one main landmark,
   heading order, unique nav labels; banner/status-pill/terminal-block
   drop decorative stripes and glows for token-driven outlines.
 - Idempotency table setup and expired-claim eviction fail closed on DB
@@ -4253,7 +4253,7 @@ pilot program).
 
 Strict mode: missing launch hygiene becomes errors instead of silently
 shipping. An opt-in `uihost.WithStrict()` refuses to serve an app whose
-screens lack SEO or — in dev — an accessibility test, every check
+screens lack SEO or, in dev, an accessibility test, every check
 individually tunable; `gofastr dev` now enforces the same static a11y
 gate `gofastr build` always had; and generated apps ship the whole bar
 turned on with a surface that passes it honestly. Hardened by a
@@ -4262,31 +4262,31 @@ over the fixes): 12 findings, all closed.
 
 ### Added
 
-- **`uihost.WithStrict` — launch hygiene as boot failures.** At Mount
+- **`uihost.WithStrict`: launch hygiene as boot failures.** At Mount
   the host validates its declared surface and panics listing every
   finding at once, each with its remedy: page-screen titles and
   descriptions (a zero-value `ScreenSEO` return stays the documented
   per-page opt-out), site description, icon, sitemap (with a validated
-  bare-origin `BaseURL`), robots — and, under `gofastr dev` only, an
+  bare-origin `BaseURL`), robots, and, under `gofastr dev` only, an
   axe scan on record for every page route. Battery-registered screens
   (admin back-office) sit outside the checks by architecture. See
   `gofastr docs strict-mode`.
-- **`uihost.StrictConfig` — every check individually tunable.**
+- **`uihost.StrictConfig`: every check individually tunable.**
   Per-check `StrictEnforce`/`StrictWarn`/`StrictOff` levels,
   `ExemptScreens` route patterns (exact or `/prefix/*`), and a
   dedicated posture for the missing-manifest case (default: warn, so
   `gofastr generate` → `gofastr dev` is never walled behind a Chrome
-  run). The zero value of every field is the strictest setting —
+  run). The zero value of every field is the strictest setting;
   configuration only ever relaxes, visibly. Composition is last-wins
   and total: a later bare `WithStrict()` restores full enforcement.
-- **`framework/testkit/axetest` — the axe harness is public.** The
+- **`framework/testkit/axetest`: the axe harness is public.** The
   vendored axe-core harness (browser/tab factories, the color-scheme
   freeze, `Scan`) moved out of `internal/` so host apps can pin the
   runtime audit as their own test. Every successful `Scan` records the
   scanned page into the axe-coverage manifest
   (`.gofastr/axe-coverage.json`, new `framework/axecov` package,
   `GOFASTR_AXE_COVERAGE=0` opts out) under a canonical root shared
-  with strict mode — Go's own discovery rule (nearest `go.work`, else
+  with strict mode: Go's own discovery rule (nearest `go.work`, else
   nearest `go.mod`), `GOFASTR_AXE_COVERAGE_DIR` to override. Coverage
   resolves through the router: one scanned `/docs/install` covers
   `/docs/:slug`, and strict only demands dynamic routes whose
@@ -4296,7 +4296,7 @@ over the fixes): 12 findings, all closed.
   (`app.description`, or derived honestly from the app name +
   entities), a sitemap rooted at `APP_BASE_URL` (fallback
   `app.base_url`), robots + sitemap excluding the admin back-office,
-  title fallbacks, `ScreenSEO` opt-outs instead of empty describers —
+  title fallbacks, `ScreenSEO` opt-outs instead of empty describers,
   and an `axe_test.go` that boots the built binary and scans every
   sitemap page under both color schemes in two passes: an anonymous
   browser for public/guest pages and a separately-authenticated one
@@ -4305,13 +4305,13 @@ over the fixes): 12 findings, all closed.
   with a redirect assertion so a bounced scan can never cover the
   wrong page. The generated `.gitignore` now always ships and covers
   `.gofastr/`.
-- **`dev.Enabled()`** — the base `GOFASTR_DEV` predicate the
+- **`dev.Enabled()`**: the base `GOFASTR_DEV` predicate the
   per-feature dev gates refine.
 
 ### Changed
 
 - **`gofastr dev` enforces the static accessibility lint on every
-  rebuild** — the same gate `gofastr build` has always run, with the
+  rebuild**: the same gate `gofastr build` has always run, with the
   same `--no-a11y` escape hatch. An app with standing findings now
   stops at the dev rebuild (watcher keeps running; fixing and saving
   retries) instead of surfacing them at build/CI time. Fix the
@@ -4319,17 +4319,17 @@ over the fixes): 12 findings, all closed.
 
 A first-contact pass over the README and the product site (gofastr.dev):
 lead with what the framework does, in plain words, before the origin
-story. Plus two small additive surfaces — a full-corpus `/llms-full.txt`
-tier and `.md`-aware dev rebuilds — and public-hosting hardening of the
+story. Plus two small additive surfaces: a full-corpus `/llms-full.txt`
+tier and `.md`-aware dev rebuilds, plus public-hosting hardening of the
 example site's live interactive demos.
 
 ### Added
 
-- **`/llms-full.txt` — the whole-corpus llms tier.**
+- **`/llms-full.txt`: the whole-corpus llms tier.**
   `uihost.WithLLMsFullTxt(content)` (or `AgentReadyConfig.FullText`)
   serves the entire docs corpus as one `text/plain` file, alongside the
   existing `/llms.txt` index that links each doc as raw markdown. Nothing
-  links it automatically — you supply the concatenated content. See
+  links it automatically; you supply the concatenated content. See
   `gofastr docs agent-ready`.
 - **`gofastr dev` rebuilds on `.md` changes.** The dev watcher now treats
   `.md` files as build inputs, so editing embedded docs (or any markdown
@@ -4351,14 +4351,14 @@ example site's live interactive demos.
 
 - **The example site's live demos are isolated and bounded per visitor.**
   The interactive demos (`examples/site`: kanban, optimistic
-  create/delete, counter) mutated shared package globals — one anonymous
+  create/delete, counter) mutated shared package globals: one anonymous
   visitor could vandalize every other visitor's demo, and one list grew
   without bound (memory DoS). Each browser now gets its own demo state
   keyed by a site-owned `site-demo` cookie (an isolation key, not the
   auth session), held in a map bounded by a hard LRU cap and a TTL
   janitor; the `/__site/*` endpoints gained body caps, sortable-order
   dedup, and cookie-shape validation. Example-app hardening (no framework
-  API change) — the pattern is what any public deployment of a stateful
+  API change). The pattern is what any public deployment of a stateful
   demo wants. Reviewed by a Claude + GLM + Sol pass.
 
 ### Fixed
@@ -4377,7 +4377,7 @@ maturity review.
 - **Kiln stop-button e2e no longer flakes under CI load.**
   `TestBrowser_StopButtonCancelsInFlightTurn` gave the stop button 2s to
   appear, but since #112 the panel learns `in_flight` solely from its
-  2s±10% `/state` poll — the next tick can land after the deadline on a
+  2s±10% `/state` poll; the next tick can land after the deadline on a
   loaded runner (which is how the post-#121 main CI run went red while
   the identical PR run passed). Both waits now use the 5s poll-cadence
   headroom every sibling test in the file already uses.
@@ -4387,49 +4387,49 @@ maturity review.
   `(ctx, topic) bool` with silent-drop semantics (rejected topics are
   simply never subscribed). `presence.md` already had it right.
 - **Doc drift.** `ROADMAP.md` §7 (the v0.20 assessment findings) is
-  deleted — all six items shipped between v0.36.0 and v0.38.0, so the
-  section was advertising fixed security holes as open work — and
+  deleted: all six items shipped between v0.36.0 and v0.38.0, so the
+  section was advertising fixed security holes as open work, and
   `CONTRIBUTING.md` named go 1.26.4 while `go.mod` says 1.26.5.
 
 ## [0.38.0] - 2026-07-20
 
 The reactivity release (#112). The interactive layer is now truly
-stateless — any replica serves any request — and liveness follows an
+stateless, any replica serves any request, and liveness follows an
 explicit pull-first ladder: client signals → RPC → polling → SSE push.
 The new model doc is `framework/docs/content/reactivity.md`
 (`gofastr docs reactivity`).
 
 This release also folds in the v0.32.0–v0.37.0 weekend-range review
 fixes (#120): a two-round multi-model pass (Claude + GLM + Sol) over that
-range found twenty-two confirmed bugs — SQLite engine correctness, queue
+range found twenty-two confirmed bugs: SQLite engine correctness, queue
 timezone/DST, outbox lease normalization, and one include-filter security
-fix — all landed test-first.
+fix, all landed test-first.
 ### Added
 
 - **Stateless session tokens** (#112). The uihost session map is gone;
   sessions are HMAC-SHA256-signed tokens verified by signature, so a
   session minted on one replica is accepted by every other. The cookie
   carries the signed token; pages embed only the bare stream id, which is
-  no longer a credential — the SSE endpoint requires the cookie token to
+  no longer a credential; the SSE endpoint requires the cookie token to
   verify AND match the requested stream, closing a hole the map never
   covered (subscribing to another session's stream with a leaked id).
 - **App-wide secret**: `framework.WithSecret(secret)` or the
   `GOFASTR_SECRET` env var (composes with the `.env` autoload; explicit
-  option wins). Subsystem keys are HKDF-derived per purpose — one secret
+  option wins). Subsystem keys are HKDF-derived per purpose; one secret
   is all a multi-replica deployment configures. Single replica with no
   secret keeps today's zero-config semantics (per-boot key; sessions roll
   over on restart, re-minted transparently on next render).
-- **Polling — the missing middle rung.** Page level:
+- **Polling: the missing middle rung.** Page level:
   `data-fui-poll="30s"` + `data-fui-poll-src="/path"` re-fetches a
   server-rendered fragment and swaps it through the existing region-swap
   pipeline (Go-duration syntax, 5s floor, ±10% jitter, pauses while the
   tab is hidden, backs off on failures; demand-loaded module, core
   runtime budget untouched). Widget level: `Builder.Poll(interval)`
   re-fetches `/state` and re-applies changed signals (trusts Go callers
-  down to 100ms). Polling needs no fanout and no held connection — any
+  down to 100ms). Polling needs no fanout and no held connection; any
   replica answers. The live-dashboard demo now shows the same metrics
   polled (rung 3) next to SSE-pushed (rung 4).
-- **`data-fui-rpc-refresh="<widget>"`** — a successful RPC can trigger an
+- **`data-fui-rpc-refresh="<widget>"`**: a successful RPC can trigger an
   immediate `/state` re-fetch on a *named* polling widget, not just the
   one the button lives in (e.g. a Reset button inside a confirm modal
   refreshing the chat panel).
@@ -4439,7 +4439,7 @@ fix — all landed test-first.
   with a time in an IANA zone (e.g. `America/New_York`) evaluates the cron
   spec in that zone's wall-clock time, across DST transitions. The zone name
   persists with the schedule (`tz` column, idempotent migration). `Register()`
-  still anchors in UTC — existing schedules keep their fire times, and
+  still anchors in UTC: existing schedules keep their fire times, and
   `time.Local` / fixed-offset zones deliberately collapse to UTC because they
   would resolve differently per replica.
 ### Fixed
@@ -4449,9 +4449,9 @@ fix — all landed test-first.
   shared channel, so same-session tabs competed for frames (first
   receiver wins). Each subscriber now gets its own buffered channel and
   delivery broadcasts. **BREAKING**: `Manager.Subscribe` returns
-  `(<-chan IslandUpdate, func())` — the cancel replaces the removed
+  `(<-chan IslandUpdate, func())`: the cancel replaces the removed
   `Manager.Unsubscribe`; `ConnectSession` changed the same way.
-- **SPA session rollover — both nav branches.** A partial navigation
+- **SPA session rollover: both nav branches.** A partial navigation
   (`X-Gofastr-Navigate`) with a stale/expired session token re-mints the
   cookie and names the fresh stream id in `X-Gofastr-Session`; a
   cross-layout navigation (full fetch) copies the freshly rendered
@@ -4462,7 +4462,7 @@ fix — all landed test-first.
   still go out), and the SSE handler defers its stream cancel before the
   presence join so a panicking hook can't leak the subscription.
 - **`data-fui-poll` durations parse like Go.** Fractions (`1.5m`) and
-  full-string validation — a typo now leaves the region unwired instead
+  full-string validation: a typo now leaves the region unwired instead
   of silently polling at the wrong cadence.
 - **Long poll intervals no longer hammer the server.** `Builder.Poll`
   values above ~24.8 days used to wrap through 32-bit coercion and the
@@ -4471,7 +4471,7 @@ fix — all landed test-first.
   early instead of continuously.
 - **SPA rollover recovers on error responses too.** A partial navigation
   to a 404 or policy-blocked route with a stale token re-mints and the
-  runtime applies the fresh stream id before it bails on the non-2xx —
+  runtime applies the fresh stream id before it bails on the non-2xx,
   and every re-mint response (success or error) is `Cache-Control:
   no-store`, as is the widget `/state` endpoint.
 - **kiln reload converges after a dropped connection.** A page-structure
@@ -4481,7 +4481,7 @@ fix — all landed test-first.
   restart/rotation/expiry kills the token under an open tab, the SSE
   module (which can't see the 401) re-mints via `POST /__gofastr/session`
   after repeated reconnect failures, rewrites the stream id, and
-  reconnects — so recovery no longer depends on the user navigating.
+  reconnects, so recovery no longer depends on the user navigating.
 - **Poll back-off on HTTP errors.** Both pollers treated a non-2xx
   response as a silent no-op; it now reaches the back-off path. A
   hidden→visible flip while a fetch is in flight can no longer arm a
@@ -4508,7 +4508,7 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
 - **SQLite: dynamic column defaults survive reopen.** `DEFAULT
   CURRENT_TIMESTAMP` (and other expressions) now serialize with the schema
   (`default_expr`), so file-backed databases no longer fail `NOT NULL`
-  inserts after a restart. Legacy files keep their constant defaults —
+  inserts after a restart. Legacy files keep their constant defaults,
   including empty-string defaults like `lane TEXT NOT NULL DEFAULT ''`.
 - **SQLite: `INTEGER` affinity keeps fractional values REAL.** `DEFAULT 1.5`
   stored `1`; conversion now happens only when lossless, matching SQLite's
@@ -4519,7 +4519,7 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
   Partial indexes stay out of scan planning (correctness over speed).
 - **Queue: non-UTC cron schedules no longer kill the scheduler.** A schedule
   registered with a non-UTC anchor errored on its first tick, and that error
-  stopped `Start` — taking every other schedule with it. Evaluation now
+  stopped `Start` and took every other schedule with it. Evaluation now
   follows the registration zone, and a schedule that cannot produce a due
   tick is logged and skipped instead of being fatal.
 - **Queue: changing a schedule's cadence self-heals.** Re-registering with a
@@ -4529,15 +4529,15 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
 - **Outbox: legacy timestamp formats no longer corrupt lease comparisons.**
   Rows written by mattn/go-sqlite3 (space-separated timestamps) compare
   lexicographically against the pure driver's RFC3339 values, so an active
-  future lease read as expired — reclaiming in-flight deliveries (double
-  delivery) and mis-timing grace cutoffs. The relay now normalizes legacy
+  future lease read as expired. That reclaimed in-flight deliveries (double
+  delivery) and mis-timed grace cutoffs. The relay now normalizes legacy
   values to the canonical format at start (idempotent, sqlite-only); the
   atomic single-`UPDATE` claim path is unchanged.
-- **Security — hidden columns can no longer be probed through include
+- **Security: hidden columns can no longer be probed through include
   scoped filters.** `?include=rel(password_hash_like=SEC%)` accepted
   filters on `Hidden` columns of the include target; the related row's
   presence in the response leaked whether the value matched
-  (prefix-bruteforceable) — the same oracle the strict-filter release
+  (prefix-bruteforceable), the same oracle the strict-filter release
   closed on the flat, nested, and `?where=` paths. A hidden field now gets
   the identical "not on target entity" rejection a nonexistent field gets.
 - **SQLite (round 2): nine more engine fixes**, found by reviewing the
@@ -4581,7 +4581,7 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
 
 - **BREAKING: `WithFanout` now requires an app secret.** Boot fails with
   an actionable message when a fanout is attached and no
-  `WithSecret`/`GOFASTR_SECRET` is set — a multi-replica deployment
+  `WithSecret`/`GOFASTR_SECRET` is set: a multi-replica deployment
   without a shared session key would 401 half of all session checks, so
   it fails at boot instead of in traffic. Sticky sessions are no longer
   part of the scaling contract.
@@ -4589,12 +4589,12 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
   per-event SSE bindings. Page-structure world edits (add/delete
   page/route, session reset) still force an SPA refresh of the current
   page via a new kiln-owned build-mode reload client
-  (`/.kiln/reload.js`) — the same dev-mode-SSE exception class as
+  (`/.kiln/reload.js`), the same dev-mode-SSE exception class as
   `framework/dev` livereload.
 
 ### Removed
 
-- **BREAKING: the dead stateful island/signal surface** — all with zero
+- **BREAKING: the dead stateful island/signal surface**: all with zero
   production callers, retained live state in one replica's RAM, and the
   modern runtime never called them: `UIHost.RegisterSignal`,
   `UIHost.RegisterWidget`, `UIHost.PushIsland`, `UIHost.GetSession`, the
@@ -4604,7 +4604,7 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
   `Island.SessionID`, `Island.Update`). Surviving push surface: render the HTML yourself
   and `Manager.PushUpdate`, or presence. The client-side signal seed
   (`#gofastr-signals`) is unrelated and unchanged.
-- **BREAKING: widget SSE bindings** — `SSEBinding`, `Builder.SSE`,
+- **BREAKING: widget SSE bindings**: `SSEBinding`, `Builder.SSE`,
   `Builder.SSERefetch`, `Builder.SSERefresh`, `Builder.SSEReload`, the
   `"sse"` widget-catalog key, and the per-widget `EventSource` block in
   the runtime (each widget opened private connections, contradicting the
@@ -4627,7 +4627,7 @@ claims that had drifted from the code. No breaking changes.
   today's defaults (empty lane, priority 0, max attempts 3). Recurring bulk work
   can now target a dedicated lane instead of standing up a separate table/worker.
 - **`CURRENT_TIMESTAMP` / `CURRENT_DATE` / `CURRENT_TIME` column defaults** in
-  the bundled pure-Go SQLite adapter (part of #115), evaluated per insert — the
+  the bundled pure-Go SQLite adapter (part of #115), evaluated per insert. The
   auth OAuth-links table (`created_at ... DEFAULT CURRENT_TIMESTAMP`) now works
   on the bundled adapter.
 
@@ -4657,7 +4657,7 @@ claims that had drifted from the code. No breaking changes.
   not an inverse"; "a Down section when a safe inverse exists") is aligned across
   the README, `pack.go`, `blueprints.md`, and `migrations.md`.
 - **Shipped-skills accuracy pass.** Audited the `.claude/skills` + agent personas
-  against the code and corrected stale references — the `battery/log` tool count
+  against the code and corrected stale references: the `battery/log` tool count
   and registration prerequisite, log-level restore semantics, the full set of
   runtime-mutating MCP tools, several `adversarial-tests` reference rows, a
   non-shipped agent/skill reference, a wrong default port, and a persona payload
@@ -4673,7 +4673,7 @@ GoFastr's live-data and optimistic-UI capabilities into runnable references.
 ### BREAKING
 
 - **OAuth login requires a durable link store** (#98). `OAuth2Plugin.Init`
-  fails closed when the `UserStore` does not implement `OAuthLinker` — the
+  fails closed when the `UserStore` does not implement `OAuthLinker`; the
   legacy email-only fallback is gone (an IdP emitting an unverified email could
   otherwise sign in as an existing account). `EntityUserStore` now implements
   it (creates a `<table>_oauth_links` table on `EnsureSchema`). A verified-email
@@ -4711,7 +4711,7 @@ GoFastr's live-data and optimistic-UI capabilities into runnable references.
   (fetching userinfo when the id_token omits it, never overwriting a signed
   `false`); an unverified email never binds to an existing account.
 - **Positioning pass** (#113). GoFastr is presented as a full-stack Go
-  framework that doesn't get in the way of you or your agents — the blueprint
+  framework that doesn't get in the way of you or your agents: the blueprint
   generator and the entity declaration are optional features, not the
   identity. No API changes. The embedded `framework/docs/content/*` corpus is
   reframed in plain words, full-stack-first (facts/flags/links/samples
@@ -4732,12 +4732,12 @@ GoFastr's live-data and optimistic-UI capabilities into runnable references.
 
 - **Cross-issuer OAuth takeover closed** (#98). The `(provider, provider_id)`
   link namespace binds to the state-validated registry key, not the
-  provider-returned `Name()` — two OIDC issuers both defaulting to `oidc` could
+  provider-returned `Name()`: two OIDC issuers both defaulting to `oidc` could
   otherwise collide and take over each other's accounts. Concurrent-link races
   now fail closed to the durable-PK winner.
 - **Streaming soft-delete authorization** (#100). `ServeStreamingList`
   authorized the `?trashed=` gate against the DB-operation context instead of
-  the request context (a data-disclosure the buffered List path did not have) —
+  the request context (a data-disclosure the buffered List path did not have). It
   now uses `r.Context()`.
 - **ConfirmAction signal safety** (#104). `SuccessSignal` names are validated
   (`^[A-Za-z0-9_-]+$`) to prevent selector injection, and a failed RPC no
@@ -4754,8 +4754,8 @@ capability map (#102).
 
 - **UI capability map** (#102). A new `ui-capability-map.md` doc (browsable via
   `gofastr docs` and the `framework_docs_*` MCP tools, linked from the README
-  and docs catalog) routes from a UI *problem* — live dashboard, optimistic
-  board, master/detail, server-authoritative reactive state — to the GoFastr
+  and docs catalog) routes from a UI *problem*, whether a live dashboard, optimistic
+  board, master/detail, or server-authoritative reactive state, to the GoFastr
   primitives that compose it and the runnable example that proves it, with
   "see also" cross-links across the interactive-patterns / signal-store /
   runtime-contract / events / presence / scaling docs. Adds a
@@ -4764,20 +4764,20 @@ capability map (#102).
   set, gates which `?presence=<topic>` topics a connection may join. The hook
   runs once per requested topic at SSE-connect time with the request context
   (carrying the server-derived user), **before** any subscription or roster
-  emission — so an unauthorized viewer never receives the roster (which can
+  emission, so an unauthorized viewer never receives the roster (which can
   contain emails) or join/leave events. Rejection is silent (the topic is
   simply not joined), so the gate is not a private-topic existence oracle. A
-  nil hook (the default) authorizes every topic — presence stays public unless
+  nil hook (the default) authorizes every topic; presence stays public unless
   an app opts in, so existing apps are unaffected. See [presence](framework/docs/content/presence.md)
   → "Topic authorization".
 
 ### Changed
 
-- **BREAKING — strict filter parsing on the List endpoint** (#100). An
+- **BREAKING: strict filter parsing on the List endpoint** (#100). An
   unknown top-level filter query param (a typo like `?stauts=open`, or a
   suffixed op on a non-field like `?scor_gt=5`) now returns a **400**
-  naming the bad key — with a "did you mean" suggestion when a field is an
-  unambiguous near-match — instead of being silently dropped. Silently
+  naming the bad key, with a "did you mean" suggestion when a field is an
+  unambiguous near-match, instead of being silently dropped. Silently
   dropping a filter returned an **unfiltered** result set: a broken client
   read the whole table and an attacker's probe was indistinguishable from a
   real query. This aligns flat filters with the existing fail-closed policy
@@ -4789,7 +4789,7 @@ capability map (#102).
   treated as unknown filters.
 
   A declared column whose name collides with a control word (a field named
-  `stream`, `q`, …) still filters — a known field wins over the reserved-word
+  `stream`, `q`, …) still filters: a known field wins over the reserved-word
   skip, so it is never silently swallowed. `?per_page` is accepted as an
   alias for `?limit` (a common REST convention) so it neither 400s nor
   silently serves the default page size.
@@ -4801,7 +4801,7 @@ capability map (#102).
   extra params, restore the old drop-silently behavior per entity with
   `EntityConfig.LenientFilters: true`, or per call with
   `filter.ParseFilters(r, fields, filter.Lenient())`. Prefer the narrow
-  options — a dropped filter is a data-exposure hazard. See
+  options; a dropped filter is a data-exposure hazard. See
   [entity declarations → Flat filters](framework/docs/content/entity-declarations.md).
 
 ### Fixed
@@ -4815,8 +4815,8 @@ capability map (#102).
 - **`?offset=` now honored on the List endpoint** (#100). The raw
   `?offset=` row-skip control was accepted but silently ignored (the paged
   query always derived its offset from `?page`), so a caller paginating by
-  offset — notably the process-module broker, which sends `?offset=` without
-  `?page` — silently received page 1. An explicit non-negative `?offset=`
+  offset, notably the process-module broker, which sends `?offset=` without
+  `?page`, silently received page 1. An explicit non-negative `?offset=`
   now overrides the page-derived offset on both the buffered and streaming
   list paths.
 
@@ -4881,7 +4881,7 @@ scheduler (#94); fixes ScreenGroup sibling navigation under a default layout
 - **MCP Apps in `core/mcp`** (#90). The tools-only server now speaks the
   richer surface MCP Apps and modern clients expect:
   - **Rich tool results.** A `ToolHandler` can return `mcp.ImageResult`
-    (an `{type:"image"}` block, base64-encoded — renders inline instead
+    (an `{type:"image"}` block, base64-encoded; renders inline instead
     of smuggling base64 through a text field), `mcp.ToolResult{Structured, Content}`
     (`structuredContent` + explicit blocks; a structured-only result mirrors
     a text block for plain clients), a `mcp.Content` / `[]mcp.Content`, or a
@@ -4893,13 +4893,13 @@ scheduler (#94); fixes ScreenGroup sibling navigation under a default layout
     capability. `mcp.WithResourceGate(gate)` auth-gates a resource's
     contents (the resource-side analogue of `mcp.Gated`).
   - **Tool / resource `_meta` + `outputSchema`.** `RegisterTool` takes
-    options — `mcp.WithToolMeta(...)` (serialized verbatim in `tools/list`,
+    options: `mcp.WithToolMeta(...)` (serialized verbatim in `tools/list`,
     the MCP Apps `ui.resourceUri` linkage) and `mcp.WithOutputSchema(...)`;
     `mcp.WithResourceMeta(...)` / `WithResourceDescription(...)` for
     resources.
-  - **`framework.WithMCPApp(mcp.AppConfig)`** wires an MCP App — a `ui://`
+  - **`framework.WithMCPApp(mcp.AppConfig)`** wires an MCP App, a `ui://`
     HTML widget resource plus the linking tool (with the ChatGPT Apps SDK
-    `openai/outputTemplate` compat alias) — in one call. Explicit opt-in,
+    `openai/outputTemplate` compat alias), in one call. Explicit opt-in,
     registered during `InitPlugins`; a duplicate tool name / resource uri is
     a hard build error.
 
@@ -4909,7 +4909,7 @@ scheduler (#94); fixes ScreenGroup sibling navigation under a default layout
   registered under `SetDefaultLayout` reports its INNER layout name in the
   route manifest but carries the OUTERMOST default layout name in the
   `[data-fui-layout]` shell marker, so `layoutWillChange` always misfired a
-  full shell swap — rebuilding the group's persistent chrome (e.g. a tab
+  full shell swap and rebuilt the group's persistent chrome (e.g. a tab
   strip) on every sibling click. The runtime now treats a shared
   `data-fui-screen-group` between the two paths as proof of a shared shell
   and does an in-shell content swap. `findCommonScreenGroup` also matches a
@@ -4934,7 +4934,7 @@ live docs site.
 ### Added
 
 - **`gofastr generate cli`** (#85). Run from an app root (entities are
-  recovered from project source — no blueprint involved) to emit a
+  recovered from project source; no blueprint involved) to emit a
   standalone, stdlib-only `package main` under `cmd/<binary>/` (go-install-
   friendly; cross-compiles anywhere Go does) that imports only the
   app's `entities/client` package. Every selected entity gets
@@ -4948,9 +4948,9 @@ live docs site.
   exit codes are 0/1/2/4 (ok/API error/usage/auth). Selection is declarative
   (`--only`, `--exclude`, `--verbs` global or per-entity) and a typo'd name
   or reserved-flag/command collision fails generation. Regeneration is
-  one-shot + `--force`, except `custom.go` — the dev-owned seam whose
+  one-shot + `--force`, except `custom.go`, the dev-owned seam whose
   `customCommands()` merge over (and can override) the generated dispatch
-  table — which is only ever created when absent. See
+  table; the file is only ever created when absent. See
   [app-cli](framework/docs/content/app-cli.md).
 - **`auth.RequireAPIScopes(prefix)`**. One mount makes minted token scopes
   real across the whole auto-CRUD tree: the resource is derived from the
@@ -4972,8 +4972,8 @@ live docs site.
   recovered from project source, exactly like `generate cli`) to emit
   `gen/sdk/`: a standalone stdlib-only **Go SDK module** (the typed
   client + its own go.mod + README, zipped for download), a
-  **zero-dependency JS/TS client** — one handrolled ESM `client.js` plus
-  `client.d.ts`, deliberately no npm packaging — and a `dist/` directory
+  **zero-dependency JS/TS client**, one handrolled ESM `client.js` plus
+  `client.d.ts`, deliberately no npm packaging, and a `dist/` directory
   (sdk-go.zip, client.js, client.d.ts, manifest.json) the app serves.
   Selection via `--only`/`--exclude`; defaults can live in
   `gofastr.codegen.yml` as a generator entry named `sdk`, which also runs
@@ -4981,7 +4981,7 @@ live docs site.
   codegen generator). Output is generator-owned and regenerates in place;
   archives are deterministic. Hidden fields never appear in any generated
   file. See [sdk](framework/docs/content/sdk.md).
-- **`framework/sdkdocs`** — the SDK docs site. `sdkdocs.Mount(site,
+- **`framework/sdkdocs`**: the SDK docs site. `sdkdocs.Mount(site,
   router, cfg)` serves a public site at `/docs/api`: tabbed install
   guides, download routes (ETag revalidation; client.js serves inline so
   browsers can `import` it straight from the URL), an auth guide
@@ -4991,14 +4991,14 @@ live docs site.
   indistinguishably from missing ones; `Entities`/`IncludeGated` opt in;
   `Policy` gates screens and downloads together. Drift detection
   compares the manifest's schema hash (`framework/sdk.SchemaHash`)
-  against the live registry — one WARN plus a page banner, downloads
+  against the live registry: one WARN plus a page banner, downloads
   keep working.
-- **`framework/sdk`** — the shared generator↔server contract: manifest
+- **`framework/sdk`**: the shared generator↔server contract: manifest
   schema, deterministic zip packer, and the schema hash both halves
   compute.
-- **`ui.CodeTabs`** — the same snippet in several languages behind a
+- **`ui.CodeTabs`**: the same snippet in several languages behind a
   zero-JS tab strip (patterns/tabs + CodeBlock with copy buttons).
-- **`static.Builder.ExtraDirs`** — generic "copy this FS under this URL
+- **`static.Builder.ExtraDirs`**: generic "copy this FS under this URL
   path" hook for static export (never clobbers files the export or the
   user static dir already own); the SDK artifacts ride it.
 
@@ -5006,17 +5006,17 @@ live docs site.
 
 - **Generated clients no longer leak hidden fields.** `renderClient`
   (the `entities/client` package and therefore the Go SDK) now skips
-  `Hidden` columns in all four generated struct walks — hidden schema
+  `Hidden` columns in all four generated struct walks; hidden schema
   never reaches a downloadable artifact.
 - **`--tk-com` syntax-comment color now meets WCAG AA** on the dark code
   surface (#676E95 → #8C93B0, 3.6:1 → 5.8:1; caught by axe on the SDK
   docs pages).
 - **`patterns/tabs` panels no longer stretch the page** when panel
-  content is wider than the viewport (flex min-width) — wide code
+  content is wider than the viewport (flex min-width); wide code
   samples scroll inside their own frame on mobile.
 - **Widget registry enumeration is now sorted.** With two or more
   registered widgets, the catalog JSON, SSR chrome-inline order, and the
-  static export's widget dump followed Go's random map order — flapping
+  static export's widget dump followed Go's random map order, which flapped
   export bytes and rotating the PWA cache version on no-op rebuilds.
 
 ## [0.31.0] - 2026-07-17
@@ -5041,12 +5041,12 @@ Ships process-isolated third-party modules (#37) and cross-replica presence
   makes `CrossOwnerRead` non-grantable and stripped on the reverse path. An
   optional `SandboxRunner` (P1–P7 conformance probes; `bwrap`/`sandbox-exec`/
   Job-Object wrapper backends, no new dependencies) is required before an
-  untrusted module runs — with no conforming backend it fails closed rather
+  untrusted module runs; with no conforming backend it fails closed rather
   than downgrade. Postgres migrations run under a per-module restricted
   schema+role; the module holds zero DB credentials. A module may expose
   `module.<name>.<tool>` MCP tools and return `ui.node.v1` UI trees the host
-  validates and renders (`core-ui/uinodev1` + `framework/uihost/uinoderender`)
-  — the module never emits markup. See
+  validates and renders (`core-ui/uinodev1` + `framework/uihost/uinoderender`);
+  the module never emits markup. See
   [process-modules](framework/docs/content/process-modules.md); operators get
   a lifecycle screen at `/admin/modules`.
 - **Cross-replica presence** (#47). Presence rosters aggregate across `serve`
@@ -5056,8 +5056,8 @@ Ships process-isolated third-party modules (#37) and cross-replica presence
   the server-derived identity already exposed, with no new HTTP surface.
 - **`access.ScopeMatch`.** The `resource:verb` wildcard algebra
   (`teams:*`, `*:read`, `*:*`) gets one home in `framework/access`;
-  `battery/auth`'s token-scope matcher delegates to it. `access.Can` — the
-  exact-match RBAC hot path — is unchanged and never learns wildcards.
+  `battery/auth`'s token-scope matcher delegates to it. `access.Can`, the
+  exact-match RBAC hot path, is unchanged and never learns wildcards.
 
 ### Changed
 
@@ -5080,7 +5080,7 @@ background compute (Web Workers + WebAssembly).
   returns them sorted. With a non-empty registry, an unknown grant emits a
   loud warning naming the grant and its nearest registered capability, and
   `StrictCapabilities()` upgrades that to a typed rejection
-  (`*access.UnknownCapabilityError` — the admin grant screen answers 400
+  (`*access.UnknownCapabilityError`; the admin grant screen answers 400
   to a typo instead of a generic 500). Resource wildcards (`teams:*`)
   expand at grant time against the registry, so `Can` stays exact-match.
   The admin RBAC screen feeds grant inputs from the registry via a
@@ -5088,7 +5088,7 @@ background compute (Web Workers + WebAssembly).
 - **`access.NewCachedResolver`** (#79). Wraps a `func(ctx) []string` roles
   resolver with per-user TTL caching (default 30s, `WithTTL`),
   single-flight de-duplication, and `Invalidate`/`InvalidateAll` for
-  event-driven invalidation — the caching layer every team-membership
+  event-driven invalidation, the caching layer every team-membership
   resolver was hand-rolling. `admin.Config.EffectiveRoles` lets the admin
   users screen show direct ∪ resolved roles labeled by origin.
 - **Resource-scoped access decisions** (#80). The `access.Decider` seam
@@ -5099,13 +5099,13 @@ background compute (Web Workers + WebAssembly).
   byte-identical. The `resource:id:capability` string convention is
   documented as an app-side alternative.
 - **Managed stored routines (Postgres functions/procedures/triggers).**
-  `App.RoutinesFS(fs, dir)` loads routines from embedded SQL files —
+  `App.RoutinesFS(fs, dir)` loads routines from embedded SQL files:
   `<name>.sql`, `<name>.down.sql`, dialect-scoped `<name>.pg.sql` /
-  `<name>.sqlite.sql` — with loud rejection of empty files, collisions,
+  `<name>.sqlite.sql`, with loud rejection of empty files, collisions,
   and unknown suffixes. `Routine.Dialect` scopes a routine to one engine
   (mismatches skipped with one per-boot log line), so Postgres-only procs
   coexist with a SQLite dev database. A `gofastr_routines` ledger records
-  name + checksum + applied_at in the same advisory-locked transaction —
+  name + checksum + applied_at in the same advisory-locked transaction;
   reporting-only: every Up still runs each boot (idempotent,
   self-healing), orphaned rows warn loudly and are never auto-dropped.
   The `app_routines` MCP introspection tool reports dialect, checksum,
@@ -5118,7 +5118,7 @@ background compute (Web Workers + WebAssembly).
   `window.__gofastr.compute`: `task(worker, fn, payload)` with a promise
   protocol, 30s timeouts, and worker recycling; `wasmURL(name)` for
   `instantiateStreaming` inside workers; `dispose(worker)`. The page CSP
-  is unchanged — worker-script responses carry their own
+  is unchanged: worker-script responses carry their own
   `script-src 'self' 'wasm-unsafe-eval'`. Docs include Go/TinyGo-to-WASM
   recipes. SharedArrayBuffer/cross-origin isolation deliberately out of
   scope.
@@ -5129,11 +5129,11 @@ background compute (Web Workers + WebAssembly).
   conflict refresh; malformed, oversized, HTML, or empty bodies keep
   today's generic copy.
 - **`ui.LinkButton` Icon slot.** `LinkButtonConfig.Icon` names a registered
-  icon (`ui.RegisterIcon`) to render before the label — external-link
+  icon (`ui.RegisterIcon`) to render before the label: external-link
   buttons can carry a recognizable mark (GitHub, docs) without bespoke
   anchors. Unknown names fall back to the plain label.
 - **`seo.WebApplication`.** Typed JSON-LD for in-browser tools (schema.org
-  SoftwareApplication subtype) — the right @type for SaaS products and
+  SoftwareApplication subtype), the right @type for SaaS products and
   online generators, previously missing from core-ui/seo's catalog.
   `NewWebApplication()` defaults `operatingSystem` to "Web"; pair with a
   free Offer for "free online tool" rich results.
@@ -5153,7 +5153,7 @@ background compute (Web Workers + WebAssembly).
   and the admin matrix.
 - **Admin RBAC wiring is purely additive** (#77). The generator emits
   auth/policy handles at package level plus an
-  `adminBatteryConfigurators` seam — activating the admin battery means
+  `adminBatteryConfigurators` seam: activating the admin battery means
   adding a file, not editing owned-generated ones. Generated repo structs
   now point at their package-level event helpers, the
   refuse-to-overwrite error names `generate --add`, and the generated
@@ -5175,7 +5175,7 @@ background compute (Web Workers + WebAssembly).
 - **The access docs say loudly that `EntityConfig.Access` is HTTP-only**
   (#77): in-process repo/CrudHandler calls bypass entity gates by design,
   so SSR per-row rules belong in hooks or handler checks.
-- **`ui.ColorPicker` renders the swatch before its label** — control on
+- **`ui.ColorPicker` renders the swatch before its label**: control on
   the left, name on the right, matching Checkbox's reading order (it
   previously rendered label-first).
 
@@ -5205,7 +5205,7 @@ background compute (Web Workers + WebAssembly).
 
 - **BREAKING: auto-CRUD requires an authenticated session by default.**
   An entity declaring none of `OwnerField`, `Access`, or the new
-  `Public` had ZERO enforcement — every operation (List/Get/Create/
+  `Public` had ZERO enforcement: every operation (List/Get/Create/
   Update/Delete) was reachable by an anonymous caller; an unauthenticated
   `POST /api/<entity>` returned 201 and persisted the row (#65). Entity
   MCP tools inherited the same gap since they dispatch through the same
@@ -5213,13 +5213,13 @@ background compute (Web Workers + WebAssembly).
   authenticated session (`core/handler.GetUser`) for every operation
   unless an explicit mechanism already governs the entity: `OwnerField`
   or a declared `Access` block (unchanged, "as today"), or the new
-  `EntityConfig.Public` / blueprint `public: true` — a deliberate, full
+  `EntityConfig.Public` / blueprint `public: true`, a deliberate, full
   opt-out for genuinely public entities (a contact form, a blog's
   comments). No `mcp.Gated` wiring was needed for entity MCP tools: they
   re-dispatch through the router and inherit the REST fix for free.
   `gofastr generate` now prints a warning listing every entity left
   publicly readable/writable (`public: true`), and the existing unscoped-
-  entity lint's message was corrected — it no longer claims anonymous
+  entity lint's message was corrected: it no longer claims anonymous
   exposure (that gap is now closed); it flags the narrower cross-user
   ("every authenticated user can read every row") exposure instead.
   Existing apps with entities that declare neither `OwnerField` nor
@@ -5245,12 +5245,12 @@ background compute (Web Workers + WebAssembly).
   absent/`null` instead of erroring.
 - **Generated `e2e_test.go` is Windows- and Postgres-portable** (issue #68).
   The blueprint generator's end-to-end test template had two portability
-  defects. (1) It built the binary to a bare `app` and exec'd it — on Windows
+  defects. (1) It built the binary to a bare `app` and exec'd it; on Windows
   that name has no `.exe` suffix, so the child can't start. The template now
   appends `.exe` when `runtime.GOOS == "windows"`. (2) It always booted the
   child with `DATABASE_URL=file:e2e.db` (a SQLite DSN), but a
   `db.driver: postgres` blueprint links only `lib/pq`, which cannot open a
-  SQLite file — the server never became ready and the test timed out with a
+  SQLite file; the server never became ready and the test timed out with a
   misleading message. The template now bootstraps from the blueprint's
   declared driver: SQLite/empty drivers still use a throwaway file DB; a
   postgres blueprint carves a disposable database from the env-provided
@@ -5258,7 +5258,7 @@ background compute (Web Workers + WebAssembly).
   driverless CI stays green-by-skip.
 - **Pre-image casing contract documented; typed/snake accessors added
   (#69).** `crud.AuditPreImageFromContext(ctx)` keys the pre-update row by
-  the handler's `JSONCase` (camelCase by default, e.g. `"statusId"`) — not
+  the handler's `JSONCase` (camelCase by default, e.g. `"statusId"`), not
   the snake_case DB column name every other hook-adjacent surface speaks.
   A hook doing `pre["status_id"]` silently got `nil` back; casing-identical
   keys (`"version"`, `"key"`) happened to work either way, masking the
@@ -5271,7 +5271,7 @@ background compute (Web Workers + WebAssembly).
 
 - **Screen router accepts both `:param` and `{param}`.** A UI screen
   registered with the `{param}` brace syntax (the form used by the
-  blueprint, REST/entity routers, and the docs) silently never matched —
+  blueprint, REST/entity routers, and the docs) silently never matched:
   no error, just a 404. The core-ui router now normalizes `{param}` to
   `:param` at registration, so both syntaxes work identically. The HTTP
   router's `{param}`-only syntax is unchanged.
@@ -5310,7 +5310,7 @@ background compute (Web Workers + WebAssembly).
   A leaked token's prefix now identifies WHICH product leaked it. Default
   stays `gfsk_`; prefixes are validated (lowercase alnum, trailing `_`).
 - **`auth.TokenID(ctx)`.** TokenMiddleware now stashes the authenticating
-  token's own ID in the request context alongside owner and scopes — one
+  token's own ID in the request context alongside owner and scopes: one
   owner can hold many tokens, and per-token metering/quotas/audit need to
   attribute the request to the specific credential.
 - **Admin token operations.** `SQLAPITokenStore.ListAll` (every token across
@@ -5321,7 +5321,7 @@ background compute (Web Workers + WebAssembly).
 ### Fixed
 
 - **`ui.Gallery` grids are responsive by default.** `Columns` was a hard
-  `repeat(N, 1fr)` — four columns stayed four columns on a phone, crushing
+  `repeat(N, 1fr)`; four columns stayed four columns on a phone, crushing
   every tile, and each consumer had to hand-write media queries. `Columns`
   is now a MAXIMUM: tracks are sized for exactly that many columns but
   never shrink below `--ui-gallery-min` (default `9.5rem`, override via a
@@ -5330,9 +5330,9 @@ background compute (Web Workers + WebAssembly).
   `column-count`.
 - **Session reads try every cookie candidate.** `SessionMiddleware`, the
   `/auth/me` handler, and logout read only the FIRST cookie with the session
-  name (`r.Cookie`). A jar can hold several — a stale cookie from an old
-  deployment at a more specific `Path`, or another localhost port's cookie —
-  and browsers send the most path-specific first, so a dead cookie shadowed a
+  name (`r.Cookie`). A jar can hold several: a stale cookie from an old
+  deployment at a more specific `Path`, or another localhost port's cookie.
+  Browsers send the most path-specific first, so a dead cookie shadowed a
   live session: login silently failed while a valid cookie sat one position
   later. All session reads now try every candidate, and logout revokes ALL
   of them so a shadowed-but-valid session cannot survive.
@@ -5345,8 +5345,8 @@ background compute (Web Workers + WebAssembly).
   referenced ten `--color-*` custom properties that no theme ever emitted
   (`--color-muted`, `--color-warn`, `--color-surface-hover`,
   `--color-primary-hover`, `--color-ring`, …). CSS custom properties fail
-  soft: each reference silently rendered its hardcoded fallback — constants
-  tuned for light themes — so dark themes hit contrast failures like
+  soft: each reference silently rendered its hardcoded fallback, constants
+  tuned for light themes, so dark themes hit contrast failures like
   `ui-copy-btn:hover` turning near-white under light-gray text. Themes now
   emit a derived-alias block mapping every legacy name onto canonical
   ColorSet tokens (via `var()`/`color-mix()`, so dark-scheme re-declarations
@@ -5362,8 +5362,8 @@ background compute (Web Workers + WebAssembly).
   independent of the watch root. Previously `dev` ran `go build .` at `--dir`,
   so an app whose main lives under `cmd/<name>/` had no working invocation:
   from the project root the build failed with `no Go files in <root>`, while
-  `--dir ./cmd/<name>` moved the watch root and the server's cwd along with it
-  — silently missing edits under `internal/` and resolving relative paths
+  `--dir ./cmd/<name>` moved the watch root and the server's cwd along with it,
+  silently missing edits under `internal/` and resolving relative paths
   (sqlite `db_url`, static dirs) against the command directory, so the app came
   up against the wrong database. Use `gofastr dev --dir . --pkg ./cmd/<name>`:
   the watcher and cwd stay at the project root while only the build target
@@ -5402,7 +5402,7 @@ background compute (Web Workers + WebAssembly).
   emitter quotes commas, quotes, and brackets wherever they appear (a seed
   value like `"a, b"` no longer re-parses as two items), leads list-item maps
   with an inline scalar list when no scalar key exists, and
-  `BlueprintYAML` now errors — naming the offending key — on seed rows or
+  `BlueprintYAML` now errors, naming the offending key, on seed rows or
   props that `core/yaml` cannot round-trip (map-only rows, keys containing
   colons) instead of writing a silently corrupt `gofastr.yml`.
 - **Typed kinds render at any depth.** A design-system kind (`card`,
@@ -5430,8 +5430,8 @@ background compute (Web Workers + WebAssembly).
 ### Changed
 
 - **`gofastr dev` runs the server in the project directory.** The rebuilt
-  binary's working directory is now `--dir` — the same cwd it gets when run
-  by hand — so relative paths (sqlite `db_url`, static dir) resolve against
+  binary's working directory is now `--dir`, the same cwd it gets when run
+  by hand, so relative paths (sqlite `db_url`, static dir) resolve against
   the project, and the app's worktree-isolation lookup keys off the
   project's location instead of wherever `gofastr dev` was launched. If you
   relied on launch-cwd-relative paths, your sqlite file now lives in the
@@ -5453,11 +5453,11 @@ that remain are current. No framework API changes.
 - **`repolint` bans the process-artifact genre.** Two new rules:
   `root-markdown` (root-level `.md` must be one of the GitHub
   community-health files + `ROADMAP.md` + `CLAUDE.md`/`AGENTS.md`) and
-  `process-artifact-markdown` (SCREAMING_SNAKE ledger names — AUDIT,
-  FINDINGS, NOTES, JOURNAL, HANDOFF, LEDGER — rejected anywhere in the
+  `process-artifact-markdown` (SCREAMING_SNAKE ledger names: AUDIT,
+  FINDINGS, NOTES, JOURNAL, HANDOFF, LEDGER; these are rejected anywhere in the
   tree). Rationale for judgment calls lives in commit messages and
   comments beside the tests that enforce them, not in ledger files.
-- **The scaffolded host skill covers the v0.26 surface** —
+- **The scaffolded host skill covers the v0.26 surface**:
   `uihost.WithAppIcon`, the SEO options + `ScreenSEO`/`ScreenSchema`,
   `gofastr audit a11y` + the enforced build lint, and the
   `gofastr upgrade` flow, with matching trigger phrases.
@@ -5467,14 +5467,14 @@ that remain are current. No framework API changes.
 
 ### Changed
 
-- **`ROADMAP.md` trimmed 57KB → 11KB** — shipped sections deleted per
+- **`ROADMAP.md` trimmed 57KB → 11KB**: shipped sections deleted per
   the file's own rule; only genuinely-unbuilt work remains. Inbound
   section references across the architecture docs and tests were
   rewired.
-- **`perf-results.md` re-measured against v0.26.0** — all 12 hot-path
+- **`perf-results.md` re-measured against v0.26.0**: all 12 hot-path
   benchmarks re-run (Postgres via testcontainers); rewritten as a
   self-contained results doc with a "reading these numbers" section.
-- The embedded kiln skill no longer triggers on "GoFastr" alone — it
+- The embedded kiln skill no longer triggers on "GoFastr" alone; it
   requires explicit Kiln signals, so framework-direct users aren't
   mis-routed into HTTP IR mutations.
 
@@ -5490,7 +5490,7 @@ that remain are current. No framework API changes.
   `agent-notes.md` dev diary and `project-architecture-review.md` risk
   register (its enforceable content already exists as CI gates), and
   `examples/ecommerce/BUILD_JOURNAL.md`.
-- Two permanently-skipped contradiction tests in `battery/embed` —
+- Two permanently-skipped contradiction tests in `battery/embed`,
   replaced by a comment beside the tests that actually carry the auth
   contract.
 
@@ -5504,19 +5504,19 @@ guided `gofastr audit a11y` command with an enforced (escape-hatched)
 documented workflow plus `gofastr upgrade`, which reads a migration
 registry embedded in the CLI and points at the exact lines in your app a
 breaking release touches. The whole batch was hardened by a dual external
-review (nine findings, all fixed pre-release — headline: the a11y lint
+review (nine findings, all fixed pre-release; headline: the a11y lint
 honors the ARIA escape hatch, so documented icon-only buttons pass).
 
 ### Added
 
-- `gofastr upgrade` — guided release upgrades (#62). The CLI embeds a
+- `gofastr upgrade`: guided release upgrades (#62). The CLI embeds a
   migration registry (`cmd/gofastr/upgrades.yml`, one entry per release
   with migration-relevant changes, complete through a `through` marker
   a tripwire test pins to the CHANGELOG's latest release). The command
   reads the project's `go.mod`, resolves the target (`--to vX.Y.Z` or
   the newest tag via the module proxy), prints every note the project
-  crosses — with per-note regex detectors pointing at the affected
-  `file:line` in the app — and `--apply` runs the mechanical
+  crosses, with per-note regex detectors pointing at the affected
+  `file:line` in the app, and `--apply` runs the mechanical
   `go get` / `go mod tidy` / build / test steps, stopping at the first
   failure. Warns when the target is newer than the binary's registry.
 - Upgrade documentation (#62): a version-independent **Updating
@@ -5526,24 +5526,24 @@ honors the ARIA escape hatch, so documented icon-only buttons pass).
 - `gofastr <cmd> --help` now reaches subcommands that implement their
   own help (`audit`, `upgrade`, `docs`); other commands keep the global
   interception so a side-effectful `dev --help` can't start a server.
-- `uihost.WithAppIcon(source)` — derives the entire icon surface from one
+- `uihost.WithAppIcon(source)`: derives the entire icon surface from one
   image: 32/180/192/512px PNGs under `/__gofastr/icons/`, `/favicon.ico`,
   the `rel="icon"` + `apple-touch-icon` head links, the PWA manifest
   192/512 icons when `PWAConfig.Icons` is empty, and the same files in
   static export. Non-square sources are center-cropped; undecodable
   sources warn and skip.
-- `image.NewGradient(w, h, from, to)` — generated placeholder imagery
+- `image.NewGradient(w, h, from, to)`: generated placeholder imagery
   (diagonal #RRGGBB gradient) so apps ship an icon without committing
   binary assets; blueprint-generated apps use it for their default icon.
 - `uihost.ScreenRobots` per-screen interface and `uihost.WithRobotsMeta`
-  sitewide option — `<meta name="robots">` parity with the other
+  sitewide option, `<meta name="robots">` parity with the other
   per-concern SEO interfaces (previously bundle-only).
 - Static export writes `sitemap.xml` and `robots.txt` when
-  `WithSitemap`/`WithRobots` are configured — same bytes as the live
+  `WithSitemap`/`WithRobots` are configured, same bytes as the live
   handlers (new `UIHost.SitemapXML`/`UIHost.RobotsTXT` single source),
   with `--export-base` folded into `<loc>` entries and the derived
   `Sitemap:` line; user-supplied files in the static dir win.
-- `gofastr audit a11y` — guided static accessibility lint: flags missing
+- `gofastr audit a11y`: guided static accessibility lint: flags missing
   required a11y fields on core-ui/html element configs (Alt, Label,
   Legend, For, …) with a teach-the-rule fix hint per finding; exits 1 on
   findings. `--url <base>` mode runs the vendored axe-core engine via
@@ -5551,18 +5551,18 @@ honors the ARIA escape hatch, so documented icon-only buttons pass).
   pages discovered from `/sitemap.xml` (or `--pages`).
 - `gofastr build` now enforces the static accessibility lint between
   `go vet` and compilation (guided failure output; `--no-a11y` skips).
-  The lint honors the ARIA escape hatch — an `ExtraAttrs` literal with
+  The lint honors the ARIA escape hatch, an `ExtraAttrs` literal with
   `aria-label`/`aria-labelledby`/`role` satisfies the matching typed
   field, and non-literal `ExtraAttrs` fails open (runtime validation
-  still backstops it) — so the documented icon-only button form passes.
-- `check.LintA11yFile` — a11y-only linter entry point that works on any
+  still backstops it), so the documented icon-only button form passes.
+- `check.LintA11yFile`: a11y-only linter entry point that works on any
   .go file (import-alias aware, no false positives on non-core-ui/html
   calls), backing both the audit command and the build gate.
 - Blueprint-generated apps ship `uihost.WithAppIcon` (gradient derived
   from the theme's primary color) and a protective default `robots.txt`
   (`Disallow: /__gofastr/`).
 - Docs: new `seo` and `accessibility` topics; static-export and PWA docs
-  updated for the new surfaces. Meridian and examples/site showcase the
+  updated for the new surfaces. Meridian and examples/site demonstrate the
   SEO stack (sitewide OG/description, per-screen `ScreenSEO` bundle with
   Product JSON-LD, Organization/WebSite schema, sitemap + robots, icons).
 
@@ -5572,7 +5572,7 @@ The MCP surface gets the funnel treatment (#61): the dev loop implies the
 full agent toolkit ("livereload for agents"), generated apps ship the
 complete MCP contract, mutating control and log debug tools stay
 fail-closed outside dev, custom tools gain first-class auth gating, and
-the guidance — skills, agents.md, embedded docs — is pinned to the code
+the guidance in skills, agents.md, and the embedded docs is pinned to the code
 by tripwire tests.
 
 ### Added
@@ -5585,14 +5585,14 @@ by tripwire tests.
   `log_metrics` / `log_set_level` debug tools the same way; and every
   CRUD-enabled entity serves its MCP data tools without per-entity
   `mcp: true` (entities with `crud: false`, like the auth battery's
-  user/session configs, are never implied — no routes, no tools). Opt
+  user/session configs, are never implied: no routes, no tools). Opt
   out with `GOFASTR_DEV_MCP=0` (mirrors `GOFASTR_DEV_LIVERELOAD=0`); a
   production `GOFASTR_ENV` always wins, and production processes never
   see `GOFASTR_DEV`. A dev-implied mount yields (warn, not panic) to a
   hand-wired `/mcp` route and dev-implied tool registration tolerates
   name collisions, so existing apps can't be broken by running under
   `gofastr dev`.
-- **`framework.WithMCPControl()` — runtime control over MCP.** The
+- **`framework.WithMCPControl()`: runtime control over MCP.** The
   mutating counterpart to `WithMCPIntrospection`: `app_module_enable` /
   `app_module_disable` toggle registered modules on the running app
   through the module store (dependency-checked, fail-closed), for
@@ -5601,7 +5601,7 @@ by tripwire tests.
   runtime state the app already models.
 - **Blueprint-generated apps ship the debug loop.** The generated
   `main.go` registers battery/log (canonical zero config: per-app file
-  sink, access log, panic recovery, dev console) — so under `gofastr
+  sink, access log, panic recovery, dev console), so under `gofastr
   dev` a generated app answers "recent requests / current errors /
   trace this request_id" and accepts module toggles over `/mcp` out of
   the box, while a production boot exposes none of it. The MCP e2e gate
@@ -5612,7 +5612,7 @@ by tripwire tests.
   precondition, and battery/auth ships the gates: `auth.MCPUser()`
   (any signed-in caller) and `auth.MCPRole("admin", …)`. The `/mcp`
   route runs under the app's global middleware chain, so the session /
-  JWT middleware resolves the caller before the tool executes — the
+  JWT middleware resolves the caller before the tool executes; the
   gate reads the same identity `RequireRole` does. Entity CRUD tools
   never needed this (they re-dispatch through the router and inherit
   HTTP auth + owner scoping + RBAC); `Gated` covers the direct
@@ -5640,14 +5640,14 @@ by tripwire tests.
   `TestIntrospectionGuidanceNamesEveryTool` fails whenever a tool
   registered by `WithMCPIntrospection` is missing from
   `framework/agents.md`, the `agent-ready` doc, or the app-introspect /
-  mcp-debug skills — the "five tools" drift (four tools had shipped
+  mcp-debug skills: the "five tools" drift (four tools had shipped
   undocumented) is fixed and can't silently recur.
 
 ### Fixed
 
 - MCP guidance accuracy sweep: the app-introspect skill no longer
   claims `app_readiness` returns per-check `error` text under
-  `WithVerboseReadiness()` (the tool always redacts it — `/readyz` and
+  `WithVerboseReadiness()` (the tool always redacts it; `/readyz` and
   `/mcp` can sit on different trust boundaries), documents the
   zero-checks `reason` field, and the skills' `go run ./examples/site`
   instructions now point at the right port (:8083; :8082 is
@@ -5658,11 +5658,11 @@ by tripwire tests.
   `app_readiness` on the flagship reports `ready:true` instead of the
   unconfirmed `"no readiness checks registered"` state.
 - Shipped-guidance relevance sweep: five battery `agents.md` snippets
-  had drifted into wouldn't-compile territory —
+  had drifted into wouldn't-compile territory:
   `email.SMTPConfig{TLS:…}` (field is `UseTLS`), `cache.Set/Get`
   missing the `ttl`/`dest` arguments, `webhook.Manager.Stop()` without
   its context, `setup.AdminStep` used as a one-return value, and
-  `admin` guidance calling a nonexistent `User.HasRole` — plus the
+  `admin` guidance calling a nonexistent `User.HasRole`, plus the
   host skill's two-arg `testkit.NewIsolatedDB` and stale file paths in
   the gofastr-docs skill. The agents.md snippet gate now also
   validates struct-literal field names against the real structs, so
@@ -5681,7 +5681,7 @@ with `WithPWA` become fully offline-capable installable apps.
 
 - **Hot reload now reaches every HTML surface.** `framework.NewApp` mounts
   dev-only middleware (active only under `gofastr dev`'s `GOFASTR_DEV=1`)
-  that splices the livereload client into full HTML documents — responses
+  that splices the livereload client into full HTML documents: responses
   declaring `Content-Type: text/html` that contain `</body>` and don't
   already carry the tag. `static.Handler` file serving (the SPA and
   static-site shapes), widget-server pages, and hand-rolled handlers that
@@ -5697,9 +5697,9 @@ with `WithPWA` become fully offline-capable installable apps.
 - **Static site as an app: full-site offline PWA for static exports.**
   A static export with `uihost.WithPWA` now emits a full-site service
   worker (`PWAStaticServiceWorkerJS`): the exported page set is closed and
-  immutable, so the whole site — pages, widget chrome, `llm.md`, component
-  stylesheets under their versioned `?v=` URLs — is precached at install
-  and navigations are cache-first (trailing-slash tolerant) — land once,
+  immutable, so the whole site, pages, widget chrome, `llm.md`, component
+  stylesheets under their versioned `?v=` URLs, is precached at install
+  and navigations are cache-first (trailing-slash tolerant): land once,
   install the app, and the whole site works offline, including
   never-visited pages. User static-dir files precache best-effort so one
   un-servable file cannot brick the install; the cache version
@@ -5716,7 +5716,7 @@ with `WithPWA` become fully offline-capable installable apps.
   logging shim (previously `gofastr docs`/`gofastr dev` depended on a
   possibly version-mismatched global install), the builder prompt stays
   neutral about dev commands, and each candidate records whether the blind
-  builder discovered `gofastr dev` from the generated guidance alone —
+  builder discovered `gofastr dev` from the generated guidance alone,
   surfaced in `result.json` and the leaderboard as funnel telemetry.
 
 ### Changed
@@ -5749,7 +5749,7 @@ with `WithPWA` become fully offline-capable installable apps.
 
 AI-native UI composition (#57): framework-owned operational components,
 generated apps that ship zero bespoke CSS with an app-owned `DESIGN.md`, an
-adaptive-by-default canonical theme (**BREAKING** — see below), and a
+adaptive-by-default canonical theme (**BREAKING**: see below), and a
 framework-snapshot UI-quality evaluation harness.
 
 ### Added
@@ -5774,7 +5774,7 @@ framework-snapshot UI-quality evaluation harness.
 
 - **BREAKING: `theme.Default()` is now adaptive.** The canonical framework
   theme carries a complete contrast-safe `DarkColors` palette, so every app
-  mounting `theme.Default()` — new or existing — follows the OS dark
+  mounting `theme.Default()`, new or existing, follows the OS dark
   preference and `ThemeToggle` works without host setup. An existing app whose
   own CSS assumes light tokens should either audit its surfaces in dark mode
   or opt out explicitly (`t := theme.Default(); t.DarkColors = nil`).
@@ -5788,20 +5788,20 @@ framework-snapshot UI-quality evaluation harness.
   CSS or tests selecting the brand as a direct child of the header must adjust
   one level. The framework now ships typography defaults for a linked brand
   (replacing browser-default blue underlines) at **zero specificity** via
-  `:where()` — any consumer rule still wins, preserving the "consumer owns
+  `:where()`, so any consumer rule still wins, preserving the "consumer owns
   visual identity" contract.
 - **Responsive and touch-target hardening.** `ui.DocLayout` now shrinks inside
   flex/grid parents instead of preserving a desktop min-content width on
   phones, and `ui.ValidationSummary` field links meet the WCAG 2.2 24px target
   floor. Button wrapping is container-driven: `flex: 0 0 auto` sizes each
   control to its unwrapped label so action rows wrap whole controls first,
-  while a label wider than its own container — a sidebar rail or card cell at
-  any viewport, not just a phone — wraps inside the bounded button instead of
+  while a label wider than its own container, a sidebar rail or card cell at
+  any viewport, not just a phone, wraps inside the bounded button instead of
   clipping. `ui.AvatarGroup` now uses a 10% overlap that keeps initials
   readable, an adaptive overflow chip, and compact corner presence dots.
 - **The interactive set reads both theming surfaces.** Counter, Tabs, Toggle,
   Dropdown, and Collapsible chain every legacy `--fui-*` bridge read to its
-  canonical token — `var(--fui-border, var(--color-border, …))` — so the
+  canonical token, `var(--fui-border, var(--color-border, …))`, so the
   adaptive theme reaches them with no host aliases while existing `--fui-*`
   host overrides keep winning. Collapsible also gains an opaque
   `--color-surface` background to hold contrast on tinted panels.
@@ -5812,7 +5812,7 @@ framework-snapshot UI-quality evaluation harness.
 - **BREAKING: `ui.Cluster` zero value now wraps.** Clusters wrap whole
   controls by default; `ClusterConfig.NoWrap` is the explicit opt-out for
   compact chrome. The old boolean `Wrap` field remains source-compatible but
-  is now ignored — it is deprecated because its zero value could not represent
+  is now ignored; it is deprecated because its zero value could not represent
   the documented wrapping default. A caller that relied on `ClusterConfig{}`
   or `Wrap: false` rendering nowrap must set `NoWrap: true`.
 - **The init scaffold emits zero app-owned CSS.** The generated
@@ -5858,28 +5858,28 @@ documentation (#54).
 
 ### Added
 
-- **Installable PWA (`uihost.WithPWA`)** — one opt-in option turns a UIHost
+- **Installable PWA (`uihost.WithPWA`)**: one opt-in option turns a UIHost
   app into an installable Progressive Web App: a typed web app manifest at
   `/manifest.webmanifest` (emitted via `encoding/json`, defaults derived at
-  serve time — name from the app title, `/` start URL/scope, standalone
+  serve time: name from the app title, `/` start URL/scope, standalone
   display), a generated service worker at `/service-worker.js`, a CSP-safe
   external registration script, and an offline fallback screen at
   `/__gofastr/pwa/offline` (framework default or `PWAConfig.OfflineScreen`;
-  deliberately not wrapped in the app layout — it is precached, so nothing
+  deliberately not wrapped in the app layout; it is precached, so nothing
   personalized may render into it). The worker is conservative by
   construction: document navigations are **network-first and never cached**
   (rendered HTML can be personalized), falling back to the precached offline
   screen; Cache Storage only ever holds the versioned app shell (runtime,
   split modules under their content-addressed `?v=` URLs, `app.css`, the
   offline page + its per-component stylesheets, icons, declared `Precache`
-  extras), matched **exactly** — content-addressed URLs are cache-first
+  extras), matched **exactly**: content-addressed URLs are cache-first
   (immutable), everything else is network-first so post-deploy HTML never
   pairs with the previous deployment's runtime/CSS. Sensitive endpoints
   (SSE, session, signal, action, widgets, `/api`, `/auth`, plus
   `PWAConfig.DenyPaths` for custom mounts) can never be precached and are
-  never intercepted. Cache names version deterministically — the fingerprint
+  never intercepted. Cache names version deterministically: the fingerprint
   includes the bytes of static-served precache entries, so swapping an icon
-  in place rotates the cache — and activation deletes only obsolete caches
+  in place rotates the cache, and activation deletes only obsolete caches
   owned by the app. Updates never force a reload: no `skipWaiting`; a
   waiting worker dispatches `gofastr:pwa-update` on `window`. Precached
   responses are re-wrapped at install time so a static host's redirects
@@ -5887,18 +5887,18 @@ documentation (#54).
   Chrome test (registration, installability metadata, offline fallback
   against a dead server, v1→v2 cache-version cleanup). See `gofastr docs
   pwa`.
-- **Static export emits the PWA surface** — `ExportStatic` writes the
+- **Static export emits the PWA surface**: `ExportStatic` writes the
   manifest, service worker, registration script, and offline page; under a
   non-root `BasePath` the manifest URLs, the worker's precache/deny lists,
   and the registration target are all prefixed, so the exported app installs
   and works offline from a subpath (GitHub Pages project sites included).
-- **Blueprint `app.pwa`** — `gofastr generate` scaffolds the full surface
+- **Blueprint `app.pwa`**: `gofastr generate` scaffolds the full surface
   from one block, including replaceable 192px/512px/maskable placeholder
   icons (deterministic in-process PNGs colored from `theme_color`, falling
   back to the theme's `primary` token) so a generated app is installable
   immediately. A custom `api_prefix` or auth `base_path` flows into
   `DenyPaths` automatically. Round-trips through `pack`.
-- **Blueprint `app.llm_md`** — emits `uihost.WithPublicLLMMD()` so every
+- **Blueprint `app.llm_md`**: emits `uihost.WithPublicLLMMD()` so every
   registered screen serves its `/llm.md` document plus the `/llm-pages.md`
   index; app-level and per-screen `NoLLMMD` opt-outs keep working.
   Independent of `app.pwa` by design; both default off, and existing
@@ -5912,16 +5912,16 @@ boundary. **BREAKING:** production mode refuses the in-memory 2FA store
 
 ### Added
 
-- **Heavy-JS plugin platform (`framework/pluginhost`)** — the client mirror
+- **Heavy-JS plugin platform (`framework/pluginhost`)**: the client mirror
   of the process-isolation track (#37). Hosts third-party-grade JS plugins
   in a sandboxed **opaque-origin iframe** (`sandbox="allow-scripts"`, never
   `allow-same-origin`) with a versioned postMessage protocol (ready→init
   handshake, capability grants, save/upload/theme/resize events; source
   check by `event.source`, never origin strings). Isolation is enforced by
   the runtime, not by convention: the sandbox derivation
-  (`Manifest.SandboxString` + the broker's `sandboxFor`) is **authoritative**
-  — it strips `allow-same-origin` and forces `allow-scripts` regardless of
-  manifest input — and the framed-asset CSP carries `sandbox allow-scripts`
+  (`Manifest.SandboxString` + the broker's `sandboxFor`) is **authoritative**;
+  it strips `allow-same-origin` and forces `allow-scripts` regardless of
+  manifest input, and the framed-asset CSP carries `sandbox allow-scripts`
   so a **top-level** load of the frame document is opaque too, not just an
   embed. The capability gate is **default-deny**: `pluginhost.Allow(ctx,
   granted, required)` is `grant-set ∩ caller-authority` (reusing the
@@ -5932,16 +5932,16 @@ boundary. **BREAKING:** production mode refuses the in-memory 2FA store
   interpolating it into the CSP (no header-injected directives) and carry
   `nosniff`; the mount marker drops unsafe attribute names. Ships plugin
   `Manifest` + validating `NewClientModule`, `MountMarker`
-  (`data-fui-plugin*` markers — see core-ui/ARCHITECTURE.md attribute
+  (`data-fui-plugin*` markers; see core-ui/ARCHITECTURE.md attribute
   table), the same-origin `AssetServer`, and the host broker
-  (`host/pluginhost.js`, served at its own route — core `runtime.js`
+  (`host/pluginhost.js`, served at its own route; core `runtime.js`
   budgets untouched). Distilled from the proven `gofastr-plugins` wysiwyg
   build; that repo now aliases this package.
 
 - **Shared login rate limiting (`auth.SQLRateLimitStore`)**. Every auth
   limiter (login per-IP / per-account, register, 2FA challenge,
   magic-link, password-reset, email-verification) accepts
-  `RateLimiterConfig.Store` — a database-backed attempt ledger so the
+  `RateLimiterConfig.Store`, a database-backed attempt ledger so the
   brute-force budget stays `MaxAttempts` total across N replicas (not
   `× N`) and a block on one replica holds on all. One store instance
   backs every limiter (keys namespaced per `Scope`, defaulted by each
@@ -5953,7 +5953,7 @@ boundary. **BREAKING:** production mode refuses the in-memory 2FA store
   of process memory, so a restart or a second replica no longer wipes
   enrollment. `TwoFAPlugin.Init` self-migrates the table (no host DDL);
   backup-code consumption is replica-safe via an optimistic
-  compare-and-swap (two replicas racing to burn the same code — exactly
+  compare-and-swap (two replicas racing to burn the same code; exactly
   one wins). `TwoFAEntityFields()` exposes the table to the entity system
   with the secret and code hashes `Hidden`.
 
@@ -5961,7 +5961,7 @@ boundary. **BREAKING:** production mode refuses the in-memory 2FA store
 
 - **BREAKING: production mode refuses the in-memory 2FA store.**
   Previously `DevMode: false` + `TwoFAPlugin` without a configured store
-  logged a WARN and booted — a restart then silently reverted every
+  logged a WARN and booted: a restart then silently reverted every
   enrolled account to password-only auth. A security control that
   quietly stops applying is not warning-grade: Init now fails closed.
   Fixes: set `TwoFAConfig.Store: auth.NewEntityTwoFAStore(db, "auth_twofa")`,
@@ -5976,12 +5976,12 @@ Issues #39, #40, #45, #47, #52.
 ### Added
 
 - **Nested predicate filters (`?where=<json>`)** (#52). The list endpoint
-  accepts a boolean predicate tree — leaves (`{field, op, value}`) and
-  AND/OR groups — for filters the flat `?field_op=` params can't express
+  accepts a boolean predicate tree, leaves (`{field, op, value}`) and
+  AND/OR groups, for filters the flat `?field_op=` params can't express
   (`status = A OR (priority = high AND assignee = me)`). Compiled to one
   parenthesized WHERE clause: every field is schema-validated (Hidden
   rejected), every value bound as a placeholder, depth/node bounds
-  fail-closed, and — the invariant — a user OR-group can never widen past
+  fail-closed, and the invariant holds: a user OR-group can never widen past
   the owner/tenant/soft-delete scopes (they stay outer ANDs).
 - **Data export / import registry (`App.ExportData` / `App.ImportData`)**
   (#39). Anti-lock-in: dump every entity's rows plus registered battery
@@ -6030,18 +6030,18 @@ Issues #41, #42, #46, #47, #48, #49, #50.
   IS the durable copy, so pairing it with `Options.Path` fails closed).
   `EnsureSchema` creates the `vector` extension + table, with an
   actionable error when the DB role can't `CREATE EXTENSION`. No new
-  dependency — vectors are encoded in pgvector's text format over the
+  dependency: vectors are encoded in pgvector's text format over the
   existing `lib/pq`.
 - **Pane-host / split-pane layout primitive (`ui.PaneHost`)** (#50). A
   master-detail shell: an always-visible primary pane plus one or two
   openable side panes (`Secondary` / `Tertiary`) with a declarative
   open/close/swap lifecycle, focus handoff on open and restore on close,
-  and a responsive collapse where — below 768px — an open side pane
+  and a responsive collapse where, below 768px, an open side pane
   becomes a fixed overlay drawer (backdrop, focus trap, scroll lock,
   ESC-to-close). Driven by the `panehost` runtime module +
   `data-fui-pane-*` attributes; `window.__gofastr.openPane` /
   `closePane` / `swapPane` expose programmatic control. Pane content
-  loads via the existing RPC→signal(html) rail — pane state is never a
+  loads via the existing RPC→signal(html) rail; pane state is never a
   route.
 - **Avatar presence dot (`AvatarConfig.Status`)** (#47). `ui.Avatar` /
   `ui.AvatarGroup` render an optional presence dot (online / away / busy
@@ -6067,22 +6067,22 @@ Issues #41, #42, #46, #47, #48, #49, #50.
   runtime module now maintains `{connected, lastEventAt, retryCount}`
   (one live object, mutated in place) and dispatches a
   `gofastr:sse-status` event on connect/disconnect.
-  `NetworkRetryBanner`'s `SSESilenceMs` trigger — previously dead
-  because nothing wrote `lastEventAt` — now works, and the banner
+  `NetworkRetryBanner`'s `SSESilenceMs` trigger, previously dead
+  because nothing wrote `lastEventAt`, now works, and the banner
   re-probes its health endpoint on SSE reconnect so it can dismiss.
 - **Per-user locale switching (`framework.WithLocaleResolver` +
   `i18n.CookieLocale`)** (#48). Locale negotiation accepts resolvers
   consulted before the `X-Locale`/`Accept-Language` headers, so a
   stored preference (cookie/session) wins. Resolver values are
   length/charset-bounded and only accepted when they match a catalog
-  locale — a garbage cookie cannot force an unsupported locale.
-- `i18nui.TVars(ctx, key, vars)` — translate + interpolate `{name}`
+  locale; a garbage cookie cannot force an unsupported locale.
+- `i18nui.TVars(ctx, key, vars)`: translate + interpolate `{name}`
   placeholders on both the catalog and English-default paths (#48).
 
 ### Fixed
 
 - **framework/ui components now actually translate** (#48). The i18n
-  middleware attached only the locale — never the translator — so every
+  middleware attached only the locale, never the translator, so every
   component rendered English even with a catalog wired. `WithI18n` now
   bridges the translator onto the request context, and a translator
   miss on a `ui.*` key falls back to the English default instead of
@@ -6093,7 +6093,7 @@ Issues #41, #42, #46, #47, #48, #49, #50.
   values always win, and default English output is byte-identical.
 - **Dead `--radius-*` token references** (#49). 18 references across 12
   component files used `var(--radius-*)` while the token pipeline emits
-  `--radii-*` — those styles silently used hardcoded fallbacks (and
+  `--radii-*`; those styles silently used hardcoded fallbacks (and
   `Repeater`, with no fallback, lost its border radius entirely). All
   renamed to the emitted `--radii-*` tokens, so theme radius overrides
   now reach every component.
@@ -6109,14 +6109,14 @@ independently or verified against the running builds).
 - **Role-based cross-owner read (`EntityConfig.CrossOwnerRead`).** An
   owner-scoped entity can name an RBAC permission (e.g.
   `"tickets:read:all"`) that lifts owner scoping for READ operations
-  only — list/get/count/cursor/stream/includes, HTTP and in-process.
+  only: list/get/count/cursor/stream/includes, HTTP and in-process.
   Checked via `access.Can` at the single owner-scope chokepoint, so it
   is fail-closed (no policy in context ⇒ scoping stays on) and
   spoof-proof (roles enter context only via server-side middleware).
   Writes never widen: update/delete stay owner-scoped and creates still
   stamp the caller. The admin battery's wildcard grant passes any
-  permission, so opted-in entities are fully visible in the back office
-  — per-entity opt-in, decided by the entity author.
+  permission, so opted-in entities are fully visible in the back office,
+  per-entity opt-in, decided by the entity author.
   `owner.AllowCrossOwner` remains the in-process escape hatch.
   Blueprint key: `cross_owner_read`.
 - **Free-text search (`EntityConfig.SearchFields` + `?q=`).** The list
@@ -6151,7 +6151,7 @@ independently or verified against the running builds).
   HTTP wire shape unchanged.
 - **`crud.WithServerWrites(ctx)`.** Opt-in for trusted server code to
   persist ReadOnly/Hidden fields through
-  `CreateOne`/`UpdateOne`/batch/upsert — previously such writes were
+  `CreateOne`/`UpdateOne`/batch/upsert; previously such writes were
   silently dropped with no error. HTTP handlers never set the flag
   (mass-assignment protection unchanged); owner and tenant columns stay
   context-stamped and body-immutable regardless.
@@ -6190,14 +6190,14 @@ independently or verified against the running builds).
 - **Module manifests + runtime enable/disable (#35).** A Module is a
   Battery plus a manifest (`ModuleManifest` with `DependsOn`,
   `MigrationGroup`, `Version`, `Description`). Everything a module
-  registers during `Init` — routes, entities, cron jobs, queue
-  consumers, MCP tools — is attributed to the module, and a live
+  registers during `Init`, routes, entities, cron jobs, queue
+  consumers, MCP tools, is attributed to the module, and a live
   enable/disable gate is enforced at dispatch time: disabled → routes
   404 (before auth, so existence doesn't leak; the gate keys on
   `METHOD + " " + path` so two modules owning different methods on the
   same path are gated independently, and 405 `Allow` headers list only
   non-gated methods), cron jobs skip, queue jobs defer (released to
-  pending without consuming retries — they run on re-enable; gated job
+  pending without consuming retries: they run on re-enable; gated job
   types are filtered before claim so the DB queue never churns
   claim/release cycles), MCP tools refuse with a generic
   `"tool unavailable"` error and are excluded from `tools/list`.
@@ -6209,7 +6209,7 @@ independently or verified against the running builds).
   check-then-act sequences are serialized by a toggle mutex), and
   propagates across replicas via `WithFanout` on topic
   `gofastr.modules` with node-ID self-dedup. The fanout message is a
-  refresh signal only — the receiving replica re-reads authoritative
+  refresh signal only; the receiving replica re-reads authoritative
   state from its store rather than trusting the payload. Attribution
   hooks are string callbacks on `core/router` (`SetRegisterHook` /
   `SetRouteGate`), `core/mcp` (`SetRegisterHook` / `SetCallGate`),
@@ -6222,7 +6222,7 @@ independently or verified against the running builds).
   deployed binary against an empty database now has a guided first
   boot: while the `Complete` predicate reports false, `Start` serves
   an SSR setup
-  wizard (composed from the design system) instead of the app router —
+  wizard (composed from the design system) instead of the app router;
   everything else 503s, `/healthz`+`/readyz` stay up, and background
   consumers (cron/queue/outbox relay) wait until bootstrap finishes,
   then the handler swaps atomically with no restart. Access requires a
@@ -6231,12 +6231,12 @@ independently or verified against the running builds).
   restart mints a fresh one); wizard POSTs are origin-guarded
   regardless. The same steps run **headless** for IaC installs when
   their env vars (`GOFASTR_ADMIN_EMAIL`/`GOFASTR_ADMIN_PASSWORD`, or
-  per-field `EnvVar`) fully resolve — before the port binds, failing
+  per-field `EnvVar`) fully resolve, before the port binds, failing
   loud. Steps are pluggable (`setup.Step` with fields, validation, and
   a `Run`); shipped: `setup.AdminStep(auth, db, usersTable)` (initial
   admin via the auth battery's hasher + password policy) and
   `setup.HealthStep(app)` (readiness checks with actionable errors).
-  Completion is derived state, never a marker file — a crash mid-setup
+  Completion is derived state, never a marker file; a crash mid-setup
   re-enters setup. `GOFASTR_SETUP=off|force` overrides; worker-role
   processes refuse to start while setup is incomplete. See the
   first-run doc. (#34)
@@ -6248,7 +6248,7 @@ independently or verified against the running builds).
   repeatable), and enabling a feature later applies only its pending
   group under the same advisory lock. Within a group ordering is
   strictly by version; across groups a run interleaves in
-  `(version, group)` order — a deterministic tiebreak, not a dependency
+  `(version, group)` order, a deterministic tiebreak, not a dependency
   mechanism (groups must be self-contained). Group-less usage is
   untouched: the runner emits byte-identical SQL and never alters the
   tracking table until a non-default group is actually in play, at
@@ -6259,7 +6259,7 @@ independently or verified against the running builds).
   stamps the directive. A named group with no registered migrations is
   a *disabled module*: its applied rows are shown by `status` but never
   compared, blocked on, rolled back, or dropped (`force --group` is the
-  reconciliation escape hatch) — the default group is never treated as
+  reconciliation escape hatch). The default group is never treated as
   a module, so drift there still errors. `--group=default` (reserved
   name) addresses the default group in selections. `Migrator.Register`
   now returns an error (duplicate `(group, version)` or invalid group
@@ -6270,8 +6270,8 @@ independently or verified against the running builds).
 ### Added
 
 - **Cross-replica real-time push (`framework.WithFanout`).** The real-time
-  lane — entity `_events` SSE streams, `On`/`Subscribe` handlers, and UI-host
-  island push — previously stopped at the process boundary: an event emitted
+  lane, entity `_events` SSE streams, `On`/`Subscribe` handlers, and UI-host
+  island push, previously stopped at the process boundary: an event emitted
   on replica A never reached a browser connected to replica B (the docs'
   answer was sticky sessions). A new `core/fanout.Fanout` seam bridges it:
   `framework.WithFanout(f)` mirrors every bus emit to the other replicas and
@@ -6282,7 +6282,7 @@ independently or verified against the running builds).
   size limit spill to a self-purging fallback table) and
   `core/fanout.NewRedis` (bring-your-own client, mirroring
   `cache.RedisClient`); `core/fanout.NewInProcess` simulates replicas in
-  tests. **Semantics under fanout: the bus becomes a broadcast** — every
+  tests. **Semantics under fanout: the bus becomes a broadcast**: every
   handler fires on every replica, so side-effect work belongs on outbox
   consumers, and handlers that derive new events must gate on the new
   `event.IsRemote(ctx)`. Delivery stays lossy best-effort (the durable lane
@@ -6300,14 +6300,14 @@ independently or verified against the running builds).
   env var; invalid values fail loudly at construction. Worker-scoped
   drainers are only registered when their workers actually start, so a
   serve-only shutdown never drains a scheduler that never ran. Plain
-  `OnStart` hooks stay role-agnostic — gate custom background work on
+  `OnStart` hooks stay role-agnostic; gate custom background work on
   `App.Role()`. (#32)
 
 ### Changed
 
 - **BREAKING: transactional outbox now delivers per-consumer, not
   whole-row.** The `framework/outbox` relay previously published each row
-  to the event bus all-or-nothing across co-subscribers — one failing
+  to the event bus all-or-nothing across co-subscribers: one failing
   subscriber failed the whole row and blocked its siblings until `Replay`.
   Delivery is now split into two disjoint lanes: a best-effort **real-time
   lane** (the live bus / SSE `EventStream` / ephemeral `On`/`Subscribe`,
@@ -6321,7 +6321,7 @@ independently or verified against the running builds).
   deploys can't lose events: a delivery whose consumer has no handler
   anywhere is `abandoned`, and a parent is completed or an orphan type
   dropped, only once older than the handler grace (`WithHandlerGrace`,
-  default 15m) — so a lagging replica never destroys, or prematurely
+  default 15m), so a lagging replica never destroys, or prematurely
   completes, a freshly-added consumer's work. (Consequence: a
   fully-delivered parent's `dispatched` bookkeeping lags by the grace;
   delivery to consumers stays prompt.) Adds `Outbox.ListDeliveries`,
@@ -6329,7 +6329,7 @@ independently or verified against the running builds).
   (resurrects dead *or* abandoned deliveries), `WithHandlerGrace`, and
   `WithRetention` (optional purge of settled rows); `StartRelay` drops its
   `bus` argument and no longer publishes to the event bus. **Migration:**
-  drain in-flight outbox rows before upgrading — the new relay ignores the
+  drain in-flight outbox rows before upgrading: the new relay ignores the
   old single-delivery row state and there is no automatic backfill.
   Declaring `WithOutboxConsumer` without `WithOutbox` now panics at
   construction rather than silently dropping the consumer.
@@ -6341,15 +6341,15 @@ independently or verified against the running builds).
   IdP-compatibility shim: the verifier was derived from the same client
   secret (and public state) that already protects the server-to-server
   code→token exchange, so it added no defense a secret-holder didn't
-  already have. Genuine PKCE — a random per-request verifier bound via a
-  cookie or store — remains the path for *public* (SPA/mobile) clients and
+  already have. Genuine PKCE, a random per-request verifier bound via a
+  cookie or store, remains the path for *public* (SPA/mobile) clients and
   is out of scope for the confidential provider. No API change: `AuthURL`
   and `ExchangeCode` are unchanged; the internal `ExchangeCodeWithState`
   seam and the `stateExchanger` interface are gone.
 
 ## [0.15.0] - 2026-07-08
 
-Nexus-gap wiring round two — six issues surfaced by building on GoFastr
+Nexus-gap wiring round two: six issues surfaced by building on GoFastr
 (tracking #35), each built at the existing seam and then hardened by two
 adversarial review rounds. No breaking changes.
 
@@ -6359,7 +6359,7 @@ adversarial review rounds. No breaking changes.
   ingestion endpoint beside the outbound one: constant-time, fail-closed,
   body-size-capped signature verification; envelope persistence (memory +
   SQL stores); dedupe by provider delivery id; and enqueue for async
-  processing via `battery/queue`. Delivery is durable-before-ack — with a
+  processing via `battery/queue`. Delivery is durable-before-ack: with a
   queue wired, the dedupe key is registered only *after* a successful
   enqueue, so an envelope that never reached the queue can never
   dedupe-ack the sender's retry (no lost events); without a queue,
@@ -6404,7 +6404,7 @@ adversarial review rounds. No breaking changes.
 
 ## [0.14.0] - 2026-07-07
 
-Nexus-gap wiring round one — three small framework gaps surfaced by
+Nexus-gap wiring round one: three small framework gaps surfaced by
 building Nexus on GoFastr (tracking issue #35), each closed at the
 existing seam rather than with new machinery.
 
@@ -6412,9 +6412,9 @@ existing seam rather than with new machinery.
 
 - **OpenAPI specs now say how to authenticate** (#21). When any entity is
   auth-gated (owner-scoped, multi-tenant, or RBAC), the generated spec
-  declares `components.securitySchemes` — `bearerAuth` (HTTP bearer, JWT)
+  declares `components.securitySchemes`: `bearerAuth` (HTTP bearer, JWT)
   and `cookieAuth` (the auth battery's session cookie, production default
-  `__Host-session`) — and every gated operation carries a per-operation
+  `__Host-session`), and every gated operation carries a per-operation
   `security` block accepting either. Ungated entities stay unmarked, and
   there is no global `security` requirement. Deployments overriding
   `AuthConfig.SessionCookie` can replace the scheme via
@@ -6425,18 +6425,18 @@ existing seam rather than with new machinery.
   `RateLimit-Reset` headers on every response (allowed and 429) so API
   clients can self-pace; `RateLimitConfig.OmitBudgetHeaders` suppresses
   them. `Retry-After` on 429 is unchanged. The auth battery's limiter
-  deliberately emits only `Retry-After` — a live remaining-attempt count
+  deliberately emits only `Retry-After`: a live remaining-attempt count
   on login/reset endpoints would hand attackers brute-force pacing.
 - **Storage content checksums** (#23). `battery/storage.SaveWithChecksum`
   tees any `Storage` save through SHA-256 in a single pass and returns
   `SaveResult{Size, SHA256}`; `VerifyChecksum` re-reads and compares,
   wrapping `ErrChecksumMismatch` on mismatch. The `Storage` interface is
-  unchanged — the helpers wrap any backend, including user-implemented
+  unchanged; the helpers wrap any backend, including user-implemented
   ones.
 
 - **Auth security events reach the audit log** (#31). `battery/auth` now
-  emits a fixed-vocabulary `SecurityEvent` at every security decision point
-  — login succeeded/pending-2FA/failed, register, logout, the full 2FA
+  emits a fixed-vocabulary `SecurityEvent` at every security decision point:
+  login succeeded/pending-2FA/failed, register, logout, the full 2FA
   lifecycle (enroll, challenge pass/fail, disable, backup-code regen),
   password reset requested (known *and* unknown emails, so probing is
   visible) and completed, session revocation with counts, OAuth
@@ -6444,7 +6444,7 @@ existing seam rather than with new machinery.
   line: `AuthConfig.AuditSink = sink` where
   `sink, _ := auth.NewSQLAuditSink(db, "")` writes into the same
   `audit_log` table as the CRUD hooks (entity `"auth"`). Events never
-  carry credentials — the only user-controlled string is the email, and a
+  carry credentials; the only user-controlled string is the email, and a
   leak-guard test greps every event for planted secrets. A panicking or
   failing sink never breaks the auth flow it was recording.
   `framework.AppendAuditEvent` is the new exported append primitive for
@@ -6456,7 +6456,7 @@ existing seam rather than with new machinery.
   weights `'B'..'D'`; `Text` is always `'A'`), configurable language, and
   built-in prefix matching on the final query term (search-as-you-type).
   Query text is sanitized through a single unit-tested chokepoint and always
-  parameterized. `Query` gained `FieldEquals` — an exact-match filter on
+  parameterized. `Query` gained `FieldEquals`, an exact-match filter on
   `Document.Fields` implemented identically in both backends (JSONB
   containment in Postgres) so tenant/owner scoping happens in-query instead
   of post-filtering. pg_trgm is deliberately omitted (needs
@@ -6511,7 +6511,7 @@ review pass over those fixes, and fixes for what *that* found.
 
 - **Accessibility enforcement grew three gates.** A shared axe-core harness
   (`internal/axetest`) now drives two app gates: the existing site gate
-  (every component demo page, both color schemes) and a new Meridian gate —
+  (every component demo page, both color schemes) and a new Meridian gate:
   marketing, auth, app, and admin pages scanned logged-in with an **empty
   allowlist**, plus the first open-widget scan (the quick-add modal's open
   DOM state). A keyboard-only traversal gate walks Tab through key pages of
@@ -6529,14 +6529,14 @@ review pass over those fixes, and fixes for what *that* found.
   Meridian's status/text-subtle palette was retoned to clear WCAG AA on
   the components' tinted chips in both schemes. The site gate also
   enables axe's WCAG 2.2 `target-size` rule (24px minimum) and scans a
-  curated page subset at a 390px viewport — carousel dots grew invisible
+  curated page subset at a 390px viewport: carousel dots grew invisible
   24px hit areas (`::after` pip), tree row links meet the floor, and
   horizontally-scrolling command lines are keyboard-focusable.
 
   An adversarial review of the gates then hardened them further: the
   harness rejects blank pages instead of scanning them as vacuously
   clean; the site's three allowlisted rules apply only to `/components/*`
-  demos (content pages scan with an empty allowlist — which surfaced and
+  demos (content pages scan with an empty allowlist, which surfaced and
   fixed nine real heading/landmark defects across the home, get-started,
   philosophy, and docs pages); every `/docs/<slug>` page, `/kiln`, and
   every Meridian admin CRUD screen (list + create per entity) is now
@@ -6552,11 +6552,11 @@ review pass over those fixes, and fixes for what *that* found.
   Callout, and Notification. Registration is init-only (sheets seal on first
   materialization; late registration panics). Custom button variants style
   `ui.ToggleAction` markup too.
-- **`ui.ToggleAction`** — an optimistic press-and-commit button
+- **`ui.ToggleAction`**: an optimistic press-and-commit button
   (follow/subscribe/pin): idle/committed labels + icons, endpoint POST with
   rollback on failure, optional untoggle endpoint, and `data-fui-toggle-group`
   mutex semantics. Gallery demo + e2e.
-- **`__gofastr.doc`** — the runtime's single owner of global document state.
+- **`__gofastr.doc`**: the runtime's single owner of global document state.
   A frozen manifest of every `<html>` attribute, `<body>` class, and DOM
   singleton the runtime may touch (guard warns on undeclared writes),
   refcounted scroll-lock (two closing widgets can't unlock each other's
@@ -6564,7 +6564,7 @@ review pass over those fixes, and fixes for what *that* found.
   shell swaps. Documented in `core-ui/ARCHITECTURE.md`; a test parses the doc
   table against the manifest.
 - **Theme slots for the code palette.** `Theme.Code` / `Theme.DarkCode` emit
-  the `--tk-*` syntax-highlighting tokens (optional group — zero slots emit
+  the `--tk-*` syntax-highlighting tokens (optional group; zero slots emit
   nothing), so dark mode can restyle code blocks through the theme instead of
   raw CSS.
 - **New embedded docs**: `ui-wiring.md` (annotated main.go wiring
@@ -6572,7 +6572,7 @@ review pass over those fixes, and fixes for what *that* found.
   (token catalog, `DarkColors`, `ui.Themed`, `--ui-*` knobs, and why theming
   never relies on CSS source order), and `runtime-contract.md` (the full
   `data-fui-*` attribute reference + SSR/island/SSE model, sync-tested against
-  `core-ui/ARCHITECTURE.md` — fixes five dead links in the embedded docs).
+  `core-ui/ARCHITECTURE.md`; fixes five dead links in the embedded docs).
   Plus a form-in-a-modal recipe in `widgets.md` documenting
   `data-fui-rpc-close` / `data-fui-rpc-reset`, and pagination-package
   disambiguation on `DataTableConfig`.
@@ -6585,7 +6585,7 @@ review pass over those fixes, and fixes for what *that* found.
   `ui.Themed`/`RegisterThemeOverride` CTA, an island-mode DataTable (RPC
   sort/pagination sharing one config between screen and endpoint), and
   `--ui-layout-container-width`. Its `app.css` now contains only published
-  `--ui-*` variable declarations — the page-header/section internals
+  `--ui-*` variable declarations; the page-header/section internals
   overrides became upstream knobs (`--ui-page-header-title-*`,
   `--ui-section-eyebrow-*`).
 - **`gofastr pack` follows extracted helpers.** A resource chain moved into a
@@ -6619,7 +6619,7 @@ review pass over those fixes, and fixes for what *that* found.
   semicolon after `)` (an empty `if(x);` body was corrupted into a
   SyntaxError). Core runtime stays within its 12KB gzip budget.
 - **Theming/tokens.** Component CSS reads the theme's typography and spacing
-  scales — 194 literal `font-size` declarations became `var(--text-*, …)` and
+  scales: 194 literal `font-size` declarations became `var(--text-*, …)` and
   76 spacing literals became `var(--spacing-*, …)` (a budget test blocks new
   literals); large buttons keep their own step (`--text-lg`); the danger
   button and notification badge read `--color-danger`/`--color-primary-fg`
@@ -6627,13 +6627,13 @@ review pass over those fixes, and fixes for what *that* found.
   `--ui-pricing-card-badge-fg` for themes whose primary isn't text-safe on
   tinted chips.
 - **`style.Contribute` works as documented**: the uihost's `app.css` now fans
-  in contributed styles automatically as the last layer — no `style.Apply`
+  in contributed styles automatically as the last layer; no `style.Apply`
   hand-wiring in the host.
 
 ### Changed
 
 - The drag-dismiss handler moved out of the core runtime into a demand-loaded
-  module (`src/dragdismiss.js`) — pages without bottom sheets don't ship it.
+  module (`src/dragdismiss.js`); pages without bottom sheets don't ship it.
 
 ## [0.12.1] - 2026-07-06
 
@@ -6641,7 +6641,7 @@ review pass over those fixes, and fixes for what *that* found.
 
 - **Opening a modal no longer dislodges sticky elements.** The overlay
   scroll-lock set `overflow: hidden` on `<body>`, which turns the body into a
-  clipped scroll container and breaks any `position: sticky` descendant — on a
+  clipped scroll container and breaks any `position: sticky` descendant: on a
   scrolled docs page, opening the ⌘K command palette (or any modal/drawer) sent
   the sticky nav rail off-screen. The lock now applies to `<html>`, which locks
   the viewport just as effectively while leaving sticky elements pinned and
@@ -6663,7 +6663,7 @@ review pass over those fixes, and fixes for what *that* found.
 - **Blueprint tutorial teaches "generate once, then own the Go."** The
   getting-started tutorial no longer edits `gofastr.yml` and re-runs
   `gofastr generate` (which is one-shot and refuses to overwrite without
-  `--force`) to add security — it generates once with auth enabled, then adds
+  `--force`) to add security; it generates once with auth enabled, then adds
   `owner_field` + `access` + the RBAC policy by editing the owned
   `entities/register.go` and `app.go` directly. Also corrects the REST paths to
   the `/api` prefix. The dev-mode→production note in `blueprints.md` likewise
@@ -6676,9 +6676,9 @@ review pass over those fixes, and fixes for what *that* found.
 - **Generated `entity_list` screens get facet filters (`filters:`).** A
   top-level `entity_list` block can now declare `filters: [status, assignee_id,
   …]` naming enum, bool, and relation columns. The generated list screen renders
-  a responsive `ui.FilterToolbar` above the table — enums as pills (≤4 short
+  a responsive `ui.FilterToolbar` above the table: enums as pills (≤4 short
   values) or a `<select>`, bools as Yes/No pills, relations as a `<select>` of
-  the related records' display names — folded into the **same** URL-driven GET
+  the related records' display names, folded into the **same** URL-driven GET
   form as the existing search box (never two competing forms). The owned
   `resource.go` engine applies each active facet as a server-side equality
   filter that composes with search, sort, and pagination (sort-header and page
@@ -6691,14 +6691,14 @@ review pass over those fixes, and fixes for what *that* found.
   evaluations hand-write their main list screen.
 - **Blueprint fonts are self-hosted and actually work.** A theme naming
   `font_heading` / `font_body` used to emit `@font-face` rules pointing at
-  `/fonts/<slug>.woff2` while shipping no font files — every fresh app 404'd
+  `/fonts/<slug>.woff2` while shipping no font files; every fresh app 404'd
   and silently fell back to system fonts (the strict CSP blocks the Google CDN,
   so a `<link>` never worked either). `gofastr generate` now **fetches** each
   family's latin `woff2` subset at generate time and writes it to
   `static/fonts/<slug>.woff2` (defaulting `static_dir` to `static/` when only a
   font is declared), so a named font renders with zero manual steps. Offline
   generation still emits the app but prints a loud warning naming the exact
-  files to supply, and the generated `main.go` boot-checks for them — no silent
+  files to supply, and the generated `main.go` boot-checks for them; no silent
   404 path remains.
 - **Blueprint seed `count:` and `weights:` for realistic demo data.** A seed
   entry can now declare `count: N` to auto-generate N demo rows (filling scalar
@@ -6708,7 +6708,7 @@ review pass over those fixes, and fixes for what *that* found.
   the flat `open/in_progress/resolved/closed` round-robin that read as obviously
   fake.
 
-- **`owner.AllowCrossOwner(ctx)` — sanctioned cross-owner read escape.**
+- **`owner.AllowCrossOwner(ctx)`: sanctioned cross-owner read escape.**
   Entities with `OwnerField` auto-scope every read to the signed-in user,
   with no way to express an app-legitimate cross-owner aggregate (e.g.
   "spots remaining = capacity − COUNT(bookings across ALL members)" or
@@ -6716,40 +6716,40 @@ review pass over those fixes, and fixes for what *that* found.
   to raw SQL against framework-managed tables. `owner.AllowCrossOwner`
   returns a context that lifts owner scoping for the **in-process Go**
   `CrudHandler` methods (`ListAll`, `CountAll`, `GetOne`, and the
-  mutate-by-id methods, which share the scope helpers) — the owner-side
+  mutate-by-id methods, which share the scope helpers), the owner-side
   twin of `tenant.AllowCrossTenant`. Secure by default is untouched: the
   context key is unexported, so the auto-generated **HTTP CRUD endpoints
   have no path to it** and stay owner-scoped, always (regression-tested).
-  It lifts the owner *requirement* only — it authorizes nothing; gate the
+  It lifts the owner *requirement* only: it authorizes nothing; gate the
   caller yourself. See `docs → entity-declarations` → "Reading across
   owners".
 
-- **`interactive.Action.WithConfirm(message)` — pre-flight confirm as a
+- **`interactive.Action.WithConfirm(message)`: pre-flight confirm as a
   first-class builder method.** The only way to gate a destructive RPC behind
-  a confirmation was `interactive.Confirm(msg)` passed to `OnSuccess(...)` —
+  a confirmation was `interactive.Confirm(msg)` passed to `OnSuccess(...)`,
   but the gate fires *before* the request, not on success, so its placement
   actively misled readers. `WithConfirm` reads in the order it executes and
   emits the identical `data-fui-confirm` attribute. `interactive.Confirm` is
   now deprecated (still works). See `docs → interactive-patterns` → "Confirm".
 
-- **`ui.FilterToolbar` — the filter/sort control strip for list screens.**
+- **`ui.FilterToolbar`: the filter/sort control strip for list screens.**
   The framework had every filter *primitive* (`Select`, `SegmentedControl`,
   `SearchInput`, `FilterChipBar`) but no composed strip for the ubiquitous
   "row of facet controls + search + sort + Apply/Reset above a table"
-  surface, so callers hand-rolled it — and repeatedly shipped the same
+  surface, so callers hand-rolled it, and repeatedly shipped the same
   mobile defect: the row overflowed a narrow container and pushed the sort
   control and Apply button off-screen (unreachable at 375px), while pill
   labels wrapped mid-label to three lines. `FilterToolbar` renders one
   URL-driven `<form method="GET">` (facets as `<select>` or `Kind:
   FacetPills` radio-pill groups, optional search + sort, Apply submit +
   Reset link) whose submitted params are the source of truth for the
-  screen's `Load(ctx)`. It is responsive by construction — declares itself a
+  screen's `Load(ctx)`. It is responsive by construction: declares itself a
   container and degrades row → wrapped rows → single-column stack as its own
   width shrinks, keeping every control (Apply/Reset included) on-screen and
   tappable, with pills that wrap between themselves but never mid-label.
   Zero new `data-fui-*` attributes (native GET form + radio semantics);
   styling is theme-token CSS, light and dark. See `docs → ui-new-components`
-  → "Filter toolbars — the URL-driven pattern".
+  → "Filter toolbars: the URL-driven pattern".
 
 ### Fixed
 
@@ -6759,8 +6759,8 @@ review pass over those fixes, and fixes for what *that* found.
   (only `widget.Mount` auto-wires); the RPC JSON key is the input's `name`,
   not its `id` (curl hides the mismatch); a `<select>` rides the existing
   `data-fui-rpc-trigger="input"` (no `change` trigger exists or is needed);
-  and the two placeholder syntaxes — `{id}` on the HTTP router vs `:id` on the
-  screen router — are a silent 404 when crossed. Also corrected stale
+  and the two placeholder syntaxes, `{id}` on the HTTP router vs `:id` on the
+  screen router, are a silent 404 when crossed. Also corrected stale
   `interactive.Action{…}` struct-literal examples (fields are unexported; use
   `interactive.Post(...)`) and documented `ui.ConfirmAction` as the themed,
   test-drivable alternative to native `window.confirm`. Behind the select
@@ -6772,7 +6772,7 @@ review pass over those fixes, and fixes for what *that* found.
   `*_chart` bound to `source: {entity: X}` rendered an empty dash whenever `X`
   had no generated list/detail screen, because `RegisterGenerated` only
   populated `appResources` for entities with screens. Every entity referenced by
-  a data source is now registered (pure lookup-map population — no extra routes),
+  a data source is now registered (pure lookup-map population; no extra routes),
   so charts sourced from screen-less entities show real numbers. `gofastr
   validate` / `generate` additionally reject a chart/stat source pointing at an
   unknown or crud-disabled entity up front.
@@ -6792,10 +6792,10 @@ review pass over those fixes, and fixes for what *that* found.
   (`BlueprintAppName`→`appName`, `blueprintAuthPolicy`→`authPolicy`,
   `BlueprintBaseCSS`→`appBaseCSS`, `BlueprintFontCSS`→`fontFaceCSS`,
   `blueprintResources`→`appResources`, `BlueprintSeedData`→`seedData`, …).
-  Generation now **refuses** to overwrite an existing project — if any target
+  Generation now **refuses** to overwrite an existing project: if any target
   file is present it lists the conflicts and stops; pass `--force` to
   overwrite. There is no merge/regen workflow: the emitted code is yours to
-  own and edit. **Existing generated apps are unaffected at runtime** — only
+  own and edit. **Existing generated apps are unaffected at runtime**: only
   the output of a fresh `generate` changes; re-run `generate --force` into a
   scratch dir if you want the new layout. `gofastr pack` reads the new flat
   layout.
@@ -6806,7 +6806,7 @@ review pass over those fixes, and fixes for what *that* found.
   rectangles, and 4+ category labels collided/truncated mid-word. The chart
   now (1) prints each bar's value above its cap by default (opt out with
   `BarChartConfig.HideValues`); (2) rounds the y-scale up to a clean maximum
-  so the tallest bar keeps ~15% headroom — uniform and near-equal data read
+  so the tallest bar keeps ~15% headroom: uniform and near-equal data read
   as intentionally-equal or clearly-ranked bars, never a wall of slabs;
   (3) always draws a hairline baseline; (4) wraps long `ShowLabels` category
   labels onto two lines (a single over-long word ellipsizes; the full text
@@ -6823,16 +6823,16 @@ review pass over those fixes, and fixes for what *that* found.
 
 ### Documentation
 
-- **Doc code samples that cited non-existent APIs are corrected** —
+- **Doc code samples that cited non-existent APIs are corrected**:
   `app.Router` as a field → `app.Router()`, `Router.With(...)` → wrap
   the handler with `RequirePermission(...)`, `u.HasRole` →
   `slices.Contains(u.GetRoles(), …)`, `Registry.Names()` →
   `range Registry.All()`, `cron.Scheduler.Every(string, fn)` →
   `Register(CronJob{…})`, and the phantom webhook `Sign`/`Verify`/
   `sha256=` paragraph removed. A new `framework/docs` regression test
-  (`TestDocsAvoidKnownWrongAPIs`) fails if any of these forms — or a
-  `migrate diff` command reference — reappears in an embedded doc.
-- **Doc drift cleaned up** — README `migrate diff` → `migrate generate`
+  (`TestDocsAvoidKnownWrongAPIs`) fails if any of these forms, or a
+  `migrate diff` command reference, reappears in an embedded doc.
+- **Doc drift cleaned up**: README `migrate diff` → `migrate generate`
   and `force`; CLI `--help` lists `audit lint` and the full `migrate`
   subcommand set; blueprint field keys (`auto_generate`, `read_only`,
   `hidden`, `pattern`) and `app.theme` font/dark tokens documented;
@@ -6844,27 +6844,27 @@ review pass over those fixes, and fixes for what *that* found.
 ### Fixed
 
 - **Reliability footguns** (Tier 3):
-  - `battery/queue` — the DBQueue-cron `Scheduler` re-reads its schedule
+  - `battery/queue`: the DBQueue-cron `Scheduler` re-reads its schedule
     set each tick and re-arms on `Register`, so jobs registered after
     `Start` fire (it used to snapshot once and drop late registrations).
     New `WithDBHandlerTimeout` cancels a stuck handler's context so a
     black-holed dependency can't wedge the (single default) worker. The
     in-memory queue re-enqueues timed-out retries on a fresh context
     instead of the already-cancelled one (retries were silently lost).
-  - `battery/email` — the SMTP sender bounds its dial (`SMTPConfig.
+  - `battery/email`: the SMTP sender bounds its dial (`SMTPConfig.
     DialTimeout`, default 10s) and sets the same budget as the
     connection's I/O deadline (the caller's ctx deadline wins when
     sooner, including on the implicit-TLS path), so neither a
     black-holed host nor one that accepts and then stalls mid-exchange
     can hang the caller forever.
-  - `battery/cache` — `NewMemoryCache` warns when built both unbounded
+  - `battery/cache`: `NewMemoryCache` warns when built both unbounded
     and never-expiring (the OOM shape).
-  - `framework/event` — a panicking subscriber is still recovered (no
+  - `framework/event`: a panicking subscriber is still recovered (no
     write rollback) but now logged at Error with its stack, instead of
     silently no-op'ing.
 - **Generator design-system regression (`.mrd-*`) removed** (`cmd/gofastr`).
   The blueprint generator emitted dead `mrd-chart`/`mrd-chart__title`/
-  `mrd-muted` classes into every generated app — the exact one-styling-
+  `mrd-muted` classes into every generated app, the exact one-styling-
   surface tripwire documented as fixed in June. Titled charts now compose
   `ui.Card(Heading: …)`, and empty values render the new `ui.EmptyValue()`
   (a `ui.Muted` em dash, colored by `--color-text-muted`).
@@ -6882,19 +6882,19 @@ review pass over those fixes, and fixes for what *that* found.
 
 ### Added (design system)
 
-- **`ui.Muted` / `ui.EmptyValue`** (`framework/ui`) — subdued inline
+- **`ui.Muted` / `ui.EmptyValue`** (`framework/ui`): subdued inline
   text and the canonical muted em-dash "no value" placeholder, colored
   via `--color-text-muted`.
 
 - **`WithConfig` merges instead of clobbering** (`framework`). Granular
   options (`WithAPIPrefix`, `WithPublicOpenAPI`, …) set before or after
   `WithConfig` now survive: each non-zero `AppConfig` field wins, zero
-  fields preserve what's already set — the same contract the
+  fields preserve what's already set, the same contract the
   `WithAgentReady` fix established. A reflection test pins the field
   list so new `AppConfig` fields can't silently drop out of the merge.
 - **Graceful shutdown is now the default** (`framework`). `App.Start`
   installs a SIGINT/SIGTERM handler that runs the full `App.Shutdown`
-  drain — HTTP server, batteries, OnStop hooks — before the process
+  drain: HTTP server, batteries, OnStop hooks, before the process
   exits, matching what `deploy.md` always claimed. The drain is bounded
   by the new `AppConfig.ShutdownTimeout` (default 15s): connections
   still open at the deadline (e.g. SSE streams, which never go idle)
@@ -6917,7 +6917,7 @@ review pass over those fixes, and fixes for what *that* found.
 
 - **HSTS emitted by default** (`core/middleware`). The default
   `SecurityHeadersConfig` now sends `Strict-Transport-Security:
-  max-age=31536000` on HTTPS responses — direct TLS or an
+  max-age=31536000` on HTTPS responses, direct TLS or an
   `X-Forwarded-Proto: https` proxy. Previously the zero-value config
   meant no HSTS at all. `HSTSMaxAge: -1` opts out.
 - **CSRF cookie is `Secure`/`__Host-` behind a TLS proxy**
@@ -6928,7 +6928,7 @@ review pass over those fixes, and fixes for what *that* found.
   so proxies that send `HTTPS` count too.
 - **Login/register/logout reject cross-site form posts** (`battery/auth`).
   These cookieless-CSRF-prone endpoints now refuse a form POST whose
-  `Origin` (or `Sec-Fetch-Site: cross-site`) is another site — closing
+  `Origin` (or `Sec-Fetch-Site: cross-site`) is another site, closing
   the login-CSRF vector SameSite cookies don't cover. JSON posts and
   no-Origin clients (curl, native apps) are unaffected.
 - **`/auth/register` is rate-limited by default** (`battery/auth`). A new
@@ -6936,14 +6936,14 @@ review pass over those fixes, and fixes for what *that* found.
   matching login's always-on throttle, to blunt account-table flooding
   and email bombing. Form submissions that hit the limit get the
   form-aware 303 error redirect (not a raw JSON 429 page), and
-  cross-site posts are rejected before they count against the budget —
+  cross-site posts are rejected before they count against the budget:
   an attacker page can't burn a victim's own login/register allowance.
 - **Blueprint refuses `multi_tenant` with no resolver** (`cmd/gofastr`).
   A generated multi-tenant app has no tenant resolver (the strategy is
   host-specific) and `ApplyTenantScope` is fail-closed, so it read empty
-  and stamped empty tenants — broken while looking secure. `validate`/
+  and stamped empty tenants, broken while looking secure. `validate`/
   `generate` now reject it with the manual-wiring remedy.
-- **`golang.org/x/image` bumped to v0.43.0** — clears the four
+- **`golang.org/x/image` bumped to v0.43.0**: clears the four
   GO-2026-506x/4961 decode-DoS advisories reachable from
   `framework/image`.
 - **BREAKING: `battery/admin` exposure is opt-in.** An empty
@@ -6958,7 +6958,7 @@ review pass over those fixes, and fixes for what *that* found.
   signal. `gofastr generate` now warns for every auto-exposed entity
   with no `owner_field`/`access`/`multi_tenant`, spelling out the
   anonymous read/write exposure. `examples/api-tour`'s `profiles`
-  (per-user bio) now gates its write operations via `Access` — reads
+  (per-user bio) now gates its write operations via `Access`; reads
   stay public for the `?include=` tour flows, anonymous writes 403.
 - **Webhook SSRF guard survives a custom `HTTPClient`**
   (`battery/webhook`). Supplying `Options.HTTPClient` (proxy, tracing,
@@ -6966,7 +6966,7 @@ review pass over those fixes, and fixes for what *that* found.
   reopening loopback/RFC1918/169.254.169.254 via DNS rebinding. `New`
   now wraps the caller's client with a per-request check that resolves
   the delivery target and refuses internal IPs before the caller's
-  transport runs — the transport itself (proxy, tunnel, custom dialer)
+  transport runs; the transport itself (proxy, tunnel, custom dialer)
   is used verbatim. `AllowPrivateNetworks: true` remains the only
   opt-out.
 - **Blueprint-generated apps no longer commit secrets** (`cmd/gofastr`).
@@ -6987,9 +6987,9 @@ review pass over those fixes, and fixes for what *that* found.
   `TestBlueprintNeverInlinesSecrets` pins the contract.
 - **2FA now fails closed at login** (`battery/auth`). If a registered
   `TwoFactorChecker` reports a user enrolled but the pending-2FA state
-  can't be established — the session store doesn't implement
+  can't be established; the session store doesn't implement
   `SessionPendingMarker`, the mark call errors, or the 2FA state lookup
-  itself fails — login is rejected (500), the just-minted session is
+  itself fails; login is rejected (500), the just-minted session is
   destroyed, and a WARN is logged. Previously a custom session store
   silently downgraded every 2FA-enrolled account to password-only auth.
 - **Pending-2FA logins no longer receive a JWT.** The JSON login
@@ -7000,52 +7000,52 @@ review pass over those fixes, and fixes for what *that* found.
 
 ## [0.10.0] - 2026-06-27
 
-### Added — agent-readiness surface (isitagentready.com)
+### Added: agent-readiness surface (isitagentready.com)
 
 GoFastr apps can now advertise the discovery artifacts AI web agents
 (and scanners like isitagentready.com) look for, in one opt-in call.
-The framework already shipped the plumbing — MCP tools, an OpenAPI spec,
-per-screen markdown, sitemap, robots — so this is the *discovery* layer
+The framework already shipped the plumbing: MCP tools, an OpenAPI spec,
+per-screen markdown, sitemap, robots, so this is the *discovery* layer
 that makes those capabilities findable. Everything is additive and opt-in;
 existing robots/sitemap/openapi/llm.md behavior is unchanged.
 
-- **`uihost.WithAgentReady`** (`framework/uihost`) — one-call bundle: serves
+- **`uihost.WithAgentReady`** (`framework/uihost`): one-call bundle: serves
   `/llms.txt` + the A2A agent card + AI-bot-aware robots rules + `Link`
   response headers on every HTML page. Granular options
   (`WithLLMsTxt`, `WithAgentCard`, `WithAgentLinkHeaders`,
   `WithMarkdownNegotiation`) expose each piece.
-- **`/llms.txt`** (llmstxt.org) — curated markdown index (H1 title,
+- **`/llms.txt`** (llmstxt.org): curated markdown index (H1 title,
   blockquote summary, `## Section` file-lists); a default Docs section
   links the app's `/llm-pages.md` index when `WithPublicLLMMD` is on.
-- **A2A agent card** — `/.well-known/agent-card.json` (+ legacy
+- **A2A agent card**: `/.well-known/agent-card.json` (+ legacy
   `/.well-known/agent.json`) describing identity, service URL,
   capabilities, and skills (Agent2Agent v1.0, camelCase keys; `supportedInterfaces`
   + `skills` always present). The service endpoint lives in
-  `supportedInterfaces[].url` — when `MCPEndpoint` is set, `/mcp` is
+  `supportedInterfaces[].url`: when `MCPEndpoint` is set, `/mcp` is
   advertised as the JSON-RPC interface (it genuinely speaks JSON-RPC)
   and a derived `mcp` skill points agents at it.
-- **AI-bot-aware robots** — `AllowAIBots` augments `/robots.txt` with
+- **AI-bot-aware robots**: `AllowAIBots` augments `/robots.txt` with
   explicit per-crawler rules (GPTBot, ClaudeBot, Google-Extended, …),
   merged into the existing `WithRobots` config regardless of option order.
-- **`Link:` response headers** — every HTML page advertises
+- **`Link:` response headers**: every HTML page advertises
   `rel="sitemap"`, `rel="llms-txt"`, `rel="agent-card"`,
   `rel="service"` (the MCP endpoint), `rel="service-desc"` (OpenAPI, when
   `OpenAPIEndpoint` is set), and `rel="alternate"` markdown.
   Absolute URLs resolve one canonical origin (`WithAgentReady`/`WithSitemap`
   `BaseURL`, else the forwarded request scheme+host).
-- **Markdown content negotiation** — `WithMarkdownNegotiation()` serves a
+- **Markdown content negotiation**: `WithMarkdownNegotiation()` serves a
   page's markdown when the request `Accept`s `text/markdown`.
-- **`framework.WithMCP`** — auto-mounts `/mcp` (Streamable HTTP: POST
+- **`framework.WithMCP`**: auto-mounts `/mcp` (Streamable HTTP: POST
   JSON-RPC + GET SSE), replacing the hand-wired
   `Router().Handle("POST","/mcp", MCP)`.
-- **`framework.WithOAuthProtectedResource`** — serves
+- **`framework.WithOAuthProtectedResource`**: serves
   `/.well-known/oauth-protected-resource` (RFC 9728) for OAuth-token-
   protected APIs.
-- **MCP handshake** — `core/mcp` now handles `initialize` (returns
+- **MCP handshake**: `core/mcp` now handles `initialize` (returns
   protocolVersion + capabilities + serverInfo, name wired from the app's
   `Config.Name`) and `ping`, so the advertised `/mcp` is functional for
   spec-compliant MCP clients (Claude, Cursor, …), not just `tools/list`.
-- **Scanner well-known endpoints** — the isitagentready.com checks the
+- **Scanner well-known endpoints**: the isitagentready.com checks the
   framework now auto-serves: `/.well-known/api-catalog` (RFC 9727
   linkset+json, when the app has an API), the MCP Server Card at both
   `/.well-known/mcp/server-card.json` (scanner path) and the spec-reserved
@@ -7054,19 +7054,19 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   `/.well-known/agent-skills/index.json` (always; opt-in entries via
   `WithAgentSkills`), and opt-in `/.well-known/oauth-authorization-server`
   (RFC 8414, via `WithOAuthAuthorizationServer`).
-- **Content Signals** — `AgentReadyConfig.ContentSignals` emits a
+- **Content Signals**: `AgentReadyConfig.ContentSignals` emits a
   `Content-Signal:` directive in robots.txt (contentsignals.org), e.g.
   `ai-train=no, search=yes, ai-input=yes`.
-- **Auth.md** (WorkOS agentic-registration profile) — `WithAuthMD` serves
+- **Auth.md** (WorkOS agentic-registration profile): `WithAuthMD` serves
   `/auth.md` (a markdown manifest) and merges an `agent_auth` block
   (skill + identity/claim/events endpoints) into the
   `/.well-known/oauth-authorization-server` metadata.
-- **Web Bot Auth / UCP / ACP** (remaining production-scanner checks) —
+- **Web Bot Auth / UCP / ACP** (remaining production-scanner checks):
   `WithWebBotAuth` serves `/.well-known/http-message-signatures-directory`
   (the site's signing JWKS), `WithUCP` serves `/.well-known/ucp`, `WithACP`
   serves `/.well-known/acp.json`. DNS-AID / x402 / MPP / WebMCP / ap2 remain
   documented-only (DNS / payment-middleware / client-side / server-only).
-- **Docs** — new `framework/docs/content/agent-ready.md` reference;
+- **Docs**: new `framework/docs/content/agent-ready.md` reference;
   `examples/site` dogfoods the full bundle (`WithAgentReady` +
   `WithMCP` + `WithMCPIntrospection`) so gofastr.dev is agent-ready, and
   now also serves `Accept: text/markdown` content negotiation
@@ -7079,7 +7079,7 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   (`WithMarkdownNegotiation`, `WithLLMsTxt`, `WithAgentCard`,
   `WithAgentLinkHeaders`) set before it. It now merges field-by-field, so the
   bundle and granular options compose regardless of option order.
-- **`examples/site` docs catalogue** — the `/docs/` "Every doc · A–Z" index
+- **`examples/site` docs catalogue**: the `/docs/` "Every doc · A–Z" index
   linked 10 embedded docs (incl. the new agent-ready reference) that had no
   registered route, rendering live links to 404s. All are now catalogued
   (51 → 61 doc pages), guarded by a new embedded-doc → catalogue parity test.
@@ -7087,20 +7087,20 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
 What this deliberately does not do: no A2A task server (the A2A card is
 discovery-only; A2A/Auth.md/WebMCP/commerce aren't among the scanner's
 scored checks); DNS-AID (infra/DNS, documented); Web Bot Auth (client-side
-RFC 9421, documented); commerce (x402/MPP/UCP/ACP — no core primitives).
+RFC 9421, documented); commerce (x402/MPP/UCP/ACP; no core primitives).
 The 11 scored isitagentready checks are all covered (6 always-on, the rest
 opt-in/conditional).
 
 ## [0.9.0] - 2026-06-25
 
-### Added — `log.ConsoleSink` (zero-config colorized dev feed)
+### Added: `log.ConsoleSink` (zero-config colorized dev feed)
 
 The log battery now ships a human-readable console sink alongside the
 JSON file sink, so `log.New(Config{})` gives every local developer a
-colorized stderr feed with no configuration — without leaking ANSI into
+colorized stderr feed with no configuration, without leaking ANSI into
 prod where stderr is captured (journald, containers) rather than shown.
 
-- **`log.ConsoleSink(ConsoleOpts)`** (`battery/log`) — a Sink that renders
+- **`log.ConsoleSink(ConsoleOpts)`** (`battery/log`): a Sink that renders
   each JSON entry as a single human-readable, optionally colorized line
   (`14:32:07.412 INFO  app.start app="myapp" go="go1.24.1"`). Level
   colors, a bolded message, and a dimmed timestamp; attr order preserved
@@ -7110,18 +7110,18 @@ prod where stderr is captured (journald, containers) rather than shown.
   bytes are written verbatim so a malformed entry is visible, not
   silently dropped. Honors the `NO_COLOR` convention; serializes on a
   mutex so concurrent entries don't interleave.
-- **`log.Config.Console` (`ConsoleMode`)** — `ConsoleAuto` (the zero
+- **`log.Config.Console` (`ConsoleMode`)**: `ConsoleAuto` (the zero
   value) attaches the sink only when stderr is a terminal and `NO_COLOR`
   is unset; `ConsoleOn` forces it on regardless of TTY (coloring still
   follows TTY + `NO_COLOR`, so piped output drops ANSI and stays
   greppable); `ConsoleOff` disables it. The console sink is appended last
   so it closes last on shutdown.
-- **Purely additive** — the file and webhook sinks run unchanged
+- **Purely additive**: the file and webhook sinks run unchanged
   alongside it; nothing about the existing JSON log surface moves.
 
 ## [0.8.1] - 2026-06-17
 
-### Changed — README rework
+### Changed: README rework
 
 - **Added a "Why this exists" section** stating plainly that GoFastr is a
   personal project first: solidifying web-tech foundations, attacking UI
@@ -7129,7 +7129,7 @@ prod where stderr is captured (journald, containers) rather than shown.
   Node), working in a compiled language, skipping the convention-vs-
   configuration choice, building something large with AI, and making a
   framework that's AI-first on both the authoring and the consuming side.
-- **Removed the framework comparison** from the README — the
+- **Removed the framework comparison** from the README: the
   PocketBase / Encore / Wasp / Supabase / FastAPI name-drops and the
   `comparison.md` link. (The `comparison.md` file itself is left on disk
   for now.)
@@ -7147,7 +7147,7 @@ prod where stderr is captured (journald, containers) rather than shown.
 
 ## [0.8.0] - 2026-06-16
 
-### Added — `gofastr export` (native static-site generation)
+### Added: `gofastr export` (native static-site generation)
 
 The framework now exports a deploy-ready static site itself, replacing the
 broken `wget --mirror` crawl used for the GitHub Pages deploy. The crawl baked
@@ -7155,49 +7155,49 @@ cache-bust `?v=<hash>` queries into on-disk module filenames; the static host
 strips the query, every split runtime module 404'd, and all client
 interactivity (theme toggle, command palette, copy, widgets) silently died.
 
-- **`App.ExportStatic(ctx, dir, basePath)`** (`framework`) — drives the app
+- **`App.ExportStatic(ctx, dir, basePath)`** (`framework`): drives the app
   in-process (no port, no crawl), enumerates every declared route, renders each
   through the SSG-aware path, and dumps all `/__gofastr` assets (split runtime
   modules, `color-scheme.js`, `app.css`, per-component CSS) with **query-free
   filenames**. Finds the `*uihost.UIHost` via `Mountables()`.
-- **`static.Builder`** (`framework/static`) — the already-tested builder, now
+- **`static.Builder`** (`framework/static`): the already-tested builder, now
   wired as the export engine. Emits query-free assets, the `color-scheme.js`
   bootstrap, and split runtime modules via `runtime.ModuleNames()`/`Module()`.
-- **Runtime static-mode** (`core-ui/runtime`) — a `data-fui-static` marker on
+- **Runtime static-mode** (`core-ui/runtime`): a `data-fui-static` marker on
   `<html>` (stamped only at export time) no-ops every server-backed dispatch
   (RPC, widget-catalog fetch, `data-fui-open`) so disabled actions read as
   intentionally inactive, not broken. Client-only features (theme, copy,
   signals) are unaffected; live pages carry no marker so the guards are no-ops
   in the normal server-backed app. Detected via `hasAttribute` to stay within
   the runtime's 12 KB gzip budget.
-- **Subpath base path** (`--export-base /<repo>`) — a GitHub Pages *project*
+- **Subpath base path** (`--export-base /<repo>`): a GitHub Pages *project*
   site serves the artifact under a subpath, so the builder prefixes every
   root-absolute `src`/`href`, the inline component-catalog `stylePath` JSON
   values, and bakes the prefix into the emitted `runtime.js` (it constructs
   split-module URLs in JS). External links, fragments, and code samples
   (`core/markdown` escapes quotes in `<code>`) are left untouched. Omit for an
   apex/custom-domain deploy.
-- **`ui.Banner` "static preview" notice** — injected at export time only,
+- **`ui.Banner` "static preview" notice**: injected at export time only,
   dismissible (`DismissID: gofastr-static-preview`, persists in `localStorage`),
   explaining that server-backed actions are disabled and how to run locally.
-- **`examples/site` `--export` / `--export-base` flags** — the same binary
+- **`examples/site` `--export` / `--export-base` flags**: the same binary
   serves live *or* exports; the live `Start` path is byte-identical when the
   flag is absent.
-- **Docs** — new `framework/docs/content/static-export.md` guide (what it is,
+- **Docs**: new `framework/docs/content/static-export.md` guide (what it is,
   how to export, what gets emitted, static-mode behavior, subpath vs apex,
   GitHub Pages workflow, common mistakes). `.github/workflows/pages.yml` now
   runs `site --export _site --export-base /gofastr`.
 
-### Added — `ui.CodeBlock.Scroll` + `ui.HighlightLines`
+### Added: `ui.CodeBlock.Scroll` + `ui.HighlightLines`
 
-- **`CodeBlockConfig.Scroll`** (`framework/ui`) — caps the body height
+- **`CodeBlockConfig.Scroll`** (`framework/ui`): caps the body height
   (`var(--ui-code-block-scroll-max, 26rem)`) and makes it scroll vertically, for
   showing a long file in full without it dominating the page. Forces the framed
   container; horizontal panning still works.
-- **`ui.HighlightLines`** (`framework/ui`) — the fenced-block tokenizer is now
+- **`ui.HighlightLines`** (`framework/ui`): the fenced-block tokenizer is now
   exported, so callers can render raw source through `CodeBlockConfig.Lines`
   with the same comment/string/number highlighting the markdown renderer uses.
-- **`/examples` Meridian row shows the real blueprint** — the synthetic,
+- **`/examples` Meridian row shows the real blueprint**: the synthetic,
   malformed pseudo-YAML snippet is replaced with the **exact, full
   `examples/meridian/gofastr.yml`** (embedded at build time, drift-guarded by
   `TestEmbeddedBlueprintsMatchSource`), shown in a scrolling, copyable block.
@@ -7235,9 +7235,9 @@ interactivity (theme toggle, command palette, copy, widgets) silently died.
 
 ## [0.7.0] - 2026-06-15
 
-### Added — marketing pricing + long-form content blocks
+### Added: marketing pricing + long-form content blocks
 
-- **`ui.PricingCard`** (`framework/ui`) — a real marketing pricing card (plan
+- **`ui.PricingCard`** (`framework/ui`): a real marketing pricing card (plan
   name, headline price + period, checked feature list, CTA, featured variant) so
   pricing pages read like marketing instead of a CRUD table. Composed via a new
   `pricing` blueprint block (`props.plans[]`).
@@ -7247,14 +7247,14 @@ interactivity (theme toggle, command palette, copy, widgets) silently died.
   flagship's `/pricing` is now pricing cards and `/terms` + `/privacy` are
   markdown, demonstrating all three content treatments.
 
-### Added — `gofastr pack` (the inverse of generate)
+### Added: `gofastr pack` (the inverse of generate)
 
 - **`gofastr pack [app-dir]`** reconstructs a `gofastr.yml` from a generated app's
-  Go source — the inverse of `gofastr generate`. It reads the real artifacts
+  Go source, the inverse of `gofastr generate`. It reads the real artifacts
   (`entities/register.go`, `blueprint/app.go`, `blueprint/stubs.go`,
   `blueprint/screens.go`) via the Go AST and re-serializes the authored blueprint:
   app config + theme/dark + auth + admin, every entity (fields, types, access,
-  indices, relations), the screens (reversing the emitted `framework/ui` grammar —
+  indices, relations), the screens (reversing the emitted `framework/ui` grammar:
   hero, sections, cards, charts, stat cards, entity list/detail, auth forms,
   headings), nav, and seed. Synthesized `/new` + `/{id}/edit` form screens are
   dropped (they weren't authored). A round-trip test gates the invariant
@@ -7265,11 +7265,11 @@ interactivity (theme toggle, command palette, copy, widgets) silently died.
   `empty_text:` are now wired (custom list heading + empty-state copy) instead of
   silently ignored.
 
-### Added — blueprint generates real, full web apps
+### Added: blueprint generates real, full web apps
 
 The blueprint generator now emits **owned Go that composes the full `framework/ui`
 catalog** instead of raw HTML, turning a blueprint into a credible product (see
-the new `examples/meridian` flagship — a SaaS billing console + marketing site).
+the new `examples/meridian` flagship, a SaaS billing console + marketing site).
 
 - **Server-rendered entity screens.** `entity_list` / `entity_detail` are emitted
   as request-time SSR screens (`RenderCtx`) backed by the entity's `CrudHandler`,
@@ -7278,14 +7278,14 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
   `$` money, dates), foreign keys resolved to the related record's name, and
   server-side search / sort / pagination + empty states. Replaces the old
   client-fetch raw-`<table>` islands.
-- **Full UI catalog as blueprint blocks** — `page_header`, `hero`, `section`,
+- **Full UI catalog as blueprint blocks**: `page_header`, `hero`, `section`,
   `card`, `stat_row`, `stat_card`, `bar_chart`/`pie_chart`, `link_button`,
   `callout`, plus data-bound dashboard widgets: `stat_card`/charts with
   `source: {entity, agg: count|sum, field, group_by, filter}` compute live
   metrics server-side.
-- **Marketing + app layouts** — `screen.layout: marketing` uses
+- **Marketing + app layouts**: `screen.layout: marketing` uses
   `ui.SiteHeader`/`ui.SiteFooter`; `layout: app` uses the sidebar shell.
-- **Auth screens + RBAC gating** — `signup_form` block; `screen.access:
+- **Auth screens + RBAC gating**: `signup_form` block; `screen.access:
   {auth: true, role: …}` emits an `appui.Policy` that redirects anonymous GETs to
   the login page (with `?next=`) and 403s a signed-in user missing the role.
 - **Writable app screens (create / edit / delete).** `entity_list` gains a
@@ -7299,7 +7299,7 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
   accepts the signed-in operator's writes instead of 403ing.
 - **The generator emits a test for every generated surface.** Each app gets an
   owned `blueprint/resource_test.go` (formatting + input-type helpers) and a
-  comprehensive `e2e_test.go` that builds + boots the binary and asserts: the
+  complete `e2e_test.go` that builds + boots the binary and asserts: the
   home brand; **every** static public screen renders; **every** gated screen
   redirects anonymous callers and renders once signed in; a full
   **create → read (detail + edit) → update → delete** lifecycle against a
@@ -7312,28 +7312,28 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
 
 ### Added
 
-- **`core-ui/node` + `core-ui/noderender`** — the JSON-clean UI node tree
+- **`core-ui/node` + `core-ui/noderender`**: the JSON-clean UI node tree
   (`Node`, `Action`, tree helpers) and its HTML renderer, extracted from
   `kiln/world` + `kiln/noderender` into first-party `core-ui` packages. The
   blueprint codegen no longer emits any import of the `kiln/*` namespace;
   Kiln consumes the node packages like any other caller (`kiln/world`
   type-aliases `node.Node`/`node.Action`, so kiln-internal code is unchanged).
-- **`data-action-mount` runtime primitive** — fires a compiled component
+- **`data-action-mount` runtime primitive**: fires a compiled component
   action once on hydration (and after each SPA nav), so a server-rendered
   island can populate itself on load without a user event.
-- **`ScreenGroup.Standalone()`** (`core-ui/app`) — marks a screen group as a
+- **`ScreenGroup.Standalone()`** (`core-ui/app`): marks a screen group as a
   self-contained shell so the host App's default layout does NOT also wrap it.
   `battery/admin` uses it: the back-office mounts on the host's App but renders
   its own sidebar, which previously nested inside the app's sidebar (a
   double-sidebar). Now the admin renders a single, correct shell.
-- **Blueprint `app.api_prefix`** (default `"api"`) — entity JSON CRUD mounts
+- **Blueprint `app.api_prefix`** (default `"api"`): entity JSON CRUD mounts
   under `/api/<table>`, freeing the bare `/<table>` path for HTML screens.
-- **Blueprint login + admin back-office** — a `login_form` screen block renders
+- **Blueprint login + admin back-office**: a `login_form` screen block renders
   a no-JS HTML sign-in form (posts to the auth battery, redirects on success),
   and `app.admin` wires the admin battery: an editable CRUD back-office over
   every entity at `/admin`, gated by a role, with `seed_email`/`seed_password`
   bootstrapping an admin account on first boot. `battery/admin` gained a
-  `LoginPath` config — an unauthenticated GET redirects to the login page
+  `LoginPath` config: an unauthenticated GET redirects to the login page
   instead of returning a bare 401.
 
 ### Changed
@@ -7362,11 +7362,11 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
   the old bare paths. MCP tools and the OpenAPI spec follow the prefix
   automatically.
 
-### Added — per-user data isolation + complete auth UX
+### Added: per-user data isolation + complete auth UX
 
 - **`owner_field` auto-creates the owner column.** Declaring `owner_field` now
   synthesizes a hidden owner column (AutoMigrate creates it; it never appears in
-  generated forms/tables) — you no longer hand-declare the field. The generated
+  generated forms/tables). You no longer hand-declare the field. The generated
   seed runs *as* the bootstrap admin, so demo data is owned and a freshly
   registered user starts with an empty, owner-scoped workspace. Meridian's
   customers/subscriptions/invoices/payments are now per-user (`owner_field:
@@ -7379,40 +7379,40 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
 - **Inline auth errors.** `ui.AuthCard` gained an `Alert` slot, and a failed
   form login now redirects back to the login page with `?error=` (via
   `auth.SetDefaultLoginErrorPath`) and renders "Invalid email or password."
-  inline — instead of dumping a raw JSON error body.
+  inline, instead of dumping a raw JSON error body.
 - **Role-aware navigation.** A nav item `role:` (→ `ui.SidebarItem.Roles` +
   `ui.SetRolesExtractor`) filters role-gated entries by the signed-in user's
-  roles, on both the desktop sidebar and the mobile drawer — a link a user can't
+  roles, on both the desktop sidebar and the mobile drawer: a link a user can't
   use never appears (and is never a dead end into a 403).
 - **The auth battery self-migrates** its `auth_users` / `auth_sessions` tables
   (`EntityUserStore`/`EntitySessionStore.EnsureSchema`, dialect-aware), so the
   generated app ships **zero** hand-rolled DDL.
 
-### Added — SPA cross-layout navigation + resilient chrome
+### Added: SPA cross-layout navigation + resilient chrome
 
 - **Cross-layout SPA navigation.** The outermost shell carries
   `data-fui-layout`; the route manifest carries each route's layout; the runtime
   detects a layout change (e.g. marketing → app) and swaps the *whole* shell
-  instead of just the content, so the new screen renders in the right chrome —
-  no hard reload.
+  instead of just the content, so the new screen renders in the right chrome,
+  with no hard reload.
 - **Charts render an empty state instead of panicking.**
   `ui.BarChart`/`PieChart`/`LineChart`/`Sparkline` no longer crash the page on
   empty data (a zero-data user's dashboard previously 404'd behind the SSR host's
-  panic recovery) — they show a calm "No data yet" placeholder.
+  panic recovery); they show a calm "No data yet" placeholder.
 - **`ui.SiteHeader` collapses its actions into the mobile drawer**, so an auth
   header no longer overflows a phone bar; the bar becomes brand + hamburger.
 - **`app.NewContextComponent`** + ctx-aware widget chrome
   (`component.RenderComponentCtx`, `serveChrome` renders with the request
   context), so per-request chrome (role-aware nav drawer, auth-aware header) sees
   the signed-in user.
-- The app shell drops its empty top bar — the theme toggle lives in the sidebar
+- The app shell drops its empty top bar; the theme toggle lives in the sidebar
   footer (visible on desktop, in the drawer on mobile).
 
 ### Fixed
 
 - **The framework-managed owner column is persisted on create/upsert.**
   `doCreate`/`doUpsert` skipped Hidden/ReadOnly fields when building the INSERT,
-  silently dropping the owner id `InjectOwner` stamps — so owner-scoping matched
+  silently dropping the owner id `InjectOwner` stamps, so owner-scoping matched
   nothing and a seeded admin's rows were invisible. The owner column is now
   exempt from the skip.
 
@@ -7441,7 +7441,7 @@ no framework API changes.
 
 Reframes the blueprint as a **generator, not a source of truth**. `gofastr
 generate` now scaffolds owned Go in an idiomatic, module-root layout you read,
-edit, and commit — there is no quarantined `gen/` directory and no `// Code
+edit, and commit: there is no quarantined `gen/` directory and no `// Code
 generated … DO NOT EDIT.` header on the scaffold. Re-running the generator is
 add-only and never clobbers your edits. Contains two **BREAKING** changes (see
 below); pin a version (`go get …@v0.6.0`).
@@ -7452,19 +7452,19 @@ below); pin a version (`go get …@v0.6.0`).
   A blueprint now scaffolds `main.go` plus `entities/` and `blueprint/`
   subpackages at the module root (imports rooted at your module), as owned Go
   with no `// Code generated … DO NOT EDIT.` header. Writes are **conflict-skip**:
-  a re-run writes new files but never overwrites a file you have hand-edited —
+  a re-run writes new files but never overwrites a file you have hand-edited;
   pass `--force` to overwrite. The blueprint is an on-ramp; once scaffolded the
   generated Go is the source of truth and the running app does not need the
   `gofastr.yml`. **Migration:** to keep the old quarantined layout, pass
-  `--out=gen` (or set `app.output_dir: gen` in the blueprint) — output is still
+  `--out=gen` (or set `app.output_dir: gen` in the blueprint); output is still
   owned Go, just in a subpackage. Build/run with `go run .` (or `go run ./<dir>`
   when `--out` is used) instead of `go run ./gen`. Monorepo examples that host a
-  test package alongside the app use `output_dir` for a subpackage —
+  test package alongside the app use `output_dir` for a subpackage;
   `examples/ecommerce` now scaffolds into an owned `app/`.
 
 - **BREAKING: `gofastr migrate diff` has been removed.** It applied a blueprint
   directly onto a live database, reconciling the running schema to the
-  blueprint — i.e. treating the blueprint as authoritative over the world. Code
+  blueprint, i.e. treating the blueprint as authoritative over the world. Code
   generation and schema migration are separate concerns. **Migration:** use
   `gofastr migrate generate <name>` to emit a reviewable, versioned migration,
   then `gofastr migrate up` to apply it; additive column changes also converge
@@ -7491,7 +7491,7 @@ metadata. No breaking changes.
 ## [0.5.0] - 2026-06-10
 
 The first-contact release: an adversarially-verified 10-dimension audit
-(2026-06-09) found the engine strong but the first-touch surface broken —
+(2026-06-09) found the engine strong but the first-touch surface broken:
 the README quickstart failed verbatim, the flagship example shipped
 insecure, RBAC was unreachable from the blueprint, and CI was red on every
 release tag. Everything below closes those findings. Contains a **BREAKING**
@@ -7502,7 +7502,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
 - **BREAKING: `battery/auth` fails closed on an empty `JWTSecret` in
   production.** An `AuthManager` with `DevMode=false` and no `JWTSecret`
   now makes `Init` return an error (the app refuses to boot) instead of
-  warning and continuing — an empty HMAC key yields forgeable,
+  warning and continuing; an empty HMAC key yields forgeable,
   restart-unstable JWTs. The error names the remedy (set
   `AuthConfig.JWTSecret`, or `DevMode: true` for local HTTP). The
   blueprint path rejects `app.auth` with `dev_mode: false` and no
@@ -7513,7 +7513,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
 
 ### Added
 
-- **Blueprint `access:` key — per-operation RBAC from `gofastr.yml`.** An
+- **Blueprint `access:` key: per-operation RBAC from `gofastr.yml`.** An
   optional `access:` map on an entity (`read` / `create` / `update` /
   `delete`, each a permission string) threads through
   `EntityDeclaration.Access` into the generated `register.go` as
@@ -7529,17 +7529,17 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   agent-friendly file:line + remedy diagnostics. `--from`, `--config`, and
   `--out` on `gofastr generate` now also accept the space form
   (`--from x.yml`), which previously silently did nothing.
-- **`unscoped-pii` lint — CLAUDE.md hard rule #6 in the toolchain.** Flags
+- **`unscoped-pii` lint: CLAUDE.md hard rule #6 in the toolchain.** Flags
   any auto-exposed entity (CRUD default-on or `mcp: true`) with PII-shaped
   fields and no `owner_field` / `access` / `multi_tenant`. Enabling
-  `app.auth` alone does **not** suppress it — the session middleware is
+  `app.auth` alone does **not** suppress it: the session middleware is
   pass-through for anonymous requests (an adversarial review proved the
   original auth-suppression wrong by anonymously reading user emails from
   a generated example app). Error from `gofastr validate`, prominent
   warning from `gofastr generate`, finding in `gofastr audit lint`.
   Running it against the repo's own examples found and fixed shipped
   exposures in `blog`, `lms`, `real-estate`, `portfolio`, and
-  `project-manager` — each now demonstrates a scoping pattern (RBAC-gated
+  `project-manager`: each now demonstrates a scoping pattern (RBAC-gated
   staff rosters, public-catalog reads with gated writes, lead-capture
   forms with open create and gated reads).
 - **Executable-README CI gate.** `cmd/gofastr/readme_quickstart_test.go`
@@ -7548,7 +7548,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   "unpublished"/replace-directive guidance anywhere in the embedded docs,
   README blueprint relations must resolve). The audit found this single
   gate would have caught five of its eight confirmed findings.
-- **`App.OnReady(func(addr string))`** — lifecycle hook that fires after
+- **`App.OnReady(func(addr string))`**: lifecycle hook that fires after
   the listener has actually bound (and is skipped on start failure).
   Generated apps now print their startup banner from it, so a migrate
   failure can no longer print "Server starting" and then exit 1.
@@ -7594,7 +7594,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
 - **SECURITY: `EntityConfig.MaxListLimit` could be bypassed on two list
   paths.** The cursor path never consulted the entity cap (asked for ≤3,
   served up to 100), and an oversized `?limit` on the offset/stream path
-  silently fell back to the default page size (20) — exceeding any cap
+  silently fell back to the default page size (20), exceeding any cap
   below 20. Both were hidden behind the security tests' auto-skip-on-500
   heuristic; converting those skips to hard failures (an audit
   recommendation) exposed them immediately. Oversized `?limit` now clamps
@@ -7602,11 +7602,11 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   stream, and cursor), with regression tests un-skipped and green.
 - **crud security tests fail instead of skip on server errors.** The
   skip-on-redacted-500 heuristic (and its "SQLite can't run $N
-  placeholders" rationale, which was false — the 500s were fixtures
+  placeholders" rationale, which was false: the 500s were fixtures
   missing `Table`) is gone across the suite.
 - **`battery/queue` tests are deterministic.** Thirteen sleep-based
   assertions replaced with Close-drain semantics, bounded `waitFor`
-  polling, and an unexported clock seam for lease/visibility expiry —
+  polling, and an unexported clock seam for lease/visibility expiry;
   stable under `-race -count=3`; no production behavior change.
 - **Doc staleness found while verifying the new callouts:** `widgets.md`
   described a `widget.Mount` return value and bootstrap route that don't
@@ -7618,7 +7618,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
 
 - **Boot-time auto-migrate now adds missing columns.** `AutoMigrate` did
   `CREATE TABLE IF NOT EXISTS` only, while deploy.md claimed
-  "create tables, add columns" — adding a field to an existing entity
+  "create tables, add columns"; adding a field to an existing entity
   broke the next boot. It now reuses the existing schema-diff machinery
   and applies the **additive** changes only (drops/renames/retypes stay
   behind `migrate diff`'s destructive gate); required new columns are
@@ -7626,7 +7626,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   re-reads live columns on the lock-holding transaction and no-ops.
   Also fixes Postgres live-schema readers to case-fold unquoted table
   names (mixed-case entities were mis-reported as missing every boot).
-- **Light color scheme now passes WCAG AA — and the axe gate can no
+- **Light color scheme now passes WCAG AA, and the axe gate can no
   longer be platform-blind.** The "Linux-only" CI axe failures were real:
   Linux Chrome defaults to `prefers-color-scheme: light`, so CI audited
   the light palette that Dark-mode dev Macs never did. Light primary/
@@ -7637,8 +7637,8 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   under BOTH forced schemes. The browser-e2e CI job is **blocking** again.
 - **Generated auth honors `dev_mode` and validates it strictly.** The
   generator hardcoded `DevMode: true`; the blueprint key now works, with
-  a deliberate default of `true` (production cookie posture —
-  `__Host-session` + `Secure` — never round-trips on the plain HTTP a
+  a deliberate default of `true` (production cookie posture,
+  `__Host-session` + `Secure`, never round-trips on the plain HTTP a
   fresh app serves) announced in the generated code, the `gofastr
   generate` output, and the docs. `dev_mode: yes` is a hard error, not a
   silent coercion to prod mode. `auth.CSRF` is deliberately not mounted
@@ -7646,10 +7646,10 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   `SameSite=Strict` mitigation are documented.
 - **Docs-site copy drift caught by visual review.** The site header
   advertised "pre-alpha 0.0.4" and the examples pages described blog as
-  "JSON-declared" — a format removed in v0.4.0. Version now lives in one
+  "JSON-declared", a format removed in v0.4.0. Version now lives in one
   `siteVersion` constant; blog is correctly described as Go-declared
   (users/posts/comments).
-- **The README quickstart now runs verbatim — and CI enforces it.** The
+- **The README quickstart now runs verbatim, and CI enforces it.** The
   blueprint example was rewritten in block style (the in-house YAML parser
   deliberately rejects flow mappings) with every referenced entity
   declared; a long-unclosed code fence that inverted every subsequent
@@ -7672,7 +7672,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   `authMgr.Init`; the flagship test asserts the full register → login →
   create → owner-isolated list flow across two users.
 - **`examples/ecommerce` no longer ships insecure.** Auth is enabled and
-  `orders` / `order_items` are owner-scoped (`owner_field: user_id`) —
+  `orders` / `order_items` are owner-scoped (`owner_field: user_id`);
   previously any anonymous caller or MCP agent could read every customer's
   PII and mutate orders, violating the repo's own hard rule #6.
   `BUILD_JOURNAL.md` keeps the honest history.
@@ -7683,7 +7683,7 @@ auth change (see below); pin a version (`go get …@v0.5.0`).
   RFC 9239 canonical `text/javascript`. `ci.yml` is restructured into a
   blocking deterministic job and an isolated, serialized browser-e2e job
   (non-blocking until the known Linux-Chrome axe contrast discrepancy in
-  `examples/site` is resolved — condition documented in the workflow).
+  `examples/site` is resolved; condition documented in the workflow).
 - **Docs drift purged.** `overview.md` core/ package count corrected
   (twelve → eighteen); `framework/ARCHITECTURE.md`'s layering map redrawn
   to match the real import graph (`openapi` above `crud`, the
@@ -7716,13 +7716,13 @@ flagship (`examples/ecommerce`) proves one `gofastr.yml` → SQL + REST + OpenAP
 
 ### Added
 
-- **Declaration-driven flagship example — `examples/ecommerce`.** A complete
+- **Declaration-driven flagship example: `examples/ecommerce`.** A complete
   storefront (five related entities, screens, nav, custom endpoints, seed data,
   and a theme) declared once in `gofastr.yml` and emitted as runnable Go by
   `gofastr generate --from=gofastr.yml` (the generated `gen/` is gitignored).
-  `flagship_test.go` regenerates, builds, and runs it to prove every surface —
+  `flagship_test.go` regenerates, builds, and runs it to prove every surface,
   SQL schema, REST CRUD, OpenAPI, the 25-tool MCP surface, and the
-  server-rendered UI — is live with zero hand-written application code. See
+  server-rendered UI, is live with zero hand-written application code. See
   `examples/ecommerce/BUILD_JOURNAL.md`.
 
 ### Fixed
@@ -7738,20 +7738,20 @@ flagship (`examples/ecommerce`) proves one `gofastr.yml` → SQL + REST + OpenAP
 ### Removed
 
 - **BREAKING: the legacy `entities/*.json` declaration format is gone.** The
-  `gofastr.yml` blueprint is now the single declaration format — it decodes into
+  `gofastr.yml` blueprint is now the single declaration format: it decodes into
   the same `EntityDeclaration` shape and additionally emits `main.go`, screens,
   and stubs, so the JSON-file path was a strict subset. Removed:
   - Framework API: `App.EntityFromFile`, `App.EntitiesFromDir`,
     `App.GroupEntitiesFromDir`, `framework.LoadEntityDeclaration`,
     `framework.LoadEntityDeclarations`. (The `EntityDeclaration` /
-    `FieldDeclaration` types and `.Config()` remain — they are the in-memory
+    `FieldDeclaration` types and `.Config()` remain; they are the in-memory
     shape the blueprint loader decodes entities into.)
   - CLI: `gofastr generate entity <name>` and `gofastr new entity <name>` (both
     now print a removal notice and exit non-zero); the `--entities=<dir>` flag
     on `gofastr generate`, `gofastr migrate generate`, and `gofastr migrate diff`.
   - `gofastr generate` no longer defaults to "scan `entities/` and generate." It
     requires `--from=<blueprint.yml>` (or a `gofastr.codegen.yml` extension
-    config). Auto-discovery of `gofastr.yml` is intentionally not done — that
+    config). Auto-discovery of `gofastr.yml` is intentionally not done; that
     filename is also the `gofastr init` isolation config.
 
   **Migration:** declare entities in a `gofastr.yml` blueprint and run
@@ -7784,13 +7784,13 @@ security audit (see `AI_TEST_AUDIT.md`).
   `{access, refresh, expiry}` per `(user, provider)`; `RefreshOAuthToken` /
   `ValidOAuthToken` refresh transparently on/near expiry via the provider's
   refresh grant (Google + GitHub). OAuth login now persists the refresh token
-  (previously discarded) when a store is wired. **Opt-in** — login is unchanged
+  (previously discarded) when a store is wired. **Opt-in**; login is unchanged
   with no store configured. `EncryptionKey` is **required** (fails closed); the
   `userID` passed to refresh/valid must be the authenticated principal.
 - **Cron-expression scheduling in the queue Scheduler.** `Scheduler.Cron(spec)`
   fires on a standard 5-field cron expression (plus `@daily`/`@hourly`/… shortcuts),
   alongside the existing `Every(interval)`. Reuses `framework/cron` (now exposing
-  `Parse`/`Schedule.Next`) — no second cron parser. Interval schedules are unchanged.
+  `Parse`/`Schedule.Next`); no second cron parser. Interval schedules are unchanged.
 - **Request context in i18n-rendering `framework/ui` components.** `RepeaterConfig`,
   `LightboxConfig`, `StepWizardConfig`, `PasswordInputConfig` gain an optional
   `Ctx` field so their localizable strings resolve the request's locale instead
@@ -7799,32 +7799,32 @@ security audit (see `AI_TEST_AUDIT.md`).
 ## [0.3.2] - 2026-06-08
 
 A developer-experience patch from the same whole-framework assessment that
-drove v0.3.1 — twenty DX improvements and small features, all with tests and
+drove v0.3.1: twenty DX improvements and small features, all with tests and
  shipped docs. No BREAKING changes; everything is additive.
 
 ### Added
 
-- **`App.WithSeed(func(ctx) error)`** — register seed funcs that run AFTER
+- **`App.WithSeed(func(ctx) error)`**: register seed funcs that run AFTER
   auto-migration (tables exist) and before the listener binds, fixing the
   first-run "no such table" footgun.
 - **`framework.DBFromContext(ctx)` / `WithDBContext`** + an auto-wired
-  `DBContextMiddleware` — screens reach the app's `*sql.DB` from the request
+  `DBContextMiddleware`: screens reach the app's `*sql.DB` from the request
   context instead of a package-level global handle.
-- **`access.GetRoles(ctx)`** (and the `framework.GetRoles` facade) — the reader
+- **`access.GetRoles(ctx)`** (and the `framework.GetRoles` facade): the reader
   half of the role-context seam, for role-based UI branching.
-- **`PluginGetAs[T]`** — typed plugin lookup mirroring the existing `GetAs[T]`.
-- **Typed interactive effects** — `Confirm`/`AfterText`/`AfterDisable`/`ScrollTo`/
+- **`PluginGetAs[T]`**: typed plugin lookup mirroring the existing `GetAs[T]`.
+- **Typed interactive effects**: `Confirm`/`AfterText`/`AfterDisable`/`ScrollTo`/
   `PushState` builders in `core-ui/interactive`, replacing hand-written
   `data-fui-*` attribute strings.
-- **`ListOptions.NestedFilters`** — in-process `ListAll`/`CountAll` now apply the
+- **`ListOptions.NestedFilters`**: in-process `ListAll`/`CountAll` now apply the
   same `?author.name=alice` EXISTS-subquery nested filters the HTTP path does.
-- **`RedisQueue.Start(ctx, interval)`** — background reclaim ticker recovers jobs
+- **`RedisQueue.Start(ctx, interval)`**: background reclaim ticker recovers jobs
   stranded by a crashed worker, matching `DBQueue`.
 - **`Battery` wrappers for cache/search/storage** (`NewBattery`) with clean
   lifecycle shutdown of background goroutines.
-- **`gofastr harness creds add|list|delete`** — store credentials in the
+- **`gofastr harness creds add|list|delete`**: store credentials in the
   encrypted credstore; `gofastr --help` now lists the `harness`/`agents` subcommands.
-- **`audit_log.tenant_id`** — a nullable column (idempotent `ADD COLUMN`) stamped
+- **`audit_log.tenant_id`**: a nullable column (idempotent `ADD COLUMN`) stamped
   from the request tenant, so multi-tenant audit trails are scopeable.
 
 ### Changed
@@ -7861,7 +7861,7 @@ behavior or loud errors.
 
 - **Codegen and blueprints no longer drop `OwnerField`.** `renderEntityRegistration`
   emitted every scope flag except `OwnerField`, and the blueprint YAML allow-list
-  rejected `owner_field` outright — so generated/blueprinted apps silently lost the
+  rejected `owner_field` outright, so generated/blueprinted apps silently lost the
   per-user row scoping the docs hard-warn about. Both paths now preserve it.
 - **Streaming list can no longer bypass `AfterList` redaction.** `?stream=true`
   skipped include resolution and the `AfterList` hook; an `AfterList` redactor would
@@ -7934,15 +7934,15 @@ LICENSE; secure-by-default authorization (multi-tenant fail-closed,
 per-operation RBAC on auto-CRUD, admin default-deny); kiln free-order
 authoring + same-origin guard; observability + deployment story; durable
 auth token store; dead-letter replay across all queue backends; and a
-broad sweep of build-quality fixes. **Contains BREAKING changes — read the
+broad sweep of build-quality fixes. **Contains BREAKING changes: read the
 entries marked BREAKING below before upgrading from v0.2.x.**
 
 ### Security
 
-- **BREAKING — typed-repo queries are now tenant-fail-closed.** A re-audit found
+- **BREAKING: typed-repo queries are now tenant-fail-closed.** A re-audit found
   `Repo.Query().Find/First/Count/Exists/UpdateAll/DeleteAll` (the generated
-  typed-query builder) only applied `ApplyTenantScope` — which no-ops on an empty
-  tenant — so on a `MultiTenant` entity a tenant-less context read/mutated across
+  typed-query builder) only applied `ApplyTenantScope`, which no-ops on an empty
+  tenant, so on a `MultiTenant` entity a tenant-less context read/mutated across
   every tenant. The in-process `crud_api.go` already gated this; the typed-query
   path slipped. Now gated via `requireTenantContext` (honors
   `tenant.AllowCrossTenant`). Owner scope stays permissive for typed repos by
@@ -7956,7 +7956,7 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   /kiln/tool/{name}`, `/kiln/agent`, and `/mcp` mutate the in-memory world with
   no auth (loopback bind is the primary control). A new origin guard refuses
   cross-origin browser POSTs (DNS-rebinding / CSRF from a page in the user's
-  browser), while non-browser clients (agent, curl, MCP/ACP — no `Origin`) are
+  browser), while non-browser clients (agent, curl, MCP/ACP; no `Origin`) are
   unaffected. Docs: `kiln.md`.
 - **`battery/auth` warns on a missing production JWT secret.** With
   `DevMode=false` and an empty `JWTSecret`, the auth battery now logs a loud
@@ -7967,18 +7967,18 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   interpolated into `CREATE/DROP VIEW` DDL verbatim; it's now checked with
   `query.SafeIdent` and panics on an unsafe name (developer misconfig, fail-fast).
   `View.Select` remains intentionally free-form developer SQL.
-- **BREAKING — admin battery is default-deny for non-admins.** With no custom
+- **BREAKING: admin battery is default-deny for non-admins.** With no custom
   `Config.Authorize`, the admin now requires an authenticated user holding the
-  admin role (`Config.AdminRole`, default `"admin"`) — detected via the
+  admin role (`Config.AdminRole`, default `"admin"`), detected via the
   structural `GetRoles() []string` interface (`battery/auth.User` satisfies it).
   Previously any authenticated, non-nil user reached full admin CRUD over every
   exposed entity, so a freshly-registered reader was effectively an admin.
   Authenticated-but-unauthorized now returns `403` (vs `401` for anonymous).
   Docs: `framework/docs/content/admin.md`.
-- **Per-operation RBAC on auto-CRUD — `EntityConfig.Access`.** Declare the
+- **Per-operation RBAC on auto-CRUD: `EntityConfig.Access`.** Declare the
   permission required for each operation (`Read` covers List+Get, plus
   `Create`/`Update`/`Delete`) and auto-CRUD refuses requests lacking it with
-  `403` — across List/Get/Create/Update/Delete and the batch/stream variants.
+  `403`, across List/Get/Create/Update/Delete and the batch/stream variants.
   Previously auto-CRUD had **no permission check at all**: exposing an entity
   granted every authenticated user full CRUD unless the host hand-composed
   route-group middleware. New seams: package-level **`access.Can(ctx, perm)`**
@@ -7986,11 +7986,11 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   `framework.AccessMiddleware`) to install policy+roles in one line. **BREAKING:**
   `access.Policy.Can` / `RolePolicy.Can` drop the unused `resource any`
   parameter. Docs: `framework/docs/content/access-control.md`.
-- **BREAKING — multi-tenant CRUD is now fail-CLOSED over HTTP.** A
+- **BREAKING: multi-tenant CRUD is now fail-CLOSED over HTTP.** A
   `MultiTenant` entity served with no tenant id in the request context is
   refused with `401` on every operation (list/get/create/update/delete, batch,
   stream, SSE), matching the in-process CRUD API which already failed closed.
-  Previously the HTTP path failed *open* — an empty tenant id disabled filtering
+  Previously the HTTP path failed *open*: an empty tenant id disabled filtering
   and returned/mutated every tenant's rows, a silent cross-tenant data leak.
   Deliberate cross-tenant access (admin tooling) must now opt in explicitly and
   server-side via the new **`tenant.AllowCrossTenant(ctx)`** marker (never from
@@ -8011,17 +8011,17 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   but the store lacks the capability. `FlatStore` implements all of them, so no
   in-tree caller changes.
 - **Blueprint codegen produces compilable Go in two edge cases.** (1) An
-  endpoint with no `handler` emitted `func (w http.ResponseWriter, r *http.Request) {`
-  — read by Go as a method with two receivers; the handler name now falls back
+  endpoint with no `handler` emitted `func (w http.ResponseWriter, r *http.Request) {`.
+  Read by Go as a method with two receivers; the handler name now falls back
   to the endpoint `name`, and a fully-anonymous endpoint is skipped. (2) A screen
   whose body was only freeform node blocks imported `core-ui/html` without using
-  it (a build error) — import accounting now only flags `html` when a top-level
+  it (a build error). Import accounting now only flags `html` when a top-level
   block actually emits an `html.*` call. Both are pinned by tests that parse /
   build the generated output.
 - **Generated apps no longer ship Kiln's authoring engine.** `gofastr generate`
   emitted `import "…/kiln/render"` into blueprint apps that use freeform node
-  blocks, which transitively pulled `kiln/expr`, `kiln/effect`, and `framework`
-  — Kiln's whole build-mode evaluator — into a shipped binary. `RenderNode` is
+  blocks, which transitively pulled `kiln/expr`, `kiln/effect`, and `framework`,
+  Kiln's whole build-mode evaluator, into a shipped binary. `RenderNode` is
   now a leaf package **`kiln/noderender`** (imports only `core-ui/html`,
   `core/render`, `kiln/world`); codegen targets it and `kiln/render` keeps a
   thin re-export for the live path. A new codegen build test compiles a
@@ -8034,10 +8034,10 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   missing marker. Unit-tested.
 - **Island SSE drops are now observable.** When a client's island-update
   channel is full the update is dropped (slow consumer); this was silent. The
-  manager now counts drops, exposed via `island.Manager.DroppedUpdates()` —
+  manager now counts drops, exposed via `island.Manager.DroppedUpdates()`;
   wire it to a metric/health check to detect stalled streams.
 - **`battery/cache`: bounded cache buffering.** The middleware buffered the
-  entire response in memory before deciding cacheability, with no size cap — a
+  entire response in memory before deciding cacheability, with no size cap; a
   pathological large response could pin unbounded memory. It now streams a
   response past `DefaultMaxCacheableBytes` (8 MiB) straight to the client and
   skips caching it. New `CacheMiddlewareWithLimit(cache, ttl, maxBodyBytes)`.
@@ -8063,7 +8063,7 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   being the README's first step). Entities are now declared in Go (self-
   contained, runs from any cwd; `gofastr.yml` still mirrors them for the
   codegen path), and seeding runs after AutoMigrate so the demo data actually
-  lands. Added a boot+HTTP-200 test (`examples/blog`) — the missing test layer
+  lands. Added a boot+HTTP-200 test (`examples/blog`), the missing test layer
   the assessment flagged.
 
 - **kiln: free-order authoring no longer bricks the rebuild.** Adding an entity
@@ -8081,7 +8081,7 @@ entries marked BREAKING below before upgrading from v0.2.x.**
 ### Added
 
 - **Dead-letter inspect + replay for queue and webhook.** Terminally-failed work
-  could be listed but never re-run. Add optional capabilities —
+  could be listed but never re-run. Add optional capabilities:
   `queue.Replayable{Replay}` (implemented by `DBQueue`) and
   `webhook.ReplayableStore{ListDeadDeliveries, ResetDelivery}` (implemented by
   `SQLStore` + `MemoryStore`, surfaced via `Manager.DeadDeliveries`/`Manager.Replay`).
@@ -8089,20 +8089,20 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   queue, `'dead'` for webhook), so it can't double-run an in-flight job. **All
   three queue backends now support replay**: `RedisQueue.Replay` moves a job off
   the dead-letter list back onto the main queue (new `LRange`/`LRem` on the
-  host-provided `RedisClient` interface — no new dependency), and `MemoryQueue`
+  host-provided `RedisClient` interface; no new dependency), and `MemoryQueue`
   now **retains** dead jobs in a bounded list (was silently dropping them),
   implements `Browsable`/`Replayable`, and replays them. The
   admin battery surfaces a **Replay** button on the failed-jobs view behind the
   admin gate + CSRF (`POST /admin/queue/_replay/{id}`), and its queue filter
   chips no longer advertise a `dead` status `DBQueue` never writes.
-- **`auth.SQLMagicLinkTokenStore` — durable token store for passwordless flows.**
+- **`auth.SQLMagicLinkTokenStore`: durable token store for passwordless flows.**
   Magic-link, password-reset, and email-verification tokens were in-memory only,
   so those flows broke on restart and couldn't scale across replicas. Add a
   DB-backed `MagicLinkTokenStore` (single-use via `DELETE … RETURNING`, TTL,
   cleanup) and a `TokenStore` config field on all three plugins
-  (`MagicLinkConfig`, `PasswordResetConfig`, `EmailVerificationConfig`) — pass
+  (`MagicLinkConfig`, `PasswordResetConfig`, `EmailVerificationConfig`); pass
   `NewSQLMagicLinkTokenStore(db)` in production. In-memory stays the default.
-- **Observability is discoverable — `WithMetrics()` / `WithTracing()`.** The
+- **Observability is discoverable: `WithMetrics()` / `WithTracing()`.** The
   production-grade Prometheus metrics and OpenTelemetry tracing middleware
   existed in `core/middleware` but were never wired into `App`, re-exported, or
   documented. `WithMetrics()` adds the metrics middleware to the default chain
@@ -8113,7 +8113,7 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   New docs: `observability.md`, `deploy.md` (single-binary model, production
   Dockerfile, env config, migrations-as-a-step, TLS/graceful shutdown,
   health/metrics wiring).
-- **`App.TryEntity(name, config) error`** — the error-returning variant of
+- **`App.TryEntity(name, config) error`**: the error-returning variant of
   `App.Entity`. `Entity` panics on misconfiguration (fail-fast for hand-written
   declarations); `TryEntity` returns the error instead and recovers panics from
   deeper validation, so a single bad config (e.g. an AI-authored field, a
@@ -8121,60 +8121,60 @@ entries marked BREAKING below before upgrading from v0.2.x.**
   wrapper over `TryEntity`. Docs: `framework/docs/content/entity-declarations.md`.
 - **`framework.WithPublicOpenAPI()` / `AppConfig.PublicOpenAPI`.** Serves
   `/openapi.json` without the auth gate. The spec is auth-gated by default (it
-  enumerates every route), so a minimal app returned `401` there — surprising
+  enumerates every route), so a minimal app returned `401` there, surprising
   anyone following the quickstart `curl`. Swagger UI at `/api/docs/` is
   unaffected. README quickstart updated to call this out.
-- **LICENSE — GoFastr is now MIT licensed.** A top-level `LICENSE` file (MIT)
+- **LICENSE: GoFastr is now MIT licensed.** A top-level `LICENSE` file (MIT)
   replaces the previous "all rights reserved / no license chosen" note. The code
   is now free to use, modify, and redistribute (including commercially) with the
   copyright notice preserved. This unblocks adoption, vendoring, and deployment.
 - **Framework DX round-4.** Closes a focused batch from the V4 host-app feedback:
-  - **`render.If(cond, html) HTML` / `render.When(cond, fn) HTML`** — inline conditional fragments. `When` is the lazy form for expensive truthy branches.
-  - **`render.Classes(parts ...string) string`** — joins non-empty class strings with spaces. Pair with **`render.ClassIf(cond, name) string`** for sparse conditionals: `render.Classes("base", render.ClassIf(isActive, "active"))`. Coexists with `html.Classes(map[string]bool)` for predicate-dense cases.
-  - **`html.InputConfig.Value` / `.Placeholder`** and **`html.TextAreaConfig.Content` / `.Placeholder` / `.Rows` / `.Cols`** — typed fields for the common attributes; killed the V4 papercut of falling back to `render.Tag("textarea", attrs, render.Text(content))` for prefilled edit sheets. `Attrs` remains as the escape hatch.
-  - **`EntityConfig.Seed func(ctx, *sql.DB) error`** — runs once per entity after `AutoMigrate`. Completion is recorded in a new `_gofastr_seeded` ledger table; subsequent restarts skip seeded entities. Errors abort `App.Start`.
-  - **`EntityConfig.SeedFS fs.FS` + `EntityConfig.SeedPath string`** — bind embedded seed data to an entity; reachable inside `Seed` via **`entity.SeedDataFromContext(ctx) ([]byte, error)`**. Removes loose JSON files from tarball-style single-binary deploys.
-  - **`App.RegisterEntities(map[string]entity.EntityConfig) *App`** — sugar over multiple `Entity(...)` calls. Iterates the map in alphabetical-by-name order so route registration, OpenAPI tag emission, and MCP tool list order are deterministic across restarts. FK ordering stays correct because AutoMigrate also topologically sorts.
-  - **`style.Contribute(func(*StyleSheet)) / style.Apply(*StyleSheet)`** — co-located scoped styles. Declare CSS next to the Go render code via `var _ = style.Contribute(...)` at package scope; the host calls `style.Apply(ss)` inside `createStyleSheet`. Final CSS is identical between dev and prod — no nonces, no inline `<style>`, no CSP relaxation. Distinct from `registry.RegisterStyle` (named, lazy-loaded per-component sheet); `Contribute` adds fragments to the host's global theme stylesheet. Kills the 3-file (screen + theme + reload) iteration cycle.
+  - **`render.If(cond, html) HTML` / `render.When(cond, fn) HTML`**: inline conditional fragments. `When` is the lazy form for expensive truthy branches.
+  - **`render.Classes(parts ...string) string`**: joins non-empty class strings with spaces. Pair with **`render.ClassIf(cond, name) string`** for sparse conditionals: `render.Classes("base", render.ClassIf(isActive, "active"))`. Coexists with `html.Classes(map[string]bool)` for predicate-dense cases.
+  - **`html.InputConfig.Value` / `.Placeholder`** and **`html.TextAreaConfig.Content` / `.Placeholder` / `.Rows` / `.Cols`**: typed fields for the common attributes; killed the V4 papercut of falling back to `render.Tag("textarea", attrs, render.Text(content))` for prefilled edit sheets. `Attrs` remains as the escape hatch.
+  - **`EntityConfig.Seed func(ctx, *sql.DB) error`**: runs once per entity after `AutoMigrate`. Completion is recorded in a new `_gofastr_seeded` ledger table; subsequent restarts skip seeded entities. Errors abort `App.Start`.
+  - **`EntityConfig.SeedFS fs.FS` + `EntityConfig.SeedPath string`**: bind embedded seed data to an entity; reachable inside `Seed` via **`entity.SeedDataFromContext(ctx) ([]byte, error)`**. Removes loose JSON files from tarball-style single-binary deploys.
+  - **`App.RegisterEntities(map[string]entity.EntityConfig) *App`**: sugar over multiple `Entity(...)` calls. Iterates the map in alphabetical-by-name order so route registration, OpenAPI tag emission, and MCP tool list order are deterministic across restarts. FK ordering stays correct because AutoMigrate also topologically sorts.
+  - **`style.Contribute(func(*StyleSheet)) / style.Apply(*StyleSheet)`**: co-located scoped styles. Declare CSS next to the Go render code via `var _ = style.Contribute(...)` at package scope; the host calls `style.Apply(ss)` inside `createStyleSheet`. Final CSS is identical between dev and prod: no nonces, no inline `<style>`, no CSP relaxation. Distinct from `registry.RegisterStyle` (named, lazy-loaded per-component sheet); `Contribute` adds fragments to the host's global theme stylesheet. Kills the 3-file (screen + theme + reload) iteration cycle.
   - `App.Router()` doc comment now points application-level code at `App.Use` / `App.Group` and documents `Router()` as the plugin/internal surface.
-  - **`App.Entity` panics at registration** when `SeedFS` is set but `SeedPath` is empty — a misconfiguration that would otherwise silently mark the entity as seeded with empty data on first run.
-  - **`App.Start` failure paths drain via `Shutdown`** — AutoMigrate / RunSeeds / InitPlugins / runStartHooks errors no longer leak goroutines past Start returning. The app lifecycle context is created before AutoMigrate so RunSeeds and individual Seed functions can observe cancellation.
+  - **`App.Entity` panics at registration** when `SeedFS` is set but `SeedPath` is empty, a misconfiguration that would otherwise silently mark the entity as seeded with empty data on first run.
+  - **`App.Start` failure paths drain via `Shutdown`**: AutoMigrate / RunSeeds / InitPlugins / runStartHooks errors no longer leak goroutines past Start returning. The app lifecycle context is created before AutoMigrate so RunSeeds and individual Seed functions can observe cancellation.
   - **`migrate.RunSeeds` reads the ledger in one round-trip** (was N+1 per entity) and emits per-seed lifecycle slog events (`seed start`, `seed done`, `seed skip`, `seed ledger read`) when a logger is attached via `migrate.WithSeedLogger(ctx, l)`.
   - **`webhook.VerifyTimestamped` rejects non-positive tolerance** (was: silently skipped the replay check) and out-of-range timestamps. Added **`webhook.DefaultTimestampTolerance = 5 * time.Minute`** as the suggested default.
-  - **`entity.Registry.AllSorted() []*Entity`** — returns entities in alphabetical-by-name order so order-sensitive consumers (`OpenAPI` tag emission, `crud.RegistryLLMMD`) produce byte-stable output across restarts. Existing `All()` keeps the map shape but its godoc now spells out that map iteration is randomised. Fixes a pre-existing non-determinism that broke ETag caching of `/openapi.json` and `/api/llm.md`.
-  - **`gofastr audit deps`** CLI command — scans the project for packages whose `init()` mutates framework-wide state (`style.Contribute`, `registry.RegisterStyle`, `render.RegisterComponent` / `RegisterLayout` / `RegisterFunc`). Output is grouped by Go import path; pairs with the documented supply-chain trust model on `style.Contribute`. Docs: `framework/docs/content/audit-deps.md`.
+  - **`entity.Registry.AllSorted() []*Entity`**: returns entities in alphabetical-by-name order so order-sensitive consumers (`OpenAPI` tag emission, `crud.RegistryLLMMD`) produce byte-stable output across restarts. Existing `All()` keeps the map shape but its godoc now spells out that map iteration is randomised. Fixes a pre-existing non-determinism that broke ETag caching of `/openapi.json` and `/api/llm.md`.
+  - **`gofastr audit deps`** CLI command: scans the project for packages whose `init()` mutates framework-wide state (`style.Contribute`, `registry.RegisterStyle`, `render.RegisterComponent` / `RegisterLayout` / `RegisterFunc`). Output is grouped by Go import path; pairs with the documented supply-chain trust model on `style.Contribute`. Docs: `framework/docs/content/audit-deps.md`.
 - **`core/dotenv` package + auto-load in `framework.NewApp()`.** Probes `.env.local`, `.env.<APP_ENV>` (when `APP_ENV` set), and `.env` from CWD before option processing. Existing `os.Environ` always wins. Parser handles double/single-quoted values, escapes, optional `export` prefix, comments; rejects malformed input loudly. Bracket-form `${VAR}` expansion with cycle detection, depth cap, undefined-as-empty, and `\${literal}` escape. Disable via `GOFASTR_DOTENV=off` in the process env. `cmd/gofastr migrate` now routes through this instead of its ad-hoc 1-key scanner. Docs: `framework/docs/content/dotenv.md`.
 - **SSR auth policies.** `core-ui/app` exposes a `Policy { Decide(ctx) Decision }` machinery with four decision kinds (Allow / Redirect / RenderAlt / Block). Attach via `Screen.WithPolicy(p)` or `NewScreenGroup(prefix, layout, policies...)`. Construct decisions through the new `core-ui/app/decide` subpackage so call sites don't shadow common variable names: `decide.Allow()`, `decide.Redirect(url)`, `decide.RenderAlt(factory)`, `decide.Block(status, msg)`.
 - **`battery/auth.SessionPolicy(opts...)` and `RolePolicy(roles, opts...)`** are the SSR counterparts to the existing `RequireSession` / `RequireRole` middleware. Options: `WithRedirect(url, ...RedirectOpt)`, `WithRenderAlt(factory)`, `WithBlock(status, msg)`. `RedirectOpt`: `NoNext()` to suppress the auto-appended `?next=<request-path>`.
-- **`auth.SessionFrom(ctx) (User, bool)`** — cheap in-component getter for ctx-aware chrome (sibling nav, conditional CTAs). Pair with `RenderCtx` for in-page gating without policy machinery.
-- **`auth.Roles(roles ...string) []string`** — ergonomic literal-list helper so `auth.RolePolicy(auth.Roles("admin", "owner"), ...)` reads cleanly. Documents the asymmetry with the variadic `auth.RequireRole`.
-- **`component.ContextComponent { RenderCtx(ctx) HTML }`** — the optional ctx-aware render interface. Does NOT embed `Component` (so a type can satisfy it via just one method). Embed `component.ContextOnly{}` to also satisfy `Component` with a stub `Render` that the framework never calls.
+- **`auth.SessionFrom(ctx) (User, bool)`**: cheap in-component getter for ctx-aware chrome (sibling nav, conditional CTAs). Pair with `RenderCtx` for in-page gating without policy machinery.
+- **`auth.Roles(roles ...string) []string`**: ergonomic literal-list helper so `auth.RolePolicy(auth.Roles("admin", "owner"), ...)` reads cleanly. Documents the asymmetry with the variadic `auth.RequireRole`.
+- **`component.ContextComponent { RenderCtx(ctx) HTML }`**: the optional ctx-aware render interface. Does NOT embed `Component` (so a type can satisfy it via just one method). Embed `component.ContextOnly{}` to also satisfy `Component` with a stub `Render` that the framework never calls.
 - **`framework.entity.EntityDeclaration.OwnerField` JSON key (`owner_field`).** Mirrors `EntityConfig.OwnerField` so per-user CRUD scoping works for entities declared in JSON, not just Go.
-- **DevMode auto-mints a random JWT secret** when `AuthConfig.JWTSecret == ""`. 32 cryptographically-random bytes, base64-encoded, logged as WARN. Sessions invalidate on restart — set `JWTSecret` for stable dev tokens.
-- **`X-Gofastr-Location` partial-redirect signal.** Policy-Redirect outcomes on a partial fetch return 200 + that header + empty body (NOT 303 — the runtime fetcher uses `redirect:'follow'` and would auto-chase a 303, losing the header). The runtime's `loadPage` calls itself with the redirected URL and updates `pushState`.
+- **DevMode auto-mints a random JWT secret** when `AuthConfig.JWTSecret == ""`. 32 cryptographically-random bytes, base64-encoded, logged as WARN. Sessions invalidate on restart; set `JWTSecret` for stable dev tokens.
+- **`X-Gofastr-Location` partial-redirect signal.** Policy-Redirect outcomes on a partial fetch return 200 + that header + empty body (NOT 303; the runtime fetcher uses `redirect:'follow'` and would auto-chase a 303, losing the header). The runtime's `loadPage` calls itself with the redirected URL and updates `pushState`.
 
 ### Removed (greenfield cleanup)
 
-- **BREAKING — escape-hatch field `Attrs` renamed to `ExtraAttrs`** across `core-ui/html/*.Config`, `core-ui/patterns/{disclosure,sortablelist,multiselect}.Config`, and every `framework/ui/*.Config` that exposes a passthrough HTML attribute bag. The new name signals "extra attributes beyond the typed surface" so callers reach for typed fields first. `core/featureflag.Flag.Attrs` stays — it's primary data, not an escape hatch. `html.Attrs` *type* alias is unchanged.
-- **BREAKING — 410 GONE compat endpoints removed**. `/__gofastr/theme.css`, `/__gofastr/styles.css`, `/__gofastr/routes.js`, `/__gofastr/catalog.js`, `/__gofastr/css/<path>` now 404 instead of serving a 410 with a migration hint. Use `/__gofastr/app.css` for CSS; routes + catalog ship inline as `<script type="application/json">` in the SSR'd page; per-component CSS comes from `/__gofastr/comp/<name>.css` via `registry.RegisterStyle`.
+- **BREAKING: escape-hatch field `Attrs` renamed to `ExtraAttrs`** across `core-ui/html/*.Config`, `core-ui/patterns/{disclosure,sortablelist,multiselect}.Config`, and every `framework/ui/*.Config` that exposes a passthrough HTML attribute bag. The new name signals "extra attributes beyond the typed surface" so callers reach for typed fields first. `core/featureflag.Flag.Attrs` stays; it's primary data, not an escape hatch. `html.Attrs` *type* alias is unchanged.
+- **BREAKING: 410 GONE compat endpoints removed**. `/__gofastr/theme.css`, `/__gofastr/styles.css`, `/__gofastr/routes.js`, `/__gofastr/catalog.js`, `/__gofastr/css/<path>` now 404 instead of serving a 410 with a migration hint. Use `/__gofastr/app.css` for CSS; routes + catalog ship inline as `<script type="application/json">` in the SSR'd page; per-component CSS comes from `/__gofastr/comp/<name>.css` via `registry.RegisterStyle`.
 - **Dead code removed**: `migrate.alreadySeeded` (replaced by batch `readSeededSet`), `i18nui.replaceAll` (inlined to `strings.ReplaceAll`).
 - **Doc framing cleanup**: removed "legacy", "back-compat", "kept for", "transitionally" language from comments that describe current first-class APIs (cursor pagination, runtime.js, framework facade, decodeCursorAny, App.Shutdown).
 
 ### Changed
 
-- **BREAKING — form intercept is opt-in.** `<form>` elements with the default `application/x-www-form-urlencoded` or `multipart/form-data` enctype are NOT intercepted by `runtime.js`. The browser submits them natively (cookies set, `Location:` followed, file uploads, password-manager UX all work without any framework involvement). Forms posting to a JSON endpoint must opt INTO interception with `enctype="application/json"` OR `data-fui-spa`. `data-fui-rpc` still triggers RPC dispatch as before. **Migration:** `grep -rn '<form' .` — forms that POST to a JSON CRUD/island handler need `enctype="application/json"` added; forms that POST to a redirect-returning handler (auth, settings) need no change.
-- **BREAKING — `core-ui/app.App.RenderPage` / `RenderPartial` now wrap richer `*Result` variants.** Returns an error for `Redirect` and `Block` decisions (the legacy shape can't express them). Use `App.RenderPageResult` / `RenderPartialResult` for the policy-aware shape.
-- **BREAKING — `core-ui/app.Router.Render` → `Router.RenderRaw`** and **`App.RenderScreen` → `App.RenderScreenRaw`**. Renamed to call out that they bypass the Policy chain. HTTP-serving code must use `App.RenderPageResult`; `RenderRaw` is for SSG/internal callers.
-- **BREAKING (effectively no-op) — `core/router.Middleware` is now a type ALIAS for `core/middleware.Middleware`.** Anonymous-func cast no longer needed when feeding `battery/auth.SessionMiddleware(mgr)` (or any battery middleware) into `Router.Use(...)`. Existing `router.Middleware(x)` conversions still compile. NOTE: `core/middleware/tracing_test.go` moved to `package middleware_test` because the alias introduces a test-only cycle.
-- **BREAKING — `Screen.Policies` field unexported.** Use `Screen.WithPolicy(p)` to add, `Screen.PolicyChain()` to read a copy. Matches `ScreenGroup.policies` (already unexported).
+- **BREAKING: form intercept is opt-in.** `<form>` elements with the default `application/x-www-form-urlencoded` or `multipart/form-data` enctype are NOT intercepted by `runtime.js`. The browser submits them natively (cookies set, `Location:` followed, file uploads, password-manager UX all work without any framework involvement). Forms posting to a JSON endpoint must opt INTO interception with `enctype="application/json"` OR `data-fui-spa`. `data-fui-rpc` still triggers RPC dispatch as before. **Migration:** `grep -rn '<form' .`: forms that POST to a JSON CRUD/island handler need `enctype="application/json"` added; forms that POST to a redirect-returning handler (auth, settings) need no change.
+- **BREAKING: `core-ui/app.App.RenderPage` / `RenderPartial` now wrap richer `*Result` variants.** Returns an error for `Redirect` and `Block` decisions (the legacy shape can't express them). Use `App.RenderPageResult` / `RenderPartialResult` for the policy-aware shape.
+- **BREAKING: `core-ui/app.Router.Render` → `Router.RenderRaw`** and **`App.RenderScreen` → `App.RenderScreenRaw`**. Renamed to call out that they bypass the Policy chain. HTTP-serving code must use `App.RenderPageResult`; `RenderRaw` is for SSG/internal callers.
+- **BREAKING (effectively no-op): `core/router.Middleware` is now a type ALIAS for `core/middleware.Middleware`.** Anonymous-func cast no longer needed when feeding `battery/auth.SessionMiddleware(mgr)` (or any battery middleware) into `Router.Use(...)`. Existing `router.Middleware(x)` conversions still compile. NOTE: `core/middleware/tracing_test.go` moved to `package middleware_test` because the alias introduces a test-only cycle.
+- **BREAKING: `Screen.Policies` field unexported.** Use `Screen.WithPolicy(p)` to add, `Screen.PolicyChain()` to read a copy. Matches `ScreenGroup.policies` (already unexported).
 - **Kiln-rendered `form` nodes default `enctype="application/json"`** because they target CRUD endpoints. The world API accepts an explicit `enctype` prop to override.
 
 ### Fixed
 
-- **SECURITY (P0) — `/auth/register` no longer honors client-supplied `roles`.** Was an anonymous privilege escalation: any visitor POSTing `roles=admin` (form or JSON) was created with admin role. Form-encoded requests were CSRF-reachable from any origin. Now roles are server-assigned to `["user"]` by default; role elevation must happen via a separate admin-gated flow. Regression tests in `battery/auth/register_roles_security_test.go`.
-- **SECURITY (P0) — `X-Gofastr-Location` open-redirect sealed.** A policy returning `decide.Redirect("//evil.com")` (or any non-relative URL) was emitted into the header raw, which the runtime feeds to `loadPage()` — a cross-origin fetch with credentials. Sealed via `isSafePartialRedirect` in uihost: only same-origin relative paths flow through the header path; absolute / protocol-relative / scheme-bearing / backslash-bypass URLs fall through to a hard 303 (which the browser handles safely). 8-case regression table in `framework/uihost/partial_redirect_test.go`.
+- **SECURITY (P0): `/auth/register` no longer honors client-supplied `roles`.** Was an anonymous privilege escalation: any visitor POSTing `roles=admin` (form or JSON) was created with admin role. Form-encoded requests were CSRF-reachable from any origin. Now roles are server-assigned to `["user"]` by default; role elevation must happen via a separate admin-gated flow. Regression tests in `battery/auth/register_roles_security_test.go`.
+- **SECURITY (P0): `X-Gofastr-Location` open-redirect sealed.** A policy returning `decide.Redirect("//evil.com")` (or any non-relative URL) was emitted into the header raw, which the runtime feeds to `loadPage()`, a cross-origin fetch with credentials. Sealed via `isSafePartialRedirect` in uihost: only same-origin relative paths flow through the header path; absolute / protocol-relative / scheme-bearing / backslash-bypass URLs fall through to a hard 303 (which the browser handles safely). 8-case regression table in `framework/uihost/partial_redirect_test.go`.
 - **(P0) Mutex copy in `renderComponentInScreen`.** The previous `tmp := *screen` copied a `sync.Mutex` while the caller held the lock; `go vet` flags it as a contract violation and it was a real concurrent-render corruption risk. Replaced with a free `wrapByScreenType(t, title, content)` helper reused from `Screen.RenderCtx`.
-- **(P0) `RenderAlt` cross-user data leak via shared instance.** `WithRenderAlt(alt component.Component)` captured `alt` by pointer; concurrent anonymous requests racing through different screens with the same `landing` instance would clobber its `SetParams`/`Inject`/`Load` mutations across users. Changed to `WithRenderAlt(factory func() component.Component)` — framework calls the factory once per request. Race-tested under `-race` with 32 parallel requests across 8 distinct gated screens.
+- **(P0) `RenderAlt` cross-user data leak via shared instance.** `WithRenderAlt(alt component.Component)` captured `alt` by pointer; concurrent anonymous requests racing through different screens with the same `landing` instance would clobber its `SetParams`/`Inject`/`Load` mutations across users. Changed to `WithRenderAlt(factory func() component.Component)`; framework calls the factory once per request. Race-tested under `-race` with 32 parallel requests across 8 distinct gated screens.
 - **(P0) Partial-redirect `X-Gofastr-Location` was dead-lettered.** `handlePartialPage` previously set the header AND `http.Redirect(303)`. The runtime fetch silently chased the 303 server-side and the header never reached client JS. Now: 200 + header + empty body; runtime detects, replaces `pushState`, loads the redirect target. Chromedp e2e in `framework/uihost/partial_redirect_e2e_test.go`.
 - **(P0) TagInput Enter swallow ate legitimate submits.** Chromium dispatches the implicit form submit despite a bubble-phase `preventDefault` on single-input forms. The prior defensive one-shot listener on the form ate the NEXT submit (the user's actual Save click). Replaced with a same-tick timestamp guard: a document-level capture-phase submit listener swallows submits within 50ms of the last tag-input Enter; legitimate submits a few hundred ms later proceed.
 
@@ -8182,30 +8182,30 @@ entries marked BREAKING below before upgrading from v0.2.x.**
 
 New coverage added during the adversarial review + tightening pass:
 
-- `framework/uihost/partial_redirect_e2e_test.go` — full chromedp chain for SPA-nav into a Redirect-policy screen.
-- `framework/uihost/partial_redirect_test.go` — httptest for the 200+header contract, full-page 303 non-regression, `X-Gofastr-Location` open-redirect rejection (8-case table), ContextOnly screens through full uihost dispatch.
-- `framework/uihost/native_form_e2e_test.go` — chromedp confirming an unadorned `<form action="/x" method="POST">` (no enctype, no opts) submits browser-native, Set-Cookie sticks, 303 followed.
-- `framework/uihost/render_alt_visual_test.go` — RenderAlt anon→landing screenshot.
-- `framework/uihost/safe_path.go` — `isSafePartialRedirect` helper.
-- `core-ui/app/policy_test.go` — RenderAlt factory-per-request (concurrent across 8 screens), policy resolver edge cases.
-- `battery/auth/policy_test.go` — `SessionPolicy` / `RolePolicy` matrix incl. `?next=` table (6 cases), `WithRenderAlt`, anon→403 default, anon→redirect override, `NoNext()`.
-- `battery/auth/register_roles_security_test.go` — privilege-escalation regression (JSON + form).
-- `battery/auth/manager_dev_secret_test.go` — random JWT secret minting / explicit-secret preservation / prod-mode opt-out.
-- `core/router/middleware_alias_test.go` — alias compile-time + Router.Use acceptance.
-- `core-ui/component/context_component_test.go` — ContextOnly satisfies Component, ContextComponent preferred over Render.
-- `framework/entity/declaration_owner_field_test.go` — JSON round-trip + omitempty.
+- `framework/uihost/partial_redirect_e2e_test.go`: full chromedp chain for SPA-nav into a Redirect-policy screen.
+- `framework/uihost/partial_redirect_test.go`: httptest for the 200+header contract, full-page 303 non-regression, `X-Gofastr-Location` open-redirect rejection (8-case table), ContextOnly screens through full uihost dispatch.
+- `framework/uihost/native_form_e2e_test.go`: chromedp confirming an unadorned `<form action="/x" method="POST">` (no enctype, no opts) submits browser-native, Set-Cookie sticks, 303 followed.
+- `framework/uihost/render_alt_visual_test.go`: RenderAlt anon→landing screenshot.
+- `framework/uihost/safe_path.go`: `isSafePartialRedirect` helper.
+- `core-ui/app/policy_test.go`: RenderAlt factory-per-request (concurrent across 8 screens), policy resolver edge cases.
+- `battery/auth/policy_test.go`: `SessionPolicy` / `RolePolicy` matrix incl. `?next=` table (6 cases), `WithRenderAlt`, anon→403 default, anon→redirect override, `NoNext()`.
+- `battery/auth/register_roles_security_test.go`: privilege-escalation regression (JSON + form).
+- `battery/auth/manager_dev_secret_test.go`: random JWT secret minting / explicit-secret preservation / prod-mode opt-out.
+- `core/router/middleware_alias_test.go`: alias compile-time + Router.Use acceptance.
+- `core-ui/component/context_component_test.go`: ContextOnly satisfies Component, ContextComponent preferred over Render.
+- `framework/entity/declaration_owner_field_test.go`: JSON round-trip + omitempty.
 
-## 2026-05-23 — round-1 DX feedback + 6 rounds of adversarial review
+## 2026-05-23: round-1 DX feedback + 6 rounds of adversarial review
 
 Commit `2044154`. Addressed FRAMEWORK-FEEDBACK.md from a third-party
 app (`wtf-do-i-eat`). Highlights:
 
 ### Added
 
-- **`EntityConfig.OwnerField`** — declarative per-user CRUD scoping. Auto-CRUD now injects `WHERE owner_field = <ctx user>` for List/Get/Update/Delete and auto-stamps Create.
-- **`battery/auth.SessionMiddleware(mgr)`** — cookie → ctx user loader (the missing counterpart to JWT-only `RequireAuth`).
-- **`battery/auth.RequireSession(opts...)` + `WithRedirectOnFail(path)`** — HTTP middleware to gate JSON/API routes (or, with redirect option, browser flows).
-- **`battery/auth.VerifyAuthEntitiesPrivate()`** — startup audit that fails fast if `users`/`sessions` entities are exposed via REST or MCP.
+- **`EntityConfig.OwnerField`**: declarative per-user CRUD scoping. Auto-CRUD now injects `WHERE owner_field = <ctx user>` for List/Get/Update/Delete and auto-stamps Create.
+- **`battery/auth.SessionMiddleware(mgr)`**: cookie → ctx user loader (the missing counterpart to JWT-only `RequireAuth`).
+- **`battery/auth.RequireSession(opts...)` + `WithRedirectOnFail(path)`**: HTTP middleware to gate JSON/API routes (or, with redirect option, browser flows).
+- **`battery/auth.VerifyAuthEntitiesPrivate()`**: startup audit that fails fast if `users`/`sessions` entities are exposed via REST or MCP.
 - **CSRF helpers + form-encoded auth endpoint negotiation.**
 
 ### Fixed (security)
@@ -8215,7 +8215,7 @@ app (`wtf-do-i-eat`). Highlights:
 - Anonymous batch endpoints mutating others' rows.
 - Hook OR-clause precedence bypass.
 
-## 2026-05-22 — worktree isolation mode
+## 2026-05-22: worktree isolation mode
 
 Commit `118605c`. First-class runtime resolver for git-worktree
 collisions on `PORT`, SQLite files, Postgres database names, and

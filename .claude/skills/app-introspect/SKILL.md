@@ -7,7 +7,7 @@ description: Inspect a running GoFastr app's shape via MCP introspection tools. 
 
 `framework.WithMCPIntrospection()` opts the App into a set of read-only
 tools that describe the running server: routes, plugins, batteries,
-modules, config, readiness — plus the framework's own embedded docs.
+modules, config, readiness, plus the framework's own embedded docs.
 Use these to orient before reading code or before issuing requests.
 
 ## Prerequisites
@@ -17,9 +17,9 @@ automatically (mount + introspection + control automatically, plus
 `log_*` tools when `battery/log` is registered; opt-out
 `GOFASTR_DEV_MCP=0`). Outside the dev loop the app must be
 built with `framework.WithMCPIntrospection()` and expose `/mcp` (via
-`framework.WithMCP()`) — both `examples/site` and blueprint-generated
+`framework.WithMCP()`); both `examples/site` and blueprint-generated
 apps wire both. Launch the site with `./scripts/dev-watch.sh` (port
-8082) or `go run ./examples/site` (port 8083 — plain go-run has no
+8082) or `go run ./examples/site` (port 8083; plain go-run has no
 `PORT` set). The curl examples below use 8082; adjust to how the app
 was launched.
 
@@ -33,29 +33,30 @@ was launched.
 | `app_modules`           | List modules with manifest metadata (version, deps, migration group), enabled state, and owned surface counts. |
 | `app_config`            | AppConfig snapshot: `name`, `json_case`, `debug_endpoints`, `no_llmmd`, `request_timeout_ms`, `disable_request_timeout`. |
 | `app_readiness`         | Run all registered readiness checks; same set `/readyz` consults, invokable programmatically. |
-| `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/skipped_for_dialect/unknown — `skipped_for_dialect` means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
+| `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/skipped_for_dialect/unknown; `skipped_for_dialect` means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
 | `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary).              |
 | `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`).                      |
 | `framework_docs_search` | Substring search across all topics (min 3 chars, `limit` caps hits).                  |
 | `contracts_list`        | Every rule `gofastr verify` enforces: ID, slug, capability, default severity, one-line summary. Optional `capability` filter. |
-| `contracts_explain`     | One rule in full — what it detects, why it matters, how to fix it, a bad/good example pair, and the exact suppression syntax. Takes an ID (`GOFASTR1002`) or a slug (`routing/colon-path-parameter`). |
+| `contracts_explain`     | One rule in full: what it detects, why it matters, how to fix it, a bad/good example pair, and the exact suppression syntax. Takes an ID (`GOFASTR1002`) or a slug (`routing/colon-path-parameter`). |
 | `contracts_capabilities`| The rule capabilities with counts and severity breakdown; use to pick the argument for `gofastr verify <capability>`. |
-| `contracts_verify`      | **Dev loop only.** Runs the analyzers over the app's source tree and returns the findings — rule, file, line, severity, message, whether it is autofixable. Same analysis as `gofastr verify`. Optional `capability` filter. |
+| `contracts_verify`      | **Dev loop only.** Runs the analyzers over the app's source tree and returns the findings: rule, file, line, severity, message, whether it is autofixable. Same analysis as `gofastr verify`. Optional `capability` filter. |
 | `contracts_fix`         | **Dev loop only. Writes to disk.** Applies one rule's autofixes and reports the files changed. Takes an ID or slug; scoped to a single rule so the edits stay reviewable. Rules without an autofix are refused. |
 
-`contracts_verify` and `contracts_fix` are absent — not merely refused —
+`contracts_verify` and `contracts_fix` are absent, not merely refused,
 outside `gofastr dev`: they read and write local source, so a deployed
 app never registers them.
 
 The `framework_docs_*` tools answer "how does the framework work?"
 questions against the exact framework version the binary was built
-with — prefer them over fetching docs from the repo when a live app
+with. Prefer them over fetching docs from the repo when a live app
 is available.
 
 ## The control tools (mutating)
 
-`framework.WithMCPControl()` — or any app running under `gofastr dev`,
-where the whole MCP surface auto-enables — adds runtime state control:
+`framework.WithMCPControl()` adds runtime state control; any app
+running under `gofastr dev` has it too, since the whole MCP surface
+auto-enables there:
 
 | Tool                 | Use                                                                     |
 |----------------------|--------------------------------------------------------------------------|
@@ -63,7 +64,7 @@ where the whole MCP surface auto-enables — adds runtime state control:
 | `app_module_disable` | Disable a module (fails closed while enabled modules depend on it).     |
 
 Call `app_modules` first to see names + current state. These mutate the
-running app — confirm with the user before toggling anything they
+running app, so confirm with the user before toggling anything they
 didn't ask about.
 
 ## How to invoke
@@ -114,9 +115,9 @@ curl -s http://localhost:8082/mcp \
   | jq -r '.result.content[0].text' | jq .
 ```
 
-`ready: false` means at least one check failed — the `checks` array
-has per-check `status` (`ok`/`error`/`timeout`) and `duration_ms` —
-OR that zero checks are registered (then `reason` says
+`ready: false` means at least one check failed, with per-check
+`status` (`ok`/`error`/`timeout`) and `duration_ms` in the `checks`
+array, OR that zero checks are registered (then `reason` says
 `"no readiness checks registered"` and `checks` is empty: unconfirmed
 is not ready). The tool never includes raw error text, even when the
 App was configured with `WithVerboseReadiness()`: `/readyz` and `/mcp`
@@ -153,7 +154,7 @@ markdown.
 ## Anti-patterns
 
 - **Don't curl every tool when only one is needed.** Each call is
-  a JSON-RPC round-trip — pick the one that answers the question.
+  a JSON-RPC round-trip; pick the one that answers the question.
 - **Don't trust `app_readiness: ready=true` as a SLO signal.**
   Readiness checks only cover what someone registered; "ready" can
   still mean "no real dependencies are wired".

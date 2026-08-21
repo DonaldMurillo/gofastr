@@ -11,7 +11,7 @@ log, slog, structured logging, "why did that 500", panic recovery,
 
 **Import:** `github.com/DonaldMurillo/gofastr/battery/log`
 
-**Shape (zero config — file sink at OS state dir):**
+**Shape (zero config, file sink at OS state dir):**
 ```go
 app.RegisterPlugin(log.New(log.Config{}))
 ```
@@ -28,7 +28,7 @@ app.RegisterPlugin(log.New(log.Config{
         log.WebhookSink("https://hooks.example.com/x", log.WebhookOpts{}),
     },
     EnableMCP:        true, // adds log_recent / log_filter / log_metrics
-    AllowMCPMutation: false, // gate log_set_level — flipping log level
+    AllowMCPMutation: false, // gate log_set_level; flipping log level
                               // remotely is a DoS-via-disk-fill risk.
 }))
 ```
@@ -55,5 +55,5 @@ gives you all three plus the MCP introspection surface for free.
 
 **Security:** leave `AllowMCPMutation: false` on any host where `/mcp`
 is reachable by untrusted callers. `log_set_level` lets a caller flip
-the global log level — combined with a verbose access pattern, that's
+the global log level. Combined with a verbose access pattern, that's
 both a DoS-via-disk-fill and an info-disclosure primitive.

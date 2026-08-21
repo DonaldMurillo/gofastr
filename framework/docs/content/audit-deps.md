@@ -8,7 +8,7 @@ of every call site, grouped by Go import path, sorted alphabetically.
 
 A malicious dependency that lands in your `go.mod` can run arbitrary Go
 code at process start. That's the same trust model as importing any Go
-package — `os.Exec`, `net.Dial`, file writes, and route hijacks are all
+package: `os.Exec`, `net.Dial`, file writes, and route hijacks are all
 available to it. The audit doesn't change that attack surface; it just
 makes the *most invisible* part of it visible: things that happen
 before `main()` runs.
@@ -60,7 +60,7 @@ github.com/DonaldMurillo/gofastr/framework/ui
 For `style.Contribute` specifically: a malicious dep CAN add a rule
 like `body { display: none }` or override a Cancel button's
 `content`. It CANNOT exfiltrate data via `background: url(//evil/...)`,
-`@import`, `@font-face`, or `cursor: url(...)` — GoFastr's default
+`@import`, `@font-face`, or `cursor: url(...)`. GoFastr's default
 strict CSP (`default-src 'self'; img-src 'self' data:`) blocks every
 external-URL load from CSS.
 
@@ -85,14 +85,14 @@ pass, not a substitute for review.
 ## Exit status
 
 `gofastr audit deps` always exits 0 unless the walk itself fails (bad
-path, unreadable file). Findings do not cause a non-zero exit — that
+path, unreadable file). Findings do not cause a non-zero exit, which
 keeps the command composable in dev workflows. For CI failure on new
 registrations, diff the output against a checked-in baseline.
 
 ## Common mistakes
 
 - **Expecting a non-zero exit on findings.** `gofastr audit deps`
-  exits 0 whenever the walk succeeds — findings alone never fail it.
+  exits 0 whenever the walk succeeds. Findings alone never fail it.
   A CI gate that just runs the command passes forever; diff the output
   against a checked-in baseline instead.
 - **Assuming `vendor/` and test files are covered.** The walker skips
@@ -103,4 +103,4 @@ registrations, diff the output against a checked-in baseline.
   only follows aliased imports of the tracked framework registries.
   Raw `init()` side effects (`os.Exec`, `net.Dial`, file writes),
   reflection-driven registrations, and `unsafe` tricks are invisible
-  to it — it's a fast first pass, not a dependency review.
+  to it. It's a fast first pass, not a dependency review.

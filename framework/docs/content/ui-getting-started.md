@@ -1,8 +1,8 @@
 # UI getting started
 
-Running `gofastr init` scaffolds a themed, product-specific app built from framework primitives. This doc walks through the setup steps in order — you'll have a working app after each one.
+Running `gofastr init` scaffolds a themed, product-specific app built from framework primitives. This doc walks through the setup steps in order; you'll have a working app after each one.
 
-The module is published — `go mod tidy` resolves it from the Go module proxy. Pin a tagged release rather than tracking `main` (`go get github.com/DonaldMurillo/gofastr@latest` resolves the newest).
+The module is published; `go mod tidy` resolves it from the Go module proxy. Pin a tagged release rather than tracking `main` (`go get github.com/DonaldMurillo/gofastr@latest` resolves the newest).
 
 ---
 
@@ -13,18 +13,18 @@ gofastr init myapp
 cd myapp
 
 go mod tidy   # resolves github.com/DonaldMurillo/gofastr from the module proxy
-gofastr dev   # dev server with hot reload — edit a screen, the browser refreshes
+gofastr dev   # dev server with hot reload; edit a screen, the browser refreshes
 ```
 
 `gofastr dev` is the development loop: it watches `.go/.js/.css/.html`,
 rebuilds, and auto-refreshes the browser. Plain `go run .` also works but
-never reloads — use it for one-shot checks, not iteration.
+never reloads; use it for one-shot checks, not iteration.
 
 Only add a `replace` directive pointing at a local checkout if you are
 hacking on the framework itself and want your app to pick up unreleased
 changes.
 
-Visit <http://localhost:8080> — you should see a placeholder home page served by `screens.go`. The CRUD entity at `/posts` works too.
+Visit <http://localhost:8080>; you should see a placeholder home page served by `screens.go`. The CRUD entity at `/posts` works too.
 
 Scaffold layout:
 
@@ -80,7 +80,7 @@ When the app needs to own the whole palette, run:
 gofastr theme init
 ```
 
-This writes `theme/theme.go` — a typed `style.Theme` literal with the
+This writes `theme/theme.go`, a typed `style.Theme` literal with the
 framework's complete light and dark defaults inline. **You own this file
 forever**; the framework never regenerates it.
 
@@ -99,7 +99,7 @@ Keep the generated `DarkColors` complete when changing brand colors; rendering
 Booting with a half-populated typed theme panics at startup with a field path
 naming the missing piece.
 
-With `gofastr dev` running, visit <http://localhost:8080/__gofastr/app.css> to confirm your tokens are emitted as `:root` custom properties — token edits hot-reload like any other change.
+With `gofastr dev` running, visit <http://localhost:8080/__gofastr/app.css> to confirm your tokens are emitted as `:root` custom properties; token edits hot-reload like any other change.
 
 ---
 
@@ -132,7 +132,7 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 ```
 
 > **Prefer the typed `core-ui/html` config structs over raw `render.Tag`.**
-> `render.Tag` works, but it's the escape hatch — the typed vocabulary in
+> `render.Tag` works, but it's the escape hatch; the typed vocabulary in
 > [`core-ui/html`](../../../core-ui/html) (`html.Div`, `html.Heading`,
 > `html.Paragraph`, …) gives you a config struct per tag with named fields
 > for the common attributes, so editors autocomplete them and typos surface
@@ -152,7 +152,7 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 > ```
 >
 > Composition intent (a card, a hero, a data table, a form field) lives one
-> layer up in [`framework/ui`](../../../framework/ui) — see
+> layer up in [`framework/ui`](../../../framework/ui); see
 > [ui-composition-recipes](ui-composition-recipes.md).
 
 Register it in `main.go`:
@@ -161,7 +161,7 @@ Register it in `main.go`:
 site.Register("/about", &screens.AboutScreen{}, nil)
 ```
 
-The `ScreenTitle/Description/Type` triple is the optional `ScreenSpec` interface — `app.Register` reads metadata from it. Cross-page nav is client-side by default (no hard reload) once `runtime.js` is on the page.
+The `ScreenTitle/Description/Type` triple is the optional `ScreenSpec` interface; `app.Register` reads metadata from it. Cross-page nav is client-side by default (no hard reload) once `runtime.js` is on the page.
 
 ### Reaching the request context from `Render`
 
@@ -189,16 +189,16 @@ func (a *AboutScreen) RenderCtx(ctx context.Context) render.HTML {
 
 The framework prefers `RenderCtx` whenever it's defined and never
 calls the stub `Render` provided by `ContextOnly`. Existing
-`Render()`-only screens keep working unchanged — `ContextOnly` is just
+`Render()`-only screens keep working unchanged; `ContextOnly` is just
 a convenience for the ctx-aware pattern.
 
-### Path space — avoid colliding with entity CRUD
+### Path space: avoid colliding with entity CRUD
 
 Every entity you register automatically claims its own URL space for
 REST CRUD: an entity named `foods` mounts `GET/POST /foods`, `GET/PUT/PATCH/DELETE
 /foods/:id`, plus `/foods/llm.md`. If you also register a screen at `/foods`,
 the two routes collide and the app panics at startup (currently the panic
-surfaces as a duplicate `/<entity>/llm.md` registration — friendlier
+surfaces as a duplicate `/<entity>/llm.md` registration; friendlier
 diagnostics are on the roadmap).
 
 The cleanest convention is to give screens their own noun space, even when
@@ -212,12 +212,12 @@ the screen *describes* an entity:
 
 Or scope all of CRUD under an API prefix (e.g. `/api/foods`) and reserve the
 unprefixed namespace for UI: set `framework.AppConfig{APIPrefix: "/api"}` (or
-the `framework.WithAPIPrefix("/api")` option) — see
+the `framework.WithAPIPrefix("/api")` option); see
 [entity-declarations](entity-declarations.md) → "Mounting under a prefix".
 
 ### Dynamic routes and parameters
 
-A route segment written as `:name` or `{name}` is dynamic — it matches any
+A route segment written as `:name` or `{name}` is dynamic: it matches any
 single path segment and arrives in the screen through `SetParams`:
 
 ```go
@@ -230,7 +230,7 @@ func (s *ProductScreen) SetParams(p map[string]string) { s.slug = p["slug"] }
 
 Both `:slug` and `{slug}` are the same route; the framework normalizes the
 brace form to the colon form at registration. If a dynamic route's screen
-does **not** implement `SetParams`, the app panics at startup — the
+does **not** implement `SetParams`, the app panics at startup; the
 parameters would otherwise be silently dropped. The contract is enforced at
 boot, never at request time.
 
@@ -246,7 +246,7 @@ site.Register("/docs/{path...}", &DocScreen{}, nil)
 
 A catch-all must be the final segment; anything else panics at registration.
 Among dynamic routes, registration order decides which one wins (first match
-wins) — there is no specificity ranking, so register the more specific
+wins); there is no specificity ranking, so register the more specific
 pattern first.
 
 **Typed constraints.** Append `:int`, `:uuid`, `:alpha`, or `:alnum` to a
@@ -260,17 +260,17 @@ site.Register("/u/{id:uuid}", &UserScreen{}, nil)        // canonical UUID
 site.Register("/u/{handle:alnum}", &ProfileScreen{}, nil) // letters + digits
 ```
 
-`alpha` is ASCII letters only; `alnum` adds digits — useful for handles and
+`alpha` is ASCII letters only; `alnum` adds digits, useful for handles and
 slugs so a segment with punctuation (`avatar.png`) falls through instead of
 reaching the screen. There is deliberately no `string` constraint: every
 param is a string already, so it would be an unconstrained no-op under a
 misleading name.
 
-The constraint suffix is stripped from the parameter name — `SetParams`
+The constraint suffix is stripped from the parameter name: `SetParams`
 receives `id`, not `id:int`. A constraint on a catch-all segment, or an
 unknown constraint name, panics at registration.
 
-**Optional segments — register twice.** There is no optional-segment syntax.
+**Optional segments: register twice.** There is no optional-segment syntax.
 To serve both `/{locale}/pricing` and `/pricing` from one component, register
 it on both routes:
 
@@ -293,27 +293,27 @@ site.RedirectPattern("/legacy/{id}", "/orders/{id}") // param passthrough
 A hard GET of the `from` path is 308-redirected to the resolved `to` path;
 on client-side navigation the runtime follows the redirect. Chains
 (`/a → /b → /c`) collapse to one hop; a cycle fails closed to a 404. The
-target must be a relative same-app path (an absolute URL panics —
+target must be a relative same-app path (an absolute URL panics;
 open-redirect guard), and every parameter referenced in `to` must be
 declared in `from`. The `from` pattern obeys the same grammar as a route
 (constraints, trailing catch-all).
 
 Because redirects are consulted **before** screen resolution, a redirect
-whose `from` **overlaps** a registered screen — dynamic or exact — panics
+whose `from` **overlaps** a registered screen, dynamic or exact, panics
 at registration (and vice versa). Param names are irrelevant, so
 `/users/{n:int}` overlaps `/users/{id}`, while genuinely disjoint
 constraints (`{n:int}` vs `{h:alpha}`) coexist. A *pattern* redirect
 overlaps an exact screen the same way: `/old/{x}` covers the literal
 path `/old/special`, so registering `/old/special` as a screen after a
-`/old/{x}` redirect panics too, in either registration order —
+`/old/{x}` redirect panics too, in either registration order;
 `ResolveRedirect` runs before screen resolution and would 308 the screen
 away forever with no diagnostic. An *exact* redirect may still shadow
-one concrete path of a dynamic screen — the router's normal exact-first
+one concrete path of a dynamic screen, per the router's normal exact-first
 rule. Redirect entries appear in `Routes()` with a non-empty
 `RedirectTo`; they render no page, so static export, sitemap, and llm.md
 skip them.
 
-**Intercepting routes — a detail that opens over its list.** Clicking a row
+**Intercepting routes: a detail that opens over its list.** Clicking a row
 should slide the detail over the list; the detail URL should still be a real
 page you can share, index, and refresh. `InterceptFrom` gives you both from
 one registration:
@@ -325,14 +325,14 @@ site.Register("/products/{id}", &ProductScreen{}, nil,
 ```
 
 `/products/42` stays an ordinary page. A hard load, a refresh, an external
-link, or a soft navigation from anywhere else renders it in full — the deep
+link, or a soft navigation from anywhere else renders it in full; the deep
 link remains the canonical render, and SSR-first is untouched. Only a
 soft navigation that **started on `/products`** presents it as a drawer over
 the list, which stays mounted underneath. Back, Escape, and the backdrop all
 close it through one history entry, so returning to the list costs no
 refetch and keeps its scroll position.
 
-One `RenderCtx` serves both presentations — the overlay is the same render
+One `RenderCtx` serves both presentations; the overlay is the same render
 with drawer scaffolding around it, so there is no second code path to keep in
 sync. Put `data-fui-intercept-close` on a button inside the screen and it
 closes the drawer when the render is an overlay, and does nothing on the
@@ -347,12 +347,12 @@ screen, so `/products?page=2&sort=name` still counts as the list.
 
 Overlay chrome ships with the framework (`app.InterceptOverlayCSS`, injected
 only when some route declares an intercept), and the runtime module loads
-only when the route manifest contains one — an app with no intercepting
+only when the route manifest contains one; an app with no intercepting
 routes carries neither.
 
 Reach for this only when the detail deserves its own page. When the overlay
 is the *only* way to see that content and the URL should stay on the list,
-you want a widget deep link instead (`?modal=user-edit&user_id=42` — see
+you want a widget deep link instead (`?modal=user-edit&user_id=42`; see
 [Interactive patterns](interactive-patterns.md)); when a region of the page
 should survive a refresh, you want
 [pane-host deep-linking](pane-host.md#deep-linking-a-pane-pane). Working
@@ -390,8 +390,8 @@ func (s *LibraryScreen) Load(ctx context.Context) error {
 }
 ```
 
-This is deliberately simple — a single shared handle, no DI container, no
-reflection — and fine for one app, but it couples screens to that package-level
+This is deliberately simple: a single shared handle, no DI container, no
+reflection. It's fine for one app, but it couples screens to that package-level
 handle, which is awkward for shared screens.
 
 **Preferred: pull the DB from the request context.** When the app has a DB
@@ -499,12 +499,12 @@ framework's navigation, focus, and mobile-drawer contract.
 
 ## Next
 
-- Section-level theme overrides (`framework/ui.Themed`), dark mode, and the token catalog — see [theming](theming.md)
-- Islands (in-page state changes without a route change) — the cookbook is [interactive-patterns](interactive-patterns.md) (incl. "Writing a hand-written island, end to end"); the underlying model is [runtime-contract](runtime-contract.md) "The four scenarios"
+- Section-level theme overrides (`framework/ui.Themed`), dark mode, and the token catalog: see [theming](theming.md)
+- Islands (in-page state changes without a route change): the cookbook is [interactive-patterns](interactive-patterns.md) (incl. "Writing a hand-written island, end to end"); the underlying model is [runtime-contract](runtime-contract.md) "The four scenarios"
 - The full `data-fui-*` primitive table is in [runtime-contract](runtime-contract.md)
 - Component catalog (Layout, Card, Tooltip, Toggle, Spinner, …) is in [ui-new-components](ui-new-components.md)
 
-For a complete worked example, read `examples/site/main.go` (route registration + widget mounts) and `examples/site/components.go` (every framework/ui component showcased).
+For a complete worked example, read `examples/site/main.go` (route registration + widget mounts) and `examples/site/components.go` (every framework/ui component demonstrated).
 
 ## Primitives reference
 
@@ -513,27 +513,27 @@ boring decisions every UI makes. Each emits one stylesheet, loads
 on first appearance, and is dogfooded under `/components/<slug>` on
 the example website:
 
-- `Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` — six
+- `Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`: six
   spatial wrappers covering vertical stacking, horizontal flow, CSS
   grid, centring, flex filler, and padded surface. `Cluster` wraps by default;
   set `ClusterConfig.NoWrap` only for compact chrome guaranteed to fit.
-- `Card` — labelled `<section>` with header / body / footer slots
+- `Card`: labelled `<section>` with header / body / footer slots
   and elevated / outlined / flat / interactive variants.
-- `OptimizedImage` — responsive `<picture>` with `srcset`, lazy
+- `OptimizedImage`: responsive `<picture>` with `srcset`, lazy
   loading, and mandatory `Width`+`Height` (no silent CLS).
-- `Checkbox` / `Radio` / `Switch` — labelled, FieldErrors-aware
+- `Checkbox` / `Radio` / `Switch`: labelled, FieldErrors-aware
   native inputs.
-- `Tooltip` — CSS-only hover/focus reveal with auto-wired
+- `Tooltip`: CSS-only hover/focus reveal with auto-wired
   `aria-describedby`.
-- `Tag` — interactive pill (filter-link or × dismiss), status-coded.
-- `Spinner` — inline `role="status"` indicator with ring / dots
+- `Tag`: interactive pill (filter-link or × dismiss), status-coded.
+- `Spinner`: inline `role="status"` indicator with ring / dots
   variants and reduced-motion fallback.
-- `Divider` — native `<hr>` for plain horizontal; `role="separator"`
+- `Divider`: native `<hr>` for plain horizontal; `role="separator"`
   for vertical / labelled (e.g. "OR" between options).
-- `FileUpload` — drag-drop zone over a native `<input type="file">`
+- `FileUpload`: drag-drop zone over a native `<input type="file">`
   via `data-fui-fileupload`.
 
-The matching widget preset is `preset.Popover` — a click-triggered
+The matching widget preset is `preset.Popover`, a click-triggered
 anchored surface without backdrop dim or focus trap. Closes on ESC
 and click-outside.
 
@@ -546,7 +546,7 @@ and click-outside.
   screens their own noun space (`/library`, not `/foods`).
 - **Unscoped selectors in a `ComponentSheet`.** `body`, `:root`,
   `::backdrop` and friends can't be scoped to
-  `[data-fui-comp="…"]` — `Build()` returns `style.ErrUnscopable` and
+  `[data-fui-comp="…"]`; `Build()` returns `style.ErrUnscopable` and
   `MustBuild` panics at startup. Component CSS styles the component;
   page-level rules belong in the host stylesheet or
   `style.Contribute`.
@@ -556,5 +556,5 @@ and click-outside.
   edit values, rather than building a `style.Theme` from scratch.
 - **Adding a `replace` directive out of habit.** The module resolves
   from the proxy; pin a tagged version. A local `replace` is only for
-  hacking on the framework itself — left in, it breaks everyone else's
+  hacking on the framework itself; left in, it breaks everyone else's
   build of your app.

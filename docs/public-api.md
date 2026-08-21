@@ -13,16 +13,16 @@ newly added top-level tree cannot ship until someone classifies it on purpose.
 
 | Tier | Promise | Depend on it if… |
 |---|---|---|
-| **Stable** | Frozen. After v1.0.0, a breaking change requires a new major version. | You want a fixed contract. **No package is Stable yet** — see below. |
+| **Stable** | Frozen. After v1.0.0, a breaking change requires a new major version. | You want a fixed contract. **No package is Stable yet**: see below. |
 | **Provisional** | Supported and documented. May change before v1.0.0, but only through the deprecation window in [stability.md](../framework/docs/content/stability.md): deprecate first, keep the old shape for at least one minor, then remove. | You are building on GoFastr today and can absorb a documented migration at a minor bump. |
 | **Experimental** | May change or be removed with no deprecation window. | You accept that and pin an exact version. |
-| **Internal** | Not a contract even though the symbols are exported. Moves freely. | Don't — import at your own risk. |
+| **Internal** | Not a contract even though the symbols are exported. Moves freely. | Don't. Import at your own risk. |
 | **Excluded** | Not part of the shipped library (examples, benchmarks, evals, build output). | N/A. |
 
 ## Why nothing is Stable before v1.0.0
 
 Marking a package Stable freezes it. That is the v1 decision, and it is made per
-package in the release that promotes it — not by leaving a package unmarked. The
+package in the release that promotes it, not by leaving a package unmarked. The
 supported framework surface (`framework/`, `core/`, `core-ui/`, `battery/`,
 `sqlite/`, the `gofastr` CLI) is **Provisional** until then: you can build on it,
 and breaks come with a migration, but the contract is not yet frozen.
@@ -34,12 +34,12 @@ the first package Stable.
 Read `stability/stability.go` for the exact rules (longest matching path prefix
 wins). The seed:
 
-- **Provisional** — `framework/` (except `framework/experimental/`), `core/`,
+- **Provisional**: `framework/` (except `framework/experimental/`), `core/`,
   `core-ui/`, `battery/`, `sqlite/`, `cmd/`.
-- **Experimental** — `framework/experimental/*`, `kiln/`, `codegen/`.
-- **Internal** — anything under an `internal/` directory, and the `stability`
+- **Experimental**: `framework/experimental/*`, `kiln/`, `codegen/`.
+- **Internal**: anything under an `internal/` directory, and the `stability`
   gate package.
-- **Excluded** — `examples/`, `benchmarks/`, `evals/`, `dist/`.
+- **Excluded**: `examples/`, `benchmarks/`, `evals/`, `dist/`.
 
 ## Changing a classification
 

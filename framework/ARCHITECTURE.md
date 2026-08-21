@@ -1,8 +1,8 @@
 # GoFastr framework package layout
 
 > Read this before adding, moving, or extracting any package under
-> `framework/`. The layout is intentional and non-obvious in places —
-> the rules below explain *why* each subpackage exists, what's still in
+> `framework/`. The layout is intentional and non-obvious in places.
+> The rules below explain *why* each subpackage exists, what's still in
 > the root and why, and how to keep the layered shape intact when adding
 > new code.
 
@@ -13,7 +13,7 @@
 `framework/` used to be a single 22k-LOC package. It now exposes the same
 public API through a thin **facade** at `framework/`, with the actual
 implementations split across ~44 runtime subpackages (plus a handful of
-test-infra and `experimental/` packages that are out-of-contract — see
+test-infra and `experimental/` packages that are out-of-contract, see
 the map). The facade re-exports
 types/funcs via type aliases and `var` bindings so external callers
 (`framework.Entity`, `framework.NewApp`, etc.) keep working unchanged.
@@ -27,16 +27,16 @@ subpackage needs to back-import the framework root.
 
 > Read this before changing `cmd/gofastr` (`generate`, `migrate`,
 > `pack`), the generated-output layout, or how the project is positioned.
-> This is what the code now does. Anything that still contradicts it —
-> `gen/` output, `clean`-rewrite — is legacy to remove, not progress
-> toward it.
+> This is what the code now does. Anything that still contradicts it,
+> such as `gen/` output or the `clean`-rewrite, is legacy to remove, not
+> progress toward it.
 
 A declaration-first generator can follow one of two mutually exclusive
 philosophies:
 
 - **Canonical declaration** (Wasp, Encore, Amplify). The declaration *is*
   the program. You live in it, regenerate from it, and the emitted code
-  is the tool's property — you don't hand-edit it. "No drift" holds
+  is the tool's property. You don't hand-edit it. "No drift" holds
   because there is one source. The cost: the declaration must eventually
   express *everything*, so it grows into a second, worse programming
   language.
@@ -57,11 +57,11 @@ treated as canonical for a running app.
 |---|---|---|
 | `generate` | YAML → owned Go | one-way on-ramp; scaffold then leave behind |
 | `pack` | owned Go → YAML | one-way, lossy off-ramp; snapshot of *shape* |
-| `migrate generate` | a schema → reviewable versioned SQL | a **separate action**; takes its schema from an opt-in source (blueprint `--from`, owned Go, or a live DB). Emits a migration file you review and commit — it does not treat any source as authoritative-over-the-world. |
-| `migrate diff --from=<blueprint>` | — | **deleted** — it *applied* the blueprint onto a live DB, making the blueprint authoritative over the running database. |
+| `migrate generate` | a schema → reviewable versioned SQL | a **separate action**; takes its schema from an opt-in source (blueprint `--from`, owned Go, or a live DB). Emits a migration file you review and commit. It does not treat any source as authoritative-over-the-world. |
+| `migrate diff --from=<blueprint>` | — | **deleted**: it *applied* the blueprint onto a live DB, making the blueprint authoritative over the running database. |
 
 `generate` (forward) and `pack` (backward) are **not inverses you sync
-between** — there is no merge-back, no conflict resolution between YAML
+between**. There is no merge-back, no conflict resolution between YAML
 and app. Two independent one-way moves, never a loop.
 
 Note the distinction that keeps `migrate diff` deleted but `migrate
@@ -69,7 +69,7 @@ generate` fine: **code generation** (blueprint → owned Go) and **schema
 migration** (schema → SQL) are *separate concerns*. A migration action
 that merely *reads* a schema to emit a reviewable file claims no
 authority. `migrate diff` was deleted not because it read the blueprint,
-but because it *applied* it — reconciling the live database to the
+but because it *applied* it, reconciling the live database to the
 blueprint. Reading is fine; applying-as-source-of-truth is not.
 
 ### The IR is the hub
@@ -80,7 +80,7 @@ compiled/live app → in-memory IR.** `generate` goes IR → files (forward);
 `pack` goes app → IR → YAML (backward). Build "app → IR" once and both
 land. Kiln already maintains an in-memory world IR; that extraction
 primitive is a reuse candidate, not net-new. (`migrate generate` is a
-separate concern — see below — though it could *optionally* take its
+separate concern, covered below, though it could *optionally* take its
 schema from that same IR one day; it is not load-bearing for this hub.)
 
 ### Schema migration is a separate action, not part of the blueprint's authority
@@ -88,13 +88,13 @@ schema from that same IR one day; it is not load-bearing for this hub.)
 Code generation (blueprint → owned Go) and schema migration (schema →
 SQL) are different concerns. The migration *engine* (`framework/migrate`:
 `DiffSchema`, `Registry`, `Load/SaveSnapshot`) already works on entity
-declarations + a committed `schema.snapshot.json` — it never sees YAML.
+declarations + a committed `schema.snapshot.json`. It never sees YAML.
 At the CLI boundary, `migrate generate` takes its schema from an opt-in
 source; today that source is `--from=<blueprint>`, which is perfectly
-fine — *reading* a schema to emit a reviewable migration file claims no
+fine. *Reading* a schema to emit a reviewable migration file claims no
 authority over anything. Owned-Go and live-DB sources are equally valid
 inputs and can be added when wanted (e.g. the app's own binary, which has
-its entities compiled in, running `myapp migrate generate <name>` — the
+its entities compiled in, running `myapp migrate generate <name>`, the
 Ent/Django shape). None of this is a leftover to remove: there
 is no contradiction with "delete the blueprint," because the *running
 app* never needs the blueprint, and schema migration is simply a separate
@@ -102,7 +102,7 @@ action you point at whatever schema you have.
 
 ### `pack` is one-way by *policy*, lossy by *maturity*
 
-`pack` captures the declarable surface only — custom handlers, hooks, and
+`pack` captures the declarable surface only: custom handlers, hooks, and
 business logic do not serialize. That is acceptable: `pack` exports
 *shape* (for sharing, templating, cheap agent-reading, re-scaffolding
 elsewhere), never *state for sync*. Fidelity will improve over time; the
@@ -112,13 +112,13 @@ too lossy to trust. Lossy-today is a maturity state; one-way is
 permanent. Stating this is the firewall that stops `pack` → edit →
 `generate` from quietly turning the blueprint back into a source of truth.
 
-### No `gen/` — generated code lands where a hand-written app would put it
+### No `gen/`: generated code lands where a hand-written app would put it
 
 A directory named `gen/`, wiped and rewritten under a `clean: true`
 flag on every run, is the giveaway of canonical-declaration output: you
 cannot own a file the tool deletes on the next run. (An earlier
 iteration of this generator worked exactly that way; nothing in the
-tree does anymore — `examples/ecommerce` scaffolds into an owned `app/`
+tree does anymore: `examples/ecommerce` scaffolds into an owned `app/`
 subpackage via `output_dir`, no `gen/`.) Scaffold-and-own emits an
 idiomatic layout the user owns immediately:
 
@@ -130,22 +130,22 @@ resource.go        # server-render engine for entity screens    — yours
 stubs.go           # endpoint/middleware/plugin/seed stubs       — yours
 entities/          # entity registration, models, typed repos   — yours
 migrations/        # versioned SQL (from `migrate generate`)
-gofastr.yml        # the scaffold input — OPTIONAL, deletable once the code is yours
+gofastr.yml        # the scaffold input: OPTIONAL, deletable once the code is yours
 ```
 
-The emitted app files are a flat `package main` at the root — no
+The emitted app files are a flat `package main` at the root: no
 `blueprint/` subpackage, no importable "generator" namespace. `main.go`
 calls `RegisterGenerated(...)` directly.
 
 (`--out=<dir>` / `app.output_dir` scaffolds into a subpackage instead of
-the module root — used by monorepo examples like `examples/ecommerce`,
+the module root, used by monorepo examples like `examples/ecommerce`,
 which keeps its app in an owned `app/` subpackage.)
 
 `generate` is **one-shot for the app**: it scaffolds once, refuses to
 overwrite an existing project (`--force` to insist), then you own the
 code and edit it in place. Growth after that is **additive, never a
 merge**: `generate --add` (partial yml) and the `generate entity|screen
-<name>` scaffold subcommands write only files that don't exist yet — an
+<name>` scaffold subcommands write only files that don't exist yet. An
 owned file is never touched, so there is no re-run/merge loop and the
 blueprint never becomes a canonical source you keep regenerating from.
 Anything the additive path can't scaffold, you write in the owned Go.
@@ -156,7 +156,7 @@ Two rules fall out, and both are load-bearing:
    is no quarantine dir and no merge machinery. `generate` writes the
    whole app when the target is empty; if **any** target file already
    exists it **refuses**, listing the conflicts, rather than clobbering
-   hand-edited code — pass `--force` to overwrite the whole set. The
+   hand-edited code. Pass `--force` to overwrite the whole set. The
    emitted code is yours the moment it lands.
 2. **No manifest, no `DO NOT EDIT` headers on owned scaffold.** Tracking
    "what I generated" re-introduces tool-ownership and slides back to
@@ -164,20 +164,20 @@ Two rules fall out, and both are load-bearing:
    `entities/product.go` carries `// Code generated — DO NOT EDIT`, you
    have told the user it is not theirs. The header survives only on
    genuinely *derived* build artifacts (`openapi.json`, build-time route
-   tables) that regenerate every build and may live in a build dir —
-   owned scaffold ≠ build output.
+   tables) that regenerate every build and may live in a build dir.
+   Owned scaffold ≠ build output.
 
 ### Why this is the better story to tell
 
 The AI-economics claim is two-sided. The README already argues the
 *output* should be inspectable because an agent wrote it; scaffold-and-own adds
 the *input* side: **an agent does not need to learn the framework to
-author an app — it needs to know the blueprint schema**, which is small,
+author an app, only the blueprint schema**, which is small,
 YAML, and fully documented. Low surface area to author, high surface area
 generated, one tool call → a multi-entity app. Two distinct AI surfaces
 follow: **author-time → blueprint** (write-mostly intent compression) and
 **run-time → MCP into the live server** (introspect routes/config/docs,
-drive the entity tools against the running app — the agent does *not*
+drive the entity tools against the running app. The agent does *not*
 crack open the YAML to learn a running app). Kiln is the third, separate
 mode: live IR mutation that graduates to a blueprint, then to Go.
 
@@ -189,7 +189,7 @@ mode: live IR mutation that graduates to a blueprint, then to Go.
 framework/
 ├── access/          Permission / Policy / RolePolicy / RBAC helpers
 ├── agentsinv/       Process-wide registry of agent-onboarding (agents.md) snippets
-├── axecov/          Axe-coverage manifest (.gofastr/axe-coverage.json) —
+├── axecov/          Axe-coverage manifest (.gofastr/axe-coverage.json),
 │                    written by testkit/axetest scans, read by uihost strict
 │                    mode. Deliberately chromedp-free so production code can
 │                    read it without linking a browser.
@@ -197,7 +197,7 @@ framework/
 │                    ids, each with Why/Fix + a bad/good example pair) and
 │                    the analyzer runner behind `gofastr verify`. The
 │                    analyzers self-register from `contracts/analyzers`.
-├── cron/            CronJob / Scheduler — minimal in-process tick loop
+├── cron/            CronJob / Scheduler: minimal in-process tick loop
 ├── crud/            HTTP CRUD layer, eager loading, includes, nested
 │                    filters, typed query, MCP tool generator,
 │                    JSONCase config, owner/tenant scoping, in-tx helper.
@@ -210,7 +210,7 @@ framework/
 ├── dev/             Dev-mode-only helpers (livereload, debug surfaces)
 ├── docs/            Embedded doc content (framework/docs/content/*.md) + `gofastr docs`
 ├── dsl/             ?dsl=… query string parser/builder
-├── embed/           Embeddable screens/islands — a customer pastes one
+├── embed/           Embeddable screens/islands: a customer pastes one
 │                    <script> tag and gets a live, themed, authenticated
 │                    iframe of the app, gated by a per-surface origin list.
 ├── entity/          Entity + EntityConfig + Define, all column types
@@ -219,13 +219,13 @@ framework/
 │                    loader, and the shared Registry interface
 ├── event/           EventBus / Event / EventHandler
 ├── fanout/          Postgres LISTEN/NOTIFY implementation of the
-│                    core/fanout.Fanout interface — one channel, fallback
+│                    core/fanout.Fanout interface: one channel, fallback
 │                    table for oversize payloads. Lossy best-effort by
 │                    design; durable delivery is outbox's job.
 ├── file/            FileField + Process/Delete/GeneratePath
 ├── filter/          Query-string filter & sort parsing
 ├── gallery/         Importable component catalog behind the /components
-│                    showcase — renders every design-system component
+│                    showcase: renders every design-system component
 │                    against an arbitrary theme. Composes framework/ui, so
 │                    like sdkdocs it is deliberately NOT a uihost option.
 ├── hook/            HookRegistry / HookType + lifecycle constants
@@ -242,50 +242,50 @@ framework/
 │                    inverted through an interface and only apps that opt in
 │                    (framework.WithImagePipeline) pay for the codecs.
 ├── internal/casing/ snake↔camel helpers (private to the framework
-│                    module — not part of the public API)
-├── lifecycle/       Graceful shutdown contract — drain, flush, stop phases
+│                    module, not part of the public API)
+├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
-├── outbox/          Transactional outbox — Append writes the event row in
+├── outbox/          Transactional outbox: Append writes the event row in
 │                    the caller's tx; a background Relay delivers each
 │                    committed row to declared durable consumers with
 │                    at-least-once semantics.
-├── owner/           "Who owns this row" seam — OwnerField scoping for CRUD
+├── owner/           "Who owns this row" seam: OwnerField scoping for CRUD
 ├── pagination/      Cursor + offset pagination
 ├── pluginhost/      Heavy-JS plugin platform: sandboxed-iframe isolation host
 │                    (opaque origin), versioned postMessage broker (host/
-│                    pluginhost.js, go:embed'd — never in runtime.js budgets),
+│                    pluginhost.js, go:embed'd, never in runtime.js budgets),
 │                    plugin manifest, same-origin AssetServer with framed-CSP
 │                    relaxation, data-fui-plugin* mount markers, capability
 │                    gate over battery/auth scopes. Extracted from the
 │                    gofastr-plugins wysiwyg build (#37 client mirror).
 ├── ratelimit/       Sliding-window + lockout HTTP rate limiter ("N per
-│                    period, then block") — battery/auth's login/register/
+│                    period, then block"). battery/auth's login/register/
 │                    reset limiters build on it. The token-bucket sibling
 │                    is core/middleware.RateLimit.
-├── routegroup/      Route groups — prefix, middleware, access, OpenAPI tags
+├── routegroup/      Route groups: prefix, middleware, access, OpenAPI tags
 ├── sdk/             Shared contract between `gofastr generate sdk` and the
 │                    serving side (sdkdocs): artifact manifest schema, the
 │                    schema hash both compute for drift detection, and the
 │                    deterministic zip packer. Leaf: entity + core/ only.
-├── sdkdocs/         The SDK docs site — sdkdocs.Mount registers public
+├── sdkdocs/         The SDK docs site: sdkdocs.Mount registers public
 │                    screens (install/auth/errors + a live per-entity API
 │                    reference) on the core-ui app plus artifact download
 │                    routes. Composes framework/ui, which is exactly why it
 │                    is NOT a uihost option: uihost must never import
 │                    framework/ui (always-on styles would leak into every
 │                    host's CSS bundle).
-├── semcov/          Semantic-coverage manifest — records which routes,
+├── semcov/          Semantic-coverage manifest: records which routes,
 │                    permissions, and entity endpoints a test run actually
 │                    exercised through the real router, as opposed to line
 │                    coverage's "did this statement run".
-├── slowquery/       SlowQueryLogger — wraps any db.Executor
+├── slowquery/       SlowQueryLogger: wraps any db.Executor
 ├── softdelete/      SoftDelete / Restore / ForceDelete + filter
 ├── tenant/          TenantConfig / Middleware / GetTenantID / etc.
 ├── static/          HTTP static-file serving
 ├── ui/              Server-rendered UI primitives (PageHeader, FormField,
-│                    DataTable, …). The largest UI surface — composes
+│                    DataTable, …). The largest UI surface: composes
 │                    core-ui/html + core-ui/patterns into intent-level
 │                    components; see core-ui/ARCHITECTURE.md for the rule
 │                    on when a primitive lives here vs in core-ui/.
@@ -293,11 +293,11 @@ framework/
 
 Out-of-contract (NOT part of the layering rules below):
   experimental/apiversions   API versioning (URL prefix, deprecation
-                             headers, projections) — experimental surface.
+                             headers, projections). Experimental surface.
   testkit/, testdata/        Public test helpers + fixtures for host apps.
   factory/                   Rails-style fixture/factory helpers (tests).
   isolation/                 Per-worktree local runtime resource resolution.
-  experimental/harness      The GoFastr agent harness — a v0.1 experimental
+  experimental/harness      The GoFastr agent harness: a v0.1 experimental
                             subsystem (lives here so the /experimental/ stability
                             exemption applies). Not imported by the framework
                             root; enforced by harness/layering_test.go. Much of
@@ -323,25 +323,25 @@ The root package `framework/` itself contains:
   `authmd.go`, `oauth_resource.go`
 - **Semantic coverage**: `semanticcoverage.go` (RecordSemanticCoverage)
 - **Test harness**: `testharness.go` (TestApp wraps `*App`)
-- **Facade re-exports**: `reexports_*.go` — one file per subpackage
+- **Facade re-exports**: `reexports_*.go`, one file per subpackage
   whose symbols are referenced as `framework.X` by external code
 - **Doc**: `doc.go`
 
 ---
 
-## Layering rules (top imports bottom — reverse is forbidden)
+## Layering rules (top imports bottom, reverse is forbidden)
 
 ```
 L1  internal/casing                         (no internal deps)
 L2  entity                                   (imports core/ +
                                               internal/casing only)
-L3  hook, event, file, cron, access, db,    (leaf packages — no framework-
+L3  hook, event, file, cron, access, db,    (leaf packages, no framework-
     pagination, filter, owner, agentsinv,    internal imports at all)
     axecov, datexport, fanout, i18nui,
     image, lifecycle, ratelimit, semcov,
     docs, dev, routegroup
     dsl, tenant, softdelete, migrate, sdk    (each imports entity)
-    slowquery, outbox, embed, imagefield,    (intra-L3 edges — listed
+    slowquery, outbox, embed, imagefield,    (intra-L3 edges, listed
     contracts                                 below)
 L4  crud                                     (uses entity, hook, event, db,
                                               file, filter, pagination,
@@ -349,29 +349,29 @@ L4  crud                                     (uses entity, hook, event, db,
                                               internal/casing; softdelete
                                               is inlined, not imported)
     openapi                                  (uses crud, entity,
-                                              internal/casing — sits above
+                                              internal/casing, and sits above
                                               crud within L4)
-L4+ ui, uihost, and the packages             (the UI stack — same direction
+L4+ ui, uihost, and the packages             (the UI stack: same direction
     composing them: ui/resource, static,      rule; uihost never imports
-    gallery, sdkdocs, pluginhost              ui — edges listed below)
+    gallery, sdkdocs, pluginhost              ui. Edges listed below)
 L5  framework/  (facade)                     (re-exports everything for
                                               the public API surface)
 ```
 
-(The map above is the real import graph as of v0.64.0 — verify with
+(The map above is the real import graph as of v0.64.0. Verify with
 `go list -f '{{join .Imports "\n"}}' ./framework/<pkg>` when in doubt.
 The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate.
 Today's intra-L3 edges: `slowquery → db`, `outbox → event + db`,
 `embed → db + migrate + tenant`, `imagefield → file + image`,
-`contracts → agentsinv`, `dsl → filter` (the LIKE-escape helpers —
+`contracts → agentsinv`, `dsl → filter` (the LIKE-escape helpers:
 one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package
 re-implementation). Within L4: `openapi → crud`. In the UI stack:
 `ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +
 tenant`, `ui/resource → crud + filter + ui`, `static → ui + uihost`,
 `gallery → ui + image + agentsinv`, `sdkdocs → ui + sdk + entity +
 internal/casing`, and `pluginhost → uihost`. `uihost/uinoderender → ui` is a separate
-package on purpose: the host itself never links `framework/ui` — the
+package on purpose: the host itself never links `framework/ui`. The
 node renderer that needs the component catalog sits above it.)
 
 One cross-tree edge is deliberate: **`battery/auth` → `framework/access`.**
@@ -380,12 +380,12 @@ exported `auth.ScopeMatch`) delegates to `access.ScopeMatch` so the
 `resource:verb` wildcard algebra has exactly one home. Batteries sit above
 the framework tree, so the edge points downward and introduces no cycle;
 `framework/access` stays a leaf (its only gofastr deps remain
-`core/handler` + `core/query`). `access.Can` — the exact-match RBAC hot
-path — is a different matcher on purpose and never learns wildcards.
+`core/handler` + `core/query`). `access.Can`, the exact-match RBAC hot
+path, is a different matcher on purpose and never learns wildcards.
 
 One edge runs the other way and is tracked, not hidden:
 **`framework/pluginhost` → `battery/auth`.** The capability gate
-(`pluginhost.Allow`) needs both halves of the scope check —
+(`pluginhost.Allow`) needs both halves of the scope check:
 `access.ScopeMatch` (reachable downward) and `auth.HasScope`, which reads
 the caller's token out of the request context and is genuinely
 battery/auth's. The import carries a `//gofastr:allow(GOFASTR1301)`
@@ -394,12 +394,12 @@ tree.
 
 **No subpackage may import `framework/`.** If a subpackage needs a type
 defined in framework root (App, Registry, CrudHandler), one of three
-patterns applies — see "Cycle-breaking interfaces" below. This invariant
+patterns applies. See "Cycle-breaking interfaces" below. This invariant
 is enforced mechanically by `framework/layering_test.go`, which also
 asserts that `uihost`'s dependency closure excludes `framework/ui` and
 that no `core-ui` package imports `framework`. The test pins one
 sanctioned carve-out: `pluginhost` carries the root in its closure
-transitively, through the `battery/auth` edge above — and only there.
+transitively, through the `battery/auth` edge above, and only there.
 
 ---
 
@@ -418,16 +418,16 @@ either require an API redesign or create an unbreakable import cycle.
 | `registry.go` | `Registry` is concrete state (`*sql.DB`, entity map). Subpackages reference it through the `entity.Registry` interface instead. |
 | `typed_hooks.go` | Generic `OnBeforeCreate[T any](app *App, …)` etc. Take `*App` directly; their type signatures live with App. |
 | `audit.go` | `(a *App) WithAuditLog(...)` is the public entry; the rest of the file (table creation, hook closures) is intrinsically tied to it. Could be split if the closures move out, but the win is small. |
-| `secret.go` | `WithSecret` + HKDF key derivation for the app-wide secret (`GOFASTR_SECRET`). Subsystem keys are derived per purpose — the uihost session-signing key is handed to a mounted host at `Mount` time through the duck-typed `SetSessionKey([]byte)` seam (same cycle-breaking shape as `SetFanout`: the framework never imports uihost). Fanout attached + no secret = boot panic, because stateless session tokens minted on one replica must verify on every other. |
+| `secret.go` | `WithSecret` + HKDF key derivation for the app-wide secret (`GOFASTR_SECRET`). Subsystem keys are derived per purpose: the uihost session-signing key is handed to a mounted host at `Mount` time through the duck-typed `SetSessionKey([]byte)` seam (same cycle-breaking shape as `SetFanout`: the framework never imports uihost). Fanout attached + no secret = boot panic, because stateless session tokens minted on one replica must verify on every other. |
 | `tx.go` | `(a *App) InTx(...)` is the public entry. The lower-level context helpers already moved to `framework/db`; this file is just App's wrapper. |
 | `testharness.go` | `TestApp.App *App` field is used by tests. Sixteen test files use `TestApp` / `TestHarness` unqualified inside `package framework`. Extracting requires either an interface refactor or qualifying every test. |
 | `processmodule*.go` | Process-isolated third-party modules (#37). The supervisor, store, runner, sandbox, broker, and proxy are bound to `*App` (spawn under the app's lifecycle drainer, re-dispatch reverse calls through the app router, enforce the app's `RolePolicy`). `RegisterProcessModule` is the single `(a *App)` entry. See the process-module section below. |
 | `role.go` | `Role` (all / serve / worker) + `WithRole` + `resolveRole`. The role decides at boot which responsibilities the binary assumes; `App.Start` consults it to skip worker-scoped consumers (cron, queues, the outbox relay) or the HTTP surface, so it is read directly by the spine. An unknown role fails loudly in `NewApp`. |
 | `setup.go` | `SetupRunner` interface + `WithSetup` first-run setup. framework defines the interface rather than importing `battery/setup` to avoid a layering cycle; `App.Start` owns the lifecycle (incomplete → wizard or headless run → atomic swap to the real handler). |
-| `export_data.go`, `erase_data.go` | `(a *App) ExportData` / `ImportData` / `EraseUserData` — data portability and right-to-be-forgotten. Both walk the App's entity registry plus the `datexport` registry, and all raw table access funnels through the SafeIdent-guarded path here, so they need the App's DB handle and migrate dialect. |
-| `wellknown.go`, `agent_extras.go`, `authmd.go`, `oauth_resource.go` | The agent-readiness discovery endpoints (`/.well-known/api-catalog`, the MCP server card, Web Bot Auth JWKS, UCP/ACP docs, `/auth.md`, RFC 9728 protected-resource metadata). Each auto-serves when its precondition holds — entities registered, WithMCP mounted, or a host opt-in config — all of which is App state. |
+| `export_data.go`, `erase_data.go` | `(a *App) ExportData` / `ImportData` / `EraseUserData`: data portability and right-to-be-forgotten. Both walk the App's entity registry plus the `datexport` registry, and all raw table access funnels through the SafeIdent-guarded path here, so they need the App's DB handle and migrate dialect. |
+| `wellknown.go`, `agent_extras.go`, `authmd.go`, `oauth_resource.go` | The agent-readiness discovery endpoints (`/.well-known/api-catalog`, the MCP server card, Web Bot Auth JWKS, UCP/ACP docs, `/auth.md`, RFC 9728 protected-resource metadata). Each auto-serves when its precondition holds: entities registered, WithMCP mounted, or a host opt-in config, all of which is App state. |
 | `mcp_contracts.go` (+ `mcp_contracts_dev.go`) | Contract-catalog MCP tools (`contracts_list` / `_explain` / `_capabilities`) registered alongside `WithMCPIntrospection`; the dev file adds the verify/fix tools that read the source tree and exist only in the dev loop. Registration hangs off the App's `/mcp` server. |
-| `mcp_control.go` | `WithMCPControl` — the mutating tool set (`app_module_enable` / `app_module_disable`), deliberately separate from read-only introspection, plus `WithMCPGate` for caller gating. Outside the dev loop the tools require an authenticated caller and refuse embed-grant credentials; dev-implied tools are ungated but loopback-bound. Same App-bound registration shape as introspection. |
+| `mcp_control.go` | `WithMCPControl`: the mutating tool set (`app_module_enable` / `app_module_disable`), deliberately separate from read-only introspection, plus `WithMCPGate` for caller gating. Outside the dev loop the tools require an authenticated caller and refuse embed-grant credentials; dev-implied tools are ungated but loopback-bound. Same App-bound registration shape as introspection. |
 | `semanticcoverage.go` | `RecordSemanticCoverage(t, app)` wires the app's router serve hook and the access/hook/event observers into the `semcov` recorder; `TestHarness` calls it automatically, and `GOFASTR_SEMANTIC_COVERAGE=1` enables it in a serving process. Needs `app.router`, so it stays with App. |
 
 ---
@@ -435,7 +435,7 @@ either require an API redesign or create an unbreakable import cycle.
 ## Process-isolated third-party modules (#37)
 
 A process module is a third-party binary the host **installs, upgrades,
-crashes, and revokes without touching itself** — so it runs out of process.
+crashes, and revokes without touching itself**, so it runs out of process.
 The trust boundary is the stdio pipe (`core/moduleproto`, a full-duplex
 JSON-RPC-2.0 codec); the host↔module wire is a purpose-built dialect, NOT
 MCP (MCP is an optional module *surface* only). The load-bearing rules:
@@ -456,18 +456,18 @@ MCP (MCP is an optional module *surface* only). The load-bearing rules:
   handler because the router gate can only 404.
 - **Fail-closed everywhere.** An untrusted module with no probe-passing
   sandbox backend never reaches Ready (no silent downgrade). A replica that
-  cannot refresh desired state past its lease TTL drains its children — the
+  cannot refresh desired state past its lease TTL drains its children, the
   deliberate inversion of the in-process `handleRemoteToggle` fail-open.
   Revoke = a `desired_generation` bump the restart circuit keys to.
 - **The module never emits markup.** It returns a `ui.node.v1` tree the
   host validates (`core-ui/uinodev1`) and renders
-  (`framework/uihost/uinoderender`) — see `core-ui/ARCHITECTURE.md`.
+  (`framework/uihost/uinoderender`). See `core-ui/ARCHITECTURE.md`.
 - **Sandbox = observable outcomes, not syscalls.** `processmodule_probe.go`
   defines the P1–P7 conformance suite; per-OS wrapper backends
   (`bwrap`/`sandbox-exec`/Job-Object, build-tagged linux-vs-not) each
   declare which probes they enforce on the host and fail closed on the rest.
   v1 is honest that P6 (resource caps) and stock macOS/Windows do not fully
-  conform — untrusted modules simply refuse to run there.
+  conform. Untrusted modules simply refuse to run there.
 
 The full converged design (transport, capability model, sandbox contract,
 migration/DDL isolation, lifecycle, UI validator, phasing, go/no-go gate)
@@ -542,7 +542,7 @@ router param syntax that just 404'd, and grants persisted against
 capabilities that never existed. The rule that came out of it: accepting
 input that will silently have no effect requires a loud `slog.Warn`
 naming the exact thing that won't work (with a nearest-match suggestion
-where one exists — see the capability registry's dead-grant warning), or
+where one exists, as in the capability registry's dead-grant warning), or
 an error where the caller can act on one. Silent no-ops, best-effort
 fallbacks that hide their fallback, and errors swallowed into defaults
 all fail review. When in doubt, scream.
@@ -552,8 +552,8 @@ all fail review. When in doubt, scream.
 Local variables named `entity` and `crud` were renamed to `ent` / `ch`
 across the codebase **before** moving the matching packages. Inside a
 function with `func f(entity *entity.Entity)`, Go resolves `entity.X`
-in the body against the local var, not the package — making any
-reference to a package-level symbol in the same function impossible.
+in the body against the local var, not the package, so any
+reference to a package-level symbol in the same function is impossible.
 
 If you add a local var that would shadow a subpackage import, rename it
 first.
@@ -565,7 +565,7 @@ invalid Go like `Foo{pkg.Index: 0}`. After every gofmt -r pass on a
 package whose exports overlap with field names anywhere in the tree
 (`Entity`, `Index`, `Required`, `Unique`, `Relation`, `SoftDelete`),
 search for `pkg.Sym:` and undo the rewrite where it lands on a field
-key. **Do not** undo `case pkg.Sym:` — those are switch labels and
+key. **Do not** undo `case pkg.Sym:`. Those are switch labels and
 need to stay qualified.
 
 ### Test placement
@@ -576,7 +576,7 @@ need to stay qualified.
 - **Cross-feature tests** (e2e, integration, openapi conformance,
   typed-repo end-to-end) stay at the framework root and exercise the
   facade.
-- **Tests that compose the App spine** (almost all of them — they call
+- **Tests that compose the App spine** (almost all of them, since they call
   `NewApp`, `WithDB`, `TestHarness`) must stay at the framework root
   unless they're rewritten to import `framework` as an external test
   package, which only works for tests that don't need internal access
@@ -630,7 +630,7 @@ Why a registry instead of file globs:
   to update on every new battery.
 - `cmd/gofastr` blank-imports the batteries it inventories, then walks
   `agentsinv.All()` to write `AGENTS.md` (see `framework/agentsinv/inventory.go`).
-- An empty `agents.md` panics at init — the file is missing or the
+- An empty `agents.md` panics at init: the file is missing or the
   `//go:embed` directive is stale.
 
 Per-battery `agents.md` content lives next to the code it documents.
@@ -706,7 +706,7 @@ If you add a subpackage, grep `core/` for name conflicts first.
 ## What I recommend NOT doing
 
 - **Do not** add a new subpackage just to make `framework/` smaller.
-  Each subpackage justified its own move — pure data/helpers, or a
+  Each subpackage justified its own move: pure data/helpers, or a
   cluster of related types. Single-file extractions of methods on
   `*App` are not worth the API churn.
 
@@ -716,5 +716,5 @@ If you add a subpackage, grep `core/` for name conflicts first.
 
 - **Do not** bypass the `entity.Registry` / `db.Executor` interfaces
   by adding a back-import to framework root. If a subpackage needs
-  more than the interface offers, extend the interface — don't reach
+  more than the interface offers, extend the interface. Don't reach
   for the concrete type.

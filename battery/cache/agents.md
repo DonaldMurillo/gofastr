@@ -31,7 +31,7 @@ _ = cache.GetOrSet(ctx, c, "42", time.Minute, &u,
 ```
 
 **Bounding memory (`WithMaxEntries`):** by default `MemoryCache` is
-**unbounded** — fine for a fixed, trusted keyspace. When keys are
+**unbounded**. That's fine for a fixed, trusted keyspace. When keys are
 influenced by untrusted input (path, query, user id), set
 `WithMaxEntries(n)` so the cache LRU-evicts once it reaches `n` live
 entries instead of growing without bound (OOM/DoS). `RedisCache`
@@ -42,7 +42,7 @@ dest, loader)` collapses concurrent misses on the same key so the
 expensive loader runs exactly once and all waiters share the result;
 a loader error propagates and is never cached.
 
-**AI-typical anti-pattern** — if you're about to write any of these,
+**AI-typical anti-pattern.** If you're about to write any of these,
 stop and use `MemoryCache` instead:
 - `type cache struct { mu sync.Mutex; m map[string]entry }` with a
   hand-rolled `Set/Get/cleanup` loop
@@ -55,6 +55,6 @@ stop and use `MemoryCache` instead:
 the in-process version.
 
 **Swapping backends:** the `Cache` interface (`Get`/`Set`/`Delete`/
-`Clear`/`Exists`) is the contract — `NewRedisCache(client, opts...)`
+`Clear`/`Exists`) is the contract. `NewRedisCache(client, opts...)`
 takes any `RedisClient`-shaped value, so the call site doesn't change
 when you move from memory to Redis.

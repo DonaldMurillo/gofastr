@@ -1,11 +1,11 @@
-# Optimistic UI — mutations, rollback, and reconciliation
+# Optimistic UI: mutations, rollback, and reconciliation
 
 Optimistic UI is the pattern where a click paints the *expected* result
 immediately and the server response either confirms it or undoes it. Done
 right it makes a server-authoritative app feel instant; done wrong it lies
 to the user about state that was never committed. This doc is the
 framework's contract for doing it right: one lifecycle, one state set, one
-reconciliation model, composed from existing primitives — `OptimisticAction`,
+reconciliation model, composed from existing primitives: `OptimisticAction`,
 `ToggleAction`, versioned `sortablelist`, `ConfirmAction`, and the generic
 RPC wrappers in `core-ui/interactive`.
 
@@ -47,7 +47,7 @@ capture previous projection
   handler needs to commit authoritatively: the new value, a stable key, a
   mutation/idempotency key, and (when the resource is versioned) a
   concurrency token.
-- **Reconcile.** The HTTP response — not a signal, not an SSE event — is
+- **Reconcile.** The HTTP response, not a signal and not an SSE event, is
   the mutation's authority. A 2xx commits the optimistic projection (or
   replaces it with the authoritative result); a 409 with a version token
   triggers server-rendered reconciliation; anything else rolls back.
@@ -87,21 +87,21 @@ coherent.
 
 **Cancellation** has two senses:
 
-1. *User cancels the in-flight click.* There is no abort — the fetch
+1. *User cancels the in-flight click.* There is no abort; the fetch
    completes and the response reconciles. The user can click a sibling
    (e.g. another toggle in the same `Group`) which optimistically revokes
    the first; the first RPC still completes, and the server stays the
    source of truth via a later navigation refresh.
 2. *User dismisses a confirm dialog.* `ConfirmAction` and
    `Action.WithConfirm` gate the request *before* it fires. Cancelling the
-   dialog never sends the RPC — there is nothing to roll back.
+   dialog never sends the RPC; there is nothing to roll back.
 
 ### Out-of-order responses
 
 Each primitive keeps at most one in-flight request per trigger element.
 Because the trigger is disabled during `pending`, a second click cannot
 start a second fetch and arrive in a different order. The runtime does
-**not** coordinate across triggers — if two different buttons POST to the
+**not** coordinate across triggers: if two different buttons POST to the
 same handler, their responses reconcile independently against whatever
 server state each finds. For ordered mutations across controls, use
 version tokens (below) so the second request 409s against the first's
@@ -127,7 +127,7 @@ reconciles a column, including to zero items). A general-purpose
 compose it from an island RPC that returns the authoritative row HTML and
 a signal swap (`data-fui-rpc-signal` with `data-fui-signal-mode="html"`).
 The temp-ID discipline is a contract between your handler and your island
-code; see [Recipe 3](#recipe-3--optimistic-create-with-a-temporary-row).
+code; see [Recipe 3](#recipe-3-optimistic-create-with-a-temporary-row).
 
 ### Idempotency and mutation keys
 
@@ -135,13 +135,13 @@ A **mutation key** is a client-chosen value that says "this is logical
 mutation N." Send it as the `Idempotency-Key` header on the fetch. The
 server records the key with the commit; a replay returns the original
 response instead of running the mutation again. This is what makes a
-flaky network safe for "ship order," "send invoice," "charge card" — the
+flaky network safe for "ship order," "send invoice," "charge card": the
 user can refresh, the browser can retry, the runtime can re-fire, and the
 server deduplicates. See [Idempotency](idempotency.md) for the
 server-side contract.
 
 For purely visual optimistic actions (follow, like, save-tag) a mutation
-key is optional — the worst case is a double-toggle that the next
+key is optional; the worst case is a double-toggle that the next
 navigation refresh corrects. For anything that creates, charges, or
 notifies, send one.
 
@@ -157,10 +157,10 @@ problem-detail body. The runtime then reconciles instead of rolling back.
 `version=<token>` (from `Config.Version`); a 409 response triggers
 `ConflictRPC` (from `Config.ConflictRPC`), which returns fresh
 server-rendered `<li>` HTML that replaces the destination column. The
-409 body is read under hard safety bounds — `Content-Type: application/json`,
-at most ~4 KB, must parse as `{"error":{"code","message"}}` — and the
+409 body is read under hard safety bounds: `Content-Type: application/json`,
+at most ~4 KB, must parse as `{"error":{"code","message"}}`, and the
 `message`, when valid, is surfaced through the polite `aria-live` region.
-See [Recipe 5](#recipe-5--sortablekanban-move-with-version-aware-409) and
+See [Recipe 5](#recipe-5-sortablekanban-move-with-version-aware-409) and
 [Interactive patterns → Sortable List](interactive-patterns.md#sortable-list-single--kanban).
 
 ### Rollback vs authoritative refresh
@@ -168,12 +168,12 @@ See [Recipe 5](#recipe-5--sortablekanban-move-with-version-aware-409) and
 Two distinct reconciliation paths, do not confuse them:
 
 - **Rollback.** The runtime restores the captured previous projection.
-  Used when there is no server-side truth to reconcile against — a
+  Used when there is no server-side truth to reconcile against: a
   network failure, a 4xx validation error, a non-versioned 5xx. The UI
   returns to exactly what it showed before the click.
 - **Authoritative refresh.** The runtime fetches the server's current
   state and replaces the optimistic region with it. Used when the server
-  *knows* the projection is stale — a versioned 409, or any path where
+  *knows* the projection is stale: a versioned 409, or any path where
   the handler can return fresh HTML. The UI lands on server truth, which
   may differ from both the optimistic projection *and* the prior state.
 
@@ -191,7 +191,7 @@ users. The primitives handle this differently:
   `OptimisticAction` and `ToggleAction`, and removed on settlement.
 - **`aria-pressed`** mirrors committed state on `ToggleAction` (it is a
   toggle by WAI-ARIA's contract). `OptimisticAction` does not use
-  `aria-pressed` — it is one-shot, not a pressed/unpressed control.
+  `aria-pressed`; it is one-shot, not a pressed/unpressed control.
 - **`prefers-reduced-motion`** is respected: the `OptimisticAction`
   shake animation is disabled under `@media (prefers-reduced-motion:
   reduce)`; the visible label flip is unchanged because it carries
@@ -200,7 +200,7 @@ users. The primitives handle this differently:
   events (the polite region is wired in `sortablelist.js`).
 
 The two button primitives (`OptimisticAction`, `ToggleAction`) do **not**
-today emit a spoken "Saved" / "Rolled back" announcement — they rely on
+today emit a spoken "Saved" / "Rolled back" announcement; they rely on
 the visible label flip and `aria-busy` toggling. See [Consistency
 notes](#consistency-notes) for the gap and the workaround.
 
@@ -208,7 +208,7 @@ notes](#consistency-notes) for the gap and the workaround.
 
 A common mistake is to wait for an SSE event to confirm a mutation. The
 runtime never does this and your handler should not either. SSE is
-push-only — best-effort delivery for *other* sessions to learn that state
+push-only: best-effort delivery for *other* sessions to learn that state
 changed. The initiating request's HTTP response is the mutation's
 authority; the database row is the durable truth. SSE can drop, lag, or
 arrive in any order relative to the response; treating it as the
@@ -217,9 +217,9 @@ confirmation channel inverts the contract.
 Concretely:
 
 - After a successful follow POST, the `ToggleAction` is committed because
-  the response was 2xx — not because a `user.followed` SSE event arrived.
+  the response was 2xx, not because a `user.followed` SSE event arrived.
 - After a sortable move, the column is authoritative because the move
-  POST returned 2xx (or the 409 conflict path reconciled) — not because
+  POST returned 2xx (or the 409 conflict path reconciled), not because
   a `board.moved` event was broadcast.
 - Other tabs and other users learn about the change through SSE; the
   initiating tab learned through the response.
@@ -236,9 +236,9 @@ the runtime expects, and where to see it running in `examples/site`
 (`go run ./examples/site` then open the listed route). Demos that are
 already complete are linked, not rebuilt.
 
-### Recipe 1 — binary toggle / follow
+### Recipe 1: binary toggle / follow
 
-**Use for:** binary server-backed state the user flips in place — follow /
+**Use for:** binary server-backed state the user flips in place: follow /
 following, watch / unwatch, subscribe / unsubscribe, default-plan picker.
 
 **Primitive:** `ui.ToggleAction` (`framework/ui/toggleaction.go`). Runtime:
@@ -262,7 +262,7 @@ ui.ToggleAction(ui.ToggleActionConfig{
 ```
 
 **Handler contract:** `POST /api/follow/42` → 2xx on success, non-2xx on
-failure (runtime reverts to idle). The body is empty — the resource id is
+failure (runtime reverts to idle). The body is empty; the resource id is
 in the URL. Authorize in the handler; never trust the client's optimistic
 state.
 
@@ -275,10 +275,10 @@ E2E: `TestE2E_ToggleAction_CommitUntoggle`,
 `TestE2E_ToggleAction_GroupMutex` in
 `examples/site/e2e_new_components_interactions_test.go`.
 
-### Recipe 2 — inline edit with rollback
+### Recipe 2: inline edit with rollback
 
-**Use for:** editing one field of a record in place — rename, retitle,
-edit a tag — where the field has a known previous value and the server
+**Use for:** editing one field of a record in place, whether rename, retitle,
+or edit a tag, where the field has a known previous value and the server
 validates the new one.
 
 **Primitive:** `ui.OptimisticAction` (`framework/ui/optimisticaction.go`)
@@ -287,7 +287,7 @@ rollback target. Runtime: `optimisticaction.js`. The button flips to its
 success label optimistically, fires its endpoint, and on non-2xx shakes
 and reverts. The `error` shake animation respects `prefers-reduced-motion`.
 
-> **Honest gap.** `OptimisticAction`'s fetch is fire-and-forget — it does
+> **Honest gap.** `OptimisticAction`'s fetch is fire-and-forget; it does
 > not serialize form fields. For a true inline edit where the *new value*
 > must reach the handler, wrap the input in a `<form>` and use
 > `interactive.OnSubmit`; the runtime submits the form as JSON keyed by
@@ -295,7 +295,7 @@ and reverts. The `error` shake animation respects `prefers-reduced-motion`.
 > value, an adjacent `OptimisticAction` provides the optimistic visual on
 > a value-independent commit (a "freeze" toggle, a "revert to draft"
 > action). For a one-form-one-button edit, prefer `OnSubmit` plus
-> `interactive.AfterText("Saved ✓")` — see [Forms](form-module.md).
+> `interactive.AfterText("Saved ✓")`; see [Forms](form-module.md).
 
 **Compose (the value-independent optimistic half):**
 
@@ -318,18 +318,18 @@ swaps the display region (`data-fui-rpc-signal` with `mode=html`).
 
 **Authorization:** the input and the button render for any viewer; the
 handler enforces "can edit this field." A 4xx response is the auth path
-the runtime understands — return 4xx (not a redirect) when the user
+the runtime understands: return 4xx (not a redirect) when the user
 lacks permission, and the optimistic flip rolls back honestly.
 
 **Runnable proof:** [`/components/optimisticinlineedit`](../../../examples/site/components.go).
-The demo pairs a text input with two `OptimisticAction` buttons — one
+The demo pairs a text input with two `OptimisticAction` buttons: one
 hits an endpoint that returns 2xx (the optimistic commit sticks), one
 hits an endpoint that returns 4xx (the button shakes and reverts). E2E:
 `TestE2E_Optimistic_InlineEdit_SuccessAndRollback`.
 
-### Recipe 3 — optimistic create with a temporary row
+### Recipe 3: optimistic create with a temporary row
 
-**Use for:** adding a row to a list — a comment, a task, a tag — where the
+**Use for:** adding a row to a list, a comment, a task, a tag, where the
 user expects the new row to appear instantly and the server assigns the
 durable ID.
 
@@ -382,7 +382,7 @@ family. The pattern's invariants, whichever path you take:
 3. The 2xx response carries the authoritative row (with the real id); a
    failure removes the temp row.
 4. A temp row must not be editable, draggable, or deletable until the
-   authoritative replacement lands — otherwise a user can mutate
+   authoritative replacement lands; otherwise a user can mutate
    state that does not exist yet.
 
 **Authorization:** the Add button can render for everyone; the handler
@@ -395,10 +395,10 @@ The demo exercises the round-trip shape: click Add → the list region
 swaps with fresh server HTML showing the new row. E2E:
 `TestE2E_Optimistic_Create_AppendsAndPersists`.
 
-### Recipe 4 — optimistic delete with restore
+### Recipe 4: optimistic delete with restore
 
-**Use for:** removing a row — delete comment, remove member, archive task
-— where the user expects the row to disappear and the server confirms.
+**Use for:** removing a row: delete comment, remove member, archive task,
+where the user expects the row to disappear and the server confirms.
 Pair with `ConfirmAction` when the action is destructive enough to need a
 second click.
 
@@ -422,7 +422,7 @@ trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
     RPCPath:       "/__site/optimistic/delete?id=" + item.ID,
     SuccessSignal: "item-list", // ← swaps the list region on 2xx
 })
-// widget.Mount(app.Router(), modal.Build()) — once, at startup
+// widget.Mount(app.Router(), modal.Build()), once, at startup
 
 // Render the trigger inline next to its row; the modal mounts globally.
 trigger
@@ -445,7 +445,7 @@ the row and responds with the **authoritative list HTML** (the list
 without the deleted row). On 2xx the runtime swaps the list region; on
 non-2xx the runtime broadcasts the auto-built error object
 `{ok:false,status,text}` into the signal, but an `html`-mode region
-**ignores non-string values** — the list stays byte-identical and the
+**ignores non-string values**; the list stays byte-identical and the
 row stays visible. Pair `SuccessSignal` with a `text`-mode sibling
 region if you want a human-readable failure message; the html region is
 reserved for trusted-HTML payloads and is never corrupted by an error
@@ -453,19 +453,19 @@ object.
 
 **Restore semantics.** Two flavors:
 
-1. *Implicit restore on failure.* The row never visually disappeared —
-   the swap happens on 2xx — so a failed delete leaves the row in place.
+1. *Implicit restore on failure.* The row never visually disappeared;
+   the swap happens on 2xx, so a failed delete leaves the row in place.
    This is what the existing primitives give you for free.
 2. *Explicit undo window.* A *truly* optimistic delete removes the row
    instantly and shows an "Undo" affordance for N seconds; if the user
    clicks Undo (or the RPC fails), the row reappears. This pattern needs
    the same temp-row machinery as Recipe 3 and is not directly supported
-   by a single runtime attribute today — compose it as an island.
+   by a single runtime attribute today; compose it as an island.
 
 **Authorization:** ConfirmAction's trigger renders for any viewer; the
 modal is the UX layer, not the auth layer. The handler must re-check
 "can delete this row" and return 4xx (not a redirect) when the user
-lacks permission — the runtime leaves the row in place, which is the
+lacks permission; the runtime leaves the row in place, which is the
 honest outcome.
 
 **Runnable proof:** [`/components/optimisticdelete`](../../../examples/site/components.go).
@@ -478,7 +478,7 @@ can see the failure invariant hold: the list does not change. E2E:
 `TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged` (422 → list
 byte-identical, row still present).
 
-### Recipe 5 — sortable/Kanban move with version-aware 409
+### Recipe 5: sortable/Kanban move with version-aware 409
 
 **Use for:** reordering within a list, or moving cards between columns on
 a board, where two users can move the same item concurrently.
@@ -516,40 +516,40 @@ patternsSortablelist.Render(patternsSortablelist.Config{
 
 **Handler contract.**
 
-- `POST /api/board/move` — body has `order`, `moved`, `container`,
+- `POST /api/board/move`: body has `order`, `moved`, `container`,
   `version`. If `version` does not match the current board version,
   respond **409 Conflict** with
   `Content-Type: application/json` and a body
   `{"error":{"code":"…","message":"…"}}` (the `message` is surfaced
   through the polite `aria-live` region, capped at ~300 chars). On
   match, apply the move, bump the version, respond 2xx.
-- `GET /api/board/conflict?container=<col>` — return fresh `<li>` HTML
+- `GET /api/board/conflict?container=<col>`: return fresh `<li>` HTML
   for the named column at its current authoritative state. An empty body
   reconciles the column to zero items.
 
 The runtime reads the 409 body under hard safety bounds
 (`Content-Type: application/json`, ≤ ~4 KB, must parse, `message` ≤ ~300
 chars). Anything malformed falls back to the generic copy. Without
-`Version`, a 409 is treated like any other non-2xx (plain rollback) —
+`Version`, a 409 is treated like any other non-2xx (plain rollback);
 back-compat.
 
 **Authorization:** the rendered board reflects what the viewer can see;
 the move handler must re-check that the user can move the named card into
 the named column. A 403 (treated as non-2xx) rolls the DOM back; a 409
 with version mismatch reconciles. Use 409 only for genuine concurrency
-conflicts — never for authorization failures.
+conflicts, never for authorization failures.
 
-**Runnable proof:** [`/components/sortablelist`](../../../examples/site/components.go)
-— a 3-column kanban backed by the package-level `kanbanBoard` store, with
+**Runnable proof:** [`/components/sortablelist`](../../../examples/site/components.go),
+a 3-column kanban backed by the package-level `kanbanBoard` store, with
 `/__site/sortable/move` (version-aware 409) and
 `/__site/sortable/conflict` (fresh HTML). E2E:
 `TestE2E_SortableKanbanDragPersist` in
 `examples/site/e2e_sortable_kanban_test.go`. Full handler source:
 `examples/site/main.go` (search `sortable/move`).
 
-### Recipe 6 — grouped mutually-exclusive selection
+### Recipe 6: grouped mutually-exclusive selection
 
-**Use for:** picking exactly one of N — plan picker, status selector, the
+**Use for:** picking exactly one of N: plan picker, status selector, the
 "which list does this belong to" radio-like control rendered as buttons.
 
 **Primitive:** `ui.ToggleAction` with a shared `Group` key. Runtime:
@@ -579,7 +579,7 @@ ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
 ```
 
 **Handler contract:** each button POSTs its own endpoint on commit. The
-`Group` mutex is **purely client-side** — the server sees two independent
+`Group` mutex is **purely client-side**; the server sees two independent
 mutations. If the user clicks Pro then immediately clicks Free before
 either RPC settles, both fire; the server must treat them as the
 independent idempotent writes they are (or apply the version-aware 409
@@ -591,15 +591,15 @@ one button as `Committed`, so client and server reconverge.
 A user who can read "Pro" but not select it gets a 4xx on the Pro POST;
 the optimistic flip reverts and the previously-committed sibling stays
 committed (the runtime reverts the failed button to idle; it does not
-re-commit the sibling — that happens on the next navigation).
+re-commit the sibling; that happens on the next navigation).
 
 **Runnable proof:** the "Free / Pro" cluster on
 [`/components/toggleaction`](../../../examples/site/components.go). E2E:
 `TestE2E_ToggleAction_GroupMutex`.
 
-### Recipe 7 — slow / network-failure behavior and retry
+### Recipe 7: slow / network-failure behavior and retry
 
-**Use for:** every optimistic surface — what the user sees when the
+**Use for:** every optimistic surface: what the user sees when the
 network is slow, the server is down, or the response never comes. This
 recipe is not a separate component; it is the failure path every other
 recipe must survive.
@@ -624,7 +624,7 @@ surface.
   (`FailureThreshold`, default 3). It hides when the Retry button's
   health-check returns 2xx, or when app code calls
   `window.__gofastr.networkStatus.reportRecovery()`. It does **not** wrap
-  `window.fetch` — apps wire `reportFailure`/`reportRecovery` into their
+  `window.fetch`; apps wire `reportFailure`/`reportRecovery` into their
   own RPC error handlers.
 
 **Retry.** The primitives do not auto-retry; they roll back and let the
@@ -648,7 +648,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 ~2 s delay (exercises the pending window). The runtime shakes + reverts
 on the fail endpoint; commits after the delay on the slow endpoint.
 
-**Authorization:** a 401/403 is a non-2xx like any other — the
+**Authorization:** a 401/403 is a non-2xx like any other; the
 optimistic projection rolls back. Pair with the global auth redirect at
 the page level, not the per-button level; the button should never be
 asked to handle a session expiry.
@@ -664,8 +664,8 @@ fail endpoint (exercises `error` then rolls back) and renders a
 ## Consistency notes
 
 This section audits the four primitives that participate in optimistic
-mutations — `interactive.OptimisticUpdate`, `ui.OptimisticAction`,
-`ui.ToggleAction`, and versioned `sortablelist` — for behavioral
+mutations, `interactive.OptimisticUpdate`, `ui.OptimisticAction`,
+`ui.ToggleAction`, and versioned `sortablelist`, for behavioral
 consistency. Applications composing these into the recipes above should
 know where they agree and where they diverge.
 
@@ -695,14 +695,14 @@ should be undertaken deliberately, not as a side effect of a docs pass.
    `ToggleAction` silently reverts to the prior state. `OptimisticAction`
    paints an `error` shake first, then reverts. A user who clicks
    `ToggleAction`, sees it flip, and then sees it flip back gets no
-   explanation — they have to infer "the RPC failed." A future revision
+   explanation; they have to infer "the RPC failed." A future revision
    should give `ToggleAction` the same `error` state + shake
    (`data-state="error"`, the `ui-optimistic-action-shake` keyframes,
    `prefers-reduced-motion` guard) and announce the rollback.
 
 2. **No spoken announcement of commit / rollback.** `sortablelist`
    announces grab/move/rollback/conflict through a polite `aria-live`
-   region. `OptimisticAction` and `ToggleAction` do not — they rely on
+   region. `OptimisticAction` and `ToggleAction` do not; they rely on
    the visible label flip and `aria-busy` toggling. Sightless users
    perceive pending state but not "Saved ✓" or "Rolled back." The
    custom events (`optimistic-action:committed`,
@@ -715,8 +715,8 @@ should be undertaken deliberately, not as a side effect of a docs pass.
 3. **`OptimisticAction` is fire-and-forget; `ToggleAction` is too.**
    Neither serializes form data. For mutations that must transmit a
    value, use `interactive.OnSubmit` (which keys the JSON body off each
-   control's `name`). This is by design — keeping the optimistic
-   primitives payload-free makes them composable — but it is the reason
+   control's `name`). This is by design: keeping the optimistic
+   primitives payload-free makes them composable, but it is the reason
    Recipe 2 reaches for two patterns side by side. Documented here so
    the next author does not look for a "body" config field that does
    not exist.
@@ -736,21 +736,21 @@ should be undertaken deliberately, not as a side effect of a docs pass.
 
 ## See also
 
-- [Interactive patterns](interactive-patterns.md) — the full
+- [Interactive patterns](interactive-patterns.md): the full
   `data-fui-*` vocabulary, including the sortable list and ConfirmAction
   reference.
-- [Reactivity model](reactivity.md) — the four ways to make a page
+- [Reactivity model](reactivity.md): the four ways to make a page
   change after first paint (signals, RPC, polling, SSE) and the
   statelessness contract.
-- [UI capability map](ui-capability-map.md) — the wider state boundary
+- [UI capability map](ui-capability-map.md): the wider state boundary
   and where optimistic state lives.
-- [Runtime contract](runtime-contract.md) — the SSR/hydration/island/SSE
+- [Runtime contract](runtime-contract.md): the SSR/hydration/island/SSE
   model and the `data-fui-*` attribute reference.
-- [UI composition recipes](ui-composition-recipes.md) — page grammar for
+- [UI composition recipes](ui-composition-recipes.md): page grammar for
   the surfaces these recipes compose into.
-- [Idempotency](idempotency.md) — the server-side `Idempotency-Key`
+- [Idempotency](idempotency.md): the server-side `Idempotency-Key`
   contract that makes optimistic mutations safe to retry.
-- [Events and SSE](events.md) — why SSE is push-only and is never the
+- [Events and SSE](events.md): why SSE is push-only and is never the
   mutation's confirmation channel.
 
 ## Common mistakes
@@ -772,7 +772,7 @@ should be undertaken deliberately, not as a side effect of a docs pass.
   it non-interactive until the authoritative replacement lands.
 - **Authorizing at the trigger.** The trigger renders for viewers; the
   handler enforces. A 4xx response is the runtime's honest "rolled back"
-  signal — return it instead of redirecting when permission is missing.
+  signal; return it instead of redirecting when permission is missing.
 - **Adding a second styling surface for the optimistic states.** The
   `[data-state="pending|committed|error"]` selectors are the styling
   surface; compose them, do not invent parallel classes (Hard rule 7).

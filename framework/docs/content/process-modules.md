@@ -16,7 +16,7 @@ model, sandbox, migration, lifecycle, UI) lives in the `#37` design note.
 ## What a process module is
 
 A process module is defined by a **content-addressed, operator-approved
-descriptor** — a Go value (`ProcessModuleDescriptor`) whose fields are
+descriptor**: a Go value (`ProcessModuleDescriptor`) whose fields are
 authoritative at runtime. The running child only ever *cross-checks*
 digests at handshake; it never supplies values. A mismatch on digest,
 identity, or an extra grant is terminal (the module is quarantined to
@@ -43,16 +43,16 @@ app.RegisterProcessModule(framework.ProcessModuleDescriptor{
 
 The fields:
 
-- **Routes** — the HTTP routes, host-registered behind the existing module
+- **Routes**: the HTTP routes, host-registered behind the existing module
   route gate. The child cannot add, rename, or reshape routes.
-- **Tools** — the optional MCP tools the module declares (see below).
+- **Tools**: the optional MCP tools the module declares (see below).
   Digests are byte-compared against `module.tool.list` at handshake.
-- **RequestedGrants** — the verbatim `resource:verb` list the operator
+- **RequestedGrants**: the verbatim `resource:verb` list the operator
   reviews at install. Effective grants = requested ∩ approved.
-- **TrustTier** — selects the runner: `TrustTrusted` (crash isolation
+- **TrustTier**: selects the runner: `TrustTrusted` (crash isolation
   only, for dev or in-house modules) or `TrustUntrusted` (requires a
   probe-passing sandbox, fail-closed otherwise).
-- **MigrationGroup** — the `#33` migration group the module owns.
+- **MigrationGroup**: the `#33` migration group the module owns.
 
 ## Install + operator approval
 
@@ -60,7 +60,7 @@ Installation is **out of band**: the operator places the approved artifact
 on disk and hands the descriptor + the approved-grant subset to
 `RegisterProcessModule`. There is no registry, marketplace, or dependency
 solver. The v1 trust anchor is a **content-addressed digest an operator
-explicitly approves after reviewing the verbatim `resource:verb` list** —
+explicitly approves after reviewing the verbatim `resource:verb` list**,
 not a signature/PKI (no signing authority, key distribution, or revocation
 is defined yet).
 
@@ -74,7 +74,7 @@ replicas through the SQL-backed `ProcessModuleStore`.
 - **Zero database credentials in the child.** The host brokers all data
   and runs all DDL. The child's reverse `host.*` calls (entity query/
   create/update/delete, search, event emit) are re-dispatched through the
-  **same CRUD chokepoint** as live HTTP — owner/tenant/permission +
+  **same CRUD chokepoint** as live HTTP, so owner/tenant/permission +
   token-scope re-run on the re-attached caller identity.
 - **Capability model = module-grant ∩ caller-authority.** The required
   permission is derived from the trusted method + canonical host resource,
@@ -95,7 +95,7 @@ A disabled module is indistinguishable from uninstalled: its routes **404**
 and its MCP tools are omitted + refused. An enabled-but-down module
 (crashed, starting, draining, lease-failing) is a **retryable temporary
 outage**: routes return `503 + Retry-After`, tools are listed but return a
-retryable-unavailable error. This split is load-bearing — the router gate
+retryable-unavailable error. This split is load-bearing: the router gate
 can only 404, so the Ready layer lives in the proxy handler and the tool
 handler. Upgrades exploit it: a module stays Enabled (no 404) but not-Ready
 (`DrainingUpgrade`) while the old generation drains and the new one starts.
@@ -106,12 +106,12 @@ A bare subprocess is **not** a security boundary. `TrustUntrusted` requires
 a `SandboxRunner` whose backend passes a P1–P7 conformance probe (distinct
 OS principal, no inherited secret/fd, no network egress, filesystem
 confinement, resource limits, no privilege re-escalation). **An untrusted
-module with no probe-passing backend does not run** — there is no silent
+module with no probe-passing backend does not run**; there is no silent
 downgrade to the trusted runner.
 
 The backends are per-OS wrapper commands (Linux: `bwrap` + cgroup v2;
 macOS: `sandbox-exec`; Windows: AppContainer + Job Object). Some probe
-properties are **structurally unreachable on a stock host** — distinct-uid
+properties are **structurally unreachable on a stock host**: distinct-uid
 on macOS, network-egress denial on Windows. So: **an untrusted module may
 be unrunnable on stock macOS/Windows/some-Linux until the operator installs
 a conforming backend or provisions the missing rule.** Fail-closed refusal
@@ -134,7 +134,7 @@ REVOKE ALL ON SCHEMA public FROM module_billing_role;
 Three load-bearing points:
 
 1. **`search_path` is a convenience, NOT the fence.** It is session-mutable;
-   the `REVOKE` on `public` is the real boundary — the role holds no
+   the `REVOKE` on `public` is the real boundary: the role holds no
    privileges outside its own schema regardless of `search_path`.
 2. **The DDL session authenticates AS `module_billing_role`** (a separate
    login role, member of nothing), not an elevated session that `SET ROLE`s
@@ -151,7 +151,7 @@ the group rules (every migration's group == the descriptor's group; default-
 group migrations are rejected; duplicate `(group, version)` and digest
 mismatches are rejected), runs a non-authoritative **lint** (flags anything
 beyond plain `CREATE TABLE` / `ALTER TABLE ADD COLUMN` / `CREATE INDEX` for
-review — the role is the real boundary, there is no SQL parse-allowlist),
+review; the role is the real boundary, there is no SQL parse-allowlist),
 then provisions the schema+role, runs `Up` under the advisory lock
 authenticated as the role, and stamps `MigrationsAppliedAt` so the
 supervisor lets the module reach Ready.
@@ -165,7 +165,7 @@ coord.Apply(ctx, desc, []framework.ApprovedMigration{
 })
 ```
 
-**SQLite is not a third-party DDL boundary** — it has no roles/`GRANT`/
+**SQLite is not a third-party DDL boundary**: it has no roles/`GRANT`/
 schemas. The coordinator rejects an **untrusted** module's migrations on
 SQLite, loud (fail-closed). Trusted/dev-only modules may run on SQLite.
 Group names do not make SQLite DDL safe; groups are bookkeeping.
@@ -178,7 +178,7 @@ action, never an uninstall side effect.
 ## MCP tools
 
 A module may declare AI-agent-callable **tools** in its
-descriptor. The host — not the child — registers each tool into its
+descriptor. The host, not the child, registers each tool into its
 existing `core/mcp.Server` under a namespaced id:
 
 ```
@@ -189,7 +189,7 @@ so two modules cannot collide and every call is attributable. At handshake
 the host fetches `module.tool.list` and requires **byte-equality** with the
 descriptor digests; a child that adds, renames, or reshapes a tool is
 quarantined. A tool invocation forwards `module.tool.call` to the live
-child through the **same capability broker** as `module.http` — the calling
+child through the **same capability broker** as `module.http`; the calling
 agent's authority is resolved and delegated identically, and the tool's
 reverse `host.*` calls are checked as module-grant ∩ caller-authority
 (including the `CrossOwnerRead` carve-out). A tool can do nothing an HTTP
@@ -199,8 +199,8 @@ vocabulary.
 ## UI rendering
 
 A module owns *screen logic* only. It returns a bounded, declarative
-`ui.node.v1` node tree — a closed, host-owned component enum with typed
-scalar props — which the host validates, maps to design-system components,
+`ui.node.v1` node tree, a closed, host-owned component enum with typed
+scalar props, which the host validates, maps to design-system components,
 renders, and hydrates. The module never emits raw HTML/CSS/JS or
 `data-fui-*` attributes; action references resolve to installed routes,
 which the host maps to the real runtime RPC URLs.
@@ -208,17 +208,17 @@ which the host maps to the real runtime RPC URLs.
 The closed validator lives in [`core-ui/uinodev1`](../../../core-ui/uinodev1)
 (`uinodev1.Validate`): it enforces the whole-tree caps (depth ≈ 32, nodes ≈
 500, per-prop strings ≈ 4 KiB), the closed component enum, typed scalar
-props (no `id`/`class`/`style`/`data-*` passthrough — `data-fui-*` and `on*`
+props (no `id`/`class`/`style`/`data-*` passthrough: `data-fui-*` and `on*`
 are *unrepresentable*, not merely denied), host-relative-only URL schemes,
 and action_ref shape. A forged tree is whole-tree rejected.
 
 The proxy renders a validated tree through
 [`framework/uihost/uinoderender`](../../uihost/uinoderender): each component
 maps to a `framework/ui` / `core-ui/html` primitive with the host assigning
-every id, class, ARIA attribute, and `data-fui-rpc` URL — the module supplies
+every id, class, ARIA attribute, and `data-fui-rpc` URL; the module supplies
 none. A node's `action_ref` resolves against the module's own declared
 routes; a ref naming no declared route fails the render **closed** (a buffered
-503), and any validation or render error is likewise fail-safe — the forged
+503), and any validation or render error is likewise fail-safe; the forged
 or malformed content never reaches the wire. The gate test
 `TestGate_UIContainment` proves both halves end to end: a clean tree renders
 to real design-system markup (200 `text/html`), a forged tree is rejected
@@ -228,7 +228,7 @@ to real design-system markup (200 `text/html`), a forged tree is rejected
 
 A module child is a plain Go binary that speaks moduleproto over stdio. It
 depends only on [`core/moduleproto`](../../../core/moduleproto) plus the
-standard library — no `framework/*`, no MCP, no DB driver. The canonical,
+standard library: no `framework/*`, no MCP, no DB driver. The canonical,
 runnable example is
 [`examples/processmodule-demo/main.go`](../../../examples/processmodule-demo/main.go),
 which is also the child the go/no-go gate suite
@@ -241,10 +241,10 @@ The shape is fixed:
    `moduleproto.Peer` in the `RoleChild` role.
 2. Register handlers for the host → module methods you serve:
    `module.handshake` (echo the host's expected `instance_id` +
-   `desired_generation` + `surface_sha256` — a mismatch is terminal),
+   `desired_generation` + `surface_sha256`; a mismatch is terminal),
    `module.ready` (warmup gate), `module.health`, `module.http` (your
    routes), `module.drain`, and optionally `module.tool.list` /
-   `module.tool.call` (`module.cancel` is built into the Peer — do not
+   `module.tool.call` (`module.cancel` is built into the Peer; do not
    re-register it).
 3. Call `peer.Start()`, then block on `<-peer.Done()` (clean EOF on stdin).
 
@@ -288,7 +288,7 @@ terminal `Failed` or a per-call 503):
   chokepoint as live HTTP. The demo's `/items` route is a worked example.
 - **Bodies are fully buffered.** A `module.http` response is one
   `HTTPResponseResult` with a `json`, `text`, or `ui.node.v1` body. There is
-  no streaming in v1 — the host buffers the whole response before committing
+  no streaming in v1: the host buffers the whole response before committing
   headers, so a child that dies mid-call yields a buffered 503, never a
   truncated 200.
 
@@ -303,7 +303,7 @@ bookkeeping.
 
 - **Treating `search_path` as the isolation fence.** It is session-mutable
   and the publisher can `SET search_path TO public, module_M` freely. The
-  fence is the `REVOKE` — the role holds no privileges outside its own
+  fence is the `REVOKE`: the role holds no privileges outside its own
   schema. Claiming otherwise is the common, wrong take on fixed `search_path`.
 - **Forgetting to run the migration coordinator.** A module with a
   declared migration group never reaches Ready until the coordinator stamps

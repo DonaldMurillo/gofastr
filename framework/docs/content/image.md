@@ -1,7 +1,7 @@
 # Image pipeline
 
-`framework/image` is a chainable image pipeline — decode → transform →
-encode — implemented in pure Go on top of `image/jpeg`, `image/png`,
+`framework/image` is a chainable image pipeline: decode → transform →
+encode. It is implemented in pure Go on top of `image/jpeg`, `image/png`,
 `image/gif`, and `golang.org/x/image`. No CGo, no system libraries, no
 native build step. The API is inspired by Bun.Image; the
 implementation is independent.
@@ -101,7 +101,7 @@ familiar Bun.Image / Sharp naming where it applies:
 | `Nearest` | `draw.NearestNeighbor` | Pixel art, exact down-sampling. |
 
 There is no native Lanczos kernel because the Go team's `x/image` does
-not ship one. `Lanczos3` is an alias for `CatmullRom` — visually similar
+not ship one. `Lanczos3` is an alias for `CatmullRom`, visually similar
 at typical photo content.
 
 ### Fit modes
@@ -161,13 +161,13 @@ framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
 
 See [uploads.md](uploads.md) → "Automatic renditions and placeholders".
 The rest of this page is the pipeline underneath, for images that do not
-come in through an upload — generated covers, imported batches, one-off
+come in through an upload: generated covers, imported batches, one-off
 scripts.
 
 ## Plug-and-play: VariantSet → PipelineImage
 
-For the common case — "take this upload, produce three sizes plus a
-placeholder, hand it to the UI" — there's a declarative helper. The
+For the common case, "take this upload, produce three sizes plus a
+placeholder, hand it to the UI", there's a declarative helper. The
 `VariantSet` is headless (no UI/HTTP dependency); pair it with the
 `ui.PipelineImage` component to render.
 
@@ -225,7 +225,7 @@ ui.PipelineImage(ui.PipelineImageConfig{
 ```
 
 `PipelineImage` emits one `<source type="…" srcset="…">` per distinct
-`Type` in input order — put the modern format first so legacy browsers
+`Type` in input order. Put the modern format first so legacy browsers
 fall through to the `<img>` fallback.
 
 ## Placeholders
@@ -234,12 +234,12 @@ A placeholder is a cheap stand-in that paints before the real image
 arrives. `Placeholder` on `ui.OptimizedImage` and `ui.PipelineImage`
 takes an inline raster `data:` URI and renders it as an image stacked
 behind the real one. No JavaScript is involved and nothing needs
-hydrating — the placeholder is server-rendered and simply stays behind
+hydrating. The placeholder is server-rendered and simply stays behind
 the loaded image.
 
 Two ways to produce one.
 
-**LQIP — encode a tiny copy of the source.** Simplest when you hold the
+**LQIP: encode a tiny copy of the source.** Simplest when you hold the
 image at the moment you need the placeholder:
 
 ```go
@@ -251,7 +251,7 @@ durl, err := img.Placeholder(image.PlaceholderOptions{
 })
 ```
 
-**BlurHash — store ~28 characters, render later.** Compute the hash once
+**BlurHash: store ~28 characters, render later.** Compute the hash once
 at upload time, keep it in a column, and turn it back into pixels on
 render:
 
@@ -282,7 +282,7 @@ the table (`n <= 0` disables it) and `FlushBlurHashCache()` empties it.
 
 `BlurHashRenderConfig` knobs: `Width`/`Height` default to
 `DefaultBlurHashRenderSize` (20 px) and are capped at
-`MaxBlurHashRenderSize` (128 px) — a hash holds at most 9×9 cosine
+`MaxBlurHashRenderSize` (128 px). A hash holds at most 9×9 cosine
 components, so rendering larger cannot recover detail it never carried.
 `Punch` raises contrast (default 1.0). `Format` defaults to
 `FormatJPEG`, whose size barely moves with dimensions (~840–940 bytes
@@ -291,7 +291,7 @@ dominate a payload this small); `FormatPNG` is smaller at or below 20 px
 (~430–880 bytes) but grows to ~2.4 KB by 48 px.
 
 `DecodeBlurHash` is available directly when you want the pixels rather
-than a data URL — it returns a pipeline `*Image`, so it chains with the
+than a data URL. It returns a pipeline `*Image`, so it chains with the
 encoders like any other source.
 
 Both directions follow the [blurha.sh][bh-spec] reference. When
@@ -300,7 +300,7 @@ encoding, note that cost scales with `width × height × components`;
 resize first.
 
 A malformed hash returns an error rather than pixels. Treat a
-placeholder as optional when rendering user data — the UI components
+placeholder as optional when rendering user data. The UI components
 already drop an unusable `Placeholder` and render the image without one,
 so a bad legacy row degrades instead of failing the page.
 
@@ -319,7 +319,7 @@ being a real element that is never removed:
 ## Decompression-bomb guard
 
 Inputs whose reported `width × height` exceed `Config.MaxPixels`
-(default 64 MP — an 8192×8192 square) return `ErrDecompressionBomb`
+(default 64 MP, an 8192×8192 square) return `ErrDecompressionBomb`
 before any pixel decoding is attempted. The check uses the format's
 header dimensions (`stdimage.DecodeConfig`) so no pixel buffer is
 allocated for a rejected input. Note the WebP-lossless encoder has
@@ -336,7 +336,7 @@ img, err := image.DecodeBytesWithConfig(data, image.Config{
 
 Decoding a JPEG records the EXIF orientation tag (`1..8`) on the
 `*Image`. `Metadata().Orientation` exposes it; `AutoOrient()` applies it
-and resets the tag. Only the orientation tag is parsed — full EXIF
+and resets the tag. Only the orientation tag is parsed. Full EXIF
 support is intentionally out of scope.
 
 **Caveat:** an `*Image` built via `FromImage(...)` carries
@@ -413,7 +413,7 @@ picture := ui.PipelineImage(ui.PipelineImageConfig{
 })
 ```
 
-`VariantSink`'s `r` is one-shot — stash it for a later goroutine and
+`VariantSink`'s `r` is one-shot. Stash it for a later goroutine and
 the next read returns `ErrReaderClosed`. Drain inside the sink (e.g.,
 hand it directly to `storage.Save`).
 
@@ -434,7 +434,7 @@ hand it directly to `storage.Save`).
 
 - **5-pass VP8L encode**: `WebP().Bytes()` runs every uniform predictor
   mode (1, 2, 11, 12, 13) and ships the smallest. On a 256² photo
-  that's ~20 ms / 29 MB of allocations — ~6× slower than a single-mode
+  that's ~20 ms / 29 MB of allocations, ~6× slower than a single-mode
   pass. For high-volume hot paths, prefer JPEG (~1 ms) and reserve
   WebP-lossless for low-throughput admin / dashboard flows.
 - **`isUniform` short-circuit**: solid-color inputs encode in one
@@ -459,7 +459,7 @@ hand it directly to `storage.Save`).
   `32 × 24`) first.
 - **Expecting WebP-lossy / HEIC / AVIF to work.** They return
   `ErrFormatUnsupported`. There is no pure-Go encoder for AV1, HEVC,
-  or VP8 quality-competitive with libvpx — those formats need CGo and
+  or VP8 quality-competitive with libvpx. Those formats need CGo and
   are out of scope for this package.
 - **Expecting WebP-lossless to match `cwebp` file sizes.** The pure-Go
   encoder tries five uniform predictor modes (1, 2, 11, 12, 13) per
@@ -482,12 +482,12 @@ hand it directly to `storage.Save`).
   for "smallest-possible WebP" you'd still go to `cwebp`.
 
   The encoder infrastructure for per-block mode evaluation is in
-  `framework/image/internal/vp8l/predictor.go` — `scoreModeBlock` +
-  `chooseBlockModes` — waiting on a proper Huffman cost model.
+  `framework/image/internal/vp8l/predictor.go`, in `scoreModeBlock` and
+  `chooseBlockModes`, waiting on a proper Huffman cost model.
 - **Aliasing `*Image` across goroutines.** Chain methods return new
   `*Image` values, but the underlying pixel buffer in an `image.Image`
   is shared. If you mutate via `GoImage()`, clone first.
 - **Forgetting `AutoOrient` on user-uploaded photos.** Phone cameras
   store rotated sensors with an orientation tag, not rotated pixels.
   Saving the JPEG verbatim leaves the rotation only correct in viewers
-  that honour EXIF — most thumbnail renderers don't.
+  that honour EXIF, and most thumbnail renderers don't.

@@ -61,7 +61,7 @@ Override with `notify.WithRouter(...)` for app-specific logic
 
 `MapTemplater` is the bundled in-memory templater: an explicit
 `(notifType, channel)` lookup table. Both fields are interpolated
-with the same `{{placeholder}}` form used by `core/i18n` — unknown
+with the same `{{placeholder}}` form used by `core/i18n`; unknown
 placeholders are left intact so they're visible during development.
 
 ```go
@@ -72,8 +72,8 @@ tmpl.Set("password.reset", "email", notify.Template{
 })
 ```
 
-`Template.Extra` is passed through to the channel as `Rendered.Extra`
-— the bundled `EmailChannel` honours `Extra["headers"]` (custom headers,
+`Template.Extra` is passed through to the channel as `Rendered.Extra`:
+the bundled `EmailChannel` honours `Extra["headers"]` (custom headers,
 with reserved keys like To/From/Cc/Bcc/Reply-To rejected) so
 per-notification overrides don't need a custom Channel. A templated
 `Extra["from"]` is **rejected** with an error: a per-notification sender
@@ -82,7 +82,7 @@ is the only legitimate source.
 
 For larger apps with translations, render templates yourself via the
 `core/i18n` package and pass the result via `Data["_rendered_email"]`
-/ `Data["_rendered"]` — the Notifier short-circuits the templater for
+/ `Data["_rendered"]`; the Notifier short-circuits the templater for
 that channel.
 
 ## Writing a channel
@@ -114,7 +114,7 @@ a custom router via `WithRouter` (or just always include it).
 
 `Send` returns the first per-channel error wrapped as
 `notify: channel %q: <err>`. Use `WithErrorCallback` to observe every
-channel's outcome — useful when you want a green path even if one
+channel's outcome, useful when you want a green path even if one
 channel breaks, but want metrics / alerts when something does.
 
 Channels are fired concurrently; a slow channel doesn't block the
@@ -129,7 +129,7 @@ others, and the call returns only after every channel has finished.
   Rendered.TextBody / HTMLBody gets pushed across every channel; for
   attachments use channel-specific Extra entries or pre-render.
 - **Don't rely on the LoggerChannel in production.** It writes to a
-  *log.Logger — meant for development, CI, and as a sanity sink.
+  *log.Logger, meant for development, CI, and as a sanity sink.
 - **Don't forget the templater.** Without one, every `Send` returns
   `ErrNoTemplater` unless you supply `Data["_rendered_*"]` per
   channel.

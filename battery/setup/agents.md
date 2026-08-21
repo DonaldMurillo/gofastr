@@ -4,8 +4,8 @@ First-run setup for self-hosted apps. While the app's `Complete`
 predicate reports false, `Start` serves an SSR setup wizard instead of
 the app router: every other path 503s, `/healthz` + `/readyz` stay up,
 and background consumers (cron, queue, outbox relay) wait. When the
-final step completes, the handler swaps to the real app atomically —
-no restart. The same steps also run **headless** when their env vars
+final step completes, the handler swaps to the real app atomically,
+with no restart. The same steps also run **headless** when their env vars
 fully resolve, for IaC installs.
 
 **Use this when** the prompt mentions: first run, first boot, install
@@ -17,7 +17,7 @@ user", onboarding a fresh deploy, setup token.
 **Shape:**
 ```go
 // AdminStep returns the step AND the matching Complete predicate
-// ("does an admin user exist?") — use both.
+// ("does an admin user exist?"). Use both.
 adminStep, adminDone := setup.AdminStep(authManager, db, "auth_users")
 runner := setup.New(setup.Config{
     Title: "My App Setup",
@@ -40,18 +40,18 @@ app := framework.NewApp(framework.WithSetup(runner), …)
   steps run before the port binds and failures abort `Start` loudly.
 - `GOFASTR_SETUP=off` skips setup mode entirely; `force` re-enters it
   as a rescue mode; invalid values fail `Start`.
-- Completion is **derived**, never a marker file — a crash mid-setup
+- Completion is **derived**, never a marker file. A crash mid-setup
   re-enters setup on next boot. Worker-role processes refuse to start
   while setup is incomplete.
 
 **Rules for agents:**
-- Never render the completion page yourself or claim setup is done —
-  the battery only shows "Setup Complete" after `Complete` confirms it
+- Never render the completion page yourself or claim setup is done.
+  The battery only shows "Setup Complete" after `Complete` confirms it
   and the handler swap fired.
 - The wizard UI is composed exclusively from `framework/ui`
-  (AuthCard, ProgressSteps, Form, FormField, Notification, Stack) —
-  zero bespoke CSS, zero hand-rolled markup. Keep it that way.
-- `AdminStep` takes the users table name explicitly — pass the same
+  (AuthCard, ProgressSteps, Form, FormField, Notification, Stack),
+  with zero bespoke CSS and zero hand-rolled markup. Keep it that way.
+- `AdminStep` takes the users table name explicitly. Pass the same
   table the auth battery writes to (canonically `auth_users`).
 
 Full doc: `gofastr docs first-run` / `framework/docs/content/first-run.md`.

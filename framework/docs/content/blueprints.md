@@ -14,7 +14,7 @@ gofastr generate --from=blueprints/ --dry-run --json
 
 Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
 `.json` blueprint files (or a directory of them), validates them, and scaffolds
-owned Go into an idiomatic, module-root layout by default — a flat
+owned Go into an idiomatic, module-root layout by default: a flat
 `package main` at the root (`main.go`, `app.go`, `screens_register.go`, one
 `screen_<name>.go` per screen, and, when needed, a thin `resource.go` or
 `stubs.go`) plus the `entities/` package (set `--out=<dir>` or
@@ -22,7 +22,7 @@ owned Go into an idiomatic, module-root layout by default — a flat
 `generate` is one-shot: it refuses to overwrite an existing project
 (pass `--force`), because the emitted code is yours to own. `--add` is the
 additive alternative: it writes only the new files from a partial yml, never
-overwriting — see [Additive generation](#additive-generation---add).
+overwriting. See [Additive generation](#additive-generation---add).
 
 `--force` overwrites everything, so it tells you what it is destroying: before
 writing, it compares each target against the bytes it is about to emit and
@@ -36,12 +36,12 @@ file after scaffolding.
   If this app is maintained by hand, recover with `git checkout -- <file>` and do not regenerate it.
 ```
 
-It warns rather than stops — you asked to overwrite. Regenerating an app you
+It warns rather than stops: you asked to overwrite. Regenerating an app you
 have edited by hand is almost always a mistake; reach for `--add` instead, or
 keep the blueprint as a record and leave the code alone.
 
 At runtime your app
-registers the **generated** entity package (`entities.RegisterAll(app)`) — there
+registers the **generated** entity package (`entities.RegisterAll(app)`). There
 is no file-based runtime loader. The blueprint's `entities:` list uses the same
 entity shape and field types documented in
 [Entity Declarations](entity-declarations.md).
@@ -59,7 +59,7 @@ external extensions rather than a full app blueprint.
 ## What the blueprint generates vs. what you hand-write
 
 The blueprint scaffolds a working app, then gets out of the way. This table
-is what it produces *today* — everything else is ordinary owned Go you write
+is what it produces *today*; everything else is ordinary owned Go you write
 against the framework (the emitted code is the starting point, not a ceiling).
 
 | Area | Generated from the blueprint | Hand-written Go |
@@ -69,7 +69,7 @@ against the framework (the emitted code is the starting point, not a ceiling).
 | **Dashboard stat/chart blocks** | `stat_card` (count/sum), `bar_chart`/`pie_chart`/`line_chart` bound to an entity `source: {entity, group_by}` | Custom metrics, multi-entity joins, computed series |
 | **Entity list** | Table with server-side **search**, **sort**, **pagination**, and **facet filters** (`filters:` → a `ui.FilterToolbar` of enum/bool/relation facets); optional "New" button | Filtering on computed/derived columns, range/date filters, multi-select facets |
 | **Entity detail / form** | Read view + create/edit `<form>` (enum & relation `<select>`s), status-transition buttons | Multi-step wizards, custom field widgets, cross-field validation UX |
-| **Child-collection islands** | — (not generated) | Hand-written — see [Interactive patterns](interactive-patterns.md) for the island RPC recipe |
+| **Child-collection islands** | — (not generated) | Hand-written; see [Interactive patterns](interactive-patterns.md) for the island RPC recipe |
 | **Admin back-office** | Full CRUD admin over every entity (`app.admin`), role-gated | Custom admin actions beyond CRUD |
 | **Seed data** | Explicit `rows:` + auto-generated `count:`/`weights:` demo rows | Fixtures with complex relations / business invariants |
 | **Theme + dark mode** | Color + font tokens, dark sub-map, header theme toggle | Per-component theme overrides |
@@ -80,7 +80,7 @@ keys are `primary`, `primary-fg`, `secondary`, `background`, `surface`,
 `surface-soft`, `text`, `text-muted`, `text-subtle`, `border`,
 `border-strong`, `accent`, `success`, `warning`, `danger`, and `info`.
 It also accepts the font tokens `font_heading`, `font_body`, and
-`font_display` — named Google Fonts families that drive the `--font-*`
+`font_display`: named Google Fonts families that drive the `--font-*`
 tokens. An `app.theme.dark` sub-map overrides any of the same color
 tokens for the dark scheme (the header's theme toggle flips to it).
 Generated apps call `site.WithTheme(...)`, so the values are emitted
@@ -95,7 +95,7 @@ family's latin `woff2` subset at generate time and writes it to
 hyphenated family name, e.g. `Bricolage Grotesque` →
 `bricolage-grotesque.woff2`). The emitted `fontFaceCSS` `@font-face`
 rules point at `/fonts/<slug>.woff2`, which the app serves from that
-static dir — so a named font just *works* in a fresh app with no manual
+static dir, so a named font just *works* in a fresh app with no manual
 step. When no `static_dir` is set but the theme names a font, the
 generator defaults it to `static/`.
 
@@ -103,14 +103,14 @@ Generation may run offline. If the fetch fails, the app is still emitted
 (it falls back to system fonts) but `generate` prints a **loud warning**
 naming the exact `static/fonts/*.woff2` files you must supply yourself.
 The generated `main.go` also boot-checks for those files and logs a
-warning at startup if one is missing — there is no silent 404 path.
+warning at startup if one is missing. There is no silent 404 path.
 
 ### Entity APIs live under `/api`; screens own the bare path
 
 `app.api_prefix` (default `"api"`) is the URL prefix every entity's JSON
 CRUD API mounts under, so `GET /api/posts` returns JSON while the bare
 `/posts` path is free for an HTML `screen`. Without this, a `screen` routed at
-`/posts` would collide with — and be shadowed by — the auto-generated CRUD
+/posts` would collide with, and be shadowed by, the auto-generated CRUD
 handler at the same path. MCP tools and the OpenAPI spec follow the prefix
 automatically. Set `api_prefix: ""` to mount entity APIs at the bare
 `/<table>` (the historical behavior); a screen must then not reuse an entity
@@ -131,14 +131,14 @@ Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, and mixed advanced YAML forms are not part
 of the blueprint format.
 
-**No inline (flow-style) maps.** `{type: relation, to: users}` is invalid —
+**No inline (flow-style) maps.** `{type: relation, to: users}` is invalid;
 every map must be written with indented `key: value` lines:
 
 ```yaml
-# Invalid — inline map
+# Invalid: inline map
 - {name: author_id, type: relation, to: users}
 
-# Valid — indented map
+# Valid: indented map
 - name: author_id
   type: relation
   to: users
@@ -277,7 +277,7 @@ Entity declarations reuse the existing `entities` package generator, including
 per-operation `access` RBAC, cursor settings, indices, and `properties`.
 The `access` map (keys `read`, `create`, `update`, `delete`;
 each value a permission string) is emitted as `Access:
-framework.AccessControl{...}` in the generated registration — see
+framework.AccessControl{...}` in the generated registration; see
 [entity-declarations](entity-declarations.md) for the semantics and
 [access-control](access-control.md) for wiring roles + policy. Entity-owned endpoints and top-level
 endpoints generate Go handler stubs (in `stubs.go`) plus router registration.
@@ -295,7 +295,7 @@ The generated app mounts MCP by default: `framework.WithMCP()` mounts
 `/.well-known/mcp/catalog.json`), serving the per-entity CRUD tools
 (`mcp: true`) alongside the `framework.WithMCPIntrospection()` set
 (`app_routes`, `app_readiness`, `framework_docs_search`, …). Those tools
-are read-only but let a caller read the app's routes and config — remove
+are read-only but let a caller read the app's routes and config. Remove
 `WithMCPIntrospection()` from `main.go` if `/mcp` is reachable by
 untrusted callers in production.
 
@@ -307,26 +307,26 @@ debug tools (`log_recent`, `log_filter`, `log_metrics`,
 `log_set_level`), and MCP data tools for every CRUD entity (even
 without `mcp: true`), so a connected agent can read recent requests
 and errors, read and write app data, and toggle modules during
-development — none of which registers on a production boot. See
+development, none of which registers on a production boot. See
 [agent-ready](agent-ready.md) and [dev-livereload](dev-livereload.md).
 
 ### Generated screen files
 
-Screens are emitted one file per screen, behind a fixed seam — never as one
+Screens are emitted one file per screen, behind a fixed seam, never as one
 aggregated `screens.go`:
 
-- `screens_register.go` — a fixed seam that names **no** screen, entity, or
+- `screens_register.go`: a fixed seam that names **no** screen, entity, or
   app. It defines `screenRegistrar{order int, fn func(fwApp *framework.App,
   site *app.App, db *sql.DB)}`, a `screenRegistrars` slice, and
   `mountGenerated(...)`, which sorts the registrars by `order` and runs them.
   Byte-identical for any screen/entity count. Add a screen by dropping in a new
   `screen_<name>.go`; never edit the seam.
-- `screen_<snake>.go` — one per authored non-CRUD screen (marketing pages,
+- `screen_<snake>.go`: one per authored non-CRUD screen (marketing pages,
   dashboards, auth forms): the screen struct, its `Screen*` methods, `Render`,
   a `mount<Screen>` func holding the `site.Register`/`site.RegisterScreen`
   call, and an `init()` that appends one
   `screenRegistrars = append(screenRegistrars, screenRegistrar{order: N, fn: mount<Screen>})`.
-- `screen_<entity>_crud.go` — one per entity with CRUD screens (or referenced
+- `screen_<entity>_crud.go`: one per entity with CRUD screens (or referenced
   by a data source): that entity's list/detail/new/edit screens, their mount
   funcs, **and** its `appResources["<entity>"] = resource.Config{...}` wiring
   inside the primary mount func (it needs `fwApp`). An entity's resource
@@ -336,17 +336,17 @@ aggregated `screens.go`:
 toasts, and endpoints. `appLayout`/`marketingLayout` are package-level vars
 assigned in `RegisterGenerated`, which calls `mountGenerated(fwApp, site, db)`
 and names no screen type or `appResources` entry. The generated screen order is
-recovered by `gofastr pack` from each file's `screenRegistrar{order: …}` — see
+recovered by `gofastr pack` from each file's `screenRegistrar{order: …}`; see
 [Packing](#packing-gofastr-pack-lossy-appblueprint-snapshot).
 
 
 ## Additive generation (`--add`)
 
 `gofastr generate --from=<yml> --add` is additive: it reads *any partial yml*
-(e.g. just two new entities, or a couple of new screens — not the canonical
+(e.g. just two new entities, or a couple of new screens, not the canonical
 `gofastr.yml`) and emits only
 the new full-fidelity pieces into an existing project, never touching owned
-files. It never overwrites anything — if a target file already exists, it is
+files. It never overwrites anything: if a target file already exists, it is
 skipped (and listed). In an empty directory, `--add` produces the same output
 as plain `generate`.
 
@@ -359,7 +359,7 @@ Partial ymls are legal: an entities-only (or screens-only) fragment omits
 `app.module`, so the module is derived from the enclosing `go.mod` exactly as
 in a full generate. This means `main.go`, `app.go`, `entities/register.go`, and
 `screens_register.go` are still rendered (the generator needs them for a valid
-package) — but since they already exist in your project, `--add` skips them.
+package), but since they already exist in your project, `--add` skips them.
 Every generated app ships both registration seams and their call sites
 (`entities.RegisterAll` in `main.go`, `mountGenerated` in `app.go`) even when
 it has no entities or screens yet, so a later `--add` registers and mounts its
@@ -381,19 +381,19 @@ added entity gets order 2). This keeps `RegisterAll`'s declaration order and
 
 **Screen order continuity.** `--add` reads the existing `screen_<name>.go`
 files and assigns the new screens `screenRegistrar{order: …}` values that
-continue after the project's existing max screen order — mirroring entity
+continue after the project's existing max screen order, mirroring entity
 order continuity, so `mountGenerated`'s sort and `gofastr pack`'s order
 recovery stay coherent across the union.
 
 **Referencing existing entities.** A screens-only fragment may reference an
-entity that lives in the *project* rather than in the fragment — e.g. an
+entity that lives in the *project* rather than in the fragment, e.g. an
 `entity_list` over an entity you generated last month. `--add` reads the
 project's `entities/` declarations and validates the fragment against the
 union, so there is no need to re-declare the entity just to build UI on it.
 
 **Re-declaring an existing entity or screen** is a no-op: the file already
 exists, so it lands in the skipped list and the existing file is left
-untouched. There is no diffing or merging — `--add` only writes files that
+untouched. There is no diffing or merging: `--add` only writes files that
 don't exist.
 
 **The `client.go` caveat.** `entities/client/client.go` is an aggregate over
@@ -426,15 +426,15 @@ gofastr generate screen contact      # screen_contact.go at /contact
 ```
 
 Each flag accepts `--out=DIR`, `--dry-run`, and `--json`. `--force` and
-`--add` are rejected — scaffolding *is* additive (it never overwrites), so
+`--add` are rejected: scaffolding *is* additive (it never overwrites), so
 those flags have no meaning here. The stub is a deliberate starting point you
 immediately edit:
 
 * `generate entity <name>` emits one entity with a single placeholder `name`
-  field (a required string) — rename it and add the rest. CRUD stays default,
+  field (a required string); rename it and add the rest. CRUD stays default,
   so the entity also gains a JSON API.
 * `generate screen <name>` emits one screen at `/<kebab-name>` with a heading
-  and a stub paragraph — replace its `Render`.
+  and a stub paragraph; replace its `Render`.
 
 Scaffolds and yml fragments are complementary, not competing: the **stub** is
 basic scaffolding (one thing, fast); a blueprint **yml** is full intention
@@ -447,7 +447,7 @@ the owned `app.go` (there is no new-file representation to scaffold).
 ## Packing: `gofastr pack` (lossy app→blueprint snapshot)
 
 `gofastr pack [app-dir]` reconstructs a best-effort `gofastr.yml` from a generated
-app's Go source — a lossy snapshot, not a round-trip inverse of `gofastr
+app's Go source, a lossy snapshot, not a round-trip inverse of `gofastr
 generate`. It reads the real artifacts via the
 Go AST (it does **not** stash a manifest): the per-entity `entities/<name>.go`
 files for entities (falling back to a legacy `entities/register.go`),
@@ -465,7 +465,7 @@ gofastr pack examples/meridian -o recovered.yml
 
 Synthesized `/new` + `/{id}/edit` form screens are dropped (they weren't
 authored). Generate and pack are a matched inverse pair for the declarative
-pieces — `app`, `entities`, `screens`, `nav`, and `seed` — so the invariant
+pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for a blueprint of those
 constructs (modulo comments + formatting); the Meridian example round-trips
 exactly, gated by a test. When you add a new construct to that set, teach
@@ -484,7 +484,7 @@ generator owns that directory outright.
 `endpoints`, `middleware`, `plugins`, and `helpers` are **not** recovered by
 pack: the generator emits them as `stubs.go` signatures you fill with your own
 Go, and pack cannot reverse a hand-written handler body back into a blueprint
-declaration. If your `gofastr.yml` declares any of these, keep the YAML — pack
+declaration. If your `gofastr.yml` declares any of these, keep the YAML; pack
 reconstructs the rest of the app around your owned stub code but will not
 re-emit their declarations.
 
@@ -492,7 +492,7 @@ re-emit their declarations.
 
 A top-level `entity_list` or `entity_detail` makes its screen a **server-rendered**
 (request-time) screen that queries the entity's `CrudHandler` and composes real
-`framework/ui` components — no client-side fetch. The generated screen calls
+`framework/ui` components with no client-side fetch. The generated screen calls
 the supported `framework/ui/resource` engine through the app's thin
 `resource.go` config registry:
 
@@ -503,16 +503,16 @@ the supported `framework/ui/resource` engine through the app's thin
   record's display name** (not the raw id). Search/sort/pagination are
   URL-driven and run server-side. `fields:` picks/orders the columns; `search:`
   names the LIKE-search field; `limit:` sets the page size.
-- **`filters:`** — an optional list of columns to expose as **facet filters**
+- **`filters:`**: an optional list of columns to expose as **facet filters**
   above the table via `ui.FilterToolbar` (one responsive, URL-driven GET form
   that also absorbs the search box, so the screen is a single form, never two).
-  Each column must be an **enum**, **bool**, or **relation** — anything else is
+  Each column must be an **enum**, **bool**, or **relation**; anything else is
   a blueprint error. Enums render as pills when they hold ≤4 short values and as
   a `<select>` otherwise; bools render as Yes/No pills; relations render as a
   `<select>` of the related records' display names. A selected facet applies a
   server-side equality filter that composes with search, sort, and pagination
   (sort-header and page links preserve the active facets; applying a facet
-  resets to page 1). Filtering is **explicit** — omit `filters:` and the list
+  resets to page 1). Filtering is **explicit**: omit `filters:` and the list
   renders exactly as before, with no toolbar. Example:
   `filters: [status, assignee_id]`.
 - `entity_detail` reads the route `{id}`, loads the record server-side, and
@@ -523,12 +523,12 @@ the supported `framework/ui/resource` engine through the app's thin
 The generated `resource.Config` registry (`appResources`) is declared in the
 thin owned `resource.go` and populated in each entity's
 `screen_<entity>_crud.go` mount func (run via `mountGenerated`) from that
-entity's `CrudHandler`, fields, and relations — see [Generated screen
+entity's `CrudHandler`, fields, and relations; see [Generated screen
 files](#generated-screen-files). Rendering, queries, formatting, relations,
 filters, and mutations stay in `framework/ui/resource`, so framework updates
 reach existing generated apps. `appBaseCSS()` (mounted ahead of
 `static/app.css`) is an owned, empty-by-default extension point for app-specific
-base CSS — every generated screen composes `framework/ui` components and
+base CSS: every generated screen composes `framework/ui` components and
 `core-ui/app` layouts that ship their own styling, so the generator emits zero
 bespoke CSS.
 
@@ -541,18 +541,18 @@ second component set or app-specific CSS.
 
 The public seam is:
 
-- `resource.DataSource` — the read methods needed by resource screens;
+- `resource.DataSource`: the read methods needed by resource screens;
   `*framework.CrudHandler` satisfies it.
-- `resource.Config` — entity labels and paths, `Fields`, relation label sources,
+- `resource.Config`: entity labels and paths, `Fields`, relation label sources,
   filters, related lists, transitions, and create/edit policy. `Field.Label`,
   `Field.Type`, `Field.Values`, and `Field.NoQuery` control display and query
   behavior; `Relation.Display` names the related record's label field.
 - `Config.WithColumns`, `WithSearch`, `WithLimit`, `WithCreate`, `WithEdit`,
-  `WithFilters`, `WithHeading`, `WithEmpty`, `WithActions`, and `WithIsland` —
+  `WithFilters`, `WithHeading`, `WithEmpty`, `WithActions`, and `WithIsland`:
   value-copy options for one screen without changing the registry entry.
-- `Config.List`, `Table`, `Detail`, and `Form` — screen-rendering entry points;
+- `Config.List`, `Table`, `Detail`, and `Form`: screen-rendering entry points;
   `TableHandler` serves an island table refresh.
-- `resource.Registry` — the per-app config map plus dashboard helpers
+- `resource.Registry`: the per-app config map plus dashboard helpers
   `StatValue`, `GroupBars`, `GroupSlices`, and `LineChart`.
 
 Generated apps keep only the editable config and auth-copy hook:
@@ -604,8 +604,8 @@ The forms submit as islands: `data-fui-rpc` POSTs/PUTs JSON to the entity's
 list/detail on success. Delete is a `DELETE` with a native confirm. The synthesized
 screens inherit the source screen's `layout` + `access` and are not added to `nav`.
 
-To add your own no-reload behavior to a hand-written screen — a status
-`<select>` that swaps a badge, a comment form that appends to a thread — follow
+To add your own no-reload behavior to a hand-written screen, such as a status
+`<select>` that swaps a badge or a comment form that appends to a thread, follow
 [interactive-patterns.md](interactive-patterns.md), in particular "Writing a
 hand-written island, end to end" (it covers the traps: the posted JSON key is
 the input's `name`, the two route-param syntaxes, and manual route
@@ -613,8 +613,8 @@ registration) and "Themed confirmation (`ui.ConfirmAction`)".
 
 #### RBAC for writable APIs
 
-When any entity declares an `access:` block, its auto-CRUD API is permission-gated
-— so the app must install a policy or every write 403s. The generator emits an
+When any entity declares an `access:` block, its auto-CRUD API is permission-gated,
+so the app must install a policy or every write 403s. The generator emits an
 `access.RolePolicy` that grants the **admin role** (`app.admin.role`) the wildcard
 (`*`) and an `access.Middleware` that resolves the signed-in user's roles, mounted
 after the session middleware. The admin operator can therefore manage every entity
@@ -624,7 +624,7 @@ per-role `Grant`s in `RegisterGenerated` as you define more roles.
 ### UI component blocks (the framework/ui catalog)
 
 Any screen body can compose the framework's UI components directly via block
-`kind`s — the generator emits the matching `ui.X(...)` call:
+`kind`s; the generator emits the matching `ui.X(...)` call:
 
 `page_header` · `hero` · `section` (with child blocks) · `card` · `stack` ·
 `cluster` · `grid` · `stat_row` · `stat_grid` · `stat_card` · `bar_chart` ·
@@ -635,23 +635,23 @@ The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
 semantic `gap`, `align`, and `justify` props (`cluster` also accepts
 `no_wrap`); `grid` accepts `min` and `gap`; `stat_grid` is the dashboard grid
 variant with a `12rem` default minimum. Spacing must use the shared
-`none|xs|sm|md|lg|xl|2xl` tokens—blueprints do not create a second styling system.
+`none|xs|sm|md|lg|xl|2xl` tokens; blueprints do not create a second styling system.
 
-**Long-form content** — `markdown` renders formatted prose (`ui.Markdown`) from a
+**Long-form content**: `markdown` renders formatted prose (`ui.Markdown`) from a
 `text:` string (headings, **bold**, lists, etc.) at a readable measure; the plain
 `type: heading` / `type: paragraph` blocks are also typeset to a comfortable
-column on marketing pages. **Pricing** — a `pricing` block takes
+column on marketing pages. **Pricing**: a `pricing` block takes
 `props: {plans: [{name, price, period, description, features: […], cta_text,
 cta_href, featured}]}` and renders a row of `ui.PricingCard`s (featured plan
 highlighted), so a pricing page reads like marketing, not an admin grid.
 
 **Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
-that computes a live metric server-side —
+that computes a live metric server-side:
 `source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
 optional `filter: status=active`) for a `stat_card`, and
 `source: {entity: customers, group_by: status}` for a chart. For the chart
 kinds `source` (with both `entity` and `group_by`, targeting a declared
-entity) is **required** — validation rejects a chart without one rather
+entity) is **required**: validation rejects a chart without one rather
 than letting the block silently vanish from the page. A chart with a
 `title` renders inside a `ui.Card` with that heading.
 
@@ -663,7 +663,7 @@ than letting the block silently vanish from the page. A chart with a
 
 ### Navigation (`nav`)
 
-`nav` is a list of sidebar entries — each `{label, href}`, with an optional
+`nav` is a list of sidebar entries, each `{label, href}`, with an optional
 `icon` and nested `items`. The app shell renders them as the sidebar (and, at
 narrow viewports, the hamburger drawer); the theme toggle lives in the sidebar
 footer, so there is no separate app top bar.
@@ -680,7 +680,7 @@ nav:
 ```
 
 Role-gated items are filtered by the signed-in user's roles at render time, on
-**both** the desktop sidebar and the mobile drawer — a link a user can't use
+**both** the desktop sidebar and the mobile drawer: a link a user can't use
 never appears (and is never a dead end into a 403). Items without `role:` are
 visible to everyone.
 
@@ -689,7 +689,7 @@ not gate the route. Whether the destination is protected depends entirely on
 what guards the destination: entity `access:` permissions gate the DATA a
 screen renders (a caller without them sees the "Not available" notice in place
 of rows), and the admin battery gates its own console. A blueprint screen
-cannot declare a role of its own — `screens: role:` is not a key — so a plain
+cannot declare a role of its own; `screens: role:` is not a key. A plain
 generated screen sitting at a role-gated href answers 200 to anyone who types
 the URL, with whatever ungated content it holds. Every screen path also appears
 in the route manifest embedded in each page, so the href is discoverable
@@ -711,14 +711,14 @@ to the decimal-string form the validator expects. Seeding is **fail-fast**: a
 row that fails validation (or an entity with no registered handler) aborts
 startup with the entity named in the error. The idempotency check would
 otherwise mark a partially-seeded entity as done, so a silently dropped row
-would never retry — the app would report ready with bootstrap data missing.
+would never retry; the app would report ready with bootstrap data missing.
 
 When any entity declares `owner_field` (per-user scoping) **and** an admin
 account is bootstrapped (`app.admin.seed_email` / `seed_password`), the seed
 runs *as that admin*: the generated hook looks the admin up and stamps every
 seeded owner column with their id. The demo data therefore belongs to the
 admin, and a freshly registered user starts with an empty, owner-scoped
-workspace they fill themselves — no other user's rows ever leak in. Without an
+workspace they fill themselves. No other user's rows ever leak in. Without an
 admin to attribute the rows to, an owner-scoped seed would have no valid owner
 and fail closed.
 
@@ -747,12 +747,12 @@ deterministic skew seeded from the entity + column name, so demos never look
 like an even split. Scalar columns are filled from naming conventions
 (`name`/`title` → `Ticket 1`, `email` → `ticket1@example.com`, `slug` →
 `ticket-1`, numeric/bool columns get a stable spread). Generation is
-reproducible — there is no runtime randomness, so regenerating the app yields
+reproducible: there is no runtime randomness, so regenerating the app yields
 the same rows and the diff never churns.
 
 `count` fills scalar and enum columns only; it leaves relations and
 system/auto-generated columns alone. For entities with a **required** relation,
-use explicit `rows:` (with `@entity.field=value` refs) instead — a generated
+use explicit `rows:` (with `@entity.field=value` refs) instead; a generated
 row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
 combined: the explicit rows are seeded first, then the generated ones.
 
@@ -762,7 +762,7 @@ combined: the explicit rows are seeded first, then the generated ones.
 app:
   auth:
     enabled: true
-    dev_mode: true     # optional, defaults to true — see below
+    dev_mode: true     # optional, defaults to true: see below
     base_path: /auth   # optional, defaults to /auth
     jwt_secret: ...    # optional
 ```
@@ -772,7 +772,7 @@ an `AuthManager` backed by entity stores over auto-created `auth_users` /
 `auth_sessions` tables, with the core plugin's register/login/logout/me
 endpoints mounted under `base_path`. The generated app also mounts
 `auth.SessionMiddleware` on the router, so the session cookie issued at
-login resolves to a user on every request — this is what makes
+login resolves to a user on every request; this is what makes
 `owner_field` and `access` scoping work for logged-in users on the
 generated CRUD and MCP endpoints. Without a valid session, owner-scoped
 entities fail closed (401/403) for reads and writes alike.
@@ -780,17 +780,17 @@ entities fail closed (401/403) for reads and writes alike.
 The generated app also wires the **auth UX** so the session is reflected
 everywhere, not just enforced:
 
-- **Sign out** — the app sidebar footer and (on marketing pages) the header
+- **Sign out**: the app sidebar footer and (on marketing pages) the header
   carry a `ui.SignOut` control that POSTs to `/auth/logout` and returns home.
-- **Auth-aware marketing header** — a signed-in visitor sees a *Dashboard* link
+- **Auth-aware marketing header**: a signed-in visitor sees a *Dashboard* link
   + *Sign out* instead of *Sign in*; the header re-renders per request from the
   session (`app.NewContextComponent`).
-- **Guest-only auth screens** — the login and signup screens redirect an
+- **Guest-only auth screens**: the login and signup screens redirect an
   already-signed-in visitor to the app instead of showing a form they're past.
 
 The bootstrap admin (`app.admin.seed_email` / `seed_password`) is created on a
 fresh database, and the auth battery creates its own `auth_users` /
-`auth_sessions` tables in `Init` — the generated app ships no DDL.
+`auth_sessions` tables in `Init`; the generated app ships no DDL.
 
 #### Secrets never land in generated source
 
@@ -815,7 +815,7 @@ overwrite an existing `.env` (or any other file) unless you pass `--force`.
 `dev_mode` maps to `auth.AuthConfig.DevMode` and **defaults to true**
 when omitted. The default is deliberate: a freshly generated app serves
 plain HTTP, and the production cookie defaults (`__Host-session` name +
-`Secure` flag) only round-trip over HTTPS — with `dev_mode: false` on
+`Secure` flag) only round-trip over HTTPS. With `dev_mode: false` on
 plain HTTP, register/login appear to succeed but the browser never sends
 the session cookie back, so every authenticated request fails. Dev mode
 uses an HTTP-friendly `session_id` cookie and mints a random per-process
@@ -826,7 +826,7 @@ sessions are DB-backed via `auth_sessions` and survive).
 generates in dev mode, and the generated wiring carries the same notice.
 Before deploying, turn dev mode off with a real signing key: set
 `DevMode: false` and a `JWTSecret` (sourced from a secret manager, not
-committed) in the `auth.AuthConfig` in the generated `app.go` — that code
+committed) in the `auth.AuthConfig` in the generated `app.go`. That code
 is yours to edit, so change it there rather than re-running the generator.
 Serve over HTTPS. Unknown keys under `app.auth` are rejected, like every
 other blueprint section.
@@ -835,7 +835,7 @@ other blueprint section.
 
 `dev_mode: false` without `jwt_secret` is a **validation error**:
 `gofastr validate` and `gofastr generate` both refuse the blueprint.
-The generated app could never boot anyway — the auth battery fails
+The generated app could never boot anyway: the auth battery fails
 closed at `Init` when `DevMode=false` and `JWTSecret` is empty, because
 an empty signing key yields forgeable JWTs. The blueprint check moves
 that failure to generate time, with the remedy in the error: set
@@ -847,14 +847,14 @@ development.
 The generated app does **not** mount `auth.CSRF`. The generated API
 is JSON-first (REST CRUD + `/mcp`), and the CSRF middleware rejects any
 unsafe-method request that doesn't echo the CSRF cookie back as an
-`X-CSRF-Token` header (or `_csrf` form field) — plain JSON and MCP
+`X-CSRF-Token` header (or `_csrf` form field); plain JSON and MCP
 clients don't, so mounting it would 403 the entire generated API for
 non-browser clients. Two mitigations bound the exposure: session cookies
 are issued `SameSite=Strict`, so modern browsers don't attach them to
 cross-site form posts, and requests authenticated by `Authorization` /
 `X-API-Key` headers aren't CSRF-able at all. If you add browser HTML
 forms to a generated app, mount `auth.CSRF` on the routes that serve
-them (every form then needs `auth.CSRFInputFromCtx`) — see
+them (every form then needs `auth.CSRFInputFromCtx`); see
 [auth](auth.md) for the pattern.
 
 ### Login screen (`login_form` block)
@@ -898,7 +898,7 @@ validation, owner/tenant scope, hooks, and events apply. Access is gated by
 `role`; an unauthenticated GET is redirected to `login_path` (pair it with a
 `login_form` screen) instead of a bare 401, and a signed-in user without the
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
-that admin account on a fresh database (idempotent — created only when absent),
+that admin account on a fresh database (idempotent: created only when absent),
 so the back-office is reachable on first boot. Requires `app.auth.enabled`.
 The Queue navigation item appears only when the host explicitly supplies a
 `queue.Browsable` backend to the admin battery; generated apps do not imply a
@@ -910,7 +910,7 @@ queue they have not configured.
 app:
   pwa:
     enabled: true
-    name: Meridian          # optional — defaults to app.name at serve time
+    name: Meridian          # optional: defaults to app.name at serve time
     short_name: Meridian    # optional home-screen label
     description: ...        # optional
     start_url: /            # optional, default /
@@ -921,8 +921,8 @@ app:
 ```
 
 With `enabled: true` the generated app passes `uihost.WithPWA(...)` to the
-UI host — manifest, service worker, offline screen, registration script;
-see the [PWA guide](pwa.md) for the full runtime behavior — and
+UI host: manifest, service worker, offline screen, registration script;
+see the [PWA guide](pwa.md) for the full runtime behavior. It also
 scaffolds three **replaceable placeholder icons** under
 `<static_dir>/icons/`: `icon-192.png`, `icon-512.png`, and
 `icon-maskable.png` (colored from `theme_color`, falling back to the
@@ -940,35 +940,35 @@ guarantee follows the app's real mounts.
 Generated apps ship `uihost.WithStrict()` plus a surface that passes
 every strict check (see `gofastr docs strict-mode`):
 
-- **Site description** — `app.description` when set, otherwise derived
-  from the app name and entities ("Demo — manage products and
+- **Site description**: `app.description` when set, otherwise derived
+  from the app name and entities ("Demo: manage products and
   orders."). Write a real one; the derivation is a floor, not copy.
-- **Sitemap + robots** — `/sitemap.xml` rooted at the `APP_BASE_URL`
-  env var (fallback: `app.base_url`, then `http://localhost:8080` —
+- **Sitemap + robots**: `/sitemap.xml` rooted at the `APP_BASE_URL`
+  env var (fallback: `app.base_url`, then `http://localhost:8080`;
   set the env when deploying), `/robots.txt` keeping `/__gofastr/` and
   the admin back-office (when enabled) out of the index. The sitemap
   excludes the admin path too.
-- **Per-screen SEO** — every screen's title falls back to its name; a
+- **Per-screen SEO**: every screen's title falls back to its name; a
   screen without a blueprint `description` emits the documented
   zero-value `ScreenSEO` opt-out instead of empty filler. Fill the
   description field for pages that should rank.
-- **Axe gate** (`axe_test.go`) — boots the built binary and runs
+- **Axe gate** (`axe_test.go`): boots the built binary and runs
   axe-core over every sitemap page under both color schemes, in two
   passes: an anonymous browser for public and guest-only pages, and a
   separately-authenticated browser (seeded admin, logged in through the
   auth battery's HTTP endpoint so no login screen is required) for
-  gated screens — one shared login would make guest pages redirect and
+  gated screens; one shared login would make guest pages redirect and
   cover the wrong screen. Concrete sitemap pages matching a gated
   dynamic pattern are routed to the authenticated pass too. Every scan
   asserts it landed on the intended route before auditing. Its scans record the axe-coverage manifest strict dev
   boots verify, so a hand-added screen without a scan fails
   `gofastr dev` with a guided finding (first boot before any test run
   warns instead of failing). Dynamic screens (`/orders/:id`) need a
-  concrete URL in the owned `axeExtraPages` slice — and `StaticPaths`
+  concrete URL in the owned `axeExtraPages` slice, and `StaticPaths`
   on the screen for strict mode to demand them.
 
 The consequence to know: after adding a screen by hand, run
-`go test ./...` once (needs Chrome) so the manifest covers it —
+`go test ./...` once (needs Chrome) so the manifest covers it;
 `gofastr dev` names the missing screen until then.
 
 ### Public LLM markdown (`app.llm_md`)
@@ -983,13 +983,13 @@ documentation on the generated app: `/llm-pages.md` (an index of every
 registered screen) and `/<screen-path>/llm.md` per screen (`/` → `/llm.md`,
 `/docs/` → `/docs/llm.md`). Application-level and per-screen `NoLLMMD`
 opt-outs keep working. Off by default because the documents enumerate every
-screen and its data shape — useful for AI agents in trusted environments,
+screen and its data shape: useful for AI agents in trusted environments,
 schema disclosure elsewhere. `app.pwa` and `app.llm_md` are independent:
 enabling one never emits the other.
 
 ### app.module and the enclosing go.mod
 
-Generated imports are `<app.module>/<output-dir>` — by default the output
+Generated imports are `<app.module>/<output-dir>`. By default the output
 directory is the module root (so the only project-local import is
 `<app.module>/entities`, since the app files are a flat `package main` with no
 importable subpackage); with `--out=<dir>` or `app.output_dir` set, it's
@@ -1085,13 +1085,13 @@ The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
-- an entity `table:` that is not letters, digits and underscores — the table
+- an entity `table:` that is not letters, digits and underscores: the table
   name reaches two sinks that neither re-escape nor re-validate it: the
   generated typed client emits it into Go string literals, and the runtime
   interpolates it into DDL as a bare SQL identifier. The entity `name:` is
   already constrained to a Go identifier; `table:` was the way around that.
 - relation-typed fields (`type: relation`) without a `to:` target, or whose
-  `to:` names an entity the blueprint does not declare — without this check
+  `to:` names an entity the blueprint does not declare; without this check
   the built app would crash at startup with "auto-migrate: entity has
   BelongsTo to unknown entity"
 - relations, endpoint entity references, and entity list blocks that target
@@ -1109,13 +1109,13 @@ The generator rejects:
 
 `gofastr generate` warns on **every** auto-exposed entity (`crud`
 defaults on, or `mcp: true`) that sets none of `owner_field`, `access`
-(with at least one non-blank permission), or `multi_tenant` — regardless
+(with at least one non-blank permission), or `multi_tenant`, regardless
 of what its fields are named. CRUD is secure-by-default, so such an
 entity already requires an authenticated session (anonymous requests get
 `401`); the residual risk the warning names is **cross-user**: every
 *signed-in* caller can read, create, update, and delete every OTHER
-user's row. Genuinely public data is a legitimate shape — declare it
-with `public: true` to opt all the way out of the session gate — but for
+user's row. Genuinely public data is a legitimate shape; declare it
+  with `public: true` to opt all the way out of the session gate, but for
 per-user rows set `owner_field`, and gate by role with `access:`. The PII
 rule below is the stricter subset that also fails `gofastr validate`.
 
@@ -1128,9 +1128,9 @@ fields (names containing tokens like `email`, `phone`, `address`, `ssn`,
 `access` (with at least one non-blank permission), or `multi_tenant`,
 every *authenticated* user could read and write every other user's row on
 the generated API (the secure-by-default gate already stops anonymous
-callers — the exposure here is cross-user). Enabling `app.auth` alone does
+callers; the exposure here is cross-user). Enabling `app.auth` alone does
 **not** suppress the rule: a session is necessary to reach the API but
-not sufficient to scope it — only per-entity scoping does that.
+not sufficient to scope it; only per-entity scoping does that.
 `gofastr validate` reports this as an error (exit 1),
 naming the entity, the matched fields, and the remedies; `gofastr generate`
 prints the same finding as a warning and proceeds (suppressed under `--json`
@@ -1168,15 +1168,15 @@ binary, boots it as a child process, and drives the real HTTP endpoints. Two
 portability rules are built into that template:
 
 - **Windows binary name.** The build target gets a `.exe` suffix when
-  `runtime.GOOS == "windows"` so `exec.Command(bin)` resolves on Windows —
+  `runtime.GOOS == "windows"` so `exec.Command(bin)` resolves on Windows;
   the bare `"app"` the old template produced cannot be exec'd there.
 - **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
   blueprint boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
-  `postgres` blueprint links only `lib/pq`, which cannot open that file DSN —
+  `postgres` blueprint links only `lib/pq`, which cannot open that file DSN,
   so the test instead carves a disposable database from the env-provided
   `TEST_POSTGRES_DSN` admin DSN and points the child at it
   (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
-  Postgres is unreachable the test **skips** (`t.Skip`), keeping driverless CI
+  Postgres is unreachable the test **skips** (`t.Skip`). That keeps driverless CI
   green-by-skip instead of timing out with a misleading "server did not become
   ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
@@ -1188,15 +1188,15 @@ portability rules are built into that template:
   and a per-process JWT secret that invalidates bearer tokens on every
   restart. Before deploying, set `DevMode: false` **and** a real
   `JWTSecret` (from a secret manager) in the generated `app.go`
-  `auth.AuthConfig` — the emitted code is yours, so edit it rather than
+  `auth.AuthConfig`; the emitted code is yours, so edit it rather than
   regenerating. Serve HTTPS. (If you'd rather set it *before* the
   one-shot generate, set `dev_mode: false` + `jwt_secret` in the
-  blueprint — but `dev_mode: false` without `jwt_secret` fails
+  blueprint, but `dev_mode: false` without `jwt_secret` fails
   validation, and the generated app's auth battery would refuse to boot.)
 - **Expecting `app.auth: enabled` to protect entity data.** The
   session middleware is pass-through for anonymous requests. Only
   per-entity `owner_field`, `access`, or `multi_tenant` gate the
-  generated CRUD and MCP endpoints — that's why the unscoped-PII check fires
+  generated CRUD and MCP endpoints; that's why the unscoped-PII check fires
   even with auth enabled.
 - **Copying the resource engine into a generated app.** Keep the generated
   `resource.Config` values and app-specific hooks, but import
@@ -1204,7 +1204,7 @@ portability rules are built into that template:
   mutations. A private engine copy does not receive fixes when GoFastr is
   upgraded.
 - **Writing flow-style inline maps.** `core/yaml` rejects
-  `{name: x, type: relation}` — every map must be indented
+  `{name: x, type: relation}`; every map must be indented
   `key: value` lines. Anchors, aliases, block scalars, and tabs are
   also out.
 - **Setting `module:` to something other than the enclosing go.mod.**
@@ -1212,6 +1212,6 @@ portability rules are built into that template:
   value, because the generated imports could never compile. Omit the
   key to derive it from go.mod automatically.
 - **Declaring `type: relation` without `to:`.** Validation rejects it
-  (and a missing target entity too) — without the check, the built app
+  (and a missing target entity too); without the check, the built app
   would crash at startup with "auto-migrate: entity has BelongsTo to
   unknown entity".

@@ -1,9 +1,9 @@
 ---
 name: chaos-test
-description: Live-agent chaos testing — spawn diverse persona agents against the running dev server, each with playwright browser tools and a distinct exploration mandate. Use when the user says "chaos test", "stress test the UI", "find bugs by exploring", "monkey test the site", or invokes `/chaos-test`. Personas are non-deterministic explorers, NOT chromedp scripts — they make judgment calls, follow surprising paths, and report what they tried. Triggers on phrases like "chaos monkey", "exploratory testing", "stress the UI", "agentic testing".
+description: Live-agent chaos testing: spawn diverse persona agents against the running dev server, each with playwright browser tools and a distinct exploration mandate. Use when the user says "chaos test", "stress test the UI", "find bugs by exploring", "monkey test the site", or invokes `/chaos-test`. Personas are non-deterministic explorers, NOT chromedp scripts; they make judgment calls, follow surprising paths, and report what they tried. Triggers on phrases like "chaos monkey", "exploratory testing", "stress the UI", "agentic testing".
 ---
 
-# Chaos-test — live exploratory testing via diverse persona agents
+# Chaos-test: live exploratory testing via diverse persona agents
 
 When this skill is invoked, you are the **orchestrator**. The skill replaces
 deterministic chromedp tests with live agents who actually drive a browser
@@ -62,12 +62,12 @@ in its own agent file.
 4. Wait for all 7 to return.
 5. Read every report file. Collate into a single triage doc at
    `/tmp/gofastr-chaos/<run>/summary.md` with sections:
-   - **Critical findings** — bugs that crash, lose data, fail WCAG-A, or render
+   - **Critical findings**: bugs that crash, lose data, fail WCAG-A, or render
      content unreadable. Cite which persona found each + reproduction steps.
-   - **Quality findings** — UX rough edges, missing affordances, perf glitches.
-   - **What worked** — paths every persona reported as smooth (lets you see
+   - **Quality findings**: UX rough edges, missing affordances, perf glitches.
+   - **What worked**: paths every persona reported as smooth (lets you see
      where the code is genuinely solid, not just where bugs are).
-   - **Inter-persona corroboration** — findings reported by ≥2 personas get
+   - **Inter-persona corroboration**: findings reported by ≥2 personas get
      promoted (high-signal, multi-angle confirmation).
 6. Present the summary to the user with a recommendation: fix all,
    triage tier-1 only, or accept as-is. The user picks.
@@ -85,15 +85,15 @@ browser-driving work stays with Claude Agents (playwright is a Claude MCP).
 ## Cost note
 
 Seven parallel playwright sessions for ~5–10 min each = serious token spend.
-Tell the user up front: "Round 7 of chaos-test fires 7 agents in parallel —
+Tell the user up front: "Round 7 of chaos-test fires 7 agents in parallel;
 this'll take ~10 min and burn tokens. Proceed?" Default to yes if the user
 already invoked the skill.
 
 ## Args
 
-- `--target <url>` — override the default `http://localhost:8082`
-- `--persona <name>` — run just one persona instead of all seven
-- `--budget <min>` — per-agent time budget in minutes (default 10)
+- `--target <url>`: override the default `http://localhost:8082`
+- `--persona <name>`: run just one persona instead of all seven
+- `--budget <min>`: per-agent time budget in minutes (default 10)
 
 ## What success looks like
 
@@ -104,4 +104,4 @@ A `summary.md` that:
 4. Distinguishes "X is broken" from "X is a UX rough edge"
 5. Names the things that worked, not just the bugs
 
-Then leave the run directory in place — it's a paper trail.
+Then leave the run directory in place; it's a paper trail.

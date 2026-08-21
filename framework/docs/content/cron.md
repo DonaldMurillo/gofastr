@@ -1,19 +1,19 @@
 # Cron / scheduled jobs
 
 `framework.Scheduler` is a minimal in-process cron runner for background
-work. By default every replica fires every tick — fine for a single
-instance. For multiple replicas, install a leader-election lease
+work. By default every replica fires every tick, which is fine for a
+single instance. For multiple replicas, install a leader-election lease
 (`Scheduler.WithLeaderElection`, e.g. `NewPostgresAdvisoryLease`) so only
 one replica fires each tick; for durable, exactly-once work, use the
 `battery/queue` DB-backed queue instead.
 
-## Cron vs Queue — which one?
+## Cron vs queue: which one?
 
 They solve different problems and often pair up:
 
 | Aspect | `framework.Scheduler` (cron) | `battery/queue` |
 |---|---|---|
-| Trigger | **Time** — "every 5 min", "0 3 * * *" | **Work** — a job enqueued by code |
+| Trigger | **Time**: "every 5 min", "0 3 * * *" | **Work**: a job enqueued by code |
 | State | In-memory; runs in this process only | DB-backed; survives restart |
 | Scale-out | Default: every replica fires. Opt into leader election (`WithLeaderElection`) so one replica fires per tick | Safe across replicas via DB locking |
 | Use for | Periodic maintenance, polling, digests | Retries, async side-effects, fan-out, dead-letter |
@@ -34,7 +34,7 @@ sched.Register(framework.CronJob{
 On multiple replicas, either install leader election on the scheduler
 (`sched.WithLeaderElection(cron.NewPostgresAdvisoryLease(db, key))`) so
 only one replica fires the tick, or run the scheduler on a single
-designated instance — then let the queue distribute the actual work. See
+designated instance, then let the queue distribute the actual work. See
 "Behaviour & guarantees" and [Leader election](#leader-election).
 
 ### Cron expressions on the queue Scheduler
@@ -42,8 +42,8 @@ designated instance — then let the queue distribute the actual work. See
 The `battery/queue` `Scheduler` accepts cron specs directly via
 `sched.Cron(spec)` (alongside `sched.Every(interval)`), so a recurring
 *queue* job can fire at a time of day rather than only on a fixed
-interval. It reuses this package's parser — `cron.Parse(spec).Next(t)`
-computes each next firing — so there is exactly one cron implementation
+interval. It reuses this package's parser: `cron.Parse(spec).Next(t)`
+computes each next firing, so there is exactly one cron implementation
 in the tree. Use `Cron` on the queue Scheduler when you want the durable,
 retrying queue to own a time-of-day job end to end; use the in-process
 `framework.Scheduler` (above) when the work is ephemeral and a missed
@@ -95,11 +95,11 @@ Standard 5-field cron: `minute hour day-of-month month day-of-week`.
 
 Supported within each field:
 
-- `*` — every value in range.
-- `a-b` — range, e.g. `1-5` for Mon–Fri.
-- `a,b,c` — list, e.g. `0,15,30,45`.
-- `*/N` — step, e.g. `*/15` for every 15 minutes.
-- `a-b/N` — stepped range.
+- `*`: every value in range.
+- `a-b`: range, e.g. `1-5` for Mon–Fri.
+- `a,b,c`: list, e.g. `0,15,30,45`.
+- `*/N`: step, e.g. `*/15` for every 15 minutes.
+- `a-b/N`: stepped range.
 
 ## Shortcuts
 
@@ -136,7 +136,7 @@ Supported within each field:
 ## Leader election
 
 `Scheduler.WithLeaderElection` installs a lease so only one replica fires
-each tick — making cron safe across replicas without a separate worker
+each tick. That makes cron safe across replicas without a separate worker
 tier. The built-in `NewPostgresAdvisoryLease(db, key)` coordinates over a
 Postgres advisory lock (`pg_try_advisory_lock`): every replica pointing at
 the same Postgres and using the same `key` races for the lock; the holder
@@ -153,15 +153,15 @@ sched.Start(ctx)
 
 Pick a fixed `key` that does not collide with the framework's own
 advisory locks (the migration advisory lock). Pool sizing matters: each
-tick pins one connection for the lock's lifetime — held until the tick's
-jobs finish — so the pool should allow at least two open connections when
+tick pins one connection for the lock's lifetime, held until the tick's
+jobs finish, so the pool should allow at least two open connections when
 the jobs themselves touch the database, otherwise the leader holds the
 only connection and the jobs deadlock on it.
 
 This is **per-tick mutual exclusion**: two replicas never fire the same
 tick. It is not exactly-once execution for a job that overruns the
-interval. For durable, exactly-once background work — retries,
-dead-letters, survival across restarts — use the DB-backed queue
+interval. For durable, exactly-once background work with retries,
+dead-letters, and survival across restarts, use the DB-backed queue
 (`battery/queue`) instead. A custom lease (Redis, etcd, …) only needs to
 satisfy the `LeaderElection` interface.
 
@@ -174,7 +174,7 @@ go func() {
 }()
 ```
 
-`Stop` is idempotent — repeated calls return immediately after the
+`Stop` is idempotent: repeated calls return immediately after the
 first one finishes. It joins in-flight job goroutines without a
 deadline; when the join must be bounded, use `StopContext`:
 
@@ -188,7 +188,7 @@ if err := sched.StopContext(ctx); err != nil {
 ```
 
 `App.AddCron` wires the stop side through `StopContext` automatically,
-bounded by the app's shutdown drain deadline — a hung job cannot stall
+bounded by the app's shutdown drain deadline, so a hung job cannot stall
 `SIGTERM` forever.
 
 ## Error handling
@@ -199,7 +199,7 @@ plumb cron failures into your existing logger/metrics.
 
 ## Registering at app startup
 
-`app.AddCron(scheduler)` is the lifecycle-managed wiring — the
+`app.AddCron(scheduler)` is the lifecycle-managed wiring. The
 scheduler starts when the app starts and stops when the app stops:
 
 ```go
@@ -216,7 +216,7 @@ func main() {
 ```
 
 You can still manage the lifecycle yourself by calling `sched.Start`
-and `sched.Stop` directly — `AddCron` is the convenience, not the
+and `sched.Stop` directly. `AddCron` is the convenience, not the
 contract.
 
 ## Common mistakes

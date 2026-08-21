@@ -14,13 +14,13 @@ client consumers, and no client-side computed values.
 One **producer** (an island/widget or a screen loader) owns a value. Many
 **consumers** (pure presentational components) bind to it read-only. When the
 producer updates the value, the change goes out through a single signal to every
-consumer **client-side** — no server round-trip per consumer.
+consumer **client-side**; no server round-trip per consumer.
 
 ```go
 var Org = store.New("org")
 var CompanyName = Org.String("companyName", "Acme Corp").Global()
 
-// PRODUCER — resolve the per-request value in Load(ctx), publish edits.
+// PRODUCER: resolve the per-request value in Load(ctx), publish edits.
 func (s *SettingsScreen) Load(ctx context.Context) error {
     CompanyName.Seed(ctx, s.tenant.Name)
     return nil
@@ -28,13 +28,13 @@ func (s *SettingsScreen) Load(ctx context.Context) error {
 editBtn := interactive.OnClick(ui.Button("Rename"),
     CompanyName.Publish(interactive.Post("/island/org/rename")))
 
-// CONSUMERS — pure presentational, anywhere; attr + initial value from one source.
+// CONSUMERS: pure presentational, anywhere; attr + initial value from one source.
 header := CompanyName.Bind(ctx, "span", map[string]string{"class": "site-name"})
 title  := CompanyName.BindAttr(ctx, "a", "title", map[string]string{"href": "/"})
 ```
 
 `Bind` requires `ctx` and is called from a component's `RenderCtx(ctx)` (the
-ctx-aware render interface) so it stamps the **resolved** value — the per-request
+ctx-aware render interface) so it stamps the **resolved** value: the per-request
 value if a producer seeded one, else the declared default. The same resolved
 value goes into the SSR seed, so the DOM and the client store can never drift.
 
@@ -58,7 +58,7 @@ different default panics; declaring it identically is idempotent.
 - **Page-scoped** (default): seeded only on pages whose HTML references the
   slice. Reset to the page's value on every navigation.
 - **App-global** (`.Global()`): seeded on every page and **preserved across
-  client-side navigation** — a value the user mutated (cart count) survives.
+  client-side navigation**; a value the user mutated (cart count) survives.
 
 The host emits one inert `<script type="application/json" id="gofastr-signals">`
 island; the runtime seeds `_signals` before hydration. SPA-nav partials carry a
@@ -73,7 +73,7 @@ greetEl := Greeting.Bind(ctx, "h1", nil)
 ```
 
 `Computed` recomputes client-side when any dependency signal changes, by running
-the JS reducer registered under its name. Register reducers as real functions —
+the JS reducer registered under its name. Register reducers as real functions,
 **no `eval`, CSP-safe**:
 
 ```js
@@ -90,7 +90,7 @@ the JS reducer registered under its name. Register reducers as real functions �
 
 `ui.Counter`, `ui.Tabs`, and `ui.SignalToggle` accept a typed `Slice` (their
 `Slice` field) in addition to the legacy `SignalName` string. With a slice they
-derive the signal name and stamp the slice's declared default — one source of
+derive the signal name and stamp the slice's declared default, one source of
 truth instead of a hardcoded initial value:
 
 <!-- gofastr:compile
@@ -105,7 +105,7 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
 
 - The seed island is inert `application/json` parsed via `JSON.parse`; values
   are double-escaped (`json.Marshal` HTML-escaping + `</`→`<\/`).
-- `Bind` (text mode) HTML-escapes the value. `BindHTML` writes to `innerHTML` —
+- `Bind` (text mode) HTML-escapes the value. `BindHTML` writes to `innerHTML`:
   **trusted values only**.
 - URL-bearing attributes bound via `BindAttr` keep the runtime's
   `javascript:`/`data:` scheme guard.
@@ -119,7 +119,7 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
 ## Common mistakes
 
 - **Re-declaring a slice name with a different default.** Panics at
-  declaration time — two producers must not claim one name with
+  declaration time: two producers must not claim one name with
   different values. Declare the slice once in a shared package and
   import it from both sides; identical re-declaration is idempotent
   and fine.
@@ -132,10 +132,10 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
   `_reducers` map registered earlier. Ship reducers via
   `WithExtraScripts` so they load after the runtime.
 - **Calling `Bind` outside a ctx-aware render.** `Bind(ctx, …)` stamps
-  the *resolved* per-request value — the one a producer seeded in
+  the *resolved* per-request value: the one a producer seeded in
   `Load(ctx)`. Render from `RenderCtx(ctx)` with the request context;
   a background/stub context stamps only the declared default and the
   SSR output diverges from what the producer intended.
 - **Using `BindHTML` for user-influenced values.** It writes to
-  `innerHTML` — trusted values only. `Bind` (text mode) escapes;
+  `innerHTML`: trusted values only. `Bind` (text mode) escapes;
   reach for it unless you control every byte of the value.

@@ -1,14 +1,14 @@
 ---
 name: gofastr-host
-description: Auto-loads when working on a *host application* that imports the GoFastr framework (not the framework itself). Encodes the "don't reinvent — reach for the battery first" rule and the import paths an agent needs. Triggers on edits to Go files in repos that import `github.com/DonaldMurillo/gofastr/...`, on `main.go` files calling `framework.NewApp`, and on phrases like "login", "signup", "session", "user table", "log out", "magic link", "forgot password", "reset password", "add admin page", "back office", "audit log", "audit trail", "compliance log", "send email", "transactional email", "welcome email", "send a notification", "notify the user", "background job", "async task", "schedule", "cron", "run every hour", "retry on failure", "upload", "store images", "store files", "S3", "MinIO", "attachments", "avatar", "full-text search", "find records containing", "outbound webhook", "signed callback", "POST to a customer URL", "cache", "memoize", "remember for N seconds", "CSRF", "RBAC", "require admin", "roles", "rate limit", "throttle", "request log", "access log", "panic recovery", "structured logging", "live debug", "per-test isolated DB", "test fixture", "favicon", "app icon", "SEO", "meta tags", "Open Graph", "JSON-LD", "structured data", "sitemap", "robots.txt", "accessibility", "a11y", "WCAG", "aria-label", "upgrade gofastr", "bump the framework version", "migrate to the new version", "live updates", "auto-refresh", "real-time", "websocket", "polling", "multiple replicas", "horizontal scaling".
+description: Auto-loads when working on a *host application* that imports the GoFastr framework (not the framework itself). Encodes the "don't reinvent: reach for the battery first" rule and the import paths an agent needs. Triggers on edits to Go files in repos that import `github.com/DonaldMurillo/gofastr/...`, on `main.go` files calling `framework.NewApp`, and on phrases like "login", "signup", "session", "user table", "log out", "magic link", "forgot password", "reset password", "add admin page", "back office", "audit log", "audit trail", "compliance log", "send email", "transactional email", "welcome email", "send a notification", "notify the user", "background job", "async task", "schedule", "cron", "run every hour", "retry on failure", "upload", "store images", "store files", "S3", "MinIO", "attachments", "avatar", "full-text search", "find records containing", "outbound webhook", "signed callback", "POST to a customer URL", "cache", "memoize", "remember for N seconds", "CSRF", "RBAC", "require admin", "roles", "rate limit", "throttle", "request log", "access log", "panic recovery", "structured logging", "live debug", "per-test isolated DB", "test fixture", "favicon", "app icon", "SEO", "meta tags", "Open Graph", "JSON-LD", "structured data", "sitemap", "robots.txt", "accessibility", "a11y", "WCAG", "aria-label", "upgrade gofastr", "bump the framework version", "migrate to the new version", "live updates", "auto-refresh", "real-time", "websocket", "polling", "multiple replicas", "horizontal scaling".
 ---
 
-# GoFastr host-app — load this before writing app code
+# GoFastr host-app: load this before writing app code
 
 You're in a Go app that uses the GoFastr framework. The framework already
 ships ~70% of the surface a real app needs. Before writing anything new,
 **read this skill, the project's `AGENTS.md`, and the matching detail
-file under `agents/`** — they exist to keep you from reinventing what's
+file under `agents/`**; they exist to keep you from reinventing what's
 already there.
 
 For UI work, also read and complete the project's `DESIGN.md` before selecting
@@ -56,7 +56,7 @@ target (with file:line hits in this app), `--apply` to run
 go get / tidy / build / test, then `gofastr agents sync` to refresh the
 generated guidance.
 
-## Don't reinvent — reach for these first
+## Don't reinvent: reach for these first
 
 | Task phrasing | Use this |
 |---|---|
@@ -67,27 +67,27 @@ generated guidance.
 | background job, scheduled task, retry-on-failure | `battery/queue` (use `DBQueue` for real workloads) |
 | send email, SMTP, transactional mail | `battery/email` |
 | file upload, S3, MinIO, attachments | `battery/storage` + `framework.WithFileStorage` |
-| image upload wanting thumbnails, srcset, blur placeholder | `framework.WithImagePipeline(imagefield.MustNew(...))` — every `schema.Image` upload gets renditions + a BlurHash, written to `<field>_blurhash` / `<field>_variants` / `<field>_placeholder` sibling columns you declare. Render with `image.BlurHashDataURL` + `ui.PipelineImage`. Per-field variation via `WithImagePipelineFor`. Never hand-roll resize/encode in an upload handler |
+| image upload wanting thumbnails, srcset, blur placeholder | `framework.WithImagePipeline(imagefield.MustNew(...))`: every `schema.Image` upload gets renditions + a BlurHash, written to `<field>_blurhash` / `<field>_variants` / `<field>_placeholder` sibling columns you declare. Render with `image.BlurHashDataURL` + `ui.PipelineImage`. Per-field variation via `WithImagePipelineFor`. Never hand-roll resize/encode in an upload handler |
 | full-text search | `battery/search` |
 | outbound signed webhooks with retry | `battery/webhook` |
 | cache key/value, memoize, "remember for N seconds" | `battery/cache` |
-| UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components) — `gofastr docs ui-composition-recipes` for page grammar, `gofastr docs ui-new-components` for the catalog, live demos at `/components/<slug>` on the docs site (`examples/site`) |
+| UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components): `gofastr docs ui-composition-recipes` for page grammar, `gofastr docs ui-new-components` for the catalog, live demos at `/components/<slug>` on the docs site (`examples/site`) |
 | live/auto-refreshing dashboard, counter, status ("websockets"?) | the reactivity ladder (`gofastr docs reactivity`): passive freshness = `data-fui-poll` / widget `Builder.Poll` (no connection, no infra); SSE bus ONLY for presence/collab/sub-second; never WebSockets, never a bespoke `EventSource` |
-| stale page after mutation, "back button shows old data", bust cached screen | `ui.InvalidateScreens(w, "/orders")` on the mutation handler — evicts that pathname (and its query variants) from the requesting tab's screen cache; pair with `data-fui-rpc-navigate` when the user should land on the fresh screen; `gofastr docs runtime-contract` for selector rules |
-| multi-replica deploy (sessions, live updates across replicas) | `framework.WithSecret` (or `GOFASTR_SECRET` env) + `framework.WithFanout` — fanout without a secret fails at boot by design; `gofastr docs scaling` |
+| stale page after mutation, "back button shows old data", bust cached screen | `ui.InvalidateScreens(w, "/orders")` on the mutation handler: evicts that pathname (and its query variants) from the requesting tab's screen cache; pair with `data-fui-rpc-navigate` when the user should land on the fresh screen; `gofastr docs runtime-contract` for selector rules |
+| multi-replica deploy (sessions, live updates across replicas) | `framework.WithSecret` (or `GOFASTR_SECRET` env) + `framework.WithFanout`: fanout without a secret fails at boot by design; `gofastr docs scaling` |
 | structured request log, JSON logs to stdout for containers (`log.JSONSink`), panic recovery, log MCP debug tools | `battery/log` |
-| browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New` — no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |
-| agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `framework_docs_search`, `contracts_list`/`contracts_explain`, …) + under dev the working pair `contracts_verify`/`contracts_fix` + control (`app_module_enable/disable`) + battery/log debug tools — opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` |
-| load `.env` files | auto-wired by `framework.NewApp` — do nothing |
+| browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New`, no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |
+| agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `framework_docs_search`, `contracts_list`/`contracts_explain`, …) + under dev the working pair `contracts_verify`/`contracts_fix` + control (`app_module_enable/disable`) + battery/log debug tools; opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` |
+| load `.env` files | auto-wired by `framework.NewApp`; do nothing |
 | per-test isolated Postgres DB | `framework/testkit.NewIsolatedDB(t, adminDSN, migrate)` |
-| favicon, app icon, PWA icons | `uihost.WithAppIcon(pngBytes)` — one source image becomes 32/180/192/512 PNGs, `/favicon.ico`, head links, and the PWA manifest icons; generate placeholder art in code with `framework/image.NewGradient` (no committed binaries) |
-| SEO: page title/description, Open Graph, Twitter cards, canonical, JSON-LD, sitemap, robots | uihost `WithDescription`/`WithOpenGraph`/`WithSitemap`/`WithRobots`/`WithRobotsMeta` + per-screen `ScreenSEO`/`ScreenSchema` interfaces — `gofastr docs seo`. Static export writes sitemap.xml/robots.txt from the same config |
-| accessibility, ADA/WCAG compliance, "aria-label", a11y audit | `gofastr audit a11y` (static guided lint) and `gofastr audit a11y --url <base>` (axe-core in headless Chrome, both color schemes, pages from /sitemap.xml). Note `gofastr build` enforces the static lint — fix findings, don't reach for `--no-a11y` — `gofastr docs accessibility` |
-| enforce SEO + a11y completeness, "error if a page has no SEO", strict defaults, launch checklist as code | `uihost.WithStrict()` — boot fails listing every page screen missing title/description, missing site description/icon/sitemap/robots, and (dev only) every screen without a recorded axe scan (`framework/testkit/axetest` writes `.gofastr/axe-coverage.json`); every check tunes individually via `StrictConfig` (enforce/warn/off + `ExemptScreens` route patterns, zero value = strictest) — `gofastr docs strict-mode` |
-| "is this still idiomatic?", pre-merge check, lint, "did I wire this right", CI quality gate | `gofastr verify` — one pipeline over routing, permissions, security, rendering, a11y, architecture, performance, data, entities, testing and AI-slop rules; every finding carries an ID (`GOFASTR1002`), why it matters, and the fix. `gofastr verify <capability>` scopes it, `--rule <id> --fix` applies one rule's mechanical fixes, `--changed` narrows to this change (fixes included), `--json`/`--sarif` for machines. Strict by default; relax in `gofastr.contracts.yml` or per-line with `//gofastr:allow(RULE) reason`. Adopt on an existing app with `--baseline-write` — `gofastr docs contracts` |
-| upgrading the framework version, migration notes between releases | install the target CLI first, then `gofastr upgrade [--to vX.Y.Z] [--apply]` — shows every migration-relevant change in range with file:line hits in your app — `gofastr docs upgrading`; finish with `gofastr agents sync` |
-| customer-facing CLI, "ship a terminal client", stripe/gh-style CLI for my API | `gofastr generate cli` — standalone stdlib binary, scoped `gfsk_` token auth, `custom.go` extension seam — `gofastr docs app-cli` |
-| client SDKs, "publish an SDK", downloadable Go/JS/TS client, API docs site for customers | `gofastr generate sdk` (Go module zip + client.js/client.d.ts under `gen/sdk/`) + `sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS("gen/sdk/dist")})` for the hosted docs site + downloads — `gofastr docs sdk` |
+| favicon, app icon, PWA icons | `uihost.WithAppIcon(pngBytes)`: one source image becomes 32/180/192/512 PNGs, `/favicon.ico`, head links, and the PWA manifest icons; generate placeholder art in code with `framework/image.NewGradient` (no committed binaries) |
+| SEO: page title/description, Open Graph, Twitter cards, canonical, JSON-LD, sitemap, robots | uihost `WithDescription`/`WithOpenGraph`/`WithSitemap`/`WithRobots`/`WithRobotsMeta` + per-screen `ScreenSEO`/`ScreenSchema` interfaces; `gofastr docs seo`. Static export writes sitemap.xml/robots.txt from the same config |
+| accessibility, ADA/WCAG compliance, "aria-label", a11y audit | `gofastr audit a11y` (static guided lint) and `gofastr audit a11y --url <base>` (axe-core in headless Chrome, both color schemes, pages from /sitemap.xml). Note `gofastr build` enforces the static lint: fix findings, don't reach for `--no-a11y`; `gofastr docs accessibility` |
+| enforce SEO + a11y completeness, "error if a page has no SEO", strict defaults, launch checklist as code | `uihost.WithStrict()`: boot fails listing every page screen missing title/description, missing site description/icon/sitemap/robots, and (dev only) every screen without a recorded axe scan (`framework/testkit/axetest` writes `.gofastr/axe-coverage.json`); every check tunes individually via `StrictConfig` (enforce/warn/off + `ExemptScreens` route patterns, zero value = strictest); `gofastr docs strict-mode` |
+| "is this still idiomatic?", pre-merge check, lint, "did I wire this right", CI quality gate | `gofastr verify`: one pipeline over routing, permissions, security, rendering, a11y, architecture, performance, data, entities, testing and AI-slop rules; every finding carries an ID (`GOFASTR1002`), why it matters, and the fix. `gofastr verify <capability>` scopes it, `--rule <id> --fix` applies one rule's mechanical fixes, `--changed` narrows to this change (fixes included), `--json`/`--sarif` for machines. Strict by default; relax in `gofastr.contracts.yml` or per-line with `//gofastr:allow(RULE) reason`. Adopt on an existing app with `--baseline-write`; `gofastr docs contracts` |
+| upgrading the framework version, migration notes between releases | install the target CLI first, then `gofastr upgrade [--to vX.Y.Z] [--apply]`. It shows every migration-relevant change in range with file:line hits in your app; `gofastr docs upgrading`; finish with `gofastr agents sync` |
+| customer-facing CLI, "ship a terminal client", stripe/gh-style CLI for my API | `gofastr generate cli`: standalone stdlib binary, scoped `gfsk_` token auth, `custom.go` extension seam; `gofastr docs app-cli` |
+| client SDKs, "publish an SDK", downloadable Go/JS/TS client, API docs site for customers | `gofastr generate sdk` (Go module zip + client.js/client.d.ts under `gen/sdk/`) + `sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS("gen/sdk/dist")})` for the hosted docs site + downloads; `gofastr docs sdk` |
 
 ## Hard rules
 
@@ -100,13 +100,13 @@ generated guidance.
    `auth.HashPassword`, `auth.CheckPassword`, `auth.SessionMiddleware`,
    `auth.UserEntityFields()` are the contract.
 4. **Audit log writes are not best-effort.** Failing audit fails the
-   user write — that's the point.
+   user write; that's the point.
 5. **Strict CSP and one styling surface.** Host apps ship zero bespoke CSS and
    zero hand-rolled structural markup. Themes mutate tokens; missing visual or
    layout treatments are framework component gaps to add upstream. The
    framework runtime is the only script tag; extra scripts use
    `WithExtraScripts(externalURL)`.
-6. **`gofastr dev` sets `GOFASTR_DEV=1`** on the child process — the
+6. **`gofastr dev` sets `GOFASTR_DEV=1`** on the child process; the
    framework auto-wires browser reload via SSE. Don't write your own
    livereload. Opt out with `GOFASTR_DEV_LIVERELOAD=0`.
 
@@ -114,14 +114,14 @@ generated guidance.
 
 - `main.go` builds the App: `framework.NewApp(WithDB, WithConfig, …)`; chained
   methods like `app.WithAuditLog(cfg)` come after.
-- `entities/` declares `EntityConfig`s — use `Seed` + `SeedFS` instead
+- `entities/` declares `EntityConfig`s; use `Seed` + `SeedFS` instead
   of hand-rolled `seedIfEmpty` helpers.
 - `screens/` is one screen per page; in-page state changes are island
   RPCs, not new routes.
 - Migrations: prefer `auto-migrate` for greenfield schemas; otherwise
   versioned migrations under `migrations/`.
 - Tests against Postgres: `framework/testkit.NewIsolatedDB(t, adminDSN, migrate)`
-  carves a fresh DB per test. **Don't `t.Skip` when the DB is missing —
+  carves a fresh DB per test. **Don't `t.Skip` when the DB is missing;
   hard-fail.**
 
 ## When in doubt
@@ -131,5 +131,5 @@ generated guidance.
 3. Run `gofastr docs --grep <term>` to search the embedded docs, or `gofastr docs <topic>` to read one.
 4. Use the live `/mcp` introspection tools (`framework_docs_search`,
    `app_routes`, `app_batteries`, etc.) if the app is running locally
-   with `framework.WithMCPIntrospection()` — blueprint-generated apps
+   with `framework.WithMCPIntrospection()`; blueprint-generated apps
    wire it (plus `framework.WithMCP()`) by default.

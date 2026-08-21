@@ -1,17 +1,17 @@
 # .env files
 
-`framework.NewApp()` reads `.env` files at the start of construction —
-before any options run — so plugins, batteries, and option callbacks
+`framework.NewApp()` reads `.env` files at the start of construction,
+before any options run, so plugins, batteries, and option callbacks
 that peek at `os.Environ` see the merged values.
 
 ## Defaults
 
 Files are probed in this order (earlier wins on conflict):
 
-1. `.env.local` — gitignored; per-developer secrets.
-2. `.env.<APP_ENV>` — only when `APP_ENV` is set
+1. `.env.local`: gitignored; per-developer secrets.
+2. `.env.<APP_ENV>`: only when `APP_ENV` is set
    (e.g. `.env.production`).
-3. `.env` — committed defaults shared by all environments.
+3. `.env`: committed defaults shared by all environments.
 
 Missing files are silently skipped; a malformed file fails fast with
 the file name and line number.
@@ -44,13 +44,13 @@ Hard rules:
 - Multi-line values are **not** supported. Use `\n` inside a
   double-quoted value.
 - Inline comments after an UNQUOTED value are preserved as part of
-  the value — write a quoted value if you need to embed `#`.
+  the value. Write a quoted value if you need to embed `#`.
 - The parser fails fast on malformed input rather than skipping the
   bad line (loud-by-default).
 
 ## Variable expansion `${VAR}`
 
-Only inside double-quoted values. Bracket form **only** — bare `$VAR`
+Only inside double-quoted values. Bracket form **only**: bare `$VAR`
 is left verbatim (less ambiguous, fewer footguns).
 
 Lookup order for `${NAME}`:
@@ -58,7 +58,7 @@ Lookup order for `${NAME}`:
 1. Other keys already parsed from the same file (or earlier file in
    the precedence chain).
 2. `os.Environ`.
-3. Empty string (no error — matches shell behaviour).
+3. Empty string (no error, matching shell behaviour).
 
 Hardening:
 
@@ -69,13 +69,13 @@ Hardening:
 - **`\${...}` escape.** A backslash before `${` is preserved by the
   string-unescape phase so the expander sees `\$` and emits a
   literal `$` without triggering a lookup.
-- **Malformed `${...` (no closing brace)** is left verbatim — never
-  silently drops bytes.
+- **Malformed `${...` (no closing brace)** is left verbatim. The
+  parser never silently drops bytes.
 
 ## Disabling auto-load
 
 Set `GOFASTR_DOTENV=off` in the **process** environment (not in a
-`.env` file — chicken-and-egg) before `NewApp` runs. Useful when:
+`.env` file, that's chicken-and-egg) before `NewApp` runs. Useful when:
 
 - You ship custom paths via `dotenv.LoadAndApply("ops/secrets.env")`
   before `NewApp` and don't want the default probe to also fire.
@@ -105,7 +105,7 @@ loading a non-`.env` config and wanting consistent expansion rules).
 - **Expecting a `.env` value to override the real environment.**
   Precedence is the other way: `Apply` only calls `os.Setenv` for keys
   not already present. An operator's `DATABASE_URL=…` always beats the
-  dotfile — by design.
+  dotfile, by design.
 - **Putting `GOFASTR_DOTENV=off` in a `.env` file.** Chicken-and-egg:
   the loader would have to read the file to learn it shouldn't read
   the file. The kill switch only works as a process env var set before
@@ -121,8 +121,8 @@ loading a non-`.env` config and wanting consistent expansion rules).
 ## Reading a variable before `NewApp`
 
 `framework.NewApp` loads the dotenv files itself, so most code never has to.
-Code that must read a variable *earlier* — a `main.go` opening its database
-before constructing the app — has to load them first, and must load the **same
+Code that must read a variable *earlier*, say a `main.go` opening its database
+before constructing the app, has to load them first, and must load the **same
 set in the same order**:
 
 ```go
@@ -137,7 +137,7 @@ db, err := sql.Open(driver, getEnv("DATABASE_URL", "file:app.db"))
 Use it rather than a hand-written list. `dotenv.Apply` never overwrites a
 variable that is already set, so loading a **shorter** list first pins the
 lower-precedence file's value, and `NewApp`'s later load of
-`.env.<APP_ENV>` can no longer win — a deployment using tiered env files
+`.env.<APP_ENV>` can no longer win: a deployment using tiered env files
 silently gets its base `.env` value.
 
 The scaffold `gofastr init` emits does exactly this.

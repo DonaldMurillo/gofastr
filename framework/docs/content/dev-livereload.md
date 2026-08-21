@@ -2,12 +2,12 @@
 
 `framework.NewApp()` and `uihost.New()` auto-wire a tiny SSE-based
 livereload pair when the process is running under `gofastr dev`. Edit
-a watched file (`.go`, `.js`, `.css`, `.html`, or `.md` — the
+a watched file (`.go`, `.js`, `.css`, `.html`, or `.md`, the
 extensions Go embeds), the binary restarts, and every open browser tab
-refreshes on its own — no host-app code required.
+refreshes on its own. No host-app code required.
 
 The rebuilt server runs with the project directory (`--dir`) as its
-working directory — the same cwd it gets when run by hand — so relative
+working directory, the same cwd it gets when run by hand, so relative
 paths like a sqlite `db_url` or a static dir resolve against the
 project, and worktree isolation keys off the project's location rather
 than wherever `gofastr dev` was launched.
@@ -36,21 +36,21 @@ GOFASTR_DEV_LIVERELOAD != "0"
 When enabled:
 
 - `framework.NewApp()` registers two routes on the App router:
-  - `GET /__livereload` — `text/event-stream`. Fires one `event: ready`
+  - `GET /__livereload`: `text/event-stream`. Fires one `event: ready`
     on connect, then idles with a 25s SSE-comment heartbeat. Closes
     when the request context cancels (server shutdown / browser tab
     close).
-  - `GET /__livereload.js` — ~16 lines of JS. Opens an `EventSource`,
+  - `GET /__livereload.js`: ~16 lines of JS. Opens an `EventSource`,
     treats the **second** `onopen` (i.e. the reconnect after the
     server drop) as the reload signal, calls `location.reload()`.
 - `uihost.New()` auto-appends `/__livereload.js` to the `extraScripts`
   list so every rendered page links to the client script before
-  `</body>`. CSP-safe — it's a `<script src="...">`, no inline JS.
-- For every OTHER way an app serves a page — `static.Handler` file
+  `</body>`. CSP-safe: it's a `<script src="...">`, no inline JS.
+- For every OTHER way an app serves a page, `static.Handler` file
   serving (SPA shells, exported static pages), widget-server pages,
-  hand-rolled handlers — `framework.NewApp` mounts dev-only middleware
+  and hand-rolled handlers, `framework.NewApp` mounts dev-only middleware
   that splices the same `<script src>` into responses that declare
-  `Content-Type: text/html` (no sniffing — set the type) and are full
+  `Content-Type: text/html` (no sniffing, so set the type) and are full
   documents (contain `</body>`) and don't already carry the tag.
   Fragments (island RPC swaps, SPA-nav partials), compressed bodies,
   HEAD/Range requests, and non-HTML responses (JSON, SSE, streams) pass
@@ -64,10 +64,10 @@ polling.
 
 `cmd/gofastr/dev.go` injects `GOFASTR_DEV=1` into the child binary's
 environment when it launches the rebuilt server. The host app doesn't
-need to forward, set, or check the flag — it's transparent.
+need to forward, set, or check the flag. It's transparent.
 
 Every rebuild (the initial one and each change-triggered one) first
-runs the same static accessibility lint `gofastr build` enforces —
+runs the same static accessibility lint `gofastr build` enforces:
 findings are printed with fix hints and the rebuild is treated exactly
 like a compile failure: the server doesn't start, the watcher keeps
 running, fixing and saving retries. `gofastr dev --no-a11y` skips the
@@ -82,7 +82,7 @@ registers read-only tools for reading the running app's state
 (`app_routes`, `app_readiness`, `framework_docs_search`, …) and tools
 that change it (`app_module_enable` / `app_module_disable`); every
 CRUD-enabled entity serves its MCP data tools without per-entity
-`mcp: true`; and battery/log — when registered — enables its
+`mcp: true`; and battery/log, when registered, enables its
 `log_recent` / `log_filter` / `log_metrics` / `log_set_level` debug
 tools. A connected agent can check what's running, read recent
 requests and errors, read and write app data, and turn modules on or
@@ -116,7 +116,7 @@ binary accepts the SSE connection.
 - Setting `GOFASTR_ENV=production` while expecting livereload to work
   in dev. Production is a hard kill switch; clear the var first.
 - Wiring `uihost.WithExtraScripts("/__livereload.js")` by hand. The
-  framework already does it when env says so — your manual call
+  framework already does it when env says so, and your manual call
   becomes a duplicate `<script>` tag.
 - Registering `/__livereload` routes by hand. The framework already
-  does it — a manual `Router().Get` will collide.
+  does it, and a manual `Router().Get` will collide.
