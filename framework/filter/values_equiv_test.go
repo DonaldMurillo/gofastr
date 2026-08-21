@@ -11,7 +11,7 @@ import (
 // ParseFilters and ParseFiltersValues share their body via a thin wrapper.
 // Pin the contract: for the same underlying query string they MUST produce
 // the same ParsedFilter set (same fields, same ops, same values). Order is
-// NOT part of the contract — the parse ranges over url.Values (a map), so
+// NOT part of the contract, the parse ranges over url.Values (a map), so
 // output order is non-deterministic, and filters are AND-ed so order carries
 // no meaning. Compared as a multiset. A refactor that fed one path a stale
 // url.Values would still be caught (the set would differ).
@@ -89,7 +89,7 @@ func TestParseSort_ValuesEquiv(t *testing.T) {
 // TestParseFiltersValues_ParsesExactlyOnce is a regression guard: it asserts
 // the same url.Values, handed to two different helpers, yields the same
 // field accessors that handing a freshly-parsed *http.Request would. This is
-// what the CRUD List handler now relies on — passing ONE url.Values through
+// what the CRUD List handler now relies on, passing ONE url.Values through
 // every helper instead of N re-parses.
 func TestParseFiltersValues_ParsesExactlyOnce(t *testing.T) {
 	fields := []schema.Field{{Name: "status", Type: schema.String}}
@@ -103,7 +103,7 @@ func TestParseFiltersValues_ParsesExactlyOnce(t *testing.T) {
 	if errA != nil || errB != nil {
 		t.Fatalf("unexpected errors: %v %v", errA, errB)
 	}
-	// url.Values is a map — iterating it twice yields the same data, but the
+	// url.Values is a map, iterating it twice yields the same data, but the
 	// ParsedFilter ORDER is non-deterministic. Compare as sets.
 	if !filtersEqualAsSet(a, b) {
 		t.Fatalf("expected idempotent re-parse:\n  a=%v\n  b=%v", a, b)

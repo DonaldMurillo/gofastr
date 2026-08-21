@@ -11,7 +11,7 @@ import (
 // entity whose INSERT/SELECT column lists never mentioned the owner
 // column: crud.InjectOwner stamped body["user_id"], but doCreate builds
 // its column list from GetFields() so the stamp was silently dropped, and
-// AutoMigrate never created the column — the first scoped read then
+// AutoMigrate never created the column, the first scoped read then
 // failed with "no such column: user_id". Define injects the missing
 // owner column, same contract as the tenant_id and deleted_at
 // injections above, and matching what the blueprint generator emits for
@@ -46,7 +46,7 @@ func TestDefine_InjectsUndeclaredOwnerField(t *testing.T) {
 	}
 }
 
-// A declared owner field wins and is left untouched — injection must not
+// A declared owner field wins and is left untouched, injection must not
 // flip flags on a column the author chose to declare (e.g. one kept
 // visible in responses).
 func TestDefine_DeclaredOwnerFieldLeftUntouched(t *testing.T) {

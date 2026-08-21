@@ -12,7 +12,7 @@ import (
 // contracts_docs_test.go, which calls the handlers directly. These tests
 // cover the transport instead: the tools are only reachable by an agent
 // if WithMCP mounts /mcp and the JSON-RPC layer serialises them. That
-// path is genuinely separate — registration happens in InitPlugins but
+// path is genuinely separate, registration happens in InitPlugins but
 // the mount happens in Start, so a tool can register cleanly and still
 // 404 for every client.
 

@@ -13,7 +13,7 @@ import (
 
 // openOutbox returns a fresh in-memory SQLite + Outbox pair. Cleanup is
 // registered via t.Cleanup. SQLite with MaxOpenConns(1) serialises
-// writers on the single in-memory page — the same setup battery/queue's
+// writers on the single in-memory page, the same setup battery/queue's
 // tests use.
 func openOutbox(t *testing.T, opts ...Option) (*sql.DB, *Outbox) {
 	t.Helper()
@@ -439,8 +439,8 @@ func TestRetention_PurgesDispatchedOnly(t *testing.T) {
 }
 
 // WithRetention must NOT purge a dispatched parent that still carries a
-// dead or abandoned delivery: the dead-letter — its last_error, attempts,
-// and the parent payload Replay needs — survives until the delivery is
+// dead or abandoned delivery: the dead-letter, its last_error, attempts,
+// and the parent payload Replay needs, survives until the delivery is
 // replayed to completion. Retention is not a dead-letter TTL. A fully-
 // dispatched parent past the window is still purged (control), and the
 // retained dead-letter remains actionable via ReplayConsumer.
@@ -449,7 +449,7 @@ func TestRetentionKeepsDeadLetterParent(t *testing.T) {
 	ctx := context.Background()
 
 	// The retention cutoff is now-1h. The package has no clock-advance
-	// helper, so — like TestRetention_PurgesDispatchedOnly — we set
+	// helper, so, like TestRetention_PurgesDispatchedOnly, we set
 	// created_at directly to age rows past the window.
 	past := o.now().UTC().Add(-2 * time.Hour)
 	ageParent := func(id string) {
@@ -462,7 +462,7 @@ func TestRetentionKeepsDeadLetterParent(t *testing.T) {
 	}
 
 	// (1) Dispatched parent carrying a DEAD delivery: purgeExpired must
-	// NOT take it — the dead-letter and the parent payload Replay needs
+	// NOT take it, the dead-letter and the parent payload Replay needs
 	// all survive.
 	tx, _ := db.BeginTx(ctx, nil)
 	deadID, _ := o.Append(ctx, tx, "t", nil)
@@ -470,7 +470,7 @@ func TestRetentionKeepsDeadLetterParent(t *testing.T) {
 	ageParent(deadID)
 	insertDeliveryAged(t, db, o, deadID, "svc", "dead", o.maxAttempts, "boom", 2*time.Hour)
 
-	// (2) Control: fully-dispatched parent past the window — purge takes it.
+	// (2) Control: fully-dispatched parent past the window, purge takes it.
 	tx, _ = db.BeginTx(ctx, nil)
 	doneID, _ := o.Append(ctx, tx, "t", nil)
 	tx.Commit()

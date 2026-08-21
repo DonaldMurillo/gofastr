@@ -63,7 +63,7 @@ func TestMigrate_MixedCaseIndexAndFK(t *testing.T) {
 			t.Fatalf("insert user: %v", err)
 		}
 
-		// Unique index is enforced — a duplicate UserName must be rejected.
+		// Unique index is enforced, a duplicate UserName must be rejected.
 		_, err := db.Exec(
 			"INSERT INTO MixedUser(id, UserName, AccountId) VALUES ($1, $2, $3)", "u2", "alice", "a1",
 		)

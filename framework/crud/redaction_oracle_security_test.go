@@ -171,7 +171,7 @@ func TestNoQueryRejectionNamesTheField(t *testing.T) {
 // `?cursor=` (even empty, for the first page) switches List into keyset mode
 // and returns early, before the AfterList execution on the offset path. A
 // redaction hook that masks a column is therefore skipped entirely and the
-// stored value is written straight to the wire — direct disclosure, not an
+// stored value is written straight to the wire, direct disclosure, not an
 // inference oracle. The streaming path already refuses to bypass AfterList
 // (crud.go:473-482, "streaming list does not support AfterList hooks"); the
 // cursor path takes precedence over that check and never reached it.
@@ -245,7 +245,7 @@ func TestInProcessReadsRunReadHooks(t *testing.T) {
 
 // TestInProcessReadsAreRawByDefault pins the polarity. Raw is correct for the
 // Go API: a typed repo's Get→Update round trip, seed-reference resolution and
-// dashboard aggregates all read a value in order to write or compute with it,
+// dashboard aggregates all read a value to write or compute with it,
 // and every one of them persists or reports the mask if reads redact by
 // default. Screens opt in instead.
 func TestInProcessReadsAreRawByDefault(t *testing.T) {
@@ -289,7 +289,7 @@ func TestReadHookErrorFailsClosed(t *testing.T) {
 // TestReadHookReadingOwnEntityDoesNotRecurse pins the reentrancy guard. A
 // hook receives the context that triggered it; if that context still carried
 // the opt-in, a hook doing its own lookup on the same entity would re-enter
-// itself until the stack is exhausted — a fatal runtime error that recover()
+// itself until the stack is exhausted, a fatal runtime error that recover()
 // cannot catch, so the process dies rather than the request failing.
 func TestReadHookReadingOwnEntityDoesNotRecurse(t *testing.T) {
 	ch, db := setupRedactedHandler(t)
@@ -323,7 +323,7 @@ func TestReadHookReadingOwnEntityDoesNotRecurse(t *testing.T) {
 // TestWriteResponseIsRedacted pins that create and update responses carry the
 // same masked value a GET does. RETURNING gives back every visible column, so
 // a partial PUT would otherwise echo stored values for fields the caller
-// never sent — a direct disclosure to anyone with update permission.
+// never sent, a direct disclosure to anyone with update permission.
 func TestWriteResponseIsRedacted(t *testing.T) {
 	ch, db := setupRedactedHandler(t)
 	ch.Hooks.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
@@ -422,7 +422,7 @@ func TestDeleteEventSurvivesRedaction(t *testing.T) {
 // response leaves the map alone.
 //
 // The handler hands `result` to EmitEvent, which passes it to an async
-// goroutine that marshals it — the live bus, the fanout tap, the webhook
+// goroutine that marshals it, the live bus, the fanout tap, the webhook
 // bridge, any Events.On handler. An in-place redaction on the request
 // goroutine writes that map while those read it: a concurrent map
 // read/write, which is a runtime throw the bus's recover() cannot catch.
@@ -453,7 +453,7 @@ func TestResponseHookDoesNotMutateEventRecord(t *testing.T) {
 
 // TestBatchResponsesAreRedacted pins the _batch surfaces. They are mounted
 // alongside the single-record routes under the same scope, so a caller who
-// can POST / can POST /_batch — and an unredacted batch body would be a way
+// can POST / can POST /_batch, and an unredacted batch body would be a way
 // to read exactly what the single-record route masks.
 func TestBatchResponsesAreRedacted(t *testing.T) {
 	ch, db := setupRedactedHandler(t)
@@ -498,7 +498,7 @@ func TestBatchResponseHookRunsOutsideTx(t *testing.T) {
 
 	ch.Hooks.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
 		p, _ := data.(*hook.GetPayload)
-		// Touches the DB — the thing that deadlocks under an open tx.
+		// Touches the DB, the thing that deadlocks under an open tx.
 		var n int
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM redacted_notes`).Scan(&n); err != nil {
 			return err

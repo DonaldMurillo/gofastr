@@ -152,8 +152,8 @@ func TestStrictAxeCoverageEnforcedInDevOnly(t *testing.T) {
 	})
 
 	t.Run("dev with no manifest warns and serves", func(t *testing.T) {
-		// A fresh clone / fresh generate has never run the axe suite —
-		// blocking boot there would wall first contact behind a Chrome
+		// A fresh clone / fresh generate has never run the axe suite.
+		// Blocking boot there would wall first contact behind a Chrome
 		// run. Absence warns (scream but serve); gaps fail (below).
 		t.Chdir(t.TempDir())
 		t.Setenv("GOFASTR_DEV", "1")
@@ -304,13 +304,13 @@ func TestStrictConfigManifestMissingCanBeEnforced(t *testing.T) {
 	}
 }
 
-// applyOption applies one more Option to an already-constructed host —
+// applyOption applies one more Option to an already-constructed host:
 // test shorthand for composing strictSiteOptions with a custom config.
 func applyOption(ds *UIHost, opt Option) { opt(ds) }
 
 func TestStrictAxeCoverageSkipsScreenlessApp(t *testing.T) {
 	// An app with no page screens (API-only, or dialogs/drawers only) has
-	// nothing an axe test could scan — dev boot must not demand a manifest.
+	// nothing an axe test could scan. Dev boot must not demand a manifest.
 	t.Chdir(t.TempDir())
 	t.Setenv("GOFASTR_DEV", "1")
 	a := app.NewApp("demo")
@@ -341,7 +341,7 @@ func TestStrictAxeCoverageResolvesDynamicRoutes(t *testing.T) {
 }
 
 // staticPathsScreen is a dynamic-route screen that declares concrete
-// instances — the mechanism that makes a dynamic route visible to the
+// instances, the mechanism that makes a dynamic route visible to the
 // sitemap and therefore demandable by the axe-coverage check.
 type staticPathsScreen struct{ describedScreen }
 
@@ -354,7 +354,7 @@ func TestWithStrictBareCallResetsRelaxedConfig(t *testing.T) {
 	a.Register("/", &describedScreen{}, nil)
 	ds := New(a,
 		WithStrict(StrictConfig{SiteDescription: StrictOff, SiteIcon: StrictOff, Sitemap: StrictOff, Robots: StrictOff}),
-		WithStrict(), // documented: bare call enforces everything — must reset
+		WithStrict(), // documented: bare call enforces everything, must reset
 	)
 	msg := mountPanic(t, ds)
 	if !strings.Contains(msg, "robots") {
@@ -397,7 +397,7 @@ func TestStrictFlagsInvalidSitemapBaseURL(t *testing.T) {
 
 func TestStrictCorruptManifestFailsBoot(t *testing.T) {
 	// A missing manifest warns (fresh checkout); a CORRUPT one must not
-	// be mistaken for absence — that would relax enforcement exactly
+	// be mistaken for absence. That would relax enforcement exactly
 	// when the coverage record is untrustworthy.
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -420,7 +420,7 @@ func TestStrictCorruptManifestFailsBoot(t *testing.T) {
 func TestStrictDynamicRouteWithoutStaticPathsWarnsNotDemands(t *testing.T) {
 	// A dynamic route with no StaticPaths is invisible to the sitemap,
 	// so a sitemap-driven axe gate can never cover it. Strict must not
-	// demand what the gate cannot discover — it screams instead.
+	// demand what the gate cannot discover. It screams instead.
 	t.Chdir(t.TempDir())
 	t.Setenv("GOFASTR_DEV", "1")
 	if err := axecov.Record(".", "/", "dark"); err != nil {
@@ -440,7 +440,7 @@ func TestStrictDynamicRouteWithoutStaticPathsWarnsNotDemands(t *testing.T) {
 	}
 }
 
-// emptyPathsScreen declares StaticPaths but returns no instances — as
+// emptyPathsScreen declares StaticPaths but returns no instances, as
 // invisible to the sitemap as not implementing it at all.
 type emptyPathsScreen struct{ describedScreen }
 

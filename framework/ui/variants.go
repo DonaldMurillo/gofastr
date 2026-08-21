@@ -11,7 +11,7 @@ import (
 // ─── Custom variants ────────────────────────────────────────────────
 //
 // The built-in variant sets (ButtonPrimary…ButtonGhost, StatusSuccess…
-// StatusNeutral, CardElevated…CardFlat) are validated at render time —
+// StatusNeutral, CardElevated…CardFlat) are validated at render time:
 // an unknown value panics so typos surface immediately. Apps that need
 // a brand variant register it here instead of shipping loose CSS: the
 // registration extends the validation set AND routes the variant's CSS
@@ -31,7 +31,7 @@ import (
 //	ui.Button(ui.ButtonConfig{Label: "Buy", Variant: Brand})
 //
 // Registering after the component's stylesheet has been built (i.e.
-// after the app started serving) panics — a late registration would
+// after the app started serving) panics: a late registration would
 // pass validation but silently miss the sheet.
 
 // VariantCSS declares the look of a registered custom variant as flat
@@ -42,8 +42,8 @@ import (
 //	    Hover: []string{"filter", "none", "opacity", "0.9"},
 //	}
 //
-// Values may reference theme tokens — "{colors.primary}" resolves to
-// "var(--color-primary)" — so registered variants re-skin with the
+// Values may reference theme tokens: "{colors.primary}" resolves to
+// "var(--color-primary)", so registered variants re-skin with the
 // theme like every other component. The emitted rules are scoped to
 // the component's data-fui-comp marker (e.g.
 // `[data-fui-comp="ui-button"].ui-button--brand`), which outranks the
@@ -54,7 +54,7 @@ type VariantCSS struct {
 	Props []string
 	// Hover is emitted under :hover. Optional. Note the component base
 	// sheet may apply its own hover treatment (Button dims via
-	// `filter: brightness(0.95)`) — include "filter", "none" to replace
+	// `filter: brightness(0.95)`). Include "filter", "none" to replace
 	// it rather than stack on it.
 	Hover []string
 	// Focus is emitted under :focus-visible. Optional; without it the
@@ -73,7 +73,7 @@ type StatusVariantCSS struct {
 	Color string
 	// Icon is the glyph Callout and Notification display for this
 	// variant (a short string, typically one character). Defaults to
-	// "•". Must not contain `"` or `\` — it is embedded in a CSS
+	// "•". Must not contain `"` or `\`. It is embedded in a CSS
 	// string literal.
 	Icon string
 }
@@ -94,7 +94,7 @@ func RegisterButtonVariant(name string, css VariantCSS) ButtonVariant {
 }
 
 // RegisterButtonSize registers a custom ButtonSize under name (shared
-// by Button and LinkButton, same rules as RegisterButtonVariant —
+// by Button and LinkButton, same rules as RegisterButtonVariant:
 // sizes and variants share the ui-button--<name> class namespace, so
 // a name can only be one or the other).
 func RegisterButtonSize(name string, css VariantCSS) ButtonSize {
@@ -105,7 +105,7 @@ func RegisterButtonSize(name string, css VariantCSS) ButtonSize {
 // RegisterCardVariant registers a custom CardVariant under name. The
 // CSS lands in the registered ui-card sheet as
 // `[data-fui-comp="ui-card"].ui-card--<name>` rules. Same rules and
-// panics as RegisterButtonVariant ("interactive" is reserved — Card
+// panics as RegisterButtonVariant ("interactive" is reserved: Card
 // uses it for the Href form).
 func RegisterCardVariant(name string, css VariantCSS) CardVariant {
 	cardMods.register("RegisterCardVariant", name, kindVariant, css)
@@ -113,8 +113,8 @@ func RegisterCardVariant(name string, css VariantCSS) CardVariant {
 }
 
 // RegisterStatusVariant registers a custom StatusVariant under name.
-// One registration extends every StatusVariant consumer — StatusBadge,
-// Tag (and therefore FilterChipBar chips), Callout, and Notification —
+// One registration extends every StatusVariant consumer: StatusBadge,
+// Tag (and therefore FilterChipBar chips), Callout, and Notification,
 // each component deriving its own variant rules from the registered
 // accent color in its own sheet, exactly as the built-ins do.
 //
@@ -210,11 +210,11 @@ func (s *variantSet) register(api, name string, kind variantKind, css VariantCSS
 		panic("ui: " + api + "(" + name + "): name collides with a built-in " + s.sheet + " class")
 	}
 	if _, dup := s.kinds[name]; dup {
-		panic("ui: " + api + "(" + name + "): duplicate registration — the name is already registered")
+		panic("ui: " + api + "(" + name + "): duplicate registration, the name is already registered")
 	}
 	if s.sealed {
 		panic("ui: " + api + "(" + name + ") called after the " + s.sheet +
-			" stylesheet was built — register custom variants at package init, before the app serves")
+			" stylesheet was built. Register custom variants at package init, before the app serves")
 	}
 	if s.kinds == nil {
 		s.kinds = map[string]variantKind{}
@@ -272,7 +272,7 @@ func checkButtonVariant(component string, v ButtonVariant) {
 		return
 	}
 	panic("ui: " + component + " unknown Variant " + string(v) +
-		" — pick one of: primary, secondary, danger, ghost, or register it via ui.RegisterButtonVariant")
+		". Pick one of: primary, secondary, danger, ghost, or register it via ui.RegisterButtonVariant")
 }
 
 func checkButtonSize(component string, s ButtonSize) {
@@ -284,7 +284,7 @@ func checkButtonSize(component string, s ButtonSize) {
 		return
 	}
 	panic("ui: " + component + " unknown Size " + string(s) +
-		" — pick one of: \"\" (default), small, large, or register it via ui.RegisterButtonSize")
+		". Pick one of: \"\" (default), small, large, or register it via ui.RegisterButtonSize")
 }
 
 func checkStatusVariant(component string, v StatusVariant) {
@@ -296,7 +296,7 @@ func checkStatusVariant(component string, v StatusVariant) {
 		return
 	}
 	panic("ui: " + component + " unknown Variant " + string(v) +
-		" — pick one of: success, warning, danger, info, neutral, or register it via ui.RegisterStatusVariant")
+		". Pick one of: success, warning, danger, info, neutral, or register it via ui.RegisterStatusVariant")
 }
 
 func checkCardVariant(v CardVariant) {
@@ -308,7 +308,7 @@ func checkCardVariant(v CardVariant) {
 		return
 	}
 	panic("ui: Card unknown Variant " + string(v) +
-		" — pick one of: \"\" (elevated), outlined, flat, or register it via ui.RegisterCardVariant")
+		". Pick one of: \"\" (elevated), outlined, flat, or register it via ui.RegisterCardVariant")
 }
 
 // registeredStatusIcon returns the registered icon glyph for a custom
@@ -322,8 +322,8 @@ func registeredStatusIcon(v StatusVariant) string {
 // registeredStatusColor returns the resolved accent CSS color for a
 // registered custom status variant, with its {colors.*} token shorthand
 // expanded to var(--color-*) the same way customStatusCSS does (the
-// resolution is purely syntactic — var names come from the token name,
-// never the value — so DefaultTheme yields the same result as any host
+// resolution is purely syntactic: var names come from the token name,
+// never the value, so DefaultTheme yields the same result as any host
 // theme). ok is false when name is not a registered status variant.
 func registeredStatusColor(name string) (color string, ok bool) {
 	statusMods.mu.RLock()
@@ -342,7 +342,7 @@ func registeredStatusColor(name string) (color string, ok bool) {
 // the marker element. Seals the set.
 //
 // extraScopes lists additional data-fui-comp markers whose elements
-// carry the same modifier classes — components like ToggleAction
+// carry the same modifier classes. Components like ToggleAction
 // render class="ui-button ui-button--<variant>" under their OWN
 // marker (ui-toggle-action), so rules scoped only to ui-button would
 // never match them. Each extra scope gets a full copy of the variant
@@ -429,7 +429,7 @@ func customStatusCSS(component string, t style.Theme) string {
 	return "\n" + cs.MustBuild()
 }
 
-// statusTint mixes the accent color with the surface token — the same
+// statusTint mixes the accent color with the surface token: the same
 // color-mix recipe the built-in status variants use.
 func statusTint(color, accentPct, surfacePct string) string {
 	return "color-mix(in oklab, " + color + " " + accentPct +

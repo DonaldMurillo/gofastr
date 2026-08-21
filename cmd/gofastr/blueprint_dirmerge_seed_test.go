@@ -9,7 +9,7 @@ import (
 // Directory mode (--from=blueprints/) loads every blueprint file in a dir and
 // folds them with mergeBlueprints. Seed was the only slice field that
 // mergeBlueprints dropped, so a `seed:` block in any file but the last was
-// silently discarded — demos shipped empty with no error.
+// silently discarded. Demos shipped empty with no error.
 func TestDirMergePreservesSeedFromEveryFile(t *testing.T) {
 	dir := t.TempDir()
 	bpDir := filepath.Join(dir, "bp")

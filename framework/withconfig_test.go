@@ -23,7 +23,7 @@ func TestWithConfigReplacesWholeStruct(t *testing.T) {
 }
 
 // Option-order: a granular setter placed AFTER WithConfig overrides the field
-// it sets. This is the replacement-contract corollary — later options win.
+// it sets. This is the replacement-contract corollary, later options win.
 func TestWithConfigGranularSetterAfterWins(t *testing.T) {
 	app := NewApp(
 		WithConfig(AppConfig{Name: "x"}),

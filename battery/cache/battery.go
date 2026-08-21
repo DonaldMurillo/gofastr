@@ -17,7 +17,7 @@ import (
 //	c := cache.NewMemoryCache(cache.WithTTL(5 * time.Minute))
 //	app.Batteries.Register(cache.NewBattery(c))
 //
-// The battery's Init is a no-op — the cache is fully configured before
+// The battery's Init is a no-op, the cache is fully configured before
 // registration.  OnStop closes the underlying cache if it implements
 // io.Closer (MemoryCache does; RedisCache does not).
 type Battery struct {

@@ -17,7 +17,7 @@
 //	</div>
 //
 // Server gets standard checkbox-group submission semantics (Name
-// repeats for each checked option). No RPC dance — apps that need
+// repeats for each checked option). No RPC dance, apps that need
 // server-fetched options should compose this with a partial render.
 package multiselect
 
@@ -89,7 +89,7 @@ func Render(cfg Config) render.HTML {
 		}
 		// Option ids are <instance id>-opt-<index>: the index keeps
 		// symbol-heavy values ("C++" vs "C#") collision-free, and the
-		// instance id (cfg.ID, falling back to Name — must be unique
+		// instance id (cfg.ID, falling back to Name, must be unique
 		// per page) scopes them across multiselect instances.
 		optID := id + "-opt-" + itoa(i)
 		inputAttrs := map[string]string{
@@ -105,7 +105,7 @@ func Render(cfg Config) render.HTML {
 		if opt.Disabled {
 			inputAttrs["disabled"] = ""
 		}
-		// The label wraps the input AND carries for= — the runtime's
+		// The label wraps the input AND carries for=, the runtime's
 		// chip renderer resolves the chip text via
 		// label[for="<checkbox id>"] .ui-multiselect__row-label.
 		rows = append(rows, render.Tag("label",

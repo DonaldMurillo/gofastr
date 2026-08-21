@@ -12,7 +12,7 @@ import (
 // Sol #20. llm.md is the reference an agent follows to call the API. Only the
 // "Resource:" header used the mounted path; every endpoint heading was built
 // from the bare table, so /api/v1/posts/llm.md told an agent to call
-// `GET /posts` — a 404, or worse, an unrelated unversioned resource.
+// `GET /posts`, a 404, or worse, an unrelated unversioned resource.
 func TestLLMMD_VersionedEndpointsUseMountedPath(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
@@ -49,7 +49,7 @@ func TestLLMMD_VersionedEndpointsUseMountedPath(t *testing.T) {
 	}
 }
 
-// The unversioned path is unchanged — bare table is correct there.
+// The unversioned path is unchanged, bare table is correct there.
 func TestLLMMD_UnversionedUnchanged(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{
 		Table:  "posts",

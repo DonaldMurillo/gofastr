@@ -15,24 +15,24 @@ import (
 // LiveReloadHTMLInjector returns dev-only middleware that splices the
 // livereload client into full HTML documents that don't already carry it.
 // uihost pages inject the script themselves; this covers every OTHER way an
-// app serves a page under `gofastr dev` — static.Handler file serving (the
+// app serves a page under `gofastr dev`: static.Handler file serving (the
 // SPA and static-site shapes), widget-server pages, hand-rolled handlers
-// that set a text/html Content-Type — so "edit → rebuild → browser
-// refreshes" holds across the whole surface, not just uihost screens.
+// that set a text/html Content-Type. So "edit → rebuild → browser
+// refreshes" holds across the whole surface, not only uihost screens.
 //
 // What is deliberately left alone:
 //   - responses without an explicit text/html Content-Type (no sniffing);
 //   - fragments: anything without a closing </body> (island RPC swaps,
-//     SPA-nav partials) — an appended script node would corrupt the DOM the
+//     SPA-nav partials), an appended script node would corrupt the DOM the
 //     runtime swaps them into;
-//   - encoded bodies (Content-Encoding) — opaque bytes even when labeled
+//   - encoded bodies (Content-Encoding): opaque bytes even when labeled
 //     HTML;
-//   - HEAD and Range requests — http.ServeFile/ServeContent semantics
+//   - HEAD and Range requests: http.ServeFile/ServeContent semantics
 //     (real Content-Length with no body, 206 byte ranges) must survive;
 //   - streams: SSE and anything the handler Flushes pass through
 //     unbuffered, and a Flush mid-HTML abandons injection so progressive
 //     rendering keeps painting;
-//   - hijacked connections (WebSocket upgrades) — Hijack is forwarded and
+//   - hijacked connections (WebSocket upgrades): Hijack is forwarded and
 //     the wrapper never writes afterwards.
 func LiveReloadHTMLInjector() router.Middleware {
 	return func(next http.Handler) http.Handler {
@@ -74,7 +74,7 @@ func (w *injectWriter) decide() {
 		return
 	}
 	if ce := h.Get("Content-Encoding"); ce != "" && !strings.EqualFold(ce, "identity") {
-		return // opaque compressed bytes — never splice or re-measure
+		return // opaque compressed bytes, never splice or re-measure
 	}
 	if h.Get("X-Gofastr-Partial") != "" {
 		return // SPA-nav partial: a fragment by contract
@@ -135,7 +135,7 @@ func (w *injectWriter) Flush() {
 	}
 }
 
-// Hijack forwards connection takeover (WebSocket upgrades — core/stream
+// Hijack forwards connection takeover for WebSocket upgrades; core/stream
 // asserts http.Hijacker directly). After a hijack the wrapper never writes.
 func (w *injectWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hj, ok := w.rw.(http.Hijacker)

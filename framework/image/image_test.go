@@ -117,7 +117,7 @@ func TestDecodeBytesRoundTripPNG(t *testing.T) {
 // default is now 64 MP (an 8192² square is already a generous web
 // upload). Callers wanting more configure Config.MaxPixels.
 func TestDecodeBombGuardTightenedDefault(t *testing.T) {
-	// 16383×16383 ≈ 268 M pixels — passes the old default; rejected by
+	// 16383×16383 ≈ 268 M pixels. Passes the old default; rejected by
 	// the new default. Build a PNG header with the canonical IHDR CRC
 	// so stdimage.DecodeConfig accepts the header and surfaces the
 	// dimensions, letting our bomb guard run.
@@ -153,7 +153,7 @@ func TestDecodeBombGuardTrips(t *testing.T) {
 // calling, defense-in-depth rejects the obvious traversal patterns
 // at the framework boundary.
 func TestOpenRejectsTraversal(t *testing.T) {
-	// Paths that ESCAPE the working directory after Clean — these
+	// Paths that ESCAPE the working directory after Clean. These
 	// retain a `..` segment and are genuine traversal.
 	for _, p := range []string{
 		"../etc/passwd",
@@ -165,7 +165,7 @@ func TestOpenRejectsTraversal(t *testing.T) {
 		}
 	}
 	// Path that resolves WITHIN the working directory (Clean collapses
-	// the `..` segments) is allowed through — only file-not-found.
+	// the `..` segments) is allowed through. Only file-not-found.
 	if _, err := Open("a/b/../../c"); err == nil || strings.Contains(err.Error(), "traversal") {
 		t.Errorf("Open(\"a/b/../../c\") should clean to safe path, not flag as traversal; got %v", err)
 	}
@@ -249,8 +249,8 @@ func TestModulateZeroIsIdentity(t *testing.T) {
 
 // TestModulateInfBrightnessOnBlackPixelClampsTo255 pins the edge:
 // for a (0,0,0,255) pixel and Brightness=+Inf, the intermediate
-// 0*Inf produces NaN, and the old clamp8 fell through to uint8(NaN)=0
-// — so an "infinitely bright" black pixel rendered as black. The
+// 0*Inf produces NaN, and the old clamp8 fell through to uint8(NaN)=0,
+// so an "infinitely bright" black pixel rendered as black. The
 // fix in clamp8 treats NaN as 0 explicitly; +Inf on a non-zero
 // channel still clamps to 255.
 func TestModulateInfBrightnessClampsCorrectly(t *testing.T) {
@@ -289,7 +289,7 @@ func TestModulateGrayscaleLiteralZero(t *testing.T) {
 // TestModulateNaNNoOps pins the behaviour for NaN inputs: NaN is
 // programmer error (typically int(NaN)=0 or float-from-broken-config)
 // and historically slipped through clamp8 to produce silent black.
-// The fix treats NaN as nil — return source unchanged.
+// The fix treats NaN as nil, returning the source unchanged.
 // TestModulateNRGBAFastPathAllocsBounded asserts the per-pixel interface
 // boxing path is gone for the two common concrete types. A 128×128
 // NRGBA modulation should allocate a constant number of structures
@@ -424,7 +424,7 @@ func TestWebPLossyReturnsErrFormatUnsupported(t *testing.T) {
 // TestWebPZeroValueOptionsIsLossless asserts that the idiomatic Go
 // pattern `Image.WebP(WebPOptions{})` produces a valid lossless WebP.
 // Before the fix the zero-value Lossless field was false, which
-// errored as "lossy not implemented" — a foot-gun for callers who
+// errored as "lossy not implemented", a foot-gun for callers who
 // reach for the zero-value struct.
 func TestWebPZeroValueOptionsIsLossless(t *testing.T) {
 	src := FromImage(gradient(16, 12), FormatPNG)
@@ -670,7 +670,7 @@ func TestBlurHashAutoResizesLargeInput(t *testing.T) {
 
 // TestBlurHashAutoResizeCapsLongestSideForPortrait pins the fix for
 // the auto-resize bug where Resize(cap, 0, FitInside) only capped
-// width — a tall portrait still walked thousands of rows. Verifying
+// width. A tall portrait still walked thousands of rows. Verifying
 // allocations stay sub-MB on a 1000-row source proves the cap now
 // applies to the longest side regardless of aspect.
 func TestBlurHashAutoResizeCapsLongestSideForPortrait(t *testing.T) {
@@ -773,7 +773,7 @@ func TestAnimatedGIFSurfacesFrameCount(t *testing.T) {
 // TestAnimatedGIFFrameCountIsCheap asserts that counting frames in a
 // multi-frame GIF doesn't materialise pixel buffers. Before: the
 // fix used gif.DecodeAll which allocated O(frames * pixels). The
-// new path walks Image Descriptor markers only — O(frames) tiny
+// new path walks Image Descriptor markers only. O(frames) tiny
 // allocs, regardless of pixel count.
 func TestAnimatedGIFFrameCountIsCheap(t *testing.T) {
 	// Build a 100-frame GIF where each frame is 64x64. Pixel mem if
@@ -806,7 +806,7 @@ func TestAnimatedGIFFrameCountIsCheap(t *testing.T) {
 	}
 	// Pixel materialisation for 100 frames at 64x64 paletted would be
 	// at least ~410k pixel bytes plus image.Paletted overhead. Cap
-	// at 200k bytes of total alloc delta — well below the pixel cost.
+	// at 200k bytes of total alloc delta, well below the pixel cost.
 	delta := after.TotalAlloc - before.TotalAlloc
 	if delta > 200_000 {
 		t.Errorf("FrameCount counting allocated %d bytes; want <200k (no pixel materialisation)", delta)

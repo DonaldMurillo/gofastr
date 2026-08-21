@@ -19,7 +19,7 @@ type ArticleConfig struct {
 }
 
 // SectionConfig configures a <section> element.
-// Required: Label or LabelledBy (one must be set — becomes aria-label/aria-labelledby).
+// Required: Label or LabelledBy (one must be set, becomes aria-label/aria-labelledby).
 type SectionConfig struct {
 	Label      string // required → aria-label
 	LabelledBy string // alternative → aria-labelledby
@@ -61,7 +61,7 @@ type FooterConfig struct {
 }
 
 // NavConfig configures a <nav> element.
-// Required: Label or LabelledBy (one must be set — becomes aria-label/aria-labelledby).
+// Required: Label or LabelledBy (one must be set, becomes aria-label/aria-labelledby).
 // Automatically adds role="navigation".
 type NavConfig struct {
 	Label      string // required → aria-label

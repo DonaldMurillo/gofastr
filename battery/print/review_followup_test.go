@@ -13,7 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// getHost is like get() but lets a test set the request Host header — used
+// getHost is like get() but lets a test set the request Host header, used
 // to prove the PDF path does NOT trust it.
 func getHost(t *testing.T, h http.Handler, path, host string) *httptest.ResponseRecorder {
 	t.Helper()

@@ -17,7 +17,7 @@ func auditAppWithRedact(t *testing.T, db *sql.DB, redact func(string, map[string
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 	app.Entity("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{
 
-		// Public: this audit suite posts anonymously throughout — the
+		// Public: this audit suite posts anonymously throughout, the
 		// secure-by-default session gate (issue #65) would otherwise 401
 			// every request here.
 	}, Table: "posts", Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{
@@ -128,7 +128,7 @@ func TestAudit_RedactNilProducesEmptyMapNotNull(t *testing.T) {
 	})
 }
 
-// Redact must fire on AfterDelete too — otherwise per-entity redaction
+// Redact must fire on AfterDelete too, otherwise per-entity redaction
 // has a hole for the very op (delete) most likely to leak natural-key
 // PHI through record_id.
 func TestAudit_RedactFiresOnDelete(t *testing.T) {
@@ -136,7 +136,7 @@ func TestAudit_RedactFiresOnDelete(t *testing.T) {
 		var deleteCalls int
 		var sawEntity, sawID string
 		redact := func(entityName string, row map[string]any) map[string]any {
-			// Return a fresh map — never mutate the input. The hook
+			// Return a fresh map, never mutate the input. The hook
 			// passes the live response payload through Redact, so a
 			// mutation would leak into the API response too.
 			out := make(map[string]any, len(row))

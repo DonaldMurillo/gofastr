@@ -2,14 +2,14 @@
 
 `battery/admin` is an admin back-office battery with two halves:
 
-- **Entity CRUD** — generated list / create / edit / delete screens for
+- **Entity CRUD**: generated list / create / edit / delete screens for
   your entities, rendered **through your app's UI host** so they hydrate
   with `runtime.js`: the list is a server-driven `DataTable` island
   (paginate without a reload), delete is a `data-fui-confirm` button, and
   forms are server-rendered. **No bespoke JavaScript.** The island
   mechanics behind these (`data-fui-rpc`, signals, fragment swaps) are
   catalogued in [interactive-patterns](interactive-patterns.md).
-- **Ops dashboards** — read-only **Queue** and **Audit log** pages on top
+- **Ops dashboards**: read-only **Queue** and **Audit log** pages on top
   of data the framework already collects (`battery/queue`,
   `framework.WithAuditLog`). These are self-contained HTML and don't need a
   UI host.
@@ -38,7 +38,7 @@ app.Entity("customers", customersConfig)
 app.RegisterBattery(admin.New(admin.Config{Title: "Back office", AllEntities: true}))
 ```
 
-Exposure is **opt-in**. An empty `Entities` exposes nothing — a
+Exposure is **opt-in**. An empty `Entities` exposes nothing. A
 zero-value config must not silently turn every table into an editable
 back-office. Either name the entities:
 
@@ -69,14 +69,14 @@ The entity screens mount at `<PathPrefix>/e/<table>`:
 > **A UI host is required for the entity screens.** The battery discovers
 > the host the app mounted (via `framework.App.Mountables()`) and registers
 > the screens on it. If you list `Entities` but no host is mounted,
-> `App.Start` returns an error from the battery's `Init` — the entity
-> screens cannot render without a host. With `AllEntities` and no host, the
+> `App.Start` returns an error from the battery's `Init`, because the
+> entity screens cannot render without a host. With `AllEntities` and no host, the
 > entity screens are simply skipped and you still get the ops dashboards.
 
 ### How the interactions work (no JavaScript)
 
 Everything is a declarative `data-fui-*` primitive the runtime already
-understands — the battery ships zero JS:
+understands. The battery ships zero JS:
 
 - **List** uses `ui.DataTable` with `IslandSignal`/`IslandEndpoint`. Page
   links fire a `GET` RPC to `_rows`, which returns the new table fragment;
@@ -84,8 +84,8 @@ understands — the battery ships zero JS:
 - **Delete** is a `<button data-fui-confirm="…" data-fui-rpc="…/_delete/{id}"
   data-fui-rpc-method="DELETE" data-fui-rpc-signal="…">`. The runtime runs
   the native confirm, fires the DELETE, and swaps the returned (refreshed)
-  table into the list signal. (It does **not** navigate to the list path —
-  that would hit the SPA cache and show a stale row.)
+  table into the list signal. (It does **not** navigate to the list path,
+  because that would hit the SPA cache and show a stale row.)
 - **Forms** are plain SSR `ui.Form`s (CSRF auto-stamped from context). On
   success the handler 303-redirects to the list; on a validation error it
   redirects back to the form with a one-shot flash token (`?e=…`) so the
@@ -94,7 +94,7 @@ understands — the battery ships zero JS:
 
 Because every write goes through the entity's **own `CrudHandler`** with the
 request context forwarded, validation, `OwnerField`/tenant scoping, hooks,
-and events all apply exactly as on the JSON API — the admin never
+and events all apply exactly as on the JSON API. The admin never
 re-implements CRUD, pagination, or filter logic.
 
 That includes `WithAuditLog`: configure it after registering entities, and
@@ -138,7 +138,7 @@ app.RegisterBattery(admin.New(admin.Config{
 On the `?status=failed` view, each row gets a **Replay** button when the
 wired queue supports it (`DBQueue` does; in-memory / Redis don't yet). The
 replay route mutates state, so it runs behind the same admin gate as every
-other route and carries a CSRF token — there is no unauthenticated way to
+other route and carries a CSRF token, so there is no unauthenticated way to
 re-fire jobs.
 
 When `Queue` is nil, the overview section and Queue navigation item are hidden;
@@ -181,7 +181,7 @@ app.RegisterBattery(admin.New(admin.Config{
 | `POST /admin/rbac/_assign`           | Replace a user's roles (RPC)         |
 
 The selectable permissions shown in the grant dropdown are the **union of
-all currently-granted permissions** — there is no capability catalog.
+all currently-granted permissions**. There is no capability catalog.
 Free-text entry for new permission strings is allowed.
 
 Every mutation (grant, revoke, assign-roles) writes an **audit row** via
@@ -192,12 +192,12 @@ The actor ID is the authenticated admin's user ID.
 ## Process-module lifecycle
 
 When `Config.ProcessModules` is wired to `app.ProcessModules()` (the
-process-isolated module supervisor — see
+process-isolated module supervisor described in
 [process-modules](process-modules.md)), the admin exposes an operator
 lifecycle screen at `<PathPrefix>/modules`, behind the same default-deny
-gate. It lists every registered module's live state — surfacing the
-disabled (404) vs crashed-but-enabled (503) distinction, the restart count,
-and the prominent circuit-open / lease-failing flags — and offers guarded
+gate. It lists every registered module's live state: the disabled (404)
+vs crashed-but-enabled (503) distinction, the restart count, and the
+prominent circuit-open / lease-failing flags. It offers guarded
 actions: enable, disable, **bump generation** (the circuit-reset recovery
 lever), and revoke a granted capability. Each action writes an audit row
 (`module_enable` / `module_disable` / `module_bump` / `module_revoke`) and
@@ -209,8 +209,8 @@ screen is not mounted.
 Every admin page is gated and requires authentication by default: the battery
 requires an authenticated user that holds the **admin role** (default
 `"admin"`). A user satisfies this when its `GetRoles() []string` includes
-the role — `battery/auth`'s `User` does. Anonymous callers get `401`;
-authenticated users who lack the role get `403` — on both the SSR screens
+the role. `battery/auth`'s `User` does. Anonymous callers get `401`;
+authenticated users who lack the role get `403`, on both the SSR screens
 (via the host policy chain) and the RPC/form routes (via middleware).
 
 > **BREAKING (since the admin default-deny change):** the default used to
@@ -241,7 +241,7 @@ admin.New(admin.Config{
 Forms embed the framework's `_csrf` hidden field automatically (`ui.Form`
 reads the token from context). The delete RPC carries the token via the
 `X-CSRF-Token` header, which the runtime reads from
-`<meta name="csrf-token">` — make sure your layout emits that tag when CSRF
+`<meta name="csrf-token">`. Make sure your layout emits that tag when CSRF
 is enforced.
 
 ## Common mistakes
@@ -256,6 +256,6 @@ is enforced.
 
 ## See also
 
-A runnable example lives in `examples/backoffice` — SQLite, two entities,
+A runnable example lives in `examples/backoffice`: SQLite, two entities,
 a demo login, and `admin.New(admin.Config{})` generating the whole
 back-office.

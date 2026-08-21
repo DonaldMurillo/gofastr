@@ -27,7 +27,7 @@ type MigrationFileOptions struct {
 
 // GenerateMigrationFile diffs the Plan against the committed snapshot at
 // opts.SnapshotPath, writes the next numbered migration file into
-// opts.MigrationsDir, and updates the snapshot — the offline declarative
+// opts.MigrationsDir, and updates the snapshot: the offline declarative
 // workflow driven from a Plan (entity registry + raw Tables + Views +
 // Routines) rather than a blueprint. It is the supported entrypoint a host
 // binary calls from its own main() to emit versioned migrations from its
@@ -40,13 +40,13 @@ type MigrationFileOptions struct {
 //	    Dialect:       migrate.DialectSQLite,
 //	})
 //
-// The output matches `gofastr migrate generate --from=<blueprint>` exactly —
+// The output matches `gofastr migrate generate --from=<blueprint>` exactly:
 // same NNNN_name.sql naming, same -- +migrate directive layout, same snapshot
-// format — because both paths use the same GeneratePlan + RenderMigrationFile +
+// format, because both paths use the same GeneratePlan + RenderMigrationFile +
 // SaveSnapshot primitives.
 //
 // Returns the written file path. An empty path (nil error) means the schema is
-// already current — nothing was written.
+// already current. Nothing was written.
 func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (string, error) {
 	// Validate the group before writing anything: an invalid name would be
 	// stamped into a directive the runner then refuses, leaving a committed

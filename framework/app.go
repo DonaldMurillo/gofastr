@@ -61,7 +61,7 @@ type Mountable interface {
 	Mount(*router.Router)
 }
 
-// JSONCase / CaseCamel / CaseSnake moved to framework/crud — see
+// JSONCase / CaseCamel / CaseSnake moved to framework/crud. See
 // reexports_crud.go for the facade aliases that keep framework.X working.
 
 // AppConfig holds application-level configuration.
@@ -73,7 +73,7 @@ type AppConfig struct {
 
 	// PublicOpenAPI serves /openapi.json without the auth gate. By default
 	// the spec is auth-gated (it enumerates every route), so a minimal app
-	// returns 401 there — which surprised users following the quickstart
+	// returns 401 there, which surprised users following the quickstart
 	// curl. Set true (or use WithPublicOpenAPI) when the spec is meant to be
 	// public, e.g. a docs site or an internal API behind a network boundary.
 	// The API docs page at /api/docs/ follows the same setting: public
@@ -81,12 +81,12 @@ type AppConfig struct {
 	PublicOpenAPI bool
 
 	// APIPrefix mounts every auto-CRUD entity route (list/get/create/update/
-	// delete + _batch + _events + per-entity llm.md) under this path — e.g.
+	// delete + _batch + _events + per-entity llm.md) under this path, e.g.
 	// "/api" serves GET /api/posts instead of GET /posts. Empty (default)
 	// keeps the bare entity-name mounts, so this is not a breaking change.
 	// The generated OpenAPI spec bakes the prefix into its path keys
 	// (servers stays [{url: "/"}]), so documented paths match requests.
-	// GroupEntity routes are unaffected — a group owns its own prefix. MCP
+	// GroupEntity routes are unaffected. A group owns its own prefix. MCP
 	// tool names are unchanged.
 	APIPrefix string
 
@@ -94,18 +94,18 @@ type AppConfig struct {
 	// the default middleware chain. Zero (default) installs a 30s cap.
 	// Set a positive duration to override. The cap applies to buffered
 	// responses only: a handler that flips into streaming mode (first
-	// Flush or Hijack — every SSE subscription does) sheds the deadline
+	// Flush or Hijack, every SSE subscription does) sheds the deadline
 	// and the server-level read/write deadlines for the life of the
 	// stream, so subscribers are never cut off by this budget. To
 	// disable the timeout middleware entirely, set
-	// DisableRequestTimeout — overloading sign for "disable" is too
+	// DisableRequestTimeout. Overloading sign for "disable" is too
 	// easy to trip on (e.g. accidentally subtracting two timestamps).
 	RequestTimeout time.Duration
 
 	// DisableRequestTimeout removes the Timeout middleware from the
 	// default chain entirely and drops the server-level read/write
 	// timeouts to match (header and idle timeouts stay). Useful for
-	// long-running uploads; SSE no longer needs it — streams shed the
+	// long-running uploads; SSE no longer needs it. Streams shed the
 	// deadline at their first flush. Pair with per-handler ctx
 	// deadlines if you still need bounded request lifetime.
 	DisableRequestTimeout bool
@@ -120,7 +120,7 @@ type AppConfig struct {
 	// See [HTTPServerTimeoutsConfig] and [WithHTTPServerTimeouts].
 	//
 	// WriteTimeout bounds the whole response, including an SSE stream:
-	// when it lapses the browser's EventSource reconnects seamlessly, so
+	// when it lapses the browser's EventSource reconnects automatically, so
 	// the single /__gofastr/sse bus keeps working at any value. To hold
 	// one stream open for longer (fewer reconnects on a presence/collab
 	// surface), raise WriteTimeout or set it to 0. See the deployment
@@ -132,7 +132,7 @@ type AppConfig struct {
 	// Permissions-Policy, CORP, COOP, HSTS) emitted by the SecurityHeaders
 	// middleware in the default chain. The zero value installs the
 	// framework's strict defaults (default-src 'self', no 'unsafe-inline');
-	// set fields to override — e.g. ContentSecurityPolicy to allow
+	// set fields to override, e.g. ContentSecurityPolicy to allow
 	// style-src 'unsafe-inline' for a third-party CSS dependency. Unset
 	// fields keep their built-in defaults, so a partial override never
 	// silently drops a defensive header. See [WithSecurityHeaders].
@@ -161,7 +161,7 @@ const defaultShutdownTimeout = 15 * time.Second
 // HTTPServerTimeoutsConfig overrides the connection deadlines of the
 // framework's embedded http.Server. Each field mirrors the equally named
 // field on [net/http.Server]. Fields are *time.Duration (not time.Duration)
-// so an unset field — nil — keeps the framework default, while an explicit
+// so an unset field, nil, keeps the framework default, while an explicit
 // pointer to 0 disables just that deadline (matching net/http, where a zero
 // time.Duration means "no timeout"). Build the pointers with the Go 1.26
 // new(expr) builtin:
@@ -228,7 +228,7 @@ type App struct {
 
 	// access, when set (WithGrantStore), is the app's RBAC GrantStore.
 	// When a fanout is also attached (WithFanout), grant/revoke propagate
-	// to every replica as a refresh-signal. Nil by default — apps that
+	// to every replica as a refresh-signal. Nil by default. Apps that
 	// don't use RBAC are unaffected.
 	access *access.GrantStore
 
@@ -247,11 +247,11 @@ type App struct {
 
 	// processDrainRegistered guards the supervisor's PrependDrainer call
 	// so repeated Start paths (canonical + setup-interactive) don't
-	// double-register. Read/written under no lock — runStartHooks is
+	// double-register. Read/written under no lock. runStartHooks is
 	// single-threaded through Start.
 	processDrainRegistered bool
 
-	serverMu   sync.Mutex // guards server + appCtx/appCancel — Start writes, Shutdown reads/nils
+	serverMu   sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
 	server     *http.Server
 	events     *event.EventBus
 	hooksMu    sync.RWMutex // guards hooks: kiln's build-mode runtime registers while the app serves
@@ -261,7 +261,7 @@ type App struct {
 
 	// outbox is the transactional event outbox (WithOutbox). When set,
 	// CRUD lifecycle events are staged in the write transaction and a
-	// relay — started by Start, drained on Shutdown — delivers each to
+	// relay, started by Start, drained on Shutdown, delivers each to
 	// the declared durable consumers (WithOutboxConsumer). The relay no
 	// longer touches the live bus; the real-time lane (EmitEvent) feeds
 	// SSE and ephemeral subscribers independently.
@@ -273,11 +273,11 @@ type App struct {
 	// fanout, when set (WithFanout), bridges the real-time lane across
 	// replicas: the event bus is attached in NewApp and any Mountable that
 	// supports SetFanout (a mounted UI host's island manager) is wired at
-	// Mount time. Caller-owned — the app never closes it.
+	// Mount time. Caller-owned. The app never closes it.
 	fanout fanout.Fanout
 
 	// secret is the app-wide secret (WithSecret, or GOFASTR_SECRET).
-	// Subsystem keys are HKDF-derived from it — never used raw — starting
+	// Subsystem keys are HKDF-derived from it, never used raw, starting
 	// with the uihost session-signing key wired at Mount time. Empty is
 	// valid for a single replica (the host self-mints a per-boot key);
 	// with a fanout attached (multi-replica) Mount fails closed instead,
@@ -304,12 +304,12 @@ type App struct {
 	// logger is the App-local *slog.Logger. Read via Logger(), swapped via
 	// SetLogger(). Stored behind an atomic pointer so middleware composed
 	// at NewApp time can resolve the current logger per request without a
-	// lock — plugins (battery/log, etc.) can swap it from their Init.
+	// lock, plugins (battery/log, etc.) can swap it from their Init.
 	logger atomic.Pointer[slog.Logger]
 
 	// initialized guards InitPlugins against double-init. Public so a test
 	// or CLI can call InitPlugins manually pre-Start, then Start also calls
-	// it — the second call must be a no-op (otherwise routes/middleware
+	// it. The second call must be a no-op (otherwise routes/middleware
 	// double-register and panic on duplicate mux patterns).
 	initialized atomic.Bool
 
@@ -320,11 +320,11 @@ type App struct {
 	appCancel  context.CancelFunc
 
 	// readyHooks fire once the HTTP listener has bound, just before the
-	// server starts accepting connections — see App.OnReady.
+	// server starts accepting connections. See App.OnReady.
 	readyHooks []func(addr string)
 
 	// seedHooks run during Start AFTER auto-migration (tables exist) and
-	// before plugin/battery init — see App.WithSeed.
+	// before plugin/battery init. See App.WithSeed.
 	seedHooks []func(ctx context.Context) error
 
 	// lc is the graceful-shutdown coordinator. OnStop hooks register
@@ -341,7 +341,7 @@ type App struct {
 	// that never use them pay nothing.
 	flagEval     *featureflag.Evaluator
 	flagMu       sync.Mutex
-	flagAccessed bool // true once Flags()/SetFlagStore has run — guards against late SetFlagStore
+	flagAccessed bool // true once Flags()/SetFlagStore has run. Guards against late SetFlagStore
 
 	// Optional idempotency config wired into the default chain when set.
 	idempotency *middleware.IdempotencyConfig
@@ -421,15 +421,15 @@ type App struct {
 
 	// configDiscards collects AppConfig field names WithConfig zeroed after
 	// an earlier option had set them. NewApp filters it against the final
-	// Config (a later option may have restored the field) and warns once —
-	// the discard is legal, replace-semantics are the contract, but it is
+	// Config (a later option may have restored the field) and warns once.
+	// The discard is legal, replace-semantics are the contract, but it is
 	// almost always a misplaced option and used to be perfectly silent.
 	configDiscards []string
 
 	// setup is the optional first-run setup runner (WithSetup). When set
 	// and setup is incomplete at boot, Start either runs the steps
 	// headlessly (all required env present) or serves an interactive
-	// wizard until setup finishes — then atomically swaps to the real
+	// wizard until setup finishes, then atomically swaps to the real
 	// router. See SetupRunner for the full lifecycle.
 	setup SetupRunner
 
@@ -462,15 +462,15 @@ func WithDB(db *sql.DB) AppOption {
 // WithConfig sets the application config by replacing AppConfig wholesale.
 // Options apply left to right and later options win: a granular setter placed
 // after WithConfig (WithAPIPrefix, WithPublicOpenAPI, …) overrides the field
-// it touches, while WithConfig overrides every option that ran before it —
+// it touches, while WithConfig overrides every option that ran before it,
 // including fields it leaves at the zero value. A zero field means the zero
 // value, not "keep whatever a previous option set". To turn a boolean back off,
 // set it in the AppConfig passed to WithConfig (or place a granular setter
 // after it) instead of relying on a zero field to preserve a prior value.
 //
-// Because that discard used to be perfectly silent — the classic form is a
+// Because that discard used to be perfectly silent. The classic form is a
 // scaffold that pastes WithPublicOpenAPI() next to WithDB, one line above the
-// WithConfig that zeroes it — NewApp now logs a warning naming every field an
+// WithConfig that zeroes it. NewApp now logs a warning naming every field an
 // earlier option set that the replacement returned to zero (and that no later
 // option restored). Place WithConfig first to stay silent.
 func WithConfig(config AppConfig) AppOption {
@@ -489,7 +489,7 @@ func defaultAppConfig() AppConfig {
 }
 
 // discardedConfigFields reports the AppConfig fields that old carried beyond
-// the NewApp seed and replacement returns to zero — the fields a wholesale
+// the NewApp seed and replacement returns to zero: the fields a wholesale
 // WithConfig replacement silently throws away.
 func discardedConfigFields(old, replacement AppConfig) []string {
 	def := reflect.ValueOf(defaultAppConfig())
@@ -531,7 +531,7 @@ func WithPublicOpenAPI() AppOption {
 // by the SecurityHeaders middleware in the default chain. Equivalent to
 // setting AppConfig.SecurityHeaders. The zero value keeps the framework's
 // strict defaults; override individual fields (e.g.
-// ContentSecurityPolicy) to relax a specific directive — unset fields
+// ContentSecurityPolicy) to relax a specific directive, unset fields
 // retain their built-in defaults so a partial override never drops a
 // defensive header. See middleware.SecurityHeadersConfig.
 //
@@ -551,7 +551,7 @@ func WithSecurityHeaders(cfg middleware.SecurityHeadersConfig) AppOption {
 // to override just that deadline without touching the others.
 //
 // This removes the need to re-derive the http.Server (which the framework
-// owns) just to change one timeout — the same shape as WithSecurityHeaders
+// owns) just to change one timeout, the same shape as WithSecurityHeaders
 // for the header chain.
 //
 //	app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
@@ -574,7 +574,7 @@ func (a *App) apiPrefix() string {
 	return "/" + p
 }
 
-// entityMountPath is the base path an entity's CRUD routes mount at —
+// entityMountPath is the base path an entity's CRUD routes mount at:
 // apiPrefix + "/" + table. With no prefix this is the historical "/table".
 func (a *App) entityMountPath(table string) string {
 	return a.apiPrefix() + "/" + table
@@ -593,14 +593,14 @@ func WithRouter(r *router.Router) AppOption {
 //	a.Router().Handle("POST", "/orders/{id}/confirm", confirmOrder)
 //	a.Router().Get("/healthz", healthz)
 //
-// Patterns are net/http ServeMux syntax — `{id}`, not `:id`. An
+// Patterns are net/http ServeMux syntax: `{id}`, not `:id`. An
 // Express-style `:id` segment matches literally and 404s every real
 // request; `gofastr verify` catches it (GOFASTR1002).
 //
 // Two App-level helpers sit above it and are preferred where they apply:
 //
-//   - App.Use(mw)        — middleware, forwards to Router().Use
-//   - App.Group(prefix)  — a sub-router carrying a prefix, middleware,
+//   - App.Use(mw):         middleware, forwards to Router().Use
+//   - App.Group(prefix):   a sub-router carrying a prefix, middleware,
 //     access rules, and an OpenAPI tag. Anything guarded belongs here.
 //
 // Exposed as a method (rather than a field) so plugins and batteries can
@@ -621,7 +621,7 @@ func WithMCPServer(s *mcp.Server) AppOption {
 // is the agent-ready default: combined with uihost.WithAgentReady (which
 // advertises /mcp via the agent card + Link headers) it makes the server's
 // tools discoverable to MCP clients. Calling this AND manually mounting
-// /mcp will panic with a route conflict — pick one.
+// /mcp will panic with a route conflict. Pick one.
 func WithMCP() AppOption {
 	return func(a *App) {
 		a.mcpAutoMount = true
@@ -650,7 +650,7 @@ func WithFileStorage(s upload.Storage) AppOption {
 //	    BlurHashX: 4, BlurHashY: 3,
 //	}))
 //
-// Derived values are written to sibling columns the entity declares —
+// Derived values are written to sibling columns the entity declares,
 // for an Image field "cover": "cover_blurhash", "cover_placeholder", and
 // "cover_variants" (JSON). Columns that do not exist are skipped, so
 // adopting one means adding the column and nothing else.
@@ -690,8 +690,8 @@ func WithImagePipelineFor(entityName, fieldName string, d file.ImageDeriver) App
 // otherwise runs before serving. Use it in deployments whose policy
 // forbids unattended schema changes on boot: generate the entity DDL
 // into versioned migration files instead (`gofastr migrate generate
-// <name>`) and apply them as an explicit step (`gofastr migrate up`). Entity seeds still run at Start —
-// they are idempotent data, not schema — which also means an entity
+// <name>`) and apply them as an explicit step (`gofastr migrate up`). Entity seeds still run at Start,
+// they are idempotent data, not schema, which also means an entity
 // WITH seeds fails Start fast when its table is missing, instead of the
 // app serving against an unmigrated schema.
 func WithoutAutoMigrate() AppOption {
@@ -705,8 +705,8 @@ func WithoutAutoMigrate() AppOption {
 // transaction as the entity write, and a relay goroutine (started by
 // App.Start, drained on Shutdown) delivers each committed row to the
 // declared durable consumers. This closes the crash window where a plain
-// post-commit emit is lost, and makes delivery at-least-once per consumer
-// — consumers that care must dedupe on Event.ID. Requires WithDB; NewApp
+// post-commit emit is lost, and makes delivery at-least-once per consumer.
+// Consumers that care must dedupe on Event.ID. Requires WithDB; NewApp
 // panics otherwise.
 //
 // The relay delivers ONLY to consumers declared via [WithOutboxConsumer];
@@ -733,8 +733,8 @@ type outboxConsumerDecl struct {
 // WithOutbox (NewApp panics if the outbox isn't also enabled). name is a
 // stable identity used to track per-consumer delivery across
 // restarts/replicas; (eventType, name) must be unique. handler is invoked
-// once per delivery with Event.ID set to the outbox row id (dedup key) —
-// it must be idempotent (at-least-once delivery). A handler that errors
+// once per delivery with Event.ID set to the outbox row id (dedup key).
+// It must be idempotent (at-least-once delivery). A handler that errors
 // or panics is retried with backoff and eventually dead-lettered
 // independently of its sibling consumers (sibling isolation).
 func WithOutboxConsumer(name, eventType string, handler event.EventHandler) AppOption {
@@ -744,13 +744,13 @@ func WithOutboxConsumer(name, eventType string, handler event.EventHandler) AppO
 }
 
 // WithFanout attaches a cross-replica fanout (core/fanout.Fanout) to the
-// app's real-time lane. The event bus is bridged — every locally-emitted
+// app's real-time lane. The event bus is bridged, every locally-emitted
 // event is mirrored to the other replicas and re-emitted on their buses, so
 // entity `_events` SSE streams work regardless of which replica holds the
-// connection — and any Mountable that supports SetFanout (a mounted UI
+// connection, and any Mountable that supports SetFanout (a mounted UI
 // host) gets its island manager wired the same way.
 //
-// SEMANTICS: with a fanout attached the bus becomes a broadcast — every
+// SEMANTICS: with a fanout attached the bus becomes a broadcast. Every
 // On/Subscribe handler fires on EVERY replica. That is correct for UI push
 // and wrong for side effects; per-event work belongs on the durable lane
 // (WithOutboxConsumer). Handlers that derive new events must gate on
@@ -761,7 +761,7 @@ func WithOutboxConsumer(name, eventType string, handler event.EventHandler) AppO
 // itself is detached by Shutdown. Panics if f is nil.
 func WithFanout(f fanout.Fanout) AppOption {
 	if f == nil {
-		panic("framework: WithFanout(nil) — construct a fanout first (framework/fanout.NewPostgres, core/fanout.NewRedis)")
+		panic("framework: WithFanout(nil): construct a fanout first (framework/fanout.NewPostgres, core/fanout.NewRedis)")
 	}
 	return func(a *App) {
 		a.fanout = f
@@ -772,7 +772,7 @@ func WithFanout(f fanout.Fanout) AppOption {
 // auto-wire cross-replica grant/revoke invalidation. When a fanout is also
 // attached (WithFanout), every GrantStore.Grant/Revoke publishes a
 // refresh-signal on the "gofastr.access" lane and each replica re-reads
-// the named role's grants from the DB into its local RolePolicy — never
+// the named role's grants from the DB into its local RolePolicy, never
 // trusting the message body. Without a fanout the store is usable but
 // grant/revoke stays local to this process (other replicas heal on
 // restart). The store MUST already be constructed (NewGrantStore) and
@@ -795,12 +795,12 @@ func WithoutDefaultMiddleware() AppOption {
 
 // WithLogger sets the App's *slog.Logger. Same effect as calling
 // App.SetLogger after NewApp; available as an option for symmetry.
-// Panics if l is nil — the App's logger is always non-nil; pass a
+// Panics if l is nil: the App's logger is always non-nil; pass a
 // discard logger (slog.New(slog.DiscardHandler)) if you want to
 // silence output.
 func WithLogger(l *slog.Logger) AppOption {
 	if l == nil {
-		panic("framework: WithLogger(nil) — use slog.DiscardHandler to silence logging")
+		panic("framework: WithLogger(nil): use slog.DiscardHandler to silence logging")
 	}
 	return func(a *App) {
 		a.logger.Store(l)
@@ -814,13 +814,13 @@ func WithLogger(l *slog.Logger) AppOption {
 //
 // Defaults Principal to the request's owner (the framework's owner
 // extractor, i.e. the authenticated user). The middleware caches nothing
-// without a Principal — one shared key namespace would replay one
-// caller's response body to another — and the framework layer is where
+// without a Principal. One shared key namespace would replay one
+// caller's response body to another, and the framework layer is where
 // "who is this" is knowable, so IdempotencyConfig{} still means "all
 // defaults" here. Set Principal explicitly to key on something else
 // (a tenant, an API-token id).
 //
-// Has no effect when WithoutDefaultMiddleware is also set — wire your
+// Has no effect when WithoutDefaultMiddleware is also set. Wire your
 // own chain explicitly in that case.
 func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 	if cfg.Principal == nil {
@@ -833,7 +833,7 @@ func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 
 // ownerPrincipal keys idempotency entries by the request's owner. An
 // unauthenticated request yields "anon", which shares a namespace among
-// anonymous callers — acceptable because an anonymous response carries
+// anonymous callers, acceptable because an anonymous response carries
 // no per-user data by construction, and the alternative (no caching at
 // all for anonymous traffic) drops the retry protection exactly where
 // duplicate submits are most common.
@@ -841,15 +841,15 @@ func ownerPrincipal(r *http.Request) string {
 	if id, ok := owner.Get(r.Context()); ok && id != nil {
 		return fmt.Sprintf("%v", id)
 	}
-	// No resolved owner — and on the default wiring there never is one.
+	// No resolved owner, and on the default wiring there never is one.
 	//
 	// NewApp installs this middleware, and the router makes the first-added
 	// middleware outermost, so idempotency runs BEFORE any authentication the
 	// app adds with Use(). owner.Get resolves through GetCurrentUser, which
 	// that inner middleware has not populated yet. So the branch above is inert
 	// for the default install and every caller landed in one "anon" namespace:
-	// two different users sending the same Idempotency-Key — "order-1" is
-	// enough — meant the second received the first's stored response and its
+	// two different users sending the same Idempotency-Key, "order-1" is
+	// enough, meant the second received the first's stored response and its
 	// own handler never ran.
 	//
 	// The credential itself is the only identity visible this early, so key on
@@ -876,7 +876,7 @@ func credentialFingerprint(r *http.Request) string {
 		// as a second field. Session auth scans every cookie, so it can
 		// authenticate two different users from a field this hash never saw,
 		// and both of them landed in one namespace keyed on the shared first
-		// field — one caller's stored response served to another, which is the
+		// field, one caller's stored response served to another, which is the
 		// exact failure this function exists to prevent.
 		for _, v := range r.Header.Values(name) {
 			if v == "" {
@@ -899,7 +899,7 @@ func credentialFingerprint(r *http.Request) string {
 // latency histograms) in the default middleware chain and mounts a
 // Prometheus-format /metrics endpoint. The endpoint is unauthenticated by
 // design (scrape it from inside your network / behind your ingress). Panics
-// when paired with WithoutDefaultMiddleware — mount middleware.MetricsMiddleware
+// when paired with WithoutDefaultMiddleware. Mount middleware.MetricsMiddleware
 // and middleware.MetricsHandler yourself in that case.
 func WithMetrics() AppOption {
 	return func(a *App) {
@@ -924,7 +924,7 @@ func WithTracing() AppOption {
 // Accept-Language. Also installed as i18n.Default() so the package-
 // level i18n.T helper works from anywhere.
 //
-// Panics when paired with WithoutDefaultMiddleware — register the
+// Panics when paired with WithoutDefaultMiddleware. Register the
 // middleware explicitly in your custom chain in that case.
 func WithI18n(tr *i18n.Translator) AppOption {
 	return func(a *App) {
@@ -945,19 +945,19 @@ func WithI18n(tr *i18n.Translator) AppOption {
 //	    framework.WithLocaleResolver(i18n.CookieLocale("locale")),
 //	)
 //
-// Panics if used without WithI18n — locale resolution is meaningless
+// Panics if used without WithI18n. Locale resolution is meaningless
 // without a translator/catalog to resolve against.
 func WithLocaleResolver(f func(*http.Request) (string, bool)) AppOption {
 	return func(a *App) {
 		if a.translator == nil {
-			panic("framework: WithLocaleResolver requires WithI18n — install a translator first")
+			panic("framework: WithLocaleResolver requires WithI18n: install a translator first")
 		}
 		a.localeResolver = f
 	}
 }
 
 // Logger returns the App-local *slog.Logger. Middleware and plugins
-// should call this — not slog.Default() — so that a logging plugin can
+// should call this, not slog.Default(), so that a logging plugin can
 // replace the destination without rewiring globals.
 //
 // Always non-nil. NewApp seeds the App with a JSON-to-stderr logger
@@ -968,15 +968,15 @@ func (a *App) Logger() *slog.Logger {
 }
 
 // SetLogger replaces the App's logger. Atomic; safe to call
-// concurrently with in-flight requests — atomic.Pointer.Store is
+// concurrently with in-flight requests, atomic.Pointer.Store is
 // race-free, and middleware reading via App.Logger() sees the new
 // value on the next request.
 //
-// Panics if l is nil — the App's logger is always non-nil; pass a
+// Panics if l is nil: the App's logger is always non-nil; pass a
 // discard logger (slog.New(slog.DiscardHandler)) to silence output.
 func (a *App) SetLogger(l *slog.Logger) {
 	if l == nil {
-		panic("framework: App.SetLogger(nil) — use slog.DiscardHandler to silence logging")
+		panic("framework: App.SetLogger(nil): use slog.DiscardHandler to silence logging")
 	}
 	a.logger.Store(l)
 }
@@ -992,8 +992,8 @@ func (a *App) SetLogger(l *slog.Logger) {
 //
 // Access logging is deliberately NOT in this list. battery/log owns
 // structured access logging when registered, and ad-hoc apps that just
-// want a basic line can add middleware.LoggingFn(app.Logger) themselves
-// — having both fire produces duplicate entries with mismatched fields
+// want a basic line can add middleware.LoggingFn(app.Logger) themselves.
+// Having both fire produces duplicate entries with mismatched fields
 // (`request` from the framework, `http.access` from the plugin).
 //
 // Takes the App so the recovery middleware can route panics through
@@ -1045,7 +1045,7 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		// labels via i18nui.T(r.Context(), …) using the caller's locale.
 		// Without this the components silently render English even when a
 		// catalog is wired, because i18n.Middleware only attaches the
-		// Locale — not the translator. Framework may import i18nui; core
+		// Locale, not the translator. Framework may import i18nui; core
 		// may not, which is why this bridge lives here and not in core/i18n.
 		chain = append(chain, func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1074,7 +1074,7 @@ func DefaultMiddleware(a *App) []router.Middleware {
 // renders pages for any unrouted path), so call Mount AFTER any explicit
 // routes you want to take precedence (entity CRUD, custom endpoints).
 //
-// IMPORTANT — ordering with plugins/batteries: plugin.Init runs at
+// IMPORTANT. Ordering with plugins/batteries: plugin.Init runs at
 // App.Start (or InitPlugins), AFTER Mount has already registered the
 // Mountable's routes. If a plugin's Init registers a more-specific
 // route that overlaps with a Mountable's NotFound catch-all, the
@@ -1104,7 +1104,7 @@ func (a *App) Mount(m Mountable) *App {
 	a.mountables = append(a.mountables, m)
 	m.Mount(a.router)
 	// Wire the mountable into the cross-replica fanout (WithFanout) when it
-	// supports it — a mounted UI host forwards to its island manager so
+	// supports it, a mounted UI host forwards to its island manager so
 	// island push reaches sessions connected to other replicas. Duck-typed:
 	// the framework doesn't import uihost.
 	if a.fanout != nil {
@@ -1125,8 +1125,8 @@ func (a *App) Mount(m Mountable) *App {
 	// stateless HMAC tokens: with a shared secret every replica verifies
 	// every replica's tokens; with no secret and no fanout the host
 	// self-mints a per-boot key (the single-replica zero-config path); no
-	// secret WITH a fanout is a broken deployment — half of session checks
-	// would 401 — so it fails at boot, not in production traffic. A
+	// secret WITH a fanout is a broken deployment: half of session checks
+	// would 401, so it fails at boot, not in production traffic. A
 	// GOFASTR_SECRET rotation drains gracefully: previous keys are handed
 	// over as verify-only alongside the current one (mirroring the CSRF
 	// AdditionalKeys idiom), so rotation does not log every user out at
@@ -1134,7 +1134,7 @@ func (a *App) Mount(m Mountable) *App {
 	// back to SetSessionKey with the current key only.
 	// Resolve the session keys only when the host actually carries a
 	// session-signing seam (preserves the original contract: a host with
-	// no session key — e.g. a fanout-only host — is never asked about
+	// no session key, e.g. a fanout-only host, is never asked about
 	// secrets, so the fanout-without-secret boot panic only fires for
 	// hosts that actually hold sessions).
 	switch s := m.(type) {
@@ -1226,7 +1226,7 @@ func (a *App) reserveEmbedPrefixes() {
 // Mountables returns the Mountables registered via Mount, in registration
 // order. Batteries use it to discover a mounted UI host (type-asserting to
 // *uihost.Host) so they can register screens on the host's render pipeline
-// rather than spinning up a second host. Returns a copy — callers must not
+// rather than spinning up a second host. Returns a copy. Callers must not
 // mutate the App's internal slice.
 func (a *App) Mountables() []Mountable {
 	out := make([]Mountable, len(a.mountables))
@@ -1277,7 +1277,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// grouped values are authoritative.
 	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
 	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
-		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
+		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name))
 	}
 
 	var crudHandler *crud.CrudHandler
@@ -1302,9 +1302,9 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 			crudHandler.Outbox = a.outbox
 		}
 		crudHandler.Registry = a.Registry
-		// The MCP tools re-dispatch through the router — that is what makes
+		// The MCP tools re-dispatch through the router: that is what makes
 		// them inherit auth, owner and tenant scoping rather than
-		// re-implementing it — so they must address the path the routes are
+		// re-implementing it, so they must address the path the routes are
 		// actually mounted at. A group's sub-router shares the parent mux and
 		// registers PREFIXED patterns, so dispatching to the bare "/table"
 		// 404s. App.Entity sets this from the API prefix; the grouped path
@@ -1322,7 +1322,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		crud.RegisterCrudRoutes(g.Router(), crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
 
-	// MCP tools — namespaced if the group has a namespace. Explicit
+	// MCP tools, namespaced if the group has a namespace. Explicit
 	// MCP=true, or dev-implied for CRUD-enabled entities (the dev loop
 	// gives the local agent the data tools without per-entity opt-in).
 	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
@@ -1350,7 +1350,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 		// EntityEndpointPath includes the version prefix for OpenAPI/spec use.
 		// Here we register on the group's sub-router, which already carries
-		// the prefix — so build the RELATIVE path (table/endpoint) instead.
+		// the prefix, so build the RELATIVE path (table/endpoint) instead.
 		path := "/" + strings.Trim(ent.GetTable(), "/")
 		if !strings.HasPrefix(strings.TrimSpace(endpoint.Path), "/") {
 			path += "/" + strings.TrimPrefix(endpoint.Path, "/")
@@ -1399,7 +1399,7 @@ func convertGroupEndpointPath(path string) string {
 
 // Use appends middleware to the app's router chain. The default chain
 // (installed by NewApp unless WithoutDefaultMiddleware is set) stays in
-// place — Use adds to it, never silently replaces it. Plugins call Use
+// place. Use adds to it, never silently replaces it. Plugins call Use
 // from their Init to contribute middleware; router late-binding means
 // these additions also wrap routes registered before the plugin loaded.
 func (a *App) Use(mw ...router.Middleware) *App {
@@ -1419,8 +1419,8 @@ func (a *App) Use(mw ...router.Middleware) *App {
 // DefaultDotEnvPaths returns the dotenv files App.NewApp loads, in precedence
 // order: .env.local, then .env.<APP_ENV> when APP_ENV is set, then .env.
 //
-// Exported so code that must read an environment variable BEFORE NewApp — a
-// scaffolded main.go opening its database, for instance — can load exactly the
+// Exported so code that must read an environment variable BEFORE NewApp, a
+// scaffolded main.go opening its database, for instance, can load exactly the
 // same set in the same order. dotenv.Apply never overwrites an existing
 // variable, so loading a shorter list first silently pins the lower-precedence
 // file's value and NewApp's later load cannot correct it.
@@ -1440,7 +1440,7 @@ func NewApp(opts ...AppOption) *App {
 	// Auto-load .env files BEFORE option processing so options that
 	// peek at os.Environ (WithDB("env://DATABASE_URL"), WithConfig
 	// reading APP_ENV, etc.) see the merged values. Existing env
-	// always wins — operator-set vars are not clobbered by dotfiles.
+	// always wins. Operator-set vars are not clobbered by dotfiles.
 	//
 	// File precedence (earlier wins on conflict): .env.local,
 	// .env.<APP_ENV>, .env. Missing files are silent.
@@ -1488,7 +1488,7 @@ func NewApp(opts ...AppOption) *App {
 		}
 	}
 	// Resolve the process role once: WithRole wins, then GOFASTR_ROLE,
-	// then RoleAll. An invalid value fails loudly — a typo'd role must
+	// then RoleAll. An invalid value fails loudly. A typo'd role must
 	// never silently run the wrong workload (a serve process that
 	// quietly starts queue workers, or vice versa).
 	role, err := resolveRole(a.roleOpt, a.roleSet)
@@ -1498,7 +1498,7 @@ func NewApp(opts ...AppOption) *App {
 	a.role = role
 
 	// Seed the App-local logger if no option supplied one. JSON to
-	// stderr — independent of slog.Default so external slog rewiring
+	// stderr, independent of slog.Default so external slog rewiring
 	// doesn't redirect this App's framework logs. battery/log replaces
 	// it during Init via app.SetLogger.
 	if a.logger.Load() == nil {
@@ -1522,7 +1522,7 @@ func NewApp(opts ...AppOption) *App {
 			}
 		}
 		if len(lost) > 0 {
-			a.Logger().Warn("WithConfig replaced AppConfig fields set by earlier options — WithConfig replaces the whole config, so options placed before it are discarded. Move the granular options after WithConfig, or set these fields in the AppConfig literal.",
+			a.Logger().Warn("WithConfig replaced AppConfig fields set by earlier options: WithConfig replaces the whole config, so options placed before it are discarded. Move the granular options after WithConfig, or set these fields in the AppConfig literal.",
 				"discarded", strings.Join(lost, ", "))
 		}
 		a.configDiscards = nil
@@ -1531,13 +1531,13 @@ func NewApp(opts ...AppOption) *App {
 	// Construct the transactional outbox after all options have applied,
 	// so option order between WithDB and WithOutbox doesn't matter.
 	if len(a.outboxConsumers) > 0 && !a.outboxEnabled {
-		// A declared consumer with no outbox would be silently dropped —
+		// A declared consumer with no outbox would be silently dropped:
 		// no durable delivery, no error. Fail loudly at construction.
-		panic("framework: WithOutboxConsumer requires WithOutbox — enable the outbox for durable delivery")
+		panic("framework: WithOutboxConsumer requires WithOutbox: enable the outbox for durable delivery")
 	}
 	if a.outboxEnabled {
 		if a.DB == nil {
-			panic("framework: WithOutbox requires WithDB — the outbox stages event rows in the entity write transaction")
+			panic("framework: WithOutbox requires WithDB: the outbox stages event rows in the entity write transaction")
 		}
 		ob, err := outbox.New(a.DB, a.outboxOpts...)
 		if err != nil {
@@ -1557,7 +1557,7 @@ func NewApp(opts ...AppOption) *App {
 	// Bridge the event bus to the fanout (WithFanout) at construction so
 	// the real-time lane crosses replicas even for apps driven through
 	// Router() without Start. AttachFanout can only fail on a double
-	// attach (impossible here — one bridge per app) or a subscribe error
+	// attach (impossible here, one bridge per app) or a subscribe error
 	// from the backend; both are construction-time misconfigurations.
 	if a.fanout != nil {
 		stopBridge, err := event.AttachFanout(a.events, a.fanout)
@@ -1609,21 +1609,21 @@ func NewApp(opts ...AppOption) *App {
 	// appear. Surface the misconfiguration immediately rather than
 	// silently dropping the middleware.
 	if a.noDefaults && a.idempotency != nil {
-		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware — " +
+		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware: " +
 			"the idempotency middleware lives in the default chain; mount it explicitly via " +
 			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
 	}
 	if a.noDefaults && a.translator != nil {
-		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware — " +
+		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware: " +
 			"the i18n middleware lives in the default chain; mount it explicitly via " +
 			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
 	}
 	if a.noDefaults && a.metrics != nil {
-		panic("framework: WithMetrics is incompatible with WithoutDefaultMiddleware — " +
+		panic("framework: WithMetrics is incompatible with WithoutDefaultMiddleware: " +
 			"mount middleware.MetricsMiddleware + middleware.MetricsHandler in your custom chain instead")
 	}
 	if a.noDefaults && a.tracing {
-		panic("framework: WithTracing is incompatible with WithoutDefaultMiddleware — " +
+		panic("framework: WithTracing is incompatible with WithoutDefaultMiddleware: " +
 			"mount middleware.Tracing() in your custom chain instead")
 	}
 
@@ -1646,7 +1646,7 @@ func NewApp(opts ...AppOption) *App {
 	dev.MaybeRegisterLiveReload(a.router)
 
 	// Auto-enable the agent-facing MCP surface in the dev loop: /mcp
-	// mount, read-only introspection, and runtime control — the dev
+	// mount, read-only introspection, and runtime control, the dev
 	// analogue of livereload, for agents instead of browsers. Same env
 	// gate (GOFASTR_DEV, production GOFASTR_ENV wins), opt-out via
 	// GOFASTR_DEV_MCP=0. Dev-implied flags are remembered so a host that
@@ -1660,7 +1660,7 @@ func NewApp(opts ...AppOption) *App {
 		// write tools, with no auth in front of them. Pin the transport
 		// to loopback so a DNS-rebound page can't reach the dispatcher:
 		// after a rebind the attacker's page is same-origin, so Origin
-		// alone proves nothing — only the Host check breaks the chain.
+		// alone proves nothing. Only the Host check breaks the chain.
 		if a.MCP != nil {
 			a.MCP.SetRequireLoopbackHost(true)
 		}
@@ -1675,7 +1675,7 @@ func NewApp(opts ...AppOption) *App {
 	return a
 }
 
-// NewUIHostApp builds an App and mounts the given host on it in one call —
+// NewUIHostApp builds an App and mounts the given host on it in one call:
 // the near-universal shape for SSR/UIHost apps, which otherwise repeat
 //
 //	app := framework.NewApp(opts...)
@@ -1688,7 +1688,7 @@ func NewUIHostApp(host Mountable, opts ...AppOption) *App {
 }
 
 // Entity registers an entity with the given name and configuration.
-// Returns the App for fluent chaining. Panics on any misconfiguration —
+// Returns the App for fluent chaining. Panics on any misconfiguration,
 // convenient for static, hand-written declarations where a bad config is a
 // programming error you want to fail fast on. For generated or untrusted
 // configs (e.g. an AI-authored field, a dynamic schema) where one bad entity
@@ -1704,11 +1704,11 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 // and returns an error on any misconfiguration instead of panicking. It also
 // recovers panics from deeper validation (e.g. an invalid TenantField) and
 // converts them to errors, so a single bad config can never take down the
-// process — the property an agent-driven authoring loop needs.
+// process, the property an agent-driven authoring loop needs.
 //
 // Registration is atomic with respect to configuration errors: every check
-// that can reject the declaration — entity validation, the MCP/CRUD
-// contract, route collisions, endpoint shape — runs BEFORE the registry,
+// that can reject the declaration, entity validation, the MCP/CRUD
+// contract, route collisions, endpoint shape, runs BEFORE the registry,
 // router, or MCP server is touched. A rejected declaration therefore
 // leaves no registry entry, no route, and no tool, and a corrected retry
 // under the same name succeeds. (The registry has no unregister and the
@@ -1726,7 +1726,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// SeedFS without SeedPath is a misconfiguration that would otherwise
 	// silently mark the entity as seeded with empty data on first run.
 	if config.SeedFS != nil && config.SeedPath == "" {
-		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty — point SeedPath at a file within the FS or unset SeedFS", name)
+		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty: point SeedPath at a file within the FS or unset SeedFS", name)
 	}
 
 	e := entity.Define(name, config)
@@ -1745,7 +1745,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// grouped values are authoritative.
 	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
 	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
-		return fmt.Errorf("entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name)
+		return fmt.Errorf("entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name)
 	}
 
 	var mountPath string
@@ -1753,7 +1753,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		mountPath = a.entityMountPath(e.GetTable())
 		// Pre-flight collision check: if a screen/route already owns this
 		// entity's URL space, surface an actionable diagnostic that names
-		// the entity, the path, and the fix — BEFORE the mux panics on the
+		// the entity, the path, and the fix. BEFORE the mux panics on the
 		// opaque "/foods/llm.md conflicts with pattern" duplicate.
 		if msg := a.entityRouteCollision(name, mountPath); msg != "" {
 			return fmt.Errorf("%s", msg)
@@ -1794,7 +1794,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		}
 		crudHandler.Registry = a.Registry
 		// MCP tools dispatch in-process against a.router, where these routes are
-		// mounted under the API prefix — tell the handler so its tool paths match.
+		// mounted under the API prefix, tell the handler so its tool paths match.
 		crudHandler.BasePath = a.apiPrefix()
 		crud.RegisterCrudRoutes(a.router, crudHandler, mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
@@ -1819,7 +1819,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 }
 
 // CrudHandler returns a fully-wired in-process CRUD handler for a registered
-// entity — the same handler shape the HTTP routes use (hooks, events, storage,
+// entity, the same handler shape the HTTP routes use (hooks, events, storage,
 // JSON casing, registry). Use it to call CreateOne/UpdateOne/DeleteOne/ListAll
 // directly, e.g. to compose several writes inside App.InTx (pass the InTx ctx
 // so they join the same transaction). Returns an error if no entity is
@@ -1861,7 +1861,7 @@ func (a *App) CrudHandlerForEntity(ent *entity.Entity) (*crud.CrudHandler, error
 	}
 	// The entity must be the one the registry holds at that (name, version).
 	// Building a handler for an unregistered entity yields something wired to
-	// routes that do not exist — every dispatch through it 404s, far from the
+	// routes that do not exist. Every dispatch through it 404s, far from the
 	// call that made it.
 	registered, err := a.Registry.GetVersioned(ent.Config.Name, ent.Version)
 	if err != nil {
@@ -1891,7 +1891,7 @@ func (a *App) CrudHandlerForEntity(ent *entity.Entity) (*crud.CrudHandler, error
 	return ch, nil
 }
 
-// MustCrudHandler is CrudHandler that panics on error — for app setup where a
+// MustCrudHandler is CrudHandler that panics on error, for app setup where a
 // missing entity is a programming mistake.
 func (a *App) MustCrudHandler(name string) *crud.CrudHandler {
 	ch, err := a.CrudHandler(name)
@@ -1901,7 +1901,7 @@ func (a *App) MustCrudHandler(name string) *crud.CrudHandler {
 	return ch
 }
 
-// Table registers a raw, non-entity table for migration only — no CRUD, no
+// Table registers a raw, non-entity table for migration only, no CRUD, no
 // HTTP routes, no validation, no auto-injected columns. The table participates
 // in auto-migrate, diffing, and generation alongside entities (including
 // foreign keys that cross between the two). For users who want migration
@@ -1934,8 +1934,8 @@ func (a *App) Routine(r migrate.Routine) *App {
 // `app.RoutinesFS(embeddedFS, "db/routines")`. See migrate.RoutinesFS for the
 // filename grammar (`<name>.sql`, `<name>.down.sql`, `<name>.pg.sql`,
 // `<name>.sqlite.sql`) and the loud-rejection rules (empty file, empty dir,
-// plain+dialect Up collision). A loader error panics at registration time —
-// mirroring App.View's misconfig panic — so the exact embed-path/file error
+// plain+dialect Up collision). A loader error panics at registration time,
+// mirroring App.View's misconfig panic, so the exact embed-path/file error
 // surfaces in the console instead of shipping a half-loaded routine set.
 func (a *App) RoutinesFS(fsys fs.FS, dir string) *App {
 	rs, err := migrate.RoutinesFS(fsys, dir)
@@ -1946,7 +1946,7 @@ func (a *App) RoutinesFS(fsys fs.FS, dir string) *App {
 	return a
 }
 
-// View registers a database view — a virtual table built from other entities.
+// View registers a database view, a virtual table built from other entities.
 // The view is created on boot after its source tables (and tracked reversibly
 // by `migrate generate`), and, when it declares Columns, it is also exposed
 // through the ORM as a READ-ONLY entity: List/Get and the query layer work, but
@@ -1972,7 +1972,7 @@ func (a *App) View(v migrate.View) *App {
 		// Views mount under the API prefix like entities do, so BasePath must
 		// match or anything deriving a URL from the handler addresses the
 		// wrong path. mcpBase() is BasePath + "/" + table, so an empty value
-		// silently yields "/posts" where the routes live at "/api/posts" — a
+		// silently yields "/posts" where the routes live at "/api/posts", a
 		// 404 surfacing far from its cause the moment a view gains a tool.
 		ch.BasePath = a.apiPrefix()
 		crud.RegisterCrudRoutes(a.router, ch, a.entityMountPath(ent.GetTable()),
@@ -1981,7 +1981,7 @@ func (a *App) View(v migrate.View) *App {
 	return a
 }
 
-// MigrationPlan returns the full migration Plan Start applies on boot — the
+// MigrationPlan returns the full migration Plan Start applies on boot, the
 // entity registry plus every routine and view registered via App.Routine /
 // App.RoutinesFS / App.View. It is the schema source for the host-binary
 // generation path: pass it to migrate.GenerateMigrationFile so a `myapp
@@ -1994,8 +1994,8 @@ func (a *App) MigrationPlan() migrate.Plan {
 
 // RegisterEntities registers each (name, config) pair via App.Entity in
 // alphabetical-by-name order. Sorting matters: Entity has order-sensitive
-// side effects — router registration, MCP tool list order, OpenAPI tag
-// emission — and Go's map iteration is randomised, so unsorted iteration
+// side effects, router registration, MCP tool list order, OpenAPI tag
+// emission, and Go's map iteration is randomised, so unsorted iteration
 // would mean non-deterministic /openapi.json bytes across restarts
 // (breaking ETag caching) and non-deterministic MCP tools/list responses.
 // FK relations stay safe because AutoMigrate also topologically sorts.
@@ -2026,7 +2026,7 @@ func (a *App) RegisterEntities(entities map[string]entity.EntityConfig) *App {
 //
 // The auto-CRUD mount registers GET <mountPath>, GET <mountPath>/{id},
 // GET <mountPath>/llm.md, etc. Without this check the first overlap panics
-// deep in net/http's ServeMux — usually on /llm.md — with a message that
+// deep in net/http's ServeMux, usually on /llm.md, with a message that
 // points at the generated doc handler rather than the underlying name
 // clash. We catch the most common overlaps (the bare path and its /llm.md
 // doc route) and explain WHAT collided and HOW to fix it.
@@ -2037,14 +2037,14 @@ func (a *App) entityRouteCollision(name, mountPath string) string {
 	}
 	// Ask crud for the full set it will claim rather than guessing at it.
 	// An earlier version listed only the bare path and /llm.md, on the
-	// theory that {id}/_batch/_events were "entity-only territory" — but a
+	// theory that {id}/_batch/_events were "entity-only territory", but a
 	// detail page at /posts/{id} is the framework's own suggested idiom
 	// (see entityScreenCollisionMessage), and a screen there collided in
 	// the commit phase, after the registry entry and the first CRUD routes
 	// were already published and with no way to un-publish them.
 	// Keyed by normalized path, holding the methods CRUD will claim. A
 	// route registered without a method is treated as claiming all of
-	// them — better a loud false positive at registration than a panic
+	// them, better a loud false positive at registration than a panic
 	// halfway through the commit phase.
 	claimed := map[string][]string{}
 	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
@@ -2104,13 +2104,13 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 // validateEntityRegistration runs every configuration check that could
 // reject an entity declaration WITHOUT touching the registry, router, or
 // MCP server. TryEntity calls it before its commit phase; keep its rules
-// in lockstep with registerEntityEndpoints and crud.RegisterEntityMCPTools
-// — a check that only exists at commit time reintroduces the partial
+// in lockstep with registerEntityEndpoints and crud.RegisterEntityMCPTools.
+// A check that only exists at commit time reintroduces the partial
 // registration this split exists to prevent.
 func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string) error {
-	// Endpoint routes: an endpoint whose (method, path) is already taken
-	// — by an existing route, by a CRUD route this same call is about to
-	// mount, or by a sibling endpoint on this same declaration — would
+	// Endpoint routes: an endpoint whose (method, path) is already taken,
+	// by an existing route, by a CRUD route this same call is about to
+	// mount, or by a sibling endpoint on this same declaration, would
 	// panic inside router.Handle during the commit phase, i.e. AFTER the
 	// registry entry and CRUD routes are already published. Recovering
 	// that panic into an error cannot un-publish them, so the collision
@@ -2118,7 +2118,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	if len(endpoints) > 0 {
 		// Values name what owns the route, so the error can tell a user
 		// who collided with an unrelated page from one who shadowed their
-		// own generated CRUD route — different fixes.
+		// own generated CRUD route. Different fixes.
 		// Keys are normalized the same way entityRouteCollision normalizes
 		// them: ServeMux conflicts on a pattern's SHAPE, so an endpoint at
 		// {slug} aliases the generated {id}. Comparing raw strings let that
@@ -2129,8 +2129,8 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		for _, rt := range a.router.Routes() {
 			taken[normalizeRoutePattern(strings.ToUpper(rt.Method)+" "+rt.Pattern)] = "an existing route"
 		}
-		// The CRUD routes are not on the router yet — this runs before
-		// the commit phase — so ask crud for the set it will mount.
+		// The CRUD routes are not on the router yet, this runs before
+		// the commit phase, so ask crud for the set it will mount.
 		if crudMount != "" {
 			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
@@ -2144,7 +2144,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 			path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
 			key := normalizeRoutePattern(method + " " + path)
 			if owner, clash := taken[key]; clash {
-				return fmt.Errorf("endpoint %q would register %s, but that route is %s — rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key, owner)
+				return fmt.Errorf("endpoint %q would register %s, but that route is %s: rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key, owner)
 			}
 			taken[key] = "a sibling endpoint on this declaration"
 		}
@@ -2180,7 +2180,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	}
 	for toolName := range claimed {
 		if a.MCP.HasTool(toolName) {
-			return fmt.Errorf("MCP tool %q is already registered on the server — rename the entity, set a namespace, or rename the endpoint tool", toolName)
+			return fmt.Errorf("MCP tool %q is already registered on the server: rename the entity, set a namespace, or rename the endpoint tool", toolName)
 		}
 	}
 	return nil
@@ -2195,7 +2195,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		// path is where the endpoint is mounted (prefix applied for relative
 		// paths); specPath is the prefix-relative form the OpenAPI spec uses.
 		// The auto-generated tool name is derived from specPath so it keeps
-		// matching the spec's operationId — the prefix moves the route, not
+		// matching the spec's operationId, the prefix moves the route, not
 		// the endpoint's identity.
 		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
 		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
@@ -2254,7 +2254,7 @@ func (a *App) JSONCasing() crud.JSONCase {
 // RegisterPlugin registers a plugin with the application's plugin manager.
 // Returns the App for fluent chaining.
 //
-// Panics if InitPlugins has already run — plugins must be registered
+// Panics if InitPlugins has already run. Plugins must be registered
 // before App.Start (or the explicit InitPlugins call) so their Init
 // fires. The panic is a clear contract violation rather than a silent
 // no-op that would have the new plugin's routes / middleware vanish.
@@ -2294,7 +2294,7 @@ func (a *App) RegisterBattery(b Battery, deps ...string) *App {
 // InitPlugins initializes all registered plugins and batteries by calling
 // their Init(app) method. Plugins go first (registration order), then
 // batteries (dependency-resolved order). Each module does everything it
-// needs from inside Init — register routes, add middleware, register MCP
+// needs from inside Init, register routes, add middleware, register MCP
 // tools, attach hooks, swap the logger, etc.
 //
 // Idempotent: the first successful call latches an internal flag so any
@@ -2324,7 +2324,7 @@ func (a *App) InitPlugins() error {
 	}
 	// Now that every plugin and battery has run Init and settled its own
 	// prefix, tell the embed host which paths a grant must never reach.
-	// Panics on a conflict — a surface declared over a battery's routes is a
+	// Panics on a conflict. A surface declared over a battery's routes is a
 	// wiring mistake that must not boot.
 	a.reserveEmbedPrefixes()
 
@@ -2336,7 +2336,7 @@ func (a *App) InitPlugins() error {
 	// Register introspection MCP tools if opted in. After plugin/battery
 	// init so app_plugins / app_batteries reflect everything. Dev-implied
 	// registration (see NewApp) downgrades collisions with host-registered
-	// tool names to a warning — dev must never fail an app that boots fine
+	// tool names to a warning, dev must never fail an app that boots fine
 	// in production.
 	if a.mcpIntrospection {
 		if err := a.registerIntrospectionTools(); err != nil {
@@ -2448,8 +2448,8 @@ func (a *App) OnStart(fn func(ctx context.Context) error) *App {
 // successfully, just before the server begins accepting connections. The
 // addr passed in is the listener's resolved address (a ":0" request
 // arrives with the real port), so it is safe to print in a startup
-// banner: every earlier phase — auto-migrate, seeds, plugin init, OnStart
-// hooks, and the bind itself — has already succeeded. Hooks run in
+// banner: every earlier phase, auto-migrate, seeds, plugin init, OnStart
+// hooks, and the bind itself, has already succeeded. Hooks run in
 // registration order and must not block.
 func (a *App) OnReady(fn func(addr string)) *App {
 	a.readyHooks = append(a.readyHooks, fn)
@@ -2457,8 +2457,8 @@ func (a *App) OnReady(fn func(addr string)) *App {
 }
 
 // OnStop registers a function to run during App.Shutdown, after the
-// HTTP server has shut down. Hooks run in reverse registration order
-// — the last thing started is the first thing stopped. Internally the
+// HTTP server has shut down. Hooks run in reverse registration order.
+// The last thing started is the first thing stopped. Internally the
 // hook is wrapped as a lifecycle.Drainer so app-level cleanup and
 // battery drains share one coordinator.
 func (a *App) OnStop(fn func() error) *App {
@@ -2474,7 +2474,7 @@ func (a *App) OnStop(fn func() error) *App {
 // to emit log entries.
 //
 // Without this, a user that registers app.OnStop BEFORE
-// RegisterPlugin(log) gets the order inverted on reverse iteration —
+// RegisterPlugin(log) gets the order inverted on reverse iteration:
 // log's close runs first, the user's OnStop logs into closed sinks.
 func (a *App) OnStopFirst(fn func() error) *App {
 	// Append so it runs LAST in the LIFO order used by PrependDrainer.
@@ -2483,7 +2483,7 @@ func (a *App) OnStopFirst(fn func() error) *App {
 }
 
 // stopHookDrainer adapts a legacy OnStop func() error into the
-// lifecycle.Drainer interface. The ctx is ignored — OnStop predates
+// lifecycle.Drainer interface. The ctx is ignored. OnStop predates
 // the context-aware drain API and is purely best-effort cleanup.
 type stopHookDrainer func() error
 
@@ -2506,11 +2506,11 @@ func (a *App) RunWithSignals(ctx context.Context) error {
 // users can wire several schedulers in one expression.
 //
 // The stop side drains through StopContext so in-flight job goroutines
-// are joined before shutdown proceeds — bounded by the drain deadline,
+// are joined before shutdown proceeds, bounded by the drain deadline,
 // so a job that ignores its (already-cancelled) context can't hang
 // SIGTERM forever.
 //
-// Worker-scoped: under RoleServe this is a no-op — neither the start hook
+// Worker-scoped: under RoleServe this is a no-op. Neither the start hook
 // nor the drainer is registered, so a serve-only shutdown never waits on
 // a scheduler that was never started.
 func (a *App) AddCron(s *cron.Scheduler) *App {
@@ -2568,12 +2568,12 @@ func (a *App) runStartHooks() error {
 	return nil
 }
 
-// Worker-scoped: under RoleServe this is a no-op — neither the start hook
+// Worker-scoped: under RoleServe this is a no-op. Neither the start hook
 // nor the Close hook is registered, so a serve-only shutdown never closes
 // a queue it never started.
 // schedulerStartStop is the minimal interface AddQueue needs. We keep it
 // here (not in the queue package) so framework doesn't have to import
-// battery/queue — apps wire their queue manually and just hand the
+// battery/queue, apps wire their queue manually and just hand the
 // start/stop pair over.
 type schedulerStartStop interface {
 	Start(ctx context.Context)
@@ -2606,7 +2606,7 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 // battery in reverse dependency order, then runs each OnStop hook in
 // reverse registration order. Matches net/http.Server.Shutdown's
 // signature (takes a deadline ctx) but does the FULL lifecycle teardown.
-// Safe to call multiple times — subsequent calls are no-ops.
+// Safe to call multiple times. Subsequent calls are no-ops.
 //
 // Call this from your signal handler.
 func (a *App) Shutdown(ctx context.Context) error {
@@ -2627,7 +2627,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		if err := srv.Shutdown(ctx); err != nil {
 			// Bounded drain: the deadline expired with connections still
 			// open (an SSE stream never goes idle, so Server.Shutdown
-			// alone would leave it — and the process — hanging).
+			// alone would leave it, and the process, hanging).
 			// Force-close the stragglers so shutdown completes.
 			_ = srv.Close()
 			firstErr = err
@@ -2654,7 +2654,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 // cannot hold the lock without deadlocking the hooks' own queries, so it runs
 // unlocked with a loud WARN (the same gap RunSeeds documents). SQLite / no-DB
 // run unlocked (single-process; the lock pin would fight the pool). WithSeed
-// hooks have no ledger — they serialize-per-boot but still run on every
+// hooks have no ledger. They serialize-per-boot but still run on every
 // replica, so keep them idempotent.
 func (a *App) runSeedHooksSerialized() error {
 	a.ensureLifecycleContext()
@@ -2673,7 +2673,7 @@ func (a *App) runSeedHooksSerialized() error {
 		return a.runSeedHooks()
 	}
 	if a.DB.Stats().MaxOpenConnections == 1 {
-		a.Logger().Warn("seed hooks advisory lock skipped: Postgres pool has MaxOpenConns(1), so App.WithSeed hooks are NOT serialized across replicas — raise MaxOpenConns above 1")
+		a.Logger().Warn("seed hooks advisory lock skipped: Postgres pool has MaxOpenConns(1), so App.WithSeed hooks are NOT serialized across replicas: raise MaxOpenConns above 1")
 		return a.runSeedHooks()
 	}
 	return coremig.WithAdvisoryLockKey(
@@ -2683,7 +2683,7 @@ func (a *App) runSeedHooksSerialized() error {
 }
 
 // ensureLifecycleContext lazily creates the app's cancellable lifecycle
-// context under serverMu — the same lock that guards server. Start and
+// context under serverMu, the same lock that guards server. Start and
 // runStartHooks both call this before binding the port, and Shutdown
 // reads/nils appCancel under the same lock, so a SIGTERM-driven Shutdown
 // racing pre-listen setup is data-race free.
@@ -2699,7 +2699,7 @@ func (a *App) ensureLifecycleContext() {
 // entity is not in the registry. Such a relation cannot be eager-loaded:
 // ?include= refuses it at request time, because with no target entity
 // there is no schema to drive the Hidden-column scrub, owner scope,
-// tenant scope, soft-delete filter or scoped-filter allow-list — and a
+// tenant scope, soft-delete filter or scoped-filter allow-list, and a
 // `SELECT *` without them is how a related auth table's password_hash
 // reaches a caller.
 //
@@ -2766,7 +2766,7 @@ func (a *App) Start(addr string) error {
 		return err
 	}
 
-	// Auto-migrate all registered entities — unless the deployment opted
+	// Auto-migrate all registered entities, unless the deployment opted
 	// into explicit migrations only (WithoutAutoMigrate). Seeds run
 	// either way: they are idempotent data writes, not schema, and a
 	// seeded entity whose table is missing fails Start here rather than
@@ -2787,7 +2787,7 @@ func (a *App) Start(addr string) error {
 	// init so a plugin that reads seed data sees it. Serialize across
 	// replicas behind the SAME advisory lock as RunSeeds ( DISTINCT from
 	// the migration lock) so two booting replicas don't race a hook.
-	// WithSeed hooks have no ledger — they serialize-per-boot but still
+	// WithSeed hooks have no ledger. They serialize-per-boot but still
 	// run on every replica, so keep them idempotent. SQLite is unwrapped
 	// (single-process; the lock pin would fight the pool the hooks use).
 	// With no DB the call is unchanged (no coordination to do).
@@ -2805,7 +2805,7 @@ func (a *App) Start(addr string) error {
 	// disabled via GOFASTR_SETUP=off, Start either runs the steps inline
 	// (headless: every required env present) or defers consumer startup
 	// and serves the interactive wizard until the final step completes.
-	// Worker role + incomplete setup is a hard error — setup touches
+	// Worker role + incomplete setup is a hard error. Setup touches
 	// tables the worker's consumers would race on.
 	setupInteractive := false
 	var setupURL string
@@ -2831,7 +2831,7 @@ func (a *App) Start(addr string) error {
 					if err := a.setup.RunSteps(a.appCtx); err != nil {
 						return abort(fmt.Errorf("setup: %w", err))
 					}
-					// Headless bootstrap finished — proceed normally.
+					// Headless bootstrap finished. Proceed normally.
 				} else {
 					setupInteractive = true
 				}
@@ -2840,7 +2840,7 @@ func (a *App) Start(addr string) error {
 	}
 
 	// Run OnStart hooks (cron/queue workers, custom setup). Failure here
-	// aborts before we bind the port — better than a half-up server.
+	// aborts before we bind the port, better than a half-up server.
 	// Deferred when interactive setup is active: the hooks may start
 	// consumers that touch tables setup owns. They run inside the swap
 	// callback once setup completes.
@@ -2853,10 +2853,10 @@ func (a *App) Start(addr string) error {
 	// Start the outbox relay (WithOutbox). Runs on the app lifecycle
 	// context so Shutdown cancels it; the returned stop func is also
 	// registered as an OnStop drainer so shutdown blocks until the loop
-	// has fully exited — no half-delivered batch outlives the process.
+	// has fully exited: no half-delivered batch outlives the process.
 	// Worker-scoped: a serve-only process stages rows (StageEvent runs in
-	// the write transaction regardless of role) but never claims them —
-	// delivery belongs to the worker/all processes.
+	// the write transaction regardless of role) but never claims them.
+	// Delivery belongs to the worker/all processes.
 	// Deferred when interactive setup is active (started in the swap).
 	if a.outbox != nil && a.runsWorkers() && !setupInteractive {
 		stopRelay := a.outbox.StartRelay(a.appCtx)
@@ -2867,7 +2867,7 @@ func (a *App) Start(addr string) error {
 	}
 
 	// Auto-generate and serve OpenAPI spec. Only when the app actually
-	// declares entities — a UI-only app (e.g. a content site) has an
+	// declares entities, a UI-only app (e.g. a content site) has an
 	// empty registry and gets none of these routes. The startup banner
 	// below keys off the same flags so it never advertises a 404.
 	hasAPI := len(a.Registry.All()) > 0
@@ -2888,7 +2888,7 @@ func (a *App) Start(addr string) error {
 		// API entity index under /api/ alongside /api/docs/.
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
-			// PublicOpenAPI serves the index without the auth gate — the
+			// PublicOpenAPI serves the index without the auth gate, the
 			// same opt-in and exposure class as the public /openapi.json
 			// above (llm.md derives from the same schema information, and
 			// the startup banner already advertises both URLs behind this
@@ -2914,7 +2914,7 @@ func (a *App) Start(addr string) error {
 	}
 
 	// Prometheus /metrics endpoint when metrics are enabled (WithMetrics).
-	// Unauthenticated by design — scrape from inside the network boundary.
+	// Unauthenticated by design, scrape from inside the network boundary.
 	if a.metrics != nil {
 		a.router.Get("/metrics", middleware.MetricsHandler(a.metrics))
 	}
@@ -2932,7 +2932,7 @@ func (a *App) Start(addr string) error {
 	}
 	if a.mcpAutoMount {
 		// A dev-implied mount yields to a hand-wired /mcp route (older
-		// scaffolds mount POST /mcp themselves) — dev must not turn a
+		// scaffolds mount POST /mcp themselves), dev must not turn a
 		// previously working app into a route-conflict panic. Explicit
 		// WithMCP() keeps the documented panic: pick one.
 		if a.mcpMountDevImplied && a.routerHasMCPRoute() {
@@ -2944,10 +2944,10 @@ func (a *App) Start(addr string) error {
 		}
 	}
 	// WithMCPApp widgets need /mcp reachable. Warn (don't fail) when an app is
-	// registered but nothing will serve /mcp — a silent prod-only 404 that
+	// registered but nothing will serve /mcp, a silent prod-only 404 that
 	// works under the dev auto-mount and disappears in production.
 	if len(a.mcpApps) > 0 && !a.mcpAutoMount && !a.routerHasMCPRoute() {
-		a.Logger().Warn("WithMCPApp registered but /mcp is not mounted — the widget and its tool will be unreachable; add framework.WithMCP()")
+		a.Logger().Warn("WithMCPApp registered but /mcp is not mounted: the widget and its tool will be unreachable; add framework.WithMCP()")
 	}
 	// Entity MCP tools (Exposure.MCP: true) have the same prod-only 404
 	// failure mode: dev auto-mounts /mcp so the tools work locally, a
@@ -2957,7 +2957,7 @@ func (a *App) Start(addr string) error {
 	if a.DB != nil && !a.mcpAutoMount && !a.routerHasMCPRoute() {
 		for _, e := range a.Registry.All() {
 			if e.Config.Exposure != nil && e.Config.Exposure.MCP {
-				a.Logger().Warn("entity MCP tools are registered but /mcp is not mounted — they will be unreachable; add framework.WithMCP()")
+				a.Logger().Warn("entity MCP tools are registered but /mcp is not mounted: they will be unreachable; add framework.WithMCP()")
 				break
 			}
 		}
@@ -3022,7 +3022,7 @@ func (a *App) Start(addr string) error {
 	a.serverMu.Lock()
 	// Resolve the real handler (full router for all/serve, health mux
 	// for worker). When interactive setup is active, the server delegates
-	// to whatever handlerCell currently points at — initially the setup
+	// to whatever handlerCell currently points at, initially the setup
 	// wizard, swapped to realHandler by the swap callback on completion.
 	realHandler := a.roleHandler()
 	serveHandler := realHandler
@@ -3036,8 +3036,8 @@ func (a *App) Start(addr string) error {
 				a.handlerCell.Store(&servingHandler{h: realHandler})
 				// Start the deferred consumers. A failure here gets the
 				// same fail-loud semantics as the identical failure at
-				// normal boot (which aborts Start): log and shut down —
-				// the process exits, and the NEXT boot finds setup
+				// normal boot (which aborts Start): log and shut down.
+				// The process exits, and the NEXT boot finds setup
 				// complete and runs the hooks on the normal Start path,
 				// failing Start properly. Silently running without
 				// consumers would be a half-up server.
@@ -3079,7 +3079,7 @@ func (a *App) Start(addr string) error {
 	}
 	// Apply host overrides (AppConfig.HTTPServerTimeouts / WithHTTPServerTimeouts).
 	// Each field is *time.Duration: nil keeps the default above; an explicit
-	// pointer — including one to 0 — wins. net/http treats a zero duration as
+	// pointer, including one to 0, wins. net/http treats a zero duration as
 	// "no timeout", so a pointer to 0 disables that one deadline rather than
 	// falling back to the default, which a plain time.Duration field could not
 	// express.
@@ -3099,7 +3099,7 @@ func (a *App) Start(addr string) error {
 	if a.Config.DisableRequestTimeout {
 		// The documented opt-out for SSE and long uploads drops the Timeout
 		// middleware from the chain and zeroes the server-level read/write
-		// deadlines to match (header and idle stay — they bound the
+		// deadlines to match (header and idle stay, they bound the
 		// connection, not the request body or the stream). It zeroes only the
 		// fields the host left unset: an explicit HTTPServerTimeouts value is
 		// authoritative, so the fine-grained knob can keep a custom deadline
@@ -3113,7 +3113,7 @@ func (a *App) Start(addr string) error {
 	}
 	a.server = srv
 	a.serverMu.Unlock()
-	// Bind first, then Serve — split from ListenAndServe so OnReady hooks
+	// Bind first, then Serve, split from ListenAndServe so OnReady hooks
 	// fire only after the port is actually held. http.ListenAndServe
 	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
 	listenAddr := addr
@@ -3122,7 +3122,7 @@ func (a *App) Start(addr string) error {
 	}
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		// Bind failure (port in use is the common case) — drain like every
+		// Bind failure (port in use is the common case), drain like every
 		// earlier start phase does, otherwise the batteries/cron/queue and
 		// OnStart workers spawned above leak past Start returning.
 		return abort(fmt.Errorf("listen and serve: %w", err))
@@ -3133,12 +3133,12 @@ func (a *App) Start(addr string) error {
 
 	// Graceful shutdown by default: docker stop and kubectl rollouts send
 	// SIGTERM, and without a handler the runtime kills the process
-	// mid-request — no drain, no battery stop, no OnStop hooks. The
+	// mid-request, no drain, no battery stop, no OnStop hooks. The
 	// deferred join keeps Start from returning while a signal-triggered
 	// drain is still running (Serve returns ErrServerClosed as soon as
 	// Shutdown begins). Opt out via DisableSignalHandling when the host
 	// process owns signals and calls Shutdown/RunWithSignals itself;
-	// concurrent Shutdown calls are safe — it is idempotent.
+	// concurrent Shutdown calls are safe. It is idempotent.
 	if !a.Config.DisableSignalHandling {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -3191,7 +3191,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		w = os.Stdout
 	}
 	if a.role == RoleWorker {
-		// The worker serves only the health surface — advertising entity or
+		// The worker serves only the health surface, advertising entity or
 		// API routes here would advertise 404s.
 		fmt.Fprintf(w, "\n  %s %s worker ready\n", bold("GoFastr"), name)
 		fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
@@ -3231,7 +3231,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	}
 
 	if hasAPI {
-		apiGate := "  (requires auth — WithPublicOpenAPI() to expose)"
+		apiGate := "  (requires auth: WithPublicOpenAPI() to expose)"
 		if a.Config.PublicOpenAPI {
 			apiGate = ""
 		}
@@ -3244,16 +3244,16 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 
 	// The MCP endpoint is the one surface a first-run user cannot discover by
 	// guessing a URL, and it was the only mounted surface the banner never
-	// named — an app could serve a full tool set at /mcp and say nothing about
+	// named, an app could serve a full tool set at /mcp and say nothing about
 	// it.
 	//
 	// The note covers ENTITY tools, which re-enter the app router and so answer
 	// an anonymous call with the same error their REST route would. The
 	// introspection tools (app_routes, app_config, …) are a separate, ungated
-	// surface — see `gofastr docs blueprints` — so the wording says "your app's
+	// surface. See `gofastr docs blueprints`, so the wording says "your app's
 	// permissions" rather than claiming every tool is gated.
 	// a.MCP is optional and nil-checked elsewhere in this file, and this line
-	// runs AFTER the listener has bound — a panic here kills a server that is
+	// runs AFTER the listener has bound, a panic here kills a server that is
 	// already accepting connections, to print a banner.
 	if a.mcpAutoMount && a.MCP != nil {
 		mcpNote := ""
@@ -3267,7 +3267,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 
 // registerDebugEndpoints adds /.debug/stats for runtime diagnostics.
 // The endpoint exposes process internals (pid, goroutines, memory) so it
-// requires an authenticated caller — the framework's normal auth chain
+// requires an authenticated caller, the framework's normal auth chain
 // must set a user in context for the request to succeed.
 func (a *App) registerDebugEndpoints() {
 	a.router.Get("/.debug/stats", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -26,21 +26,21 @@ import (
 // catalog endpoint) only sees the embedded canonical fields. App-
 // specific components reference theme.App.Brand.Logo directly.
 type Theme struct {
-	Name string // theme identifier — used for telemetry and the class-scoped block name
+	Name string // theme identifier, used for telemetry and the class-scoped block name
 
 	// DarkColors is the dark-scheme palette, keyed by color token name
 	// ("background", "surface", "text", "primary", …). When non-empty,
 	// CSSCustomProperties emits a `:root[data-color-scheme="dark"]` block (and a
 	// matching prefers-color-scheme fallback) re-declaring these tokens, so a
-	// ui.ThemeToggle / the color-scheme bootstrap recolors the whole app — and
-	// every surface that emits the theme CSS — by flipping one attribute. Empty
+	// ui.ThemeToggle / the color-scheme bootstrap recolors the whole app, and
+	// every surface that emits the theme CSS, by flipping one attribute. Empty
 	// by default: an app opts into dark mode by supplying it, so existing
 	// light-only apps are never surprised into dark by an OS preference. It's a
 	// map (not a typed ColorSet) so the reflection token-walk ignores it.
 	DarkColors map[string]string
 
 	// DarkCode is the dark-scheme syntax palette, keyed by code token
-	// name ("kw", "str", …). Same contract as DarkColors — when
+	// name ("kw", "str", …). Same contract as DarkColors, when
 	// non-empty its `--tk-<name>` re-declarations join the dark-scheme
 	// blocks, so a theme toggle restyles code blocks along with the
 	// rest of the page. Empty by default. A map (not a typed CodeSet)
@@ -72,7 +72,7 @@ type ColorSet struct {
 	Danger, Success, Warning, Info   Color
 	Accent                           Color
 
-	// Code surface — the background + foreground used by code-display
+	// Code surface, the background + foreground used by code-display
 	// components (ui.CodeBlock, demo source panels). Intentionally a
 	// SEPARATE token pair from Surface/Text so dark mode can keep code
 	// blocks legibly distinct from the page background without
@@ -80,43 +80,43 @@ type ColorSet struct {
 	CodeSurface, CodeText, CodeBorder Color
 }
 
-// SpacingScale — pixel-valued spacing scale.
+// SpacingScale: pixel-valued spacing scale.
 type SpacingScale struct {
 	XS, SM, MD, LG, XL, XXL, XXXL Spacing
 }
 
-// RadiusSet — border-radius scale.
+// RadiusSet: border-radius scale.
 type RadiusSet struct {
 	None, SM, MD, LG, XL, Full Radius
 }
 
-// FontSet — font-family stacks.
+// FontSet: font-family stacks.
 type FontSet struct {
 	Body, Heading, Mono Font
 }
 
-// BreakpointSet — viewport-width thresholds, in pixels.
+// BreakpointSet: viewport-width thresholds, in pixels.
 type BreakpointSet struct {
 	SM, MD, LG, XL, XXL Breakpoint
 }
 
-// ShadowSet — box-shadow depth scale.
+// ShadowSet: box-shadow depth scale.
 type ShadowSet struct {
 	None, SM, MD, LG, XL Shadow
 }
 
-// ZIndexSet — named layers. Prevents the `z-index: 9999` arms race
-// — every elevated surface picks a layer by name.
+// ZIndexSet: named layers. Prevents the `z-index: 9999` arms race,
+// every elevated surface picks a layer by name.
 type ZIndexSet struct {
 	Dropdown, Sticky, Modal, Popover, Toast ZIndexValue
 }
 
-// DurationSet — animation / transition timing scale.
+// DurationSet: animation / transition timing scale.
 //
 // The generic Fast/Normal/Slow are everyday tokens. The named overlay
 // and toast/dropdown values are referenced by core-ui widget chrome so
 // every modal, drawer, dropdown, and toast respects the same motion
-// budget — and a single override on the theme retunes them all.
+// budget, and a single override on the theme retunes them all.
 type DurationSet struct {
 	Fast, Normal, Slow Duration
 
@@ -131,25 +131,25 @@ type DurationSet struct {
 	DropdownEnter Duration
 }
 
-// EasingSet — CSS timing-function tokens. Widget chrome references
+// EasingSet: CSS timing-function tokens. Widget chrome references
 // these so motion curves stay theme-driven.
 type EasingSet struct {
-	// EaseOut decelerates — the default for elements entering view.
-	// EaseIn accelerates — used when elements leave view.
+	// EaseOut decelerates, the default for elements entering view.
+	// EaseIn accelerates, used when elements leave view.
 	// EaseInOut for symmetric transitions. Spring overshoots slightly.
 	EaseOut, EaseIn, EaseInOut, Spring Easing
 }
 
-// FontSizeSet — typography size scale.
+// FontSizeSet: typography size scale.
 type FontSizeSet struct {
 	XS, SM, Base, LG, XL, XXL, XXXL FontSize
 }
 
-// CodeSet — the syntax-highlight palette consumed by code-display
+// CodeSet: the syntax-highlight palette consumed by code-display
 // components via `--tk-<name>`. Field names ARE the emitted suffixes
 // (KW → --tk-kw): KW keywords, FN function names, Str strings, Num
 // numeric literals, Com comments, Type type names, PN punctuation.
-// The group is optional — zero tokens are skipped (component CSS
+// The group is optional, zero tokens are skipped (component CSS
 // keeps its built-in fallback palette), so themes that never set it
 // behave exactly as before the group existed. Dark-scheme values go
 // in Theme.DarkCode.
@@ -157,7 +157,7 @@ type CodeSet struct {
 	KW, FN, Str, Num, Com, Type, PN CodeColor
 }
 
-// LayoutSet — interaction-affordance dimensions. TouchTarget is
+// LayoutSet: interaction-affordance dimensions. TouchTarget is
 // the WCAG 2.5.5 minimum tap target (default 44px); buttons and
 // form inputs reference var(--spacing-touch-target) to land on it.
 type LayoutSet struct {
@@ -170,7 +170,7 @@ type LayoutSet struct {
 //
 //	t.Colors.Primary = style.Color{Value: "#FF0000"}
 //
-// — the Name "primary" is filled in automatically. Explicit Name
+// the Name "primary" is filled in automatically. Explicit Name
 // values are preserved (handy for app extensions that need a
 // non-canonical CSS var identifier).
 //
@@ -273,7 +273,7 @@ func (t Theme) Validate() error {
 // MustValidate panics if validation fails. Wraps Validate.
 func (t Theme) MustValidate() {
 	if err := t.Validate(); err != nil {
-		panic("style.Theme: invalid — " + err.Error())
+		panic("style.Theme: invalid: " + err.Error())
 	}
 }
 
@@ -287,7 +287,7 @@ func validateTokens(v reflect.Value, path string) error {
 	if v.Kind() != reflect.Struct {
 		return nil
 	}
-	// Typed token leaves — check fields are populated.
+	// Typed token leaves, check fields are populated.
 	switch tk := v.Interface().(type) {
 	case Color:
 		if tk.Name == "" {
@@ -305,7 +305,7 @@ func validateTokens(v reflect.Value, path string) error {
 		// scaled token (md/lg/xl) at Value=0 is almost always a
 		// configuration mistake.
 		if tk.Value == 0 && tk.Name != "none" && tk.Name != "0" {
-			return fmt.Errorf("%s: Spacing.Value is 0 (Name=%q) — emits `--spacing-%s: 0px;` and breaks layout", path, tk.Name, tk.Name)
+			return fmt.Errorf("%s: Spacing.Value is 0 (Name=%q). It emits `--spacing-%s: 0px;` and breaks layout", path, tk.Name, tk.Name)
 		}
 		return nil
 	case Radius:
@@ -314,7 +314,7 @@ func validateTokens(v reflect.Value, path string) error {
 		}
 		// "none" / "0" is a legitimate sharp-corner sentinel.
 		if tk.Value == 0 && tk.Name != "none" && tk.Name != "0" {
-			return fmt.Errorf("%s: Radius.Value is 0 (Name=%q) — use Radius{Name: \"none\"} for sharp corners explicitly", path, tk.Name)
+			return fmt.Errorf("%s: Radius.Value is 0 (Name=%q). Use Radius{Name: \"none\"} for sharp corners explicitly", path, tk.Name)
 		}
 		return nil
 	case Font:
@@ -349,7 +349,7 @@ func validateTokens(v reflect.Value, path string) error {
 		// valid CSS. Only flag the all-zero default that signals
 		// "I forgot to set this".
 		if tk.Value == 0 && tk.Name != "base" && tk.Name != "0" {
-			return fmt.Errorf("%s: ZIndex.Value is 0 (Name=%q) — use Name \"base\"/\"0\" if intentional", path, tk.Name)
+			return fmt.Errorf("%s: ZIndex.Value is 0 (Name=%q). Use Name \"base\"/\"0\" if intentional", path, tk.Name)
 		}
 		return nil
 	case Duration:
@@ -381,10 +381,10 @@ func validateTokens(v reflect.Value, path string) error {
 		// CSS keeps its built-in fallback palette). Only a half-set
 		// token is a configuration mistake.
 		if tk.Value == "" && tk.Name != "" {
-			return fmt.Errorf("%s: CodeColor.Value is empty (Name=%q) — leave the token fully zero to fall back, or give it a value", path, tk.Name)
+			return fmt.Errorf("%s: CodeColor.Value is empty (Name=%q). Leave the token fully zero to fall back, or give it a value", path, tk.Name)
 		}
 		if tk.Value != "" && tk.Name == "" {
-			return fmt.Errorf("%s: CodeColor.Name is empty (Value=%q) — run AutoFillNames or set the Name", path, tk.Value)
+			return fmt.Errorf("%s: CodeColor.Name is empty (Value=%q). Run AutoFillNames or set the Name", path, tk.Value)
 		}
 		return nil
 	}
@@ -422,21 +422,21 @@ func DefaultTheme() Theme {
 			SurfaceSoft:  Color{Name: "surface-soft", Value: "#F4F4F5"},
 			Text:         Color{Name: "text", Value: "#18181B"},
 			TextMuted:    Color{Name: "text-muted", Value: "#52525B"},
-			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface — was #A1A1AA (2.56:1, fails AA)
+			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface, was #A1A1AA (2.56:1, fails AA)
 			Border:       Color{Name: "border", Value: "#E4E4E7"},
 			BorderStrong: Color{Name: "border-strong", Value: "#A1A1AA"},
 			// Status tones are used two ways by framework/ui components:
 			// as WHITE-TEXT FILLS (toasts, button--danger) and as LABEL
 			// TEXT on their own 15%-tinted chips (Badge, Tag, StatCard
-			// trend, ValidationSummary). The tint is the harder target —
+			// trend, ValidationSummary). The tint is the harder target,
 			// the previous values (#DC2626 / #15803D / #A16207 / #2563EB)
 			// hit 4.5:1 on white but only 3.7–4.2:1 on the tinted chips,
 			// which axe flags on any light scheme. These shades clear
 			// 4.6:1 on the chips and ≥6.4:1 with white fills.
-			Danger:  Color{Name: "danger", Value: "#B91C1C"},  // 5.2:1 on its 15% chip — was #DC2626 (3.96:1)
-			Success: Color{Name: "success", Value: "#166534"}, // 5.6:1 on its 15% chip — was #15803D (4.10:1)
-			Warning: Color{Name: "warning", Value: "#854D0E"}, // 5.4:1 on its 15% chip — was #A16207 (4.03:1)
-			Info:    Color{Name: "info", Value: "#1D4ED8"},    // 5.3:1 on its 15% chip — was #2563EB (4.23:1)
+			Danger:  Color{Name: "danger", Value: "#B91C1C"},  // 5.2:1 on its 15% chip, was #DC2626 (3.96:1)
+			Success: Color{Name: "success", Value: "#166534"}, // 5.6:1 on its 15% chip, was #15803D (4.10:1)
+			Warning: Color{Name: "warning", Value: "#854D0E"}, // 5.4:1 on its 15% chip, was #A16207 (4.03:1)
+			Info:    Color{Name: "info", Value: "#1D4ED8"},    // 5.3:1 on its 15% chip, was #2563EB (4.23:1)
 			Accent:  Color{Name: "accent", Value: "#7C3AED"},
 			// Code surface: an always-dark panel for ui.CodeBlock and
 			// other code-display contexts. Light mode keeps the dark
@@ -521,7 +521,7 @@ func DefaultTheme() Theme {
 			TouchTarget: Spacing{Name: "touch-target", Value: 44},
 		},
 		// Syntax-highlight palette (--tk-*). These are the values the
-		// ui.CodeBlock CSS previously carried only as var() fallbacks —
+		// ui.CodeBlock CSS previously carried only as var() fallbacks,
 		// promoted to theme slots so dark mode (Theme.DarkCode) and
 		// re-skins can restyle code blocks. Tuned for the always-dark
 		// default CodeSurface, so they hold in both page schemes. PN

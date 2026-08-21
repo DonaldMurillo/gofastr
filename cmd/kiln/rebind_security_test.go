@@ -12,7 +12,7 @@ import (
 
 // Property: kiln's tool API is unauthenticated by design, so a loopback
 // bind is the only thing separating it from the network. sameOrigin
-// alone cannot hold that line — under DNS rebinding the attacker owns
+// alone cannot hold that line. Under DNS rebinding the attacker owns
 // both Origin and Host, so they match and the guard passes. Pinning
 // Host to a literal loopback name is what refuses the rebound request.
 //
@@ -39,7 +39,7 @@ func TestOriginGuardRejectsReboundHost(t *testing.T) {
 		return w.Code
 	}
 
-	// The rebind: attacker's own name, and Origin agrees with it — this
+	// The rebind: attacker's own name, and Origin agrees with it. This
 	// is exactly the shape sameOrigin lets through.
 	if got := call("POST", "evil.test:8765", "http://evil.test:8765"); got != http.StatusForbidden {
 		t.Errorf("rebound POST got %d, want 403", got)

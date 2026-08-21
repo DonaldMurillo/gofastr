@@ -6,7 +6,7 @@ import (
 )
 
 // Manifest.Entry is the URL the broker loads into the plugin iframe, and it
-// arrives with the third-party plugin — attacker-influenced by construction.
+// arrives with the third-party plugin, attacker-influenced by construction.
 // It was unvalidated: an absolute "https://evil.example/x.html" or a
 // protocol-relative "//evil.example/x.html" made the frame a document the host
 // origin no longer controls, and the framed-CSP sandbox header that carries
@@ -49,7 +49,7 @@ func TestManifestAcceptsSameOriginAbsolutePath(t *testing.T) {
 	}
 }
 
-// The JS broker is the actual sink — it sets the iframe src. A Go-side
+// The JS broker is the actual sink, it sets the iframe src. A Go-side
 // Validate a plugin author might skip cannot be the only check, exactly as
 // the sandbox invariant is dual-enforced.
 func TestBrokerJSValidatesEntry(t *testing.T) {
@@ -66,8 +66,8 @@ func TestBrokerJSValidatesEntry(t *testing.T) {
 	}
 }
 
-// The Go sandbox sanitizer became an allow-list in v0.45.0; the JS one — the
-// authoritative sink — was still a one-token deny-list, so
+// The Go sandbox sanitizer became an allow-list in v0.45.0; the JS one, the
+// authoritative sink, was still a one-token deny-list, so
 // allow-popups-to-escape-sandbox, allow-top-navigation and allow-downloads all
 // passed through it. Two sanitizers with different verdicts is one sanitizer.
 func TestBrokerJSSandboxIsAllowList(t *testing.T) {

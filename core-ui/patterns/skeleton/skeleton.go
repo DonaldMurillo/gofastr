@@ -2,13 +2,13 @@
 // The skeleton stylesheet (BaseCSS) and its package-level doc
 // comments reference `style="…"` in CSS comments and prose to
 // explain why the package deliberately avoids inline style attrs.
-// The package never emits one — its rendered HTML carries only class
-// names — so the file opts out of the inline-style linter.
+// The package never emits one, its rendered HTML carries only class
+// names, so the file opts out of the inline-style linter.
 
 // Package skeleton provides shimmer placeholders rendered with pure CSS.
 //
 // Use a skeleton during server-side data loads or while a signal-driven
-// island fetches replacement HTML — render the skeleton in the initial
+// island fetches replacement HTML, render the skeleton in the initial
 // HTML, then swap it for the real content when the data resolves.
 //
 // All variants are visually-only: aria-hidden="true" so screen readers

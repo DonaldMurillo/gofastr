@@ -64,7 +64,7 @@ func TestWALReplayRecoversUnsnapshottedWrites(t *testing.T) {
 	idx, err := Open(Options{
 		Embedder:      NewStubEmbedder(64),
 		Path:          dir,
-		SnapshotEvery: 0, // no auto-snapshot — simulate crash before flush
+		SnapshotEvery: 0, // no auto-snapshot, simulate crash before flush
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -81,7 +81,7 @@ func TestWALReplayRecoversUnsnapshottedWrites(t *testing.T) {
 		internal.wal = nil
 	}
 
-	// Reopen — snapshot is missing/empty, WAL must carry the state.
+	// Reopen: snapshot is missing/empty, WAL must carry the state.
 	idx2, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -114,7 +114,7 @@ func TestAutoSnapshotTruncatesWAL(t *testing.T) {
 			t.Fatalf("Add %s: %v", id, err)
 		}
 	}
-	// After 4 writes with SnapshotEvery=2, the WAL should be small —
+	// After 4 writes with SnapshotEvery=2, the WAL should be small,
 	// at most one outstanding write since the last snapshot.
 	info, err := os.Stat(filepath.Join(dir, "store.wal"))
 	if err != nil {
@@ -136,7 +136,7 @@ func TestLoadSnapshotRefusesModelMismatch(t *testing.T) {
 	}
 	idx.Close()
 
-	// Reopen with a different-dim stub — the model fingerprint match
+	// Reopen with a different-dim stub, the model fingerprint match
 	// keys on (model, dim); 64 -> 128 must be refused.
 	fs := NewFlatStore(128, "stub-fnv-bow")
 	err := fs.LoadSnapshot(filepath.Join(dir, "store.snap"))

@@ -9,8 +9,8 @@ import (
 // NewGradient returns a width×height image filled with a diagonal
 // (top-left → bottom-right) linear gradient between two #RRGGBB stops.
 // Useful as a generated placeholder for surfaces that need an image but
-// have none yet — app icons (uihost.WithAppIcon), covers, OG images —
-// without committing binary assets.
+// have none yet: app icons (uihost.WithAppIcon), covers, OG images.
+// This avoids committing binary assets.
 func NewGradient(width, height int, fromHex, toHex string) (*Image, error) {
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("image: NewGradient dimensions must be positive, got %dx%d", width, height)

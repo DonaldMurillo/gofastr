@@ -32,7 +32,7 @@ func TestIsValidHostRelative(t *testing.T) {
 		{"relative dot-slash", "./foo", false},
 		{"relative dot-dot", "../escape", false},
 
-		// --- rejected: scheme-relative ("//host") — off-origin ---
+		// --- rejected: scheme-relative ("//host"), off-origin ---
 		{"scheme-relative bare", "//evil.com", false},
 		{"scheme-relative path", "//evil.com/x", false},
 		{"scheme-relative with https", "//evil.com/https://x", false},
@@ -69,7 +69,7 @@ func TestIsValidHostRelative(t *testing.T) {
 		{"embedded ff", "/da\x0cshboard", false},
 
 		// --- rejected: dangerous scheme tokens embedded in path
-		//     (defense-in-depth — a downstream parser that extracts the
+		//     (defense-in-depth, a downstream parser that extracts the
 		//     query value and navigates could otherwise be confused) ---
 		{"javascript in query", "/path?next=javascript:alert(1)", false},
 		{"data in fragment", "/path#data:text/html,x", false},

@@ -11,11 +11,11 @@
 //     framework subpackage, and it does NOT import core/mcp. The host↔module
 //     pipe is a purpose-built JSON-RPC 2.0 dialect, not MCP. (MCP survives only
 //     as an optional module *surface*, registered into a separate core/mcp.Server
-//     by the supervisor — never on this pipe.)
+//     by the supervisor, never on this pipe.)
 //   - It enforces NO capability rules. The resource:verb intersection
 //     (module-grant ∩ caller-authority) lives in the supervisor above this codec.
-//   - The codec reads/writes an [io.Reader]/[io.Writer] pair — not os.Stdin /
-//     os.Stdout specifically — so the wire format survives a future v2 socket
+//   - The codec reads/writes an [io.Reader]/[io.Writer] pair, not os.Stdin /
+//     os.Stdout specifically, so the wire format survives a future v2 socket
 //     transport without re-opening the protocol (design §1).
 //
 // # Why not reuse framework/experimental/harness/mcpclient

@@ -24,7 +24,7 @@ import (
 // pool. Use kilnGet / kilnPost as drop-in shorthands.
 //
 // Note: a separate test-only helper `httpGet(t, url) (string, error)`
-// already exists in browser_test.go for "fetch body as string" — these
+// already exists in browser_test.go for "fetch body as string", these
 // helpers are the `(*http.Response, error)` variants used by tests
 // that need to inspect headers, status, or stream the body.
 

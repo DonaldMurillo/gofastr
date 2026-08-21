@@ -13,7 +13,7 @@ import (
 
 // ─── FileDropzone ───────────────────────────────────────────────────
 //
-// A larger-surface variant of FileUpload — same form-POST semantics
+// A larger-surface variant of FileUpload. Same form-POST semantics
 // (native <input type="file"> under the hood, runtime drag-drop
 // handler via data-fui-fileupload), but a more prominent drop area
 // and an optional thumbnail preview strip for image uploads.
@@ -41,7 +41,7 @@ type FileDropzoneConfig struct {
 	// Disabled disables interaction.
 	Disabled bool
 	// ShowPreview opts into a thumbnail strip rendered below the
-	// dropzone after change. Only works for image MIME types — the
+	// dropzone after change. Only works for image MIME types: the
 	// runtime FileReader-reads each file and emits <img>.
 	ShowPreview bool
 	// MaxSizeMB is announced in the help text. Server is still

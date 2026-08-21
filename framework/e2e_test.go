@@ -525,8 +525,8 @@ func TestE2E_Hooks_BeforeCreate(t *testing.T) {
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		defer ta.Close()
 
-		// Note: CrudHandler.Create doesn't call hooks directly —
-		// hooks are called when using the App's entity operations.
+		// Note: CrudHandler.Create doesn't call hooks directly.
+		// Hooks are called when using the App's entity operations.
 		// For this E2E test, we verify the hook registry works
 		err := hooks.ExecuteHooks(context.Background(), hook.BeforeCreate, map[string]any{"title": "test"})
 		if err != nil {

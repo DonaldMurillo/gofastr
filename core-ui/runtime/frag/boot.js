@@ -1,4 +1,4 @@
-// boot.js — kernel boot tail (always composed LAST, after every other fragment).
+// boot.js: kernel boot tail (always composed LAST, after every other fragment).
 // These declarations run AFTER nav/signals/widgets-boot have loaded because
 // _initialPass() is invoked synchronously here, probes nav's loadPage, and
 // calls _injectSignalAria (signals). Function declarations (loadModule,
@@ -58,7 +58,7 @@
     const el = document.querySelector(`[data-widget="${componentId}"]`)
       ?? document.querySelector(`[data-component="${componentId}"]`);
     if (!el) return;
-    // Mark hydrated only once the element was actually found — marking
+    // Mark hydrated only once the element was actually found, marking
     // before the lookup made a too-early call (root not yet in the DOM)
     // permanently block that id's behavior script. Never cleared across
     // navs: the behavior script URL is keyed by id, so process-lifetime
@@ -67,8 +67,8 @@
 
     // data-behavior is the most privileged attribute the runtime reads:
     // it becomes a <script src>. Only the one shape the framework emits
-    // is honoured — /__gofastr/widget/<id>.js, written by
-    // core-ui/component/component.go — because any other value turns
+    // is honoured, /__gofastr/widget/<id>.js, written by
+    // core-ui/component/component.go, because any other value turns
     // attribute injection into script execution. CSP is not the answer
     // here: a SAME-origin JS route (an upload store, a generated SDK
     // .js, a plugin asset) executes under `default-src 'self'`.
@@ -160,7 +160,7 @@
   // manifest under <script id="gofastr-runtime-modules">. The loader
   // reads it once; if a name is missing from the manifest, we fall
   // back to an un-versioned URL (works in dev, may pollute caches in
-  // prod — the manifest is the source of truth).
+  // prod, the manifest is the source of truth).
   const _moduleManifest = (() => {
     // Live pages assign the global via /__gofastr/manifest.js (loaded
     // before runtime.js); export mode keeps the inline JSON block.
@@ -210,13 +210,13 @@
   const _rpcFormFallback = (form) => {
     _rpcUnavailable();
     // Native submit is correct ONLY for a form the browser could have
-    // submitted itself — a data-fui-spa form with an ordinary enctype.
+    // submitted itself, a data-fui-spa form with an ordinary enctype.
     //
     // A data-fui-rpc form targets a JSON API: the resource engine emits it
     // with no enctype at all and rpc.js builds the JSON body, so submitting
     // it natively posts urlencoded (415) or cannot issue its declared
     // PUT/PATCH at all (405). Either way the user is navigated off the page
-    // to a raw error and everything they typed is gone — strictly worse
+    // to a raw error and everything they typed is gone, strictly worse
     // than staying put. An application/json enctype is unsendable natively
     // for the same reason. In those cases the warning is the whole remedy.
     if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) return;
@@ -228,7 +228,7 @@
     try { HTMLFormElement.prototype.submit.call(form); } catch (_) {}
   };
   // Widget-scoped listeners live in the widgets MODULE and prevent the
-  // default before awaiting rpc too, so they need the same recovery — the
+  // default before awaiting rpc too, so they need the same recovery, the
   // document bridge deliberately skips anything inside [data-fui-widget]
   // and cannot cover for them.
   window.__gofastr._rpcUnavailable = _rpcUnavailable;
@@ -315,7 +315,7 @@
   // === DRAG-TO-DISMISS (bottom-sheet style) ============================
   // Pointer-driven drag-to-close for widgets (DragDismiss /
   // preset.BottomSheet) lives in the split-runtime module at
-  // core-ui/runtime/src/dragdismiss.js — demand-loaded via the
+  // core-ui/runtime/src/dragdismiss.js, demand-loaded via the
   // [data-fui-drag-dismiss="true"] scanner below (SSR-inlined sheets
   // load at boot; dynamically-opened chrome is caught by the
   // MutationObserver scan when it's appended to <body>).
@@ -344,14 +344,14 @@
     // focus-on-open, and the opt-in inert focus trap for drawers.
     { name: 'disclosure', selector: 'details[data-fui-disclosure]' },
     { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
-    // SSE: background event stream. Idle-loaded — never blocks first
+    // SSE: background event stream. Idle-loaded, never blocks first
     // interaction; the channel only carries push updates, not user
     // actions. See ROADMAP §8 Phase 5.
     { name: 'sse',        selector: 'meta[name="gofastr-sse"]', idle: true },
     // Widgets: any SSR-inlined widget element or any data-fui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
-    // scanner just covers the marker-on-page path. Idle-loaded —
+    // scanner just covers the marker-on-page path. Idle-loaded,
     // SSR-inlined widget chrome is already on the page; mounting is
     // hydration not first paint. See ROADMAP §8 Phase 5.
     { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
@@ -512,7 +512,7 @@
       // rpc-stub owns static-export clicks. The marker table is shared by all
       // compositions, so skip this one entry instead of fetching dead code.
       if (name === 'rpc' && document.__fuiStaticDispatch) continue;
-      // Skip if the module is already loaded — its own internal scanner
+      // Skip if the module is already loaded, its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
       if (window.__gofastr.loadedModules?.[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
@@ -530,7 +530,7 @@
   // Phase 5 idle fallback (ROADMAP §8). Modules tagged `idle: true` in
   // `_moduleMarkers` ship after FCP via requestIdleCallback so they
   // never compete with the user's first interaction. Safari < 16.2 and
-  // Firefox < 55 lack rIC — fall back to setTimeout(0) which still
+  // Firefox < 55 lack rIC, fall back to setTimeout(0) which still
   // runs after the current task settles.
   function _scheduleIdleModules(names) {
     const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 0));
@@ -540,16 +540,16 @@
   }
   // Re-scan after SPA-nav swaps content. Two phases:
   //
-  //  1. Marker scan — modules that AREN'T loaded yet get fetched when
+  //  1. Marker scan: modules that AREN'T loaded yet get fetched when
   //     their marker appears in the freshly-swapped content. (Fresh
   //     page brings new feature → load on demand.)
   //
-  //  2. Per-module rescan — modules that ARE loaded re-run their
+  //  2. Per-module rescan: modules that ARE loaded re-run their
   //     scanner against the new DOM. Modules opt in by registering
   //     a function on `window.__gofastr._moduleScanners[name]`; the
   //     contract is "wire any new elements inside `root`, idempotent
   //     against already-wired elements". This is how SSR-inlined
-  //     toast stacks on the new page get their TTL timers armed —
+  //     toast stacks on the new page get their TTL timers armed,
   //     without it, `_initToasts` would have run only once at module
   //     load before that DOM existed.
   window.addEventListener('gofastr:navigate', () => {
@@ -567,7 +567,7 @@
   });
 
   // Close any open modal widgets on SPA navigation. Toasts/panels
-  // (non-backdrop'd widgets) survive — they're page-independent
+  // (non-backdrop'd widgets) survive, they're page-independent
   // UI like build-progress banners.
   window.addEventListener('gofastr:navigate', () => {
     const G = window.__gofastr;
@@ -584,7 +584,7 @@
   // page-scoped widget elsewhere silently bails because the entry is
   // missing from _widgetCatalog.
   //
-  // The fetch is idempotent — entries are MERGED into the catalog
+  // The fetch is idempotent, entries are MERGED into the catalog
   // (existing entries from boot don't get overwritten unless the
   // server returns a changed version). Non-hidden widgets that
   // aren't already mounted are mounted now. Then _syncDeepLinks runs
@@ -598,7 +598,7 @@
         if (!Array.isArray(list) || list.length === 0) return;
         const G = window.__gofastr;
         if (!G) return;
-        // Make sure the widgets module is loaded — the initial page
+        // Make sure the widgets module is loaded, the initial page
         // may have had no widgets, so loadModule('widgets') was never
         // triggered and mountWidget isn't on the namespace yet.
         try { await G.loadModule('widgets'); } catch (_) { return; }
@@ -633,15 +633,15 @@
     G.scheduleIdleLoads();
   };
 
-  // Event listeners attach unconditionally — they fire only when the
+  // Event listeners attach unconditionally, they fire only when the
   // matching event happens, so installing them before the DOM is parsed
   // is safe. An earlier arrangement gated them inside
   // `if (document.readyState === 'loading')`, which silently disabled
   // them when runtime.js loaded after DOMContentLoaded (late injection,
   // fast parse, dynamic re-init).
 
-  // Disclosure keyboard/AT behaviour — aria-expanded mirroring,
-  // Escape-to-close, menu focus-on-open, and the opt-in focus trap —
+  // Disclosure keyboard/AT behaviour, aria-expanded mirroring,
+  // Escape-to-close, menu focus-on-open, and the opt-in focus trap,
   // lives in the split-runtime module at core-ui/runtime/src/disclosure.js,
   // demand-loaded via the details[data-fui-disclosure] scanner below.
   // Core keeps only the close-on-navigate lines; the `toggle` event they
@@ -652,7 +652,7 @@
   // when data-fui-signal-mode is absent or "text"): attr-mode and
   // html-mode bindings must NOT receive role=status because:
   //  - attr-mode: injects into element attributes (e.g. <a href=…>),
-  //    not text — role=status on an <a> is invalid ARIA.
+  //    not text, role=status on an <a> is invalid ARIA.
   //  - html-mode: swaps innerHTML of island wrappers; treating the
   //    entire region as a live region causes a storm of announcements
   //    on every island update. Those regions use their own role/aria.
@@ -675,8 +675,8 @@
   // _runMountActions fires component actions marked data-action-mount once,
   // right after hydration. Component clientJS handlers (data-action) only run
   // on user events (click/input/change/submit); a server-rendered island that
-  // must populate itself on load — an entity list fetching its rows, a detail
-  // view fetching one record, a relation <select> fetching its options — opts
+  // must populate itself on load, an entity list fetching its rows, a detail
+  // view fetching one record, a relation <select> fetching its options, opts
   // in by carrying data-action-mount="<actionName>" on a node inside a
   // [data-component]. Re-runs on SPA nav so a swapped-in page repopulates.
   const _runMountActions = (root) => {
@@ -712,7 +712,7 @@
     // Active-link highlighting is cosmetic post-nav work carved out of
     // core (level-1 budget): the idle-loaded module applies aria-current
     // on load and keeps it fresh across SPA navs. Skipped in the embed
-    // composition — nav is absent there, and typeof on an undeclared
+    // composition, nav is absent there, and typeof on an undeclared
     // identifier is the one safe probe for a fragment symbol.
     if (typeof loadPage === 'function') {
       (window.requestIdleCallback || ((fn) => setTimeout(fn, 150)))(

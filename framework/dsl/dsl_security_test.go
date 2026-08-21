@@ -6,8 +6,8 @@ import (
 )
 
 // TestParseDSL_AfterStripsControlBytes pins that ParseDSL never leaves
-// raw CR/LF/NUL inside a cursor literal. The cursor is opaque — its
-// internal validation happens in framework/crud — but the parse-time
+// raw CR/LF/NUL inside a cursor literal. The cursor is opaque, its
+// internal validation happens in framework/crud, but the parse-time
 // scrub makes sure a CR/LF in after() can't reach a log line or a
 // re-emitted DSL string.
 func TestParseDSL_AfterStripsControlBytes(t *testing.T) {

@@ -34,7 +34,7 @@ func runBuild(args []string) {
 
 	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
 	// is present. Blueprint generation (gofastr generate --from) is an
-	// explicit, separate step — `gofastr build` does not guess a blueprint.
+	// explicit, separate step: `gofastr build` does not guess a blueprint.
 	if !opts.noGenerate {
 		discovery, err := codegen.DiscoverConfig(".")
 		if err != nil {
@@ -64,7 +64,7 @@ func runBuild(args []string) {
 	}
 	success("go vet passed")
 
-	// Step 3: static accessibility lint. Enforced by default — the rules
+	// Step 3: static accessibility lint. Enforced by default. The rules
 	// are the WCAG floor the type system can already see (Alt on images,
 	// Label on buttons/landmarks, …) and every finding ships with a fix
 	// hint, so failing here is cheaper than failing a real user.
@@ -72,7 +72,7 @@ func runBuild(args []string) {
 	if !opts.noA11y {
 		info("Checking accessibility...")
 		if !buildA11yGate(".") {
-			fail("Accessibility lint failed — fix the findings above (guided), or skip once with --no-a11y")
+			fail("Accessibility lint failed. Fix the findings above (guided), or skip once with --no-a11y")
 			osExit(1)
 		}
 		success("accessibility lint passed")
@@ -80,12 +80,12 @@ func runBuild(args []string) {
 
 	// Step 3b: .ui.go hydration-sandbox lint. The sandbox rules forbid
 	// goroutines, channels, type switches, and imports outside the safe
-	// allow-list in client-hydrated .ui.go files — they break hydration at
+	// allow-list in client-hydrated .ui.go files: they break hydration at
 	// runtime. This is a correctness floor (not a WCAG nicety), so unlike
 	// a11y it is NOT skippable: no valid .ui.go violates it.
 	info("Checking .ui.go sandbox...")
 	if !buildSandboxGate(".") {
-		fail(".ui.go sandbox lint failed — move goroutines/channels/IO out of .ui.go (see findings above)")
+		fail(".ui.go sandbox lint failed. Move goroutines/channels/IO out of .ui.go (see findings above)")
 		osExit(1)
 	}
 	success(".ui.go sandbox lint passed")
@@ -100,21 +100,21 @@ func runBuild(args []string) {
 	if !opts.noEmbedCheck {
 		info("Checking embed surfaces for server actions...")
 		if !buildEmbedGate("./...", opts.allowUnverifiedEmbeds) {
-			fail("check-embed failed — an embeddable surface registers a G.serverAction, which is refused inside a frame. Fix the findings above, or skip once with --no-embed-check")
+			fail("check-embed failed: an embeddable surface registers a G.serverAction, which is refused inside a frame. Fix the findings above, or skip once with --no-embed-check")
 			osExit(1)
 		}
 		success("no embeddable surface registers a server action")
 	}
 
 	// Step 4b: the contract analyzers. Only findings at the fail-on
-	// severity (error by default) stop the build — warnings print and let
+	// severity (error by default) stop the build. Warnings print and let
 	// it through, because a build that fails on "this route has no test"
 	// is a build people learn to bypass. `gofastr verify` is where the
 	// full picture lives; this is the floor.
 	if !opts.noContracts {
 		info("Verifying contracts...")
 		if !buildContractsGate(".") {
-			fail("Contract verification failed — run `gofastr verify` for the full report, or skip once with --no-contracts")
+			fail("Contract verification failed. Run `gofastr verify` for the full report, or skip once with --no-contracts")
 			osExit(1)
 		}
 		success("contracts verified")
@@ -158,7 +158,7 @@ func buildContractsGate(root string) bool {
 	// `gofastr verify --baseline-write` is how an existing app adopts
 	// contracts: accept what is there, fail on what is added. The build
 	// gate has to honour the same file, or recording a baseline fixes
-	// `verify` and leaves `build` permanently red — and the only exit a
+	// `verify` and leaves `build` permanently red, and the only exit a
 	// user finds from that is --no-contracts, which turns everything off.
 	baseline, baselineErr := contracts.ReadBaseline(filepath.Join(root, contracts.BaselineFileName))
 	if baselineErr != nil {
@@ -177,8 +177,8 @@ func buildContractsGate(root string) bool {
 
 // buildEmbedGate runs the embed-surface server-action check for `gofastr build`
 // and reports whether the build may proceed. It scans pattern (the package
-// graph being built) via the shared embedcheck driver — the same one the
-// standalone cmd/check-embed CLI uses — so build-time and CLI findings are
+// graph being built) via the shared embedcheck driver, the same one the
+// standalone cmd/check-embed CLI uses, so build-time and CLI findings are
 // identical. On a violation it prints each finding with its fix hint.
 func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	findings, unresolved, fset, err := embedcheck.CheckAll(pattern)
@@ -189,8 +189,8 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	// Print every note; fail only on the BLOCKING class.
 	//
 	// The boot-time walk in framework/uihost reads live component values, so a
-	// child held in a field — through an interface, a map key, or an island
-	// wrapper — is checked at Mount, and a note describing one is advisory.
+	// child held in a field, whether through an interface, a map key, or an island
+	// wrapper, is checked at Mount, and a note describing one is advisory.
 	// The exception is a child CONSTRUCTED inside Render() whose type is in
 	// another package: it does not exist as a value when the walk runs, and
 	// its Actions() body is not in the analyzer's syntax tree. Neither gate
@@ -199,7 +199,7 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	// Failing on every note was tried and reverted: it also rejected clean
 	// island surfaces (the shape the blueprint emits for every island block),
 	// interface-typed fields the analyzer had already resolved, and the
-	// fixture named for false positives — with no remedy available, since
+	// fixture named for false positives, with no remedy available, since
 	// "hold the child in a field" is impossible for a wrapper.
 	var blocking int
 	for _, u := range unresolved {
@@ -218,7 +218,7 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 		}
 	}
 	if blocking > 0 && !allowUnverified {
-		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified — see the notes above.\n"+
+		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified; see the notes above.\n"+
 			"Hold the child in a field rather than building it in Render, or move its type into the surface's package. "+
 			"If the surface genuinely cannot be analysed and you have verified it by hand, pass --allow-unverified-embeds.\n\n",
 			blocking)

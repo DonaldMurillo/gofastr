@@ -12,7 +12,7 @@ import (
 // Codec cap constants (design §4.2). The scanner caps are the verbatim lift
 // from mcpclient: 64 KiB initial buffer growing to a 4 MiB ceiling. The
 // negotiated max_frame_bytes (default 1 MiB) is the protocol-level cap,
-// enforced on BOTH read and write — over-cap is a terminal fault, never a
+// enforced on BOTH read and write: over-cap is a terminal fault, never a
 // truncation.
 const (
 	// DefaultMaxFrameBytes is the default negotiated max_frame_bytes (1 MiB),
@@ -24,7 +24,7 @@ const (
 	scannerStartCap = 64 * 1024
 	// scannerMaxCap is the bufio.Scanner's structural maximum (4 MiB). A
 	// line longer than this triggers bufio.ErrTooLong, which is terminal.
-	// The negotiated max_frame_bytes MUST be ≤ scannerMaxCap — the codec
+	// The negotiated max_frame_bytes MUST be ≤ scannerMaxCap; the codec
 	// asserts this at construction.
 	scannerMaxCap = 4 * 1024 * 1024
 
@@ -42,7 +42,7 @@ var ErrScannerOvercap = errors.New("moduleproto: scanner buffer overflow")
 //
 // It is transport-neutral: it speaks to an [io.Reader] and [io.Writer] pair,
 // NOT specifically to os.Stdin / os.Stdout. The same Codec works for stdio
-// (v1) and a future v2 socket transport — the wire format is identical, only
+// (v1) and a future v2 socket transport; the wire format is identical, only
 // the Reader/Writer change (design §1).
 //
 // Concurrency:
@@ -53,7 +53,7 @@ var ErrScannerOvercap = errors.New("moduleproto: scanner buffer overflow")
 //     This is the [Peer]'s readLoop goroutine.
 //
 // Over-cap policy (design §4.2): a frame exceeding max_frame_bytes on read or
-// write produces an [*OvercapError] and is terminal — the peer tears down. The
+// write produces an [*OvercapError] and is terminal; the peer tears down. The
 // codec NEVER truncates; truncation would silently corrupt the wire.
 type Codec struct {
 	r   io.Reader
@@ -66,7 +66,7 @@ type Codec struct {
 
 // NewCodec constructs a Codec over the given reader/writer pair. If
 // maxFrameBytes is <= 0, [DefaultMaxFrameBytes] is used. If maxFrameBytes is
-// greater than the structural scanner cap (4 MiB), construction fails — the
+// greater than the structural scanner cap (4 MiB), construction fails; the
 // scanner itself would reject such frames at the wrong layer, so we surface
 // the configuration error early rather than at first frame.
 func NewCodec(r io.Reader, w io.Writer, maxFrameBytes int) (*Codec, error) {
@@ -91,7 +91,7 @@ func (c *Codec) MaxFrameBytes() int { return c.max }
 // WriteFrame encodes f as JSON, enforces the negotiated cap, and writes the
 // frame followed by a single '\n'. The write is mutex-guarded.
 //
-// On over-cap the frame is NOT written and [*OvercapError] is returned — the
+// On over-cap the frame is NOT written and [*OvercapError] is returned; the
 // caller (the Peer) treats this as a terminal protocol fault.
 func (c *Codec) WriteFrame(f *Frame) error {
 	if f == nil {
@@ -134,7 +134,7 @@ func (c *Codec) ReadFrame() (*Frame, error) {
 	data := c.scan.Bytes()
 	if len(data) > c.max {
 		// Structural scanner cap (4 MiB) allowed the line through, but the
-		// negotiated protocol cap rejects it — still terminal.
+		// negotiated protocol cap rejects it; still terminal.
 		return nil, &OvercapError{Size: len(data), Cap: c.max}
 	}
 	var f Frame
@@ -148,7 +148,7 @@ func (c *Codec) ReadFrame() (*Frame, error) {
 
 // EncodeJSON is a small helper for tests and for peers that need to encode a
 // typed value as json.RawMessage for Frame.Params. It enforces nothing about
-// size — callers composing raw Frames should check len against [Codec.MaxFrameBytes].
+// size; callers composing raw Frames should check len against [Codec.MaxFrameBytes].
 func EncodeJSON(v any) (json.RawMessage, error) {
 	if v == nil {
 		return nil, nil

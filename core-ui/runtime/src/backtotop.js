@@ -20,7 +20,7 @@
     _buttons = _buttons.filter((b) => b.isConnected);
   };
 
-  // Debounced visibility toggle — coalesces rapid IntersectionObserver
+  // Debounced visibility toggle, coalesces rapid IntersectionObserver
   // callbacks (e.g. during smooth scroll) into a single paint.
   const scheduleToggle = (visible) => {
     if (_rafPending) return;
@@ -44,7 +44,7 @@
   const ensureObserver = () => {
     if (_observer) return;
 
-    // Body singleton (doc.MANIFEST: fui-backtotop-sentinel) — shared by
+    // Body singleton (doc.MANIFEST: fui-backtotop-sentinel), shared by
     // every BackToTop button; re-attached by the SPA full-shell swap.
     _sentinel = window.__gofastr.doc.singleton('fui-backtotop-sentinel', () => {
       const s = document.createElement('div');

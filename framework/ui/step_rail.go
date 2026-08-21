@@ -1,10 +1,10 @@
 package ui
 
-// StepRail — sticky-on-desktop, static-on-mobile numbered nav for
+// StepRail: sticky-on-desktop, static-on-mobile numbered nav for
 // multi-step pages (onboarding, tutorials, guided tours). Reads as
 // "you are here" + "what's next." Each step is an in-page anchor;
 // pair with html.Section IDs (or ui.Section auto-slugs) for the
-// jumps. The rail does not auto-track scroll position — wire to
+// jumps. The rail does not auto-track scroll position. Wire to
 // scrollspy if that's wanted (see core-ui/patterns/scrollspy).
 
 import (
@@ -35,7 +35,7 @@ type StepRailConfig struct {
 	Items []StepRailItem
 	// ActiveIndex marks one step as the active one (visually
 	// highlighted). Must be in [0, len(Items)) or -1 for "no active
-	// step" — out-of-range values panic at render time so a typo
+	// step". Out-of-range values panic at render time so a typo
 	// (or a `slices.Index` -1 result, which is the common one) is
 	// caught immediately rather than silently rendering a rail with
 	// no highlight.
@@ -44,7 +44,7 @@ type StepRailConfig struct {
 	// open the journal" pointer).
 	Meta string
 	// MetaHref, when non-empty, renders Meta as a link to this URL
-	// instead of plain text — so a "stuck? ask here" pointer is
+	// instead of plain text, so a "stuck? ask here" pointer is
 	// actually clickable.
 	MetaHref string
 	// Class is appended to the ui-step-rail wrapper.
@@ -53,7 +53,7 @@ type StepRailConfig struct {
 
 // StepRail renders the sticky numbered nav. The wrapper is an <aside>
 // with role=complementary and an aria-label derived from Title (or a
-// generic fallback) — the rail is a navigation landmark for AT users
+// generic fallback). The rail is a navigation landmark for AT users
 // reading along.
 func StepRail(cfg StepRailConfig) render.HTML {
 	if len(cfg.Items) == 0 {

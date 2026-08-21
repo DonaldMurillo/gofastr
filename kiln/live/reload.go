@@ -5,17 +5,17 @@ import (
 	"net/http"
 )
 
-// reloadJS is kiln's build-mode page-refresh client — the world-edit
+// reloadJS is kiln's build-mode page-refresh client, the world-edit
 // analog of framework/dev's livereload script, and like it a dev-mode
 // exception to the "no bespoke EventSource" rule for app surfaces:
 // an agent editing the world IS a genuine background push, and the
 // affected surface is the rendered page itself, not a widget signal
-// (the chat panel's signals poll /state instead — see kiln/chat).
+// (the chat panel's signals poll /state instead, see kiln/chat).
 //
 // On a page-structure world edit (add/delete page or route) or a
 // session reset, the current page's rendering may have changed under
 // the visitor, so the script forces an SPA refresh through the
-// framework runtime's navigate (cache-bypassing) — never a hard
+// framework runtime's navigate (cache-bypassing), never a hard
 // reload while the runtime is present.
 const reloadJS = `// kiln build-mode reload (dev only)
 (() => {
@@ -32,7 +32,7 @@ const reloadJS = `// kiln build-mode reload (dev only)
     }
   }, 200);
   // Body classes mirror the link state for the panel's connection dot
-  // (.kiln-panel-conn styles off body.fui-sse-up / body.fui-sse-down —
+  // (.kiln-panel-conn styles off body.fui-sse-up / body.fui-sse-down:
   // the same contract the old per-widget SSE block maintained).
   const mark = (up) => {
     document.body.classList.toggle('fui-sse-up', up);
@@ -41,7 +41,7 @@ const reloadJS = `// kiln build-mode reload (dev only)
   // dirty: a prior connection dropped, so a page-structure edit may have
   // been broadcast while we were gone (the broadcaster has no replay).
   // On the first 'ready' after a drop, refresh unconditionally to
-  // converge — the whole page re-renders under the current world.
+  // converge: the whole page re-renders under the current world.
   let dirty = false;
   const connect = () => {
     const es = new EventSource('/.kiln/events');

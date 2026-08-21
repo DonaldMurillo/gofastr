@@ -214,7 +214,7 @@ func TestUpload_Update_ReplacesURL(t *testing.T) {
 
 func TestUpload_JSONStillWorks(t *testing.T) {
 	runUploadTest(t, func(t *testing.T, db *sql.DB, ta *TestApp, dir string) {
-		// External URL: must be http(s) — see crud_upload.go
+		// External URL: must be http(s). See crud_upload.go.
 		// isSafeMediaURL. Adversarial schemes are covered in
 		// json_upload_security_test.go.
 		safe := "https://cdn.example.com/avatar.png"

@@ -31,7 +31,7 @@ import (
 // connection starts, so control frames (Ping/Pong/Close) are handled
 // even if the application never calls Read. Read() consumes complete
 // messages from that buffer; beyond it, TCP backpressure applies. A
-// push-only server needs no read loop — it stays alive while a healthy
+// push-only server needs no read loop; it stays alive while a healthy
 // peer answers Pongs, and Close()'s handshake completes promptly when
 // the peer reciprocates.
 type WebSocketConn struct {
@@ -55,7 +55,7 @@ type WebSocketConn struct {
 
 	// peerClosed is closed by readFrame the first time it parses a Close
 	// frame from the peer. Close() waits on this (or CloseTimeout) so the
-	// closing handshake is signal-driven — no parallel byte-scan, no
+	// closing handshake is signal-driven: no parallel byte-scan, no
 	// reader race. peerCloseOnce protects the close-of-channel from
 	// concurrent readers.
 	peerClosed    chan struct{}
@@ -82,7 +82,7 @@ type WebSocketConn struct {
 	// handoffPending is true while the pump is blocked handing a
 	// message to a slow (or absent) consumer. The keepalive skips its
 	// tick while this is set: a stalled handoff means the app is slow
-	// to drain, not that the peer is dead — killing there would
+	// to drain, not that the peer is dead; killing there would
 	// recreate the very bug the pump exists to fix.
 	handoffPending atomic.Bool
 }
@@ -147,7 +147,7 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	// recognise the request as an upgrade forwards it as an ordinary
 	// request on a pooled backend connection and waits for an ordinary
 	// response. If we hijack and start writing frames, those bytes can
-	// surface as the response to a DIFFERENT user's queued request —
+	// surface as the response to a DIFFERENT user's queued request,
 	// and the peer partly controls them, since ping payloads are
 	// echoed verbatim. So every condition below must be checked before
 	// the 101 is written.
@@ -158,7 +158,7 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 		return nil, errors.New("stream: not a websocket upgrade request")
 	}
 
-	// Origin check — block CSWSH by default. Caller may opt in to
+	// Origin check: block CSWSH by default. Caller may opt in to
 	// cross-origin via cfg.CheckOrigin. Runs before the remaining
 	// shape checks so a cross-origin attempt reports the security
 	// reason rather than whichever header it also happened to omit.
@@ -343,7 +343,7 @@ func (c *WebSocketConn) WriteString(data string) error {
 // internal read pump's buffer (readMsgs); it never reads the socket
 // directly, so the pump remains the sole owner of the wire and control
 // frames stay processed even between Read calls. A push-only server
-// need not call Read at all — the pump still answers Pings, clears the
+// need not call Read at all; the pump still answers Pings, clears the
 // keepalive's Pong watch, and completes Close()'s handshake.
 //
 // Messages decoded by the pump before a terminal error are delivered
@@ -366,7 +366,7 @@ func (c *WebSocketConn) Read() ([]byte, error) {
 	case <-c.readDone:
 		// readErr was stored before close(readDone); the channel-close
 		// happens-before this read, so the store is visible. Do NOT
-		// call Close() here — the pump already tore the connection down.
+		// call Close() here; the pump already tore the connection down.
 		return nil, c.readErr
 	}
 }
@@ -380,7 +380,7 @@ func (c *WebSocketConn) Read() ([]byte, error) {
 // If the peer initiated the close, the echo Close frame preserves the
 // peer's 2-byte status code per RFC 6455 §5.5.1, sanitized per §7.4.1
 // so a reserved (1004/1005/1006/1015), sub-1000, or otherwise invalid
-// code — or an illegal 1-byte body — is never echoed verbatim and is
+// code, or an illegal 1-byte body, is never echoed verbatim and is
 // replaced by 1002. Otherwise we send an empty Close payload (status
 // 1000 implied by absence).
 func (c *WebSocketConn) Close() error {
@@ -393,7 +393,7 @@ func (c *WebSocketConn) Close() error {
 		if echo != nil {
 			payload = *echo
 		}
-		// Send close frame. Ignore the error — if writing fails the peer
+		// Send close frame. Ignore the error: if writing fails the peer
 		// is likely already gone, but we still want to drop the TCP conn.
 		_ = c.writeFrame(wsopcodeClose, payload)
 		close(c.closed)
@@ -490,7 +490,7 @@ func (c *WebSocketConn) keepalive() {
 			// so enforcing PongTimeout here would recreate this very
 			// bug one layer up and kill a healthy connection. Skip the
 			// whole tick; a genuinely dead peer with an idle app still
-			// dies — no messages arrive, handoffPending stays false, a
+			// dies: no messages arrive, handoffPending stays false, a
 			// ping goes unanswered, and PongTimeout kills it.
 			if c.handoffPending.Load() {
 				continue
@@ -549,7 +549,7 @@ func (c *WebSocketConn) startReadPump() {
 //
 // On any readFrame error the pump records readErr, closes readDone (the
 // happens-before edge that lets Read observe readErr), and tears the
-// connection down — mirroring the old Read()'s error path. After Close()
+// connection down, mirroring the old Read()'s error path. After Close()
 // closes the underlying conn, the blocked io.ReadFull inside readFrame
 // errors and the pump exits; no deadline is needed because the teardown
 // is the unblocker.
@@ -757,7 +757,7 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 		// handful of header bytes, so an eager make() lets 12 bytes on
 		// the wire pin ReadLimit (1 MiB by default) of heap per socket.
 		// Grow while reading instead, so memory tracks bytes actually
-		// delivered. A read deadline bounds the stall — net/http no
+		// delivered. A read deadline bounds the stall: net/http no
 		// longer manages this connection after Hijack, and
 		// lastReadActivity only advances on a COMPLETE frame, so
 		// without one a half-sent frame holds its buffer until the
@@ -795,7 +795,7 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			// Capture the peer's status code so Close() can echo it, but
 			// sanitize it first: a peer (or a hostile client) may send a
 			// reserved/never-on-wire code, a sub-1000 code, or an illegal
-			// 1-byte body. We never echo those verbatim — wsEchoableCloseCode
+			// 1-byte body. We never echo those verbatim: wsEchoableCloseCode
 			// decides what is safe; the rest are replaced by 1002 (protocol
 			// error) per RFC 6455 §7.4.1. peerClosePayload thus only ever
 			// holds echoable bytes (or is empty), and Close() stays dumb.
@@ -836,7 +836,7 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 		// RFC 6455 §5.4 message assembly. `fin` was previously read and
 		// then used only for the control-frame check, so a TEXT frame
 		// with FIN=0 returned HALF A MESSAGE to the application as if
-		// it were whole — and browsers fragment large sends, so that
+		// it were whole, and browsers fragment large sends, so that
 		// fired on legitimate traffic. ReadLimit is also documented as
 		// a *message* bound, which only holds once fragments accumulate.
 		switch opcode {
@@ -902,7 +902,7 @@ func minInt(a, b int) int {
 }
 
 // headerHasToken reports whether a comma-separated header value
-// contains token (case-insensitive) — e.g. "keep-alive, Upgrade".
+// contains token (case-insensitive), e.g. "keep-alive, Upgrade".
 func headerHasToken(value, token string) bool {
 	for _, part := range strings.Split(value, ",") {
 		if strings.EqualFold(strings.TrimSpace(part), token) {

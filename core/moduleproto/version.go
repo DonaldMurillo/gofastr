@@ -5,7 +5,7 @@ import (
 )
 
 // ProtoRange is the integer protocol-version window a peer advertises in
-// module.handshake (design §4.5). Versions are plain integers — there is no
+// module.handshake (design §4.5). Versions are plain integers: there is no
 // MCP-style "YYYY-MM-DD" string and no semver. [Min, Max] is inclusive.
 //
 // A peer that speaks exactly one version sets Min == Max. The floor for v1 of
@@ -52,11 +52,11 @@ func (r ProtoRange) Validate() error {
 //	             else terminal
 //
 // Both ranges are validated first; a malformed range is terminal. The returned
-// version is what both peers MUST use for the rest of the connection — it is
+// version is what both peers MUST use for the rest of the connection; it is
 // the highest mutually-supported version that is also at or above the joint
 // floor (the stricter of the two minimums).
 //
-// Negotiate is pure — it makes no decision about feature policy; see
+// Negotiate is pure. It makes no decision about feature policy; see
 // [CheckCritical] for the critical-feature half of negotiation.
 func Negotiate(host, child ProtoRange) (int, error) {
 	if err := host.Validate(); err != nil {
@@ -79,7 +79,7 @@ func Negotiate(host, child ProtoRange) (int, error) {
 // In the handshake, a peer may declare names in `critical` for features it
 // REQUIRES the other endpoint to support. The receiver rejects the handshake
 // if any of the sender's critical names are absent from its own supported set
-// (`supported`). Unknown non-critical fields are ignored — only critical names
+// (`supported`). Unknown non-critical fields are ignored; only critical names
 // force rejection.
 //
 // For v1 only the host→child direction is wired (the handshake result has no

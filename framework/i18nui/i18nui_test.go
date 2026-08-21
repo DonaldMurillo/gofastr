@@ -12,7 +12,7 @@ import (
 )
 
 func TestStringsReplaceAllNoInfiniteLoop(t *testing.T) {
-	// Pins the substitution path used by TranslateValidation — confirms
+	// Pins the substitution path used by TranslateValidation, confirms
 	// strings.ReplaceAll terminates even when the replacement contains
 	// the placeholder it just consumed. (Stdlib guarantees this; we
 	// keep the test as a regression net for the substitution call site.)
@@ -106,7 +106,7 @@ func TestTUsesCtxTranslator(t *testing.T) {
 }
 
 // TVars falls back to the English default when the ctx translator is
-// present but the catalog has no ui.* entry (the miss case — an app
+// present but the catalog has no ui.* entry (the miss case, an app
 // catalog won't contain ui.* keys unless the app overrides them).
 func TestTVarsMissFallsBackToDefault(t *testing.T) {
 	cat := i18n.NewMapCatalog() // no ui.* entries
@@ -220,7 +220,7 @@ func TestLabelForFieldSnakeCase(t *testing.T) {
 
 func TestAllKeysHaveDefaults(t *testing.T) {
 	// Discover every exported Key constant via reflection on
-	// AllKeys() — guarantees a newly added key without a default is
+	// AllKeys(). Guarantees a newly added key without a default is
 	// caught immediately, not only when someone updates this test.
 	keys := AllKeys()
 	if len(keys) == 0 {

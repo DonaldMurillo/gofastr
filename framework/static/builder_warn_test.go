@@ -68,7 +68,7 @@ func TestBuildNoWarnWhenStaticPathsProvided(t *testing.T) {
 	}
 }
 
-// A policy-gated dynamic screen (RenderAlt — e.g. a login prompt) builds,
+// A policy-gated dynamic screen (RenderAlt, e.g. a login prompt) builds,
 // but its llm.md is the withheld doc: no title, no rendered content. A
 // Block policy or a constraint-violating StaticPaths value fails the
 // build loudly instead (see TestBuildFailsOnUnresolvableStaticPath).
@@ -111,7 +111,7 @@ func TestBuildGatedScreenExportsWithheldDoc(t *testing.T) {
 
 // A static route whose policy Redirects or Blocks (the two non-Allow
 // branches RenderStaticPage can hit) is skipped with a WARN naming the
-// route and the decision — it must NOT abort the whole export. The public
+// route and the decision. It must NOT abort the whole export. The public
 // page still writes; the gated page is absent from OutDir and res.Pages.
 // Mirrors the llm.md loop, which already handles gates gracefully.
 func TestGatedScreenSkippedNotFatal(t *testing.T) {
@@ -167,7 +167,7 @@ func TestGatedScreenSkippedNotFatal(t *testing.T) {
 }
 
 // A StaticPaths value that violates the route's constraint fails the
-// build loudly (the expanded path resolves to nothing) — never a silent
+// build loudly (the expanded path resolves to nothing), never a silent
 // skip, never an ungated fallback doc.
 func TestBuildFailsOnUnresolvableStaticPath(t *testing.T) {
 	a := coreapp.NewApp("t")

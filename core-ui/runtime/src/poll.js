@@ -1,4 +1,4 @@
-// GoFastr runtime module — Poll
+// GoFastr runtime module, Poll
 //
 // Page-level region polling. An element carrying
 //   data-fui-poll="<duration>" data-fui-poll-src="<url>"
@@ -6,7 +6,7 @@
 // element's innerHTML, then __gofastr.scanAndLoadCSS wires any
 // freshly-arrived [data-fui-comp] component styles. Used for passive
 // freshness of server-rendered regions that don't warrant an SSE
-// channel — the pull-first half of the reactivity model.
+// channel, the pull-first half of the reactivity model.
 //
 // Interval syntax: Go-duration style ("5s", "30s", "1m", "1m30s").
 // Clamped to a 5-second minimum so a typo can't DoS the server.
@@ -34,7 +34,7 @@
   // setTimeout delays are 32-bit: a value above ~24.8 days wraps and
   // fires IMMEDIATELY, turning a long poll into a tight loop. Cap every
   // scheduled delay here (the interval magnitude is preserved for the
-  // back-off math; only the single wait is chunked — the tick re-checks
+  // back-off math; only the single wait is chunked, the tick re-checks
   // and re-arms, so an ultra-long poll simply fires a little early).
   const MAX_DELAY = 2147483647;
   const arm = (fn, ms) => setTimeout(fn, Math.min(Math.max(0, ms), MAX_DELAY));
@@ -43,8 +43,8 @@
 
   // parseGoDuration parses a Go-style duration string into milliseconds.
   // Supports ns, us, µs, ms, s, m, h, fractions ("1.5m"), and compounds
-  // ("1m30s"). The whole string must parse — anchored segments consumed
-  // left to right, no gaps — so a typo yields NaN (region not wired)
+  // ("1m30s"). The whole string must parse, anchored segments consumed
+  // left to right, no gaps, so a typo yields NaN (region not wired)
   // instead of a silently wrong cadence.
   function parseGoDuration(s) {
     if (!s) return NaN;
@@ -80,14 +80,14 @@
     ps.lastTickAt = Date.now();
   }
 
-  // isStop: a poll response signals "terminal — stop polling" via the
+  // isStop: a poll response signals "terminal, stop polling" via the
   // X-Gofastr-Poll-Stop header (truthy: 1/true/yes/on). Empty/0/false
   // are no-ops so an absent header never trips it. This is the analog
   // of X-Gofastr-Infinite-Cursor's empty=done, but opt-IN (presence
   // stops) rather than opt-OUT (absence stops): a poll handler that
   // forgets the header keeps polling rather than silently dying, and
   // the server can't accidentally terminate a still-live poll. Fixes
-  // #192 — a region/widget that reached a terminal state polled
+  // #192, a region/widget that reached a terminal state polled
   // forever because the runtime never re-read a per-response signal.
   function isStop(v) {
     return /^(1|true|yes|on)$/i.test((v || '').trim());
@@ -126,7 +126,7 @@
       if (!el.isConnected) { teardown(el); return; }
       if (document.hidden) return; // visibility handler resumes
       // Single-chain guard: a hidden→visible flip while a fetch is
-      // pending must not start a second chain — both would reach
+      // pending must not start a second chain, both would reach
       // .finally and each would arm its own timer, multiplying the
       // poll forever. The pending fetch's finally keeps the cadence.
       if (s.inFlight) return;
@@ -137,14 +137,14 @@
         credentials: 'same-origin',
       })
         .then((r) => {
-          // An HTTP error must reach .catch so back-off applies —
+          // An HTTP error must reach .catch so back-off applies,
           // a bare `null` return would skip both success and catch,
           // leaving the interval untouched on 500s.
           if (!r.ok) throw new Error('poll: HTTP ' + r.status);
           // #192: the server ends the poll by setting
           // X-Gofastr-Poll-Stop on the terminal response. Capture it
           // before consuming the body so the apply-then-stop order is
-          // guaranteed — the terminal body must render before teardown.
+          // guaranteed, the terminal body must render before teardown.
           const stop = isStop(r.headers.get('x-gofastr-poll-stop'));
           return r.text().then((html) => ({ html, stop }));
         })
@@ -201,7 +201,7 @@
 
   // reclaimAndWire: tear down timers for elements that have left the
   // DOM (SPA nav, island swap), then wire any freshly-arrived polls.
-  // Registered as the _moduleScanners.poll hook — core runtime calls
+  // Registered as the _moduleScanners.poll hook, core runtime calls
   // it on gofastr:navigate and on MutationObserver-added-node batches.
   function reclaimAndWire(root) {
     for (const el of Array.from(active)) {
@@ -212,7 +212,7 @@
 
 
   // _widgetPoll: the widget-level poll loop (Builder.Poll). It lives in
-  // this demand-loaded module — not widgets.js — so widget-bearing pages
+  // this demand-loaded module, not widgets.js, so widget-bearing pages
   // that never poll don't ship the cadence machinery; widgets.js
   // loadModule('poll')s and calls it at mount. Shares the semantics of
   // the page-level poller above (jitter, hidden-pause, back-off,
@@ -221,7 +221,7 @@
     if (!entry || entry.pollStop) return; // already wired (or gone)
     // Math.trunc, NOT `| 0`: bitwise coercion is 32-bit signed, so a
     // legitimate long interval (e.g. Poll(30*24*time.Hour) → 2.59e9 ms)
-    // wraps NEGATIVE and Math.max floors it to 100 ms — a monthly poll
+    // wraps NEGATIVE and Math.max floors it to 100 ms, a monthly poll
     // becomes a 10 req/s hammer. Trunc preserves the real magnitude.
     const requested = Number(cfg.pollMs);
     if (!Number.isFinite(requested) || requested <= 0) return;
@@ -277,7 +277,7 @@
           if (timer) clearTimeout(timer);
           if (queued) {
             // A mutation's pollNow landed while this fetch was in
-            // flight — its response may predate the write. Re-fetch
+            // flight, its response may predate the write. Re-fetch
             // immediately so the promised authoritative refresh isn't
             // silently absorbed into the stale cadence response.
             queued = false;

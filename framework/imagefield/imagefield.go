@@ -2,7 +2,7 @@
 // turns a framework/image.VariantSet into the file.ImageDeriver that
 // ProcessFileField and the CRUD upload handler call, so declaring a
 // schema.Image field is what makes uploads produce renditions and a
-// BlurHash — no per-entity upload handler.
+// BlurHash, no per-entity upload handler.
 //
 // It is a separate package on purpose. framework/file is a leaf that
 // framework/crud imports, so an edge from there to framework/image would
@@ -10,7 +10,7 @@
 // with a CRUD handler. Keeping the adapter here means only applications
 // that actually want the pipeline pay for it.
 //
-// Typical wiring — one option on the app:
+// Typical wiring, one option on the app:
 //
 //	framework.NewApp(
 //	    framework.WithFileStorage(store),
@@ -40,7 +40,7 @@ import (
 )
 
 // Config declares what to derive from each uploaded image. The zero value
-// derives nothing and New rejects it — an image pipeline that produces no
+// derives nothing and New rejects it, an image pipeline that produces no
 // renditions, no hash, and no placeholder is a configuration mistake, not
 // a no-op worth honouring silently.
 type Config struct {
@@ -56,7 +56,7 @@ type Config struct {
 	BlurHashY int
 
 	// Placeholder, when non-nil, also stores an LQIP data URL. Redundant
-	// alongside a BlurHash for most callers — a BlurHash costs ~28 bytes
+	// alongside a BlurHash for most callers, a BlurHash costs ~28 bytes
 	// in the column against a few hundred, and framework/image renders
 	// either one the same way.
 	Placeholder *fwimage.PlaceholderOptions
@@ -87,7 +87,7 @@ var _ file.ImageDeriver = (*Deriver)(nil)
 
 // New builds a Deriver from cfg. It returns an error for a configuration
 // that could not produce anything, or that framework/image would reject at
-// process time anyway — better at wiring time than on the first upload.
+// process time anyway, better at wiring time than on the first upload.
 func New(cfg Config) (*Deriver, error) {
 	if (cfg.BlurHashX == 0) != (cfg.BlurHashY == 0) {
 		return nil, fmt.Errorf("imagefield: BlurHashX and BlurHashY must both be set or both zero")
@@ -97,7 +97,7 @@ func New(cfg Config) (*Deriver, error) {
 			cfg.BlurHashX, cfg.BlurHashY)
 	}
 	if len(cfg.Variants) == 0 && cfg.BlurHashX == 0 && cfg.Placeholder == nil {
-		return nil, fmt.Errorf("imagefield: Config derives nothing — set Variants, BlurHashX/Y, or Placeholder")
+		return nil, fmt.Errorf("imagefield: Config derives nothing: set Variants, BlurHashX/Y, or Placeholder")
 	}
 	if len(cfg.Variants) > fwimage.MaxVariantsPerSet {
 		return nil, fmt.Errorf("imagefield: %d variants exceeds MaxVariantsPerSet=%d",
@@ -138,7 +138,7 @@ func MustNew(cfg Config) *Deriver {
 // placeholder metadata.
 //
 // Renditions stream one at a time through VariantSet.ProcessTo, so peak
-// memory stays near a single rendition rather than all of them summed —
+// memory stays near a single rendition rather than all of them summed,
 // this runs inside a request, on bytes a client chose.
 func (d *Deriver) DeriveImage(ctx context.Context, store upload.Storage, data []byte, primaryRef string) (*file.ImageDerivatives, error) {
 	if store == nil {

@@ -51,7 +51,7 @@ type ConfirmActionConfig struct {
 	// Title is the alertdialog title (h2). Required.
 	Title string
 
-	// Body is the alertdialog body paragraph. Required — the body
+	// Body is the alertdialog body paragraph. Required: the body
 	// gives the user the information they need to confirm safely.
 	Body string
 
@@ -70,7 +70,7 @@ type ConfirmActionConfig struct {
 	// SuccessSignal, when set, emits data-fui-rpc-signal="<name>" on
 	// the Confirm button. On a 2xx response the runtime broadcasts
 	// the response body (typically the fresh authoritative list HTML)
-	// into the named signal — pair it with a
+	// into the named signal: pair it with a
 	// data-fui-signal="<name>" data-fui-signal-mode="html" region to
 	// swap in that HTML (e.g. the shorter list after a delete). On a
 	// non-2xx response html-mode regions are left unchanged (the
@@ -79,7 +79,7 @@ type ConfirmActionConfig struct {
 	// "Error: …" string. Empty (the default) leaves the response
 	// unused, which is correct for fire-and-forget confirms.
 	//
-	// The name MUST match ^[A-Za-z0-9_-]+$ — ConfirmAction panics
+	// The name MUST match ^[A-Za-z0-9_-]+$: ConfirmAction panics
 	// otherwise. The runtime interpolates the value into a CSS
 	// attribute selector (querySelectorAll '[data-fui-signal="…"]'),
 	// so any other shape is either an invalid selector (silently
@@ -231,7 +231,7 @@ func (s *confirmDialogSlot) Render() render.HTML {
 	}
 	// Only the OPT-IN case carries an autofocus attribute. Cancel is
 	// rendered first in DOM order so the Modal preset's "focus the
-	// first focusable" pass already lands on it — adding autofocus
+	// first focusable" pass already lands on it, adding autofocus
 	// there would race with the preset's focus() call and emit
 	// Chrome's "Autofocus processing was blocked" info message. The
 	// preset's focus pass also explicitly prefers any [autofocus]
@@ -268,7 +268,7 @@ func confirmActionCSS(_ style.Theme) string {
 	// No background / padding / border-radius here: the widget chrome's
 	// centered panel (`.fui-pos-center > .fui-panel`, core-ui/widget)
 	// paints the panel surface for every modal body. This component
-	// only constrains its own width and lays out its internals —
+	// only constrains its own width and lays out its internals:
 	// duplicating the panel props would double-pad the dialog.
 	return `[data-fui-comp="ui-confirm-action"] {
   display: block;

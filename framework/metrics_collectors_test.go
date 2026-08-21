@@ -71,7 +71,7 @@ func TestAppMetrics_DBPoolCollector(t *testing.T) {
 // per-consumer outbox gauges on the single /metrics endpoint the moment any
 // caller takes the metrics handle (a battery's Init in a real app;
 // app.Metrics() here stands in for that). No second handler to mount, no
-// cross-package wiring — RegisterCollector("outbox", …) fires from Metrics()
+// cross-package wiring. RegisterCollector("outbox", …) fires from Metrics()
 // itself. The DB-pool collector must still land alongside it, so the two
 // framework-owned collectors coexist on one scrape.
 func TestAppMetrics_OutboxCollectorAutoWired(t *testing.T) {

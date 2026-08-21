@@ -2,8 +2,8 @@
 
 `framework/factory` is a tiny Rails-style factory primitive for tests
 and dev-time seeders. Each `Factory` binds to one entity and produces
-fresh row bodies — typically by layering caller overrides on top of a
-base function — so test setup reads "make me a user with admin=true"
+fresh row bodies, typically by layering caller overrides on top of a
+base function, so test setup reads "make me a user with admin=true"
 instead of "construct a map with every required field by hand."
 
 Factories dispatch through `crud.CrudHandler.CreateOne`, so they run
@@ -51,8 +51,8 @@ batch, err := userFactory.CreateMany(ctx, 10, func(i int) map[string]any {
 })
 ```
 
-`Build(overrides...)` returns the body that `Create` would insert —
-useful when a test wants to assert on the request shape without
+`Build(overrides...)` returns the body that `Create` would insert.
+That is useful when a test wants to assert on the request shape without
 actually hitting the database. Multiple overrides apply left-to-right;
 later overrides win on key conflict.
 
@@ -69,13 +69,13 @@ reg := factory.NewRegistry().
 admin, _ := reg.Create(ctx, "users", map[string]any{"role": "admin"})
 ```
 
-`MustGet(name)` panics on missing factories — tests are the only
+`MustGet(name)` panics on missing factories. Tests are the only
 caller, so a typo should fail loudly.
 
 ## Sequence helper
 
 `Sequence` is an atomic counter for unique base values inside
-`BaseFunc`. Concurrent-test safe — `Next()` never repeats.
+`BaseFunc`. It is safe under concurrent tests: `Next()` never repeats.
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/factory"
@@ -99,7 +99,7 @@ base := func() map[string]any {
   fresh map each call; otherwise later overrides leak into earlier
   factory outputs.
 - **Don't put `Sequence` values in a struct literal at package level.**
-  Tests share package state — use one per `*testing.T` (or a global
+  Tests share package state. Use one per `*testing.T` (or a global
   if you accept cross-test sequencing) but never bake a literal
   count into the base map.
 - **Don't expect factories to clean up.** They INSERT only. Wrap

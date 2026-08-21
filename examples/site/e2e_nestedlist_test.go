@@ -64,7 +64,7 @@ func TestE2ENestedListBranchDetails(t *testing.T) {
 }
 
 // TestE2ENestedListStyled asserts that BaseCSS() for the nestedlist pattern
-// was wired into the site theme — same regression guard as in the website
+// was wired into the site theme, same regression guard as in the website
 // suite, pinning the "shipped without its stylesheet" failure mode.
 func TestE2ENestedListStyled(t *testing.T) {
 	base := startE2EServer(t)

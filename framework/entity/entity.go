@@ -30,7 +30,7 @@ type EntityConfig struct {
 	Exposure   *ExposureConfig   // generated HTTP/MCP and access posture
 	Timestamps *bool             // add created_at / updated_at columns; nil defaults to true
 	Indices    []Index           // additional CREATE INDEX statements emitted by AutoMigrate
-	Unmanaged  bool              // when true, the migration system never emits DDL for this object (it is created elsewhere — e.g. a view, an FTS virtual table, or a legacy/external table). The ORM still queries it.
+	Unmanaged  bool              // when true, the migration system never emits DDL for this object (it is created elsewhere, e.g. a view, an FTS virtual table, or a legacy/external table). The ORM still queries it.
 
 	// Properties holds caller-owned metadata. The framework does not
 	// interpret any key; generators, plugins, and apps define their own keys.
@@ -79,7 +79,7 @@ type EntityConfig struct {
 
 	// LenientFilters opts the entity's auto-CRUD List endpoint OUT of strict
 	// filter parsing. By default an unknown top-level filter key (a typo like
-	// ?stauts=active) is REJECTED with a 400 rather than silently dropped —
+	// ?stauts=active) is REJECTED with a 400 rather than silently dropped,
 	// silently dropping it returns an UNFILTERED result set, which is a
 	// data-exposure and broken-client hazard. Set true only as a migration
 	// escape hatch for an endpoint that must tolerate arbitrary extra query
@@ -88,7 +88,7 @@ type EntityConfig struct {
 	LenientFilters bool
 
 	// AllowedFilterParams declares extra query-param keys that are NOT entity
-	// columns but are legitimately consumed elsewhere on the List request —
+	// columns but are legitimately consumed elsewhere on the List request,
 	// typically read by a BeforeList hook or custom middleware (e.g. a
 	// bespoke "?region=eu" scope param). Strict filter parsing skips these
 	// instead of rejecting them, so the endpoint keeps typo-protection for
@@ -180,7 +180,7 @@ type AccessControl struct {
 	Delete string
 }
 
-// Declared reports whether any per-operation permission is set — i.e.
+// Declared reports whether any per-operation permission is set, i.e.
 // whether the entity opted into RBAC gating at all. Used by
 // framework/crud's secure-by-default session gate to tell "this entity
 // declared an (possibly partial) access: block, defer to it as today"
@@ -193,7 +193,7 @@ func (a AccessControl) Declared() bool {
 // same CREATE INDEX syntax; AutoMigrate emits CREATE INDEX IF NOT EXISTS so
 // re-runs are safe.
 //
-// Name is optional — when empty, AutoMigrate synthesises one as
+// Name is optional, when empty, AutoMigrate synthesises one as
 // "idx_<table>_<col1>_<col2>". Unique indices reject duplicate rows for the
 // chosen column set; for single-column uniqueness prefer the Field-level
 // Unique flag which lives on the column definition.
@@ -201,7 +201,7 @@ func (a AccessControl) Declared() bool {
 // Expression covers the case the column-list form can't express: a
 // functional or partial index, e.g. `UNIQUE(user_id, lower(food))` to
 // dedupe case-insensitively. When non-empty, Expression is rendered
-// verbatim inside the index body (replacing Columns) — Name is REQUIRED
+// verbatim inside the index body (replacing Columns). Name is REQUIRED
 // in that case because there's no safe deterministic slug for an
 // arbitrary expression. Use Columns for plain identifier indices;
 // reach for Expression when SQL functions or constants need to
@@ -221,13 +221,13 @@ type Index struct {
 // registered when MCP is true.
 //
 // Under framework.WithAPIPrefix a relative path resolves under the prefixed
-// table path — WithAPIPrefix("/api") mounts "{id}/publish" on entity "posts"
+// table path. WithAPIPrefix("/api") mounts "{id}/publish" on entity "posts"
 // at POST /api/posts/{id}/publish, alongside that entity's CRUD routes. An
 // absolute path bypasses the prefix entirely; use it to mount outside the
 // entity's API namespace.
 //
 // InputSchema and OutputSchema are OPTIONAL typed descriptions of the request
-// body and the success (200) response, expressed as []schema.Field — the same
+// body and the success (200) response, expressed as []schema.Field, the same
 // representation the entity's own CRUD schema is built from, so OpenAPI and the
 // generated MCP tool both consume one source. When unset (nil), the endpoint
 // renders exactly as before: a shapeless {type:object} request/response in
@@ -288,7 +288,7 @@ type Entity struct {
 
 	// Version identifies the API version this entity is mounted under, when
 	// registered via App.GroupEntity. It is the route group's full prefix
-	// (e.g. "/api/v1"). Empty for entities registered via App.Entity — those
+	// (e.g. "/api/v1"). Empty for entities registered via App.Entity, those
 	// keep the historical single-version behaviour. The registry keys on
 	// (Config.Name, Version) so the same entity name can coexist under
 	// different versions; callers that don't care about version resolve the
@@ -370,11 +370,11 @@ func Define(name string, config EntityConfig) *Entity {
 	// table. Without this, AutoMigrate would create a table with no
 	// tenant_id column and the first create request would fail with a
 	// "no such column" error. Hidden + ReadOnly keeps it out of request
-	// bodies and API responses — the framework manages its value.
+	// bodies and API responses, the framework manages its value.
 	if config.Scope.MultiTenant {
 		tenantCol := config.TenantColumn()
 		// Validate the tenant column name once, here, so a misconfigured
-		// TenantField fails loud at definition with an actionable message —
+		// TenantField fails loud at definition with an actionable message,
 		// rather than as an opaque "unsafe SQL identifier" panic on the first
 		// tenant-scoped request, where the column name is interpolated into the
 		// WHERE clause.
@@ -418,12 +418,12 @@ func Define(name string, config EntityConfig) *Entity {
 	}
 
 	// Inject the owner column when an owner scope is configured and no
-	// field with that name is declared — symmetric with tenant_id above
+	// field with that name is declared, symmetric with tenant_id above
 	// and matching the blueprint generator's owner_field semantics. The
 	// crud layer stamps the owner on writes (InjectOwner) and scopes
 	// reads by it (ApplyOwnerScope), so the column MUST exist in the
 	// table; without this, AutoMigrate would create a table with no
-	// owner column — a create would silently persist an unowned row (the
+	// owner column, a create would silently persist an unowned row (the
 	// INSERT column list comes from GetFields) and the first scoped read
 	// would fail with "no such column". A field the caller DID declare
 	// with that name is left untouched.
@@ -454,7 +454,7 @@ func Define(name string, config EntityConfig) *Entity {
 
 	// CrossOwnerRead lifts owner scoping for reads only, so it only makes
 	// sense on an entity that is owner-scoped to begin with. Catch the
-	// misconfiguration here, at definition, with an actionable message —
+	// misconfiguration here, at definition, with an actionable message,
 	// otherwise the knob silently does nothing.
 	if config.Scope.CrossOwnerRead != "" && config.Scope.OwnerField == "" {
 		panic(fmt.Sprintf("entity %q: CrossOwnerRead %q requires OwnerField (cross-owner read only applies to owner-scoped entities)", name, config.Scope.CrossOwnerRead))
@@ -531,7 +531,7 @@ func Define(name string, config EntityConfig) *Entity {
 
 	// Cursor columns are a query surface too: they land in ORDER BY and in the
 	// keyset WHERE, and the emitted cursor token is base64 JSON of the raw
-	// value — reversible, not secret. A Hidden or NoQuery keyset column
+	// value, reversible, not secret. A Hidden or NoQuery keyset column
 	// therefore hands the caller back exactly what those flags withhold, and
 	// lets them binary-search it by forging cursors. Fail at definition, the
 	// same way SearchFields does.
@@ -539,7 +539,7 @@ func Define(name string, config EntityConfig) *Entity {
 	// The DEFAULT keyset column (the primary key) is checked too, not just
 	// explicitly declared ones. Keyset paging falls back to the PK when no
 	// cursor field is configured, so a NoQuery primary key is used exactly
-	// as if it had been named — and its stored value ends up in the emitted
+	// as if it had been named, and its stored value ends up in the emitted
 	// token. Checking only declared columns left ?cursor= leaking a value
 	// that ?sort= and every filter refused, and disagreed with the DSL's
 	// after() guard, which resolves the same default before checking.
@@ -583,7 +583,7 @@ func Define(name string, config EntityConfig) *Entity {
 	// find the join. Deriving the relation here makes both work from the
 	// single field declaration. The FK column for a BelongsTo lives on the
 	// local table, so it IS the relation field's own column (Name). An
-	// explicit relation already declared for the same name wins — we never
+	// explicit relation already declared for the same name wins, we never
 	// clobber caller-declared relations.
 	for _, f := range config.Fields {
 		if f.Type != schema.Relation || f.To == "" || f.Many {
@@ -699,7 +699,7 @@ func (e *Entity) Validate() error {
 	// Without this guard the collision is SILENT and splits reads from writes.
 	// CRUD's refreshFieldCache keeps whichever field it saw first, so a body
 	// posted under the shared key writes to that column, while filters resolve
-	// the same key independently and may target the other — the row written is
+	// the same key independently and may target the other, the row written is
 	// then invisible to the filter, with no error anywhere. crud.go documented
 	// this as "a config error that ValidateWireNames catches at Define"; that
 	// function never existed, so nothing caught it.
@@ -717,7 +717,7 @@ func (e *Entity) Validate() error {
 		// responses but still resolve on write and filter paths, so letting a
 		// visible field alias a hidden column would be worse, not harmless.
 		//
-		// A bare column does not claim its literal name on the wire — it
+		// A bare column does not claim its literal name on the wire, it
 		// claims the CASE-CONVERTED form (crud.wireKeyOfField), camelCase by
 		// default. Validate cannot read JSONCase, which App assigns after
 		// registration, so a bare column claims BOTH spellings and a clash
@@ -734,7 +734,7 @@ func (e *Entity) Validate() error {
 		for _, wk := range claims {
 			if owner, clash := wireKeys[wk]; clash {
 				return fmt.Errorf(
-					"entity %q: fields %q and %q both resolve to wire key %q — a wire key addresses exactly one column; change one field's WireName",
+					"entity %q: fields %q and %q both resolve to wire key %q: a wire key addresses exactly one column; change one field's WireName",
 					e.Config.Name, owner, f.Name, wk)
 			}
 		}
@@ -751,14 +751,14 @@ func (e *Entity) Validate() error {
 		// as a client-sent value but, before this check, through none of the
 		// same checks: ValidateAll ran over the body and the Default was
 		// applied afterwards. A malformed one therefore surfaced as a
-		// per-request 500 with nothing actionable in it — or, on a dialect
+		// per-request 500 with nothing actionable in it, or, on a dialect
 		// whose column type is looser, as silently wrong data (a non-JSON
 		// Default on a schema.JSON field 500s against Postgres JSONB and
 		// stores fine in SQLite's TEXT).
 		//
 		// The value is static, so it is checked once here rather than on
 		// every request, and a bad one is a bug in the app's own declaration
-		// rather than in a request — so it fails the declaration, naming the
+		// rather than in a request, so it fails the declaration, naming the
 		// field, instead of reporting an app-authored bug as a caller's 400.
 		//
 		// Auto-generated fields are skipped, exactly as schema.ValidateAll
@@ -780,7 +780,7 @@ func (e *Entity) Validate() error {
 // expects, which is the form a client sends. The two differ because a Default
 // is authored in Go, not JSON, and for a few types the natural Go literal is
 // not the wire literal. Normalizing here keeps the registration check from
-// refusing declarations the write path accepts — a false refusal fires at
+// refusing declarations the write path accepts, a false refusal fires at
 // boot, for every caller at once, which is worse than the bug it guards.
 //
 // The patterns this permits, both of which reach the driver intact today:
@@ -819,7 +819,7 @@ func defaultAsWireValue(f schema.Field) any {
 }
 
 // toSnake converts CamelCase or kebab-case to snake_case. The camelCase
-// conversion is framework/internal/casing's (cached) — only the kebab/space
+// conversion is framework/internal/casing's (cached), only the kebab/space
 // normalization is local: casing.ToSnake leaves those bytes untouched, but a
 // default table name must be a bare SQL identifier.
 func toSnake(s string) string {

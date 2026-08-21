@@ -63,7 +63,7 @@ type SQLOAuthTokenStoreConfig struct {
 	// Table is the table name; defaults to "oauth_tokens".
 	Table string
 	// EncryptionKey seals the access/refresh tokens at rest with AES-GCM.
-	// REQUIRED and non-empty — stored refresh tokens are password-equivalent,
+	// REQUIRED and non-empty, stored refresh tokens are password-equivalent,
 	// so there is no default key. Any length is accepted (it is SHA-256-folded
 	// to a 32-byte key). Source it from a secret manager, not source code.
 	EncryptionKey []byte
@@ -84,7 +84,7 @@ type SQLOAuthTokenStore struct {
 }
 
 // NewSQLOAuthTokenStore creates the token table (IF NOT EXISTS) and returns
-// the store. A non-empty EncryptionKey is REQUIRED — stored refresh tokens are
+// the store. A non-empty EncryptionKey is REQUIRED, stored refresh tokens are
 // password-equivalent, so the store fails closed rather than sealing them with
 // a default key (which would be reversible obfuscation, not encryption).
 func NewSQLOAuthTokenStore(db *sql.DB, cfg ...SQLOAuthTokenStoreConfig) (*SQLOAuthTokenStore, error) {
@@ -240,7 +240,7 @@ func (s *SQLOAuthTokenStore) Delete(ctx context.Context, userID, provider string
 // OAuthTokenRefresher is implemented by providers that can exchange a
 // refresh token for a fresh access token at the provider's token endpoint.
 // The built-in GoogleProvider and GitHubProvider implement it. The refresh
-// path is concrete per provider — there is deliberately no generic provider
+// path is concrete per provider, there is deliberately no generic provider
 // registry here.
 type OAuthTokenRefresher interface {
 	// RefreshToken exchanges refreshToken for a fresh access token. The
@@ -259,11 +259,11 @@ const refreshSkew = 60 * time.Second
 //
 // The provider must implement OAuthTokenRefresher (the built-in Google and
 // GitHub providers do). If the stored token has no refresh token, refresh
-// is impossible and an error is returned — the user must re-authenticate.
+// is impossible and an error is returned, the user must re-authenticate.
 //
 // SECURITY: userID MUST be the authenticated principal's id (e.g. from the
 // resolved session), never a value taken from request input. Passing a
-// client-supplied id is an IDOR — it reads/refreshes another user's tokens.
+// client-supplied id is an IDOR, it reads/refreshes another user's tokens.
 func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, userID string) (OAuthTokenRecord, error) {
 	if store == nil {
 		return OAuthTokenRecord{}, errors.New("auth: oauth token store not configured")
@@ -309,7 +309,7 @@ func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAut
 // calls on the user's behalf.
 //
 // SECURITY: as with RefreshOAuthToken, userID MUST be the authenticated
-// principal's id — never request-supplied — or it is an IDOR.
+// principal's id, never request-supplied, or it is an IDOR.
 func ValidOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, userID string) (string, error) {
 	if store == nil {
 		return "", errors.New("auth: oauth token store not configured")

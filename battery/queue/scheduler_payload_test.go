@@ -9,7 +9,7 @@ import (
 //
 // Job() now rejects a payload that is not valid JSON. The removed
 // `if payload == "" { payload = "null" }` fallback in RegisterAt used to
-// normalize an EMPTY payload to "null" — the same thing Job(jobType, nil)
+// normalize an EMPTY payload to "null", the same thing Job(jobType, nil)
 // still produces. An empty []byte / json.RawMessage / "" is "no payload",
 // not a malformed one, and it now fails registration instead.
 //

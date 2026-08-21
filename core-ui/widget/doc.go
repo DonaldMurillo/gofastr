@@ -1,6 +1,6 @@
 // Package widget provides the framework's overlay-UI primitive.
 //
-// A widget is a self-mounting UI surface that runs on top of any page —
+// A widget is a self-mounting UI surface that runs on top of any page,
 // regardless of whether that page is built with core-ui components or
 // is a plain HTML document. Widgets are distinct from components:
 //
@@ -24,7 +24,7 @@
 //     ({colors.primary}, {spacing.lg}). Override the theme to reskin
 //     every widget at once.
 //
-// Anatomy of a widget — code skeleton:
+// Anatomy of a widget, code skeleton:
 //
 //	def := widget.New("kiln-panel").
 //	    Mount(widget.BottomRight).
@@ -39,5 +39,5 @@
 // The package is intentionally small in interface. Built-in surfaces
 // (FloatingPanel, Modal, Toast, Drawer, Popover) live in
 // core-ui/widget/preset and are constructed with the same WidgetDef
-// builder — no new primitive per surface.
+// builder, no new primitive per surface.
 package widget

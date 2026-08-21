@@ -16,7 +16,7 @@ import (
 
 // tenantEchoComp renders the tenant the request ran under, so a test can tell
 // "rendered under the granted subject's tenant" from "rendered under whatever
-// the ambient middleware left behind" — which is the difference between tenant
+// the ambient middleware left behind", which is the difference between tenant
 // isolation and the absence of it.
 type tenantEchoComp struct{}
 
@@ -78,7 +78,7 @@ func tenantFixture(t *testing.T, mutate func(*fembed.Config)) embedFixture {
 //
 // It was wired into Host.Middleware() alone. The content route builds its own
 // context from scratch, so a multi-tenant surface rendered untenanted on first
-// paint and tenanted on every swap afterwards — against a fail-closed
+// paint and tenanted on every swap afterwards. Against a fail-closed
 // multi-tenant entity, that is exactly the "simply errored" symptom
 // Config.ResolveTenant was added to fix, arriving one render later.
 func TestEmbedContentInstallsTheResolvedTenant(t *testing.T) {
@@ -109,7 +109,7 @@ func TestEmbedContentInstallsTheResolvedTenant(t *testing.T) {
 // Strict cookie, and an app that derives a tenant from it in its own middleware
 // leaves one on the context before this handler runs. Clearing the user and
 // keeping the tenant renders the surface as the GRANT's subject scoped to the
-// COOKIE visitor's tenant — the pairing Host.Middleware refuses outright.
+// COOKIE visitor's tenant, the pairing Host.Middleware refuses outright.
 func TestEmbedContentDoesNotInheritTheAmbientTenant(t *testing.T) {
 	f := tenantFixture(t, nil)
 	grant := f.grantFor(t, "reports")

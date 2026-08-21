@@ -119,7 +119,7 @@ func TestParseDSLUnknownCall(t *testing.T) {
 }
 
 func TestParseDSLCacheHit(t *testing.T) {
-	// Parse the same query twice — second should be a cache hit
+	// Parse the same query twice, second should be a cache hit
 	input := `Post.where(status="published").limit(10)`
 	q1, err := ParseDSL(input)
 	if err != nil {

@@ -67,12 +67,12 @@ type CrudHandler struct {
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
 	// ImageDeriver, when set, runs over every schema.Image upload to
 	// produce stored renditions plus a BlurHash/LQIP. Derived values land
-	// in sibling columns the entity declares — see applyDerivedColumns.
+	// in sibling columns the entity declares. See applyDerivedColumns.
 	// framework/imagefield provides the implementation.
 	ImageDeriver file.ImageDeriver
 	// FieldImageDerivers overrides ImageDeriver for specific image fields,
 	// keyed by field name. An avatar wants portrait components and animated
-	// sources rejected; a hero cover wants wide renditions — one app-wide
+	// sources rejected; a hero cover wants wide renditions, one app-wide
 	// config cannot express both.
 	FieldImageDerivers map[string]file.ImageDeriver
 	Events             *event.EventBus // optional; receives entity.created/updated/deleted on commit
@@ -82,7 +82,7 @@ type CrudHandler struct {
 	// eager-loaded through ?include= run the read hooks of the entity they
 	// belong to rather than this one's. Without it a redaction on the child
 	// applies to GET /children but not to the same row one relation hop away.
-	// Must not create registries — it is called on the request path.
+	// Must not create registries, it is called on the request path.
 	// framework.App wires it; nil leaves includes unhooked.
 	ChildHooks   func(entityName string) *hook.HookRegistry
 	BasePath     string // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
@@ -96,7 +96,7 @@ type CrudHandler struct {
 	// jsonWireKeys holds the same fields by wire key. The write path
 	// needs the column form (it binds by column), the read path the wire
 	// form (scanned rows are already key-converted). Both cover hidden
-	// fields too — a server-writes create can set one. Rebuilt by
+	// fields too, a server-writes create can set one. Rebuilt by
 	// refreshFieldCache.
 	jsonColumns  map[string]struct{}
 	jsonWireKeys map[string]struct{}
@@ -198,7 +198,7 @@ func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
 // ApplySoftDeleteFilter adds a deleted_at IS NULL filter unless the caller
 // requests trashed records via ?trashed=true AND the request is
 // authenticated. An anonymous caller passing ?trashed=true on a public
-// list endpoint must not be allowed to enumerate soft-deleted rows —
+// list endpoint must not be allowed to enumerate soft-deleted rows,
 // that's an information-disclosure path. The query param is honoured
 // only when a user is present in the request context.
 func (ch *CrudHandler) ApplySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
@@ -230,7 +230,7 @@ func (ch *CrudHandler) applySoftDeleteFilterCountQ(cb *query.CountBuilder, q url
 
 // trashedAllowed reports whether the caller may see soft-deleted rows on
 // this request. True only when ?trashed=true AND the request carries an
-// authenticated user — anonymous callers are denied visibility into
+// authenticated user, anonymous callers are denied visibility into
 // soft-deleted data regardless of how they ask.
 func (ch *CrudHandler) trashedAllowed(r *http.Request) bool {
 	return ch.trashedAllowedQ(r.URL.Query(), r.Context())
@@ -511,7 +511,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 
 		// q-column edge case: when the entity has SearchFields and ?q= is
 		// present, a plain ?q=value would be parsed as an OpEq filter on a
-		// column named "q". Drop it — plain ?q= means search. Suffixed ops
+		// column named "q". Drop it, plain ?q= means search. Suffixed ops
 		// (?q_like=, ?q_gt=, …) still filter the column.
 		filters = stripQColumnEqFilter(filters, len(ch.Entity.Config.SearchFields) > 0, q.Has("q"))
 
@@ -523,10 +523,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 		// Filtering across a relation reads that relation's rows, so its
-		// entity's posture applies — without this the row count is an oracle
+		// entity's posture applies, without this the row count is an oracle
 		// for values in a column the related entity refuses to serve. This
 		// call both refuses the targets the caller may not read and narrows
-		// the ones they may to their own rows; the `nested` slice is mutated
+		// the ones they may to their own rows. The `nested` slice is mutated
 		// in place, and every downstream sink (count, data, cursor, stream)
 		// reads the same slice.
 		if err := ch.scopeNestedFiltersForCaller(r.Context(), nested); err != nil {
@@ -544,7 +544,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// ?where=<json> nested predicate tree (OR-groups / nested AND-OR).
 		// Compiles to ONE parenthesized WHERE clause that AND-composes with
 		// the owner/tenant/soft-delete scopes exactly like the search
-		// clauses above — a user OR-group can never widen past a scope.
+		// clauses above, a user OR-group can never widen past a scope.
 		treeWheres, err := ch.whereTreeClausesQ(q)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid where: "+err.Error())
@@ -552,7 +552,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		searchWheres = append(searchWheres, treeWheres...)
 
-		// BeforeList hook — collect any extra WHERE clauses the host wants
+		// BeforeList hook, collect any extra WHERE clauses the host wants
 		// to scope the query by. Runs before cursor / streaming branches so
 		// both paths inherit the same scope.
 		listPayload := &hook.ListPayload{Request: r}
@@ -571,8 +571,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
 		if q.Has("cursor") {
-			// Keyset mode ignores ?sort= — the cursor fields control ORDER BY
-			// — but it must still REFUSE a sort it would refuse anywhere else.
+			// Keyset mode ignores ?sort=, the cursor fields control ORDER BY,
+			// but it must still REFUSE a sort it would refuse anywhere else.
 			// Returning early before this check made ?cursor=&sort=<NoQuery>
 			// answer 200 where ?sort=<NoQuery> answers 400, so "every query
 			// surface refuses it" had an exception reachable by appending one
@@ -598,10 +598,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		// Streaming-list opt-in: explicit ?stream=true, or auto-on when the
 		// requested limit is huge. Streaming skips include resolution to keep
-		// memory bounded — so it CANNOT honour ?include= or per-row AfterList
+		// memory bounded, so it CANNOT honour ?include= or per-row AfterList
 		// transforms (AfterList runs once over the full slice the stream
 		// never materialises). Silently streaming anyway is wrong: includes
-		// would vanish, and an AfterList redactor would be BYPASSED — leaking
+		// would vanish, and an AfterList redactor would be BYPASSED, leaking
 		// the very fields it exists to hide.
 		//
 		// Explicit ?stream=true → refuse with 400 so the caller knows their
@@ -627,7 +627,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				return
 			}
 			// Fall through to the buffered path (auto-stream with includes or
-			// AfterList) — it honours both correctly.
+			// AfterList), it honours both correctly.
 		}
 
 		var total int
@@ -652,7 +652,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// Build data query — select only projected (or all visible by default).
+		// Build data query, select only projected (or all visible by default).
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		filter.ApplyToQuery(qb, filters)
@@ -672,7 +672,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		offset := pagination.OffsetForPage(page, perPage)
 		// An explicit ?offset= overrides the page-derived offset. The
 		// process-module broker paginates by raw offset (it sets ?offset=
-		// without ?page=), and it is a documented control param — honoring it
+		// without ?page=), and it is a documented control param, honoring it
 		// here is what makes those requests return the intended window
 		// instead of silently serving page 1.
 		if o, ok := explicitOffsetValues(q); ok {
@@ -719,7 +719,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// AfterList hook — host can redact / transform / drop rows.
+		// AfterList hook, host can redact / transform / drop rows.
 		if ch.Hooks != nil {
 			listPayload.Results = results
 			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, listPayload); err != nil {
@@ -753,7 +753,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 
 // searchWhereClauses builds hook.WhereClause entries from ?q= when the
 // entity declares SearchFields. Returns nil when SearchFields is empty
-// or ?q= is blank — the entity then ignores ?q= exactly as before
+// or ?q= is blank, the entity then ignores ?q= exactly as before
 // (back-compat). The conditions AND-compose safely with owner/tenant/
 // soft-delete scopes because the query builder wraps each Where clause
 // in parens.
@@ -814,7 +814,7 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, erro
 // stripQColumnEqFilter removes a plain OpEq filter on a column named "q"
 // when the entity has SearchFields AND ?q= is present. This resolves the
 // edge case: an entity WITH SearchFields that also has a physical column
-// named "q" — plain ?q= means search (not filter on the column). Suffixed
+// named "q", plain ?q= means search (not filter on the column). Suffixed
 // ops (?q_like=, ?q_gt=, …) still filter the column.
 func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPresent bool) []filter.ParsedFilter {
 	if !hasSearchFields || !qPresent || len(filters) == 0 {
@@ -967,7 +967,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		//
 		// A hook error degrades the body to the new row's id rather than
 		// answering 500: the row is committed and the event has shipped, so a
-		// 500 would be a lie the caller acts on by retrying — creating it
+		// 500 would be a lie the caller acts on by retrying, creating it
 		// twice. See identityOnly.
 		body, hookErr := ch.runResponseHooks(r, result)
 		if hookErr != nil {
@@ -1026,10 +1026,10 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 
 		ch.EmitEvent(r.Context(), event.EntityUpdated, result)
 
-		// AfterGet over the response body — see the note on Create. A partial
+		// AfterGet over the response body. See the note on Create. A partial
 		// PUT/PATCH otherwise returns stored values for every field the
 		// caller did not send.
-		// A hook error degrades to the id, not a 500 — the update is already
+		// A hook error degrades to the id, not a 500, the update is already
 		// committed. See identityOnly.
 		body, hookErr := ch.runResponseHooks(r, result)
 		if hookErr != nil {
@@ -1140,7 +1140,7 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 	if isUniqueViolation(err) {
 		// Map UNIQUE-constraint failures to 409 Conflict so callers can
 		// distinguish duplicate-key errors from a real server fault.
-		// The error message itself is generic — we deliberately don't
+		// The error message itself is generic, we deliberately don't
 		// echo the violated column to avoid leaking schema details to
 		// an enumeration probe.
 		writeJSONError(w, http.StatusConflict, "conflict")
@@ -1160,7 +1160,7 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 // isUniqueViolation reports whether err looks like a UNIQUE-constraint
 // violation from any of the supported drivers. We sniff the message
 // string because the drivers don't share a typed error and the CRUD
-// layer is otherwise driver-agnostic. False positives are rare —
+// layer is otherwise driver-agnostic. False positives are rare,
 // "UNIQUE constraint failed" (sqlite), "duplicate key value" (pq),
 // "Error 1062" (mysql) are all distinctive.
 func isUniqueViolation(err error) bool {
@@ -1185,7 +1185,7 @@ func isUniqueViolation(err error) bool {
 //
 // The per_page cap is 100 by default. Entities can raise this via
 // EntityConfig.MaxListLimit. ?stream=true on its own does NOT raise
-// the cap — that path is opt-in per entity (MaxListLimit > 100) so
+// the cap, that path is opt-in per entity (MaxListLimit > 100) so
 // public endpoints can't be coerced into 10× larger responses by
 // adding a query param. When the entity has explicitly raised the
 // limit, the streaming-list path uses min(MaxListLimit, streamListThreshold).
@@ -1229,7 +1229,7 @@ func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 // explicitOffset reads a raw ?offset= row skip. Returns (n, true) only for a
 // well-formed non-negative integer; a missing, malformed, or negative value
 // yields (0, false) so the caller keeps the page-derived offset. LIMIT still
-// caps the row count, so an oversized offset just returns an empty window —
+// caps the row count, so an oversized offset just returns an empty window,
 // no need to clamp it here.
 func explicitOffset(r *http.Request) (int, bool) {
 	return explicitOffsetValues(r.URL.Query())
@@ -1296,7 +1296,7 @@ func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, ent *entity.
 	}
 	// rows.Next() returning false can mean EOF OR a mid-iteration error (a
 	// dropped connection, a read fault). Without this check the read path
-	// would silently return partial/empty results as success — the eager
+	// would silently return partial/empty results as success, the eager
 	// loaders already guard this; the primary scanner must too.
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1450,16 +1450,16 @@ func generateFieldValue(strategy schema.AutoGenerate) any {
 		// Microsecond precision, FIXED WIDTH (.000000 keeps trailing
 		// zeros). Whole-second resolution made two rows written in the
 		// same second share an identical created_at, which stalls
-		// single-field cursor pagination on ties — the documented
+		// single-field cursor pagination on ties, the documented
 		// tiebreak. Microseconds match PostgreSQL TIMESTAMPTZ storage
 		// (its max), so the value round-trips losslessly on Postgres;
 		// SQLite TEXT keeps the exact string. Fixed width is load-
 		// bearing: SQLite compares these as strings, and a zero-stripped
 		// "…07.5Z" sorts AFTER "…07.5001Z" while being chronologically
-		// earlier — mis-ordering both the cursor keyset and ORDER BY.
+		// earlier, mis-ordering both the cursor keyset and ORDER BY.
 		return time.Now().UTC().Format("2006-01-02T15:04:05.000000Z07:00")
 	case schema.AutoIncrement:
-		return 0 // placeholder — real increment handled by DB
+		return 0 // placeholder, real increment handled by DB
 	default:
 		return nil
 	}

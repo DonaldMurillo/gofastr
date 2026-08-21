@@ -1,10 +1,10 @@
 package framework
 
-// agent_extras.go — the remaining isitagentready.com production-scanner
+// agent_extras.go: the remaining isitagentready.com production-scanner
 // checks that ARE framework-buildable as served routes (each opt-in; the
 // host provides the real data, the framework serves the discovery doc):
 //
-//   - /.well-known/http-message-signatures-directory  (Web Bot Auth — the
+//   - /.well-known/http-message-signatures-directory  (Web Bot Auth, the
 //     site PUBLISHES a JWKS so it can sign its outbound bot/agent requests)
 //   - /.well-known/ucp                                 (Universal Commerce Protocol)
 //   - /.well-known/acp.json                            (Agentic Commerce Protocol)
@@ -26,7 +26,7 @@ import (
 // the requests it sends as a bot/agent. (This is the publishing side, not
 // RFC 9421 inbound verification.)
 type WebBotAuthConfig struct {
-	// Keys is the JWK Set "keys" array — the site's public signing keys.
+	// Keys is the JWK Set "keys" array, the site's public signing keys.
 	Keys []map[string]any
 }
 

@@ -79,12 +79,12 @@ backend wrote the file under.
 The key is not the client's filename. `upload.UniqueFilename` sanitizes
 the name and appends a nanosecond timestamp and 8 random bytes, so two
 users uploading `report.txt` get two objects instead of the second
-silently overwriting the first. Read `key` from the response — do not
+silently overwriting the first. Read `key` from the response; do not
 reconstruct it from `originalName`.
 
 ## Field-name casing
 
-Multipart field names are **taken literally** as column names — there
+Multipart field names are **taken literally** as column names; there
 is no JSON-case translation. If your entity's column is `avatar_url`,
 the multipart field must be `avatar_url`, regardless of `JSONCase`
 config. (JSON requests are reverse-cased; multipart is not.)
@@ -98,7 +98,7 @@ config. (JSON requests are reverse-cased; multipart is not.)
 
 The two differ in two ways: the UI host emits an image-aware widget for
 `Image` fields, and only `Image` fields run the image pipeline described
-below. A `File` field is any binary — a PDF, a CSV — so decoding it as an
+below. A `File` field is any binary, a PDF or a CSV, so decoding it as an
 image would fail every upload.
 
 ## Automatic renditions and placeholders
@@ -135,7 +135,7 @@ CRUD handler. Only apps that ask for the pipeline link it.
 ### Where the derived values go
 
 Renditions are written through the same storage backend as the original,
-into the same directory, sharing its unique base name — an original at
+into the same directory, sharing its unique base name: an original at
 `products/cover/a1b2-photo.png` yields `products/cover/a1b2-photo-sm.webp`
 and so on, so two uploads of `photo.png` never collide.
 
@@ -148,7 +148,7 @@ The metadata lands in **sibling columns**, named for the image field:
 | `<field>_variants`     | `schema.JSON`   | `[{storage_ref, mime, width, height}, …]`, ascending by width |
 
 **Columns you do not declare are skipped.** Nothing errors, nothing is
-lost — you adopt a column by adding it to the entity. So an entity with a
+lost; you adopt a column by adding it to the entity. So an entity with a
 `cover` image field opts into the hash alone by declaring:
 
 ```go
@@ -190,13 +190,13 @@ BlurHash-versus-LQIP trade-off.
 |------------------|-------------------------------------------------------------|
 | `Variants`       | Renditions to produce and store. `Suffix` (or width) distinguishes each key. |
 | `BlurHashX/Y`    | BlurHash component counts, 1..9. Both zero = no hash; setting only one is an error. 4×3 landscape, 3×4 portrait. |
-| `Placeholder`    | Also store an LQIP data URL. Usually redundant next to a BlurHash — ~28 bytes versus a few hundred, and both render identically. |
+| `Placeholder`    | Also store an LQIP data URL. Usually redundant next to a BlurHash; ~28 bytes versus a few hundred, and both render identically. |
 | `RejectAnimated` | Fail the upload on a multi-frame source instead of silently keeping frame one. Worth setting on avatars. |
 | `AllowUpscale`   | Permit renditions wider than the source. Off by default, so a small upload does not fan out into pixel-multiplied files. |
 | `MaxPixels`      | Override the decompression-bomb guard (default 64 MP).      |
 
 `New` returns an error for a config that could not produce anything, or
-that the pipeline would reject at process time anyway — so wiring
+that the pipeline would reject at process time anyway, so wiring
 mistakes surface at startup rather than on the first upload. `MustNew`
 panics instead, for package-level wiring.
 
@@ -217,7 +217,7 @@ that one field out without unpicking the app-wide config.
 
 ### Doing it yourself
 
-The declarative wiring is a convenience over interfaces that stay open —
+The declarative wiring is a convenience over interfaces that stay open;
 none of it is a closed system, and every layer below remains callable.
 
 **Your own deriver.** `WithImagePipeline` takes a `file.ImageDeriver`, not a
@@ -241,7 +241,7 @@ Whatever you return is validated and then spread across the sibling columns
 exactly as `imagefield`'s output would be, so you keep the declarative half
 while owning the processing.
 
-**Driving the upload path directly**, outside auto-CRUD — your own handler,
+**Driving the upload path directly**, outside auto-CRUD: your own handler,
 your own storage keys, the full `FileField` including `.Image` rather than
 just the URL string:
 
@@ -253,7 +253,7 @@ ff, err := file.ProcessFileField(ctx, store, part, filename, "products", "cover"
 
 **Ignoring all of it** and calling the pipeline yourself. `VariantSet` is
 headless and unchanged; see [image.md](image.md). Nothing about the upload
-path is required to use it — generated covers, imported batches, and one-off
+path is required to use it: generated covers, imported batches, and one-off
 scripts have no upload to hang off.
 
 **Storing the metadata somewhere else.** The sibling columns are a
@@ -262,7 +262,7 @@ are dropped; do the persistence in a `BeforeCreate` hook, a separate table,
 or a JSON blob of your own shape instead.
 
 The one thing the framework will not do is reach into `framework/image` from
-`framework/file` or `framework/crud` — that edge would link every image
+`framework/file` or `framework/crud`: that edge would link every image
 codec into every app with a CRUD handler, which is why the dependency is
 inverted through `ImageDeriver` in the first place.
 
@@ -272,8 +272,8 @@ inverted through `ImageDeriver` in the first place.
 image-shaped on purpose: it runs on write, for `schema.Image` fields, and
 puts its output in sibling columns. It is not a general field hook.
 
-For anything else — normalising a string on write, masking a value on read,
-composing several transforms on one field — use a `BeforeCreate`/
+For anything else, such as normalising a string on write, masking a value on
+read, or composing several transforms on one field, use a `BeforeCreate`/
 `BeforeUpdate` hook or an `entity.ValidatorFunc` today. Note that schema
 validation runs *after* `BeforeCreate`, so a hook can normalise a value into
 validity.
@@ -287,7 +287,7 @@ settled, `ImageDeriver` stays narrow rather than growing sideways.
 
 ### Failure behavior
 
-A source that cannot be decoded **fails the whole request** — the row is
+A source that cannot be decoded **fails the whole request**: the row is
 not written and no file is kept. That is deliberate: the column is
 declared as an image, and a silent success would surface much later as a
 page with no `srcset` and no placeholder, with nothing in the logs
@@ -295,7 +295,7 @@ pointing back at the upload. The original is stored before renditions are
 derived, so a derive failure never leaves a half-written primary file.
 
 Renditions stream one at a time, so peak memory stays near a single
-rendition rather than all of them summed — this runs inside a request, on
+rendition rather than all of them summed; this runs inside a request, on
 bytes a client chose.
 
 ### Cost: this is synchronous
@@ -315,15 +315,15 @@ notes). So:
 
 - For a **hot upload path**, prefer JPEG renditions. Two JPEG widths plus a
   BlurHash is under 200 ms even from a large source.
-- Reserve **WebP** for low-volume flows — admin uploads, one-off imports —
-  or accept the half-second.
+- Reserve **WebP** for low-volume flows like admin uploads and one-off
+  imports, or accept the half-second.
 - Each upload holds a request slot for that whole time and does not
   parallelise away. If uploads are frequent, derive out-of-band instead:
   store the original in the request, then produce renditions in a
   `battery/queue` job and patch the sibling columns when it finishes. The
   pieces are the same; only the timing moves.
 
-There is no built-in async mode — `WithImagePipeline` is deliberately the
+There is no built-in async mode; `WithImagePipeline` is deliberately the
 simple synchronous one, because it is correct for the common case (a user
 uploading their own avatar or a cover image) and needs no queue.
 
@@ -335,7 +335,7 @@ Uploads are bounded and content-checked before anything is stored:
   multipart parser buffers at most `crud.MaxMultipartMemory` (32 MiB) in
   memory before spilling to a temp file. An oversize body returns
   `file.ErrFileFieldTooLarge` without reading past the limit.
-- **Content shape** is checked from the bytes — never the filename or the
+- **Content shape** is checked from the bytes, never the filename or the
   client's `Content-Type`, both of which an attacker controls. Executable
   magic bytes (PE, ELF, Mach-O) are rejected outright. Active-content
   markup is scanned in two tiers: hard tokens (`<script`, `<svg`,
@@ -349,7 +349,7 @@ Uploads are bounded and content-checked before anything is stored:
   accept a `FileField` from a request body. Beyond the scheme and `..`
   checks on `URL` and `StorageRef`, `Filename` is held to the same
   traversal rule, and a C0 control byte or DEL anywhere in `URL`,
-  `Filename`, or `StorageRef` returns `file.ErrFileFieldControlBytes` —
+  `Filename`, or `StorageRef` returns `file.ErrFileFieldControlBytes`;
   those fields are echoed into `Content-Disposition`, HTML attributes,
   and log lines, each of which a CR/LF splits. `ProcessFileField` strips
   control bytes from the multipart filename, so the metadata it returns
@@ -359,8 +359,8 @@ Uploads are bounded and content-checked before anything is stored:
 
 These are global limits, not per-field ones: there is no per-field byte
 cap or MIME allow-list today. To bound a specific field more tightly, use
-a `BeforeCreate` hook or an `entity.ValidatorFunc` — both run before the
-row is written — or set `imagefield.Config.MaxPixels` to tighten the
+a `BeforeCreate` hook or an `entity.ValidatorFunc`, both of which run before
+the row is written, or set `imagefield.Config.MaxPixels` to tighten the
 decode guard for image fields.
 
 A failing validator returns `400 Bad Request` with a `fields` map
@@ -392,14 +392,14 @@ type Storage interface {
 
 Built-in implementations:
 
-- `upload.NewLocalStorage(dir)` (`core/upload`) — writes files under a
+- `upload.NewLocalStorage(dir)` (`core/upload`): writes files under a
   local directory. It only *stores*; it does not serve. Wire downloads
   with `upload.ServeHandler`, which sniffs the content type, blocks
   traversal (delegated to the backend's key sanitization), and
   neutralizes HTML/SVG to a forced download so an uploaded document
   can't execute as script in a victim's browser (stored-XSS guard).
   Suitable for tests and single-host deployments.
-- `battery/storage` — local, S3, and in-memory backends behind the same
+- `battery/storage`: local, S3, and in-memory backends behind the same
   interface, plus a declarative factory registry.
 - (Add GCS / Azure adapters in your own code by implementing
   `Storage`.)
@@ -417,7 +417,7 @@ app.Router().Get("/uploads/{key...}", upload.ServeHandler(storage))
 `ServeHandler` resolves the key from the `{key...}` wildcard, sniffs the
 content type from the first 512 bytes (never trusting the client or the
 key), and sets `X-Content-Type-Options: nosniff` on every response.
-Scriptable content — HTML or SVG, by sniffed type *or* key extension —
+Scriptable content, HTML or SVG by sniffed type *or* key extension,
 is forced to `application/octet-stream` with
 `Content-Disposition: attachment`, so an uploaded document can't execute
 as script in a victim's browser (stored-XSS guard). Path-traversal
@@ -426,7 +426,7 @@ echoes no filesystem path on any error.
 
 ### Range requests and resumable downloads
 
-`Storage.Get` returns an `io.ReadCloser`, which erases seekability — and
+`Storage.Get` returns an `io.ReadCloser`, which erases seekability, and
 `http.ServeContent` needs an `io.ReadSeeker` to answer a `Range:` header.
 Backends that hold their bytes locally declare the capability instead:
 
@@ -443,23 +443,23 @@ type RangeGetter interface {
 `ServeHandler` type-asserts for it. When the backend implements it, range
 requests get a `206` with `Accept-Ranges: bytes`, so a download interrupted
 1.8 GB into a 2 GB file resumes instead of restarting. When it doesn't, the
-handler serves whole bodies exactly as before — declining is legal.
+handler serves whole bodies exactly as before; declining is legal.
 
 | Backend | `RangeGetter` |
 | --- | --- |
-| `upload.LocalStorage`, `storage.LocalStorage` | yes — already opens an `*os.File` |
-| `storage.MemoryStorage` | yes — the bytes are already resident |
-| `storage.S3Storage` | no — a network backend would have to buffer the whole object to satisfy `Seek`. Use `WithPresigner` so the transfer bypasses the app entirely. |
+| `upload.LocalStorage`, `storage.LocalStorage` | yes; already opens an `*os.File` |
+| `storage.MemoryStorage` | yes; the bytes are already resident |
+| `storage.S3Storage` | no; a network backend would have to buffer the whole object to satisfy `Seek`. Use `WithPresigner` so the transfer bypasses the app entirely. |
 
 Implement it on your own backend only if seeking is genuinely cheap there,
-and route key validation through the same code path as `Get` — a capability
+and route key validation through the same code path as `Get`; a capability
 that skipped the traversal check would be a path-traversal hole with a
 performance justification.
 
 ## Content checksums
 
 The `battery/storage` package provides opt-in SHA-256 helpers that wrap
-any `Storage` backend — integrity verification, dedup, or
+any `Storage` backend: integrity verification, dedup, or
 content-addressed keys without touching the backend or buffering the
 whole stream:
 
@@ -489,14 +489,14 @@ characters.
 ## Common mistakes
 
 - **Forgetting `WithFileStorage`.** Multipart requests on an `Image`/
-  `File` entity will error. JSON requests still work — they just can't
+  `File` entity will error. JSON requests still work; they just can't
   set those fields.
 - **Sending a JSON body with a base64 file.** Not supported. Use
   multipart, or store the file out-of-band and PATCH the URL in.
 - **Trusting client-supplied URLs.** Multipart writes the URL the
   server gets back from `Storage.Save`, not anything the client sent.
   Don't try to set a file URL via a JSON request expecting the server
-  to honour it as-is — that path uses the column verbatim and won't
+  to honour it as-is; that path uses the column verbatim and won't
   validate or upload anything.
 - **Camelcasing multipart names.** They are literal column names. Use
   snake_case if your DB columns are snake_case.

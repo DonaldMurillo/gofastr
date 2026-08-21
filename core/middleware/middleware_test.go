@@ -314,7 +314,7 @@ func TestSecurityHeaders(t *testing.T) {
 		}
 	}
 
-	// CSP must be strict by default — the framework renders all CSS and
+	// CSP must be strict by default: the framework renders all CSS and
 	// scripts as external resources under /__gofastr/*, so no
 	// 'unsafe-inline' fallbacks are needed.
 	csp := rec.Header().Get("Content-Security-Policy")
@@ -468,7 +468,7 @@ func TestTimeoutConcurrentRequests(t *testing.T) {
 // when the timeout fires and writes its 504 (which also calls Header().Set
 // on the underlying ResponseWriter). Stdlib http.Header is a plain
 // map[string][]string, so two concurrent writers panic with `fatal error:
-// concurrent map writes` — observed in the chaos rapid-click test on the
+// concurrent map writes`, observed in the chaos rapid-click test on the
 // pagination island handler.
 //
 // Must run with `-race`. Reproduces deterministically because the handler
@@ -477,7 +477,7 @@ func TestTimeoutHeaderRaceAfterTimeout(t *testing.T) {
 	m := Timeout(15 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Wait long enough for the timeout to have fired and written 504.
 		time.Sleep(60 * time.Millisecond)
-		// Now mutate headers from the handler goroutine — used to race
+		// Now mutate headers from the handler goroutine; used to race
 		// with the timeout goroutine's writes to the underlying header map.
 		w.Header().Set("X-Late-Header-1", "v1")
 		w.Header().Set("X-Late-Header-2", "v2")
@@ -566,7 +566,7 @@ func TestCORSMultipleOrigins(t *testing.T) {
 		t.Errorf("origin 2: got %q", got)
 	}
 
-	// Request from unknown origin — should not get ACAO header
+	// Request from unknown origin: should not get ACAO header
 	req3 := httptest.NewRequest(http.MethodGet, "/api", nil)
 	req3.Header.Set("Origin", "https://evil.com")
 	rec3 := httptest.NewRecorder()

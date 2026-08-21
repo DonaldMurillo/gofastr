@@ -4,7 +4,7 @@ package outbox
 // suite covers the full behaviour matrix; these tests prove the generated
 // delivery SQL (CTE claim with FOR UPDATE OF d SKIP LOCKED, the ON CONFLICT
 // expand upsert, the orphan-drop/completion sweep UPDATEs) executes against a
-// live Postgres and the values come back out. One focused suite —
+// live Postgres and the values come back out. One focused suite,
 // representative paths only.
 //
 // Skips automatically when Postgres is unreachable (see internal/pgtest).
@@ -90,7 +90,7 @@ func TestPostgres_DeliversAndDispatches(t *testing.T) {
 }
 
 // TestPostgres_SiblingIsolation: a failing consumer does not block its
-// succeeding sibling — B dispatches while A retries, parent stays pending.
+// succeeding sibling. B dispatches while A retries, parent stays pending.
 func TestPostgres_SiblingIsolation(t *testing.T) {
 	db, o := pgOutbox(t, WithMaxAttempts(1000), WithPollInterval(5*time.Millisecond))
 	o.backoffBase = 200 * time.Millisecond
@@ -226,14 +226,14 @@ func TestPostgres_RetentionKeepsDeadLetterParent(t *testing.T) {
 		}
 	}
 
-	// (1) Dispatched parent carrying a DEAD delivery — must survive purge.
+	// (1) Dispatched parent carrying a DEAD delivery, must survive purge.
 	tx, _ := db.BeginTx(ctx, nil)
 	deadID, _ := o.Append(ctx, tx, "t", nil)
 	tx.Commit()
 	ageParent(deadID)
 	seedDelivery(deadID, "svc", "dead", o.maxAttempts, "boom", 2*time.Hour)
 
-	// (2) Control: fully-dispatched parent past the window — must purge.
+	// (2) Control: fully-dispatched parent past the window, must purge.
 	tx, _ = db.BeginTx(ctx, nil)
 	doneID, _ := o.Append(ctx, tx, "t", nil)
 	tx.Commit()

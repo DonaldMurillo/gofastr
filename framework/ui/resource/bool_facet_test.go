@@ -7,7 +7,7 @@ import (
 
 // The bool facet renders Yes/No options with values "true"/"false"
 // (blueprint-generated apps ship this UI on SQLite by default), so the
-// filter it builds must bind a real bool — a raw "true" string binds TEXT
+// filter it builds must bind a real bool. A raw "true" string binds TEXT
 // against SQLite's INTEGER storage and the facet silently shows zero rows.
 func TestBoolFacetFilterBindsBool(t *testing.T) {
 	c := Config{Filters: []Filter{{Key: "published", Label: "Published", Type: "bool"}}}

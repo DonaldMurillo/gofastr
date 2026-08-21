@@ -17,7 +17,7 @@ import (
 //   - Otherwise on.
 //
 // Rationale: `gofastr dev` means "a local, trusted loop where the
-// primary consumer is the developer's own agent" — the same reasoning
+// primary consumer is the developer's own agent". The same reasoning
 // that auto-wires livereload. Production processes never see
 // GOFASTR_DEV, so none of this activates there.
 func DevMCPEnabled() bool {

@@ -63,7 +63,7 @@ func TestHubStopFastWithSlowClose(t *testing.T) {
 		close(stopDone)
 	}()
 
-	// Stop should not block on slow.Close — it should return promptly.
+	// Stop should not block on slow.Close; it should return promptly.
 	select {
 	case <-stopDone:
 	case <-time.After(500 * time.Millisecond):

@@ -1,4 +1,4 @@
-// GoFastr runtime module — InfiniteScroll
+// GoFastr runtime module, InfiniteScroll
 //
 // Wires every [data-fui-infinite-scroll] wrapper:
 //   - IntersectionObserver on the inner [data-fui-infinite-sentinel]
@@ -89,7 +89,7 @@
             wrap.setAttribute('data-fui-infinite-cursor', next);
           }
         } catch (_) {
-          /* network / abort — keep sentinel, allow retry on next intersection */
+          /* network / abort, keep sentinel, allow retry on next intersection */
         } finally {
           inFlight = false;
           wrap.setAttribute('aria-busy', 'false');
@@ -98,7 +98,7 @@
         // the sentinel was already in view and stays in view (items
         // get inserted ABOVE it, so its intersection is unchanged).
         // Manually re-check after layout settles. The viewport math
-        // honors the scroll container we detected — using window.
+        // honors the scroll container we detected, using window.
         // innerHeight here would over-fetch in a contained-scroll
         // demo, draining the feed before the user scrolls a pixel.
         if (!exhausted) {
@@ -121,7 +121,7 @@
         }
       };
 
-      // Find the nearest scroll container — any ancestor whose
+      // Find the nearest scroll container, any ancestor whose
       // overflow-y is auto/scroll/overlay. The page viewport
       // (document) is the default when none is found. Without this,
       // a feed wrapped in a max-height: 24rem; overflow-y: auto

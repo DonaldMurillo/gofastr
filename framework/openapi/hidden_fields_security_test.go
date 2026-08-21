@@ -11,15 +11,15 @@ import (
 
 // Property: a field marked Hidden never appears in any surface of the
 // published spec. The spec is served to unauthenticated clients (the docs
-// and /openapi.json handlers), so a Hidden column's name reaching it — as
+// and /openapi.json handlers), so a Hidden column's name reaching it, as
 // a schema property, a required entry, a filter parameter, or in the
-// ?fields= projection blurb — publishes the existence and wire key of a
+// ?fields= projection blurb, publishes the existence and wire key of a
 // column the entity declared invisible.
 //
 // entity.Define enforces the related SearchFields rule (a Hidden column
 // there panics), but nothing pins the builder's own visibleFields walk.
 // This sweeps every surface that names a field, including one whose wire
-// key differs from its column name (WireName) — the exclusion must hold
+// key differs from its column name (WireName), the exclusion must hold
 // under the same key resolution the properties map uses.
 func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 	ent := entity.Define("invoices", entity.EntityConfig{
@@ -29,7 +29,7 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 			// Both hidden fields are Required on purpose. A hidden field
 			// that is not required never reaches the required list, so the
 			// required-list assertion below would hold no matter what the
-			// filter did — the test would stay green through a regression
+			// filter did, the test would stay green through a regression
 			// in exactly the code it exists to pin.
 			{Name: "internal_note", Type: schema.String, Hidden: true, Required: true},
 			{Name: "audit_meta", Type: schema.String, Hidden: true, Required: true, WireName: "auditMeta"},
@@ -50,7 +50,7 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 	}
 
 	// 2. Required list. Assert the visible required field is present before
-	// checking the hidden ones are absent — a type assertion that quietly
+	// checking the hidden ones are absent, a type assertion that quietly
 	// failed, or a builder that stopped emitting `required` at all, would
 	// otherwise make the absence check pass by finding nothing to look at.
 	reqs, ok := inv["required"].([]string)
@@ -111,8 +111,8 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 		t.Errorf("?fields= description lost the visible field: %s", desc)
 	}
 
-	// 5. Every request body that accepts entity fields — create, the two
-	// item updates, and the batch variants — excludes the hidden ones.
+	// 5. Every request body that accepts entity fields, create, the two
+	// item updates, and the batch variants, excludes the hidden ones.
 	//
 	// The previous version serialized the /invoices path item and grepped
 	// it, which covered the create body by accident (bodies are inlined)

@@ -3,12 +3,12 @@ package gallery
 // Support code for the three stateful catalog demos (sortablelist,
 // optimisticcreate, optimisticdelete), the sidebar + section-menu showcase
 // configs, and the signal-store demo. These types and helpers ship in the
-// gallery so the catalog's Demo closures are self-contained — a theme
+// gallery so the catalog's Demo closures are self-contained. A theme
 // previewer or static export renders a realistic seed view of every demo
 // without needing the docs site's per-visitor session machinery.
 //
 // examples/site keeps its own per-visitor demoState (cookies, bounded store,
-// RPC handlers — see demo_state.go in that package) but delegates the actual
+// RPC handlers, see demo_state.go in that package) but delegates the actual
 // rendering to these helpers, passing the visitor's current data in. So the
 // SSR live view and the gallery's seed view share one render path.
 //
@@ -42,7 +42,7 @@ type KanbanColumn struct {
 }
 
 // InitialKanbanColumns is the seed board every visitor's session starts
-// from — and the board the gallery's seed Demo closure renders.
+// from, and the board the gallery's seed Demo closure renders.
 func InitialKanbanColumns() []KanbanColumn {
 	return []KanbanColumn{
 		{ID: "todo", Title: "To do", Cards: []KanbanCard{
@@ -61,7 +61,7 @@ func InitialKanbanColumns() []KanbanColumn {
 // RenderKanbanBoard renders N linked sortable columns. Each column shares
 // Group "kanban-demo" and has a unique Container id. Version + ConflictRPC
 // wire the 409 conflict-recovery path. The caller owns any locking around
-// the input data — this function is lock-free.
+// the input data. This function is lock-free.
 func RenderKanbanBoard(cols []KanbanColumn, version int) render.HTML {
 	rendered := make([]render.HTML, 0, len(cols))
 	for _, c := range cols {
@@ -91,8 +91,8 @@ func RenderKanbanBoard(cols []KanbanColumn, version int) render.HTML {
 // =============================================================================
 
 // OptimisticNote is one row in the optimistic-create / optimistic-delete
-// demo lists. Each visitor's demoState carries two independent note lists
-// — one per recipe — seeded from InitialOptimisticNotes.
+// demo lists. Each visitor's demoState carries two independent note lists,
+// one per recipe, seeded from InitialOptimisticNotes.
 type OptimisticNote struct {
 	ID, Title string
 }
@@ -117,10 +117,10 @@ func RenderOptimisticCreateList(notes []OptimisticNote) render.HTML {
 		}, render.Text(n.Title)))
 	}
 	if len(items) == 0 {
-		// Empty state — the list region reconciles to zero items (#82
+		// Empty state: the list region reconciles to zero items (#82
 		// style), so the swap target is never a bare missing element.
 		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
-			render.Text("No notes yet — click Add."))
+			render.Text("No notes yet: click Add."))
 	}
 	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
 }
@@ -150,7 +150,7 @@ func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 	}
 	if len(items) == 0 {
 		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
-			render.Text("No notes — the list reconciled to zero. Reload to reset the demo."))
+			render.Text("No notes: the list reconciled to zero. Reload to reset the demo."))
 	}
 	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
 }
@@ -158,7 +158,7 @@ func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 // OptimisticFailDeleteTrigger is the inline trigger for the
 // "Delete (will fail)" affordance rendered below the list. It opens the
 // dedicated opt-delete-fail-n1 modal (mounted by OptimisticDeleteModals)
-// whose RPC always returns 422 — the runtime then leaves the opt-delete-list
+// whose RPC always returns 422. The runtime then leaves the opt-delete-list
 // region untouched, exercising the optimistic-UI "failed delete leaves the
 // row/list unchanged" invariant. Rendered as a free-standing button (no
 // list row) so the store never carries a phantom "fail row".
@@ -167,7 +167,7 @@ func OptimisticFailDeleteTrigger() render.HTML {
 		Name:         "opt-delete-fail-n1",
 		TriggerLabel: "Delete n1 (will fail)",
 		Title:        "Delete this note?",
-		Body:         "The demo handler rejects this with 422 — the list must stay unchanged.",
+		Body:         "The demo handler rejects this with 422: the list must stay unchanged.",
 		RPCPath:      "/__site/optimistic/delete/fail?id=n1",
 		ConfirmLabel: "Delete it",
 		// Bound to the same region as the working deletes: on 2xx the
@@ -181,9 +181,9 @@ func OptimisticFailDeleteTrigger() render.HTML {
 // OptimisticDeleteModals returns one *widget.Builder per initial delete row
 // (the ConfirmAction modal matching that row's Delete trigger), PLUS the
 // opt-delete-fail-n1 modal for the "will fail" affordance. Hosts mount
-// these once at startup, keyed off InitialOptimisticNotes — the set EVERY
+// these once at startup, keyed off InitialOptimisticNotes, the set EVERY
 // session seeds from and only ever shrinks below. So every rendered
-// trigger, in any session, has its modal mounted — no orphan
+// trigger, in any session, has its modal mounted. No orphan
 // opt-delete-nN triggers.
 func OptimisticDeleteModals() []*widget.Builder {
 	out := make([]*widget.Builder, 0, len(InitialOptimisticNotes)+1)
@@ -197,7 +197,7 @@ func OptimisticDeleteModals() []*widget.Builder {
 			ConfirmLabel: "Delete it",
 			// SuccessSignal wires the 2xx response body (the fresh
 			// shorter list HTML returned by the delete handler) into
-			// the opt-delete-list signal region — the runtime swaps
+			// the opt-delete-list signal region. The runtime swaps
 			// the region's innerHTML, the row disappears, and the
 			// modal closes via data-fui-rpc-close. On a non-2xx the
 			// runtime leaves the region unchanged (html-mode skips
@@ -207,13 +207,13 @@ func OptimisticDeleteModals() []*widget.Builder {
 		})
 		out = append(out, modal)
 	}
-	// "Will fail" affordance — same SuccessSignal, different RPC path
+	// "Will fail" affordance: same SuccessSignal, different RPC path
 	// that always returns 422. Mounted once so its trigger is valid.
 	_, failModal := ui.ConfirmAction(ui.ConfirmActionConfig{
 		Name:          "opt-delete-fail-n1",
 		TriggerLabel:  "Delete n1 (will fail)",
 		Title:         "Delete this note?",
-		Body:          "The demo handler rejects this with 422 — the list must stay unchanged.",
+		Body:          "The demo handler rejects this with 422: the list must stay unchanged.",
 		RPCPath:       "/__site/optimistic/delete/fail?id=n1",
 		ConfirmLabel:  "Delete it",
 		SuccessSignal: "opt-delete-list",
@@ -225,7 +225,7 @@ func OptimisticDeleteModals() []*widget.Builder {
 // RenderOptimisticCreateDemoFor renders the full optimistic-create demo
 // (code block + Add button + the supplied list) for a given notes slice.
 // The list region is bound to a signal in mode=html; on 2xx the runtime
-// swaps its innerHTML with the response — the fresh authoritative list
+// swaps its innerHTML with the response, the fresh authoritative list
 // (with the new row's real server-assigned id). Hosts pass the visitor's
 // current createNotes; the gallery's seed catalog closure passes
 // InitialOptimisticNotes.
@@ -246,7 +246,7 @@ func RenderOptimisticCreateDemoFor(notes []OptimisticNote) render.HTML {
 		addBtn,
 		listRegion,
 		html.Div(html.DivConfig{Class: "fact"},
-			render.Text("The full list HTML is the response body. A true temp-row pattern (row visible before the RPC resolves, then replaced by the authoritative row on 2xx) needs an island with a small bit of registered JS — see the optimistic-ui doc, Recipe 3."),
+			render.Text("The full list HTML is the response body. A true temp-row pattern (row visible before the RPC resolves, then replaced by the authoritative row on 2xx) needs an island with a small bit of registered JS: see the optimistic-ui doc, Recipe 3."),
 		),
 	)
 }
@@ -270,7 +270,7 @@ widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
 		listRegion,
 		OptimisticFailDeleteTrigger(),
 		html.Div(html.DivConfig{Class: "fact"},
-			render.Text("Confirm → POST → on 2xx the response replaces the list region with the authoritative shorter list. On failure (4xx) the runtime skips the swap (html-mode + non-string value = no-op), so the row stays put — try “Delete n1 (will fail)” to see it. Pair with an Undo window for a true optimistic-remove pattern (Recipe 4)."),
+			render.Text("Confirm → POST → on 2xx the response replaces the list region with the authoritative shorter list. On failure (4xx) the runtime skips the swap (html-mode + non-string value = no-op), so the row stays put; try “Delete n1 (will fail)” to see it. Pair with an Undo window for a true optimistic-remove pattern (Recipe 4)."),
 		),
 	)
 }
@@ -282,7 +282,7 @@ widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
 // SidebarShowcaseConfig is the config for the /components/sidebar demo. It
 // is shared between the inline render (the hamburger trigger in the catalog
 // closure) and the mounted ui-sidebar-drawer widget the host mounts once at
-// startup — so the two agree on DrawerName + content, otherwise the
+// startup, so the two agree on DrawerName + content, otherwise the
 // hamburger opens a drawer that was never mounted.
 var SidebarShowcaseConfig = ui.SidebarConfig{
 	Title:      "Docs",
@@ -301,7 +301,7 @@ var SidebarShowcaseConfig = ui.SidebarConfig{
 	},
 }
 
-// DemoSectionMenuConfig powers the /components/section-menu showcase — a
+// DemoSectionMenuConfig powers the /components/section-menu showcase, a
 // small self-contained menu whose drawer the host mounts like any real
 // menu's.
 func DemoSectionMenuConfig() interactive.SectionMenuConfig {

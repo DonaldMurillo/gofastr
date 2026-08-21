@@ -11,7 +11,7 @@ import (
 )
 
 // ============================================================================
-// Tier 2 — hot-path microbenchmarks (no DB)
+// Tier 2: hot-path microbenchmarks (no DB)
 // ============================================================================
 
 // BenchmarkMiddleware_DefaultChain measures the per-request overhead of the

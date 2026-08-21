@@ -12,7 +12,7 @@ import (
 // a gate with no host-installed check must fail closed rather than open.
 //
 // /state is unauthenticated by default and SignalSource.Read takes no
-// context, so signal values are process-global and world-readable —
+// context, so signal values are process-global and world-readable,
 // that is now stated on Definition.Signals. Widgets whose signals are
 // not safe to expose set RequireSession.
 func TestWidgetStateGate(t *testing.T) {

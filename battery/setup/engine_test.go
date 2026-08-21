@@ -213,7 +213,7 @@ func TestSecretNeverPrefilled(t *testing.T) {
 }
 
 // TestConcurrentStepExecution_OneRun verifies that two concurrent step
-// submissions don't both execute the step — the mutex + Complete
+// submissions don't both execute the step, the mutex + Complete
 // re-check must serialize them.
 func TestConcurrentStepExecution_OneRun(t *testing.T) {
 	var runCount int64
@@ -339,7 +339,7 @@ func TestConcurrentStepExecution_IntermediateStep(t *testing.T) {
 }
 
 // TestRender_NoHandRolledClasses verifies the rendered wizard HTML
-// contains no invented setup-* class names — only framework/ui
+// contains no invented setup-* class names, only framework/ui
 // composition primitives.
 func TestRender_NoHandRolledClasses(t *testing.T) {
 	done := false
@@ -354,8 +354,8 @@ func TestRender_NoHandRolledClasses(t *testing.T) {
 
 	// Every class on every rendered page must come from the design system:
 	// registered ui-* component classes (with their BEM-ish suffixes) or
-	// runtime fui-* markers. An invented class — setup-*, ui-input,
-	// anything the registry never styles — is hand-rolled markup
+	// runtime fui-* markers. An invented class, setup-*, ui-input,
+	// anything the registry never styles, is hand-rolled markup
 	// (Hard Rules 7/8).
 	classRe := regexp.MustCompile(`class="([^"]*)"`)
 	assertDesignSystemClasses := func(page, body string) {

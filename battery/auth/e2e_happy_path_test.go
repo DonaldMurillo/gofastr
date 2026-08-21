@@ -19,7 +19,7 @@ import (
 )
 
 // TestE2E_HappyPath_FullAuthLifecycle drives every plugin through real
-// HTTP against an httptest.Server with a cookie jar — the closest thing
+// HTTP against an httptest.Server with a cookie jar, the closest thing
 // to a live deployment without running a binary. Order matters: the 2FA
 // gate, OAuth linking, and password reset interact through session
 // state, and the test fails loudly if any plugin breaks the others.
@@ -251,7 +251,7 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
 		Jar: jar,
-		// 30s — generous because bcrypt + 2FA run ~3x slower under
+		// 30s, generous because bcrypt + 2FA run ~3x slower under
 		// `go test -race`, exceeding the previous 5s cap and producing
 		// false-positive timeouts.
 		Timeout: 30 * time.Second,
@@ -349,7 +349,7 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 	if code != http.StatusNoContent && code != http.StatusOK {
 		t.Fatalf("logout: %d", code)
 	}
-	// jar may have stale cookies past expiry — clear explicitly.
+	// jar may have stale cookies past expiry, clear explicitly.
 	jar.SetCookies(mustParseURL(srv.URL), nil)
 
 	// 8. Re-login → pending session
@@ -380,7 +380,7 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 		t.Fatalf("/auth/me post-challenge: %d %v", code, body)
 	}
 
-	// 12. Simulate OAuth link directly on the store — there is no
+	// 12. Simulate OAuth link directly on the store, there is no
 	// in-session link endpoint today; AccountsPlugin owns list+unlink.
 	if err := store.LinkOAuth(context.Background(), userID, "google", "g-12345"); err != nil {
 		t.Fatalf("LinkOAuth seed: %v", err)
@@ -396,13 +396,13 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 		t.Fatalf("expected 1 linked account; got %v", body)
 	}
 
-	// 14. Unlink — user has a password so this must succeed.
+	// 14. Unlink, user has a password so this must succeed.
 	code, _ = do(http.MethodDelete, "/auth/unlink/google", nil)
 	if code != http.StatusOK {
 		t.Fatalf("/auth/unlink/google for password user: %d", code)
 	}
 
-	// 15. Forgot password (logged in — handler doesn't require auth)
+	// 15. Forgot password (logged in, handler doesn't require auth)
 	code, _ = do(http.MethodPost, "/auth/forgot-password", map[string]string{
 		"email": "alice@e2e.test",
 	})
@@ -463,5 +463,5 @@ func mustParseURL(s string) *url.URL {
 	return u
 }
 
-// noinspection GoUnusedFunction — kept available for follow-up tests.
+// noinspection GoUnusedFunction, kept available for follow-up tests.
 var _ = strings.Contains

@@ -17,7 +17,7 @@ import (
 // or cloud metadata endpoints are SSRF vectors when subscribers are
 // user-provided.
 //
-// When allowPrivate is true the host check is skipped — used by the
+// When allowPrivate is true the host check is skipped, used by the
 // test helper and by apps that explicitly want to deliver to private
 // networks. The scheme guard runs in both modes.
 func validateSubscriberURL(raw string, allowPrivate bool) error {
@@ -45,7 +45,7 @@ func validateSubscriberURL(raw string, allowPrivate bool) error {
 	if host == "" {
 		return fmt.Errorf("webhook: URL missing host")
 	}
-	// Hostname-only checks first — cheaper than DNS and catch the
+	// Hostname-only checks first, cheaper than DNS and catch the
 	// obvious cloud-metadata names regardless of how they resolve.
 	lowerHost := strings.ToLower(host)
 	if lowerHost == "localhost" ||
@@ -54,7 +54,7 @@ func validateSubscriberURL(raw string, allowPrivate bool) error {
 		lowerHost == "metadata.google.internal" {
 		return fmt.Errorf("webhook: host %q targets internal infrastructure", host)
 	}
-	// Resolve literal IPs without DNS — the parsed host may already be
+	// Resolve literal IPs without DNS, the parsed host may already be
 	// a numeric address.
 	if ip := net.ParseIP(host); ip != nil {
 		if err := rejectInternalIP(ip); err != nil {
@@ -62,12 +62,12 @@ func validateSubscriberURL(raw string, allowPrivate bool) error {
 		}
 		return nil
 	}
-	// Hostname — resolve and re-check. A more rigorous defense is to
+	// Hostname, resolve and re-check. A more rigorous defense is to
 	// hook net.Dialer.Control at connect time (also catches DNS
 	// rebinding); this lookup catches the common case at registration.
 	addrs, err := net.LookupIP(host)
 	if err != nil {
-		// Leave DNS failure for the worker — registration shouldn't
+		// Leave DNS failure for the worker, registration shouldn't
 		// require the receiver to be live. The dial-time guard catches
 		// any resolution that lands on an internal IP later.
 		return nil
@@ -104,7 +104,7 @@ func ssrfGuardedTransport(allowPrivate bool) *http.Transport {
 			ip := net.ParseIP(host)
 			if ip == nil {
 				// Control receives the already-resolved numeric address;
-				// a non-IP here is unexpected — refuse rather than dial
+				// a non-IP here is unexpected, refuse rather than dial
 				// blind.
 				return fmt.Errorf("webhook: dial address %q is not a resolved IP", address)
 			}
@@ -125,12 +125,12 @@ func ssrfGuardedTransport(allowPrivate bool) *http.Transport {
 //   - any caller-supplied transport → left untouched and wrapped with a
 //     per-request resolved-IP check on the request TARGET that refuses
 //     before the inner transport runs. Swapping the transport's dialer
-//     instead would silently break legitimate custom routing — an
+//     instead would silently break legitimate custom routing, an
 //     egress proxy on a private IP, an SSH tunnel, a unix-socket or
-//     custom-DNS dialer — because those dial addresses are internal by
+//     custom-DNS dialer, because those dial addresses are internal by
 //     design while the delivery target is not. The per-request check
 //     resolves once up front, so unlike the dialer hook it cannot see a
-//     mid-flight re-resolve — still strictly safer than no guard.
+//     mid-flight re-resolve, still strictly safer than no guard.
 func ssrfGuardClient(c *http.Client) *http.Client {
 	cc := *c
 	if c.Transport == nil {
@@ -164,7 +164,7 @@ func rejectInternalIP(ip net.IP) error {
 	// One predicate, shared with framework/experimental/harness's webfetch and
 	// battery/print's PDF renderer. This used to be a local copy that
 	// omitted RFC 6598 CGNAT (100.64.0.0/10) and did not normalize
-	// IPv4-mapped IPv6 before range-checking — both gaps the sibling
+	// IPv4-mapped IPv6 before range-checking, both gaps the sibling
 	// copy had already closed.
 	if reason := netguard.Reason(ip); reason != "" {
 		return fmt.Errorf("webhook: %s %s not allowed", reason, ip)

@@ -14,7 +14,7 @@ import (
 // normalizeLegacyTimestamps rewrites timestamp strings in the time columns
 // of the parent and delivery tables to the canonical text layout the
 // CONNECTED driver binds for time.Time (RFC3339Nano on the pure driver,
-// space-separated on mattn/go-sqlite3 — see probeBindLayout). SQLite
+// space-separated on mattn/go-sqlite3; see probeBindLayout). SQLite
 // stores these columns as TEXT, and the relay's lease/grace SQL predicates
 // (claimed_until <= $1, created_at <= $2) compare them lexicographically. A
 // same-day legacy value like '2026-07-20 23:59:59+00:00' sorts BEFORE the
@@ -42,7 +42,7 @@ func (o *Outbox) normalizeLegacyTimestamps(ctx context.Context) error {
 }
 
 // probeBindLayout detects the text layout the connected driver produces
-// when a time.Time is bound as a parameter — the format the relay's own
+// when a time.Time is bound as a parameter, the format the relay's own
 // predicates compare against, and therefore the canonical target for
 // normalization. The pure driver binds RFC3339Nano; mattn/go-sqlite3
 // binds a space-separated form. Rows already in the probed layout are
@@ -240,7 +240,7 @@ func legacyTimeSets(layout string, cols []timeCol) ([]string, []any, error) {
 // path). Errors are treated as "absent": ensureTable has already run by the
 // time normalization is reached (when not WithoutEnsureTable), so a real
 // error here most likely means the host set WithoutEnsureTable and the
-// migration hasn't created the table yet — nothing to normalize, and the
+// migration hasn't created the table yet, nothing to normalize, and the
 // relay's own queries will surface any genuine DB fault.
 func (o *Outbox) tableExists(ctx context.Context, bareName string) bool {
 	var n int
@@ -251,8 +251,8 @@ func (o *Outbox) tableExists(ctx context.Context, bareName string) bool {
 	}
 	// "no such table" is the expected WithoutEnsureTable-before-migration
 	// case and stays silent. Anything else (e.g. SQLITE_BUSY from another
-	// process holding the file lock) also skips normalization — the relay
-	// keeps working via the post-scan parse fallback — but is worth a
+	// process holding the file lock) also skips normalization, the relay
+	// keeps working via the post-scan parse fallback, but is worth a
 	// trace, since silence here would hide a persistent fault.
 	if !strings.Contains(strings.ToLower(err.Error()), "no such table") {
 		slog.Default().Warn("outbox: table probe failed; skipping timestamp normalization this start",

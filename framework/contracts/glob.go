@@ -17,13 +17,13 @@ import "strings"
 // One deliberate departure from gitignore: `core/**` also matches `core`
 // itself, because `**` matches zero segments. gitignore reads that
 // pattern as "the contents of core, but not core". Here the patterns
-// mostly name layers and subtrees — `packages: ["core/**"]` means "the
+// mostly name layers and subtrees: `packages: ["core/**"]` means "the
 // core tree", and a reader would be surprised to find the root `core`
 // package outside its own layer.
 func matchGlob(pattern, path string) bool {
 	// Backslashes in a pattern are separators a Windows user typed. Every
 	// path this matcher sees is slash-separated (Pass normalises on
-	// discovery), so a backslash could otherwise only ever fail to match —
+	// discovery), so a backslash could otherwise only ever fail to match,
 	// and it would fail *silently*, leaving an exemption that looks
 	// applied and does nothing.
 	pattern = strings.ReplaceAll(pattern, `\`, "/")
@@ -103,7 +103,7 @@ func matchSegment(pat, seg string) bool {
 }
 
 // MatchPath is [matchGlob] exported for analyzers that need the same
-// dialect on something other than a file path — import paths, most
+// dialect on something other than a file path, import paths, most
 // obviously, which are slash-separated in exactly the same way.
 func MatchPath(pattern, path string) bool { return matchGlob(pattern, path) }
 

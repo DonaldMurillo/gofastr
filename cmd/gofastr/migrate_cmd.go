@@ -40,7 +40,7 @@ func runMigrate(args []string) {
 		runMigrateStatus(rest)
 	case "diff":
 		// Removed: `migrate diff` *applied* a blueprint onto a live DB,
-		// reconciling the running database to the blueprint — i.e. treating
+		// reconciling the running database to the blueprint, i.e. treating
 		// the blueprint as authoritative over the world. Schema migration is a
 		// separate concern from code generation: emit a reviewable, versioned
 		// migration instead. See framework/ARCHITECTURE.md.
@@ -60,7 +60,7 @@ func runMigrate(args []string) {
 	}
 }
 
-// runMigrateForce reconciles the tracking table by hand — the recovery path out
+// runMigrateForce reconciles the tracking table by hand: the recovery path out
 // of a dirty state and the baseline path for adopting an existing database.
 //
 //	gofastr migrate force <version> [--not-applied]
@@ -77,7 +77,7 @@ func runMigrateForce(args []string) {
 		case a == "--not-applied":
 			applied = false
 		case strings.HasPrefix(a, "--"):
-			// flag consumed elsewhere (e.g. --db-url) — skip
+			// flag consumed elsewhere (e.g. --db-url): skip
 		default:
 			if _, err := fmt.Sscanf(a, "%d", &version); err == nil {
 				haveVersion = true
@@ -316,13 +316,13 @@ func runMigrateStatus(args []string) {
 		if rec.Dirty {
 			if showGroup {
 				// groupLabel maps the default group to "default", which the
-				// CLI accepts as its alias — the printed command is runnable
+				// CLI accepts as its alias; the printed command is runnable
 				// verbatim for every group (a raw "" would render --group=,
 				// which getGroups rejects).
-				fmt.Printf("    %s %d %s [%s] — DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
+				fmt.Printf("    %s %d %s [%s]: DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
 					yellow("⚠"), rec.Version, rec.Name, groupLabel(rec.Group), rec.Version, groupLabel(rec.Group))
 			} else {
-				fmt.Printf("    %s %d %s — DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
+				fmt.Printf("    %s %d %s: DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
 					yellow("⚠"), rec.Version, rec.Name, rec.Version)
 			}
 		}
@@ -332,7 +332,7 @@ func runMigrateStatus(args []string) {
 func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
 	if _, err := os.Stat("migrations"); os.IsNotExist(err) {
 		return nil, nil, fmt.Errorf("directory 'migrations/' not found.\n" +
-			"This subcommand reads file-based migrations (migrations/*.sql), but apps scaffolded by `gofastr init` register migrations inline in Go (entities/entities.go → RegisterMigrations) and apply them at boot — there may be nothing on disk to read.\n" +
+			"This subcommand reads file-based migrations (migrations/*.sql), but apps scaffolded by `gofastr init` register migrations inline in Go (entities/entities.go → RegisterMigrations) and apply them at boot: there may be nothing on disk to read.\n" +
 			"Review inline migrations in your entities package; to adopt file-based migrations, generate one with `gofastr migrate generate <name> --from=<blueprint.yml>` (see `gofastr docs migrations`).")
 	}
 	dbURL := getMigrateDBURL(args)
@@ -410,14 +410,14 @@ func getMigrateDBURL(args []string) string {
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		return v
 	}
-	// Check the .env files via the shared parser — handles quoted values,
+	// Check the .env files via the shared parser: handles quoted values,
 	// escapes, and the `export` prefix that the prior ad-hoc 1-key
 	// scanner mishandled.
 	//
-	// framework.DefaultDotEnvPaths(), not just ".env": that is the same set
+	// framework.DefaultDotEnvPaths() rather than ".env" alone: that is the same set
 	// and order NewApp loads, and Load resolves conflicts earliest-file-wins.
-	// Reading ".env" alone ignored .env.local — the HIGHEST-precedence file,
-	// and the documented place to override a local database — so `gofastr
+	// Reading ".env" alone ignored .env.local, the HIGHEST-precedence file,
+	// and the documented place to override a local database, so `gofastr
 	// migrate` migrated a different database than the app it was migrating
 	// for would open.
 	if vals, err := dotenv.Load(framework.DefaultDotEnvPaths()...); err == nil {
@@ -438,7 +438,7 @@ func ensureDriverRegistered(driver string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("driver %q is not registered (available: %v) — build a gofastr CLI that blank-imports the driver you need (e.g. _ \"github.com/lib/pq\")", driver, sql.Drivers())
+	return fmt.Errorf("driver %q is not registered (available: %v). Build a gofastr CLI that blank-imports the driver you need (e.g. _ \"github.com/lib/pq\")", driver, sql.Drivers())
 }
 
 func hasFlag(args []string, flag string) bool {

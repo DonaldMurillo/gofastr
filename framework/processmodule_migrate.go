@@ -18,7 +18,7 @@ import (
 
 // Migration isolation (design §7): a process module holds ZERO database
 // credentials. The HOST runs all DDL, keyed to the module's #33 migration
-// group. This file is the short-lived migration coordinator — a
+// group. This file is the short-lived migration coordinator, a
 // deploy/CLI-style operation that loads approved SQL from the
 // digest-verified artifact (never from the running child), validates it
 // against the group rules, provisions a restricted per-module Postgres
@@ -31,7 +31,7 @@ import (
 // runner, which stays untouched.
 
 // moduleMigrationGroupDefault is the sentinel that a module's migrations
-// landed in the DEFAULT group — explicitly forbidden for third-party
+// landed in the DEFAULT group, explicitly forbidden for third-party
 // modules (design §7: a module must own a named group so its DDL stream
 // is addressable and isolatable from the host's own migrations).
 const errModuleMigrationDefaultGroup = "processmodule: module migrations must declare a named group"
@@ -94,7 +94,7 @@ type PlannedStep struct {
 
 // CoordinatorPlan is the reviewable artifact Plan returns: the group the
 // migrations will run under, the ordered steps with digests, and the
-// install-time lint warnings (advisory only — the role is the real
+// install-time lint warnings (advisory only, the role is the real
 // boundary, design §7 "no parse-allowlist").
 type CoordinatorPlan struct {
 	Group    string
@@ -127,7 +127,7 @@ func WithCoordinatorClock(now func() time.Time) CoordinatorOption {
 // WithCoordinatorAdminDSN supplies the URL-form Postgres DSN the
 // per-module role DSN is derived from (same host/db, user=module_role,
 // generated password). Required for the Postgres path; ignored on SQLite.
-// This is the host's privileged DSN — keep it off any path reachable by
+// This is the host's privileged DSN, keep it off any path reachable by
 // untrusted callers.
 func WithCoordinatorAdminDSN(dsn string) CoordinatorOption {
 	return func(c *MigrationCoordinator) { c.adminDSN = dsn }
@@ -144,8 +144,8 @@ func NewMigrationCoordinator(store ProcessModuleStore, adminDB *sql.DB, opts ...
 	if adminDB == nil {
 		return nil, errors.New("processmodule: NewMigrationCoordinator: nil admin db")
 	}
-	// The dialect picks the migration path — including whether the
-	// per-module Postgres schema/role boundary applies — and is cached for
+	// The dialect picks the migration path, including whether the
+	// per-module Postgres schema/role boundary applies, and is cached for
 	// the coordinator's lifetime. A guess here would run trusted module DDL
 	// down the wrong path, so fail closed.
 	dialect, err := migrate.DetectDialectStrict(adminDB)
@@ -171,7 +171,7 @@ func (c *MigrationCoordinator) Dialect() migrate.Dialect { return c.dialect }
 // against the descriptor's group. It enforces (design §7):
 //
 //   - the descriptor MUST declare a named migration group (default-group
-//     migrations are rejected — a module cannot inject into the host's
+//     migrations are rejected, a module cannot inject into the host's
 //     own group);
 //   - every migration runs under that one group (group-equality);
 //   - no duplicate (Version) within the set;
@@ -224,12 +224,12 @@ func (c *MigrationCoordinator) Plan(desc ProcessModuleDescriptor, migs []Approve
 //
 // Postgres: provisions a restricted per-module schema + role, opens a
 // separate *sql.DB AUTHENTICATED AS that role (not SET ROLE down from a
-// powerful session — design §7 load-bearing point 2), and runs Up under
+// privileged session, design §7 load-bearing point 2), and runs Up under
 // the advisory lock with the schema-local _migrations tracking table.
 //
 // SQLite: there is no roles/GRANT/schemas boundary (design §7 / decision
 // F). Untrusted modules are rejected loud (fail-closed). Trusted/dev-only
-// modules run Up against the host pool — trusted-only, never a claim that
+// modules run Up against the host pool, trusted-only, never a claim that
 // groups make SQLite DDL safe.
 func (c *MigrationCoordinator) Apply(ctx context.Context, desc ProcessModuleDescriptor, migs []ApprovedMigration) error {
 	plan, err := c.Plan(desc, migs)
@@ -244,7 +244,7 @@ func (c *MigrationCoordinator) Apply(ctx context.Context, desc ProcessModuleDesc
 	case migrate.DialectSQLite:
 		if desc.TrustTier == TrustUntrusted {
 			return coordErr("dialect", "sqlite_untrusted",
-				"processmodule: SQLite is not a third-party DDL boundary (design §7); an untrusted module's migrations cannot run on SQLite — fail closed")
+				"processmodule: SQLite is not a third-party DDL boundary (design §7); an untrusted module's migrations cannot run on SQLite: fail closed")
 		}
 		// Trusted/dev-only: run Up against the host pool under the group.
 		if err := c.applyWithMigrator(ctx, c.adminDB, migrate.DialectSQLite, desc.MigrationGroup, plan, "" /* no role DSN */); err != nil {
@@ -277,9 +277,9 @@ func (c *MigrationCoordinator) applyPostgres(ctx context.Context, desc ProcessMo
 		return fmt.Errorf("derive module-role DSN: %w", err)
 	}
 	// IMPORTANT (design §7 point 2): authenticate AS module_<M>_role, not
-	// SET ROLE down from a powerful session. A separate login pool means
+	// SET ROLE down from a privileged session. A separate login pool means
 	// the role's own (NOINHERIT/NOSUPERUSER) privileges are the ceiling;
-	// `RESET ROLE` is a no-op and `SET ROLE <powerful>` fails ("not a
+	// `RESET ROLE` is a no-op and `SET ROLE <privileged>` fails ("not a
 	// member"). Opening a one-connection pool keeps the runner's
 	// advisory-lock + single-connection contract.
 	roleDB, err := sql.Open("postgres", roleDSN)
@@ -335,7 +335,7 @@ func (c *MigrationCoordinator) stampApplied(ctx context.Context, module string) 
 		// Non-fatal: the periodic poll will still observe
 		// MigrationsAppliedAt. Log-shape: surface the error so the caller
 		// knows the wake signal did not land.
-		return fmt.Errorf("bump generation (non-fatal — poll will reconcile): %w", err)
+		return fmt.Errorf("bump generation (non-fatal, poll will reconcile): %w", err)
 	}
 	return nil
 }
@@ -344,7 +344,7 @@ func (c *MigrationCoordinator) stampApplied(ctx context.Context, module string) 
 
 // provisionModuleSchemaRole creates the module's schema + restricted role
 // idempotently. The role is LOGIN (with a generated password) so the DDL
-// session can AUTHENTICATE AS it — the design's §7 SQL block lists
+// session can AUTHENTICATE AS it, the design's §7 SQL block lists
 // NOLOGIN, but that is internally inconsistent with the load-bearing
 // point 2 ("a genuinely separate LOGIN role ... authenticate as"); we
 // resolve in favour of the property (LOGIN + NOINHERIT/NOSUPERUSER +
@@ -358,7 +358,7 @@ func provisionModuleSchemaRole(ctx context.Context, adminDB *sql.DB, schema, rol
 
 // moduleSchemaRoleStmts builds the provisioning DDL. Split out from the
 // execution so the ordering invariants below can be unit-tested without a
-// Postgres server — the one that matters most was invisible for exactly that
+// Postgres server, the one that matters most was invisible for exactly that
 // reason (see TestModuleSchemaRoleStmtsResetPasswordOnReprovision).
 func moduleSchemaRoleStmts(schema, role, password string) []string {
 	return []string{
@@ -377,8 +377,8 @@ END $$`,
 		// will certainly have left it with a different password).
 		//
 		// The password is the load-bearing part. Roles are CLUSTER-scoped, so
-		// a role provisioned by an earlier deploy — or an earlier test run
-		// against the same server — still exists with its old password. The
+		// a role provisioned by an earlier deploy, or an earlier test run
+		// against the same server, still exists with its old password. The
 		// CREATE above then raises duplicate_object, the handler swallows it,
 		// and without this line the freshly generated password is never
 		// applied. The coordinator immediately tries to authenticate as the
@@ -393,7 +393,7 @@ END $$`,
 		`ALTER ROLE ` + query.QuoteIdent(role) + ` WITH LOGIN PASSWORD '` + password + `' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
 		// USAGE+CREATE on its own schema ONLY.
 		`GRANT USAGE, CREATE ON SCHEMA ` + query.QuoteIdent(schema) + ` TO ` + query.QuoteIdent(role),
-		// search_path = module_<M> — convenience, NOT the fence.
+		// search_path = module_<M>, convenience, NOT the fence.
 		`ALTER ROLE ` + query.QuoteIdent(role) + ` SET search_path = ` + query.QuoteIdent(schema),
 		`ALTER ROLE ` + query.QuoteIdent(role) + ` SET statement_timeout = '30s'`,
 		`ALTER ROLE ` + query.QuoteIdent(role) + ` SET lock_timeout = '5s'`,
@@ -508,7 +508,7 @@ func randomHex(n int) string {
 // lintMigrationSQL is the NON-AUTHORITATIVE install-time lint (design §7
 // "no parse-allowlist"). It splits the Up SQL naively on ';' and flags any
 // statement whose leading verb is not CREATE TABLE / ALTER TABLE ADD
-// COLUMN / CREATE INDEX. It is advisory only — a keyword/regex allowlist
+// COLUMN / CREATE INDEX. It is advisory only, a keyword/regex allowlist
 // fails OPEN (trivially bypassed by comments, $$-quoting, ;-chaining,
 // CREATE TABLE AS SELECT, plpgsql blocks) and is redundant with the role,
 // which bounds blast radius to module_<M> regardless of what DDL is
@@ -539,7 +539,7 @@ func lintMigrationSQL(up string) []string {
 func isPlainDDL(upper string) bool {
 	// CREATE TABLE ... AS SELECT is the classic lint-bypass (it can read
 	// any table the role can see); flag it even though it starts with
-	// CREATE TABLE. Advisory only — the role is the real boundary.
+	// CREATE TABLE. Advisory only, the role is the real boundary.
 	if strings.Contains(upper, " AS SELECT") {
 		return false
 	}

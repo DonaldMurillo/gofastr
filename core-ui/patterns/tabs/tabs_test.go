@@ -70,7 +70,7 @@ func TestExplicitOpenRespected(t *testing.T) {
 	if !strings.Contains(h, `open=""`) {
 		t.Errorf("expected open tab, got: %s", h)
 	}
-	// B should be the open one — find which <details> contains open=""
+	// B should be the open one, find which <details> contains open=""
 	// Roughly: the open="" should be closer to B than A.
 	openIdx := strings.Index(h, `open=""`)
 	if openIdx < idxA || openIdx > idxB {

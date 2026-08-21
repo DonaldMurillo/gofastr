@@ -29,22 +29,22 @@ results, _ := idx.Search(ctx, search.Query{
 })
 ```
 
-**AI-typical anti-pattern** — if you're about to write any of these,
+**AI-typical anti-pattern.** If you're about to write any of these,
 stop and use a `Backend` instead:
 - `db.Query("SELECT ... WHERE title LIKE ?", "%"+q+"%")` over a domain
-  table — tanks the planner, gives no ranking, and you'll re-write it
+  table. It tanks the planner, gives no ranking, and you'll re-write it
   the moment data grows
 - A range loop over `[]Post` doing `strings.Contains(p.Title, q)`
 - A regex match across every row
 - An ad-hoc `strings.Fields` tokeniser to "approximate" full-text
 
 Push documents into a `Backend` (`Memory` in dev, durable in prod)
-and call `Search` — the swap is a one-line change at the call site.
+and call `Search`. The swap is a one-line change at the call site.
 **Backend choice:** `Memory` is fine for tests and small-volume dev data;
 it loses everything on restart. For a Postgres-first app, use
-`search.NewPostgres(db, cfg)` — ranked full-text search straight out of the
+`search.NewPostgres(db, cfg)` for ranked full-text search straight out of the
 database with zero extra infrastructure. For a SQLite-first app, use
-`search.NewSQLiteFTS(db, cfg)` — BM25-ranked FTS5 search (requires the
+`search.NewSQLiteFTS(db, cfg)` for BM25-ranked FTS5 search (requires the
 `sqlite_fts5` build tag). Call `EnsureSchema` once on boot,
 then `Index`/`Search` like any backend. See `framework/docs/content/search.md`
 for construction, weighted fields, and the tenant-scoping example.

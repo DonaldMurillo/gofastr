@@ -8,7 +8,7 @@ import (
 // The emitted seed hook's CreateOne failure path must surface the
 // per-field detail the CRUD validator already computed. A bare
 // fmt.Errorf("seed %s: %w", ...) wraps ValidationError, whose Error() is
-// the literal string "validation failed" — the generated app dies with a
+// the literal string "validation failed". The generated app dies with a
 // message containing zero actionable information. The hook must
 // errors.As the *crud.ValidationError, print each field's messages, and
 // identify the offending row.
@@ -26,7 +26,7 @@ func TestSeedCreateErrorCarriesFieldDetail(t *testing.T) {
 	}
 	// The failure path must route through the detail helper, not wrap bare.
 	// The row is identified by its one-based position in the blueprint's
-	// seed: block — i+1, matching how a human counts YAML list entries.
+	// seed: block, at i+1, matching how a human counts YAML list entries.
 	if !strings.Contains(main, "return seedCreateError(s.Entity, i+1, err)") {
 		t.Errorf("CreateOne error path does not route through seedCreateError:\n%s", main)
 	}
@@ -43,7 +43,7 @@ func TestSeedCreateErrorCarriesFieldDetail(t *testing.T) {
 
 // A failed seed aborts boot through log.Fatal, so anything in the message
 // lands in application logs. Seed rows carry admin emails and seed
-// passwords — the row's VALUES must never appear; only its position.
+// passwords: the row's VALUES must never appear; only its position.
 func TestSeedErrorOmitsRowValues(t *testing.T) {
 	main := renderBlueprintMain(seedDetailBlueprint())
 	if strings.Contains(main, "seedRowLabel") {

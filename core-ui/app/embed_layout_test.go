@@ -10,7 +10,7 @@ import (
 // An embedded surface lives in an iframe the host page resizes to the height
 // the frame reports. Under the shared .layout-body rule (min-height: 100vh)
 // that reported height is partly the frame's own height, so each report grows
-// the frame, which grows 100vh, which grows the next report — the panel
+// the frame, which grows 100vh, which grows the next report, the panel
 // ratchets open with a band of empty space below the content. Every element is
 // laid out correctly, so only a screenshot shows it.
 func TestEmbedLayoutIsNotViewportTall(t *testing.T) {

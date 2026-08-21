@@ -164,7 +164,7 @@ func MetricsHandler(m *Metrics) http.Handler {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		var sb strings.Builder
 
-		// http_requests_total — counter per (method, route, status).
+		// http_requests_total: counter per (method, route, status).
 		sb.WriteString("# HELP http_requests_total Number of HTTP requests served.\n")
 		sb.WriteString("# TYPE http_requests_total counter\n")
 
@@ -188,7 +188,7 @@ func MetricsHandler(m *Metrics) http.Handler {
 				k.Method, k.Route, k.Status, n)
 		}
 
-		// http_request_duration_ms — histogram per route.
+		// http_request_duration_ms: histogram per route.
 		sb.WriteString("# HELP http_request_duration_ms Request latency in ms.\n")
 		sb.WriteString("# TYPE http_request_duration_ms histogram\n")
 		routes := make([]string, 0, len(m.durations))
@@ -210,7 +210,7 @@ func MetricsHandler(m *Metrics) http.Handler {
 			fmt.Fprintf(&sb, "http_request_duration_ms_count{route=%q} %d\n", r, h.count)
 			h.mu.Unlock()
 		}
-		// Snapshot collectors — names AND funcs — under the lock, then run
+		// Snapshot collectors, names AND funcs, under the lock, then run
 		// them OUTSIDE m.mu: a collector may do I/O (DB count, queue stats)
 		// and must never block request recording or hold the metrics lock.
 		// Reading the live map after Unlock would race a concurrent

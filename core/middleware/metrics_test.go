@@ -57,7 +57,7 @@ func TestMetrics_RecordsRequests(t *testing.T) {
 
 func TestMetrics_HistogramBucketBoundaries(t *testing.T) {
 	m := NewMetrics()
-	// Record three latencies into the same "route" — 2ms, 7ms, 600ms.
+	// Record three latencies into the same "route": 2ms, 7ms, 600ms.
 	// Buckets: 1, 5, 10, 50, 100, 250, 500, 1000.
 	// 2ms → bucket index 1 (<=5).
 	// 7ms → bucket index 2 (<=10).
@@ -70,7 +70,7 @@ func TestMetrics_HistogramBucketBoundaries(t *testing.T) {
 	MetricsHandler(m).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 	body := rec.Body.String()
 
-	// Cumulative buckets (le="X") — Prometheus expects cumulative counts.
+	// Cumulative buckets (le="X"); Prometheus expects cumulative counts.
 	// le=5  → 1 (just the 2ms)
 	// le=10 → 2 (2ms + 7ms)
 	// le=1000 → 3 (all three)
@@ -120,7 +120,7 @@ func TestMetrics_ConcurrentSafe(t *testing.T) {
 // ============================================================================
 // Regression: the wrapped ResponseWriter must forward Flush() so SSE / chunked
 // handlers work behind the metrics middleware. Caught in a full-stack E2E
-// before this fixture existed — keeping it pinned here so the assertion
+// before this fixture existed, keeping it pinned here so the assertion
 // fires at the unit level too.
 // ============================================================================
 

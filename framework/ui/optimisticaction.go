@@ -14,10 +14,10 @@ import (
 // (or network error) the button rolls back to idle and surfaces a
 // brief error tooltip.
 //
-// Use for "Follow", "Like", "Subscribe", "Add to cart" — actions where
+// Use for "Follow", "Like", "Subscribe", "Add to cart": actions where
 // the user expects instant feedback and the server response is just a
 // confirmation. NOT for irreversible / destructive actions (delete,
-// charge, …) — pair those with ConfirmAction instead.
+// charge, …). Pair those with ConfirmAction instead.
 //
 // SSR shape:
 //
@@ -51,7 +51,7 @@ type OptimisticActionConfig struct {
 	// IdleIcon optionally renders alongside IdleLabel.
 	IdleIcon render.HTML
 
-	// SuccessIcon optionally renders alongside SuccessLabel — common
+	// SuccessIcon optionally renders alongside SuccessLabel. Common
 	// usage: a small check or filled-heart SVG.
 	SuccessIcon render.HTML
 
@@ -85,7 +85,7 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	}
 
 	cls := "ui-button ui-optimistic-action"
-	// Always append the variant modifier when set — primary needs the
+	// Always append the variant modifier when set. Primary needs the
 	// class too because the base .ui-button selectors include the
 	// primary colors via ui-button--primary on some themes. The
 	// earlier `!= ButtonPrimary` guard silently dropped the class for

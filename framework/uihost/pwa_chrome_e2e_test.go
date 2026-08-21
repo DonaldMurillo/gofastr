@@ -17,7 +17,7 @@ import (
 
 // TestPWAChromeE2E drives the full PWA lifecycle in a real Chrome:
 // registration + installability metadata, offline fallback against a
-// genuinely dead server (listener closed — no CDP network emulation,
+// genuinely dead server (listener closed, no CDP network emulation,
 // which does not reliably reach service-worker fetches), and
 // cache-version cleanup across a v1 → v2 deployment on the same origin.
 // Serialized by design: phases share one browser and one origin.
@@ -32,8 +32,8 @@ func TestPWAChromeE2E(t *testing.T) {
 		a.Register("/other", &plainComp{}, nil)
 		opts := []Option{WithPWA(PWAConfig{ThemeColor: "#112233"})}
 		if extraCSS != "" {
-			// Changing app.css rotates the deployment fingerprint —
-			// this is what makes v2 a "new asset fingerprint" deploy.
+			// Changing app.css rotates the deployment fingerprint.
+			// This is what makes v2 a "new asset fingerprint" deploy.
 			opts = append(opts, WithCustomCSS(extraCSS))
 		}
 		return New(a, opts...)
@@ -70,8 +70,8 @@ func TestPWAChromeE2E(t *testing.T) {
 	defer browserCancel()
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
-	// passing a timeout context here would make the browser die when that
+	// browser context so the browser's lifetime is the browser context's.
+	// Passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
 	go func() { started <- chromedp.Run(browserCtx) }()
@@ -145,7 +145,7 @@ func TestPWAChromeE2E(t *testing.T) {
 	// ── Phase 1.5: SPA partial navigation flows THROUGH the worker ──
 	// Partials are per-user no-store responses. The controlled page's
 	// fetch is not mode:"navigate", so it lands in the worker's asset
-	// branch — which must pass it to the network every time, never
+	// branch, which must pass it to the network every time, never
 	// answer it from Cache Storage. Two fetches, two server hits.
 	if err := chromedp.Run(ctx, chromedp.Evaluate(
 		`fetch('/other', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-From': '/'}})
@@ -240,7 +240,7 @@ func TestPWAChromeE2E(t *testing.T) {
 		t.Fatalf("v2 install never created its cache: %v", err)
 	}
 
-	// The old worker keeps controlling until its clients go away — no
+	// The old worker keeps controlling until its clients go away, no
 	// forced skipWaiting. Release the origin (about:blank), let the v2
 	// worker activate and clean up, then come back and verify only the
 	// v2 cache remains.

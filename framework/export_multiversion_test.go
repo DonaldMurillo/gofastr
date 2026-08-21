@@ -14,7 +14,7 @@ import (
 
 // TestExportData_MultiVersionOneFilePerTable (F3): two versions of one entity
 // share one physical table, so the archive must emit exactly ONE source
-// (<name>.ndjson + one manifest entry) for that table — not one per version.
+// (<name>.ndjson + one manifest entry) for that table, not one per version.
 // Without the union, collectSources iterated AllSorted() and emitted each
 // version under the same <name>.ndjson path; the second write clobbered the
 // first while the manifest gained two entries, and import either

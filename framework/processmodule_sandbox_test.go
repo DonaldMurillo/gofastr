@@ -11,16 +11,16 @@ import (
 )
 
 //
-//   - TestSelectRunner_*  — the fail-closed selection logic (design §6
+//   - TestSelectRunner_*:   the fail-closed selection logic (design §6
 //     decision C): trusted → trusted runner; untrusted + conforming
 //     sandbox → sandbox; untrusted + nil/non-conforming → error.
-//   - TestNewSandboxRunner_* — the constructor's probe-at-construction
+//   - TestNewSandboxRunner_*: the constructor's probe-at-construction
 //     gate: nil/unavailable/non-conforming backend ⇒ error.
-//   - TestSupervisor_UntrustedFailsClosedNoSandbox — the inverted
+//   - TestSupervisor_UntrustedFailsClosedNoSandbox: the inverted
 //     supervisor site still fails closed when no sandbox is configured
 //     (preserves the wave-2a contract; the inversion is that it CAN now
 //     succeed when a conforming sandbox is supplied).
-//   - TestSupervisor_UntrustedRegistersWithConformingSandbox — the
+//   - TestSupervisor_UntrustedRegistersWithConformingSandbox: the
 //     inversion's positive case: an untrusted descriptor registers when
 //     SupervisorConfig.Sandbox is a probe-passing runner.
 
@@ -48,7 +48,7 @@ func (f *fakeBackend) Wrap(_ *exec.Cmd, _ SandboxOpts) error {
 }
 
 // newFakeConformingSandbox builds a *SandboxRunner whose Conforms() is
-// true WITHOUT running the real probe suite — the report is hand-built
+// true WITHOUT running the real probe suite, the report is hand-built
 // all-pass. Used to test selection / supervisor wiring in isolation from
 // host sandbox availability.
 func newFakeConformingSandbox(b SandboxBackend) *SandboxRunner {
@@ -156,7 +156,7 @@ func TestNewSandboxRunner_UnavailableBackendErrors(t *testing.T) {
 // TestNewSandboxRunner_RealBackendProbesOrFail exercises the constructor's
 // probe-at-construction gate against whatever backend the host actually
 // has. On every host it asserts the constructor returns EITHER a working
-// runner OR an error mentioning ErrSandboxUnavailable — never a silent
+// runner OR an error mentioning ErrSandboxUnavailable, never a silent
 // nil-both. A host whose backend does not conform (the v1 norm on
 // darwin/windows/some-linux) sees the constructor error; the error
 // message MUST contain the report summary so the operator can see which
@@ -190,7 +190,7 @@ func TestNewSandboxRunner_RealBackendProbesOrFail(t *testing.T) {
 // difference from TrustedProcessRunner.Start). It uses a fake backend
 // whose Wrap records the invocation; the child is NOT actually exec'd
 // (the descriptor pins a nonexistent artifact, so prepareChildForSpawn
-// errors at the SHA-256 step — but that is AFTER the backend would wrap;
+// errors at the SHA-256 step, but that is AFTER the backend would wrap;
 // to test wrap-ordering we point the artifact at a real file).
 func TestSandboxRunner_StartAppliesBackendWrap(t *testing.T) {
 	// Build a real (tiny) artifact so prepareChildForSpawn's SHA check
@@ -224,7 +224,7 @@ func TestSandboxRunner_StartAppliesBackendWrap(t *testing.T) {
 	if err != nil {
 		// The fake child (a copy of the test binary) will start, speak
 		// no moduleproto, and the codec wire may fail; that is fine for
-		// this test — we only assert Wrap fired. Kill anything that
+		// this test, we only assert Wrap fired. Kill anything that
 		// started.
 		if rc != nil {
 			_ = rc.Kill()

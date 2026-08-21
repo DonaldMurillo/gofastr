@@ -12,7 +12,7 @@ import (
 // widgets on one page must not cross-talk. The module used a single
 // module-scoped `state` plus a first-match findViewer(), so the Prev/Next
 // buttons of the SECOND lightbox resolved to the FIRST viewer in DOM
-// order — and if that one was closed, recordOpen() set state=null and
+// order, and if that one was closed, recordOpen() set state=null and
 // the click was a silent no-op (B's nav was dead whenever A preceded it
 // in the DOM).
 //
@@ -21,7 +21,7 @@ import (
 // Next MUST step B (openWidget called with B's widget name + the second
 // image), not A.
 func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
-	// A is CLOSED (hidden) and first in DOM order — exactly the case
+	// A is CLOSED (hidden) and first in DOM order, exactly the case
 	// where the old first-match findViewer() picked the wrong viewer.
 	// B is OPEN and carries the Prev/Next buttons.
 	page := fmt.Sprintf(`<!doctype html><html><head></head><body>
@@ -56,11 +56,11 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 		// is idle-scheduled off the [data-fui-widget] marker this fixture
 		// carries. Installing the spy first is a race: if widgets lands
 		// afterwards it overwrites the spy, step() calls the real
-		// openWidget, and __lbCall stays "" — which is exactly the ~8%
+		// openWidget, and __lbCall stays "", which is exactly the ~8%
 		// flake this test had. Wait for it, THEN spy.
 		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.loadedModules&&window.__gofastr.loadedModules.widgets)`,
 			nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
-		// Spy on openWidget — step() calls it with the widget name + parsed params.
+		// Spy on openWidget, step() calls it with the widget name + parsed params.
 		chromedp.Evaluate(`window.__lbCall='';window.__gofastr.openWidget=function(name,opts){window.__lbCall=name+':'+(((opts&&opts.params)||{}).src||'');};`, nil),
 		chromedp.Click(`#bNext`, chromedp.ByID),
 		chromedp.Sleep(500*time.Millisecond),

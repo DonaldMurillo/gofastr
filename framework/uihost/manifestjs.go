@@ -16,7 +16,7 @@ import (
 // they are fetched once per deploy and revalidate with a 304 after.
 //
 // It is a classic script injected immediately BEFORE runtime.js, so its
-// globals are assigned by the time the kernel boots — the kernel and the
+// globals are assigned by the time the kernel boots. The kernel and the
 // module loader already prefer the window globals over the inline blocks.
 // Export mode (static sites, the PWA offline shell) and theme-variant
 // pages keep the inline blocks: exports must be self-contained files,

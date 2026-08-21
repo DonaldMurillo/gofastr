@@ -1,4 +1,4 @@
-// OptimisticAction runtime — on click, flip the button to its
+// OptimisticAction runtime, on click, flip the button to its
 // committed state IMMEDIATELY (showing the SSR-declared success
 // label), then fire the RPC. On non-2xx (or network error) revert to
 // idle and play a small shake animation.
@@ -53,7 +53,7 @@
       const url = btn.getAttribute('data-fui-optimistic-endpoint');
       const method = (btn.getAttribute('data-fui-optimistic-method') || 'POST').toUpperCase();
       if (!url) return;
-      // Optimistic flip — paint success state on the next frame.
+      // Optimistic flip, paint success state on the next frame.
       setState(btn, 'pending');
       // Dispatch a custom event so apps can hook in (e.g. update an
       // adjacent counter, swap an icon).

@@ -3,7 +3,7 @@
 //
 // An app composed of optional features can organize migrations into named
 // GROUPS so each module owns its schema independently. A migration with an
-// empty Group belongs to the DEFAULT group — the single flat, version-ordered
+// empty Group belongs to the DEFAULT group: the single flat, version-ordered
 // list every existing app uses. Two groups may each have a version 1; version
 // uniqueness is enforced per group.
 //
@@ -18,7 +18,7 @@
 // Up/Down/Status take an optional variadic list of group names. With no
 // arguments every registered group is in scope (the existing behavior). With
 // one or more names, only those groups' migrations are applied, rolled back, or
-// reported — so enabling a feature later runs just its pending set. Force takes
+// reported, so enabling a feature later runs just its pending set. Force takes
 // at most one group (0 = default, 1 = that group, more = error).
 //
 // # Ordering

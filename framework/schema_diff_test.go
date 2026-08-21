@@ -234,7 +234,7 @@ func TestSchemaDiff_KeepsFrameworkManagedColumns(t *testing.T) {
 }
 
 // ============================================================================
-// Test: ApplySchemaDiff is transactional — failure mid-way rolls back.
+// Test: ApplySchemaDiff is transactional, failure mid-way rolls back.
 // ============================================================================
 
 func TestSchemaDiff_ApplyTransactional(t *testing.T) {

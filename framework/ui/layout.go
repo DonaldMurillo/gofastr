@@ -15,7 +15,7 @@ import (
 // data-fui-comp="ui-layout" so one stylesheet covers the family.
 //
 // Apps that need anything beyond the canonical tokens are expected to
-// reach for raw CSS via Class — these primitives intentionally don't
+// reach for raw CSS via Class. These primitives intentionally don't
 // proliferate options.
 
 // Gap is a named spacing token. Maps to var(--spacing-*).
@@ -53,7 +53,7 @@ const (
 	JustifyAround  Justify = "around"
 )
 
-// ─── Stack — vertical flex column ───────────────────────────────────
+// ─── Stack: vertical flex column ───────────────────────────────────
 
 // StackConfig configures a vertical stack.
 type StackConfig struct {
@@ -74,7 +74,7 @@ func Stack(cfg StackConfig, children ...render.HTML) render.HTML {
 	}, children...))
 }
 
-// ─── Cluster — horizontal flex row with wrap ────────────────────────
+// ─── Cluster: horizontal flex row with wrap ────────────────────────
 
 // ClusterConfig configures a horizontal cluster.
 type ClusterConfig struct {
@@ -99,7 +99,7 @@ func Cluster(cfg ClusterConfig, children ...render.HTML) render.HTML {
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))
 }
 
-// ─── Grid — responsive CSS grid ─────────────────────────────────────
+// ─── Grid: responsive CSS grid ─────────────────────────────────────
 
 // GridConfig configures a CSS grid.
 type GridConfig struct {
@@ -117,7 +117,7 @@ type GridConfig struct {
 //
 // Min is passed through `--ui-grid-min` (a CSS custom property the
 // component declares on the root), so no inline `style="…"` is
-// emitted — strict-CSP clean.
+// emitted, strict-CSP clean.
 func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 	cls := layoutClass("ui-grid", cfg.Class, cfg.Gap, "", "")
 	min := cfg.Min
@@ -135,11 +135,11 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 	}, children...))
 }
 
-// ─── Center — single child centered both axes ───────────────────────
+// ─── Center: single child centered both axes ───────────────────────
 
 // CenterConfig configures a centered region.
 type CenterConfig struct {
-	// MinHeight maps to a class — "viewport" (100vh), "screen" (100dvh
+	// MinHeight maps to a class: "viewport" (100vh), "screen" (100dvh
 	// where supported), or "" (auto). Used for empty-state landing /
 	// onboarding panels.
 	MinHeight string
@@ -159,7 +159,7 @@ func Center(cfg CenterConfig, children ...render.HTML) render.HTML {
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))
 }
 
-// ─── Spacer — flexible filler ───────────────────────────────────────
+// ─── Spacer: flexible filler ───────────────────────────────────────
 
 // Spacer renders an empty flexible element that grows to fill
 // available space. Use inside a Stack or Cluster to push a sibling
@@ -172,7 +172,7 @@ func Spacer() render.HTML {
 	}))
 }
 
-// ─── Box — wrapper with optional padding / background ───────────────
+// ─── Box: wrapper with optional padding / background ───────────────
 
 // BoxPad selects a named padding value. "" is no padding.
 type BoxPad string
@@ -260,7 +260,7 @@ type StickyConfig struct {
 
 	// ZIndexTier selects the z-index tier. Defaults to "sticky" when
 	// empty. Valid values are exactly the five built-in ZIndexSet tiers
-	// — "sticky", "dropdown", "modal", "popover", "toast" — which the
+	// "sticky", "dropdown", "modal", "popover", "toast", which the
 	// stylesheet maps to z-index: var(--z-<tier>). These are fixed
 	// built-ins, not arbitrary theme-supplied tokens: validation and
 	// the generated CSS only know these five, so an unknown tier panics

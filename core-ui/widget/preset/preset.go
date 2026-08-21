@@ -12,7 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// FloatingPanel is a corner-anchored, persistent panel — useful for
+// FloatingPanel is a corner-anchored, persistent panel, useful for
 // chat surfaces, devtools, build status. Defaults to BottomRight.
 // Backdrop=false (it floats above the page without dimming it).
 func FloatingPanel(name string) *widget.Builder {
@@ -29,7 +29,7 @@ func Modal(name string) *widget.Builder {
 }
 
 // ToastStack registers an empty toast stack widget. Toasts are
-// pushed entirely on the client — either via the JS API
+// pushed entirely on the client, either via the JS API
 // `window.__gofastr.toast({...})`, or by setting an
 // `X-Gofastr-Toast: <json>` header on the response of any
 // `data-fui-rpc` handler. The runtime appends the rendered item into
@@ -53,9 +53,9 @@ func Modal(name string) *widget.Builder {
 //	window.__gofastr.toast({variant:"success", title:"Saved", ttl:5000});
 //
 // Position can be overridden after the preset returns. Backdrop is
-// intentionally OFF — toasts are non-blocking.
+// intentionally OFF, toasts are non-blocking.
 func ToastStack(name string) *widget.Builder {
-	// No custom Skeleton — the framework's defaultSkeleton picks up
+	// No custom Skeleton, the framework's defaultSkeleton picks up
 	// whatever Position the caller chose via .Mount(). The slot
 	// renders the empty `data-fui-toast-stack="<name>"` container
 	// the runtime appends items into.
@@ -70,7 +70,7 @@ type clientToastSlot struct{ name string }
 
 func (s clientToastSlot) Render() render.HTML {
 	// Escape the widget name before interpolating into the HTML
-	// attribute — callers control the name but a `"` would break out
+	// attribute, callers control the name but a `"` would break out
 	// of the attribute. core-ui/widget's escAttr is unexported, so
 	// we use render.Escape (same set of replacements).
 	return render.HTML(
@@ -83,12 +83,12 @@ var _ component.Component = clientToastSlot{}
 
 // Drawer is an edge-mounted sliding panel. Defaults to the left edge;
 // pass widget.EdgeRight to flip. Includes a backdrop, closes on
-// Escape, and closes on click-outside — matches Modal's dismiss
+// Escape, and closes on click-outside, matches Modal's dismiss
 // affordances. Set the corresponding fields back to false after
 // .Build() if a drawer needs to behave as a non-dismissible panel.
 //
 // Role defaults to "dialog" so screen readers announce the drawer
-// like a modal — overrideable via .Role("…") on the builder.
+// like a modal, overrideable via .Role("…") on the builder.
 func Drawer(name string) *widget.Builder {
 	b := widget.New(name).
 		Mount(widget.Edge).
@@ -121,7 +121,7 @@ func Banner(name string) *widget.Builder {
 // Slide-from-bottom animation; on small viewports the sheet rises
 // ~75vh; on larger viewports it caps to a more conservative ~50vh.
 //
-// Use for mobile detail panels, share sheets, action menus — any
+// Use for mobile detail panels, share sheets, action menus, any
 // content surface that on small screens makes more sense rising
 // from the bottom than sliding in from the left.
 func BottomSheet(name string) *widget.Builder {
@@ -137,7 +137,7 @@ func BottomSheet(name string) *widget.Builder {
 }
 
 // Popover is a click-triggered floating surface with no backdrop dim.
-// Hidden by default — opened with data-fui-open="<name>" — and
+// Hidden by default, opened with data-fui-open="<name>", and
 // dismisses on Escape or click-outside.
 //
 // Two placement modes share the same widget definition; the choice
@@ -146,10 +146,10 @@ func BottomSheet(name string) *widget.Builder {
 //  1. Corner-anchored (default). Without extra attributes the popover
 //     renders at the widget's declared Position (TopRight by default;
 //     override via .Mount(widget.BottomLeft) etc). Predictable global
-//     placement — good for a toolbar "Share" / "Help" surface.
+//     placement, good for a toolbar "Share" / "Help" surface.
 //
 //  2. Trigger-anchored. Add data-fui-popover-anchor to the trigger
-//     button (with an optional preferred side — "top", "bottom",
+//     button (with an optional preferred side, "top", "bottom",
 //     "left", "right", or "auto"). The runtime measures both rects
 //     after open and positions the popover next to the trigger; when
 //     the preferred side would overflow the viewport it auto-flips
@@ -172,7 +172,7 @@ func Popover(name string) *widget.Builder {
 		Mount(widget.TopRight).
 		Hidden()
 	d := b.Definition()
-	// Same dismissal affordances as Drawer / Modal — no backdrop dim,
+	// Same dismissal affordances as Drawer / Modal, no backdrop dim,
 	// but ESC and outside-click still close the popover.
 	d.CloseOnEscape = true
 	d.CloseOnClickOutside = true

@@ -18,12 +18,12 @@ import (
 // silently stamping the default. Clearing roles is a legitimate admin
 // operation; defaulting would be a privilege bug.
 //
-// The roles are OPERATOR input (from an admin screen), never request data —
+// The roles are OPERATOR input (from an admin screen), never request data,
 // the same security posture as AuthConfig.DefaultRoles. The caller
 // (AuthManager.SetUserRoles) is responsible for sourcing them from an
 // admin-gated context.
 func (s *EntityUserStore) UpdateRoles(ctx context.Context, userID string, roles []string) error {
-	// json.Marshal directly — do NOT use formatRoles, which defaults empty
+	// json.Marshal directly, do NOT use formatRoles, which defaults empty
 	// to ["user"]. An admin clearing a user's roles must produce an empty
 	// set, not a silent promotion to "user".
 	b, _ := json.Marshal(roles)

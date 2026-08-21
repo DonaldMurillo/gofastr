@@ -65,7 +65,7 @@ func main() {
 	// The semantic routes require a bearer token. Default to a fixed demo
 	// token so `go run ./examples/semantic-demo` works out of the box; set
 	// SEMANTIC_DEMO_TOKEN to use something else. (Real deployments MUST set
-	// their own secret — never ship this default.)
+	// their own secret, never ship this default.)
 	token := os.Getenv("SEMANTIC_DEMO_TOKEN")
 	if token == "" {
 		token = "demo-token" // not-a-secret: published demo default, overridden by SEMANTIC_DEMO_TOKEN

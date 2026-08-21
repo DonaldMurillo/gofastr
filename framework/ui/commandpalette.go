@@ -27,7 +27,7 @@ import (
 //     the global shortcut binding (Meta+K by default).
 //   - preset: a *widget.Builder the host mounts once at startup.
 //
-// Selecting an option does whatever the option's HTML wires it to —
+// Selecting an option does whatever the option's HTML wires it to:
 // typically the server emits `<li role="option" data-fui-rpc="..."
 // data-fui-push-state="...">…</li>` so picking it navigates or fires
 // an action. The combobox runtime picks the option's data-value or
@@ -49,7 +49,7 @@ type CommandPaletteConfig struct {
 	Placeholder string
 
 	// Shortcut is the chord that opens the palette. Default "Meta+K"
-	// (Cmd+K on Mac, Ctrl+K elsewhere — the runtime treats either as
+	// (Cmd+K on Mac, Ctrl+K elsewhere: the runtime treats either as
 	// Mod when matching).
 	Shortcut string
 
@@ -57,7 +57,7 @@ type CommandPaletteConfig struct {
 	// than a generic combobox since results render eagerly).
 	DebounceMs int
 
-	// TriggerLabel is the SR-only trigger button text — what AT
+	// TriggerLabel is the SR-only trigger button text: what AT
 	// users hear if they tab to it. Default "Open command palette".
 	TriggerLabel string
 
@@ -66,7 +66,7 @@ type CommandPaletteConfig struct {
 	EmptyHTML string
 
 	// Commands, when non-empty, renders a static, client-side-filtered
-	// command list — no search endpoint needed. Use for a small fixed
+	// command list, no search endpoint needed. Use for a small fixed
 	// set (docs/nav links) so the palette works on a serverless export
 	// where no RPC handler exists. Takes precedence over RPCPath.
 	Commands []PaletteCommand
@@ -176,7 +176,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	inputID := s.widgetName + "-input"
 	// title is resolved at CommandPalette() call time and stashed on
 	// the slot. Slots constructed directly (e.g. in tests) may leave it
-	// empty — fall back to the localized default so combobox.Render's
+	// empty: fall back to the localized default so combobox.Render's
 	// non-empty Label contract holds.
 	title := s.title
 	if title == "" {

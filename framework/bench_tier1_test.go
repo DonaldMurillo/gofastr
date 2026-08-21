@@ -14,10 +14,10 @@ import (
 )
 
 // ============================================================================
-// Tier 1 — claims-defending end-to-end benchmarks (dual-DB)
+// Tier 1: claims-defending end-to-end benchmarks (dual-DB)
 //
 // These map directly to README assertions. Numbers either back up the
-// pitch or expose holes — both are useful.
+// pitch or expose holes, both are useful.
 // ============================================================================
 
 // setupBlogDomain creates a posts/authors/comments tri-table domain on the
@@ -27,7 +27,7 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 	b.Helper()
 	ctx := context.Background()
 
-	// DDL — portable between SQLite and Postgres. Include timestamps so the
+	// DDL, portable between SQLite and Postgres. Include timestamps so the
 	// framework's default `Timestamps: true` doesn't reference missing columns.
 	for _, ddl := range []string{
 		`CREATE TABLE IF NOT EXISTS authors (
@@ -146,7 +146,7 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 // a request to the CRUD layer. Commit 4758c4a0 made generated CRUD require
 // a session by default; without this, the setupBlogDomain fixtures (no
 // OwnerField, no Access, no Config.Public) 401 in requireAuthenticated
-// before the List body runs — so every bench that hit /posts via the
+// before the List body runs, so every bench that hit /posts via the
 // framework was measuring the auth rejection, not the list path.
 func benchAuthedGet(target string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -154,12 +154,12 @@ func benchAuthedGet(target string) *http.Request {
 }
 
 // ----------------------------------------------------------------------------
-// 1.1 — Includes vs N+1: the "no N+1 — one query per relation per level" claim
+// 1.1. Includes vs N+1: the "no N+1, one query per relation per level" claim
 // ----------------------------------------------------------------------------
 
 // BenchmarkTier1_IncludesVsN1 compares:
-//   - GET /posts?limit=N&include=author,comments — the framework's eager-load.
-//   - GET /posts?limit=N (then per-row author + comments fetches) — naive N+1.
+//   - GET /posts?limit=N&include=author,comments: the framework's eager-load.
+//   - GET /posts?limit=N (then per-row author + comments fetches): naive N+1.
 //
 // The framework should win by an O(rows) factor at meaningful page sizes.
 func BenchmarkTier1_IncludesVsN1(b *testing.B) {
@@ -223,7 +223,7 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 1.2 — Cursor pagination at depth vs offset
+// 1.2: Cursor pagination at depth vs offset
 // ----------------------------------------------------------------------------
 
 // BenchmarkTier1_PaginationDepth compares offset and cursor pagination at
@@ -317,7 +317,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 1.3 — Batch endpoint vs N individual writes
+// 1.3: Batch endpoint vs N individual writes
 // ----------------------------------------------------------------------------
 
 // BenchmarkTier1_BatchVsN compares:
@@ -387,7 +387,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 1.4 — Streaming JSON vs buffered for large result sets
+// 1.4: Streaming JSON vs buffered for large result sets
 // ----------------------------------------------------------------------------
 
 // BenchmarkTier1_StreamingVsBuffered compares the buffered list response
@@ -399,7 +399,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 // per-row encode/write overhead at the max client-controllable page size
 // of 100, not the streaming surface's full intended workload. The auto-
 // stream trigger (perPage ≥ streamListThreshold = 1000) is unreachable
-// through the documented HTTP surface — flagged as a feature gap.
+// through the documented HTTP surface, flagged as a feature gap.
 func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		const N = 5000

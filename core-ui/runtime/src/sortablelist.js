@@ -1,10 +1,10 @@
-// SortableList runtime module — drag-and-drop reorder + keyboard
+// SortableList runtime module, drag-and-drop reorder + keyboard
 // fallback. Posts the new order to data-fui-sortable-rpc as
 // `order=<comma-separated-keys>`; reverts on non-2xx.
 //
 // Cross-container (kanban): lists sharing a data-fui-sortable-group
 // allow items to drag/keyboard between them (including into empty
-// columns — #82). A cross-container drop POSTs
+// columns, #82). A cross-container drop POSTs
 // order=<dest keys>&moved=<key>&container=<col id> to the destination
 // list's RPC. A same-container reorder POSTs order=<keys> plus
 // container=<col id> when the list has data-fui-sortable-container
@@ -71,7 +71,7 @@
   }
 
   // containerField: the per-column id, sent on EVERY commit when the
-  // source list carries data-fui-sortable-container — same-container
+  // source list carries data-fui-sortable-container, same-container
   // reorders included (#84) so the server can route the write without
   // inferring the column from the key set. Empty when the list never
   // configured a container (back-compat: payload unchanged).
@@ -95,7 +95,7 @@
     let body = 'order=' + encodeURIComponent(keysOf(dest).join(','));
     body += '&moved=' + encodeURIComponent(movedKey);
     // Cross-container commits ALWAYS carry container= (empty when the
-    // list has no configured id) — unchanged by #84. Same-container
+    // list has no configured id), unchanged by #84. Same-container
     // commits use containerField() instead, which omits the field
     // entirely for back-compat with container-less lists.
     body += '&container=' + encodeURIComponent(attr(dest, 'data-fui-sortable-container'));
@@ -123,7 +123,7 @@
 
   // fireToast: best-effort error toast via the framework toast surface
   // (#83). No-op when neither __gofastr.toast nor loadModule('toasts')
-  // is available (e.g. bare test pages) — the live region is the
+  // is available (e.g. bare test pages), the live region is the
   // primary, always-on surface; this is secondary.
   function fireToast(msg) {
     let g = window.__gofastr;
@@ -138,7 +138,7 @@
   }
 
   // readBounded: read at most `max` chars from res's body via the
-  // stream reader — a hard safety bound so a hostile/buggy server
+  // stream reader, a hard safety bound so a hostile/buggy server
   // can't make us buffer an unbounded 409 body. Falls back to text()
   // (then slices) only when the stream reader is unavailable. cb(txt).
   function readBounded(res, max, cb) {
@@ -181,7 +181,7 @@
 
   // finishConflict: announce the captured message (or the generic
   // fallback when none) and fire a toast only when a real message
-  // exists — never toast the generic copy.
+  // exists, never toast the generic copy.
   function finishConflict(msg, fallback) {
     announce(msg || fallback);
     if (msg) fireToast(msg);
@@ -278,7 +278,7 @@
       overList = listOf(over);
     } else {
       // Empty list: no [data-fui-sortable-item] to hit-test, so
-      // accept the list element itself as the drop target (#82 —
+      // accept the list element itself as the drop target (#82,
       // dropping into an empty Kanban column).
       overList = ev.target && ev.target.closest && ev.target.closest('[data-fui-sortable]');
     }

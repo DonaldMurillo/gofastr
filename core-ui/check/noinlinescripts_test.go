@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Sanity-check the inline-script linter — uses a temp dir with
+// Sanity-check the inline-script linter, uses a temp dir with
 // controlled fixture .go files so we never depend on the rest of
 // the repo to define what's "bad".
 

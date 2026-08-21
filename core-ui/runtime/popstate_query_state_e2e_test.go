@@ -52,7 +52,7 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 }
 
 // Back across a deep-link push (only a stateful param differs) must not
-// refetch the screen — refetching is what discarded the mounted widget
+// refetch the screen, refetching is what discarded the mounted widget
 // and made Forward unusable (the v0.44.0 known issue).
 func TestStatefulQueryBackForwardZeroFetch(t *testing.T) {
 	srv, count := stateSite(t)
@@ -92,7 +92,7 @@ func TestStatefulQueryBackForwardZeroFetch(t *testing.T) {
 	}
 }
 
-// A non-stateful query diff (?p=2 — pagination pushed via push-state) IS
+// A non-stateful query diff (?p=2, pagination pushed via push-state) IS
 // screen identity: back must refetch (or cache-replay) as before.
 func TestIdentityQueryBackRefetches(t *testing.T) {
 	srv, count := stateSite(t)
@@ -111,7 +111,7 @@ func TestIdentityQueryBackRefetches(t *testing.T) {
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	// The back over an identity param must reload the screen — from the
+	// The back over an identity param must reload the screen, from the
 	// LRU cache here (the boot entry for /list), so no second network
 	// request, but never a silent skip: the content is re-swapped and
 	// the stamp is gone.

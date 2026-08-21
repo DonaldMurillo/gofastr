@@ -119,7 +119,7 @@ func (s *Server) handle(ctx context.Context, line []byte) {
 		})
 		return
 	}
-	// Notifications (no ID) — handle "notifications/initialized" silently.
+	// Notifications (no ID), handle "notifications/initialized" silently.
 	if len(req.ID) == 0 {
 		return
 	}
@@ -177,7 +177,7 @@ func (s *Server) handleInitialize(req rpcRequest) {
 func (s *Server) handleToolsList(req rpcRequest) {
 	// Session-lifecycle verbs (create/attach/detach) are intentionally
 	// NOT advertised: the mux only arbitrates per-turn commands and the
-	// harness composition layer owns session creation — this server has
+	// harness composition layer owns session creation, this server has
 	// no path to them, and MCP clients are per-call ephemeral, so there
 	// is nothing durable to attach/detach. tools/list must equal what
 	// tools/call actually dispatches (see TestMCPToolsListDispatchParity).
@@ -185,7 +185,7 @@ func (s *Server) handleToolsList(req rpcRequest) {
 		mkTool("harness.list_sessions", "List active and stored harness sessions.",
 			`{"type":"object","properties":{}}`),
 		mkTool("harness.run_agent_with_shell_access",
-			"Run the inner harness agent. The agent has access to Bash, Read, Write, WebFetch tools — allowlisting this is allowlisting LLM-mediated RCE.",
+			"Run the inner harness agent. The agent has access to Bash, Read, Write, WebFetch tools: allowlisting this is allowlisting LLM-mediated RCE.",
 			`{"type":"object","properties":{"sessionId":{"type":"string"},"prompt":{"type":"string"},"wait":{"type":"string","enum":["turn","none"]}},"required":["sessionId","prompt"]}`),
 		mkTool("harness.cancel_turn", "Cancel the in-flight turn.",
 			`{"type":"object","properties":{"sessionId":{"type":"string"}},"required":["sessionId"]}`),

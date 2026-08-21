@@ -59,7 +59,7 @@ func TestBind_RejectsUnknownFields(t *testing.T) {
 	}
 }
 
-// Tag json:"-" must stay off the allow-list — a body with "IsAdmin":true
+// Tag json:"-" must stay off the allow-list: a body with "IsAdmin":true
 // must not bind to a field the author explicitly excluded.
 func TestBind_RejectsJsonDashTaggedFields(t *testing.T) {
 	body := `{"name":"alice","IsAdmin":true}`

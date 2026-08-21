@@ -11,7 +11,7 @@ import (
 // A fixed-position button that appears after the user scrolls past a
 // configurable threshold and smooth-scrolls to the top of the page on
 // click. Uses a lightweight runtime module with IntersectionObserver
-// for the visibility toggle — no scroll-event listener churn.
+// for the visibility toggle. No scroll-event listener churn.
 
 // BackToTopPosition selects which corner the button anchors to.
 type BackToTopPosition string
@@ -36,7 +36,7 @@ const (
 type BackToTopVariant string
 
 const (
-	BackToTopPrimary   BackToTopVariant = ""          // default — solid primary
+	BackToTopPrimary   BackToTopVariant = ""          // default: solid primary
 	BackToTopSecondary BackToTopVariant = "secondary" // outlined, subtle
 	BackToTopGhost     BackToTopVariant = "ghost"     // transparent bg, only visible on hover
 )

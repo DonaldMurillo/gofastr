@@ -41,7 +41,7 @@ func TestCrossOwner_ListSpansOwners(t *testing.T) {
 	}
 }
 
-// TestCrossOwner_CountSpansOwners proves CountAll honors the escape — the
+// TestCrossOwner_CountSpansOwners proves CountAll honors the escape, the
 // eval's "spots remaining = capacity - COUNT(all bookings)" case.
 func TestCrossOwner_CountSpansOwners(t *testing.T) {
 	installOwnerExtractor(t)
@@ -132,7 +132,7 @@ func TestCrossOwner_HTTPCannotBypass(t *testing.T) {
 	}
 
 	// Attacker-controlled QUERY PARAMS that name the escape. Strict filter
-	// parsing rejects the unknown params with a 400 before any scan — the
+	// parsing rejects the unknown params with a 400 before any scan, the
 	// body can never contain bob's row.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/onotes?all_owners=true&cross_owner=1", nil)
 	req2 = withTestUser(req2, "alice")

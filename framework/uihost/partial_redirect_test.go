@@ -61,12 +61,12 @@ func TestPartialRedirect_Returns200WithLocationHeader(t *testing.T) {
 // defense: a policy that returns decide.Redirect with a
 // protocol-relative ("//evil.com"), absolute ("https://evil.com"), or
 // scheme-bearing ("javascript:...") URL MUST NOT be emitted via
-// X-Gofastr-Location — that header is read by the runtime and fed
+// X-Gofastr-Location. That header is read by the runtime and fed
 // directly into loadPage(), which would issue a cross-origin fetch
 // with credentials.
 //
 // Behaviour: unsafe URLs fall through to a hard 303 redirect (which
-// the browser handles safely — cross-origin redirects don't propagate
+// the browser handles safely; cross-origin redirects don't propagate
 // cookies and the user sees the URL change). Safe relative paths use
 // the SPA-nav header path.
 func TestPartialRedirect_RejectsUnsafeURLs(t *testing.T) {
@@ -160,7 +160,7 @@ func TestFullPageRedirect_StaysAs303(t *testing.T) {
 	ds := New(application)
 
 	req := httptest.NewRequest("GET", "/dash", nil)
-	// No X-Gofastr-Navigate header — full-page request.
+	// No X-Gofastr-Navigate header, full-page request.
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 

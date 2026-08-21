@@ -706,7 +706,7 @@ func needsQuote(value string) bool {
 		strings.Contains(value, ": ") || strings.Contains(value, " #") ||
 		// Commas split core/yaml flow lists; quotes and brackets anywhere
 		// confuse its quote/flow scanning; a colon in a block list item
-		// re-parses as `- key: value`. Quote them wherever they appear —
+		// re-parses as `- key: value`. Quote them wherever they appear,
 		// over-quoting is harmless, under-quoting corrupts silently.
 		strings.ContainsAny(value, `,'"[]{}:`) ||
 		strings.ContainsAny(value, "\n\t") || value != strings.TrimSpace(value) ||
@@ -865,7 +865,7 @@ func orderFor(key string) []string {
 // frozen blueprint.
 //
 // Freeze writes gofastr.yml into a project directory that is about to be
-// committed, so the value must not be the secret itself — same rule the
+// committed, so the value must not be the secret itself, same rule the
 // generated app already follows. An empty value stays empty: there is
 // nothing to reference, and emitting "${JWT_SECRET}" for an unset secret
 // would turn "not configured" into "misconfigured".

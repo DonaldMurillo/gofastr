@@ -12,7 +12,7 @@ import (
 )
 
 // semanticCoverageOptOut disables recording for a suite that does not
-// want the manifest written — a benchmark run, or a package whose routes
+// want the manifest written, a benchmark run, or a package whose routes
 // are fixtures rather than the app's real surface.
 const semanticCoverageOptOut = "GOFASTR_NO_SEMANTIC_COVERAGE"
 
@@ -22,7 +22,7 @@ const semanticCoverageOptOut = "GOFASTR_NO_SEMANTIC_COVERAGE"
 //
 // [TestHarness] calls this automatically, so a suite already using the
 // harness gets route and entity coverage with no change at all. Call it
-// directly only when driving an app some other way — an httptest.Server,
+// directly only when driving an app some other way, an httptest.Server,
 // a chromedp suite against a real listener:
 //
 //	func TestMain(m *testing.M) { … }
@@ -52,7 +52,7 @@ func RecordSemanticCoverage(t testing.TB, app *App) {
 	})
 	// Permissions are recorded whatever the verdict. A test that asserts
 	// a *denial* proves the boundary just as well as one that asserts a
-	// grant — and the failure this rule exists to catch is a check that
+	// grant, and the failure this rule exists to catch is a check that
 	// is never reached at all.
 	access.SetObserver(func(e access.Evaluation) {
 		semcov.RecordPermission(string(e.Permission))
@@ -92,8 +92,8 @@ const semanticCoverageEnv = "GOFASTR_SEMANTIC_COVERAGE"
 // This exists because the most common integration-test shape does not go
 // through [TestHarness] at all: `gofastr generate` emits an e2e test that
 // builds the binary and runs it as a subprocess, driving it over real
-// HTTP. Every route that test exercises was invisible to coverage — the
-// requests happened in a process that had never called Enable — so a
+// HTTP. Every route that test exercises was invisible to coverage, the
+// requests happened in a process that had never called Enable, so a
 // suite with thorough e2e coverage still reported every route as
 // unreached. Setting the variable on the subprocess fixes that with no
 // change to how the test drives it.

@@ -16,7 +16,7 @@ import "strings"
 //	ESC [ < 65 ; X ; Y M   Mouse wheel down
 //
 // Anything else (left/right arrows, function keys, full mouse moves) is
-// currently ignored — the inputs that matter for v0.1 are typing,
+// currently ignored, the inputs that matter for v0.1 are typing,
 // submission, and scrollback navigation.
 func (t *TUI) handleEscape(bs []byte) {
 	s := string(bs)
@@ -50,7 +50,7 @@ func (t *TUI) handleEscape(bs []byte) {
 		if strings.HasPrefix(s, "\x1b[<") {
 			switch {
 			case strings.Contains(s, "<64;") && strings.HasSuffix(s, "M"):
-				t.scrollDelta(+3) // 3 lines per notch — common default
+				t.scrollDelta(+3) // 3 lines per notch, common default
 			case strings.Contains(s, "<65;") && strings.HasSuffix(s, "M"):
 				t.scrollDelta(-3)
 			}

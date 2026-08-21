@@ -12,7 +12,7 @@ import (
 //
 // Keyboard-accessible star rating bound to a hidden radio group, so
 // it submits via plain form POST without JavaScript. Hover-preview
-// uses :has() / sibling selectors — no JS needed.
+// uses :has() / sibling selectors, no JS needed.
 //
 // Markup: <fieldset role=radiogroup> containing <input type=radio>
 // + <label> pairs in REVERSE order (5..1). The reverse order plus
@@ -20,7 +20,7 @@ import (
 // the hovered/checked star to all earlier stars without JS.
 
 // RatingShape picks one of the bundled glyphs. For a custom glyph,
-// set RatingConfig.Icon instead — Icon overrides Shape.
+// set RatingConfig.Icon instead. Icon overrides Shape.
 type RatingShape string
 
 const (
@@ -81,7 +81,7 @@ type RatingConfig struct {
 	// Gap picks the visual spacing between stars. Default keeps the
 	// AAA 44×44 tap target per star (glyphs ~22px apart). Tight
 	// shrinks the inline tap zone to glyph+8px so adjacent glyphs
-	// nearly touch (~8px gap) — relaxes AAA to AA (24px floor) for
+	// nearly touch (~8px gap), relaxes AAA to AA (24px floor) for
 	// dense inline ratings. Loose / Wide widen the gap without
 	// touching the tap zone. Independent of Size.
 	Gap RatingGap
@@ -113,26 +113,26 @@ func RatingInput(cfg RatingConfig) render.HTML {
 		RatingShapeSquare:
 	default:
 		panic("ui: RatingInput unknown Shape " + string(cfg.Shape) +
-			` — pick one of: "" (star), heart, thumb, fire, diamond, circle, square`)
+			`. Pick one of: "" (star), heart, thumb, fire, diamond, circle, square`)
 	}
 	switch cfg.Size {
 	case RatingSizeDefault, RatingSizeSmall, RatingSizeLarge:
 	default:
 		panic("ui: RatingInput unknown Size " + string(cfg.Size) +
-			` — pick one of: "" (default), small, large`)
+			`. Pick one of: "" (default), small, large`)
 	}
 	switch cfg.Gap {
 	case RatingGapDefault, RatingGapTight, RatingGapLoose, RatingGapWide:
 	default:
 		panic("ui: RatingInput unknown Gap " + string(cfg.Gap) +
-			` — pick one of: "" (default), tight, loose, wide`)
+			`. Pick one of: "" (default), tight, loose, wide`)
 	}
 
 	cls := "ui-rating"
 	// Apply a shape-specific class so per-shape color overrides (e.g.
 	// heart → danger red, fire → danger, thumb → primary) can theme
 	// without the caller picking colors. Only the bundled Shape is
-	// considered — when Icon is set, the user is on their own.
+	// considered. When Icon is set, the user is on their own.
 	if cfg.Icon == "" && cfg.Shape != RatingShapeStar {
 		cls += " ui-rating--" + string(cfg.Shape)
 	}

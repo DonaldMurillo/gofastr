@@ -22,7 +22,7 @@ func collectEvaluations(t *testing.T) *[]Evaluation {
 }
 
 func TestCanObservesBothVerdicts(t *testing.T) {
-	// A denial is coverage. The failure this feeds — GOFASTR1102 — is
+	// A denial is coverage. The failure this feeds, GOFASTR1102, is
 	// about a permission check that is never *reached*, so recording only
 	// the grants would report a correctly-tested rejection as untested.
 	seen := collectEvaluations(t)

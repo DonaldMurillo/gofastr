@@ -16,7 +16,7 @@ import (
 // ok=false means the ref does not resolve to an installed route. The
 // renderer treats that as a hard failure (design §9): it returns an error
 // and renders nothing for the node, never a dead or guessed URL. The
-// module never sees or sets the URL — only the host does.
+// module never sees or sets the URL; only the host does.
 //
 // A nil ActionResolver fails closed on every ActionRef.
 type ActionResolver func(actionRef string) (rpcURL string, ok bool)
@@ -26,7 +26,7 @@ type ActionResolver func(actionRef string) (rpcURL string, ok bool)
 // implements [uinodev1.Renderer].
 //
 // Every id, class, ARIA attribute, visual variant, and data-fui-rpc URL
-// is assigned HERE by the trusted mapping — the validated tree carries
+// is assigned HERE by the trusted mapping. The validated tree carries
 // none of them (that is the whole point of the closed wire type).
 type Renderer struct {
 	resolve ActionResolver
@@ -129,7 +129,7 @@ func (r *Renderer) renderNode(n uinodev1.Node) (render.HTML, error) {
 		return html.Image(html.ImageConfig{Src: p.Src, Alt: p.Alt}), nil
 	}
 	// The validator's closed enum makes this unreachable for a validated
-	// tree. Fail closed anyway — never improvise markup for an unknown
+	// tree. Fail closed anyway. Never improvise markup for an unknown
 	// component (the noderender debug-comment hole, design §9).
 	return "", errUnknownComponent(n.Component)
 }
@@ -224,7 +224,7 @@ func (r *Renderer) renderCard(n uinodev1.Node) (render.HTML, error) {
 }
 
 // renderChildren fans out to every child node. A single child error
-// rejects the whole render — the tree is all-or-nothing (design §9).
+// rejects the whole render: the tree is all-or-nothing (design §9).
 func (r *Renderer) renderChildren(nodes []uinodev1.Node) ([]render.HTML, error) {
 	if len(nodes) == 0 {
 		return nil, nil
@@ -278,7 +278,7 @@ func statValue(value, unit string) string {
 // renderDataTable maps a read-only data-table. PANIC-SAFE: the framework's
 // ui.DataTable panics on empty Columns (datatable.go:154). The validator
 // already rejects empty Columns, but this is a defensive guard so a
-// hand-built (unvalidated) Tree can never crash the renderer — it renders
+// hand-built (unvalidated) Tree can never crash the renderer. It renders
 // an empty-state instead. Empty Rows are handled by ui.DataTable itself
 // (it already composes EmptyState for zero rows).
 func (r *Renderer) renderDataTable(n uinodev1.Node) (render.HTML, error) {
@@ -351,7 +351,7 @@ func (r *Renderer) renderLink(n uinodev1.Node) (render.HTML, error) {
 }
 
 // resolveActionRef resolves an ActionRef via the injected seam. An empty
-// ref or an unresolvable ref is a hard error — the renderer never emits a
+// ref or an unresolvable ref is a hard error: the renderer never emits a
 // dead or guessed URL. A nil resolver fails closed on every ref.
 func (r *Renderer) resolveActionRef(ref string) (string, error) {
 	if ref == "" {
@@ -405,7 +405,7 @@ func cardVariant(elevation string) ui.CardVariant {
 	switch elevation {
 	case "flat":
 		return ui.CardFlat
-	default: // "" | "low" | "high" — closest is the shadowed elevated card
+	default: // "" | "low" | "high"; closest is the shadowed elevated card
 		return ui.CardElevated
 	}
 }
@@ -423,7 +423,7 @@ func statDirection(trend string) ui.TrendDirection {
 
 // gridMinForColumns approximates the requested fixed column count using
 // the auto-fit Grid primitive's Min knob (passed via the --ui-grid-min
-// custom property, CSP-clean — no inline style). The design system's Grid
+// custom property, CSP-clean, no inline style). The design system's Grid
 // is auto-fit only; a true fixed-column-count grid would be an upstream
 // gap to fill. 0 (unset) defers to the framework default.
 func gridMinForColumns(columns int) string {

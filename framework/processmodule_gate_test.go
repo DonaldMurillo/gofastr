@@ -240,7 +240,7 @@ func proxyGet(t testing.TB, sup *ProcessModuleSupervisor, name, routeID, cookie 
 }
 
 // =====================================================================
-// Item 1 — Crash containment (design §10.1)
+// Item 1: Crash containment (design §10.1)
 // =====================================================================
 
 // =====================================================================
@@ -267,7 +267,7 @@ type gateCapEnv struct {
 func newGateCapEnv(t *testing.T) *gateCapEnv {
 	t.Helper()
 	// Register the global owner extractor so RequireOwner (owner.Get) can
-	// resolve the Cookie-derived brokerTestUser to an owner id — the same
+	// resolve the Cookie-derived brokerTestUser to an owner id, the same
 	// setup newCrudBrokerEnv uses in processmodule_broker_test.go.
 	brokerInstallOwnerExtractor(t)
 	db := brokerSetupDB(t,
@@ -305,7 +305,7 @@ func (e *gateCapEnv) newBroker() *Broker {
 
 // TestGate_ConvergenceAndRevoke proves, with two supervisors sharing one
 // store, that a grant revoke on replica A bumps desired_generation and every
-// other replica observes it within the poll bound — and that the revoked
+// other replica observes it within the poll bound, and that the revoked
 // capability's next reverse call on the other replica is DENIED. This is the
 // headline convergence property: revoke takes effect on the next reverse
 // call after the replica reconciles, no token-expiry window.
@@ -357,7 +357,7 @@ func TestGate_ConvergenceAndRevoke(t *testing.T) {
 	waitForState(t, supA, d.Name, StateReady, 6*time.Second)
 	waitForStateOn(t, supB, d.Name, StateReady, 6*time.Second)
 
-	// Pre-revoke: /items on B (as userA) succeeds — articles:read is granted.
+	// Pre-revoke: /items on B (as userA) succeeds, articles:read is granted.
 	pre := proxyGet(t, supB, d.Name, "items", "sid=userA")
 	if pre.Code != http.StatusOK {
 		t.Fatalf("pre-revoke /items on B: status = %d, want 200", pre.Code)
@@ -399,7 +399,7 @@ func TestGate_ConvergenceAndRevoke(t *testing.T) {
 	// The store row is revoked (EffectiveGrants=[]) and B restarted at the new
 	// generation. finishDrain re-reads the store's authoritative
 	// EffectiveGrants on the upgrade respawn, so the narrowed set reaches the
-	// new child's broker view — the reverse-call denial is proven end-to-end
+	// new child's broker view, the reverse-call denial is proven end-to-end
 	// by TestGate_RevokeDeniesReverseCall.
 	desired, _ := store.GetDesired(ctx, d.Name)
 	if len(desired.EffectiveGrants) != 0 {

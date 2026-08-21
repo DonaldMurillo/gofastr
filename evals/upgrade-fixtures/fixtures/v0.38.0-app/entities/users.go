@@ -44,7 +44,7 @@ func NewUsersRepo(app *framework.App) *UsersRepo {
 	return &UsersRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler, useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *UsersRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -215,7 +215,7 @@ func OnUsersUpdated(app *framework.App, fn func(ctx context.Context, row *Users)
 }
 
 // OnUsersDeleted subscribes to entity.deleted events scoped to "users". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only, by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnUsersDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

@@ -218,10 +218,10 @@ type ToolResultPayload struct {
 
 // PlanTarget names a single destructive op the plan covers. Destructive
 // tool calls require an approved plan whose Targets list contains a
-// matching entry — that's the safety gate.
+// matching entry, that's the safety gate.
 //
-//	op   — the protocol op key, e.g. "delete_entity", "delete_field"
-//	name — the target name, e.g. "posts" or "posts.title" or "/about"
+//	op   : the protocol op key, e.g. "delete_entity", "delete_field"
+//	name : the target name, e.g. "posts" or "posts.title" or "/about"
 type PlanTarget struct {
 	Op   string `json:"op"`
 	Name string `json:"name"`
@@ -240,7 +240,7 @@ type PlanApprovedPayload struct {
 }
 
 // PlanRejectedPayload journals a user's "no" on a proposed plan.
-// Rejected plans cannot be approved later — propose a new one.
+// Rejected plans cannot be approved later, propose a new one.
 type PlanRejectedPayload struct {
 	PlanID string `json:"plan_id"`
 	Reason string `json:"reason,omitempty"`

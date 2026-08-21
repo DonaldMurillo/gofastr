@@ -17,7 +17,7 @@ import (
 //
 // Threshold of 0 disables logging entirely (default zero-value).
 //
-// The wrapper is dialect-agnostic — it simply times QueryContext /
+// The wrapper is dialect-agnostic, it simply times QueryContext /
 // QueryRowContext / ExecContext on the underlying connection and emits a
 // structured log line when the duration crosses the threshold.
 type SlowQueryLogger struct {

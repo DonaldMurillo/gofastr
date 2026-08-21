@@ -13,17 +13,17 @@ import (
 // committed and supports two additional patterns:
 //
 //  1. Mutex groups (Group): buttons sharing the same group key form a
-//     mutex — committing one optimistically reverts any sibling that
+//     mutex: committing one optimistically reverts any sibling that
 //     was committed (no extra RPC; the server stays the source of
 //     truth and a later navigation refreshes from server state).
 //
 //  2. Untoggle (AllowUntoggle / UntoggleEndpoint): clicking an
 //     already-committed button reverts it to idle. If UntoggleEndpoint
 //     is set the runtime POSTs it; otherwise the state just flips
-//     locally. Without either, the button is sticky once committed —
+//     locally. Without either, the button is sticky once committed,
 //     matching OptimisticAction's behaviour.
 //
-// Use for "Follow / Following", plan pickers, watch/unwatch — binary
+// Use for "Follow / Following", plan pickers, watch/unwatch: binary
 // server-backed state the user flips in place. For one-shot commits
 // prefer OptimisticAction; for destructive actions pair with
 // ConfirmAction instead.

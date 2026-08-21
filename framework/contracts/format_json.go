@@ -35,7 +35,7 @@ type jsonReport struct {
 	// what the run did NOT report and why. Without them a narrowed or
 	// baselined `--json` run is indistinguishable from a clean whole-tree
 	// one, which is precisely the confusion the text footer exists to
-	// prevent — the wire format has to make the same admission.
+	// prevent: the wire format has to make the same admission.
 	Baselined     int               `json:"baselined,omitempty"`
 	BaselineFixed int               `json:"baselineFixed,omitempty"`
 	Notices       []string          `json:"notices,omitempty"`
@@ -56,7 +56,7 @@ type jsonCounts struct {
 }
 
 // FormatJSON renders the report as indented JSON. Every diagnostic
-// carries its full rule — Why, Fix, examples, doc URL — so an agent
+// carries its full rule, Why, Fix, examples, doc URL, so an agent
 // consuming one finding has everything it needs to make the change
 // without a second call. That redundancy costs bytes and saves round
 // trips, which is the right trade for the consumer this exists for.
@@ -99,7 +99,7 @@ func FormatJSON(r *Report) ([]byte, error) {
 	return json.MarshalIndent(doc, "", "  ")
 }
 
-// FormatCatalogJSON renders the rule catalog — what `contracts_list`
+// FormatCatalogJSON renders the rule catalog: what `contracts_list`
 // returns over MCP and what `gofastr verify --list --json` prints. An
 // agent reads this once and knows every contract the framework enforces.
 func FormatCatalogJSON(rules []Rule) ([]byte, error) {
@@ -144,7 +144,7 @@ func sarifDirURI(dir string) string {
 	return "file://" + slashed
 }
 
-// FormatSARIF renders SARIF 2.1.0 — the format GitHub code scanning and
+// FormatSARIF renders SARIF 2.1.0, the format GitHub code scanning and
 // every major IDE already consume, which is how `gofastr verify` gets
 // inline squiggles and PR annotations without anyone writing an extension.
 func FormatSARIF(r *Report, version string) ([]byte, error) {
@@ -160,7 +160,7 @@ func FormatSARIF(r *Report, version string) ([]byte, error) {
 		URI string `json:"uri"`
 		// UriBaseId names what the relative URI is relative TO. Without
 		// it a consumer assumes the repository root, which is wrong the
-		// moment verify analysed a subdirectory — every annotation lands
+		// moment verify analysed a subdirectory, every annotation lands
 		// on a path that does not exist, silently.
 		UriBaseID string `json:"uriBaseId,omitempty"`
 	}
@@ -216,7 +216,7 @@ func FormatSARIF(r *Report, version string) ([]byte, error) {
 		Runs    []sarifRun `json:"runs"`
 	}
 
-	// Only rules that actually fired go in the driver's rule list — a
+	// Only rules that actually fired go in the driver's rule list: a
 	// SARIF consumer shows the whole list in its UI, and 36 entries for a
 	// clean file is noise.
 	seen := map[string]bool{}
@@ -246,7 +246,7 @@ func FormatSARIF(r *Report, version string) ([]byte, error) {
 		}
 		msg := d.Message
 		if d.Suggestion != "" {
-			msg += " — " + d.Suggestion
+			msg += ": " + d.Suggestion
 		}
 		loc := sarifLocation{PhysicalLocation: sarifPhysical{
 			ArtifactLocation: sarifArtifact{URI: d.File, UriBaseID: sarifRootBaseID},

@@ -19,8 +19,8 @@ func TestDispatchRoutesNonBlocking(t *testing.T) {
 	covT_capStdout(t, func() { dispatch([]string{"docs", "--help"}) })
 	covT_capStdout(t, func() { dispatch([]string{"semantic", "help"}) })
 
-	// These dispatch to functions whose no-/bad-arg path — or a
-	// removed-feature path (`generate entity`) — calls osExit.
+	// These dispatch to functions whose no-/bad-arg path, or a
+	// removed-feature path (`generate entity`), calls osExit.
 	for _, args := range [][]string{
 		{"gen", "entity", "Foo", "name:string"},
 		{"migrate", "bogus"},

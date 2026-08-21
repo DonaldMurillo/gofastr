@@ -47,7 +47,7 @@ func TestEnqueueAndHandlerExecution(t *testing.T) {
 	}
 
 	// Close drains the channel and waits for workers, so the handler is
-	// guaranteed to have run by the time it returns — no sleep needed.
+	// guaranteed to have run by the time it returns, no sleep needed.
 	q.Close()
 
 	if got := executed.Load(); got != 1 {
@@ -152,7 +152,7 @@ func TestCloseDrainsPendingJobs(t *testing.T) {
 
 	var executed atomic.Int32
 	// Handlers block on a gate so jobs are still pending/in-flight when Close
-	// is called — deterministic, no sleep.
+	// is called, deterministic, no sleep.
 	gate := make(chan struct{})
 	q.RegisterHandler("slow", func(ctx context.Context, job Job) error {
 		<-gate
@@ -166,7 +166,7 @@ func TestCloseDrainsPendingJobs(t *testing.T) {
 		_ = q.Enqueue(context.Background(), Job{Type: "slow"})
 	}
 
-	// Release the handlers, then Close — it must drain all 10 jobs.
+	// Release the handlers, then Close, it must drain all 10 jobs.
 	close(gate)
 	q.Close()
 
@@ -446,7 +446,7 @@ func TestRedisAckRemovesOneJob(t *testing.T) {
 	_ = q.Enqueue(ctx, Job{ID: "job1", Type: "test"})
 	_ = q.Enqueue(ctx, Job{ID: "job2", Type: "test"})
 
-	// Dequeue both — this puts them in the processing hash.
+	// Dequeue both, this puts them in the processing hash.
 	job1, err := q.Dequeue(ctx)
 	if err != nil {
 		t.Fatalf("Dequeue job1: %v", err)
@@ -493,7 +493,7 @@ func TestRedisNackRetries(t *testing.T) {
 		t.Fatalf("expected job ID 'retry1', got %q", job.ID)
 	}
 
-	// Nack — should re-enqueue with incremented attempts.
+	// Nack: should re-enqueue with incremented attempts.
 	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("Nack: %v", err)
 	}
@@ -530,7 +530,7 @@ func TestRedisNackMovesToDLQ(t *testing.T) {
 		t.Fatalf("Dequeue: %v", err)
 	}
 
-	// Nack — MaxAttempts=1 so it should go to DLQ.
+	// Nack. MaxAttempts=1 so it should go to DLQ.
 	if err := q.Nack(ctx, job); err != nil {
 		t.Fatalf("Nack: %v", err)
 	}
@@ -587,7 +587,7 @@ func TestRedisDequeueTypeFilter(t *testing.T) {
 		t.Errorf("expected job ID 'a', got %q", job.ID)
 	}
 
-	// Dequeue another email — "b" should be skipped and pushed back.
+	// Dequeue another email, "b" should be skipped and pushed back.
 	job, err = q.Dequeue(ctx, "email")
 	if err != nil {
 		t.Fatalf("Dequeue second: %v", err)

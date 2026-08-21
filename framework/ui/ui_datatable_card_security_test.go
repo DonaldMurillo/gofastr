@@ -38,7 +38,7 @@ func truncate(s string, max int) string {
 
 func TestDataTable_ColumnKeyXSS(t *testing.T) {
 	t.Parallel()
-	// Column Key with script tags — it's URL-encoded in sort hrefs.
+	// Column Key with script tags, it's URL-encoded in sort hrefs.
 	h := ui.DataTable(ui.DataTableConfig{
 		Columns:         []ui.Column{{Key: "<script>alert(1)</script>", Header: "X", Sortable: true}},
 		Rows:            []ui.Row{{Cells: map[string]render.HTML{"<script>alert(1)</script>": render.Text("ok")}}},
@@ -88,14 +88,14 @@ func TestDataTable_CellContentXSS(t *testing.T) {
 
 func TestDataTable_SortHrefInjection(t *testing.T) {
 	t.Parallel()
-	// SortHrefPattern with path traversal — it's a Sprintf pattern.
+	// SortHrefPattern with path traversal, it's a Sprintf pattern.
 	h := ui.DataTable(ui.DataTableConfig{
 		Columns:         []ui.Column{{Key: "name", Header: "Name", Sortable: true}},
 		Rows:            []ui.Row{{Cells: map[string]render.HTML{"name": render.Text("Alice")}}},
 		SortHrefPattern: "?sort=%s&dir=%s&redirect=../../../etc/passwd",
 	})
 	s := string(h)
-	// The pattern is used directly — this documents that callers must provide safe patterns.
+	// The pattern is used directly. This documents that callers must provide safe patterns.
 	if strings.Contains(s, "../../../etc/passwd") {
 		t.Logf("NOTE: [datatable-sort-href] SortHrefPattern is caller-controlled format string; framework does not sanitize it")
 	}
@@ -193,7 +193,7 @@ func TestDataTable_PaginationLinksXSS(t *testing.T) {
 		ui.DataTable(ui.DataTableConfig{
 			Columns: []ui.Column{{Key: "x", Header: "X"}},
 			Rows:    []ui.Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
-			// No pagination set — just verify no crash
+			// No pagination set, just verify no crash
 		})
 	}()
 }
@@ -219,7 +219,7 @@ func TestDataTable_EmptyStateMessageXSS(t *testing.T) {
 
 func TestDataTable_SortKeyInjection(t *testing.T) {
 	t.Parallel()
-	// SQL-like content in sort key — should be URL-encoded in href.
+	// SQL-like content in sort key, should be URL-encoded in href.
 	sqlPayload := "1; DROP TABLE users--"
 	h := ui.DataTable(ui.DataTableConfig{
 		Columns:         []ui.Column{{Key: sqlPayload, Header: "ID", Sortable: true}},
@@ -335,7 +335,7 @@ func TestCard_ClassInjection(t *testing.T) {
 
 func TestCard_NilBodyHandled(t *testing.T) {
 	t.Parallel()
-	// Card with no body variadic args — should render without panic.
+	// Card with no body variadic args, should render without panic.
 	h := ui.Card(ui.CardConfig{Heading: "No body"})
 	s := string(h)
 	if !strings.Contains(s, `data-fui-comp="ui-card"`) {
@@ -385,7 +385,7 @@ func TestContainer_IDInjection(t *testing.T) {
 
 func TestContainer_NilChildrenHandled(t *testing.T) {
 	t.Parallel()
-	// Container with no children — should render without panic.
+	// Container with no children, should render without panic.
 	h := ui.Container(ui.ContainerConfig{})
 	s := string(h)
 	if !strings.Contains(s, `data-fui-comp="ui-container"`) {
@@ -441,7 +441,7 @@ func TestBanner_ActionLinkXSS(t *testing.T) {
 	xssAction := render.HTML(`<a href="javascript:alert('action-xss')">Click</a>`)
 	_ = ui.Banner(ui.BannerConfig{Title: "Info", Action: xssAction})
 	_ = xssAction
-	// Action is raw render.HTML — caller responsibility.
+	// Action is raw render.HTML, caller responsibility.
 	t.Logf("NOTE: [banner-action-link] Action is raw render.HTML — callers are responsible for sanitization")
 }
 
@@ -484,7 +484,7 @@ func TestToolbar_ButtonXSS(t *testing.T) {
 		Label:  "Actions",
 		Groups: []ui.ToolbarGroup{{Children: []render.HTML{xssBtn}}},
 	})
-	// Group.Children are raw render.HTML — caller responsibility.
+	// Group.Children are raw render.HTML, caller responsibility.
 	t.Logf("NOTE: [toolbar-button-xss] Group.Children are raw render.HTML — callers are responsible for sanitization")
 }
 
@@ -504,7 +504,7 @@ func TestDivider_ClassInjection(t *testing.T) {
 
 func TestIcon_NameInjection(t *testing.T) {
 	t.Parallel()
-	// Icon name with path traversal — it's used as a registry key.
+	// Icon name with path traversal, it's used as a registry key.
 	h := ui.Icon("../../etc/passwd", ui.IconConfig{})
 	s := string(h)
 	if s != "" {
@@ -524,7 +524,7 @@ func TestImage_SrcJavaScript(t *testing.T) {
 	s := string(h)
 	// Allow-list (see framework/ui/safety.go): javascript: is dropped
 	// outright, replaced with an empty src. The browser shows a broken
-	// image — preferable to silently shipping the protocol into the
+	// image, preferable to silently shipping the protocol into the
 	// DOM the way the old contract did.
 	if strings.Contains(s, "javascript:") {
 		t.Errorf("SECURITY: [image-src-javascript] javascript: scheme survived in:\n  %s", truncate(s, 300))

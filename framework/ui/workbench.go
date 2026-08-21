@@ -13,8 +13,8 @@ import (
 // own, beside a content pane that fills whatever is left.
 //
 // It exists because "controls on the left, the thing you are editing on the
-// right" had no home in the design system, and the tool that needed it —
-// `gofastr theme edit` — grew ~25 bespoke classes and ~21 hardcoded hex values
+// right" had no home in the design system, and the tool that needed it,
+// `gofastr theme edit`, grew ~25 bespoke classes and ~21 hardcoded hex values
 // standing in for one. Deleting those without adding this produced a rail with
 // no scroll (a 2300px page) beside a preview iframe collapsed to its ~300x150
 // default box. Both are the same missing piece.
@@ -31,7 +31,7 @@ type WorkbenchConfig struct {
 	// Rail is the left column. It scrolls independently of the pane, so a
 	// long control list never pushes the pane off screen.
 	Rail render.HTML
-	// Pane is the right column. It fills the remaining space in both axes —
+	// Pane is the right column. It fills the remaining space in both axes:
 	// an <iframe> placed directly inside fills it edge to edge, which is the
 	// case that motivated the component.
 	Pane render.HTML

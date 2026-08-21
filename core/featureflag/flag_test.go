@@ -130,7 +130,7 @@ func TestEvaluator_RolloutPartiallyDistributes(t *testing.T) {
 			on++
 		}
 	}
-	// 50% rollout over 1000 distinct subjects — allow wide tolerance
+	// 50% rollout over 1000 distinct subjects: allow wide tolerance
 	// since FNV bucketing is uniform but not perfect.
 	if on < 400 || on > 600 {
 		t.Fatalf("50%% rollout produced %d/%d on — expected ~500", on, N)
@@ -165,7 +165,7 @@ func TestEvaluator_EnvEmptyEnvsMeansAnyEnv(t *testing.T) {
 }
 
 func TestEvaluator_EnvAllowlistOverridesUserAllowlist(t *testing.T) {
-	// Env restriction is the outermost filter — a force-enable via Users
+	// Env restriction is the outermost filter: a force-enable via Users
 	// must still not leak the flag into the wrong environment.
 	s := NewMemoryStore()
 	_ = s.Set(Flag{Key: "x", Enabled: true, Users: []string{"alice"}, Envs: []string{"dev"}})

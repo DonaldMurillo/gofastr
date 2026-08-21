@@ -1,8 +1,8 @@
 // Package tree provides a TreeView component built on the WAI-ARIA
 // tree pattern. The Go-side renders the SSR-visible portion of the
 // tree as nested <ul role="group">/<li role="treeitem"> elements. The
-// runtime (core-ui/runtime/runtime.js) wires keyboard navigation —
-// ArrowUp/Down/Left/Right, Home, End, Enter/Space, type-ahead — and
+// runtime (core-ui/runtime/runtime.js) wires keyboard navigation,
+// ArrowUp/Down/Left/Right, Home, End, Enter/Space, type-ahead, and
 // drives expand/collapse through existing data-fui-rpc + signal
 // machinery.
 //

@@ -76,7 +76,7 @@ func TestPIIAccessPasses(t *testing.T) {
 	}
 }
 
-// An access: map whose entries are all blank gates nothing — it must not
+// An access: map whose entries are all blank gates nothing; it must not
 // count as a remedy.
 func TestPIIEmptyAccessStillFlagged(t *testing.T) {
 	decl := piiEntity("patients", "email")
@@ -88,8 +88,8 @@ func TestPIIEmptyAccessStillFlagged(t *testing.T) {
 }
 
 // The examples/blog case: auth enabled, users entity with email, no
-// scoping. Auth only mounts pass-through SessionMiddleware — anonymous
-// requests still reach auto-CRUD/MCP — so it must NOT suppress the rule.
+// scoping. Auth only mounts pass-through SessionMiddleware: anonymous
+// requests still reach auto-CRUD/MCP, so it must NOT suppress the rule.
 func TestPIIAuthAloneStillFlagged(t *testing.T) {
 	bp := Blueprint{
 		App:      BlueprintApp{Auth: BlueprintAuth{Enabled: true}},
@@ -138,7 +138,7 @@ func TestPIICamelCaseFieldFlagged(t *testing.T) {
 	}
 }
 
-// FK columns typed `relation` reference PII, they don't hold it — the
+// FK columns typed `relation` reference PII, they don't hold it; the
 // target entity gets flagged instead.
 func TestPIIRelationFieldNotFlagged(t *testing.T) {
 	decl := framework.EntityDeclaration{Name: "orders", Fields: []framework.FieldDeclaration{
@@ -218,7 +218,7 @@ func TestValidatePIIExits1(t *testing.T) {
 }
 
 // The blog repro end to end: auth enabled in the blueprint, users entity
-// with email, no scoping — validate must still exit 1.
+// with email, no scoping; validate must still exit 1.
 func TestValidateAuthOnPIIExits1(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
@@ -297,10 +297,10 @@ func TestAuditLintBlueprintOwnerFieldOk(t *testing.T) {
 	mustNotHaveRule(t, got, "unscoped-pii")
 }
 
-// --- gofastr audit lint: Go-declared entities are linted too, not just
+// --- gofastr audit lint: Go-declared entities are linted as well as
 // the blueprint. A Go `app.Entity("x", framework.EntityConfig{...})` with
 // an unscoped PII-shaped field exposed via auto-CRUD must surface the
-// SAME rule "unscoped-pii" as the blueprint path — it's the same defect.
+// SAME rule "unscoped-pii" as the blueprint path; it's the same defect.
 
 // goPiiTripGo is a hand-written Go entity declaration: "members" with an
 // email field, auto-CRUD on by default (no Exposure.CRUD), no scoping.
@@ -313,8 +313,8 @@ func registerMembers() {
 }
 `
 
-// goPiiScopedGo is the same entity WITH a Scope OwnerField — the remedy
-// the rule prescribes — so it must NOT be flagged.
+// goPiiScopedGo is the same entity WITH a Scope OwnerField, the remedy
+// the rule prescribes, so it must NOT be flagged.
 const goPiiScopedGo = `package entities
 
 func registerMembers() {

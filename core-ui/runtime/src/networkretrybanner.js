@@ -1,12 +1,12 @@
-// NetworkRetryBanner runtime — per-banner state via WeakMap. Exposes
+// NetworkRetryBanner runtime, per-banner state via WeakMap. Exposes
 // window.__gofastr.networkStatus with reportFailure() / reportRecovery()
 // / checkHealth() helpers. Public API operates on EVERY mounted
 // banner so app code doesn't need to know which one to address.
 //
 // Public API:
-//   networkStatus.reportFailure()  — increment every banner's counter
-//   networkStatus.reportRecovery() — reset every banner's counter + hide
-//   networkStatus.checkHealth()    — ping every banner's health endpoint
+//   networkStatus.reportFailure()  : increment every banner's counter
+//   networkStatus.reportRecovery() : reset every banner's counter + hide
+//   networkStatus.checkHealth()    : ping every banner's health endpoint
 //
 // Loaded on-demand when a [data-fui-comp="ui-network-retry-banner"]
 // element appears.
@@ -15,7 +15,7 @@
   window.__gofastr = window.__gofastr || {};
 
   // Per-banner state. Keys are the wrap DOM nodes. Each entry holds
-  // { failureCount, sseTimer, healthInFlight } — module-globals would
+  // { failureCount, sseTimer, healthInFlight }, module-globals would
   // collapse onto whichever banner happened to be set up last.
   const stateByBanner = new WeakMap();
   // Iteration helper: keep a Set of registered banners to walk for the
@@ -97,7 +97,7 @@
     const silenceMs = parseInt(banner.getAttribute('data-fui-network-retry-sse-silence') || '0', 10);
     if (silenceMs > 0) {
       const s = getState(banner);
-      // Clear any prior interval first — defensive against duplicate
+      // Clear any prior interval first, defensive against duplicate
       // setup calls (e.g. a rescan that bypasses the bound guard).
       if (s.sseTimer) { clearInterval(s.sseTimer); s.sseTimer = null; }
       s.sseTimer = setInterval(() => {
@@ -130,7 +130,7 @@
 
   scan(document);
   window.addEventListener('gofastr:navigate', () => {
-    // Disconnect old banners' timers — their DOM is about to be
+    // Disconnect old banners' timers, their DOM is about to be
     // replaced. Walk the WeakMap-keyed Set; banners not in the new
     // DOM tree get GC'd as the Set is cleared.
     banners.forEach((b) => {
@@ -144,7 +144,7 @@
   // SSE reconnect recovery: when the stream comes back, re-probe the
   // health endpoint on any banner that's currently showing so it can
   // dismiss (checkHealthOn → reportRecoveryOn on 2xx). Registered
-  // once at module load — iterating the live `banners` Set inside it
+  // once at module load, iterating the live `banners` Set inside it
   // avoids stacking duplicate document listeners across
   // gofastr:navigate re-scans (same single-listener pattern as the
   // networkStatus public API below).

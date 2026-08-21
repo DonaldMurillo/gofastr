@@ -22,7 +22,7 @@ func TestNotificationDefaultsToInfo(t *testing.T) {
 }
 
 // TestNotificationRejectsUnknownVariant mirrors Button/StatusBadge/
-// Callout — a typo'd variant must panic instead of silently emitting
+// Callout. A typo'd variant must panic instead of silently emitting
 // an unmatched class.
 func TestNotificationRejectsUnknownVariant(t *testing.T) {
 	defer func() {

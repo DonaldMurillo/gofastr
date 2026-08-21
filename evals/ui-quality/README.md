@@ -74,7 +74,7 @@ result or used as variant names.
 - Candidates are isolated Git workspaces containing the normal scaffold plus a
   neutral `EVAL_TASK.md`.
 - The builder prompt does not prescribe layouts, aesthetics, component choices,
-  or exceptions to GoFastr's ownership rules — nor does it name any dev
+  or exceptions to GoFastr's ownership rules, nor does it name any dev
   command.
 - Builders get the snapshot's own `gofastr` CLI first on PATH through a
   logging shim, so `gofastr docs` / `gofastr dev` always match the framework
@@ -171,13 +171,13 @@ repeatable `--*-prefix-arg` flags support wrappers and alternate installations.
 
 Runs are written under `dist/ui-eval/<run-id>/`:
 
-- `protocol/` — effective suite, rubric, schema, and evaluator fingerprint;
-- `manifest.json` — private candidate-to-framework mapping and provenance;
-- `workspaces/` — generated candidate source trees;
-- `blind/` — viewport and full-page evidence;
-- `judge-workspaces/` and `judge-artifacts/` — source-free judge inputs/results;
-- `results/` — builder logs, gates, and per-candidate results;
-- `summary.json` and `leaderboard.md` — aggregate machine/human output.
+- `protocol/`: effective suite, rubric, schema, and evaluator fingerprint;
+- `manifest.json`: private candidate-to-framework mapping and provenance;
+- `workspaces/`: generated candidate source trees;
+- `blind/`: viewport and full-page evidence;
+- `judge-workspaces/` and `judge-artifacts/`: source-free judge inputs/results;
+- `results/`: builder logs, gates, and per-candidate results;
+- `summary.json` and `leaderboard.md`: aggregate machine/human output.
 
 Workspace reuse is accepted only when the framework snapshot, neutral task,
 builder prompt/backend, scaffold, generated guidance, and produced source still

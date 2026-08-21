@@ -161,7 +161,7 @@ func TestDefaultDirFallsBackToCwdWithoutModule(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	got := DefaultDir()
-	// macOS tempdirs resolve through /private symlinks — compare resolved.
+	// macOS tempdirs resolve through /private symlinks, compare resolved.
 	wd, _ := os.Getwd()
 	if got != wd && got != dir {
 		t.Fatalf("DefaultDir without go.mod = %q, want cwd %q", got, wd)
@@ -171,7 +171,7 @@ func TestDefaultDirFallsBackToCwdWithoutModule(t *testing.T) {
 func TestDefaultDirResolvesOutermostWorkspaceRoot(t *testing.T) {
 	// A workspace root (go.work) above a nested module (go.mod): the
 	// test binary in the nested module and a dev server at the
-	// workspace root must resolve the SAME directory — the outermost.
+	// workspace root must resolve the SAME directory, the outermost.
 	root := t.TempDir()
 	nested := filepath.Join(root, "apps", "shop", "cmd", "app")
 	if err := os.MkdirAll(nested, 0o755); err != nil {

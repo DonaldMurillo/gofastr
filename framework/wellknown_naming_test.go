@@ -59,8 +59,8 @@ func TestMCPServerCard_NameDerivedFromConfig(t *testing.T) {
 
 // TestMCPServerCard_NameFallsBackForAllInvalidChars pins the other arm of
 // mcpCardName: an app name with NO spec-valid characters (everything gets
-// stripped) must fall back to "app" rather than emitting an empty identifier
-// — io.gofastr/<empty> would be a malformed, spec-rejecting card.
+// stripped) must fall back to "app" rather than emitting an empty identifier:
+// io.gofastr/<empty> would be a malformed, spec-rejecting card.
 func TestMCPServerCard_NameFallsBackForAllInvalidChars(t *testing.T) {
 	app, cleanup := startApp(t, NewApp(WithConfig(AppConfig{Name: "🎉✨"}), WithMCP()))
 	defer cleanup()

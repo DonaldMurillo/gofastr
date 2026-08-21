@@ -28,7 +28,7 @@ func escapeLikeLiteral(s string) string {
 //
 // The store receives the limiter's resolved config on every call so one
 // store instance can serve limiters with different budgets (login,
-// register, 2FA challenge) — implementations must derive per-limiter
+// register, 2FA challenge), implementations must derive per-limiter
 // state from the key alone, which the RateLimiter already namespaces.
 type RateLimitStore interface {
 	Allow(ctx context.Context, key string, cfg RateLimiterConfig) (allowed bool, retryAfter time.Duration, err error)
@@ -47,7 +47,7 @@ type RateLimitStore interface {
 //	    ...
 //	})
 //
-// The schema is created lazily on first use — hosts never hand-roll the
+// The schema is created lazily on first use, hosts never hand-roll the
 // DDL. Concurrent replicas may overshoot MaxAttempts by at most the
 // number of simultaneously in-flight requests (the count-then-insert is
 // not serialized); that error is bounded and far smaller than the
@@ -94,7 +94,7 @@ func (s *SQLRateLimitStore) EnsureSchema(ctx context.Context) error {
 // ensureSchemaOnce runs EnsureSchema until it first succeeds, then never
 // again. Unlike a sync.Once that latches the *result*, a transient
 // failure (DB unreachable during boot warm-up, context deadline) is
-// retried on the next Allow — so a single blip can't permanently brick
+// retried on the next Allow, so a single blip can't permanently brick
 // this replica's limiter into denying every login until a restart.
 // CREATE TABLE IF NOT EXISTS is idempotent, so re-running is cheap.
 func (s *SQLRateLimitStore) ensureSchemaOnce(ctx context.Context) error {
@@ -135,7 +135,7 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 	// scoped to THIS limiter's keys: the _attempts table is shared across
 	// scopes with independent Windows, so (a) a short-window co-tenant (e.g.
 	// a 2FA challenge limiter) must not delete a long-window limiter's (e.g.
-	// 1h login-account) still-valid rows — hence the scope prefix, and (b)
+	// 1h login-account) still-valid rows, hence the scope prefix, and (b)
 	// each scope owns its own sweep timer, so a busy scope can't monopolize
 	// a single shared timer and starve every other scope's GC.
 	s.mu.Lock()

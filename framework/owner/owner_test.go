@@ -97,7 +97,7 @@ func staticExtractor(id any) owner.Extractor {
 }
 
 // ownerHandler builds the minimal CrudHandler needed to exercise the
-// owner seams. No DB — RequireOwner/ApplyOwnerScope/InjectOwner only
+// owner seams. No DB. RequireOwner/ApplyOwnerScope/InjectOwner only
 // touch Entity.Config and the owner package.
 func ownerHandler(field string) *crud.CrudHandler {
 	return &crud.CrudHandler{
@@ -192,7 +192,7 @@ func TestSetNilClearsSilently(t *testing.T) {
 // TestHTTPGateClosedWithoutOwner pins the secure-by-default HTTP seam:
 // an OwnerField entity with no extractable owner (no extractor at all,
 // or an extractor that reports anonymous) must be refused with 401 by
-// crud.RequireOwner — the gate every crud HTTP handler runs via
+// crud.RequireOwner, the gate every crud HTTP handler runs via
 // requireScope before touching the DB.
 func TestHTTPGateClosedWithoutOwner(t *testing.T) {
 	restoreExtractor(t)
@@ -237,7 +237,7 @@ func TestHTTPGateOpenWithOwner(t *testing.T) {
 
 // TestScopeNoOpWithoutOwner pins QUESTIONABLE behavior: when OwnerField
 // is set but no owner id is extractable, ApplyOwnerScope silently skips
-// the predicate (framework/crud/owner.go:85-88) — the query would return
+// the predicate (framework/crud/owner.go:85-88), the query would return
 // EVERY row. This is fail-OPEN at the scope layer. It is only safe
 // because every crud HTTP handler calls requireScope (→ RequireOwner →
 // 401) before building the query; ApplyOwnerScope on its own is NOT a
@@ -278,7 +278,7 @@ func TestScopeAddsOwnerPredicate(t *testing.T) {
 }
 
 // TestOwnerFieldUnsetIsInert: entities without OwnerField must see zero
-// behavioural change even with an extractor registered — no 401 gate,
+// behavioural change even with an extractor registered, no 401 gate,
 // no predicate, no stamped field.
 func TestOwnerFieldUnsetIsInert(t *testing.T) {
 	restoreExtractor(t)

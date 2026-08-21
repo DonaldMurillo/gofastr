@@ -2,11 +2,11 @@
 
 An admin back-office battery with two halves:
 
-1. **Entity CRUD** — generated list / create / edit / delete screens for your
+1. **Entity CRUD**: generated list / create / edit / delete screens for your
    entities, rendered through the app's UI host so they hydrate with
    `runtime.js` (DataTable island, `data-fui-confirm` delete, SSR forms). No
    bespoke JS. Requires a mounted UI host.
-2. **Ops dashboards** — read-only queue + audit pages on data the framework
+2. **Ops dashboards**: read-only queue + audit pages on data the framework
    already collects (`battery/queue`, `framework.WithAuditLog`). Self-contained
    HTML, no host needed.
 
@@ -42,7 +42,7 @@ app.RegisterBattery(admin.New(admin.Config{
 - Ops: `GET {prefix}` (overview), `GET {prefix}/queue`, `GET {prefix}/audit`
 
 **Gated by default:** any authenticated non-nil user. Anonymous → 401 (screens
-via host policy chain, routes via middleware). The non-nil check matters —
+via host policy chain, routes via middleware). The non-nil check matters:
 `auth.SessionMiddleware` seeds a nil user, so "user present?" alone is insufficient.
 
 **Writes go through each entity's own `CrudHandler`** with the request context

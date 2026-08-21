@@ -18,13 +18,13 @@ import (
 )
 
 // MaxMultipartMemory is the in-memory portion of a multipart upload before
-// spilling to disk. Files larger than this still upload — they just stream
+// spilling to disk. Files larger than this still upload, they just stream
 // through a temp file.
 const MaxMultipartMemory = 32 << 20 // 32 MiB
 
 // MaxMultipartBodyBytes caps the total wire size of a multipart request
 // accepted by the CRUD write handlers. MaxMultipartMemory above is the
-// in-RAM spill threshold, not a body cap — without a wire cap a hostile
+// in-RAM spill threshold, not a body cap, without a wire cap a hostile
 // client can stream an unbounded body into parser temp files (and, via
 // non-file form values, straight into memory). 64 MiB leaves headroom
 // over the 32 MiB per-file ProcessFileField cap for framing and form
@@ -50,8 +50,8 @@ var errUnsupportedMediaType = errors.New("unsupported media type")
 var errBodyTooLarge = errors.New("request body too large")
 
 // isMultipart reports whether the request carries a multipart/form-data body.
-// Parsed with mime.ParseMediaType — media types are case-insensitive
-// (RFC 9110 §8.3.1) and lowercased by the parser — so this agrees with
+// Parsed with mime.ParseMediaType, media types are case-insensitive
+// (RFC 9110 §8.3.1) and lowercased by the parser, so this agrees with
 // enforceJSONContentType for a header like `Multipart/Form-Data; …`. A
 // case-sensitive prefix check here let such a request through the gate
 // but not the multipart branch, so the JSON 1 MiB body cap applied and
@@ -64,7 +64,7 @@ func isMultipart(r *http.Request) bool {
 // enforceJSONContentType refuses requests whose Content-Type isn't either
 // application/json or multipart/form-data. Returns errUnsupportedMediaType
 // for text/plain, application/x-www-form-urlencoded, missing, or any other
-// type — these are the "simple-request" content types a browser can send
+// type, these are the "simple-request" content types a browser can send
 // cross-origin without a CORS preflight, so accepting them on JSON-only
 // write endpoints opens a CSRF vector.
 func enforceJSONContentType(r *http.Request) error {
@@ -86,7 +86,7 @@ func enforceJSONContentType(r *http.Request) error {
 // limitRequestBody wraps r.Body with the http.MaxBytesReader matching the
 // request's Content-Type: JSON bodies cap at MaxJSONBodyBytes, multipart
 // bodies at MaxMultipartBodyBytes. One cap for both would break whichever
-// side it doesn't fit — a JSON-sized cap rejects every multipart upload
+// side it doesn't fit, a JSON-sized cap rejects every multipart upload
 // above 1 MiB (multipart framing plus file parts dwarf a JSON record), and
 // a multipart-sized cap would let unauthenticated callers pin ~64 MiB of
 // parser memory with a JSON body. Callers map the resulting
@@ -118,7 +118,7 @@ func decodeJSONBody(r *http.Request, v any) error {
 		}
 		// http.MaxBytesReader may also report a generic
 		// "http: request body too large" error string on some Go
-		// versions / paths — match by substring as a fallback.
+		// versions / paths, match by substring as a fallback.
 		if strings.Contains(err.Error(), "request body too large") {
 			return errBodyTooLarge
 		}
@@ -128,8 +128,8 @@ func decodeJSONBody(r *http.Request, v any) error {
 }
 
 // readRequestBody decodes the incoming request into a snake_cased body map.
-// Multipart requests run through parseMultipartBody (no JSON casing conversion
-// — multipart field names are taken literally as DB column names); JSON
+// Multipart requests run through parseMultipartBody (no JSON casing conversion,
+// multipart field names are taken literally as DB column names); JSON
 // requests are decoded and reverse-cased back to snake_case so they match the
 // schema's field names regardless of the wire casing.
 //
@@ -219,8 +219,8 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fieldType sc
 	defer f.Close()
 
 	var opts []file.ProcessOption
-	// Only Image fields get the pipeline. A File field is any binary — a
-	// PDF, a CSV — and decoding it as an image would fail every upload.
+	// Only Image fields get the pipeline. A File field is any binary, a
+	// PDF, a CSV, and decoding it as an image would fail every upload.
 	if fieldType == schema.Image {
 		if d := ch.deriverFor(key); d != nil {
 			opts = append(opts, file.WithImageDeriver(d))
@@ -253,7 +253,7 @@ func (ch *CrudHandler) deriverFor(field string) file.ImageDeriver {
 
 // derivedColumnSuffixes maps each derived artifact to the sibling column
 // that receives it. An Image field named "cover" populates
-// "cover_blurhash", "cover_placeholder", and "cover_variants" — but only
+// "cover_blurhash", "cover_placeholder", and "cover_variants", but only
 // those the entity actually declares, so adopting one is a matter of adding
 // the column and nothing else. Columns that do not exist are skipped
 // silently; that is what makes this additive rather than a schema
@@ -360,7 +360,7 @@ func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
 
 // isSafeMediaURL is true for URLs / paths that may be persisted into an
 // Image or File field. Allow-list (rather than block-list) because the
-// stored value flows into HTML attributes and HTTP redirects later —
+// stored value flows into HTML attributes and HTTP redirects later,
 // any scheme not on this list becomes a phishing / XSS / SSRF vector
 // when rendered.
 //

@@ -121,7 +121,7 @@ func TestModuleFanoutSelfDedup(t *testing.T) {
 	// Simulate receiving our own publish.
 	payload := fanout.Wrap(app.Modules().nodeID, []byte(`{"name":"m1","enabled":false}`))
 	app.Modules().handleRemoteToggle(payload)
-	// Should be ignored — module still enabled.
+	// Should be ignored, module still enabled.
 	if !app.Modules().Enabled("m1") {
 		t.Fatal("self-publish should be ignored")
 	}

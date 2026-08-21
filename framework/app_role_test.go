@@ -23,7 +23,7 @@ import (
 // ──────────────────────────────────────────────────────────────────────
 
 // A freshly built app with no role option and no GOFASTR_ROLE env defaults
-// to RoleAll — today's behavior, so existing apps are untouched.
+// to RoleAll, today's behavior, so existing apps are untouched.
 func TestRole_DefaultIsAll(t *testing.T) {
 	t.Setenv("GOFASTR_ROLE", "") // force unset regardless of runner env
 	app := NewApp(WithoutDefaultMiddleware())
@@ -50,7 +50,7 @@ func TestRole_WithRoleBeatsEnv(t *testing.T) {
 	}
 }
 
-// An unknown WithRole value panics in NewApp — fail loud, never silently
+// An unknown WithRole value panics in NewApp. Fail loud, never silently
 // fall back to all (a typo'd role would run the wrong workload).
 func TestRole_BadOptionPanics(t *testing.T) {
 	t.Setenv("GOFASTR_ROLE", "")
@@ -67,7 +67,7 @@ func TestRole_BadOptionPanics(t *testing.T) {
 	NewApp(WithoutDefaultMiddleware(), WithRole(Role("bogus")))
 }
 
-// A bogus GOFASTR_ROLE value fails loudly too — never a silent fallback.
+// A bogus GOFASTR_ROLE value fails loudly too, never a silent fallback.
 func TestRole_BadEnvPanics(t *testing.T) {
 	t.Setenv("GOFASTR_ROLE", "supercomputer")
 	defer func() {
@@ -169,11 +169,11 @@ func get(t *testing.T, addr, path string) *http.Response {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Serve role — background consumers do NOT start
+// Serve role: background consumers do NOT start
 // ──────────────────────────────────────────────────────────────────────
 
 // In RoleServe, AddQueue's worker does not start, and Close is never called
-// on shutdown — a serve-only process never owns a queue it would drain.
+// on shutdown, a serve-only process never owns a queue it would drain.
 func TestServeRole_QueueDoesNotStart(t *testing.T) {
 	t.Setenv("GOFASTR_ROLE", "")
 	app := NewApp(WithoutDefaultMiddleware(), WithRole(RoleServe))
@@ -217,7 +217,7 @@ func TestServeRole_OutboxRelaySkipped(t *testing.T) {
 	if _, err := app.Outbox().Append(ctx, db, "test.created", map[string]string{"k": "v"}); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond) // 6x the poll interval — enough to be sure
+	time.Sleep(300 * time.Millisecond) // 6x the poll interval, enough to be sure
 
 	if got := delivered.Load(); got != 0 {
 		t.Fatalf("serve role: outbox delivered %d rows, want 0 (relay should not start)", got)
@@ -226,7 +226,7 @@ func TestServeRole_OutboxRelaySkipped(t *testing.T) {
 
 // In RoleServe, a cron scheduler is not started. Cron shares the same
 // onWorkerStart gate as AddQueue (proven by TestServeRole_QueueDoesNotStart);
-// this test confirms AddCron + serve Start+Shutdown is clean — no hang from
+// this test confirms AddCron + serve Start+Shutdown is clean, no hang from
 // a drain waiting on a scheduler that was never started.
 func TestServeRole_CronCleanLifecycle(t *testing.T) {
 	t.Setenv("GOFASTR_ROLE", "")
@@ -265,7 +265,7 @@ func TestServeRole_ServesFullRouter(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Worker role — health surface only, consumers run
+// Worker role: health surface only, consumers run
 // ──────────────────────────────────────────────────────────────────────
 
 // In RoleWorker, /healthz and /readyz respond on the bound address.
@@ -291,7 +291,7 @@ func TestWorkerRole_HealthResponds(t *testing.T) {
 	}
 }
 
-// In RoleWorker, an entity CRUD route is NOT served — the worker binds addr
+// In RoleWorker, an entity CRUD route is NOT served, the worker binds addr
 // but serves only the health surface, never the app router.
 func TestWorkerRole_EntityRouteNotServed(t *testing.T) {
 	t.Setenv("GOFASTR_ROLE", "")
@@ -404,10 +404,10 @@ func TestWorkerRole_CronWired(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// All role — everything starts (regression guard)
+// All role: everything starts (regression guard)
 // ──────────────────────────────────────────────────────────────────────
 
-// In RoleAll, AddQueue's worker starts AND the full router serves — exactly
+// In RoleAll, AddQueue's worker starts AND the full router serves, exactly
 // today's behavior, so existing apps are untouched.
 func TestAllRole_QueueStartsAndRouterServes(t *testing.T) {
 	t.Setenv("GOFASTR_ROLE", "")

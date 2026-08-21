@@ -18,11 +18,11 @@ import (
 // enabled → listed), collision prevention, and that a tool invocation
 // forwards module.tool.call to the live child with a delegation handle
 // minted from the calling agent's context. They use the in-memory
-// [newModuleProtoPipe] peer pair — no child process is spawned, so they do
+// [newModuleProtoPipe] peer pair, no child process is spawned, so they do
 // not touch the supervisor_test.go TestMain dispatch.
 
 // validToolDescriptor builds a descriptor for a module that exposes tools,
-// with a correctly computed surface digest (no child artifact — the
+// with a correctly computed surface digest (no child artifact, the
 // tool-surface tests never spawn).
 func validToolDescriptor(t *testing.T, name string, tools []ToolDigest) ProcessModuleDescriptor {
 	t.Helper()
@@ -192,8 +192,8 @@ func toolTestSlot(t *testing.T, tools []ToolDigest) (sup *ProcessModuleSuperviso
 }
 
 // TestVerifyToolSurface_DigestMismatch: a child whose module.tool.list
-// returns a tool whose digest does NOT match the descriptor is quarantined
-// — verifyToolSurface returns a *moduleproto.HandshakeMismatchError (the
+// returns a tool whose digest does NOT match the descriptor is quarantined:
+// verifyToolSurface returns a *moduleproto.HandshakeMismatchError (the
 // integrity fault isIntegrityFault recognizes → terminal Failed).
 func TestVerifyToolSurface_DigestMismatch(t *testing.T) {
 	good := demoToolDigest("search", "Search", "desc", nil)
@@ -285,7 +285,7 @@ func TestDispatchToolCall_NotReady(t *testing.T) {
 // TestDispatchToolCall_ForwardsAndDelegates: with a Ready slot over an
 // in-memory pipe, dispatchToolCall forwards module.tool.call to the child
 // and returns its result. The supervisor's NopBroker mints an ambient
-// (empty) delegation handle — sufficient to prove the forward path; the
+// (empty) delegation handle, sufficient to prove the forward path; the
 // capability intersection on the reverse channel is covered by the broker
 // suite (processmodule_broker_test.go).
 func TestDispatchToolCall_ForwardsAndDelegates(t *testing.T) {

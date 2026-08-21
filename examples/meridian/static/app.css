@@ -1,4 +1,4 @@
-/* Meridian brand layer — token + published --ui-* knob overrides ONLY.
+/* Meridian brand layer: token + published --ui-* knob overrides ONLY.
    The @font-face rules for the self-hosted woff2 (static/fonts/) live in
    app.go's fontFaceCSS and are shared with the admin battery. Component
    internals are never restyled here: every declaration below sets a CSS

@@ -77,7 +77,7 @@ var demandLoadMarkers = []demandLoadMarker{
 // initial paint.
 //
 // Matches are substring containment with an attribute-name boundary
-// check — not a real HTML parse. The boundary check keeps one marker
+// check, not a real HTML parse. The boundary check keeps one marker
 // from matching inside a longer attribute name (data-fui-compute must
 // not fire on data-fui-computed). The cost of a residual false positive
 // is one wasted module fetch (no correctness impact).

@@ -44,7 +44,7 @@ type Manifest struct {
 	// SchemaHash is SchemaHash() over the covered entities at generation
 	// time ("sha256:<hex>").
 	SchemaHash string `json:"schemaHash"`
-	// Artifacts is keyed "go", "js", "js-types" — targets that were not
+	// Artifacts is keyed "go", "js", "js-types", targets that were not
 	// generated are absent.
 	Artifacts map[string]Artifact `json:"artifacts"`
 }
@@ -52,7 +52,7 @@ type Manifest struct {
 // ReadManifest loads and validates ManifestFile from the root of fsys
 // (the dist directory). It returns an error when the file is missing,
 // malformed, or structurally empty; a SchemaVersion mismatch is NOT an
-// error — callers detect it via Manifest.SchemaVersion and degrade the
+// error, callers detect it via Manifest.SchemaVersion and degrade the
 // drift check to "unknown provenance".
 func ReadManifest(fsys fs.FS) (*Manifest, error) {
 	raw, err := fs.ReadFile(fsys, ManifestFile)

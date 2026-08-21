@@ -9,8 +9,8 @@ import (
 
 // LayoutLayer is one level of a screen's resolved layout chain, ordered
 // outermost → innermost. The chain is DERIVED at registration/render time
-// from what the app declared — the default layout, ScreenGroup nesting,
-// per-screen overrides — so ScreenGroup stays the builder API and the
+// from what the app declared, the default layout, ScreenGroup nesting,
+// per-screen overrides, so ScreenGroup stays the builder API and the
 // chain is the single composition model every renderer (full page, SSG,
 // subtree partial) and the route manifest share.
 type LayoutLayer struct {
@@ -31,10 +31,10 @@ type LayoutLayer struct {
 // target: "g:<prefix>:<layoutName>" for group levels ("g:<prefix>" when
 // marker-only), "l:<name>" for plain layouts. The layout name is part of
 // a group level's key so a per-screen layout override inside a group
-// compares as a DIFFERENT layer than its siblings — navigating between
+// compares as a DIFFERENT layer than its siblings, navigating between
 // them re-renders the shell instead of silently keeping whichever one
 // happened to be on screen. Empty when the level has no usable identity
-// (an unnamed non-group layout) — the client treats an empty key as
+// (an unnamed non-group layout), the client treats an empty key as
 // never-matching, forcing a full swap at that depth.
 func (l LayoutLayer) Key() string {
 	if l.GroupPrefix != "" {
@@ -50,7 +50,7 @@ func (l LayoutLayer) Key() string {
 }
 
 // layoutChainFor resolves a screen's full layout chain, outermost →
-// innermost. Nil for overlay screens (drawer/sheet/dialog — they skip
+// innermost. Nil for overlay screens (drawer/sheet/dialog, they skip
 // layouts) and for layout-less pages.
 //
 // Resolution rules (each mirrors the pre-chain composition behavior):
@@ -111,7 +111,7 @@ func (r *Router) layoutChainFor(screen *Screen) []LayoutLayer {
 		}
 		switch {
 		case eff == nil:
-			// No shell and nothing to dedupe — the level contributes
+			// No shell and nothing to dedupe, the level contributes
 			// nothing, exactly as the pre-chain composition rendered it.
 		case seen[eff]:
 			chain = append(chain, LayoutLayer{GroupPrefix: g.prefix})
@@ -131,7 +131,7 @@ func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.
 
 // renderLayoutChainFrom wraps content in layers from..len(chain)-1. When
 // from > 0 the outermost shared layers are already in the caller's DOM
-// (subtree partials), so every rendered layer nests — none emits <main>.
+// (subtree partials), so every rendered layer nests, none emits <main>.
 func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, content render.HTML) render.HTML {
 	out := content
 	for i := len(chain) - 1; i >= from; i-- {

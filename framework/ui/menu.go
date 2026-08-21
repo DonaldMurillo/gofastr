@@ -21,7 +21,7 @@ const (
 	MenuTopEnd      MenuPosition = "top-end"
 )
 
-// MenuItem is one row in a Menu — either an actionable item (Label
+// MenuItem is one row in a Menu: either an actionable item (Label
 // required, Href / OnClickAttr / RPC etc. as supplied) or a
 // separator. The framework owns the role attributes; callers only
 // describe semantics.
@@ -42,7 +42,7 @@ type MenuItem struct {
 	// supplies an <svg>, character, or render.Text("⚙").
 	Icon render.HTML
 
-	// Variant tints destructive items (red) — purely a visual hint;
+	// Variant tints destructive items (red), purely a visual hint;
 	// the actual confirm step belongs on the RPC via data-fui-confirm.
 	Danger bool
 
@@ -62,13 +62,13 @@ type MenuItem struct {
 	ExtraAttrs map[string]string
 }
 
-// MenuConfig describes a dropdown menu — a trigger that, when
+// MenuConfig describes a dropdown menu: a trigger that, when
 // activated, reveals a list of MenuItems with proper roles, keyboard
 // navigation, and theming.
 type MenuConfig struct {
 	// ID becomes the dropdown's stable identifier. Used to pair the
 	// trigger with the panel for aria-controls + analytics. Optional
-	// — auto-generated when empty.
+	// auto-generated when empty.
 	ID string
 
 	// Label is the trigger's visible text. Mutually exclusive with
@@ -80,7 +80,7 @@ type MenuConfig struct {
 	TriggerHTML render.HTML
 
 	// Items is the menu's contents. Required (empty menus panic at
-	// render time — they signal a bug, not a runtime state).
+	// render time. They signal a bug, not a runtime state).
 	Items []MenuItem
 
 	// Position anchors the panel relative to the trigger.
@@ -204,7 +204,7 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	extra := ""
 	for k, v := range it.ExtraAttrs {
 		// render.Attr validates the key against the same allow-list as
-		// every other ExtraAttrs consumer — render.Escape alone doesn't
+		// every other ExtraAttrs consumer: render.Escape alone doesn't
 		// touch spaces, so a key like `x onclick` would smuggle a live
 		// event handler into the tag. Unsafe keys are dropped.
 		if a := render.Attr(k, v); a != "" {
@@ -221,7 +221,7 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 
 // shortHash is a tiny FNV-style stable hash used only to derive a
 // unique fallback ID when the caller doesn't supply one. Collisions
-// are visually acceptable — two menus sharing the same ID just both
+// are visually acceptable. Two menus sharing the same ID just both
 // respond to the same Esc; nothing breaks.
 func shortHash(s string) string {
 	var h uint32 = 2166136261

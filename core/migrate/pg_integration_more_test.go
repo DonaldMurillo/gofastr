@@ -1,6 +1,6 @@
 package migrate_test
 
-// Comprehensive unhappy-path / edge-case integration tests for the versioned
+// Unhappy-path / edge-case integration tests for the versioned
 // runner, executed against REAL databases. The dialect-agnostic scenarios run
 // on both real SQLite and real Postgres (forEachRealDialect); the
 // Postgres-specific ones (CONCURRENTLY, advisory-lock semantics, create-db)
@@ -64,7 +64,7 @@ func exists(t *testing.T, db *sql.DB, d migrate.Dialect, table string) bool {
 	return n > 0
 }
 
-// #19 — a failure mid-sequence is atomic: earlier migrations stay, the failing
+// #19: a failure mid-sequence is atomic: earlier migrations stay, the failing
 // one leaves nothing behind, later ones don't run; fixing it resumes cleanly.
 func TestRT_PartialFailureIsAtomic(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -90,7 +90,7 @@ func TestRT_PartialFailureIsAtomic(t *testing.T) {
 		if len(st.Applied) != 1 || len(st.Pending) != 2 {
 			t.Fatalf("status: applied=%d pending=%d, want 1/2", len(st.Applied), len(st.Pending))
 		}
-		// Fix #2 and resume — only 2 and 3 run.
+		// Fix #2 and resume. Only 2 and 3 run.
 		m2 := mig(t, db, d)
 		m2.Register(migrate.Migration{Version: 1, Name: "one", Up: "CREATE TABLE one (id INTEGER)", Down: "DROP TABLE one"})
 		m2.Register(migrate.Migration{Version: 2, Name: "bad", Up: "CREATE TABLE two (id INTEGER)", Down: "DROP TABLE two"})
@@ -104,7 +104,7 @@ func TestRT_PartialFailureIsAtomic(t *testing.T) {
 	})
 }
 
-// #24 — Down with nothing applied is a no-op; Down(N>applied) clamps; a second
+// #24: Down with nothing applied is a no-op; Down(N>applied) clamps; a second
 // Up only runs newly-registered migrations.
 func TestRT_DownEdgeCasesAndSkip(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -117,7 +117,7 @@ func TestRT_DownEdgeCasesAndSkip(t *testing.T) {
 		if err := m.Up(ctx); err != nil {
 			t.Fatalf("Up: %v", err)
 		}
-		// Register a second migration on a fresh migrator and Up — only #2 runs.
+		// Register a second migration on a fresh migrator and Up. Only #2 runs.
 		m2 := mig(t, db, d)
 		m2.Register(migrate.Migration{Version: 1, Name: "a", Up: "CREATE TABLE a (id INTEGER)", Down: "DROP TABLE a"})
 		m2.Register(migrate.Migration{Version: 2, Name: "b", Up: "CREATE TABLE b (id INTEGER)", Down: "DROP TABLE b"})
@@ -134,7 +134,7 @@ func TestRT_DownEdgeCasesAndSkip(t *testing.T) {
 	})
 }
 
-// #24 — a `-- +migrate` SQL file is parsed by RegisterFromReader and then
+// #24: a `-- +migrate` SQL file is parsed by RegisterFromReader and then
 // actually executed by Up on a real database.
 func TestRT_RegisterFromReaderThenUp(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -158,7 +158,7 @@ DROP TABLE from_file;`
 	})
 }
 
-// #21 — a legacy _migrations table without checksum/dirty columns is upgraded
+// #21: a legacy _migrations table without checksum/dirty columns is upgraded
 // in place (tolerant ALTER) and migrations continue to apply.
 func TestRT_LegacyTrackingTableBackfill(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -200,7 +200,7 @@ func TestRT_LegacyTrackingTableBackfill(t *testing.T) {
 	})
 }
 
-// #22 — a dirty migration surfaces in Status (Applied record with Dirty=true).
+// #22: a dirty migration surfaces in Status (Applied record with Dirty=true).
 func TestRT_StatusReportsDirty(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
 		ctx := context.Background()
@@ -227,7 +227,7 @@ func TestRT_StatusReportsDirty(t *testing.T) {
 
 // ---- Postgres-only semantics ----
 
-// #18 — NoTransaction Down runs DROP INDEX CONCURRENTLY outside a transaction
+// #18: NoTransaction Down runs DROP INDEX CONCURRENTLY outside a transaction
 // (it would error inside one). Proves the prior runMigrationDownNoTx fix.
 func TestPG_NoTransactionDownConcurrently(t *testing.T) {
 	db := pgtest.DB(t)
@@ -244,7 +244,7 @@ func TestPG_NoTransactionDownConcurrently(t *testing.T) {
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("Up: %v", err)
 	}
-	// Down the CONCURRENTLY index — must not be wrapped in a tx.
+	// Down the CONCURRENTLY index. Must not be wrapped in a tx.
 	if err := m.Down(ctx, 1); err != nil {
 		t.Fatalf("NoTransaction Down (DROP INDEX CONCURRENTLY): %v", err)
 	}
@@ -257,7 +257,7 @@ func TestPG_NoTransactionDownConcurrently(t *testing.T) {
 	}
 }
 
-// #22 — a failed NoTransaction Down leaves the row dirty and blocks later runs.
+// #22: a failed NoTransaction Down leaves the row dirty and blocks later runs.
 func TestPG_DirtyViaNoTransactionDown(t *testing.T) {
 	db := pgtest.DB(t)
 	ctx := context.Background()
@@ -281,7 +281,7 @@ func TestPG_DirtyViaNoTransactionDown(t *testing.T) {
 	}
 }
 
-// #23 — advisory lock keyed isolation: same key serializes, different keys run
+// #23: advisory lock keyed isolation: same key serializes, different keys run
 // concurrently.
 func TestPG_AdvisoryLockCustomKeyIsolation(t *testing.T) {
 	dbA := pgtest.DB(t)
@@ -330,7 +330,7 @@ func maxConcurrentUnderLock(t *testing.T, ctx context.Context, dbA, dbB *sql.DB,
 	return max
 }
 
-// #23 — a deployer waiting on a held advisory lock honours context
+// #23: a deployer waiting on a held advisory lock honours context
 // cancellation instead of hanging forever (the cancellable poll loop).
 func TestPG_AdvisoryLockCtxCancelWhileWaiting(t *testing.T) {
 	dbHold := pgtest.DB(t)
@@ -362,7 +362,7 @@ func TestPG_AdvisoryLockCtxCancelWhileWaiting(t *testing.T) {
 	}
 }
 
-// #20 — EnsureDatabase actually creates a Postgres database, idempotently.
+// #20: EnsureDatabase actually creates a Postgres database, idempotently.
 func TestPG_EnsureDatabaseCreatesRealDB(t *testing.T) {
 	target, drop := pgtest.UnusedDSN(t) // a DB name that does not exist yet
 	defer drop()
@@ -393,7 +393,7 @@ func TestPG_EnsureDatabaseCreatesRealDB(t *testing.T) {
 	}
 }
 
-// #31 — two genuine Up() calls racing on the SAME database apply the migration
+// #31: two genuine Up() calls racing on the SAME database apply the migration
 // set EXACTLY ONCE (the real rolling-deploy scenario). Without the advisory
 // lock one deployer would hit "relation already exists".
 func TestPG_ConcurrentUpAppliesExactlyOnce(t *testing.T) {
@@ -442,7 +442,7 @@ func TestPG_ConcurrentUpAppliesExactlyOnce(t *testing.T) {
 	}
 }
 
-// #31 — Down refuses to proceed when the database is dirty.
+// #31: Down refuses to proceed when the database is dirty.
 func TestRT_DownBlocksOnDirty(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
 		ctx := context.Background()
@@ -457,7 +457,7 @@ func TestRT_DownBlocksOnDirty(t *testing.T) {
 	})
 }
 
-// #31 — Down rolls back in REVERSE version order. FK dependencies make a wrong
+// #31: Down rolls back in REVERSE version order. FK dependencies make a wrong
 // order fail: dropping a parent before its child violates the constraint.
 func TestRT_DownReverseOrderViaFK(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -479,7 +479,7 @@ func TestRT_DownReverseOrderViaFK(t *testing.T) {
 	})
 }
 
-// #31 — versions registered out of order (and with gaps) apply in ascending
+// #31: versions registered out of order (and with gaps) apply in ascending
 // version order.
 func TestRT_OutOfOrderGappedVersions(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -502,7 +502,7 @@ func TestRT_OutOfOrderGappedVersions(t *testing.T) {
 	})
 }
 
-// #31 — a custom tracking table name is honoured; the default _migrations is
+// #31: a custom tracking table name is honoured; the default _migrations is
 // not created.
 func TestRT_CustomTrackingTable(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -521,7 +521,7 @@ func TestRT_CustomTrackingTable(t *testing.T) {
 	})
 }
 
-// #33 — a deployer cannot roll back a migration it doesn't have registered (no
+// #33: a deployer cannot roll back a migration it doesn't have registered (no
 // Down SQL): it errors safely and leaves that migration in place, rather than
 // corrupting the schema.
 func TestRT_DownUnregisteredMigrationFailsSafely(t *testing.T) {
@@ -547,7 +547,7 @@ func TestRT_DownUnregisteredMigrationFailsSafely(t *testing.T) {
 	})
 }
 
-// #36 — a data migration applies and rolls back its data.
+// #36: a data migration applies and rolls back its data.
 func TestRT_DataMigrationRoundTrip(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
 		ctx := context.Background()
@@ -575,7 +575,7 @@ func TestRT_DataMigrationRoundTrip(t *testing.T) {
 	})
 }
 
-// #36 — a transactional migration whose data step fails rolls back DDL + data.
+// #36: a transactional migration whose data step fails rolls back DDL + data.
 func TestRT_DataMigrationFailureRollsBack(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
 		ctx := context.Background()
@@ -590,7 +590,7 @@ func TestRT_DataMigrationFailureRollsBack(t *testing.T) {
 	})
 }
 
-// #36 — Down does NOT guard checksum drift (Up does). Pinned so the asymmetry
+// #36: Down does NOT guard checksum drift (Up does). Pinned so the asymmetry
 // is intentional and visible: rolling back uses the registered Down SQL even if
 // the Up was edited after it was applied.
 func TestRT_DownIgnoresChecksumDrift(t *testing.T) {
@@ -613,7 +613,7 @@ func TestRT_DownIgnoresChecksumDrift(t *testing.T) {
 	})
 }
 
-// #36 — checksum drift on a NON-latest applied migration still blocks Up.
+// #36: checksum drift on a NON-latest applied migration still blocks Up.
 func TestRT_ChecksumDriftOnNonLatestBlocks(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
 		ctx := context.Background()
@@ -624,7 +624,7 @@ func TestRT_ChecksumDriftOnNonLatestBlocks(t *testing.T) {
 		if err := m.Up(ctx); err != nil {
 			t.Fatalf("Up: %v", err)
 		}
-		// Edit v1 (the oldest) and try to migrate again — must be caught.
+		// Edit v1 (the oldest) and try to migrate again. Must be caught.
 		m2 := mig(t, db, d)
 		m2.Register(migrate.Migration{Version: 1, Name: "x", Up: "CREATE TABLE cx (id BIGINT)", Down: "DROP TABLE cx"})
 		m2.Register(migrate.Migration{Version: 2, Name: "y", Up: "CREATE TABLE cy (id INTEGER)", Down: "DROP TABLE cy"})
@@ -637,7 +637,7 @@ func TestRT_ChecksumDriftOnNonLatestBlocks(t *testing.T) {
 	})
 }
 
-// #36 — Force(version, true) on an unregistered version baselines it as applied.
+// #36: Force(version, true) on an unregistered version baselines it as applied.
 func TestRT_ForceUnregisteredBaseline(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
 		ctx := context.Background()
@@ -658,7 +658,7 @@ func TestRT_ForceUnregisteredBaseline(t *testing.T) {
 	})
 }
 
-// #36 — Force(version, false) on a clean applied version makes it pending again
+// #36: Force(version, false) on a clean applied version makes it pending again
 // and re-runnable (with idempotent SQL).
 func TestRT_ForceOffCleanVersionMakesPending(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
@@ -681,7 +681,7 @@ func TestRT_ForceOffCleanVersionMakesPending(t *testing.T) {
 	})
 }
 
-// #36 — Status on a fresh DB and on a mixed applied/pending DB.
+// #36: Status on a fresh DB and on a mixed applied/pending DB.
 func TestRT_StatusFreshAndMixed(t *testing.T) {
 	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
 		ctx := context.Background()

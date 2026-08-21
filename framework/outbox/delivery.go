@@ -15,9 +15,9 @@ import (
 // Delivery is a snapshot of one per-consumer delivery row. Status is one of
 // "pending", "dispatched", "dead" (handler exhausted MaxAttempts), or
 // "abandoned" (no consumer handler existed anywhere within the grace
-// window — a removed consumer). Each (parent row, declared consumer) pair
+// window, a removed consumer). Each (parent row, declared consumer) pair
 // has exactly one delivery row; its lifecycle is independent of every
-// sibling consumer's delivery for the same event (sibling isolation) — one
+// sibling consumer's delivery for the same event (sibling isolation), one
 // consumer failing never blocks another.
 type Delivery struct {
 	RowID         string
@@ -104,7 +104,7 @@ func (o *Outbox) Replay(ctx context.Context, rowID string) error {
 
 // ReplayConsumer resurrects a single consumer's dead or abandoned delivery
 // for a row and reopens the parent. Like [Replay] but scoped to one
-// consumer — use it to retry just the dead-lettered consumer after fixing
+// consumer, use it to retry just the dead-lettered consumer after fixing
 // its handler, or to re-deliver to a consumer that was removed and
 // re-added (its delivery abandoned in the interim). Idempotent (no-op if
 // the named delivery isn't dead/abandoned).
@@ -148,7 +148,7 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 	// The NOT EXISTS guard is a read-time filter, not a concurrency guard:
 	// two relays (different replicas) can both pass it and both INSERT the
 	// same (row_id, consumer), which the PRIMARY KEY would reject with a
-	// unique violation — aborting the whole statement and stalling the pump.
+	// unique violation, aborting the whole statement and stalling the pump.
 	// An idempotent upsert turns that benign race into a silent no-op.
 	insertVerb, conflict := "INSERT INTO", ""
 	if o.dialect == dialectPostgres {
@@ -156,8 +156,8 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 	} else {
 		insertVerb = "INSERT OR IGNORE INTO"
 	}
-	// Placeholders must first-appear in ascending order ($1,$2,…) — go-sqlite3
-	// binds $N by first-appearance ordinal, not by the digit — so the delivery
+	// Placeholders must first-appear in ascending order ($1,$2,…), go-sqlite3
+	// binds $N by first-appearance ordinal, not by the digit, so the delivery
 	// created_at ($2) sits in the SELECT list before the WHERE ($3) and LIMIT
 	// ($4). See the placeholder note in outbox.go.
 	now := o.now().UTC()
@@ -190,7 +190,7 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 // live declared set), so they are safe across a rolling deploy that changes
 // the consumer set:
 //
-//	(i)  Orphan drop — a pending parent older than handlerGrace, with NO
+//	(i)  Orphan drop: a pending parent older than handlerGrace, with NO
 //	     delivery rows, whose event type has no declared consumer here.
 //	     Both guards matter: the type guard means a still-consumed type is
 //	     never dropped even when a >grace relay outage left a large backlog
@@ -200,9 +200,9 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 //	     grace, so a lagging replica that lacks the consumer never drops them
 //	     before an up-to-date replica expands them). Events staged more than
 //	     handlerGrace before a type's first consumer is added are not
-//	     back-delivered — a retention-style boundary.
+//	     back-delivered, a retention-style boundary.
 //
-//	(ii) Completion backstop — a pending parent older than the grace that
+//	(ii) Completion backstop: a pending parent older than the grace that
 //	     HAS deliveries, all terminal (dispatched/dead/abandoned). Same age
 //	     gate as completeParent (a young parent may still gain a delivery from
 //	     a consumer being rolled out on another replica). This is also what
@@ -212,7 +212,7 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 func (o *Outbox) sweepParents(ctx context.Context) error {
 	now := o.now().UTC()
 	cutoff := now.Add(-o.handlerGrace)
-	// (i) orphan drop — old, never-expanded parents of an unconsumed type.
+	// (i) orphan drop: old, never-expanded parents of an unconsumed type.
 	declaredTypes := make(map[string]bool)
 	for _, c := range o.declaredSnapshot() {
 		declaredTypes[c.eventType] = true
@@ -246,7 +246,7 @@ func (o *Outbox) sweepParents(ctx context.Context) error {
 			return err
 		}
 	}
-	// (ii) completion backstop — old parent, all deliveries terminal.
+	// (ii) completion backstop: old parent, all deliveries terminal.
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s AS p SET status='dispatched', dispatched_at=$1
 			WHERE p.status='pending'
@@ -273,7 +273,7 @@ func joinPlaceholders(ph []string) string {
 // purgeExpired deletes fully-settled (dispatched) parent rows and their
 // deliveries once older than the retention window. No-op when retention is
 // unset (0). A parent is eligible only when it is dispatched, past the
-// cutoff, AND has no dead or abandoned delivery — the NOT EXISTS guard on
+// cutoff, AND has no dead or abandoned delivery, the NOT EXISTS guard on
 // both DELETEs excludes any parent still carrying a terminal delivery, so
 // the dead-letter (its last_error, attempts, and the parent payload) that
 // Replay/ReplayConsumer need to resurrect it is kept. Retention is therefore
@@ -314,7 +314,7 @@ func (o *Outbox) purgeExpired(ctx context.Context) error {
 // handler grace. The age gate is essential and symmetric with abandonment:
 // a consumer added on another replica has not yet had its delivery row
 // created, so "no pending delivery" does NOT prove "fully delivered" for a
-// young parent — completing it would let expand (WHERE status='pending')
+// young parent, completing it would let expand (WHERE status='pending')
 // skip the parent forever and lose that consumer's event. Waiting the grace
 // gives every replica time to expand its declared consumers. A parent may
 // complete with some deliveries dead/abandoned; dead ones await Replay.
@@ -487,10 +487,10 @@ func scanClaimedDelivery(row interface {
 // stays sticky (a pending-only guard still never clobbers one), and dead or
 // abandoned deliveries are terminal until an explicit Replay. This stops a
 // worker whose lease expired from resurrecting a delivery an operator already
-// triaged — flipping it straight to dispatched, clearing last_error, and
+// triaged, flipping it straight to dispatched, clearing last_error, and
 // burying the dead-letter as a clean success. The outbox is at-least-once, so
 // a stale success whose handler genuinely ran is simply lost credit; a later
-// Replay may duplicate, and that is the documented contract — the terminal
+// Replay may duplicate, and that is the documented contract, the terminal
 // record wins.
 func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) {
 	if _, err := o.db.ExecContext(ctx,
@@ -536,7 +536,7 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 // requeueNoHandler handles a delivery whose consumer has no handler on THIS
 // replica. If the delivery has been unhandled since its own creation for
 // longer than handlerGrace, no replica holds the consumer (a genuinely-
-// removed consumer), so it is abandoned — settled terminal — and its parent
+// removed consumer), so it is abandoned, settled terminal, and its parent
 // completed. Otherwise it is requeued with a short backoff for an up-to-date
 // replica to claim; it is never dead-lettered on attempts, because a replica
 // mid-deploy may still hold the handler. Measuring the grace from the
@@ -574,7 +574,7 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 
 // invokeHandler calls h with a deferred recover that converts a panic into
 // a delivery error (rather than swallowing it, as the bus's emitSafe does).
-// A panicking consumer is a retryable FAILURE — never a silent dispatched.
+// A panicking consumer is a retryable FAILURE, never a silent dispatched.
 // Mirrors event.emitStrict's panic-surfacing contract.
 func invokeHandler(ctx context.Context, h event.EventHandler, ev event.Event, consumer string) (err error) {
 	defer func() {

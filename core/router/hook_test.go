@@ -136,7 +136,7 @@ func TestRouteGateBlocksBeforeMiddleware(t *testing.T) {
 // methods on the same path are gated independently (H1 scenario a).
 func TestGateKeyedOnMethodAndPath(t *testing.T) {
 	r := New()
-	// Gate blocks only "GET /shared" — POST /shared must pass.
+	// Gate blocks only "GET /shared": POST /shared must pass.
 	r.SetRouteGate(func(key string) bool {
 		return key != "GET /shared"
 	})

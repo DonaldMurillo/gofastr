@@ -84,7 +84,7 @@ func TestSSEBufferClampedToMax(t *testing.T) {
 		<-done
 	})
 
-	// In-bounds request must NOT be clamped to DefaultBuf — caller
+	// In-bounds request must NOT be clamped to DefaultBuf; caller
 	// should get exactly what they asked for when it sits within
 	// [DefaultBuf, MaxBuf].
 	t.Run("in-bounds honored", func(t *testing.T) {
@@ -191,8 +191,8 @@ func TestSSESubscriberIDCollision(t *testing.T) {
 	// With no Config.Principal the broker cannot tell the two callers
 	// apart, so it evicts NOTHING: the newcomer is registered under a
 	// freshly generated id and the incumbent keeps streaming. The
-	// original concern still holds — neither subscriber may be silently
-	// leaked — so assert both are registered, and that both unregister
+	// original concern still holds: neither subscriber may be silently
+	// leaked, so assert both are registered, and that both unregister
 	// when their requests end.
 	deadline = time.Now().Add(500 * time.Millisecond)
 	for broker.SubscriberCount() != 2 {

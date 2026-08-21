@@ -9,7 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// These tests cover GenerateMigrationFile — the registry→versioned-files
+// These tests cover GenerateMigrationFile, the registry→versioned-files
 // entrypoint a host binary calls from its own main() to emit versioned
 // migrations from its compiled entity registry (the Ent/Django shape). They
 // assert (a) first-run output matches the blueprint generator's format
@@ -18,7 +18,7 @@ import (
 // (d) generation is deterministic, plus the Group directive and up-to-date
 // (no-op) paths.
 
-// blogReg builds a registry of two entities (posts, authors) — the shape a
+// blogReg builds a registry of two entities (posts, authors), the shape a
 // host app compiles in. Fields are kept minimal so the asserted SQL is stable.
 func blogReg(extraField *schema.Field) testReg {
 	postFields := []schema.Field{
@@ -39,7 +39,7 @@ func blogReg(extraField *schema.Field) testReg {
 // TestGenerateMigrationFileFirstRun proves the first generation from a
 // registry writes migrations/0001_<name>.sql + schema.snapshot.json whose
 // bytes are byte-identical to what the blueprint generator's primitives
-// (GenerateMigration + RenderMigrationFile + SaveSnapshot) produce — i.e. the
+// (GenerateMigration + RenderMigrationFile + SaveSnapshot) produce, i.e. the
 // new entrypoint is format-compatible with the standalone CLI, not a parallel
 // scheme.
 func TestGenerateMigrationFileFirstRun(t *testing.T) {
@@ -95,7 +95,7 @@ func TestGenerateMigrationFileFirstRun(t *testing.T) {
 
 // TestGenerateMigrationFileIncremental proves a second generation after a
 // column is added produces 0002_<name>.sql with an ADD COLUMN Up and a DROP
-// COLUMN Down — the incremental, reversible loop.
+// COLUMN Down, the incremental, reversible loop.
 func TestGenerateMigrationFileIncremental(t *testing.T) {
 	dir := t.TempDir()
 	opts := MigrationFileOptions{
@@ -130,7 +130,7 @@ func TestGenerateMigrationFileIncremental(t *testing.T) {
 
 // TestGenerateMigrationFileRename proves an EntityConfig.Renames declaration on
 // a Go-registered entity emits a non-destructive RENAME COLUMN through the new
-// entrypoint — not a data-losing drop+add.
+// entrypoint, not a data-losing drop+add.
 func TestGenerateMigrationFileRename(t *testing.T) {
 	dir := t.TempDir()
 	opts := MigrationFileOptions{
@@ -175,7 +175,7 @@ func TestGenerateMigrationFileRename(t *testing.T) {
 
 // TestGenerateMigrationFileDeterministic proves the same Plan + name generates
 // byte-identical migration files and snapshots across runs (no map-order or
-// timestamp leakage) — required for reviewable diffs and checksum stability.
+// timestamp leakage), required for reviewable diffs and checksum stability.
 func TestGenerateMigrationFileDeterministic(t *testing.T) {
 	gen := func(t *testing.T) (string, string) {
 		dir := t.TempDir()

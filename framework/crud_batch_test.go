@@ -165,7 +165,7 @@ func TestBatchCreate_PartialFailRollsBack(t *testing.T) {
 			t.Fatalf("expected index 2 skipped (loop aborted): %+v", got.Results[2])
 		}
 
-		// Only the seed row should remain — the batch must have rolled back.
+		// Only the seed row should remain, the batch must have rolled back.
 		if got := postsRowCount(t, db); got != 1 {
 			t.Fatalf("expected 1 row (seed only) after rollback, got %d", got)
 		}

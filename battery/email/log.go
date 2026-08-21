@@ -62,7 +62,7 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 	if len(email.CC) > 0 {
 		sb.WriteString(fmt.Sprintf("CC:      %s\n", strings.Join(email.CC, ", ")))
 	}
-	// BCC is intentionally omitted from dev logs — blind-carbon recipients
+	// BCC is intentionally omitted from dev logs, blind-carbon recipients
 	// must not be observable to anyone reading the log (including the dev
 	// who sent the message). We do not even emit the label, because the
 	// presence of a "BCC:" line in a log is itself an observable signal.

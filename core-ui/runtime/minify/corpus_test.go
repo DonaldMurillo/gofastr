@@ -15,7 +15,7 @@ import (
 //   - the minifier is idempotent: Minify(Minify(x)) == Minify(x)
 //   - well-known anchor strings survive (sanity that we didn't truncate)
 //
-// We deliberately do NOT compare raw punct counts against the input —
+// We deliberately do NOT compare raw punct counts against the input,
 // comments and string literals contain `[`, `(`, `{` characters that
 // legitimately disappear during minification. Idempotency is the
 // stronger invariant: the minifier must reach a fixed point in one
@@ -34,7 +34,7 @@ func TestMinifyRuntimeCorpus(t *testing.T) {
 		{
 			path: filepath.Join(root, "core-ui/runtime/runtime.js"),
 			anchors: []string{
-				// Identifiers and string literals — comments are stripped.
+				// Identifiers and string literals, comments are stripped.
 				"data-fui-os",
 				"__gofastr",
 			},

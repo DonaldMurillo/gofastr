@@ -11,7 +11,7 @@ import (
 )
 
 // A minimal commit-faulting sqlite wrapper, used to exercise App.InTx's
-// tx.Commit() error branch (tx.go) — a healthy DB never fails Commit.
+// tx.Commit() error branch (tx.go), a healthy DB never fails Commit.
 
 var errCovCommit = errors.New("cov: injected commit fault")
 
@@ -67,7 +67,7 @@ func TestCovInTxCommitError(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	// fn succeeds, so InTx proceeds to Commit — which the driver fails.
+	// fn succeeds, so InTx proceeds to Commit, which the driver fails.
 	err = app.InTx(context.Background(), func(ctx context.Context, tx *sql.Tx) error {
 		return nil
 	})

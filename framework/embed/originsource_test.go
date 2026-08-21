@@ -46,7 +46,7 @@ func TestResolveCustomerOriginsNormalizesAndDeduplicates(t *testing.T) {
 }
 
 // A store is not a trusted input. A wildcard, a userinfo URL, or a path that
-// NormalizeOrigin rejects on a boot-time list must be rejected here too — the
+// NormalizeOrigin rejects on a boot-time list must be rejected here too: the
 // source backing this is the app's own table, and a row that slips in should
 // not widen framing past an exact origin.
 func TestResolveCustomerOriginsRejectsUntrustedInput(t *testing.T) {
@@ -58,7 +58,7 @@ func TestResolveCustomerOriginsRejectsUntrustedInput(t *testing.T) {
 	}
 }
 
-// An unknown customer returns no origins. That must fail CLOSED — never an
+// An unknown customer returns no origins. That must fail CLOSED: never an
 // empty frame-ancestors directive a browser could read as permissive, and
 // never a fallback to "allow everyone".
 func TestResolveCustomerOriginsFailsClosedOnUnknownCustomer(t *testing.T) {
@@ -73,7 +73,7 @@ func TestResolveCustomerOriginsFailsClosedOnUnknownCustomer(t *testing.T) {
 func TestResolveCustomerOriginsFailsClosedOnEmptyCustomerID(t *testing.T) {
 	// "" is REGISTERED with a real origin. Without that the stub returns
 	// nothing for it and the empty-list fail-closed path rescues the
-	// assertion — the guard could be deleted entirely and this test would
+	// assertion: the guard could be deleted entirely and this test would
 	// still pass, which is what it did before.
 	src := &stubOriginSource{byCustomer: map[string][]string{
 		"acme": {"https://acme.com"},
@@ -90,7 +90,7 @@ func TestResolveCustomerOriginsFailsClosedOnEmptyCustomerID(t *testing.T) {
 }
 
 // A source that errors must fail closed. A broken lookup must not fall back to
-// "allow" — that would turn a DB outage into every surface framed by anyone.
+// "allow": that would turn a DB outage into every surface framed by anyone.
 func TestResolveCustomerOriginsFailsClosedOnSourceError(t *testing.T) {
 	src := &stubOriginSource{
 		byCustomer: map[string][]string{"acme": {"https://acme.com"}},
@@ -131,7 +131,7 @@ func TestResolveCustomerOriginsFailsClosedOnOverlongCustomerID(t *testing.T) {
 
 // The per-customer list is bounded at RESPONSE time, not boot time. A single
 // customer whose origins would overflow the frame-ancestors directive fails
-// closed for THAT customer only — strictly better than the boot-time refusal
+// closed for THAT customer only, strictly better than the boot-time refusal
 // that broke every customer at once.
 func TestResolveCustomerOriginsCapsPerResponse(t *testing.T) {
 	many := make([]string, 0, 300)

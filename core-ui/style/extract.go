@@ -14,7 +14,7 @@ var classAttrRe = regexp.MustCompile(`class="([^"]*)"`)
 // to generate CSS for them.
 //
 // The legacy "Known map of named component styles" was retired
-// alongside the typed-theme migration — registered styled components
+// alongside the typed-theme migration, registered styled components
 // now own their own CSS via core-ui/registry. CSSExtractor is now
 // purely the utility-class generator (Tailwind-style helpers).
 type CSSExtractor struct {

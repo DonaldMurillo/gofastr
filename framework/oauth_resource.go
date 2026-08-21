@@ -1,6 +1,6 @@
 package framework
 
-// oauth_resource.go — OAuth 2.0 Protected Resource Metadata (RFC 9728).
+// oauth_resource.go: OAuth 2.0 Protected Resource Metadata (RFC 9728).
 //
 // A GoFastr app whose API accepts bearer access tokens (e.g. battery/auth's
 // JWT bearer auth) is an OAuth "protected resource". RFC 9728 lets it

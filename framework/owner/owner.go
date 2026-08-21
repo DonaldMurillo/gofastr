@@ -4,7 +4,7 @@
 // extractor at init time so the framework core stays free of any
 // authentication dependency.
 //
-// The default state is "no extractor" — owner.Get always returns
+// The default state is "no extractor", owner.Get always returns
 // (nil, false). Hosts that never wire an extractor see no behavioural
 // change: EntityConfig.Scope.OwnerField stays inert and CRUD operates as
 // before. Hosts that import battery/auth pick up the extractor
@@ -17,28 +17,28 @@ import (
 	"sync/atomic"
 )
 
-// Extractor returns the identity of the current request's owner — typically
+// Extractor returns the identity of the current request's owner, typically
 // a user id pulled from request context. ok=false means no owner is
 // associated with this context (anonymous request, background job, etc.).
 type Extractor func(ctx context.Context) (id any, ok bool)
 
 // crossOwnerKey marks a context as deliberately permitted to read across
-// owners. It must ONLY ever be set server-side, in Go, via AllowCrossOwner —
-// never derived from a client-supplied header, query param, or body — or it
+// owners. It must ONLY ever be set server-side, in Go, via AllowCrossOwner,
+// never derived from a client-supplied header, query param, or body, or it
 // becomes an owner-isolation bypass. The key type is unexported precisely so
 // no HTTP-derived context can ever carry it: there is no way to set it except
 // by calling AllowCrossOwner from your own process code.
 type crossOwnerKey struct{}
 
 // AllowCrossOwner returns a context that lifts owner scoping for the Go-level
-// CrudHandler methods (ListAll, CountAll, GetOne — and, because they share the
+// CrudHandler methods (ListAll, CountAll, GetOne, and, because they share the
 // same scope helpers, the mutate-by-id methods UpdateOne/DeleteOne and their
 // batch variants). Reads then span every owner's rows instead of being
 // confined to the signed-in user. This is the sanctioned escape for
-// app-legitimate cross-owner work — e.g. "spots remaining = capacity −
+// app-legitimate cross-owner work, e.g. "spots remaining = capacity −
 // COUNT(bookings for this class across ALL members)", or reading the whole
 // waitlist to "promote the oldest waitlisted booking" (which belongs to
-// another member) — that would otherwise force raw SQL against
+// another member), that would otherwise force raw SQL against
 // framework-managed tables.
 //
 // SECURITY:
@@ -71,7 +71,7 @@ var extractor atomic.Pointer[Extractor]
 
 // SetExtractor installs the global owner extractor. Subsequent calls
 // replace the previous extractor. Pass nil to clear. Emits a WARN log
-// when REPLACING an existing non-nil extractor — that's almost always
+// when REPLACING an existing non-nil extractor, that's almost always
 // an import-order accident (two packages both calling SetExtractor,
 // whichever Go's init order picks runs last and silently overrides
 // the other). Operators see the warning and can fix the wiring.
@@ -91,7 +91,7 @@ func SetExtractor(fn Extractor) {
 	}
 	extractor.Store(&fn)
 	if prev != nil {
-		slog.Default().Warn("framework/owner: SetExtractor replaced an existing extractor — likely an import-order accident between two batteries that both register one. The last-call-wins extractor is the one currently active.",
+		slog.Default().Warn("framework/owner: SetExtractor replaced an existing extractor: likely an import-order accident between two batteries that both register one. The last-call-wins extractor is the one currently active.",
 			"component", "framework/owner")
 	}
 }

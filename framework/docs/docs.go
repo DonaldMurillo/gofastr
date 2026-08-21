@@ -1,14 +1,14 @@
 // Package docs ships the framework's user-facing markdown docs as an
 // embedded filesystem. Two consumers:
 //
-//  1. `gofastr docs` CLI subcommand — list + show + search.
-//  2. `framework.WithMCPIntrospection()` — exposes framework_docs_list
+//  1. `gofastr docs` CLI subcommand: list + show + search.
+//  2. `framework.WithMCPIntrospection()`: exposes framework_docs_list
 //     and framework_docs_get tools so agents connected to a running app
 //     can answer "how do I use hooks" without leaving the session.
 //
 // The embedded tree is the source of truth for shipped docs; the repo's
 // canonical edit location IS framework/docs/content/. There's no
-// generation step — every commit changes the binary's docs the next
+// generation step: every commit changes the binary's docs the next
 // build.
 package docs
 
@@ -25,7 +25,7 @@ var contentFS embed.FS
 
 // Topic describes a single doc file in the embedded tree.
 type Topic struct {
-	// Name is the short identifier — the filename without .md.
+	// Name is the short identifier: the filename without .md.
 	// Use this with Get().
 	Name string
 
@@ -71,7 +71,7 @@ func List() ([]Topic, error) {
 }
 
 // Get returns the raw markdown body for the named topic. Returns a
-// "not found" error for unknown names — never panics. Pass the topic
+// "not found" error for unknown names. Never panics. Pass the topic
 // name without the .md suffix.
 func Get(name string) ([]byte, error) {
 	if name == "" {
@@ -99,7 +99,7 @@ type SearchHit struct {
 
 // minSearchTermLen is the shortest search term Search will accept.
 // Below this, the function returns zero hits without scanning the
-// corpus — short terms ("a", "of") match noise and would produce
+// corpus: short terms ("a", "of") match noise and would produce
 // thousands of hits.
 const minSearchTermLen = 3
 

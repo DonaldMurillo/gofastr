@@ -29,7 +29,7 @@ func TestKilnFreezeBlueprintParsesAndValidates(t *testing.T) {
 		Access: &world.AccessDeclaration{Read: "tasks:read", Create: "tasks:write"},
 		// A composite cursor over DECLARED columns. This used to name
 		// created_at while the same entity sets Timestamps=false, which is a
-		// column the table never gets — the decoder now rejects that, so the
+		// column the table never gets. The decoder now rejects that, so the
 		// fixture named an entity that could not have worked at runtime.
 		// "title" keeps the multi-field cursor shape under test.
 		CursorFields: []string{"title", "id"},

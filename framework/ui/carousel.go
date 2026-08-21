@@ -27,7 +27,7 @@ import (
 
 // CarouselSlide is one entry.
 type CarouselSlide struct {
-	// Content is the slide body (required) — caller decides the shape.
+	// Content is the slide body (required). Caller decides the shape.
 	// For an image-only carousel pass an <img>; for richer slides pass
 	// a Card or any composition.
 	Content render.HTML
@@ -53,7 +53,7 @@ type CarouselConfig struct {
 	// hover, focus, and when prefers-reduced-motion is true.
 	AutoRotateMs int
 	// Loop, when true, makes Next-on-last wrap to first (and vice
-	// versa). Default false — Prev/Next disable at the ends.
+	// versa). Default false. Prev/Next disable at the ends.
 	Loop bool
 	// VisiblePerView (default 1) shows N slides side-by-side; snap
 	// still steps one slide at a time.
@@ -67,7 +67,7 @@ type CarouselConfig struct {
 	// (>50 slides) where rendering every slide upfront is wasteful.
 	//
 	// Once hydrated, slides stay hydrated for the lifetime of the
-	// page — browsers manage the image cache on their own and
+	// page: browsers manage the image cache on their own and
 	// re-hydrating on scroll-back would feel laggier than the original
 	// problem.
 	VirtualScroll bool
@@ -77,8 +77,8 @@ type CarouselConfig struct {
 	VirtualWindow int
 	// VirtualPlaceholderHeight is an optional CSS length applied to
 	// each unhydrated placeholder slide. Required when slides have
-	// no intrinsic flex height (e.g. raw <img> with no fixed aspect)
-	// — otherwise placeholders collapse to 0 and IntersectionObserver
+	// no intrinsic flex height (e.g. raw <img> with no fixed aspect),
+	// otherwise placeholders collapse to 0 and IntersectionObserver
 	// fires every placeholder at once. Image-only carousels typically
 	// pick "240px" or whatever matches the typical slide aspect.
 	VirtualPlaceholderHeight string
@@ -145,7 +145,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		attrs[k] = v
 	}
 
-	// VirtualScroll prep — figure out the inline window.
+	// VirtualScroll prep: figure out the inline window.
 	virtualWindow := 0
 	if cfg.VirtualScroll {
 		virtualWindow = cfg.VirtualWindow
@@ -182,7 +182,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 			"data-fui-carousel-slide": strconv.Itoa(i),
 		}
 		if cfg.VirtualScroll && i >= virtualWindow {
-			// Placeholder slide — content is deferred to the JSON
+			// Placeholder slide: content is deferred to the JSON
 			// manifest and hydrated lazily via IntersectionObserver.
 			slideAttrs["data-fui-carousel-defer"] = strconv.Itoa(i)
 			if cfg.VirtualPlaceholderHeight != "" {
@@ -198,13 +198,13 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		"class":                   "ui-carousel__track",
 		"data-fui-carousel-track": "true",
 		"tabindex":                "0",
-		"aria-label":              cfg.Label + " — slides",
+		"aria-label":              cfg.Label + ": slides",
 	}, slideEls...)
 
 	// The track + nav arrows live in a positioned "stage" wrapper so the
 	// absolute nav buttons center on the TRACK, not the whole carousel
 	// (which includes the dot row). Without it the 44px arrows overlap the
-	// pagination dots and partially obscure them — a WCAG 2.2 target-size
+	// pagination dots and partially obscure them, a WCAG 2.2 target-size
 	// failure (the last dot's unobscured area drops below 24px). The dots
 	// stay a sibling grid row below the stage, clear of the arrows.
 	stageChildren := []render.HTML{track}
@@ -259,7 +259,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 			}
 			dots = append(dots, render.Tag("button", dotAttrs))
 		}
-		// Plain <div> wrapper (no role="tablist" — dots aren't real
+		// Plain <div> wrapper (no role="tablist": dots aren't real
 		// tabs, and tablist would require role="tab" children which
 		// axe enforces via aria-required-children).
 		children = append(children, render.Tag("div", map[string]string{

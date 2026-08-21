@@ -8,12 +8,12 @@ import (
 )
 
 // runInit accepts --db=<driver> and silently scaffolded SQLite for any value
-// that wasn't "postgres" — so --db=mysql wrote dbDriver="mysql" with a SQLite
+// that wasn't "postgres", so --db=mysql wrote dbDriver="mysql" with a SQLite
 func TestInitRejectsUnknownDBDriver(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	// osExit unwinds via panic (covT_capExit), and covT_capStdout reads its
-	// temp file only AFTER fn returns — so the read is skipped on the panic
+	// temp file only AFTER fn returns, so the read is skipped on the panic
 	// path. Swap os.Stdout ourselves and read inline once covT_capExit has
 	// recovered the panic (it returns normally, so execution continues here).
 	old := os.Stdout
@@ -74,7 +74,7 @@ func TestInitAcceptsDBDriverAliases(t *testing.T) {
 
 // The scaffold must emit WithConfig BEFORE any other framework option.
 // WithConfig replaces the whole AppConfig, so with it scaffolded last the
-// natural paste point for a granular option — next to WithDB — was before
+// natural paste point for a granular option, next to WithDB, was before
 // WithConfig, which silently zeroed it (the 2026-07-26 eval's #2 footgun).
 // Ordering makes every below-the-line paste work; framework.NewApp warns at
 // boot about the remaining above-the-line case.

@@ -10,7 +10,7 @@ import (
 
 // fakeAuthUser is a test double for battery/auth's User. It implements the
 // presenceUser interface (GetID + GetEmail) so PresenceIdentityFromContext
-// can type-assert it — exactly as a real battery/auth user would. This lets
+// can type-assert it, exactly as a real battery/auth user would. This lets
 // the tests prove identity derivation WITHOUT importing battery/auth.
 type fakeAuthUser struct {
 	id    string
@@ -20,7 +20,7 @@ type fakeAuthUser struct {
 func (u *fakeAuthUser) GetID() string    { return u.id }
 func (u *fakeAuthUser) GetEmail() string { return u.email }
 
-// TestPresenceJoinAddsToRoster — a join on a topic makes the identity
+// TestPresenceJoinAddsToRoster: a join on a topic makes the identity
 // appear in that topic's roster.
 func TestPresenceJoinAddsToRoster(t *testing.T) {
 	m := NewManager()
@@ -36,7 +36,7 @@ func TestPresenceJoinAddsToRoster(t *testing.T) {
 	}
 }
 
-// TestPresenceLeaveRemovesMember — disconnect removes the member.
+// TestPresenceLeaveRemovesMember: disconnect removes the member.
 func TestPresenceLeaveRemovesMember(t *testing.T) {
 	m := NewManager()
 	h := m.PresenceJoin("sess-1", PresenceIdentity{UserID: "u1", DisplayName: "Alice"}, []string{"doc:42"})
@@ -47,7 +47,7 @@ func TestPresenceLeaveRemovesMember(t *testing.T) {
 	}
 }
 
-// TestPresenceMultiTabRefCount — two connections for the same user on the
+// TestPresenceMultiTabRefCount: two connections for the same user on the
 // same topic produce ONE roster member; closing one tab keeps the member;
 // closing the last drops it (the "no ghost presence" invariant).
 func TestPresenceMultiTabRefCount(t *testing.T) {
@@ -60,20 +60,20 @@ func TestPresenceMultiTabRefCount(t *testing.T) {
 		t.Fatalf("two same-user joins should dedup to 1 member, got %d", len(got))
 	}
 
-	// Close one tab — member must persist.
+	// Close one tab, member must persist.
 	h1.Leave()
 	if got := m.PresenceRoster("doc:42"); len(got) != 1 {
 		t.Fatalf("roster must still have 1 member after one tab closes, got %d", len(got))
 	}
 
-	// Close the last tab — member drops (no ghost).
+	// Close the last tab, member drops (no ghost).
 	h2.Leave()
 	if got := m.PresenceRoster("doc:42"); len(got) != 0 {
 		t.Errorf("roster must be empty after last tab closes, got %+v", got)
 	}
 }
 
-// TestPresenceAnonymousHandled — an anonymous (zero-identity) connection is
+// TestPresenceAnonymousHandled: an anonymous (zero-identity) connection is
 // tracked with a server-derived pseudo-identity, not crashed on and not
 // excluded. The pseudo-identity comes from the session id, never a client
 // param.
@@ -94,7 +94,7 @@ func TestPresenceAnonymousHandled(t *testing.T) {
 	}
 }
 
-// TestPresenceMultipleTopics — one connection joining two topics appears in
+// TestPresenceMultipleTopics: one connection joining two topics appears in
 // each topic's roster independently.
 func TestPresenceMultipleTopics(t *testing.T) {
 	m := NewManager()
@@ -112,7 +112,7 @@ func TestPresenceMultipleTopics(t *testing.T) {
 	}
 }
 
-// TestParsePresenceTopicsBounds — oversize topics are dropped, the count is
+// TestParsePresenceTopicsBounds: oversize topics are dropped, the count is
 // capped, duplicates collapse, and empty input yields nil.
 func TestParsePresenceTopicsBounds(t *testing.T) {
 	// empty
@@ -141,7 +141,7 @@ func TestParsePresenceTopicsBounds(t *testing.T) {
 	}
 }
 
-// TestPresenceIdentityServerDerived — THE SPOOF TEST. Identity comes from
+// TestPresenceIdentityServerDerived: THE SPOOF TEST. Identity comes from
 // the ctx auth user (handler.GetUser), never from a client param. A
 // connection has NO way to claim a different identity: PresenceJoin only
 // accepts a PresenceIdentity that the caller (handleSSE) derived from ctx.
@@ -150,14 +150,14 @@ func TestParsePresenceTopicsBounds(t *testing.T) {
 func TestPresenceIdentityServerDerived(t *testing.T) {
 	ctx := handler.SetUser(context.Background(), &fakeAuthUser{id: "real-alice", email: "alice@test.com"})
 
-	// The identity is resolved from ctx — the ONLY source.
+	// The identity is resolved from ctx, the ONLY source.
 	id := PresenceIdentityFromContext(ctx)
 	if id.UserID != "real-alice" || id.DisplayName != "alice@test.com" {
 		t.Fatalf("identity must come from ctx user, got %+v", id)
 	}
 
 	m := NewManager()
-	// A hostile client might try ?presence=doc:42&user=evil — but "user" is
+	// A hostile client might try ?presence=doc:42&user=evil, but "user" is
 	// never read. The topic is the only client-supplied value; the identity
 	// is the ctx-derived one.
 	h := m.PresenceJoin("sess-1", id, []string{"doc:42"})
@@ -172,7 +172,7 @@ func TestPresenceIdentityServerDerived(t *testing.T) {
 	}
 }
 
-// TestPresenceIdentityNoUserAnonymous — a context with no authenticated
+// TestPresenceIdentityNoUserAnonymous: a context with no authenticated
 // user yields the zero identity (anonymous), which PresenceJoin then
 // synthesizes a pseudo-identity for. No crash, no leak.
 func TestPresenceIdentityNoUserAnonymous(t *testing.T) {
@@ -182,7 +182,7 @@ func TestPresenceIdentityNoUserAnonymous(t *testing.T) {
 	}
 }
 
-// TestPresenceRosterSorted — roster is deterministically sorted by UserID.
+// TestPresenceRosterSorted: roster is deterministically sorted by UserID.
 func TestPresenceRosterSorted(t *testing.T) {
 	m := NewManager()
 	_ = m.PresenceJoin("s1", PresenceIdentity{UserID: "charlie", DisplayName: "C"}, []string{"t"})
@@ -201,7 +201,7 @@ func TestPresenceRosterSorted(t *testing.T) {
 	}
 }
 
-// TestPresenceSessionsForTopic — PresenceSessions returns the distinct
+// TestPresenceSessionsForTopic: PresenceSessions returns the distinct
 // session ids on a topic (push targets), sorted.
 func TestPresenceSessionsForTopic(t *testing.T) {
 	m := NewManager()
@@ -218,7 +218,7 @@ func TestPresenceSessionsForTopic(t *testing.T) {
 	}
 }
 
-// TestPresenceOnChangeFires — OnPresenceChange fires on join and leave.
+// TestPresenceOnChangeFires: OnPresenceChange fires on join and leave.
 func TestPresenceOnChangeFires(t *testing.T) {
 	m := NewManager()
 	var events []string
@@ -233,7 +233,7 @@ func TestPresenceOnChangeFires(t *testing.T) {
 	}
 }
 
-// TestPresenceDedupByUserID — two different sessions, same userID,
+// TestPresenceDedupByUserID: two different sessions, same userID,
 // produce one roster member (dedup is by UserID, not session).
 func TestPresenceDedupByUserID(t *testing.T) {
 	m := NewManager()
@@ -246,7 +246,7 @@ func TestPresenceDedupByUserID(t *testing.T) {
 	}
 }
 
-// TestPresenceJoinNoTopicsReturnsNil — joining with no topics is a no-op
+// TestPresenceJoinNoTopicsReturnsNil: joining with no topics is a no-op
 // (nil handle); Leave on nil is safe.
 func TestPresenceJoinNoTopicsReturnsNil(t *testing.T) {
 	m := NewManager()
@@ -258,7 +258,7 @@ func TestPresenceJoinNoTopicsReturnsNil(t *testing.T) {
 	nilHandle.Leave() // must not panic
 }
 
-// TestPresenceRosterEmptyTopic — querying an empty topic returns nil.
+// TestPresenceRosterEmptyTopic: querying an empty topic returns nil.
 func TestPresenceRosterEmptyTopic(t *testing.T) {
 	m := NewManager()
 	if got := m.PresenceRoster(""); got != nil {

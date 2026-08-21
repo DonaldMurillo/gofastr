@@ -50,7 +50,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	var vals []any
 	for _, f := range ch.Entity.GetFields() {
 		if f.AutoGenerate == schema.AutoIncrement {
-			// Omit: the database assigns the value — the Postgres SERIAL
+			// Omit: the database assigns the value, the Postgres SERIAL
 			// sequence or the SQLite "INTEGER PRIMARY KEY" rowid alias.
 			// Sending the 0 placeholder would collide on every insert
 			// after the first. RETURNING (below) reads the assigned id back.
@@ -129,7 +129,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 // record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string, body map[string]any) (map[string]any, error) {
 	// Snapshot the pre-change row inside the same transaction so the audit
-	// hook can diff old vs new. Best-effort — a SELECT failure here must
+	// hook can diff old vs new. Best-effort, a SELECT failure here must
 	// not block the update itself (the audit log already tolerates a
 	// missing pre-image and just emits {"old": null, "new": ...}).
 	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
@@ -146,7 +146,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, err
 	}
 
-	// Partial validation — only check fields the caller actually sent.
+	// Partial validation, only check fields the caller actually sent.
 	// Missing fields aren't treated as "required" violations because the
 	// existing row already satisfies them; the UPDATE only touches the
 	// columns present in the body.
@@ -171,7 +171,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		// The owner scope already pins the WHERE to the caller's id, but
 		// permitting `user_id` in the SET clause would still allow a
 		// legitimate-owner update to hand the row off to another user
-		// ("transfer-by-tamper"). Always skip the owner field — the
+		// ("transfer-by-tamper"). Always skip the owner field, the
 		// framework manages it.
 		if ownerField != "" && f.Name == ownerField {
 			continue
@@ -204,7 +204,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	ch.ApplyOwnerScopeUpdate(ub, r)
 	// A soft-deleted row is logically gone: the read paths hide it
 	// (ApplySoftDeleteFilter on Get/List/cursor/pre-image) and so must the
-	// write path — otherwise an owner could mutate / resurrect a record the
+	// write path, otherwise an owner could mutate / resurrect a record the
 	// system considers deleted, which the upsert path already refuses
 	// (errSoftDeletedResurrection). Match-nothing ⇒ scanRow gets ErrNoRows
 	// ⇒ errNotFound, same 404 a deleted row gives on Get.
@@ -252,7 +252,7 @@ func autoUpdatedAtColumn(ent *entity.Entity) string {
 // single record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string) error {
 	// Snapshot the row before deletion so the audit hook can record what
-	// went away. Without this the audit row only carries a record_id —
+	// went away. Without this the audit row only carries a record_id,
 	// useful for "who did it" but useless for "what was lost".
 	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
 		ctx = WithAuditPreImage(ctx, pre)
@@ -273,7 +273,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		ch.ApplyOwnerScopeUpdate(ub, r)
 		// Don't re-soft-delete an already-deleted row: without this the
 		// UPDATE matches the trashed row, bumps deleted_at, and reports
-		// success — making a re-delete of a logically-gone record look
+		// success, making a re-delete of a logically-gone record look
 		// like a fresh delete. Filtering to live rows makes affected==0,
 		// which maps to errNotFound below.
 		ub.Where("deleted_at IS NULL")
@@ -313,7 +313,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 // selectPreImage SELECTs the row matching `id` (with the same tenant /
 // owner / soft-delete scopes that the mutating statement will use) so
 // audit hooks can capture an old-state snapshot. Returns (nil, nil) when
-// the row doesn't exist or the SELECT fails — callers treat that as
+// the row doesn't exist or the SELECT fails, callers treat that as
 // "no snapshot available" rather than aborting the surrounding mutation.
 func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := ch.visibleFields()

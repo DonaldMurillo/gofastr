@@ -55,17 +55,17 @@ func NormalizeOrigin(raw string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("embed: origin %q has no host", raw)
 	}
-	// url.Parse is permissive about what may sit in an authority — it happily
+	// url.Parse is permissive about what may sit in an authority: it happily
 	// accepts "*.acme.com". An allowlist entry that looks like a wildcard but
 	// is compared literally is the worst of both readings: the author believes
 	// subdomains are covered and none are. Reject anything that is not a
 	// literal hostname or IP.
 	if !validOriginHost(host) {
-		return "", fmt.Errorf("embed: origin %q has an invalid host — exact hosts only, no wildcards", raw)
+		return "", fmt.Errorf("embed: origin %q has an invalid host: exact hosts only, no wildcards", raw)
 	}
 	// Ports are compared as NUMBERS, not as text. A browser serializes an
 	// origin's port canonically, so ":0443" and ":443" both arrive as the
-	// default-port-free form — while a config keeping ":0443" verbatim can
+	// default-port-free form, while a config keeping ":0443" verbatim can
 	// never match anything the browser sends. Same for a port outside the
 	// valid range, which is not an origin at all.
 	port := u.Port()
@@ -115,7 +115,7 @@ func validOriginHost(host string) bool {
 	// A browser normalizes every numeric host to dotted-quad: "127.1",
 	// "2130706433" and "0177.0.0.1" all serialize as "127.0.0.1". Go's URL
 	// parser treats them as ordinary DNS labels, so such an allowlist entry is
-	// accepted and then never matches. Rejecting is the honest answer — the
+	// accepted and then never matches. Rejecting is the honest answer: the
 	// author gets an error at boot instead of an embed that silently never
 	// completes its handshake.
 	if looksNumericHost(host) && net.ParseIP(host) == nil {
@@ -145,7 +145,7 @@ func validOriginHost(host string) bool {
 	return true
 }
 
-// looksNumericHost reports whether every label is decimal digits — the shape a
+// looksNumericHost reports whether every label is decimal digits, the shape a
 // browser reads as an IPv4 address however many parts it has.
 func looksNumericHost(host string) bool {
 	if host == "" {
@@ -165,7 +165,7 @@ func looksNumericHost(host string) bool {
 }
 
 // originSet is a normalized allowlist. Lookup is by normalized origin, so a
-// caller must normalize the candidate first — Has does it for you.
+// caller must normalize the candidate first. Has does it for you.
 type originSet struct {
 	// order preserves declaration order so the frame-ancestors directive is
 	// stable across boots (a shuffling CSP header defeats HTTP caching and
@@ -177,7 +177,7 @@ type originSet struct {
 // normalizeOrigins normalizes and de-duplicates an origin list and returns the
 // set alongside the byte size of the frame-ancestors directive it would
 // produce. It validates nothing about the LIST as a whole (empty-ness, the
-// response-header cap) — those policies differ between the boot-time static
+// response-header cap), those policies differ between the boot-time static
 // path and the per-customer runtime path, so each applies its own. Sharing
 // this core is what makes a runtime OriginSource go through the SAME
 // normalization as a boot-time Surface.Origins: a store is not a trusted
@@ -199,7 +199,7 @@ const maxSourceRows = 4096
 func normalizeOrigins(raw []string) (*originSet, int, error) {
 	// Bound the RAW count before anything is sized or normalized from it. The
 	// byte cap below counts de-duplicated output, so it cannot see a list of
-	// duplicates — and normalizing one is where the work actually goes.
+	// duplicates, and normalizing one is where the work actually goes.
 	if len(raw) > maxSourceRows {
 		return nil, 0, fmt.Errorf("embed: origin list has %d entries, over the %d-row limit", len(raw), maxSourceRows)
 	}
@@ -249,7 +249,7 @@ func newOriginSet(raw []string) (*originSet, error) {
 	if bytes > maxFrameAncestorsBytes {
 		return nil, fmt.Errorf(
 			"embed: %d origins produce a %d-byte frame-ancestors directive, over the %d-byte "+
-				"limit — that directive ships on every shell response and proxies reject or "+
+				"limit: that directive ships on every shell response and proxies reject or "+
 				"truncate outsized response headers, which breaks the surface for every "+
 				"customer at once. Split the customers across separate surfaces",
 			len(s.order), bytes, maxFrameAncestorsBytes)
@@ -264,7 +264,7 @@ func newOriginSet(raw []string) (*originSet, error) {
 // OriginSource. The cap is applied here, per response, rather than at boot:
 // an over-large list fails this ONE customer closed (frame-ancestors 'none')
 // instead of the old behaviour where the whole surface refused to start. An
-// empty list is a fail-closed error too — a customer with no framers is a
+// empty list is a fail-closed error too: a customer with no framers is a
 // configuration mistake, never an allow-everyone wildcard.
 func buildCustomerOriginSet(raw []string) (*originSet, error) {
 	s, bytes, err := normalizeOrigins(raw)
@@ -272,12 +272,12 @@ func buildCustomerOriginSet(raw []string) (*originSet, error) {
 		return nil, err
 	}
 	if len(s.order) == 0 {
-		return nil, fmt.Errorf("embed: origin source returned no origins — a customer with no framers fails closed rather than widening to everyone")
+		return nil, fmt.Errorf("embed: origin source returned no origins: a customer with no framers fails closed rather than widening to everyone")
 	}
 	if bytes > maxFrameAncestorsBytes {
 		return nil, fmt.Errorf(
 			"embed: customer produces a %d-byte frame-ancestors directive, over the %d-byte "+
-				"limit — failing this customer closed rather than shipping a directive a proxy "+
+				"limit: failing this customer closed rather than shipping a directive a proxy "+
 				"will truncate or reject",
 			bytes, maxFrameAncestorsBytes)
 	}
@@ -290,7 +290,7 @@ func buildCustomerOriginSet(raw []string) (*originSet, error) {
 const maxFrameAncestorsBytes = 4 << 10
 
 // Has reports whether candidate names an allowed origin. A candidate that is
-// not a well-formed origin is not allowed — it is never normalized "close
+// not a well-formed origin is not allowed: it is never normalized "close
 // enough" into a match.
 func (s *originSet) Has(candidate string) bool {
 	if s == nil {

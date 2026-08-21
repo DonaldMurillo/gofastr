@@ -44,7 +44,7 @@ func TestDurableSchedulerSkipsTickWhilePriorOccurrenceIsActive(t *testing.T) {
 	}
 
 	// A worker claims and completes the first occurrence's job, so the 3m
-	// tick enqueues fresh work instead of skipping as overlap. Claim first —
+	// tick enqueues fresh work instead of skipping as overlap. Claim first,
 	// Ack alone must not remove a never-claimed pending row.
 	claimed, err := q.Dequeue(context.Background())
 	if err != nil {

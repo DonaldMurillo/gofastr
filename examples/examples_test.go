@@ -178,7 +178,7 @@ func TestSPAEntityAPI(t *testing.T) {
 	)
 
 	app.Entity("articles", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true},
 		{Name: "summary", Type: schema.Text},
@@ -188,7 +188,7 @@ func TestSPAEntityAPI(t *testing.T) {
 	})
 
 	app.Entity("projects", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "name", Type: schema.String, Required: true},
 		{Name: "description", Type: schema.Text},
@@ -409,7 +409,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 	)
 
 	app.Entity("articles", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true},
 		{Name: "summary", Type: schema.Text},
@@ -553,7 +553,7 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 
 	crudFalse := false
 	app.Entity("articles", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true, CRUD: &crudFalse}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true},
 		{Name: "summary", Type: schema.Text},
@@ -640,8 +640,8 @@ func stringContains(s, sub string) bool {
 }
 
 // TestApiTourSmoke spins up the api-tour app's entity graph (without binding
-// a port) and exercises the new endpoints — eager loading, cursor pagination,
-// batch create, and the SSE handler — through TestHarness. This isn't the
+// a port) and exercises the new endpoints: eager loading, cursor pagination,
+// batch create, and the SSE handler, through TestHarness. This isn't the
 // shipped main.go (that runs ListenAndServe); it pins the entity wiring so
 // the example doesn't drift from the framework API.
 func TestApiTourSmoke(t *testing.T) {
@@ -659,7 +659,7 @@ func TestApiTourSmoke(t *testing.T) {
 		framework.WithConfig(framework.AppConfig{Name: "api-tour-test"}),
 	)
 	app.Entity("users", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
@@ -687,7 +687,7 @@ func TestApiTourSmoke(t *testing.T) {
 		}},
 	})
 	app.Entity("posts", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "posts", Pagination: &framework.PaginationConfig{CursorField: "created_at"}, Fields: []schema.Field{
 		{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 		{Name: "title", Type: schema.String, Required: true},

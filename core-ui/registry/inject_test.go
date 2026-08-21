@@ -120,7 +120,7 @@ func TestInjectIdempotentWhenAlreadyMarked(t *testing.T) {
 
 // TestInjectSelfClosingPreservesSpace asserts that a self-closing
 // tag with a space before /> retains that space after marker
-// injection — otherwise `<br />` becomes `<br data-fui-comp="…"/>`
+// injection, otherwise `<br />` becomes `<br data-fui-comp="…"/>`
 // which is technically valid but visually inconsistent and
 // regression-prone for downstream HTML normalizers.
 func TestInjectSelfClosingPreservesSpace(t *testing.T) {
@@ -196,11 +196,11 @@ func TestInjectIgnoresAttrNameInsideQuotedValue(t *testing.T) {
 // tags (common in handwritten templates) would get a duplicate marker.
 func TestInjectIdempotentAcrossLineBreaks(t *testing.T) {
 	cases := []string{
-		// Bare newline / CR directly before the attribute — no space
-		// indent — so only an \n / \r boundary distinguishes the attr.
+		// Bare newline / CR directly before the attribute, no space
+		// indent, so only an \n / \r boundary distinguishes the attr.
 		"<div\ndata-fui-comp=\"modal\"\nclass=\"x\">hi</div>",
 		"<div\rdata-fui-comp=\"modal\"\rclass=\"x\">hi</div>",
-		// And the indented cases that already work — keep them as a
+		// And the indented cases that already work, keep them as a
 		// regression net.
 		"<div\n  data-fui-comp=\"modal\"\n  class=\"x\">hi</div>",
 		"<div\r\n  data-fui-comp=\"modal\"\r\n  class=\"x\">hi</div>",

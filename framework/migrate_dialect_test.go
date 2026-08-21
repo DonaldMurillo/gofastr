@@ -45,7 +45,7 @@ func TestSqlType_DialectMatrix(t *testing.T) {
 // TestColumnDefaultClause_AutoUUID pins the V3 #8 fix: AutoUUID columns
 // on Postgres get DEFAULT gen_random_uuid() so raw-SQL INSERTs that
 // omit the id column succeed instead of crashing with a NOT NULL
-// constraint violation. SQLite has no built-in UUID generator —
+// constraint violation. SQLite has no built-in UUID generator,
 // the column stays app-managed there.
 func TestColumnDefaultClause_AutoUUID(t *testing.T) {
 	f := schema.Field{Name: "id", Type: schema.String, AutoGenerate: schema.AutoUUID}
@@ -58,8 +58,8 @@ func TestColumnDefaultClause_AutoUUID(t *testing.T) {
 }
 
 // TestColumnDefaultClause_LiteralDefaultsStillWork guards the regression
-// path: explicit f.Default values must continue to render via SQLDefault
-// — the AutoUUID branch must not shadow them.
+// path: explicit f.Default values must continue to render via SQLDefault.
+// The AutoUUID branch must not shadow them.
 func TestColumnDefaultClause_LiteralDefaultsStillWork(t *testing.T) {
 	cases := []struct {
 		f       schema.Field
@@ -76,7 +76,7 @@ func TestColumnDefaultClause_LiteralDefaultsStillWork(t *testing.T) {
 		// No default and no AutoUUID → empty.
 		{schema.Field{Type: schema.String}, DialectPostgres, ""},
 		{schema.Field{Type: schema.String}, DialectSQLite, ""},
-		// AutoTimestamp does NOT auto-emit a DEFAULT — framework hooks set
+		// AutoTimestamp does NOT auto-emit a DEFAULT, framework hooks set
 		// created_at/updated_at app-side. Don't broaden the auto-default
 		// surface beyond what V3 #8 asked for.
 		{schema.Field{Type: schema.Timestamp, AutoGenerate: schema.AutoTimestamp}, DialectPostgres, ""},

@@ -44,7 +44,7 @@ func NewElementID() string {
 // is nil and index is -1 when the matched node is the tree root.
 // Returns ok=false when no node matches.
 //
-// Linear walk over the tree — pages aren't large enough for this to
+// Linear walk over the tree, pages aren't large enough for this to
 // matter; an index lookup would just add bookkeeping cost on every
 // other op.
 func FindNodeByID(root *Node, id string) (target *Node, parent *Node, index int, ok bool) {

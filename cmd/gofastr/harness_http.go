@@ -129,7 +129,7 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 // Host-pinning is the DNS-rebinding defence. Without it, an attacker
 // who points their own domain at 127.0.0.1 makes the victim's browser
 // treat the sidecar as same-origin, which lets their JS read response
-// bodies — including the chat page's harness-token meta tag — and then
+// bodies, including the chat page's harness-token meta tag, and then
 // drive /v1/sessions/<id>/input and .../permission as an authenticated
 // client. Comparing Host against the bound authority breaks that: a
 // rebound request still carries the attacker's own name.
@@ -158,7 +158,7 @@ func loopbackGuards(addr string) (hosts, origins []string) {
 		// the operator may click either the IP or the name.
 		//
 		// A WILDCARD bind gets the same list. net.Listen(":8090") reports its
-		// address as "[::]:8090", and "[::]" is a host no browser ever sends —
+		// address as "[::]:8090", and "[::]" is a host no browser ever sends,
 		// so pinning to it made every request 403, including the one from the
 		// URL the tool prints. `--addr=:8090` is a documented invocation; it
 		// has to work. The guard still does its job: DNS rebinding needs a
@@ -196,7 +196,7 @@ func isLoopbackHost(host string) bool {
 
 // hostAllowed reports whether the request's Host matches one of the
 // pinned authorities. An empty list means nothing was pinned, which
-// only happens if the caller skipped loopbackGuards — fail closed.
+// only happens if the caller skipped loopbackGuards: fail closed.
 func hostAllowed(host string, allowed []string) bool {
 	for _, a := range allowed {
 		if strings.EqualFold(host, a) {
@@ -220,7 +220,7 @@ func deriveListenerSecret() []byte {
 }
 
 // shortSessionLabel produces a status-bar-friendly truncation of the
-// session id. Robust against shorter-than-expected inputs (tests +
+// session id. Handles shorter-than-expected inputs (tests +
 // future formats); never panics.
 func shortSessionLabel(s string) string {
 	if len(s) <= 14 {
@@ -249,7 +249,7 @@ func chatPage(w http.ResponseWriter, r *http.Request, sess ids.SessionID, token 
 // meta tags rather than a query string so they aren't logged in
 // referrers or browser history.
 //
-// Layout (web is not the TUI — it has affordances the TUI can't have):
+// Layout (web is not the TUI; it has affordances the TUI can't have):
 //
 //	┌──────────────────────────── status bar ──────────────────┐
 //	│ harness · session · model · $cost                api docs │
@@ -303,7 +303,7 @@ func renderChat(host, sessionID, token string) render.HTML {
 			html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"class": "welcome"}},
 				render.Tag("strong", nil, render.Text("gofastr harness")),
 				render.Tag("br", nil),
-				render.Text("Type a message and press Enter. This page is one of multiple clients attached to the same engine — open the TUI in another window and you'll see messages and tool calls sync both ways."),
+				render.Text("Type a message and press Enter. This page is one of multiple clients attached to the same engine: open the TUI in another window and you'll see messages and tool calls sync both ways."),
 			),
 		),
 		render.Tag("form", map[string]string{"id": "input-form"},
@@ -362,7 +362,7 @@ func renderChat(host, sessionID, token string) render.HTML {
 				render.VoidTag("meta", map[string]string{
 					"name": "harness-token", "content": token,
 				}),
-				render.Tag("title", nil, render.Text("gofastr harness — "+host)),
+				render.Tag("title", nil, render.Text("gofastr harness: "+host)),
 				render.Tag("style", nil, render.Raw(chatCSS)),
 			),
 			render.Tag("body", nil,
@@ -390,7 +390,7 @@ func renderLanding(host string) render.HTML {
 			map[string]string{"class": "method method-" + strings.ToLower(e.method)},
 			render.Text(e.method))
 		pathSpan := render.Tag("code", nil, render.Text(e.path))
-		desc := render.Text(" — " + e.desc)
+		desc := render.Text(": " + e.desc)
 		var authMark render.HTML
 		if e.auth != "" {
 			authMark = render.Tag("small", nil, render.Text("  ("+e.auth+" required)"))
@@ -404,7 +404,7 @@ func renderLanding(host string) render.HTML {
 		html.Paragraph(html.TextConfig{},
 			render.Text("Control plane is live at "),
 			render.Tag("code", nil, render.Text("http://"+host+"/v1/")),
-			render.Text(". This sidecar is rendered by the gofastr framework itself — no hand-written HTML, no JS framework. The full interactive web client is on the roadmap; for now the REST + WS endpoints below are the primary surface.")),
+			render.Text(". This sidecar is rendered by the gofastr framework itself: no hand-written HTML, no JS framework. The full interactive web client is on the roadmap; for now the REST + WS endpoints below are the primary surface.")),
 
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Endpoints")),
 		html.UnorderedList(html.ListConfig{}, rows...),
@@ -803,7 +803,7 @@ const chatJS = `
       more.textContent = '… +' + (lines.length - PREVIEW_LINES) + ' more lines (click to expand)';
       preview.appendChild(more);
     }
-    // Stay COLLAPSED by default — user expands by clicking the
+    // Stay COLLAPSED by default: user expands by clicking the
     // header. Avoids the previous behavior where every tool card
     // popped open and ate the viewport.
   }
@@ -930,7 +930,7 @@ const chatJS = `
         taskPanel.appendChild(row);
       }
     } catch {
-      /* silently ignore — UI just won't update until next tick */
+      /* silently ignore: UI just won't update until next tick */
     }
   }
   refreshTasks();

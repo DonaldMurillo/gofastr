@@ -21,11 +21,11 @@ import (
 // roster (the set of connected identities) is then queryable and can be
 // pushed live to every viewer when someone joins or leaves.
 //
-// SECURITY MODEL — identity is SERVER-DERIVED, never client-supplied.
+// SECURITY MODEL, identity is SERVER-DERIVED, never client-supplied.
 // The {userID, displayName} in a roster entry come exclusively from the
 // request context's authenticated user (handler.GetUser), resolved at
 // SSE-connect time. A client may NAME a topic (it is untrusted and
-// bounded) but may NEVER claim an identity — so a user cannot spoof
+// bounded) but may NEVER claim an identity, so a user cannot spoof
 // being someone else in the roster. See PresenceIdentityFromContext.
 //
 // Anonymous (unauthenticated) connections are tracked with a
@@ -35,7 +35,7 @@ import (
 // one stable viewer) while preserving the invariant that a client can't
 // choose its roster identity.
 //
-// CROSS-REPLICA: the roster is the MERGED set — THIS replica's connections
+// CROSS-REPLICA: the roster is the MERGED set, THIS replica's connections
 // ∪ every other live replica's announced members (see presence_fanout.go).
 // Each replica broadcasts its full local roster per topic over a dedicated
 // presence lane on the fanout transport; a remote-roster table keyed by
@@ -71,7 +71,7 @@ type presenceUser interface {
 
 // PresenceIdentityFromContext resolves the authenticated user from the
 // request context into a PresenceIdentity. It is a READ of the ctx
-// interface — it does not import or edit battery/auth. Returns the zero
+// interface, it does not import or edit battery/auth. Returns the zero
 // value (anonymous) when no user is present; callers that join a topic
 // then get a synthesized pseudo-identity (see PresenceJoin).
 //
@@ -93,7 +93,7 @@ func PresenceIdentityFromContext(ctx context.Context) PresenceIdentity {
 	return PresenceIdentity{UserID: id, DisplayName: u.GetEmail()}
 }
 
-// Presence topic bounds — a hostile client supplies the topic string, so
+// Presence topic bounds, a hostile client supplies the topic string, so
 // both its length and the count per connection are capped to prevent
 // unbounded memory/bookkeeping.
 const (
@@ -132,7 +132,7 @@ func ParsePresenceTopics(raw string) []string {
 // presenceConn is one SSE connection's presence registration. Each
 // ServeSSE call creates one; disconnect removes it. The roster is
 // derived from the live set of connections (dedup by UserID at read
-// time), so there is no manual ref-count to drift — closing the last
+// time), so there is no manual ref-count to drift, closing the last
 // tab of a user simply removes the last connection and the member
 // drops.
 type presenceConn struct {
@@ -181,7 +181,7 @@ func (h *PresenceHandle) Leave() {
 
 // anonIdentity synthesizes a stable pseudo-identity for an anonymous
 // (unauthenticated) connection from its session id. The identity is
-// server-derived — a client cannot choose it. The display name uses the
+// server-derived, a client cannot choose it. The display name uses the
 // trailing 4 chars (the session token's random tail), avoiding any fixed
 // prefix the host may prepend (e.g. "sess-") so two viewers are visually
 // distinct ("Guest 9f3d" vs "Guest a77e").
@@ -197,7 +197,7 @@ func anonIdentity(sessionID string) PresenceIdentity {
 }
 
 // filterAuthorizedTopics returns the subset of topics the AuthorizeTopic hook
-// permits for ctx. A nil hook (the default) authorizes everything — presence
+// permits for ctx. A nil hook (the default) authorizes everything, presence
 // is public unless an app opts into gating. Rejected topics are dropped
 // silently; no error distinguishes an unauthorized topic from a nonexistent
 // one, so the filter cannot be used as a private-topic existence oracle.
@@ -236,7 +236,7 @@ func (m *Manager) filterAuthorizedTopics(ctx context.Context, topics []string) [
 // without deadlocking.
 func (m *Manager) PresenceJoin(sessionID string, identity PresenceIdentity, topics []string) *PresenceHandle {
 	if len(topics) == 0 {
-		return nil // nothing to join — nothing to clean up
+		return nil // nothing to join, nothing to clean up
 	}
 	if identity.UserID == "" {
 		identity = anonIdentity(sessionID)
@@ -284,7 +284,7 @@ func (m *Manager) PresenceRoster(topic string) []PresenceMember {
 }
 
 // PresenceSessions returns the distinct session ids currently connected
-// to a topic — the push targets for a live roster update. Sorted for
+// to a topic, the push targets for a live roster update. Sorted for
 // deterministic test output.
 func (m *Manager) PresenceSessions(topic string) []string {
 	if topic == "" {

@@ -10,7 +10,7 @@ import (
 
 // CSRF must use the __Host- prefix when secure, and the cookie value
 // must be HMAC-signed so a subdomain attacker who plants both a cookie
-// AND the matching header value can't forge a request — without the
+// AND the matching header value can't forge a request. Without the
 // signing key they can't construct a value the server will accept.
 
 func newOK() http.Handler {
@@ -64,7 +64,7 @@ func TestCSRF_UnsignedHeaderRejected(t *testing.T) {
 	}
 
 	// An attacker who plants a fake cookie and matching header (both being
-	// just the random part — no signature) must be rejected.
+	// just the random part, no signature) must be rejected.
 	random := strings.SplitN(cookieVal, ".", 2)[0]
 	req2 := httptest.NewRequest(http.MethodPost, "/", nil)
 	req2.AddCookie(&http.Cookie{Name: cookieName, Value: random})
@@ -89,7 +89,7 @@ func TestCSRF_ForgedSignatureRejected(t *testing.T) {
 	cookieName := cookies[0].Name
 	cookieVal := cookies[0].Value
 
-	// Replace the signature with garbage — server must reject.
+	// Replace the signature with garbage: server must reject.
 	parts := strings.SplitN(cookieVal, ".", 2)
 	forged := parts[0] + ".AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	req2 := httptest.NewRequest(http.MethodPost, "/", nil)

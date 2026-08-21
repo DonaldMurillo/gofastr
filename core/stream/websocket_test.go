@@ -62,7 +62,7 @@ func TestWebSocketConnClose(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	// Close again — must not panic
+	// Close again: must not panic
 	if err := conn.Close(); err != nil {
 		t.Fatalf("second Close: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestWebSocketConnClose(t *testing.T) {
 		t.Fatal("closed channel not signaled")
 	}
 
-	// OnClose runs in a goroutine — eventually fires
+	// OnClose runs in a goroutine; eventually fires
 	deadline := time.After(2 * time.Second)
 	for atomic.LoadInt32(&callbackRan) == 0 {
 		select {
@@ -212,7 +212,7 @@ func TestReadFrameTooLarge(t *testing.T) {
 	binary.BigEndian.PutUint64(lenBytes, 2<<20) // 2MB
 	frame = append(frame, lenBytes...)
 	frame = append(frame, make([]byte, 4)...) // mask key
-	// No actual payload data — readFrame will fail on io.ReadFull
+	// No actual payload data; readFrame will fail on io.ReadFull
 
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(frame), w: io.Discard},

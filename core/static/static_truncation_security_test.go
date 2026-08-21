@@ -19,7 +19,7 @@ import (
 // 32MB are served in full. Previously serveFile wrapped the file in
 // io.LimitReader(f, 32<<20) and never compared against stat.Size(), so a
 // >32MB file was served truncated as 200 with a Content-Length and ETag
-// that were self-consistent with the (truncated) body — a silent data
+// that were self-consistent with the (truncated) body, a silent data
 // corruption.
 //
 // The body is verified by streaming it through a SHA-256 hasher so the
@@ -106,7 +106,7 @@ func (errorReadFS) Open(name string) (fs.File, error) {
 // TestStatic_ReadErrorMapsTo500 verifies that an I/O error during serving
 // that is NOT fs.ErrNotExist yields a 500, not a 404. Previously every
 // IO error (Open/Stat/Read) returned false from serveFile and the handler
-// fell through to http.NotFound — masking server-side faults as 404s.
+// fell through to http.NotFound, masking server-side faults as 404s.
 func TestStatic_ReadErrorMapsTo500(t *testing.T) {
 	h := static.Handler(static.Config{FS: errorReadFS{}})
 	req := httptest.NewRequest(http.MethodGet, "/boom.bin", nil)

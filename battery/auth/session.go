@@ -48,7 +48,7 @@ type SessionStore interface {
 // SessionTwoFAMarker is the optional SessionStore extension that lets the
 // 2FA challenge handler mark a session as having completed the second
 // factor. The implementation MUST set TwoFactorVerified=true AND clear
-// PendingTwoFactor — the two are inverses in the post-login state model.
+// PendingTwoFactor, the two are inverses in the post-login state model.
 // RequireTwoFA refuses access if a 2FA-enabled user's session is not
 // marked. Stores that don't implement this method effectively cannot
 // participate in 2FA enforcement (RequireTwoFA will fail-closed).
@@ -157,7 +157,7 @@ func (m *MemorySessionStore) Get(_ context.Context, token string) (*Session, err
 }
 
 // Delete drops the session for token. Returns nil even if the token is
-// unknown — idempotent logout.
+// unknown, idempotent logout.
 func (m *MemorySessionStore) Delete(_ context.Context, token string) error {
 	m.mu.Lock()
 	delete(m.sessions, token)

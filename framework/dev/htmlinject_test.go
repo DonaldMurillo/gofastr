@@ -42,8 +42,8 @@ func TestInjectorAddsScriptBeforeBodyClose(t *testing.T) {
 	}
 }
 
-// Fragments — island RPC responses, SPA-nav partials (X-Gofastr-Partial), any
-// HTML without </body> — are swapped into a live DOM by the runtime; an
+// Fragments, island RPC responses, SPA-nav partials (X-Gofastr-Partial), any
+// HTML without </body>, are swapped into a live DOM by the runtime; an
 // appended script node would corrupt :last-child styling and the screen
 // cache. No </body>, no injection.
 func TestInjectorLeavesFragmentsAlone(t *testing.T) {
@@ -95,7 +95,7 @@ func TestInjectorPassesThroughNonHTMLUntouched(t *testing.T) {
 	}
 }
 
-// Compressed bodies are opaque bytes even when labeled text/html — a host
+// Compressed bodies are opaque bytes even when labeled text/html. A host
 // gzip middleware sitting inside the injector must pass through unmodified.
 func TestInjectorSkipsEncodedBodies(t *testing.T) {
 	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -163,7 +163,7 @@ func TestInjectorStreamsSSEWithFlush(t *testing.T) {
 
 // An explicit Flush on an HTML response is a streaming signal: the buffered
 // prefix goes out raw, injection is abandoned, and later writes+flushes
-// stream through — progressive server-rendered pages keep painting in dev.
+// stream through. Progressive server-rendered pages keep painting in dev.
 func TestInjectorFlushSwitchesHTMLToStreaming(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler := func(w http.ResponseWriter, _ *http.Request) {

@@ -28,7 +28,7 @@ func TestIsValidDemoID(t *testing.T) {
 		strings.Repeat("a", 33),
 		strings.Repeat("A", 32),            // uppercase
 		strings.Repeat("g", 32),            // non-hex
-		strings.Repeat("x", 1<<20),         // megabyte key — the attack
+		strings.Repeat("x", 1<<20),         // megabyte key, the attack
 		"0123456789abcdef0123456789abcde ", // trailing space
 	}
 	for _, s := range invalid {
@@ -49,7 +49,7 @@ func TestReadDemoCookieRejectsOversized(t *testing.T) {
 }
 
 // TestSortableMoveDedupsCards: a move whose order repeats a card id many times
-// must not inflate the persisted column — each known card lands at most once.
+// must not inflate the persisted column, each known card lands at most once.
 func TestSortableMoveDedupsCards(t *testing.T) {
 	app := setupServer()
 
@@ -93,7 +93,7 @@ func TestSortableMoveDedupsCards(t *testing.T) {
 
 // TestComponentShowcaseRenderNonEmpty guards the llm.md regression: the
 // showcase screen's direct Render() (called by core-ui/app/llmmd.go) must
-// produce content, not the empty ContextOnly stub — for both a stateless demo
+// produce content, not the empty ContextOnly stub, for both a stateless demo
 // and a ctx-dispatched stateful one.
 func TestComponentShowcaseRenderNonEmpty(t *testing.T) {
 	find := func(slug string) componentEntry {

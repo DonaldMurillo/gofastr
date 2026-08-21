@@ -71,7 +71,7 @@ func expandDocPattern(pattern string, params map[string]string) string {
 }
 
 // TestDocsCatchAllUnknownSlug404s verifies an unknown doc slug is
-// rejected (Load errors), so handlePage serves the site's 404 —
+// rejected (Load errors), so handlePage serves the site's 404,
 // preserving the UX the per-slug loop had by not registering unknown
 // paths at all.
 func TestDocsCatchAllUnknownSlug404s(t *testing.T) {

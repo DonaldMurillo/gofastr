@@ -8,7 +8,7 @@ import (
 // Themed wraps children in a <div class="fui-theme-<hash>"> so the
 // CSS variable cascade applies a section-level theme override to
 // every descendant. Components inside Themed read var(--color-…)
-// as usual — the browser dereferences them against the override
+// as usual: the browser dereferences them against the override
 // block, not the canonical :root.
 //
 // Use it for dark sections, branded callouts, multi-tenant

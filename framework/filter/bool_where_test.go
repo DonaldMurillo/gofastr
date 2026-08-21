@@ -7,7 +7,7 @@ import (
 )
 
 // The ?where= predicate path must coerce Bool-column values the same way
-// ParseFiltersValues does — otherwise ?published=true matches rows while
+// ParseFiltersValues does, otherwise ?published=true matches rows while
 // the equivalent where-tree binds TEXT 'true' against an INTEGER column
 // and matches nothing on SQLite.
 

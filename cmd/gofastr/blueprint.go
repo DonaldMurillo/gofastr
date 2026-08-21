@@ -57,7 +57,7 @@ type BlueprintSeedEntity struct {
 	Weights map[string]map[string]int
 }
 
-// BlueprintNavItem describes a navigation entry — a link to a screen or URL.
+// BlueprintNavItem describes a navigation entry: a link to a screen or URL.
 type BlueprintNavItem struct {
 	Label string
 	Href  string
@@ -71,7 +71,7 @@ type BlueprintApp struct {
 	// (app.description). Empty derives one from the app name + entities
 	// so the generated app passes uihost strict mode with honest copy.
 	Description string
-	// BaseURL seeds the generated appBaseURL() fallback — the canonical
+	// BaseURL seeds the generated appBaseURL() fallback, the canonical
 	// origin for sitemap <loc> entries (app.base_url). The APP_BASE_URL
 	// env var always wins at runtime; empty falls back to localhost.
 	BaseURL       string
@@ -89,7 +89,7 @@ type BlueprintApp struct {
 	PWA           BlueprintPWA
 	// LLMMD emits uihost.WithPublicLLMMD() so every registered screen
 	// serves its /llm.md document (plus the /llm-pages.md index).
-	// Independent of PWA — a screen inventory is schema disclosure, so
+	// Independent of PWA. A screen inventory is schema disclosure, so
 	// it never rides along with another feature.
 	LLMMD bool
 }
@@ -517,7 +517,7 @@ func decodeBlueprintAuth(node *coreyaml.Node) (BlueprintAuth, error) {
 	}
 	// dev_mode defaults to true when omitted: a freshly generated app
 	// serves plain HTTP, where the production cookie defaults
-	// (__Host-session + Secure) never round-trip — login would silently
+	// (__Host-session + Secure) never round-trip. Login would silently
 	// break out of the box. `gofastr generate` warns loudly about the
 	// default; set `dev_mode: false` (plus jwt_secret + HTTPS) to deploy.
 	devMode := true
@@ -525,8 +525,8 @@ func decodeBlueprintAuth(node *coreyaml.Node) (BlueprintAuth, error) {
 		// Strict bool only: dev_mode is the one blueprint bool whose
 		// default is true, so the usual lax "anything-but-true → false"
 		// coercion would let YAML-1.1 spellings like `yes` silently flip
-		// it to prod cookie mode on plain HTTP — the exact broken-login
-		// scenario the default exists to prevent — while also
+		// it to prod cookie mode on plain HTTP, the exact broken-login
+		// scenario the default exists to prevent, while also
 		// suppressing the dev-mode warning.
 		v, err := strictBoolValue(dm)
 		if err != nil {
@@ -1044,7 +1044,7 @@ func entityDeclarationCRUDEnabled(decl framework.EntityDeclaration) bool {
 }
 
 // blueprintHasEntityAccess reports whether any entity declares an `access:`
-// block — i.e. its auto-CRUD API is permission-gated and therefore needs a
+// block, i.e. its auto-CRUD API is permission-gated and therefore needs a
 // RolePolicy installed for the signed-in user, or every write 403s.
 func blueprintHasEntityAccess(bp Blueprint) bool {
 	for _, e := range bp.Entities {
@@ -1073,7 +1073,7 @@ func blueprintLoginRoute(bp Blueprint) string {
 	return "/login"
 }
 
-// blueprintAppHome returns the post-login landing route — the first app-layout
+// blueprintAppHome returns the post-login landing route: the first app-layout
 // screen, defaulting to "/". Used for the auth-aware header's "Dashboard" link
 // and to bounce already-signed-in visitors off the login/signup screens.
 func blueprintAppHome(bp Blueprint) string {
@@ -1120,7 +1120,7 @@ func blueprintNavHasRoles(items []BlueprintNavItem) bool {
 }
 
 // blueprintEntityHasField reports whether the declaration already lists a field
-// of the given name (case-sensitive — column names are verbatim).
+// of the given name (case-sensitive; column names are verbatim).
 func blueprintEntityHasField(decl framework.EntityDeclaration, name string) bool {
 	for _, f := range decl.Fields {
 		if f.Name == name {
@@ -1139,7 +1139,7 @@ func blueprintHasOwnerScopedEntity(bp Blueprint) bool {
 	return false
 }
 
-// decodeEntityAccess decodes an entity's `access:` map — the per-operation
+// decodeEntityAccess decodes an entity's `access:` map: the per-operation
 // RBAC permissions mirroring EntityConfig.Access. nil node = no RBAC gating
 // (the key is optional and additive; existing blueprints are unaffected).
 func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDeclaration, error) {
@@ -1596,8 +1596,8 @@ func blueprintExpandSeed(bp Blueprint) Blueprint {
 // blueprintGenerateSeedRows builds n demo rows for an entity. Each enum column
 // is filled from a precomputed distribution; scalar columns get plausible
 // deterministic values keyed off the row index. System columns (id/timestamps/
-// auto-generated/read-only), hidden columns, and relations are skipped —
-// relations can't be safely fabricated, so count-seeding suits scalar/enum
+// auto-generated/read-only), hidden columns, and relations are skipped.
+// Relations can't be safely fabricated, so count-seeding suits scalar/enum
 // entities (use explicit rows: for entities with required relations).
 func blueprintGenerateSeedRows(decl framework.EntityDeclaration, n int, weights map[string]map[string]int) []map[string]any {
 	// Precompute enum distributions once per column.
@@ -1935,10 +1935,10 @@ func validateIslandPathsAreDistinct(bp Blueprint) error {
 			}
 			if prev.screen == p.screen.Name {
 				prev.blocks++
-				return fmt.Errorf("blueprint: screen %q lists entity %q more than once, and both lists would share the island endpoint %s — sorting or paging either table would rewrite both from the first list's columns. Split them onto separate screens, or render one of them as a different block kind",
+				return fmt.Errorf("blueprint: screen %q lists entity %q more than once, and both lists would share the island endpoint %s: sorting or paging either table would rewrite both from the first list's columns. Split them onto separate screens, or render one of them as a different block kind",
 					p.screen.Name, entity, path)
 			}
-			return fmt.Errorf("blueprint: screens %q and %q both derive the island endpoint %s for entity %q — only one mount would be emitted, silently discarding the other screen's columns, filters and access policy. Rename one screen so the two differ by more than case or punctuation",
+			return fmt.Errorf("blueprint: screens %q and %q both derive the island endpoint %s for entity %q: only one mount would be emitted, silently discarding the other screen's columns, filters and access policy. Rename one screen so the two differ by more than case or punctuation",
 				prev.screen, p.screen.Name, path, entity)
 		}
 	}
@@ -1946,7 +1946,7 @@ func validateIslandPathsAreDistinct(bp Blueprint) error {
 }
 
 // schemaErrors accumulates validation findings so one pass reports every
-// fixable problem, not just the first. The alternative is a serial
+// fixable problem rather than only the first. The alternative is a serial
 // guess-and-recompile loop: fix one error, rerun, meet the next. A single
 // finding returns unchanged (existing exact-shape callers keep their
 // message); multiple findings join under a count.
@@ -1980,23 +1980,23 @@ func validateBlueprint(bp Blueprint) error {
 	// JWTSecret with DevMode=false). Fail at generate/validate time
 	// instead, with the same remedy.
 	if bp.App.Auth.Enabled && !bp.App.Auth.DevMode && bp.App.Auth.JWTSecret == "" {
-		errs.add(fmt.Errorf("blueprint: app.auth has dev_mode: false but no jwt_secret — the generated app would refuse to boot (production auth requires a signing key); set jwt_secret from your secret store, or set dev_mode: true for local development"))
+		errs.add(fmt.Errorf("blueprint: app.auth has dev_mode: false but no jwt_secret: the generated app would refuse to boot (production auth requires a signing key); set jwt_secret from your secret store, or set dev_mode: true for local development"))
 	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The
-	// generator can't emit it, and ApplyTenantScope is fail-closed — so a
+	// generator can't emit it, and ApplyTenantScope is fail-closed, so a
 	// generated multi_tenant app with no resolver reads empty and stamps an
 	// empty tenant on writes: silently broken while looking secure. Refuse
 	// to generate rather than ship that.
 	for _, decl := range bp.Entities {
 		if entityDeclarationScope(decl).MultiTenant {
-			errs.add(fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy — subdomain, JWT claim, user's org — is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name))
+			errs.add(fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy, subdomain, JWT claim, user's org, is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name))
 		}
 	}
 	// Island endpoints are keyed by toSnakeCase(screen name) + entity, so
 	// two screens whose names normalize to the same slug would derive the
 	// same endpoint. The generator would then emit ONE mount and silently
-	// discard the other screen's refined config and its policy — the second
+	// discard the other screen's refined config and its policy. The second
 	// screen ends up pointing at a table it does not own, gated by a rule it
 	// never declared. Reject it here rather than generate that.
 	//
@@ -2020,7 +2020,7 @@ func validateBlueprint(bp Blueprint) error {
 	// Theme VALUES need the same boundary as theme keys. The emitter writes
 	// them as direct struct assignments (theme.Colors.<T>.Value = …,
 	// theme.DarkColors = map[string]string{…}), which bypass every
-	// core-ui/style setter — so ApplyTokens' grammar never runs on them, and
+	// core-ui/style setter, so ApplyTokens' grammar never runs on them, and
 	// the value reaches `--color-<token>: <value>;` on the stylesheet the UI
 	// host (/app.css) and the admin battery serve. A `;` or `}` there closes
 	// :root and appends rules of the author's choosing; `url(` is an outbound
@@ -2035,7 +2035,7 @@ func validateBlueprint(bp Blueprint) error {
 			}
 			continue
 		}
-		// Font tokens are valid theme keys too — they drive the theme's
+		// Font tokens are valid theme keys too. They drive the theme's
 		// font-family tokens and the webfont <link>s, not colors. Their value
 		// is reduced to an allow-listed family name by blueprintFontFamilyName
 		// before it reaches CSS, so the color grammar does not apply.
@@ -2062,7 +2062,7 @@ func validateBlueprint(bp Blueprint) error {
 			continue
 		}
 		if !isGoIdentifier(toCamelCase(decl.Name)) {
-			errs.add(fmt.Errorf("blueprint: entity %q does not produce a valid Go identifier — the generated code would not compile; rename it to start with a letter (e.g. \"two_fa_tokens\" instead of \"2fa_tokens\")", decl.Name))
+			errs.add(fmt.Errorf("blueprint: entity %q does not produce a valid Go identifier: the generated code would not compile; rename it to start with a letter (e.g. \"two_fa_tokens\" instead of \"2fa_tokens\")", decl.Name))
 			continue
 		}
 		// The table name reaches two sinks that neither re-escape nor
@@ -2087,11 +2087,11 @@ func validateBlueprint(bp Blueprint) error {
 		// where the error can name the offending field.
 		for _, f := range decl.Fields {
 			if !isGoIdentifier(toCamelCase(f.Name)) {
-				errs.add(fmt.Errorf("blueprint: entity %q field %q does not produce a valid Go identifier — rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name))
+				errs.add(fmt.Errorf("blueprint: entity %q field %q does not produce a valid Go identifier: rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name))
 			}
 			for _, v := range f.Values {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
-					errs.add(fmt.Errorf("blueprint: entity %q field %q enum value %q contains a quote, backtick, backslash or newline — these break the generated Go source", decl.Name, f.Name, v))
+					errs.add(fmt.Errorf("blueprint: entity %q field %q enum value %q contains a quote, backtick, backslash or newline: these break the generated Go source", decl.Name, f.Name, v))
 				}
 			}
 		}
@@ -2114,11 +2114,11 @@ func validateBlueprint(bp Blueprint) error {
 				continue
 			}
 			if strings.TrimSpace(field.To) == "" {
-				errs.add(fmt.Errorf("blueprint: entity %q field %q has type \"relation\" but no target — add `to: <entity>` naming a declared entity", decl.Name, field.Name))
+				errs.add(fmt.Errorf("blueprint: entity %q field %q has type \"relation\" but no target: add `to: <entity>` naming a declared entity", decl.Name, field.Name))
 				continue
 			}
 			if !entityNames[field.To] {
-				errs.add(fmt.Errorf("blueprint: entity %q field %q is a relation to unknown entity %q — declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To))
+				errs.add(fmt.Errorf("blueprint: entity %q field %q is a relation to unknown entity %q: declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To))
 			}
 		}
 		// Both sides of a rename become column names in emitted
@@ -2139,13 +2139,13 @@ func validateBlueprint(bp Blueprint) error {
 				errs.add(fmt.Errorf("blueprint: entity %q rename target %q is not a safe column name: %w", decl.Name, next, err))
 			}
 			if old == next {
-				errs.add(fmt.Errorf("blueprint: entity %q renames %q to itself — drop the entry", decl.Name, old))
+				errs.add(fmt.Errorf("blueprint: entity %q renames %q to itself: drop the entry", decl.Name, old))
 			}
 			if !declaredFields[next] {
-				errs.add(fmt.Errorf("blueprint: entity %q renames %q to %q, but %q is not a declared field — a rename only fires when the new name is declared on the entity", decl.Name, old, next, next))
+				errs.add(fmt.Errorf("blueprint: entity %q renames %q to %q, but %q is not a declared field: a rename only fires when the new name is declared on the entity", decl.Name, old, next, next))
 			}
 			if declaredFields[old] {
-				errs.add(fmt.Errorf("blueprint: entity %q renames %q to %q while still declaring %q as a field — the diff would see both columns; remove the old field", decl.Name, old, next, old))
+				errs.add(fmt.Errorf("blueprint: entity %q renames %q to %q while still declaring %q as a field: the diff would see both columns; remove the old field", decl.Name, old, next, old))
 			}
 		}
 		// A relation name is an identifier, not a label: the entity emitter
@@ -2153,7 +2153,7 @@ func validateBlueprint(bp Blueprint) error {
 		// backtick `json:"…"` tag (a raw literal, which has no escape
 		// mechanism at all), and the typed-column emitter puts it in
 		// const-identifier position. It was the last name in the IR with no
-		// identifier guard — every sibling above (entity, field, screen,
+		// identifier guard. Every sibling above (entity, field, screen,
 		// endpoint handler, middleware, plugin, helper) already has one.
 		relNames := map[string]string{}
 		for _, field := range decl.Fields {
@@ -2161,30 +2161,30 @@ func validateBlueprint(bp Blueprint) error {
 		}
 		for _, rel := range decl.Relations {
 			if rel.Name == "" {
-				errs.add(fmt.Errorf("blueprint: entity %q has a relation with no name — add `name: <name>`; it becomes a struct field and an include name in the generated Go", decl.Name))
+				errs.add(fmt.Errorf("blueprint: entity %q has a relation with no name: add `name: <name>`; it becomes a struct field and an include name in the generated Go", decl.Name))
 				continue
 			}
 			camel := toCamelCase(rel.Name)
 			if !isGoIdentifier(camel) {
-				errs.add(fmt.Errorf("blueprint: entity %q relation %q does not produce a valid Go identifier — it is emitted as a struct field name and an include constant, so the generated code would not compile; use letters, digits and underscores (e.g. \"author\" or \"line_items\")", decl.Name, rel.Name))
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q does not produce a valid Go identifier: it is emitted as a struct field name and an include constant, so the generated code would not compile; use letters, digits and underscores (e.g. \"author\" or \"line_items\")", decl.Name, rel.Name))
 				continue
 			}
 			if owner, dup := relNames[camel]; dup {
-				errs.add(fmt.Errorf("blueprint: entity %q relation %q collides with %s — both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel))
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q collides with %s: both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel))
 				continue
 			}
 			relNames[camel] = "relation " + rel.Name
 			if rel.Entity == "" {
-				errs.add(fmt.Errorf("blueprint: entity %q relation %q target entity is required — add `entity: <name>` referencing a declared entity", decl.Name, rel.Name))
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q target entity is required: add `entity: <name>` referencing a declared entity", decl.Name, rel.Name))
 				continue
 			}
 			if !entityNames[rel.Entity] {
-				errs.add(fmt.Errorf("blueprint: entity %q relation %q targets unknown entity %q — declare an entity named %q under entities: (or fix the relation's entity: value)", decl.Name, rel.Name, rel.Entity, rel.Entity))
+				errs.add(fmt.Errorf("blueprint: entity %q relation %q targets unknown entity %q: declare an entity named %q under entities: (or fix the relation's entity: value)", decl.Name, rel.Name, rel.Entity, rel.Entity))
 			}
 		}
 	}
 	// Seed values are typed inserts the generated app runs through the
-	// CRUD validators at boot. Check them here — see validateBlueprintSeedTypes.
+	// CRUD validators at boot. Check them here. See validateBlueprintSeedTypes.
 	errs.add(validateBlueprintSeedTypes(bp, entitiesByName))
 	routes := map[string]bool{}
 	for _, screen := range bp.Screens {
@@ -2210,7 +2210,7 @@ func validateBlueprint(bp Blueprint) error {
 		}
 		// blueprintScreenLayoutExpr maps ANYTHING that is not "marketing" to
 		// appLayout, so a typo ("markting") silently renders a public marketing
-		// page inside the authenticated app shell — sidebar, account controls and
+		// page inside the authenticated app shell; sidebar, account controls and
 		// all. Gating is `access`, not `layout`, so this is a wrong-chrome bug
 		// rather than a gate bypass; it is still a value the author believed they
 		// set and did not. Fail on it instead of guessing.
@@ -2233,7 +2233,7 @@ func validateBlueprint(bp Blueprint) error {
 				if !detail {
 					what = "entity_form (mode: edit)"
 				}
-				errs.add(fmt.Errorf("blueprint: screen %q has an %s block but its route %q has no {id} parameter — add {id} (e.g. %s/{id}) so the record id is in the URL", screen.Name, what, screen.Route, strings.TrimRight(screen.Route, "/")))
+				errs.add(fmt.Errorf("blueprint: screen %q has an %s block but its route %q has no {id} parameter: add {id} (e.g. %s/{id}) so the record id is in the URL", screen.Name, what, screen.Route, strings.TrimRight(screen.Route, "/")))
 			}
 		}
 		errs.add(validateBlueprintActions(screen.Name, screen.Body))
@@ -2337,8 +2337,8 @@ func sortedMapKeys[V any](m map[string]V) []string {
 // validateBlueprintSeedTypes rejects seed values whose YAML type can never
 // satisfy the target field's runtime validator (core/schema/validate.go).
 //
-// Without this check, a blueprint like the blog's — comments.post_id is a
-// relation (a UUID string column) seeded with `post_id: 1` — sails through
+// Without this check, a blueprint like the blog's, where comments.post_id is a
+// relation (a UUID string column) seeded with `post_id: 1`, sails through
 // generate, compiles, and then the app DIES at boot with
 // "seed comments: validation failed": the least discoverable point in the
 // pipeline, after the author has done everything the tool told them to.
@@ -2354,8 +2354,8 @@ func validateBlueprintSeedTypes(bp Blueprint, entitiesByName map[string]framewor
 		decl, known := entitiesByName[seed.Entity]
 		if !known {
 			// A seed for an undeclared entity fails at boot with
-			// "no handler" — same fail-late shape, catch it here too.
-			errs.add(fmt.Errorf("blueprint: seed targets unknown entity %q — declare an entity named %q under entities: (or fix the seed's entity: value)", seed.Entity, seed.Entity))
+			// "no handler"; same fail-late shape, catch it here too.
+			errs.add(fmt.Errorf("blueprint: seed targets unknown entity %q: declare an entity named %q under entities: (or fix the seed's entity: value)", seed.Entity, seed.Entity))
 			continue
 		}
 		for i, row := range seed.Rows {
@@ -2374,11 +2374,11 @@ func validateBlueprintSeedTypes(bp Blueprint, entitiesByName map[string]framewor
 				}
 				if strings.EqualFold(strings.TrimSpace(field.Type), "relation") && strings.TrimSpace(field.To) != "" {
 					if target, ok := entitiesByName[strings.TrimSpace(field.To)]; ok {
-						errs.add(fmt.Errorf("blueprint: seed row %d for entity %q sets %q to %v — a relation column holds the target row's id, and every generated entity's id is a UUID string, so a number can never satisfy it; reference a row seeded earlier in the same pass instead: %q", i+1, seed.Entity, name, value, "@"+strings.TrimSpace(field.To)+"."+blueprintDisplayField(target)+"=<value>"))
+						errs.add(fmt.Errorf("blueprint: seed row %d for entity %q sets %q to %v: a relation column holds the target row's id, and every generated entity's id is a UUID string, so a number can never satisfy it; reference a row seeded earlier in the same pass instead: %q", i+1, seed.Entity, name, value, "@"+strings.TrimSpace(field.To)+"."+blueprintDisplayField(target)+"=<value>"))
 						continue
 					}
 				}
-				errs.add(fmt.Errorf("blueprint: seed row %d for entity %q sets %q (type %s) to %v — the generated app would reject it at boot: %s", i+1, seed.Entity, name, field.Type, value, reason))
+				errs.add(fmt.Errorf("blueprint: seed row %d for entity %q sets %q (type %s) to %v: the generated app would reject it at boot: %s", i+1, seed.Entity, name, field.Type, value, reason))
 			}
 		}
 	}
@@ -2404,9 +2404,9 @@ func blueprintSeedFieldKind(decl framework.EntityDeclaration, name string) (fram
 
 // seedValueRejection returns "" when value can satisfy the field's runtime
 // validator, else the message that validator would produce. Mirrors the
-// per-type validators in core/schema/validate.go — including their
+// per-type validators in core/schema/validate.go, including their
 // coercions (toString accepts only strings; toInt64 accepts integral
-// floats and integer-parsable strings; toFloat64 accepts no strings) —
+// floats and integer-parsable strings; toFloat64 accepts no strings),
 // so the generate-time verdict never disagrees with boot.
 func seedValueRejection(field framework.FieldDeclaration, value any) string {
 	if value == nil {
@@ -2481,7 +2481,7 @@ func seedValueRejection(field framework.FieldDeclaration, value any) string {
 			return "must be true or false"
 		}
 	case "json":
-		// Any value marshals — the validator accepts strings, maps, lists.
+		// Any value marshals; the validator accepts strings, maps, lists.
 	}
 	return ""
 }
@@ -2595,7 +2595,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		// a value oracle for a column the caller may not read in full.
 		if block.Search != "" {
 			// blueprintColumn covers the columns the framework adds that are
-			// never in decl.Fields — id, the timestamps:/soft_delete: stamps,
+			// never in decl.Fields: id, the timestamps:/soft_delete: stamps,
 			// and relations:-declared FKs. Every one of them was a working
 			// search column before this check existed.
 			found, ok := blueprintColumn(decl, block.Search)
@@ -2611,7 +2611,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 				return fmt.Errorf("blueprint: screen %q entity_list search %q is no_query (search would match on the stored value)", screenName, block.Search)
 			}
 		}
-		// filters: each must be a defined column of a facetable type — enum,
+		// filters: each must be a defined column of a facetable type: enum,
 		// bool, or relation. Explicit only (no auto-derivation): an omitted
 		// filters: list renders exactly as before, no facet toolbar.
 		if len(block.Filters) > 0 {
@@ -2682,7 +2682,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		}
 		// The footer href becomes an anchor on the login/signup screen. The
 		// emitter routes it through ui.Link, which degrades an unsafe scheme to
-		// a dead link — safe, but silent: the author asked for a link and got
+		// a dead link. Safe, but silent: the author asked for a link and got
 		// one that goes nowhere. Reject here instead, the way every sibling
 		// problem in this validator does. urlsafe.Anchor is the SAME predicate
 		// the renderer applies (http(s), relative, fragment, mailto, tel), so
@@ -2693,7 +2693,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 				continue
 			}
 			if !urlsafe.OK(href, urlsafe.Anchor) {
-				return fmt.Errorf("blueprint: screen %q %s %s %q is not a safe link — use an http(s), root-relative, fragment, mailto or tel URL", screenName, kind, key, href)
+				return fmt.Errorf("blueprint: screen %q %s %s %q is not a safe link: use an http(s), root-relative, fragment, mailto or tel URL", screenName, kind, key, href)
 			}
 		}
 	case "bar_chart", "pie_chart", "line_chart":
@@ -2716,10 +2716,10 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			return fmt.Errorf("blueprint: screen %q %s source entity %q must enable crud (the chart reads its rows via the CRUD handler)", screenName, kind, srcEntity)
 		}
 		// group_by is the chart's LABEL, not an aggregate: groupCounts reads
-		// rows raw (no WithReadHooks — the dashboard aggregates are meant to
+		// rows raw (no WithReadHooks; the dashboard aggregates are meant to
 		// compute over stored values) and prints each distinct value as a bar
 		// or slice label. Pointed at a masked column that renders the stored
-		// value verbatim on the page while the API masks it — the full value
+		// value verbatim on the page while the API masks it: the full value
 		// set, not the one-bit oracle the stat_card filter guard below closes.
 		// Masking groupCounts instead would collapse every row into a single
 		// "****" bucket, so the bar belongs here.
@@ -2745,7 +2745,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 				return fmt.Errorf("blueprint: screen %q stat_card source entity %q must enable crud", screenName, srcEntity)
 			}
 			// source.filter is split on "=" and handed to CountAll as a raw
-			// ParsedFilter, bypassing ParseFilters — the same unvalidated
+			// ParsedFilter, bypassing ParseFilters, the same unvalidated
 			// route entity_list facets take. A Hidden or NoQuery column there
 			// turns the rendered count into a one-bit oracle, so bar it here,
 			// where entity_list's filters: are barred.
@@ -2786,7 +2786,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 	case "page_header", "hero", "card", "stat_row",
 		"link_button", "callout",
 		"markdown", "pricing", "divider":
-		// framework/ui catalog blocks — props are validated leniently (the
+		// framework/ui catalog blocks. Props are validated leniently (the
 		// generator reads only the props each component understands).
 	default:
 		return fmt.Errorf("blueprint: screen %q has unsupported block type %q", screenName, kind)
@@ -3019,7 +3019,7 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 		}
 	} else if bp.App.Module != "" {
 		// No entities yet, but main.go imports the entities package and
-		// calls entities.RegisterAll unconditionally — emit the empty seam
+		// calls entities.RegisterAll unconditionally. Emit the empty seam
 		// so the project compiles AND stays additive-ready: a later
 		// `--add`/scaffold entity is a new file that self-registers, with
 		// no edit to any owned file.
@@ -3058,13 +3058,13 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	}
 	// Secrets never land in committed source: the generated Go reads them
 	// via env (JWT_SECRET, DATABASE_URL, ADMIN_SEED_PASSWORD) and the
-	// generated .env — excluded by the generated .gitignore — carries the
+	// generated .env, excluded by the generated .gitignore, carries the
 	// blueprint's values so the app runs out of the box.
 	if env := renderBlueprintEnv(bp); env != "" {
 		files = append(files, generatedFile{name: ".env", content: env})
 	}
 	// Always ship the .gitignore: even a secret-less app writes local
-	// build artifacts (.gofastr/ — the axe-coverage manifest) that must
+	// build artifacts (.gofastr/, the axe-coverage manifest) that must
 	// not land in source control.
 	files = append(files, generatedFile{name: ".gitignore", content: blueprintGitignore})
 	// Self-hosted webfonts: fetch the theme's families at generate time so a
@@ -3075,7 +3075,7 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	fontFiles, _ := blueprintFontAssets(bp)
 	files = append(files, fontFiles...)
 	// PWA placeholder icons: generated deterministic PNGs so a fresh
-	// app.pwa blueprint is installable immediately. Replaceable — swap
+	// app.pwa blueprint is installable immediately. Replaceable; swap
 	// the files under <static>/icons/ with real branding.
 	files = append(files, blueprintPWAIconAssets(bp)...)
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
@@ -3088,7 +3088,7 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 // assertBlueprintGoParses is the emitter-side backstop for the property that
 // validateBlueprint enforces field by field: no blueprint string escapes the Go
 // literal, identifier, or comment it is emitted into. Every such field has an
-// identifier or quoting guard at validate time — but relation names had none
+// identifier or quoting guard at validate time, but relation names had none
 // until the 2026-08-04 pass, and the way that gap presented was Go that does
 // not parse. So check the whole emitted tree once, here, and refuse to hand
 // back a broken file: the next missing guard fails the generate with a
@@ -3100,8 +3100,8 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 // compiler). The two differ because the inputs differ: formatGenerated also
 // serves `gofastr generate` over entity declarations the developer wrote in
 // Go, where a parse failure is a generator bug worth inspecting. A blueprint is
-// transcribed text — the documented workflow has an agent authoring it from
-// natural-language requirements (see blueprint_emitter_injection_test.go) — so
+// transcribed text. The documented workflow has an agent authoring it from
+// natural-language requirements (see blueprint_emitter_injection_test.go), so
 // on that path unparseable output is a security signal and fails closed.
 func assertBlueprintGoParses(files []generatedFile) error {
 	for _, file := range files {
@@ -3110,7 +3110,7 @@ func assertBlueprintGoParses(files []generatedFile) error {
 		}
 		fset := token.NewFileSet()
 		if _, err := parser.ParseFile(fset, file.name, file.content, parser.SkipObjectResolution); err != nil {
-			return fmt.Errorf("blueprint: generated %s does not parse (%w) — a blueprint value escaped the Go literal it was emitted into. Please report this with the blueprint that produced it", file.name, err)
+			return fmt.Errorf("blueprint: generated %s does not parse (%w): a blueprint value escaped the Go literal it was emitted into. Please report this with the blueprint that produced it", file.name, err)
 		}
 	}
 	return nil
@@ -3127,7 +3127,7 @@ const blueprintGitignore = `# Generated by gofastr.
 `
 
 // renderBlueprintEnv collects every blueprint value that must not be
-// committed as a Go literal. Empty when the blueprint holds no secrets —
+// committed as a Go literal. Empty when the blueprint holds no secrets;
 // then no .env is emitted at all.
 func renderBlueprintEnv(bp Blueprint) string {
 	var b strings.Builder
@@ -3150,8 +3150,8 @@ func renderBlueprintEnv(bp Blueprint) string {
 }
 
 // envQuote renders a value for the generated .env so both readers of
-// that file — core/dotenv (the generated app's loader and its e2e test)
-// and `gofastr pack` — read back exactly the blueprint's value. Bare
+// that file, core/dotenv (the generated app's loader and its e2e test)
+// and `gofastr pack`, read back exactly the blueprint's value. Bare
 // values survive verbatim unless they lead with a quote character or
 // carry edge whitespace; those are double-quoted with backslash escapes
 // ('$' included, so no ${VAR} expansion fires on the way back in).
@@ -3180,7 +3180,7 @@ func envQuote(v string) string {
 	return b.String()
 }
 
-// dsnHasSecret reports whether a database DSN embeds credentials — a
+// dsnHasSecret reports whether a database DSN embeds credentials: a
 // URL-form password (postgres://user:pw@host/db) or a key/value
 // `password=` pair. SQLite file DSNs return false: nothing to hide.
 //
@@ -3241,7 +3241,7 @@ func redactDSN(dsn string) string {
 	}
 	// key=value form: drop the password pair. Values may be libpq
 	// single-quoted and contain spaces (password='a b'), so split
-	// quote-aware — a bare strings.Fields would leak the quoted tail.
+	// quote-aware; a bare strings.Fields would leak the quoted tail.
 	fields := splitDSNFields(dsn)
 	kept := fields[:0]
 	for _, f := range fields {
@@ -3385,7 +3385,7 @@ func blueprintHasRequiredRelation(decl framework.EntityDeclaration) bool {
 // decl, plus an update payload mutating one string field, and a probe value that
 // the created record will contain (for asserting detail/edit HTML). To stay valid
 // across any schema it sends only the entity's REQUIRED fields (best-effort per
-// type) — optional fields with exotic validators (json, image, file) are left
+// type). Optional fields with exotic validators (json, image, file) are left
 // out; the screens still exercise all-field rendering.
 func blueprintE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJSON, probe string) {
 	var parts []string
@@ -3450,7 +3450,7 @@ func blueprintE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updat
 // renderBlueprintAxeTest emits the generated app's runtime accessibility
 // gate: boot the built binary, discover public pages from /sitemap.xml,
 // scan them with an ANONYMOUS browser, then scan access-gated screens
-// with a separately-authenticated browser — one shared login state
+// with a separately-authenticated browser. One shared login state
 // would make guest-only pages (login) redirect and record the wrong
 // screen. Gated DYNAMIC patterns classify concrete sitemap pages (a
 // StaticPaths-bearing "/orders/:id" puts "/orders/42" in the sitemap;
@@ -3494,7 +3494,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("// Code generated by gofastr. Owned — safe to edit.\n")
+	b.WriteString("// Code generated by gofastr. Owned: safe to edit.\n")
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
 	for _, imp := range []string{"context", "io", "net/http", "net/url", "os", "os/exec", "path/filepath", "regexp", "runtime", "strings", "testing", "time"} {
@@ -3515,13 +3515,13 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/testkit/axetest\"\n")
 	b.WriteString(")\n\n")
 
-	b.WriteString("// axeExtraPages lists concrete URLs the sitemap cannot discover —\n")
+	b.WriteString("// axeExtraPages lists concrete URLs the sitemap cannot discover:\n")
 	b.WriteString("// instances of dynamic routes (\"/orders/42\"). Owned: append entries as\n")
 	b.WriteString("// you add dynamic screens; they are scanned with the authenticated\n")
 	b.WriteString("// browser when one exists, so gated instances work too.\n")
 	b.WriteString("var axeExtraPages []string\n\n")
 	b.WriteString("// axeGatedPages are the access-gated static screen routes; they are\n")
-	b.WriteString("// scanned with an authenticated browser — an anonymous scan would\n")
+	b.WriteString("// scanned with an authenticated browser: an anonymous scan would\n")
 	b.WriteString("// only ever cover the login redirect, never the real screen.\n")
 	b.WriteString("var axeGatedPages = " + goSlice(gated) + "\n\n")
 	b.WriteString("// axeGatedPatterns are the access-gated DYNAMIC route patterns; any\n")
@@ -3536,7 +3536,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("// up automatically on the next run; dynamic screens need StaticPaths\n")
 	b.WriteString("// (sitemap + strict demand) or an entry in axeExtraPages.\n")
 	b.WriteString("func TestAxeEveryScreen(t *testing.T) {\n")
-	b.WriteString("\t// allow-skip: chromedp suite — boots the app + headless Chrome; runs in the full (non-short) pass.\n")
+	b.WriteString("\t// allow-skip: chromedp suite, boots the app + headless Chrome; runs in the full (non-short) pass.\n")
 	b.WriteString("\tif testing.Short() { t.Skip(\"boots the app + headless Chrome\") }\n")
 	if login {
 		b.WriteString("\t_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)\n")
@@ -3569,7 +3569,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\tgated := map[string]bool{}\n")
 	b.WriteString("\tfor _, p := range axeGatedPages {\n\t\tgated[p] = true\n\t}\n\n")
 	b.WriteString("\t// Anonymous pass: every public (and guest-only) page. Pages that\n")
-	b.WriteString("\t// are gated — directly or by matching a gated dynamic pattern —\n")
+	b.WriteString("\t// are gated, directly or by matching a gated dynamic pattern,\n")
 	b.WriteString("\t// are queued for the authenticated pass instead.\n")
 	b.WriteString("\tvar needsAuth []string\n")
 	b.WriteString("\tanon := axetest.NewBrowser(t)\n")
@@ -3604,7 +3604,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	} else {
 		b.WriteString("\tneedsAuth = append(needsAuth, axeGatedPages...)\n")
 		b.WriteString("\tif len(needsAuth) > 0 {\n")
-		b.WriteString("\t\tt.Errorf(\"gated screens %v cannot be scanned: no seeded admin — set app.admin.seed_email/seed_password (or extend this test with your own login) so the gate can cover them; unscanned gated screens fail strict dev boot\", needsAuth)\n")
+		b.WriteString("\t\tt.Errorf(\"gated screens %v cannot be scanned: no seeded admin. Set app.admin.seed_email/seed_password (or extend this test with your own login) so the gate can cover them; unscanned gated screens fail strict dev boot\", needsAuth)\n")
 		b.WriteString("\t}\n")
 		b.WriteString("\tfor _, page := range axeExtraPages {\n")
 		b.WriteString("\t\tfor _, scheme := range axetest.Schemes {\n")
@@ -3642,12 +3642,12 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\t\tchromedp.Sleep(400*time.Millisecond), // hydration settle\n")
 	b.WriteString("\t\tchromedp.Location(&loc),\n")
 	b.WriteString("\t); err != nil {\n\t\tt.Fatalf(\"navigate %s (%s): %v\", page, scheme, err)\n\t}\n")
-	b.WriteString("\t// A redirect means axe would audit — and the coverage manifest would\n")
-	b.WriteString("\t// record — a DIFFERENT screen. Fail loudly instead of silently\n")
+	b.WriteString("\t// A redirect means axe would audit, and the coverage manifest would\n")
+	b.WriteString("\t// record, a DIFFERENT screen. Fail loudly instead of silently\n")
 	b.WriteString("\t// covering the wrong page: the page either needs the authenticated\n")
 	b.WriteString("\t// pass (axeGatedPages / axeGatedPatterns) or the route changed.\n")
 	b.WriteString("\tif u, err := url.Parse(loc); err != nil || u.Path != page {\n")
-	b.WriteString("\t\tt.Errorf(\"%s redirected to %s — page not scanned\", page, loc)\n")
+	b.WriteString("\t\tt.Errorf(\"%s redirected to %s: page not scanned\", page, loc)\n")
 	b.WriteString("\t\treturn\n")
 	b.WriteString("\t}\n")
 	b.WriteString("\tif err := chromedp.Run(tab, axetest.Prepare(scheme)); err != nil {\n")
@@ -3655,12 +3655,12 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\tviolations, err := axetest.Scan(tab, scheme, nil)\n")
 	b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"axe scan %s (%s): %v\", page, scheme, err)\n\t}\n")
 	b.WriteString("\tfor _, v := range violations {\n")
-	b.WriteString("\t\tt.Errorf(\"%s (%s scheme): [%s] %s — %s (%s)\", page, scheme, v.Impact, v.ID, v.Help, v.HelpURL)\n")
+	b.WriteString("\t\tt.Errorf(\"%s (%s scheme): [%s] %s: %s (%s)\", page, scheme, v.Impact, v.ID, v.Help, v.HelpURL)\n")
 	b.WriteString("\t}\n")
 	b.WriteString("}\n\n")
 
 	b.WriteString("// axePagesFromSitemap derives the public scan list from the app's own\n")
-	b.WriteString("// sitemap — the same registry the router serves — so a new static\n")
+	b.WriteString("// sitemap, the same registry the router serves, so a new static\n")
 	b.WriteString("// screen can never drift out of the gate.\n")
 	b.WriteString("func axePagesFromSitemap(t *testing.T, base string) []string {\n")
 	b.WriteString("\tt.Helper()\n")
@@ -3679,7 +3679,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("\t\tif p == \"\" {\n\t\t\tp = \"/\"\n\t\t}\n")
 	b.WriteString("\t\tif !seen[p] {\n\t\t\tseen[p] = true\n\t\t\tpages = append(pages, p)\n\t\t}\n")
 	b.WriteString("\t}\n")
-	b.WriteString("\tif len(pages) == 0 {\n\t\tt.Fatal(\"sitemap listed no pages — is uihost.WithSitemap configured?\")\n\t}\n")
+	b.WriteString("\tif len(pages) == 0 {\n\t\tt.Fatal(\"sitemap listed no pages. Is uihost.WithSitemap configured?\")\n\t}\n")
 	b.WriteString("\treturn pages\n")
 	b.WriteString("}\n")
 
@@ -3687,8 +3687,8 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 		b.WriteString("\n// axeLogin authenticates the given browser as the seeded admin so\n")
 		b.WriteString("// access-gated screens render their real content instead of bouncing\n")
 		b.WriteString("// (a bounced scan would cover the wrong page). Login goes through the\n")
-		b.WriteString("// auth battery's HTTP endpoint — it exists whether or not the app has\n")
-		b.WriteString("// a login screen — and the session cookies are transplanted into the\n")
+		b.WriteString("// auth battery's HTTP endpoint: it exists whether or not the app has\n")
+		b.WriteString("// a login screen, and the session cookies are transplanted into the\n")
 		b.WriteString("// browser. Prefixed cookies (__Host-/__Secure-) must stay host-only\n")
 		b.WriteString("// and Secure or Chrome silently rejects them, so the transplant sets\n")
 		b.WriteString("// them by URL, never by Domain.\n")
@@ -3703,7 +3703,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 		b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"login: parse base: %v\", err)\n\t}\n")
 		b.WriteString("\tcookies := jar.Cookies(u)\n")
 		b.WriteString("\tif len(cookies) == 0 {\n")
-		b.WriteString("\t\tt.Fatal(\"login set no cookies — wrong seeded credentials, or the auth battery is not mounted\")\n")
+		b.WriteString("\t\tt.Fatal(\"login set no cookies: wrong seeded credentials, or the auth battery is not mounted\")\n")
 		b.WriteString("\t}\n")
 		b.WriteString("\ttab, done := axetest.NewTab(t, browser)\n")
 		b.WriteString("\tdefer done()\n")
@@ -3761,7 +3761,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	crud := hasTarget && needsAuthClient // the lifecycle needs an authed client
 	// The generated e2e test boots against the blueprint's declared driver.
 	// A postgres blueprint links only lib/pq, so it cannot open a SQLite
-	// file DSN — provision a throwaway Postgres database instead, and skip
+	// file DSN. Provision a throwaway Postgres database instead, and skip
 	// when Postgres is unreachable so driverless CI stays green-by-skip.
 	dbDriver := strings.ToLower(strings.TrimSpace(bp.App.DBDriver))
 	isPostgres := dbDriver == "postgres" || dbDriver == "postgresql"
@@ -3775,7 +3775,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("// Code generated by gofastr. Owned — safe to edit.\n")
+	b.WriteString("// Code generated by gofastr. Owned: safe to edit.\n")
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
 	imports := []string{"io", "net", "net/http", "os", "os/exec", "path/filepath", "runtime", "strings", "testing", "time"}
@@ -4039,7 +4039,7 @@ func blueprintNeedsResource(bp Blueprint) bool {
 // blueprintResourceGo is the thin owned seam emitted for apps with entity
 // resources, dashboard data sources, or auth forms. Generic resource behavior
 // lives in framework/ui/resource; the app keeps its registry and auth copy hook.
-const blueprintResourceGo = `// Code generated by gofastr. Owned — safe to edit.
+const blueprintResourceGo = `// Code generated by gofastr. Owned: safe to edit.
 package main
 
 import (
@@ -4066,7 +4066,7 @@ func authError(ctx context.Context) render.HTML {
 	case "credentials_required":
 		return render.Text("Enter your email and password.")
 	case "rate_limit":
-		return render.Text("Too many attempts — please wait a moment and try again.")
+		return render.Text("Too many attempts. Please wait a moment and try again.")
 	case "email_taken", "user_exists", "duplicate":
 		return render.Text("That email is already registered.")
 	default:
@@ -4077,7 +4077,7 @@ func authError(ctx context.Context) render.HTML {
 
 // blueprintSiteDescription resolves the generated app's site-level meta
 // description: the blueprint's app.description when set, otherwise an
-// honest derivation from what the generator actually knows — the app
+// honest derivation from what the generator actually knows: the app
 // name and its entities. Never empty: uihost strict mode (which
 // generated apps ship with) requires a site description.
 func blueprintSiteDescription(bp Blueprint) string {
@@ -4095,7 +4095,7 @@ func blueprintSiteDescription(bp Blueprint) string {
 	for _, ent := range bp.Entities {
 		plurals = append(plurals, blueprintPluralWord(ent.Name))
 	}
-	return name + " — manage " + joinNaturalList(plurals) + "."
+	return name + ": manage " + joinNaturalList(plurals) + "."
 }
 
 // blueprintPluralWord is a naive English pluralizer, good enough for
@@ -4203,7 +4203,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString(")\n\n")
 
 	sb.WriteString("func main() {\n")
-	sb.WriteString("\t// Load .env before anything reads the environment — the DB (and\n")
+	sb.WriteString("\t// Load .env before anything reads the environment: the DB (and\n")
 	sb.WriteString("\t// its DATABASE_URL) opens before NewApp's own dotenv auto-load\n")
 	sb.WriteString("\t// would run. Existing process env always wins over the files.\n")
 	sb.WriteString("\t//\n")
@@ -4223,7 +4223,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\t\t// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);\n")
 	sb.WriteString("\t\t// WithMCPIntrospection adds read-only orientation tools\n")
 	sb.WriteString("\t\t// (app_routes, app_readiness, framework_docs_search, …). The\n")
-	sb.WriteString("\t\t// introspection tools reveal the app's shape — remove the option\n")
+	sb.WriteString("\t\t// introspection tools reveal the app's shape: remove the option\n")
 	sb.WriteString("\t\t// if /mcp is reachable by untrusted callers in production.\n")
 	sb.WriteString("\t\t// Under `gofastr dev` the framework additionally auto-enables the\n")
 	sb.WriteString("\t\t// mutating control tools + log debug tools (opt-out:\n")
@@ -4242,7 +4242,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\t// sink, access log, panic recovery, colorized dev console. Under\n")
 	sb.WriteString("\t// `gofastr dev` its MCP debug tools (log_recent, log_filter,\n")
 	sb.WriteString("\t// log_metrics, log_set_level) auto-register so a connected agent\n")
-	sb.WriteString("\t// can read recent requests and errors; they stay OFF outside dev —\n")
+	sb.WriteString("\t// can read recent requests and errors; they stay OFF outside dev,\n")
 	sb.WriteString("\t// access logs carry client IPs. Set EnableMCP: true here only when\n")
 	sb.WriteString("\t// a production /mcp is reachable solely by trusted callers.\n")
 	sb.WriteString("\tfwApp.RegisterPlugin(gflog.New(gflog.Config{}))\n")
@@ -4250,14 +4250,14 @@ func renderBlueprintMain(bp Blueprint) string {
 		// Boot-time guard: a self-hosted webfont whose file is missing from
 		// the static dir would 404 and silently fall back to system fonts.
 		// Warn loudly (once at startup) with the exact path so it never fails
-		// silently — the generate-time fetch normally supplies these.
+		// silently; the generate-time fetch normally supplies these.
 		sb.WriteString("\tfor _, fontFile := range []string{\n")
 		for _, fam := range fams {
 			sb.WriteString(fmt.Sprintf("\t\t%q,\n", blueprintFontRelPath(staticDir, fam)))
 		}
 		sb.WriteString("\t} {\n")
 		sb.WriteString("\t\tif _, statErr := os.Stat(fontFile); statErr != nil {\n")
-		sb.WriteString("\t\t\tlog.Printf(\"gofastr: webfont %s is missing — falling back to system fonts. Add the .woff2 there (the strict CSP blocks the Google CDN, so fonts must be self-hosted). See `gofastr docs blueprints`.\", fontFile)\n")
+		sb.WriteString("\t\t\tlog.Printf(\"gofastr: webfont %s is missing, falling back to system fonts. Add the .woff2 there (the strict CSP blocks the Google CDN, so fonts must be self-hosted). See `gofastr docs blueprints`.\", fontFile)\n")
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t}\n")
 	}
@@ -4310,7 +4310,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	// Always-on SEO/icon defaults: a generated app ships a site
 	// description (blueprint-provided or derived from the app's
 	// entities), a favicon (derived at startup from the theme's primary
-	// color — replace appIconPNG with real logo bytes when there is
+	// color; replace appIconPNG with real logo bytes when there is
 	// one), a sitemap rooted at appBaseURL(), and a robots.txt that
 	// keeps the framework's internal endpoints (and the admin
 	// back-office, when enabled) out of the index while allowing
@@ -4363,13 +4363,13 @@ func renderBlueprintMain(bp Blueprint) string {
 		themeArg := ""
 		if len(bp.App.Theme) > 0 {
 			// Hand the admin back-office the same theme tokens AND @font-face
-			// rules the UI host uses, so the back-office renders coherently —
-			// same colors, same fonts — with the rest of the app.
+			// rules the UI host uses, so the back-office renders coherently
+			// with the rest of the app. Same colors, same fonts.
 			themeArg = ", Theme: appTheme(), FontFaceCSS: fontFaceCSS"
 		}
 		// Build the base admin config, then route it through the
 		// adminBatteryConfigurators seam (admin_register.go) so a new file
-		// can wire Policy/GrantStore/Auth additively — no edits here.
+		// can wire Policy/GrantStore/Auth additively, no edits here.
 		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}\n",
 			adminPath, adminRole, bp.App.Admin.LoginPath, themeArg))
 		sb.WriteString("\tapplyAdminBatteryConfigurators(&adminCfg)\n")
@@ -4377,7 +4377,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	}
 	sb.WriteString("\taddr, err := runtimeIsolation.Addr(getEnv(\"PORT\", \"localhost:8080\"))\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
-	sb.WriteString("\t// Banner fires via OnReady — only after auto-migrate, hooks, and the\n")
+	sb.WriteString("\t// Banner fires via OnReady: only after auto-migrate, hooks, and the\n")
 	sb.WriteString("\t// port bind all succeeded. Printing before Start would announce a\n")
 	sb.WriteString("\t// server that may never come up.\n")
 	sb.WriteString("\tfwApp.OnReady(func(boundAddr string) {\n\t\tfmt.Printf(\"Server running at http://%s\\n\", boundAddr)\n\t})\n")
@@ -4389,7 +4389,7 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\treturn nil, nil\n")
 	} else {
 		sb.WriteString(fmt.Sprintf("\tdriver := getEnv(\"DB_DRIVER\", %q)\n", driver))
-		// A credentialed DSN never appears as a committed fallback literal —
+		// A credentialed DSN never appears as a committed fallback literal;
 		// the generated .env supplies DATABASE_URL instead.
 		fallbackDSN := dbURL
 		if dsnHasSecret(dbURL) {
@@ -4397,7 +4397,7 @@ func renderBlueprintMain(bp Blueprint) string {
 		}
 		sb.WriteString(fmt.Sprintf("\tdsn := getEnv(\"DATABASE_URL\", %q)\n", fallbackDSN))
 		if fallbackDSN == "" {
-			sb.WriteString("\tif dsn == \"\" {\n\t\treturn nil, fmt.Errorf(\"DATABASE_URL is not set — the generated .env supplies it; copy it next to the binary or export the variable\")\n\t}\n")
+			sb.WriteString("\tif dsn == \"\" {\n\t\treturn nil, fmt.Errorf(\"DATABASE_URL is not set: the generated .env supplies it; copy it next to the binary or export the variable\")\n\t}\n")
 		}
 		sb.WriteString("\tresolvedDriver, resolvedDSN, err := runtimeIsolation.Database(driver, dsn)\n")
 		sb.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
@@ -4415,7 +4415,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\treturn fallback\n")
 	sb.WriteString("}\n\n")
 	iconFrom, iconTo := blueprintIconStops(bp)
-	sb.WriteString("// appIconPNG generates the app's icon source at startup — a diagonal\n")
+	sb.WriteString("// appIconPNG generates the app's icon source at startup: a diagonal\n")
 	sb.WriteString("// gradient in the blueprint's primary color. uihost.WithAppIcon derives\n")
 	sb.WriteString("// /favicon.ico, the sized PNGs, and the head links from this one image.\n")
 	sb.WriteString("// Have a real logo? Embed it and return those bytes instead:\n")
@@ -4463,11 +4463,11 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("}\n")
 		sb.WriteString("\n// seedCreateError renders a failed seed insert with the per-field detail\n")
 		sb.WriteString("// the CRUD validator already computed. ValidationError.Error() is the\n")
-		sb.WriteString("// bare string \"validation failed\" — the messages worth reading live in\n")
-		sb.WriteString("// Fields() — so a plain %w would abort the boot with zero actionable\n")
+		sb.WriteString("// bare string \"validation failed\": the messages worth reading live in\n")
+		sb.WriteString("// Fields(), so a plain %w would abort the boot with zero actionable\n")
 		sb.WriteString("// information. Unwrap, print every field message (sorted, so the output\n")
 		sb.WriteString("// is stable), and name the row by its one-based position in the\n")
-		sb.WriteString("// blueprint's seed: block. The position — never a row value — is the\n")
+		sb.WriteString("// blueprint's seed: block. The position, never a row value, is the\n")
 		sb.WriteString("// label: this error aborts boot through log.Fatal, so its text lands\n")
 		sb.WriteString("// in application logs, and seed rows carry admin emails and passwords.\n")
 		sb.WriteString("func seedCreateError(entity string, index int, err error) error {\n")
@@ -4495,7 +4495,7 @@ func renderBlueprintMain(bp Blueprint) string {
 
 // blueprintIconStops picks the generated app icon's gradient stops from
 // the blueprint theme: the primary color when it's a plain #RRGGBB hex
-// (theme values may be any CSS color — oklch etc. can't feed the PNG
+// (theme values may be any CSS color; oklch etc. can't feed the PNG
 // generator, so those fall back to the framework's indigo), and a 45%-
 // darkened variant of the from-stop for depth.
 func blueprintIconStops(bp Blueprint) (string, string) {
@@ -4556,7 +4556,7 @@ func renderBlueprintScreens(bp Blueprint) string {
 }
 
 // screensNeedCtx reports whether any screen in the set needs a request
-// context (RenderCtx) — drives the context + component.ContextOnly imports.
+// context (RenderCtx). That drives the context + component.ContextOnly imports.
 func screensNeedCtx(screens []BlueprintScreen) bool {
 	for _, s := range screens {
 		if screenNeedsCtx(s) {
@@ -4621,7 +4621,7 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 }
 
 // blueprintScreenBody emits one screen's type declaration, Screen* methods,
-// and Render/RenderCtx — the screen content that is identical whether it
+// and Render/RenderCtx: the screen content that is identical whether it
 // lands in its own file or in a per-entity crud file.
 func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	var sb strings.Builder
@@ -4637,7 +4637,7 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
 		}
 	} else if needParams {
-		// A dynamic route without context still MUST accept its params —
+		// A dynamic route without context still MUST accept its params;
 		// the router fails loudly at registration for any dynamic screen
 		// lacking SetParams (silently dropped params were a bug class).
 		sb.WriteString(fmt.Sprintf("type %s struct{ id string }\n\n", typeName))
@@ -4654,7 +4654,7 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 		// which keeps uihost strict mode passing without inventing filler
 		// copy. Replace with a real ScreenDescription when the page has
 		// something to say.
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO() uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out — set description in the blueprint or replace with real copy\n", typeName))
+		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO() uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out: set description in the blueprint or replace with real copy\n", typeName))
 	}
 	typeConst, _ := screenTypeConst(screen.Type)
 	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenType() app.ScreenType { return %s }\n", typeName, typeConst))
@@ -4673,7 +4673,7 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 	}
 	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
 	// Screen root goes through core-ui/html, the design system's 1:1 tag
-	// primitive, rather than raw render.Tag — CLAUDE.md's rule for markup
+	// primitive, rather than raw render.Tag, CLAUDE.md's rule for markup
 	// that maps directly to an element. Output is byte-identical.
 	rootCfg := "html.DivConfig{}"
 	if hasActions {
@@ -4765,7 +4765,7 @@ import "github.com/DonaldMurillo/gofastr/battery/admin"
 
 // adminBatteryConfigurators mutates the admin battery config in main.go
 // before admin.New is called. Append from a new file's init() to wire
-// RBAC handles additively — no edits to generated files. The package-level
+// RBAC handles additively: no edits to generated files. The package-level
 // rolePolicy and authMgr handles (in app.go) are how a new file reaches them:
 //
 //	// admin_rbac.go (your file, additive)
@@ -4964,7 +4964,7 @@ func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, e
 
 // renderBlueprintCrudFile emits screen_<entity>_crud.go: the entity's
 // list/detail/form screens (in declaration order), a mount func per screen,
-// the entity's appResources wiring (inside the primary mount func — it needs
+// the entity's appResources wiring (inside the primary mount func; it needs
 // fwApp), and one init() registering every mount func at its authored order.
 // screens may be nil for a resource-only entity (sourced but screen-less):
 // then the file carries just the resource wiring.
@@ -5050,7 +5050,7 @@ func blueprintResourceIndex(bp Blueprint) (entityMap map[string]framework.Entity
 // generate --add can add resources without rewriting the shared resource.go.
 // Returns "" when the entity is unknown. When the entity is rendered by any
 // entity_list screen, it also sets IslandPath and mounts a TableHandler route
-// so the list sorts/paginates as an island (Hard rule 1) — the wiring
+// so the list sorts/paginates as an island (Hard rule 1), the wiring
 // examples/meridian/app.go does for its customers list.
 func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool) string {
 	decl, ok := entityMap[e]
@@ -5105,7 +5105,7 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 		}
 		sb.WriteString("\t\t},\n")
 	}
-	// Related: reverse relations — other entities that point back at this
+	// Related: reverse relations, other entities that point back at this
 	// one via a FK. Surfaced as tables on the detail page (account view).
 	if rel := blueprintRelatedEmit(e, entityMap, base); rel != "" {
 		sb.WriteString(rel)
@@ -5144,7 +5144,7 @@ func entityHasListScreen(bp Blueprint, entity string) bool {
 //
 // The endpoint cannot be per-entity. A list block carries its own columns,
 // search, facets and page size, and two screens can show the same entity
-// refined differently — so one shared /api/tables/<entity> would answer the
+// refined differently, so one shared /api/tables/<entity> would answer the
 // wrong rows for at least one of them, and would answer them under whichever
 // screen's gate happened to be weaker. Path and policy both come from the
 // placement.
@@ -5178,7 +5178,7 @@ func blueprintIslandPath(apiBase string, screen BlueprintScreen, entity string) 
 }
 
 // blueprintIslandPolicyExpr returns the policy gating the screen this
-// placement sits on — the SAME expression blueprintScreenMountStmt emits.
+// placement sits on: the SAME expression blueprintScreenMountStmt emits.
 // The island is a second route onto the screen's rows, so it has to repeat
 // the screen's gate.
 //
@@ -5200,7 +5200,7 @@ func blueprintIslandPolicyExpr(screen BlueprintScreen) string {
 // for validating a screen against a schema: created_at/updated_at exist only
 // under timestamps:, deleted_at only under soft_delete:, tenant_id only under
 // multi_tenant:. Treating the name as proof of existence let a screen name a
-// column the table does not have — validation passed and the generated app
+// column the table does not have. Validation passed and the generated app
 // issued `WHERE created_at LIKE …` against a table without one, turning a
 // named generate-time error into an anonymous runtime failure.
 func blueprintEntityHasSystemColumn(decl framework.EntityDeclaration, name string) bool {
@@ -5235,7 +5235,7 @@ func blueprintFieldSystem(name string) bool {
 // `created_at` / `updated_at` / `deleted_at` (from timestamps:/soft_delete:),
 // and a FK column declared by a top-level relations: block rather than a
 // type: relation field. Rejecting them as undefined broke blueprints that
-// generated fine, and the message asserted something false — the column does
+// generated fine, and the message asserted something false. The column does
 // exist. None of them can carry a hidden or no_query flag of its own, so
 // found==nil with ok==true means "exists, unflagged".
 func blueprintColumn(decl framework.EntityDeclaration, name string) (found *framework.FieldDeclaration, ok bool) {
@@ -5398,7 +5398,7 @@ func screenNeedsCtx(screen BlueprintScreen) bool {
 	var walk func([]BlueprintBlock, bool) bool
 	walk = func(blocks []BlueprintBlock, top bool) bool {
 		for _, b := range blocks {
-			// Any entity list/detail/form — at any nesting level — is
+			// Any entity list/detail/form, at any nesting level, is
 			// server-rendered via the resource engine, which needs the request ctx.
 			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) || isEntityEditBlock(b) {
 				return true
@@ -5428,7 +5428,7 @@ func blueprintBlockHasSource(b BlueprintBlock) bool {
 
 // blueprintSourceEntities collects every entity named by a block's
 // `source: {entity: X}` across all screens (recursing into children). These
-// are the entities a stat_card/chart reads live data from — they must be
+// are the entities a stat_card/chart reads live data from. They must be
 // registered in appResources even when no list/detail screen exists for them.
 func blueprintSourceEntities(bp Blueprint) map[string]bool {
 	out := map[string]bool{}
@@ -5450,8 +5450,8 @@ func blueprintSourceEntities(bp Blueprint) map[string]bool {
 }
 
 // routeParamNames parses the param names a route declares, accepting
-// both supported syntaxes — "{slug}" / "{path...}" / "{id:int}" and
-// ":slug" / ":path*" / ":id:int" — mirroring the router's
+// both supported syntaxes, "{slug}" / "{path...}" / "{id:int}" and
+// ":slug" / ":path*" / ":id:int", mirroring the router's
 // normalizeRoutePath + segParamName rules.
 func routeParamNames(route string) []string {
 	var names []string
@@ -5475,7 +5475,7 @@ func routeParamNames(route string) []string {
 
 // screenParamName returns the param key the generated SetParams reads:
 // a param literally named "id" when the route declares one (the
-// entity-record convention), else the LAST declared param — on a nested
+// entity-record convention), else the LAST declared param: on a nested
 // route like /organizations/{organization_id}/users/{user_id} the final
 // segment identifies the record the screen shows. Falls back to "id"
 // for entity detail/edit screens whose {id} lives on a synthesized route.
@@ -5508,7 +5508,7 @@ func screenNeedsParams(screen BlueprintScreen) bool {
 }
 
 // screenNeedsRouteID reports whether a screen's body tree contains an
-// entity_detail block or an entity_form with mode "edit" — both render a
+// entity_detail block or an entity_form with mode "edit". Both render a
 // specific record identified by a route {id} param. The first return is the
 // detail case, the second the edit-form case, so the validator can name it.
 func screenNeedsRouteID(screen BlueprintScreen) (detail, editForm bool) {
@@ -5550,7 +5550,7 @@ func blueprintEntityListResourceExpr(screen BlueprintScreen, block BlueprintBloc
 }
 
 // blueprintEntityListConfigExpr emits the refined resource.Config for one
-// entity_list block — the chain WITHOUT a terminal .List(ctx), so the island
+// entity_list block: the chain WITHOUT a terminal .List(ctx), so the island
 // mount can render the exact same config the page renders.
 //
 // The refinement has to be shared rather than re-derived: columns, search,
@@ -5745,7 +5745,7 @@ func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string
 						needs.resource = true
 					}
 					// An entity_list ALWAYS gets an island, and the island
-					// always carries the screen's own gate — see
+					// always carries the screen's own gate. See
 					// blueprintEntityListConfigExpr. On an ungated screen that
 					// gate is resource.PublicIsland(), which needs the import
 					// with no filters and no transitions declared. Ask the
@@ -5817,7 +5817,7 @@ func screenActions(screen BlueprintScreen, entityMap map[string]framework.Entity
 			switch {
 			case isEntityListBlock(block), isEntityDetailBlock(block):
 				// Entity lists/details are server-rendered via the resource
-				// engine at every nesting level — no client island, no action.
+				// engine at every nesting level, no client island, no action.
 			case isEntityFormBlock(block):
 				// Only forms with relation fields need a mount action to
 				// fetch <select> options; submission itself is wired via
@@ -5955,7 +5955,7 @@ func blueprintJustifyExpr(value string) string {
 }
 
 // blueprintSectionChildrenAreCards reports whether every child of a section is
-// a card/stat_card — the only kinds that belong in the responsive card grid.
+// a card/stat_card, the only kinds that belong in the responsive card grid.
 // Mixed or non-card children flow in a left-aligned stack instead so a single
 // CTA button doesn't stretch the full column width.
 func blueprintSectionChildrenAreCards(children []BlueprintBlock) bool {
@@ -6086,7 +6086,7 @@ func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, p
 			default:
 				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: appResources.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
 			}
-			// A titled chart is a Card with a heading — design-system
+			// A titled chart is a Card with a heading; design-system
 			// composition, zero bespoke classes (Hard rule 7).
 			if title != "" {
 				return fmt.Sprintf("ui.Card(ui.CardConfig{Heading: %q}, %s)", title, chart), true
@@ -6325,7 +6325,7 @@ func isSignupFormBlock(block BlueprintBlock) bool {
 }
 
 // blueprintAuthFormExpr composes a ui.AuthCard around a ui.Form for the auth
-// surfaces — the framework owns the card/centering/field CSS, so this emits
+// surfaces. The framework owns the card/centering/field CSS, so this emits
 // zero bespoke styling. The form posts urlencoded to the auth battery's POST
 // <action> handler, which sets the session cookie and 303-redirects to ?next=,
 // so it works with no JavaScript.
@@ -6342,7 +6342,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete, p
 	footer := ""
 	if footerHref != "" {
 		// ui.Link, NOT a hand-rolled <a> inside render.Raw. render.Raw is what
-		// took the href around core-ui/html's setURLAttr — the layer whose doc
+		// took the href around core-ui/html's setURLAttr, the layer whose doc
 		// comment says it is "the lowest layer that renders a caller-supplied
 		// URL, so it is where the guard belongs". htmlEscapeJSString keeps the
 		// value inside the attribute but says nothing about the SCHEME, so
@@ -6350,7 +6350,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete, p
 		// the login and signup screens. ui.Link runs urlsafe.CleanAnchor and
 		// degrades an unsafe href to "#"; every sibling anchor sink in the
 		// generator already goes through that guard or ui.LinkButton's
-		// isUnsafeScheme. Emitting the component also satisfies Hard rule 7 —
+		// isUnsafeScheme. Emitting the component also satisfies Hard rule 7,
 		// no hand-rolled structural markup.
 		footer = fmt.Sprintf(", Footer: ui.Link(ui.LinkConfig{Href: %q, Text: %q})", footerHref, footerText)
 	}
@@ -6421,7 +6421,7 @@ func blueprintScreenRoutePath(route string) string {
 	return strings.Join(segs, "/")
 }
 
-// blueprintAPIBase returns the URL path prefix entity CRUD mounts at —
+// blueprintAPIBase returns the URL path prefix entity CRUD mounts at:
 // "/api" for prefix "api", or "" for an empty prefix (bare /{table}).
 // Mirrors framework (*App).apiPrefix so generated client fetches/posts hit
 // the same path the entity routes are registered at.
@@ -6455,7 +6455,7 @@ func blueprintFormInputType(fieldType string) string {
 }
 
 // blueprintEntityFormExpr emits a ui.Form for a create/edit form, composing
-// ui.FormField per entity field — the framework owns the form/field CSS, so this
+// ui.FormField per entity field. The framework owns the form/field CSS, so this
 // ships no bespoke styling. The form is an island: data-fui-rpc-* (on the form
 // via ExtraAttrs) makes the runtime JSON-encode the body to the CRUD endpoint;
 // relation <select>s are populated on mount via data-action-mount.
@@ -6483,7 +6483,7 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 	// data-action-mount when relation selects need populating) alongside
 	// the RPC wiring. Build the RPC attrs via the typed interactive layer
 	// and merge them into the markers map so render.Tag's sorted writer
-	// places every attribute in one consistent order — byte-for-byte the
+	// places every attribute in one consistent order, byte-for-byte the
 	// same <form> the raw data-fui-rpc map produced before.
 	markerParts := []string{
 		fmt.Sprintf("\"data-entity-form\": %q", entity),
@@ -6510,7 +6510,7 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 		label := toDisplayName(field.Name)
 		// fieldID needs a different treatment in each of its two uses: escaped
 		// (eID) where it is interpolated into the raw markup below, and RAW as
-		// ui.FormFieldConfig.For, which the renderer escapes itself — escaping
+		// ui.FormFieldConfig.For, which the renderer escapes itself; escaping
 		// that one here would double-escape it. field.Name is already
 		// constrained to a Go identifier by validateBlueprint, so eID is
 		// defense-in-depth; it matters because `id="` + fieldID sat three tokens
@@ -6639,7 +6639,7 @@ func toDisplayName(s string) string {
 // blueprintEndpointHandlerName returns the Go identifier for an
 // endpoint's handler. It prefers the explicit Handler, falling back to
 // the endpoint Name when Handler is empty. When both are empty it
-// returns "" — there is no identifier to emit, and callers skip the
+// returns "". There is no identifier to emit, and callers skip the
 // endpoint entirely (no stub, no route registration).
 func blueprintEndpointHandlerName(endpoint BlueprintEndpoint) string {
 	source := strings.TrimSpace(endpoint.Handler)
@@ -6846,7 +6846,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	// sidebar footer resolves Sign out vs Sign in from the live session, so the
 	// generated app.go needs context/render/handler exactly like the auth-aware
 	// marketing header does. Computed here, above the import block, for the same
-	// reason rbac is — a condition declared below it cannot be seen by it.
+	// reason rbac is: a condition declared below it cannot be seen by it.
 	authSidebar := bp.App.Auth.Enabled && len(bp.Nav) > 0
 	sb.WriteString("package main\n\n")
 	sb.WriteString("import (\n")
@@ -6954,14 +6954,14 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("// marketingHeader / Footer wrap the public marketing layout.\n")
 		toggleArg := ""
 		if len(bp.App.ThemeDark) > 0 {
-			// The app declares a dark scheme — surface the toggle as a real
+			// The app declares a dark scheme. Surface the toggle as a real
 			// ui.ThemeToggle in the header's Actions slot, never hand-rolled.
 			toggleArg = ", ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})"
 		}
 		if authHeader {
 			// Auth-aware header. Dashboard is a plain nav link (cohesive with
 			// Pricing/About, and it collapses into the mobile drawer like them); the
-			// single auth action — Sign out when signed in, Sign in when not — is the
+			// single auth action, Sign out when signed in and Sign in when not, is the
 			// one button, sized to match. No "Sign in" loop for users already past it.
 			appHome := blueprintAppHome(bp)
 			sb.WriteString("func marketingHeader(ctx context.Context) render.HTML {\n")
@@ -6975,7 +6975,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			// sidebar had the same literal and it pointed at a route six of
 			// the seven shipped blueprints never register. Dormant here today
 			// only because meridian is the sole blueprint with both marketing
-			// screens and auth, and it happens to route /login — which is luck,
+			// screens and auth, and it happens to route /login, which is luck,
 			// not design.
 			sb.WriteString(fmt.Sprintf("\t\tactions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})%s)\n", blueprintLoginRoute(bp), toggleArg))
 			sb.WriteString("\t}\n")
@@ -7027,7 +7027,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			}
 		}
 		if len(bp.App.ThemeDark) > 0 {
-			// Dark-scheme palette — emitted as a [data-color-scheme="dark"] token
+			// Dark-scheme palette, emitted as a [data-color-scheme="dark"] token
 			// block so the header's ui.ThemeToggle recolors the whole app.
 			sb.WriteString("\ttheme.DarkColors = map[string]string{\n")
 			for _, key := range sortedStringMapKeys(bp.App.ThemeDark) {
@@ -7050,10 +7050,10 @@ func renderBlueprintApp(bp Blueprint) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("// sidebarConfig returns the navigation sidebar configuration.\n")
 		// The sidebar footer's auth control has to be resolved per request. A
-		// static sidebar showed "Sign out" to anonymous visitors — the control
-		// was emitted whenever auth was *enabled*, never asked whether anyone
-		// was signed *in* — so the app shell told every first-time visitor they
-		// had a session to end. The marketing header already resolved this
+		// static sidebar showed "Sign out" to anonymous visitors, because the
+		// control was emitted whenever auth was *enabled*, never asked whether
+		// anyone was signed *in*, so the app shell told every first-time visitor
+		// they had a session to end. The marketing header already resolved this
 		// correctly from handler.GetUser(ctx); the app shell now does too.
 		if bp.App.Auth.Enabled {
 			sb.WriteString("func sidebarConfig(ctx context.Context) ui.SidebarConfig {\n")
@@ -7066,7 +7066,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		}
 		sb.WriteString("\t}}\n")
 		// The app shell has no top bar, so account/appearance controls live in
-		// the sidebar footer (visible on desktop, in the drawer on mobile) — the
+		// the sidebar footer (visible on desktop, in the drawer on mobile): the
 		// theme toggle always, and the auth action only for the session that has
 		// one. Assigned after the literal so pack's AST nav reader still sees a
 		// plain Items slice.
@@ -7114,8 +7114,8 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString(")\n\n")
 	}
 	// Auth + RBAC handles are package-level so a new file (e.g. admin_rbac.go)
-	// can wire admin.Config{Policy: rolePolicy, Auth: authMgr} — or extend the
-	// policy with finer-grained grants — purely additively, never by editing
+	// can wire admin.Config{Policy: rolePolicy, Auth: authMgr}, or extend the
+	// policy with finer-grained grants, purely additively, never by editing
 	// this generated file. Populated by RegisterGenerated below; nil otherwise.
 	if bp.App.Auth.Enabled || rbac {
 		sb.WriteString("var (\n")
@@ -7164,7 +7164,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		}
 		// No standalone app top bar: the sidebar owns brand + nav + the theme
 		// toggle (in its footer), so content fills from the top with no empty
-		// header band — the way real app shells (Linear/Notion/Stripe) read.
+		// header band, the way real app shells (Linear/Notion/Stripe) read.
 		sb.WriteString("\tappLayout = app.NewLayout(\"app\").WithSidebar(sbComponent)\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
 		sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
@@ -7180,7 +7180,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString(fmt.Sprintf("\t\tWithHeader(%s).\n", headerExpr))
 		sb.WriteString("\t\tWithFooter(app.NewStaticComponent(marketingFooter()))\n")
 	}
-	// Toast stack — mount a global toast stack so server-side handlers
+	// Toast stack: mount a global toast stack so server-side handlers
 	// and client-side JS can fire toasts via X-Gofastr-Toast header or
 	// window.__gofastr.toast().
 	if blueprintNeedsToasts(bp) {
@@ -7189,11 +7189,11 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\twidget.Mount(fwApp.Router(), &stack)\n")
 		sb.WriteString("\t}\n")
 	}
-	// Auth — wire up the built-in auth system with login, register, logout.
+	// Auth: wire up the built-in auth system with login, register, logout.
 	if bp.App.Auth.Enabled {
 		sb.WriteString("\t{\n")
 		if bp.App.Auth.DevMode {
-			sb.WriteString("\t\t// WARNING: auth runs in DEV MODE — HTTP-friendly cookies (no\n")
+			sb.WriteString("\t\t// WARNING: auth runs in DEV MODE: HTTP-friendly cookies (no\n")
 			sb.WriteString("\t\t// Secure flag, plain session_id name) and a per-process JWT\n")
 			sb.WriteString("\t\t// secret minted at startup. Do NOT deploy like this: set\n")
 			sb.WriteString("\t\t// `dev_mode: false` and `jwt_secret` under app.auth in the\n")
@@ -7201,7 +7201,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t\tauthCfg := auth.AuthConfig{DevMode: true")
 		} else {
 			sb.WriteString("\t\t// Production auth defaults: Secure __Host-session cookie.\n")
-			sb.WriteString("\t\t// Requires HTTPS end-to-end — over plain HTTP the browser\n")
+			sb.WriteString("\t\t// Requires HTTPS end-to-end: over plain HTTP the browser\n")
 			sb.WriteString("\t\t// never echoes the cookie back and login silently breaks.\n")
 			sb.WriteString("\t\tauthCfg := auth.AuthConfig{DevMode: false")
 		}
@@ -7236,7 +7236,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t\t\t// Only a genuinely fresh database (admin absent) needs the seed\n")
 			sb.WriteString("\t\t\t// password; an already-seeded deployment boots without it.\n")
 			sb.WriteString("\t\t\tseedPw := os.Getenv(\"ADMIN_SEED_PASSWORD\")\n")
-			sb.WriteString("\t\t\tif seedPw == \"\" {\n\t\t\t\treturn fmt.Errorf(\"ADMIN_SEED_PASSWORD is not set — admin %q cannot be seeded on a fresh database\", " + fmt.Sprintf("%q", bp.App.Admin.SeedEmail) + ")\n\t\t\t}\n")
+			sb.WriteString("\t\t\tif seedPw == \"\" {\n\t\t\t\treturn fmt.Errorf(\"ADMIN_SEED_PASSWORD is not set: admin %q cannot be seeded on a fresh database\", " + fmt.Sprintf("%q", bp.App.Admin.SeedEmail) + ")\n\t\t\t}\n")
 			sb.WriteString("\t\t\th, err := auth.HashPassword(seedPw)\n")
 			sb.WriteString("\t\t\tif err != nil {\n\t\t\t\treturn fmt.Errorf(\"hash bootstrap admin password: %w\", err)\n\t\t\t}\n")
 			adminRole := bp.App.Admin.Role
@@ -7276,7 +7276,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t\t// signed-in user's roles resolve to those permissions on the gated\n")
 			sb.WriteString("\t\t// CRUD API. The admin role holds the wildcard (full access, the same\n")
 			sb.WriteString("\t\t// surface the back-office manages). Add finer per-role Grants here,\n")
-			sb.WriteString("\t\t// OR from a new file that appends to rolePolicy — both are additive\n")
+			sb.WriteString("\t\t// OR from a new file that appends to rolePolicy: both are additive\n")
 			sb.WriteString("\t\t// now that rolePolicy is package-level. Without this, every write 403s.\n")
 			sb.WriteString("\t\trolePolicy = access.NewRolePolicy()\n")
 			sb.WriteString(fmt.Sprintf("\t\trolePolicy.Grant(%q, access.Wildcard)\n", adminRole))
@@ -7292,16 +7292,16 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\t// auth.CSRF is intentionally NOT mounted: this generated surface\n")
 		sb.WriteString("\t\t// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s\n")
 		sb.WriteString("\t\t// any unsafe-method request that doesn't echo the csrf cookie as\n")
-		sb.WriteString("\t\t// an X-CSRF-Token header — which plain JSON/MCP clients don't.\n")
+		sb.WriteString("\t\t// an X-CSRF-Token header, which plain JSON/MCP clients don't.\n")
 		sb.WriteString("\t\t// Session cookies are SameSite=Strict, so cross-site form posts\n")
 		sb.WriteString("\t\t// don't carry the session in modern browsers. If you add browser\n")
-		sb.WriteString("\t\t// HTML forms, mount auth.CSRF — see `gofastr docs blueprints`\n")
+		sb.WriteString("\t\t// HTML forms, mount auth.CSRF: see `gofastr docs blueprints`\n")
 		sb.WriteString("\t\t// (Auth section) and `gofastr docs auth`.\n")
 		sb.WriteString("\t}\n")
 	}
 	// Screens (authored + synthesized CRUD) mount themselves: each screen_*.go
 	// self-registers a mount func, and mountGenerated runs them in declaration
-	// order. app.go names no screen type or entity resource — adding a screen
+	// order. app.go names no screen type or entity resource. Adding a screen
 	// or an entity fragment is a new file, never an edit here. The call is
 	// unconditional (the seam ships even with zero screens) so a later
 	// `--add`/scaffold screen mounts without editing this owned file.
@@ -7335,8 +7335,8 @@ func renderBlueprintApp(bp Blueprint) string {
 }
 
 // blueprintBaseCSSFunc emits the appBaseCSS() function. It returns the
-// empty string: every generated surface — marketing, app, entity list/detail,
-// entity forms, auth — composes framework/ui components and core-ui/app layouts
+// empty string: every generated surface, marketing, app, entity list/detail,
+// entity forms, auth, composes framework/ui components and core-ui/app layouts
 // that ship their own CSS (auto-injected by the UI host). The generator ships
 // ZERO bespoke styling, which is the proof the design system is cohesive and
 // composable. This owned function stays as an extension point: an app can add
@@ -7418,14 +7418,14 @@ func blueprintFontFamilyName(v string) string {
 // falls back to the DefaultTheme value.
 //
 // Dropping is deliberate: the value cannot be sanitized into a color, and a
-// comment in the generated source is visible to whoever reads app.go — unlike a
+// comment in the generated source is visible to whoever reads app.go, unlike a
 // silent skip. The empty string means "safe, emit the assignment".
 func blueprintUnsafeColorNote(key, value string) string {
 	err := style.ValidateColorValue(value)
 	if err == nil {
 		return ""
 	}
-	// The rejected value never enters the comment — a value carrying "*/"
+	// The rejected value never enters the comment; a value carrying "*/"
 	// would close it and the rest would become live Go.
 	return fmt.Sprintf("\t// theme %s dropped: %s (see validateBlueprint)\n", blueprintCommentSafe(key), blueprintCommentSafe(err.Error()))
 }
@@ -7463,8 +7463,8 @@ func blueprintConfiguredFonts(theme map[string]string) (body, heading string) {
 const blueprintFontSysStack = "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 
 // blueprintFontStacks builds the full CSS font-family stacks for the theme's
-// body and heading tokens, appending a robust system fallback (and letting the
-// heading fall back through the body family first).
+// body and heading tokens, appending a standard system font fallback (and
+// letting the heading fall back through the body family first).
 func blueprintFontStacks(theme map[string]string) (bodyStack, headingStack string) {
 	body, heading := blueprintConfiguredFonts(theme)
 	if body != "" {
@@ -7485,7 +7485,7 @@ func blueprintFontStacks(theme map[string]string) (bodyStack, headingStack strin
 // It delegates to style.FontSlug so the slug in the emitted `src: url(…)`
 // and the slug in the woff2 path the developer is told to write to are
 // produced by ONE function. They were two implementations that agreed on
-// space-separated names and diverged on anything with punctuation — a
+// space-separated names and diverged on anything with punctuation; a
 // family like "Libre Baskerville, Display" would have been served from a
 // path nothing wrote to, with no error anywhere.
 func blueprintFontSlug(family string) string {
@@ -7530,7 +7530,7 @@ func blueprintEffectiveStaticDir(bp Blueprint) string {
 
 // fontFetcher resolves a Google Fonts family name to a self-hostable woff2 file
 // (the regular-weight latin subset). It's a package var so the test suite can
-// stub it — the real implementation makes network calls, which tests never do.
+// stub it; the real implementation makes network calls, which tests never do.
 var fontFetcher = fetchGoogleFontWoff2
 
 // blueprintFontHTTPClient bounds the generate-time font fetch so an unreachable
@@ -7587,7 +7587,7 @@ func blueprintFontHTTPGet(u string) ([]byte, error) {
 // a hijacked or redirected css2 response could point the fetch at any host it
 // liked. The blueprint author cannot reach this (the `family` query param is
 // reduced to [A-Za-z0-9 _-] first), which is why it is a contract gap rather
-// than a blueprint-driven SSRF — closed by making the code enforce what the
+// than a blueprint-driven SSRF, closed by making the code enforce what the
 // comment claims.
 func blueprintFirstWoff2URL(css string) string {
 	extract := func(s string) string {
@@ -7625,7 +7625,7 @@ func blueprintFirstWoff2URL(css string) string {
 }
 
 // blueprintIsGstaticWoff2 reports whether u is an https fonts.gstatic.com URL
-// whose path ends in .woff2 — the only thing generation is willing to fetch out
+// whose path ends in .woff2: the only thing generation is willing to fetch out
 // of a Google Fonts css2 response.
 //
 // Parsed, not prefix-matched: a `strings.HasPrefix(u, "https://fonts.gstatic.com")`
@@ -7634,7 +7634,7 @@ func blueprintFirstWoff2URL(css string) string {
 // satisfied by a query string or fragment (…/evil?x=.woff2).
 //
 // If Google ever moves the font CDN, generation reports the family in `missing`
-// and warns — the app still builds, minus the self-hosted font.
+// and warns; the app still builds, minus the self-hosted font.
 func blueprintIsGstaticWoff2(u string) bool {
 	parsed, err := url.Parse(u)
 	if err != nil {
@@ -7648,8 +7648,8 @@ func blueprintIsGstaticWoff2(u string) bool {
 
 // blueprintFontAssets fetches every configured font family and returns the
 // woff2 files to emit under <static>/fonts/. Families whose fetch fails are
-// reported in `missing` (as their emitted relative path) so the caller can warn
-// — generation still proceeds so an offline run produces a working app minus the
+// reported in `missing` (as their emitted relative path) so the caller can warn;
+// generation still proceeds so an offline run produces a working app minus the
 // custom fonts.
 func blueprintFontAssets(bp Blueprint) (files []generatedFile, missing []string) {
 	dir := blueprintEffectiveStaticDir(bp)
@@ -7740,7 +7740,7 @@ func blueprintPWADisplayConst(display string) string {
 // app.pwa blueprint scaffolds: 192px and 512px "any" icons plus a 512px
 // maskable variant, colored from the declared theme_color (falling back
 // to the theme's primary token, then the framework indigo). Generated
-// in-process — deterministic PNG bytes, no network fetch.
+// in-process. Deterministic PNG bytes, no network fetch.
 func blueprintPWAIconAssets(bp Blueprint) []generatedFile {
 	if !bp.App.PWA.Enabled {
 		return nil
@@ -7838,7 +7838,7 @@ func blueprintMissingFontSlugs(bp Blueprint, files []generatedFile) []string {
 
 // blueprintFontFaceCSS returns the @font-face rules for the theme's declared
 // families, self-hosted from <static>/fonts/<slug>.woff2. This is the SINGLE
-// font-loading source — it's prepended to the UI host's stylesheet AND handed to
+// font-loading source; it's prepended to the UI host's stylesheet AND handed to
 // the admin battery, so every surface (marketing, app, back-office) loads the
 // exact same fonts with no external CDN dependency. Drop the matching woff2 into
 // <static_dir>/fonts/. Returns "" when the theme declares no fonts.
@@ -7849,7 +7849,7 @@ func blueprintMissingFontSlugs(bp Blueprint, files []generatedFile) []string {
 // style.FontFaceCSS is the upstream primitive that finding asked for.
 func blueprintFontFaceCSS(theme map[string]string) string {
 	body, heading := blueprintConfiguredFonts(theme)
-	// Heading first, then body — the declaration order callers rely on.
+	// Heading first, then body: the declaration order callers rely on.
 	return style.FontFaceCSS("", style.WebFont{Family: heading}, style.WebFont{Family: body})
 }
 
@@ -7976,7 +7976,7 @@ func expectList(node *coreyaml.Node, label string) ([]*coreyaml.Node, error) {
 	return node.List, nil
 }
 
-// appLevelKeys are settings that live under `app:` — the most common
+// appLevelKeys are settings that live under `app:`. The most common
 // misplacement is writing them at the blueprint root, where they silently
 // do nothing (an agent or a YAML-merge tool has no way to know).
 var appLevelKeys = map[string]bool{
@@ -7986,7 +7986,7 @@ var appLevelKeys = map[string]bool{
 	"pwa": true, "llm_md": true,
 }
 
-// topLevelKeys are the blueprint's root sections — written under `app:`
+// topLevelKeys are the blueprint's root sections; written under `app:`
 // they are equally dead.
 var topLevelKeys = map[string]bool{
 	"entities": true, "screens": true, "nav": true, "seed": true,
@@ -8032,7 +8032,7 @@ func rejectUnknownKeys(m map[string]*coreyaml.Node, allowed map[string]bool, lab
 			if end := strings.IndexByte(key, '"'); end >= 0 {
 				key = key[:end]
 				if hint := unknownKeyLocationHint(key, label); hint != "" {
-					msg += " — " + hint
+					msg += ": " + hint
 				}
 			}
 		}
@@ -8067,14 +8067,14 @@ func boolValue(node *coreyaml.Node) bool {
 //
 // boolValue, the lax decoder, maps anything that is not the bool true or the
 // string "true" to false. core/yaml is YAML 1.2, so `yes` / `on` / `y` / `1` are
-// STRINGS there — and they are how people, and agents transcribing a spec, most
+// STRINGS there, and they are how people, and agents transcribing a spec, most
 // often write "true" in YAML. `access: {auth: yes}` therefore decoded to
 // Auth=false and registered the screen with no policy at all: publicly
 // reachable, no warning, no error.
 //
 // strictBoolValue already existed for this and was wired to exactly one key
 // (app.auth.dev_mode). Its comment justified itself as "the one blueprint bool
-// whose default is true", and that framing is what let these through — the
+// whose default is true", and that framing is what let these through. The
 // polarity that matters is not what the default is, it is which direction the
 // coercion moves safety. Every key routed through here defaults to false, and
 // false is the unsafe side.
@@ -8083,7 +8083,7 @@ func boolValue(node *coreyaml.Node) bool {
 // (`exposure.public`, `exposure.mcp`, `exposure.crud`, `app.public_openapi`,
 // `pwa.enabled`, `admin.enabled`, `llm_md`, `timestamps`, `many`, `create`):
 // there, a coerced false turns a feature OFF, which is the direction we would
-// want anyway. NOTE: `*.enabled` is NOT a blanket exception — app.auth.enabled
+// want anyway. NOTE: `*.enabled` is NOT a blanket exception; app.auth.enabled
 // IS routed here: false means the auth subsystem is off and the app is public.
 func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, error) {
 	node, ok := m[key]
@@ -8092,13 +8092,13 @@ func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, err
 	}
 	v, err := strictBoolValue(node)
 	if err != nil {
-		return false, fmt.Errorf("%s.%s %w — this flag gates access or exposure, so it is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
+		return false, fmt.Errorf("%s.%s %w: this flag gates access or exposure, so it is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
 	}
 	return v, nil
 }
 
 // strictBoolValue accepts only a genuine bool node (or the literal
-// strings "true"/"false") and errors on anything else — for keys where
+// strings "true"/"false") and errors on anything else, for keys where
 // lax coercion would silently invert a safe default. See protectiveBool
 // for the larger set of keys where the unsafe direction is FALSE.
 func strictBoolValue(node *coreyaml.Node) (bool, error) {
@@ -8213,7 +8213,7 @@ func anyValue(node *coreyaml.Node) any {
 }
 
 // blueprintNeedsToasts returns true when any screen uses entity_form or
-// entity_list — these blocks benefit from toast feedback on CRUD actions.
+// entity_list; these blocks benefit from toast feedback on CRUD actions.
 func blueprintNeedsToasts(bp Blueprint) bool {
 	for _, screen := range bp.Screens {
 		for _, block := range screen.Body {

@@ -2,7 +2,7 @@
 
 `App.ExportData` / `App.ImportData` dump every entity's rows (plus every
 registered battery table) to a portable archive and restore it with
-validation. This is a **data** export — anti-lock-in for the rows you own —
+validation. This is a **data** export, anti-lock-in for the rows you own,
 and is distinct from `ExportStatic`, which renders the site to static HTML.
 
 `App.EraseUserData` is the matching **erasure** primitive (GDPR
@@ -29,7 +29,7 @@ if err := app.ImportData(context.Background(), "/var/backups/app-2026-07-12"); e
 ## Why raw, not the CRUD pipeline
 
 Export/import is an **operator/admin** operation. It round-trips data
-**faithfully** — original primary keys, `created_at`/`updated_at`, `owner_id`,
+**faithfully**: original primary keys, `created_at`/`updated_at`, `owner_id`,
 `tenant_id`, hidden columns, and soft-deleted rows included. The CRUD
 pipeline can't do this: `ListAll` is owner/tenant/soft-delete scoped and drops
 hidden columns, and `BatchCreateMany` regenerates ids, stamps tenant/owner, and
@@ -39,7 +39,7 @@ foreign key.
 So export reads raw (`SELECT <all physical columns> FROM <table>`, all rows,
 paged by primary-key keyset) and import writes raw (parameterized `INSERT`
 preserving every column value verbatim). No hooks, no validation, no
-auto-generation — the data was already valid when it was written.
+auto-generation. The data was already valid when it was written.
 
 ## Battery tables (outside the registry)
 
@@ -67,7 +67,7 @@ func init() {
 
 `battery/auth` (auth_users, auth_sessions) and `battery/queue` (queue_jobs)
 register themselves this way; importing the battery == including its tables.
-**Unregistered raw tables are silently excluded** — a battery or app with
+**Unregistered raw tables are silently excluded**: a battery or app with
 custom tables registers an exporter to be included. A registered table that is
 absent from the live DB is skipped with a note (e.g. the auth battery is
 imported but the host didn't create that table).
@@ -114,8 +114,8 @@ reproducible:
 app.ExportData(ctx, dir, framework.WithExportTime(someFixedTime))
 ```
 
-`schema` is the `migrate.SchemaSnapshot` of the entity registry at export time
-— a column→type fingerprint for compatibility inspection. (Import recomputes
+`schema` is the `migrate.SchemaSnapshot` of the entity registry at export
+time, a column→type fingerprint for compatibility inspection. (Import recomputes
 the live column set rather than trusting the manifest, so the fingerprint is
 provenance, not an authority.)
 
@@ -132,7 +132,7 @@ these is rejected up front, leaving the database untouched:
 - an archive column absent from the live schema (incompatible column set);
 - a per-file `sha256` that doesn't match the `.ndjson` bytes (corrupt/tampered).
 
-Restore into an empty (or freshly migrated) database — import uses plain
+Restore into an empty (or freshly migrated) database. Import uses plain
 `INSERT` and will fail loud on a primary-key conflict if a row already exists,
 rolling the whole thing back.
 
@@ -143,7 +143,7 @@ Table and column names must be interpolated into SQL (identifiers can't be
 registry schema (`entity.GetTable` / `entity.GetFields`) or a registered
 `DataExporter`, and each passes through `core/query.SafeIdent` before
 `core/query.QuoteIdent`. Archive table/column names are **never** trusted into
-SQL — they are checked against the live known set first and unknown ones are
+SQL. They are checked against the live known set first and unknown ones are
 rejected. All row values are `$n` bound arguments. This is why a malicious or
 corrupt archive cannot inject SQL: a smuggled identifier is rejected at the
 membership check before any query is built.
@@ -172,13 +172,13 @@ datexport.Register(datexport.DataExporter{
   own private `:memory:`). A file-backed SQLite or Postgres DB has no such
   constraint.
 - **Cross-dialect restore**: an archive is portable across SQLite and Postgres
-  at the row level, but Postgres enforces column types strictly — bind a string
+  at the row level, but Postgres enforces column types strictly: bind a string
   into a `TIMESTAMPTZ` column and it parses; bind a JSON number into a typed
   column and it must fit. Validate a cross-engine restore against the target
   dialect before relying on it.
 - **Not a substitute for DB-native backup**. This is application-level,
   declaration-aware portability (and anti-lock-in). For point-in-time disaster
-  recovery, use your database's own backup tooling — see
+  recovery, use your database's own backup tooling. See
   [Backups and restore](backups.md).
 
 ## Common mistakes
@@ -187,7 +187,7 @@ datexport.Register(datexport.DataExporter{
   primary keys, so restoring on top of existing rows conflicts. Import into
   a fresh/empty schema (the transaction rolls back cleanly on conflict).
 - **Expecting the CRUD pipeline to run.** Import writes raw to preserve
-  ids/timestamps/owner/tenant faithfully — validators, hooks, and
+  ids/timestamps/owner/tenant faithfully: validators, hooks, and
   auto-generated fields do NOT fire. It restores already-valid data; it is
   not an ingestion endpoint for untrusted input.
 - **Forgetting battery tables.** A registry walk only sees declared
@@ -201,8 +201,8 @@ datexport.Register(datexport.DataExporter{
 ## Data erasure
 
 `App.EraseUserData(ctx, userID, opts...)` is the right-to-be-forgotten
-primitive. It mirrors `ExportData`'s two-plane design — the entity registry
-plus the `datexport` registry — so an erasure reaches exactly the tables an
+primitive. It mirrors `ExportData`'s two-plane design, the entity registry
+plus the `datexport` registry, so an erasure reaches exactly the tables an
 export does, and adds a third, built-in plane for the audit trail.
 
 ```go
@@ -215,7 +215,7 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
 
 1. **Entity plane.** Every owner-scoped entity (`Scope.OwnerField` set) is
    hard-deleted: `DELETE FROM <table> WHERE <owner_field> = $1`. The delete is
-   raw, so it removes soft-deleted rows too — a row the user previously
+   raw, so it removes soft-deleted rows too: a row the user previously
    "deleted" is now actually expunged. Erasure means erasure: no tombstone, no
    undo. Entities without an `OwnerField` hold no per-user data and are
    skipped.
@@ -224,9 +224,9 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    (overwrite named columns with a tombstone and keep the row). `battery/auth`
    registers `auth_sessions` (delete by `user_id`), `auth_users` (delete by
    `id`), and `magic_link_tokens` (delete by `email` via the `IdentityEmail`
-   resolver — see [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
-3. **Audit plane (built-in).** The audit table is retained — it is the
-   compliance record of who did what — but the user's `actor_id` is
+   resolver, see [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
+3. **Audit plane (built-in).** The audit table is retained, since it is the
+   compliance record of who did what, but the user's `actor_id` is
    anonymized: every row where `actor_id = userID` is set to `[erased]`. See
    [Audit retention](#audit-retention) below.
 
@@ -237,8 +237,8 @@ posture for a compliance trail. Instead the personal link is cut:
 
 - `actor_id` (the *who*) is overwritten with `[erased]` for every row the
   erased user acted from.
-- `record_id` (the *what*) is left intact. It is heterogeneous — a resource id
-  for CRUD events, sometimes a user id for auth events — and records which
+- `record_id` (the *what*) is left intact. It is heterogeneous, a resource id
+  for CRUD events, sometimes a user id for auth events, and records which
   object was acted on, which is legitimate audit content. Blanket-anonymizing
   it would also destroy the resource ids that make the trail useful.
 
@@ -266,7 +266,7 @@ type EraseReport struct {
 Each `EraseTableResult` carries the table name, the mode (`delete` or
 `anonymize`), and the row count. `report.TotalErased()` sums every plane.
 `Skipped` names identity-resolved erasers that were skipped because the
-resolved identity row was already gone — the idempotent-re-run case (see
+resolved identity row was already gone, the idempotent-re-run case (see
 "Identity-keyed tables" above): skipping is not an error, and the erasure
 reports zero for those tables rather than failing.
 
@@ -286,7 +286,7 @@ dry, _ := app.EraseUserData(ctx, uid, framework.WithEraseDryRun())
 `EraseUserData` is idempotent: a second call for the same user matches zero
 rows and returns a zero report without error. The delete plane is naturally
 idempotent (the rows are gone). The anonymize plane is idempotent by count
-because it scrubs its match column too — once `user_id` (or `actor_id`) holds
+because it scrubs its match column too: once `user_id` (or `actor_id`) holds
 the tombstone, a re-run's `WHERE` matches nothing.
 
 ### Registering an eraser
@@ -320,12 +320,12 @@ DB is skipped with a note; an unregistered raw table is silently excluded.
 
 ### Identity-keyed tables (non-user-id match)
 
-Most tables are reached by the user id — `Column` holds the user id directly.
+Most tables are reached by the user id: `Column` holds the user id directly.
 Some tables are keyed by a *different* identity: `battery/auth`'s
 `magic_link_tokens` is keyed by **email**, not user id, so a plain user-id match
 cannot reach it. Before this seam, a magic link minted before an erasure and
 redeemed after it found no user and *created a new account* for the erased
-address — an account-restoration path straight through a completed erasure.
+address, an account-restoration path straight through a completed erasure.
 
 An eraser declares the identity with `Identity`; the framework resolves it ONCE
 at erase time (before the write transaction opens) through a registered
@@ -348,7 +348,7 @@ datexport.RegisterEraser(datexport.DataEraser{
 })
 ```
 
-Resolution stays **declarative** — the framework remains the single place raw
+Resolution stays **declarative**: the framework remains the single place raw
 SQL is built (`SafeIdent`-guarded identifiers, `$n`-bound values); a battery
 never runs arbitrary SQL. Two guarantees:
 
@@ -381,7 +381,7 @@ rolls back on any error.
 
 - **Expecting soft-delete to protect rows.** Erasure is a raw hard-delete that
   ignores `deleted_at`. If you need a recoverable "soft erasure," do it in app
-  code — `EraseUserData` is for the irrevocable case.
+  code. `EraseUserData` is for the irrevocable case.
 - **Forgetting battery tables.** Just as with export, a registry walk only
   sees declared entities. `battery/auth` registers its tables; a custom raw
   table with per-user data needs its own `datexport.RegisterEraser`, or it is

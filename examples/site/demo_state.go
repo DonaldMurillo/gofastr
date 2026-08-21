@@ -8,7 +8,7 @@ package main
 // (optimistic-create appends forever) is a memory-exhaustion target.
 //
 // So each browser gets its own slice of demo state, keyed by a site-owned
-// `site-demo` cookie — deliberately NOT the framework session/auth cookie.
+// `site-demo` cookie, deliberately NOT the framework session/auth cookie.
 // This is an ISOLATION key, not an auth credential: anyone can set it, and
 // copying someone else's value only lands you on the same harmless demo
 // bucket. Flood protection is the bounded store (cap + TTL) plus the origin
@@ -33,7 +33,7 @@ import (
 
 const (
 	// demoCookieName is the site-owned per-visitor isolation cookie. Not the
-	// gofastr session cookie — demo isolation is a separate concern from auth.
+	// gofastr session cookie, demo isolation is a separate concern from auth.
 	demoCookieName = "site-demo"
 
 	// demoSessionTTL bounds how long an idle demo session survives. The store
@@ -74,7 +74,7 @@ type demoState struct {
 	counter int64
 }
 
-// seedDemoState builds a fresh demo session at its initial state — the same
+// seedDemoState builds a fresh demo session at its initial state, the same
 // starting point every visitor sees on first contact and after a reset.
 func seedDemoState() *demoState {
 	return &demoState{
@@ -110,7 +110,7 @@ func demoStateWrite(w http.ResponseWriter, r *http.Request) *demoState {
 	return demoSessions.getOrCreate(id)
 }
 
-// demoStateRead returns the caller's demo session for SSR — READ-ONLY, never
+// demoStateRead returns the caller's demo session for SSR, READ-ONLY, never
 // mints a cookie or creates a store entry. Delegates to demoStateForRequest.
 func demoStateRead(ctx context.Context) *demoState {
 	return demoStateForRequest(app.RequestFromContext(ctx))
@@ -119,7 +119,7 @@ func demoStateRead(ctx context.Context) *demoState {
 // demoStateForRequest is the read-only session lookup shared by SSR and the
 // GET conflict handler. A nil request (static export / SSG), no cookie (first
 // load, a crawler), an invalid cookie, or an expired/evicted session all
-// render an ephemeral seed — the canonical starting point — WITHOUT populating
+// render an ephemeral seed, the canonical starting point, WITHOUT populating
 // or mutating the store beyond the existing entry's LRU/TTL touch. Only a write
 // (an RPC via demoStateWrite) ever creates a session.
 func demoStateForRequest(r *http.Request) *demoState {
@@ -138,7 +138,7 @@ func demoStateForRequest(r *http.Request) *demoState {
 
 // newDemoID returns a random 128-bit id as lowercase hex (demoIDLen chars).
 // crypto/rand failure is effectively impossible; on the off chance it errors we
-// fall back to a fixed, valid-shaped id rather than panic — worst case a few
+// fall back to a fixed, valid-shaped id rather than panic, worst case a few
 // visitors share one demo bucket, harmless for throwaway state, and the value
 // still passes isValidDemoID so it round-trips through the cookie.
 func newDemoID() string {
@@ -178,7 +178,7 @@ func isValidDemoID(s string) bool {
 // setDemoCookie writes the site-demo cookie. Secure is set on TLS (direct or
 // behind an https-terminating proxy) so it survives there, and left off on a
 // plaintext loopback dev origin where a Secure cookie would be dropped. Not an
-// auth cookie, so no __Host- prefix — just Lax + HttpOnly + a bounded MaxAge.
+// auth cookie, so no __Host- prefix, just Lax + HttpOnly + a bounded MaxAge.
 func setDemoCookie(w http.ResponseWriter, r *http.Request, id string) {
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{

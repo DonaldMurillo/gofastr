@@ -174,7 +174,7 @@ var codeLengthCodeOrder = [19]int{
 // the per-symbol (code, length) tables for pixel emission. Codes are
 // returned in stream-bit order: pass them to bw.writeBits directly,
 // not bw.writeBitsRev. This abstracts away the simple-vs-normal
-// distinction — the caller doesn't need to know which path was taken.
+// distinction. The caller doesn't need to know which path was taken.
 //
 // Tree-format rules per VP8L spec:
 //
@@ -257,7 +257,7 @@ func writeHuffmanTree(bw *bitWriter, lengths []int) (codes []uint32, effLens []i
 
 	clcFreq := make([]int, 19)
 	for _, l := range lengths {
-		// Repeat codes 16/17/18 stay at freq 0 — Phase A doesn't compress
+		// Repeat codes 16/17/18 stay at freq 0. Phase A doesn't compress
 		// length runs. They'll still receive a code slot (length 0) in
 		// the code-length code.
 		clcFreq[l]++
@@ -280,7 +280,7 @@ func writeHuffmanTree(bw *bitWriter, lengths []int) (codes []uint32, effLens []i
 	// Count distinct code-length values that appear; the decoder's
 	// build() treats a single-symbol secondary Huffman as a 0-bit code
 	// (nSymbols==1 shortcut), so we must emit zero bits per primary
-	// length code in that case — regardless of the 1-bit length we
+	// length code in that case, regardless of the 1-bit length we
 	// just wrote into clcLengths.
 	clcUsed := 0
 	for _, cl := range clcLengths {

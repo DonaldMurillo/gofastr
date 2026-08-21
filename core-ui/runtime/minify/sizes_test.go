@@ -10,7 +10,7 @@ import (
 )
 
 // TestReportSizes prints raw + gz sizes for the runtime corpus before
-// and after minification. Not an assertion — it exists so a `go test
+// and after minification. Not an assertion, it exists so a `go test
 // -run TestReportSizes -v` invocation surfaces the actual shrink we're
 // shipping. Useful when tightening budget_test.go overrides.
 func TestReportSizes(t *testing.T) {

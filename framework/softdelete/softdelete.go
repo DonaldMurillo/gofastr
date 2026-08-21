@@ -24,7 +24,7 @@ func WithSoftDelete(ent *entity.Entity) *entity.Entity {
 // SoftDelete marks a record as deleted by setting deleted_at to NOW().
 // The record remains in the database but will be excluded from normal queries.
 //
-// SECURITY — UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
+// SECURITY. UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
 // with NO tenant, owner, or access-control filter. Any id supplied will be
 // soft-deleted regardless of which tenant or user owns it. Call this only after
 // you have independently verified that the caller is authorised to delete that
@@ -43,7 +43,7 @@ func SoftDelete(ctx context.Context, db *sql.DB, table string, id string) error 
 
 // Restore clears the deleted_at field, making a soft-deleted record visible again.
 //
-// SECURITY — UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
+// SECURITY. UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
 // with NO tenant, owner, or access-control filter. Any id supplied will be
 // restored regardless of which tenant or user owns it. Call this only after
 // you have independently verified that the caller is authorised to restore that
@@ -63,7 +63,7 @@ func Restore(ctx context.Context, db *sql.DB, table string, id string) error {
 // ForceDelete permanently removes a record from the database.
 // This bypasses soft delete and performs a real DELETE.
 //
-// SECURITY — UNSCOPED OPERATION: this function issues DELETE … WHERE id = $1
+// SECURITY. UNSCOPED OPERATION: this function issues DELETE … WHERE id = $1
 // with NO tenant, owner, or access-control filter. Any id supplied will be
 // permanently deleted regardless of which tenant or user owns it. Call this
 // only after you have independently verified that the caller is authorised to
@@ -85,7 +85,7 @@ func ForceDelete(ctx context.Context, db *sql.DB, table string, id string) error
 // WithTrashed checks whether the request asks to include soft-deleted records.
 // Returns true when the query parameter ?trashed=true is present.
 //
-// SECURITY — CALLER MUST AUTHORISE: this function only parses the request
+// SECURITY. CALLER MUST AUTHORISE: this function only parses the request
 // parameter; it performs no access-control check of its own. If you pass its
 // result to ApplySoftDeleteFilter (or build your own query that omits the
 // deleted_at IS NULL clause), you must first confirm that the caller has

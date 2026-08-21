@@ -19,7 +19,7 @@ import (
 // following the Fix produces the finding it was supposed to resolve.
 //
 // The analyzers parse rather than type-check, so a snippet only has to be
-// syntactically valid — unresolved identifiers and unused imports are
+// syntactically valid. Unresolved identifiers and unused imports are
 // fine. That is what makes checking the catalog against itself possible.
 
 // exampleFilePrelude gives snippets a package, plausible imports, and
@@ -129,7 +129,7 @@ func TestNoRuleFiresOnItsOwnGoodExample(t *testing.T) {
 // rather than self-contained: the analyzer needs something a one-file
 // snippet cannot express. Each entry says what is missing.
 //
-// Landing here is NOT an exemption from being tested — it moves the
+// Landing here is NOT an exemption from being tested. It moves the
 // obligation to a purpose-built fixture elsewhere.
 // [TestExemptedRulesAreTestedElsewhere] enforces that, because this
 // comment previously asserted the coverage existed when for four rules it
@@ -158,8 +158,8 @@ var examplesNeedingMoreContext = map[string]string{
 }
 
 // The other half: a rule whose bad example does NOT produce it has either
-// drifted from the analyzer or stopped working. Both are silent failures —
-// the rule keeps appearing in `--list` and never fires again.
+// drifted from the analyzer or stopped working. Both are silent failures.
+// The rule keeps appearing in `--list` and never fires again.
 func TestEveryRuleFiresOnItsOwnBadExample(t *testing.T) {
 	var covered, skipped []string
 	for _, r := range contracts.AllRules() {
@@ -194,7 +194,7 @@ func TestEveryRuleFiresOnItsOwnBadExample(t *testing.T) {
 // A rule nothing can emit is documentation pretending to be a check.
 //
 // This lives here rather than in package contracts because the catalog
-// deliberately does not import its analyzers — so the same assertion over
+// deliberately does not import its analyzers, so the same assertion over
 // there could only ever guard on an empty set and skip. It did, silently,
 // for every run.
 func TestEveryCatalogRuleHasAnAnalyzer(t *testing.T) {
@@ -274,7 +274,7 @@ func TestInlineScriptRuleHonoursItsSkips(t *testing.T) {
 
 // The rendering analyzer pre-filters lines on a few bytes before running
 // its regexes. Each guard is meant to be a strict superset of what its
-// regex can match; this pins the shapes where that is least obvious —
+// regex can match; this pins the shapes where that is least obvious:
 // a hard navigation with no colon, an EventSource with no colon, and an
 // at-rule whose only trigger byte is '@'.
 func TestRenderingPreFilterDropsNothing(t *testing.T) {
@@ -373,7 +373,7 @@ func TestExemptedRulesAreTestedElsewhere(t *testing.T) {
 			t.Errorf("%s is exempted but not in the catalog", id)
 			continue
 		}
-		// A test may name a rule by ID, by slug, or — most often — by its
+		// A test may name a rule by ID, by slug, or, most often, by its
 		// Go constant, which shares neither substring with the ID. Missing
 		// the constant form would report well-tested rules as untested and
 		// train a reader to ignore this gate.

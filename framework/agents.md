@@ -7,7 +7,7 @@ reload, dev server, browser auto-refresh, livereload, run the app while
 developing, `.env` loading, live app introspection, image uploads that need
 thumbnails / responsive sizes / a blur placeholder.
 
-## `app.WithAuditLog(cfg)` — automatic CRUD audit
+## `app.WithAuditLog(cfg)`: automatic CRUD audit
 
 **Use this when** the prompt mentions: audit trail, who did what, track
 changes, compliance log, history of modifications, admin accountability.
@@ -34,12 +34,12 @@ audit; that defeats the point of audit hygiene.
 
 **Don't reinvent** a hand-rolled `audit_log` entity + `recordAuditLog`
 helper for entity CRUD. DO keep custom audit writes for domain actions
-(suspend, delete, password.reset) — the framework only covers CRUD,
+(suspend, delete, password.reset). The framework only covers CRUD,
 not arbitrary domain events.
 
 ---
 
-## `framework.WithImagePipeline(d)` — uploads derive their own renditions
+## `framework.WithImagePipeline(d)`: uploads derive their own renditions
 
 Every `schema.Image` upload produces the configured renditions plus a
 BlurHash, stores them beside the original, and writes the metadata to sibling
@@ -64,13 +64,13 @@ JPEG widths from a 3000px source, ~540ms once WebP is included, because that
 encoder runs five passes), and an undecodable upload fails the request rather
 than storing a file with no renditions. `gofastr docs uploads` has the detail.
 
-## `framework/dev` — auto-wired livereload
+## `framework/dev`: auto-wired livereload
 
-**Develop with `gofastr dev`, not `go run .`** — it is the only
+**Develop with `gofastr dev`, not `go run .`**. It is the only
 first-party command that sets `GOFASTR_DEV=1`, so plain `go run .` never
 hot-reloads. `gofastr dev` rebuilds the binary on save;
 `framework.NewApp` auto-wires `/__livereload` + `/__livereload.js`, and
-full HTML documents get the reload client — uihost screens inject it
+full HTML documents get the reload client. uihost screens inject it
 themselves, and dev middleware splices it into any other response that
 declares `Content-Type: text/html` and contains `</body>` (static file
 serving, widget pages, hand-rolled handlers that set the type). So every
@@ -83,7 +83,7 @@ is hard-killed by `GOFASTR_ENV=production`.
 
 ---
 
-## `core/dotenv` — automatic `.env` loading
+## `core/dotenv`: automatic `.env` loading
 
 `framework.NewApp` reads `.env.local`, `.env.<APP_ENV>`, `.env` in
 order (earlier wins) before option callbacks run. Existing `os.Environ`
@@ -91,12 +91,12 @@ always beats file values.
 
 **Disable:** `GOFASTR_DOTENV=off` in the real process env.
 
-**Don't** add a separate `godotenv.Load()` call before `NewApp` — it's
+**Don't** add a separate `godotenv.Load()` call before `NewApp`. It's
 already done.
 
 ---
 
-## `framework.WithMCPIntrospection()` — live-app agent debug
+## `framework.WithMCPIntrospection()`: live-app agent debug
 
 Adds `framework_docs_list`, `framework_docs_get`,
 `framework_docs_search`, `app_routes`, `app_plugins`, `app_batteries`,
@@ -104,8 +104,8 @@ Adds `framework_docs_list`, `framework_docs_get`,
 endpoint so a connected agent can answer "what routes exist" / "is the app
 ready" / "did my routine body change land" without leaving the session.
 
-It also adds the contract catalog — `contracts_list`,
-`contracts_explain`, `contracts_capabilities` — so an agent can read what
+It also adds the contract catalog tools `contracts_list`,
+`contracts_explain`, and `contracts_capabilities`, so an agent can read what
 the framework *requires* of app code (with the reasoning, the fix, and a
 worked example per rule) before writing any, rather than after
 `gofastr verify` rejects it.
@@ -113,8 +113,8 @@ worked example per rule) before writing any, rather than after
 In the dev loop (`gofastr dev`) two more join them: `contracts_verify`
 runs the analyzers over the app's own source tree and returns the
 findings as structured diagnostics, and `contracts_fix` applies one
-rule's autofixes and reports which files changed. Both read — and
-`contracts_fix` writes — local source, so they are registered **only**
+rule's autofixes and reports which files changed. Both read local
+source, and `contracts_fix` also writes it, so they are registered **only**
 when dev implies the MCP surface. A production `/mcp` does not gate
 them; it does not have them.
 
@@ -124,7 +124,7 @@ on trusted /mcp endpoints.
 
 **Under `gofastr dev` the whole surface auto-enables** (mount +
 introspection + control + battery/log's `log_*` debug tools) with no
-options — livereload for agents. Opt out with `GOFASTR_DEV_MCP=0`.
+options, livereload for agents. Opt out with `GOFASTR_DEV_MCP=0`.
 Production processes never see `GOFASTR_DEV`, so the explicit options
 stay the only path there.
 
@@ -136,14 +136,14 @@ a running server, or "is this app healthy". See the
 
 ## Don't reinvent
 
-- A custom audit log entity — `WithAuditLog` for CRUD; domain actions stay custom.
-- A livereload SSE handler — framework auto-wires it under `gofastr dev`.
-- A dotenv loader — `NewApp` does it.
-- Per-test PG isolation — see `framework/testkit` (`NewIsolatedDB`).
-- Resize/encode/thumbnail code in an upload handler — `WithImagePipeline`
+- A custom audit log entity: `WithAuditLog` for CRUD; domain actions stay custom.
+- A livereload SSE handler: framework auto-wires it under `gofastr dev`.
+- A dotenv loader: `NewApp` does it.
+- Per-test PG isolation: see `framework/testkit` (`NewIsolatedDB`).
+- Resize/encode/thumbnail code in an upload handler: `WithImagePipeline`
   does it from the field declaration; `framework/image` is the manual path.
-- A JS BlurHash decoder — `image.BlurHashDataURL` decodes server-side and
+- A JS BlurHash decoder: `image.BlurHashDataURL` decodes server-side and
   `ui.PipelineImage` paints it with no JavaScript.
-- Hand-rolled markup or CSS — `framework/ui` ships ~100 components;
+- Hand-rolled markup or CSS: `framework/ui` ships ~100 components;
   see the `ui` row of AGENTS.md (`agents/ui.md`) and
   `gofastr docs ui-new-components`.

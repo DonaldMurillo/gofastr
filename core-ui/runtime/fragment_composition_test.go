@@ -113,7 +113,7 @@ const symbolManifestHeader = `# Symbol manifest for core-ui/runtime/frag/*.js �
 //
 // What it catches: deleting or typo-renaming a declaration in any frag/*.js,
 // including declarations nested inside functions or callbacks. Regenerating
-// runtime.js with GOFASTR_UPDATE_RUNTIME_JS=1 does not launder that away — the
+// runtime.js with GOFASTR_UPDATE_RUNTIME_JS=1 does not launder that away, the
 // manifest is a separate artifact with a separate regeneration flag, so the
 // loss stays visible as a removed line in the diff that a reviewer has to
 // accept.
@@ -121,7 +121,7 @@ const symbolManifestHeader = `# Symbol manifest for core-ui/runtime/frag/*.js �
 // What it does NOT catch, and never claimed to: deleting the BODY of a
 // declaration while keeping its name; object-literal method shorthand on the
 // namespace (the attr/doc parity gate covers those); or any semantic
-// regression. It is a "nothing vanished" check, not a behaviour check — the
+// regression. It is a "nothing vanished" check, not a behaviour check, the
 // chromedp e2e suite is what covers behaviour.
 //
 // Its previous reference was `git show HEAD:core-ui/runtime/runtime.js`, which
@@ -204,7 +204,7 @@ func manifestLines(s string) []string {
 // two drift apart, the gates would be certifying content users never receive.
 //
 // This test fails the moment a fragment file is edited without re-assembling
-// runtime.js — keeping the on-disk canonical form honest with the actual
+// runtime.js, keeping the on-disk canonical form honest with the actual
 // composition the binary ships.
 func TestComposedRuntimeMatchesOnDiskFile(t *testing.T) {
 	raw, err := composeFull()
@@ -219,7 +219,7 @@ func TestComposedRuntimeMatchesOnDiskFile(t *testing.T) {
 		return
 	}
 	// Regenerate on request. Without this the only instruction a developer who
-	// edited a fragment gets is "re-assemble it somehow" — there is no
+	// edited a fragment gets is "re-assemble it somehow", there is no
 	// generator, no go:generate, and hand-copying the composition is absurd.
 	// The env var keeps the default behaviour a hard failure (CI must never
 	// silently rewrite a checked-in artifact) while giving the fix a name.
@@ -241,8 +241,8 @@ func TestComposedRuntimeMatchesOnDiskFile(t *testing.T) {
 }
 
 // TestEmbedCompositionOmitsNav is the structural half of "SPA navigation is
-// disabled inside frames". The design decision was to enforce it by ABSENCE —
-// the nav fragment is not composed — rather than by a runtime flag, precisely
+// disabled inside frames". The design decision was to enforce it by ABSENCE,
+// the nav fragment is not composed, rather than by a runtime flag, precisely
 // so a later refactor cannot re-enable it by flipping a boolean. This asserts
 // the absence is real: not one of nav.js's top-level symbols may appear in the
 // embed bundle.
@@ -285,7 +285,7 @@ func TestEmbedCompositionOmitsNav(t *testing.T) {
 // makes a nav-less composition possible. boot gates the activelink
 // idle-load on nav's presence by probing the loadPage symbol; without the
 // typeof probe the embed bundle throws a ReferenceError at boot and takes
-// hydration, module loading and the CSS scanner down with it — a failure
+// hydration, module loading and the CSS scanner down with it, a failure
 // that looks like "the embed renders nothing".
 func TestBootToleratesAMissingNav(t *testing.T) {
 	src, err := fs.ReadFile(fragFS, "frag/boot.js")
@@ -341,7 +341,7 @@ func TestRPCIsDemandLoaded(t *testing.T) {
 // TestCompositionsShareByteIdenticalFragments is the anti-drift guard for the
 // composer as a whole. Every bundle is assembled from the SAME files by the
 // same function, so a fix applied to one composition cannot fail to reach
-// another. This asserts the assembly really is file concatenation — if a
+// another. This asserts the assembly really is file concatenation, if a
 // composition ever grew a per-bundle transform, the substring check below stops
 // being true and the divergence surfaces here rather than in production.
 func TestCompositionsShareByteIdenticalFragments(t *testing.T) {
@@ -395,7 +395,7 @@ func TestCompositionsShareByteIdenticalFragments(t *testing.T) {
 //
 // An embedded surface lives in an iframe the host page resizes to the height
 // the frame reports. documentElement.scrollHeight is at least the viewport
-// height, and that viewport IS the frame being resized — so measuring it feeds
+// height, and that viewport IS the frame being resized, so measuring it feeds
 // each report into the next measurement, and any full-height rule inside makes
 // the panel ratchet open with a band of empty space under the content.
 //
@@ -413,7 +413,7 @@ func TestBootEmbedMeasuresContentNotViewport(t *testing.T) {
 	// A denylist of four spellings was the previous shape of this gate, and it
 	// could not see document.body.scrollHeight, root.scrollHeight,
 	// visualViewport.height, getComputedStyle(docEl).height, or
-	// observe(document.body) — any one of which reopens the ratchet. Assert what
+	// observe(document.body), any one of which reopens the ratchet. Assert what
 	// the measurement IS instead: every height-shaped read in this fragment has
 	// to come from the root's own bounding box.
 	heightRead := regexp.MustCompile(`(?:scrollHeight|offsetHeight|clientHeight|innerHeight|visualViewport|getComputedStyle)`)
@@ -435,7 +435,7 @@ func TestBootEmbedMeasuresContentNotViewport(t *testing.T) {
 	}
 }
 
-// The catalog's stylePath may already carry a query — an embed frame appends
+// The catalog's stylePath may already carry a query, an embed frame appends
 // ?t=<variant> so component CSS resolves under the same theme as app.css.
 // Appending the version with a hard-coded '?' folded both into one unparseable
 // parameter, so the server saw an unknown theme key and no version at all: the
@@ -488,7 +488,7 @@ func TestSignalMutationTakesPrecedenceOverRPC(t *testing.T) {
 // Every site that prevents the default action and THEN awaits the rpc
 // module has to recover when the module never arrives, or it eats the
 // user's click in silence. The document bridge in boot.js does this, and
-// deliberately skips anything inside [data-fui-widget] — so the
+// deliberately skips anything inside [data-fui-widget], so the
 // widget-scoped listeners in src/widgets.js cannot be covered by it and
 // must handle their own failure. They shipped with a bare `catch (_) {}`,
 // which is exactly the swallow the bridge was written to prevent.

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// AGENTS.md is now a thin TOC — full per-section content lives under
+// AGENTS.md is now a thin TOC. Full per-section content lives under
 // agents/. The TOC must reference every inventory entry by section
 // title and link to its detail file, but the FULL body must NOT inline.
 func TestBuildAgentsMDIsThinTOC(t *testing.T) {
@@ -37,7 +37,7 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 
 	// AGENTS.md must NOT inline the full per-section bodies anymore.
 	// `**Shape:**` only appears in battery agents.md bodies (never in
-	// the preamble) — its presence here would mean we regressed to
+	// the preamble). Its presence here would mean we regressed to
 	// inlining. `**Import:**` is the same.
 	if strings.Contains(body, "**Shape:**") {
 		t.Fatalf("AGENTS.md inlines '**Shape:**' code blocks — those belong in agents/<name>.md detail files")
@@ -88,7 +88,7 @@ func TestWriteAgentDetailFilesPopulatesDir(t *testing.T) {
 }
 
 // User has their own agents/some-doc.md sitting alongside ours;
-// writeAgentDetailFiles must NOT touch it. Coexistence — we own
+// writeAgentDetailFiles must NOT touch it. Coexistence: we own
 // our filenames, they own theirs.
 func TestWriteAgentDetailFilesLeavesUnrelatedUserFiles(t *testing.T) {
 	dir := t.TempDir()
@@ -116,7 +116,7 @@ func TestWriteAgentDetailFilesLeavesUnrelatedUserFiles(t *testing.T) {
 
 // User has agents/framework.md as their own hand-written doc (name
 // collision with our generated file). writeAgentDetailFiles must
-// REFUSE to clobber — return an error naming the conflicting path
+// REFUSE to clobber: return an error naming the conflicting path
 // and suggesting a fix. Better a loud failure than silent overwrite.
 func TestWriteAgentDetailFilesRefusesToClobberUserFile(t *testing.T) {
 	dir := t.TempDir()
@@ -191,11 +191,11 @@ func TestExtractUseWhenStripsBoilerplate(t *testing.T) {
 		"**Use this when** the prompt mentions: just one\n\n":                "just one",
 		"**Use this when** anything goes here\n\n":                           "anything goes here",
 		"no use-when line": "—",
-		// Multi-line paragraph — markdown wraps the trigger list across
-		// lines; the TOC must show all of them, not just the first wrap.
+		// Multi-line paragraph. Markdown wraps the trigger list across
+		// lines; the TOC must show all of them, rather than only the first wrap.
 		"**Use this when** the prompt mentions: a, b,\nc, d, e\n\nrest": "a, b, c, d, e",
 		// Author wrote the next **Heading:** immediately without a
-		// blank line — the use-when paragraph still ends at the new
+		// blank line. The use-when paragraph still ends at the new
 		// heading, otherwise the TOC cell would slurp the whole
 		// **Import:** block too.
 		"**Use this when** trigger phrases here\n**Import:** `pkg`\n": "trigger phrases here",

@@ -84,7 +84,7 @@ func (ms *MemoryStorage) Get(_ context.Context, key string) (io.ReadCloser, erro
 }
 
 // GetRange implements [upload.RangeGetter]. The bytes are already in memory,
-// so a *bytes.Reader satisfies Seek for free — the wrapper only supplies the
+// so a *bytes.Reader satisfies Seek for free, the wrapper only supplies the
 // no-op Close.
 func (ms *MemoryStorage) GetRange(_ context.Context, key string) (io.ReadSeekCloser, error) {
 	ms.mu.RLock()

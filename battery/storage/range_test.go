@@ -63,7 +63,7 @@ func TestGetRangeRejectsTraversal(t *testing.T) {
 	}
 }
 
-// A backend that declines the capability must stay a valid Storage — the
+// A backend that declines the capability must stay a valid Storage, the
 // point of a capability interface is that not implementing it is legal.
 func TestS3DeclinesRangeGetter(t *testing.T) {
 	var s Storage = NewS3Storage("bucket", "us-east-1")
@@ -73,7 +73,7 @@ func TestS3DeclinesRangeGetter(t *testing.T) {
 }
 
 // The seekable reader must still return the whole object when read from the
-// start — the capability adds resumability, it does not change the bytes.
+// start, the capability adds resumability, it does not change the bytes.
 func TestGetRangeWholeObjectMatchesGet(t *testing.T) {
 	mem := NewMemoryStorage()
 	want := []byte("the quick brown fox")

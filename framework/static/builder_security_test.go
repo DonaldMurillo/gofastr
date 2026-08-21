@@ -42,7 +42,7 @@ func TestSSGParamNoTraversal(t *testing.T) {
 			// Attack shapes: either the expansion errors out, or whatever URL
 			// it produces must map to a file CONTAINED within OutDir.
 			if err != nil {
-				return // rejected — the desired fail-closed outcome
+				return // rejected, the desired fail-closed outcome
 			}
 			for _, u := range urls {
 				dst := filepath.Join(out, pathToFile(u))
@@ -64,8 +64,8 @@ func expandRouteWith(ctx context.Context, pattern string, params map[string]stri
 // TestStaticExportShipsCSP pins that a static export carries the same
 // Content-Security-Policy a served page gets.
 //
-// The whole browser-gadget set the audit found — the data-behavior
-// script sink, the runtime's fetch URLs, signal-driven attributes — is
+// The whole browser-gadget set the audit found, the data-behavior
+// script sink, the runtime's fetch URLs, signal-driven attributes, is
 // mitigated in production by `default-src 'self'`, which
 // core/middleware.SecurityHeaders sets as a RESPONSE HEADER. A static
 // export is a directory of files: on S3, Netlify or GitHub Pages nobody

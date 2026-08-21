@@ -26,7 +26,7 @@ func readSrc(t *testing.T, rel string) string {
 
 // schemeGuardStripsInteriorControls asserts the URL-scheme guard
 // (_isUnsafeSignalUrl) neutralises javascript:/vbscript: even when the
-// scheme carries embedded tab/newline/CR or leading C0 control bytes —
+// scheme carries embedded tab/newline/CR or leading C0 control bytes,
 // the chars browsers strip during URL parsing before scheme detection.
 //
 // Surface: the strip step in _isUnsafeSignalUrl, which is the single
@@ -46,11 +46,11 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 	}
 
 	// The old guard anchored the strip with `^`, so only the LEADING run
-	// of control chars was removed — an interior tab/newline left the
+	// of control chars was removed, an interior tab/newline left the
 	// scheme intact and startsWith() returned false. The fixed guard must
 	// NOT anchor with `^`. The char class spans `\s` plus the C0 control
 	// range; it is written with `\x00-\x1f` escapes (raw control bytes in
-	// source make the file "binary" — see TestRuntimeJSIsCleanText). We
+	// source make the file "binary". See TestRuntimeJSIsCleanText). We
 	// match the class interior generically and validate range coverage
 	// below, so both the escaped and (legacy) raw-byte forms are accepted.
 	// Capture the anchor and the global flag.
@@ -67,7 +67,7 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 	}
 	// The class must still span the full C0 control range (0x00-0x1f).
 	// Accept either the escaped form (`\x00-\x1f`) or the legacy raw
-	// control bytes — both denote the identical JS character-class range.
+	// control bytes, both denote the identical JS character-class range.
 	classStart := strings.Index(body, `replace(/`)
 	classEnd := strings.Index(body[classStart:], `]+/`)
 	class := body[classStart : classStart+classEnd]
@@ -80,7 +80,7 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 
 // csrfHeaderForwardedOnRPC asserts every state-changing fetch from the
 // runtime forwards the CSRF token (X-CSRF-Token from the
-// meta[name="csrf-token"] tag) — the documented channel the auth.CSRF
+// meta[name="csrf-token"] tag), the documented channel the auth.CSRF
 // middleware accepts for JSON-bodied requests.
 //
 // Surfaces: shared dispatchRPC + kiln POST (src/rpc.js), infinite-scroll
@@ -157,7 +157,7 @@ func TestHtmlSignalDoesNotInjectObjectMarkup(t *testing.T) {
 
 	// The vulnerable shape assigns JSON.stringify(value) into innerHTML
 	// for the non-string case. The fixed shape must NOT feed
-	// JSON.stringify output to innerHTML — non-string values go to
+	// JSON.stringify output to innerHTML, non-string values go to
 	// textContent. Detect the unsafe pairing: innerHTML on the same
 	// statement as JSON.stringify.
 	for _, line := range strings.Split(htmlBranch, "\n") {
@@ -202,8 +202,8 @@ func TestHtmlSignalSkipsNonStringValues(t *testing.T) {
 		!strings.Contains(htmlBranch, "typeof value != 'string'") {
 		t.Error("SECURITY: [html-signal] html-mode branch must early-return on non-string values (typeof value !== 'string') so a failed-RPC error object does not overwrite the trusted region")
 	}
-	// The corruption shape — writing JSON.stringify(value) into textContent
-	// — must be gone from the html-mode branch entirely.
+	// The corruption shape, writing JSON.stringify(value) into textContent,
+	// must be gone from the html-mode branch entirely.
 	for _, line := range strings.Split(htmlBranch, "\n") {
 		l := strings.TrimSpace(line)
 		if strings.Contains(l, "textContent") && strings.Contains(l, "JSON.stringify") {
@@ -240,7 +240,7 @@ func TestSseIslandSelectorEscaped(t *testing.T) {
 // runtime.js skip the JS reserved object keys (__proto__, constructor,
 // prototype) before assigning `store[k] = …`. With a string key of
 // "__proto__", the bracket assignment `store["__proto__"] = {…}` invokes
-// the __proto__ setter and re-parents the _signals store object — a
+// the __proto__ setter and re-parents the _signals store object, a
 // crafted seed then re-routes every not-yet-set signal name through the
 // attacker's object (cross-signal confusion) and makes setSignal mutate
 // the shared prototype instead of an own property. The host-generated

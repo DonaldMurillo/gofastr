@@ -10,7 +10,7 @@
 //	POST /kiln/tool/{name}       generic tool dispatch
 //	GET  /.kiln/events           live SSE stream of session events
 //
-// The panel itself does not need world IR coverage — it's the host's
+// The panel itself does not need world IR coverage, it's the host's
 // own surface, not something the agent edits. Kiln-built apps still
 // drive the panel by issuing tool calls; the panel is just the eyes.
 package chat

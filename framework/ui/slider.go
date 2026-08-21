@@ -12,7 +12,7 @@ import (
 // ─── Slider ─────────────────────────────────────────────────────────
 //
 // Styled <input type="range"> with optional value display and
-// min/max edge labels. Native semantics — keyboard ArrowLeft/Right,
+// min/max edge labels. Native semantics: keyboard ArrowLeft/Right,
 // PageUp/Down, Home/End all work via the browser. The styled track
 // + thumb live in the registered ui-slider sheet.
 
@@ -31,7 +31,7 @@ type SliderConfig struct {
 	Value int
 	// ShowValue renders a value bubble next to the label that updates
 	// via :has() / CSS custom-property tricks isn't supported across
-	// browsers yet — we emit a simple <output> element instead, which
+	// browsers yet. We emit a simple <output> element instead, which
 	// the browser auto-updates as the range input moves (the native
 	// form-output association).
 	ShowValue bool

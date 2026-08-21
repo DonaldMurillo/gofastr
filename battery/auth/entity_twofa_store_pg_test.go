@@ -12,7 +12,7 @@ import (
 )
 
 // slowHash hashes at a real bcrypt cost (10) so a CompareHashAndPassword
-// against it takes ~60ms — used to widen the read-to-write window in the
+// against it takes ~60ms, used to widen the read-to-write window in the
 // same-code concurrency test so the version CAS is genuinely exercised.
 func slowHash(t *testing.T, code string) string {
 	t.Helper()
@@ -52,7 +52,7 @@ func openPGMultiConn(t *testing.T) *sql.DB {
 	}
 	if err != nil {
 		// resolveBatteryPG already confirmed PG is up, so an unpingable pool
-		// now is a real breakage — fail loudly rather than silently skip and
+		// now is a real breakage, fail loudly rather than silently skip and
 		// quietly drop the CAS coverage from CI (matches openPGForBattery).
 		_ = admin.Close()
 		t.Fatalf("Postgres was resolved but the pool is unreachable: %v", err)
@@ -306,7 +306,7 @@ func TestEntityTwoFA_Postgres_ConcurrentConsumeSingleUse(t *testing.T) {
 	// shared target sits behind two pads, so each racer spends ~180ms in the
 	// bcrypt scan between its SELECT and its UPDATE. That holds the
 	// read-to-write window open long enough for all racers to read the SAME
-	// version before any UPDATE commits — forcing the version CAS to
+	// version before any UPDATE commits, forcing the version CAS to
 	// actually arbitrate. (With MinCost hashes and the target at index 0 the
 	// scan returns instantly and the goroutines serialize, making the test a
 	// guard that stays green even with the CAS removed.)

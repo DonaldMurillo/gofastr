@@ -25,8 +25,8 @@ func generateETag(data []byte) string {
 // holding it is per-handler (Config.digests), never process-wide: an
 // embed.FS reports the zero time.Time as the modtime of every file, so a
 // shared cache would collapse to (name, size) across every embed in the
-// process. Two handlers backed by different filesystems — a site embed
-// and an admin embed both serving "app.css" — would then hand the second
+// process. Two handlers backed by different filesystems, a site embed
+// and an admin embed both serving "app.css", would then hand the second
 // one the first one's ETag, and answer 304 Not Modified for content the
 // client has never seen.
 //
@@ -39,7 +39,7 @@ type digestKey struct {
 }
 
 // fileETag returns a double-quoted content-hash ETag for the file. On a
-// cache miss it streams the file through SHA-256 — the content is never
+// cache miss it streams the file through SHA-256, the content is never
 // held in memory, which matters for large files. On a cache miss the
 // caller MUST Seek the file back to the start before serving the body.
 // A read error is returned so the caller can map it to 500 rather than

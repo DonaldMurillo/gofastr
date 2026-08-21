@@ -4,7 +4,7 @@ package main
 // presents two ways depending on how you got to it.
 //
 //   - /examples/catalog        the list
-//   - /examples/catalog/:id    the detail — a real, shareable, indexable
+//   - /examples/catalog/:id    the detail, a real, shareable, indexable
 //                              page that renders standalone on a hard
 //                              load, refresh, or external link
 //
@@ -18,7 +18,7 @@ package main
 // link. A deep link would keep the URL on the list
 // (/examples/catalog?modal=…) and the detail would have no page of its
 // own. Here the page IS the canonical render and the overlay is a
-// presentation of it — the server decides which one you get, from the
+// presentation of it, the server decides which one you get, from the
 // origin the client reports (see core-ui/app/intercept.go).
 
 import (
@@ -78,7 +78,7 @@ func (s *CatalogScreen) RenderCtx(_ context.Context) render.HTML {
 		ui.PageHeader(ui.PageHeaderConfig{
 			Title: "Catalog",
 			Subtitle: "Click a product: its own route opens as a drawer over this list. " +
-				"Press Escape or Back to close — the list never reloaded. Open the same URL " +
+				"Press Escape or Back to close. The list never reloaded. Open the same URL " +
 				"in a new tab and it renders as a full page.",
 		}),
 		html.Div(html.DivConfig{Class: "cat-list"}, rows...),
@@ -89,7 +89,7 @@ func (s *CatalogScreen) RenderCtx(_ context.Context) render.HTML {
 
 // CatalogItemScreen renders one product. Registered as an ordinary page
 // with app.InterceptFrom, so this same method serves both the standalone
-// page and the drawer — there is no second render path to keep in sync.
+// page and the drawer, there is no second render path to keep in sync.
 type CatalogItemScreen struct {
 	component.ContextOnly
 	id string

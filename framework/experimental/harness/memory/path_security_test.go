@@ -8,7 +8,7 @@ import (
 
 // Property: Entry.Name becomes a filename under the store root, so it
 // must never be able to walk out of it. Save builds
-// <root>/<name>.md — an unvalidated name escapes the root and writes
+// <root>/<name>.md, an unvalidated name escapes the root and writes
 // an attacker-chosen file with the process's own privileges.
 func TestSaveRejectsPathEscape(t *testing.T) {
 	root := t.TempDir()
@@ -37,7 +37,7 @@ func TestSaveRejectsPathEscape(t *testing.T) {
 	}
 }
 
-// The happy path must still work — slug names are the convention.
+// The happy path must still work, slug names are the convention.
 func TestSaveAcceptsSlugName(t *testing.T) {
 	root := t.TempDir()
 	s, err := New(root)

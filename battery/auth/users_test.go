@@ -7,7 +7,7 @@ import (
 )
 
 // TestListUsersUnsupportedStore pins that a store which does not
-// implement UserLister yields ErrListUsersUnsupported — never a silent
+// implement UserLister yields ErrListUsersUnsupported, never a silent
 // empty page. memoryUserStore only implements UserStore.
 func TestListUsersUnsupportedStore(t *testing.T) {
 	store := newMemoryUserStore() // UserStore only, no UserLister

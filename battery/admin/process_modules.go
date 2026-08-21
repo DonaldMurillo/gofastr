@@ -7,8 +7,8 @@ package admin
 // POST that writes an audit row (via framework.AppendAuditEvent, exactly as
 // the RBAC grant/revoke handlers do) and 303-redirects back to the list.
 //
-// The screen is the same standalone SSR pipeline as the RBAC screens —
-// b.writePage + section(...) + core-ui/html typed configs — and gates behind
+// The screen is the same standalone SSR pipeline as the RBAC screens,
+// b.writePage + section(...) + core-ui/html typed configs, and gates behind
 // b.gate (admin-only), so it inherits the admin battery's default-deny. No
 // data brokering and no secrets are shown: operator control only.
 //
@@ -61,9 +61,9 @@ const (
 
 // handleProcessModules renders the operator lifecycle screen. The list comes
 // from the controller; an empty list renders a friendly empty state (never a
-// panic — the generated-app rule). A controller error on a prior POST is
+// panic, the generated-app rule). A controller error on a prior POST is
 // surfaced via the ?err= query param as a danger Callout flash above the
-// table — never a raw 500 or JSON leak.
+// table, never a raw 500 or JSON leak.
 func (b *Battery) handleProcessModules(w http.ResponseWriter, r *http.Request) {
 	modules := b.cfg.ProcessModules.List()
 
@@ -126,7 +126,7 @@ func moduleNameCell(m framework.ProcessModuleInfo) render.HTML {
 }
 
 // moduleStateCell renders the state name plus the 404-vs-503 meaning
-// (design §8 decision D — the operator must read a disabled module
+// (design §8 decision D, the operator must read a disabled module
 // differently from a crashed one). Ready renders plain; disabled renders
 // muted; enabled-but-not-serving renders a warning StatusBadge. Circuit-open
 // and lease-failing render danger StatusBadges since both mean serving
@@ -139,7 +139,7 @@ func moduleStateCell(m framework.ProcessModuleInfo) render.HTML {
 	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent:
 		items = append(items, ui.Muted(render.Text(m.State.String())))
 	default:
-		// Starting/Handshaking/Crashed/Backoff/DrainingUpgrade/Failed —
+		// Starting/Handshaking/Crashed/Backoff/DrainingUpgrade/Failed,
 		// enabled but not serving; reads as trouble.
 		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{
 			Label: m.State.String(), Variant: ui.StatusWarning,
@@ -155,7 +155,7 @@ func moduleStateCell(m framework.ProcessModuleInfo) render.HTML {
 		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: "Circuit open", Variant: ui.StatusDanger}))
 	}
 	if m.LeaseFailing {
-		// Lease-failing means fail-closed / serving 503 right now — the
+		// Lease-failing means fail-closed / serving 503 right now, the
 		// loudest signal on the page short of a crash.
 		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: "Lease failing", Variant: ui.StatusDanger}))
 	}
@@ -200,7 +200,7 @@ func moduleLastExitCell(last string) render.HTML {
 
 // moduleActionsCell renders the per-row lifecycle levers as CSRF'd inline
 // POST forms (same shape as the RBAC grant/revoke forms). Disable and Revoke
-// carry data-fui-confirm — the existing destructive-action affordance, no
+// carry data-fui-confirm, the existing destructive-action affordance, no
 // new JS. Enable/Disable choose based on state so the operator is offered
 // the action that actually changes something.
 func moduleActionsCell(prefix, csrf string, m framework.ProcessModuleInfo) render.HTML {
@@ -219,7 +219,7 @@ func moduleActionsCell(prefix, csrf string, m framework.ProcessModuleInfo) rende
 }
 
 // moduleIsDisabled reports whether the current state means "not serving,
-// route gate 404s" — i.e. Enable is the meaningful action.
+// route gate 404s", i.e. Enable is the meaningful action.
 func moduleIsDisabled(state framework.ProcessState) bool {
 	switch state {
 	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent, framework.StateFailed:
@@ -230,7 +230,7 @@ func moduleIsDisabled(state framework.ProcessState) bool {
 
 // moduleActionForm renders a single-submit inline form for a named action.
 // confirm, when non-empty, sets data-fui-confirm (the existing runtime
-// affordance — no new JS). variant picks the ui.Button treatment.
+// affordance, no new JS). variant picks the ui.Button treatment.
 func moduleActionForm(prefix, csrf, name, action, label, confirm string, variant ui.ButtonVariant) render.HTML {
 	attrs := html.Attrs{}
 	if confirm != "" {
@@ -283,7 +283,7 @@ func moduleRevokeForm(prefix, csrf, name string) render.HTML {
 // Each handler validates the module name, calls the controller, writes an
 // audit row, and 303-redirects to the list. On any error (validation,
 // controller, unknown module) it 303-redirects with ?err=<message> so the
-// failure surfaces as a flash on the list page — never a raw 500 or JSON
+// failure surfaces as a flash on the list page, never a raw 500 or JSON
 // leak (generated-app rule).
 
 func (b *Battery) handleModuleEnable(w http.ResponseWriter, r *http.Request) {

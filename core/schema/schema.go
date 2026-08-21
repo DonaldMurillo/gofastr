@@ -37,7 +37,7 @@ const (
 // its existence stay server-side. NoQuery keeps the field in responses but
 // bars it from filters, sorting, and search.
 //
-// NoQuery exists for values the caller may see only in transformed form —
+// NoQuery exists for values the caller may see only in transformed form,
 // a card masked to last-4 by an AfterGet/AfterList hook, say. Without it the
 // stored value is still a live column in WHERE and ORDER BY, so a caller
 // recovers it a character at a time (?card_like=4111) while every response
@@ -67,7 +67,7 @@ type Field struct {
 	// empty, the wire key is derived from Name via the entity's JSONCase
 	// (camelCase → "authorId", snake_case → "author_id"). When set, it is
 	// used verbatim as the JSON output key, the accepted input key, and the
-	// filter parameter name — the DB column (Name) is never changed. This is
+	// filter parameter name. The DB column (Name) is never changed. This is
 	// how an API version renames or aliases a field without altering the
 	// underlying table: v2 exposes column "author_id" as "authorId" (the
 	// JSONCase default) or as a custom "writer" (WireName), while v1 keeps
@@ -185,7 +185,7 @@ func ValidateAll(s Schema, values map[string]any) ValidationResult {
 }
 
 // ValidatePartial validates only the fields that are present in `values`.
-// Missing fields — required or not — are not reported. Use this for
+// Missing fields, required or not, are not reported. Use this for
 // partial-update flows (PUT/PATCH with only the fields the caller wants
 // to change) so a sparse update doesn't fail because some other required
 // field happens not to be in the body.

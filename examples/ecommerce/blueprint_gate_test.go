@@ -12,7 +12,7 @@ import (
 //
 // It lives inside the repo module so the generated code's self-imports
 // (github.com/DonaldMurillo/gofastr/examples/ecommerce/<scratchPkg>/entities)
-// resolve without a go.mod, a replace directive, or a network fetch — the same
+// resolve without a go.mod, a replace directive, or a network fetch, the same
 // arrangement examples/meridian/blueprint_gate_test.go uses. Gitignored, and
 // removed before and after the run so a killed test cannot leave a package
 // behind that later trips `go build ./...`.
@@ -29,7 +29,7 @@ const realModule = "github.com/DonaldMurillo/gofastr/examples/ecommerce"
 // It used to run with --force in the repo directory, which rewrote the tracked
 // examples/ecommerce/app/ on every suite run (#176). Building fresh generator
 // output is the right thing to test; writing it over the committed copy is
-// what caused the trouble — a full suite left the tree dirty, and the drift it
+// what caused the trouble: a full suite left the tree dirty, and the drift it
 // papered over was invisible until someone looked at a diff.
 func generateShopfront(t *testing.T) string {
 	t.Helper()
@@ -57,7 +57,7 @@ func generateShopfront(t *testing.T) string {
 	blueprint := string(src)
 	moduleLine := "module: " + realModule
 	if !strings.Contains(blueprint, moduleLine) {
-		t.Fatalf("gofastr.yml no longer declares %q — update this test's rewrite", moduleLine)
+		t.Fatalf("gofastr.yml no longer declares %q: update this test's rewrite", moduleLine)
 	}
 	blueprint = strings.Replace(blueprint, moduleLine, moduleLine+"/"+scratchPkg, 1)
 	// output_dir is left alone on purpose. Flattening it to "." changes the
@@ -68,7 +68,7 @@ func generateShopfront(t *testing.T) string {
 	// app/main.go stale over a one-line import difference it had introduced
 	// itself.
 	if !strings.Contains(blueprint, "output_dir: app") {
-		t.Fatalf("gofastr.yml no longer declares output_dir: app — update this test's rewrite")
+		t.Fatalf("gofastr.yml no longer declares output_dir: app; update this test's rewrite")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(blueprint), 0o644); err != nil {
 		t.Fatalf("write scratch blueprint: %v", err)
@@ -80,7 +80,7 @@ func generateShopfront(t *testing.T) string {
 	if out, err := gen.CombinedOutput(); err != nil {
 		t.Fatalf("gofastr generate --from=gofastr.yml: %v\n%s", err, out)
 	}
-	// output_dir: app, so the emitted app is one level down — the same layout
+	// output_dir: app, so the emitted app is one level down, the same layout
 	// as the committed copy, which is what makes a byte comparison possible.
 	return filepath.Join(dir, "app")
 }
@@ -129,7 +129,7 @@ func TestCommittedAppMatchesGeneratorOutput(t *testing.T) {
 		committedPath := filepath.Join("app", rel)
 		wantBytes, readErr := os.ReadFile(committedPath)
 		if os.IsNotExist(readErr) {
-			t.Errorf("the generator emits %s but it is not committed under app/ — regenerate and commit", rel)
+			t.Errorf("the generator emits %s but it is not committed under app/; regenerate and commit", rel)
 			return nil
 		}
 		if readErr != nil {
@@ -149,7 +149,7 @@ func TestCommittedAppMatchesGeneratorOutput(t *testing.T) {
 	// A walk that matched nothing would make every assertion above vacuous and
 	// report a clean pass over an empty set.
 	if checked == 0 {
-		t.Fatal("compared no generated files — the generator emitted nothing, or the walk is wrong")
+		t.Fatal("compared no generated files: the generator emitted nothing, or the walk is wrong")
 	}
 	t.Logf("compared %d generated files against the committed app/", checked)
 }

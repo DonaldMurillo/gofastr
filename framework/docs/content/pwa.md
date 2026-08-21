@@ -1,9 +1,9 @@
-# PWA — installable app + offline shell
+# PWA: installable app + offline shell
 
 `uihost.WithPWA` turns a UIHost app into an installable Progressive Web
 App: it serves a typed web app manifest, a CSP-safe external service
 worker with a versioned app-shell precache, an offline fallback screen,
-and the registration script. Apps opt in with one option — no hand-wired
+and the registration script. Apps opt in with one option: no hand-wired
 head tags, caching rules, or registration scripts.
 
 ```go
@@ -24,7 +24,7 @@ fwApp.Mount(uihost.New(site,
 ```
 
 Chromium's installability check needs HTTPS (or localhost), a manifest
-with a name, and 192px + 512px icons — supply the icon files as static
+with a name, and 192px + 512px icons: supply the icon files as static
 assets, or skip file management entirely: `uihost.WithAppIcon(logo)`
 derives the 192/512 manifest icons (plus favicon and apple-touch-icon)
 from one source image when `Icons` is left empty (see [SEO](/docs/seo)).
@@ -37,13 +37,13 @@ Blueprint-generated apps scaffold placeholder icons automatically (see
 |-------|---------|---------|
 | `/manifest.webmanifest` | The web app manifest, generated from `PWAConfig` via `encoding/json` (all values escaped) | `application/manifest+json`, `no-cache` |
 | `/service-worker.js` | The generated worker. Served from the root so its default scope covers the whole app | `application/javascript`, `no-cache` (browsers re-fetch it to detect updates) |
-| `/__gofastr/pwa/register.js` | External registration script, injected before `</body>` on every page — CSP-safe under the default `default-src 'self'` policy (no inline JS) | `application/javascript`, `no-cache` |
+| `/__gofastr/pwa/register.js` | External registration script, injected before `</body>` on every page; CSP-safe under the default `default-src 'self'` policy (no inline JS) | `application/javascript`, `no-cache` |
 | `/__gofastr/pwa/offline` | The offline fallback page, precached at install time | `text/html`, `no-cache` |
 
 Every rendered page also gains `<link rel="manifest">` and, when
 `ThemeColor` is set, a `<meta name="theme-color">` in `<head>`.
 
-Without `WithPWA` none of these routes or tags exist — existing apps
+Without `WithPWA` none of these routes or tags exist; existing apps
 are unchanged.
 
 ## PWAConfig
@@ -70,7 +70,7 @@ The generated worker is deliberately conservative:
 - **Documents are network-first and never cached.** Rendered HTML can
   be personalized, so navigations always hit the server; when the
   network is unavailable the precached offline screen renders instead.
-- **The cache holds exactly the precache set** — the goFastr runtime
+- **The cache holds exactly the precache set**: the goFastr runtime
   (`runtime.js`, split modules under their content-addressed
   `?v=<hash>` URLs, `color-scheme.js`, `actions.js`, `app.css`,
   `manifest.js`), the web app manifest, the offline page plus the
@@ -83,10 +83,10 @@ The generated worker is deliberately conservative:
   re-wrapped at install time so a static host's redirects can't poison
   the offline fallback.
 - **Online always means fresh.** URLs are matched exactly. Only
-  content-addressed assets (`?v=<hash>`) are served cache-first —
+  content-addressed assets (`?v=<hash>`) are served cache-first;
   they're immutable, and a new deployment's URLs miss the old cache.
   Every other asset is network-first, with the cache answering only
-  when the network is gone — so after a deploy, new HTML never runs
+  when the network is gone, so after a deploy, new HTML never runs
   against the previous deployment's runtime or CSS.
 - **Sensitive endpoints are never intercepted and can never be
   precached.** `/__gofastr/sse`, `/__gofastr/session`,
@@ -98,30 +98,30 @@ The generated worker is deliberately conservative:
   with `DenyPaths` (blueprint-generated apps do this automatically for
   a custom `api_prefix` / auth `base_path`).
 - **Cache names are versioned deterministically.** The name is
-  `gofastr-pwa-<slug>.<name-hash>.<fingerprint>` — `<name-hash>` is
+  `gofastr-pwa-<slug>.<name-hash>.<fingerprint>`; `<name-hash>` is
   12 hex chars derived from the app name, and the fingerprint hashes
   the manifest, the precache URL list, the shell asset bodies, and the
   bytes of every precache entry served from the host's static
-  storage — swapping an icon in place rotates the version. A new
+  storage; swapping an icon in place rotates the version. A new
   deployment installs a fresh cache; on activation the worker deletes
   only obsolete caches carrying this app's
   `gofastr-pwa-<slug>.<name-hash>.` prefix, and reaps leftover
   `gofastr-pwa-<slug>-<hex>` caches from the older dashed naming.
-  (An asset served from outside static storage — a reverse proxy,
-  say — contributes only its URL; give it a new path or query when it
+  (An asset served from outside static storage, say a reverse proxy,
+  contributes only its URL; give it a new path or query when it
   changes.)
 
 ## Static exports: the full-site worker
 
 The rules above protect a LIVE app, where rendered HTML can be
-personalized. A [static export](static-export.md) has no such concern —
-the page set is closed and every byte is immutable — so the exported
+Personalized. A [static export](static-export.md) has no such concern:
+the page set is closed and every byte is immutable, so the exported
 `service-worker.js` flips strategy: the whole site is precached at
-install — every page, every framework asset (including component
-stylesheets under their versioned `?v=` URLs), the shell — and
-navigations are served cache-first, tolerating static hosts' trailing-
+install: every page, every framework asset (including component
+stylesheets under their versioned `?v=` URLs), and the shell.
+Navigations are served cache-first, tolerating static hosts' trailing-
 slash redirects, with the network as fallback. Visit the site once,
-install it, and every page works offline after that — even ones you
+install it, and every page works offline after that, even ones you
 never opened.
 
 User static-dir files are precached best-effort: one un-servable file
@@ -148,14 +148,14 @@ uihost.WithPWA(uihost.PWAConfig{OfflineScreen: myOfflineScreen{}})
 ```
 
 The page is precached at service-worker install time, so it must not
-render personalized content — for that reason it is deliberately **not**
+render personalized content; for that reason it is deliberately **not**
 wrapped in the app layout (a layout may embed per-user chrome).
 
 ## Update behavior
 
 Registration runs on every page load, which doubles as the update
 check. A new deployment installs its worker and cache in the
-background, but the framework never calls `skipWaiting` — the new
+background, but the framework never calls `skipWaiting`; the new
 worker activates once every tab running the old version closes, so an
 open app is never yanked onto new code mid-session. To offer a "new
 version available — reload" prompt, listen for the window event the
@@ -168,7 +168,7 @@ window.addEventListener("gofastr:pwa-update", function (e) {
 });
 ```
 
-(Ship that listener as an external script via `WithExtraScripts` — the
+(Ship that listener as an external script via `WithExtraScripts`; the
 default CSP blocks inline JS.)
 
 ## Static export
@@ -185,7 +185,7 @@ the exported app installs and works offline from the subpath. See
 ## Blueprint support
 
 `gofastr generate` scaffolds the whole PWA setup described above from an
-`app.pwa` block — including replaceable placeholder icons. See
+`app.pwa` block, including replaceable placeholder icons. See
 [Blueprints](/docs/blueprints).
 
 ## Common mistakes
@@ -194,7 +194,7 @@ the exported app installs and works offline from the subpath. See
   precache; if a file 404s, `cache.addAll` rejects and the worker never
   installs. Put the files in your static dir first, then declare them.
 - **Precaching API responses.** `Precache: []string{"/api/products"}`
-  is silently dropped — the shell cache is for assets, never data. If
+  is silently dropped: the shell cache is for assets, never data. If
   you need offline data, that's application logic, not the app shell.
   If your API lives at a custom prefix, list it in `DenyPaths` so the
   same guarantee covers it.
@@ -207,5 +207,5 @@ the exported app installs and works offline from the subpath. See
   immediately, prompt the user from the `gofastr:pwa-update` event and
   reload after they accept.
 - **Rendering per-user content into a custom `OfflineScreen`.** The
-  page is cached at install time under the installing user's session —
+  page is cached at install time under the installing user's session;
   keep it generic.

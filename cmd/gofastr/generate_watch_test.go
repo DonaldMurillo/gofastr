@@ -57,7 +57,7 @@ func TestHashEntitiesDir_DetectsFileLifecycle(t *testing.T) {
 	}
 	h1 := hashEntitiesDir(dir)
 
-	// Add a second entity — hash shifts.
+	// Add a second entity; hash shifts.
 	if err := os.WriteFile(filepath.Join(dir, "users.json"), []byte(`{"name":"users","fields":[]}`), 0o644); err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestHashEntitiesDir_DetectsFileLifecycle(t *testing.T) {
 		t.Fatal("hash should change after adding a file")
 	}
 
-	// Remove the new one — hash returns to original.
+	// Remove the new one; hash returns to original.
 	if err := os.Remove(filepath.Join(dir, "users.json")); err != nil {
 		t.Fatalf("rm: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestHashEntitiesDir_IgnoresNonJSON(t *testing.T) {
 	}
 	h1 := hashEntitiesDir(dir)
 
-	// Drop a README — should be ignored.
+	// Drop a README; should be ignored.
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("readme: %v", err)
 	}

@@ -45,7 +45,7 @@ func Divider(cfg DividerConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// Native <hr> is the cleanest case — no label, horizontal, no
+	// Native <hr> is the cleanest case: no label, horizontal, no
 	// extra DOM. Keeps "<hr>" findable in view-source for plain
 	// dividers and avoids unnecessary role announcements.
 	if cfg.Label == "" && cfg.Orientation == DividerHorizontal {

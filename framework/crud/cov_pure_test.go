@@ -78,7 +78,7 @@ func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 		"acct":  entity.Define("acct", entity.EntityConfig{Name: "acct", Table: "acct", Scope: &entity.ScopeConfig{MultiTenant: true, SoftDelete: true}, Fields: []schema.Field{{Name: "n", Type: schema.String}}}.WithTimestamps(false)),
 	}}
 	md := RegistryLLMMD(reg, "MyApp")
-	for _, want := range []string{"MyApp — API Reference", "posts", "acct", "soft-delete", "multi-tenant", "Quick Reference"} {
+	for _, want := range []string{"MyApp: API Reference", "posts", "acct", "soft-delete", "multi-tenant", "Quick Reference"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("RegistryLLMMD missing %q", want)
 		}
@@ -88,7 +88,7 @@ func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 func TestRegistryLLMMD_EmptyAndDefaultTitle(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{}}
 	md := RegistryLLMMD(reg, "")
-	if !strings.Contains(md, "API — API Reference") {
+	if !strings.Contains(md, "API: API Reference") {
 		t.Errorf("default title missing: %s", md[:40])
 	}
 	if !strings.Contains(md, "No entities registered.") {
@@ -283,7 +283,7 @@ func TestParseNestedFilters_Paths(t *testing.T) {
 }
 
 // A Hidden column on the TARGET entity must not be reachable as a nested
-// predicate — otherwise ?author.password_hash_like=… resurrects the
+// predicate, otherwise ?author.password_hash_like=… resurrects the
 // value-disclosure oracle the flat-filter Hidden exclusion blocks, one
 // relation hop away. The rejection must be non-leaky: identical wording to a
 // nonexistent field, so the error can't distinguish hidden from absent.
@@ -317,7 +317,7 @@ func TestParseNestedFilters_HiddenTargetFieldRejected(t *testing.T) {
 }
 
 // The in-process typed-repo nested path (resolveNestedFilters) must reject a
-// Hidden target column exactly like the HTTP path — its doc comment claims
+// Hidden target column exactly like the HTTP path, its doc comment claims
 // parity, and a typed caller passing a partially user-influenced field name
 // would otherwise rebuild the value-disclosure oracle one hop away.
 func TestResolveNestedFilters_HiddenTargetFieldRejected(t *testing.T) {

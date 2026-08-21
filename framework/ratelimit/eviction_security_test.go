@@ -52,7 +52,7 @@ func TestKeyFloodKeepsActiveBlocks(t *testing.T) {
 }
 
 // A block whose duration has elapsed is not a lockout, but it keeps a
-// non-zero blockedUntil until that key is touched again — AllowContext
+// non-zero blockedUntil until that key is touched again. AllowContext
 // clears it lazily, and a key nobody touches again is never cleared.
 //
 // That stale timestamp is read twice by eviction, and it was wrong both
@@ -61,7 +61,7 @@ func TestKeyFloodKeepsActiveBlocks(t *testing.T) {
 // its older timestamp ranked it as more protected than a live lockout.
 //
 // Driving this through Allow would need two different BlockDurations in one
-// limiter, which the config cannot express — so the state is built directly
+// limiter, which the config cannot express, so the state is built directly
 // and evictLocked called once. That also keeps the test off the 100k-key
 // flood path.
 func TestElapsedBlockIsReclaimed(t *testing.T) {

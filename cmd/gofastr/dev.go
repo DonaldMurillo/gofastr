@@ -17,7 +17,7 @@ import (
 
 // buildDevChildEnv produces the env slice handed to the rebuilt server
 // process. It drops every pre-existing GOFASTR_DEV entry and prepends
-// GOFASTR_DEV=1 — necessary because:
+// GOFASTR_DEV=1, necessary because:
 //
 //   - macOS getenv returns the LAST occurrence; appending wins.
 //   - Linux glibc getenv returns the FIRST occurrence; a parent
@@ -27,7 +27,7 @@ import (
 // independent and immune to a user's prior export.
 //
 // It also injects PORT=<addr> so the generated scaffold's getEnv("PORT", …)
-// binds the address `gofastr dev --addr` resolved — the scaffold never
+// binds the address `gofastr dev --addr` resolved; the scaffold never
 // parses argv, so without this the child silently binds the committed .env
 // default while the parent banner reports the requested address.
 func buildDevChildEnv(parent []string, addr string) []string {
@@ -47,7 +47,7 @@ func buildDevChildEnv(parent []string, addr string) []string {
 	}
 	// Inject the resolved listen address as PORT. The generated scaffold
 	// binds getEnv("PORT", "localhost:8080") and never parses argv, so the
-	// --addr flag alone reaches nothing — this is what makes the child
+	// --addr flag alone reaches nothing; this is what makes the child
 	// actually listen on the requested address. The framework's dotenv
 	// auto-load never clobbers an existing process var, so this also wins
 	// over the committed .env default. Dedup + a single PORT entry keeps
@@ -68,7 +68,7 @@ func runDev(args []string) {
 	// which is right for the scaffold layout (main at the project root). Apps
 	// that keep main under cmd/<name>/ need the two to differ: the build target
 	// is the command, but the watch root and the server's cwd must stay at the
-	// project root — otherwise the watcher misses internal/ and relative paths
+	// project root; otherwise the watcher misses internal/ and relative paths
 	// (sqlite db_url, static dirs) resolve against the command dir instead.
 	addr, dir, pkg, noA11y := parseDevFlags(args)
 
@@ -102,10 +102,10 @@ func runDev(args []string) {
 
 	// Build and start the server initially
 	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y) {
-		fail("Initial build failed — fixing and saving will retry")
+		fail("Initial build failed. Fixing and saving will retry")
 	}
 
-	// File watcher goroutine — polls for .go file changes
+	// File watcher goroutine: polls for .go file changes
 	go func() {
 		prev := scanModTimes(dir)
 		ticker := time.NewTicker(500 * time.Millisecond)
@@ -146,7 +146,7 @@ func runDev(args []string) {
 
 		case <-reload:
 			fmt.Println()
-			info("Change detected — rebuilding...")
+			info("Change detected; rebuilding...")
 			killServer(&mu, &server)
 			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y) {
 				success("Reloaded!")
@@ -156,7 +156,7 @@ func runDev(args []string) {
 				// off. Runs behind the restart and prints when ready.
 				contractWatch.Run()
 			} else {
-				fail("Build failed — fixing and saving will retry")
+				fail("Build failed. Fixing and saving will retry")
 			}
 		}
 	}
@@ -254,7 +254,7 @@ func devA11yGate(dir string, noA11y bool) bool {
 		return true
 	}
 	if !buildA11yGate(dir) {
-		fail("Accessibility lint failed — fix the findings above (guided), or run with --no-a11y")
+		fail("Accessibility lint failed. Fix the findings above (guided), or run with --no-a11y")
 		return false
 	}
 	return true
@@ -263,14 +263,14 @@ func devA11yGate(dir string, noA11y bool) bool {
 // buildAndServe builds and starts the server process.
 func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool) bool {
 	// Same posture as `gofastr build`: the static a11y lint gates the
-	// rebuild by default. Failing here is a build failure — the watch
+	// rebuild by default. Failing here is a build failure: the watch
 	// loop keeps running and the next save retries.
 	if !devA11yGate(dir, noA11y) {
 		return false
 	}
 	// Same posture as `gofastr build`: the .ui.go hydration-sandbox lint
 	// (no goroutines/channels/unsafe imports) gates the rebuild too, and is
-	// not skipped by --no-a11y — a violating .ui.go breaks hydration.
+	// not skipped by --no-a11y; a violating .ui.go breaks hydration.
 	if !buildSandboxGate(dir) {
 		return false
 	}
@@ -295,13 +295,13 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	// Start the server. GOFASTR_DEV=1 signals to framework.NewApp +
 	// uihost.New that this process is under `gofastr dev`, so they
 	// auto-wire the livereload SSE endpoint and client script. The
-	// host doesn't need any code change to get browser reload — and
+	// host doesn't need any code change to get browser reload, and
 	// production deployments don't accidentally serve it because
 	// GOFASTR_ENV=production is checked as a kill switch.
 	childEnv := buildDevChildEnv(runtimeIsolation.Env(os.Environ()), addr)
 	runCmd := exec.Command(tmpBin, "--addr", addr)
-	// Run the server in the project dir — the same cwd it gets when run by
-	// hand — so relative paths (sqlite db_url, static dir) resolve against
+	// Run the server in the project dir, the same cwd it gets when run by
+	// hand, so relative paths (sqlite db_url, static dir) resolve against
 	// the project, and the app's own worktree-isolation lookup sees the
 	// project's location rather than wherever `gofastr dev` was launched.
 	runCmd.Dir = dir
@@ -320,7 +320,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 
 	// Wait for it in background so we can detect crashes. The writer is
 	// captured at spawn: this goroutine can outlive the caller, and the
-	// coverage tests swap os.Stdout around buildAndServe — reading the
+	// coverage tests swap os.Stdout around buildAndServe; reading the
 	// global here later would race that restore.
 	go func(stdout *os.File) {
 		if err := runCmd.Wait(); err != nil {

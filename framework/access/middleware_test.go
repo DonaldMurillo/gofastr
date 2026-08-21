@@ -8,7 +8,7 @@ import (
 )
 
 // TestCan_NoPolicyDenies confirms the package-level Can fails closed when no
-// policy is installed — the secure default for an un-wired request.
+// policy is installed, the secure default for an un-wired request.
 func TestCan_NoPolicyDenies(t *testing.T) {
 	if Can(context.Background(), "posts:read") {
 		t.Fatal("Can returned true with no policy in context")

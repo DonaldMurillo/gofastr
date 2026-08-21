@@ -5,7 +5,7 @@
 // time and URL-safe. The first 48 bits are the millisecond
 // timestamp; the remaining 80 bits are random.
 //
-// This implementation is intentionally minimal — it covers what
+// This implementation is intentionally minimal, it covers what
 // the harness needs (generate, parse, validate) and nothing else.
 // Spec: https://github.com/ulid/spec
 package ulid
@@ -179,7 +179,7 @@ func parseClean(s string) (ULID, error) {
 	}
 
 	// Accumulate the 26 base32 chars (130 bits) into a 16-byte big-endian
-	// integer (128 bits with the top 2 bits dropped — they must be zero).
+	// integer (128 bits with the top 2 bits dropped, they must be zero).
 	var u ULID
 	var carry uint32
 	bits := 0

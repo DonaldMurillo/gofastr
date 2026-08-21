@@ -163,7 +163,7 @@ func (r *e2ePostsRepo) BatchDelete(ctx context.Context, ids []string) error {
 	return err
 }
 
-// "Generated" column constants — same shape codegen emits.
+// "Generated" column constants, same shape codegen emits.
 var (
 	e2ePostsTitle = entity.NewStringColumn("title")
 	e2ePostsBody  = entity.NewStringColumn("body")
@@ -336,7 +336,7 @@ func TestTypedRepoContract_BatchOps(t *testing.T) {
 			t.Fatalf("BatchUpdate result: %+v", patched)
 		}
 
-		// BatchDelete — drop A2 + C
+		// BatchDelete: drop A2 + C
 		if err := repo.BatchDelete(ctx, []string{out[0].ID, out[2].ID}); err != nil {
 			t.Fatalf("BatchDelete: %v", err)
 		}

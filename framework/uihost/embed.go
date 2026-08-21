@@ -42,7 +42,7 @@ const maxEmbedThemeParam = 6 << 10
 
 // embedThemeWait bounds how long a request waits for another request already
 // resolving the same customer theme. Resolving one is a decode, an ApplyTokens
-// and a stylesheet compose+hash — sub-millisecond in practice — so this is a
+// and a stylesheet compose+hash, sub-millisecond in practice, so this is a
 // ceiling for a pathological case, not a budget.
 const embedThemeWait = 2 * time.Second
 
@@ -72,7 +72,7 @@ type embedThemeState struct {
 	// Keying on the PARAMETER rather than on the resulting CSS hash is what
 	// makes the cap enforceable: the cap has to be decided before anything is
 	// registered, and the CSS hash is only known after a render. It also makes
-	// the hot path free — a repeat request is one map read, no decode, no
+	// the hot path free: a repeat request is one map read, no decode, no
 	// ApplyTokens, no CSS render.
 	resolved map[string]map[string]string
 	// used stamps each resolved param with a monotonic counter so the cap can
@@ -81,7 +81,7 @@ type embedThemeState struct {
 	tick uint64
 	// pending holds one channel per in-flight reservation, closed by record or
 	// release. A duplicate waits on it instead of resolving the same theme a
-	// second time — the previous approach registered its own copy and released
+	// second time. The previous approach registered its own copy and released
 	// it immediately, which dropped the variant outright when the duplicate got
 	// there before the owner registered: refcount 1 → 0 → deleted, and the
 	// duplicate returned a key nothing held.
@@ -145,7 +145,7 @@ func chanFor(m map[string]chan struct{}, param string) (chan struct{}, bool) {
 // An in-flight reservation is stored as an empty string, and reporting that as
 // a hit is what the duplicate handling in embedThemeKey exists to avoid: the
 // caller would take the empty key and render under the app theme. The window is
-// not small — the entry stays empty for the whole of resolveEmbedTheme, which
+// not small: the entry stays empty for the whole of resolveEmbedTheme, which
 // decodes, validates, composes the stylesheet and hashes it, all of it far too
 // slow to hold a lock across. So a second request for the same theme almost
 // always lands inside it. Reporting a miss sends that request into reserve,
@@ -166,8 +166,8 @@ func (s *embedThemeState) lookup(surface, param string) (string, bool) {
 // It RESERVES rather than merely checking, because the check and the
 // registration cannot be one atomic step: registering renders CSS, which is far
 // too slow to hold a lock across. Without a reservation, N concurrent requests
-// carrying N distinct themes would each see "under the cap" and each register —
-// the cap would bound nothing but the steady state, and a burst is exactly how
+// carrying N distinct themes would each see "under the cap" and each register.
+// The cap would bound nothing but the steady state, and a burst is exactly how
 // an amplification attack arrives.
 //
 // The reservation is the map entry itself, with an empty key meaning
@@ -176,8 +176,8 @@ func (s *embedThemeState) lookup(surface, param string) (string, bool) {
 // consume a slot permanently.
 //
 // At the cap it EVICTS the least recently used variant rather than refusing.
-// The shell route is unauthenticated by design — it has to be, a frame is
-// fetched by a navigation — so an anonymous caller can present as many distinct
+// The shell route is unauthenticated by design. It has to be: a frame is
+// fetched by a navigation. So an anonymous caller can present as many distinct
 // well-formed themes as it likes. Refusing at the cap meant thirty-two requests
 // permanently locked a surface out of its own customer's branding for the life
 // of the process. Eviction keeps the bound (the point of the cap) without
@@ -186,7 +186,7 @@ func (s *embedThemeState) lookup(surface, param string) (string, bool) {
 //
 // dup distinguishes "someone else is already resolving exactly this theme" from
 // "there is no room". Both used to return the same false, and the caller read
-// every false as cap exhaustion — so two visitors opening the same customer's
+// every false as cap exhaustion, so two visitors opening the same customer's
 // page at the same moment on a cold process had one of them silently rendered
 // in the app palette instead of the customer's brand.
 func (s *embedThemeState) reserve(surface, param string, max int) (ok bool, evicted []string, dup bool) {
@@ -203,7 +203,7 @@ func (s *embedThemeState) reserve(surface, param string, max int) (ok bool, evic
 	if _, taken := byParam[param]; taken {
 		// Either resolved (lookup would have hit, so this is a race with a
 		// record) or still in flight. Either way this request does not get a
-		// second slot — but it is asking for a theme that IS being admitted,
+		// second slot, but it is asking for a theme that IS being admitted,
 		// which is not the same as being turned away.
 		return false, nil, true
 	}
@@ -243,7 +243,7 @@ func (s *embedThemeState) lruLocked(surface string, byParam map[string]string) (
 }
 
 // touchLocked stamps a param as most recently used. The counter is monotonic
-// per host, so it needs no clock — which matters because the whole point is to
+// per host, so it needs no clock, which matters because the whole point is to
 // be cheap on a hot path.
 func (s *embedThemeState) touchLocked(surface, param string) {
 	if s.used == nil {
@@ -270,7 +270,7 @@ func (s *embedThemeState) record(surface, param, key string) {
 // EITHER map: caching every rejected parameter would replace one unbounded map
 // with another, since the parameter is attacker-chosen.
 //
-// Both maps, because reserve writes both — resolved directly and used through
+// Both maps, because reserve writes both: resolved directly and used through
 // touchLocked. Cleaning only resolved left the used entry permanent and
 // invisible: eviction never reaches it (lruLocked iterates resolved), the cap
 // never counts it, and the shell route that creates it is unauthenticated, so a
@@ -290,7 +290,7 @@ func (s *embedThemeState) release(surface, param string) {
 
 // mountEmbed registers the embed routes. Called from Mount only when an embed
 // host is configured, so an app that does not hand out pieces of itself serves
-// no embed surface at all — not even a 404 that confirms the feature exists.
+// no embed surface at all, not even a 404 that confirms the feature exists.
 func (ds *UIHost) mountEmbed(r *router.Router) {
 	if ds.embedHost == nil {
 		return
@@ -301,7 +301,7 @@ func (ds *UIHost) mountEmbed(r *router.Router) {
 	r.Post(embedRefreshPath, http.HandlerFunc(ds.handleEmbedRefresh))
 	// GET on the API endpoints is 405, not 404. The exchange spends a
 	// single-use nonce, so it must never be reachable by anything that fires
-	// on navigation, prefetch or an <img> — and a 405 says that plainly
+	// on navigation, prefetch or an <img>, and a 405 says that plainly
 	// instead of looking like a typo.
 	r.Get(embedExchangePath, http.HandlerFunc(methodNotAllowed))
 	r.Get(embedRefreshPath, http.HandlerFunc(methodNotAllowed))
@@ -313,26 +313,26 @@ func (ds *UIHost) mountEmbed(r *router.Router) {
 // handler can read one: Cookie, Authorization and X-API-Key.
 //
 // Embed routes must not HONOUR any of these, and this is how that is enforced:
-// the credentials are removed, so no downstream code — the session reader, the
-// CSRF middleware, a bearer/API-token authenticator, an app's own handler — can
+// the credentials are removed, so no downstream code, the session reader, the
+// CSRF middleware, a bearer/API-token authenticator, an app's own handler, can
 // act on them.
 //
 // It is not a 4xx, and that is deliberate. Normally none arrive at all:
 // SameSite is computed against the top-level browsing context, so inside a
 // customer's frame the session cookie is never sent. But there is one real case
-// where it IS sent — an app at app.acme.com framed by www.acme.com is
+// where it IS sent: an app at app.acme.com framed by www.acme.com is
 // SAME-SITE, so a Strict cookie rides along. Rejecting the request would make
 // same-site embedding impossible; discarding the cookie makes it behave exactly
 // like the cross-site case, which is the behaviour the whole design assumes.
 // Authorization and X-API-Key ride the same channel: a cached HTTP Basic
 // credential (or a Basic-auth proxy in front of the app) and an API-key header
 // a fetch adapter attaches are sent automatically on same-origin subresource
-// fetches from the frame — the exact path the cookie defence exists for — so
+// fetches from the frame, the exact path the cookie defence exists for, so
 // they are stripped for the same reason.
 //
 // This mirrors Host.Middleware's strip in framework/embed/middleware.go so the
-// two surfaces — the uihost embed routes and the app's own authenticated router
-// — cannot drift on what "no ambient credential" means.
+// two surfaces, the uihost embed routes and the app's own authenticated router,
+// cannot drift on what "no ambient credential" means.
 func stripAmbientCredentials(r *http.Request) {
 	r.Header.Del("Cookie")
 	r.Header.Del("Authorization")
@@ -353,12 +353,12 @@ func stripAmbientCredentials(r *http.Request) {
 // only writes it. Listing origins does not widen anything: the browser
 // enforces against the real ancestor chain, so an eleventh origin still
 // cannot frame a surface that lists ten. An empty list fails closed to
-// frame-ancestors 'none' (see withFrameAncestors) — never a wildcard.
+// frame-ancestors 'none' (see withFrameAncestors), never a wildcard.
 func applyEmbedFraming(w http.ResponseWriter, origins []string) {
 	h := w.Header()
 	// X-Frame-Options has no "these specific origins" mode, so it can only be
 	// removed. CSP frame-ancestors is the modern, precise control and browsers
-	// honour it over XFO — which also means a buffering middleware that
+	// honour it over XFO, which also means a buffering middleware that
 	// re-adds XFO downstream cannot break this.
 	h.Del("X-Frame-Options")
 	h.Set("Content-Security-Policy", withFrameAncestors(h.Get("Content-Security-Policy"), origins))
@@ -375,7 +375,7 @@ func applyEmbedFraming(w http.ResponseWriter, origins []string) {
 func withFrameAncestors(policy string, origins []string) string {
 	// An empty origin list is the fail-closed shape: the shell's source
 	// returned nothing usable, so the directive must read 'none' (the same
-	// thing the app default already says) — never a bare "frame-ancestors "
+	// thing the app default already says), never a bare "frame-ancestors "
 	// with no sources, which is a directive a browser could read oddly, and
 	// never a widening to everyone.
 	directive := "frame-ancestors 'none'"
@@ -411,7 +411,7 @@ func withFrameAncestors(policy string, origins []string) string {
 // response.
 //
 // With no OriginSource it is the surface's static allowlist, exactly as
-// before — an app that never configures a source behaves identically to
+// before: an app that never configures a source behaves identically to
 // today. With a source it is ONLY the origins of the customer named in the
 // request, so the directive no longer publishes the whole customer list and
 // one customer's over-large list cannot overflow the response header for
@@ -420,7 +420,7 @@ func withFrameAncestors(policy string, origins []string) string {
 // The customer id is attacker-chosen: it arrives on an unauthenticated
 // navigation, so anyone may request another customer's shell and read THAT
 // customer's origins. That is a smaller leak than today (the whole list on
-// every response) and grants no framing — the browser enforces against the
+// every response) and grants no framing. The browser enforces against the
 // real ancestor chain, and a grant stays bound to the origin it was minted
 // for. Every failure of the source path (unknown customer, source error,
 // over-size list, invalid origin) returns nil, which withFrameAncestors
@@ -432,7 +432,7 @@ func (ds *UIHost) embedShellOrigins(r *http.Request, s *fembed.ResolvedSurface) 
 	}
 	resolved, err := fembed.ResolveCustomerOrigins(r.Context(), src, s.Name, r.URL.Query().Get("customer"))
 	if err != nil {
-		slog.Default().Warn("uihost: embed origin source failed closed — serving frame-ancestors 'none'",
+		slog.Default().Warn("uihost: embed origin source failed closed: serving frame-ancestors 'none'",
 			"surface", s.Name, "err", err)
 		return nil
 	}
@@ -454,7 +454,7 @@ func (ds *UIHost) handleEmbedLoaderJS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 	// no-cache, matching /__gofastr/runtime.js. Neither URL is
 	// content-addressed, so a long max-age would pin a customer's page to a
-	// stale loader — including past a security fix — with no way to bust it.
+	// stale loader, including past a security fix, with no way to bust it.
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write([]byte(js))
 }
@@ -464,7 +464,7 @@ func (ds *UIHost) handleEmbedLoaderJS(w http.ResponseWriter, r *http.Request) {
 //
 // The actions ship in the same response rather than through
 // /__gofastr/actions.js because that endpoint is credentialed and a <script
-// src> is not a fetch — the runtime's wrapper never sees a script tag, so the
+// src> is not a fetch. The runtime's wrapper never sees a script tag, so the
 // grant could not ride along and the frame would 401. Without them
 // __gofastr.register is never called, handlers stays empty for the life of the
 // frame, and the failure is silent in both directions: every data-action-mount
@@ -473,8 +473,8 @@ func (ds *UIHost) handleEmbedLoaderJS(w http.ResponseWriter, r *http.Request) {
 // delegator and then dropped, so the control looks alive and does nothing.
 //
 // This publishes the app's action names to anyone who can fetch this URL. That
-// is the same audience that can already fetch the surface shell — which is
-// unauthenticated by necessity, since a frame is loaded by a navigation — and
+// is the same audience that can already fetch the surface shell, which is
+// unauthenticated by necessity, since a frame is loaded by a navigation, and
 // which already carries the full component catalog. Configuring an embed host
 // is the opt-in.
 func (ds *UIHost) handleEmbedRuntimeJS(w http.ResponseWriter, r *http.Request) {
@@ -515,7 +515,7 @@ type embedGrantResponse struct {
 // embedError writes a deliberately uninformative failure.
 //
 // Every rejection on the exchange path answers the same way. Which check failed
-// — bad signature, expired, already used, wrong origin, unknown surface — is an
+// bad signature, expired, already used, wrong origin, unknown surface, is an
 // oracle: it tells a caller probing with a captured nonce exactly how far they
 // got. The server logs the real reason; the client learns only that it failed.
 func embedError(w http.ResponseWriter, status int, reason string, err error) {
@@ -544,8 +544,8 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if res.Replay {
-		// A replayed exchange is expected once — a prefetched iframe, a
-		// double-mounted loader, a refresh — which is why the exchange is
+		// A replayed exchange is expected once, a prefetched iframe, a
+		// double-mounted loader, a refresh, which is why the exchange is
 		// idempotent at all. It is also the ONLY externally visible sign of
 		// the one failure this feature cannot detect for itself: a nonce
 		// baked into a cached customer page, handing one identity to every
@@ -555,7 +555,7 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 			"surface", res.Surface,
 			"origin", req.Origin,
 			"hint", "one replay is normal (prefetch, refresh); repeated replays mean "+
-				"the page carrying the nonce is cached — mint a fresh nonce per render, "+
+				"the page carrying the nonce is cached: mint a fresh nonce per render, "+
 				"or every visitor of that cached copy acts as the same subject")
 	}
 	ds.writeEmbedGrant(w, res.Grant, res.Expires.UnixMilli())
@@ -563,7 +563,7 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 
 // handleEmbedRefresh rolls a live grant forward.
 //
-// Without it a frame someone leaves open — which is what a dashboard embed IS —
+// Without it a frame someone leaves open, which is what a dashboard embed IS,
 // stops working when its grant expires, and every island RPC starts 401ing with
 // no way back short of reloading the customer's page. The nonce is long spent
 // by then, so the refresh has to be driven by the grant itself.
@@ -601,7 +601,7 @@ func (ds *UIHost) writeEmbedGrant(w http.ResponseWriter, grant string, expiresUn
 // Used by infrastructure endpoints that normally gate on the session cookie. A
 // frame has no cookie by construction, so without this its requests are either
 // refused (cross-site) or answered on the strength of an unrelated ambient
-// session (same-site) — and "which of those happens" is not something the
+// session (same-site), and "which of those happens" is not something the
 // feature should leave to the viewer's browser state.
 //
 // It returns the grant rather than a bare bool because a caller that accepts an
@@ -631,7 +631,7 @@ func (ds *UIHost) embedGrantOK(r *http.Request) bool {
 
 // embedSurfacePath returns the app path a grant's surface renders.
 //
-// Empty when the surface has gone away since the grant was minted — the caller
+// Empty when the surface has gone away since the grant was minted. The caller
 // must then treat the request as unscoped rather than as unrestricted.
 func (ds *UIHost) embedSurfacePath(g fembed.Grant) string {
 	if ds.embedHost == nil {
@@ -668,7 +668,7 @@ func (ds *UIHost) resolveEmbedSurface(w http.ResponseWriter, r *http.Request) (*
 // It is deliberately content-free: a head, one empty root element and the embed
 // runtime. The surface's actual content cannot be server-rendered into it,
 // because this document is fetched by a navigation and a navigation can carry
-// no credential — the frame is anonymous until the postMessage handshake
+// no credential. The frame is anonymous until the postMessage handshake
 // completes. boot-embed fetches the content as the granted subject and injects
 // it.
 //
@@ -691,7 +691,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	}
 	applyEmbedFraming(w, ds.embedShellOrigins(r, s))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The shell carries no identity, so it would be safe to cache — but it
+	// The shell carries no identity, so it would be safe to cache, but it
 	// also carries the component catalog, whose per-component hashes change on
 	// every deploy. A cached shell would demand-load component CSS at hashes
 	// the new build no longer serves. no-cache, like every other
@@ -705,7 +705,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 		"refresh":  embedRefreshPath,
 		// The app route the surface renders. Anything inside the frame that
 		// asks the server "what belongs on this page" has to name THIS, not the
-		// shell's own URL — a widget scoped with .Pages("/reports") is not
+		// shell's own URL: a widget scoped with .Pages("/reports") is not
 		// scoped to /__gofastr/embed/reports.
 		"path": s.Path(),
 	}
@@ -737,7 +737,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<script src="/__gofastr/color-scheme.js"></script>` + "\n")
 	fmt.Fprintf(&b, `<link rel="stylesheet" href="%s">`+"\n", stdhtml.EscapeString(appCSS))
 	// The component catalog and the runtime module manifest, as inert
-	// <script type="application/json"> blocks — the same shape a normal page
+	// <script type="application/json"> blocks, the same shape a normal page
 	// ships, and the same reason: the kernel's CSS scanner resolves a
 	// data-fui-comp marker to a stylesheet URL through the catalog, and
 	// loadModule cache-busts through the manifest.
@@ -745,7 +745,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	// Without the catalog the frame renders every component's MARKUP with none
 	// of its CSS: cards lose their surface, grids collapse to a single column,
 	// stat cards become bare paragraphs. The failure is invisible to a DOM
-	// assertion — the elements are all present — and obvious in a screenshot.
+	// assertion, the elements are all present, and obvious in a screenshot.
 	if catalog := catalogJSONScriptFor(ds, shellTheme, variantKey); catalog != "" {
 		b.WriteString(catalog)
 		b.WriteByte('\n')
@@ -756,8 +756,8 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	}
 	b.WriteString("</head>\n<body>\n")
 	b.WriteString(`<div id="gofastr-embed-root" data-fui-embed-state="loading"></div>` + "\n")
-	// The embed runtime carries the app's compiled component actions with it —
-	// see handleEmbedRuntimeJS. A separate <script src="/__gofastr/actions.js">
+	// The embed runtime carries the app's compiled component actions with it.
+	// See handleEmbedRuntimeJS. A separate <script src="/__gofastr/actions.js">
 	// cannot work here: a script tag is not a fetch, so the runtime's wrapper
 	// never sees it and it would arrive without the grant.
 	b.WriteString(`<script src="` + embedRuntimePath + `"></script>` + "\n")
@@ -771,7 +771,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 //
 // The tokens arrive base64url-encoded in the frame URL rather than through the
 // handshake, so the shell can link the right stylesheet in its first response.
-// They are not secret — they are the customer's brand colours — and putting
+// They are not secret: they are the customer's brand colours, and putting
 // them in the URL is what avoids rendering the frame in the wrong palette and
 // then swapping it.
 //
@@ -793,7 +793,7 @@ func (ds *UIHost) embedThemeKey(s *fembed.ResolvedSurface, encoded string) strin
 	}
 	// Bound the parameter BEFORE it can become a map key. resolveEmbedTheme
 	// applies the same limit, but it runs after the reservation is recorded, so
-	// an oversize value was already stored — and the only bound on its length
+	// an oversize value was already stored, and the only bound on its length
 	// there was the server's request-line limit, three orders of magnitude
 	// larger than this one.
 	if len(encoded) > maxEmbedThemeParam {
@@ -818,8 +818,8 @@ func (ds *UIHost) embedThemeKey(s *fembed.ResolvedSurface, encoded string) strin
 		// rather than resolving a second copy.
 		//
 		// Resolving independently and releasing the extra registration looked
-		// equivalent — the key is a content address, so both land on the same
-		// one — but it is not: when the duplicate got there FIRST, its register
+		// equivalent, the key is a content address, so both land on the same
+		// one, but it is not: when the duplicate got there FIRST, its register
 		// took the refcount 0→1 and its release took it 1→0, deleting the
 		// variant before the owner had registered anything. The duplicate then
 		// returned a key nothing held, and the frame rendered under the app
@@ -835,7 +835,7 @@ func (ds *UIHost) embedThemeKey(s *fembed.ResolvedSurface, encoded string) strin
 		return ""
 	}
 	if !admitted {
-		slog.Default().Warn("uihost: embed theme variants all in flight — rendering under the app theme",
+		slog.Default().Warn("uihost: embed theme variants all in flight: rendering under the app theme",
 			"surface", s.Name, "max", max)
 		return ""
 	}
@@ -918,7 +918,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// surface and the URL names one too; they have to agree.
 	//
 	// The answer is 404, matching an unknown name exactly. A 403 here would
-	// have told any grant holder which surface names are real — the same
+	// have told any grant holder which surface names are real, the same
 	// enumeration the absence of an index endpoint is meant to prevent.
 	if grant.Surface != s.Name {
 		embedError(w, http.StatusNotFound, "grant is for another surface", nil)
@@ -932,7 +932,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	//
 	// The two directions fail differently and both are wrong. A screen writing
 	// `if _, embedded := GrantFromContext(ctx); !embedded { firstPartyOnly() }`
-	// fails OPEN — ok=false is documented as "an ordinary first-party request",
+	// fails OPEN: ok=false is documented as "an ordinary first-party request",
 	// so the frame renders exactly what it must not. A screen gating on
 	// HasScope fails closed, but inconsistently: the same component's island
 	// goes through Host.Middleware, which does install the grant, so the section
@@ -941,7 +941,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// Clear any identity the app's own middleware installed before this
 	// handler ran.
 	//
-	// stripAmbientCredentials runs here, inside the handler — but session middleware runs
+	// stripAmbientCredentials runs here, inside the handler, but session middleware runs
 	// BEFORE it, on the app's router, and this package does not control that
 	// ordering. So a same-site framing (app.acme.com inside www.acme.com, where
 	// a Strict cookie really is sent) could otherwise reach this point with a
@@ -1020,9 +1020,9 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The grant is bound to exactly one origin (the one it was minted for, and
-	// a verified grant's Origin is never empty — see MintNonce/VerifyGrant in
+	// a verified grant's Origin is never empty; see MintNonce/VerifyGrant in
 	// framework/embed/token.go), so the directive names exactly the framer this
-	// response was minted for — not the surface's whole static allowlist. The
+	// response was minted for, not the surface's whole static allowlist. The
 	// shell already stopped publishing the list (see embedShellOrigins); this
 	// closes the same leak on the content response, the very next answer of the
 	// same handshake.

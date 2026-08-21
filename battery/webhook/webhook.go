@@ -123,7 +123,7 @@ type ReplayableStore interface {
 	// ResetDelivery returns a dead delivery to pending so the worker retries
 	// it (attempts + last error cleared, due immediately). Idempotent: it MUST
 	// only touch StatusDead rows, so resetting a non-dead/unknown delivery is a
-	// no-op — never resurrecting an in-flight or already-delivered one.
+	// no-op, never resurrecting an in-flight or already-delivered one.
 	ResetDelivery(ctx context.Context, id string) error
 }
 
@@ -164,7 +164,7 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 // 10s per-request timeout, no redirect following, and a dial-time SSRF
 // guard (net.Dialer.Control re-checks the resolved IP at connect time
 // to defeat DNS rebinding) unless AllowPrivateNetworks is set. A
-// caller-supplied client is used as-is — it gets no dial-time guard.
+// caller-supplied client is used as-is, it gets no dial-time guard.
 //
 // PollInterval controls how often the worker looks for due deliveries.
 // Default 1 second.
@@ -174,13 +174,13 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 //
 // AllowPrivateNetworks opts-out of the SSRF guard that rejects
 // subscriber URLs targeting RFC1918, loopback, link-local, or cloud
-// metadata endpoints. Default false — required production posture.
+// metadata endpoints. Default false, required production posture.
 // Tests and explicit dev wiring may set true.
 //
 // SignatureTolerance bounds how far receivers may consider the
 // signed timestamp drifting from "now" when verifying. The sender
 // embeds the timestamp into the signature; this field is purely
-// documentation here — receivers pass it to VerifyTimestamped.
+// documentation here, receivers pass it to VerifyTimestamped.
 //
 // LeasePeriod controls how long a claimed delivery is hidden from
 // other workers when the store implements LeasedStore. Must be
@@ -196,7 +196,7 @@ type Options struct {
 	LeasePeriod          time.Duration
 
 	// Logger receives operational warnings the worker can't surface to a
-	// caller — chiefly a delivery-state UPDATE failing after an attempt. A DB
+	// caller, chiefly a delivery-state UPDATE failing after an attempt. A DB
 	// blip there leaves the row with its pre-attempt status, so the next tick
 	// re-delivers (at-least-once) with zero signal that the state write was
 	// lost. Default: log.Printf. Mirrors InboundConfig.Logger on IngestHandler;
@@ -272,7 +272,7 @@ func New(s Store, opts Options) *Manager {
 		}
 	} else if !opts.AllowPrivateNetworks {
 		// A caller-supplied client (proxy, tracing, custom timeout) must
-		// not silently drop the SSRF guard — that reopens loopback /
+		// not silently drop the SSRF guard, that reopens loopback /
 		// RFC1918 / 169.254.169.254 via DNS rebinding for the most
 		// common customizations. Wrap with a per-request target check
 		// that leaves the caller's transport (proxy, tunnel, custom
@@ -410,7 +410,7 @@ func (m *Manager) Start() {
 
 // Stop signals the worker to exit, cancels any in-flight HTTP attempt
 // via the worker's derived context, then waits for the worker to
-// return. If ctx fires first, returns ctx.Err — but the cancellation
+// return. If ctx fires first, returns ctx.Err, but the cancellation
 // of in-flight HTTP requests has already been signaled. Safe to call
 // more than once.
 func (m *Manager) Stop(ctx context.Context) error {
@@ -452,7 +452,7 @@ func (m *Manager) runWorker() {
 // When the store implements LeasedStore the worker uses the
 // claim-and-lease path so concurrent Manager instances against the
 // same SQL store don't double-deliver. Stores without that interface
-// fall back to plain DueDeliveries — fine for single-instance setups.
+// fall back to plain DueDeliveries, fine for single-instance setups.
 func (m *Manager) tick(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -547,7 +547,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 // saveDelivery persists a delivery's post-attempt state, logging (never
 // swallowing) a store error. A lost state write leaves the row at its
 // pre-attempt status, so the next tick re-delivers (at-least-once) with no
-// signal that the prior attempt ever happened — the only correct response is
+// signal that the prior attempt ever happened, the only correct response is
 // to make the loss observable via the configured Logger. The attempt's HTTP
 // side-effect already occurred, so there is nothing else to do here.
 //
@@ -662,7 +662,7 @@ func cloneBytes(b []byte) []byte {
 }
 
 // newID returns a fresh 32-character hex identifier. Panics on entropy
-// failure — that's an operating-system-level fault and the manager
+// failure, that's an operating-system-level fault and the manager
 // must not silently mint colliding all-zero IDs.
 func newID() string {
 	var b [16]byte

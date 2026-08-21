@@ -36,7 +36,7 @@ func main() {
 	// are: the yml additionally declares mcp, indices, cursor pagination, a
 	// users.avatar field, and display properties this file omits, because those
 	// drive generated surfaces that `go run` does not build. What DOES have to
-	// match is the EXPOSURE — which entity is readable and writable by whom.
+	// match is the EXPOSURE, which entity is readable and writable by whom.
 	// That is the half that drifted once, leaving this runnable twin accepting
 	// anonymous deletes the blueprint had already closed, so keep the
 	// Exposure blocks below in step with gofastr.yml.
@@ -44,7 +44,7 @@ func main() {
 
 	// --- Custom endpoints ---
 
-	// GET /posts/published — filter published posts
+	// GET /posts/published, filter published posts
 	app.Router().Get("/posts/published", postsByStatus(app, "published"))
 	searchIndex := search.NewMemory()
 	app.Router().Get("/posts/search", searchPosts(searchIndex))
@@ -69,7 +69,7 @@ func main() {
 func registerEntities(app *framework.App) {
 	app.Entity("users", framework.EntityConfig{Scope:
 	// email is PII: accounts are staff-managed records, so every operation
-	// is RBAC-gated (fail-closed 403 for anonymous) — hard rule #6. This
+	// is RBAC-gated (fail-closed 403 for anonymous), hard rule #6. This
 	// mirrors the access: block in the blueprint twin (gofastr.yml).
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
 		Read:   "users:read",
@@ -87,7 +87,7 @@ func registerEntities(app *framework.App) {
 		},
 	})
 	app.Entity("posts", framework.EntityConfig{Pagination:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.PaginationConfig{}, Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
 		// Mirrors gofastr.yml: readable by anyone, every write gated.
 		// Public: true would also grant anonymous create/update/delete.
@@ -105,9 +105,9 @@ func registerEntities(app *framework.App) {
 		},
 	})
 	app.Entity("comments", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
-		// Mirrors gofastr.yml — see the posts entity above.
+		// Mirrors gofastr.yml. See the posts entity above.
 		Read: "", Create: "comments:write", Update: "comments:write", Delete: "comments:admin",
 	}}, Fields: []schema.Field{
 		{Name: "body", Type: schema.Text, Required: true},

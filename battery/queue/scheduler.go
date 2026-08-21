@@ -24,7 +24,7 @@ type ScheduledJob struct {
 
 	// Lane, Priority, and MaxAttempts are carried into every Job fired by
 	// this schedule. They default to "", 0, and 0 (which enqueueWith
-	// resolves to 3) — matching the pre-options behaviour for callers that
+	// resolves to 3), matching the pre-options behaviour for callers that
 	// never set them.
 	Lane        string `json:"lane,omitempty"`
 	Priority    int    `json:"priority"`
@@ -159,7 +159,7 @@ func (b *ScheduleBuilder) Priority(p int) *ScheduleBuilder {
 }
 
 // MaxAttempts bounds the retry ceiling carried into every Job fired by this
-// schedule. Zero (the default) lets Enqueue resolve it to 3 — matching the
+// schedule. Zero (the default) lets Enqueue resolve it to 3, matching the
 // pre-options behaviour.
 func (b *ScheduleBuilder) MaxAttempts(n int) *ScheduleBuilder {
 	b.maxAttempts = n
@@ -213,7 +213,7 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 // Start begins the scheduling loop. It blocks until ctx is cancelled.
 //
 // The loop re-reads the schedule set (under lock) on every tick, so jobs
-// registered AFTER Start still fire — the natural wiring is "start
+// registered AFTER Start still fire, the natural wiring is "start
 // subsystems, then register jobs", and an empty-at-Start scheduler that
 // exited would silently drop everything registered later. The tick
 // cadence adapts to the finest live interval each pass, so adding a

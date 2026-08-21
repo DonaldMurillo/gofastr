@@ -97,7 +97,7 @@ func slug(s string) string {
 // SectionConfig configures a labelled content section.
 //
 // ID behavior:
-//   - If ID is set, it's used verbatim — caller controls the anchor.
+//   - If ID is set, it's used verbatim. Caller controls the anchor.
 //   - If ID is empty and Heading is set, the section auto-slugs the
 //     heading as its id ("Forms" → id="forms"). This is the typical
 //     case for in-page navs / scrollspy rails where the rail's
@@ -107,7 +107,7 @@ func slug(s string) string {
 //     a generic aria-label.
 type SectionConfig struct {
 	// Eyebrow is an optional short decorative kicker rendered above/around
-	// the heading — e.g. a section number ("01 / what it generates"). It is
+	// the heading, e.g. a section number ("01 / what it generates"). It is
 	// marked aria-hidden because it duplicates the heading for SR users.
 	Eyebrow     string
 	Heading     string // optional <h2> heading
@@ -133,7 +133,7 @@ type SectionConfig struct {
 // Heading is provided, an h2 + aria-labelledby wires up the
 // accessibility name; otherwise a generic aria-label is required.
 // Without a heading or label this would silently produce an
-// inaccessible region — Section panics in that case to push callers
+// inaccessible region. Section panics in that case to push callers
 // toward the right shape.
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	ctx := cfg.Ctx
@@ -177,7 +177,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 
 	sectionID := cfg.ID
 	if sectionID == "" && cfg.Heading != "" {
-		// Auto-anchor — typical use is in-page rails / scrollspy where the
+		// Auto-anchor: typical use is in-page rails / scrollspy where the
 		// rail's href="#<slug>" should land on this section without the
 		// caller having to repeat the slug.
 		sectionID = slug(cfg.Heading)
@@ -249,7 +249,7 @@ func FormField(cfg FormFieldConfig) render.HTML {
 	// When the field is in an error state, inject aria-invalid +
 	// aria-describedby into the input's first open tag so SR users
 	// hear "invalid entry" and the error message text. Without this
-	// the visual error (red border) is the only signal — fails
+	// the visual error (red border) is the only signal. It fails
 	// WCAG 1.3.1 / 4.1.2 / 1.4.1.
 	input := cfg.Input
 	if cfg.Error != "" {
@@ -274,7 +274,7 @@ func FormField(cfg FormFieldConfig) render.HTML {
 }
 
 // injectAriaInvalid splices ` aria-invalid="true" aria-describedby="<id>"`
-// into the first open tag of the input HTML. Idempotent — won't
+// into the first open tag of the input HTML. Idempotent: won't
 // add duplicates.
 func injectAriaInvalid(input render.HTML, errID string) render.HTML {
 	safe := render.Escape(errID)
@@ -374,7 +374,7 @@ func findFirstTagClose(s string) int {
 }
 
 // leadingAttrName extracts the attribute name from an attrs string
-// like ` aria-invalid="true" aria-describedby="x"` — returns
+// like ` aria-invalid="true" aria-describedby="x"`. Returns
 // "aria-invalid". Used for idempotence: if a tag already has the
 // named attribute, skip injection.
 func leadingAttrName(attrs string) string {
@@ -494,7 +494,7 @@ type ButtonConfig struct {
 // maps to .ui-button--<variant> in the registered ui-button CSS;
 // the framework's styled component handles the visual rules.
 //
-// Authors never reach for raw class strings — pick a variant.
+// Authors never reach for raw class strings. Pick a variant.
 // Unknown variants panic at render time so typos surface
 // immediately rather than silently rendering an unstyled button.
 // Custom brand variants/sizes join the set via RegisterButtonVariant /
@@ -532,7 +532,7 @@ func Button(cfg ButtonConfig) render.HTML {
 // ─── LinkButton ─────────────────────────────────────────────────────
 
 // LinkButtonConfig configures a button-styled <a> link. Use this when
-// the affordance navigates (changes URL) — CTAs like "Get started",
+// the affordance navigates (changes URL): CTAs like "Get started",
 // "Read the docs". For in-page actions that don't change URL, use
 // Button instead.
 type LinkButtonConfig struct {
@@ -544,7 +544,7 @@ type LinkButtonConfig struct {
 	// rel="noopener noreferrer". Use for off-site links (docs to
 	// GitHub, pkg.go.dev, etc.). The runtime's SPA-nav interceptor
 	// naturally skips http(s):// hrefs (they're not "internal"), so
-	// External does not also need to "suppress SPA nav" — the
+	// External does not also need to "suppress SPA nav": the
 	// underlying SPA router already does the right thing.
 	External bool
 	// Icon, when set, renders the named registered icon (see
@@ -557,7 +557,7 @@ type LinkButtonConfig struct {
 }
 
 // LinkButton renders a button-styled anchor. Same variant/size grammar
-// as Button — the visual styling is shared via the registered ui-button
+// as Button. The visual styling is shared via the registered ui-button
 // CSS (class-based, not tag-scoped). The difference is semantic:
 // <a> for navigation, <button> for actions. Screen readers, "open in
 // new tab", and SPA push-state nav all rely on the right tag choice.
@@ -566,7 +566,7 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 		panic("ui: LinkButton requires Label")
 	}
 	if cfg.Href == "" {
-		panic("ui: LinkButton requires Href — use Button for non-navigating actions")
+		panic("ui: LinkButton requires Href. Use Button for non-navigating actions")
 	}
 	// Refuse dangerous schemes at render time. The runtime's SPA
 	// navigator screens these too, but a direct anchor click bypasses
@@ -611,13 +611,13 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 }
 
 // isUnsafeScheme rejects the canonical XSS vectors for `href`/`src`
-// attributes — javascript:, vbscript:, and non-image data: URIs. Used
+// attributes: javascript:, vbscript:, and non-image data: URIs. Used
 // by LinkButton (render-time guard) and shadowed by the runtime's
 // _isUnsafeSignalUrl for programmatic SPA navigation.
 func isUnsafeScheme(href string) bool {
-	// Browsers strip ASCII whitespace and control bytes from a URL —
+	// Browsers strip ASCII whitespace and control bytes from a URL,
 	// including bytes INTERIOR to the scheme token ("java\tscript:" is
-	// resolved as "javascript:") — before scheme resolution. A leading-
+	// resolved as "javascript:"), before scheme resolution. A leading-
 	// only strip therefore misses "java\tscript:". Remove every ASCII
 	// control byte and space anywhere in the string before matching, so
 	// the deny-list sees the same scheme the browser will.
@@ -761,7 +761,7 @@ type CalloutConfig struct {
 }
 
 // Callout renders a persistent info/warning/error block. Distinct from
-// Toast / Notification (ephemeral) — Callouts live inline with content.
+// Toast / Notification (ephemeral). Callouts live inline with content.
 //
 // Composition: html.Aside (which auto-applies role=complementary
 // and requires an aria-label, here derived from Title or variant).
@@ -853,7 +853,7 @@ type StatCardConfig struct {
 	Class string
 }
 
-// StatCard renders a metric card — label, value, optional trend pill.
+// StatCard renders a metric card: label, value, optional trend pill.
 func StatCard(cfg StatCardConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: StatCard requires Label")
@@ -884,7 +884,7 @@ func StatCard(cfg StatCardConfig) render.HTML {
 // ─── Avatar ─────────────────────────────────────────────────────────
 
 // AvatarSize is one of a small set of pre-defined avatar sizes.
-// Sizes are CSS classes — no inline styles — so a strict CSP that
+// Sizes are CSS classes, not inline styles, so a strict CSP that
 // blocks `style="…"` attributes still works.
 type AvatarSize string
 
@@ -898,8 +898,8 @@ const (
 // AvatarStatus is a presence indicator drawn as a small dot in the
 // avatar's lower corner. Empty renders no dot. Colors come from the
 // status tokens so a themed app recolors them for free. This is the
-// visual half of presence; the framework does not track who is online
-// — an app feeds the status from its own source (see the presence
+// visual half of presence; the framework does not track who is online:
+// an app feeds the status from its own source (see the presence
 // note in framework/docs/content/interactive-patterns.md).
 type AvatarStatus string
 
@@ -971,7 +971,7 @@ func Avatar(cfg AvatarConfig) render.HTML {
 
 // avatarStatusDot renders the presence dot. It carries role="img" +
 // aria-label so the status is announced (a bare aria-label on a span is
-// rejected by axe — the implicit role doesn't accept a name), matching
+// rejected by axe: the implicit role doesn't accept a name), matching
 // the AvatarGroup overflow-chip pattern.
 func avatarStatusDot(status AvatarStatus, label string) render.HTML {
 	if label == "" {
@@ -1019,7 +1019,7 @@ type CodeBlockConfig struct {
 	// Lines carries pre-rendered (e.g. syntax-highlighted) logical source
 	// lines. When non-empty it takes precedence over Code; each entry is
 	// wrapped as one line so LineNumbers can number it. Callers own the
-	// per-token markup — pass already-escaped, trusted HTML.
+	// per-token markup: pass already-escaped, trusted HTML.
 	Lines []render.HTML
 	// Filename, when set, renders a chrome header (status dot + filename)
 	// above the body and switches the wrapper to a framed container.
@@ -1031,7 +1031,7 @@ type CodeBlockConfig struct {
 	// LineNumbers renders a left gutter numbering each line.
 	LineNumbers bool
 	// Scroll caps the body height (var(--ui-code-block-scroll-max,
-	// 26rem)) and makes it scroll vertically — for showing a long file in
+	// 26rem)) and makes it scroll vertically, for showing a long file in
 	// full without letting it dominate the page. Implies the framed
 	// container.
 	Scroll bool
@@ -1058,7 +1058,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	}
 
 	// Body <pre>. WCAG 2.1.1: tabindex=0 so keyboard users can pan the
-	// horizontal scroll. (role=region is intentionally avoided — it would
+	// horizontal scroll. (role=region is intentionally avoided. It would
 	// make every block a landmark and fail landmark-unique.)
 	bodyID := cfg.ID
 	if framed && cfg.ShowCopy && bodyID == "" {
@@ -1153,7 +1153,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 //	ui.SkipLink(ui.SkipLinkConfig{Target: "main-content"})
 //	// … then on the main element:
 //	// <main id="main-content"> ...
-//	// Or with no Target — defaults to "main-content".
+//	// Or with no Target: defaults to "main-content".
 //	ui.SkipLink(ui.SkipLinkConfig{})
 type SkipLinkConfig struct {
 	// Target is the id of the element to jump to.

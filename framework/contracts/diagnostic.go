@@ -17,7 +17,7 @@ type TextEdit struct {
 	New   string `json:"new"`
 	// Old is the text this edit expects to find at [Start, End). When
 	// set, [Report.Apply] refuses the edit if the file no longer carries
-	// it — a file edited since analysis can pass every bounds check and
+	// it, a file edited since analysis can pass every bounds check and
 	// still put the offsets in the middle of something else entirely.
 	// Leave it empty only for pure insertions (Start == End), where there
 	// is nothing to expect.
@@ -25,7 +25,7 @@ type TextEdit struct {
 }
 
 // SuggestedFix is a mechanical edit an analyzer is willing to apply. Only
-// attach one when the rewrite is unambiguous — "add the missing Alt: \"\"
+// attach one when the rewrite is unambiguous: "add the missing Alt: \"\"
 // field", not "restructure this handler". Anything requiring a judgment
 // call belongs in Rule.Fix as prose.
 type SuggestedFix struct {
@@ -62,7 +62,7 @@ type Diagnostic struct {
 	// EndLine bounds a multi-line finding. Zero means single-line.
 	EndLine int `json:"endLine,omitempty"`
 
-	// Message is the instance-specific statement — it names the actual
+	// Message is the instance-specific statement: it names the actual
 	// route, field, or import, where Rule.Summary states the class.
 	Message string `json:"message"`
 	// Suggestion is the instance-specific remedy, naming the concrete
@@ -71,11 +71,11 @@ type Diagnostic struct {
 	// Snippet is the offending source line, trimmed.
 	Snippet string `json:"snippet,omitempty"`
 	// RedactSnippet stops [Run] from filling Snippet in from the source.
-	// Set by rules whose whole subject is a value that must not be echoed
-	// — a report that prints the committed credential back into a
+	// Set by rules whose whole subject is a value that must not be echoed,
+	// a report that prints the committed credential back into a
 	// terminal, a CI log, and a SARIF artifact has made things worse.
 	RedactSnippet bool `json:"-"`
-	// Evidence carries analyzer-specific structured detail — the route
+	// Evidence carries analyzer-specific structured detail: the route
 	// pattern, the two conflicting registrations, the import edge. Agents
 	// read this; the text reporter ignores it.
 	Evidence map[string]string `json:"evidence,omitempty"`
@@ -102,7 +102,7 @@ func (d Diagnostic) Location() string {
 }
 
 // key is the identity used to deduplicate diagnostics. Two analyzers
-// reaching the same conclusion about the same place should report once —
+// reaching the same conclusion about the same place should report once:
 // this happens legitimately, e.g. when the routing and permissions
 // analyzers both look at an unguarded mutating route.
 func (d Diagnostic) key() string {

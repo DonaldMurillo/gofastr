@@ -77,7 +77,7 @@ func TestWriteScreensGoNoEntityVsEntity(t *testing.T) {
 	covT_capStdout(t, func() { writeScreensGo(d2, false) })
 
 	// The entity hint is prose. It must land in the Section description,
-	// never inside the shell CodeBlock — a sentence concatenated onto a
+	// never inside the shell CodeBlock; a sentence concatenated onto a
 	// command renders as a nonsense line a new user may copy-paste.
 	b, err := os.ReadFile(filepath.Join(d2, "screens.go"))
 	if err != nil {

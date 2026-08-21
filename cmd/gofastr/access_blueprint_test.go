@@ -93,7 +93,7 @@ func TestRegisterEmitsAccessLiteral(t *testing.T) {
 		t.Fatalf("renderGeneratedProject: %v", err)
 	}
 	// The Access literal lives in the entity's own file (the registration
-	// func), not register.go — register.go is the entity-agnostic seam.
+	// func), not register.go; register.go is the entity-agnostic seam.
 	var entityFile string
 	for _, f := range files {
 		if f.name == "posts.go" {

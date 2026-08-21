@@ -1,7 +1,7 @@
 package main
 
 // =============================================================================
-// /seo + /seo-bundle — demonstrates every per-page SEO surface the framework
+// /seo + /seo-bundle, demonstrates every per-page SEO surface the framework
 // exposes. Ported from examples/website. The value is in the interface
 // implementations below (ScreenCanonical / ScreenHreflangs / ScreenSchema /
 // ScreenSEO); the uihost auto-emits the matching <head> tags. View-source on
@@ -60,7 +60,7 @@ func (s *SEOScreen) Render() render.HTML {
 		container(
 			html.Heading(html.HeadingConfig{Level: 1}, render.Text("SEO")),
 			html.Paragraph(html.TextConfig{Class: "lede"}, render.Text(
-				"Per-page SEO is wired through four small interfaces — implement the ones you need, skip the rest. The uihost auto-emits the right tags in <head>. View-source on this page to see them.")),
+				"Per-page SEO is wired through four small interfaces. Implement the ones you need, skip the rest. The uihost auto-emits the right tags in <head>. View-source on this page to see them.")),
 
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Per-page interfaces")),
 			html.UnorderedList(html.ListConfig{},
@@ -70,7 +70,7 @@ func (s *SEOScreen) Render() render.HTML {
 				li(codeText("uihost.ScreenSchema"), render.Text(" → one "), codeText(`<script type="application/ld+json">`), render.Text(" per item. This page emits an Article + a BreadcrumbList.")),
 			),
 
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Bundle alternative — ScreenSEO")),
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Bundle alternative: ScreenSEO")),
 			html.Paragraph(html.TextConfig{},
 				render.Text("Prefer one method over four? "), codeText("ScreenSEO()"),
 				render.Text(" bundles description, canonical, hreflangs, robots, OG, Twitter Card, and JSON-LD into a single declaration. "),
@@ -79,8 +79,8 @@ func (s *SEOScreen) Render() render.HTML {
 
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Sitewide endpoints")),
 			html.UnorderedList(html.ListConfig{},
-				li(html.Link(html.LinkConfig{Href: "/sitemap.xml", Text: "/sitemap.xml"}), render.Text(" — uihost.WithSitemap. Lists every reachable route.")),
-				li(html.Link(html.LinkConfig{Href: "/robots.txt", Text: "/robots.txt"}), render.Text(" — uihost.WithRobots. References the sitemap when both are configured.")),
+				li(html.Link(html.LinkConfig{Href: "/sitemap.xml", Text: "/sitemap.xml"}), render.Text(": uihost.WithSitemap. Lists every reachable route.")),
+				li(html.Link(html.LinkConfig{Href: "/robots.txt", Text: "/robots.txt"}), render.Text(": uihost.WithRobots. References the sitemap when both are configured.")),
 			),
 		),
 	)
@@ -127,13 +127,13 @@ func (s *SEOBundleScreen) Render() render.HTML {
 	return html.Section(html.SectionConfig{Class: "doc-page", Label: "SEO bundle"},
 		container(
 			html.Link(html.LinkConfig{Href: "/seo", Text: "← SEO"}),
-			html.Heading(html.HeadingConfig{Level: 1}, render.Text("SEO bundle — ScreenSEO")),
+			html.Heading(html.HeadingConfig{Level: 1}, render.Text("SEO bundle: ScreenSEO")),
 			html.Paragraph(html.TextConfig{Class: "lede"}, render.Text(
-				"Same tags as the per-concern interfaces — packed into one method. View-source to see every tag the bundle emitted in <head>.")),
+				"Same tags as the per-concern interfaces, packed into one method. View-source to see every tag the bundle emitted in <head>.")),
 
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Bundle vs per-concern")),
 			html.UnorderedList(html.ListConfig{},
-				li("Empty bundle fields fall through to per-concern interfaces — so a screen can mix both."),
+				li("Empty bundle fields fall through to per-concern interfaces, so a screen can mix both."),
 				li("Bundle fields ALWAYS win when non-empty. Don't implement both for the same field expecting per-concern to take precedence."),
 				li("Returning zero-value SEO opts the screen out of all per-page emission."),
 			),

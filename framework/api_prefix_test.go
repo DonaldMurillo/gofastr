@@ -55,8 +55,8 @@ func TestAPIPrefix_MountsEntityRoutesUnderPrefix(t *testing.T) {
 	})
 }
 
-// TestAPIPrefix_DefaultIsBareMount confirms the default (no prefix) is unchanged
-// — entities mount at /<table>, so this is not a breaking change.
+// TestAPIPrefix_DefaultIsBareMount confirms the default (no prefix) is unchanged.
+// Entities mount at /<table>, so this is not a breaking change.
 func TestAPIPrefix_DefaultIsBareMount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())

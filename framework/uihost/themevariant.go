@@ -9,7 +9,7 @@ import (
 )
 
 // Theme variants let one process serve app.css under more than one palette
-// without mutating App.Theme — which is process-global and shared across
+// without mutating App.Theme, which is process-global and shared across
 // concurrent requests, so writing a per-request palette there would leak one
 // visitor's theme into another's page.
 //
@@ -31,7 +31,7 @@ import (
 //     unrepresentable rather than merely filtered.
 //   - Component CSS is content-addressed per theme (registry.VersionFor). If a
 //     request could mint an arbitrary theme it could mint unbounded distinct
-//     hashes, each a guaranteed cache miss plus a fresh render — a cheap
+//     hashes, each a guaranteed cache miss plus a fresh render, a cheap
 //     amplification attack. A closed registry bounds the variant space to what
 //     the host actually registered.
 //
@@ -50,9 +50,9 @@ type themeVariants struct {
 // RegisterThemeVariant makes t servable as a theme variant and returns the key
 // a themed surface puts in its app.css URL.
 //
-// # The key addresses the WHOLE stylesheet, not just the palette
+// # The key addresses the WHOLE stylesheet, not only the palette
 //
-// The served response is not the theme's :root block alone — it also carries
+// The served response is not the theme's :root block alone. It also carries
 // framework built-ins, layout CSS, intercept CSS, global theme overrides,
 // WithCustomCSS, and every style.Contribute fragment. Keying the URL on
 // style.ThemeHash (the palette) while serving it `immutable` would be a false
@@ -116,8 +116,8 @@ func (ds *UIHost) ReleaseThemeVariant(key string) {
 	if n <= 1 {
 		// Capture the variant's theme hash BEFORE deleting so the per-component
 		// CSS caches it warmed (registry.Entry.cssCache, keyed by theme hash)
-		// can be swept. Without this, cycling ?theme= values — or an embed
-		// rebranding per request — grew those caches forever: the variant went
+		// can be swept. Without this, cycling ?theme= values, or an embed
+		// rebranding per request, grew those caches forever: the variant went
 		// away but the CSS it generated stayed pinned in RAM. Skip the app's
 		// OWN theme: its cache is the hot path every other request still rides.
 		if t, ok := ds.variants.m[key]; ok {
@@ -177,7 +177,7 @@ func (ds *UIHost) requestTheme(r *http.Request) style.Theme {
 }
 
 // themeVariant resolves a registered variant by hash. ok is false for an
-// unknown hash — callers fall back to the app theme rather than erroring, so a
+// unknown hash: callers fall back to the app theme rather than erroring, so a
 // stale URL degrades to the default palette instead of a broken page.
 func (ds *UIHost) themeVariant(hash string) (style.Theme, bool) {
 	if hash == "" {

@@ -8,7 +8,7 @@ import (
 )
 
 // ============================================================================
-// Tier 4 — in-memory search backend
+// Tier 4, in-memory search backend
 // ============================================================================
 
 // BenchmarkMemory_Index measures the cost of inserting one document into the

@@ -3,7 +3,7 @@
 //
 // A guard whose "never fires" mutant leaves the suite green is a guard nothing
 // proves refuses anything. A guard whose "always fires" mutant leaves the
-// suite green is a guard nothing proves permits anything — the shape that lets
+// suite green is a guard nothing proves permits anything, the shape that lets
 // a too-tight gate ship. Both are reported as SURVIVED.
 //
 //	go run ./cmd/mutate ./sqlite/                       # whole package
@@ -13,7 +13,7 @@
 // Before any mutation the unmutated suite is run once: an already-red package
 // would otherwise report every mutant as caught and exit 0 claiming perfect
 // coverage. A mutant that fails to compile is reported as BROKEN, never as
-// caught — a build failure prints its own `FAIL` line, so that classification
+// caught; a build failure prints its own `FAIL` line, so that classification
 // has to be tested for explicitly rather than assumed. A mutation that does
 // not change the file, or does not reach disk, is a hard error rather than any
 // verdict at all.
@@ -31,11 +31,11 @@
 // Run on itself, this package reports survivors in main()'s own flag parsing,
 // filtering, and output formatting. That is accurate and deliberate: those
 // branches are exercised by using the tool, and covering them would mean
-// spawning the binary from a test for no real gain. The logic that can lie —
-// the verdict classification, the write-and-verify step, restore, and the
-// mutation core in guardmut — is tested, and guardmut is mutation-clean. A
-// clean run of `make mutate PKG=./cmd/mutate/guardmut/` is the claim being
-// made; it is not a claim about the CLI wiring.
+// spawning the binary from a test for no real gain. The logic that can
+// lie, namely the verdict classification, the write-and-verify step,
+// restore, and the mutation core in guardmut, is tested, and guardmut is
+// mutation-clean. A clean run of `make mutate PKG=./cmd/mutate/guardmut/`
+// is the claim being made; it is not a claim about the CLI wiring.
 package main
 
 import (
@@ -92,7 +92,7 @@ func run() int {
 	//
 	// A lock, because two concurrent runs over one package interleave: the
 	// second reads its "original" while the first's mutant is on disk, then
-	// restores THAT as the original — a reviewer reproduced it and the true
+	// restores THAT as the original; a reviewer reproduced it and the true
 	// source survived only by finish order.
 	unlock, err := lockPackage(dir)
 	if err != nil {
@@ -101,7 +101,7 @@ func run() int {
 	}
 	defer unlock()
 
-	// And a signal handler, because `defer restore` does not run on SIGINT —
+	// And a signal handler, because `defer restore` does not run on SIGINT,
 	// and Ctrl-C on a slow run is the ordinary way this ends. Both signals
 	// were shown to leave a mutant in the tree.
 	restoreAll := newRestoreSet()
@@ -112,7 +112,7 @@ func run() int {
 		// Order matters: mark the run as stopping FIRST, so a write already
 		// past pending.add refuses rather than landing after the restore.
 		// The mutex made this data-race-free but did not order the two
-		// against the FILESYSTEM — a restore could be immediately overwritten
+		// against the FILESYSTEM: a restore could be immediately overwritten
 		// by the write it was racing, leaving the mutant on disk.
 		restoreAll.stop()
 		restoreAll.runAll()
@@ -131,7 +131,7 @@ func run() int {
 
 	// Establish that the suite is GREEN before breaking anything. Without
 	// this, an already-red package reports every mutant as caught and the run
-	// exits 0 claiming perfect coverage — the tests were failing the whole
+	// exits 0 claiming perfect coverage: the tests were failing the whole
 	// time and the guards were never exercised. A reviewer produced exactly
 	// that with a package whose test file did not compile.
 	if err := checkBaseline(pkg, *runFlag, root, *timeout); err != nil {
@@ -173,7 +173,7 @@ func run() int {
 				}
 			case brokenStatus:
 				broken++
-				fmt.Printf("  BROKEN    %s — mutant did not compile; nothing was proven\n", g)
+				fmt.Printf("  BROKEN    %s: mutant did not compile; nothing was proven\n", g)
 			case survivedStatus:
 				survived++
 				fmt.Printf("  SURVIVED  %s\n", g)
@@ -219,7 +219,7 @@ func runMutant(path string, original []byte, g guardmut.Guard, pkg, run, moduleR
 	}
 	// Run from the module root, NOT the package directory: `go test ./sqlite/`
 	// from inside ./sqlite resolves to nothing, `go test` exits non-zero, and a
-	// naive reading of that exit code calls every mutant "caught" — the tool
+	// naive reading of that exit code calls every mutant "caught": the tool
 	// reporting perfect coverage precisely because it never ran a test. This
 	// happened on the first draft.
 	// -timeout was accepted and never applied until a reviewer walked the
@@ -249,7 +249,7 @@ func runMutant(path string, original []byte, g guardmut.Guard, pkg, run, moduleR
 //
 // All three checks exist because their absence is invisible. A mutation that
 // produces identical source, or that never reaches disk, yields a green test
-// run — which reads exactly like a guard no test covers. Two hand-run audits
+// run, which reads exactly like a guard no test covers. Two hand-run audits
 // during the review that motivated this tool nearly recorded a guard as
 // covered for precisely that reason.
 func writeVerified(path string, original, mutated []byte) error {
@@ -299,7 +299,7 @@ func checkBaseline(pkg, run, moduleRoot string, timeout time.Duration) error {
 		// Including the timeout case: a suite that cannot finish inside
 		// -timeout must refuse here, not proceed. Without this, every mutant
 		// dies at the deadline, go test's `panic: test timed out` scores as
-		// caught, and the run prints perfect coverage and exits 0 — a report
+		// caught, and the run prints perfect coverage and exits 0: a report
 		// manufactured entirely by a flag that was added for safety.
 		return fmt.Errorf("the suite is not green under -timeout=%s before any mutation, so no verdict below would mean anything:\n%s",
 			timeout, truncate(string(out)))
@@ -319,7 +319,7 @@ var compilerDiagnostic = regexp.MustCompile(`(?m)^[^\s]+\.go:\d+:\d+: `)
 // as opposed to failing its tests.
 //
 // Structural, not lexical. An earlier version searched the whole stream for
-// "syntax error", "undefined:", and friends — words that appear routinely in
+// "syntax error", "undefined:", and friends, words that appear routinely in
 // the log output of tests that exercise error paths, so a package whose tests
 // print a database's own `syntax error` message had every caught mutant
 // reported as BROKEN.
@@ -348,9 +348,9 @@ func isBuildFailure(output string) bool {
 // classify turns one `go test` run into a verdict.
 //
 // A zero exit means the tests passed with the guard broken: SURVIVED. A
-// non-zero exit has three causes that must not be conflated — a real test
+// non-zero exit has three causes that must not be conflated: a real test
 // failure (the mutant was caught), a compile error (nothing ran), and a
-// tooling problem (also nothing ran) — and only the first is evidence. The
+// tooling problem (also nothing ran). Only the first is evidence. The
 // first draft of this tool read every non-zero exit as "caught" and reported
 // a package as fully covered while running no tests at all, because the
 // package pattern was wrong for its working directory.
@@ -369,7 +369,7 @@ func classify(exitErr error, output string) (status, error) {
 		return survivedStatus, nil
 	}
 	// A reported test failure settles it. This is checked FIRST because the
-	// alternative — scanning the whole stream for compiler-ish words — reads
+	// alternative, scanning the whole stream for compiler-ish words, reads
 	// an application's own log output as a build error. Packages under test
 	// here log strings like `SQL logic error: near "(": syntax error`, which
 	// made genuinely caught mutants report BROKEN on every full-package run
@@ -379,9 +379,9 @@ func classify(exitErr error, output string) (status, error) {
 		return caughtStatus, nil
 	}
 	// No test failure line: a build error is the other reason for a non-zero
-	// exit. Detect it structurally — go prints `FAIL\tpkg [build failed]`, or
-	// a `# pkg` header followed by `file.go:line:col: message` — rather than
-	// by hunting for words that legitimately appear in test output.
+	// exit. Detect it structurally rather than by hunting for words that
+	// legitimately appear in test output: go prints `FAIL\tpkg [build failed]`,
+	// or a `# pkg` header followed by `file.go:line:col: message`.
 	if isBuildFailure(output) {
 		return brokenStatus, nil
 	}
@@ -417,7 +417,7 @@ func newRestoreSet() *restoreSet { return &restoreSet{files: map[string][]byte{}
 // caller past the registration could still be inside its write when the signal
 // handler restored the tree and called os.Exit, so the mutant landed on disk
 // AFTER the restore and stayed there. Holding the lock across both makes the
-// two orderings the only ones possible — either the write completes and
+// two orderings the only ones possible: either the write completes and
 // runAll undoes it, or stopping is already set and the write never happens.
 func (r *restoreSet) addAndWrite(path string, original, mutated []byte) error {
 	r.mu.Lock()
@@ -432,7 +432,7 @@ func (r *restoreSet) addAndWrite(path string, original, mutated []byte) error {
 	return nil
 }
 
-// stop marks the run as stopping. Callers already past add() are unaffected —
+// stop marks the run as stopping. Callers already past add() are unaffected;
 // the window it closes is the common one, where the signal arrives before the
 // next mutant is written.
 func (r *restoreSet) stop() {
@@ -464,7 +464,7 @@ func (r *restoreSet) runAll() {
 }
 
 // lockPackage serialises runs over one package directory. Concurrent runs do
-// not merely produce garbage verdicts — each reads the other's mutant as its
+// not merely produce garbage verdicts; each reads the other's mutant as its
 // baseline, and whichever finishes last writes that baseline back as the
 // "original".
 func lockPackage(dir string) (func(), error) {
@@ -473,7 +473,7 @@ func lockPackage(dir string) (func(), error) {
 	if err != nil {
 		if os.IsExist(err) {
 			return nil, fmt.Errorf("another mutate run holds %s.\n"+
-				"If a run is active, wait — concurrent runs read each other's mutants as their baseline.\n"+
+				"If a run is active, wait; concurrent runs read each other's mutants as their baseline.\n"+
 				"If none is active, the previous run was killed and MAY HAVE LEFT A MUTANT IN THE SOURCE.\n"+
 				"Check `git status` / `git diff` for the package and restore it before removing the lock:\n"+
 				"a fresh run would otherwise adopt that mutant as the original and write it back permanently.", path)

@@ -1,8 +1,8 @@
-// Shortcut runtime module — bindings for data-fui-shortcut-focus +
+// Shortcut runtime module, bindings for data-fui-shortcut-focus +
 // data-fui-shortcut-click, inside widgets and out. This module is the
 // sole owner of shortcut wiring (widgets.js demand-loads it via the
-// marker scan; app chrome — GlobalSearch in a page header, ⌘K hint in
-// a marketing nav — uses the same declarative syntax).
+// marker scan; app chrome, GlobalSearch in a page header, ⌘K hint in
+// a marketing nav, uses the same declarative syntax).
 //
 // One document-level keydown listener queries the LIVE DOM per press.
 // No per-element listeners: remounted widgets (close → reopen builds
@@ -10,7 +10,7 @@
 // never fire or accumulate handlers.
 //
 // Extra wrinkle: data-fui-shortcut-target lets a non-focusable
-// wrapper carry the chord while focus lands on a descendant — the
+// wrapper carry the chord while focus lands on a descendant, the
 // runtime queries the wrapper for the target selector and focuses
 // the matched element. Useful for compositions where the chord lives
 // on a wrapper but the focus target is an input deep inside (e.g. a
@@ -38,7 +38,7 @@
     if (m.mod && !(e.metaKey || e.ctrlKey)) return false;
     if (m.shift && !e.shiftKey) return false;
     if (m.alt && !e.altKey) return false;
-    // Don't intercept while typing into a text-like input — except
+    // Don't intercept while typing into a text-like input, except
     // when the chord includes a modifier (then it's an intentional
     // hotkey, not a typed character).
     const inField = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
@@ -59,7 +59,7 @@
     document.__fuiShortcutDoc = true;
     document.addEventListener('keydown', function (e) {
       if (e.isComposing) return;
-      // First connected match wins — deterministic when a chord is
+      // First connected match wins, deterministic when a chord is
       // declared on more than one element (e.g. a stale SSR duplicate).
       const els = document.querySelectorAll('[data-fui-shortcut-focus],[data-fui-shortcut-click]');
       for (const el of els) {

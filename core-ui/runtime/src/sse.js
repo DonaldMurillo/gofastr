@@ -1,4 +1,4 @@
-// GoFastr runtime module — SSE island stream
+// GoFastr runtime module, SSE island stream
 //
 // Connects to the framework's server-side SSE bus declared on the
 // page via <meta name="gofastr-sse" content="<url>"> and reflects
@@ -7,7 +7,7 @@
 // updates by event type so multiple islands share one connection.
 //
 // Connection state is mirrored onto window.__gofastr.sseStatus
-// ({ connected, lastEventAt, retryCount }) — one object mutated in
+// ({ connected, lastEventAt, retryCount }), one object mutated in
 // place so holders (NetworkRetryBanner, app code) keep a live
 // reference. Transitions (connect / disconnect) announce a
 // `gofastr:sse-status` CustomEvent on document; per-frame updates
@@ -20,7 +20,7 @@
 //     DOMContentLoaded; if present, idle-loads this module.
 //   - reconnects on transport error (3s back-off).
 //   - closes the transport on pagehide and re-establishes it on a
-//     bfcache restore (pageshow.persisted) — see the lifecycle block.
+//     bfcache restore (pageshow.persisted). See the lifecycle block.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
@@ -31,7 +31,7 @@
   let source = null;
   let retryTimer = 0;
 
-  // One live status object. Mutated in place — never reassigned — so
+  // One live status object. Mutated in place, never reassigned, so
   // every reference (banner poll, app listener) sees updates.
   const status = NS.sseStatus = { connected: false, lastEventAt: 0, retryCount: 0 };
   const emit = () => document.dispatchEvent(new CustomEvent('gofastr:sse-status', { detail: status }));
@@ -39,7 +39,7 @@
   // remintSession recovers an idle page whose session token died under
   // it (server restart, key rotation, or 30-day expiry). An EventSource
   // onerror can't see the 401 that handleSSE returns, so a purely idle
-  // page — one that never navigates — would otherwise reconnect-loop
+  // page, one that never navigates, would otherwise reconnect-loop
   // forever on the dead stream id. POST /__gofastr/session mints a fresh
   // token (Set-Cookie) and returns its bare id; we rewrite the stream
   // meta so the next connect() uses an id that matches the new cookie.
@@ -75,7 +75,7 @@
         const { island, html } = JSON.parse(event.data);
         if (island === undefined || html === undefined) return;
         // Escape the server-supplied island name before it enters the
-        // CSS attribute selector — a crafted name (e.g. `x"], [data-…`)
+        // CSS attribute selector, a crafted name (e.g. `x"], [data-…`)
         // would otherwise re-target the write to an unintended element,
         // or throw an invalid-selector error that silently drops the
         // legitimate island's update. Matches the CSS.escape pattern in
@@ -84,7 +84,7 @@
         if (!el) return;
         el.innerHTML = html;
         // A server-pushed island can introduce a [data-fui-comp] the
-        // page hadn't carried — load its component CSS, same as every
+        // page hadn't carried, load its component CSS, same as every
         // other innerHTML swap path (nav/signals/poll/widgets/
         // infinitescroll). This used to be the only swap that skipped
         // scanAndLoadCSS, so pushed islands rendered unstyled.
@@ -101,7 +101,7 @@
       source.close();
       source = null;
       // After repeated failures the cause is more likely a dead token
-      // than a flapping network — attempt a re-mint (throttled to every
+      // than a flapping network, attempt a re-mint (throttled to every
       // other failure past the 2nd, so a genuine outage doesn't hammer
       // /session). The rewrite lands on the meta; the reconnect below
       // picks it up on this or the next cycle. Reconnect timing is NOT
@@ -130,7 +130,7 @@
       source.close();
       source = null;
     }
-    // Silent: the page is going away — holders re-learn the state from
+    // Silent: the page is going away, holders re-learn the state from
     // onopen's emit after the pageshow reconnect.
     status.connected = false;
   });
@@ -138,7 +138,7 @@
     if (e.persisted && !source) connect();
   });
 
-  // Connect immediately when the module loads — by the time we're
+  // Connect immediately when the module loads, by the time we're
   // executed core has already determined the SSE meta tag is on the
   // page (otherwise the marker scanner wouldn't have triggered us).
   NS.connectSSE = connect;

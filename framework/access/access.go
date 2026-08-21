@@ -298,7 +298,7 @@ func (rp *RolePolicy) Revoke(role string, permissions ...Permission) {
 
 // ReplaceRole atomically REPLACES the set of permissions held by role with
 // perms (after the same prepare/validate/dedupe pass Grant uses). Unlike
-// Grant, permissions absent from perms are dropped — the role ends up with
+// Grant, permissions absent from perms are dropped, the role ends up with
 // exactly perms, nothing more. Use to re-sync a role's grants from an
 // authoritative source (e.g. after a cross-replica invalidation re-reads
 // the access_grants table). Honors strictCapabilities exactly like Grant:
@@ -336,7 +336,7 @@ func (rp *RolePolicy) permissionsFor(role string) []Permission {
 }
 
 // Roles returns the sorted list of all roles that currently have at least
-// one granted permission. The slice is a defensive copy — callers can
+// one granted permission. The slice is a defensive copy, callers can
 // iterate it without holding the lock. Intended for admin UIs that need
 // to enumerate the grant matrix; not used on the hot Can path.
 func (rp *RolePolicy) Roles() []string {
@@ -361,7 +361,7 @@ func (rp *RolePolicy) PermissionsOf(role string) []Permission {
 // Wildcard is the superuser permission: a role granted "*" passes every
 // permission check. Grant it deliberately and only to fully-trusted,
 // separately-gated surfaces (e.g. the admin back-office, which has its own
-// Authorize gate) — never to an end-user role.
+// Authorize gate), never to an end-user role.
 const Wildcard Permission = "*"
 
 // Can checks if the user from ctx has the given permission via any of their
@@ -378,8 +378,8 @@ func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 
 // Can reports whether the request context carries the given permission. It
 // reads the RolePolicy and roles installed via WithPolicy / WithRoles (by
-// access.Middleware or battery/auth). Returns false when no policy is present
-// — the secure-by-default answer for an un-wired request. This is the seam the
+// access.Middleware or battery/auth). Returns false when no policy is present,
+// the secure-by-default answer for an un-wired request. This is the seam the
 // CRUD layer uses to enforce EntityConfig.Access.
 func Can(ctx context.Context, permission Permission) bool {
 	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
@@ -392,7 +392,7 @@ func Can(ctx context.Context, permission Permission) bool {
 // GetPermissions extracts the user's permissions from context by looking up
 // the user's roles against the RolePolicy.
 //
-// Returns nil if ctx is nil, missing a policy, or missing roles — never
+// Returns nil if ctx is nil, missing a policy, or missing roles, never
 // panics. A nil context is treated as an anonymous request rather than
 // allowed to crash the handler.
 func GetPermissions(ctx context.Context) []Permission {
@@ -441,7 +441,7 @@ func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 // Middleware installs the RBAC policy and the request's roles into the context
 // so downstream RequirePermission middleware and auto-CRUD permission gates
 // (EntityConfig.Access) can resolve permissions. roles maps a request context
-// to the caller's roles — typically by reading the authenticated user; pass
+// to the caller's roles, typically by reading the authenticated user; pass
 // nil to install only the policy (roles resolved elsewhere). Mount this once,
 // app-wide or on a route group, ahead of any permission-gated routes.
 func Middleware(policy *RolePolicy, roles func(ctx context.Context) []string) func(http.Handler) http.Handler {
@@ -473,11 +473,11 @@ func WithRoles(ctx context.Context, roles []string) context.Context {
 
 // GetRoles reads back the roles installed via WithRoles (by
 // access.Middleware or battery/auth). It is the reader half of the
-// role-context seam — without it, role context is one-way (you can put
+// role-context seam, without it, role context is one-way (you can put
 // roles in but not read them out), which blocks role-based UI branching
 // (e.g. "show the admin nav only when the caller holds 'admin'").
 //
-// Returns nil when ctx is nil or carries no roles — never panics. A nil
+// Returns nil when ctx is nil or carries no roles, never panics. A nil
 // context is treated as an anonymous request.
 func GetRoles(ctx context.Context) []string {
 	if ctx == nil {
@@ -489,13 +489,13 @@ func GetRoles(ctx context.Context) []string {
 
 // PolicyFromContext reads back the *RolePolicy installed via WithPolicy (by
 // access.Middleware or battery/auth). It is the reader half of the
-// policy-context seam — the symmetric pair to GetRoles. The process-module
+// policy-context seam, the symmetric pair to GetRoles. The process-module
 // capability broker (framework/processmodule_broker.go, design #37 §5) uses
 // it to snapshot the delegated caller's policy at delegation-mint time so the
 // CrossOwnerRead carve-out can be checked on the reverse path without an
 // app-wide policy reference.
 //
-// Returns nil when ctx is nil or carries no policy — never panics.
+// Returns nil when ctx is nil or carries no policy, never panics.
 func PolicyFromContext(ctx context.Context) *RolePolicy {
 	if ctx == nil {
 		return nil

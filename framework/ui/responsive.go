@@ -1,6 +1,6 @@
 package ui
 
-// Responsive — viewport-swap primitive. Renders BOTH a desktop and a
+// Responsive is a viewport-swap primitive. Renders BOTH a desktop and a
 // mobile variant of a region, then hides one via the registered
 // stylesheet's @media query. Use it when a CSS-only collapse of the
 // desktop tree produces poor mobile UX (think: a multi-level sidebar
@@ -8,7 +8,7 @@ package ui
 // that's much better as a single picker on small screens).
 //
 // Why both render in SSR (not a runtime swap):
-//   - Same HTML lands on every viewport — no FOUC, no JS dependency
+//   - Same HTML lands on every viewport. No FOUC, no JS dependency
 //   - Search engines + AT only walk the visible branch (display:none
 //     removes a subtree from the accessibility tree and tab order)
 //   - SPA navigation doesn't have to re-fetch a separate "mobile page"
@@ -37,7 +37,7 @@ import (
 
 // ResponsiveConfig configures the swap.
 type ResponsiveConfig struct {
-	// Breakpoint in pixels — viewport >= Breakpoint renders the
+	// Breakpoint in pixels: viewport >= Breakpoint renders the
 	// desktop variant; < Breakpoint renders the mobile variant.
 	// Defaults to 1024 when zero.
 	Breakpoint int

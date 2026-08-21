@@ -44,7 +44,7 @@ type upgradeRelease struct {
 
 // loadUpgradeRegistry parses the embedded registry. Returned releases
 // keep file order, which the registry test pins to ascending semver.
-// through is the release the registry is complete up to — releases at
+// through is the release the registry is complete up to. Releases at
 // or below it with no entry genuinely had no migration-relevant
 // changes, while targets beyond it are newer than this CLI's knowledge.
 func loadUpgradeRegistry() ([]upgradeRelease, error) {
@@ -215,7 +215,7 @@ func goModGofastrVersion(root string) (version string, replaced bool, err error)
 			continue
 		case inReplaceBlock:
 			// Block-form replace: the module sits on its own line
-			// ("github.com/… => ../local"). Never parse versions here —
+			// ("github.com/… => ../local"). Never parse versions here;
 			// the "=>" token would be misread as one.
 			if fields := strings.Fields(line); len(fields) > 0 && fields[0] == gofastrModule {
 				replaced = true
@@ -233,7 +233,7 @@ func goModGofastrVersion(root string) (version string, replaced bool, err error)
 		}
 	}
 	if version == "" {
-		return "", replaced, fmt.Errorf("go.mod does not require %s — is this a GoFastr app?", gofastrModule)
+		return "", replaced, fmt.Errorf("go.mod does not require %s: is this a GoFastr app?", gofastrModule)
 	}
 	return version, replaced, nil
 }
@@ -289,12 +289,12 @@ func detectHits(root, pattern string) []string {
 // report points at the exact lines that need attention.
 func formatUpgradeNotes(root string, releases []upgradeRelease) string {
 	if len(releases) == 0 {
-		return "No migration notes between these versions — the mechanical steps below are all there is.\n"
+		return "No migration notes between these versions: the mechanical steps below are all there is.\n"
 	}
 	var b strings.Builder
 	for _, r := range releases {
 		if r.Title != "" {
-			fmt.Fprintf(&b, "%s — %s\n", r.Version, r.Title)
+			fmt.Fprintf(&b, "%s: %s\n", r.Version, r.Title)
 		} else {
 			fmt.Fprintf(&b, "%s\n", r.Version)
 		}
@@ -381,7 +381,7 @@ func runUpgrade(args []string) {
 		fmt.Println("proxy. With --apply the mechanical steps run for you: go get, go mod")
 		fmt.Println("tidy, go build ./..., go test ./….")
 		fmt.Println()
-		fmt.Println("Install the TARGET version of this CLI first — an older binary's")
+		fmt.Println("Install the TARGET version of this CLI first: an older binary's")
 		fmt.Println("registry can't know about newer releases:")
 		fmt.Println("    go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z")
 		osExit(0)
@@ -418,14 +418,14 @@ func runUpgrade(args []string) {
 
 	fmt.Printf("Current: %s (go.mod)\n", current)
 	if replaced {
-		fmt.Println("         NOTE: go.mod has a replace directive for gofastr — the")
+		fmt.Println("         NOTE: go.mod has a replace directive for gofastr: the")
 		fmt.Println("         version above may not be what actually builds.")
 	}
 	fmt.Printf("Target:  %s\n\n", target)
 
 	if !semverLess(current, target) {
 		if current == target {
-			fmt.Println("Already on the target release — nothing to do.")
+			fmt.Println("Already on the target release: nothing to do.")
 			return
 		}
 		fmt.Println("Target is OLDER than the current version. Downgrades aren't guided;")
@@ -437,10 +437,10 @@ func runUpgrade(args []string) {
 		lo, hi = target, current
 	}
 	// Key the staleness warning on the UPPER bound of the inspected
-	// range, not just the target — a downgrade FROM a version newer
+	// range rather than only the target. A downgrade FROM a version newer
 	// than the registry also spans releases this binary doesn't know.
 	if semverLess(through, hi) {
-		fmt.Printf("NOTE: this CLI's migration registry is complete through %s — the\n", through)
+		fmt.Printf("NOTE: this CLI's migration registry is complete through %s: the\n", through)
 		fmt.Printf("range shown reaches %s, so it may cross notes this binary doesn't\n", hi)
 		fmt.Println("know. Install the newest involved CLI first and re-run:")
 		fmt.Printf("    go install %s/cmd/gofastr@%s\n\n", gofastrModule, hi)

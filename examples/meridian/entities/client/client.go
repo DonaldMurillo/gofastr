@@ -14,7 +14,7 @@ import (
 )
 
 // Client is a typed HTTP client targeting the gofastr server's CRUD routes.
-// Pass any *http.Client (httptest, retryable wrapper, etc.) — Client never
+// Pass any *http.Client (httptest, retryable wrapper, etc.). Client never
 // closes it.
 //
 // Token, when set, is sent as "Authorization: Bearer <Token>" on every
@@ -101,7 +101,7 @@ func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, ou
 // Do is the raw escape hatch under the typed methods: it sends method+path
 // with an optional JSON body and decodes the 2xx response into out, applying
 // the same base URL, auth header, and error handling. Reach for it when the
-// typed surface doesn't fit — custom endpoints, or presence-faithful bodies
+// typed surface doesn't fit: custom endpoints, or presence-faithful bodies
 // built as map[string]any (a typed Input's json:",omitempty" drops explicit
 // zero values; a map keeps them).
 func (c *Client) Do(ctx context.Context, method, path string, body, out any) error {
@@ -110,7 +110,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 
 // BatchResult is one entry in a _batch response, in input order. Exactly one
 // of Data, Error, or Skipped is populated. When a later item failed, earlier
-// successes still carry Data — but Committed=false on the envelope means
+// successes still carry Data, but Committed=false on the envelope means
 // nothing was persisted (the whole batch runs in one transaction).
 type BatchResult struct {
 	Index   int                 `json:"index"`
@@ -128,7 +128,7 @@ type BatchResponse struct {
 
 // doBatch sends a _batch request. The server answers 200 (committed) or 400
 // (rolled back) with the same envelope, so a 400 with a decodable body is a
-// result, not an error — callers inspect Committed and per-item Error fields.
+// result, not an error, callers inspect Committed and per-item Error fields.
 func (c *Client) doBatch(ctx context.Context, method, path string, body any) (BatchResponse, error) {
 	var out BatchResponse
 	err := c.doJSON(ctx, method, path, body, &out)
@@ -272,7 +272,7 @@ func (c *Client) UpdatePlans(ctx context.Context, id string, body PlansInput) (P
 
 // PatchPlans updates exactly the fields whose pointers in body are non-nil.
 // A nil field is omitted (the server leaves it untouched); a non-nil pointer
-// sets the field — including to a zero value (false, 0, ""), which a value
+// sets the field, including to a zero value (false, 0, ""), which a value
 // payload cannot express. Pass an empty PlansPatch to no-op.
 func (c *Client) PatchPlans(ctx context.Context, id string, body PlansPatch) (Plans, error) {
 	var out Plans
@@ -297,7 +297,7 @@ type PlansBatchPatch struct {
 }
 
 // BatchCreatePlans creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// Inspect Committed and the per-item Results, a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreatePlans(ctx context.Context, items []PlansInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/plans/_batch", map[string]any{"items": items})
@@ -400,7 +400,7 @@ func (c *Client) UpdateCustomers(ctx context.Context, id string, body CustomersI
 
 // PatchCustomers updates exactly the fields whose pointers in body are non-nil.
 // A nil field is omitted (the server leaves it untouched); a non-nil pointer
-// sets the field — including to a zero value (false, 0, ""), which a value
+// sets the field, including to a zero value (false, 0, ""), which a value
 // payload cannot express. Pass an empty CustomersPatch to no-op.
 func (c *Client) PatchCustomers(ctx context.Context, id string, body CustomersPatch) (Customers, error) {
 	var out Customers
@@ -426,7 +426,7 @@ type CustomersBatchPatch struct {
 }
 
 // BatchCreateCustomers creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// Inspect Committed and the per-item Results, a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreateCustomers(ctx context.Context, items []CustomersInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/customers/_batch", map[string]any{"items": items})
@@ -532,7 +532,7 @@ func (c *Client) UpdateSubscriptions(ctx context.Context, id string, body Subscr
 
 // PatchSubscriptions updates exactly the fields whose pointers in body are non-nil.
 // A nil field is omitted (the server leaves it untouched); a non-nil pointer
-// sets the field — including to a zero value (false, 0, ""), which a value
+// sets the field, including to a zero value (false, 0, ""), which a value
 // payload cannot express. Pass an empty SubscriptionsPatch to no-op.
 func (c *Client) PatchSubscriptions(ctx context.Context, id string, body SubscriptionsPatch) (Subscriptions, error) {
 	var out Subscriptions
@@ -559,7 +559,7 @@ type SubscriptionsBatchPatch struct {
 }
 
 // BatchCreateSubscriptions creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// Inspect Committed and the per-item Results, a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreateSubscriptions(ctx context.Context, items []SubscriptionsInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/subscriptions/_batch", map[string]any{"items": items})
@@ -668,7 +668,7 @@ func (c *Client) UpdateInvoices(ctx context.Context, id string, body InvoicesInp
 
 // PatchInvoices updates exactly the fields whose pointers in body are non-nil.
 // A nil field is omitted (the server leaves it untouched); a non-nil pointer
-// sets the field — including to a zero value (false, 0, ""), which a value
+// sets the field, including to a zero value (false, 0, ""), which a value
 // payload cannot express. Pass an empty InvoicesPatch to no-op.
 func (c *Client) PatchInvoices(ctx context.Context, id string, body InvoicesPatch) (Invoices, error) {
 	var out Invoices
@@ -696,7 +696,7 @@ type InvoicesBatchPatch struct {
 }
 
 // BatchCreateInvoices creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// Inspect Committed and the per-item Results, a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreateInvoices(ctx context.Context, items []InvoicesInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/invoices/_batch", map[string]any{"items": items})
@@ -799,7 +799,7 @@ func (c *Client) UpdatePayments(ctx context.Context, id string, body PaymentsInp
 
 // PatchPayments updates exactly the fields whose pointers in body are non-nil.
 // A nil field is omitted (the server leaves it untouched); a non-nil pointer
-// sets the field — including to a zero value (false, 0, ""), which a value
+// sets the field, including to a zero value (false, 0, ""), which a value
 // payload cannot express. Pass an empty PaymentsPatch to no-op.
 func (c *Client) PatchPayments(ctx context.Context, id string, body PaymentsPatch) (Payments, error) {
 	var out Payments
@@ -825,7 +825,7 @@ type PaymentsBatchPatch struct {
 }
 
 // BatchCreatePayments creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results — a 400 rollback is returned as
+// Inspect Committed and the per-item Results, a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreatePayments(ctx context.Context, items []PaymentsInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/payments/_batch", map[string]any{"items": items})

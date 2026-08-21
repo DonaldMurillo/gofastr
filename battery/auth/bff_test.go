@@ -252,7 +252,7 @@ func TestBFFPreflightWorksWithoutOPTIONSRoute(t *testing.T) {
 	app := framework.NewApp(WithBFFPosture(mgr, BFFPostureConfig{
 		AllowedOrigins: []string{"https://app.example.com"},
 	}))
-	// CRUD registration adds GET/POST/PUT/PATCH/DELETE but never OPTIONS —
+	// CRUD registration adds GET/POST/PUT/PATCH/DELETE but never OPTIONS,
 	// the preflight must be answered by the guard on the 405 fallback path.
 	app.Router().Get("/api/posts", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -318,7 +318,7 @@ func TestLogoutRejectsSameSiteSiblingOrigin(t *testing.T) {
 	mgr.RegisterRoutes(app.Router())
 
 	// A form on a sibling subdomain is Sec-Fetch-Site: same-site and the
-	// SameSite session cookie IS attached — the Origin host comparison
+	// SameSite session cookie IS attached, the Origin host comparison
 	// must refuse the forced logout.
 	sibling := httptest.NewRequest(http.MethodPost, "https://app.example.com/auth/logout", strings.NewReader("next=%2F"))
 	sibling.Header.Set("Content-Type", "application/x-www-form-urlencoded")

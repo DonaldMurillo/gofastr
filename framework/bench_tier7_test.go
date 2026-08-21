@@ -13,7 +13,7 @@ import (
 )
 
 // ============================================================================
-// Tier 7 — stdlib baseline comparisons
+// Tier 7: stdlib baseline comparisons
 //
 // Hand-rolled net/http + database/sql implementations sitting next to the
 // framework-equivalent endpoints. The delta is what GoFastr's
@@ -25,7 +25,7 @@ import (
 // ============================================================================
 
 // ----------------------------------------------------------------------------
-// 7.1 — Plaintext
+// 7.1: Plaintext
 // ----------------------------------------------------------------------------
 
 func BenchmarkT7_Plaintext_NetHTTP(b *testing.B) {
@@ -59,7 +59,7 @@ func BenchmarkT7_Plaintext_GoFastr(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 7.2 — JSON serialization (small)
+// 7.2: JSON serialization (small)
 // ----------------------------------------------------------------------------
 
 func BenchmarkT7_JSON_NetHTTP(b *testing.B) {
@@ -99,7 +99,7 @@ func BenchmarkT7_JSON_GoFastr(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 7.3 — Single query
+// 7.3: Single query
 // ----------------------------------------------------------------------------
 
 // BenchmarkT7_SingleQuery_NetHTTP is the textbook hand-rolled handler:
@@ -176,7 +176,7 @@ func BenchmarkT7_SingleQuery_GoFastr(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 7.4 — List with filter (the framework's bread and butter)
+// 7.4: List with filter (the framework's bread and butter)
 // ----------------------------------------------------------------------------
 
 // BenchmarkT7_FilteredList_NetHTTP is a hand-rolled list endpoint that

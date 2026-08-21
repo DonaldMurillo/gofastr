@@ -33,7 +33,7 @@ func TestList_RejectsHiddenSort(t *testing.T) {
 
 // TestList_RejectsUnknownSort pins fail-closed behavior on probe sorts.
 // Silently dropping the unknown field made the API look like it worked
-// the same with or without the param — an oracle for probe attempts and
+// the same with or without the param, an oracle for probe attempts and
 // a footgun for legit clients with typos.
 func TestList_RejectsUnknownSort(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("items", "items", "", []schema.Field{

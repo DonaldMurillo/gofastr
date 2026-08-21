@@ -9,7 +9,7 @@ import (
 // Flags returns the app's feature-flag evaluator, creating one on
 // first call. The default backing store is in-memory; for clustered
 // deployments call SetFlagStore with a Redis- or DB-backed
-// implementation BEFORE any caller invokes Flags — once the lazy
+// implementation BEFORE any caller invokes Flags, once the lazy
 // default fires, subsequent SetFlagStore calls panic to avoid the
 // silent race where some goroutines still hold a reference to the
 // previous evaluator.
@@ -34,13 +34,13 @@ func (a *App) Flags() *featureflag.Evaluator {
 // previous evaluator persist in handler closures.
 //
 // Useful for tests that want a preconfigured store, or for production
-// wiring that uses a persistent backend — wire it during NewApp setup,
+// wiring that uses a persistent backend, wire it during NewApp setup,
 // before any request runs.
 func (a *App) SetFlagStore(s featureflag.Store) *App {
 	a.flagMu.Lock()
 	defer a.flagMu.Unlock()
 	if a.flagAccessed {
-		panic("framework: SetFlagStore called after the flag evaluator was already used — " +
+		panic("framework: SetFlagStore called after the flag evaluator was already used: " +
 			"wire your store before any handler / startup hook calls Flags() or IsEnabled, " +
 			"otherwise stale evaluator references will linger in goroutines")
 	}

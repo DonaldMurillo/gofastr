@@ -1,4 +1,4 @@
-// kernel.js — always-present substrate (spec fragment `kernel`, boot class).
+// kernel.js: always-present substrate (spec fragment `kernel`, boot class).
 // Owns: doc state (DOC_MANIFEST), module loader, same-origin guards, the
 // data-fui-comp CSS scanner, window.__gofastr namespace CREATION (other
 // fragments and demand modules extend it via Object.assign), manifest reads,
@@ -12,12 +12,12 @@
   // DOC_MANIFEST is the frozen inventory of every allowed <html>
   // attribute, <body> class, and <body> singleton id; the table in
   // core-ui/ARCHITECTURE.md ("Global document state") mirrors it and a
-  // parity test (doc_manifest_test.go) fails the build on drift — hard
+  // parity test (doc_manifest_test.go) fails the build on drift, hard
   // rule 5 applied to document-level state. Writes outside the manifest
   // still land (never break the page) but console.warn the offender.
   //
   // Not covered on purpose:
-  //   - data-color-scheme is WRITTEN by colorscheme.js — the separate
+  //   - data-color-scheme is WRITTEN by colorscheme.js, the separate
   //     synchronous <head> bootstrap that must run before first paint
   //     (FOUC). It is enumerated here as documentation only.
   //   - data-fui-static is written by the static exporter (Go), never
@@ -26,19 +26,19 @@
   //     (#fui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
-  // concurrent lockers — a modal over a lightbox, a drawer over a
-  // modal — can't fight over documentElement.style.overflow: the lock
+  // concurrent lockers, a modal over a lightbox, a drawer over a
+  // modal, can't fight over documentElement.style.overflow: the lock
   // releases only when the LAST owner unlocks. (Lock lives on <html>,
   // not <body>: overflow:hidden on <body> breaks position:sticky
   // descendants.)
   //
   // singleton(id, factory) returns the existing body child with that id
   // (SSR-provided or previously created) or creates+appends it once.
-  // reattach() re-appends any created singleton that lost its parent —
+  // reattach() re-appends any created singleton that lost its parent,
   // the SPA full-shell swap calls it after replacing [data-fui-layout],
   // covering layouts that (incorrectly but survivably) nest chrome the
   // runtime hung on <body>.
-  // docEl is the shared <html> handle for the whole core runtime —
+  // docEl is the shared <html> handle for the whole core runtime,
   // every documentElement touch goes through it (keeps the minified
   // bundle inside the 12.5 KB gz budget).
   const docEl = document.documentElement;
@@ -98,7 +98,7 @@
   // data-fui-static on <html> is still written by the static exporter
   // (framework/static.Builder) and read by the widgets demand module
   // (src/widgets.js) for its missing-widget fallback toast. The runtime
-  // itself no longer branches on it — composition selects the `static`
+  // itself no longer branches on it, composition selects the `static`
   // bundle at build time instead of testing the marker at request time.
   // -----------------------------------------------------------------------
   // Component handler registry
@@ -106,7 +106,7 @@
   const handlers = {};
 
   // -----------------------------------------------------------------------
-  // State store — compiled Go components share state through this
+  // State store: compiled Go components share state through this
   // -----------------------------------------------------------------------
   const state = {};
 
@@ -150,7 +150,7 @@
     if (c) window.__gofastr_catalog = c;
   }
 
-  // Signal store seed — server-provided initial values for the signal
+  // Signal store seed: server-provided initial values for the signal
   // bus (core-ui/store). Stashed now; applied to _signals right after
   // the __gofastr namespace is built (below), BEFORE hydration, so
   // getSignal returns the SSR value on first paint instead of undefined.
@@ -184,14 +184,14 @@
   };
 
   // -----------------------------------------------------------------------
-  // Public API — kernel members only. Core fragments and demand modules add
+  // Public API: kernel members only. Core fragments and demand modules add
   // their namespace members via Object.assign. Optional code therefore leaves
   // no dangling references inside this literal.
   // -----------------------------------------------------------------------
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
   window.__gofastr = {
-    /** Global document state module — see the DOC_MANIFEST block at the
+    /** Global document state module. See the DOC_MANIFEST block at the
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
@@ -238,7 +238,7 @@
       if (trimmed.startsWith('data:')) {
         // Allow data:image/* only; everything else (data:text/html,
         // data:application/javascript, etc.) is rejected. NOTE: this
-        // intentionally allows data:image/svg+xml — an SVG in an <img>
+        // intentionally allows data:image/svg+xml, an SVG in an <img>
         // src (the only sink signal-bound `src`/`href` reaches here)
         // renders inertly and does NOT execute its scripts. SVG only runs
         // script when loaded as a *document* (iframe/object/navigation),
@@ -320,7 +320,7 @@
       document.querySelector(selector)?.classList.toggle(cls);
     },
 
-    /** Legacy toast — kept as a forwarding shim so older callers
+    /** Legacy toast, kept as a forwarding shim so older callers
         (string-only arg) continue to work. The real implementation
         is the cfg-object version defined below; it owns the stack
         widget + lifecycle. */
@@ -353,9 +353,9 @@
       //
       // The action compiler rewrites the literal "G.serverAction(" into
       // "G._serverActionFor(<componentId>, ", so every registered action
-      // arrives with an id. A call the compiler could not see — a computed
+      // arrives with an id. A call the compiler could not see, a computed
       // spelling like G["serverAction"](…), an aliased reference, a call
-      // assembled at runtime — keeps this method and posts with an empty
+      // assembled at runtime, keeps this method and posts with an empty
       // componentId, which the server cannot route. That used to be a silent
       // 404 discovered in production; say what actually happened instead.
       //
@@ -388,12 +388,12 @@
 
     /** loadCSS is a no-op kept for external callers that still invoke
      * window.__gofastr.loadCSS(path). The per-screen chunk endpoint
-     * (/__gofastr/css/<path>) now returns 410 GONE — declare CSS per
+     * (/__gofastr/css/<path>) now returns 410 GONE, declare CSS per
      * component via registry.RegisterStyle and the runtime loads
      * /__gofastr/comp/<name>.css from the SSR-emitted <link>. */
     loadCSS(_screenPath) { /* no-op */ },
 
-    // Component CSS — three modes share _pendingLinks + data-fui-style dedup.
+    // Component CSS: three modes share _pendingLinks + data-fui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
     loadComponentCSS(name) {
@@ -408,7 +408,7 @@
       // so component CSS resolves under the same theme as app.css), so pick the
       // separator rather than always using '?'. Concatenating a second '?' put
       // the whole thing in one parameter value, which the server read as an
-      // unknown theme key AND an absent version — silently serving the app
+      // unknown theme key AND an absent version, silently serving the app
       // palette with no immutable caching.
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-fui-style', name);
@@ -453,7 +453,7 @@
     formatFloat: (n, d) => Number(n).toFixed(d),
 
     // -----------------------------------------------------------------
-    // Widgets (core-ui/widget) — overlay UIs that mount on top of any
+    // Widgets (core-ui/widget): overlay UIs that mount on top of any
     // page. mountWidget is the runtime entrypoint used by per-widget
     // bootstrap scripts. The host (Go) builds the WidgetDef → emits a
     // tiny init script that calls __gofastr.mountWidget(cfg, chrome).
@@ -477,11 +477,11 @@
 
     /** Load a split runtime module by name (e.g. "fileupload",
         "popover"). Returns a cached Promise that resolves once the
-        module's IIFE has executed. Safe to call concurrently — the
+        module's IIFE has executed. Safe to call concurrently, the
         first call wins, all callers await the same fetch. */
     loadModule,
 
-    /** Selector for focusable elements inside a modal — used by the
+    /** Selector for focusable elements inside a modal, used by the
         initial-focus pass and the Tab focus trap. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
 
@@ -536,12 +536,12 @@
 
     // _fallbackToast renders an unstyled-but-visible toast notice when
     // the toasts module can't load. No TTL, no animation, no hover
-    // pause — just a labelled live region the user can read and
+    // pause, just a labelled live region the user can read and
     // dismiss with the × button. Uses textContent throughout (no
     // innerHTML) so a malicious title can't inject script.
     _fallbackToast(cfg) {
       if (!cfg || !cfg.title) return null;
-      // Body singleton (doc.MANIFEST) — distinct from the styled
+      // Body singleton (doc.MANIFEST), distinct from the styled
       // [data-fui-toast-stack] container the toasts module owns; the
       // fallback stays deliberately unstyled + module-free.
       const container = doc.singleton('fui-toast-fallback', () => {
@@ -553,7 +553,7 @@
         return c;
       });
       const isAssertive = cfg.variant === 'warning' || cfg.variant === 'danger';
-      // mk: tiny element builder (tag, cssText, textContent) — inline
+      // mk: tiny element builder (tag, cssText, textContent), inline
       // styles + textContent only (no innerHTML) so a malicious title
       // can't inject script. Styling is the bare minimum that reads as
       // a notice; the styled experience lives in the toasts module.

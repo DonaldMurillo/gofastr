@@ -108,7 +108,7 @@ func pixelAt(src [][4]uint8, x, y, w, h int) [4]uint8 {
 // scoreModeBlock returns a Huffman-cost proxy for a block under the
 // given mode. We count residual entries that are non-zero (each is a
 // "rare" symbol the Huffman tree must spend bits on) plus the L1
-// magnitude — counting zeros first concentrates on the metric that
+// magnitude. Counting zeros first concentrates on the metric that
 // actually drives compression ratio, while L1 is a fast tiebreaker.
 // The decoder's per-block-corner hardcoded modes (0/1/2 at edges)
 // apply regardless of mode here.
@@ -153,14 +153,14 @@ func scoreModeBlock(src [][4]uint8, w, h, x0, y0, x1, y1, mode int) int {
 	// cost proxy: zero is by far the most common literal symbol, so
 	// each non-zero residual incurs a few bits of branching that a
 	// fully-zero pixel does not. L1 magnitude is a fine-grained
-	// tiebreaker — modes that are tied on nonzero count are then
+	// tiebreaker. Modes that are tied on nonzero count are then
 	// ranked by total residual magnitude.
 	return nonZero<<8 | (l1 & 0xff)
 }
 
 // chooseBlockModes returns a uniform sub-image where every block uses
 // the same predictor mode. Per-block adaptive selection requires a
-// Huffman-aware cost metric to beat uniform mode in practice — a
+// Huffman-aware cost metric to beat uniform mode in practice. A
 // simple L1 / nonzero-count proxy ends up fragmenting the residual
 // distribution and inflating the sub-image. scoreModeBlock stays in
 // this file as the foundation for a future per-block-adaptive pass

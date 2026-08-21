@@ -11,7 +11,7 @@ import (
 // type no longer matches the live DB type SURFACES as a change instead of being
 // silently ignored (the pre-fix gap the package doc called "intentionally out
 // of scope"). A type change can need a data-specific USING conversion, so it is
-// flagged Destructive and refused by default — never silent schema drift.
+// flagged Destructive and refused by default, never silent schema drift.
 func TestDiffEntityFromLive_TypeChangeDetected(t *testing.T) {
 	ent := rawEnt("widgets", "widgets", []schema.Field{
 		{Name: "id", Type: schema.String},
@@ -19,7 +19,7 @@ func TestDiffEntityFromLive_TypeChangeDetected(t *testing.T) {
 	}, nil, "id")
 	changes, err := diffEntityFromLive(ent, nil, DialectSQLite, map[string]string{
 		"id":    "TEXT",
-		"count": "TEXT", // live holds TEXT — a type change
+		"count": "TEXT", // live holds TEXT, a type change
 	})
 	if err != nil {
 		t.Fatalf("diff: %v", err)
@@ -64,7 +64,7 @@ func TestDiffEntityFromLive_NoTypeChangeWhenMatching(t *testing.T) {
 // (EntityConfig.Renames: old → new) emits a non-destructive RENAME COLUMN
 // instead of a data-losing DROP of the old column + ADD of the new one.
 // Rename is otherwise indistinguishable from drop+add, so it requires the
-// explicit declaration — auto-detection is unsafe.
+// explicit declaration. Auto-detection is unsafe.
 func TestDiffEntityFromLive_RenameColumn(t *testing.T) {
 	ent := rawEnt("widgets", "widgets", []schema.Field{
 		{Name: "id", Type: schema.String},
@@ -103,7 +103,7 @@ func TestDiffEntityFromLive_RenameColumn(t *testing.T) {
 // TestAdditiveChanges_ExcludesRename pins boot's additive-only contract: the
 // boot convergence path (addMissingColumns/additiveChanges) must NOT apply a
 // RENAME even though a rename is non-destructive. A rename leaking through
-// boot would silently mutate a live column whenever a Renames hint is set —
+// boot would silently mutate a live column whenever a Renames hint is set,
 // and a stale hint could rename the wrong in-use column. Renames belong in a
 // reviewable `migrate generate` file, not silent boot convergence.
 func TestAdditiveChanges_ExcludesRename(t *testing.T) {
@@ -185,7 +185,7 @@ func TestDiffEntityFromLive_RenameAndTypeChange(t *testing.T) {
 
 // TestDiffEntityFromLive_RawTypeNotFlagged: a column declared with RawType
 // (a Postgres domain, custom type, or array) must NOT false-positive as a type
-// change every diff — the live DB reports the underlying type, which never
+// change every diff, the live DB reports the underlying type, which never
 // matches the operator-supplied raw type. RawType is an explicit escape hatch;
 // the diff can't verify it, so it skips the comparison.
 func TestDiffEntityFromLive_RawTypeNotFlagged(t *testing.T) {

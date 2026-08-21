@@ -3,7 +3,7 @@ package main
 // Browser-level (chromedp) e2e for `gofastr theme edit`.
 //
 // The theme_edit_test.go suite asserts on the Go STRING that contains the
-// editor's ~360 lines of bootstrap JS — it pins characters, not behaviour,
+// editor's ~360 lines of bootstrap JS. It pins characters, not behaviour,
 // and every one of those tests passes even when the function holding the
 // asserted line is never called. Three real defects survived exactly that
 // gap: a contrast check that could not fail, a Write that emitted the file
@@ -107,7 +107,7 @@ func TestMain(m *testing.M) {
 // listener, wired EXACTLY as runThemeEdit wires it: the UIHost carries the
 // gallery base CSS plus the contrast-probe CSS the /preview page needs for
 // the check to measure real colours (newTestServer omits these because its
-// suite never renders). hosts/origins are pinned to the ACTUAL bound port —
+// suite never renders). hosts/origins are pinned to the ACTUAL bound port:
 // a browser sends the real port in Host/Origin, and the DNS-rebinding guard
 // would 403 every request against newTestServer's hardcoded "127.0.0.1:0".
 func newThemeEditE2EServer(t *testing.T) (srv *themeEditServer, base string) {
@@ -133,7 +133,7 @@ func newThemeEditE2EServer(t *testing.T) (srv *themeEditServer, base string) {
 }
 
 // navigateEditor loads the controls page and waits for the preview iframe's
-// app.css to apply — proven by the readiness sentinel probe reading back as
+// app.css to apply, proven by the readiness sentinel probe reading back as
 // literal black-on-white. Before the sheet lands the sentinel inherits the
 // page background and the contrast check would publish a wrong reading, so
 // every test waits here first.
@@ -153,7 +153,7 @@ func navigateEditor(t *testing.T, ctx context.Context, base string) {
 // ---------------------------------------------------------------------------
 
 // previewReadyJS is truthy once the iframe's readiness sentinel measures as
-// literal black-on-white — the signal that the generated app.css has applied.
+// literal black-on-white, the signal that the generated app.css has applied.
 const previewReadyJS = `(function(){
   var f = document.getElementById('te-frame');
   if (!f || !f.contentDocument) return false;
@@ -164,7 +164,7 @@ const previewReadyJS = `(function(){
 })()`
 
 // setTokenInputJS sets a token control's text input and fires a real 'input'
-// event — the exact path a keystroke takes through the debounce handler.
+// event, the exact path a keystroke takes through the debounce handler.
 func setTokenInputJS(key, value string) string {
 	return fmt.Sprintf(`(function(){
   var input = document.querySelector('[data-token=%[1]q]:not([data-type="color-swatch"])');
@@ -175,8 +175,8 @@ func setTokenInputJS(key, value string) string {
 })()`, key, value)
 }
 
-// primaryColorIsJS is truthy once the preview's primary-fg|primary probe —
-// whose background is var(--color-primary) — resolves to the expected rgb.
+// primaryColorIsJS is truthy once the preview's primary-fg|primary probe,
+// whose background is var(--color-primary), resolves to the expected rgb.
 // Reaching this state proves the edit round-tripped through applyToken →
 // RegisterThemeVariant → the swapped app.css → a re-resolved var().
 func primaryColorIsJS(wantRGB string) string {
@@ -270,7 +270,7 @@ func evalPanel(t *testing.T, ctx context.Context) contrastPanelState {
 
 // 1. An edit reaches the rendered preview. Set color-primary to a distinctive
 // value and assert the preview iframe's RESOLVED --color-primary actually
-// changed — the core round trip, untested before.
+// changed: the core round trip, untested before.
 func TestThemeEditPreviewReceivesEdit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -305,7 +305,7 @@ func TestThemeEditPreviewReceivesEdit(t *testing.T) {
 // the defect class this guards.
 //
 // The default theme already trips four DARK-mode findings (white text on the
-// light dark-mode status tones) — those are real, but out of scope here. This
+// light dark-mode status tones); those are real, but out of scope here. This
 // test isolates the LIGHT text|surface pair: it is clean on the default, so a
 // failing edit is the only thing that can introduce it, and restoring the
 // value is the only thing that can remove it.
@@ -367,7 +367,7 @@ func TestThemeEditWriteIncludesLastEdit(t *testing.T) {
 	navigateEditor(t, ctx, base)
 
 	// Set the value AND click Write in one JS turn so the click lands well
-	// inside the 300 ms debounce — the exact race that loses the edit.
+	// inside the 300 ms debounce, the exact race that loses the edit.
 	const raceJS = `(function(){
   var input = document.querySelector('[data-token="color-primary"]:not([data-type="color-swatch"])'); // not-a-secret: a DOM attribute selector
   input.value = "#AB12CD";
@@ -397,7 +397,7 @@ func TestThemeEditWriteIncludesLastEdit(t *testing.T) {
 	}
 }
 
-// 4. Write twice in one session. Edit, Write, edit again, Write again — both
+// 4. Write twice in one session. Edit, Write, edit again, Write again: both
 // must succeed. The first Write creates the file; without the session-owned-
 // file digest the second Write refused, citing a file the tool itself had
 // just produced.

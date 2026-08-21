@@ -14,7 +14,7 @@ import (
 //
 // W1 claims J and stalls past the visibility timeout; Reclaim re-enqueues J;
 // W2 re-claims it. The processing entry now belongs to W2. If W1 then wakes
-// and Acks/Nacks by bare job ID, it deletes or re-enqueues W2's entry — and
+// and Acks/Nacks by bare job ID, it deletes or re-enqueues W2's entry, and
 // when W2 later crashes there is nothing left to reclaim: the job is on no
 // list, in no hash, never dead-lettered. The claim token mints a fresh
 // identity per claim so a stale holder's completion is a fenced no-op.
@@ -59,7 +59,7 @@ func claimByTwoWorkers(t *testing.T, q *RedisQueue, now *time.Time) (w1, w2 Job)
 
 // TestRedisStaleAckCannotDeleteReclaimant: W1's late Ack must NOT delete
 // W2's processing entry. After W2 crashes (visibility expiry + Reclaim), the
-// job must still exist — re-delivered on the main list, not lost.
+// job must still exist, re-delivered on the main list, not lost.
 func TestRedisStaleAckCannotDeleteReclaimant(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "jobs")
@@ -74,7 +74,7 @@ func TestRedisStaleAckCannotDeleteReclaimant(t *testing.T) {
 		t.Fatalf("stale ack must be a no-op, not an error: %v", err)
 	}
 
-	// W2's entry must survive the stale Ack — it is the current claim.
+	// W2's entry must survive the stale Ack, it is the current claim.
 	if _, err := r.HGet(ctx, "jobs:processing", w1.ID); err != nil {
 		t.Fatalf("stale Ack deleted the re-claimant's processing entry: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestRedisStaleAckCannotDeleteReclaimant(t *testing.T) {
 		t.Fatalf("StaleClaimCount = %d, want 1 (stale completion must be observable)", got)
 	}
 
-	// W2 crashes. After its visibility window the job must be resurrected —
+	// W2 crashes. After its visibility window the job must be resurrected,
 	// not vanished from every list and hash.
 	now = now.Add(2 * time.Minute)
 	n, err := q.Reclaim(ctx)
@@ -102,7 +102,7 @@ func TestRedisStaleAckCannotDeleteReclaimant(t *testing.T) {
 }
 
 // TestRedisStaleNackCannotTouchReclaimant: W1's late Nack must NOT re-enqueue
-// W2's in-flight job nor delete W2's entry — otherwise the job runs twice
+// W2's in-flight job nor delete W2's entry, otherwise the job runs twice
 // concurrently and W2's crash finds nothing to reclaim.
 func TestRedisStaleNackCannotTouchReclaimant(t *testing.T) {
 	r := newMockRedis()
@@ -130,7 +130,7 @@ func TestRedisStaleNackCannotTouchReclaimant(t *testing.T) {
 		t.Fatalf("StaleClaimCount = %d, want 1 (stale completion must be observable)", got)
 	}
 
-	// Sanity: the CURRENT claimant (W2) can still complete normally — the
+	// Sanity: the CURRENT claimant (W2) can still complete normally, the
 	// fenced nack re-enqueues its job for the next attempt.
 	if err := q.Nack(ctx, w2); err != nil {
 		t.Fatalf("current claimant's nack failed: %v", err)

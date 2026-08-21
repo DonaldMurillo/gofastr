@@ -16,7 +16,7 @@ import (
 // data-fui-drag-dismiss="true" on a BottomSheet root emitted by
 // defaultSkeleton). The MutationObserver hands that root node to
 // _scanForModules, which must match the node ITSELF, not just its
-// descendants — otherwise root-marker modules (dragdismiss) never load
+// descendants, otherwise root-marker modules (dragdismiss) never load
 // and the sheet's drag handle is dead DOM.
 func TestModuleLoadsForRootMarkerNode(t *testing.T) {
 	js, err := RuntimeJS()
@@ -41,7 +41,7 @@ func TestModuleLoadsForRootMarkerNode(t *testing.T) {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		// No marker in the initial DOM — the module must NOT load at boot.
+		// No marker in the initial DOM, the module must NOT load at boot.
 		fmt.Fprint(w, `<!doctype html><html><head><title>root-marker</title></head><body>
   <main role="main"><span id="ready">ready</span></main>
   <script src="/__gofastr/runtime.js"></script>

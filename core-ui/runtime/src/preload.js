@@ -1,4 +1,4 @@
-// GoFastr runtime module — route preload (next-page HTML prefetch).
+// GoFastr runtime module, route preload (next-page HTML prefetch).
 //
 // Loaded by boot only when the route manifest declares a preload mode on
 // at least one route ("hover" | "visible" | "eager"). Prefetches the
@@ -10,7 +10,7 @@
 //   - GET-only by construction; the request carries X-Gofastr-Prefetch: 1
 //     so the server can skip session side effects.
 //   - X-Gofastr-Session / X-Gofastr-Invalidate / X-Gofastr-Location on a
-//     prefetch response are IGNORED — no DOM or store writes; a redirect
+//     prefetch response are IGNORED, no DOM or store writes; a redirect
 //     response is simply not cached. The next real navigation handles
 //     all of those.
 //   - A route that would present as an overlay from the CURRENT page is
@@ -75,7 +75,7 @@
     if (path === location.pathname + location.search || path === location.pathname) return;
     const target = routeFor(path);
     if (!target) return;
-    // Never prefetch a route that would overlay the CURRENT page — the
+    // Never prefetch a route that would overlay the CURRENT page, the
     // click goes through the intercept module and overlay HTML must not
     // enter any cache.
     if (target.intercept) {

@@ -111,7 +111,7 @@ func TestSQLIdempotency_UnsafeTableNameRejected(t *testing.T) {
 }
 
 // Simulates the race where two concurrent transactions both see "no row"
-// and both attempt INSERT — the second must surface as ErrInFlight, not a
+// and both attempt INSERT; the second must surface as ErrInFlight, not a
 // raw PK-violation error that the middleware would interpret as fail-open.
 func TestSQLIdempotency_DoubleInsertIsErrInFlightNotRawError(t *testing.T) {
 	db, s := openSQLIdemStore(t)
@@ -127,7 +127,7 @@ func TestSQLIdempotency_DoubleInsertIsErrInFlightNotRawError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed in-flight row: %v", err)
 	}
-	// Same fingerprint, fresh Begin — should see the in-flight row.
+	// Same fingerprint, fresh Begin: should see the in-flight row.
 	_, _, err = s.Begin(ctx, "k-concurrent", "fp1")
 	if !errors.Is(err, ErrInFlight) {
 		t.Fatalf("expected ErrInFlight, got %v", err)

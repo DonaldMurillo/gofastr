@@ -34,7 +34,7 @@ var (
 	OrderItemsTotalPrice  = framework.NewFloatColumn("total_price")
 )
 
-// OrderItems include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// OrderItems include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	OrderItemsInclOrder   = "order"
 	OrderItemsInclProduct = "product"
@@ -62,7 +62,7 @@ func NewOrderItemsRepo(app *framework.App) *OrderItemsRepo {
 	return &OrderItemsRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *OrderItemsRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -233,7 +233,7 @@ func OnOrderItemsUpdated(app *framework.App, fn func(ctx context.Context, row *O
 }
 
 // OnOrderItemsDeleted subscribes to entity.deleted events scoped to "order_items". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnOrderItemsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

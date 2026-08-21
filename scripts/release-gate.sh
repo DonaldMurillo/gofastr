@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# release-gate.sh — the publish gate for a release tag.
+# release-gate.sh: the publish gate for a release tag.
 #
 # The ONLY normal way a GitHub release is created here is the release.yml
 # workflow, which invokes this script. The supported human/agent flow is:
@@ -7,7 +7,7 @@
 #     merge the release PR to main  →  push the v* tag on the green main head
 #
 # The tag push triggers the workflow; this gate VALIDATES ONLY (it never
-# creates the release — the workflow step after a passing gate does) and
+# creates the release, the workflow step after a passing gate does) and
 # refuses to publish unless:
 #
 #   1. SECURITY.md names the minor being released as the supported line
@@ -26,7 +26,7 @@
 # published.
 #
 # Why a script (not inline YAML): the gate is behavioral and must be testable
-# locally — GitHub Actions cannot run as a PR check. The logic lives here and
+# locally, GitHub Actions cannot run as a PR check. The logic lives here and
 # is exercised by cmd/gofastr/release_gate_test.go against a stubbed gh/git,
 # so the contract is pinned by a test, not by hope.
 #
@@ -56,7 +56,7 @@ fail() { echo "::error::release gate: $*" >&2; exit 1; }
 # --- 0. Load the required-check manifest -------------------------------------
 # One check name per line; blank lines and '#' comments are ignored. Names are
 # matched EXACTLY (byte-for-byte) against the check runs' `name` field, so the
-# list is the single source of truth — a check whose name drifted is "missing".
+# list is the single source of truth, a check whose name drifted is "missing".
 REQUIRED=()
 while IFS= read -r raw; do
 	line="${raw#"${raw%%[![:space:]]*}"}"   # trim leading whitespace
@@ -77,7 +77,7 @@ fi
 # from the checkout root (the scripts/ path could not resolve otherwise), so
 # there a missing SECURITY.md fails rather than skips; the one caller NOT at
 # the root is cmd/gofastr/release_gate_test.go, which drives the script from
-# its own package dir against stub tags — neither path below exists there, so
+# its own package dir against stub tags, neither path below exists there, so
 # the policy check stays out of that harness.
 if [ -f "$SECURITY_MD" ] || [ -f scripts/release-gate.sh ]; then
 	supported="${TAG#v}"
@@ -99,7 +99,7 @@ fi
 
 # --- 2. A release must not pre-exist -----------------------------------------
 # The workflow is the publisher. An existing release means someone ran
-# `gh release create` by hand (bypassing this gate entirely — the old flow
+# `gh release create` by hand (bypassing this gate entirely, the old flow
 # documented exactly that, and the old "already exists" check ran only AFTER
 # the CI gate) or a prior run already shipped. Either way: stop loud.
 if "$GH_BIN" release view "$TAG" --json tagName >/dev/null 2>&1; then
@@ -121,17 +121,17 @@ fi
 
 # --- 4. Every required blocking check must be present + green ----------------
 # Fetch the tag commit's check runs and reduce them to one (status, conclusion)
-# per name — NEWEST wins, by descending id, so a red re-run of an
+# per name, NEWEST wins, by descending id, so a red re-run of an
 # already-green check blocks the release (and a green re-run unblocks a
 # previously red one). The reduction happens AFTER paginate concatenates
 # every page: --jq streams rows, sort/awk fold them globally. A per-page jq
 # group_by would reduce each page independently. Then classify each entry:
-#   missing  — no run for that name (race while CI uploads, or a rename)
-#   running  — present but not yet completed
-#   bad      — completed with a non-success conclusion (failure/cancelled/
-#              skipped/neutral/timed_out/action_required/stale) — terminal, no
+#   missing  : no run for that name (race while CI uploads, or a rename)
+#   running  : present but not yet completed
+#   bad      : completed with a non-success conclusion (failure/cancelled/
+#              skipped/neutral/timed_out/action_required/stale), terminal, no
 #              point waiting; CI will not re-run itself.
-#   green    — completed + success.
+#   green    : completed + success.
 # Terminal-bad aborts immediately. Missing/running wait up to GATE_TIMEOUT so a
 # tag pushed the instant CI starts (or a workflow_dispatch re-run while CI is
 # mid-flight) can still converge; anything still outstanding at the deadline

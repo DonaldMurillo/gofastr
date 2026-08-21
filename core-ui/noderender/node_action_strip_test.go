@@ -15,7 +15,7 @@ import (
 // data-action, data-action-* and data-param-*. The trusted entry points skip
 // it, so a developer-authored blueprint can still wire button actions through
 // those exact attributes. attrAllowed then independently strips the
-// privileged data-fui-* family on BOTH paths — that is asserted here only for
+// privileged data-fui-* family on BOTH paths, that is asserted here only for
 // the untrusted path (the case the task names), since the code strips it
 // regardless of trust.
 //
@@ -53,7 +53,7 @@ func TestRenderNodeStripsActionAttrs(t *testing.T) {
 	}
 }
 
-// RenderTrustedNode keeps the same family (emits it as an attribute) — that is
+// RenderTrustedNode keeps the same family (emits it as an attribute), that is
 // the whole reason the trusted variant exists. If it ever stops, every
 // blueprint-generated action goes silently dead.
 func TestRenderTrustedNodeKeepsActionAttrs(t *testing.T) {
@@ -71,7 +71,7 @@ func TestRenderTrustedNodeKeepsActionAttrs(t *testing.T) {
 }
 
 // RenderKind (the single-element entry point) strips the action family exactly
-// like RenderNode does — it routes through withoutActionAttrs before
+// like RenderNode does, it routes through withoutActionAttrs before
 // renderKind.
 func TestRenderKindStripsActionAttrs(t *testing.T) {
 	for _, attr := range strippedActionAttrs {
@@ -137,7 +137,7 @@ func TestRenderNodeStripsActionAttrsOnNestedChild(t *testing.T) {
 
 // withoutActionAttrs and attrAllowed both fold the key to lowercase before
 // matching, so a prop keyed Data-Action / DATA-ACTION is still recognized as
-// the action attr, and OnClick is still recognized as an event handler — HTML
+// the action attr, and OnClick is still recognized as an event handler, HTML
 // attribute names are case-insensitive to the parser, so the casing must not be
 // an escape hatch. Assert the rendered string contains none of those tokens.
 func TestRenderNodeStripsActionAttrsCaseInsensitive(t *testing.T) {

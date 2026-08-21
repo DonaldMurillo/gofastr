@@ -1,6 +1,6 @@
 // Package expr is Kiln's tiny expression evaluator. It exists so the
 // world IR can describe predicates, computed values, and conditions
-// declaratively — without requiring an embedded Go interpreter.
+// declaratively, without requiring an embedded Go interpreter.
 //
 // The grammar is a deliberately small subset:
 //

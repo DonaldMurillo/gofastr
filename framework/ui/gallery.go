@@ -16,18 +16,18 @@ import (
 // Standalone thumbnail surface. Three visual variants share the same
 // Item shape:
 //
-//   - GalleryGrid    — CSS Grid, `Columns` × `Gap`. The default.
-//   - GalleryStrip   — horizontal scroll-snap row.
-//   - GalleryMasonry — CSS `columns: <n>` so tiles flow at natural
+//   - GalleryGrid:     CSS Grid, `Columns` × `Gap`. The default.
+//   - GalleryStrip:    horizontal scroll-snap row.
+//   - GalleryMasonry:  CSS `columns: <n>` so tiles flow at natural
 //                      aspect (Pinterest-style).
 //
 // Click behaviour (pick ONE; otherwise the anchor opens Src in a new
 // tab as the no-JS fallback):
 //
-//   - Lightbox — name of a paired framework/ui.Lightbox. Each item
+//   - Lightbox:  name of a paired framework/ui.Lightbox. Each item
 //                emits data-fui-open + data-fui-deeplink so clicking
 //                opens the overlay with the matching image.
-//   - HrefFn   — a function returning a per-item URL the anchor
+//   - HrefFn:    a function returning a per-item URL the anchor
 //                navigates to. Use for "click photo → detail page".
 //
 // Caption rendering is controlled by CaptionMode.
@@ -56,7 +56,7 @@ type GalleryItem struct {
 	Src string
 	// Thumb is the thumbnail URL. Defaults to Src.
 	Thumb string
-	// Alt is the accessible image description (required — empty Alt
+	// Alt is the accessible image description (required: empty Alt
 	// is rejected at render time to surface omissions).
 	Alt string
 	// Caption is optional descriptive text shown per CaptionMode.
@@ -75,7 +75,7 @@ type GalleryConfig struct {
 	// Label is the accessible label for the gallery list. Defaults
 	// to "Image gallery".
 	Label string
-	// Columns (Grid mode) — the MAXIMUM number of columns. Default 3.
+	// Columns (Grid mode): the MAXIMUM number of columns. Default 3.
 	// The grid is responsive: tracks never shrink below --ui-gallery-min
 	// (default 9.5rem, overridable per instance via a Class), so narrow
 	// viewports automatically get fewer columns without media queries.
@@ -107,7 +107,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	case GalleryGrid, GalleryStrip, GalleryMasonry:
 	default:
 		panic("ui: Gallery unknown Variant " + string(cfg.Variant) +
-			` — pick one of: "" (grid), strip, masonry`)
+			`. Pick one of: "" (grid), strip, masonry`)
 	}
 	switch cfg.CaptionMode {
 	case GalleryCaptionBelow, GalleryCaptionOverlay, GalleryCaptionOff:
@@ -146,7 +146,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 		"aria-label": label,
 	}
 	// Columns maps to a precomputed .ui-gallery--cols-<n> class that
-	// sets --ui-gallery-cols — no inline style needed (CSP).
+	// sets --ui-gallery-cols, no inline style needed (CSP).
 	if cfg.Variant == GalleryGrid || cfg.Variant == GalleryMasonry {
 		// Cap at 12 for the precomputed class set; very wide grids
 		// fall back to 12.
@@ -172,7 +172,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 			panic("ui: Gallery item requires Src")
 		}
 		if it.Alt == "" {
-			panic("ui: Gallery item requires Alt — set a meaningful description; the framework panics by default to surface missing alt text")
+			panic("ui: Gallery item requires Alt. Set a meaningful description; the framework panics by default to surface missing alt text")
 		}
 		thumb := it.Thumb
 		if thumb == "" {

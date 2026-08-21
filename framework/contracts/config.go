@@ -25,7 +25,7 @@ var ConfigFileNames = []string{
 // CoverageConfig governs the testing capability's thresholds. Zero values
 // are the strict setting throughout: every demand on, and a line-coverage
 // floor that is only enforced once a number is set (there is no honest
-// default percentage — a floor nobody chose is a floor nobody meets).
+// default percentage: a floor nobody chose is a floor nobody meets).
 type CoverageConfig struct {
 	// Minimum is the line-coverage percentage floor. Zero disables the
 	// check; the generated config comments this in at 90.
@@ -72,15 +72,15 @@ type ArchitectureConfig struct {
 }
 
 // Configured reports whether the project described a dependency shape. No
-// layers means the analyzer has nothing to enforce and stays quiet —
-// inventing a layering for someone else's package tree would be noise.
+// layers means the analyzer has nothing to enforce and stays quiet.
+// Inventing a layering for someone else's package tree would be noise.
 func (a ArchitectureConfig) Configured() bool {
 	return len(a.Layers) > 0 || len(a.Forbid) > 0
 }
 
 // Config is the resolved configuration for a verify run. The zero value
 // (via [DefaultConfig]) enforces every rule in the catalog at its declared
-// severity — nothing is quieter than declared unless someone writes it
+// severity: nothing is quieter than declared unless someone writes it
 // down. Most fields exist to turn something down; severity may also be
 // raised, which is a real choice a team is entitled to make.
 type Config struct {
@@ -119,7 +119,7 @@ func DefaultConfig() *Config {
 // LoadConfig resolves configuration for a project root. An explicit path
 // must exist; otherwise the first of [ConfigFileNames] present in root is
 // used, and defaults apply when none is. A file that exists but is
-// malformed is an error — falling back to defaults there would silently
+// malformed is an error: falling back to defaults there would silently
 // re-enable rules the author believed they had turned off.
 func LoadConfig(root, explicit string) (*Config, error) {
 	if explicit != "" {
@@ -140,7 +140,7 @@ func LoadConfig(root, explicit string) (*Config, error) {
 			return nil, err
 		}
 		// A gofastr.yml without a `contracts:` block is a blueprint, not a
-		// contracts config — keep looking rather than claiming it.
+		// contracts config. Keep looking rather than claiming it.
 		if cfg == nil {
 			continue
 		}
@@ -150,7 +150,7 @@ func LoadConfig(root, explicit string) (*Config, error) {
 }
 
 // parseConfig returns (nil, nil) when the document parses but holds no
-// contracts block — the "this is a blueprint, not my config" case.
+// contracts block, the "this is a blueprint, not my config" case.
 func parseConfig(path string, body []byte) (*Config, error) {
 	doc, err := coreyaml.Parse(string(body))
 	if err != nil {
@@ -190,7 +190,7 @@ func (c *Config) applyNode(path string, root *coreyaml.Node) error {
 		case "strict":
 			var on bool
 			if on, err = boolValue(path, node); err == nil && on {
-				// Strict makes warnings fail. It cannot make them pass —
+				// Strict makes warnings fail. It cannot make them pass:
 				// there is no setting that raises the floor above error.
 				c.FailOn = SeverityWarn
 			}
@@ -199,7 +199,7 @@ func (c *Config) applyNode(path string, root *coreyaml.Node) error {
 			if s, err = stringValue(path, node); err == nil {
 				c.FailOn, err = ParseSeverity(s)
 				if err == nil && c.FailOn == SeverityOff {
-					err = fmt.Errorf("fail-on: off would make every run pass — remove the key or set rules to off individually")
+					err = fmt.Errorf("fail-on: off would make every run pass: remove the key or set rules to off individually")
 				}
 			}
 		case "coverage":
@@ -313,7 +313,7 @@ func (c *Config) applyRules(path string, node *coreyaml.Node) error {
 		if !ok {
 			msg := fmt.Sprintf("%s:%d: unknown rule %q", path, child.Line, key)
 			if near := SuggestRules(key); len(near) > 0 {
-				msg += " — did you mean " + strings.Join(near, ", ") + "?"
+				msg += ": did you mean " + strings.Join(near, ", ") + "?"
 			}
 			return fmt.Errorf("%s\nRun `gofastr verify --list` for the full catalog.", msg)
 		}
@@ -495,7 +495,7 @@ func parseLayers(path string, node *coreyaml.Node) ([]LayerRule, error) {
 
 // SeverityFor is the effective severity of a rule after configuration.
 // Rule overrides beat capability overrides, which beat the rule's declared
-// default — most specific wins.
+// default: most specific wins.
 //
 // Configuration may move a severity in either direction. "Strict by
 // default" is a statement about the *default*, not a ceiling: a team that
@@ -554,8 +554,8 @@ func (c *Config) Relaxations() []string {
 	for _, g := range c.Exempt {
 		out = append(out, "exempt path "+g)
 	}
-	// Scoped exemptions are relaxations too — a path where a rule cannot
-	// fire — and omitting them left the footer's account incomplete for
+	// Scoped exemptions are relaxations too, a path where a rule cannot
+	// fire, and omitting them left the footer's account incomplete for
 	// exactly the two forms a reader is least likely to know about.
 	for capName, globs := range c.capExempt {
 		for _, g := range globs {

@@ -72,7 +72,7 @@ func (notFoundErr) Error() string { return "entity not found" }
 var errNotFound = notFoundErr{}
 
 // TestRunSeeds_AdvisoryLockSerializesAcrossReplicas: two RunSeeds calls
-// against the SAME Postgres — simulating two replicas booting at once —
+// against the SAME Postgres, simulating two replicas booting at once,
 // run the Seed body exactly ONCE (ledger + lock). The sentinel row the
 // Seed inserts appears exactly once; both calls return nil.
 func TestRunSeeds_AdvisoryLockSerializesAcrossReplicas(t *testing.T) {
@@ -88,7 +88,7 @@ func TestRunSeeds_AdvisoryLockSerializesAcrossReplicas(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `DELETE FROM seed_lock_sentinel`); err != nil {
 		t.Fatalf("clear sentinel table: %v", err)
 	}
-	// Same for the ledger — a stale ledger row would short-circuit the test
+	// Same for the ledger: a stale ledger row would short-circuit the test
 	// and mask the race we're trying to exercise.
 	if _, err := db.ExecContext(ctx, `DELETE FROM _gofastr_seeded WHERE entity_name = 'seed_lock_sentinel'`); err != nil {
 		// Tolerate the ledger not existing yet (first run in this schema).
@@ -100,7 +100,7 @@ func TestRunSeeds_AdvisoryLockSerializesAcrossReplicas(t *testing.T) {
 		"seed_lock_sentinel": seededEntityBuilder("seed_lock_sentinel", func(ctx context.Context, db *sql.DB) error {
 			atomic.AddInt64(&seedCalls, 1)
 			// INSERT ON CONFLICT keeps the Seed idempotent if both replicas
-			// DO end up running it (defense in depth — the lock should
+			// DO end up running it (defense in depth, the lock should
 			// already prevent this, but a Seed that crashes mid-flight is
 			// re-run on next boot).
 			_, err := db.ExecContext(ctx,
@@ -133,7 +133,7 @@ func TestRunSeeds_AdvisoryLockSerializesAcrossReplicas(t *testing.T) {
 
 	// The Seed body ran at most once. With the lock it's exactly once; the
 	// assertion documents "no double-run", which is the contract. (Either
-	// replica may win — that's fine.)
+	// replica may win, that's fine.)
 	if got := atomic.LoadInt64(&seedCalls); got != 1 {
 		t.Fatalf("Seed body executed %d times, want exactly 1 (ledger + advisory lock)", got)
 	}
@@ -191,7 +191,7 @@ func TestRunSeeds_LockReleasedAfterError(t *testing.T) {
 		t.Fatal("expected first RunSeeds to fail")
 	}
 
-	// Second call with a no-op Seed must NOT block — the lock from the
+	// Second call with a no-op Seed must NOT block: the lock from the
 	// failed call must have been released.
 	done := make(chan error, 1)
 	go func() {

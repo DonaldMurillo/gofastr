@@ -8,7 +8,7 @@ import (
 
 // multiErrorBlueprint carries three independent schema errors: a
 // duplicate entity, a screen with no route, and an endpoint with no
-// handler. One validation pass must report all three — the alternative
+// handler. One validation pass must report all three. The alternative
 // is a serial guess-and-recompile loop where each fix reveals the next
 // error.
 func TestValidateReportsAllSchemaErrors(t *testing.T) {
@@ -55,7 +55,7 @@ endpoints:
 }
 
 // An unknown top-level key that is a known app-level setting must point
-// at the right nesting level — `auth:` at the root silently does nothing
+// at the right nesting level: `auth:` at the root silently does nothing
 // (the real key is app.auth), which is exactly the misplacement an agent
 // or a YAML-merging tool produces.
 func TestUnknownKeySuggestsCorrectLocation(t *testing.T) {
@@ -86,7 +86,7 @@ func TestUnknownKeySuggestsCorrectLocation(t *testing.T) {
 }
 
 // Every unknown key at one level must be reported in the same pass, not
-// one per run (they are all in the same map — the fix is the same edit).
+// one per run (they are all in the same map; the fix is the same edit).
 func TestUnknownKeysAllReportedAtOnce(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")

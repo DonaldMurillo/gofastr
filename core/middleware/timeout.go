@@ -26,7 +26,7 @@ import (
 // Streaming mode: first call to Flush() or Hijack() commits the buffered
 // headers + body to the underlying writer and flips into passthrough so
 // SSE handlers and WebSocket upgrades keep working. After streaming
-// starts, the timeout path can no longer write the 504 — the underlying
+// starts, the timeout path can no longer write the 504: the underlying
 // connection is owned by the handler.
 type timeoutWriter struct {
 	w http.ResponseWriter
@@ -81,7 +81,7 @@ func (tw *timeoutWriter) Write(p []byte) (int, error) {
 }
 
 // Flush passes through when supported. First call commits buffered headers
-// + body and flips into streaming mode — required for SSE handlers whose
+// + body and flips into streaming mode, required for SSE handlers whose
 // post-headers `Flush()` call is the signal that subsequent Writes must
 // reach the client immediately.
 func (tw *timeoutWriter) Flush() {
@@ -165,18 +165,18 @@ func (tw *timeoutWriter) expire() bool {
 // replaces context.WithTimeout because a stdlib deadline is irrevocable:
 // once it fires, Err() is frozen at DeadlineExceeded forever, so a client
 // disconnect AFTER the deadline becomes invisible to a still-streaming
-// handler that discriminates DeadlineExceeded (ignore — issue #159) from
+// handler that discriminates DeadlineExceeded (ignore, issue #159) from
 // Canceled (unwind). This context keeps the same observable behavior for
-// non-streaming requests — Done fires at the deadline with
-// Err() == DeadlineExceeded, and earlier parent cancellation propagates —
-// but the deadline is DISARMED when the response has started streaming,
+// non-streaming requests: Done fires at the deadline with
+// Err() == DeadlineExceeded, and earlier parent cancellation propagates.
+// But the deadline is DISARMED when the response has started streaming,
 // leaving the context live so a later disconnect still delivers Canceled.
 //
 // Deadline() deliberately reports no deadline: for a streaming response
 // the deadline may never fire, and advertising one that then doesn't fire
 // makes stdlib helpers misbehave (context.WithTimeout derived from a
 // parent whose advertised deadline is earlier trusts the parent to fire
-// and drops its own timer — a lost timeout). Callers needing a budget
+// and drops its own timer, a lost timeout). Callers needing a budget
 // still observe Done()/Err() exactly as with context.WithTimeout.
 type timeoutCtx struct {
 	parent context.Context // original *http.Request context (values, cause)
@@ -221,16 +221,16 @@ func (c *timeoutCtx) cancel(err error) {
 // concurrent writes to the underlying http.Header map between the handler
 // goroutine and the timeout path.
 //
-// Streaming contract: once the handler flushes or hijacks — flipping the
-// wrapped writer into streaming mode — the deadline stops applying to the
+// Streaming contract: once the handler flushes or hijacks, flipping the
+// wrapped writer into streaming mode, the deadline stops applying to the
 // response. The middleware waits for the handler to return instead of
 // handing the finalized response back to net/http underneath it (which
-// would make the handler's next write panic — the bug that killed every
+// would make the handler's next write panic, the bug that killed every
 // SSE stream older than the timeout), and the request context stays LIVE
 // past the deadline so a later client disconnect is still delivered as
 // context.Canceled. A streaming handler therefore owns its lifetime: it
 // unwinds on disconnect, on its own bound (like the SSE bus, issue #159),
-// or on a failed write — never because the request deadline lapsed.
+// or on a failed write, never because the request deadline lapsed.
 // Handlers that never start streaming keep the hard guarantee: a hung
 // handler gets its 504 at the deadline, with the context completed as
 // DeadlineExceeded.
@@ -282,11 +282,11 @@ func Timeout(d time.Duration) Middleware {
 					// handler owns the connection lifetime and the deadline
 					// no longer applies. Returning here would hand the
 					// response back to net/http, which finalizes it and
-					// nils its internal buffered writer — the still-
+					// nils its internal buffered writer; the still-
 					// streaming handler's next write (e.g. the SSE
 					// heartbeat) would then panic inside net/http. Block
 					// until the handler returns instead. The handler's ctx
-					// is NOT cancelled here — it stays live so a later
+					// is NOT cancelled here; it stays live so a later
 					// client disconnect still reaches the handler as
 					// Canceled (via the AfterFunc above); the stream's
 					// lifetime belongs to the handler and its own bound
@@ -302,7 +302,7 @@ func Timeout(d time.Duration) Middleware {
 				// Parent abandoned the handler; the handler goroutine
 				// is still running and may yet panic. Watch for that
 				// late panic and surface it through slog.Default so it
-				// doesn't vanish — otherwise debugging "why does this
+				// doesn't vanish. Otherwise debugging "why does this
 				// endpoint sometimes 504 with no further trace" is
 				// impossible.
 				go func() {
@@ -327,7 +327,7 @@ func Timeout(d time.Duration) Middleware {
 				// Client gone before the handler finished (the AfterFunc
 				// has already delivered the parent's error to ctx). Same
 				// exit as the deadline: don't hold the connection open
-				// for a peer that left. The 504 goes to a dead socket —
+				// for a peer that left. The 504 goes to a dead socket:
 				// written for parity, observed by no one.
 				abandon(r.Context().Err())
 			case <-timer.C:

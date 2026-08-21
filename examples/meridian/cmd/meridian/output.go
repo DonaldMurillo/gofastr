@@ -112,7 +112,7 @@ func apiFail(err error) int {
 	if errors.As(err, &apiErr) {
 		fmt.Fprintln(os.Stderr, apiErr.Error())
 		if apiErr.Status == 401 || apiErr.Status == 403 {
-			fmt.Fprintf(os.Stderr, "auth failed — mint a token in the app and run `%s login`\n", binaryName)
+			fmt.Fprintf(os.Stderr, "auth failed: mint a token in the app and run `%s login`\n", binaryName)
 			return 4
 		}
 		return 1
@@ -209,8 +209,8 @@ func readJSONArrayArg(v string) (json.RawMessage, int) {
 
 // doBatch sends a _batch request. The server answers a rolled-back batch
 // with 400 and the same {committed, results[]} envelope, so that case is
-// decoded and returned as a response — printBatch then surfaces it on
-// stdout and exit code 1 — rather than treated as a transport error.
+// decoded and returned as a response, printBatch then surfaces it on
+// stdout and exit code 1, rather than treated as a transport error.
 func doBatch(g *global, method, path string, body any) (client.BatchResponse, int) {
 	var resp client.BatchResponse
 	if err := g.client.Do(g.ctx, method, path, body, &resp); err != nil {
@@ -237,7 +237,7 @@ func printBatch(resp client.BatchResponse) int {
 	return 0
 }
 
-// paramFlags collects repeatable --param key=value pairs — the escape hatch
+// paramFlags collects repeatable --param key=value pairs, the escape hatch
 // for query params the generated flags don't cover (e.g. created_at_gt on
 // timestamp-managed columns).
 type paramFlags struct {

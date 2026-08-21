@@ -79,9 +79,9 @@ Let the status and primary path lead. The mobile opening should preserve status
 without a second mobile-only summary tree. Full responder lists and archival evidence belong later or in
 `ui.Collapsible`; do not shrink them into micro text.
 
-On a wide detail route, put related bounded modules—two `DetailList`s, a record
-and live impact, or metadata and ownership—in `ui.Grid` when they have similar
-weight. Do not stack a narrow table down the left half of a desktop canvas and
+On a wide detail route, put related bounded modules in `ui.Grid` when they
+have similar weight: two `DetailList`s, a record and live impact, or metadata
+and ownership. Do not stack a narrow table down the left half of a desktop canvas and
 leave an accidental empty rail. Let the framework grid reflow the pair to a
 single readable column on phones.
 
@@ -126,8 +126,8 @@ into one endless page.
 **Use for:** technical product pages, documentation entry pages, launches, and
 content where a concrete artifact should explain the product beside the copy.
 
-**Density:** balanced to spacious. **Dominant element:** the artifact—code,
-terminal output, diagram, or product image—not a decorative gradient.
+**Density:** balanced to spacious. **Dominant element:** a concrete artifact
+such as code, terminal output, a diagram, or a product image, not a decorative gradient.
 **Avoid:** centered hero → three equal feature cards → centered CTA.
 
 Start with `ui.HeroSplit`; pair concise copy with `ui.CodeBlock`,
@@ -193,7 +193,7 @@ active controls.
 ## Choosing without overfitting
 
 1. State the primary user task and the first decision.
-2. Pick the closest recipe by task—not by visual fashion.
+2. Pick the closest recipe by task, not by visual fashion.
 3. Name the dominant element and the content that can remain secondary.
 4. Decide desktop regions and the mobile priority order before implementation.
 5. Survey `framework/ui`, `core-ui/app`, and `core-ui/patterns` for the named
@@ -202,7 +202,7 @@ active controls.
 7. Identify the three weakest visible decisions and revise them.
 
 If a recipe can't be built without local structural markup or CSS, that's a
-missing piece in the design system — write it down and add it there. The app
+missing piece in the design system: write it down and add it there. The app
 doesn't get an exception to the no-CSS rule; building it is how you find what's
 missing.
 
@@ -219,7 +219,7 @@ missing.
 - Choosing a recipe after already assembling a familiar card grid.
 - Treating every region as equally important.
 - Using Cards, pills, or elevation as decoration rather than semantics.
-- Repeating desktop content in a second “mobile” tree without changing its
+- Repeating desktop content in a second "mobile" tree without changing its
   priority.
-- Calling a component-valid DOM “visually verified” without screenshots.
+- Calling a component-valid DOM "visually verified" without screenshots.
 - Adding app CSS to approximate a recipe instead of filling an upstream gap.

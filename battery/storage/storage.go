@@ -12,7 +12,7 @@ type Storage = upload.Storage
 
 // RangeGetter is a re-export of [upload.RangeGetter], the optional capability
 // a backend implements to expose seekable reads so HTTP range requests can be
-// answered. LocalStorage and MemoryStorage implement it; S3Storage declines —
+// answered. LocalStorage and MemoryStorage implement it; S3Storage declines,
 // a network-backed store would have to buffer the whole object to satisfy
 // Seek, and [WithPresigner] lets the transfer bypass the app entirely.
 type RangeGetter = upload.RangeGetter

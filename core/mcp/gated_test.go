@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Gated wraps a ToolHandler with a caller-facing precondition — the
+// Gated wraps a ToolHandler with a caller-facing precondition: the
 // building block for auth-gating custom MCP tools. The gate sees the
 // tool call's context (which carries the inbound HTTP request and
 // whatever identity the router middleware resolved onto it).

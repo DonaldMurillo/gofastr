@@ -10,18 +10,18 @@ import (
 // ─── Container ──────────────────────────────────────────────────────
 //
 // Max-width page wrapper with breakpoint-aware horizontal padding.
-// Pairs with Stack/Cluster/Grid (which manage internal spacing) —
+// Pairs with Stack/Cluster/Grid (which manage internal spacing).
 // Container manages the OUTER bounds: the gutter against the viewport.
 
 // ContainerWidth picks the max-inline-size cap.
 type ContainerWidth string
 
 const (
-	// ContainerNarrow caps at ~640px — long-form prose, marketing.
+	// ContainerNarrow caps at ~640px: long-form prose, marketing.
 	ContainerNarrow ContainerWidth = "narrow"
-	// ContainerDefault caps at ~1080px — most pages.
+	// ContainerDefault caps at ~1080px: most pages.
 	ContainerDefault ContainerWidth = ""
-	// ContainerWide caps at ~1280px — dashboards.
+	// ContainerWide caps at ~1280px: dashboards.
 	ContainerWide ContainerWidth = "wide"
 	// ContainerFull removes the cap; padding still applies.
 	ContainerFull ContainerWidth = "full"
@@ -45,7 +45,7 @@ func Container(cfg ContainerConfig, children ...render.HTML) render.HTML {
 	case ContainerNarrow, ContainerDefault, ContainerWide, ContainerFull:
 	default:
 		panic("ui: Container unknown Width " + string(cfg.Width) +
-			` — pick one of: narrow, "" (default), wide, full`)
+			`. Pick one of: narrow, "" (default), wide, full`)
 	}
 	tag := cfg.As
 	if tag == "" {

@@ -49,7 +49,7 @@ func TestSuccessHiddenByDefault(t *testing.T) {
 	if !strings.Contains(got, "Following</span>") {
 		t.Errorf("expected success label, got: %s", got)
 	}
-	// Success span must be hidden by default — runtime un-hides it on
+	// Success span must be hidden by default: runtime un-hides it on
 	// commit. Attribute order isn't guaranteed; check for both pieces.
 	if !strings.Contains(got, `data-fui-optimistic-success=""`) ||
 		!strings.Contains(got, `hidden=""`) {

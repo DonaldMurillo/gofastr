@@ -9,7 +9,7 @@ import (
 )
 
 // A panicking subscriber must not veto the write (Emit returns nil), but
-// the panic must be LOGGED — a silently no-op'd "send welcome email"
+// the panic must be LOGGED, a silently no-op'd "send welcome email"
 // handler is otherwise undebuggable.
 func TestEmitLogsSubscriberPanic(t *testing.T) {
 	var buf bytes.Buffer

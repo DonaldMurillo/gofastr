@@ -1,6 +1,6 @@
 package main
 
-// ComponentsSidebar — category navigation for /components/*. A single
+// ComponentsSidebar, category navigation for /components/*. A single
 // interactive.SectionMenu: a sticky collapsible rail on desktop, a slide-in
 // sheet on mobile. The active component is highlighted by the runtime's
 // active-link pass (exact-href aria-current) since the sidebar persists across
@@ -24,7 +24,7 @@ func (s *ComponentsSidebar) Render() render.HTML {
 }
 
 // componentsSectionMenuConfig is the single source of truth for the components
-// nav — shared by the inline rail (ComponentsSidebar.Render) and the mounted
+// nav, shared by the inline rail (ComponentsSidebar.Render) and the mounted
 // mobile drawer (SectionMenuDrawer in main.go). Active state is left to the
 // runtime's client-side aria-current pass since the sidebar persists across
 // the screen group's navigation.
@@ -56,7 +56,7 @@ func componentsSectionMenuConfig() interactive.SectionMenuConfig {
 	}
 }
 
-// demoSectionMenuConfig powers the /components/section-menu showcase — a small
+// demoSectionMenuConfig powers the /components/section-menu showcase, a small
 // self-contained menu whose drawer is mounted in main.go like any real menu.
 //
 // Re-exported here as a wrapper because main.go and the catalog both call it
@@ -65,7 +65,7 @@ func demoSectionMenuConfig() interactive.SectionMenuConfig {
 	return gallery.DemoSectionMenuConfig()
 }
 
-// groupCatalog — category-grouped catalog. Shared here to keep navigation
+// groupCatalog, category-grouped catalog. Shared here to keep navigation
 // in lock-step with the showcase.
 func groupCatalog() []componentGroup {
 	return gallery.Grouped()

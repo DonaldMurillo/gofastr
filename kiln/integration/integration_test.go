@@ -437,7 +437,7 @@ func TestSeedFlowInsertsVisibleRows(t *testing.T) {
 		t.Fatalf("add seed: %+v", r)
 	}
 
-	// Seeds aren't auto-applied yet — the test just verifies the seed is
+	// Seeds aren't auto-applied yet, the test just verifies the seed is
 	// recorded in the world. Functional seed application is wired in
 	// render.ApplySeeds and exercised in kiln/render tests.
 	if len(h.live.Session().World.Seeds) != 1 {

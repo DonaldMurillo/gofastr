@@ -4,7 +4,7 @@ A live dashboard is the canonical composition of GoFastr's push primitives:
 server-rendered charts and StatCards, a bounded activity feed, a keyed
 changing collection, an authoritative refresh endpoint, and the
 connection-health banner. This doc is the reference for how those
-primitives fit together — and the boundaries that decide when each is
+primitives fit together, and the boundaries that decide when each is
 the right shape versus when you need a durable queue.
 
 The runnable proof lives at
@@ -15,13 +15,13 @@ ticks, because pushes are broadcast to every session that joined the
 
 ## What the example demonstrates
 
-The dashboard composes existing primitives — no bespoke CSS, no new
+The dashboard composes existing primitives: no bespoke CSS, no new
 runtime JS. Each region maps to one product job:
 
 | Region | Primitive | What it proves |
 |---|---|---|
-| Metric StatCards (throughput, workers, queue depth, p99) | `ui.StatCard` inside a `data-island` slot | Server re-renders fresh HTML on each tick and `PushUpdate`s it; the runtime swaps just that region's `innerHTML`. The cards are NOT `aria-live` — high-frequency numbers would flood assistive tech. |
-| Activity feed | `ui.Timeline` in a `data-island` slot with `role="status"` | The polite announcement lane. The server trims to the N most recent entries before each push — the client never buffers. |
+| Metric StatCards (throughput, workers, queue depth, p99) | `ui.StatCard` inside a `data-island` slot | Server re-renders fresh HTML on each tick and `PushUpdate`s it; the runtime swaps just that region's `innerHTML`. The cards are NOT `aria-live` because high-frequency numbers would flood assistive tech. |
+| Activity feed | `ui.Timeline` in a `data-island` slot with `role="status"` | The polite announcement lane. The server trims to the N most recent entries before each push. The client never buffers. |
 | Jobs table | `ui.DataTable` (rows keyed by `Row.ID`) in a `data-island` slot | A keyed changing collection. Successive pushes produce HTML that differs only on rows that actually changed. |
 | Operational status pill | `store.Computed` bound via `Slice.Bind` | A derived client-side value. The operator's +/- buttons mutate two signals with `data-fui-signal-inc`; the reducer runs in the browser and the pill updates live. No RPC. |
 | Connection-health banner | `ui.NetworkRetryBanner` | Watches the SSE lane. `SSESilenceMs` trips the banner if the ticker goes quiet; the Retry button probes a health endpoint. |
@@ -53,7 +53,7 @@ mgr.SetOnPresenceChange(func(topic string) {
 })
 ```
 
-The dashboard's ticker uses the identical shape — it just fires on a
+The dashboard's ticker uses the identical shape. It just fires on a
 timer instead of on a roster change.
 
 ## Update scheduling and DOM discipline
@@ -69,7 +69,7 @@ work. The runtime's rAF-throttled modules (`backtotop`, `popover`,
 `scrollspy`, `toc`, `dropdown`) all use the same shape: a boolean
 `_rafPending` gate, a single `requestAnimationFrame` callback that walks
 the pending set, then clears the gate. The pattern in `popover.js` is
-the cleanest example — capture-phase scroll listener, one `place()` per
+the cleanest example: capture-phase scroll listener, one `place()` per
 frame even on a furious wheel-spin.
 
 ```js
@@ -81,7 +81,7 @@ scrollEl.addEventListener('scroll', () => {
 }, { capture: true, passive: true });
 ```
 
-For island pushes, the runtime already batches per SSE frame — one
+For island pushes, the runtime already batches per SSE frame: one
 `el.innerHTML = html` per island event. If your island handler emits
 multiple signal updates that touch the same region, fold them into one
 re-render on the server side and push once.
@@ -92,15 +92,15 @@ These are two different update shapes and they must not share a region:
 
 - **Latest-state metric** (throughput, queue depth). The new value
   replaces the old. Intermediate frames may drop without harming the
-  user — a future tick heals a missed one. This is the default SSE
+  user. A future tick heals a missed one. This is the default SSE
   contract (`?buffer=N` with oldest-drop).
 - **Bounded append feed** (activity log, audit trail). New entries
   prepend/append; old entries trim. The server trims to the N most
-  recent before re-render — never the client. The dashboard caps the
+  recent before re-render, never the client. The dashboard caps the
   feed at eight entries on the server (`liveDashFeedCap`) and ships a
   Timeline that fits in one viewport without scrolling.
 
-A feed that must not lose entries is not an SSE feed — see the decision
+A feed that must not lose entries is not an SSE feed. See the decision
 table below.
 
 ### Keyed row updates without rebuilding unrelated regions
@@ -115,7 +115,7 @@ swaps cheap and DOM-stable:
   islands (stats, feed, jobs) so a metric tick does not re-encode the
   jobs table. One monolithic island would re-render everything per tick.
 - Do not push unrelated chrome. The PageHeader, the operator console,
-  and the "How this is wired" prose are SSR-only — they never appear in
+  and the "How this is wired" prose are SSR-only. They never appear in
   a `PushUpdate` payload.
 
 ### Separate high-frequency visuals from polite aria-live
@@ -135,7 +135,7 @@ The rule:
 
 ### Pause work for hidden and background tabs
 
-A tab moved to the background is throttled by the browser — rAF callbacks
+A tab moved to the background is throttled by the browser: rAF callbacks
 slow to ~1Hz, IntersectionObservers stop firing, smooth scrolling
 freezes. Background work that ignores this wastes battery and CPU.
 
@@ -144,14 +144,14 @@ The carousel module is the canonical example: it listens for
 `document.visibilityState === "hidden"`, restarting on return. SSE
 itself stays connected in the background (the OS keeps the network
 socket alive), but you should not spin rAF animations or poll loops
-against a hidden tab — gate them on `visibilitychange`.
+against a hidden tab. Gate them on `visibilitychange`.
 
 ### Dispose subscriptions on navigation
 
 The runtime's `animate` and `computed` modules subscribe element closures
 into `G._signals[name].listeners` on wire. The same modules splice those
-closures back out on `gofastr:navigate` once the element is detached —
-without this, every SPA page swap would leak closures (and the detached
+closures back out on `gofastr:navigate` once the element is detached.
+Without this, every SPA page swap would leak closures (and the detached
 DOM nodes they close over) for the lifetime of the session.
 
 The lesson for app-owned islands: if you add a `MutationObserver`, an
@@ -180,7 +180,7 @@ Pick the lane by who needs to know *when*:
   the user did not ask for the update.
 - **Push with SSE when the server needs to initiate the update or the
   cadence is sub-second.** Presence rosters and collaborative surfaces
-  need the connection itself — either because the connection IS part
+  need the connection itself, either because the connection IS part
   of the truth (presence) or because polling at the cadence the
   product needs would hammer the server. SSE costs a held connection
   per page and (across replicas) a fanout.
@@ -194,8 +194,8 @@ dashboard that ticks once every 5–30 seconds should poll. See
 
 | Job | Source of truth | Lane | Reconnect behavior | Duplicate handling |
 |---|---|---|---|---|
-| Latest-state dashboard (throughput, gauge, badge count) | Server's current value | SSE with default `?buffer=N` (oldest-drop) | Refetch current island HTML; intermediate frames are gone. A future frame heals the miss. | Idempotent — same value applied twice is a no-op. |
-| Event feed / status timeline | Durable rows in your DB (the feed is a projection) | SSE for invalidation; the rows are source of truth | Authoritative refresh: refetch the rendered feed island, OR refetch the page slice and re-render. The runtime does not replay missed frames. | Idempotent if your feed renderer dedups by event id. Plan for duplicates anyway — at-least-once under fanout. |
+| Latest-state dashboard (throughput, gauge, badge count) | Server's current value | SSE with default `?buffer=N` (oldest-drop) | Refetch current island HTML; intermediate frames are gone. A future frame heals the miss. | Idempotent: same value applied twice is a no-op. |
+| Event feed / status timeline | Durable rows in your DB (the feed is a projection) | SSE for invalidation; the rows are source of truth | Authoritative refresh: refetch the rendered feed island, OR refetch the page slice and re-render. The runtime does not replay missed frames. | Idempotent if your feed renderer dedups by event id. Plan for duplicates anyway: at-least-once under fanout. |
 | Every-event-matters (billing, audit, workflow transition, ordered processing) | **Durable queue or transactional outbox** | SSE NOT used for delivery. SSE may be used to *invalidate* a view ("an event you care about arrived"), but the durable lane owns the side effect. | The outbox relay redelivers undelivered rows on restart. SSE reconnect changes nothing about durable delivery. | Consumers must be idempotent, keyed on `(consumer, Event.ID)`. |
 
 If the question is "did this exact event reach the browser?", the
@@ -212,7 +212,7 @@ presence rosters (a stale roster is a bug).
 
 `?slow=block` (or the `X-SSE-Slow: block` header) opts into the opposite:
 the broker waits for buffer space before moving on. Use it only when a
-slow subscriber is allowed to backpressure the emitter — never for
+slow subscriber is allowed to backpressure the emitter, never for
 fanout from a hot path. The default keeps emitters non-blocking.
 
 The broker must enable this before a request can select it:
@@ -229,13 +229,13 @@ stream.NewSSEBroker(stream.SSEBrokerConfig{
 
 **`Principal` decides who may evict a subscriber id.** A `?subscriber_id`
 is a label a client chooses; it is not an identity. With no `Principal`,
-the broker evicts nothing — a reconnect with the same id does not drop
+the broker evicts nothing. A reconnect with the same id does not drop
 the previous entry, because the broker cannot tell whether the same
 caller came back. Set `Principal` to a function returning something the
 caller cannot choose and another caller cannot guess (a session user id
 is the usual answer), and a reconnect with the same id replaces only its
 own entry. The old default keyed on `RemoteAddr`'s host, which behind any
-reverse proxy is the proxy for every request — so every subscriber
+reverse proxy is the proxy for every request, so every subscriber
 collapsed into one principal and `?subscriber_id=<victim>` dropped a
 stranger's stream. Evicting nothing costs nothing: delivery is a
 broadcast, and a dropped connection already unregisters itself.
@@ -243,7 +243,7 @@ broadcast, and a dropped connection already unregisters itself.
 Block mode is off by default because `deliver` walks subscribers
 sequentially on the publisher's goroutine: a block-mode subscriber that
 stops reading stalls every *other* subscriber and whatever called
-`Publish` — usually a request handler. On a public endpoint that is an
+`Publish`, usually a request handler. On a public endpoint that is an
 unauthenticated denial of service, so the decision belongs to the
 developer who knows whether the endpoint is trusted, not to the caller.
 `BlockTimeout` bounds the stall even when enabled.
@@ -254,7 +254,7 @@ By default the SSE bus and the island manager are per-process: a push
 on replica A reaches only sessions connected to A. Attaching a fanout
 (`framework.WithFanout`) bridges the real-time lane across replicas, so
 an SSE subscriber on B receives a push emitted on A. The fanout is
-**also lossy** — it is a broadcast, not a log. A message published while
+**also lossy**: it is a broadcast, not a log. A message published while
 a replica's listener is reconnecting is gone.
 
 Under fanout, every `On`/`Subscribe` handler fires on **every** replica
@@ -283,7 +283,7 @@ What SSE reconnect **does not** do:
   ```js
   document.addEventListener('gofastr:sse-status', (ev) => {
     if (!ev.detail.connected) return;
-    // The stream just reconnected — refetch the current island HTML.
+    // The stream just reconnected. Refetch the current island HTML.
     fetch("/__site/livedash/refresh?island=stats")
       .then(r => r.text())
       .then(html => {
@@ -299,7 +299,7 @@ What SSE reconnect **does not** do:
 
 - Deduplicate. If the emitter pushed the same value twice and the broker
   delivered both, the runtime applies both. Idempotency is the island
-  renderer's job — and the easiest idempotency is "render the latest
+  renderer's job, and the easiest idempotency is "render the latest
   state," which is what the dashboard does.
 
 For an every-event-matters surface, do not try to bolt sequence numbers
@@ -330,10 +330,10 @@ right shape when the renderer must converge without a round-trip.
 ## Tenant isolation
 
 The demo uses ONE fixed topic (`live-dashboard-demo`) because the demo
-has no authenticated identity — every viewer is meant to see the same
+has no authenticated identity. Every viewer is meant to see the same
 metric ticks. **A fixed topic is wrong for a multi-tenant app.** Two
 different tenants' users would join the same topic and `pushAll` would
-broadcast identical HTML to all of them — no isolation, *regardless of
+broadcast identical HTML to all of them, with no isolation, *regardless of
 any `SetAuthorizeTopic` gate you add*. `Manager.SetAuthorizeTopic` only checks
 *whether* a session may join a topic; it does not invent a per-tenant
 topic. The gate is correct, but it must gate a topic that is **already
@@ -358,12 +358,12 @@ The right shape for a multi-tenant dashboard:
    The page link then carries the derived topic:
    `/examples/live-dashboard?presence=tenant:<serverID>:dashboard`.
    `handlePage` threads the `?presence=` value into the SSE `<meta>`
-   tag exactly as the demo does — the wiring does not change, only the
+   tag exactly as the demo does. The wiring does not change, only the
    topic value does.
 
 2. **Authorize the requested topic against the identity.**
    `Manager.SetAuthorizeTopic` verifies the session may join the topic it
-   asked for — i.e. the identity actually belongs to that tenant. A
+   asked for, i.e. the identity actually belongs to that tenant. A
    client that asks for `?presence=tenant:someone-else:dashboard` is
    refused at SSE-connect time:
 
@@ -377,7 +377,7 @@ The right shape for a multi-tenant dashboard:
    })
    ```
 
-   Rejected topics are dropped silently — the client is simply never
+   Rejected topics are dropped silently. The client is simply never
    subscribed, so an unauthorized viewer can't distinguish a forbidden
    topic from a nonexistent one.
 
@@ -397,31 +397,31 @@ The right shape for a multi-tenant dashboard:
 
    `PresenceSessions(topic)` already returns only sessions that joined
    the topic, so a push to `tenant:X:dashboard` reaches only tenant X's
-   viewers — no cross-tenant bleed.
+   viewers, with no cross-tenant bleed.
 
 4. **Apply the same derivation on the refresh endpoint.**
    `/__site/livedash/refresh` must re-derive the tenant from the
    authenticated request and render that tenant's snapshot. Never let
-   an `?island=` or `?tenant=` query param select state — otherwise a
+   an `?island=` or `?tenant=` query param select state. Otherwise a
    dropped SSE frame lets one tenant reconcile another tenant's view
    by hand-crafting the URL. The `?island=` param may select *which*
    island to render, but *whose* data feeds it is identity-derived.
 
 The demo intentionally skips all four steps because it is single-tenant
 by design. Copying the demo's fixed topic into an authed app is the
-most common isolation bug — `SetAuthorizeTopic` alone does not fix it.
+most common isolation bug. `SetAuthorizeTopic` alone does not fix it.
 
 ## Performance evidence
 
-The numbers below are measured by the existing framework benchmarks —
+The numbers below are measured by the existing framework benchmarks,
 not new claims. Re-run with `go test -run=^$ -bench='BenchmarkSSE|BenchmarkEventBus' -benchmem ./framework/`.
 
 | Benchmark | What it measures | Result (v0.26.0) |
 |---|---|---|
 | `BenchmarkSSE_BackpressureDropRate` | Drop rate under a slow subscriber paired with a fast emitter through the production `core/stream.SSEBroker` (`?buffer=128`) | 5000 fast-published events → 130 delivered, 4870 dropped (drop rate 0.974). The intended contract: bounded, non-blocking, latest-state retention. |
 | `BenchmarkSSEWriter_Write` | Per-frame encode + write cost through the production SSE writer | The per-event cost the EventStream handler pays on every outgoing frame. |
-| `BenchmarkT9_IslandRPC_Concurrency` | Island RPC tail latency at worker=64 concurrency | p50 12µs, p90 37µs, p99 **5.2ms**, p999 14ms — p99 below the 10ms target. |
-| `BenchmarkT9_UIHostPageRender` | UI-host full-page SSR cost | `/` at 3.7ms / 59k allocs (14.8KB response) — the per-render ceiling for a complex page. |
+| `BenchmarkT9_IslandRPC_Concurrency` | Island RPC tail latency at worker=64 concurrency | p50 12µs, p90 37µs, p99 **5.2ms**, p999 14ms, with p99 below the 10ms target. |
+| `BenchmarkT9_UIHostPageRender` | UI-host full-page SSR cost | `/` at 3.7ms / 59k allocs (14.8KB response), the per-render ceiling for a complex page. |
 
 What this tells you about a dashboard:
 
@@ -430,7 +430,7 @@ What this tells you about a dashboard:
   sessions is not a measured ceiling; it depends on the broker's buffer
   and your payload size, not on framework overhead.
 - Drop rate spikes only when a subscriber cannot drain faster than the
-  emitter pushes — which is the **intended** backpressure path. If a
+  emitter pushes, which is the **intended** backpressure path. If a
   subscriber reports dropped frames, that subscriber is the bottleneck;
   either reduce the push rate, narrow the payload, or accept that the
   subscriber sees latest-state rather than every frame.
@@ -440,7 +440,7 @@ What this tells you about a dashboard:
 
 Unmeasured: browser hydration, layout cost of `innerHTML` swaps, and
 the actual fanout ceiling for your payload size across your topology.
-Treat those as unmeasured — profile them in your own app before
+Treat those as unmeasured. Profile them in your own app before
 promising a number.
 
 ## Wiring checklist
@@ -457,7 +457,7 @@ promising a number.
 5. **Pick the scope.** Use `PresenceSessions(topic)` for push targets.
    For multi-tenant apps, derive a tenant-qualified topic from the
    authenticated identity and gate it with `Manager.SetAuthorizeTopic`
-   (see [Tenant isolation](#tenant-isolation) — a fixed topic is wrong
+   (see [Tenant isolation](#tenant-isolation): a fixed topic is wrong
    for multi-tenant, and `SetAuthorizeTopic` alone does not fix it).
 6. **Stop the ticker on shutdown.** `app.OnStop` cancels the ticker
    context so SIGTERM drains cleanly.
@@ -470,7 +470,7 @@ promising a number.
   projection primitive the status pill uses.
 - [Events and SSE](events.md) for the broker's backpressure modes,
   fanout semantics, and the transactional outbox.
-- [Presence](presence.md) — the same push lane used for "who's here"
+- [Presence](presence.md): the same push lane used for "who's here"
   rosters. The dashboard reuses `PresenceSessions(topic)` as its
   delivery target list.
 - [Interactive patterns](interactive-patterns.md) for `data-fui-signal-inc`
@@ -494,8 +494,8 @@ promising a number.
   reason about eviction policy.
 - **Pushing to every session.** Address pushes to
   `PresenceSessions(topic)` so only viewers who joined the topic
-  receive them. **A fixed topic is wrong for multi-tenant apps** —
-  derive a tenant-qualified topic from the authenticated identity and
+  receive them. **A fixed topic is wrong for multi-tenant apps.**
+  Derive a tenant-qualified topic from the authenticated identity and
   gate it with `Manager.SetAuthorizeTopic` (see [Tenant isolation](#tenant-isolation)).
 - **SPA navigation won't join the topic.** The SSE topic is read from
   the page's `<meta name="gofastr-sse">` on initial load; partial-nav
@@ -504,8 +504,8 @@ promising a number.
   no live updates, and leaving the page does not unsubscribe them.
   Full-load the dashboard URL (or re-open the SSE connection) so the
   topic join fires. The command-palette entry for the dashboard uses
-  normal SPA nav and so exhibits this — open the page directly to see
-  live updates. See [Presence](presence.md) — the same limitation
+  normal SPA nav and so exhibits this. Open the page directly to see
+  live updates. See [Presence](presence.md), where the same limitation
   applies to the roster demo ("Re-threading presence on SPA navigation").
 - **Stopping the ticker on shutdown.** A goroutine that pushes into a
   closed manager on SIGTERM is a leak. Register it with `app.OnStop`.

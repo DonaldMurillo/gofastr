@@ -14,7 +14,7 @@ import (
 // subscriber_id exists so apps can pass a meaningful id (user, tab,
 // device). Because Subscribe evicts on a bare id match,
 // `?subscriber_id=<victim>` closed the victim's done channel and
-// dropped their SSE stream — repeatably, for a permanent denial.
+// dropped their SSE stream, repeatably, for a permanent denial.
 // Eviction is now scoped to the same principal.
 func TestSubscriberIDCannotEvictOther(t *testing.T) {
 	b := NewSSEBroker(SSEBrokerConfig{Topic: "t"})
@@ -73,7 +73,7 @@ func TestMaxSubscribersRejectsRatherThanEvicts(t *testing.T) {
 }
 
 // The cap is exact. A reserved slot keyed on the requested subscriber id was
-// tried and removed — nothing in the client runtime sends an id, so the
+// tried and removed: nothing in the client runtime sends an id, so the
 // reserve could never fire for a first-party client, while costing a scan of
 // every subscriber under the write lock and letting the cap be exceeded by
 // one. This pins the simpler contract that replaced it.

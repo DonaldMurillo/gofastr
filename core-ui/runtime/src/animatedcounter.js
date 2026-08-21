@@ -1,9 +1,9 @@
-// AnimatedCounter runtime module — ticks the displayed value from
+// AnimatedCounter runtime module, ticks the displayed value from
 // data-fui-animated-counter-from to data-fui-animated-counter over
 // data-fui-animated-counter-ms. Fires once per element on first
 // IntersectionObserver hit.
 //
-// Respects prefers-reduced-motion: when set, the module is a no-op —
+// Respects prefers-reduced-motion: when set, the module is a no-op,
 // the SSR-rendered target value is what the user sees.
 (function () {
   'use strict';
@@ -33,7 +33,7 @@
     requestAnimationFrame(tick);
   }
 
-  // IntersectionObserver — animate when scrolled into view.
+  // IntersectionObserver: animate when scrolled into view.
   let observer = null;
   function ensureObserver() {
     if (observer) return observer;

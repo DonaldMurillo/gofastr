@@ -19,7 +19,7 @@ import (
 //	ss.Rule(".body").Set("padding", "{spacing.lg}").End()
 //	css, err := ss.Build()
 //
-// Build() returns an error when a selector cannot be safely scoped —
+// Build() returns an error when a selector cannot be safely scoped,
 // e.g. `body`, `html`, `:root`, `*`, `::backdrop`, or
 // `::view-transition-*`. Move those to theme.css / WithCustomCSS
 // instead. Registration helpers convert this error to a panic with a
@@ -91,7 +91,7 @@ func (cs *ComponentSheet) Container(name, query string, fn func(*ComponentSheet)
 }
 
 // Keyframes adds an @keyframes animation. Keyframe step selectors
-// (`0%`, `from`, etc.) are preserved verbatim — only outer rule
+// (`0%`, `from`, etc.) are preserved verbatim, only outer rule
 // selectors get scoped.
 func (cs *ComponentSheet) Keyframes(name string, steps ...KeyframeStep) *ComponentSheet {
 	cs.inner.Keyframes(name, steps...)
@@ -123,7 +123,7 @@ func (cs *ComponentSheet) MustBuild() string {
 	css, err := cs.Build()
 	if err != nil {
 		panic(fmt.Errorf(
-			"style.ComponentSheet(%q): %w — move global resets/utilities to theme.css or WithCustomCSS",
+			"style.ComponentSheet(%q): %w. Move global resets/utilities to theme.css or WithCustomCSS",
 			cs.name, err,
 		))
 	}
@@ -170,7 +170,7 @@ func scopeSelector(selector, prefix string) (string, error) {
 		}
 		if strings.HasPrefix(trimmed, "&") {
 			rest := strings.TrimSpace(trimmed[1:])
-			// Apply the same unscopable check to the tail —
+			// Apply the same unscopable check to the tail,
 			// `&::backdrop` and `&::view-transition-old(*)` would
 			// otherwise silently produce a rule that targets a
 			// pseudo-element outside the component's subtree, with
@@ -216,7 +216,7 @@ func unscopableSelector(sel string) (string, bool) {
 // Note: CSS escapes inside attribute selectors use the hex form
 // (e.g. `\22` for ", with an optional trailing space), not C-style
 // `\"`. A naive `\` escape would corrupt selectors like
-// `[data-x="a\\b"]`. We simply toggle on the matching quote — that's
+// `[data-x="a\\b"]`. We simply toggle on the matching quote, that's
 // what CSS parsers do, and any embedded comma inside quotes is
 // already protected by the quote bracket.
 func splitTopLevelCommas(s string) []string {

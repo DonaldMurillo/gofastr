@@ -3,7 +3,7 @@ package pagination
 import "testing"
 
 // FuzzDecodeMultiCursor verifies the decoder never panics on a malformed
-// cursor and, on success, control-scrubs every decoded column NAME —
+// cursor and, on success, control-scrubs every decoded column NAME,
 // names feed ORDER BY / allow-lists, so a surviving C0 control byte is a
 // query-shaping primitive (#185 scrub). VALUES are deliberately not
 // scrubbed: they are bound SQL args compared against stored data, and
@@ -21,7 +21,7 @@ func FuzzDecodeMultiCursor(f *testing.F) {
 	f.Fuzz(func(t *testing.T, cursor string) {
 		fields, err := DecodeMultiCursor(cursor)
 		if err != nil {
-			return // malformed input rejected — fine
+			return // malformed input rejected, fine
 		}
 		for _, fld := range fields {
 			for _, r := range fld.Name {

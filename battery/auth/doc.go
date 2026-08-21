@@ -36,7 +36,7 @@
 //
 // Per-IP rate limiting is opt-in via [AuthConfig.LoginRateLimit] and the
 // per-plugin RateLimit fields. Per-account limiting is opt-in via
-// [AuthConfig.LoginRateLimitPerAccount]. Neither is on by default — set
+// [AuthConfig.LoginRateLimitPerAccount]. Neither is on by default, set
 // them in production.
 //
 // X-Forwarded-For is NOT trusted by default. Set
@@ -66,20 +66,20 @@
 //
 // Stores that DON'T implement an optional interface fall back to a
 // safe-but-reduced behavior (or, where fail-closed is the only option,
-// the feature returns 500 — see each plugin's docs).
+// the feature returns 500. See each plugin's docs).
 //
 // # Storage
 //
 // [MemorySessionStore], [MemoryMagicLinkTokenStore], and [MemoryTwoFAStore]
 // are in-memory implementations suitable for single-instance deployments
-// and tests. There is no in-memory UserStore — bring your own (typically
+// and tests. There is no in-memory UserStore, bring your own (typically
 // [EntityUserStore], which adapts a database table via the framework's
 // entity system) or write a thin map-backed one for tests. For production
 // deployments, supply [EntityUserStore] + [EntitySessionStore] +
 // [EntityTwoFAStore] (backed by SQLite or PostgreSQL). Production mode
 // (DevMode=false) refuses to boot on the in-memory 2FA store unless
 // [AuthConfig.AllowInMemoryStores] acknowledges a deliberate single-node
-// deployment — a restart wiping 2FA enrollment is a silent security
+// deployment, a restart wiping 2FA enrollment is a silent security
 // downgrade, not a scaling nuisance.
 //
 // # Sentinel errors

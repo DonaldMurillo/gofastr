@@ -1,6 +1,6 @@
 package main
 
-// Theme — the GoFastr brand design language (dark-first, warm near-black
+// Theme: the GoFastr brand design language (dark-first, warm near-black
 // oklch surface ladder, a single amber accent, sans + mono). Built on
 // theme.Default so every framework/ui component the admin renders
 // (DataTable, Button, Form, Select, PageHeader, Sidebar) is retuned through
@@ -24,7 +24,7 @@ func createTheme() style.Theme {
 		TextMuted:    "oklch(0.78 0.008 75)",
 		TextSubtle:   "oklch(0.66 0.010 70)",
 
-		// One chromatic accent — amber, not the red/blue every admin picks.
+		// One chromatic accent: amber, not the red/blue every admin picks.
 		Primary:   "oklch(0.82 0.155 78)",
 		PrimaryFg: "oklch(0.14 0.005 75)",
 		Accent:    "oklch(0.82 0.155 78)",

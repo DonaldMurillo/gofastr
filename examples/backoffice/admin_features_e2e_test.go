@@ -4,7 +4,7 @@ package main
 // of the basic CRUD flows: column sorting (island sort RPC swaps the table),
 // search (filters server-side), the read-only detail view, and the BelongsTo
 // relationship picker. These exercise the runtime path the httptest tests in
-// battery/admin can't reach — clicking a real sort header, the search submit
+// battery/admin can't reach: clicking a real sort header, the search submit
 // navigation, and a populated <select> of related records.
 //
 // Gated by -short, like the other backoffice e2e.
@@ -59,7 +59,7 @@ func TestBackofficeE2E_SortByName(t *testing.T) {
 	waitHydrated(t, ctx)
 
 	// The column header is a SPA-nav sort link (not an island RPC) so a click
-	// re-renders the whole screen — table AND the toolbar Sort summary — keeping
+	// re-renders the whole screen, table AND the toolbar Sort summary, keeping
 	// them in one consistent state.
 	sortSel := `thead a[href*="sort=name"]`
 	if err := chromedp.Run(ctx, chromedp.WaitVisible(sortSel, chromedp.ByQuery)); err != nil {
@@ -141,7 +141,7 @@ func TestBackofficeE2E_DetailView(t *testing.T) {
 
 // TestBackofficeE2E_RelationDropdown asserts the product form renders a
 // supplier <select> populated with the seeded suppliers, selects one, and
-// submits — proving the relationship picker is wired end to end.
+// submits, proving the relationship picker is wired end to end.
 func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("chromedp e2e: skipped under -short")
@@ -172,7 +172,7 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	); err != nil {
 		t.Fatalf("submit with relation: %v", err)
 	}
-	// Paginated list — find the new product via search rather than assuming page 1.
+	// Paginated list, find the new product via search rather than assuming page 1.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/admin/e/products?q=Relation"),
 		chromedp.WaitVisible(`tbody tr`, chromedp.ByQuery),

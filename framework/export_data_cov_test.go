@@ -52,7 +52,7 @@ func corruptExportFile(t *testing.T, dir, name string, data []byte) {
 }
 
 // TestExportImportRegisteredExporter round-trips a non-entity table via a
-// registered DataExporter — covering the exporter branch of collectSources
+// registered DataExporter, covering the exporter branch of collectSources
 // plus the raw read/write of a battery-style table.
 func TestExportImportRegisteredExporter(t *testing.T) {
 	datexport.Reset(t)
@@ -76,7 +76,7 @@ func TestExportImportRegisteredExporter(t *testing.T) {
 	if err := app.ExportData(context.Background(), dir, WithExportTime(fixedExportTime())); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	// Import restores every source in the archive — wipe all of them.
+	// Import restores every source in the archive, wipe all of them.
 	for _, tbl := range []string{"documents", "tags", "widgets"} {
 		if _, err := db.Exec("DELETE FROM " + tbl); err != nil {
 			t.Fatalf("wipe %s: %v", tbl, err)
@@ -216,13 +216,13 @@ func TestImportExecErrorRollsBack(t *testing.T) {
 	if err := app.ExportData(context.Background(), dir, WithExportTime(fixedExportTime())); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	// Do NOT wipe — importing over existing rows conflicts on PK.
+	// Do NOT wipe, importing over existing rows conflicts on PK.
 	if err := app.ImportData(context.Background(), dir); err == nil {
 		t.Error("ImportData over existing rows should error on PK conflict")
 	}
 }
 
-// Direct unit tests for the package-level IO helpers — cheaper than driving
+// Direct unit tests for the package-level IO helpers, cheaper than driving
 // every branch through ExportData/ImportData.
 
 func TestNormalizeScan(t *testing.T) {
@@ -353,7 +353,7 @@ func TestExportImportReachableBranches(t *testing.T) {
 	}
 }
 
-// Direct fault tests for the IO helpers' error branches — crafted inputs hit
+// Direct fault tests for the IO helpers' error branches, crafted inputs hit
 // the query/encode/dialect paths without brittle filesystem tricks.
 
 func TestRawReadAllQueryError(t *testing.T) {

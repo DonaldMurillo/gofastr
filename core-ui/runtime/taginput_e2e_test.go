@@ -12,7 +12,7 @@ import (
 // Name="tags" field seeded with one tag ("go"). It is inlined (rather than
 // rendered via the Go component) because framework/ui transitively imports
 // core-ui/runtime, so no test in this package can import it. Keep this in
-// sync with framework/ui/taginput.go:TagInput — the runtime hydrates off
+// sync with framework/ui/taginput.go:TagInput, the runtime hydrates off
 // these exact classes and data-fui-* attributes:
 //   - .ui-tag-input__zone + [data-fui-tag-input-zone] wrapper
 //   - one <input type=hidden class="ui-tag-input__hidden"> per seed tag
@@ -29,7 +29,7 @@ const tagInputPage = `
 
 // TestTagInputRoundTrip drives a real browser against a server-rendered
 // framework/ui.TagInput and proves the taginput runtime module round-trips
-// chips, AND — the part that was missing — consumes
+// chips, AND, the part that was missing, consumes
 // data-fui-tag-input-id: removing a chip via its × button must return
 // focus to the field identified by that id, so keyboard / screen-reader
 // users stay in the input instead of falling out to <body>.

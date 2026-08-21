@@ -1,6 +1,6 @@
 //go:build e2e_real
 
-// e2e external-communication tests — drive a real turn through every
+// e2e external-communication tests, drive a real turn through every
 // transport the harness exposes: MCP stdio, MCP streamable HTTP, WS
 // command/event frames, REST POST + SSE, and the MCP client (consumer).
 //

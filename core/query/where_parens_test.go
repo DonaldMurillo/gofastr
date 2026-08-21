@@ -14,12 +14,12 @@ import (
 //
 //	AND visibility='public' OR author_id=$2 AND owner_id=$3
 //	→ (X AND visibility='public') OR (author_id=$2 AND owner_id=$3)
-//	The owner_id scope only applies to the OR branch — public posts
+//	The owner_id scope only applies to the OR branch: public posts
 //	from OTHER owners leak.
 func TestSelect_WhereClausesAreParenthesised(t *testing.T) {
 	qb := Select("id").From("posts")
 	qb.Where("tenant_id = $1", "tenant-a")
-	// This is what a host's BeforeList hook might add — a multi-
+	// This is what a host's BeforeList hook might add, a multi-
 	// condition OR. Without parens the framework's tenant_id AND
 	// is captured by the inner OR's right operand only.
 	qb.Where("visibility = $1 OR author_id = $2", "public", "u-1")
@@ -53,7 +53,7 @@ func TestCount_WhereClausesAreParenthesised(t *testing.T) {
 	}
 }
 
-// TestUpdate_WhereClausesAreParenthesised — the UPDATE path is
+// TestUpdate_WhereClausesAreParenthesised: the UPDATE path is
 // where the leak is most dangerous (cross-owner UPDATE).
 func TestUpdate_WhereClausesAreParenthesised(t *testing.T) {
 	ub := Update("posts").Set("title", "new")
@@ -66,7 +66,7 @@ func TestUpdate_WhereClausesAreParenthesised(t *testing.T) {
 	}
 }
 
-// TestDelete_WhereClausesAreParenthesised — same for DELETE.
+// TestDelete_WhereClausesAreParenthesised: same for DELETE.
 func TestDelete_WhereClausesAreParenthesised(t *testing.T) {
 	db := Delete("posts")
 	db.Where("tenant_id = $1", "tenant-a")

@@ -1,5 +1,5 @@
   // ---------------------------------------------------------------------
-  // boot-embed — the frame side of an embedded surface.
+  // boot-embed: the frame side of an embedded surface.
   //
   // Ships ONLY in the `embed` composition (core-ui/runtime/runtime.go
   // composeEmbed). It is inert without a <meta name="gofastr-embed"> config,
@@ -12,7 +12,7 @@
   //   - exchanging that nonce for a grant, and refreshing the grant while the
   //     frame lives;
   //   - fetching the surface's server-rendered content AS the granted subject
-  //     and injecting it (the shell document itself is anonymous — it is
+  //     and injecting it (the shell document itself is anonymous, it is
   //     fetched by a navigation, which can carry no credential);
   //   - reporting height to the parent so the iframe can size itself;
   //   - contributing the grant header to every runtime fetch via
@@ -37,7 +37,7 @@
 
     // The parent's origin, as attested by the browser on the message event.
     // A page cannot forge event.origin, so this is a trustworthy record of
-    // WHO framed us — but it is only trustworthy in a browser, which is why
+    // WHO framed us, but it is only trustworthy in a browser, which is why
     // the server treats it as corroboration and lets CSP frame-ancestors do
     // the actual enforcing.
     let parentOrigin = null;
@@ -59,7 +59,7 @@
     //
     // The grant is deliberately NOT cleared. Clearing it makes the wrapper stop
     // sending the header, and a request with no header is not a refused embed
-    // request — it is an ordinary anonymous one, which the server passes
+    // request, it is an ordinary anonymous one, which the server passes
     // straight through. A dashboard polling every 30s would then quietly swap
     // its authenticated numbers for the logged-out render, with the frame still
     // reporting state "ready". Keeping the dead token makes the server answer
@@ -101,7 +101,7 @@
     // Measure the CONTENT, never the viewport.
     //
     // The document's own scroll height is at least the viewport height, and
-    // the viewport here IS the frame the host sizes from our report — so any
+    // the viewport here IS the frame the host sizes from our report, so any
     // full-height rule inside makes each report grow the frame, which grows the
     // next report. The panel ratchets open with a band of empty space under the
     // content. Measuring the root element's own extent breaks that loop: it is
@@ -127,8 +127,8 @@
       if (e.source !== window.parent) return;
       const d = e.data;
       if (!d || d.proto !== PROTO || d.type !== 'token') return;
-      // First token wins. A second one — from a parent that changed its mind,
-      // or from a script that got hold of the frame handle — must not swap the
+      // First token wins. A second one, from a parent that changed its mind,
+      // or from a script that got hold of the frame handle, must not swap the
       // frame's identity out from under content already rendered for the first.
       if (started) return;
       started = true;
@@ -213,7 +213,7 @@
         // Transient network failure: retry, but not forever and not in
         // lockstep. An app that stays down would otherwise have every embed on
         // every customer page retrying together, every 15s, for as long as the
-        // tabs stay open. Back off, jitter, and give up after a few attempts —
+        // tabs stay open. Back off, jitter, and give up after a few attempts,
         // the parent is told, and a reload gets a fresh nonce.
         refreshFailures++;
         if (refreshFailures > 4) {
@@ -263,7 +263,7 @@
         // gofastr:navigate listener re-fetches the widget catalog with
         // ?page=<path>, and a widget scoped with .Pages("/reports") is not
         // scoped to /__gofastr/embed/reports. This also runs AFTER the grant
-        // is installed, so that catalog fetch is authenticated — the boot-time
+        // is installed, so that catalog fetch is authenticated, the boot-time
         // one fires before the handshake and is expected to come back empty.
         const surfacePath = cfg.path || location.pathname;
         window.dispatchEvent(new CustomEvent('gofastr:navigate', {
@@ -278,8 +278,8 @@
     // ---- wiring -----------------------------------------------------------
     // Attach the grant to every same-origin fetch this document makes.
     //
-    // The grant is the ONLY identity an embedded surface has — no cookie is
-    // ever sent from inside a frame — so every request that would normally ride
+    // The grant is the ONLY identity an embedded surface has, no cookie is
+    // ever sent from inside a frame, so every request that would normally ride
     // on the session has to carry it instead. That is not just island RPC: the
     // demand-loaded modules (poll, toggle-action, optimistic-action, infinite
     // scroll, sortable list, intercept, widget state) each build their own
@@ -308,7 +308,7 @@
       // Make "no cookie reaches an embed request" true at the source rather
       // than assumed. Callers pass credentials:'same-origin' (rpc, poll,
       // intercept all do), and in a SAME-SITE framing the browser really does
-      // send the cookie — the one case the server goes to lengths to defend
+      // send the cookie, the one case the server goes to lengths to defend
       // against. Omitting here means the request never carries one to begin
       // with, so that defence is not the only thing standing between an embed
       // and the viewer's unrelated session.
@@ -317,7 +317,7 @@
       //
       // Same-origin is decided from the URL we are GIVEN. A redirect changes
       // the origin after that check, and the browser strips only Authorization
-      // across an origin change — a custom header rides along. So one open
+      // across an origin change, a custom header rides along. So one open
       // redirect on the app (an OAuth start, a /out?url= tracker, a CDN
       // handoff) would hand the grant to whoever the redirect names, and the
       // grant is a bearer credential for its subject until its deadline.
@@ -331,14 +331,14 @@
     // Absence of the nav fragment is not enough on its own.
     //
     // Modules guard on `__gofastr.navigate` being present and fall back to a
-    // hard `location.href` when it is not — which inside a frame is not a rare
+    // hard `location.href` when it is not, which inside a frame is not a rare
     // race but the ONLY path. src/combobox.js does exactly that, so choosing an
     // option navigated the frame to an ordinary app route, whose CSP refuses to
     // be framed: blank panel, runtime gone, grant gone, and no way left to
     // report any of it.
     //
     // Defining a no-op navigator flips every one of those guards to the branch
-    // that does nothing instead of the branch that destroys the embed — and
+    // that does nothing instead of the branch that destroys the embed, and
     // covers modules added later, for the same reason fetch is wrapped and
     // history is neutered here rather than at each call site.
     try {
@@ -352,7 +352,7 @@
     // Never write to the host page's history.
     //
     // The embed composition omits the nav fragment, so there is no SPA
-    // navigator in here — but pushState is not navigation and was not removed
+    // navigator in here, but pushState is not navigation and was not removed
     // with it. Widget and pane deep links call it, and so does any island whose
     // response carries X-Gofastr-Push-State. Inside a frame it appends to the
     // TOP-LEVEL browsing context's joint session history, which is the
@@ -442,7 +442,7 @@
 
     if (window.parent === window) {
       // Someone opened the embed URL directly. There is no parent to hand us a
-      // nonce, so there is nothing to render — say so instead of spinning.
+      // nonce, so there is nothing to render, say so instead of spinning.
       fail('not-framed');
       return;
     }

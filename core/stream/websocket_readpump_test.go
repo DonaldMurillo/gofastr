@@ -80,7 +80,7 @@ func pongAnsweringPeer(cli net.Conn, answered *int32, stop <-chan struct{}) {
 // and starts every long-lived goroutine a real Upgrade starts: the write
 // pump, the keepalive, and the read pump. TCP is used deliberately: its
 // kernel send buffer lets a peer's writes (Pong, Close) complete even
-// while the server side isn't reading — exactly the push-only scenario
+// while the server side isn't reading, exactly the push-only scenario
 // net.Pipe's synchronous semantics cannot model.
 func newReadPumpConn(t *testing.T, cfg WSConfig) (*WebSocketConn, net.Conn) {
 	t.Helper()
@@ -133,7 +133,7 @@ func newReadPumpConn(t *testing.T, cfg WSConfig) (*WebSocketConn, net.Conn) {
 //
 // Before the internal read pump, readFrame ran only when the app called
 // Read(), so the peer's Pongs were never processed and awaitingPong was
-// never cleared — a healthy push-only conn died every ReadIdleTimeout +
+// never cleared; a healthy push-only conn died every ReadIdleTimeout +
 // PongTimeout (80ms at these settings).
 func TestPushOnlyConnSurvivesKeepalive(t *testing.T) {
 	conn, cli := newReadPumpConn(t, WSConfig{
@@ -151,7 +151,7 @@ func TestPushOnlyConnSurvivesKeepalive(t *testing.T) {
 	stop := make(chan struct{})
 	go pongAnsweringPeer(cli, &answered, stop)
 
-	// The app NEVER calls Read — this is a push-only server.
+	// The app NEVER calls Read; this is a push-only server.
 	time.Sleep(1500 * time.Millisecond)
 	close(stop)
 
@@ -183,7 +183,7 @@ func TestDeadPeerStillDetected(t *testing.T) {
 
 	select {
 	case <-conn.Closed():
-		// good — dead peer detected.
+		// good: dead peer detected.
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("dead peer was not detected: conn stayed open past idle+pong")
 	}

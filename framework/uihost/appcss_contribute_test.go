@@ -10,8 +10,8 @@ import (
 
 // style.Contribute is documented as THE one-off-screen-styles path
 // (ui-getting-started.md §"Co-located screen styles"). The host must
-// fan contributed fragments into app.css itself — with theme-token
-// substitution — so a bare Contribute works on any app without
+// fan contributed fragments into app.css itself, with theme-token
+// substitution, so a bare Contribute works on any app without
 // hand-wiring style.Apply into WithCustomCSS.
 func TestAppCSSServesContributedStyles(t *testing.T) {
 	style.ResetRegistryForTest()
@@ -40,8 +40,8 @@ func TestAppCSSServesContributedStyles(t *testing.T) {
 	}
 }
 
-// Contributed fragments must land AFTER the WithCustomCSS payload —
-// the layer the hand-wired style.Apply pattern put them in — so a
+// Contributed fragments must land AFTER the WithCustomCSS payload,
+// the layer the hand-wired style.Apply pattern put them in, so a
 // screen can override host base rules by re-declaring the selector.
 func TestContributedCSSAfterCustomCSS(t *testing.T) {
 	style.ResetRegistryForTest()

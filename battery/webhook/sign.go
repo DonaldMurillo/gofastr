@@ -29,7 +29,7 @@ func SignWithTimestamp(secret string, unixTimestamp int64, body []byte) string {
 }
 
 // DefaultTimestampTolerance is the suggested replay window for
-// VerifyTimestamped — wide enough to cover modest clock skew, narrow
+// VerifyTimestamped, wide enough to cover modest clock skew, narrow
 // enough that a captured signature decays quickly.
 const DefaultTimestampTolerance = 5 * time.Minute
 
@@ -43,7 +43,7 @@ const DefaultTimestampTolerance = 5 * time.Minute
 // `now` is captured at call time so receivers don't need a clock arg.
 //
 // tolerance MUST be positive. A non-positive tolerance is treated as a
-// usage error and always rejects — otherwise a caller that accidentally
+// usage error and always rejects, otherwise a caller that accidentally
 // passed 0 (zero value of a forgotten config field) would silently
 // disable the replay check. Use [DefaultTimestampTolerance] for the
 // suggested default.
@@ -84,7 +84,7 @@ func parseTimestampedHeader(header string) (int64, string, bool) {
 	// `v0=…`) are tolerated for forward-compat with other v1 variants,
 	// but duplicate `t=` or `v1=` is a signature-smuggling primitive
 	// (last-wins lets an attacker pair a valid timestamp with a bogus
-	// signature or vice versa) — reject the whole header.
+	// signature or vice versa), reject the whole header.
 	var (
 		tsRaw, sig string
 		tsSeen     bool

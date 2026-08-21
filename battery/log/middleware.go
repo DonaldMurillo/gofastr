@@ -57,7 +57,7 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			// Snapshot path/method up front — inner middleware may
+			// Snapshot path/method up front, inner middleware may
 			// rewrite r.URL; the access log records what the client
 			// actually sent.
 			method := r.Method
@@ -88,7 +88,7 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 //
 // The panic value and stack are capped (4 KiB / 64 KiB) so a handler that
 // panics with a 100 MB string doesn't write a 100 MB log entry or POST one
-// to an error collector — the file sink would serialize all of it before
+// to an error collector, the file sink would serialize all of it before
 // rotating, and the webhook sink would try to deliver it as a batch element.
 func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 	if reporter == nil {
@@ -144,7 +144,7 @@ func (rw *countingResponseWriter) Write(b []byte) (int, error) {
 
 // Flush forwards to the underlying ResponseWriter's Flusher if it has one.
 // Without this, any SSE / chunked-JSON / long-poll handler downstream of
-// battery/log returns 500 "streaming unsupported" — its
+// battery/log returns 500 "streaming unsupported", its
 // `w.(http.Flusher)` assertion fails against the wrapper. Mirrors the
 // fix already present on core/middleware.metricsResponseWriter.
 func (rw *countingResponseWriter) Flush() {
@@ -181,7 +181,7 @@ func (rw *countingResponseWriter) Push(target string, opts *http.PushOptions) er
 //
 // When trustXFF is true the returned value is the FIRST comma-separated
 // segment of X-Forwarded-For (or X-Real-IP) with surrounding whitespace
-// trimmed — without the trim, a value like "  attacker.example, real"
+// trimmed, without the trim, a value like "  attacker.example, real"
 // could sneak past downstream allow-list string matching.
 func remoteAddr(r *http.Request, trustXFF bool) string {
 	if trustXFF {

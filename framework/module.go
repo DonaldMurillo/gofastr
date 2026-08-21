@@ -14,7 +14,7 @@ import (
 )
 
 // ModuleManifest is the declarative metadata a Module carries alongside
-// its Battery Init. Everything in it is informational — the framework
+// its Battery Init. Everything in it is informational, the framework
 // uses DependsOn for battery init ordering (it doubles as the battery
 // dep list), and the rest is surfaced through introspection.
 type ModuleManifest struct {
@@ -30,7 +30,7 @@ type ModuleManifest struct {
 	DependsOn []string
 
 	// MigrationGroup defaults to the module name. It is an informational
-	// pointer to the core/migrate group (#33) the module owns — the
+	// pointer to the core/migrate group (#33) the module owns, the
 	// framework does not enforce that it matches a registered migration
 	// group, but the modules doc describes the tie-in.
 	MigrationGroup string
@@ -94,7 +94,7 @@ type ModuleStore interface {
 // ---------------------------------------------------------------------------
 
 // InMemoryModuleStore is the default store for apps without a DB. State
-// is lost on restart — modules re-enable on every boot.
+// is lost on restart, modules re-enable on every boot.
 type InMemoryModuleStore struct {
 	mu   sync.Mutex
 	data map[string]bool
@@ -129,7 +129,7 @@ func (s *InMemoryModuleStore) SetEnabled(_ context.Context, name string, enabled
 // ---------------------------------------------------------------------------
 
 // SQLModuleStore persists module state in a gofastr_modules table.
-// Self-migrating (CREATE TABLE IF NOT EXISTS) — not a migrate group.
+// Self-migrating (CREATE TABLE IF NOT EXISTS), not a migrate group.
 type SQLModuleStore struct {
 	db      *sql.DB
 	dialect migrate.Dialect
@@ -243,7 +243,7 @@ type ModuleManager struct {
 // When db is non-nil a SQLModuleStore is used; otherwise in-memory.
 // If db is non-nil and the SQL store cannot be created (e.g. CREATE TABLE
 // fails), the error is stored and surfaced by loadFromStore so boot fails
-// closed — a deliberately disabled module must not silently come back
+// closed, a deliberately disabled module must not silently come back
 // enabled on a broken store.
 func NewModuleManager(db *sql.DB, f fanout.Fanout) *ModuleManager {
 	mm := &ModuleManager{
@@ -261,7 +261,7 @@ func NewModuleManager(db *sql.DB, f fanout.Fanout) *ModuleManager {
 		if err == nil {
 			mm.store = store
 		} else {
-			// Store creation failed with a DB provided — propagate the
+			// Store creation failed with a DB provided, propagate the
 			// error via storeErr so loadFromStore fails the boot.
 			// Do NOT fall back to in-memory: that would silently
 			// re-enable every deliberately-disabled module.
@@ -478,7 +478,7 @@ func (mm *ModuleManager) Enable(ctx context.Context, name string) error {
 }
 
 // Disable persists the new state and flips the cache. Refuses (fail
-// closed) if any currently-enabled module lists name in DependsOn — no
+// closed) if any currently-enabled module lists name in DependsOn, no
 // cascade. Serialized by toggleMu alongside Enable.
 func (mm *ModuleManager) Disable(ctx context.Context, name string) error {
 	mm.toggleMu.Lock()
@@ -517,7 +517,7 @@ func (mm *ModuleManager) publish(_ context.Context, name string, enabled bool) {
 	payload, _ := json.Marshal(moduleToggleMessage{Name: name, Enabled: enabled})
 	envelope := fanout.Wrap(mm.nodeID, payload)
 	if err := mm.fanout.Publish(context.Background(), "gofastr.modules", envelope); err != nil {
-		log.Printf("WARN: module manager: fanout publish for %q failed: %v — other replicas may be stale until restart", name, err)
+		log.Printf("WARN: module manager: fanout publish for %q failed: %v: other replicas may be stale until restart", name, err)
 	}
 }
 
@@ -541,7 +541,7 @@ func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
 	if err := json.Unmarshal(body, &msg); err != nil {
 		return
 	}
-	// Ignore names not registered as modules — a crafted or stale
+	// Ignore names not registered as modules, a crafted or stale
 	// payload must not pollute the cache.
 	if !mm.hasModule(msg.Name) {
 		return
@@ -549,7 +549,7 @@ func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
 	// Re-read authoritative state from the store.
 	state, err := mm.store.Load(context.Background())
 	if err != nil {
-		log.Printf("WARN: module manager: store load on fanout refresh for %q failed: %v — keeping current cache", msg.Name, err)
+		log.Printf("WARN: module manager: store load on fanout refresh for %q failed: %v: keeping current cache", msg.Name, err)
 		return
 	}
 	mm.mu.Lock()
@@ -561,7 +561,7 @@ func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
 	// of the THREE reconcile sources. After the in-process cache has
 	// been re-read, fan the signal into the per-module supervisor so it
 	// spawns / drains its child. The in-process fail-open WARN above is
-	// deliberately NOT inherited by the process supervisor — it enforces
+	// deliberately NOT inherited by the process supervisor, it enforces
 	// its own fail-closed state lease.
 	if mm.processCoordinator != nil {
 		mm.processCoordinator.Reconcile(msg.Name)
@@ -629,7 +629,7 @@ func (mm *ModuleManager) List() []ModuleInfo {
 		}
 		// Process-module introspection (design §8): fill operator-only
 		// fields when a process coordinator is attached. nil/zero for
-		// in-process modules — [ProcessModuleInfo] is additive.
+		// in-process modules. [ProcessModuleInfo] is additive.
 		if mm.processCoordinator != nil {
 			if pi, ok := mm.processCoordinator.Info(name); ok {
 				info.ProcessState = pi.State.String()

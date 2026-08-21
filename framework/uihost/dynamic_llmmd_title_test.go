@@ -13,7 +13,7 @@ import (
 )
 
 // loadedTitleComp is a dynamic screen whose title and content only exist
-// after SetParams + Load — the shape every dynamic detail screen (and the
+// after SetParams + Load, the shape every dynamic detail screen (and the
 // site's /docs/{path...} catch-all) has.
 type loadedTitleComp struct {
 	id    string
@@ -41,7 +41,7 @@ func newDynamicTitleHost(t *testing.T) *UIHost {
 	a := app.NewApp("dyn")
 	a.Register("/", &testHomeComp{}, nil)
 	a.Register("/things/{id}", &loadedTitleComp{}, nil)
-	// Per-screen llm.md is public only via the explicit opt-in — the
+	// Per-screen llm.md is public only via the explicit opt-in. The
 	// dynamic-route fallback must honor the same gate.
 	return New(a, WithPublicLLMMD())
 }
@@ -98,7 +98,7 @@ func TestDynamicLLMMDUnknownBase404s(t *testing.T) {
 	}
 }
 
-// Without WithPublicLLMMD the dynamic-route fallback must stay closed —
+// Without WithPublicLLMMD the dynamic-route fallback must stay closed,
 // same default as the static per-screen handlers.
 func TestDynamicLLMMDGatedByDefault(t *testing.T) {
 	a := app.NewApp("dyn")
@@ -113,7 +113,7 @@ func TestDynamicLLMMDGatedByDefault(t *testing.T) {
 }
 
 // Full-page renders of dynamic routes must emit the LOADED instance's
-// meta description — the registration-time description is empty for
+// meta description: the registration-time description is empty for
 // every dynamic route (the docs catch-all regression).
 func TestDynamicMetaDescriptionLoaded(t *testing.T) {
 	ds := newDynamicTitleHost(t)
@@ -128,7 +128,7 @@ func TestDynamicMetaDescriptionLoaded(t *testing.T) {
 	}
 }
 
-// Markdown content negotiation must evaluate the policy chain — a gated
+// Markdown content negotiation must evaluate the policy chain. A gated
 // screen's negotiated markdown degrades to the withheld doc instead of
 // serving its rendered content.
 func TestNegotiatedMarkdownHonorsPolicy(t *testing.T) {
@@ -174,7 +174,7 @@ func (c *secretRenderComp) Render() render.HTML {
 }
 
 // The dynamic llm.md's SEO front matter resolves against the LOADED
-// instance — the HTML head and the markdown must stay in lockstep.
+// instance. The HTML head and the markdown must stay in lockstep.
 func TestDynamicLLMMDFrontMatterLoaded(t *testing.T) {
 	ds := newDynamicTitleHost(t)
 	rec := httptest.NewRecorder()

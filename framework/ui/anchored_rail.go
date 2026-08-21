@@ -1,6 +1,6 @@
 package ui
 
-// AnchoredRail — sticky in-page nav rail with scrollspy-tracked active state.
+// AnchoredRail is a sticky in-page nav rail with scrollspy-tracked active state.
 //
 // Bundles the rail markup (a labelled <aside> with an ordered list of
 // "#anchor" links, each optionally carrying an eyebrow number + trailing
@@ -53,7 +53,7 @@ type RailItem struct {
 // AnchoredRailConfig configures the rail.
 type AnchoredRailConfig struct {
 	// Label is the visible heading above the rail (e.g. "Categories",
-	// "By intent", "The path"). Required — also doubles as the
+	// "By intent", "The path"). Required: also doubles as the
 	// aria-label on the underlying <aside>.
 	Label string
 
@@ -63,11 +63,11 @@ type AnchoredRailConfig struct {
 	// ObserveSelector is the CSS selector for the container the
 	// scrollspy runtime watches for in-view sections. Typically the
 	// id of a wrapper around the sections (e.g. "#docs-sections"). If
-	// empty, scrollspy is skipped and the rail is purely static — the
+	// empty, scrollspy is skipped and the rail is purely static. The
 	// runtime then can't track active state.
 	ObserveSelector string
 
-	// TargetSelector overrides the default ".ui-section[id]" — set it
+	// TargetSelector overrides the default ".ui-section[id]". Set it
 	// when the sections aren't ui.Section calls.
 	TargetSelector string
 
@@ -81,7 +81,7 @@ type AnchoredRailConfig struct {
 // AnchoredRail returns the rail HTML. When ObserveSelector is set, the
 // rail is wrapped with scrollspy so the runtime tracks active state.
 //
-// The default CSS class is "ui-anchored-rail" — re-style with a Class
+// The default CSS class is "ui-anchored-rail". Re-style with a Class
 // override and a scoped block in the host's stylesheet.
 func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	if cfg.Label == "" {
@@ -150,7 +150,7 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	// Stamp the rail FIRST so data-fui-comp="ui-anchored-rail" lands on
 	// the <aside>. If we wrapped with scrollspy first and then WrapHTML
 	// over that, the registry's injectMarker would see scrollspy's
-	// outermost data-fui-comp already present and skip ours — leaving
+	// outermost data-fui-comp already present and skip ours, leaving
 	// our CSS un-bundled by the SSR scanner.
 	marked := anchoredRailStyle.WrapHTML(rail)
 
@@ -160,7 +160,7 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 
 	target := cfg.TargetSelector
 	if target == "" {
-		// Match what ui.Section emits — auto-slugged-from-heading sections
+		// Match what ui.Section emits: auto-slugged-from-heading sections
 		// land as .ui-section[id="…"], so the default selector picks them
 		// up without the caller having to spell it out.
 		target = ".ui-section[id]"

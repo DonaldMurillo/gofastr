@@ -11,7 +11,7 @@ type Emission struct {
 	// Type is the event type string, e.g. "order.placed".
 	Type string
 	// Subscribers is how many handlers were registered for it at emit
-	// time. Zero means the event went nowhere — published, and nothing
+	// time. Zero means the event went nowhere, published, and nothing
 	// listening. That is worth distinguishing from "never published".
 	Subscribers int
 }
@@ -26,7 +26,7 @@ type Emission struct {
 var observer atomic.Pointer[func(Emission)]
 
 // SetObserver installs a callback fired for every event published through
-// Emit or EmitStrict. Pass nil to clear. Intended for test tooling — the
+// Emit or EmitStrict. Pass nil to clear. Intended for test tooling, the
 // framework's semantic coverage recorder is the first consumer.
 //
 // The callback runs inline, so it must be cheap, must not block, and must

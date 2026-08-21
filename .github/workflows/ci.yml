@@ -1,7 +1,7 @@
 name: CI
 
 # Least privilege by default: without this block a workflow inherits the
-# repository default, which on many repos is write-all — so any action or
+# repository default, which on many repos is write-all, so any action or
 # script in the run holds a token that can push to the repo. Jobs that
 # genuinely need more raise it for themselves.
 permissions:
@@ -11,25 +11,25 @@ permissions:
 # Two jobs, split by runtime profile (history: CI runs
 # 27100756725..27161715772, June 2026):
 #
-#   1. `test` (BLOCKING) — build + vet + every package that produced
+#   1. `test` (BLOCKING): build + vet + every package that produced
 #      deterministic results on the runners. This is the merge gate.
 #
-#   2. `browser-e2e` (BLOCKING since 2026-06-10) — the slow chromedp
+#   2. `browser-e2e` (BLOCKING since 2026-06-10): the slow chromedp
 #      suites, one matrix shard per suite so each runs isolated on its
 #      own runner (they contend for Chrome/sockets when sharing one):
 #        - examples/site, including the axe gate in its own isolated
 #          invocation (it flakes when sharing a go-test run with the
-#          other chromedp tests — CLAUDE.md).
+#          other chromedp tests, CLAUDE.md).
 #        - cmd/gofastr TestBlueprintCLIGeneratesEntireWorkingAppE2E
 #          ("chrome failed to start" under parallel load when it ran
-#          inside the blocking job, 3/6 runs — serialized here).
+#          inside the blocking job, 3/6 runs, serialized here).
 #        - kiln/integration: chromedp-heavy, grouped here per
 #          CLAUDE.md's slow-suite guidance.
 #      This job was continue-on-error while TestAxe_AllPagesAreClean
 #      failed 6/6 on Linux runners. Root cause: Linux Chrome defaults
 #      to prefers-color-scheme: light, so CI audited the site's LIGHT
 #      palette while macOS dev machines (Dark appearance) only ever
-#      audited the dark one — the light-scheme colors genuinely failed
+#      audited the dark one, the light-scheme colors genuinely failed
 #      WCAG AA. Fixed 2026-06-10: light tokens retoned (examples/site
 #      + core-ui status tones) and the axe test now forces BOTH schemes
 #      per page, so the scan is platform-independent. If the
@@ -48,14 +48,14 @@ on:
     # and check runs attach to the commit SHA, so the main-push run
     # already carries the blocking checks the release gate (release.yml)
     # polls for. A tag trigger re-ran the identical pipeline on the same
-    # SHA — v0.62.0 ran twice, concurrently. Fail-closed is preserved: a
+    # SHA, v0.62.0 ran twice, concurrently. Fail-closed is preserved: a
     # tag on a commit with no CI run finds zero check runs and the
     # release gate times out red.
   pull_request:
   # Merge queue: GitHub tests the queued commit (main + this PR, as it will
   # actually land) and merges that exact commit, so its check runs attach to
   # the SHA the release gate polls. Without the queue, every change runs this
-  # pipeline twice — once on the PR's ephemeral merge commit, once on the
+  # pipeline twice, once on the PR's ephemeral merge commit, once on the
   # identical tree after it lands on main. This trigger is inert until the
   # queue is enabled on main; enabling it removes the duplicate.
   merge_group:
@@ -82,14 +82,14 @@ jobs:
       # Every Postgres suite in the repo resolves through TEST_POSTGRES_DSN.
       # The service below supplies it. This replaced testcontainers-go, which
       # spawned the container from inside the tests but had to be a require in
-      # the root go.mod — and Go hands a module's requirements to everything
+      # the root go.mod, and Go hands a module's requirements to everything
       # importing it, so every app built on GoFastr resolved the Docker client
       # stack. See cmd/repolint's test-only-dep-in-consumer-graph rule.
       TEST_POSTGRES_DSN: "postgres://test:test@localhost:5432/framework_test?sslmode=disable"
       # Fail-closed for the real-Postgres suites: internal/pgtest escalates the
       # no-Postgres t.Skip to t.Fatal so the ~30 dual-dialect tests can't
       # silently degrade to SQLite-only behind a green build. That guard now
-      # covers this wiring too — a service that fails to come up, or a DSN that
+      # covers this wiring too, a service that fails to come up, or a DSN that
       # drifts from it, fails the job instead of quietly skipping. Local dev
       # leaves it unset → tests keep skipping when no Postgres is around.
       PGTEST_REQUIRED: "1"
@@ -97,7 +97,7 @@ jobs:
       # pgvector/pgvector:pg16 is stock Postgres 16 plus the `vector`
       # extension, so this one service also covers battery/semantic's pgvector
       # store. Mirrors the `postgres` service in docker-compose.yml, which is
-      # what `make test-pg` starts locally — keep the two images in step.
+      # what `make test-pg` starts locally, keep the two images in step.
       postgres:
         image: pgvector/pgvector:pg16
         env:
@@ -120,7 +120,7 @@ jobs:
           go-version-file: go.mod
           # setup-go's built-in cache keys on go.sum alone: the entry is
           # saved once per dependency bump, then restored read-only by every
-          # later run — test results for code that changed since are never
+          # later run, test results for code that changed since are never
           # persisted, so the test step re-executed every package on every
           # run (observed: the v0.62.0 tag run re-ran 7.5 min of tests on a
           # SHA whose main-push twin was concurrently running the identical
@@ -134,11 +134,11 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           # Keyed on the commit so every run SAVES a fresh snapshot (cache
-          # entries are immutable — an existing key is never updated), and
+          # entries are immutable, an existing key is never updated), and
           # restore-keys hands the next run the newest prior snapshot. That
           # is what lets Go's content-addressed test cache skip every
           # package whose sources + transitive deps are unchanged since the
-          # last run — the affected-tests mechanism the Test step's comment
+          # last run, the affected-tests mechanism the Test step's comment
           # relies on. GOCACHE self-trims stale entries; GitHub's 10 GB
           # per-repo LRU evicts old SHAs.
           key: go-test-${{ runner.os }}-${{ github.sha }}
@@ -156,12 +156,12 @@ jobs:
         # tests skip (fail-closed "backend unavailable") and that backend's
         # code goes uncovered in the coverage-floors gate. Installing it lets
         # the probes actually run. If unprivileged user namespaces are
-        # restricted on the runner the probes still skip cleanly — never fail.
+        # restricted on the runner the probes still skip cleanly, never fail.
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
       - name: Install the gofastr binary
         # cmd/gofastr e2e tests (migrate diff/generate, blueprint) skip
-        # silently when the binary is absent — install it so they run.
+        # silently when the binary is absent, install it so they run.
         run: go install ./cmd/gofastr
 
       - name: Build
@@ -170,7 +170,7 @@ jobs:
       # cmd/check-embed, cmd/repolint). The Build step above uses plain
       # `go build`, so until now these were local-only: a tree that fails them
       # still merged green. Each is a `go run` of a cmd/ gate binary over the
-      # checkout — seconds, no services, no Chrome (verified 3-5s each,
+      # checkout: seconds, no services, no Chrome (verified 3-5s each,
       # 2026-08-16).
       - name: csp-check (no inline <script> / style emission)
         run: make csp-check
@@ -183,7 +183,7 @@ jobs:
 
       - name: Cross-compile smoke (windows, darwin)
         # The runner is ubuntu-only, so windows-tagged files never compile
-        # in any gate without this. Compile-only — no tests run. CGO_ENABLED
+        # in any gate without this. Compile-only, no tests run. CGO_ENABLED
         # is forced off: the job-level "1" would make the cross-build
         # compile runtime/cgo with the host gcc, which cannot target the
         # other OSes.
@@ -209,18 +209,18 @@ jobs:
         # content-addressed test cache (persisted across runs by the
         # per-SHA cache step above) then skips re-executing any package
         # whose sources + transitive deps + test inputs are byte-identical
-        # to a prior PASS — the free, correct-by-construction analog of
+        # to a prior PASS, the free, correct-by-construction analog of
         # Nx's affected/cache. Do NOT re-add -count=1 here to "force fresh
         # runs"; the flaky chromedp suites keep it in browser-e2e, which
         # is where forcing a fresh run per push actually matters.
         # Excluded here and run in browser-e2e instead:
         #   - examples/site, kiln/integration, core-ui/runtime,
-        #     core-ui/widget (whole packages — the latter two host the
+        #     core-ui/widget (whole packages, the latter two host the
         #     hydration chromedp suites and are documented flaky under
         #     parallel package load; see CLAUDE.md)
         #   - examples/meridian (the 16-surface visual canary exhausts its
         #     bounded 12s capture attempts when another chromedp suite runs
-        #     beside it under -p 2 — the exact starvation class the other
+        #     beside it under -p 2, the exact starvation class the other
         #     exclusions document)
         #   - evals/ui-quality/internal/evalrunner (its capture tests drive
         #     a real headless Chrome; same class)
@@ -285,7 +285,7 @@ jobs:
         # battery/print/chromepdf is its own go module: a nested module that
         # isolates the chromedp/cdproto dependency surface from the print
         # battery's core. A nested module is invisible to the root `./...`
-        # glob, so the build/vet/test steps above no longer cover it — this
+        # glob, so the build/vet/test steps above no longer cover it, this
         # step keeps its build + vet + the non-chromium unit tests (the SSRF
         # resolver-rules gate in ssrf_security_test.go) inside the blocking
         # job. The chromium-tagged integration tests are intentionally not run
@@ -301,7 +301,7 @@ jobs:
 
       - name: Contracts (gofastr verify)
         # The framework held to its own contract. Runs AFTER the test step
-        # so the semantic-coverage manifest those tests write is on disk —
+        # so the semantic-coverage manifest those tests write is on disk,
         # without it the testing rules report "no manifest" and check
         # nothing, which would look like a pass.
         #
@@ -315,13 +315,13 @@ jobs:
         # ADDED after that point and not on the ones already there.
         #
         # Without it the gate could only fail on errors, and a change adding
-        # fifty unguarded mutations would pass — which is the same as having
+        # fifty unguarded mutations would pass, which is the same as having
         # no gate for two thirds of the catalog.
         #
         # Pay the debt down and re-record with `gofastr verify --strict
         # --baseline-write`; the run tells you when an entry is
         # over-accepting. Relaxations live in gofastr.contracts.yml, in the
-        # repository, in review — not in this file as CI-only flags nobody
+        # repository, in review, not in this file as CI-only flags nobody
         # reads.
         run: |
           go run ./cmd/gofastr verify --no-vet --strict
@@ -365,7 +365,7 @@ jobs:
     # a single job because they contend for Chrome/sockets when they share
     # a runner (CLAUDE.md documents the flake classes); separate runners
     # don't contend, so the matrix keeps every suite exactly as isolated
-    # while running them concurrently — wall clock drops from the ~28m
+    # while running them concurrently, wall clock drops from the ~28m
     # serial sum to the slowest shard (site-axe, ~13m). fail-fast is off
     # so one red suite still lets the rest report, matching the old
     # per-step `if: !cancelled()` behavior. Each shard is its own check
@@ -386,7 +386,7 @@ jobs:
           - suite: site
             run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
           - suite: site-axe
-            # 15m, not 10 — the gate scans every page under BOTH color
+            # 15m, not 10, the gate scans every page under BOTH color
             # schemes (≈3.5min locally; CI runners are slower). Its own
             # shard: CLAUDE.md documents the axe suite flaking when it
             # shares a go-test run with the other chromedp tests.
@@ -394,7 +394,7 @@ jobs:
           - suite: kiln-integration
             run: go test -count=1 -timeout=15m ./kiln/integration/
           - suite: gofastr-cli
-            # Every cmd/gofastr test that drives a real Chrome — the
+            # Every cmd/gofastr test that drives a real Chrome, the
             # blueprint app E2E plus the two dev livereload browser tests.
             # Kept out of the deterministic step so the websocket connect
             # isn't starved by parallel package load.
@@ -403,11 +403,11 @@ jobs:
             # The runtime hydration suite launches a real Chrome per test
             # binary; under the deterministic job's -p 2 package
             # parallelism the chromedp websocket connect starves and times
-            # out ("websocket url timeout reached" — CLAUDE.md documents
+            # out ("websocket url timeout reached", CLAUDE.md documents
             # this package as flaky under parallel load, run isolated).
             run: go test -count=1 -timeout=10m ./core-ui/runtime/
           - suite: core-ui-widget
-            # Same class as core-ui/runtime — documented flaky when
+            # Same class as core-ui/runtime, documented flaky when
             # sharing a go-test run with other chromedp suites.
             run: go test -count=1 -timeout=5m ./core-ui/widget/
           - suite: meridian
@@ -439,7 +439,7 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           # Restore-only: every suite here runs -count=1, so the cache buys
-          # compile time, not test skips — and saving this job's
+          # compile time, not test skips, and saving this job's
           # near-duplicate GOCACHE would crowd the repo's 10 GB cache LRU
           # for no extra hits.
           key: go-test-${{ runner.os }}-${{ github.sha }}
@@ -463,11 +463,11 @@ jobs:
     # apps generated by old CLIs (v0.38.0 and v0.53.0) are each bumped to THIS
     # tree (via a go.mod replace), have their migration.patch applied, are
     # built, booted against a frozen pre-upgrade SQLite DB, and exercised over
-    # HTTP — SSR, auth, owner isolation, CRUD, OpenAPI, island round-trips.
+    # HTTP: SSR, auth, owner isolation, CRUD, OpenAPI, island round-trips.
     # See evals/upgrade-fixtures/README.md.
     #
     # BLOCKING since 2026-08-16: promoted from advisory (the v0.63 changelog
-    # deferred promotion) after a stretch of green runs — 4/4 success on the
+    # deferred promotion) after a stretch of green runs, 4/4 success on the
     # main runs checked at promotion time. The "(blocking)" suffix puts the
     # check in scripts/release-required-checks.txt's scope; the gate matches
     # names exactly and TestReleaseManifestMatchesCI pins the sync.

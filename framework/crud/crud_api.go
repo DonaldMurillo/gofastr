@@ -17,8 +17,8 @@ import (
 // In-process typed CRUD API
 //
 // The methods below let same-process callers (typed repositories, jobs, seed
-// scripts) drive the framework's full CRUD pipeline — transaction wrapping,
-// hook chain, event emission — without round-tripping through HTTP. They
+// scripts) drive the framework's full CRUD pipeline, transaction wrapping,
+// hook chain, event emission, without round-tripping through HTTP. They
 // share the underlying do{Create,Update,Delete} primitives with the HTTP
 // handlers so semantics never drift between the two paths.
 //
@@ -42,7 +42,7 @@ func syntheticRequest(ctx context.Context, method, path string) *http.Request {
 //
 // By default ReadOnly and Hidden fields in body are silently skipped
 // (matching the HTTP Create path). To persist them from trusted server
-// code, wrap ctx with WithServerWrites — the owner and tenant columns
+// code, wrap ctx with WithServerWrites, the owner and tenant columns
 // remain context-stamped regardless. Hidden fields stay absent from the
 // returned map (visibleFields shapes the projection, not the write set).
 func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[string]any, error) {
@@ -160,8 +160,8 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 
 	// AfterGet, in the same position the HTTP handler runs it (after
 	// includes are attached). Without this a redaction hook applied only to
-	// `GET /x/{id}` while every in-process reader — including the generated
-	// blueprint detail screen and edit form — saw the stored value.
+	// `GET /x/{id}` while every in-process reader, including the generated
+	// blueprint detail screen and edit form, saw the stored value.
 	return ch.runAfterGet(ctx, req, id, result)
 }
 
@@ -255,7 +255,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 
 // BatchCreateMany runs CreateOne for each body in a single transaction.
 // Events fire after commit (per item, in input order). Any per-item error
-// rolls back the whole batch — same semantics as the HTTP _batch endpoint.
+// rolls back the whole batch, same semantics as the HTTP _batch endpoint.
 // Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
 	if err := ch.requireOwnerContext(ctx); err != nil {

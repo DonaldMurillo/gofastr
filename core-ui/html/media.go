@@ -49,7 +49,7 @@ func Image(cfg ImageConfig) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	// ImageSource rather than Resource: an inline raster data: URI is a
 	// legitimate <img src> (LQIP placeholders, generated icons), while the
-	// sinks that must keep rejecting data: — <script src>, <link href> —
+	// sinks that must keep rejecting data:, <script src>, <link href>,
 	// stay on Resource.
 	attrs = setURLAttr(attrs, "src", cfg.Src, urlsafe.ImageSource)
 	attrs = setAttr(attrs, "alt", cfg.Alt)

@@ -165,7 +165,7 @@ func TestComponentSheetRejectsUnscopableSelectors(t *testing.T) {
 				t.Fatalf("expected error scoping %q", sel)
 			}
 			// Callers must be able to detect this category of failure
-			// via errors.Is — that's what the exported sentinel is for.
+			// via errors.Is, that's what the exported sentinel is for.
 			if !errors.Is(err, ErrUnscopable) {
 				t.Errorf("scope error for %q must wrap ErrUnscopable; got %v", sel, err)
 			}

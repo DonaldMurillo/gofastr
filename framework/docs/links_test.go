@@ -50,7 +50,7 @@ var (
 	nonAnchorChar = regexp.MustCompile(`[^\pL\pN\s_-]`)
 	headingLineRE = regexp.MustCompile(`^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$`)
 	linkTargetRE  = regexp.MustCompile(`\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
-	// inline code span — links inside `…` are prose, not links.
+	// inline code span: links inside `…` are prose, not links.
 	inlineCodeRE = regexp.MustCompile("`[^`]*`")
 )
 
@@ -191,7 +191,7 @@ func TestContentLinksResolve(t *testing.T) {
 }
 
 // TestLinkGateCatchesBroken proves the gate fails on the exact shapes it
-// claims to catch — a dead file link and a stale in-text anchor — using a
+// claims to catch: a dead file link and a stale in-text anchor, using a
 // testdata fixture rather than a file under content/ (which is embedded
 // into the shipped binary and served by `gofastr docs`).
 func TestLinkGateCatchesBroken(t *testing.T) {

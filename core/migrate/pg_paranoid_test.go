@@ -30,7 +30,7 @@ func pgConnFactory(t *testing.T, dsn string) func() *sql.DB {
 	}
 }
 
-// #32 — a panic inside the locked fn must still release the advisory lock; a
+// #32: a panic inside the locked fn must still release the advisory lock; a
 // subsequent acquire must not hang.
 func TestPG_LockReleasedAfterPanic(t *testing.T) {
 	db := pgtest.DB(t)
@@ -49,8 +49,8 @@ func TestPG_LockReleasedAfterPanic(t *testing.T) {
 	}
 }
 
-// #32 — a waiter actually ACQUIRES the lock once the holder releases (positive
-// resolution of contention, not just cancellation).
+// #32: a waiter actually ACQUIRES the lock once the holder releases (positive
+// resolution of contention, not only cancellation).
 func TestPG_LockAcquiredAfterHolderReleases(t *testing.T) {
 	dbHold := pgtest.DB(t)
 	dbWait := pgtest.DB(t)
@@ -83,7 +83,7 @@ func TestPG_LockAcquiredAfterHolderReleases(t *testing.T) {
 	}
 }
 
-// #32 — acquiring the lock with an already-cancelled context fails fast and
+// #32: acquiring the lock with an already-cancelled context fails fast and
 // does not run the protected fn.
 func TestPG_LockAcquireFailsOnCancelledCtx(t *testing.T) {
 	db := pgtest.DB(t)
@@ -99,8 +99,8 @@ func TestPG_LockAcquireFailsOnCancelledCtx(t *testing.T) {
 	}
 }
 
-// #33 — two deployers carrying DIFFERENT migration sets ({1,2,3} and {1,2}) —
-// the real mixed-code rolling deploy — converge with every migration applied
+// #33: two deployers carrying DIFFERENT migration sets ({1,2,3} and {1,2}),
+// the real mixed-code rolling deploy, converge with every migration applied
 // exactly once.
 func TestPG_ConcurrentMixedVersionSetsUp(t *testing.T) {
 	dsn := pgtest.FreshDatabaseDSN(t)
@@ -146,7 +146,7 @@ func TestPG_ConcurrentMixedVersionSetsUp(t *testing.T) {
 	}
 }
 
-// #33 — many deployers race; the set is applied exactly once with no deadlock.
+// #33: many deployers race; the set is applied exactly once with no deadlock.
 func TestPG_ManyConcurrentDeployersExactlyOnce(t *testing.T) {
 	dsn := pgtest.FreshDatabaseDSN(t)
 	newDB := pgConnFactory(t, dsn)
@@ -188,7 +188,7 @@ func TestPG_ManyConcurrentDeployersExactlyOnce(t *testing.T) {
 	}
 }
 
-// #33 — an Up and a Down racing both complete and leave the tracking table
+// #33: an Up and a Down racing both complete and leave the tracking table
 // consistent with the actual tables (every recorded version has its table).
 func TestPG_ConcurrentUpAndDownConsistent(t *testing.T) {
 	dsn := pgtest.FreshDatabaseDSN(t)
@@ -266,7 +266,7 @@ func TestPG_ConcurrentUpAndDownConsistent(t *testing.T) {
 	}
 }
 
-// #34 — a NoTransaction CREATE UNIQUE INDEX CONCURRENTLY that fails on duplicate
+// #34: a NoTransaction CREATE UNIQUE INDEX CONCURRENTLY that fails on duplicate
 // data leaves a genuine half-migration (an INVALID index) + a dirty row that
 // blocks all further runs, then the operator reconciles and resumes.
 func TestPG_NoTxInvalidIndexThenReconcile(t *testing.T) {
@@ -330,7 +330,7 @@ func TestPG_NoTxInvalidIndexThenReconcile(t *testing.T) {
 	}
 }
 
-// #34 — alternative reconcile: the operator decides the half-migrated state is
+// #34: alternative reconcile: the operator decides the half-migrated state is
 // acceptable and Force-marks it applied (clearing dirty); the next run no-ops.
 func TestPG_NoTxDirtyThenForceApplied(t *testing.T) {
 	db := pgtest.DB(t)
@@ -354,8 +354,8 @@ func TestPG_NoTxDirtyThenForceApplied(t *testing.T) {
 	}
 }
 
-// #35 — a transactional Up cancelled by context rolls back fully: no table, and
-// crucially NOT dirty (transactional migrations are atomic).
+// #35: a transactional Up cancelled by context rolls back fully: no table, and
+// NOT dirty (transactional migrations are atomic).
 func TestPG_CtxTimeoutDuringTxUpRollsBackClean(t *testing.T) {
 	db := pgtest.DB(t)
 	m := migrate.New(db, migrate.WithDialect(migrate.DialectPostgres))
@@ -384,7 +384,7 @@ func TestPG_CtxTimeoutDuringTxUpRollsBackClean(t *testing.T) {
 	}
 }
 
-// #35 — a NoTransaction Up cancelled by context leaves the migration dirty
+// #35: a NoTransaction Up cancelled by context leaves the migration dirty
 // (the dirty row was committed before the DDL, and there is no transaction to
 // undo it).
 func TestPG_CtxCancelDuringNoTxUpLeavesDirty(t *testing.T) {

@@ -34,7 +34,7 @@ type Reader struct {
 	// walks upward from this to the repo root.
 	WorkingDir string
 
-	// Sources is the configured list — names like "AGENTS.md" or
+	// Sources is the configured list, names like "AGENTS.md" or
 	// "CLAUDE.md". Per § Profiles, this is just a strings list, not
 	// a polymorphism point.
 	Sources []string
@@ -44,7 +44,7 @@ type Reader struct {
 // AGENTS.md walk produces one section per file encountered (deepest
 // first → root last, so child rules apply atop parent rules).
 //
-// Missing files are silently skipped — readers don't error on the
+// Missing files are silently skipped, readers don't error on the
 // happy "no AGENTS.md in this repo" path.
 func (r *Reader) Read() ([]Section, error) {
 	if r.WorkingDir == "" {

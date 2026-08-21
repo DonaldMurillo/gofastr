@@ -157,7 +157,7 @@ func TestMiddlewareByKey_CustomKeyFunc(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("X-Api-Key", key)
-		// Same RemoteAddr for both — the key func, not IP, must drive the bucket.
+		// Same RemoteAddr for both, the key func, not IP, must drive the bucket.
 		req.RemoteAddr = "7.7.7.7:1"
 		h.ServeHTTP(rec, req)
 		return rec.Code

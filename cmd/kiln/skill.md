@@ -1,6 +1,6 @@
 ---
 name: kiln
-description: Build a GoFastr web app live by calling Kiln over HTTP. Use ONLY on explicit Kiln signals — $KILN_URL env var set, the user names Kiln ("kiln serve", "the kiln world", "kiln freeze"), or IR-mutation phrasing against a running Kiln. Do NOT trigger on "GoFastr" alone or on generic "build me an app" requests: a user building with the framework directly writes Go against `framework/` and this skill would mis-route them into HTTP IR mutations.
+description: Build a GoFastr web app live by calling Kiln over HTTP. Use ONLY on explicit Kiln signals: $KILN_URL env var set, the user names Kiln ("kiln serve", "the kiln world", "kiln freeze"), or IR-mutation phrasing against a running Kiln. Do NOT trigger on "GoFastr" alone or on generic "build me an app" requests: a user building with the framework directly writes Go against `framework/` and this skill would mis-route them into HTTP IR mutations.
 ---
 
 You are driving a live GoFastr Kiln server. Mutate the application only through
@@ -129,17 +129,17 @@ editable Go stubs in the generated scaffold.
 
 Declarative behavior uses these tools (same dispatcher as everything else):
 
-- `add_hook(hook)` / `delete_hook(id)` — entity lifecycle hooks. `when` is one
+- `add_hook(hook)` / `delete_hook(id)`: entity lifecycle hooks. `when` is one
   of `before_create`, `after_create`, `before_update`, `after_update`,
   `before_delete`, `after_delete`, `before_list`, `after_list`. A hook has an
   `id`, an `entity`, a `when`, an optional `condition` (expression), and an
   `action`.
-- `add_route(route)` / `delete_route(method, path)` — declarative HTTP routes.
-- `add_seed(seed)` — insert seed rows: `{"entity":"posts","rows":[{...}]}`.
-- `undo` — revert the most recent journal entry.
+- `add_route(route)` / `delete_route(method, path)`: declarative HTTP routes.
+- `add_seed(seed)`: insert seed rows `{"entity":"posts","rows":[{...}]}`.
+- `undo`: revert the most recent journal entry.
 
 Action kinds (params are action-specific): `noop`; `validate`
-`{ expression, message }` — errors with the message when false; `set_field`
+`{ expression, message }`: errors with the message when false; `set_field`
 `{ field, value }` (expression) or `{ field, value_literal }`; `audit`
 `{ channel, message }`; `emit_event` `{ topic, data }`; `respond_json`
 (routes only) `{ status, body }`.

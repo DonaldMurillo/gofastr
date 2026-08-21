@@ -14,7 +14,7 @@ import (
 // Sinks that batch (webhook) should treat each Write as one logical entry.
 //
 // Close is called once during App.Stop. It must flush in-flight data and
-// return any final error. After Close, Write must not panic — it should
+// return any final error. After Close, Write must not panic, it should
 // return ErrSinkClosed and drop the entry.
 type Sink interface {
 	io.Closer

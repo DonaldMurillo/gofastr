@@ -1,8 +1,8 @@
-// GoFastr runtime module — PaneHost
+// GoFastr runtime module, PaneHost
 //
 // Wires the pane-host layout primitive: a primary pane that is always
 // visible plus one or two openable side panes (secondary / tertiary).
-// Owns the pane lifecycle — open / close / swap, focus handoff on open,
+// Owns the pane lifecycle, open / close / swap, focus handoff on open,
 // focus restore on close, and a responsive collapse where, below 768px,
 // an open side pane becomes a fixed overlay drawer (backdrop scrim +
 // focus trap + scroll lock + ESC-to-close) instead of an inline column.
@@ -46,7 +46,7 @@
 
   // Per-instance state. Multiple pane-hosts per page must not share it.
   // A pane the SERVER rendered open is already visible, so seed the
-  // stack from the DOM — otherwise topmost() reports nothing open and
+  // stack from the DOM, otherwise topmost() reports nothing open and
   // ESC, overlay-drawer mode, and bare close all skip a pane the user
   // can plainly see.
   const st = (host) => {
@@ -85,7 +85,7 @@
   // The host names a query parameter; opening through a trigger that
   // declares data-fui-pane-key writes `?<param>=<pane>:<key>`, closing
   // strips it, and Back moves between those states. Pane state is still
-  // in-page state (Hard Rule 1) — the parameter only records it so a
+  // in-page state (Hard Rule 1), the parameter only records it so a
   // refresh or a shared link reproduces what is on screen, exactly as
   // widget deep links do. Push/strip both use pushState, matching
   // widgetlinks.js so history behaves the same for panes and modals.
@@ -125,7 +125,7 @@
     writeURL((sp) => {
       const cur = sp.get(param);
       // Only clear the parameter if it is describing the pane that just
-      // closed — never clobber a sibling pane's deep link.
+      // closed, never clobber a sibling pane's deep link.
       if (!cur || cur.split(':')[0] !== pane) return false;
       sp.delete(param);
       return true;
@@ -146,7 +146,7 @@
         for (const p of st(host).stack.slice()) closePane(host, p);
         return;
       }
-      // Replay the trigger so the pane's CONTENT is restored too — it
+      // Replay the trigger so the pane's CONTENT is restored too, it
       // carries the open marker and the RPC that fills the region, so
       // one click rebuilds the state the URL describes. Falls back to
       // opening an empty pane when the trigger is not on this page.
@@ -228,7 +228,7 @@
   }
 
   // ESC closes; Tab is trapped inside the topmost overlay pane. Minimal
-  // trap over NS._focusSel — does NOT touch the widgets module's private
+  // trap over NS._focusSel, does NOT touch the widgets module's private
   // _modalStack.
   function onKeydown(e) {
     const host = document.querySelector('[data-fui-pane-mode="overlay"]');

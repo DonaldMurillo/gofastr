@@ -18,7 +18,7 @@ import (
 // turns the most useful line in a finding into a dead end.
 //
 // This lives in package framework rather than in contracts because the
-// catalog must not import the docs package — the rules have to be
+// catalog must not import the docs package, the rules have to be
 // readable and serveable without dragging the embedded markdown in.
 func TestEveryRuleDocTopicExists(t *testing.T) {
 	topics, err := docs.List()
@@ -85,7 +85,7 @@ func TestContractsExplainToolRejectsUnknownRule(t *testing.T) {
 	if _, err := app.toolContractsExplain(t.Context(), map[string]any{"rule": "GOFASTR9999"}); err == nil {
 		t.Fatal("unknown rule accepted")
 	}
-	// A near miss gets a suggestion — an agent that typed the slug from
+	// A near miss gets a suggestion, an agent that typed the slug from
 	// memory should be corrected, not just refused.
 	_, err := app.toolContractsExplain(t.Context(), map[string]any{"rule": "colon-path"})
 	if err == nil {
@@ -127,7 +127,7 @@ func TestContractsCapabilitiesToolSummarises(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Asserted through JSON because that is what an MCP client actually
-	// receives — the Go type is an implementation detail of the handler.
+	// receives, the Go type is an implementation detail of the handler.
 	raw, err := json.Marshal(out)
 	if err != nil {
 		t.Fatal(err)
@@ -209,8 +209,8 @@ func TestContractsExplainRequiresARule(t *testing.T) {
 }
 
 // TestAdvertisedRuleCountMatchesTheCatalog pins the numbers the docs
-// quote. A count in prose drifts the moment a rule is added — this file
-// shipped "43 rules" while the catalog held 46 — and a README that
+// quote. A count in prose drifts the moment a rule is added, this file
+// shipped "43 rules" while the catalog held 46, and a README that
 // undersells the tool by three rules is a small lie that compounds.
 //
 // The fix when this fails is one number per document, not deleting the

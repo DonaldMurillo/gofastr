@@ -35,8 +35,8 @@ func covT_capExit(t *testing.T, fn func()) (code int) {
 type covT_exitSentinel struct{}
 
 // covT_capStdout captures everything fn writes to os.Stdout. It backs the
-// capture with a temp file (not a pipe) so a panicking fn — e.g. one that
-// trips a captured osExit — can never leave a blocked reader goroutine
+// capture with a temp file (not a pipe) so a panicking fn, e.g. one that
+// trips a captured osExit, can never leave a blocked reader goroutine
 // behind. Output is restored and read on the deferred path regardless.
 func covT_capStdout(t *testing.T, fn func()) string {
 	t.Helper()

@@ -10,14 +10,14 @@ import (
 
 // Predicate is a node in a boolean filter tree: either a LEAF (one
 // field/op/value comparison) or a GROUP (AND/OR of child predicates).
-// It is the parsed, validated form of a `?where=<json>` request — every
+// It is the parsed, validated form of a `?where=<json>` request, every
 // field has already been checked against the entity's schema allow-list
 // and every operator against the supported set, so [BuildPredicate] may
 // interpolate field names trusting they are safe while binding all
 // values as placeholders.
 //
 // Groups let callers express nested boolean logic the flat query-param
-// filters cannot — e.g. `status = A OR (priority = high AND assignee =
+// filters cannot, e.g. `status = A OR (priority = high AND assignee =
 // me)`. The whole tree compiles to ONE parenthesized WHERE clause that
 // the query builder AND-composes with the framework's owner/tenant/
 // soft-delete scopes; a user OR-group can never widen past those scopes
@@ -30,7 +30,7 @@ type Predicate struct {
 	Values []string // for OpIn
 	// isBool marks a leaf on a Bool-typed column, set by ParseWhere from
 	// the schema. BuildPredicate coerces true/false spellings to Go
-	// bools at bind time — same rationale as ParsedFilter's typed value.
+	// bools at bind time, same rationale as ParsedFilter's typed value.
 	isBool bool
 
 	// Group fields (Children != nil):
@@ -78,7 +78,7 @@ type rawPred struct {
 // value-disclosure-oracle rationale as ParseFilters) and every operator
 // against the supported set. Returns (nil, nil) when raw is empty. Any
 // unknown field, unknown operator, malformed JSON, empty/ambiguous node,
-// or a tree that exceeds the depth/node bounds returns an error — the
+// or a tree that exceeds the depth/node bounds returns an error, the
 // caller maps it to 400. On success the tree is safe for BuildPredicate
 // to compile.
 func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
@@ -109,7 +109,7 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 			noQuery[f.Name] = true
 			// And under the wire key, which is the name clients are given.
 			// Registering only the column would let the alias fall through to
-			// "unknown field" — or, worse, past the refusal if it ever
+			// "unknown field", or, worse, past the refusal if it ever
 			// reached allow.
 			if f.WireName != "" && f.WireName != f.Name {
 				noQuery[f.WireName] = true
@@ -180,7 +180,7 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 		return Predicate{}, fmt.Errorf("where: field %q cannot be filtered", rp.Field)
 	}
 	if !allow[rp.Field] {
-		// Unknown or Hidden field — never build a predicate on it.
+		// Unknown or Hidden field, never build a predicate on it.
 		return Predicate{}, fmt.Errorf("where: unknown filter field %q", rp.Field)
 	}
 	// Resolve an alias to its column: Predicate.Field reaches the WHERE
@@ -203,7 +203,7 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 			// Count separators before splitting. The where-body is size-bounded,
 			// so this is defence in depth rather than a live DoS, but the
 			// allocate-then-reject shape is the same one SplitINValuesBounded
-			// exists to avoid on the ?field_in= path — keep them consistent.
+			// exists to avoid on the ?field_in= path, keep them consistent.
 			if strings.Count(rp.Value, ",")+1 > MaxINListEntries {
 				return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", MaxINListEntries)
 			}
@@ -227,13 +227,13 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 // placeholders in depth-first order and a matching, same-order Args
 // slice. Field names are interpolated (they came from the schema
 // allow-list in ParseWhere); every value is a bound arg. Hand the result
-// to qb.Where(c.SQL, c.Args...) ONCE — the builder wraps it in its own
+// to qb.Where(c.SQL, c.Args...) ONCE, the builder wraps it in its own
 // parens and AND-joins it to the framework scopes, so the user's boolean
 // logic can never escape to widen a scope.
 //
 // The $N numbers are positional only; core/query.renumberPlaceholders
 // rewrites them left-to-right and advances by len(Args), so the sole
-// invariant is that placeholders appear in the same order as Args — which
+// invariant is that placeholders appear in the same order as Args, which
 // building both in one DFS pass guarantees.
 func BuildPredicate(p *Predicate) Condition {
 	if p == nil {
@@ -256,7 +256,7 @@ func buildPredSQL(p Predicate, args *[]any) string {
 		}
 		return "(" + strings.Join(parts, conj) + ")"
 	}
-	// Leaf — mirror ApplyToQuery's per-op SQL exactly.
+	// Leaf, mirror ApplyToQuery's per-op SQL exactly.
 	switch p.Op {
 	case OpIn:
 		ph := make([]string, len(p.Values))

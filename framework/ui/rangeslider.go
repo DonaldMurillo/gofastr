@@ -16,13 +16,13 @@ import (
 // tree). The runtime module ensures the low thumb never exceeds the
 // high thumb and vice-versa.
 //
-// Form-submit shape: two fields — Name+"-min" and Name+"-max" — so
+// Form-submit shape: two fields, Name+"-min" and Name+"-max", so
 // the server gets explicit lo/hi values without parsing a composite
 // string.
 
 // RangeSliderConfig configures a RangeSlider.
 type RangeSliderConfig struct {
-	// Name is the form-field base name (required). Two inputs ship —
+	// Name is the form-field base name (required). Two inputs ship:
 	// Name+"-min" and Name+"-max".
 	Name string
 	// Label is the accessible group name (required, used as the

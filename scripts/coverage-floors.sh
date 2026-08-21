@@ -6,10 +6,10 @@
 # Methodology: own-package coverage (`go test -coverprofile ./<pkg>/`),
 # the cheapest reproducible measurement. No -count=1: coverage runs are
 # served from Go's content-addressed test cache when a package's sources
-# and deps are unchanged — same inputs, same percentage — so repeat runs
+# and deps are unchanged, same inputs, same percentage, so repeat runs
 # (locally and in CI, which persists GOCACHE per-SHA) skip re-execution. A
 # floor may gate a
-# whole package OR a file-filtered *bucket* within one — see below. The
+# whole package OR a file-filtered *bucket* within one. See below. The
 # audited packages sit below a literal 100% by design: defensive
 # fail-closed guards that are unreachable today are kept (not rewritten to
 # chase the number), and CLI serve-loops / interactive entry points + a few
@@ -21,16 +21,16 @@
 # into one diluted number that hides a regression in either. `framework`
 # does this: the App spine (app/module/plugin/battery/...) is held to a
 # strict floor, while the process-isolated-module subsystem
-# (processmodule_*.go, #37) — 87% of the package by volume, and dominated by
+# (processmodule_*.go, #37), 87% of the package by volume, and dominated by
 # subprocess spawn/kill, OS-specific sandbox backends, and Postgres-only DDL
-# that no portable test env can exercise — is held to a floor matching its
+# that no portable test env can exercise, is held to a floor matching its
 # nature (the same way framework/migrate is floored at 73.5 and
 # framework/entity at 86.5). Both buckets are computed from ONE profile.
 #
 # Each floor is set ~2 points below the value measured when the bucket was
 # last (re)baselined. The slack absorbs ordinary churn (a refactor that adds
 # a handful of uncovered defensive lines shouldn't block CI) while still
-# catching real regressions — a deleted test file or a newly untested
+# catching real regressions, a deleted test file or a newly untested
 # feature moves coverage far more than 2 points. If you intentionally change
 # a bucket's coverage profile, re-measure and update the floor here in the
 # same commit.
@@ -50,7 +50,7 @@
 #   cmd/gofastr (claimed 84% full-suite) is NOT gated here: its suite is
 #   dominated by slow, environment-sensitive e2e tests (subprocess hot-reload
 #   servers, chromedp, an installed `gofastr` binary on PATH, ~7 min) that
-#   the CI test/browser-e2e jobs already run — re-running them for a floor
+#   the CI test/browser-e2e jobs already run, re-running them for a floor
 #   check would double the longest part of the blocking job and import their
 #   flake surface into this gate.
 #
@@ -226,7 +226,7 @@ profile_for() {
     if ! go test -coverprofile="$prof" "$pkg" >"$profdir/$key.log" 2>&1; then
       # stderr, not stdout. This function is called as $(profile_for ...), so
       # anything on stdout is captured into the caller's variable instead of
-      # reaching the log — which is how a filtered package could fail a
+      # reaching the log, which is how a filtered package could fail a
       # BLOCKING gate while printing nothing but "tests failed (no coverage
       # measurement)". The failing test name was simply swallowed.
       cat "$profdir/$key.log" >&2

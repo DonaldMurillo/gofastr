@@ -97,7 +97,7 @@ type shellInput struct {
 // without this a Build component built from framework/ui or
 // core-ui/patterns (which ship their CSS as [data-fui-comp] scoped sheets)
 // would render unstyled. Component CSS is var(--*)-based, so DefaultTheme
-// is fine here — the concrete token values come from the linked app.css
+// is fine here, the concrete token values come from the linked app.css
 // :root, not from these rules.
 func componentCSS(body render.HTML) string {
 	names := registry.Scan(string(body))
@@ -124,7 +124,7 @@ func componentCSS(body render.HTML) string {
 }
 
 // renderShell assembles the full <!doctype html> print document. It never
-// links runtime.js — a print document is inert. The <style> blocks are
+// links runtime.js, a print document is inert. The <style> blocks are
 // server-generated/trusted; the only attacker-influenced value (Title) is
 // escaped, and Body is already escaped by the component layer.
 func renderShell(in shellInput) string {
@@ -134,7 +134,7 @@ func renderShell(in shellInput) string {
 	b.WriteString(`  <meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
 	// The CSP is emitted IN the document, not only as a response header.
 	// The PDF path base64s this HTML into a `data:text/html` URL and
-	// navigates headless Chrome to it — a headerless document, so the
+	// navigates headless Chrome to it, a headerless document, so the
 	// route's Content-Security-Policy response header has no effect
 	// there at all. An in-document meta survives the transition, which
 	// is the only place it matters for PDFs.

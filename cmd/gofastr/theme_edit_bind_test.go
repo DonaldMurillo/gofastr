@@ -11,7 +11,7 @@ import (
 // Both guards this replaced were fail-open on a parse error, in sequence:
 // loopbackifyThemeAddr returns its input unchanged when SplitHostPort fails,
 // and the non-loopback refusal was gated on `err == nil &&`. The address that
-// exercises both is the empty string — SplitHostPort("") errors, and
+// exercises both is the empty string: SplitHostPort("") errors, and
 // net.Listen("tcp", "") binds every interface. It arrives as
 // `--addr=$THEME_ADDR` with the variable unset.
 func TestThemeEditBindAddrFailsClosed(t *testing.T) {
@@ -38,7 +38,7 @@ func TestThemeEditBindAddrFailsClosed(t *testing.T) {
 }
 
 // The forms an operator actually types must still work, and a wildcard must
-// resolve to loopback rather than being refused outright — ":8090" means "port
+// resolve to loopback rather than being refused outright; ":8090" means "port
 // 8090 on this machine", which is what they want.
 func TestThemeEditBindAddrAcceptsLoopbackForms(t *testing.T) {
 	accepted := []struct{ addr, wantHost string }{
@@ -68,7 +68,7 @@ func TestThemeEditBindAddrAcceptsLoopbackForms(t *testing.T) {
 }
 
 // Whatever the guard returns must be something net.Listen actually confines to
-// loopback — the assertion that matters is the socket, not the string.
+// loopback; the assertion that matters is the socket, not the string.
 func TestThemeEditBindAddrResolvesToALoopbackSocket(t *testing.T) {
 	for _, addr := range []string{":0", "0.0.0.0:0", "127.0.0.1:0"} {
 		resolved, err := themeEditBindAddr(addr)

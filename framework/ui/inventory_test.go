@@ -15,12 +15,12 @@ import (
 // the package-doc component list in doc.go, and the one-page catalog at
 // framework/docs/content/ui-new-components.md (which claims to index
 // "every UI component"). Both tests AST-walk this directory for exported
-// Config-taking constructors — mirroring
-// examples/site/components_coverage_test.go — and fail on any absentee,
+// Config-taking constructors, mirroring
+// examples/site/components_coverage_test.go, and fail on any absentee,
 // so a new component can't land without its inventory lines.
 
 // docCatalogExempt lists constructors deliberately absent from
-// ui-new-components.md, each with the reason. doc.go has no exemptions —
+// ui-new-components.md, each with the reason. doc.go has no exemptions:
 // the package doc lists everything.
 var docCatalogExempt = map[string]string{
 	"AspectRatioComponent": "exported alias; documented as AspectRatio (slug aspectratio)",
@@ -72,7 +72,7 @@ func checkInventory(t *testing.T, doc string, exempt map[string]string, where st
 }
 
 // componentConstructorNames AST-walks the package directory and returns
-// every exported func whose first parameter type ends in "Config" —
+// every exported func whose first parameter type ends in "Config":
 // the package's component-constructor idiom. Helpers that take no
 // Config (Muted, Themed, HighlightLines, …) are out of scope.
 func componentConstructorNames(t *testing.T) []string {

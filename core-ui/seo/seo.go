@@ -6,7 +6,7 @@
 // caller fills in the descriptive fields and hands the value to
 // [Render] (or to a screen's HeadHTML implementation), which produces
 // a `<script type="application/ld+json">` block. The script element
-// is data, not code — strict CSP (`default-src 'self'`) permits it
+// is data, not code, strict CSP (`default-src 'self'`) permits it
 // alongside `<script type="application/json">`.
 //
 // Common usage from a screen:
@@ -30,7 +30,7 @@ import (
 // Thing is the marker interface that every Schema.org type implements
 // via the embedded base struct.
 type Thing interface {
-	thing() // unexported — only the types defined here qualify
+	thing() // unexported, only the types defined here qualify
 }
 
 // base carries the JSON-LD envelope (@context + @type). All typed
@@ -218,7 +218,7 @@ func NewWebPage() WebPage { return WebPage{base: newBase("WebPage")} }
 
 // WebApplication describes an in-browser application or tool (schema.org
 // SoftwareApplication subtype). The right type for SaaS products, online
-// generators, editors — anything a user runs at a URL. Pair with a free
+// generators, editors, anything a user runs at a URL. Pair with a free
 // Offer (Price "0") for "free online tool" queries.
 type WebApplication struct {
 	base
@@ -273,7 +273,7 @@ func NewOffer() Offer { return Offer{base: newBase("Offer")} }
 // ─── Render ────────────────────────────────────────────────────────
 
 // Render emits one <script type="application/ld+json"> tag per item.
-// JSON is marshaled with html.UnescapeString-safe content — the only
+// JSON is marshaled with html.UnescapeString-safe content, the only
 // dangerous sequence inside a `<script>` body is `</`, which we
 // neutralize by escaping the `<`.
 //

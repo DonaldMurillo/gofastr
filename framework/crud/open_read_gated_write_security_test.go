@@ -20,7 +20,7 @@ import (
 // "Open reads, gated writes" is the shape the framework itself tells people to
 // adopt: `gofastr generate` warns that `public: true` grants anonymous DELETE
 // and recommends "access: (a blank read: + a real create: permission)" instead.
-// A blog's posts, a public feed, a docs site — all land here.
+// A blog's posts, a public feed, a docs site, all land here.
 //
 // The blank Read must not weaken its siblings. Read is ungated *by
 // declaration*; Create/Update/Delete each name a real permission and an
@@ -69,7 +69,7 @@ func TestOpenReadGatedWrite_AnonymousListAllowed(t *testing.T) {
 	}
 }
 
-// The write half — the one that regressed. An anonymous Create against an
+// The write half, the one that regressed. An anonymous Create against an
 // entity requiring "posts:write" must 403, not persist a row.
 func TestOpenReadGatedWrite_AnonymousCreateDenied(t *testing.T) {
 	ch, db := setupOpenReadGatedWriteHandler(t)
@@ -141,7 +141,7 @@ func TestOpenReadGatedWrite_AnonymousDeleteDenied(t *testing.T) {
 
 // The app-wired shape: access.Middleware installs a RolePolicy on every
 // request, including anonymous ones. The unit cases above run with NO policy in
-// context, where access.Can short-circuits to false — so they can pass while a
+// context, where access.Can short-circuits to false, so they can pass while a
 // real app, which always has a policy, behaves differently. This case pins the
 // path a generated app actually takes.
 func TestOpenReadGatedWrite_AnonymousCreateDeniedWithPolicyInstalled(t *testing.T) {
@@ -175,8 +175,8 @@ func TestOpenReadGatedWrite_AnonymousCreateDeniedWithPolicyInstalled(t *testing.
 // CanReadScoped is the predicate every non-CRUD surface (server-rendered
 // screens, island fragments, reports) uses to decide whether the caller may see
 // an entity's rows. It has to answer the WHOLE read posture, not just RBAC:
-// gating on CanRead alone let a default-posture entity — the shape `gofastr
-// init` and most blueprints produce — render every row to an anonymous caller
+// gating on CanRead alone let a default-posture entity, the shape `gofastr
+// init` and most blueprints produce, render every row to an anonymous caller
 // while its JSON route answered 401.
 func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	newHandler := func(t *testing.T, cfg entity.EntityConfig) *CrudHandler {
@@ -257,7 +257,7 @@ func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	// entity's screen would render rows to a caller the REST route refuses,
 	// and the whole suite would stay green.
 	t.Run("multi-tenant entity refuses a caller with no tenant in context", func(t *testing.T) {
-		// Public, so the baseline session gate cannot answer first — with a
+		// Public, so the baseline session gate cannot answer first, with a
 		// default-posture fixture the anonymous refusal below would be the
 		// session check, and the tenant rule would never be reached. That is
 		// the trap this whole matrix exists to avoid.
@@ -275,7 +275,7 @@ func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	})
 }
 
-// A resource-aware Decider can allow the listing and deny one row — that seam
+// A resource-aware Decider can allow the listing and deny one row, that seam
 // is the reason CanResource takes a Ref with an ID. CanReadScoped asks about
 // the collection (empty ID), so a screen using it would render a record the
 // read-one route refuses by id. CanReadRecordScoped closes that.

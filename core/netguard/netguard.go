@@ -2,8 +2,8 @@
 // internal" that every outbound-fetch surface checks against.
 //
 // It exists because the same predicate had been written twice with
-// different coverage — battery/webhook's rejectInternalIP and
-// framework/experimental/harness's isInternalIP — and the narrower copy was the one
+// different coverage, battery/webhook's rejectInternalIP and
+// framework/experimental/harness's isInternalIP, and the narrower copy was the one
 // guarding the surface that delivers signed payloads to caller-supplied
 // URLs. A predicate that only half the callers agree on is not a
 // predicate. New SSRF-adjacent surfaces call this rather than growing a
@@ -20,7 +20,7 @@ import "net"
 
 // cgnatRange is the RFC 6598 carrier-grade NAT block (100.64.0.0/10).
 // net.IP.IsPrivate does not cover it, but it is non-routable internal
-// space — a cloud provider's internal services and a customer's own LAN
+// space. A cloud provider's internal services and a customer's own LAN
 // both live behind it.
 var cgnatRange = net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 
@@ -36,7 +36,7 @@ var metadataIPv4 = net.IPv4(169, 254, 169, 254)
 // IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) are normalized to their
 // 4-byte form first, so a mapped internal literal cannot slip past the
 // v4 range checks. Addresses in an IPv4-*translation* prefix (NAT64,
-// 6to4, IPv4-compatible) are checked against the IPv4 they carry — see
+// 6to4, IPv4-compatible) are checked against the IPv4 they carry. See
 // [translatedV4].
 func IsInternal(ip net.IP) bool {
 	if ip == nil {
@@ -61,7 +61,7 @@ func IsInternal(ip net.IP) bool {
 }
 
 // internalRange is the range check itself, shared by IsInternal and
-// Reason so the predicate and its diagnostic can never disagree — the
+// Reason so the predicate and its diagnostic can never disagree, the
 // drift this package was created to end.
 func internalRange(ip net.IP) bool {
 	switch {
@@ -85,8 +85,8 @@ func internalRange(ip net.IP) bool {
 //
 // net.IP.To4 normalizes only the IPv4-*mapped* form (`::ffff:0:0/96`).
 // These other encodings also resolve to an IPv4 destination, so a guard
-// that skips them lets `64:ff9b::a9fe:a9fe` — cloud instance metadata
-// behind NAT64 — read as a public address:
+// that skips them lets `64:ff9b::a9fe:a9fe`, cloud instance metadata
+// behind NAT64, read as a public address:
 //
 //   - NAT64 well-known prefix `64:ff9b::/96` (RFC 6052): v4 at bytes 12-16.
 //   - NAT64 local-use prefix `64:ff9b:1::/48` (RFC 8215): the RFC 6052
@@ -105,7 +105,7 @@ func translatedV4(ip net.IP) net.IP {
 	switch {
 	case ip[0] == 0x00 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b:
 		// RFC 8215 local-use 64:ff9b:1::/48. The u octet (byte 8) must be
-		// zero, and so must the 40-bit suffix (bytes 11-15) — RFC 6052
+		// zero, and so must the 40-bit suffix (bytes 11-15). RFC 6052
 		// §2.2 defines both as zero for a canonical embedding. Checking
 		// the suffix keeps an unrelated address that merely shares the
 		// prefix, such as 64:ff9b:1:a9fe:a9:fe00:0:1, from being read as
@@ -121,7 +121,7 @@ func translatedV4(ip net.IP) net.IP {
 		// 6to4.
 		return net.IPv4(ip[2], ip[3], ip[4], ip[5])
 	case isZero(ip[0:12]):
-		// IPv4-compatible. `::` and `::1` never reach here — IsInternal
+		// IPv4-compatible. `::` and `::1` never reach here. IsInternal
 		// and Reason both run the direct range checks first.
 		return net.IPv4(ip[12], ip[13], ip[14], ip[15])
 	}

@@ -128,7 +128,7 @@ func TestMigratorFromArgsForceBaseline(t *testing.T) {
 // TestMigratorFromArgsMissingDirExplainsBothSystems pins the error a
 // freshly scaffolded app sees: `gofastr init` registers migrations inline
 // in Go (entities.RegisterMigrations, applied at boot by main.go), so the
-// app has no migrations/ directory — and `gofastr migrate status` used to
+// app has no migrations/ directory, and `gofastr migrate status` used to
 // answer "directory 'migrations/' not found", which reads as "wrong place"
 // for the exact app this CLI just generated. The error must name both
 // migration systems and a way forward.

@@ -8,7 +8,7 @@ import (
 // Ref identifies the resource a capability check is about. Type is the entity
 // name (e.g. "projects"); ID is the record id, or "" for a collection-level
 // check (List, Create, a batch, or the SSE feed). The zero Ref carries no
-// resource information — a decider that ignores empty Refs is effectively
+// resource information, a decider that ignores empty Refs is effectively
 // opting out of resource-awareness for that call.
 type Ref struct {
 	Type string
@@ -22,7 +22,7 @@ type Decision int
 
 const (
 	// DecisionAbstain defers the check to the role policy (Can). Use it when
-	// the decider has no opinion for this resource — e.g. the resource type is
+	// the decider has no opinion for this resource, e.g. the resource type is
 	// not one it governs, or the caller holds a role it doesn't model.
 	DecisionAbstain Decision = iota
 	// DecisionAllow permits the check; the role policy is not consulted.
@@ -32,7 +32,7 @@ const (
 )
 
 // Decider is consulted before the role policy when a resource-aware check
-// (CanResource) runs. roles is the caller's resolved roles — the same slice
+// (CanResource) runs. roles is the caller's resolved roles, the same slice
 // access.Middleware / WithRoles install. The decider receives the capability
 // and the Ref under check so it can express rules the coarse role policy
 // cannot ("a team maintainer may edit their team's projects").
@@ -56,8 +56,8 @@ func WithDecider(ctx context.Context, d Decider) context.Context {
 
 // GetDecider reads back the Decider installed via WithDecider (by
 // DeciderMiddleware or an explicit WithDecider call). It is the reader half of
-// the decider-context seam. Returns nil when ctx is nil or carries no decider
-// — never panics.
+// the decider-context seam. Returns nil when ctx is nil or carries no decider,
+// never panics.
 func GetDecider(ctx context.Context) Decider {
 	if ctx == nil {
 		return nil
@@ -74,7 +74,7 @@ func GetDecider(ctx context.Context) Decider {
 //   - DecisionDeny   → false (role policy not consulted)
 //   - DecisionAbstain → falls through to Can
 //
-// With no decider in ctx the answer is exactly Can(ctx, capability) — the
+// With no decider in ctx the answer is exactly Can(ctx, capability), the
 // fail-closed semantics of the coarse role policy are unchanged, so existing
 // RBAC-only wiring is byte-identical. A nil context fails closed to false.
 //
@@ -104,8 +104,8 @@ func CanResource(ctx context.Context, capability Permission, resource Ref) bool 
 //	app.Use(access.Middleware(policy, roles.Resolve))
 //	app.Use(access.DeciderMiddleware(teamMaintainerDecider))
 //
-// This shape — a sibling constructor returning the same
-// func(http.Handler) http.Handler type — matches Middleware's. The package uses
+// This shape, a sibling constructor returning the same
+// func(http.Handler) http.Handler type, matches Middleware's. The package uses
 // positional constructors (Middleware(policy, roles)), not an options pattern,
 // so a DeciderMiddleware(d) wrapper is the consistent way to add the decider
 // without changing Middleware's signature or introducing an options idiom for

@@ -26,16 +26,16 @@ const streamListThreshold = 1000
 //
 // The wire shape is identical to the regular list envelope so existing
 // clients keep working: {"data": [...], "total": N, "page": P, "perPage":
-// N, "totalPages": T}. Streaming applies only to the data array — the
+// N, "totalPages": T}. Streaming applies only to the data array, the
 // envelope fields are written before the rows start flowing.
 //
 // `page` is honoured the same way the non-stream List handler honours it:
 // OFFSET (page-1)*limit. Without this, ?page=2&stream=true would re-stream
-// page 1 while reporting page 1 — silently dropping the offset. An explicit
+// page 1 while reporting page 1, silently dropping the offset. An explicit
 // ?offset= overrides the page-derived offset, matching the buffered path.
 func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
 	// Same owner+tenant gate the public List handler enforces. Direct
-	// callers (in-process or chained from List) must not bypass it —
+	// callers (in-process or chained from List) must not bypass it,
 	// without this the streaming variant would happily return every row to
 	// an anonymous caller on an OwnerField entity, or every tenant's rows
 	// on a MultiTenant entity with no tenant in context.
@@ -56,7 +56,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	ch.ApplyOwnerScopeCount(countQb, r)
 	ch.ApplyReadScopeCount(countQb, r)
 	// Soft-delete's ?trashed= gate authorizes against the REQUEST user, so it
-	// must read r.Context() — not the DB-operation ctx (which callers may seed
+	// must read r.Context(), not the DB-operation ctx (which callers may seed
 	// with a different identity for in-process execution). The buffered List()
 	// path uses r.Context() here; keep the stream path identical.
 	ch.applySoftDeleteFilterCountQ(countQb, q, r.Context())
@@ -91,7 +91,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	filter.ApplySortToQuery(qb, sorts)
 	qb.Limit(limit)
 	// An explicit ?offset= overrides the page-derived offset, matching the
-	// buffered List() path — otherwise ?offset=N&stream=true would silently
+	// buffered List() path, otherwise ?offset=N&stream=true would silently
 	// serve page 1 (the process-module broker paginates by raw offset).
 	if o, ok := explicitOffsetValues(q); ok {
 		if o > 0 {

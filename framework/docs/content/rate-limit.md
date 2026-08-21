@@ -8,10 +8,10 @@ admitted inside `Window`; the next request trips a hard block lasting
 
 Use it for brute-force surfaces, write-heavy endpoints, and any route where a
 steady refill rate is the wrong model. For steady API throughput
-("1 req/s, burst 60") use the token-bucket middleware instead — see
+("1 req/s, burst 60") use the token-bucket middleware instead; see
 [Two limiters, two jobs](#two-limiters-two-jobs).
 
-## Quickstart — throttle one route
+## Quickstart: throttle one route
 
 ```go
 import (
@@ -38,7 +38,7 @@ a plain `rate limit exceeded`.
 ## Throttle by something other than IP
 
 `MiddlewareByKey` takes a function that derives the bucket identity from the
-request — API key, authenticated user id, route param, anything. This is the
+request: API key, authenticated user id, route param, anything. This is the
 escape hatch when per-IP is too coarse.
 
 ```go
@@ -90,9 +90,9 @@ useful elsewhere.
 
 ## The auth battery already uses it
 
-`battery/auth` builds every built-in brute-force limiter — login (per-IP and
-per-account), register, 2FA challenge, magic-link send, password-reset,
-email-verification — on top of this limiter. Those limiters are configured
+`battery/auth` builds every built-in brute-force limiter on top of this
+limiter: login (per-IP and per-account), register, 2FA challenge,
+magic-link send, password-reset, email-verification. Those limiters are configured
 through `AuthConfig` (`LoginRateLimit`, `RegisterRateLimit`, …) and apply
 automatically when you mount the auth battery; you do not wire them by hand.
 See [security.md](security.md) → "Rate limiting" for the auth-specific posture,
@@ -108,8 +108,8 @@ is **per replica**: N replicas each admit `MaxAttempts`. That is the right
 default for a single instance and for routes where per-replica throttling is
 acceptable.
 
-For a replica-wide (or fleet-wide) budget — so a coordinated burst across
-replicas can't multiply the limit by N — supply a `Store`.
+For a replica-wide (or fleet-wide) budget, so a coordinated burst across
+replicas can't multiply the limit by N, supply a `Store`.
 `battery/auth.SQLRateLimitStore` is the reference implementation (SQLite or
 PostgreSQL); one store instance backs many limiters, with keys namespaced by
 `Config.Scope` so a login limiter and a checkout limiter sharing one store never
@@ -137,7 +137,7 @@ checkoutLimit := ratelimit.NewLimiter(ratelimit.Config{
 })
 ```
 
-On a store error the limiter **fails closed** (denies) — degrading the backend
+On a store error the limiter **fails closed** (denies); degrading the backend
 must never lift the limit. A custom Redis/etcd backend only needs to satisfy the
 `ratelimit.Store` interface.
 
@@ -153,7 +153,7 @@ you control that strips client-supplied XFF.
 ## DevMode
 
 `Config.DevMode: true` makes `AllowContext` admit every attempt without touching
-either backend — a relief valve for local screenshot / verification tooling that
+either backend: a relief valve for local screenshot / verification tooling that
 hammers an endpoint from localhost. Production must never set it; the default
 keeps the limiter fail-closed.
 
@@ -161,7 +161,7 @@ keeps the limiter fail-closed.
 
 - **Reaching for the token bucket when you mean "N then lock out".**
   `core/middleware.RateLimit` refills continuously, so a brute-force attacker
-  never gets a hard block — they just slow to the refill rate. Use this package
+  never gets a hard block: they just slow to the refill rate. Use this package
   for lockout semantics.
 - **Trusting `X-Forwarded-For` without a stripping proxy.** A rotating XFF
   header gives the attacker a fresh bucket per request. Leave
@@ -172,7 +172,7 @@ keeps the limiter fail-closed.
 - **Keying a public limiter on attacker-chosen input without a cap.** This
   package bounds its key map (idle keys are reclaimed, then soonest-expiring
   blocks under flood), but a custom key func over untrusted input (raw email,
-  URL) still widens the key space — prefer stable identities (user id, hashed
+  URL) still widens the key space; prefer stable identities (user id, hashed
   API key).
 - **Expecting budget headers.** This limiter emits only `Retry-After` by design
   (see [Two limiters, two jobs](#two-limiters-two-jobs)). If a client needs

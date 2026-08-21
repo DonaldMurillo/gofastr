@@ -51,6 +51,6 @@
   }
 
   // Document-level handlers read the live modal/popover stacks, so no
-  // rescan hook is needed — just the loader's loaded flag.
+  // rescan hook is needed, just the loader's loaded flag.
   (G.loadedModules ||= {}).widgetfocus = true;
 })();

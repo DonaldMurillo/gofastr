@@ -6,8 +6,8 @@ import (
 )
 
 // Production mode (DevMode=false) with no JWTSecret must refuse to
-// initialize — an empty HMAC key means forgeable JWTs. The error has to
-// carry the remedy, not just the symptom. Previously this only warned.
+// initialize, an empty HMAC key means forgeable JWTs. The error has to
+// carry the remedy, not only the symptom. Previously this only warned.
 func TestInit_ProdEmptySecretFailsClosed(t *testing.T) {
 	mgr := New(AuthConfig{DevMode: false}) // JWTSecret empty
 	err := mgr.Init(nil)

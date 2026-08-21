@@ -11,7 +11,7 @@ import (
 
 // Route is one statically discovered registration.
 type Route struct {
-	// Method is the HTTP verb exactly as written — case included, since a
+	// Method is the HTTP verb exactly as written, case included, since a
 	// lowercase one is a finding rather than something to normalise away.
 	Method string
 	// Pattern is the full path with any resolvable group prefix applied.
@@ -27,7 +27,7 @@ type Route struct {
 	Handler string
 	// Screen marks a route declared through `app.NewScreen`. Screens are
 	// matched by core-ui's own router, NOT by ServeMux, and that router
-	// takes `:id` parameters natively — it even rewrites `{id}` into
+	// takes `:id` parameters natively. It even rewrites `{id}` into
 	// `:id`. Every rule about ServeMux pattern syntax must therefore skip
 	// them, or it reports the correct spelling as a bug.
 	Screen bool
@@ -57,7 +57,7 @@ type EntityDecl struct {
 type RouteTable struct {
 	Routes   []Route
 	Entities []EntityDecl
-	// Registered is true when at least one registration was found —
+	// Registered is true when at least one registration was found,
 	// distinguishing "no routes" from "this project does not register
 	// routes in a way the static pass can see". Analyzers stay quiet in
 	// the second case rather than reporting an empty app.
@@ -73,7 +73,7 @@ var routeVerbs = map[string]string{
 	"PatchFunc": "PATCH", "DeleteFunc": "DELETE",
 }
 
-// mutatingMethods are the verbs that change state — the ones an access
+// mutatingMethods are the verbs that change state: the ones an access
 // declaration has to cover.
 var mutatingMethods = map[string]bool{
 	"POST": true, "PUT": true, "PATCH": true, "DELETE": true,
@@ -146,7 +146,7 @@ func buildRouteTable(p *contracts.Pass) *RouteTable {
 //	r := app.Router()          // the app's router
 //	g := app.Group("/admin")   // a prefixed, possibly guarded group
 func collectRouterIdents(file *ast.File, aliases map[string]string, scope *routerScope) {
-	// A router handed in as a parameter — `func wire(r *router.Router)` —
+	// A router handed in as a parameter, `func wire(r *router.Router)`,
 	// is how most apps split their route registration across files. Miss
 	// it and those files report nothing at all, which reads as a clean
 	// bill of health rather than as "not analysed".
@@ -187,7 +187,7 @@ func collectRouterIdents(file *ast.File, aliases map[string]string, scope *route
 		}
 		// A router constructed straight from the package. Without this,
 		// a program that does not go through App registers routes the
-		// analyzers cannot see — and reports zero findings, which reads
+		// analyzers cannot see, and reports zero findings, which reads
 		// like a clean bill of health.
 		for _, ctor := range []string{"New", "NewRouter"} {
 			if _, isCtor := qualifiedCall(assign.Rhs[0], aliases, "core/router", ctor); isCtor {
@@ -227,7 +227,7 @@ func collectRouterIdents(file *ast.File, aliases map[string]string, scope *route
 }
 
 // routerTypeNames are the types a parameter can have that make it a
-// routing surface. Matched on the type name alone — the import alias is
+// routing surface. Matched on the type name alone. The import alias is
 // already established by the file importing the package at all.
 var routerTypeNames = map[string]bool{"Router": true, "RouteGroup": true}
 
@@ -391,7 +391,7 @@ func appendRoute(p *contracts.Pass, table *RouteTable, rel, pkg string, call *as
 }
 
 // joinPath concatenates a group prefix with a pattern the way the router
-// does — plain concatenation, then a squeeze of any doubled slash.
+// does: plain concatenation, then a squeeze of any doubled slash.
 func joinPath(prefix, pattern string) string {
 	joined := prefix + pattern
 	for strings.Contains(joined, "//") {

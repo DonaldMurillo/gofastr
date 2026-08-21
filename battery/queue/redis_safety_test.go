@@ -91,14 +91,14 @@ func TestRedisDequeueRestoresJobOnHSetFailure(t *testing.T) {
 
 // TestRedisClaimCrashLoopRespectsMaxAttempts simulates claim→crash→reclaim in a
 // tight loop. A poison job (MaxAttempts=3) must be claimed at most 3 times and
-// then land on the dead-letter queue — not cycle indefinitely.
+// then land on the dead-letter queue, not cycle indefinitely.
 func TestRedisClaimCrashLoopRespectsMaxAttempts(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
 	q.SetVisibilityTimeout(time.Minute)
 
 	// Fake clock: no background goroutine runs (Start is never called), so the
-	// single test goroutine is the only reader of q.now — expiry is driven by
+	// single test goroutine is the only reader of q.now, expiry is driven by
 	// advancing the clock, not by sleeping.
 	now := time.Now()
 	q.now = func() time.Time { return now }
@@ -159,7 +159,7 @@ func TestRedisClaimCrashLoopRespectsMaxAttempts(t *testing.T) {
 
 // TestRedisDequeueSurfacesBackendError asserts that a real RPop failure (e.g.
 // Redis unreachable) is returned as an error, not masked as an empty queue
-// (ErrNoJob) — which would make an outage indistinguishable from idle.
+// (ErrNoJob), which would make an outage indistinguishable from idle.
 func TestRedisDequeueSurfacesBackendError(t *testing.T) {
 	r := newMockRedis()
 	ctx := context.Background()

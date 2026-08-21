@@ -10,7 +10,7 @@ import (
 // Sol review #2. isValidColor previously accepted any value that started with
 // a colour-function prefix, ended in ")", and had balanced parens. That admits
 // a colour FOLLOWED BY a second call, and admits resource-loading functions
-// nested inside var() fallbacks — neither of which is a colour.
+// nested inside var() fallbacks, neither of which is a colour.
 //
 // The sink is real: an embedded surface's brand token is emitted as
 // --color-primary, and `background: var(--color-primary)` resolves a colour
@@ -23,7 +23,7 @@ func TestColor_RejectsTrailingCallAndResourceFunctions(t *testing.T) {
 		"rgb(0 0 0) URL(https://attacker.example/pixel)",
 		"rgb(0 0 0) url(https://attacker.example/pixel)",
 		"oklch(62% 0.19 264) image-set('https://attacker.example/x' 1x)",
-		// Resource functions smuggled through a var() fallback — no "url(" token.
+		// Resource functions smuggled through a var() fallback, no "url(" token.
 		`var(--missing, image-set("https://attacker.example/pixel" 1x))`,
 		`var(--missing, -webkit-image-set("https://attacker.example/x" 1x))`,
 		`var(--missing, cross-fade(url(https://attacker.example/x), red))`,
@@ -32,7 +32,7 @@ func TestColor_RejectsTrailingCallAndResourceFunctions(t *testing.T) {
 		`var(--missing, src("https://attacker.example/x"))`,
 		// Nested inside an otherwise-legitimate colour function.
 		`color-mix(in srgb, var(--x, image-set("https://attacker.example/x" 1x)) 50%, red)`,
-		// Case variations — CSS function names are case-insensitive.
+		// Case variations, CSS function names are case-insensitive.
 		"rgb(0 0 0) Url(https://attacker.example/x)",
 		"RGB(0 0 0) IMAGE-SET('https://attacker.example/x' 1x)",
 	}
@@ -51,7 +51,7 @@ func TestColor_RejectsTrailingCallAndResourceFunctions(t *testing.T) {
 	}
 }
 
-// The grammar must not become so strict that real colours are rejected —
+// The grammar must not become so strict that real colours are rejected,
 // otherwise it just moves the failure from security to usability.
 func TestColor_AcceptsLegitimateValues(t *testing.T) {
 	base := style.DefaultTheme()

@@ -11,7 +11,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// TestRpcNavigateRefusesJavascriptScheme — security: a successful
+// TestRpcNavigateRefusesJavascriptScheme: security: a successful
 // RPC whose data-fui-rpc-navigate carries an attacker-controlled
 // javascript: URL must NOT reach history.pushState / replaceState.
 // The widget path routes through NS.navigate (which applies the
@@ -19,7 +19,7 @@ import (
 // same. We spy on history.pushState/replaceState and assert the
 // unsafe URL never lands there. (Modern Chrome also blocks a
 // javascript: pushState at the browser layer, but the guard is the
-// framework's choke point — defense in depth + older engines.)
+// framework's choke point, defense in depth + older engines.)
 func TestRpcNavigateRefusesJavascriptScheme(t *testing.T) {
 	js, err := RuntimeJS()
 	if err != nil {

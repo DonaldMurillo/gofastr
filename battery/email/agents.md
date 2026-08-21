@@ -9,7 +9,7 @@ HTML+plaintext message.
 
 **Import:** `github.com/DonaldMurillo/gofastr/battery/email`
 
-**Shape (dev — write to stderr):**
+**Shape (dev, write to stderr):**
 ```go
 s := email.NewLogSender(os.Stderr)
 _ = s.Send(ctx, email.Email{
@@ -19,7 +19,7 @@ _ = s.Send(ctx, email.Email{
 })
 ```
 
-**Shape (prod — SMTP):**
+**Shape (prod, SMTP):**
 ```go
 s, err := email.NewSMTPSender(email.SMTPConfig{
     Host: "smtp.example.com", Port: 587, // STARTTLS negotiated by default
@@ -45,7 +45,7 @@ msg.To = []string{user.Email}
 _ = sender.Send(ctx, msg)
 ```
 
-**AI-typical anti-pattern** — if you're about to write any of these,
+**AI-typical anti-pattern.** If you're about to write any of these,
 stop and use `Sender` / `Email` instead:
 - `net/smtp.SendMail(addr, auth, from, to, msg)` with a hand-built
   `Subject:\nFrom:\nTo:\n\nbody` byte slice
@@ -53,14 +53,14 @@ stop and use `Sender` / `Email` instead:
 - A `func sendEmail(to, subject, body string)` helper that swallows
   the SMTP error
 - A `_, _ = client.SendMail(...)` because "email is best-effort"
-  (it isn't — failed sends matter; surface the error)
+  (it isn't. Failed sends matter; surface the error)
 
 `email.Email{}` handles To/CC/BCC/HTML/Text/Attachments uniformly,
 and `Sender` lets you swap LogSender (dev) for SMTPSender (prod)
 without changing call sites.
 
 **For PHI-bearing apps:** never put diagnostic content (symptom logs,
-triggers, search history) in `Subject` — subjects show in inbox
+triggers, search history) in `Subject`, because subjects show in inbox
 preview panes. Body content is at the user's email-provider's
 discretion to retain indefinitely.
 

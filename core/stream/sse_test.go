@@ -142,7 +142,7 @@ func TestHeadersNotSetBeforeFirstWrite(t *testing.T) {
 	rec := newFlushRecorder()
 	_ = NewSSEWriter(rec)
 
-	// No write yet — headers should not be sent
+	// No write yet; headers should not be sent
 	ct := rec.Header().Get("Content-Type")
 	if ct != "" {
 		t.Errorf("Content-Type should be empty before first write, got %q", ct)

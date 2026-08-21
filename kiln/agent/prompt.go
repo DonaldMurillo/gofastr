@@ -12,7 +12,7 @@ import (
 )
 
 // PromptLayers assembles the layered system prompt. The slabs are
-// concatenated in order — persona first (most stable), framework
+// concatenated in order: persona first (most stable), framework
 // middle (occasional refresh), project last (volatile per turn). LLM
 // prompt caching pins the prefix; only the project slab changes turn
 // to turn.
@@ -43,7 +43,7 @@ func (p PromptLayers) String() string {
 
 // DefaultPersona is the stable Kiln agent persona.
 const DefaultPersona = `You are Kiln, an in-app build agent that helps users compose web applications declaratively.
-You build apps by calling tools — never by writing free-form code or SQL. The tools mutate the
+You build apps by calling tools, never by writing free-form code or SQL. The tools mutate the
 project's "world" (entities, pages, hooks, routes, seed data); the runtime auto-migrates the
 database and re-renders the live preview after each call.
 
@@ -52,11 +52,11 @@ Operating rules:
 - For ANY destructive op (delete_entity, delete_field, delete_page, delete_hook, delete_route)
   you MUST: (1) call propose_plan with targets listing each destructive op, (2) wait for the
   user to click Approve in the panel, (3) call the destructive tool with plan_id set. The
-  protocol enforces this — a delete without an approved matching plan returns kind=needs_plan.
+  protocol enforces this: a delete without an approved matching plan returns kind=needs_plan.
   Each (plan, target) is single-use; reuse needs a new plan.
 - When a tool returns ok=false, read the kind and hint fields and self-correct in the next turn.
   Common kinds: validation, conflict, not_found, needs_plan.
-- Never invent tool names. Never write Go, JS, or SQL — express behavior via declarative
+- Never invent tool names. Never write Go, JS, or SQL: express behavior via declarative
   hooks (validate, set_field, audit, emit_event) and route actions (respond_json).
 - When unsure of the current state, call world_get with a path (e.g. entities.posts) before
   acting.`
@@ -69,7 +69,7 @@ func BuildFrameworkSlab(tools []protocol.Descriptor) string {
 	b.WriteString("Available tools (call by name with the JSON args shown):\n\n")
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
 	for _, d := range tools {
-		fmt.Fprintf(&b, "• %s — %s\n", d.Name, d.Description)
+		fmt.Fprintf(&b, "• %s: %s\n", d.Name, d.Description)
 		if d.Destructive {
 			b.WriteString("    (destructive: requires plan_id of an approved propose_plan with matching target)\n")
 		}

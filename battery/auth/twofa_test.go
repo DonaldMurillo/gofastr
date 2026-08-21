@@ -336,7 +336,7 @@ func TestTwoFA_EnrollAndVerify(t *testing.T) {
 	}
 }
 
-// toggleErrTwoFAStore wraps a real store and, once armed, fails GetTwoFA —
+// toggleErrTwoFAStore wraps a real store and, once armed, fails GetTwoFA,
 // simulating a durable store hitting a DB error (the memory store never
 // could). Armed AFTER login, because a GetTwoFA error during login makes
 // login itself fail closed (see the 2FA flow's fail-closed pending check).
@@ -392,7 +392,7 @@ func TestTwoFA_Enroll_FailsClosedOnStoreError(t *testing.T) {
 		t.Fatal("no session cookie after login")
 	}
 
-	// Arm the store failure only now — login is past, enroll is next.
+	// Arm the store failure only now, login is past, enroll is next.
 	errStore.failing.Store(true)
 
 	req := httptest.NewRequest("POST", "/auth/2fa/enroll", nil)
@@ -640,7 +640,7 @@ func TestTwoFA_Challenge_NotEnabled(t *testing.T) {
 	}
 }
 
-// Login of a 2FA-enrolled user must mint a "pending" session — usable
+// Login of a 2FA-enrolled user must mint a "pending" session, usable
 // ONLY for /auth/2fa/challenge. Today login mints a fully-authenticated
 // session and 2FA enforcement is opt-in per route via RequireTwoFA. The
 // fix flips the default to deny: any other endpoint refuses a pending
@@ -703,7 +703,7 @@ func loginP17(t *testing.T, r *router.Router) string {
 	return ""
 }
 
-// Pending session must not satisfy /auth/me — that endpoint reveals the
+// Pending session must not satisfy /auth/me, that endpoint reveals the
 // authenticated user identity, which is exactly what 2FA exists to gate.
 func TestPendingTwoFA_Me_Rejected(t *testing.T) {
 	_, _, r := setupP17(t)
@@ -751,7 +751,7 @@ func TestPendingTwoFA_Me_AllowedAfterChallenge(t *testing.T) {
 	}
 }
 
-// User without 2FA enrolment is unaffected — meHandler works on first try.
+// User without 2FA enrolment is unaffected, meHandler works on first try.
 func TestPendingTwoFA_NoEnrollmentUnaffected(t *testing.T) {
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
@@ -798,7 +798,7 @@ func TestPendingTwoFA_NoEnrollmentUnaffected(t *testing.T) {
 }
 
 // MemoryTwoFAStore.ConsumeBackupCode must not hold the exclusive lock
-// while running N bcrypt comparisons. Today it does — the entire 2FA
+// while running N bcrypt comparisons. Today it does, the entire 2FA
 // store freezes for ~600ms per failed attempt, which is also the
 // brute-force path under attack.
 //
@@ -812,7 +812,7 @@ func TestBackupCode_GetIsNotBlockedByConsume(t *testing.T) {
 	store := NewMemoryTwoFAStore()
 	ctx := context.Background()
 
-	// Pre-hash 10 random backup codes — the typical default.
+	// Pre-hash 10 random backup codes, the typical default.
 	codes := make([]string, 10)
 	for i := range codes {
 		h, err := bcrypt.GenerateFromPassword([]byte("code"+string(rune('0'+i))), bcrypt.DefaultCost)
@@ -829,7 +829,7 @@ func TestBackupCode_GetIsNotBlockedByConsume(t *testing.T) {
 		t.Fatalf("SetTwoFA: %v", err)
 	}
 
-	// Kick off ConsumeBackupCode with a code that won't match — forces
+	// Kick off ConsumeBackupCode with a code that won't match, forces
 	// all 10 bcrypt comparisons to run.
 	done := make(chan struct{})
 	go func() {
@@ -859,7 +859,7 @@ func TestBackupCode_GetIsNotBlockedByConsume(t *testing.T) {
 }
 
 // 2FA must actually gate access. Today the /2fa/challenge endpoint just
-// returns {verified:true} and does nothing else — these tests pin the
+// returns {verified:true} and does nothing else, these tests pin the
 // expected new behavior:
 //
 //   1. RequireTwoFA middleware blocks access when the user has 2FA
@@ -974,7 +974,7 @@ func TestTwoFA_RequireMiddleware_AllowsAfterChallenge(t *testing.T) {
 func TestTwoFA_RequireMiddleware_NoEnrollmentBypass(t *testing.T) {
 	mgr, twofa := newTwoFAEnforceManager(t)
 
-	// User has NOT enrolled 2FA — the middleware should not gate them.
+	// User has NOT enrolled 2FA, the middleware should not gate them.
 	sess, err := mgr.SessionStore().Create(context.Background(), "user-y", time.Hour)
 	if err != nil {
 		t.Fatalf("session create: %v", err)

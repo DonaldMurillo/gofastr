@@ -1,4 +1,4 @@
-// MultiSelect runtime module — chip rendering for checked options.
+// MultiSelect runtime module, chip rendering for checked options.
 //
 // On boot + every change inside a [data-fui-multiselect] disclosure,
 // re-render the chips strip above the disclosure with one chip per
@@ -66,7 +66,7 @@
   // Click-outside-to-close. Any click whose target is NOT inside an
   // open multiselect closes every open multiselect on the page. Use
   // mousedown rather than click so the close fires before a click on
-  // a sibling button (e.g. a form submit) — feels snappier and
+  // a sibling button (e.g. a form submit), feels snappier and
   // avoids the case where the click handler that we want to fire is
   // INSIDE the disclosure (it stays open until the action runs).
   document.addEventListener('mousedown', function (ev) {

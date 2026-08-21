@@ -13,11 +13,11 @@ import (
 // TokensPlugin is the AuthPlugin + AuthPluginRoutes implementation that
 // exposes self-service API-token management to logged-in users:
 //
-//	POST   {base}/tokens       — create a token for the caller (plaintext shown once)
-//	GET    {base}/tokens       — list the caller's tokens (prefix only, no plaintext)
-//	DELETE {base}/tokens/{id}  — revoke one of the caller's tokens
+//	POST   {base}/tokens       : create a token for the caller (plaintext shown once)
+//	GET    {base}/tokens       : list the caller's tokens (prefix only, no plaintext)
+//	DELETE {base}/tokens/{id}  : revoke one of the caller's tokens
 //
-// Every endpoint resolves the owner from the authenticated session user —
+// Every endpoint resolves the owner from the authenticated session user,
 // OwnerKind is forced to "user" and OwnerID to the current user's ID, so a
 // caller can never mint for or revoke another user's token. Service-account
 // management is programmatic-only in v1 (no HTTP surface).
@@ -72,8 +72,8 @@ func (p *TokensPlugin) RegisterRoutes(r *router.Router, basePath string) {
 // request is authenticated by an API token rather than an interactive
 // session. The session-only gate is load-bearing: TokenMiddleware sets the
 // same ctx user a session does, so without it a leaked scoped (or even
-// empty-scoped) token could POST here to mint a `*:*` token for its owner —
-// escaping its own scope leash — and list/revoke the owner's other tokens.
+// empty-scoped) token could POST here to mint a `*:*` token for its owner,
+// escaping its own scope leash, and list/revoke the owner's other tokens.
 // Token scopes in ctx are the discriminator (only TokenMiddleware sets them).
 func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	u := GetCurrentUser(r.Context())
@@ -87,8 +87,8 @@ func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 	}
 	// An embed grant is the third credential with that property, and the worst
 	// of the three to accept here. It resolves to the same ctx user a session
-	// does, but it lives in a third party's page where any script — or anyone
-	// with devtools — can read it, and it is deliberately scoped and
+	// does, but it lives in a third party's page where any script, or anyone
+	// with devtools, can read it, and it is deliberately scoped and
 	// time-bounded. Minting from it converts a 15-minute, one-surface,
 	// one-origin credential into a permanent `*:*` API token that outlives the
 	// grant's deadline, ignores its scopes and is invisible to the embed system.
@@ -100,14 +100,14 @@ func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 }
 
 // createTokenRequest is the POST /tokens body. OwnerKind/OwnerID are decoded
-// intentionally so we can prove they are IGNORED — the owner is always the
+// intentionally so we can prove they are IGNORED, the owner is always the
 // session user. They never reach IssueToken.
 type createTokenRequest struct {
 	Name       string   `json:"name"`
 	Scopes     []string `json:"scopes"`
 	TTLSeconds int64    `json:"ttl_seconds"`
-	OwnerKind  string   `json:"owner_kind"` // ignored — forced to "user"
-	OwnerID    string   `json:"owner_id"`   // ignored — forced to session user
+	OwnerKind  string   `json:"owner_kind"` // ignored: forced to "user"
+	OwnerID    string   `json:"owner_id"`   // ignored: forced to session user
 }
 
 func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
@@ -120,7 +120,7 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 		if !decodeJSONLimited(w, r, &body) {
 			return
 		}
-		// Owner is ALWAYS the session user — body owner_kind/owner_id are
+		// Owner is ALWAYS the session user, body owner_kind/owner_id are
 		// discarded by construction here.
 		plaintext, rec, err := IssueToken(r.Context(), p.tokens, TokenSpec{
 			Name:      body.Name,
@@ -172,7 +172,7 @@ func (p *TokensPlugin) listTokensHandler() http.HandlerFunc {
 			out = append(out, map[string]any{
 				"id":         t.ID,
 				"name":       t.Name,
-				"prefix":     t.Prefix, // display prefix only — never the plaintext
+				"prefix":     t.Prefix, // display prefix only, never the plaintext
 				"scopes":     t.Scopes,
 				"expiresAt":  t.ExpiresAt,
 				"lastUsedAt": t.LastUsedAt,

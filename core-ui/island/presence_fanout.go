@@ -14,12 +14,12 @@ import (
 // The single-replica roster (presence.go) is extended to a MERGED roster:
 // local connections ∪ live remote replicas, deduped by UserID exactly like
 // the local dedup. Remote state arrives as full-roster announcements over a
-// DEDICATED presence lane on the same [fanout.Fanout] transport — a parallel
+// DEDICATED presence lane on the same [fanout.Fanout] transport, a parallel
 // topic, NOT the island-invalidation lane ("gofastr.islands"). Both lanes
 // remain lossy best-effort; presence is ephemeral self-healing state, so a
 // dropped announcement simply heals on the next periodic heartbeat.
 //
-// CONVERGENCE MODEL — full-roster heartbeats, not deltas. Each replica
+// CONVERGENCE MODEL, full-roster heartbeats, not deltas. Each replica
 // broadcasts its full local roster per active topic on join/leave (prompt)
 // and every presenceHeartbeat (reconvergence backstop). A receiver keeps a
 // per-(replica,topic) entry with a TTL (~3× heartbeat); expired entries are
@@ -27,12 +27,12 @@ import (
 // explicit "goodbye". Graceful stop() additionally publishes an empty roster
 // so a rolling restart converges promptly.
 //
-// IDENTITY SAFETY — announcements carry ONLY the same server-derived
+// IDENTITY SAFETY, announcements carry ONLY the same server-derived
 // {UserID, DisplayName} the local roster already exposes via PresenceRoster.
 // No session id, no IP, no new surface ever leaves this replica. Proven by
 // TestPresenceFanoutAnnouncementCarriesNoSessionID.
 //
-// ZERO-CONFIG DEGRADATION — no fanout attached ⇒ presenceSend is nil ⇒
+// ZERO-CONFIG DEGRADATION, no fanout attached ⇒ presenceSend is nil ⇒
 // every broadcast/heartbeat is a no-op, remoteRosters stays nil, and
 // PresenceRoster returns exactly the single-replica result (see
 // TestPresenceFanoutNoFanoutByteIdentical). No goroutine is started.
@@ -53,11 +53,11 @@ const (
 	defaultPresenceHeartbeat = 15 * time.Second
 	// defaultPresenceTTL is how long a remote replica's contribution stays
 	// fresh without a heartbeat refresh. 3× heartbeat tolerates two missed
-	// beats before expiry — a crashed replica's members vanish within TTL.
+	// beats before expiry, a crashed replica's members vanish within TTL.
 	defaultPresenceTTL = 45 * time.Second
 	// maxRemoteReplicasPerTopic bounds the remote-roster table per topic.
 	// A misbehaving peer could forge many replica ids to bloat the table;
-	// this cap drops new ones once exceeded (the lossy model tolerates it —
+	// this cap drops new ones once exceeded (the lossy model tolerates it,
 	// the legitimate replica's next heartbeat reclaims its slot only when a
 	// stale forged id expires).
 	maxRemoteReplicasPerTopic = 512
@@ -68,7 +68,7 @@ const (
 )
 
 // presenceFanoutMsg is the wire shape of a presence announcement. It carries
-// a replica's FULL local roster for one topic — full beats (not deltas) are
+// a replica's FULL local roster for one topic, full beats (not deltas) are
 // the convergence mechanism, so a missed message heals on the next beat.
 // Members is the same server-derived identity the local roster exposes (see
 // PresenceMember); no session id or anything not already in PresenceRoster
@@ -120,7 +120,7 @@ func (m *Manager) publishPresence(send func([]byte), nodeID, topic string, membe
 	send(fanout.Wrap(nodeID, body))
 }
 
-// broadcastAllLocalTopics re-publishes every active local topic's roster —
+// broadcastAllLocalTopics re-publishes every active local topic's roster,
 // the periodic heartbeat that reconverges after any dropped announcement.
 func (m *Manager) broadcastAllLocalTopics() {
 	m.mu.RLock()
@@ -142,7 +142,7 @@ func (m *Manager) broadcastAllLocalTopics() {
 
 // gracefulLeaveLocalTopics publishes an empty-roster announcement for every
 // topic this replica currently holds, so peers drop it PROMPTLY on a rolling
-// restart / graceful stop — without waiting for TTL. Synchronous (direct
+// restart / graceful stop, without waiting for TTL. Synchronous (direct
 // Publish) rather than the async queue so the leave is not lost to the
 // queue's drop-on-stop; TTL remains the crash fallback. Skipped when the
 // heartbeat has been halted (crash sim: a crashed process sends nothing).
@@ -171,7 +171,7 @@ func (m *Manager) gracefulLeaveLocalTopics(f fanout.Fanout) {
 // roster table and fires OnPresenceChange if the MERGED roster for the topic
 // changed. An empty Members slice is a graceful leave → the origin's entry is
 // deleted (and the change propagated if the merged roster shrank). Called on
-// the fanout subscriber goroutine; never re-publishes (no loop — own-node
+// the fanout subscriber goroutine; never re-publishes (no loop, own-node
 // envelopes are dropped before this is reached).
 func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	if msg.Topic == "" || origin == "" {
@@ -181,7 +181,7 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	m.mu.Lock()
 	// The presence subscriber is cancelled asynchronously in stop(); an
 	// in-flight callback may run after clearPresenceFanoutLocked has nilled
-	// remoteRosters. A nil table means the lane is torn down — drop silently.
+	// remoteRosters. A nil table means the lane is torn down, drop silently.
 	if m.remoteRosters == nil {
 		m.mu.Unlock()
 		return
@@ -261,7 +261,7 @@ func (m *Manager) presenceBeat() {
 // presenceHeartbeat it runs presenceBeat. It exits when its CAPTURED done
 // channel is closed. done is passed in (not re-read from the field) so that
 // reconfigurePresence/haltPresenceHeartbeat can close the channel THIS
-// goroutine is bound to — re-reading m.presenceDone each tick would race
+// goroutine is bound to, re-reading m.presenceDone each tick would race
 // with reconfigure swapping in a fresh channel and leave the old goroutine
 // waiting on the wrong one (a real deadlock this guard prevents). The
 // interval is read fresh each tick so a live change applies on the next
@@ -287,7 +287,7 @@ func (m *Manager) presenceHeartbeatLoop(done chan struct{}) {
 // reconfigurePresence changes the heartbeat/TTL intervals live. It swaps in
 // a fresh done channel, closes the one the running goroutine captured (so
 // that goroutine exits promptly), waits for it, then starts a new goroutine
-// bound to the fresh channel — so the new interval takes effect immediately
+// bound to the fresh channel, so the new interval takes effect immediately
 // rather than waiting out the current sleep. Test-only knob; production runs
 // on the defaults set by SetFanout.
 func (m *Manager) reconfigurePresence(heartbeat, ttl time.Duration) {
@@ -311,7 +311,7 @@ func (m *Manager) reconfigurePresence(heartbeat, ttl time.Duration) {
 }
 
 // haltPresenceHeartbeat stops the heartbeat goroutine WITHOUT sending a
-// graceful leave — a faithful simulation of a crashed (silent) replica so
+// graceful leave, a faithful simulation of a crashed (silent) replica so
 // tests can exercise TTL-based expiry. Test-only. The goroutine exits because
 // it captured the channel we close here. After halt, presenceDone is nil so
 // every broadcast/gracefulLeave is a no-op (a crashed process sends
@@ -409,7 +409,7 @@ func buildSortedMembers(seen map[string]string) []PresenceMember {
 }
 
 // dedupMembers removes duplicate UserIDs from an inbound announcement's
-// member list (defensive — the local roster is already deduped, but the wire
+// member list (defensive, the local roster is already deduped, but the wire
 // format is not trusted to be deduped). First occurrence wins.
 func dedupMembers(in []PresenceMember) []PresenceMember {
 	if len(in) == 0 {

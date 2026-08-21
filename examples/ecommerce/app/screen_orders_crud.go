@@ -51,7 +51,7 @@ type OrdersEditScreen struct {
 
 func (s *OrdersEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
 func (s *OrdersEditScreen) ScreenTitle() string           { return "Edit Order" }
-func (s *OrdersEditScreen) ScreenSEO() uihost.SEO         { return uihost.SEO{} } // deliberate SEO opt-out — set description in the blueprint or replace with real copy
+func (s *OrdersEditScreen) ScreenSEO() uihost.SEO         { return uihost.SEO{} } // deliberate SEO opt-out: set description in the blueprint or replace with real copy
 func (s *OrdersEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *OrdersEditScreen) RenderCtx(ctx context.Context) render.HTML {

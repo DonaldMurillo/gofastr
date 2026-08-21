@@ -106,7 +106,7 @@ func TestStyleSheetMedia(t *testing.T) {
 
 // TestStyleSheetMediaDoesNotLeak guards against a regression where
 // .Pseudo() called AFTER .Media() inside the same Rule chain ended up
-// nested inside the @media block — silently changing the selector's
+// nested inside the @media block, silently changing the selector's
 // meaning (hover only above 640px).
 func TestStyleSheetMediaDoesNotLeak(t *testing.T) {
 	theme := DefaultTheme()
@@ -138,7 +138,7 @@ func TestStyleSheetMediaDoesNotLeak(t *testing.T) {
 }
 
 // TestStyleSheetNestedMediaPreservesInner asserts that Media() inside
-// a Media() callback produces a nested @media block — the outer
+// a Media() callback produces a nested @media block, the outer
 // Media() must not overwrite the inner rule's parent.
 func TestStyleSheetNestedMediaPreservesInner(t *testing.T) {
 	ss := NewStyleSheet(DefaultTheme())
@@ -164,7 +164,7 @@ func TestStyleSheetNestedMediaPreservesInner(t *testing.T) {
 
 // TestStyleSheetMediaMixedOrder covers the case where a Media block
 // wraps three siblings: a plain rule, an inner Media, and another
-// plain rule. The output must preserve source order — the trailing
+// plain rule. The output must preserve source order, the trailing
 // rule must come AFTER the inner @media closes, not get sucked into
 // the inner block.
 func TestStyleSheetMediaMixedOrder(t *testing.T) {
@@ -173,7 +173,7 @@ func TestStyleSheetMediaMixedOrder(t *testing.T) {
 		outer.Rule(".a").Set("color", "red").End()
 		outer.Media("(prefers-color-scheme: dark)", func(inner *StyleSheet) {
 			outer.Rule(".b").Set("color", "blue").End()
-			_ = inner // satisfy linter — we intentionally use outer here
+			_ = inner // satisfy linter, we intentionally use outer here
 		})
 		outer.Rule(".c").Set("color", "green").End()
 	})
@@ -206,7 +206,7 @@ func TestStyleSheetMediaTopLevel(t *testing.T) {
 	}
 }
 
-// TestStyleSheetContainerTopLevel mirrors Media — Container() called
+// TestStyleSheetContainerTopLevel mirrors Media, Container() called
 // at the top level must produce real @container output.
 func TestStyleSheetContainerTopLevel(t *testing.T) {
 	ss := NewStyleSheet(DefaultTheme())

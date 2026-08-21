@@ -196,7 +196,7 @@ func TestNotifier_NoChannelsSelectedReturnsErr(t *testing.T) {
 
 func TestNotifier_PreRenderedPayloadShortCircuitsTemplater(t *testing.T) {
 	ch := &recordingChannel{name: "log"}
-	// No templater installed — pre-rendered payload must be used.
+	// No templater installed, pre-rendered payload must be used.
 	n := New(WithChannel(ch))
 	err := n.Send(context.Background(), Notification{
 		Type: "anything",

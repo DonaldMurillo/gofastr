@@ -138,7 +138,7 @@ func TestDurableSchedulerPersistsTZOnRegistration(t *testing.T) {
 
 // TestDurableSchedulerPoisonedScheduleDoesNotKillOthers proves the design
 // invariant from the fix brief: a single schedule that returns an error from
-// dueTicks (only triggerable post-fix by genuine corruption — here simulated
+// dueTicks (only triggerable post-fix by genuine corruption, here simulated
 // by directly corrupting cron_spec to an unsatisfiable / invalid spec on
 // disk) must not stop RunOnce from evaluating the remaining due schedules.
 func TestDurableSchedulerPoisonedScheduleDoesNotKillOthers(t *testing.T) {
@@ -155,7 +155,7 @@ func TestDurableSchedulerPoisonedScheduleDoesNotKillOthers(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Seed a poison-pilled schedule by writing an invalid cron spec directly
-	// to the row — `Register` would have rejected it. This stands in for
+	// to the row, `Register` would have rejected it. This stands in for
 	// genuine data corruption (operator typo in a manual row edit, partial
 	// restore, schema drift) that survives restart.
 	if _, err := db.Exec(
@@ -229,7 +229,7 @@ func TestDurableSchedulerLocationHelper(t *testing.T) {
 func TestBoundedDueTicksCadenceChangeRecovery(t *testing.T) {
 	base := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 	// Stored watermark from a previous interval schedule: 00:01. The current
-	// spec "0 2 * * *" has no occurrence at 00:01 — pre-fix this errored.
+	// spec "0 2 * * *" has no occurrence at 00:01, pre-fix this errored.
 	schedule := durableSchedule{
 		id:       "switch",
 		cronSpec: "0 2 * * *",
@@ -258,7 +258,7 @@ func TestBoundedDueTicksCadenceChangeRecovery(t *testing.T) {
 	}
 
 	// And the same recovery branch fires immediately when the next
-	// occurrence is already in the past — e.g. a long outage between
+	// occurrence is already in the past, e.g. a long outage between
 	// cadence change and the first evaluation.
 	later := time.Date(2026, 1, 15, 5, 0, 0, 0, time.UTC)
 	ticks, _, err = boundedDueTicks(schedule, later, 100)
@@ -298,7 +298,7 @@ func TestBoundedDueTicksCronMatchesInScheduleLocation(t *testing.T) {
 
 	// Sanity: the same spec registered in UTC would also fire at 02:00 UTC,
 	// but a NY-registered schedule must NOT treat 02:00 UTC (21:00 NY prev
-	// day) as a tick — proving the location actually drives the match.
+	// day) as a tick, proving the location actually drives the match.
 	utcSchedule := schedule
 	utcSchedule.tz = ""
 	utcSchedule.nextRun = time.Date(2026, 1, 15, 2, 0, 0, 0, time.UTC)

@@ -23,7 +23,7 @@ import (
 // Stop with Ctrl-C.
 func runGenerateWatch(args []string) {
 	options := parseGenerateOptions(args)
-	info("Watching generator inputs — Ctrl-C to stop.")
+	info("Watching generator inputs: Ctrl-C to stop.")
 
 	// Initial pass.
 	runOnce(args)
@@ -39,7 +39,7 @@ func runGenerateWatch(args []string) {
 		}
 		lastHash = h
 		fmt.Printf("\033[2J\033[H") // clear terminal
-		info("Detected codegen input change — regenerating...")
+		info("Detected codegen input change: regenerating...")
 		runOnce(args)
 	}
 }

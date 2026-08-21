@@ -60,12 +60,12 @@ type VersionedRegistry interface {
 // the soft-delete filter and the scoped-filter allow-list. Resolving by name
 // alone picks the unversioned declaration when one exists, so a request under
 // /api/v1 could inherit an internal entity's visibility and scoping rules
-// instead of v1's — disclosing columns v1 marks hidden and returning rows v1's
+// instead of v1's, disclosing columns v1 marks hidden and returning rows v1's
 // scopes exclude.
 //
 // Order: the source's own version first; then unversioned, which is the shared
 // declaration a versioned entity legitimately points at; then a sole version
-// when exactly one exists. Ambiguity is an ERROR, never a silent pick — the
+// when exactly one exists. Ambiguity is an ERROR, never a silent pick, the
 // caller must fail closed.
 func ResolveTarget(reg Registry, source *Entity, targetName string) (*Entity, error) {
 	if reg == nil {

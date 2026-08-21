@@ -164,8 +164,8 @@ func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 }
 
 // A field whose flag name collides with a reserved flag (sort, json, page,
-// url, …) must fail at generate time with the entity and field named — never
-// emit a broken flag set.
+// url, …) must fail at generate time with the entity and field named, and
+// never emit a broken flag set.
 func TestRenderCLI_ReservedFlagCollision(t *testing.T) {
 	decls := []framework.EntityDeclaration{{
 		Name:   "events",
@@ -255,7 +255,7 @@ func TestRenderCLI_VerbAllowList(t *testing.T) {
 }
 
 // A delete-only (or any narrow) verb selection must still emit the imports
-// its code uses — needsHTTP/needsURLValues are per-verb, and format.Source
+// its code uses. needsHTTP/needsURLValues are per-verb, and format.Source
 // cannot add missing imports.
 func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 	opts := defaultCLIOptions()
@@ -270,7 +270,7 @@ func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 }
 
 // Positional ids are path-escaped in every id-addressed verb, matching the
-// typed client — a '/' or '?' in an id must not rewrite the route.
+// typed client: a '/' or '?' in an id must not rewrite the route.
 func TestRenderCLI_PathEscapesIDs(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
 	posts := files["posts.go"]
@@ -280,7 +280,7 @@ func TestRenderCLI_PathEscapesIDs(t *testing.T) {
 }
 
 // An entity whose command form collides with a CLI built-in (config, login,
-// custom, …) must fail generation — it would shadow a command or emit a
+// custom, …) must fail generation: it would shadow a command or emit a
 // duplicate filename.
 func TestRenderCLI_ReservedCommandName(t *testing.T) {
 	for _, table := range []string{"config", "login", "custom"} {
@@ -451,7 +451,7 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	// EMPTY database. Under the concurrency this test creates (a
 	// long-lived SSE watch plus parallel CLI calls) the pool opens a
 	// second connection whose token lookup then hits "no such table:
-	// auth_api_tokens" and the request silently degrades to anonymous —
+	// auth_api_tokens" and the request silently degrades to anonymous:
 	// the CLI 401s or never sees an event. One connection = one database.
 	db.SetMaxOpenConns(1)
 	defer db.Close()
@@ -508,7 +508,7 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 		return string(out), code
 	}
 
-	// help surfaces: root usage, bare entity group, verb --help — all exit 0;
+	// help surfaces: root usage, bare entity group, verb --help; all exit 0;
 	// an unknown subcommand exits 2 but still shows the group usage
 	out, code := run("--help")
 	if code != 0 || !strings.Contains(out, "posts list") {
@@ -641,7 +641,7 @@ poll:
 				eventLine = l
 				break poll
 			}
-			// Closed with no line: the watch process ended (EOF) — no
+			// Closed with no line: the watch process ended (EOF). No
 			// more events can arrive, stop creating and report.
 			break poll
 		case <-time.After(500 * time.Millisecond):

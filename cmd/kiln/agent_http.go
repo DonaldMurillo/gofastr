@@ -44,7 +44,7 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 			// sentinels: pass through
 		case "custom":
 			// The custom form lets the request body choose the entire
-			// argv of a process kiln will spawn — request-borne code
+			// argv of a process kiln will spawn: request-borne code
 			// execution. It stays off unless the operator opted in.
 			if !allowCustomAgent {
 				writeJSON(w, map[string]any{
@@ -133,7 +133,7 @@ func agentState(store *AdapterStore) map[string]any {
 
 func describeAdapter(a Adapter) map[string]any {
 	if a.BuildArgs == nil {
-		return map[string]any{"name": "none", "display": "(no agent — chat goes to journal but nothing runs)"}
+		return map[string]any{"name": "none", "display": "(no agent: chat goes to journal but nothing runs)"}
 	}
 	return map[string]any{"name": a.Name, "display": a.Display}
 }

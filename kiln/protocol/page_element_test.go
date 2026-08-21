@@ -67,7 +67,7 @@ func TestAddPage_PreservesUserProvidedIDs(t *testing.T) {
 			Kind: "div",
 			Children: []world.Node{
 				{ID: "user-link", Kind: "link", Props: map[string]any{"href": "/", "text": "home"}},
-				{Kind: "paragraph"}, // unidentified — should be auto-assigned
+				{Kind: "paragraph"}, // unidentified, should be auto-assigned
 			},
 		},
 	}
@@ -171,7 +171,7 @@ func TestUpdatePageElement_ReplaceSubtree_PreservesID(t *testing.T) {
 		t.Errorf("ID changed by replace_subtree: was %q, now %q. The id should survive a content swap so cross-call references stay valid.", originalID, heading.ID)
 	}
 	if heading.Props["level"].(float64) != 2 && heading.Props["level"] != 2 {
-		// JSON round-trip can produce float64 or int — accept either
+		// JSON round-trip can produce float64 or int, accept either
 		t.Errorf("level = %v, want 2", heading.Props["level"])
 	}
 	if len(heading.Children) != 1 || heading.Children[0].Kind != "span" {
@@ -383,7 +383,7 @@ func TestUpdatePageElement_UnknownElement(t *testing.T) {
 }
 
 // Pin that update_page_element is wired into the agent dispatcher
-// (kiln/agent/loop.go) and the descriptor table — without these, a
+// (kiln/agent/loop.go) and the descriptor table. Without these, a
 // new tool method on Tools is silently invisible to MCP/ACP/the panel.
 func TestUpdatePageElement_DescriptorRegistered(t *testing.T) {
 	tools := newTools(t)

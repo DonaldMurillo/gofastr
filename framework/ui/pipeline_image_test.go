@@ -46,7 +46,7 @@ func TestPipelineImageOnlyHeightMissing(t *testing.T) {
 func TestPipelineImageZeroDimensionsRendersGracefully(t *testing.T) {
 	// User-generated content sometimes has missing width/height (old DB
 	// rows pre-migration, malformed uploads). The component must not
-	// panic — that crashes the render pipeline. Instead it emits an
+	// panic. That crashes the render pipeline. Instead it emits an
 	// <img> without intrinsic dimensions and accepts the CLS cost.
 	defer func() {
 		if r := recover(); r != nil {
@@ -58,7 +58,7 @@ func TestPipelineImageZeroDimensionsRendersGracefully(t *testing.T) {
 	if !strings.Contains(out, "/x.jpg") {
 		t.Errorf("expected fallback src in output, got %q", out)
 	}
-	// Should NOT have width="0" or height="0" — omit instead.
+	// Should NOT have width="0" or height="0". Omit instead.
 	if strings.Contains(out, `width="0"`) || strings.Contains(out, `height="0"`) {
 		t.Errorf("zero dims should be omitted, not emitted; got %q", out)
 	}
@@ -96,7 +96,7 @@ func TestPipelineImageRendersPlaceholderDataURL(t *testing.T) {
 		Placeholder: "data:image/jpeg;base64,Zm9v",
 	})
 	// The placeholder is a stacked element, not an attribute for someone
-	// else to hydrate — see image_placeholder_test.go for the full contract.
+	// else to hydrate. See image_placeholder_test.go for the full contract.
 	mustContain(t, h, `class="ui-image__lqip"`)
 	mustContain(t, h, `src="data:image/jpeg;base64,Zm9v"`)
 }
@@ -179,7 +179,7 @@ func TestPipelineSourcesFromHeaders(t *testing.T) {
 
 func TestPipelineImageDedupesIdenticalSources(t *testing.T) {
 	// Two PipelineSource entries with the same (URL, Width, Type)
-	// must collapse to one srcset candidate — duplicates are invalid
+	// must collapse to one srcset candidate: duplicates are invalid
 	// per the HTML spec ("each candidate must have a unique width
 	// descriptor within the same source").
 	h := PipelineImage(PipelineImageConfig{
@@ -257,7 +257,7 @@ func TestPipelineImageSkipsInvalidSources(t *testing.T) {
 // srcsets, which additionally accept an inline raster data: URI", so a
 // data: URI reaching a srcset is by design. encodeSrcsetURL used to
 // percent-escape every comma, including the one that separates a data:
-// URI's media type from its payload — admitted by the allow-list, then
+// URI's media type from its payload, admitted by the allow-list, then
 // destroyed by the emitter, so the candidate silently decoded to nothing.
 const pngDataURL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 

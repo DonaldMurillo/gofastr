@@ -1,8 +1,8 @@
 # Heavy-JS plugin platform (`framework/pluginhost`)
 
 `framework/pluginhost` lets a GoFastr app mount a **heavy-JavaScript
-plugin** — a megabyte-class client bundle like a WYSIWYG editor or a
-diagram renderer — as a genuinely third-party, isolated module. It is
+plugin**, a megabyte-class client bundle like a WYSIWYG editor or a
+diagram renderer, as a genuinely third-party, isolated module. It is
 the client-side mirror of the process-isolation track (#37): the same
 question ("what can code we didn't audit actually reach?") answered for
 untrusted DOM-touching JavaScript.
@@ -13,7 +13,7 @@ survived a measured go/no-go gate (p99 keystroke latency ≤ 16 ms inside
 the sandbox), then proven general by a second plugin (mermaid) that
 reused it without modification.
 
-## The isolation model — secure by default
+## The isolation model: secure by default
 
 The plugin bundle runs inside an **opaque-origin sandboxed iframe**:
 `sandbox="allow-scripts"`, and `allow-same-origin` is **never** added.
@@ -21,7 +21,7 @@ Two independent, authoritative enforcement points guarantee this:
 
 1. The sandbox derivation (`Manifest.SandboxString` server-side and
    `sandboxFor` in the broker JS) **always** strips `allow-same-origin`
-   and forces `allow-scripts` — a mis-configured or tampered manifest
+   and forces `allow-scripts`; a mis-configured or tampered manifest
    cannot produce a de-opaqued frame. `Manifest.Validate` (run by
    `NewClientModule`) additionally rejects such a manifest loudly at
    construction.
@@ -37,14 +37,14 @@ Consequences the browser enforces (not our code, not review):
 - The frame has no network capability of its own; its only channel to
   the app is `postMessage`, brokered by the host.
 - A crashed or malicious bundle cannot deface the page or exfiltrate a
-  session — including via a compromised transitive npm dependency, which
+  session, including via a compromised transitive npm dependency, which
   is the realistic threat: the app owner *deliberately installs* the
   plugin, but nobody audits megabytes of dependency tree per upgrade.
 
 Assets are served **same-origin** from the plugin's route prefix via
 `pluginhost.NewAssetServer`, so the app's strict CSP needs zero edits.
 Framed assets get a scoped relaxation (framing headers + a CSP keyed to
-the explicit request origin — inside an opaque frame, `'self'` resolves
+the explicit request origin; inside an opaque frame, `'self'` resolves
 to `null` and spec-correct browsers like Safari refuse subresources).
 
 ## The protocol
@@ -60,29 +60,29 @@ One versioned envelope in both directions:
 - plugin→host: `ready`, `docChanged`, `save`, `requestUpload`, `resize`,
   `focusChanged`, `metric`, `themeApplied`, `bootError`.
 - **Source validation:** `event.source === iframe.contentWindow`, never
-  `event.origin` — an opaque frame's origin is the literal string
+  `event.origin`; an opaque frame's origin is the literal string
   `"null"`, so origin-string checks are a trap.
 - Unknown methods are ignored, so additive events are non-breaking.
 
 The host side is `framework/pluginhost/host/pluginhost.js`, served at
 its own route (`pluginhost.RegisterBrokerRoute`, idempotent across
-plugins). It is **not** part of `runtime.js` — pages without plugins
+plugins). It is **not** part of `runtime.js`; pages without plugins
 ship zero extra bytes and the core payload budgets are untouched.
 
-## Capabilities — reuse the scope registry, don't invent one
+## Capabilities: reuse the scope registry, don't invent one
 
 Grants use the **same `resource:verb` grammar as battery/auth token
 scopes** (`document:read`, `document:write`, `upload:images`,
 `theme:read`) and are enforced server-side with **default-deny**:
 `pluginhost.Allow(ctx, granted, required)` permits an action only when
-`required` is covered by the plugin's `granted` set (the ceiling — via
+`required` is covered by the plugin's `granted` set (the ceiling, via
 `auth.ScopeMatch`, the same wildcard matcher as token scopes) AND the
 caller's own authority permits it. A plugin can therefore never exceed
 its granted capabilities, even under a session cookie (where an unscoped
 `auth.HasScope` alone would pass everything). Mount privileged plugin
 routes behind `pluginhost.Guard(granted, required, next)`, which fails
 **closed** with `403 E_CAPABILITY_DENIED`. This is the reconciliation
-#37 calls for — one permission vocabulary across process-isolated modules,
+#37 calls for: one permission vocabulary across process-isolated modules,
 API tokens, and client plugins. Do not build a parallel capability
 catalog for plugins; extend the scope vocabulary.
 
@@ -99,10 +99,10 @@ grants.
 core-ui/ARCHITECTURE.md attribute table and the
 [runtime contract](runtime-contract.md)). A plugin adds its own
 adapter script (registered via `window.__gofastrPluginHost.register`)
-that supplies its `Manifest` and handles its plugin-specific events —
+that supplies its `Manifest` and handles its plugin-specific events;
 the generic broker owns everything protocol-level.
 
-## Opting out — the trusted mount
+## Opting out: the trusted mount
 
 Isolation is the default; a **loud, host-side opt-out** exists for
 plugins the app owner compiles in and vouches for (code the team wrote
@@ -111,7 +111,7 @@ paying).
 The wysiwyg plugin's `WithTrustedMount()` is the reference: same plugin
 API and protocol envelopes, transport swapped from postMessage to
 direct calls, no iframe. The opt-out is never a default and never
-selectable by the plugin itself — only the host can grant it.
+selectable by the plugin itself; only the host can grant it.
 
 ## The registry
 
@@ -128,7 +128,7 @@ or capability set.
 - **Adding `allow-same-origin` to "fix" a frame that can't load its
   assets.** That de-opaques the frame and deletes the entire isolation
   guarantee. The real fix is the framed-asset CSP relaxation the
-  `AssetServer` already applies — `'self'` means `null` inside an
+  `AssetServer` already applies: `'self'` means `null` inside an
   opaque frame, so framed responses carry an origin-keyed CSP instead.
 - **Checking `event.origin` in the broker or the frame.** The opaque
   frame's origin is the string `"null"`; string checks either always

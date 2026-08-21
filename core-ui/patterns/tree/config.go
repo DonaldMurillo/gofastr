@@ -17,7 +17,7 @@ type Node struct {
 
 	// LazyPath, when set, makes this a branch whose children load
 	// on first expand via an RPC POST. Mutually exclusive with
-	// Children — if both are set, Children wins on first render and
+	// Children, if both are set, Children wins on first render and
 	// LazyPath is ignored (the children are already there).
 	LazyPath string
 
@@ -40,7 +40,7 @@ type Config struct {
 	Nodes []Node
 
 	// SignalPrefix names the signal namespace used for lazy-load
-	// signal bindings — each LazyPath branch's child <ul role="group">
+	// signal bindings, each LazyPath branch's child <ul role="group">
 	// is bound to data-fui-signal="<prefix>-<node-id>". Required when
 	// any node uses LazyPath; ignored otherwise.
 	SignalPrefix string

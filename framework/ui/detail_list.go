@@ -1,6 +1,6 @@
 package ui
 
-// DetailList — a label/value description list for record detail screens
+// DetailList: a label/value description list for record detail screens
 // ("Name: Ada Lovelace", "Status: <badge>"). Renders semantic <dl>/<dt>/<dd>
 // with a two-column grid that collapses gracefully. The framework owns the
 // layout so detail screens don't hand-roll key/value CSS.

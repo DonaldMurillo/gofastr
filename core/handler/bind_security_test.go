@@ -45,7 +45,7 @@ func TestBind_InvalidJSONRejected(t *testing.T) {
 }
 
 // TestBind_NilDstPanics verifies that nil destination causes a clean
-// failure (returned error OR a recovered panic) — never a silent
+// failure (returned error OR a recovered panic). Never a silent
 // success that lets a handler proceed with a zero-value struct.
 func TestBind_NilDstPanics(t *testing.T) {
 	var bindErr error
@@ -147,7 +147,7 @@ func TestBind_NonJSONContentTypeSkipped(t *testing.T) {
 
 	err := Bind(req, &dst)
 	if err != nil {
-		// Parse error is fine — XML was not parsed
+		// Parse error is fine; XML was not parsed
 		t.Logf("Non-JSON body correctly not parsed: %v", err)
 	}
 	if dst.Name == "" {
@@ -213,7 +213,7 @@ func TestBind_DeeplyNestedJSONRejected(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	err := Bind(req, &dst)
-	// If it succeeds, that's fine — json.Decoder handles nesting
+	// If it succeeds, that's fine: json.Decoder handles nesting
 	// If it fails with a resource error, that's also fine
 	if err != nil {
 		t.Logf("Deeply nested JSON handling: %v", err)
@@ -223,7 +223,7 @@ func TestBind_DeeplyNestedJSONRejected(t *testing.T) {
 // TestRespond_ErrorNoStackLeak verifies that WriteError refuses to
 // leak the inner message of a non-*Error error. A handler that returns
 // a raw database error (or any unwrapped error) must get a generic
-// 500 body — the inner cause stays server-side. Callers that *do*
+// 500 body. The inner cause stays server-side. Callers that *do*
 // want a custom message must wrap with Errorf/WrapError.
 func TestRespond_ErrorNoStackLeak(t *testing.T) {
 	w := httptest.NewRecorder()

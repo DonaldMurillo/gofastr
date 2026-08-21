@@ -48,8 +48,8 @@ type Loader func(ctx context.Context) (any, error)
 var getOrSetGroup singleflight.Group
 
 // GetOrSet returns the cached value for key, deserialized into dest. On a miss
-// it invokes loader exactly once — even when many goroutines miss the same key
-// concurrently — stores the result with the given TTL, and shares it with all
+// it invokes loader exactly once, even when many goroutines miss the same key
+// concurrently, stores the result with the given TTL, and shares it with all
 // waiters. A loader error is propagated and never cached.
 //
 // dest must be a non-nil pointer. The loader's returned value is round-tripped

@@ -12,7 +12,7 @@ func TestCodeTokensEmit(t *testing.T) {
 		"--tk-fn: #82AAFF;",
 		"--tk-str: #C3E88D;",
 		"--tk-num: #F78C6C;",
-		// Flipped from #676E95 (3.6:1 on the #18181B code surface — fails
+		// Flipped from #676E95 (3.6:1 on the #18181B code surface, fails
 		// WCAG AA; axe caught it on the SDK docs pages) to 5.8:1.
 		"--tk-com: #8C93B0;",
 		"--tk-type: #FFCB6B;",

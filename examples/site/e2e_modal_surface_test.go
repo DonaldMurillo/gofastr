@@ -58,7 +58,7 @@ func TestE2E_ModalSlotPaintsSurface(t *testing.T) {
 }
 
 // A preset.BottomSheet must paint its panel on the widget root
-// (surface background + shadow), like drawers do — not float slot
+// (surface background + shadow), like drawers do, not float slot
 // text over the page.
 func TestE2E_SheetPaintsSurface(t *testing.T) {
 	if testing.Short() {
@@ -88,7 +88,7 @@ func TestE2E_SheetPaintsSurface(t *testing.T) {
 	}
 }
 
-// The command palette is excluded from the default panel surface — it
+// The command palette is excluded from the default panel surface, it
 // paints its own chrome, so the .fui-panel around it must stay
 // transparent (the :has() opt-out branch, exercised in real DOM rather
 // than by string-matching the selector).

@@ -15,7 +15,7 @@ import (
 //
 // Sticky page-level search bar with `/`-shortcut focus + a Combobox-
 // driven dropdown of results. Distinct from CommandPalette (which is
-// a focus-trapped ⌘K modal) — GlobalSearch is inline, persistent, and
+// a focus-trapped ⌘K modal). GlobalSearch is inline, persistent, and
 // per-page.
 //
 // Compositional shape: GlobalSearch is mostly a wrapper around the
@@ -114,12 +114,12 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 		LabelHidden: true,
 	})
 
-	// Decorate the combobox input with shortcut markers — done by
+	// Decorate the combobox input with shortcut markers, done by
 	// emitting wrapping JS-free annotations the runtime picks up.
 	// The framework's `data-fui-shortcut-focus` listens for the chord
 	// globally and focuses the matching `[data-fui-shortcut-focus="<chord>"]`
 	// element. We add it via a sibling marker element that points at
-	// the input via aria-controls — but the simpler pattern is to
+	// the input via aria-controls. But the simpler pattern is to
 	// expose Shortcut on the GlobalSearch wrapper and let the runtime
 	// focus the FIRST input within when the chord fires. We use a
 	// per-instance wrapper-level shortcut marker (data-fui-shortcut-

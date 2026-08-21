@@ -17,8 +17,8 @@ import (
 )
 
 // An `?include=` is a read of ANOTHER entity's rows. Every other guard hanging
-// off the include target was already applied — the Hidden-column scrub, owner
-// scope, tenant scope, soft delete — but the target's own Exposure.Access was
+// off the include target was already applied, the Hidden-column scrub, owner
+// scope, tenant scope, soft delete, but the target's own Exposure.Access was
 // not. So `GET /api/posts?include=author` returned whole rows of an entity
 // whose own route answers 403, and `?include=comments.author` dumped the table
 // in one request. The same held for `?rel.field=` nested filters, which do not
@@ -88,7 +88,7 @@ func TestIncludeRespectsTargetEntityReadGate(t *testing.T) {
 }
 
 // Filtering across the relation does not return the row, but the result count
-// changes with the guessed value — an oracle over a column the entity refuses
+// changes with the guessed value, an oracle over a column the entity refuses
 // to serve.
 func TestNestedFilterRespectsTargetEntityReadGate(t *testing.T) {
 	app := includeGateApp(t)
@@ -156,15 +156,15 @@ func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
 	}
 }
 
-// The gate is wired on three surfaces — List, read-one, and cursor pagination
-// (crud.go, crud_cursor.go) — but was tested only through List, so a
+// The gate is wired on three surfaces. List, read-one, and cursor pagination
+// (crud.go, crud_cursor.go), but was tested only through List, so a
 // regression on either of the other two would have stayed green.
 // The gate walks node.Children, so a gated entity two hops out cannot be
 // laundered through a readable first segment.
 //
 // This needs a real second hop: an earlier version of this test asked for
 // `owner.notes`, which the PARSER rejected with 400 because that relation does
-// not exist — so it never reached the recursion it claimed to cover, and its
+// not exist, so it never reached the recursion it claimed to cover, and its
 // assertion accepted the 400. The chain here is notes → owner (readable) →
 // profile (gated), and only a 403 naming the gated entity passes.
 func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
@@ -186,7 +186,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 			Access: entity.AccessControl{Read: "profiles:read"},
 		},
 	})
-	// One hop out, and readable — the segment that must not launder the next.
+	// One hop out, and readable, the segment that must not launder the next.
 	app.Entity("owners", EntityConfig{
 		Fields: []schema.Field{{Name: "email", Type: schema.String}},
 		Relations: []entity.Relation{
@@ -218,7 +218,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 		}
 	}
 
-	// The first hop alone is readable and must still work — otherwise a 403
+	// The first hop alone is readable and must still work, otherwise a 403
 	// below would prove nothing about depth.
 	if got := ta.Get("/api/notes?include=owner"); got.Status() != http.StatusOK {
 		t.Fatalf("GET /api/notes?include=owner = %d, want 200 — the readable first hop is the baseline this test rests on: %s", got.Status(), got.Body())
@@ -239,7 +239,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 
 // The gate must not depend on whether the parent table happens to have rows.
 // It once sat below an early return for an empty parent, so the same request
-// answered 200 while the table was empty and 403 after the first row existed —
+// answered 200 while the table was empty and 403 after the first row existed:
 // a table-emptiness oracle, and inconsistent with the nested-filter check,
 // which refuses before querying anything.
 func TestIncludeGateDoesNotDependOnParentEmptiness(t *testing.T) {
@@ -397,7 +397,7 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	}
 }
 
-// A soft-deleted target row is hidden by every other read surface — the routes
+// A soft-deleted target row is hidden by every other read surface, the routes
 // via ApplySoftDeleteFilter, the eager loaders via their soft-delete argument,
 // and GET by id with a 404. The EXISTS subquery counted them, so `?rel.field=`
 // confirmed values in trashed rows one guess at a time.
@@ -527,7 +527,7 @@ func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
 	}
 
 	// Owner identity comes from the signed-in user, so the two callers below
-	// are genuinely different owners — and neither of them owns n1.
+	// are genuinely different owners, and neither of them owns n1.
 	prev := owner.GetExtractor()
 	owner.SetExtractor(func(ctx context.Context) (any, bool) {
 		if u, ok := handler.GetUser(ctx); ok && u != nil {
@@ -586,7 +586,7 @@ func (u xoUser) GetRoles() []string { return u.roles }
 
 // Relation.Entity is the registry KEY; the table can differ whenever a host
 // declares Name != Table. Every check in nested_filter.go is made against the
-// RESOLVED target, so the subquery must read that target's table — otherwise
+// RESOLVED target, so the subquery must read that target's table, otherwise
 // validation describes one table while the query reads another, which is
 // silently wrong data when a same-named table exists and a 500 when it does
 // not.
@@ -647,7 +647,7 @@ func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
 
 // Every other include test reaches its 403 through a declared read permission
 // or owner scoping. Neither exercises the gate's THIRD reason to refuse: the
-// baseline session requirement that a default-posture entity carries — no
+// baseline session requirement that a default-posture entity carries, no
 // Access, no Public, no OwnerField, which is exactly what `gofastr init`
 // scaffolds and therefore the most common entity shape there is. With that arm
 // dead, an anonymous `?include=` serves whole rows of a session-required entity
@@ -688,7 +688,7 @@ func TestIncludeGateRefusesADefaultPostureTarget(t *testing.T) {
 	}
 
 	// Baseline: the target's own route refuses an anonymous caller for the
-	// session reason alone — no permission is declared anywhere here.
+	// session reason alone, no permission is declared anywhere here.
 	if got := ta.Get("/api/profiles").Status(); got != http.StatusUnauthorized {
 		t.Fatalf("GET /api/profiles = %d, want 401 — this test rests on the session gate, not on RBAC", got)
 	}

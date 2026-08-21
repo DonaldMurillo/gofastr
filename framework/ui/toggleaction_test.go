@@ -93,7 +93,7 @@ func TestToggleActionGroupUntoggle(t *testing.T) {
 }
 
 func TestToggleActionUntoggleEndpointImplies(t *testing.T) {
-	// Setting UntoggleEndpoint without AllowUntoggle still opts in —
+	// Setting UntoggleEndpoint without AllowUntoggle still opts in:
 	// a reverse endpoint is meaningless on a sticky button.
 	got := string(ToggleAction(ToggleActionConfig{
 		Endpoint:         "/api/follow",
@@ -124,7 +124,7 @@ func TestToggleActionVariantClass(t *testing.T) {
 
 func TestToggleActionBadVariantPanics(t *testing.T) {
 	// ToggleAction shares Button's variant/size sets and must validate
-	// them the same way — a typo'd variant panics at render time
+	// them the same way. A typo'd variant panics at render time
 	// instead of silently rendering an unstyled button.
 	wantPanic(t, "ToggleAction unknown Variant", func() {
 		ToggleAction(ToggleActionConfig{

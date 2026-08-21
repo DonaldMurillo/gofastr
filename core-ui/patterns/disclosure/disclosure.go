@@ -10,7 +10,7 @@
 //	  <div class="ui-disclosure__body">…</div>
 //	</details>
 //
-// Native semantics — keyboard, screen reader, "find in page"
+// Native semantics, keyboard, screen reader, "find in page"
 // expansion all work without JavaScript.
 package disclosure
 

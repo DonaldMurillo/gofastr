@@ -6,7 +6,7 @@ import (
 
 // Condition is a single WHERE fragment (SQL + args) produced by
 // SearchConditions. Convert to a hook.WhereClause and append via
-// qb.Where(c.SQL, c.Args…) — the query builder wraps each Where in
+// qb.Where(c.SQL, c.Args…), the query builder wraps each Where in
 // parens and AND-composes them, so multi-field search clauses combine
 // safely with owner/tenant/soft-delete scopes.
 type Condition struct {
@@ -35,7 +35,7 @@ const MaxSearchTerms = 8
 // dialects.
 //
 // LIKE metacharacters (%, _, \) in each token are escaped via the
-// existing escaper so they match literally — a user searching for "50%"
+// existing escaper so they match literally, a user searching for "50%"
 // finds rows containing "50%", not every row with any character sequence.
 // The args are ordered to match the $N placeholders left-to-right; the
 // crud query builder renumbers $N on Build.

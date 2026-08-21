@@ -1,10 +1,10 @@
-# Entity Declarations
+# Entity declarations
 
 > ⚠️ **Auto-CRUD is secure-by-default; per-user data still needs
 > `OwnerField`.** An entity exposed via `app.Entity(...)` (or
 > `app.GroupEntity(...)`) that declares none of `OwnerField`, `Access`,
-> or `Public` requires an authenticated session for **every** operation
-> — List/Get/Create/Update/Delete all 401 an anonymous caller. That
+> or `Public` requires an authenticated session for **every** operation:
+> List/Get/Create/Update/Delete all 401 an anonymous caller. That
 > closes anonymous read/write, but it does **not** scope rows by user:
 > without `OwnerField`, every authenticated user still reads (and can
 > overwrite) every other user's rows. For per-user data:
@@ -17,10 +17,10 @@
 > ```
 >
 > When `battery/auth` is imported, the framework's owner extractor is
-> wired automatically — no extra setup needed. See the **Per-user
+> wired automatically: no extra setup needed. See the **Per-user
 > scoping (`OwnerField`)** section below for details, and **Default CRUD
 > authentication** below for the session-requirement contract (including
-> the `Public` opt-out for genuinely public entities — a contact form, a
+> the `Public` opt-out for genuinely public entities, such as a contact form, a
 > blog's comments).
 
 An entity is registered in Go with `app.Entity(name, framework.EntityConfig{…})`.
@@ -52,7 +52,7 @@ app.Entity("tickets", framework.EntityConfig{
 
 Blueprint entities accept the same `scope:`, `pagination:`, and `exposure:`
 maps. In Go, the grouped sub-configs (`ScopeConfig`, `PaginationConfig`,
-`ExposureConfig`) are the only form — the historical flat `EntityConfig`
+`ExposureConfig`) are the only form; the historical flat `EntityConfig`
 fields were removed. In a blueprint YAML you may still use the flat
 shorthand keys, but declaring a flat key and its grouped key with
 *different* values is a hard decode error, not a silent precedence rule.
@@ -70,7 +70,7 @@ app.Entity("posts", framework.EntityConfig{
 ```
 
 The same entity shape can also be **declared in a `gofastr.yml` blueprint**
-and emitted as Go by the CLI — see [Blueprints](blueprints.md), the single
+and emitted as Go by the CLI; see [Blueprints](blueprints.md), the single
 declaration format the `gofastr generate` codegen pipeline reads. The
 `EntityDeclaration` / `FieldDeclaration` types documented below
 (`framework/entity/declaration.go`) are the in-memory shape the blueprint
@@ -92,7 +92,7 @@ app.RegisterEntities(map[string]entity.EntityConfig{
 
 ## `Entity` vs `TryEntity`
 
-`app.Entity(name, config)` **panics** on a misconfiguration — fail-fast,
+`app.Entity(name, config)` **panics** on a misconfiguration: fail-fast,
 ideal for static hand-written declarations where a bad config is a bug
 you want surfaced immediately. When the config is generated or untrusted
 (an AI-authored field, a dynamic schema, a user-supplied declaration) and
@@ -112,7 +112,7 @@ Registration is atomic with respect to configuration errors: every
 check that can reject a declaration runs before the registry, router,
 or MCP server is touched. A rejected declaration leaves no registry
 entry, no route, and no MCP tool, and a corrected retry under the same
-name succeeds — the property the authoring loop above depends on.
+name succeeds, which is the property the authoring loop above depends on.
 
 ## Seeding
 
@@ -175,7 +175,7 @@ within `SeedFS`. The framework wires the context just before calling
 `Seed`; hosts never need to attach it manually.
 
 `App.Entity` panics at registration time if `SeedFS` is set but
-`SeedPath` is empty — a misconfiguration that would otherwise silently
+`SeedPath` is empty: a misconfiguration that would otherwise silently
 record the entity as seeded with empty data on first run.
 
 ### Observability
@@ -226,7 +226,7 @@ entities:
     public: false   # default; see "Default CRUD authentication" below
     crud: true
     mcp: true
-    renames:        # old column: new column — see migrations.md
+    renames:        # old column: new column; see migrations.md
       headline: title
     fields:
       - name: title
@@ -254,7 +254,7 @@ for them a mis-read value opens something up rather than closing it:
 
 The reason is YAML 1.2, which `core/yaml` implements: `yes`, `on`, `y`, and
 `1` are **strings**, not booleans. Written `auth: yes`, the value used to
-read as false and the screen was registered with no policy — publicly
+read as false and the screen was registered with no policy: publicly
 reachable, with no error to say so. `multi_tenant: yes` dropped tenant
 scoping the same way. Keys where false is the inert direction (`public`,
 `mcp`, `crud`, `enabled`) keep the lax reading.
@@ -269,22 +269,22 @@ Each entry under `fields:` accepts:
 | `type` | string | One of the field types above (`string`, `text`, `int`, `float`, `decimal`, `bool`, `enum`, `date`, `timestamp`, `uuid`, `json`, `image`, `file`, `relation`). |
 | `required` | bool | NOT NULL + presence validation. |
 | `unique` | bool | Unique constraint on the column. |
-| `default` | scalar | Value written when the field is omitted on create. Checked against the field's own rules when the entity is registered — see "Defaults are validated at registration" below. |
+| `default` | scalar | Value written when the field is omitted on create. Checked against the field's own rules when the entity is registered; see "Defaults are validated at registration" below. |
 | `max` / `min` | number | Length (strings) or value (numbers) bounds. |
 | `values` | list | Allowed values for `type: enum`. |
 | `pattern` | string | Regex the value must match (validated on write). |
-| `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4 — the default `id`), `increment` (database-assigned integer — `SERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
+| `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `SERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
-| `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned — `visibleFields` shapes the projection). |
-| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form — see "Masked fields" below. |
+| `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned; `visibleFields` shapes the projection). |
+| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. |
 | `to` | string | For `type: relation`, the target entity. |
 
 ### Defaults are validated at registration
 
 A `default` is the value the create path writes when the request body omits
 the field. It goes into the same column a client-sent value would, so it is
-checked against the same field rules — `values`, `pattern`, `min`/`max`,
-`required`, and the type itself — when the entity is registered.
+checked against the same field rules, `values`, `pattern`, `min`/`max`,
+`required`, and the type itself, when the entity is registered.
 
 A default that fails those rules fails the declaration. `app.Entity` panics
 and `app.TryEntity` returns the error, both naming the field:
@@ -310,12 +310,12 @@ declaration is not JSON:
 - `timestamp` and `date` written as a `time.Time`.
 
 A default on an `auto_generate` field is not validated, because the create path
-never writes it — the generated value takes that slot. It still becomes the
+never writes it: the generated value takes that slot. It still becomes the
 column's DDL `DEFAULT`.
 
 ### Masked fields
 
-An `AfterGet` / `AfterList` hook can rewrite a field on the way out — a
+An `AfterGet` / `AfterList` hook can rewrite a field on the way out: a
 card number to its last four digits, a note redacted for non-owners.
 That changes what the caller reads. It does not change what the database
 filtered and sorted on.
@@ -342,21 +342,21 @@ fields:
 GET /cards?number_like=4111    → 400 field "number" cannot be filtered
 ```
 
-Use `hidden` instead when the caller should not see the value at all —
+Use `hidden` instead when the caller should not see the value at all:
 `hidden` also removes the field from responses, and hides the fact that
 the column exists. `no_query` is for when they must see *something*.
 
 `no_query` refuses the query surface; it does not mask anything by
 itself. The hook is what rewrites the value, so declare both, and
-register the hook on `AfterGet` **and** `AfterList` — each response path
+register the hook on `AfterGet` **and** `AfterList`; each response path
 runs the one matching the shape it serves.
 
 The admin's edit form reads the row twice and treats any column the hook
 rewrites as write-only: rendered empty (or with an explicit
 "— unchanged —" option on a checkbox, enum, or relation picker), left
 alone unless you supply a value. It compares the two reads rather than
-looking at `no_query`, so a hook that *transforms* rather than masks —
-normalising a phone number, rounding a currency — also makes its columns
+looking at `no_query`, so a hook that *transforms* rather than masks,
+normalising a phone number or rounding a currency, also makes its columns
 write-only in the admin. Do that work in `BeforeCreate`/`BeforeUpdate`
 if the column should stay editable.
 
@@ -364,7 +364,7 @@ Relation *blocks* (the `relations:` list, distinct from a `relation`
 field) take `type` (`belongs_to`, `has_many`, `has_one`), `name`,
 `entity`, and `foreign_key`.
 
-`owner_field` mirrors `Scope.OwnerField` — set it to the column
+`owner_field` mirrors `Scope.OwnerField`: set it to the column
 that holds the row owner's id (e.g. `user_id`) and the blueprint-declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one
 (see **Per-user scoping** below). Omit the key to keep pre-existing
@@ -372,16 +372,16 @@ behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` inside a
 `Scope: &framework.ScopeConfig{…}` block in the generated `app.Entity(...)`
 registration, so the scoping survives code generation.
 
-`access` mirrors `Exposure.Access` (`framework.AccessControl`) — the
+`access` mirrors `Exposure.Access` (`framework.AccessControl`): the
 per-operation RBAC permission required by auto-CRUD. Keys are `read`
 (List + Get), `create`, `update`, and `delete`; each value is a permission
 string such as `posts:write`. A blank or omitted key leaves that operation
 un-gated by RBAC (owner and tenant scoping still apply); omit the whole map
 for no RBAC gating at all. When set, auto-CRUD refuses a request whose
-context lacks the permission with **403** — the roles + policy must be in
+context lacks the permission with **403**: the roles + policy must be in
 the request context first: mount `framework.AccessMiddleware` with a policy
 (`battery/auth` only supplies the authenticated user whose roles you feed
-into it; it does not satisfy the gate by itself — see
+into it; it does not satisfy the gate by itself; see
 [access-control](access-control.md)). `gofastr generate
 --from=gofastr.yml` emits the map as `Access: framework.AccessControl{...}`
 inside an `Exposure: &framework.ExposureConfig{…}` block in the generated
@@ -392,23 +392,23 @@ fail-closed enforcement as Go-declared ones.
 
 Auto-CRUD is secure-by-default. An entity that declares **none** of
 `owner_field`, `access`, or `public` requires an authenticated session for
-**every** operation — List/Get/Create/Update/Delete all refuse an
+**every** operation: List/Get/Create/Update/Delete all refuse an
 anonymous caller with **401**. Before this, a plain entity with no
 `owner_field`/`access` had zero enforcement: an anonymous `POST
 /api/<entity>` returned 201 and persisted the row.
 
-`owner_field` and `access` already take over gating for an entity — set
+`owner_field` and `access` already take over gating for an entity: set
 either one and this default session requirement no longer applies (their
 own contracts, described above and in **Per-user scoping**, govern the
-entity instead — including any operation an `access:` block leaves
+entity instead, including any operation an `access:` block leaves
 un-gated, "as today").
 
-For an entity that's genuinely meant to be open to anonymous callers — a
-public contact form, a blog's comments, a newsletter signup — declare
+For an entity that's genuinely meant to be open to anonymous callers, such as a
+public contact form, a blog's comments, or a newsletter signup, declare
 `public: true`. This is a full, deliberate opt-out: every operation,
 reads AND writes, is reachable anonymously, matching the framework's
 pre-secure-by-default behaviour for that entity. It is **not** a partial
-"reads only" relaxation — an entity that wants public reads but gated
+"reads only" relaxation: an entity that wants public reads but gated
 writes uses `access:` instead (a blank `read:` + a real `create:`
 permission leaves List/Get open while Create still requires the
 permission):
@@ -416,7 +416,7 @@ permission):
 ```yaml
 entities:
   - name: announcements
-    public: true    # anonymous read AND write — a public entity
+    public: true    # anonymous read AND write: a public entity
     fields:
       - name: title
         type: string
@@ -438,7 +438,7 @@ surprise.
 
 `gofastr dev`'s auto-registered entity MCP tools (and any `mcp: true`
 entity in production) dispatch through the same router + middleware chain
-as REST, so they inherit this session requirement automatically — no
+as REST, so they inherit this session requirement automatically: no
 separate MCP-level auth wiring is needed. An anonymous MCP `posts_create`
 call against a non-public entity is refused exactly like the REST route.
 
@@ -454,7 +454,7 @@ entities:
 
 You do **not** declare the owner column as a field: `gofastr generate`
 synthesizes it as a hidden string column, so AutoMigrate creates it while it
-stays out of generated forms and tables. The framework manages it end to end —
+stays out of generated forms and tables. The framework manages it end to end:
 `CreateOne` stamps it from the current user and every read scopes by it. (A
 field you *do* declare with the owner's name always wins and is left untouched.)
 `owner_field` alone satisfies the per-user PII gate, so it does not need an
@@ -483,14 +483,14 @@ A `relation` field with a `to` target (e.g. a field named `author_id`, type
 `relation`, `to: users`) declares a *BelongsTo*: the field's own column
 holds the foreign key. `Define` derives a matching `Config.Relations` entry
 automatically, so AutoMigrate emits the FK constraint and `?include=author_id`
-eager-loads the related row — you do not have to declare the relation twice. An
+eager-loads the related row, so you do not have to declare the relation twice. An
 explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
 ### Column naming
 
-The `name` you put in a field declaration is the SQL column name verbatim —
+The `name` you put in a field declaration is the SQL column name verbatim:
 case preserved, no snake-casing applied. A field named `flareVerdict` creates
 a column called `flareVerdict`, not `flare_verdict`. The same name is also the
 JSON property on REST responses when the app's JSON casing is left at the
@@ -517,21 +517,21 @@ id, and auto-CRUD becomes per-user automatically:
 |---|---|
 | `GET /api/<entity>` (List)   | `WHERE user_id = <ctx user id>` injected into both the data and count queries. |
 | `GET /api/<entity>/{id}` (Get) | `WHERE id = ? AND user_id = <ctx user id>`. Cross-user requests return 404. |
-| `POST /api/<entity>` (Create) | `user_id` is stamped from the current request — clients can omit it (or send it; it's overwritten). |
+| `POST /api/<entity>` (Create) | `user_id` is stamped from the current request; clients can omit it (or send it; it's overwritten). |
 | `PUT /api/<entity>/{id}` / `PATCH /api/<entity>/{id}` (Update) | UPDATE is scoped by owner. Cross-user requests return 404. |
 | `DELETE /api/<entity>/{id}` (Delete) | DELETE is scoped by owner. Cross-user requests return 404. |
 
 The owner column is created for you: when no field named like the
 `OwnerField` column is declared, `entity.Define` injects it as a hidden
-string column — AutoMigrate creates it, Create stamps it, and it stays
+string column: AutoMigrate creates it, Create stamps it, and it stays
 out of responses, forms, and the OpenAPI spec. A field you *do* declare
 with that name always wins and is left untouched.
 
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
-registers an extractor wires this up — `battery/auth` does so in
+registers an extractor wires this up: `battery/auth` does so in
 `init()`, pulling from `auth.GetCurrentUser(ctx).GetID()`. If no
 extractor is registered, `OwnerField` is inert (no scoping, no
-stamping) — so adding the field to an entity config in an app that
+stamping), so adding the field to an entity config in an app that
 hasn't wired auth is harmless.
 
 Pair with **session middleware** so cookie-authenticated requests
@@ -555,7 +555,7 @@ PII".
 ### Letting a role read every owner's rows (`CrossOwnerRead`)
 
 Owner scoping keeps each user's rows private, but some roles *should* see
-every owner's data on **reads** — a staff dashboard, a support tool, an
+every owner's data on **reads**: a staff dashboard, a support tool, an
 analytics aggregate over user-owned rows. `CrossOwnerRead` is the
 declarative knob for that: name an RBAC permission, and when the request
 context holds it, owner scoping is lifted for List/Get/Count (HTTP and
@@ -610,11 +610,11 @@ office automatically.
 
 **Fail-closed.** When no access policy is in the request context (an
 un-wired request, or the caller's roles don't include the permission),
-owner scoping stays **on** — the widening never happens implicitly. This
+owner scoping stays **on**: the widening never happens implicitly. This
 is the secure-by-default answer: opt in explicitly, and only when the
 policy says yes.
 
-**Read-only.** `CrossOwnerRead` never touches Create/Update/Delete —
+**Read-only.** `CrossOwnerRead` never touches Create/Update/Delete:
 those stay owner-scoped. A staff member can *see* every ticket but
 cannot PUT/PATCH/DELETE another user's row through auto-CRUD.
 Cross-user writes still return 404. Multi-tenant isolation is also
@@ -624,7 +624,7 @@ Requires `OwnerField` (it only makes sense on an owner-scoped entity);
 `entity.Define` panics when `CrossOwnerRead` is set without it, and the
 blueprint decoder returns a validation error for the same mismatch.
 
-### Reading across owners (`owner.AllowCrossOwner`) — in-process escape hatch
+### Reading across owners (`owner.AllowCrossOwner`): in-process escape hatch
 
 
 Owner scoping is correct for user-facing CRUD, but some
@@ -636,14 +636,14 @@ per-user-scoped read.
 
 `owner.AllowCrossOwner(ctx)` is the sanctioned escape. It returns a
 context that lifts owner scoping for the **in-process Go CrudHandler
-methods** — `ListAll`, `CountAll`, `GetOne`, and (because they share the
+methods**: `ListAll`, `CountAll`, `GetOne`, and (because they share the
 scope helpers) the mutate-by-id methods. It is the owner-side twin of
 `tenant.AllowCrossTenant` for multi-tenant entities.
 
 ```go
 import "github.com/DonaldMurillo/gofastr/framework/owner"
 
-// "Spots remaining" for a class — a count over EVERY member's bookings,
+// "Spots remaining" for a class: a count over EVERY member's bookings,
 // not just the caller's. bookings.OwnerField == "user_id".
 func spotsRemaining(ctx context.Context, bookings *crud.CrudHandler, classID string, capacity int) (int, error) {
     taken, err := bookings.CountAll(owner.AllowCrossOwner(ctx), crud.ListOptions{
@@ -656,13 +656,13 @@ func spotsRemaining(ctx context.Context, bookings *crud.CrudHandler, classID str
 }
 ```
 
-**Reach for this only when the cross-owner read is the whole point** —
+**Reach for this only when the cross-owner read is the whole point**:
 an aggregate, a queue, an admin lookup. It is NOT a convenience for
 "I couldn't figure out the scoped API"; the default scoped read is what
 you want for anything a user sees about *their own* data. Two hard rules:
 
 - **Server-side Go only.** The context key is unexported, so the
-  auto-generated HTTP CRUD endpoints have **no path** to this marker —
+  auto-generated HTTP CRUD endpoints have **no path** to this marker:
   they stay owner-scoped, always. Never derive it from a header, query
   param, or request body, and never plumb it onto the request context of
   an auto-CRUD route.
@@ -858,7 +858,7 @@ on whitespace (deduped, capped at 8 tokens), and AND-composes one
 `LOWER(col) LIKE '%token%'` condition per token across the declared
 fields. Every token must match (AND); within one token, any field may
 match (OR). The conditions AND safely with owner, tenant, and soft-delete
-scopes — the query builder wraps each WHERE clause in parens.
+scopes; the query builder wraps each WHERE clause in parens.
 
 **Case contract.** `LOWER()` is ASCII-only on SQLite and locale-aware on
 Postgres, so matching is ASCII-case-insensitive everywhere. Unicode case
@@ -866,7 +866,7 @@ folding is a Postgres bonus. The token is lowercased before building the
 LIKE pattern so the comparison is consistent across dialects.
 
 **Back-compat.** An entity WITHOUT `SearchFields` ignores `?q=` exactly
-as before — no behavioural change.
+as before: no behavioural change.
 
 **The `q`-column edge case.** An entity WITH `SearchFields` that also
 has a physical column named `q`: plain `?q=value` means **search** (the
@@ -876,7 +876,7 @@ OpEq filter on the `q` column is dropped). Suffixed ops (`?q_like=`,
 Column names must be known, non-Hidden, and String/Text-typed;
 `entity.Define` panics otherwise (the blueprint decoder returns a
 validation error). A Hidden column would turn `?q=` into a
-value-disclosure oracle — the same rationale as ParseFilters' hidden
+value-disclosure oracle: the same rationale as ParseFilters' hidden
 stripping.
 
 In-process callers get the same behaviour via `ListOptions.Search`:
@@ -905,21 +905,21 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | `_lt`    | `<`                                        |
 | `_lte`   | `<=`                                       |
 | `_like`  | literal `contains` (`LIKE '%value%'`)      |
-| `_in`    | `IN (…)` — comma-separated, capped at 1000 |
+| `_in`    | `IN (…)`, comma-separated, capped at 1000 |
 
 **Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
 Every occurrence of the key contributes; the 1000-entry cap
 (`filter.MaxINListEntries`) counts the union, and the same cap applies to
 relation-scoped lists like `?author.name_in=` (which are refused when the
 related entity is owner-scoped or multi-tenant, unless the caller already holds
-cross-owner or cross-tenant access for that axis — see
+cross-owner or cross-tenant access for that axis; see
 [access control](access-control.md)). A list over the cap is a
-**400** naming the field and both counts — never a silent truncation,
+**400** naming the field and both counts, never a silent truncation,
 for the same reason unknown filters fail closed below.
 
 **Unknown filters fail closed (strict).** A misspelled or unrecognized
-top-level filter — `?stauts=open`, or a suffixed op on a non-field like
-`?scor_gt=5` — returns a **400** naming the bad key (with a "did you
+top-level filter, `?stauts=open`, or a suffixed op on a non-field like
+`?scor_gt=5`, returns a **400** naming the bad key (with a "did you
 mean" suggestion when a field is an unambiguous near-match), rather than
 being silently dropped. Silently dropping a filter returns an
 **unfiltered** result set: a broken client reads the whole table, and an
@@ -928,14 +928,14 @@ existing fail-closed policy for `?sort=` and `?where=`.
 
 Hidden columns are rejected with the **same** "unknown filter" wording as
 a nonexistent column, so the error can't be used to distinguish
-hidden-from-absent (the value-disclosure-oracle rationale — this also
+hidden-from-absent (the value-disclosure-oracle rationale; this also
 holds for nested relation filters like `?author.password_hash_like=`).
 Reserved list controls (`sort`, `page`, `limit`, `per_page`, `offset`,
 `cursor`, `direction`, `where`, `fields`, `include`, `trashed`, `stream`,
 `q`) and nested relation filters (dotted keys like `?author.name=alice`)
 are never treated as unknown filters. A declared **column** whose name
 collides with a control word (say a field literally named `stream`) still
-filters — a known field always wins over the reserved-word skip, so it is
+filters: a known field always wins over the reserved-word skip, so it is
 never silently swallowed.
 
 **Custom params.** An endpoint that reads its own non-column query params
@@ -956,13 +956,13 @@ app.Entity("things", entity.EntityConfig{
 **Escape hatch.** To tolerate *arbitrary* extra params (e.g. legacy
 tracking params) rather than an enumerated set, opt back into the old
 drop-silently behavior with `EntityConfig.LenientFilters: true`. Prefer
-`AllowedFilterParams` or fixing the caller — a dropped filter is a
+`AllowedFilterParams` or fixing the caller: a dropped filter is a
 data-exposure hazard.
 
 ## Nested predicate filters (`?where=`)
 
 The flat `?field_op=value` params AND-compose. When you need **boolean
-logic** — OR-groups, nested AND/OR — pass a predicate tree as a JSON
+logic**, OR-groups or nested AND/OR, pass a predicate tree as a JSON
 value in `?where=`:
 
 ```
@@ -984,12 +984,12 @@ Operators are the same set as the flat params: `eq, gt, lt, gte, lte,
 like, in`.
 
 **Safety.** Every field is validated against the entity's schema
-(Hidden fields rejected — the same value-disclosure-oracle rationale as
+(Hidden fields rejected; the same value-disclosure-oracle rationale as
 flat filters); every value is a bound placeholder, never string-
 interpolated; unknown fields/operators, malformed JSON, or a tree
 exceeding the depth (8) or node (64) bounds return **400**. The whole
 tree compiles to **one** parenthesized WHERE clause, so it AND-composes
-with owner, tenant, and soft-delete scopes exactly like `?q=` — a user
+with owner, tenant, and soft-delete scopes exactly like `?q=`: a user
 OR-group can never widen past those scopes. `?where=` combines (AND)
 with any flat `?field_op=` params on the same request.
 
@@ -1003,7 +1003,7 @@ gofastr generate --from=gofastr.yml
 
 This scaffolds the owned entity package into `entities/` at the module root:
 
-- `register.go` with `RegisterAll(app *framework.App)` — the fixed seam.
+- `register.go` with `RegisterAll(app *framework.App)`: the fixed seam.
   It carries no entity name, so adding an entity never edits it.
 - one `<entity>.go` per declared entity: model struct, typed column
   constants, typed repository, lifecycle subscriptions, and its own
@@ -1016,18 +1016,18 @@ This scaffolds the owned entity package into `entities/` at the module root:
   `{committed, results[]}` envelope even on rollback), and the live
   `_events` feed (`Watch<Entity>`, a blocking SSE loop). Setting the
   client's `Token` field sends it as `Authorization: Bearer <token>` on
-  every request — pair with a scoped API token
+  every request: pair with a scoped API token
   ([auth](auth.md#service-accounts--scoped-api-tokens)); leave empty for
   public or cookie-authenticated APIs.
 
 A blueprint that declares `app.module` also emits a flat `package main` at the
 root (`main.go` plus `app.go`, `screens_register.go`, one `screen_<name>.go`
 per screen, and `stubs.go` for endpoint/seed stubs). These are owned Go you
-read, edit, and commit — no `DO NOT EDIT` header. See
+  read, edit, and commit; no `DO NOT EDIT` header. See
 [Blueprints](blueprints.md) for the full blueprint shape, including the
 [generated screen file layout](blueprints.md#generated-screen-files). To add
 in-page dynamic behavior to those screens (sort, paginate, mutate without a
-reload), build islands — the cookbook is
+  reload), build islands: the cookbook is
 [interactive-patterns](interactive-patterns.md).
 
 Useful flags:
@@ -1036,7 +1036,7 @@ Useful flags:
 - `--dry-run` lists generated files without writing.
 - `--json` emits machine-readable output.
 - `--out=<dir>` scaffolds into a subpackage instead of the module root (also
-  settable as `app.output_dir` in the blueprint) — useful for monorepos and
+  settable as `app.output_dir` in the blueprint); useful for monorepos and
   examples that host their own Go test package.
 - `--force` overwrites existing files. `generate` is one-shot: with no
   `--force` it refuses to write into a directory that already holds any target
@@ -1050,13 +1050,13 @@ Useful flags:
 
 For a fast stub with no yml, `generate entity|screen <name>` synthesizes a
 minimal one-piece fragment and runs it through the same additive path as
-`--add` — so the new entity/screen continues the project's declaration order,
+`--add`, so the new entity/screen continues the project's declaration order,
 existing files are never overwritten, and `--out`, `--dry-run`, and `--json`
 work as above. `--force` and `--add` are rejected (scaffolding is additive):
 
-* `gofastr generate entity posts` — `entities/posts.go` with one placeholder
+* `gofastr generate entity posts`: `entities/posts.go` with one placeholder
   `name` field (a required string) you rename; CRUD stays default.
-* `gofastr generate screen contact` — `screen_contact.go` at `/contact` with
+* `gofastr generate screen contact`: `screen_contact.go` at `/contact` with
   a heading + stub paragraph whose `Render` you replace.
 
 See [Quick scaffolds](blueprints.md#quick-scaffolds-generate-entityscreen) in
@@ -1066,14 +1066,14 @@ For arbitrary configured generators (not a full app blueprint), use a
 `gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
 config discovery, the extension protocol, and manifest-based cleaning.
 
-To ship the API as a branded terminal client for your customers —
-token auth, filter/sort/pagination flags, batch verbs, a live `watch`
-feed — run `gofastr generate cli` from the app root. See
+To ship the API as a branded terminal client for your customers,
+with token auth, filter/sort/pagination flags, batch verbs, and a live `watch`
+feed, run `gofastr generate cli` from the app root. See
 [Ship your API as a CLI](app-cli.md).
 
 ## Mounting under a prefix (`APIPrefix`)
 
-By default an entity's CRUD routes mount at its bare name — `GET /posts`,
+By default an entity's CRUD routes mount at its bare name: `GET /posts`,
 `POST /posts/_batch`, `GET /posts/_events`. To move every auto-CRUD route under
 a path prefix (the usual `/api`), set `AppConfig.APIPrefix` (or the
 `framework.WithAPIPrefix` option):
@@ -1092,7 +1092,7 @@ home page at `/posts` vs. the `posts` CRUD): put the data routes under `/api`
 and let the UI own the bare paths. The generated OpenAPI spec expresses the
 prefix via its server URL, so `/openapi.json` stays consistent, and **MCP tool
 names are unchanged** (`posts_list`, not `api_posts_list`). `GroupEntity`
-routes are unaffected — a route group owns its own prefix. Leaving `APIPrefix`
+routes are unaffected: a route group owns its own prefix. Leaving `APIPrefix`
 empty keeps the bare mounts, so adding it is never a breaking change.
 
 > **Common mistake:** registering a screen at `/posts` while a `posts` entity
@@ -1104,7 +1104,7 @@ empty keeps the bare mounts, so adding it is never a breaking change.
 Each writable entity mounts `POST /<entity>`, `PUT /<entity>/{id}`, and
 `PATCH /<entity>/{id}`. Both PUT and PATCH are sparse: validation and SQL
 updates apply only to the fields present in the JSON body, so neither verb
-nulls an omitted column — they are wired to the same update path and differ
+nulls an omitted column: they are wired to the same update path and differ
 only in the HTTP method clients use to express intent. Both use the same
 access, owner and tenant scopes, update hooks, audit pre-image, and
 transaction path. The generated typed client exposes both `Update<Entity>`
@@ -1139,7 +1139,7 @@ POST /api/policies
 ```
 
 The column stores JSON text (`JSONB` on PostgreSQL, `TEXT` on SQLite) and
-reads back parsed, so what a client sends is what it reads back — on
+reads back parsed, so what a client sends is what it reads back: on
 create, update, get, list, cursor pages, `?stream=true`, and rows pulled
 in through `?include=`.
 
@@ -1148,7 +1148,7 @@ Three rules worth knowing:
 - **A string is JSON text, stored verbatim.** `{"features":"{\"seats\":5}"}`
   writes the same document as the object form. That is what an admin
   textarea submits.
-- **Absent and `null` are the same thing** — both leave the column NULL and
+- **Absent and `null` are the same thing**: both leave the column NULL and
   read back as `null`. `{}` is distinct: it stores and returns `{}`.
 - **Text that is not JSON reads back unchanged**, so a legacy `TEXT` column
   promoted to `json` keeps serving its existing rows.
@@ -1166,14 +1166,14 @@ When an entity sets `"mcp": true`, GoFastr registers CRUD tools:
 The tools use the same validation and CRUD handler behavior as HTTP routes.
 
 In the dev loop (`gofastr dev`; opt-out `GOFASTR_DEV_MCP=0`) these tools
-register for **every CRUD-enabled entity** — no per-entity `mcp: true`
-needed — so the local agent can read and write app data. Production
+register for **every CRUD-enabled entity**, with no per-entity `mcp: true`
+needed, so the local agent can read and write app data. Production
 keeps the explicit flag as the only path. Entities with `crud: false`
 (e.g. the auth battery's users/sessions configs) are never implied:
 MCP tools dispatch through the CRUD routes, so no routes means no
 tools, in dev or out.
 
-`/openapi.json` follows the same rule — an entity with `crud: false`
+`/openapi.json` follows the same rule: an entity with `crud: false`
 contributes no paths, because the server answers 404 for every one of
 them and an SDK generated from the spec would ship methods that cannot
 work. Its schema component stays, so hand-written `Endpoints` that speak
@@ -1203,13 +1203,13 @@ entity table path (`{id}/publish`). Both `{id}` and `:id` parameter syntax are
 accepted.
 
 Under `WithAPIPrefix` a **relative** path resolves under the prefixed table
-path — `WithAPIPrefix("/api")` mounts `{id}/publish` on entity `posts` at
+path: `WithAPIPrefix("/api")` mounts `{id}/publish` on entity `posts` at
 `POST /api/posts/{id}/publish`, alongside that entity's CRUD routes. An
 absolute path bypasses the prefix; use it to mount outside the entity's API
 namespace.
 
 Note the auth asymmetry: the HTTP `Handler` runs behind the route
-middleware chain, but the `MCPHandler` twin is invoked directly — no route
+middleware chain, but the `MCPHandler` twin is invoked directly: no route
 middleware, so no per-caller auth of its own. **The twin therefore defaults
 to requiring an authenticated caller.** Declare something stricter with
 `MCPGate`, or opt out with `MCPPublic` for an endpoint that really is
@@ -1230,9 +1230,9 @@ See [plugins](plugins.md) → MCP tool gating.
 
 By default a custom endpoint is shapeless to generators: OpenAPI emits a bare
 `{type: object}` request/response and the MCP tool advertises an empty
-`{type: object}` input schema — useless SDK stubs and agent tools. Describe the
+`{type: object}` input schema: useless SDK stubs and agent tools. Describe the
 request body and the success (200) response with the **optional** `InputSchema`
-and `OutputSchema` fields. Both take `[]schema.Field` — the same representation
+and `OutputSchema` fields. Both take `[]schema.Field`: the same representation
 the entity's own CRUD schema is built from, so OpenAPI and the generated MCP
 tool consume one source:
 
@@ -1263,28 +1263,28 @@ input schema. Both fields are optional: leave them `nil` to keep the historical
 - **Exposing per-user data without `OwnerField`.** The warning at the
   top of this page is the #1 footgun: auto-CRUD with no `OwnerField`
   lets every authenticated user read (and write) every row. Set it on
-  any entity holding per-user data — List/Get/Update/Delete scope to
+  any entity holding per-user data: List/Get/Update/Delete scope to
   the current user and Create stamps the column automatically.
 - **Reaching for `public: true` to fix a 401 in dev.** The 401 an
   anonymous entity returns by default (see **Default CRUD
-  authentication** above) is the framework working as intended — the
+  authentication** above) is the framework working as intended: the
   fix is almost always to send a session, not to declare the entity
   `public`. `public: true` opens BOTH reads and writes to anyone; use it
   only for content that's genuinely meant to be public (a contact form,
   a blog's comments), never as a quick way past a login wall during
   development.
 - **Setting `OwnerField` in an app that never wires an owner
-  extractor.** Without a registered extractor the field is inert — no
+  extractor.** Without a registered extractor the field is inert: no
   scoping, no stamping, no error. Importing `battery/auth` registers
   one in `init()`; pair it with `auth.SessionMiddleware` so
   cookie-authenticated requests carry a user.
 - **Setting `Access` and forgetting the policy middleware.** The CRUD
-  gate is fail-closed: a context without the permission gets 403 — so
+  gate is fail-closed: a context without the permission gets 403, so
   without `framework.AccessMiddleware` (with a policy feeding roles
   into the context), *every* request to that operation 403s, including
   legitimate ones. `battery/auth` alone does not satisfy the gate.
 - **Expecting a `relation` field to model has-many.** A relation field
-  declares a BelongsTo — the FK lives in the field's own column, and
+  declares a BelongsTo: the FK lives in the field's own column, and
   the matching relation is derived for you. Has-many keeps its FK on
   the *other* table and must be declared explicitly via
   `HasMany`/`Relations`.

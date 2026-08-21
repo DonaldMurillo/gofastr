@@ -43,7 +43,7 @@ func TestJWKSCache_PerKidRefetchNotWedged(t *testing.T) {
 		t.Fatal("bogus kid should not resolve")
 	}
 	// 3. kid-b (legitimately rotated in) must still get its own forced
-	//    refetch (hit 3) despite bogus having just refetched — under a global
+	//    refetch (hit 3) despite bogus having just refetched, under a global
 	//    limiter this returns an error with no new fetch.
 	if _, err := c.getKey(ctx, srv.URL, "kid-b"); err != nil {
 		t.Fatalf("kid-b wedged by bogus kid's spent slot: %v", err)

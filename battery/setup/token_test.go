@@ -320,7 +320,7 @@ func TestCookie_HTTPExchangeFlowWithJar(t *testing.T) {
 		t.Fatalf("exchange expected 303, got %d", resp.StatusCode)
 	}
 
-	// Follow-up: GET /setup — cookie jar must return the cookie.
+	// Follow-up: GET /setup, cookie jar must return the cookie.
 	resp, err = client.Get(server.URL + "/setup")
 	if err != nil {
 		t.Fatalf("get /setup: %v", err)

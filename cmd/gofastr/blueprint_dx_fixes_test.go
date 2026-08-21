@@ -20,7 +20,7 @@ func stubFontFetcher(t *testing.T, fn func(family string) ([]byte, error)) {
 // ---- Item 1: self-hosted fonts ------------------------------------------
 
 // A theme naming fonts must ship the matching woff2 files, and every file the
-// emitted @font-face references must actually exist in the file set — no
+// emitted @font-face references must actually exist in the file set. No
 // silent /fonts/*.woff2 404.
 func TestFontsShippedMatchCSS(t *testing.T) {
 	stubFontFetcher(t, func(family string) ([]byte, error) {
@@ -51,7 +51,7 @@ func TestFontsShippedMatchCSS(t *testing.T) {
 	if strings.Contains(appGo, "@font-face {") {
 		t.Fatalf("the generator baked CSS into the app instead of composing style.FontFaceCSS:\n%s", appGo)
 	}
-	// The URLs those families resolve to must still be the shipped files —
+	// The URLs those families resolve to must still be the shipped files:
 	// same slug function on both sides, so they cannot drift.
 	css := blueprintFontFaceCSS(bp.App.Theme)
 	for _, ref := range []string{"/fonts/test-sans.woff2", "/fonts/demo-serif.woff2"} {
@@ -66,7 +66,7 @@ func TestFontsShippedMatchCSS(t *testing.T) {
 }
 
 // When the generate-time fetch fails (offline), the app is still emitted but
-// the missing files are reported so generate can warn — no silent fallback.
+// the missing files are reported so generate can warn. No silent fallback.
 func TestFontsOfflineReportedMissing(t *testing.T) {
 	stubFontFetcher(t, func(family string) ([]byte, error) {
 		return nil, errStubOffline
@@ -191,7 +191,7 @@ screens:
 // ---- Item 3: seed enum distribution --------------------------------------
 
 // The default (unweighted) distribution of a count-seed must NOT be a uniform
-// N/K split — that's the "8/8/8/8" round-robin the fix removes.
+// N/K split, the "8/8/8/8" round-robin the fix removes.
 func TestSeedDefaultDistributionNotUniform(t *testing.T) {
 	values := []string{"open", "in_progress", "resolved", "closed"}
 	seq := blueprintEnumDistribution("ticket", "status", values, nil, 30)
@@ -311,7 +311,7 @@ func keysOf(m map[string]string) []string {
 // The generated e2e suite drives a subprocess over real HTTP, so it never
 // touches framework.TestHarness. Without GOFASTR_SEMANTIC_COVERAGE on the
 // server's env, every route that suite covers reports as unreached by
-// `gofastr verify` — a thorough e2e suite scoring zero.
+// `gofastr verify`, a thorough e2e suite scoring zero.
 func TestGeneratedE2ESetsSemanticCoverageEnv(t *testing.T) {
 	stubFontFetcher(t, func(family string) ([]byte, error) { return []byte("x"), nil })
 	bp := Blueprint{
@@ -328,7 +328,7 @@ func TestGeneratedE2ESetsSemanticCoverageEnv(t *testing.T) {
 		t.Fatalf("generated e2e test does not enable semantic coverage on the server:\n%s", e2e)
 	}
 	// It must sit on the SAME env the server subprocess gets, not on the
-	// test process — the recording happens server-side.
+	// test process. The recording happens server-side.
 	if !strings.Contains(e2e, `srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1"`) {
 		t.Fatalf("the variable is not on the server subprocess env:\n%s", e2e)
 	}

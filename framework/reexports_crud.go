@@ -76,7 +76,7 @@ func NewValidationError(fields map[string][]string) *crud.ValidationError {
 	return crud.NewValidationError(fields)
 }
 
-// TypedQuery and NewTypedQuery are generics — declared as wrappers since Go
+// TypedQuery and NewTypedQuery are generics, declared as wrappers since Go
 // generic type aliases / generic var bindings are recent.
 
 type TypedQuery[T any] = crud.TypedQuery[T]

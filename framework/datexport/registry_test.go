@@ -6,7 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
 )
 
-// The registry stores entries verbatim — identifier validation (SafeIdent /
+// The registry stores entries verbatim, identifier validation (SafeIdent /
 // MustIdent) is deliberately NOT here; it happens at the SQL-building sites
 // in framework/export_data.go and framework/erase_data.go. These tests cover
 // the guarantees the registry itself makes: last-writer-wins dedup by Name,

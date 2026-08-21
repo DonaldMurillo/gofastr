@@ -1,6 +1,6 @@
 package ui
 
-// Hero — a single-column editorial hero for marketing/landing surfaces:
+// Hero: a single-column editorial hero for marketing/landing surfaces:
 // an optional eyebrow pill, a large display title, a supporting lede, and a
 // row of call-to-action buttons. When Media is supplied it becomes a
 // two-column split (copy + media) that collapses to one column on small

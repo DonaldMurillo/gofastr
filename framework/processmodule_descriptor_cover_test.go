@@ -100,7 +100,7 @@ func TestNonGrantableReason_carveOuts(t *testing.T) {
 			t.Errorf("nonGrantableReason(%q) = %q, want empty", p, reason)
 		}
 	}
-	// Malformed (no colon) is not carved out here — ValidScope rejects it.
+	// Malformed (no colon) is not carved out here. ValidScope rejects it.
 	if reason := nonGrantableReason(access.Permission("garbage")); reason != "" {
 		t.Errorf("nonGrantableReason(garbage) = %q, want empty (ValidScope handles)", reason)
 	}

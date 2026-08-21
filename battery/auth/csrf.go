@@ -23,8 +23,8 @@ const CSRFHeaderName = "X-CSRF-Token"
 // protection on unsafe HTTP methods (POST/PUT/PATCH/DELETE).
 //
 // Behaviour:
-//   - GET/HEAD/OPTIONS — sets the token cookie if missing; lets request through.
-//   - POST/PUT/PATCH/DELETE — verifies the request header X-CSRF-Token
+//   - GET/HEAD/OPTIONS, sets the token cookie if missing; lets request through.
+//   - POST/PUT/PATCH/DELETE, verifies the request header X-CSRF-Token
 //     (JSON path) OR a hidden _csrf form field (HTML form path) matches
 //     the cookie value AND has a valid HMAC signature.
 //   - Bearer-token / X-API-Key requests are skipped (not cookie-based).
@@ -44,7 +44,7 @@ func CSRF(opts ...CSRFOption) middleware.Middleware {
 		HeaderName: CSRFHeaderName,
 		FormField:  CSRFFormField,
 		// Bearer-auth requests carry no ambient credential, and neither do
-		// embed endpoints — no cookie is ever sent from inside an embed frame,
+		// embed endpoints, no cookie is ever sent from inside an embed frame,
 		// so a double-submit check there would 403 every exchange with
 		// "missing cookie" and the feature would be dead in exactly the
 		// configuration this framework recommends. See embed.CSRFExempt.
@@ -62,7 +62,7 @@ func CSRF(opts ...CSRFOption) middleware.Middleware {
 	// deciding it at construction from cfg.CookieSecure missed the
 	// standard TLS-terminating-proxy deployment, where the host never
 	// calls WithCSRFCookieSecure(true) and the request-time signal is
-	// X-Forwarded-Proto. The cookie was Secure and plainly named — the
+	// X-Forwarded-Proto. The cookie was Secure and plainly named, the
 	// two halves of the same decision disagreeing. A host that overrode
 	// CookieName via WithCSRFCookieName keeps their override verbatim.
 	if cfg.CookieName == CSRFCookieName {
@@ -93,7 +93,7 @@ func WithCSRFCookieName(name string) CSRFOption {
 }
 
 // WithDevCSRFKey loads (or creates+writes) a stable HMAC key from path
-// and uses it as SecretKey. Intended for dev only — survives process
+// and uses it as SecretKey. Intended for dev only, survives process
 // restarts so browsers don't 403 on the next form submit after every
 // dev-server reload (V3 #5). In production, use WithCSRFSecret with a
 // value sourced from your secret manager.
@@ -118,7 +118,7 @@ func WithDevCSRFKey(path string) CSRFOption {
 //
 //	app.Use(auth.CSRF(auth.WithCSRFSkipPaths("/webhooks/", "/health")))
 //
-// Path matching is literal string-prefix — see middleware.CSRFSkipper.
+// Path matching is literal string-prefix. See middleware.CSRFSkipper.
 func WithCSRFSkipPaths(prefixes ...string) CSRFOption {
 	return func(c *middleware.CSRFConfig) {
 		skipper := middleware.NewCSRFSkipper()
@@ -138,7 +138,7 @@ func WithCSRFSkipPaths(prefixes ...string) CSRFOption {
 // value stashed on ctx by middleware.CSRF (which works on the SAME
 // request that minted the cookie); falls back to reading the cookie
 // (for follow-up requests where the cookie is already in r.Cookies()).
-// Returns "" when no token is available — typically because the
+// Returns "" when no token is available, typically because the
 // route isn't behind CSRF middleware.
 func CSRFToken(r *http.Request) string {
 	if tok := middleware.TokenFromContext(r.Context()); tok != "" {
@@ -155,14 +155,14 @@ func CSRFToken(r *http.Request) string {
 
 // CSRFInputHTML returns the hidden <input> markup callers embed inside
 // every HTML form they submit through the framework runtime. Safe for
-// template/html — returns template.HTML so it isn't double-escaped.
+// template/html, returns template.HTML so it isn't double-escaped.
 //
 //	<form method="POST" action="/save">
 //	  {{ auth.CSRFInputHTML .Request }}
 //	  …
 //	</form>
 //
-// When no token cookie is present yet, CSRFInputHTML returns "" — the
+// When no token cookie is present yet, CSRFInputHTML returns "", the
 // next safe-method request to a CSRF-protected route will set the
 // cookie, so the typical page flow lands the token before any form
 // renders.
@@ -176,7 +176,7 @@ func CSRFInputHTML(r *http.Request) template.HTML {
 
 // CSRFTokenFromCtx returns the request's CSRF token from a context. It
 // reads the value the CSRF middleware stashes on ctx via
-// middleware.TokenFromContext — works on the SAME request that minted
+// middleware.TokenFromContext, works on the SAME request that minted
 // the cookie, where the cookie isn't in r.Cookies() yet. Returns "" if
 // the route isn't behind CSRF middleware or no token is available.
 //
@@ -187,7 +187,7 @@ func CSRFTokenFromCtx(ctx context.Context) string {
 	return middleware.TokenFromContext(ctx)
 }
 
-// CSRFInputFromCtx is the ctx-based counterpart to CSRFInputHTML — same
+// CSRFInputFromCtx is the ctx-based counterpart to CSRFInputHTML, same
 // hidden-input markup, derived from middleware.TokenFromContext. Use
 // from core-ui Screen.Render where only ctx is in scope:
 //
@@ -210,7 +210,7 @@ func renderCSRFInput(tok string) template.HTML {
 	if tok == "" {
 		return ""
 	}
-	// tok is base64url + "." + base64url(HMAC) — no HTML metachars need
+	// tok is base64url + "." + base64url(HMAC), no HTML metachars need
 	// escaping. EscapeString is still applied as defense in depth.
 	return template.HTML(`<input type="hidden" name="` + CSRFFormField +
 		`" value="` + template.HTMLEscapeString(tok) + `">`)

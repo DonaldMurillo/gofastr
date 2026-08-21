@@ -9,7 +9,7 @@ import (
 )
 
 // BrokerScriptURL is the platform route serving the generic host broker
-// (host/pluginhost.js). It is shared by every heavy-JS plugin — the same script
+// (host/pluginhost.js). It is shared by every heavy-JS plugin, the same script
 // is injected once per host page and dispatches to per-plugin adapters.
 const BrokerScriptURL = "/__gofastr/plugin/host/pluginhost.js"
 
@@ -31,7 +31,7 @@ func RegisterBrokerRoute(rt *router.Router) {
 	}
 	rt.Get(BrokerScriptURL, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The broker is a host-page script (full privileges), NOT a framed
-		// asset — no CORP/CSP relaxation. It is same-origin and CSP-clean
+		// asset, no CORP/CSP relaxation. It is same-origin and CSP-clean
 		// (external <script src>, no inline JS).
 		writeAsset(w, r, brokerJSBytes, "text/javascript; charset=utf-8", false)
 	}))

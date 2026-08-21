@@ -238,7 +238,7 @@ func (recordingComp) Render() render.HTML { return render.HTML("<p>alt</p>") }
 // concurrency test: N distinct gated screens share a single alt
 // factory, so parallel goroutines hit DIFFERENT screens (each with
 // its own mu) and the factory contract is exercised under genuine
-// parallelism — not the per-screen serialization that
+// parallelism, not the per-screen serialization that
 // TestRenderAlt_FactoryPerRequest had.
 func TestRenderAlt_FactoryConcurrentAcrossScreens(t *testing.T) {
 	const numScreens = 8

@@ -31,7 +31,7 @@ func logSlogWarnDefault(msg string) {
 // CookieName / HeaderName must match what the client sends back; defaults
 // are sensible.
 //
-// Skip is consulted on every request — return true to bypass the check
+// Skip is consulted on every request; return true to bypass the check
 // entirely (e.g., for endpoints authenticated by Bearer tokens or API
 // keys, which aren't subject to CSRF since they don't ride on cookies).
 //
@@ -56,19 +56,19 @@ type CSRFConfig struct {
 
 	// HostPrefixWhenSecure promotes a caller-supplied CookieName to
 	// "__Host-"+CookieName on requests the middleware considers secure,
-	// resolved PER REQUEST — the same signal that decides the Secure
+	// resolved PER REQUEST, the same signal that decides the Secure
 	// flag (r.TLS or X-Forwarded-Proto), not construction-time
 	// CookieSecure.
 	//
 	// The two had drifted: with TLS terminated at a proxy and the host
 	// never setting CookieSecure, the cookie came back Secure but named
-	// plainly, so the __Host- guarantee — the thing stopping a sibling
-	// subdomain from planting a valid token — silently did not apply.
+	// plainly, so the __Host- guarantee, the thing stopping a sibling
+	// subdomain from planting a valid token, silently did not apply.
 	// A CookieName that already carries the prefix is left alone.
 	HostPrefixWhenSecure bool
 
 	// SecretKey is the HMAC key used to sign the CSRF token. Empty means
-	// the middleware autogenerates a per-process key on first use —
+	// the middleware autogenerates a per-process key on first use;
 	// fine for single-instance dev, NOT acceptable for production
 	// (each restart and each fleet replica gets a different key, so
 	// in-flight tokens silently 403). Call WarnIfCSRFUnconfigured at
@@ -93,8 +93,8 @@ type CSRFConfig struct {
 
 	// MaxFormBytes caps how much of a form-encoded request body the
 	// middleware will buffer when probing for FormField. Defaults to
-	// 1 MiB. Bodies above the cap return 413 before any allocation —
-	// without this, an unauthenticated attacker could force the
+	// 1 MiB. Bodies above the cap return 413 before any allocation.
+	// Without this, an unauthenticated attacker could force the
 	// process to buffer up to 10 MB (form-urlencoded) or 32 MB
 	// (multipart) per request just to land in the signature-mismatch
 	// branch. Set to a smaller value for endpoints that never carry
@@ -167,7 +167,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 	}
 	ensureCSRFKey(&cfg)
 	// Resolve the cookie name. __Host- prefix requires Path=/, Secure,
-	// and no Domain — all of which we satisfy. The browser refuses to
+	// and no Domain, all of which we satisfy. The browser refuses to
 	// accept a __Host- cookie set from a sibling subdomain.
 	resolveCookieName := func(secure bool) string {
 		if cfg.CookieName != "" {
@@ -198,12 +198,12 @@ func CSRF(cfg CSRFConfig) Middleware {
 				// Set a signed token cookie if the client doesn't have one
 				// yet. EITHER way, stash the token value on ctx so the
 				// downstream template helper (CSRFInputHTML) can render
-				// the hidden input on the same request — without that,
+				// the hidden input on the same request. Without that,
 				// the first GET's response has the cookie but the body
 				// has no token (the cookie isn't in r.Cookies() yet).
 				//
 				// Skip the cookie/ctx work entirely when an outer CSRF
-				// middleware already stashed a token on ctx — nested
+				// middleware already stashed a token on ctx; nested
 				// instances would otherwise emit duplicate Set-Cookie
 				// headers (browser keeps the last, but it's noisy and
 				// can race with operator-rotated keys).
@@ -243,7 +243,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 				return
 			}
 
-			// Unsafe method — verify header (or form-body fallback) matches
+			// Unsafe method: verify header (or form-body fallback) matches
 			// cookie AND signature is valid.
 			cookie, err := r.Cookie(cookieName)
 			if err != nil {
@@ -269,7 +269,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 				return
 			}
 			if !verifySignedTokenAny(cookie.Value, cfg.SecretKey, cfg.AdditionalKeys) {
-				// Header matched cookie but the signature is bogus — i.e.
+				// Header matched cookie but the signature is bogus, i.e.
 				// an attacker planted both via a subdomain and didn't
 				// have the signing key (and the additional rotation
 				// keys, if any, also rejected). Reject.
@@ -312,7 +312,7 @@ func readAndBufferCapped(r *http.Request, cap int64) ([]byte, error) {
 
 // parseFormField extracts the named field from a buffered request body,
 // handling either application/x-www-form-urlencoded or multipart/form-data.
-// Returns "" when the field is missing or the body is malformed —
+// Returns "" when the field is missing or the body is malformed;
 // the caller treats either as "no token submitted" and rejects.
 func parseFormField(body []byte, contentType, name string) string {
 	mediaType, params, err := mime.ParseMediaType(contentType)
@@ -391,7 +391,7 @@ func generateSignedCSRFToken(secret []byte) (string, error) {
 // signed by the previous SecretKey while minting new ones under the
 // rolled key.
 //
-// Runs ALL key checks even after a match — early-return on match would
+// Runs ALL key checks even after a match; early-return on match would
 // leak (via timing) which key signed the token, useful to an attacker
 // who wants to identify sessions signed by the old, soon-to-be-dropped
 // rotation key.
@@ -401,7 +401,7 @@ func verifySignedTokenAny(value string, primary []byte, additional [][]byte) boo
 		if len(k) == 0 {
 			continue
 		}
-		// Don't short-circuit — the cost of one extra HMAC per request
+		// Don't short-circuit; the cost of one extra HMAC per request
 		// is negligible vs. the cost of a rotation-key timing oracle.
 		if verifySignedCSRFToken(value, k) {
 			ok = true
@@ -428,7 +428,7 @@ func verifySignedCSRFToken(value string, secret []byte) bool {
 // relies on the per-process auto-generated SecretKey. Hosts should
 // call this once at startup. Multi-instance deploys silently break
 // without a shared SecretKey because every replica signs tokens with
-// a different per-process key — verification fails when a request
+// a different per-process key; verification fails when a request
 // lands on a different replica than the one that minted the cookie.
 //
 // Passing nil for logger uses slog.Default. Safe to call with any
@@ -440,7 +440,7 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 		return
 	}
 	if logger == nil {
-		// stdlib slog default — keeps this package log-implementation-agnostic.
+		// stdlib slog default; keeps this package log-implementation-agnostic.
 		// Importing log/slog here is fine; it's stdlib since Go 1.21.
 		logSlogWarnDefault("CSRF SecretKey not configured — auto-generated per-process key will not survive restart and will reject form submits across multi-instance deploys. Set CSRFConfig.SecretKey for production.")
 		return
@@ -450,7 +450,7 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 }
 
 // SkipBearerAuth returns a Skip predicate suitable for CSRFConfig.Skip that
-// bypasses requests using Authorization: Bearer or Api-Key headers — those
+// bypasses requests using Authorization: Bearer or Api-Key headers; those
 // don't ride on cookies and so aren't subject to CSRF.
 func SkipBearerAuth() func(*http.Request) bool {
 	return func(r *http.Request) bool {

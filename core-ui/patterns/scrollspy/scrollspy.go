@@ -4,7 +4,7 @@
 // whose target is currently in view.
 //
 // This is the standalone pattern extracted from the TOC widget's
-// runtime — use it for sidebars, sticky in-page nav bars, or any
+// runtime, use it for sidebars, sticky in-page nav bars, or any
 // list of `<a href="#id">` links that should reflect scroll position.
 //
 // Wiring:
@@ -37,7 +37,7 @@ type Config struct {
 	// ".doc-body"). Required.
 	ObserveSelector string
 
-	// TargetSelector overrides the default "h2[id], h3[id]" — set it
+	// TargetSelector overrides the default "h2[id], h3[id]", set it
 	// when the section anchors aren't headings (e.g. "section[id]",
 	// "[data-spy]").
 	TargetSelector string

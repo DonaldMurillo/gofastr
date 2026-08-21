@@ -25,9 +25,9 @@ import (
 // This used to be the other way round: relative path keys ("/posts") plus a
 // servers[0].url of "/api". That composes to the same URL and is legal
 // OpenAPI, but it is the one form that misleads a reader who takes `paths`
-// literally — and that reader is this framework's primary audience. The
+// literally, and that reader is this framework's primary audience. The
 // 2026-07-26 backend eval reproduced the confusion twice, in both its agent
-// and its deterministic grader, and ranked fixing it as the highest-leverage
+// and its deterministic grader, and ranked fixing it as the most valuable
 // change available. Repeating the prefix in `servers` as well would double it
 // to /api/api/posts for any client that composes the two, so it does not.
 func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...string) *openapi.Spec {
@@ -97,7 +97,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 	// schemes are registered once after the loop, not per entity.
 	anyGated := false
 	// Generate schema + paths for each entity. Use AllSorted so the
-	// emitted /openapi.json bytes are stable across restarts —
+	// emitted /openapi.json bytes are stable across restarts,
 	// otherwise the tag array order tracks Go's randomised map
 	// iteration, breaking ETag caching and golden-file diffs.
 	for _, ent := range registry.AllSorted() {
@@ -106,7 +106,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		fields := ent.GetFields()
 
 		// Version-aware disambiguation. Unversioned entities (App.Entity)
-		// keep the historical bare names — schema "posts", tag "posts",
+		// keep the historical bare names, schema "posts", tag "posts",
 		// path "/posts". Versioned entities (App.GroupEntity) carry the
 		// group prefix as Version; we derive a slug from it so two versions
 		// of the same entity produce non-colliding schema component names,
@@ -137,7 +137,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// WireName verbatim when set, else the historical camelCase of the
 		// DB column). The entity schema is built from snake_case field
 		// Names; this step translates them to the wire keys clients see.
-		// Do NOT camelCase a WireName — it is the literal JSON key the
+		// Do NOT camelCase a WireName, it is the literal JSON key the
 		// entity chose to expose. wireKeyOf is the SAME resolution used by
 		// the ?fields= description and excludeFieldsByBehavior so every
 		// surface agrees on what a field is called on the wire.
@@ -169,7 +169,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// ("auto" ⇒ on) or explicitly true, so an entity that opted out
 		// answers 404 on every generated path. Advertising them anyway
 		// documents an API the server does not have, and an SDK built
-		// from the spec ships methods that cannot work — worst exactly
+		// from the spec ships methods that cannot work, worst exactly
 		// where the opt-out was deliberate (sensitive rows, or invariants
 		// owned by a server-side workflow).
 		//
@@ -177,7 +177,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// stays, and so do hand-written Endpoints: App mounts those
 		// outside its crudEnabled branch, so the server serves them
 		// either way, and an entity that opted out of auto-CRUD is the
-		// one most likely to carry them — opting out is how an app says
+		// one most likely to carry them, opting out is how an app says
 		// "reach this through the endpoints I declared". The tag is
 		// emitted only when something will carry it; an entity with
 		// neither CRUD nor endpoints would otherwise render as an empty
@@ -214,12 +214,12 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
 		// out via Public, or an explicit mechanism already governs it
-		// (owner-scoped, tenant-scoped, or an RBAC AccessControl rule —
+		// (owner-scoped, tenant-scoped, or an RBAC AccessControl rule,
 		// which additionally rejects authenticated-but-unpermitted
 		// callers with 403). The spec must advertise 401/403 on every
 		// entity except a Public one, so generated SDKs and agents don't
 		// assume a plain entity (no owner_field/access declared) is
-		// reachable anonymously — it isn't, unless Public: true says so.
+		// reachable anonymously, it isn't, unless Public: true says so.
 		rbacGated := ent.Config.Exposure.Access.Read != "" ||
 			ent.Config.Exposure.Access.Create != "" ||
 			ent.Config.Exposure.Access.Update != "" ||
@@ -252,7 +252,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		fieldsSchema := map[string]any{"type": "string"}
 
-		// --- GET /{table} — List ---
+		// --- GET /{table}: List ---
 		listOp := openapi.NewOperation()
 		listOp.Summary = "List " + entityName
 		listOp.OperationID = "list_" + schemaName
@@ -276,7 +276,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// Filter parameters use raw field names (e.g. "created_at_gt")
 		// because ParseFilters matches against the schema field names
 		// directly, plus a WireName alias when one is set. The wire key
-		// (WireName or raw Name — NOT camelCased) is what a client sends.
+		// (WireName or raw Name, NOT camelCased) is what a client sends.
 		// NoQuery fields are in the response schema but rejected by the
 		// filter parser under BOTH names, so advertising them here would
 		// generate SDK methods and agent calls that always 400.
@@ -301,7 +301,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 				listOp.AddParameter(name+"_lt", "query", name+" less than", false, filterSchema)
 				listOp.AddParameter(name+"_lte", "query", name+" less than or equal", false, filterSchema)
 			}
-			// _like is a substring match — only meaningful for text-ish
+			// _like is a substring match, only meaningful for text-ish
 			// fields, not booleans or JSON.
 			if fieldSupportsLike(f.Type) {
 				listOp.AddParameter(name+"_like", "query", name+" contains (LIKE)", false, filterSchema)
@@ -317,7 +317,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			listOp.AddParameter("q", "query", desc, false, map[string]any{"type": "string"})
 		}
 
-		// 200 is one of two envelopes — clients pick by whether they sent ?cursor.
+		// 200 is one of two envelopes, clients pick by whether they sent ?cursor.
 		listOp.AddResponse(200, "List of "+entityName, map[string]any{"oneOf": []any{listRef, cursorRef}})
 		listOp.AddResponse(400, "Invalid filters or unknown include", errorRef)
 		if gated {
@@ -328,7 +328,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddPath("GET", path, *listOp)
 
-		// --- POST /{table} — Create ---
+		// --- POST /{table}: Create ---
 		createOp := openapi.NewOperation()
 		createOp.Summary = "Create " + entityName
 		createOp.OperationID = "create_" + schemaName
@@ -347,7 +347,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddPath("POST", path, *createOp)
 
-		// --- GET /{table}/:id — Get by ID ---
+		// --- GET /{table}/:id: Get by ID ---
 		getOp := openapi.NewOperation()
 		getOp.Summary = "Get " + entityName + " by ID"
 		getOp.OperationID = "get_" + schemaName
@@ -365,7 +365,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		getOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("GET", path+"/:id", *getOp)
 
-		// --- PUT /{table}/:id — Update ---
+		// --- PUT /{table}/:id: Update ---
 		updateOp := openapi.NewOperation()
 		updateOp.Summary = "Update " + entityName
 		updateOp.OperationID = "update_" + schemaName
@@ -382,7 +382,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("PUT", path+"/:id", *updateOp)
 
-		// --- PATCH /{table}/:id — Sparse update ---
+		// --- PATCH /{table}/:id: Sparse update ---
 		patchOp := openapi.NewOperation()
 		patchOp.Summary = "Patch " + entityName
 		patchOp.OperationID = "patch_" + schemaName
@@ -401,7 +401,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		patchOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("PATCH", path+"/:id", *patchOp)
 
-		// --- DELETE /{table}/:id — Delete ---
+		// --- DELETE /{table}/:id: Delete ---
 		deleteOp := openapi.NewOperation()
 		deleteOp.Summary = "Delete " + entityName
 		deleteOp.OperationID = "delete_" + schemaName
@@ -418,7 +418,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
 
-		// --- POST /{table}/_batch — BatchCreate ---
+		// --- POST /{table}/_batch: BatchCreate ---
 		batchCreateBody := map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -445,7 +445,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddPath("POST", path+"/_batch", *batchCreateOp)
 
-		// --- PATCH /{table}/_batch — BatchUpdate ---
+		// --- PATCH /{table}/_batch: BatchUpdate ---
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
 				excludeFieldsByBehavior(entitySchema, fields),
@@ -478,7 +478,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
 
-		// --- GET /{table}/_events — SSE entity subscription stream ---
+		// --- GET /{table}/_events: SSE entity subscription stream ---
 		eventsOp := openapi.NewOperation()
 		eventsOp.Summary = "Subscribe to " + entityName + " events (SSE)"
 		eventsOp.OperationID = "events_" + schemaName
@@ -499,7 +499,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		s.AddPath("GET", path+"/_events", *eventsOp)
 
-		// --- DELETE /{table}/_batch — BatchDelete ---
+		// --- DELETE /{table}/_batch: BatchDelete ---
 		batchDeleteBody := map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -534,7 +534,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 	// endpoints as public. Both schemes are accepted per-operation; only
 	// the gated operations carry a `security` block, leaving public
 	// entities unmarked. This is deliberately NOT a global security
-	// requirement (Spec.AddSecurityRequirement) — that would hide the
+	// requirement (Spec.AddSecurityRequirement), that would hide the
 	// fact that ungated entities are anonymously reachable.
 	if anyGated {
 		// "__Host-session" is the production default the auth battery
@@ -658,7 +658,7 @@ func versionSlug(prefix string) string {
 // wireKeyOf returns the JSON wire key for a schema field: WireName
 // verbatim when set, else the camelCase of the DB column name. This is
 // the single wire-key resolution used by every OpenAPI surface that
-// names a field — response properties, the required list, the ?fields=
+// names a field, response properties, the required list, the ?fields=
 // projection description, and excludeFieldsByBehavior (request-schema
 // exclusion). Routing every surface through one function prevents the
 // class of bug where one surface advertises bodyText (camelCase of
@@ -682,7 +682,7 @@ func wireKeyOf(f schema.Field) string {
 }
 
 // hasCustomEndpoints reports whether the entity declares at least one
-// well-formed Endpoint — one that addCustomEndpoints will actually emit.
+// well-formed Endpoint, one that addCustomEndpoints will actually emit.
 func hasCustomEndpoints(ent *entity.Entity) bool {
 	for _, endpoint := range ent.Config.Endpoints {
 		if endpoint.Method != "" && endpoint.Path != "" {
@@ -708,7 +708,7 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		}
 		customOp.OperationID = DefaultEndpointToolName(schemaName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
 		customOp.Tags = []string{tagName}
-		// A typed InputSchema becomes the JSON request body — but only for
+		// A typed InputSchema becomes the JSON request body, but only for
 		// methods that carry one (GET/HEAD never do). Unset schemas fall
 		// back to today's shapeless {type:object} response and no body.
 		if len(endpoint.InputSchema) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {

@@ -27,7 +27,7 @@ type SignOutConfig struct {
 }
 
 // SignOut renders a logout control: a minimal form that POSTs to the auth
-// battery's logout endpoint. It is a POST (not a link) on purpose — a GET
+// logout endpoint. It is a POST (not a link) on purpose: a GET
 // logout is trivially triggerable by a stray <img> or prefetch. The button is
 // a real ui.Button, so it inherits the design system's styling.
 func SignOut(cfg SignOutConfig) render.HTML {

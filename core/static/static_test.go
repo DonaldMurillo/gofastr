@@ -205,7 +205,7 @@ func TestDirectoryListingDisabledByDefault(t *testing.T) {
 		Prefix: "/static",
 	})
 
-	// Request the root — should serve index.html, not a listing.
+	// Request the root. Should serve index.html, not a listing.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

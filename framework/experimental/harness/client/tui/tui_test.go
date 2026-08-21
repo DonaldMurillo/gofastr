@@ -31,13 +31,13 @@ func TestCtrlCWindow(t *testing.T) {
 	if exit := tui.handleCtrlC(); exit {
 		t.Fatal("first Ctrl-C shouldn't exit")
 	}
-	// Within 2 seconds — should exit.
+	// Within 2 seconds, should exit.
 	clock = 2_500_000_000
 	if exit := tui.handleCtrlC(); !exit {
 		t.Fatal("second Ctrl-C within 2s should exit")
 	}
 
-	// Far apart — first counts as fresh.
+	// Far apart, first counts as fresh.
 	tui.lastCtrlC = 0
 	clock = 10_000_000_000
 	if exit := tui.handleCtrlC(); exit {

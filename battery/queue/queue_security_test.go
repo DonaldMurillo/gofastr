@@ -89,7 +89,7 @@ func TestMemoryWorkerSurvivesHandlerPanic(t *testing.T) {
 
 // ============================================================================
 // Property: a job claimed by a worker that then crashes must eventually become
-// re-eligible — in-flight work must not be lost forever.
+// re-eligible, in-flight work must not be lost forever.
 // Surface: DBQueue dequeue / eligibleWhere lease reclaim.
 // ============================================================================
 
@@ -100,7 +100,7 @@ func TestDBReclaimsStaleClaimedJob(t *testing.T) {
 	db, q := openDBQueue(t, 0)
 	q.SetLeaseTimeout(time.Minute)
 	// Fake clock: no workers are running, so the single test goroutine is the
-	// only reader of q.now — lease expiry is asserted by advancing the clock,
+	// only reader of q.now, lease expiry is asserted by advancing the clock,
 	// not by sleeping.
 	now := time.Now()
 	q.now = func() time.Time { return now }
@@ -143,11 +143,11 @@ func TestDBReclaimsStaleClaimedJob(t *testing.T) {
 }
 
 // TestDBReclaimRespectsMaxAttempts asserts a stale-claimed job whose attempts
-// already hit max is NOT re-run indefinitely — it must fail closed.
+// already hit max is NOT re-run indefinitely, it must fail closed.
 func TestDBReclaimRespectsMaxAttempts(t *testing.T) {
 	_, q := openDBQueue(t, 0)
 	q.SetLeaseTimeout(time.Minute)
-	// Fake clock (single test goroutine, no workers) — see
+	// Fake clock (single test goroutine, no workers), see
 	// TestDBReclaimsStaleClaimedJob.
 	now := time.Now()
 	q.now = func() time.Time { return now }
@@ -190,7 +190,7 @@ func TestRedisDequeueKeepsSkippedOnBadJSON(t *testing.T) {
 		t.Fatalf("expected an error from malformed entry")
 	}
 
-	// The valid "sms" job must still be retrievable — it must not have been
+	// The valid "sms" job must still be retrievable, it must not have been
 	// dropped along with the malformed entry.
 	job, err := q.Dequeue(ctx, "sms")
 	if err != nil {
@@ -228,7 +228,7 @@ func TestRedisDequeueQuarantinesBadJSON(t *testing.T) {
 
 // ============================================================================
 // Property: a type-filtered MemoryQueue.Dequeue must never lose the valid,
-// non-matching jobs it inspects while searching — even under a concurrent
+// non-matching jobs it inspects while searching, even under a concurrent
 // producer hammering Enqueue. Surface: MemoryQueue.Dequeue type-filter branch
 // (priority-heap pending store).
 // ============================================================================
@@ -239,7 +239,7 @@ func TestRedisDequeueQuarantinesBadJSON(t *testing.T) {
 // removeMatching leaves them in the heap. We assert the total job count is
 // conserved across the drain cycle.
 func TestMemoryDequeueKeepsSkippedUnderLoad(t *testing.T) {
-	q := NewMemoryQueue(0) // no workers — manual consumption only
+	q := NewMemoryQueue(0) // no workers, manual consumption only
 	ctx := context.Background()
 
 	const cap = 1024 // backlog size (ex-old-channel-capacity)
@@ -306,7 +306,7 @@ func TestRedisReclaimRedeliversExpired(t *testing.T) {
 	q := NewRedisQueue(r, "test")
 	q.SetVisibilityTimeout(time.Minute)
 	// Fake clock: Start is never called, so the single test goroutine is the
-	// only reader of q.now — expiry is asserted by advancing the clock.
+	// only reader of q.now, expiry is asserted by advancing the clock.
 	now := time.Now()
 	q.now = func() time.Time { return now }
 	ctx := context.Background()
@@ -320,7 +320,7 @@ func TestRedisReclaimRedeliversExpired(t *testing.T) {
 		t.Fatalf("unexpected job %q", job.ID)
 	}
 
-	// Worker "crashes" — never Ack/Nack. Before expiry, Reclaim is a no-op.
+	// Worker "crashes", never Ack/Nack. Before expiry, Reclaim is a no-op.
 	// The clock is frozen, so this cannot race the visibility timeout.
 	n, err := q.Reclaim(ctx)
 	if err != nil {

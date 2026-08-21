@@ -12,7 +12,7 @@ import (
 )
 
 // TestRawTable_ExactColumns: a raw Table migrates with EXACTLY its declared
-// columns — no auto-injected id/created_at/updated_at.
+// columns, no auto-injected id/created_at/updated_at.
 func TestRawTable_ExactColumns(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
@@ -115,7 +115,7 @@ func TestReconcile_EntityAndRawTableWithFK(t *testing.T) {
 			Table:  "users",
 			Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}},
 		}))
-		// A raw audit table with an FK to users.id — registered AFTER users, but
+		// A raw audit table with an FK to users.id, registered AFTER users, but
 		// even reversed the topo sort would order users first.
 		audit := migrate.Table{
 			Name: "audit_log",
@@ -132,7 +132,7 @@ func TestReconcile_EntityAndRawTableWithFK(t *testing.T) {
 			t.Fatalf("AutoMigrate (entity + raw table): %v", err)
 		}
 
-		// Insert a user, then an audit row referencing it — must succeed.
+		// Insert a user, then an audit row referencing it, must succeed.
 		if _, err := db.Exec("INSERT INTO users (id, name) VALUES ($1, $2)", "u1", "alice"); err != nil {
 			t.Fatalf("insert user: %v", err)
 		}

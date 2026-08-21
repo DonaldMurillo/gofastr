@@ -26,7 +26,7 @@ type TOCConfig struct {
 	Label string
 	// Levels picks which heading levels to harvest. Bit flags:
 	// 2 = h2 only, 3 = h3 only, 0 / 5 = h2 + h3. Default 0.
-	// We keep the API minimal — most sites want h2 + h3.
+	// We keep the API minimal: most sites want h2 + h3.
 	Levels int
 	// Sticky toggles the position: sticky behaviour. Default true.
 	// When false the nav scrolls with the content.

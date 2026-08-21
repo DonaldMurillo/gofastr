@@ -84,7 +84,7 @@ func siteBrowserCtx(t *testing.T) context.Context {
 	t.Cleanup(cancel)
 	// Materialize the tab and bring it to the foreground. The browser's
 	// initial about:blank tab otherwise keeps focus, and Chrome throttles
-	// background tabs' rAF / IntersectionObserver / smooth scrolling —
+	// background tabs' rAF / IntersectionObserver / smooth scrolling,
 	// which silently breaks every scroll- and animation-driven assertion
 	// in the suite.
 	if err := chromedp.Run(ctx, page.BringToFront()); err != nil {
@@ -106,7 +106,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// runtime401Sink records any /__gofastr/* response that came back 401 —
+// runtime401Sink records any /__gofastr/* response that came back 401,
 // the exact symptom of the cookie regression. A real browser rejects the
 // __Host-/Secure cookie over http, so the gated runtime endpoints 401 and
 // the island runtime / SSE / search all break.
@@ -136,7 +136,7 @@ func (s *runtime401Sink) errors() []string {
 // TestE2ENoRuntime401s is the keystone guard at the browser level: load
 // pages that hydrate islands and assert none of the /__gofastr/* runtime
 // requests came back 401. With the cookie bug, Chrome drops the cookie and
-// these all 401 — exactly the storm the audit found.
+// these all 401, exactly the storm the audit found.
 func TestE2ENoRuntime401s(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -224,7 +224,7 @@ func TestE2EDocCardNavigates(t *testing.T) {
 }
 
 // TestE2EInteractive_RPCSignal clicks the counter button and verifies
-// the signal region updates with the incremented value — no page reload.
+// the signal region updates with the incremented value, no page reload.
 func TestE2EInteractive_RPCSignal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e")
@@ -236,7 +236,7 @@ func TestE2EInteractive_RPCSignal(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
 		chromedp.WaitVisible(`button[data-fui-rpc="/__site/interactive/counter"]`),
-		// Use JS click instead of chromedp.Click — chromedp's mouse
+		// Use JS click instead of chromedp.Click, chromedp's mouse
 		// event dispatch doesn't reliably trigger the runtime's
 		// delegated click handler in headless Chrome.
 		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
@@ -263,7 +263,7 @@ func TestE2EInteractive_FormSubmitWithSignal(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-form-signal"),
 		chromedp.WaitVisible(`form[data-fui-rpc="/__site/interactive/submit"]`),
-		// Use JS to fill + submit — same reason as RPCSignal test.
+		// Use JS to fill + submit, same reason as RPCSignal test.
 		chromedp.Evaluate(`{
             const form = document.querySelector('form[data-fui-rpc="/__site/interactive/submit"]');
             const input = form.querySelector('input[name="message"]');
@@ -488,7 +488,7 @@ func TestE2EInteractive_NetworkErrorFeedback(t *testing.T) {
 	}
 	t.Logf("network-error signal text: %q", signalText)
 	trimmed := strings.TrimSpace(signalText)
-	// Signal must have changed from "0" — the runtime should have written
+	// Signal must have changed from "0", the runtime should have written
 	// something (error message) into the signal on network failure.
 	if trimmed == "0" || trimmed == "" {
 		t.Errorf("signal still %q after network error — dispatchRPC did not write error feedback to signal", signalText)
@@ -612,7 +612,7 @@ func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
 	}
 }
 
-// NOTE: a chromedp mobile-overflow test was tried and removed — chromedp's
+// NOTE: a chromedp mobile-overflow test was tried and removed, chromedp's
 // EmulateViewport doesn't reproduce the grid-overflow that a real browser
 // resize does, so it passed even with the broken CSS (a false guard). The
 // responsive rule is guarded deterministically by
@@ -698,7 +698,7 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// First tab should be active — the highlight is driven by the
+	// First tab should be active, the highlight is driven by the
 	// wrapper's data-active, so the first button's bottom border is the
 	// accent colour while the second button's is transparent.
 	var firstBorder, secondBorderInitial string
@@ -743,7 +743,7 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	}
 
 	// Regression (frozen-highlight bug): the active indicator must MOVE to
-	// the second button — its bottom border now matches the original
+	// the second button, its bottom border now matches the original
 	// first-tab accent, and the first button no longer does.
 	var firstAfter, secondAfter string
 	if err := chromedp.Run(ctx,
@@ -984,7 +984,7 @@ func TestE2E_ScrollRevealShowsOnViewport(t *testing.T) {
 
 	// After scrolling into view, the fui-revealed class should be present
 	// (if the runtime module loaded). If the module hasn't loaded yet,
-	// the element still exists and is visible — just without the animation.
+	// the element still exists and is visible, just without the animation.
 	var hasClass bool
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelector('[data-fui-reveal]').classList.contains('fui-revealed')`, &hasClass),
@@ -1193,7 +1193,7 @@ func TestE2EInteractive_WorkspacePanes(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	// The whole flow must stay on the same page — panes fill, no nav.
+	// The whole flow must stay on the same page: panes fill, no nav.
 	if !strings.Contains(url1, "/examples/workspace") || !strings.Contains(url2, "/examples/workspace") {
 		t.Errorf("expected to stay on /examples/workspace, got %q then %q", url1, url2)
 	}

@@ -28,7 +28,7 @@ type redactionSub struct {
 // environment (e.g. "env | grep KEY") never lands in events.payload
 // plaintext. The assignment matcher catches provider keys whose value is
 // not an sk- token (ZAI's <id>.<secret> form) without clobbering benign
-// assignments like PATH=… — it only fires when the variable name ends in
+// assignments like PATH=…, it only fires when the variable name ends in
 // API_KEY / TOKEN / SECRET / PASSWORD / ACCESS_KEY.
 var redactionSubs = []redactionSub{
 	{

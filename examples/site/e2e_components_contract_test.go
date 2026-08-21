@@ -8,14 +8,14 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// Contract tests for each /components/* primitive — assert the
+// Contract tests for each /components/* primitive, assert the
 // behavioural baseline that other people build on. Failing any of
 // these means the primitive has regressed and apps depending on it
 // will silently break.
 //
 // Each test exercises one primitive end-to-end through a real
 // headless browser: open, ARIA attrs, focus management, dismiss
-// affordances. Keeps tight signal-to-noise — one assert per
+// affordances. Keeps tight signal-to-noise, one assert per
 // behaviour, no scaffolding noise.
 
 // --- Modal ---------------------------------------------------------
@@ -214,7 +214,7 @@ func TestE2E_Toast_ClientJSAPIFiresToast(t *testing.T) {
 	}
 }
 
-// Note: burst-of-3 test dropped — the site's /components/toast page has
+// Note: burst-of-3 test dropped, the site's /components/toast page has
 // client + server toast buttons but no "burst of 3" multi-toast trigger.
 
 // --- Menu ----------------------------------------------------------
@@ -277,7 +277,7 @@ func TestE2E_Menu_RolesAndKeyboardNav(t *testing.T) {
 //
 // The /components/sidebar showcase renders a ui.Sidebar whose hamburger
 // (< 900px) opens the ui-sidebar-drawer widget. That drawer must be mounted
-// for the hamburger to do anything — historically it was not, so the button
+// for the hamburger to do anything, historically it was not, so the button
 // silently no-opened. This is the contract test for "the hamburger opens the
 // drawer".
 
@@ -294,7 +294,7 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 		chromedp.Navigate(base+"/components/sidebar"),
 		pageReady(),
 		chromedp.Evaluate(`!!document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')`, &triggerExists),
-		// Click via JS so the test is viewport-independent — the open is gated
+		// Click via JS so the test is viewport-independent, the open is gated
 		// on the runtime handler, not CSS visibility.
 		chromedp.Evaluate(`document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')?.click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
@@ -342,7 +342,7 @@ func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
 		chromedp.Click(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &collapsed),
 		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar-collapse]')?.getAttribute('aria-expanded') ?? ''`, &expanded),
-		// Labels are clipped (visually-hidden pattern), NOT display:none —
+		// Labels are clipped (visually-hidden pattern), NOT display:none,
 		// focusable links must keep their accessible names when collapsed.
 		chromedp.Evaluate(`(() => {
 			const l = document.querySelector('[data-fui-sidebar] .ui-sidebar__label');
@@ -379,4 +379,4 @@ func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
 	}
 }
 
-// Note: Popover tests dropped — the site has no /components/popover page.
+// Note: Popover tests dropped, the site has no /components/popover page.

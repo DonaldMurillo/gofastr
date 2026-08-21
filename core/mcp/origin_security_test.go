@@ -8,8 +8,8 @@ import (
 )
 
 // Property: the MCP JSON-RPC transport must reject a browser request
-// whose Origin is not same-origin with the request, and — when the
-// host pins an authority — a request whose Host is not that authority.
+// whose Origin is not same-origin with the request, and, when the
+// host pins an authority, a request whose Host is not that authority.
 //
 // The MCP spec makes Origin validation a MUST for HTTP transports, and
 // four 2025-26 CVEs (Playwright MCP CVE-2025-9611, CVE-2026-11624,
@@ -18,7 +18,7 @@ import (
 // nothing against DNS rebinding: after a rebind the attacker's page is
 // same-origin with the listener, so it may set Content-Type freely.
 // Host pinning is what breaks that, which is why `gofastr dev` pins to
-// loopback — dev auto-enables the mutating control tools.
+// loopback: dev auto-enables the mutating control tools.
 func TestMCPRejectsForeignOrigin(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 	newReq := func(origin, host string) *httptest.ResponseRecorder {
@@ -94,7 +94,7 @@ func TestMCPHostPinRejectsRebind(t *testing.T) {
 //
 // sseGetHandler discarded the request entirely (`_ *http.Request`), so
 // it never ran originOK. Nothing is disclosed by the static endpoint
-// event it currently writes — which is why this is low — but it is a
+// event it currently writes, which is why this is low, but it is a
 // guard hole in the pair, and the moment that handler starts streaming
 // anything session-derived it becomes a cross-origin read.
 func TestSSEGetHandlerEnforcesOrigin(t *testing.T) {
@@ -128,7 +128,7 @@ func TestSSEGetHandlerEnforcesOrigin(t *testing.T) {
 // SetRequireLoopbackHost makes the server accept only a loopback
 // authority in the Host header. That stops DNS rebinding, because a
 // browser cannot forge Host. It does NOT stop a direct TCP client, which
-// sets Host to whatever it likes — so a server listening on a routable
+// sets Host to whatever it likes, so a server listening on a routable
 // interface is reachable by anyone who can open a socket to it,
 // regardless of the pin. The bind-side half lives in
 // framework.guardDevMCPBind (TestDevMCPRefusesNonLoopbackBind).
@@ -152,7 +152,7 @@ func TestLoopbackPinDoesNotImplyLoopbackBind(t *testing.T) {
 		t.Errorf("the loopback pin accepted an honest LAN Host: %d", got)
 	}
 	// The same client is accepted the moment it claims localhost. Not a
-	// bug in the pin — its scope. Asserted so nobody later mistakes the
+	// bug in the pin: its scope. Asserted so nobody later mistakes the
 	// pin for a network control.
 	if got := call("localhost:8080"); got == 403 {
 		t.Log("a forged loopback Host is now refused; if a network-level check moved here, update the doc comment below too")

@@ -1,7 +1,7 @@
 // Package setup provides a first-run setup flow for self-hosted GoFastr
 // apps. An operator deploying a binary against an empty database gets a
 // guided bootstrap: create the initial admin, verify adapter health, and
-// any other step the app declares — either headlessly (all values in env)
+// any other step the app declares, either headlessly (all values in env)
 // or through an SSR wizard.
 //
 // The package exports Config, Field, Step, and constructors for shipped
@@ -32,7 +32,7 @@ type Field struct {
 	Label string
 	// EnvVar is the full environment variable name (e.g.
 	// "GOFASTR_ADMIN_EMAIL"). Empty means the field cannot be resolved
-	// from env — it can only come through the wizard.
+	// from env, it can only come through the wizard.
 	EnvVar string
 	// Secret renders as a password input. Secret values are never
 	// pre-filled from env (the wizard shows an empty password field even
@@ -59,8 +59,8 @@ type Config struct {
 	Steps []Step
 
 	// Complete reports whether setup has already finished (e.g. "at
-	// least one user exists"). This is a DERIVED check — never a marker
-	// file — so a crash mid-setup re-enters setup on next boot. Required.
+	// least one user exists"). This is a DERIVED check, never a marker
+	// file, so a crash mid-setup re-enters setup on next boot. Required.
 	Complete func(ctx context.Context) (bool, error)
 
 	// DisableToken opts out of the one-time setup token. Use only on
@@ -94,7 +94,7 @@ func (c Config) theme() style.Theme {
 type Runner struct {
 	cfg Config
 
-	// wizard state — protected by mu
+	// wizard state, protected by mu
 	mu          sync.Mutex
 	currentStep int
 
@@ -117,7 +117,7 @@ type Runner struct {
 	preChecked  bool
 }
 
-// New constructs a Runner from cfg. Panics if cfg.Complete is nil —
+// New constructs a Runner from cfg. Panics if cfg.Complete is nil,
 // without a Complete predicate the framework can't tell whether setup
 // is done, and a derived check (not a marker file) is the contract.
 func New(cfg Config) *Runner {
@@ -226,7 +226,7 @@ func runValidations(step Step, values map[string]string) error {
 	return nil
 }
 
-// isForceMode reports whether GOFASTR_SETUP=force is set — rescue mode
+// isForceMode reports whether GOFASTR_SETUP=force is set, rescue mode
 // where the wizard re-runs even when Complete returns true.
 func isForceMode() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("GOFASTR_SETUP")), "force")

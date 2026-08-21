@@ -35,7 +35,7 @@ var (
 	InvoicesUserId     = framework.NewStringColumn("user_id")
 )
 
-// Invoices include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Invoices include names, pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	InvoicesInclCustomer = "customer"
 )
@@ -61,7 +61,7 @@ func NewInvoicesRepo(app *framework.App) *InvoicesRepo {
 	return &InvoicesRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler, useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *InvoicesRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -232,7 +232,7 @@ func OnInvoicesUpdated(app *framework.App, fn func(ctx context.Context, row *Inv
 }
 
 // OnInvoicesDeleted subscribes to entity.deleted events scoped to "invoices". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only, by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnInvoicesDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

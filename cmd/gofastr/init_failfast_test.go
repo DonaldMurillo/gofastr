@@ -10,7 +10,7 @@ import (
 
 // A failed versioned migration must abort boot. The scaffold used to log
 // "Migration warning" and call Start anyway, so a deploy whose committed
-// migration did not apply still reported a ready server — the fault then
+// migration did not apply still reported a ready server; the fault then
 // surfaces as a later request error instead of a failed rollout. The ready
 // banner's own comment promises it fires only after migrations succeeded.
 func TestInitMainFailsClosedOnMigrationError(t *testing.T) {

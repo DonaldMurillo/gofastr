@@ -15,7 +15,7 @@ import (
 // and `gofastr dev`, and reports whether the build may proceed. The sandbox
 // rules (check.LintFile: no goroutines, channels, type switches, or imports
 // outside the safe allow-list) exist because client-hydrated .ui.go files
-// cannot use them — a `go func(){}` or `import "os"` in a .ui.go file breaks
+// cannot use them: a `go func(){}` or `import "os"` in a .ui.go file breaks
 // hydration at runtime. Unlike the accessibility gate this is a correctness
 // floor, so it is NOT bound to --no-a11y and runs on every build/dev rebuild.
 func buildSandboxGate(root string) bool {
@@ -39,7 +39,7 @@ type SandboxFinding struct {
 }
 
 // auditSandbox statically scans every non-test, non-generated .ui.go file
-// under root with check.LintFile — the goroutine/channel/import sandbox that
+// under root with check.LintFile, the goroutine/channel/import sandbox that
 // LintA11yFile deliberately skips. Mirrors auditA11y's walk/skip policy so
 // the two gates agree on which files are in scope.
 func auditSandbox(root string) ([]SandboxFinding, error) {
@@ -111,7 +111,7 @@ func formatSandboxReport(findings []SandboxFinding) string {
 		files[f.File] = true
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, ".ui.go sandbox lint — %d issue(s) in %d file(s)\n\n", len(findings), len(files))
+	fmt.Fprintf(&b, ".ui.go sandbox lint: %d issue(s) in %d file(s)\n\n", len(findings), len(files))
 	for _, f := range findings {
 		fmt.Fprintf(&b, "%s:%d: %s\n\n", f.File, f.Line, f.Message)
 	}

@@ -29,7 +29,7 @@ func newReplica(t *testing.T, opts ...AppOption) *App {
 
 // TestSessionPortableAcrossReplicas is the #112 acceptance test at the
 // HTTP layer: a session cookie minted by replica A is accepted by
-// replica B when both share the app secret — no shared state, no sticky
+// replica B when both share the app secret, no shared state, no sticky
 // routing.
 func TestSessionPortableAcrossReplicas(t *testing.T) {
 	secret := strings.Repeat("s", 32)

@@ -7,7 +7,7 @@ import (
 )
 
 // The natural wiring is: start the scheduler, then register jobs. A job
-// registered after Start must still fire — the old snapshot-once + return-
+// registered after Start must still fire, the old snapshot-once + return-
 // on-empty loop dropped everything registered late.
 func TestSchedulerFiresJobsRegisteredAfterStart(t *testing.T) {
 	q := &recordQueue{}
@@ -25,7 +25,7 @@ func TestSchedulerFiresJobsRegisteredAfterStart(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if q.count() > 0 {
-			return // fired — the late registration was picked up
+			return // fired, the late registration was picked up
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

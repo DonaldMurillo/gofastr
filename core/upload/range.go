@@ -16,7 +16,7 @@ import (
 //
 // It is a capability interface rather than a widening of Storage on purpose:
 // a network-backed store would have to buffer the whole object to satisfy
-// Seek, which is worse than declining. Callers type-assert and fall back —
+// Seek, which is worse than declining. Callers type-assert and fall back:
 // [ServeHandler] is the reference consumer.
 //
 // An implementation MUST apply the same key validation as its Get: a

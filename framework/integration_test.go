@@ -365,7 +365,7 @@ func TestPluginNames(t *testing.T) {
 }
 
 // ============================================================================
-// Integration Tests — Full Request Lifecycle
+// Integration Tests: Full Request Lifecycle
 // ============================================================================
 
 func TestIntegrationDefineEntityRegisterRoutesHTTP(t *testing.T) {

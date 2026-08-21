@@ -73,7 +73,7 @@ func RuntimeModuleHash(name string) string {
 }
 
 // RuntimeModuleManifestJSON returns the raw JSON manifest mapping every
-// split runtime module to its content-addressed hash — nil when no
+// split runtime module to its content-addressed hash, nil when no
 // modules are embedded. Hosts that ship the manifest as an external
 // hashed script (framework/uihost's /__gofastr/manifest.js) embed this
 // instead of the inline block, saving the bytes on every page.
@@ -100,7 +100,7 @@ func RuntimeModuleManifestJSON() []byte {
 // Both RuntimeTag (kiln + manual hosts) and framework/uihost's export
 // mode embed this script. Pages without the manifest fall through to
 // un-versioned module URLs and then collide with the immutable cache
-// headers — see TestRuntimeTagEmbedsModuleManifest for the regression
+// headers. See TestRuntimeTagEmbedsModuleManifest for the regression
 // that motivated this.
 func RuntimeModuleManifestScript() string {
 	var script string
@@ -240,7 +240,7 @@ func serveRuntime(w http.ResponseWriter, _ *http.Request) {
 	fmt.Fprint(w, rt)
 }
 
-// ServeWidgetList returns the JSON list of registered widgets — the
+// ServeWidgetList returns the JSON list of registered widgets, the
 // payload the framework runtime fetches at /__gofastr/widgets to
 // discover and mount what's been registered with widget.Mount.
 // Exported so hosts that already own the /__gofastr/widgets route
@@ -250,7 +250,7 @@ func serveRuntime(w http.ResponseWriter, _ *http.Request) {
 func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w, r) }
 
 // serveWidgetList returns the JSON registry of widgets. Metadata
-// ONLY — chrome HTML is shipped via the per-widget endpoint
+// ONLY, chrome HTML is shipped via the per-widget endpoint
 // `/core-ui/widget/<name>/chrome` and fetched lazily when the
 // runtime needs to insert the widget. Same pattern as styles +
 // state: minimal index, fetch on demand.
@@ -258,10 +258,10 @@ func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w
 // The runtime appends `?page=<pathname>` when fetching the catalog
 // so widgets scoped via .Pages / .PagesPrefix / .PagesMatch are
 // filtered out of pages they don't belong to. A request with no
-// page parameter returns the unfiltered registry — backwards-compat
+// page parameter returns the unfiltered registry, backwards-compat
 // for static catalog inspection.
 //
-// statePath is only emitted when the widget declared signals — the
+// statePath is only emitted when the widget declared signals, the
 // runtime skips the /state hydrate fetch when this field is absent.
 func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	page := r.URL.Query().Get("page")
@@ -290,7 +290,7 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 		// pollMs is emitted ONLY when both conditions hold: there is
 		// something to poll (statePath exists) AND PollMS > 0. A
 		// widget without signals never carries pollMs even if PollMS
-		// was set — the runtime would have nothing to fetch.
+		// was set, the runtime would have nothing to fetch.
 		if len(d.Signals) > 0 {
 			cfg["statePath"] = d.StatePath
 			if d.PollMS > 0 {
@@ -322,7 +322,7 @@ func chromePathFor(d *Definition) string {
 func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 	// Render with the request context so context-aware slots (e.g. a
 	// role-aware nav drawer) see the signed-in user the session middleware
-	// placed on r — a hidden drawer is fetched here, not SSR-inlined, so this
+	// placed on r, a hidden drawer is fetched here, not SSR-inlined, so this
 	// is the only point where it can be personalised.
 	chrome := s.renderSkeletonCtx(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -332,8 +332,8 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 
 // serveStyle returns the widget stylesheet. The framework owns
 // positioning (corner/center/edge) + chrome (panel, modal, toast,
-// backdrop). Hosts that need additional rules — typically content
-// styling for slot innards — supply def.ExtraCSS, which is appended
+// backdrop). Hosts that need additional rules, typically content
+// styling for slot innards, supply def.ExtraCSS, which is appended
 // verbatim after the framework rules.
 func (s *server) serveStyle(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
@@ -432,8 +432,8 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		b.WriteString(`<div class="fui-widget-drag-handle" aria-hidden="true" data-fui-drag-handle="true"></div>`)
 	}
 
-	// Centered (modal) widgets group every slot inside ONE .fui-panel
-	// — the element the chrome CSS paints as the dialog surface. Slots
+	// Centered (modal) widgets group every slot inside ONE .fui-panel,
+	// the element the chrome CSS paints as the dialog surface. Slots
 	// as direct flex children of the viewport-filling center wrapper
 	// would each paint their own card (a header/body/footer modal read
 	// as three panels). Other positions paint the surface on the
@@ -474,7 +474,7 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 //   - Slot containers
 //
 // The host's slot components carry their own classes (resolved through
-// the theme's tokens). This function is intentionally small — it's the
+// the theme's tokens). This function is intentionally small, it's the
 // chrome, not the contents.
 func widgetCSS(def Definition) string {
 	theme := style.DefaultTheme()
@@ -500,7 +500,7 @@ func widgetCSS(def Definition) string {
 		Set("box-sizing", "border-box").
 		End()
 
-	// Position presets — 6 corner/edge points + 2 full-width banners.
+	// Position presets: 6 corner/edge points + 2 full-width banners.
 	for _, p := range []struct{ cls, top, right, bottom, left string }{
 		{"fui-pos-bottom-right", "", "20px", "20px", ""},
 		{"fui-pos-bottom-left", "", "", "20px", "20px"},
@@ -524,7 +524,7 @@ func widgetCSS(def Definition) string {
 		}
 		ss.Rule("." + p.cls).Set(props...).End()
 	}
-	// Horizontally centered top + bottom — toast stacks anchored at
+	// Horizontally centered top + bottom, toast stacks anchored at
 	// the viewport's top-center or bottom-center. transform centers
 	// the element regardless of its width.
 	ss.Rule(".fui-pos-top-center").
@@ -559,7 +559,7 @@ func widgetCSS(def Definition) string {
 	// surface background, shadow, rounded top corners, a height cap
 	// so tall content scrolls inside the sheet instead of covering
 	// the page. Without this the sheet's slot text floats over the
-	// page content on the dimmed backdrop — same invisible-panel
+	// page content on the dimmed backdrop, same invisible-panel
 	// defect the centered modal had.
 	ss.Rule(".fui-pos-bottom").
 		Set(
@@ -585,7 +585,7 @@ func widgetCSS(def Definition) string {
 	// wrapper IS the full viewport (top/left/right/bottom: 0) and sits
 	// ABOVE the backdrop in the z-order, so without it real mouse
 	// clicks on the dim area always land on the wrapper and never
-	// reach the backdrop's click handler — the "backdrop-click closes"
+	// reach the backdrop's click handler, the "backdrop-click closes"
 	// affordance breaks silently. Direct children are flipped back to
 	// `pointer-events: auto` so the slot content stays interactive.
 	ss.Rule(".fui-pos-center").
@@ -632,14 +632,14 @@ func widgetCSS(def Definition) string {
 		Set("animation", "fui-top-in {durations.overlay-enter} {easings.ease-out}").
 		End()
 
-	// Slots are plain containers — the visible surface lives on the
+	// Slots are plain containers, the visible surface lives on the
 	// position container (drawers, sheets), the widget root (popovers)
 	// or the .fui-panel slot group (centered modals, below).
 	ss.Rule(".fui-slot").Set("display", "block").End()
 
 	// Centered (modal) panel: default dialog surface. Drawers paint
 	// their surface on the position container and popovers on the
-	// widget root, but the centered wrapper IS the full viewport — so
+	// widget root, but the centered wrapper IS the full viewport, so
 	// defaultSkeleton groups every slot inside one .fui-panel and the
 	// panel paints the card. Painting each slot instead would render a
 	// header/body/footer modal as three separate cards; painting
@@ -647,15 +647,15 @@ func widgetCSS(def Definition) string {
 	// (a plain preset.Modal would open, trap focus, and round-trip
 	// RPCs while showing no dialog).
 	//
-	// Opt-outs — full-bleed bodies that own (or reject) the chrome.
+	// Opt-outs: full-bleed bodies that own (or reject) the chrome.
 	// The markers sit on a slot's root element, one level under the
 	// panel:
-	//   - `.fui-slot-bare` on the body's root element — the
+	//   - `.fui-slot-bare` on the body's root element: the
 	//     documented escape hatch for chrome-less content;
-	//   - `[data-fui-lightbox]` — Lightbox viewers center bare media
+	//   - `[data-fui-lightbox]`: Lightbox viewers center bare media
 	//     on the backdrop; a card behind a photo is unwanted and the
 	//     panel's max-inline-size would fight the viewer's 90vw;
-	//   - `[data-fui-comp="ui-cmd-palette"]` — the command palette
+	//   - `[data-fui-comp="ui-cmd-palette"]`: the command palette
 	//     predates this rule and paints its own 36rem panel (incl. a
 	//     full-screen mobile variant the panel caps would break).
 	//     Legacy exclusion: it should adopt .fui-slot-bare so this
@@ -722,7 +722,7 @@ func widgetCSS(def Definition) string {
 	// single token tweak retunes every popover surface.
 	// Popover root keeps overflow visible so the arrow ::before (sitting
 	// outside the root's box at -7px) renders. The scroll cap moves
-	// to the inner .fui-slot below — a tall slot scrolls inside the
+	// to the inner .fui-slot below, a tall slot scrolls inside the
 	// popover, the arrow stays visible.
 	ss.Rule("[data-fui-widget][data-fui-popover-side]").
 		Set("border-radius", "{radii.md}",
@@ -796,7 +796,7 @@ func widgetCSS(def Definition) string {
 
 	// Keyframes + reduced-motion suppression. Emitted as raw CSS
 	// because the StyleSheet builder doesn't yet model @keyframes /
-	// @media — small targeted escape hatch.
+	// @media, small targeted escape hatch.
 	const animationCSS = `
 @keyframes fui-backdrop-in    { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fui-overlay-scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
@@ -810,7 +810,7 @@ func widgetCSS(def Definition) string {
   }
 }
 `
-	// Do NOT prepend theme.CSSCustomProperties() — that would emit a
+	// Do NOT prepend theme.CSSCustomProperties(), that would emit a
 	// :root block of the framework DefaultTheme tokens AFTER the
 	// host's app.css, overwriting any custom theme an app has set
 	// via app.WithTheme(...). The widget's CSS uses bare var(--…)

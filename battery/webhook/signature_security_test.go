@@ -120,7 +120,7 @@ func TestSignature_FutureTimestampRejected(t *testing.T) {
 }
 
 // TestSignature_TimingSafeComparison verifies that the comparison is not
-// vulnerable to timing attacks. This is a documentation test — if the
+// vulnerable to timing attacks. This is a documentation test, if the
 // implementation uses hmac.Equal, it is constant-time.
 func TestSignature_TimingSafeComparison(t *testing.T) {
 	secret := "test-secret"
@@ -134,7 +134,7 @@ func TestSignature_TimingSafeComparison(t *testing.T) {
 	h.Write(body)
 	wrongMAC := hex.EncodeToString(h.Sum(nil))
 
-	// Parse both and check — this just documents the implementation uses
+	// Parse both and check, this just documents the implementation uses
 	// hmac.Equal (constant-time) rather than == (short-circuit)
 	t.Logf("Valid signature uses constant-time comparison: hmac.Equal=%v", hmac.Equal([]byte(validSig), []byte("t."+validSig[1:])))
 	t.Logf("NOTE: [signature] VerifyTimestamped should use constant-time comparison (hmac.Equal) to prevent timing attacks")

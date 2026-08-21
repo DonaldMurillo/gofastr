@@ -138,7 +138,7 @@ func TestUpsert_AnonymousBodyOwnerFieldRejected(t *testing.T) {
 }
 
 // TestUpsert_CannotHijackOtherOwnersRow pins that an upsert whose body PK
-// matches a row owned by a DIFFERENT owner is refused — not silently
+// matches a row owned by a DIFFERENT owner is refused, not silently
 // taken over via ON CONFLICT DO UPDATE (which re-stamps owner_id from the
 // caller's context and overwrites the victim's data).
 func TestUpsert_CannotHijackOtherOwnersRow(t *testing.T) {
@@ -200,7 +200,7 @@ func TestUpsert_CannotHijackOtherTenantsRow(t *testing.T) {
 }
 
 // TestUpsert_RejectsDangerousMediaURL pins that UpsertOne runs the same
-// media-URL allow-list (isSafeMediaURL) that Create/Update enforce — an
+// media-URL allow-list (isSafeMediaURL) that Create/Update enforce, an
 // Image/File field value like javascript:/data:/../ traversal must be
 // rejected, not stored verbatim for later stored-XSS in an <img src>.
 func TestUpsert_RejectsDangerousMediaURL(t *testing.T) {

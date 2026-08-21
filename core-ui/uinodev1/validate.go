@@ -9,8 +9,8 @@ import (
 
 // Validate decodes, type-checks, and bounds-checks a ui.node.v1 JSON tree.
 // It returns the typed [Tree] on success, or a descriptive error describing
-// the first failure encountered. On any failure the whole tree is rejected
-// — Validate never returns a partial tree and never truncates content.
+// the first failure encountered. On any failure the whole tree is rejected,
+// Validate never returns a partial tree and never truncates content.
 //
 // All whole-tree caps ([Limits]) are enforced: input bytes are bounded
 // before any decode allocation; depth, node count, and per-node children
@@ -25,12 +25,12 @@ import (
 func Validate(data []byte, lim Limits) (*Tree, error) {
 	lim = lim.withDefaults()
 
-	// 1. Hard cap on raw input — defeats memory bombs before any parse.
+	// 1. Hard cap on raw input: defeats memory bombs before any parse.
 	if len(data) > lim.MaxInputBytes {
 		return nil, errCapExceeded("input bytes", len(data), lim.MaxInputBytes)
 	}
 
-	// 2. Trim surrounding whitespace (a polite allowance — JSON spec
+	// 2. Trim surrounding whitespace (a polite allowance: JSON spec
 	//    permits it). Reject empty input.
 	trimmed := bytes.TrimLeft(data, " \t\r\n")
 	if len(trimmed) == 0 {
@@ -75,7 +75,7 @@ type decodedNode struct {
 }
 
 // walker carries the limits and the running counters for one Validate call.
-// It is not safe for concurrent reuse — each Validate call mints its own.
+// It is not safe for concurrent reuse, each Validate call mints its own.
 type walker struct {
 	lim       Limits
 	nodes     int
@@ -107,7 +107,7 @@ func (w *walker) decodeNode(data []byte, depth int) (decodedNode, error) {
 
 	// Null nodes are explicitly rejected. A bare "null" decodes cleanly
 	// into a zero-valued struct, which would silently pass component
-	// checks as an empty component — we must catch it.
+	// checks as an empty component, we must catch it.
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return decodedNode{}, errNullNode()
 	}
@@ -115,7 +115,7 @@ func (w *walker) decodeNode(data []byte, depth int) (decodedNode, error) {
 	// Shadow decode with DisallowUnknownFields so any key outside
 	// {component, props, children, action_ref} rejects the whole tree.
 	// That makes Bindings/Actions/_id/etc. unrepresentable at the node
-	// level — they are not in the shadow struct, so DisallowUnknownFields
+	// level, they are not in the shadow struct, so DisallowUnknownFields
 	// fires.
 	var shadow struct {
 		Component string            `json:"component"`
@@ -176,7 +176,7 @@ func (w *walker) decodeNode(data []byte, depth int) (decodedNode, error) {
 		}
 	}
 
-	// Per-node child cap — checked before recursion so a children bomb
+	// Per-node child cap, checked before recursion so a children bomb
 	// never allocates child structs.
 	if len(shadow.Children) > w.lim.MaxChildrenPerNode {
 		return decodedNode{}, errCapExceeded("children per node", len(shadow.Children), w.lim.MaxChildrenPerNode)
@@ -244,7 +244,7 @@ func validateActionRef(s string, lim Limits) error {
 //     action_ref).
 //
 // The per-node child COUNT cap (Limits.MaxChildrenPerNode) is enforced
-// in decodeNode before recursion — this helper only handles policy +
+// in decodeNode before recursion, this helper only handles policy +
 // interactive rules.
 func enforceComponentRules(comp Component, props Props, actionRef string, children []json.RawMessage) error {
 	if props.childPolicy() == childPolicyNone && len(children) > 0 {
@@ -315,7 +315,7 @@ func walkDupCheck(dec *json.Decoder) error {
 	}
 	delim, ok := t.(json.Delim)
 	if !ok {
-		// Scalar (string/number/bool/null) — nothing to recurse into.
+		// Scalar (string/number/bool/null), nothing to recurse into.
 		return nil
 	}
 	switch delim {

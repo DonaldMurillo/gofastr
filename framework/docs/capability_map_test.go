@@ -14,11 +14,11 @@ import (
 // The backend capability map is a lookup table, and a lookup table that lies
 // is worse than no lookup table: an agent that trusts a wrong symbol spends
 // more context recovering than it would have spent reading the package. These
-// tests are the anti-rot gate — every symbol, link, and command it names has
+// tests are the anti-rot gate: every symbol, link, and command it names has
 // to resolve against the tree it ships from.
 //
 // This exists because of a measured cost. The 2026-07-26 backend eval put
-// GoFastr at 313,579 cold-start tokens against Gin's 72,172 — 4.35x — for 48%
+// GoFastr at 313,579 cold-start tokens against Gin's 72,172, 4.35x, for 48%
 // fewer lines of application code. The compression is real; finding the
 // primitive is what was expensive. The eval's own sixth next-move was "give
 // agents one short capability map and exact verification commands before deep
@@ -56,8 +56,8 @@ func repoRoot(t *testing.T) string {
 }
 
 // exportedSymbolsByPackage indexes every exported top-level declaration in the
-// repo, keyed by the package's clause name (`framework`, `auth`, `entity`, …)
-// — which is exactly how a doc refers to them. A name declared by two
+// repo, keyed by the package's clause name (`framework`, `auth`, `entity`, …),
+// which is exactly how a doc refers to them. A name declared by two
 // packages maps to the union, so this catches typos and renames rather than
 // resolving import ambiguity.
 func exportedSymbolsByPackage(t *testing.T, root string) map[string]map[string]bool {
@@ -144,7 +144,7 @@ func receiverTypeName(recv *ast.FieldList) string {
 var symbolRef = regexp.MustCompile("`([a-z][a-z0-9]*)\\.([A-Z][A-Za-z0-9]*(?:\\.[A-Z][A-Za-z0-9]*)?)`")
 
 // TestBackendCapabilityMapSymbolsExist fails when the map names a symbol the
-// tree does not export — the failure mode that makes a lookup table
+// tree does not export: the failure mode that makes a lookup table
 // actively harmful.
 func TestBackendCapabilityMapSymbolsExist(t *testing.T) {
 	body := backendMapBody(t)
@@ -233,7 +233,7 @@ func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 }
 
 // TestEmbeddedDocTablesHaveHeaderText catches an empty markdown table header
-// cell — `| | Package | … |` — which renders as `<th></th>` and trips axe's
+// cell, `| | Package | … |`, which renders as `<th></th>` and trips axe's
 // empty-table-header rule on whatever route serves the doc.
 //
 // This exists because that is exactly how it was found: a table in
@@ -244,7 +244,7 @@ func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 // `<th>` is empty is the wrong feedback loop.
 //
 // Deliberately scoped to header rows. Empty cells in a table BODY are
-// ordinary — "not applicable" is a legitimate value — and axe does not
+// ordinary, "not applicable" is a legitimate value, and axe does not
 // object to them.
 func TestEmbeddedDocTablesHaveHeaderText(t *testing.T) {
 	topics, err := List()
@@ -284,7 +284,7 @@ func TestEmbeddedDocTablesHaveHeaderText(t *testing.T) {
 // `:` and spaces.
 //
 // Deliberately NOT "the line starts and ends with |". GFM makes the outer
-// pipes optional, and core/markdown accepts that form — splitTableRow trims a
+// pipes optional, and core/markdown accepts that form: splitTableRow trims a
 // leading and trailing pipe if present rather than requiring them. An earlier
 // version of this test demanded them, so
 //

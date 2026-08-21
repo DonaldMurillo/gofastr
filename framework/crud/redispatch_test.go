@@ -13,7 +13,7 @@ import (
 )
 
 // TestRedispatch_RunsThroughRouter proves the exported seam re-enters the
-// router's middleware chain (the load-bearing property — a bare CRUD handler
+// router's middleware chain (the load-bearing property, a bare CRUD handler
 // call would bypass auth) and returns the parsed JSON envelope.
 func TestRedispatch_RunsThroughRouter(t *testing.T) {
 	got := make(chan string, 2)
@@ -42,7 +42,7 @@ func TestRedispatch_RunsThroughRouter(t *testing.T) {
 }
 
 // TestRedispatch_ReinjectsOriginatingHeaders proves the header copy from the
-// mcp.WithRequest-stashed originating request — without it a reverse call
+// mcp.WithRequest-stashed originating request, without it a reverse call
 // arrives with no Cookie/Authorization and owner-scoped CRUD returns 401
 // (design §5 caveat b).
 func TestRedispatch_ReinjectsOriginatingHeaders(t *testing.T) {
@@ -83,7 +83,7 @@ func TestRedispatch_StatusErrorIsSurfaceable(t *testing.T) {
 	if !strings.Contains(err.Error(), "403") {
 		t.Errorf("error should name status 403: %v", err)
 	}
-	// Body is JSON-encoded into the message? It is raw text here — assert it
+	// Body is JSON-encoded into the message? It is raw text here, assert it
 	// carries the denial text regardless of encoding.
 	if b, _ := json.Marshal(err.Error()); !strings.Contains(string(b), "access denied") {
 		t.Errorf("error should carry body text: %v", err)

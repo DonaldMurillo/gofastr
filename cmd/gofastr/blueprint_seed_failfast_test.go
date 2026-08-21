@@ -7,7 +7,7 @@ import (
 
 // A seed row that fails CreateOne must abort startup, not be logged and
 // skipped: the CountAll idempotency gate marks the entity non-empty after a
-// partial insert, so a dropped row never retries — the app then reports
+// partial insert, so a dropped row never retries. The app then reports
 // ready on every boot with bootstrap data silently missing. WithSeed errors
 // abort App.Start, so returning the error is the whole fix.
 func TestSeedHookReturnsRowErrors(t *testing.T) {
@@ -21,7 +21,7 @@ func TestSeedHookReturnsRowErrors(t *testing.T) {
 }
 
 // A missing CRUD handler (entity renamed, registration drifted) must abort
-// for the same reason — `continue` silently unseeds the whole entity.
+// for the same reason. `continue` silently unseeds the whole entity.
 func TestSeedHookReturnsHandlerErrors(t *testing.T) {
 	main := renderBlueprintMain(websitesBlueprint())
 	if !strings.Contains(main, `return fmt.Errorf("seed %s: no handler: %w", s.Entity, err)`) {
@@ -32,9 +32,10 @@ func TestSeedHookReturnsHandlerErrors(t *testing.T) {
 // A CountAll ERROR must abort startup, not fall through into inserts: the
 // idempotency gate's premise is "skip if non-empty", and an unreadable
 // table is uncertainty about exactly that. Guessing "empty" on a
-// transient read failure re-seeds — duplicates for non-unique rows — the
-// fail-open the fail-fast comment above promises to prevent. Sibling of
-// the CreateOne / missing-handler fixes (v0.62) on the same seed path.
+// transient read failure re-seeds, creating duplicates for non-unique
+// rows. That is the fail-open the fail-fast comment above promises to
+// prevent. Sibling of the CreateOne / missing-handler fixes (v0.62) on
+// the same seed path.
 func TestSeedHookReturnsCountAllErrors(t *testing.T) {
 	main := renderBlueprintMain(websitesBlueprint())
 	if strings.Contains(main, "err == nil && n > 0") {

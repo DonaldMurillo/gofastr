@@ -13,7 +13,7 @@ import (
 )
 
 // An embed grant resolves to the same context user a session does. That is the
-// point — an embedded surface renders as its viewer. It is also why the grant
+// point, an embedded surface renders as its viewer. It is also why the grant
 // must be refused wherever the app hands out authority that outlives it.
 //
 // The grant lives in a third party's page, readable by any script there and by
@@ -79,7 +79,7 @@ func (u *testEscalationUser) GetRoles() []string { return u.roles }
 
 // The documented wiring is embeds.Middleware() outermost, then SessionMiddleware.
 // An embed request carries no session cookie by construction, so it takes
-// SessionMiddleware's anonymous branch — which used to clear the user and
+// SessionMiddleware's anonymous branch, which used to clear the user and
 // therefore erased the identity the grant had just established one layer out.
 func TestSessionMiddlewareKeepsTheGrantSubject(t *testing.T) {
 	mgr := New(AuthConfig{
@@ -113,7 +113,7 @@ func TestSessionMiddlewareKeepsTheGrantSubject(t *testing.T) {
 
 // Same shape as the SessionMiddleware case: embeds.Middleware() deletes
 // Authorization so no second credential competes with the grant, and RequireAuth
-// then 401'd every embed request on any JWT-protected route — under exactly the
+// then 401'd every embed request on any JWT-protected route, under exactly the
 // middleware order the embed docs prescribe.
 func TestRequireAuthAcceptsAVerifiedGrant(t *testing.T) {
 	jwtAuth := NewJWTAuth("embed-order-test", time.Hour)

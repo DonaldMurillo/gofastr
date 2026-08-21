@@ -75,7 +75,7 @@ func TestSignalTogglePanicsMissingSignal(t *testing.T) {
 }
 
 // TestSignalToggleRegistersCSS guards that SignalToggle ships its own
-// scoped CSS — it stamps data-fui-comp="fui-toggle" but had no
+// scoped CSS: it stamps data-fui-comp="fui-toggle" but had no
 // registered style, so the track/thumb rendered unstyled.
 func TestSignalToggleRegistersCSS(t *testing.T) {
 	css := signalToggleStyle.Entry().CSSFor(style.Theme{})

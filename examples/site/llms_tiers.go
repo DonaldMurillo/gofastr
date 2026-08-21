@@ -1,11 +1,11 @@
 // =============================================================================
-// llms_tiers.go — the two-tier llms.txt surface over the embedded docs.
+// llms_tiers.go, the two-tier llms.txt surface over the embedded docs.
 //
-// Tier 1: /llms.txt — an index built from the same docIntents catalog that
+// Tier 1: /llms.txt, an index built from the same docIntents catalog that
 // drives /docs/. Every entry links the RAW markdown at /docs/<slug>.md (not
 // the HTML page), so an agent reading the index can curl the source directly.
 //
-// Tier 2: /llms-full.txt — the whole embedded corpus concatenated into one
+// Tier 2: /llms-full.txt, the whole embedded corpus concatenated into one
 // markdown file, for agents that want everything in a single request.
 //
 // Both are wired into uihost.WithAgentReady in setupServer; the raw
@@ -70,7 +70,7 @@ func llmsFullText() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("# GoFastr — full documentation\n\n")
+	b.WriteString("# GoFastr: full documentation\n\n")
 	b.WriteString("> All " + strconv.Itoa(len(topics)-1) + " embedded framework docs in one file. ")
 	b.WriteString("The index tier is /llms.txt; each doc is also served alone at the /docs/<name>.md URL named before it.\n")
 	for _, t := range topics {
@@ -88,7 +88,7 @@ func llmsFullText() string {
 }
 
 // registerDocMarkdownRoutes serves each embedded doc's raw markdown at
-// /docs/<name>.md — the URLs /llms.txt links to. The HTML page for the
+// /docs/<name>.md: the URLs /llms.txt links to. The HTML page for the
 // same doc stays at /docs/<name>.
 func registerDocMarkdownRoutes(r *router.Router) {
 	topics, err := docs.List()

@@ -63,7 +63,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 			return pe.buildStatusHTML(), nil
 		})).
 		// All three signals render server-side from the live session /
-		// world, so a 2s poll of /state keeps the whole panel fresh —
+		// world, so a 2s poll of /state keeps the whole panel fresh,
 		// chat log, agent chip, and world-snapshot pill alike. This
 		// replaced the per-event widget SSE bindings when those were
 		// removed from the builder (reactivity.md: passive freshness
@@ -71,7 +71,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		// in-memory snapshot costs nothing, and Builder.Poll trusts Go
 		// callers below the page-attribute 5s clamp. Page-STRUCTURE
 		// world edits (add/delete page/route) are not a panel-signal
-		// concern — kiln/live/reload.go's dev-mode client forces the
+		// concern, kiln/live/reload.go's dev-mode client forces the
 		// SPA refresh of the current page for those.
 		Poll(2*time.Second).
 		// RPC: chat send, reset, approve/reject, undo.
@@ -94,7 +94,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	// data-fui-open="kiln-agent-settings". Loads the same panel CSS
 	// (widgetCSS) so .kiln-modal-card, .kiln-modal-title, .kiln-button
 	// and friends are styled. Without this the modal renders as
-	// transparent floating text — looks like the gear "doesn't work".
+	// transparent floating text, looks like the gear "doesn't work".
 	settings := preset.Modal("kiln-agent-settings").
 		Hidden().
 		DeepLink("modal", "agent-settings").
@@ -121,7 +121,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	// Hidden Modal: reset confirmation, opened by the ↺ button via
 	// data-fui-open="kiln-reset-confirm". Reset is destructive
 	// (truncates journal + drops DB schema) so a single misclick
-	// shouldn't lose work — the modal forces an explicit Confirm.
+	// shouldn't lose work, the modal forces an explicit Confirm.
 	resetConfirm := preset.Modal("kiln-reset-confirm").
 		Hidden().
 		DeepLink("modal", "reset-confirm").
@@ -130,7 +130,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	resetConfirm.ExtraCSS = widgetCSS
 	widget.Mount(r, &resetConfirm)
 
-	widget.MountRuntime(r) // idempotent — the framework runtime URL goes here
+	widget.MountRuntime(r) // idempotent, the framework runtime URL goes here
 }
 
 func (pe *panelEnv) helpHTML() string {
@@ -166,7 +166,7 @@ func (pe *panelEnv) resetConfirmHTML() string {
 		// Live count updates via the world_snapshot signal which
 		// refreshes on every world_edit / session_reset.
 		`<p class="kiln-modal-sub">Currently live: <strong data-fui-signal="world_snapshot">` + render.Escape(pe.worldSnapshotText()) + `</strong>. Reset wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen is gone.</p>` +
-		`<p class="kiln-modal-tip">Snapshot first with <code>kiln freeze --diff</code> in your terminal — emits a review summary you can paste into a commit message before resetting.</p>` +
+		`<p class="kiln-modal-tip">Snapshot first with <code>kiln freeze --diff</code> in your terminal: emits a review summary you can paste into a commit message before resetting.</p>` +
 		`<div class="kiln-modal-actions">` +
 		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel <kbd class="kiln-kbd">Esc</kbd></button>` +
 		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-refresh="kiln-panel" data-fui-rpc-close>Reset</button>` +
@@ -175,11 +175,11 @@ func (pe *panelEnv) resetConfirmHTML() string {
 }
 
 // agentSettingsHTML is the modal body. The list itself is server-
-// rendered via the agent_list_html signal — the runtime hydrates
+// rendered via the agent_list_html signal, the runtime hydrates
 // the placeholder on widget mount.
 //
 // Uses kiln-modal-* classes that already have styled rules in
-// kiln/chat/style.go (.kiln-modal — the card container, etc.).
+// kiln/chat/style.go (.kiln-modal, the card container, etc.).
 func (pe *panelEnv) agentSettingsHTML() string {
 	return `<div class="kiln-modal">` +
 		`<h2 class="kiln-modal-title">Agent settings</h2>` +
@@ -214,7 +214,7 @@ func (pe *panelEnv) agentListHTML() string {
 		b.WriteString(`<p class="kiln-modal-tip">A turn is running. Changing the agent applies to the next turn.</p>`)
 	}
 
-	// If zero adapters are installed, prepend an install hint —
+	// If zero adapters are installed, prepend an install hint,
 	// otherwise the modal looks like a list of broken options.
 	anyInstalled := false
 	for _, a := range available {
@@ -224,7 +224,7 @@ func (pe *panelEnv) agentListHTML() string {
 		}
 	}
 	if !anyInstalled && len(available) > 0 {
-		b.WriteString(`<p class="kiln-modal-tip">No agent CLIs detected on PATH. Install one to enable chat-driven builds — e.g. ` +
+		b.WriteString(`<p class="kiln-modal-tip">No agent CLIs detected on PATH. Install one to enable chat-driven builds, e.g. ` +
 			`install <code>omp</code> (recommended for GLM-5.2), ` +
 			`<code>npm i -g @anthropic-ai/claude-code</code>, ` +
 			`or <code>npm i -g @openai/codex</code>.</p>`)
@@ -237,8 +237,8 @@ func (pe *panelEnv) agentListHTML() string {
 	// the next /state poll tick (the RPC also triggers one).
 	b.WriteString(`<form class="kiln-adapter-list" data-fui-rpc="/kiln/agent" data-fui-rpc-close>`)
 
-	// "none" sentinel — always present, always installed.
-	writeAdapterRow(&b, "none", "(no agent — chat goes to journal but nothing runs)", true, curName == "none" || curName == "")
+	// "none" sentinel, always present, always installed.
+	writeAdapterRow(&b, "none", "(no agent: chat goes to journal but nothing runs)", true, curName == "none" || curName == "")
 
 	for _, a := range available {
 		name, _ := a["name"].(string)
@@ -274,7 +274,7 @@ func writeAdapterRow(b *strings.Builder, name, display string, installed, isCurr
 	)
 	suffix := ""
 	if !installed {
-		suffix = " — not installed"
+		suffix = ": not installed"
 	}
 	fmt.Fprintf(b,
 		`<div class="kiln-adapter-label"><div class="kiln-adapter-name">%s</div><div class="kiln-adapter-display">%s%s</div></div>`,
@@ -336,7 +336,7 @@ func (pe *panelEnv) headerHTML() string {
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
 		// When there's no agent wired, render the chip as a button
-		// that opens the gear modal directly — the user has a one-
+		// that opens the gear modal directly, the user has a one-
 		// click path to fix it from where they noticed the problem.
 		// kiln-panel-agent-none CSS already styles it distinctly.
 		(func() string {
@@ -387,7 +387,7 @@ func (pe *panelEnv) buildStatusHTML() string {
 
 // worldSnapshotTextLocked is the body of worldSnapshotText, run under
 // Live.ReadSession's held read lock. It must not let the *world.World
-// (or anything reachable from it: Entities, Pages, …) escape — only
+// (or anything reachable from it: Entities, Pages, …) escape, only
 // the rendered string leaves the closure.
 func worldSnapshotTextLocked(w *world.World) string {
 	if w == nil {
@@ -422,7 +422,7 @@ func worldSnapshotTextLocked(w *world.World) string {
 }
 
 // worldSnapshotTooltip is the longer-form world summary shown on
-// hover of the snapshot pill — always lists every entity by name
+// hover of the snapshot pill, always lists every entity by name
 // regardless of count, so even sprawling worlds reveal their full
 // contents without opening /kiln/world.
 func (pe *panelEnv) worldSnapshotTooltip() string {
@@ -433,10 +433,10 @@ func (pe *panelEnv) worldSnapshotTooltip() string {
 
 // worldSnapshotTooltipLocked is the body of worldSnapshotTooltip, run
 // under Live.ReadSession's held read lock. Must not let *world.World
-// escape — only the rendered string.
+// escape, only the rendered string.
 func worldSnapshotTooltipLocked(w *world.World) string {
 	if w == nil || (len(w.Entities) == 0 && len(w.Pages) == 0 && len(w.Routes) == 0 && len(w.Hooks) == 0) {
-		return "Empty world — open /kiln/world for the IR"
+		return "Empty world: open /kiln/world for the IR"
 	}
 	var b strings.Builder
 	if n := len(w.Entities); n > 0 {
@@ -504,7 +504,7 @@ func (pe *panelEnv) agentLabel() string {
 }
 
 // lastUserMessageMillisLocked returns the UnixMillis timestamp of the
-// most recent user chat event, or 0. Run under Live.ReadSession — the
+// most recent user chat event, or 0. Run under Live.ReadSession, the
 // chat slice is session-reachable and must not escape.
 func lastUserMessageMillisLocked(chat []journal.ChatEvent) int64 {
 	for i := len(chat) - 1; i >= 0; i-- {
@@ -520,7 +520,7 @@ func lastUserMessageMillisLocked(chat []journal.ChatEvent) int64 {
 // entity exists → suggest building on it (page, hook, relation).
 // Returns nil when the world is rich enough that suggestions would
 // just be noise (any chat history triggers an empty list upstream).
-// Run under Live.ReadSession — *world.World must not escape.
+// Run under Live.ReadSession, *world.World must not escape.
 func quickstartExamplesLocked(w *world.World) []string {
 	if w == nil || len(w.Entities) == 0 {
 		return []string{
@@ -556,7 +556,7 @@ func quickstartExamplesLocked(w *world.World) []string {
 // toolCountsLocked returns (totalCalls, pendingCalls) in the current
 // turn. Pending = tool_call without a matching tool_result yet. Drives
 // the 'N tools (M done · K running)' split in the in-flight indicator.
-// Run under Live.ReadSession — the chat slice must not escape.
+// Run under Live.ReadSession, the chat slice must not escape.
 func toolCountsLocked(chat []journal.ChatEvent) (calls, pending int) {
 	lastUser := -1
 	for i := len(chat) - 1; i >= 0; i-- {
@@ -611,7 +611,7 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 // Live.ReadSession's held read lock. It reads sess.Chat / sess.Plans
 // and the journal directly; the composed sub-reads (quickstart tray,
 // in-flight thinking row) use their *Locked forms taking the already-
-// locked data — NOT the panelEnv wrapper methods. Go's RWMutex is not
+// locked data, NOT the panelEnv wrapper methods. Go's RWMutex is not
 // reentrant, so calling pe.quickstartExamples() / pe.thinkingRowHTML()
 // (each of which would re-RLock) from inside this closure would
 // deadlock against a pending Live.Apply writer. The session pointer
@@ -793,7 +793,7 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 			d := r.Timestamp.Sub(e.Timestamp)
 			suffix = ` <span class="kiln-msg-tool-elapsed">(` + render.Escape(formatElapsed(d)) + `)</span>`
 		} else {
-			// Live ticker — runtime rewrites text every 200ms relative
+			// Live ticker, runtime rewrites text every 200ms relative
 			// to the call timestamp so pending tools surface their age.
 			suffix = fmt.Sprintf(` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running… <span data-fui-tick-elapsed="%d">…</span>)</span>`,
 				e.Timestamp.UnixMilli())
@@ -906,7 +906,7 @@ func formatElapsed(d time.Duration) string {
 }
 
 // formatRelTime returns a brief relative-time string like '12s ago',
-// '4m ago', '1h ago' — enough context for plan cards / chat rows
+// '4m ago', '1h ago', enough context for plan cards / chat rows
 // to convey freshness without taking too much space.
 func formatRelTime(t time.Time) string {
 	d := time.Since(t)
@@ -1017,7 +1017,7 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 
 // All RPC handlers return a small JSON ack. The actual log update flows
 // to the panel via the /state poll (a successful RPC triggers an
-// immediate re-fetch) — that's the only path that should write to
+// immediate re-fetch), that's the only path that should write to
 // chat_html.
 
 func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
@@ -1026,7 +1026,7 @@ func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if strings.TrimSpace(body.Text) == "" {
-		// Don't 4xx on empty — that would surface as an RPC failure
+		// Don't 4xx on empty, that would surface as an RPC failure
 		// in the runtime. Silent ack: nothing to do, no journal write.
 		ack(w)
 		return
@@ -1144,7 +1144,7 @@ func splitPagePrefix(s string) (page, rest string) {
 	}
 	body := s[len("[page="):end]
 	if i := strings.Index(body, " "); i >= 0 {
-		// "[page=/x ?q=1]" — drop the query suffix from the chip text.
+		// "[page=/x ?q=1]". Drop the query suffix from the chip text.
 		body = body[:i]
 	}
 	return body, s[end+2:]

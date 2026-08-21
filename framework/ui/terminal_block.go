@@ -1,10 +1,10 @@
 package ui
 
-// TerminalBlock — a presentational CLI/terminal mock: a labelled header with
+// TerminalBlock: a presentational CLI/terminal mock: a labelled header with
 // a status dot over a mono, pre-wrapped body. For docs and marketing pages
 // that show commands and their output ("$ go install …" → "→ installed").
 //
-// It is NOT an interactive terminal — there is no input, no execution. Pair
+// It is NOT an interactive terminal. There is no input, no execution. Pair
 // the body lines with the tone helpers TerminalOut (dim output) and
 // TerminalOK (success); plain command text goes in as render.Text.
 
@@ -23,7 +23,7 @@ type TerminalBlockConfig struct {
 }
 
 // TerminalBlock renders a CLI mock. Body lines are rendered verbatim in a
-// pre-wrapped mono body — embed "\n" to break lines.
+// pre-wrapped mono body. Embed "\n" to break lines.
 func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: TerminalBlock requires Label")

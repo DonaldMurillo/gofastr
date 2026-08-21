@@ -9,7 +9,7 @@ import (
 // to start from an example, and every one of them declares an app.module under
 // the framework's own module path. Outside this repo that path is claimed by
 // both the local module and the framework dependency, so `go build` fails with
-// "ambiguous import" — an error no go.mod edit can resolve, and one the
+// "ambiguous import": an error no go.mod edit can resolve, and one the
 // generator's own "Next steps" used to lead the reader deeper into by printing
 // `go mod init <the colliding path>`.
 func TestModuleCollisionFlagsFrameworkSubpaths(t *testing.T) {
@@ -35,7 +35,7 @@ func TestModuleCollisionFlagsFrameworkSubpaths(t *testing.T) {
 }
 
 // A module path that merely shares a prefix string with the framework's is not
-// a collision — only a true path-segment descendant is. "…/gofastr-app" lives
+// a collision: only a true path-segment descendant is. "…/gofastr-app" lives
 // beside the framework module, not inside it, and builds fine.
 func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 	for _, module := range []string{

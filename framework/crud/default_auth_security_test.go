@@ -18,7 +18,7 @@ import (
 )
 
 // setupPlainHandler builds a CrudHandler over a "notes" table whose
-// EntityConfig declares NEITHER OwnerField NOR Access — the exact shape
+// EntityConfig declares NEITHER OwnerField NOR Access, the exact shape
 // issue #65 was filed against: a blueprint entity with no `access:` block
 // and no per-user scoping.
 func setupPlainHandler(t *testing.T) (*CrudHandler, *sql.DB) {
@@ -39,7 +39,7 @@ func setupPlainHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 }
 
 // TestAnonymousCreateRejectedByDefault pins issue #65: an entity with no
-// OwnerField and no Access block must refuse an anonymous POST — before the
+// OwnerField and no Access block must refuse an anonymous POST, before the
 // fix, Create() returned 201 and persisted the row for anyone.
 func TestAnonymousCreateRejectedByDefault(t *testing.T) {
 	ch, db := setupPlainHandler(t)
@@ -77,7 +77,7 @@ func TestAnonymousListRejectedByDefault(t *testing.T) {
 
 // TestAuthenticatedCreateAllowedByDefault: once a session/user is present
 // in context (the way SessionMiddleware installs one), an entity with no
-// OwnerField/Access still allows the write — the default gate requires
+// OwnerField/Access still allows the write, the default gate requires
 // authentication, not a specific permission.
 func TestAuthenticatedCreateAllowedByDefault(t *testing.T) {
 	ch, _ := setupPlainHandler(t)
@@ -95,7 +95,7 @@ func TestAuthenticatedCreateAllowedByDefault(t *testing.T) {
 
 // TestPublicEntityOpensReadAndWrite pins the `Public` opt-out contract:
 // it is a full, deliberate opt-out (a public contact form, a blog's
-// comments) — every operation is open to anonymous callers, not a
+// comments), every operation is open to anonymous callers, not a
 // partial "reads only" relaxation. Entities that want public reads but
 // gated writes use a declared Access block instead (blank Access.Read +
 // a real Access.Create permission).
@@ -129,7 +129,7 @@ func TestPublicEntityOpensReadAndWrite(t *testing.T) {
 }
 
 // TestOwnerFieldUnaffectedByDefaultGate: entities that already declare
-// OwnerField keep their existing contract untouched — RequireOwner alone
+// OwnerField keep their existing contract untouched. RequireOwner alone
 // governs them, same as before #65.
 func TestOwnerFieldUnaffectedByDefaultGate(t *testing.T) {
 	ch := setupOwnerCreateInProcHandler(t)
@@ -144,12 +144,12 @@ func TestOwnerFieldUnaffectedByDefaultGate(t *testing.T) {
 }
 
 // TestAccessEntityUnaffectedByDefaultGate: entities that already declare an
-// Access block keep RBAC as the sole gate — no additional baseline-session
+// Access block keep RBAC as the sole gate, no additional baseline-session
 // requirement layered on top (matches "as today").
 func TestAccessEntityUnaffectedByDefaultGate(t *testing.T) {
 	ch, _ := setupPermissionedHandler(t)
 
-	// No session, no policy at all — must still be refused (fail-closed),
+	// No session, no policy at all, must still be refused (fail-closed),
 	// but by the existing permission gate, not a new baseline check with a
 	// different error shape.
 	req := httptest.NewRequest(http.MethodPost, "/api/docs", strings.NewReader(`{"body":"x"}`))
@@ -164,7 +164,7 @@ func TestAccessEntityUnaffectedByDefaultGate(t *testing.T) {
 
 // TestSSEStricterThanBlankReadAccess pins the EventStream baseline: a
 // declared Access block with a BLANK Read permission means "public static
-// reads", but the live feed must still demand a session — otherwise an
+// reads", but the live feed must still demand a session, otherwise an
 // anonymous subscriber turns the public list endpoint into a real-time
 // scrape of every write. Only Public (the full opt-out) opens the stream.
 func TestSSEStricterThanBlankReadAccess(t *testing.T) {

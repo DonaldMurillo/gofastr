@@ -17,7 +17,7 @@ import (
 // passed to onError if non-nil. If interval is <= 0 it defaults to 500ms.
 //
 // Polling avoids a third-party fsnotify dependency. For projects with a
-// large source tree this is fine — we only stat files we already know about.
+// large source tree this is fine: we only stat files we already know about.
 func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.Duration, onError func(error)) error {
 	if interval <= 0 {
 		interval = 500 * time.Millisecond
@@ -40,7 +40,7 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 			return nil
 		case <-ticker.C:
 			if state.changed(watchDirs) {
-				b.log("change detected — rebuilding")
+				b.log("change detected: rebuilding")
 				if _, err := b.Build(ctx); err != nil && onError != nil {
 					onError(err)
 				}

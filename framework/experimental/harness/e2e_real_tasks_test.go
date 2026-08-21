@@ -3,7 +3,7 @@
 // Real-provider verification for the TaskList tool. Hits ZAI GLM-5.1
 // with the TaskList tool registered, asks the model to plan three
 // steps, and asserts the tool was dispatched and the in-memory
-// snapshot reflects the new plan. Token-cheap by design — one turn,
+// snapshot reflects the new plan. Token-cheap by design, one turn,
 // short prompt, no tool chains. Skipped when ZAI_API_KEY isn't set.
 //
 // Run with:
@@ -38,7 +38,7 @@ func TestE2EReal_ZAI_TaskList(t *testing.T) {
 	codingPlan := os.Getenv("ZAI_CODING_PLAN") == "1" || os.Getenv("ZAI_CODING_PLAN") == "true"
 	prov := &zai.Provider{APIKey: key, CodingPlan: codingPlan}
 
-	// Tool registry with just TaskList — keeps the test deterministic.
+	// Tool registry with just TaskList, keeps the test deterministic.
 	reg := tool.NewRegistry()
 	if err := reg.Register(context.Background(),
 		staticToolSourceFn([]tool.Tool{builtins.TaskList{}})); err != nil {
@@ -65,7 +65,7 @@ func TestE2EReal_ZAI_TaskList(t *testing.T) {
 	defer cancel()
 	sub := c.Subscribe(ctx)
 
-	// Use a tight prompt that explicitly asks for the tool — keeps
+	// Use a tight prompt that explicitly asks for the tool, keeps
 	// the test cheap (single turn, ~few hundred tokens) and stable.
 	prompt := "Use the TaskList tool to record this plan: (1) audit imports, " +
 		"(2) fix race in bus, (3) write changelog. Mark the first as in_progress " +
@@ -113,7 +113,7 @@ func TestE2EReal_ZAI_TaskList(t *testing.T) {
 	if len(snap) < 3 {
 		t.Fatalf("task snapshot has %d items, want at least 3: %+v", len(snap), snap)
 	}
-	// Find each by status — the model might reorder or rephrase, so
+	// Find each by status, the model might reorder or rephrase, so
 	// match loosely on content keywords.
 	hasInProgress := false
 	hasCompleted := false
@@ -186,7 +186,7 @@ func TestE2EReal_ZAI_TaskList_AutoUsed(t *testing.T) {
 	defer cancel()
 	sub := c.Subscribe(ctx)
 
-	// NO mention of TaskList in the prompt — the model has to choose
+	// NO mention of TaskList in the prompt, the model has to choose
 	// the tool based on the system-prompt guidance alone.
 	prompt := "I want to add a new feature to my Go project: (1) add a Config struct with three fields, " +
 		"(2) write a parser that loads it from a TOML file, (3) write a test for the parser. " +
@@ -231,7 +231,7 @@ func TestE2EReal_ZAI_TaskList_AutoUsed(t *testing.T) {
 // list other tools by name, ask for a capability, expect the model
 // to call ToolSearch first, then call the discovered tool.
 //
-// This is the real value-prop of ToolSearch — the model shouldn't
+// This is the real value-prop of ToolSearch, the model shouldn't
 // need every tool's schema pre-loaded; it can discover on demand.
 func TestE2EReal_ZAI_ToolSearch_Discovers(t *testing.T) {
 	key := os.Getenv("ZAI_API_KEY")
@@ -256,7 +256,7 @@ func TestE2EReal_ZAI_ToolSearch_Discovers(t *testing.T) {
 	defer bus.Close()
 	d := engine.NewDispatcher(bus, reg)
 	eng := engine.NewEngine(session, bus, prov, "glm-5.1", d)
-	// v0.1 ToolSearch is INFORMATIONAL — it surfaces tool metadata so
+	// v0.1 ToolSearch is INFORMATIONAL, it surfaces tool metadata so
 	// the model can read the schema and call the tool the next round.
 	// Both tools must be in eng.Tools because most OpenAI-compatible
 	// providers (ZAI included) won't dispatch a tool that's not in
@@ -341,7 +341,7 @@ and re-call TaskList to mark each step completed as you finish it.`
 // TestE2EReal_ZAI_NoSubAgentCascade reproduces the exact prompt that
 // blew up sess_01KSDZK5… ("create 3 tasks to search... execute them
 // via subagents") and asserts the turn completes WITHOUT the
-// cascade — Agent count must be ≤ 3 (one per task, not nested) and
+// cascade. Agent count must be ≤ 3 (one per task, not nested) and
 // TaskList calls must come from the PARENT only (sub-agents don't
 // see it in their tool catalog).
 //

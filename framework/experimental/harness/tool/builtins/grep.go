@@ -16,7 +16,7 @@ import (
 )
 
 // Grep finds lines matching a regex across files. Tiny ripgrep
-// substitute — exact line matches per file.
+// substitute, exact line matches per file.
 type Grep struct{}
 
 func (Grep) Name() string        { return "Grep" }

@@ -20,7 +20,7 @@ import (
 // `gofastr generate sdk` emits downloadable client SDKs for the app's HTTP
 // API: a standalone stdlib-only Go module (the same typed client the app
 // embeds, packaged with its own go.mod) and a handrolled ESM client.js +
-// client.d.ts pair — deliberately no npm packaging; publishing is the app
+// client.d.ts pair, deliberately no npm packaging; publishing is the app
 // owner's call. A dist/ directory holds the servable artifacts (sdk-go.zip,
 // client.js, client.d.ts, manifest.json) that framework/sdkdocs hosts.
 //
@@ -54,7 +54,7 @@ type sdkSpec struct {
 	GofastrVersion string
 	Module         string
 	BaseURL        string
-	APIPrefix      string // "" or "/api" — baked into docs/examples, not client paths
+	APIPrefix      string // "" or "/api": baked into docs/examples, not client paths
 	Decls          []framework.EntityDeclaration
 	Entities       []cliEntity
 }
@@ -75,7 +75,7 @@ func (s sdkSpec) Header() string {
 
 // sdkCommentSafe makes a value inert inside every comment syntax the SDK
 // emitters use. `name` and `sdk_version` come from --name/--sdk-version or from
-// the project's own gofastr.codegen.yml (applySDKConfigDefaults) — the same
+// the project's own gofastr.codegen.yml (applySDKConfigDefaults), the same
 // provenance the codegen exec gate already treats as potentially hostile,
 // because a config committed to a repo you cloned is not a config you wrote.
 //
@@ -102,16 +102,16 @@ func sdkCommentSafe(value string) string {
 // into the SDK's go.mod. Deliberately narrower than the spec allows: the value
 // is interpolated into `module %s` with nothing between it and the next
 // directive, so a single newline turns it into `require`/`replace` lines that
-// the SDK's consumers build — a `replace` naming an attacker-controlled
+// the SDK's consumers build. A `replace` naming an attacker-controlled
 // directory is arbitrary code execution on `go build` in a downstream repo.
 var sdkModulePathRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~/-]*$`)
 
 func validateSDKModulePath(module string) error {
 	if !sdkModulePathRe.MatchString(module) {
-		return fmt.Errorf("--module %q is not a usable Go module path — use letters, digits, dot, dash, underscore, tilde and slash (e.g. example.com/app-sdk)", module)
+		return fmt.Errorf("--module %q is not a usable Go module path. Use letters, digits, dot, dash, underscore, tilde and slash (e.g. example.com/app-sdk)", module)
 	}
 	if strings.Contains(module, "//") || strings.HasSuffix(module, "/") {
-		return fmt.Errorf("--module %q is not a usable Go module path — empty path element", module)
+		return fmt.Errorf("--module %q is not a usable Go module path: empty path element", module)
 	}
 	return nil
 }
@@ -202,7 +202,7 @@ func runGenerateSDK(args []string) {
 	fmt.Println()
 	fmt.Println("  Next steps:")
 	fmt.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q)})\n", filepath.ToSlash(filepath.Join(opts.outDir, "dist")))
-	fmt.Println("    re-run this command whenever entities change — output regenerates in place")
+	fmt.Println("    re-run this command whenever entities change: output regenerates in place")
 }
 
 func parseSDKOptions(args []string) (sdkOptions, error) {
@@ -423,7 +423,7 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		spec.Entities = append(spec.Entities, buildEntityModel(decl, cliVerbs))
 	}
 	if len(spec.Decls) == 0 {
-		return sdkSpec{}, fmt.Errorf("selection matches no entities — nothing to generate")
+		return sdkSpec{}, fmt.Errorf("selection matches no entities: nothing to generate")
 	}
 	return spec, nil
 }
@@ -515,7 +515,7 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]generatedFile,
 }
 
 // sdkSchemaHash computes the drift-detection hash over the selected
-// declarations — the generation-time half of the check sdkdocs.Mount
+// declarations, the generation-time half of the check sdkdocs.Mount
 // recomputes against the live registry.
 func sdkSchemaHash(decls []framework.EntityDeclaration) (string, error) {
 	var named []sdk.NamedConfig
@@ -550,7 +550,7 @@ func sdkExampleBaseURL(spec sdkSpec) string {
 	return sdkExampleHost(spec) + spec.APIPrefix
 }
 
-// sdkExampleHost is the app origin WITHOUT the API prefix — docs-site and
+// sdkExampleHost is the app origin WITHOUT the API prefix. Docs-site and
 // download URLs mount on the host, only API calls live under the prefix.
 func sdkExampleHost(spec sdkSpec) string {
 	base := spec.BaseURL
@@ -573,10 +573,10 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	fmt.Fprintf(&sb, "page, err := c.List%s(ctx, nil)\n```\n\n", first.Struct)
 	sb.WriteString("The base URL must include the API prefix when the server mounts one (e.g. `/api`).\n\n")
 	sb.WriteString("## Filtering, sorting, pagination\n\n")
-	sb.WriteString("List methods take `url.Values`. Query parameter names are the **snake_case**\ncolumn names (responses are camelCase — that asymmetry is the server's contract):\n\n")
+	sb.WriteString("List methods take `url.Values`. Query parameter names are the **snake_case**\ncolumn names (responses are camelCase: that asymmetry is the server's contract):\n\n")
 	// Skip NoQuery columns when picking the example. The server refuses them
 	// on every filter surface, so Fields[0] taken blindly documents a request
-	// that answers 400 — from the snippet whose whole job is to demonstrate
+	// that answers 400, from the snippet whose whole job is to demonstrate
 	// the casing contract working. Mirrors the JS README above.
 	filterField := ""
 	for i := range first.Fields {

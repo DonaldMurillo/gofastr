@@ -20,7 +20,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// F2 — a module cannot reach entities outside its grant via caller-supplied
+// F2: a module cannot reach entities outside its grant via caller-supplied
 // CONTROL KEYS smuggled through the child filter. expandRaw used to forward
 // every top-level key of p.Filter into the CRUD list query, so a child could
 // inject include/trashed/where/limit (and any undeclared name). The fix
@@ -85,7 +85,7 @@ func TestBrokerFilterCannotSetControlKeys(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// F3 — a brokered re-dispatch NEVER lifts owner scope, even when the
+// F3: a brokered re-dispatch NEVER lifts owner scope, even when the
 // re-resolved caller legitimately holds CrossOwnerRead. The root-cause fix
 // stamps every brokered re-dispatch context with crud.WithBrokeredCall so
 // crossOwnerReadGranted returns false by construction; the gate at broker.gate
@@ -144,7 +144,7 @@ func TestBrokerNeverLiftsOwnerScope(t *testing.T) {
 
 	// Sub-case 3: a brokered call that PROCEEDS (no CrossOwnerRead on the
 	// entity) must still stamp the re-dispatch context with the brokeredCall
-	// marker — the root-cause guarantee that owner scope holds by
+	// marker, the root-cause guarantee that owner scope holds by
 	// construction for every brokered call.
 	t.Run("redispatch_context_stamped", func(t *testing.T) {
 		var sawMarker atomic.Bool
@@ -172,7 +172,7 @@ func TestBrokerNeverLiftsOwnerScope(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// F6 — delegation handles are app-global (one Broker.handles map shared by
+// F6: delegation handles are app-global (one Broker.handles map shared by
 // every module). A handle minted for module A must be refused when it is
 // echoed back under module B's reverse handler. The fix binds each handle to
 // the minting module and rejects on mismatch in resolveCaller.
@@ -200,7 +200,7 @@ func TestBrokerHandleBoundToModule(t *testing.T) {
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
 
-	// Sanity: the SAME handle under moduleA's own handler is accepted — this
+	// Sanity: the SAME handle under moduleA's own handler is accepted, this
 	// is a cross-module bind, not a blanket rejection.
 	hit.Store(false)
 	hA := b.entityHandler(ModuleGrantView{Name: "moduleA", Grants: []access.Permission{"docs:read"}}, opQuery)

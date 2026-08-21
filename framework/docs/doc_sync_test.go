@@ -13,7 +13,7 @@ import (
 // UI/runtime contract) and the embedded extract content/runtime-contract.md
 // (what `gofastr docs` readers see). Every data-fui-* attribute that
 // leads a row of the ARCHITECTURE attribute table must appear in the
-// embedded doc — so adding an attribute upstream without carrying it
+// embedded doc, so adding an attribute upstream without carrying it
 // into the extract fails here, in the same spirit as
 // core-ui/runtime/doc_manifest_test.go.
 func TestRuntimeContractCoversArchitectureAttrs(t *testing.T) {

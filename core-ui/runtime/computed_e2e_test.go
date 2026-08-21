@@ -12,7 +12,7 @@ import (
 )
 
 // TestComputedModule_NoEval is a CSP-safety guard: the computed reducer
-// engine must never use eval/Function — reducers are real host functions
+// engine must never use eval/Function, reducers are real host functions
 // registered by name, not strings.
 func TestComputedModule_NoEval(t *testing.T) {
 	src, err := os.ReadFile("src/computed.js")
@@ -32,7 +32,7 @@ func TestComputedModule_NoEval(t *testing.T) {
 // TestComputed_RecomputesOnDepChange drives the full computed flow in a
 // browser: a host-registered reducer derives a greeting from a dependency
 // signal; mutating the dependency recomputes and fans the result out to
-// the computed's consumer — no server round-trip.
+// the computed's consumer, no server round-trip.
 func TestComputed_RecomputesOnDepChange(t *testing.T) {
 	js, err := RuntimeJS()
 	if err != nil {

@@ -48,7 +48,7 @@ func sourceHost(t *testing.T, src OriginSource) *Host {
 }
 
 // THE requirement: a customer types their domain into a settings page and the
-// embed works — no deploy, no restart.
+// embed works. No deploy, no restart.
 //
 // Before this, the source narrowed the shell's frame-ancestors but the grant
 // path still gated on the boot-time list, so the customer's domain appeared in
@@ -79,7 +79,7 @@ func TestSourceOriginCanObtainAGrantWithoutADeploy(t *testing.T) {
 	}
 }
 
-// Removing the row takes effect immediately, on the next request — it does not
+// Removing the row takes effect immediately, on the next request: it does not
 // wait out the grant's TTL. Same property de-listing a static origin has.
 func TestRemovingASourceOriginRevokesInFlightGrants(t *testing.T) {
 	const customer = "https://shop.acme.example"
@@ -120,7 +120,7 @@ func TestSourceErrorFailsClosedOnTheGrantPath(t *testing.T) {
 }
 
 // The static list still works on its own, and is checked WITHOUT consulting the
-// source — an app that lists its origins at boot should not pay for a store
+// source: an app that lists its origins at boot should not pay for a store
 // lookup, and an app with no source at all must behave exactly as before.
 func TestStaticOriginsBypassTheSource(t *testing.T) {
 	src := &liveSource{origins: map[string]bool{}, err: errors.New("must not be consulted")}

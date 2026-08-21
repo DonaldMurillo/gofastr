@@ -10,8 +10,8 @@ import (
 // its worktree-isolation config under a dedicated filename, NOT gofastr.yml.
 // The blueprint pipeline (loadBlueprint / `gofastr validate`) claims
 // gofastr.yml, so an isolation config written there made the help's own
-// example sequence — `gofastr init myapp` then `gofastr validate gofastr.yml`
-// — fail with `unknown key "version"`: the isolation config's top-level
+// example sequence, `gofastr init myapp` then `gofastr validate gofastr.yml`,
+// fail with `unknown key "version"`: the isolation config's top-level
 // `version: 1` is not a blueprint key.
 func TestInitDoesNotCollideWithBlueprintFilename(t *testing.T) {
 	dir := t.TempDir()

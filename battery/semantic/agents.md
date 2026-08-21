@@ -11,7 +11,7 @@ search", "AI memory", "index codebase for an agent", "context hook".
 
 **Import:** `github.com/DonaldMurillo/gofastr/battery/semantic`
 
-**Shape (recommended — Ollama-backed, persistent, hybrid):**
+**Shape (recommended: Ollama-backed, persistent, hybrid):**
 ```go
 idx, err := semantic.Open(semantic.Options{
     Embedder: semantic.NewOllamaEmbedder(semantic.OllamaConfig{
@@ -23,7 +23,7 @@ idx, err := semantic.Open(semantic.Options{
 if err != nil { return err }
 defer idx.Close()
 
-// Index documents (re-Add is idempotent — same ID overwrites stale chunks):
+// Index documents (re-Add is idempotent, same ID overwrites stale chunks):
 _ = idx.Add(ctx,
     semantic.Document{ID: "auth-readme", Source: "auth.md", Text: "..."},
     semantic.Document{ID: "crud-readme", Source: "crud.md", Text: "..."},
@@ -38,7 +38,7 @@ hits, err := idx.Query(ctx, semantic.Query{
 })
 ```
 
-**Shape (offline / test — stub embedder, no persistence):**
+**Shape (offline / test: stub embedder, no persistence):**
 ```go
 idx, _ := semantic.Open(semantic.Options{
     Embedder: semantic.NewStubEmbedder(128), // deterministic FNV hash, no model
@@ -52,13 +52,13 @@ app.RegisterPlugin(semantic.NewPlugin(idx))
 // DELETE /semantic/doc/{id}
 ```
 
-**AI-typical anti-pattern** — if you're about to write any of these,
+**AI-typical anti-pattern.** If you're about to write any of these,
 stop and use `battery/semantic` instead:
 - A `[]float32` map in a global var with a hand-rolled cosine loop
 - Calling an external embedding API and storing raw vectors in
   Postgres/SQLite without a dedicated retrieval layer. **If you genuinely
   need vectors in Postgres**, the sanctioned way is `semantic.NewPgVector`
-  (a `PgVectorStore` over pgvector) — it handles cosine ranking, filters,
+  (a `PgVectorStore` over pgvector). It handles cosine ranking, filters,
   hybrid/keyword hydration, and schema management. Don't hand-roll the
   retrieval SQL.
 - Building a BM25 or TF-IDF index from scratch in Go
@@ -68,7 +68,7 @@ stop and use `battery/semantic` instead:
 **Embedder choice:** `OllamaEmbedder` is the recommended production
 default (no CGO, no bundled model, real semantic quality). Use
 `StubEmbedder` for tests and offline CI. Any `Embedder`-shaped value
-works — wire an OpenAI Embeddings API client, a private microservice,
+works. Wire an OpenAI Embeddings API client, a private microservice,
 or a local model server by implementing the three-method interface.
 
 **Persistence and model lock-in:** when `Options.Path` is set, the

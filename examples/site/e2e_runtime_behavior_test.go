@@ -11,7 +11,7 @@ import (
 
 // Behavioral contracts for the runtime security guarantees pinned during
 // the adversarial security-audit campaigns. Each test renders a live page, drives real DOM events,
-// and asserts the runtime's observable contract — not the presence of a
+// and asserts the runtime's observable contract, not the presence of a
 // substring in the bundle.
 
 // Item 3a: setSignal with mode=attr + attr=href MUST scrub
@@ -73,7 +73,7 @@ func TestE2E_AnchorDownloadSkipsSPA(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	// Capture whether gofastr:navigate fires on the click — that event
+	// Capture whether gofastr:navigate fires on the click, that event
 	// is the SPA-router's signal that it intercepted the anchor.
 	var navigateFired bool
 	var urlAfterClick string

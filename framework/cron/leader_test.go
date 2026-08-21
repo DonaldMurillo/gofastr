@@ -32,7 +32,7 @@ func (l *stubLease) Acquire(ctx context.Context) (bool, func(), error) {
 }
 
 // TestRunTick_SkipsWhenNotLeader: when leader election is configured and this
-// replica does NOT win the lease, the tick skips every job — so a second
+// replica does NOT win the lease, the tick skips every job, so a second
 // replica sharing the lease never double-fires the schedule.
 func TestRunTick_SkipsWhenNotLeader(t *testing.T) {
 	var fired atomic.Int32
@@ -134,7 +134,7 @@ func TestRunTick_DoesNotBlockOnInflightJobs(t *testing.T) {
 }
 
 // TestRunTick_ReleasesLeaseOnRunOncePanic: a panic inside RunOnce (here, a
-// panicking gate) must still schedule the lease release — the release is
+// panicking gate) must still schedule the lease release, the release is
 // deferred, not run only after RunOnce returns. Without the defer the lease
 // and its pinned connection would leak past the panic.
 func TestRunTick_ReleasesLeaseOnRunOncePanic(t *testing.T) {

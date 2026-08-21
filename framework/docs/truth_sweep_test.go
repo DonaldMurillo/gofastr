@@ -17,7 +17,7 @@ import (
 // battery/auth/password.go), but argon2id is now a REAL opt-in hasher, so
 // the doc may mention it ONLY when the code actually ships Argon2Hasher.
 // Pin both: no phantom package, and any argon2 claim must be backed by the
-// symbol — a fabricated claim with no symbol fails.
+// symbol. A fabricated claim with no symbol fails.
 func TestAuthDocHashingClaimsMatchCode(t *testing.T) {
 	doc := readDoc(t, "auth.md")
 	if strings.Contains(doc, "framework/auth`") {
@@ -109,7 +109,7 @@ func TestDocIndexHasNoAgentArtifacts(t *testing.T) {
 // ── 2026-07-31 review round: docs that taught APIs the same release deleted ──
 
 // widgets.md's opening quickstart taught Builder.RPCWithSignal and listed
-// Definition.Bootstrap — both removed in 0.55.0. A quickstart that does not
+// Definition.Bootstrap, both removed in 0.55.0. A quickstart that does not
 // compile is the worst class of doc bug: it is the first code a new user runs.
 func TestWidgetsDocDoesNotTeachDeletedBuilderAPI(t *testing.T) {
 	doc := readDoc(t, "widgets.md")
@@ -176,7 +176,7 @@ func TestQueueDocDocumentsTheEmptySentinel(t *testing.T) {
 }
 
 // isolation.md told you to configure isolation in gofastr.yml. The file was
-// renamed to gofastr.isolation.yml, which WINS the discovery order — so
+// renamed to gofastr.isolation.yml, which WINS the discovery order, so
 // following the doc silently configured nothing.
 func TestIsolationDocNamesTheRealConfigFile(t *testing.T) {
 	doc := readDoc(t, "isolation.md")

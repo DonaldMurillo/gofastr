@@ -8,7 +8,7 @@ import (
 )
 
 // Screens registered with a trailing slash should also resolve when the
-// client requests the same path without the slash — net/http.ServeMux
+// client requests the same path without the slash; net/http.ServeMux
 // gives this for free for raw subtrees, but here the path dispatch
 // happens inside the UIHost via App.Router.Resolve, so we have to do
 // it ourselves. A miss should redirect, not 404.

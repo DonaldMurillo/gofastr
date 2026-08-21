@@ -26,7 +26,7 @@ import (
 //     DOMContentLoaded + SPA-nav so a cold-cache visit still has the
 //     module ready when the user clicks.
 //   - Hovering a data-fui-prefetch="<module>" element triggers the
-//     module fetch before any click — the "warm the cache on hover"
+//     module fetch before any click, the "warm the cache on hover"
 //     path.
 //   - The manifest emitted in <head> binds each module to its content-
 //     addressed `?v=<hash>` URL.
@@ -51,7 +51,7 @@ func collectRuntimeModuleURLs(ctx context.Context) (*sync.Map, func()) {
 // Visiting / (home page) must NOT trigger fetches for runtime
 // modules whose markers aren't on the page. The site mounts a
 // site-wide toast stack on every page + emits the gofastr-sse meta
-// tag, so toasts.js and sse.js are legitimately loaded — those are
+// tag, so toasts.js and sse.js are legitimately loaded, those are
 // excluded. The split's payoff is asserting fileupload/menu
 // DON'T load.
 func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
@@ -75,7 +75,7 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// The home page has no fileupload zone, no menu — those modules
+	// The home page has no fileupload zone, no menu, those modules
 	// should not load. (toasts + sse load legitimately because of
 	// site-wide widgets above.)
 	for _, mod := range []string{"fileupload", "menu"} {
@@ -229,10 +229,10 @@ func TestE2E_RuntimeSplit_ManifestIsContentAddressed(t *testing.T) {
 // A user who clicks a `data-fui-open` button BEFORE the framework's
 // /__gofastr/widgets catalog fetch resolves must not lose the click.
 // Today the click delegator is installed inside the catalog .then()
-// callback — meaning on slow networks (Slow 3G, cold cache, a deploy
+// callback, meaning on slow networks (Slow 3G, cold cache, a deploy
 // in flight) the very first click on an open trigger hits no handler
 // at all. The button looks dead and the user clicks again, often
-// after the catalog has loaded — at which point the second click works
+// after the catalog has loaded, at which point the second click works
 // and the first click feels lost.
 //
 // The fix: install the click delegator in CORE at boot, before the
@@ -284,7 +284,7 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 
 // When `/__gofastr/runtime/toasts.js` fails to load (deploy mid-flight,
 // CDN cache miss, transient 5xx), the X-Gofastr-Toast header path used
-// to swallow the rejection via `.catch(() => {})` — the user's toast
+// to swallow the rejection via `.catch(() => {})`, the user's toast
 // (often a "Save failed" error) silently vanished. Core must show a
 // minimal fallback notice so the user still sees the message.
 func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
@@ -294,7 +294,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	app := newTestApp(t)
 	srv500 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/__gofastr/runtime/toasts.js" {
-			// Force toasts.js to 500 — simulates a deploy mid-flight.
+			// Force toasts.js to 500, simulates a deploy mid-flight.
 			http.Error(w, "broken", http.StatusInternalServerError)
 			return
 		}
@@ -307,7 +307,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 
 	var fallbackVisible bool
 	// Navigate to a page that doesn't pre-load the toast module so
-	// toasts.js isn't already cached — then manually trigger the
+	// toasts.js isn't already cached, then manually trigger the
 	// toast push path to exercise the fallback when the module 500s.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -347,13 +347,13 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 		// with the title text the server sent. POLL for it rather than
 		// sampling once after a fixed sleep: loadModule inserts module
 		// <script>s with async=false, so they join the document's
-		// in-order script list — and per the HTML spec even the ERROR
+		// in-order script list, and per the HTML spec even the ERROR
 		// event of an in-order script waits for every earlier pending
 		// in-order script to settle. The home page queues several
 		// modules at boot (toasts, sse, widgets, …); on a starved CI
 		// runner any of those fetches can outlive a fixed sleep, which
 		// delays the toasts.js onerror → fallback render past the
-		// sample point. The fallback is delayed, never lost — so wait
+		// sample point. The fallback is delayed, never lost, so wait
 		// on the real signal with a generous budget.
 		chromedp.Evaluate(`new Promise((resolve) => {
             const t0 = performance.now();
@@ -380,7 +380,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 // other in-place mutation MUST trigger the module loader. Today the
 // marker scanner runs only on DOMContentLoaded + gofastr:navigate;
 // a newly-injected [data-fui-fileupload] zone (e.g. an RPC response
-// that replaces innerHTML) used to be dead — the module never loaded.
+// that replaces innerHTML) used to be dead, the module never loaded.
 //
 // The MutationObserver in core handles component/widget hydration on
 // inserted nodes; it MUST also kick the module scanner so newly-
@@ -398,7 +398,7 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		network.Enable(),
 		// Home page has no fileupload marker, so the module is NOT
-		// pre-loaded — exactly the cold-cache case we want to test.
+		// pre-loaded, exactly the cold-cache case we want to test.
 		chromedp.Navigate(base+"/"),
 		pageReady(),
 		chromedp.Sleep(300*time.Millisecond),
@@ -434,7 +434,7 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 // this, a page like /components/toast loads the toasts module on first
 // paint, the user navs to a different page that has its own SSR-inlined
 // toast stack with TTL items, and those new items NEVER get their auto-
-// dismiss timers armed — _initToasts only ran once at module-load time
+// dismiss timers armed, _initToasts only ran once at module-load time
 // before that DOM existed.
 //
 // The test injects a fresh SSR-style toast item with a 300ms TTL into
@@ -455,7 +455,7 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
 		chromedp.Navigate(base+"/components/toast"),
 		pageReady(),
 		chromedp.Sleep(400*time.Millisecond), // toasts module loaded by now
-		// Inject a brand-new toast-stack with a TTL item — simulating
+		// Inject a brand-new toast-stack with a TTL item, simulating
 		// the post-SPA-nav case where a freshly-swapped <main> brings
 		// a stack the module never saw at load time.
 		chromedp.Evaluate(`(() => {
@@ -482,7 +482,7 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
 }
 
 // Hovering an element with data-fui-prefetch fires loadModule for the
-// named module — the "warm the cache before click" contract. We
+// named module, the "warm the cache before click" contract. We
 // dispatch a synthetic pointerover (no actual mouse needed) and
 // verify the module URL appears in the request log.
 func TestE2E_RuntimeSplit_HoverPrefetch(t *testing.T) {

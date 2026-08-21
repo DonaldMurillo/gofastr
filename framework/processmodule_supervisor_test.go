@@ -161,7 +161,7 @@ func newTestSupervisor(t *testing.T, store ProcessModuleStore, mode childMode) *
 }
 
 // newBareTestSupervisor constructs a supervisor with an explicit runner
-// (no envRunner wrapping) — used by tests that don't spawn real children
+// (no envRunner wrapping), used by tests that don't spawn real children
 // (e.g. TestSupervisor_UntrustedNoSandbox, which fails at Register).
 func newBareTestSupervisor(t *testing.T, store ProcessModuleStore, runner Runner) *ProcessModuleSupervisor {
 	t.Helper()
@@ -255,7 +255,7 @@ func TestSupervisor_KillMidCallBuffered503(t *testing.T) {
 	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
 
 	// Drive the proxy via an httptest.ResponseRecorder, but in a separate
-	// goroutine — the child sleeps in module.http, so the call blocks.
+	// goroutine, the child sleeps in module.http, so the call blocks.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/echo", nil)
 	done := make(chan struct{})
@@ -373,7 +373,7 @@ func TestSupervisor_RemoteToggleCrossReplica(t *testing.T) {
 	if _, err := sup1.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	// sup2 registers the same descriptor — Install returns ErrModuleInstalled
+	// sup2 registers the same descriptor. Install returns ErrModuleInstalled
 	// (the row exists), which we treat as "already known": manually create
 	// sup2's slot pointing at the existing row.
 	if _, err := sup2.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err == nil {
@@ -383,7 +383,7 @@ func TestSupervisor_RemoteToggleCrossReplica(t *testing.T) {
 	}
 	// Create sup2's slot directly (cross-replica: each replica supervises
 	// independently against the shared store). The runner is selected via
-	// SelectRunner — the same path Register uses — so the slot's runner
+	// SelectRunner, the same path Register uses, so the slot's runner
 	// field is populated and spawnOnce does not nil-deref.
 	selectedRunner, selErr := SelectRunner(d.TrustTier, sup2.runner, sup2.sandbox)
 	if selErr != nil {
@@ -438,7 +438,7 @@ func waitForStateOn(t *testing.T, sup *ProcessModuleSupervisor, name string, wan
 // Child process (self-exec). The test binary re-execs itself with
 // GOFASTR_PROCESS_MODULE_CHILD=<mode>; this main wires a moduleproto Peer
 // over stdin/stdout and serves the configured behavior. Nothing is written
-// to the repo tree — the artifact IS the test binary copied to t.TempDir().
+// to the repo tree, the artifact IS the test binary copied to t.TempDir().
 // ============================================================================
 
 // processModuleChildMain is invoked from TestMain when the env guard is set.

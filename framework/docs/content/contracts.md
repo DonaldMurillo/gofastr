@@ -1,4 +1,4 @@
-# Contracts — `gofastr verify`
+# Contracts: `gofastr verify`
 
 `go build` answers "does this compile". `go vet` answers "is anything
 obviously wrong". Neither answers the question you actually have before
@@ -8,7 +8,7 @@ merging:
 
 `gofastr verify` answers that one. It discovers your route table, entity
 declarations, permission strings, and rendering surface, then reports
-where they no longer hold to the framework's contract — with the reason
+where they no longer hold to the framework's contract, with the reason
 and the fix attached to every finding.
 
 ```
@@ -29,7 +29,7 @@ Rules are grouped into capabilities, and each capability is also a filter:
 | `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
 | `architecture` | imports that point up the layer stack, explicitly forbidden edges |
 | `rendering` | CSS outside the design system, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body |
-| `accessibility` | the static WCAG floor — missing alt text, unnamed controls and landmarks, incomplete form controls, implicit heading levels, elements missing required metadata |
+| `accessibility` | the static WCAG floor: missing alt text, unnamed controls and landmarks, incomplete form controls, implicit heading levels, elements missing required metadata |
 | `performance` | regexps compiled per call, N+1 queries, reflection on the request path |
 | `testing` | routes, permissions, roles, entity operations, lifecycle hooks, and event subscribers no test exercised; disabled tests; a line-coverage floor; an unreadable coverage manifest |
 | `ai` | hand-rolled CRUD for a declared entity, subsystems a battery already provides, raw SQL bypassing entity scoping |
@@ -43,7 +43,7 @@ Every rule in the catalog is enforced at its declared severity. There is
 no opt-in, because a rule you have to switch on is a rule nobody switches
 on. There are exactly two ways to say no, and both leave a written trace.
 
-Configuration moves severity in either direction — nothing is quieter than
+Configuration moves severity in either direction: nothing is quieter than
 declared unless you write it down, but a team that wants
 `routing/untested-route` to be an *error* rather than a warning is making
 a real choice and can. Either way it appears in the report footer.
@@ -55,7 +55,7 @@ a real choice and can. Either way it appears in the report footer.
 r.Handle("POST", "/hooks/stripe", stripeWebhook)
 ```
 
-The reason is required — a directive without one is itself a finding
+The reason is required: a directive without one is itself a finding
 (`GOFASTR0001`). So is a directive naming a rule that does not exist
 (`GOFASTR0003`), or one that stops matching anything (`GOFASTR0002`), so
 suppressions cannot quietly accumulate. `//gofastr:allow(all)` is
@@ -92,7 +92,7 @@ than silently matching nothing.
 
 A `contracts:` block in `gofastr.yml` works too, so a small project needs
 one file rather than two. Every relaxation is printed in the report
-footer — a run that passes because half of it was switched off says so.
+footer: a run that passes because half of it was switched off says so.
 
 ## Adopting it on an existing codebase
 
@@ -101,7 +101,7 @@ in a mature app and you get hundreds of findings at once; nobody fixes
 hundreds of findings at once, so the realistic outcomes are "turn the tool
 off" or "downgrade every rule to warn". Both end with nothing enforced.
 
-A baseline is the third option — accept what is there, fail on what is
+A baseline is the third option. Accept what is there, fail on what is
 added:
 
 ```
@@ -123,8 +123,8 @@ shrink.
 The conventional path is the contract. The build gate, the dev loop, and
 MCP `contracts_verify` all read `.gofastr-contracts-baseline.json` from
 the analysed root, and none of them can be pointed elsewhere.
-`verify --baseline <file>` overrides the path for that one invocation —
-useful for trying a candidate baseline before adopting it — but a
+`verify --baseline <file>` overrides the path for that one invocation,
+useful for trying a candidate baseline before adopting it, but a
 baseline only `verify` can see is one every other gate will ignore, so
 the recorded file belongs at the conventional path.
 
@@ -148,35 +148,35 @@ button.
 Suppressing a baselined finding with `//gofastr:allow` does not free its
 slot: the finding still exists, so it keeps occupying its allowance, and
 a new finding of the same rule in that file still fails. The entry shows
-up in the over-accepting nudge instead — a re-recorded baseline, which
+up in the over-accepting nudge instead. A re-recorded baseline, which
 also runs after suppressions are consumed, would no longer include it.
 
 Only **gating** findings are recorded. Anything below the run's fail-on
 severity is left out on purpose: a baseline exists to unblock a gate, and
 an entry for a finding that cannot fail the run would absorb it on every
-later run — silencing an informational signal you deliberately kept
+later run and silence an informational signal you deliberately kept
 visible.
 
 That interacts with the semantic-coverage rules specifically. They record
 *which tests ran*, which differs by environment: a CI job that excludes
 some packages, or a machine with Docker down, produces different findings
 for the same commit. Gating a shared CI on a recorded baseline of those is
-flaky by construction — a baseline recorded in one lane fails in the
+flaky by construction: a baseline recorded in one lane fails in the
 other. The usual answer is to downgrade them to `info` in the config, so
 they stay visible on every run and never gate; the filter above is what
 stops `--baseline-write` from then silencing them anyway. This repository
-does exactly that — see its `gofastr.contracts.yml`.
+does exactly that. See its `gofastr.contracts.yml`.
 
 A baseline is not a substitute for the config. Use `gofastr.contracts.yml`
-when a rule's premise genuinely does not hold for a surface — that is
+when a rule's premise genuinely does not hold for a surface: that is
 permanent and explained. Use a baseline for debt you intend to pay.
 
 ## Checking only what you changed
 
 `gofastr verify` reports the whole tree, which is the wrong shape for the
 three moments you most want it: a pre-commit hook, a dev-loop rebuild, and
-a PR review. All three ask the narrower question — *what did this change
-break* — and answering it by reading a 200-line whole-repo report is
+a PR review. All three ask the narrower question, *what did this change
+break*, and answering it by reading a 200-line whole-repo report is
 answering a different one.
 
 ```
@@ -191,7 +191,7 @@ one file is still found, because the other half of the pair was analysed
 too.
 
 `--changed=<ref>` compares against the **fork point** with that ref, not
-its tip — otherwise a long-lived branch would report every finding in
+its tip. Otherwise a long-lived branch would report every finding in
 everyone else's commits as something it changed. Untracked files count as
 changed; a brand-new file full of findings is exactly what a pre-commit
 check should catch, and `git diff` alone never lists it.
@@ -207,7 +207,7 @@ than silently reporting nothing.
 
 `--changed` narrows the **fixes** too, not just the report. `gofastr
 verify --changed --fix` in a pre-commit hook rewrites only the files the
-change touched — editing an unrelated file there would land an unreviewed
+change touched. Editing an unrelated file there would land an unreviewed
 edit in someone's commit, and the narrowed report they were reading would
 never mention it. Without `--changed`, `--fix` still applies everywhere.
 
@@ -232,7 +232,7 @@ Three deliberate properties:
   a loop people use and one they turn off. The server restarts first; this
   runs behind it and prints when ready.
 - **Compact.** Rule ID, location, one line. The reasoning, the example,
-  and the fix are what `gofastr verify --explain` is for — repeating them
+  and the fix are what `gofastr verify --explain` is for. Repeating them
   on every save would bury the loop. Long reports are capped, and say how
   many they hid.
 - **Quiet when nothing changed.** An unchanged report is not reprinted;
@@ -240,7 +240,7 @@ Three deliberate properties:
   repeats itself is a loop you stop reading.
 
 The baseline applies here too, so an existing project sees only what it
-is adding. And failures of the analysis itself are said out loud, once —
+is adding. And failures of the analysis itself are said out loud, once:
 a config that will not parse, a tree that cannot be scanned, a corrupt
 baseline. In a loop, silence reads as "clean", so nothing is allowed to
 fail silently: even a changed-set that cannot be computed (a repository
@@ -268,7 +268,7 @@ against the discovered surface.
 Six dimensions are recorded, each through a hook the runtime packages
 expose rather than by importing the recorder (the router's
 `SetServeHook` method,
-`access.SetObserver`, `hook.SetObserver`, `event.SetObserver`) — so
+`access.SetObserver`, `hook.SetObserver`, `event.SetObserver`), so
 `core/router`, `framework/access`, `framework/hook`, and `framework/event`
 stay dependency-free leaves and a production binary pays one atomic load
 per check:
@@ -284,7 +284,7 @@ per check:
 
 Two of those distinctions carry the weight. A permission **denial** is
 recorded as coverage, because a test asserting a rejection proves the
-boundary exists at least as well as one asserting a grant — the failure
+boundary exists at least as well as one asserting a grant; the failure
 worth catching is a check that is never reached at all. And a hook firing
 is only recorded when something is registered for that lifecycle point;
 `ExecuteHooks` runs on every CRUD operation regardless, so crediting the
@@ -297,7 +297,7 @@ suite actually authenticated as is how the second kind becomes visible.
 
 Hooks and event subscribers are the two surfaces with no callers to
 follow. Nothing in the codebase invokes them by name, so a rename on the
-emitting side — `order.placed` becoming `order.completed` — leaves the
+emitting side, `order.placed` becoming `order.completed`, leaves the
 subscriber compiling, the tests green, and the notification never sent.
 
 `framework.TestHarness` records automatically, so a suite already using it
@@ -323,14 +323,14 @@ srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1")
 
 The e2e test `gofastr generate` emits already does this. The manifest is
 written from the request path rather than at shutdown, because a harness
-usually SIGKILLs the server — flushing costs one write per newly-seen
+usually SIGKILLs the server. Flushing costs one write per newly-seen
 route, not one per request.
 
 Set `GOFASTR_NO_SEMANTIC_COVERAGE` to turn in-process recording off for a
 suite.
 
 Absence and drift are treated differently, on purpose. **No manifest at
-all** — a fresh clone whose tests have never run — reports at info level
+all**, as in a fresh clone whose tests have never run, reports at info level
 and does not fail: walling the first `verify` behind a full test run
 teaches people to skip `verify`. **A manifest that exists but misses a
 route** is real drift and fails. Run `go test ./...` once and the manifest
@@ -345,13 +345,13 @@ Three things are absent on purpose rather than pending.
 DO NOT EDIT` header: the developer cannot fix a finding there, only the
 generator can, and a finding nobody can act on trains people to stop
 reading. This is why `cmd/check-csp` still exists alongside the
-rendering rules — it scans generated output at `make build` time, where
+rendering rules. It scans generated output at `make build` time, where
 the generator's product is exactly what needs checking. The two are a
 division of labour, not a duplication: contracts polices what you write,
 check-csp polices what the build emits.
 
 **Middleware execution.** Recording which middleware ran needs a wrapper
-around every registered middleware, permanently, on the request path — and
+around every registered middleware, permanently, on the request path, and
 the rule it would enable ("you registered middleware that never ran")
 almost never fires, because `app.Use` middleware runs on *every* request
 by definition. Group-scoped middleware is the interesting case, and route
@@ -366,11 +366,11 @@ would make it harder to change, which is the opposite of what
 "experimental" is for.
 
 If either becomes worth having, the analyzer surface is the place to add
-it — `framework/contracts/analyzers`, one file per capability.
+it: `framework/contracts/analyzers`, one file per capability.
 
 ## Output for agents
 
-`--json` emits every diagnostic with its complete rule attached — the
+`--json` emits every diagnostic with its complete rule attached: the
 reason, the fix, the bad/good example pair, the doc topic. One finding is
 a complete work item, so an agent acting on it needs no second call:
 
@@ -411,17 +411,17 @@ must notice.
 `capabilities` appears when the run was scoped (`gofastr verify routing`),
 `config` when a config file was found, and `baselined`,
 `baselineFixed`, `outsideChange`, `analyzerErrors` and `timings` are
-omitted when empty — so absence means zero, never unknown. A skipped vet
+omitted when empty, so absence means zero, never unknown. A skipped vet
 stage omits `passed` entirely: a stage that never ran has no verdict,
 and serialising `false` there would read "did not check" as "failed".
 
 `unparsed` counts files the parser rejected. They produced no findings
 from any analyzer, so without the count a tree mid-edit reads as clean for
 exactly the files nobody could read. A tree that does not parse is normal
-in the dev loop and reported rather than fatal — `go vet` runs first and
+in the dev loop and reported rather than fatal. `go vet` runs first and
 is where a genuine syntax error stops the run.
 
-`passed` is the field to gate on — it already accounts for a failed vet
+`passed` is the field to gate on; it already accounts for a failed vet
 stage and for analyzer errors, either of which means "could not look"
 rather than "nothing found". `baselined`, `baselineFixed`, and
 `outsideChange` report what the run did NOT show: without them a narrowed
@@ -449,14 +449,14 @@ is a self-contained work item:
 }
 ```
 
-`file` is relative to `root`. `snippet` is omitted for a redacted finding
-— the hardcoded-secret rule never echoes what it matched, over any
+`file` is relative to `root`. `snippet` is omitted for a redacted finding.
+The hardcoded-secret rule never echoes what it matched, over any
 output. `evidence` is per-rule structured detail; treat unknown keys as
 additive.
 
 `--sarif verify.sarif` writes SARIF 2.1.0 for GitHub code scanning and
 IDE inline diagnostics. Artifact URIs are relative to the analysed root,
-and the run declares that root in `originalUriBaseIds` — so annotations
+and the run declares that root in `originalUriBaseIds`, so annotations
 map correctly whether you ran verify from the repository root or pointed
 it at a subdirectory.
 
@@ -466,7 +466,7 @@ Every report carries the `vet` stage that ran before the analyzers:
 "vet": { "ran": true, "passed": true }
 ```
 
-`go vet` is a precondition, not a check — half the analyzers cannot read
+`go vet` is a precondition, not a check: half the analyzers cannot read
 what they need from a tree the compiler rejects, so a failing vet stops
 the run and the document says so (`passed: false`, no diagnostics, and
 vet's own output attached). `--no-vet` records `{"ran": false, "skipped":
@@ -474,8 +474,8 @@ vet's own output attached). `--no-vet` records `{"ran": false, "skipped":
 must never read as "it was fine".
 
 A running app built with `framework.WithMCPIntrospection()` also serves
-the catalog over MCP — `contracts_list`, `contracts_explain`,
-`contracts_capabilities` — so an agent can read what the framework expects
+the catalog over MCP through `contracts_list`, `contracts_explain`,
+and `contracts_capabilities`, so an agent can read what the framework expects
 *before* writing code rather than after a build rejects it.
 
 Under `gofastr dev`, two more tools turn the catalog from reference into
@@ -486,10 +486,10 @@ changed. An agent can then verify → explain → fix without shelling out.
 
 `contracts_verify` honours the project's baseline, so an agent's view of
 the tree agrees with `gofastr verify`, `gofastr build`, and the dev
-watcher — and reports the count it absorbed, so a clean result never
+watcher, and reports the count it absorbed, so a clean result never
 hides accepted debt. It also admits what it could not check: `unparsed`
 counts files the parser rejected, and `analyzerErrors` lists checks that
-errored instead of completing — so `passed: false` with zero findings
+errored instead of completing, so `passed: false` with zero findings
 always comes with its reason. The one deliberate difference from
 `gofastr verify` is the missing `go vet` stage: the dev loop's rebuild
 already reports compile errors, and running vet again on every tool call
@@ -498,7 +498,7 @@ baseline: it records debt the team agreed to carry, and paying it down
 is the point.
 
 Both read local source, and `contracts_fix` writes it, so neither is
-registered outside the dev loop — a deployed `/mcp` does not gate them,
+registered outside the dev loop: a deployed `/mcp` does not gate them,
 it does not have them. `contracts_fix` takes one rule at a time on
 purpose: a single rule's edits are reviewable in a way a whole-tree
 rewrite is not. Rules with no autofix are refused with the reason,
@@ -515,7 +515,7 @@ attributes), and `GOFASTR0002` (delete a suppression that matches nothing).
 The last is the one worth running regularly: suppression debt accumulates
 quietly, and a directive left on a moved line silently covers whatever
 code slid into its place. `gofastr verify --rule GOFASTR0002 --fix` clears
-the dead ones — the whole line when the directive sits on its own, only
+the dead ones: the whole line when the directive sits on its own, only
 the comment when it trails a statement, never the code behind it.
 
 `--rule <id>` narrows a run to one rule (or several, comma-separated, as
@@ -532,7 +532,7 @@ cannot read as a clean bill of health.
 Applied fixes are gofmt-ed, so an edit only has to be syntactically
 correct rather than match the surrounding indentation. Overlapping edits
 are refused outright, and every edit records the text it expects to
-replace — a file edited since analysis is caught by content, not just by
+replace: a file edited since analysis is caught by content, not just by
 offsets that happen to still be in range. A corrupted source file is a
 far worse outcome than "run verify again".
 
@@ -543,7 +543,7 @@ fails quietly; the handler has to change in the same edit, and only you
 know what it should read.
 
 `gofastr build` runs the analyzers too, but fails only on error-severity
-findings — a build that fails on "this route has no test" is a build
+findings: a build that fails on "this route has no test" is a build
 people learn to bypass. `--no-contracts` skips it.
 
 The build gate reads the same baseline `verify` does. Recording one has
@@ -551,7 +551,7 @@ to fix both, or adopting a baseline leaves `build` permanently red and
 the only exit a user finds is `--no-contracts`, which turns every check
 off. New findings the baseline never recorded still stop the build.
 
-Every rule carries at least one bad/good example pair — required, not
+Every rule carries at least one bad/good example pair, required rather
 encouraged: `RegisterRules` rejects a rule without one at init, the same
 place a malformed or duplicate rule already fails. A rule the reader
 cannot see is a rule they will not apply.
@@ -560,8 +560,8 @@ The catalog is checked against the analyzers, not just against itself: no
 rule may fire on its own documented *good* example, and a rule's *bad*
 example has to produce it. A rule and its documentation cannot drift apart
 without a test failing. Twenty rules whose examples need context one file
-cannot express — a coverage manifest, a multi-package layout, a `_test.go`
-— are listed with the reason, and that list is guarded too: if such an
+cannot express, such as a coverage manifest, a multi-package layout, or a `_test.go`,
+are listed with the reason, and that list is guarded too: if such an
 example starts firing, the entry is stale and the test says so.
 
 ## Adding a rule
@@ -577,16 +577,16 @@ the fix, the finding is an opinion and does not belong in the catalog.
 ## Your own rules
 
 The pipeline is a library, and the catalog is open to registration: a
-project can add rules the framework could never know about — "order
-writes go through the audit trail", "handlers in `internal/api` never
-import `internal/billing` directly" — and they ride everything the
+project can add rules the framework could never know about, say "order
+writes go through the audit trail" or "handlers in `internal/api` never
+import `internal/billing` directly", and they ride everything the
 built-ins ride: config severity, `off`, exemptions, `//gofastr:allow`
 with a mandatory reason, the baseline ratchet, the JSON/SARIF output,
 and `contracts_list`/`contracts_explain` over MCP in any app process
 that imports them.
 
 A custom rule picks its **own uppercase ID prefix** (`ACME101`, not
-`GOFASTR9901`) — the `GOFASTR` namespace and its per-capability number
+`GOFASTR9901`); the `GOFASTR` namespace and its per-capability number
 blocks belong to the built-in catalog, which is what keeps a suppression
 written today from colliding with a future release. The slug's prefix
 must name one of the existing capabilities, which decide where the rule
@@ -625,7 +625,7 @@ func init() {
 		Name: "acme-audit", Doc: "audit-trail discipline for order writes",
 		Rules: []string{"ACME101"},
 		Run: func(p *contracts.Pass) ([]contracts.Diagnostic, error) {
-			// p.Files, p.AST, p.Lines — the same pass the built-ins read.
+			// p.Files, p.AST, p.Lines: the same pass the built-ins read.
 			return nil, nil
 		},
 	})
@@ -652,7 +652,7 @@ func main() {
 }
 ```
 
-`go run ./cmd/contracts-verify` is then your project's gate — wire it
+`go run ./cmd/contracts-verify` is then your project's gate: wire it
 into the same pre-commit hook or CI step you would wire `gofastr verify`
 into. The stock `gofastr` binary only ever knows the built-in catalog:
 custom rules live in your module, so they run through your command,
@@ -663,12 +663,12 @@ where the compiler can see them.
 - **Suppressing instead of fixing.** `--explain` exists because most
   findings have a one-line remedy. Reach for `//gofastr:allow` when the
   rule's premise genuinely does not hold here, not when the fix is
-  inconvenient — and write the reason for a reader, not for the linter.
+  inconvenient, and write the reason for a reader, not for the linter.
 - **Expecting `:id` to work in an API route.** It works in *screens*,
   which core-ui routes itself, and silently 404s in `Router().Handle`,
   which goes to ServeMux. GOFASTR1002 only fires on the second.
 - **Reading a clean `testing` report as proof.** With no manifest, those
-  checks did not run — that is what the `GOFASTR1106` info line is telling
+  checks did not run; that is what the `GOFASTR1106` info line is telling
   you. Run the tests first.
 - **Configuring a coverage floor with no profile.** `coverage.minimum`
   needs `go test -coverprofile=coverage.out` to have produced something to

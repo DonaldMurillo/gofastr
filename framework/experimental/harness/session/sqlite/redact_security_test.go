@@ -66,7 +66,7 @@ func TestProviderKeyRedaction(t *testing.T) {
 	}
 
 	// Happy path: an ordinary value that merely contains an = sign must not
-	// be mangled into nothing — redaction is targeted, not destroy-all.
+	// be mangled into nothing, redaction is targeted, not destroy-all.
 	t.Run("benign assignment preserved", func(t *testing.T) {
 		s := newStore(t)
 		sess := ids.NewSessionID()

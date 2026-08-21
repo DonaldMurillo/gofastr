@@ -13,7 +13,7 @@ import (
 )
 
 // ============================================================================
-// Tier 5 — TechEmpower-style endpoints
+// Tier 5: TechEmpower-style endpoints
 //
 // The six canonical comparable workloads everyone publishes numbers for.
 // Numbers here can be cross-referenced with the TechEmpower Framework
@@ -25,8 +25,8 @@ import (
 // ============================================================================
 
 // ----------------------------------------------------------------------------
-// 5.1 — Plaintext
-// "Return Hello, World!" — measures raw routing + handler dispatch cost.
+// 5.1: Plaintext
+// "Return Hello, World!": measures raw routing + handler dispatch cost.
 // ----------------------------------------------------------------------------
 
 // BenchmarkT5_Plaintext is the floor: no DB, no JSON, no entity machinery.
@@ -66,8 +66,8 @@ func BenchmarkT5_Plaintext_WithDefaults(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 5.2 — JSON serialization
-// "Return {"message":"Hello, World!"}" — measures encode + write overhead.
+// 5.2: JSON serialization
+// "Return {"message":"Hello, World!"}": measures encode + write overhead.
 // ----------------------------------------------------------------------------
 
 // BenchmarkT5_JSON encodes a small message object and writes it.
@@ -91,8 +91,8 @@ func BenchmarkT5_JSON(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 5.3 — Single query
-// "SELECT one random row by primary key" — measures DB round-trip + decode.
+// 5.3: Single query
+// "SELECT one random row by primary key": measures DB round-trip + decode.
 // ----------------------------------------------------------------------------
 
 // BenchmarkT5_SingleQuery hits GET /worlds/{id} for a random id. Mirrors
@@ -128,8 +128,8 @@ func BenchmarkT5_SingleQuery(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 5.4 — Multiple queries
-// "Fetch N random rows" — measures N round-trips vs amortised overhead.
+// 5.4: Multiple queries
+// "Fetch N random rows": measures N round-trips vs amortised overhead.
 // ----------------------------------------------------------------------------
 
 // BenchmarkT5_MultiQuery fetches N random worlds per request. TechEmpower
@@ -172,11 +172,11 @@ func BenchmarkT5_MultiQuery(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 5.5 — Fortunes equivalent
+// 5.5: Fortunes equivalent
 // TechEmpower's Fortunes test: fetch all rows from a small table, add a
 // row in-memory, sort, render HTML. We don't have a templating layer in
 // the API surface, so this measures the equivalent JSON-list workload
-// against a small table — comparable to "Test 4: Fortunes" minus the HTML.
+// against a small table, comparable to "Test 4: Fortunes" minus the HTML.
 // ----------------------------------------------------------------------------
 
 // BenchmarkT5_FortunesLike fetches a small full table as JSON. Closest
@@ -211,8 +211,8 @@ func BenchmarkT5_FortunesLike(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 5.6 — Data updates
-// "Fetch N rows, increment random_number, write back" — measures the
+// 5.6: Data updates
+// "Fetch N rows, increment random_number, write back": measures the
 // mixed read/write path under realistic ratios.
 // ----------------------------------------------------------------------------
 

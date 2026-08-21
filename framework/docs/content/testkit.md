@@ -1,4 +1,4 @@
-# Testkit — isolated Postgres helpers for integration tests
+# Testkit: isolated Postgres helpers for integration tests
 
 `framework/testkit` provides public test helpers for host apps that need
 real Postgres isolation in integration tests. The package carves a fresh
@@ -35,18 +35,18 @@ func TestMyFeature(t *testing.T) {
 func NewIsolatedDB(t *testing.T, adminDSN string, migrate func(*sql.DB) error) *sql.DB
 ```
 
-1. Validates `adminDSN` — hard-fails (`t.Fatalf`) if empty or wrong scheme.
+1. Validates `adminDSN`: hard-fails (`t.Fatalf`) if empty or wrong scheme.
    Tests that skip on a missing DB prove nothing; this helper refuses to skip.
 2. Opens a connection to `adminDSN` and pings it (retries for up to 3s).
 3. Creates a uniquely-named database: `ftest_<sanitised-test-name>_<random>`.
-4. Calls `migrate(carved)` if non-nil — run your schema DDL here.
+4. Calls `migrate(carved)` if non-nil: run your schema DDL here.
 5. Registers `t.Cleanup` to terminate lingering connections and `DROP DATABASE`.
 
 Returns the `*sql.DB` for the carved database.
 
 ### `NewIsolatedDBWithName`
 
-Same as `NewIsolatedDB` but also returns the database name as a string —
+Same as `NewIsolatedDB` but also returns the database name as a string,
 useful when a test wants to assert the database exists (or is gone) via a
 separate admin connection.
 
@@ -64,7 +64,7 @@ postgres://postgres:secret@localhost:5432/postgres?sslmode=disable
 ```
 
 Both `postgres://` and `postgresql://` schemes are accepted. The libpq
-key-value form (`host=… dbname=…`) is **not** supported — the helper
+key-value form (`host=… dbname=…`) is **not** supported: the helper
 rewrites the path component of the URL to carve the new database name, which
 requires a URL-parseable DSN.
 
@@ -77,7 +77,7 @@ if adminDSN == "" {
 }
 ```
 
-> The helper itself does **not** skip on a missing DSN — it hard-fails.
+> The helper itself does **not** skip on a missing DSN: it hard-fails.
 > Skipping is the caller's responsibility. The framework's own
 > self-tests accept both `GOFASTR_TEST_POSTGRES_DSN` and
 > `WTF_TEST_DATABASE_URL`.
@@ -133,7 +133,7 @@ out, err := testkit.RewriteDBNameForTest("postgres://u:p@host/db", "new_db")
 ```
 
 Returns an error for libpq key-value DSNs, non-postgres schemes, or
-unparseable inputs — by design, to prevent the carved connection from
+unparseable inputs: by design, to prevent the carved connection from
 accidentally pointing at the admin database on parse failure.
 
 ## Common mistakes

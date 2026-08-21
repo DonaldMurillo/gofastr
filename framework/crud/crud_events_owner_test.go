@@ -20,7 +20,7 @@ import (
 // and scrapes every other user's row updates in real time.
 //
 // The request carries a 250ms timeout so the test bounds the SSE loop
-// in case the gate is missing — a passing test must REJECT before the
+// in case the gate is missing, a passing test must REJECT before the
 // loop is entered; a missing gate causes the request handler to enter
 // the loop and the ctx-deadline trips return.
 func TestEventStream_AnonymousIsRejected(t *testing.T) {
@@ -51,7 +51,7 @@ func TestEventStream_FiltersByOwner(t *testing.T) {
 	srv := httptest.NewServer(ch.EventStream())
 	t.Cleanup(srv.Close)
 
-	// Subscribe as alice via cookieless HTTP — manually set the
+	// Subscribe as alice via cookieless HTTP, manually set the
 	// owner-extractor return for this request via a wrapped handler.
 	aliceURL := srv.URL + "?as=alice"
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

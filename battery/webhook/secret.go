@@ -16,13 +16,13 @@ import (
 //
 // Encode is called at write time (AddSubscriber); Decode is called at
 // read time (GetSubscriber / ListSubscribers). The codec is purely a
-// storage concern — the Manager only ever sees plaintext.
+// storage concern, the Manager only ever sees plaintext.
 type SecretCodec interface {
 	Encode(plaintext string) (string, error)
 	Decode(encoded string) (string, error)
 }
 
-// NoopSecretCodec is the default — it stores secrets as-is. Use it
+// NoopSecretCodec is the default, it stores secrets as-is. Use it
 // only when the database is itself encrypted at rest or the threat
 // model doesn't include a DB-snapshot attacker.
 type NoopSecretCodec struct{}
@@ -39,7 +39,7 @@ func (NoopSecretCodec) Decode(e string) (string, error) { return e, nil }
 const secretEncodingPrefix = "wbenc:v1:"
 
 // aesGCMSecretCodec encrypts secrets with AES-GCM. The encoded
-// format is "wbenc:v1:" + base64(nonce || ciphertext) — the nonce
+// format is "wbenc:v1:" + base64(nonce || ciphertext), the nonce
 // is generated fresh for every Encode call so identical plaintexts
 // produce different ciphertexts.
 //
@@ -88,7 +88,7 @@ func (c *aesGCMSecretCodec) Encode(plaintext string) (string, error) {
 
 func (c *aesGCMSecretCodec) Decode(encoded string) (string, error) {
 	if !strings.HasPrefix(encoded, secretEncodingPrefix) {
-		// Legacy / pre-encryption value — pass through so deployments
+		// Legacy / pre-encryption value, pass through so deployments
 		// can roll the codec on existing rows without a migration step.
 		return encoded, nil
 	}

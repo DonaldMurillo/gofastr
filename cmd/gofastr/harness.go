@@ -1,4 +1,4 @@
-// Package main — `gofastr harness` subcommand.
+// Package main: `gofastr harness` subcommand.
 //
 // Boot sequence per docs/harness-architecture.md § Lifecycle / boot.
 // v0.1 flags supported:
@@ -14,7 +14,7 @@
 //	--log-to-stderr         also write logs to stderr
 //	--log-level <spec>      per-component level overrides
 //
-// v0.1 doesn't yet launch the TUI / web — those are tasks 39 and 40.
+// v0.1 doesn't yet launch the TUI / web; those are tasks 39 and 40.
 // The subcommand instead boots the engine, registers everything, and
 // runs a tiny REPL so the binary is functional end-to-end.
 package main
@@ -51,7 +51,7 @@ func runHarness(args []string) {
 		printHarnessUsage()
 		return
 	}
-	// `gofastr harness mcp` launches the stdio MCP server — the path
+	// `gofastr harness mcp` launches the stdio MCP server, the path
 	// other MCP clients (Claude Code, Codex, Cursor) use to spawn
 	// the harness as a subprocess.
 	if len(args) > 0 && args[0] == "mcp" {
@@ -276,7 +276,7 @@ func buildLogger(xdgState string, toStderr bool, levelSpec string) *logging.Logg
 //   - 64 hex characters,
 //   - base64 (standard or URL, with or without padding).
 //
-// An empty value yields (nil, nil) — no machine key configured. Any other
+// An empty value yields (nil, nil): no machine key configured. Any other
 // value that does not decode to exactly 32 bytes returns an error so the
 // caller fails loudly instead of silently downgrading to a weaker secret.
 func machineKeyFromEnv() ([]byte, error) {
@@ -350,7 +350,7 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 }
 
 func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
-	fmt.Fprintln(os.Stderr, "gofastr harness — interactive REPL. Ctrl-D to exit.")
+	fmt.Fprintln(os.Stderr, "gofastr harness: interactive REPL. Ctrl-D to exit.")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
 	ctx, cancel := context.WithCancel(context.Background())

@@ -33,7 +33,7 @@ type TimelineEvent struct {
 	// Title is the event headline (required, e.g. "Deployed v3.2.1").
 	Title string
 	// Meta is the optional right-aligned secondary text (e.g. a time
-	// or actor — "2h ago" / "by dom").
+	// or actor: "2h ago" / "by dom").
 	Meta string
 	// Body is the optional supporting prose / nested HTML.
 	Body render.HTML
@@ -75,7 +75,7 @@ func Timeline(cfg TimelineConfig) render.HTML {
 		case TimelineNeutral, TimelineSuccess, TimelineWarn, TimelineDanger, TimelineInfo:
 		default:
 			panic("ui: Timeline event unknown Variant " + string(e.Variant) +
-				` — pick one of: "" (neutral), success, warn, danger, info`)
+				`. Pick one of: "" (neutral), success, warn, danger, info`)
 		}
 		itemCls := "ui-timeline__item"
 		if e.Variant != TimelineNeutral {

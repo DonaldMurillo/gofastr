@@ -18,7 +18,7 @@ import (
 //
 // DROPPED: TestE2E_Pagination_IslandMode_NoFullReload
 // The site's /components/pagination page renders a static pagination
-// component (no island mode — no IslandSignal/IslandEndpoint wired). The
+// component (no island mode, no IslandSignal/IslandEndpoint wired). The
 // website's island RPC at /islands/pagination-demo/page has no equivalent
 // registered route in site. Dropping this sub-test rather than faking it.
 //

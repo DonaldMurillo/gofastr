@@ -1,6 +1,6 @@
 ---
 name: gofastr-mcp-debug
-description: Live debug a running GoFastr app via its MCP endpoint — combined entry point covering both the log_* tools (battery/log) and the app_* introspection tools (framework). Use when the user wants to "debug the live app", "see what's going on right now", "tell me about the running server", or any general "go look at the running app" prompt.
+description: Live debug a running GoFastr app via its MCP endpoint, the combined entry point covering both the log_* tools (battery/log) and the app_* introspection tools (framework). Use when the user wants to "debug the live app", "see what's going on right now", "tell me about the running server", or any general "go look at the running app" prompt.
 ---
 
 # Debug a running GoFastr app live (one-page guide)
@@ -8,16 +8,16 @@ description: Live debug a running GoFastr app via its MCP endpoint — combined 
 This skill is the **starting point** for any agent investigation of a
 running GoFastr app via MCP. For deep recipes, jump to:
 
-- `.claude/skills/log-debug/SKILL.md` — the four `log_*` tools (recent
-  entries, structured filter, metrics, level mutation).
-- `.claude/skills/app-introspect/SKILL.md` — the ten introspection
+- `.claude/skills/log-debug/SKILL.md` covers the four `log_*` tools
+  (recent entries, structured filter, metrics, level mutation).
+- `.claude/skills/app-introspect/SKILL.md` covers the ten introspection
   tools: `app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
   `app_config`, `app_readiness`, `app_routines`, plus `framework_docs_list` /
   `framework_docs_get` / `framework_docs_search` for the embedded
   framework docs, and `contracts_list` / `contracts_explain` /
   `contracts_capabilities` for the rules `gofastr verify` enforces. Under
   `gofastr dev` only, `contracts_verify` runs those rules against the
-  app's source and `contracts_fix` applies one rule's autofixes — both
+  app's source and `contracts_fix` applies one rule's autofixes; both
   touch local files, so a deployed app does not register them.
 
 ## When to use which
@@ -30,24 +30,24 @@ running GoFastr app via MCP. For deep recipes, jump to:
 | "What endpoints exist?"                     | `app_routes` (app-introspect)                            |
 | "What plugins / batteries are loaded?"      | `app_plugins`, `app_batteries` (app-introspect)          |
 | "What modules are enabled?"                 | `app_modules` (app-introspect)                           |
-| "Did my routine body change propagate?"     | `app_routines` (app-introspect) — ledger_state=drifted flags it |
+| "Did my routine body change propagate?"     | `app_routines` (app-introspect); ledger_state=drifted flags it |
 | "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
 | "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |
-| "Why did `gofastr verify` flag this?"       | `contracts_explain` — the rule's why, fix, and example   |
+| "Why did `gofastr verify` flag this?"       | `contracts_explain`: the rule's why, fix, and example    |
 | "What does the framework require of me?"    | `contracts_capabilities` → `contracts_list`              |
-| "What's wrong with this app's code?"        | `contracts_verify` (dev loop) — then `contracts_explain` per rule |
-| "Fix the GOFASTR#### findings for me"       | `contracts_fix` (dev loop, WRITES) — one rule at a time  |
-| "Are the logs even working?"                | `log_metrics` — non-zero counters = lost entries          |
+| "What's wrong with this app's code?"        | `contracts_verify` (dev loop), then `contracts_explain` per rule |
+| "Fix the GOFASTR#### findings for me"       | `contracts_fix` (dev loop, WRITES), one rule at a time   |
+| "Are the logs even working?"                | `log_metrics`: non-zero counters = lost entries           |
 | "Crank up DEBUG for 30 seconds, then back"  | `log_set_level DEBUG` (save `.previous_level`) → reproduce → `log_set_level <previous_level>` |
 
 ## Getting started
 
-**Under `gofastr dev`, everything below is automatic** — the framework
+**Under `gofastr dev`, everything below is automatic**: the framework
 auto-mounts `/mcp` and enables introspection + control, every
 CRUD-enabled entity serves its `{entity}_*` data tools (no `mcp: true`
 needed), and battery/log (if registered) auto-enables its `log_*`
 tools. Opt-out: `GOFASTR_DEV_MCP=0`. So for a dev-loop app there is
-nothing to wire — just connect.
+nothing to wire; just connect.
 
 Outside the dev loop, the app opts in explicitly:
 
@@ -56,22 +56,22 @@ fwApp := framework.NewApp(
     framework.WithConfig(framework.AppConfig{Name: "<your-app>"}),  // battery/log needs a non-empty app name for its state dir
     framework.WithMCP(),                    // mounts /mcp (POST + GET SSE) + discovery wellknowns
     framework.WithMCPIntrospection(),       // app_* + framework_docs_* tools (read-only)
-    framework.WithMCPControl(),             // app_module_enable/disable (mutating — trusted /mcp only)
+    framework.WithMCPControl(),             // app_module_enable/disable (mutating; trusted /mcp only)
 )
 fwApp.RegisterPlugin(log.New(log.Config{
     EnableMCP:        true,                  // log_recent, log_filter, log_metrics (read-only)
-    AllowMCPMutation: true,                  // also registers log_set_level (mutating — trusted /mcp only)
+    AllowMCPMutation: true,                  // also registers log_set_level (mutating; trusted /mcp only)
     MCPRingSize:      2000,
 }))
 ```
 
-(`WithMCP()` replaces hand-mounting `/mcp` — doing both panics with a
+(`WithMCP()` replaces hand-mounting `/mcp`; doing both panics with a
 route conflict.) `examples/site` and blueprint-generated apps already
 have `WithMCP` + `WithMCPIntrospection` + the log battery wired. Spin
 the site up with the repo's normal dev workflow:
 
 ```bash
-./scripts/dev-watch.sh                    # examples/site on :8082, auto-rebuild — log_* tools on
+./scripts/dev-watch.sh                    # examples/site on :8082, auto-rebuild, log_* tools on
 # or
 GOFASTR_DEV=1 go run ./examples/site      # :8083; plain `go run` exposes introspection but NOT log_* (dev-only)
 ```
@@ -97,7 +97,7 @@ All tool calls are `POST /mcp` with body:
 ```
 
 Response wraps the tool's return value as a JSON-encoded string in
-`.result.content[0].text` — pipe through `jq -r '.result.content[0].text' | jq .`
+`.result.content[0].text`. Pipe through `jq -r '.result.content[0].text' | jq .`
 to get back to structured JSON. List available tools via
 `"method": "tools/list"` (no params).
 
@@ -114,6 +114,6 @@ to get back to structured JSON. List available tools via
 - **Don't forget to revert state mutations.** The mutating tools are
   `log_set_level`, plus (when `WithMCPControl()` is wired)
   `app_module_enable` / `app_module_disable`. Treat each like a
-  temporary debug toggle: flip on, reproduce, flip back — capture
+  temporary debug toggle: flip on, reproduce, flip back. Capture
   `previous_level` from `log_set_level` so you restore what was
   actually there, not a hard-coded INFO.

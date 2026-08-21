@@ -25,7 +25,7 @@ func WithDBContext(ctx context.Context, db *sql.DB) context.Context {
 }
 
 // DBFromContext returns the *sql.DB stamped onto ctx by an App with a DB
-// configured. The second return value is false when no DB is present —
+// configured. The second return value is false when no DB is present,
 // e.g. a UI-only app, or a context that never passed through the App's
 // request chain.
 //

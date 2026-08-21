@@ -134,7 +134,7 @@ func newTestManager(t *testing.T) (*AuthManager, *memoryUserStore) {
 		JWTExpiry:  time.Hour,
 		SessionTTL: 24 * time.Hour,
 		UserStore:  userStore,
-		// httptest serves over plain HTTP — DevMode keeps the cookie
+		// httptest serves over plain HTTP. DevMode keeps the cookie
 		// readable (no __Host- prefix) and Secure=false so AddCookie works.
 		DevMode: true,
 	})
@@ -341,7 +341,7 @@ func TestAuthManager_PluginLifecycle(t *testing.T) {
 }
 
 // TestAuthManager_DevModeMintsJWT: with no explicit JWTSecret, the only
-// reachable boot path is DevMode (production fails closed — see
+// reachable boot path is DevMode (production fails closed, see
 // TestInit_ProdEmptySecretFailsClosed). DevMode mints a per-process
 // secret, so the JWT helper is configured rather than nil.
 func TestAuthManager_DevModeMintsJWT(t *testing.T) {
@@ -357,7 +357,7 @@ func TestAuthManager_DevModeMintsJWT(t *testing.T) {
 
 // AuthConfig must default to Secure cookies and the __Host- prefix.
 // Today SessionSecure defaults to false (zero value) and the cookie
-// name to plain "session_id" — first-deploy-to-prod ships cleartext
+// name to plain "session_id", first-deploy-to-prod ships cleartext
 // cookies vulnerable to subdomain injection.
 
 func TestAuthConfig_DefaultsAreSecure(t *testing.T) {
@@ -411,7 +411,7 @@ func TestLogin_TimingSafe_NoEnumerationByResponseTime(t *testing.T) {
 		hash: hash,
 	}
 
-	// Warm-up — discard one of each so the JIT/init overhead doesn't bias.
+	// Warm-up: discard one of each so the JIT/init overhead doesn't bias.
 	measure(t, r, "existing@example.com", "wrongpassword")
 	measure(t, r, "missing@example.com", "anypassword")
 
@@ -431,7 +431,7 @@ func TestLogin_TimingSafe_NoEnumerationByResponseTime(t *testing.T) {
 	// default cost is ≥30ms even on fast hardware. If the missing-email
 	// path skips bcrypt, missingMean is two orders of magnitude smaller.
 	// We require the missing-email mean to be at least 50% of the
-	// existing-email mean — this catches "no bcrypt at all" without
+	// existing-email mean, this catches "no bcrypt at all" without
 	// being fragile under CI jitter.
 	if missingMean*2 < existMean {
 		t.Fatalf("login is user-enumerable via timing: existing=%v missing=%v (missing must be ≥50%% of existing)",

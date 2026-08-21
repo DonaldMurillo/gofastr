@@ -8,7 +8,7 @@ import (
 // ensureArticleSchema appends an Article JSON-LD item derived from meta
 // when the resolved schema doesn't already include one. An explicit
 // ScreenSchema declaration (which may carry richer publisher/author data)
-// wins — only the gap is filled. The Article carries headline/author/date,
+// wins. Only the gap is filled. The Article carries headline/author/date,
 // which Safari Reader reads to populate its reader-view title, byline, and
 // date.
 func ensureArticleSchema(schema []seo.Thing, meta app.ArticleMeta) []seo.Thing {
@@ -34,7 +34,7 @@ func ensureArticleSchema(schema []seo.Thing, meta app.ArticleMeta) []seo.Thing {
 // mergeArticleOG fills og:type=article and any empty OG field from the
 // article metadata. A nil og (the screen declared no OG) becomes a minimal
 // article OG. Values the screen declared explicitly through ScreenSEO are
-// preserved — only empty fields inherit from the article meta.
+// preserved. Only empty fields inherit from the article meta.
 func mergeArticleOG(og *OG, meta app.ArticleMeta) *OG {
 	if og == nil {
 		og = &OG{}

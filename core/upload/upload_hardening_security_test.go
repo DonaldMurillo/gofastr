@@ -33,7 +33,7 @@ func TestSanitize_StripsControlBytes(t *testing.T) {
 }
 
 // TestSanitize_NotHiddenAfterSanitize verifies that names made entirely
-// of dots and spaces never produce a result that starts with a dot —
+// of dots and spaces never produce a result that starts with a dot,
 // leaving them as "." or "..." would still be a hidden file on POSIX.
 func TestSanitize_NotHiddenAfterSanitize(t *testing.T) {
 	t.Parallel()

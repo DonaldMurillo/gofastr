@@ -13,7 +13,7 @@ import (
 //
 // The strip metadata (StripOffsets/RowsPerStrip/StripByteCounts/
 // BitsPerSample/Compression/Photometric) is enough that x/image/tiff
-// proceeds to allocate the destination raster — which panics in
+// proceeds to allocate the destination raster, which panics in
 // image.NewGray on the huge rectangle when the guard is bypassed.
 func tiffHugeDims(w uint32) []byte {
 	type entry struct {

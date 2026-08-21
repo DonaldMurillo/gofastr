@@ -15,7 +15,7 @@ import (
 // The component showcase needs a real image without committing a binary, so
 // the demo draws one in-process and inlines both it and its placeholder as
 // data URIs. Inlining a full image is a showcase convenience, not a pattern to
-// copy — a real app serves variants from storage and stores only the ~28-char
+// copy. A real app serves variants from storage and stores only the ~28-char
 // BlurHash, which `framework.WithImagePipeline` does automatically for
 // `schema.Image` uploads. See `gofastr docs uploads`.
 
@@ -36,7 +36,7 @@ func pipelineImageDemo() pipelineDemo {
 	return pipelineDemoVal
 }
 
-// demoMockup draws a crude dashboard mock — a header bar, a chart block, and
+// demoMockup draws a crude dashboard mock: a header bar, a chart block, and
 // two cards. Crisp edges are the point: a gradient's blur looks identical to
 // the gradient, so a showcase built on one demonstrates nothing. With edges,
 // the difference between the placeholder and the image it stands in for is

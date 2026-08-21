@@ -1,4 +1,4 @@
-// GoFastr runtime module — Disclosure
+// GoFastr runtime module, Disclosure
 //
 // Keyboard + assistive-tech behaviour for <details data-fui-disclosure>:
 //
@@ -36,7 +36,7 @@
   // the drawer's ancestor chain. Tab walking is then naturally confined,
   // because inert removes elements from both the focus order and the AT
   // tree. inertNeighbors records exactly what was toggled so the cleanup
-  // is exact — "remove inert from everything" would clobber a host's own
+  // is exact, "remove inert from everything" would clobber a host's own
   // inert state.
   const inertNeighbors = new WeakMap();
   // activeTraps is the sibling Set rule 12 asks for: the WeakMap alone is
@@ -75,8 +75,8 @@
   // [data-fui-layout] shell (cur.replaceWith), and swapMainContent writes
   // main.innerHTML before its close-open-disclosures sweep can reach a
   // drawer living inside <main>. Either way the inert would stick to every
-  // other <body> child — gone from the focus order AND the accessibility
-  // tree — for the life of the tab. So watch for the detach directly, and
+  // other <body> child, gone from the focus order AND the accessibility
+  // tree, for the life of the tab. So watch for the detach directly, and
   // only while a trap is actually engaged (rule 13: clean up per-instance
   // state, then re-scan).
   let trapWatcher = null;
@@ -87,7 +87,7 @@
   };
   const syncTrapWatcher = () => {
     if (activeTraps.size > 0 && !trapWatcher) {
-      // childList only — releaseStaleTraps mutates attributes, so an
+      // childList only, releaseStaleTraps mutates attributes, so an
       // attribute-observing watcher would re-enter itself.
       trapWatcher = new MutationObserver(releaseStaleTraps);
       trapWatcher.observe(document.body, { childList: true, subtree: true });
@@ -101,7 +101,7 @@
     document.__fuiDisclosureDispatch = true;
 
     // 'toggle' fires on every open/close. Delegated at document level in
-    // the capture phase — toggle does not bubble — so dynamically
+    // the capture phase, toggle does not bubble, so dynamically
     // inserted disclosures are covered.
     document.addEventListener('toggle', (e) => {
       const d = e.target;
@@ -118,14 +118,14 @@
     }, true);
 
     // Escape closes any open disclosure. An open modal widget takes
-    // precedence — its own CloseOnEscape handler runs, and we defer so a
+    // precedence, its own CloseOnEscape handler runs, and we defer so a
     // single Escape doesn't close both.
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (NS._modalStack && NS._modalStack.length > 0) return;
       for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
         // Only refocus the summary when focus is already inside this
-        // disclosure — otherwise we would yank focus away from whatever
+        // disclosure, otherwise we would yank focus away from whatever
         // the user was actually doing in the main content.
         const wasInside = d.contains(document.activeElement);
         d.removeAttribute('open');

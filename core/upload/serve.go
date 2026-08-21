@@ -44,7 +44,7 @@ func scriptableExt(key string) bool {
 //     router's {key...} wildcard), falling back to the URL path with a
 //     leading slash stripped when no path value is set.
 //   - The content type is sniffed from the first 512 bytes of the body
-//     via [http.DetectContentType] — never from the client or the key.
+//     via [http.DetectContentType], never from the client or the key.
 //   - X-Content-Type-Options: nosniff is always set.
 //   - Scriptable content (HTML, XHTML, SVG) is forced to
 //     application/octet-stream with Content-Disposition: attachment so a
@@ -135,7 +135,7 @@ func serveSeekable(w http.ResponseWriter, r *http.Request, key string, rs io.Rea
 	setServeHeaders(w, key, http.DetectContentType(head[:n]))
 
 	// An empty name keeps ServeContent from re-deriving a content type from
-	// the extension — the sniffed value above is authoritative. A zero modtime
+	// the extension: the sniffed value above is authoritative. A zero modtime
 	// suppresses Last-Modified; the Storage contract exposes no mtime.
 	http.ServeContent(w, r, "", time.Time{}, rs)
 }

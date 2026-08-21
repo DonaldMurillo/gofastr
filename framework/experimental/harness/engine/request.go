@@ -6,7 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 )
 
-// RequestHandler is the leaf in the request middleware chain — it
+// RequestHandler is the leaf in the request middleware chain, it
 // invokes the provider's Chat method and returns the streaming
 // channel.
 type RequestHandler func(ctx context.Context, req *provider.Request) (<-chan provider.StreamEvent, error)

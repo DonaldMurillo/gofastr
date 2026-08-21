@@ -1,9 +1,9 @@
-# GoFastr Blog Example
+# GoFastr blog example
 
 A minimal blog application demonstrating JSON entity declarations, CRUD routes,
 soft delete, custom endpoints, generated OpenAPI, and entity MCP tools.
 
-## Quick Start
+## Quick start
 
 ```bash
 # From the repository root:
@@ -65,7 +65,7 @@ curl -H "Content-Type: application/json" \
      http://localhost:8080/users
 ```
 
-### Filtering & Pagination
+### Filtering & pagination
 
 All list endpoints support query parameters:
 
@@ -81,7 +81,7 @@ GET /posts?page=2&limit=10&sort=-created_at&status=published
 | `{field}`  | `status=draft`   | Exact-match filter              |
 | `{field}_like` | `title_like=go` | Contains filter             |
 
-## Entities & Relationships
+## Entities & relationships
 
 ```
 User ──< Post ──< Comment
@@ -96,7 +96,7 @@ User ──< Post ──< Comment
 The entities are declared in Go in [`main.go`](main.go) via
 `app.Entity("posts", framework.EntityConfig{…})`, so `go run ./examples/blog`
 runs with no external files. The same schema is mirrored in
-[`gofastr.yml`](gofastr.yml) — the blueprint format the CLI generates from:
+[`gofastr.yml`](gofastr.yml), the blueprint format the CLI generates from:
 
 ```yaml
 entities:
@@ -123,7 +123,7 @@ The blog uses `battery/search` with the in-memory backend for `/posts/search`.
 Production apps can swap this interface for a Postgres full-text, Meilisearch,
 or Elasticsearch backend.
 
-## MCP Tools
+## MCP tools
 
 Each entity sets `mcp: true`, so GoFastr registers CRUD tools:
 

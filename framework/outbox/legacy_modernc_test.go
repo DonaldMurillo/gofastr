@@ -12,7 +12,7 @@ import (
 // openModerncOutbox opens the outbox on the driver the framework actually
 // ships ("sqlite3" = modernc via sqlite/stdlib). The sibling tests in
 // legacy_normalize_test.go use the repo's own pure engine, which no
-// production path opens any more — so a defect that only appears on modernc
+// production path opens any more, so a defect that only appears on modernc
 // slipped through them.
 func openModerncOutbox(t *testing.T) (*sql.DB, *Outbox) {
 	t.Helper()
@@ -34,7 +34,7 @@ func openModerncOutbox(t *testing.T) (*sql.DB, *Outbox) {
 // canonical text (legacyTimeSets: `c.raw.(string)`). modernc returns a
 // time.Time for a DATETIME column, so without an explicit text cast that
 // comparison can never match and EVERY row is rewritten on EVERY relay
-// start — unbounded write churn against SQLite's single writer.
+// start, unbounded write churn against SQLite's single writer.
 func TestNormalizeReadsStoredTextNotDriverParsedTime(t *testing.T) {
 	db, o := openModerncOutbox(t)
 	ctx := context.Background()

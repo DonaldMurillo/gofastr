@@ -9,7 +9,7 @@ import (
 )
 
 // Every place a Bool-column filter value reaches a bind must coerce it the
-// way filter.ParseFiltersValues does — SQLite stores Bool as INTEGER and
+// way filter.ParseFiltersValues does. SQLite stores Bool as INTEGER and
 // never matches the TEXT 'true'/'false' spellings. These tests pin the
 // three crud-side binders: nested relation filters, scoped include
 // filters, and the eager-load filter clause.

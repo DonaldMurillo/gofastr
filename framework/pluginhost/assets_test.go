@@ -49,8 +49,8 @@ func TestAssetServerFramedHeaders(t *testing.T) {
 			t.Errorf("%s: empty body", path)
 		}
 		csp := resp.Header.Get("Content-Security-Policy")
-		// The relaxation: frame-ancestors permits the host origin (NOT 'none'), and
-		// — crucially — the frame's OWN script/style sub-resources are keyed to the
+		// The relaxation: frame-ancestors permits the host origin (NOT 'none'),
+		// and the frame's OWN script/style sub-resources are keyed to the
 		// explicit request origin, NOT 'self' (which is null for the opaque frame
 		// and gets the assets refused in strict browsers like Safari). CORP cross-origin.
 		if !strings.Contains(csp, "frame-ancestors http") {
@@ -79,7 +79,7 @@ func TestAssetServerFramedHeaders(t *testing.T) {
 // The framed CSP must (a) sandbox the document so a TOP-LEVEL load can't run
 // unsandboxed same-origin, (b) forbid all network egress via connect-src
 // 'none' (the exfil guard), and (c) carry nosniff. These are the load-bearing
-// isolation directives — pinned so a refactor can't silently drop them.
+// isolation directives, pinned so a refactor can't silently drop them.
 func TestAssetServerFramedIsolationDirectives(t *testing.T) {
 	rt := newAssetRouter(t)
 	srv := httptest.NewServer(rt)

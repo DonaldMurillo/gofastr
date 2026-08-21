@@ -14,7 +14,7 @@ import (
 //
 // The catalog is the interesting half. An agent connected to a live app
 // can ask "what does this framework actually require of me" and get every
-// rule with its reasoning, its remedy, and a worked example — before
+// rule with its reasoning, its remedy, and a worked example, before
 // writing code, rather than after a build rejects it. That is the whole
 // point of making the rules data rather than error strings.
 //
@@ -36,7 +36,7 @@ func (a *App) registerContractTools() error {
 				"slug, capability, default severity, and a one-line summary. Optionally filter by " +
 				"capability (routing, security, permissions, rendering, accessibility, testing, " +
 				"architecture, performance, data, entities, ai, meta). Call contracts_explain for " +
-				"the full reasoning and fix of any rule. Read this before writing app code — the " +
+				"the full reasoning and fix of any rule. Read this before writing app code: the " +
 				"rules describe what an idiomatic GoFastr application looks like.",
 			schema: map[string]any{
 				"type": "object",
@@ -105,7 +105,7 @@ type contractRuleView struct {
 	Suppress    string              `json:"suppress,omitempty"`
 }
 
-// summaryView omits the long-form fields — a catalog listing of 43 rules
+// summaryView omits the long-form fields, a catalog listing of 43 rules
 // with full Why text is a wall an agent has to page through to find the
 // one it needs.
 func summaryView(r contracts.Rule) contractRuleView {
@@ -150,13 +150,13 @@ func (a *App) toolContractsList(_ context.Context, params map[string]any) (any, 
 func (a *App) toolContractsExplain(_ context.Context, params map[string]any) (any, error) {
 	name, _ := params["rule"].(string)
 	if strings.TrimSpace(name) == "" {
-		return nil, fmt.Errorf("rule is required — pass an ID (GOFASTR1002) or a slug (routing/colon-path-parameter)")
+		return nil, fmt.Errorf("rule is required: pass an ID (GOFASTR1002) or a slug (routing/colon-path-parameter)")
 	}
 	rule, ok := contracts.LookupRule(name)
 	if !ok {
 		msg := fmt.Sprintf("unknown rule %q", name)
 		if near := contracts.SuggestRules(name); len(near) > 0 {
-			msg += " — did you mean " + strings.Join(near, ", ") + "?"
+			msg += ": did you mean " + strings.Join(near, ", ") + "?"
 		}
 		return nil, fmt.Errorf("%s", msg)
 	}

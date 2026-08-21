@@ -5,13 +5,13 @@
 //
 // The lifecycle phases are:
 //
-//  1. Drain — stop accepting new requests, let in-flight requests finish.
+//  1. Drain: stop accepting new requests, let in-flight requests finish.
 //     Signaled via context cancellation. HTTP server Shutdown handles this.
 //
-//  2. Flush — batteries flush their queues, buffers, and pending writes.
+//  2. Flush: batteries flush their queues, buffers, and pending writes.
 //     Each battery that implements Drainer participates.
 //
-//  3. Stop — final cleanup: close connections, release resources.
+//  3. Stop, final cleanup: close connections, release resources.
 //     OnStop hooks fire in reverse registration order.
 //
 // Usage (typically done by App.Start automatically):
@@ -85,7 +85,7 @@ func WithTimeout(d time.Duration) func(*Lifecycle) {
 
 // RegisterDrainer adds a component to the drain phase. Drainers are
 // called sequentially during shutdown, in registration order. Returns
-// ErrShuttingDown if Shutdown has already started — late registrations
+// ErrShuttingDown if Shutdown has already started, late registrations
 // are dropped to keep the shutdown snapshot deterministic.
 func (lc *Lifecycle) RegisterDrainer(d Drainer) error {
 	return lc.AppendDrainer(d)
@@ -107,7 +107,7 @@ func (lc *Lifecycle) AppendDrainer(d Drainer) error {
 	return nil
 }
 
-// PrependDrainer adds a drainer to the FRONT of the drain order — so
+// PrependDrainer adds a drainer to the FRONT of the drain order, so
 // it runs BEFORE every previously-registered drainer. Used to encode
 // LIFO semantics for app-level stop hooks (last registered = first
 // drained).
@@ -160,7 +160,7 @@ func (lc *Lifecycle) Shutdown(ctx context.Context) error {
 	timeout := lc.timeout
 	drainers := make([]Drainer, len(lc.drainers))
 	copy(drainers, lc.drainers)
-	// Snapshot consumed — clear so a second Shutdown() call is a safe
+	// Snapshot consumed, clear so a second Shutdown() call is a safe
 	// no-op even if callers re-enter (idempotent shutdown contract).
 	lc.drainers = nil
 	lc.mu.Unlock()

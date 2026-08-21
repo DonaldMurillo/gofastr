@@ -35,8 +35,8 @@ func init() {
 }
 
 // EntityInfo is what the static pass can recover from an entity
-// registration. It is a subset of framework/entity.EntityConfig — only
-// the fields that decide exposure and scoping — read straight off the
+// registration. It is a subset of framework/entity.EntityConfig, only
+// the fields that decide exposure and scoping, read straight off the
 // composite literal.
 type EntityInfo struct {
 	Name   string
@@ -114,7 +114,7 @@ func collectHooks(p *contracts.Pass) []HookDecl {
 		}
 		// Same guard the event, role, entity, and auth collectors carry.
 		// `OnBeforeCreate(db, "orders", fn)` is a perfectly ordinary
-		// trigger helper, and its second argument is a table name — the
+		// trigger helper, and its second argument is a table name, the
 		// exact shape this reads a hook from. Without the import there is
 		// nothing to distinguish the two.
 		if !importsAny(file, "framework", "framework/hook") {
@@ -256,8 +256,8 @@ func collectRoles(p *contracts.Pass) []RoleGrant {
 			if !litOK || role == "" || seen[role] {
 				return true
 			}
-			// Every remaining argument should look like a permission —
-			// that shape is what distinguishes RolePolicy.Grant from some
+			// Every remaining argument should look like a permission.
+			// That shape is what distinguishes RolePolicy.Grant from some
 			// other two-argument Grant.
 			permissionish := false
 			for _, arg := range call.Args[1:] {
@@ -294,7 +294,7 @@ func collectEntities(p *contracts.Pass) []EntityInfo {
 		// Guard on the import, the way collectAuthWiring, the event
 		// subscriber walk, and the role-grant walk all do. Without it any
 		// two-argument `x.Entity("name", SomeConfig{})` reads as a GoFastr
-		// entity — a host app with its own registry type got phantom
+		// entity. A host app with its own registry type got phantom
 		// findings from five rules at once, and a false positive in
 		// someone else's code is how a linter loses its audience.
 		if !ok || !importsAny(file, "framework", "framework/entity") {
@@ -327,7 +327,7 @@ func collectEntities(p *contracts.Pass) []EntityInfo {
 			lit, isLit := configArg.(*ast.CompositeLit)
 			if !isLit {
 				// The config is bound to a variable or returned by a
-				// helper. Nothing readable here — record nothing rather
+				// helper. Nothing readable here. Record nothing rather
 				// than record an entity with every flag defaulted, which
 				// would make an unscoped-looking finding out of thin air.
 				return true
@@ -423,7 +423,7 @@ func readExposure(e ast.Expr, info *EntityInfo) {
 
 // accessDeclared reports whether an AccessControl literal gates at least
 // one operation. A block of empty strings gates nothing and must not
-// count as scoping — that is the difference between "reviewed and
+// count as scoping. That is the difference between "reviewed and
 // declared open" and "reviewed and forgot".
 func accessDeclared(e ast.Expr) bool {
 	lit := compositeOf(e)
@@ -549,8 +549,8 @@ func readFieldNames(e ast.Expr) ([]string, bool) {
 // ----------------------------------------------------------------------
 
 // piiTokens are field-name tokens suggesting personally identifiable or
-// secret data. Matching is per-token — split on separators and camelCase
-// boundaries — so "cardinality" does not trip "card".
+// secret data. Matching is per-token, split on separators and camelCase
+// boundaries, so "cardinality" does not trip "card".
 var piiTokens = map[string]bool{
 	"email": true, "phone": true, "mobile": true, "address": true,
 	"street": true, "ssn": true, "password": true, "passwd": true,
@@ -607,7 +607,7 @@ func splitIdentifier(s string) []string {
 func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	var out []contracts.Diagnostic
 	// GOFASTR1703 keys on auth being absent app-wide, which is a property
-	// of the whole module rather than any one entity — compute it once.
+	// of the whole module rather than any one entity. Compute it once.
 	// Auth is "absent" when no battery/auth manager is configured and no
 	// reader (SessionMiddleware / RequireAuth / BFF) is mounted anywhere;
 	// that is the half-wiring complement GOFASTR1903 does not cover (1903
@@ -617,19 +617,19 @@ func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	for _, e := range Entities(p) {
 		if e.MCP && e.CRUDDisabled {
 			d := diag(p, contracts.RuleMCPWithoutCRUD, e.File, e.Pos,
-				fmt.Sprintf("entity %q sets MCP with CRUD disabled — its tools dispatch to routes that do not exist", e.Name))
+				fmt.Sprintf("entity %q sets MCP with CRUD disabled: its tools dispatch to routes that do not exist", e.Name))
 			d.Evidence = map[string]string{"entity": e.Name}
 			out = append(out, d)
 		}
 		if e.Public {
 			d := diag(p, contracts.RulePublicEntity, e.File, e.Pos, fmt.Sprintf(
-				"entity %q is Public — anonymous callers can create, update, and delete rows, not only read them", e.Name))
+				"entity %q is Public: anonymous callers can create, update, and delete rows, not only read them", e.Name))
 			d.Evidence = map[string]string{"entity": e.Name}
 			out = append(out, d)
 		}
 		if noAuth && !e.CRUDDisabled && !e.Public {
 			d := diag(p, contracts.RuleCrudWithoutAuth, e.File, e.Pos, fmt.Sprintf(
-				"entity %q mounts auto-CRUD routes but the app wires no auth — every operation 401s for every caller; wire battery/auth or mark the entity Public", e.Name))
+				"entity %q mounts auto-CRUD routes but the app wires no auth: every operation 401s for every caller; wire battery/auth or mark the entity Public", e.Name))
 			d.Evidence = map[string]string{"entity": e.Name}
 			out = append(out, d)
 		}
@@ -646,7 +646,7 @@ func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			continue
 		}
 		d := diag(p, contracts.RuleUnscopedPII, e.File, e.Pos, fmt.Sprintf(
-			"entity %q exposes %s through auto-CRUD with no owner field, tenant, or access rule — every signed-in user can read and write every other user's row",
+			"entity %q exposes %s through auto-CRUD with no owner field, tenant, or access rule: every signed-in user can read and write every other user's row",
 			e.Name, strings.Join(pii, ", ")))
 		d.Evidence = map[string]string{"entity": e.Name, "fields": strings.Join(pii, ",")}
 		out = append(out, d)
@@ -659,7 +659,7 @@ func runPermissions(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	// whether a configured credential is ever read, which has nothing to
 	// do with whether this pass could discover any routes. Gating it on
 	// the route table meant it never fired for the shape it exists to
-	// catch — an app whose routes are wired somewhere the static pass
+	// catch: an app whose routes are wired somewhere the static pass
 	// cannot see.
 	out, err := runAuthWiring(p)
 	if err != nil {
@@ -685,13 +685,13 @@ func runPermissions(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1903 — auth configured but never mounted.
+// GOFASTR1903: auth configured but never mounted.
 // ----------------------------------------------------------------------
 
 // authWiring is what the module says about authentication, attributed by
 // package. One module-global Mounted flag let the first binary that
 // wired auth correctly silence the rule for every other binary in the
-// module — a mount can only cover a configure the compiler could link it
+// module. A mount can only cover a configure the compiler could link it
 // with.
 type authWiring struct {
 	// Configured is one `auth.New(...)` site per package that calls it.
@@ -700,7 +700,7 @@ type authWiring struct {
 	// credential: SessionMiddleware (cookies), RequireAuth (bearer), or
 	// BFF (which mounts the session middleware itself).
 	Mounted map[string]bool
-	// Imports is the module-internal import graph over app packages —
+	// Imports is the module-internal import graph over app packages,
 	// including packages that have nothing to do with auth, because
 	// coverage has to flow through them.
 	Imports map[string]map[string]bool
@@ -741,7 +741,7 @@ func collectAuthWiring(p *contracts.Pass) authWiring {
 		if !ok {
 			continue
 		}
-		// Without a go.mod the packages cannot be told apart — files get
+		// Without a go.mod the packages cannot be told apart. Files get
 		// relative-directory names while the import matcher can accept
 		// nothing, which would leave a graph with nodes and no edges
 		// where a mount can never cover a configure. Collapse every file
@@ -768,7 +768,7 @@ func collectAuthWiring(p *contracts.Pass) authWiring {
 		// A dot import erases the selector: the mount is a bare
 		// `RequireAuth`, invisible to the selector walk below. The reader
 		// names are specific enough to trust as bare identifiers; `New`
-		// is not, so a dot-imported configure stays uncollected — a
+		// is not, so a dot-imported configure stays uncollected. A
 		// missed configure can only under-report, never false-positive.
 		// Only USES count: an app is free to declare its own method or
 		// field named RequireAuth (method names do not collide with
@@ -780,7 +780,7 @@ func collectAuthWiring(p *contracts.Pass) authWiring {
 			// declaration, so a pointer-keyed exclusion let the app's
 			// own `Opts{RequireAuth: true}` field key count as a mount.
 			// If the file declares the name anywhere, none of its bare
-			// occurrences can be trusted to mean the auth package — the
+			// occurrences can be trusted to mean the auth package. The
 			// residual under-report (a file that both shadows AND
 			// genuinely mounts) is the direction this walk accepts.
 			shadowed := map[string]bool{}
@@ -839,7 +839,7 @@ func collectAuthWiring(p *contracts.Pass) authWiring {
 		})
 		ast.Inspect(file, func(n ast.Node) bool {
 			// Matched on the SELECTOR, not on a call: middleware is
-			// routinely passed as a value rather than invoked here —
+			// routinely passed as a value rather than invoked here:
 			// `app.Group("/x", auth.RequireAuth)` mounts it just as
 			// surely as `Use(auth.SessionMiddleware(mgr))` does.
 			sel, isSel := n.(*ast.SelectorExpr)
@@ -861,7 +861,7 @@ func collectAuthWiring(p *contracts.Pass) authWiring {
 			}
 			// `auth.New(cfg)` is the manager constructor. Other New*
 			// helpers in the package build stores and plugins, not the
-			// manager, so the name is matched exactly — and only when it
+			// manager, so the name is matched exactly, and only when it
 			// is genuinely invoked, since a bare reference to the
 			// constructor configures nothing. One site per package:
 			// several auth.New calls in one package are one wiring
@@ -927,8 +927,8 @@ func runAuthWiring(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 
 // authCovered reports whether some compilation unit could contain both
 // this configure site and a mount. Walk UP to everything that
-// transitively imports the configuring package — the binaries that link
-// it — then DOWN through everything those importers link, and look for a
+// transitively imports the configuring package, the binaries that link
+// it, then DOWN through everything those importers link, and look for a
 // mount anywhere in that closure. Package identity alone is too narrow
 // (main configures, an imported routes package mounts); the whole module
 // is too wide (appA's mount says nothing about appB, which never links

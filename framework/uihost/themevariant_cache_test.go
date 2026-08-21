@@ -11,7 +11,7 @@ import (
 // holder of a theme variant evicts that theme's entries from every registry
 // component's CSS cache. The per-component cssCache/versionCache (keyed by theme
 // hash) grow on first render and were never cleared, so cycling ?theme= values
-// — or an embed rebranding per request — grew RAM permanently. Variant release
+// or an embed rebranding per request, grew RAM permanently. Variant release
 // is the only point that knows a theme is truly gone, so eviction hooks there.
 func TestReleaseThemeVariantEvictsComponentCSSCaches(t *testing.T) {
 	ds := hostWithTheme(t, style.DefaultTheme())
@@ -54,7 +54,7 @@ func TestReleaseThemeVariantKeepsAppThemeCache(t *testing.T) {
 		t.Fatal("precondition: app theme should be cached")
 	}
 
-	// Register then release a DISTINCT variant — the app theme cache survives.
+	// Register then release a DISTINCT variant. The app theme cache survives.
 	key := ds.RegisterThemeVariant(brandTheme("#0D9488"))
 	ds.ReleaseThemeVariant(key)
 

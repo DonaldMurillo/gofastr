@@ -15,8 +15,8 @@ import (
 // against the route scope (path, method), so its value is attacker-
 // influenced even when the IR itself is benign. net/http's WriteHeader
 // panics for any code outside 100..999, and kiln's applyRoutes installs
-// raw http.HandlerFuncs — panic recovery in a kiln-rendered app is an
-// opt-in catalog entry the world has to declare — so an out-of-range
+// raw http.HandlerFuncs, panic recovery in a kiln-rendered app is an
+// opt-in catalog entry the world has to declare, so an out-of-range
 // status is an uncontained panic on the serving goroutine.
 
 // TestOutOfRangeStatusRejected pins that a status outside the HTTP range
@@ -38,7 +38,7 @@ func TestOutOfRangeStatusRejected(t *testing.T) {
 		scope := Scope{Ctx: map[string]any{"path": "/ab", "method": "GET"}}
 		resp, err := Resolve(context.Background(), a, scope)
 		if err != nil {
-			continue // rejected at resolve — the preferred outcome
+			continue // rejected at resolve, the preferred outcome
 		}
 		func() {
 			defer func() {

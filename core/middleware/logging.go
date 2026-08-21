@@ -16,7 +16,7 @@ import (
 // LoggingFn returns middleware that logs each request via the *slog.Logger
 // returned by getLogger. getLogger is called per request so the upstream
 // (e.g. framework.App) can hand out a logger that was swapped after the
-// middleware was attached — this is how plugins can replace the logger
+// middleware was attached; this is how plugins can replace the logger
 // after the chain is already wired.
 //
 // If getLogger is nil or returns nil, slog.Default() is used.
@@ -149,8 +149,8 @@ var c0AndDelSet = func() string {
 }()
 
 // scrubControlBytes percent-encodes ASCII control bytes (the C0 range) and
-// DEL in a request-derived value — URL path, method, or a panic that embeds
-// a request string — so an attacker can't forge a fake log entry or smuggle
+// DEL in a request-derived value, URL path, method, or a panic that embeds
+// a request string, so an attacker can't forge a fake log entry or smuggle
 // a terminal-control payload into an operator's tail/less session. slog's
 // JSON handler escapes these for valid JSON, but a JSON-escaped \r\n is still
 // visible to text grep, and naive log shippers render the injected payload on
@@ -210,7 +210,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// optional-interface wrappers — we conditionally expose just what the
+// optional-interface wrappers; we conditionally expose just what the
 // underlying writer actually supports, so a caller's interface assertion
 // reflects the real capabilities of the stack.
 
@@ -240,7 +240,7 @@ func (p pushWriter) Push(target string, opts *http.PushOptions) error {
 	return http.ErrNotSupported
 }
 
-// 8 combinations of (Flusher, Hijacker, Pusher) — only the relevant
+// 8 combinations of (Flusher, Hijacker, Pusher); only the relevant
 // few are common enough to be worth a dedicated type; we collapse the
 // rest into the dominant patterns below.
 

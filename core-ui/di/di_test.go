@@ -150,7 +150,7 @@ func TestDI_InjectFillsTaggedFields(t *testing.T) {
 func TestDI_InjectSkipsUntaggedFields(t *testing.T) {
 	type Mixed struct {
 		Log  *Logger `inject:""`
-		Name string  // NOT tagged — should stay empty
+		Name string  // NOT tagged, should stay empty
 	}
 
 	c := NewContainer()
@@ -186,7 +186,7 @@ func TestDI_InjectErrorsOnMissingProvider(t *testing.T) {
 	}
 
 	// The first field should still be nil since injection stops on error
-	// (or it may be set depending on implementation — both are acceptable)
+	// (or it may be set depending on implementation, both are acceptable)
 }
 
 // --- 4. Error handling ---

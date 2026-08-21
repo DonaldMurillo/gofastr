@@ -8,7 +8,7 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 // Content is required and is the rendered HTML revealed when open.
 //
 // Open is honored by the server-rendered output and by the browser on
-// initial load. The browser then takes over — toggling via clicks or
+// initial load. The browser then takes over, toggling via clicks or
 // keyboard does not require a server round-trip.
 type Item struct {
 	Summary string
@@ -21,7 +21,7 @@ type Item struct {
 // GroupConfig configures an exclusive (single-open) accordion.
 //
 // Required: Name. The Name attribute is the native HTML mechanism that
-// makes a set of <details> elements mutually exclusive — opening one
+// makes a set of <details> elements mutually exclusive, opening one
 // automatically closes any other <details> sharing the same name.
 type GroupConfig struct {
 	Name      string // required → becomes <details name="…"> across all items

@@ -15,7 +15,7 @@ import (
 // middleware loads N MB into memory looking for a _csrf field.
 //
 // Without the cap, ParseForm() in the middleware would buffer up to
-// 10MB (form-urlencoded) or 32MB (multipart) per request — 100 attackers
+// 10MB (form-urlencoded) or 32MB (multipart) per request; 100 attackers
 // = 1-3GB resident.
 func TestCSRF_FormBodyHasMaxSize(t *testing.T) {
 	mw := CSRF(CSRFConfig{
@@ -43,7 +43,7 @@ func TestCSRF_FormBodyHasMaxSize(t *testing.T) {
 		t.Fatal("no cookie from GET")
 	}
 
-	// 2) Oversized POST. 10 KB body, cookie present, no header — must
+	// 2) Oversized POST. 10 KB body, cookie present, no header: must
 	// 413 BEFORE buffering the full body.
 	big := bytes.Repeat([]byte("a=b&"), 2500)
 	req := httptest.NewRequest(http.MethodPost, "/save", bytes.NewReader(big))
@@ -111,7 +111,7 @@ func TestCSRF_FormBodyDownstreamCanRead(t *testing.T) {
 // default cap so callers who don't set MaxFormBytes still get
 // protection.
 // TestCSRF_MultipartBodyHasMaxSize pins the cap for the OTHER form
-// content-type. Go's stdlib defaults to 32MB for multipart parsing —
+// content-type. Go's stdlib defaults to 32MB for multipart parsing;
 // much bigger DoS surface than urlencoded's 10MB. The middleware's
 // MaxFormBytes wraps both via the same readAndBufferCapped path.
 func TestCSRF_MultipartBodyHasMaxSize(t *testing.T) {
@@ -134,7 +134,7 @@ func TestCSRF_MultipartBodyHasMaxSize(t *testing.T) {
 		t.Fatal("no cookie from GET")
 	}
 
-	// Build a 10KB multipart body — over the 1KB cap.
+	// Build a 10KB multipart body, over the 1KB cap.
 	boundary := "X-BOUNDARY"
 	bodyText := "--" + boundary + "\r\n" +
 		"Content-Disposition: form-data; name=\"field\"\r\n\r\n" +
@@ -166,7 +166,7 @@ func TestCSRF_FormBodyMaxSizeDefault(t *testing.T) {
 		}
 	}
 
-	// 9 MB body — should be rejected by the default (which the fix sets
+	// 9 MB body: should be rejected by the default (which the fix sets
 	// to 1MB).
 	big := make([]byte, 9<<20)
 	_, _ = rand.Read(big)

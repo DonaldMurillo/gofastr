@@ -392,7 +392,7 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 		t.Fatalf("challenge: expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
 
-	// Now hit RequireTwoFA — must succeed because EntitySessionStore.MarkTwoFactorVerified ran.
+	// Now hit RequireTwoFA, must succeed because EntitySessionStore.MarkTwoFactorVerified ran.
 	req2 := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req2.AddCookie(&http.Cookie{Name: "session_id", Value: sess.Token})
 	w2 := httptest.NewRecorder()
@@ -534,7 +534,7 @@ func TestEntityUserStore_DuplicateEmail_ReturnsErrEmailTaken(t *testing.T) {
 // TestEntityStoreListUsersPaginates pins the UserLister contract on
 // EntityUserStore: stable email-ordered pages, an accurate total
 // count, and roles round-tripped through parseRoles. SELECTs only
-// id/email/roles — password_hash never appears in the listing.
+// id/email/roles, password_hash never appears in the listing.
 func TestEntityStoreListUsersPaginates(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

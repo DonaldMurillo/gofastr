@@ -18,11 +18,11 @@ import (
 //
 // Selector semantics (enforced client-side):
 //
-//   - "/orders"          — drops /orders AND every cached query variant
+//   - "/orders":           drops /orders AND every cached query variant
 //     (/orders?page=2, /orders?sort=asc, …). A mutation that stales a
 //     list stales every filtered/paginated view of it.
-//   - "/orders?page=2"   — drops exactly that pathname+query entry.
-//   - "*"                — clears the whole cache.
+//   - "/orders?page=2":     drops exactly that pathname+query entry.
+//   - "*":                 clears the whole cache.
 //
 // No prefix/glob matching: "/orders" never matches "/orders/42".
 //
@@ -30,7 +30,7 @@ import (
 // tab whose request carried it. Surfaces that must stay fresh across
 // tabs belong on the polling rung (data-fui-poll), not the screen cache.
 //
-// Invalidation never re-renders the visible page — it only affects
+// Invalidation never re-renders the visible page. It only affects
 // future navigations. Pair with data-fui-rpc-navigate (or
 // __gofastr.refresh() client-side) when the mutation should also land
 // the user on a freshly rendered screen.
@@ -41,13 +41,13 @@ import (
 // array, mirroring AddToast.
 //
 // Paths must be root-relative ("/orders", "/dashboard?range=7d") or the
-// wildcard "*". Anything else — empty strings, absolute URLs,
+// wildcard "*". Anything else: empty strings, absolute URLs,
 // protocol-relative or bare-relative paths, or paths carrying control
-// characters — is dropped silently: the values are only ever cache-map
+// characters, is dropped silently: the values are only ever cache-map
 // keys on the client, so an invalid one could never match an entry
 // anyway. (Control bytes are rejected outright rather than escaped:
 // DEL survives JSON encoding un-escaped, and an invalid header value
-// is silently dropped by Go's HTTP/2 writer — a path that can't be a
+// is silently dropped by Go's HTTP/2 writer. A path that can't be a
 // real cache key is not worth a malformed header.)
 //
 // The header is consumed on every 2xx mutation or navigation response
@@ -66,7 +66,7 @@ func InvalidateScreens(w http.ResponseWriter, paths ...string) {
 	}
 	var list []string
 	if existing := w.Header().Get("X-Gofastr-Invalidate"); existing != "" {
-		// Malformed manual values are replaced, not preserved — a bad
+		// Malformed manual values are replaced, not preserved: a bad
 		// prefix must not poison the whole header.
 		_ = json.Unmarshal([]byte(existing), &list)
 	}

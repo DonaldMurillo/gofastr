@@ -285,7 +285,7 @@ entities:
     crud: true
     mcp: true
     # Lead-capture pattern: the public contact form needs create open, but
-    # the submitted email/phone are PII — reads and mutations are RBAC-gated
+    # the submitted email/phone are PII; reads and mutations are RBAC-gated
     # (fail-closed 403 for anonymous). See blueprints.md "Unscoped PII".
     access:
       read: contacts:read
@@ -349,7 +349,7 @@ nav:
 screens:
   - name: home
     route: /
-    title: Folio — Portfolio & Blog
+    title: "Folio: Portfolio & Blog"
     description: Personal portfolio and blog
     body:
       - type: heading
@@ -526,7 +526,7 @@ seed:
     rows:
       - title: Why I Chose Go for My Backend
         slug: why-i-chose-go
-        body: "After years of Node.js, I made the switch to Go. Here is what I learned and why I am not looking back.\n\n## Performance\n\nGo compiles to native code and its goroutine model makes concurrency trivial.\n\n## Tooling\n\nThe standard library is incredible. go test, go fmt, go vet — everything you need is built in."
+        body: "After years of Node.js, I made the switch to Go. Here is what I learned and why I am not looking back.\n\n## Performance\n\nGo compiles to native code and its goroutine model makes concurrency trivial.\n\n## Tooling\n\nThe standard library is incredible. go test, go fmt, go vet: everything you need is built in."
         status: published
         category: Engineering
         featured: true

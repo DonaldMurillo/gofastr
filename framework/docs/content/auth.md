@@ -3,15 +3,15 @@
 GoFastr's auth subsystem lives in `battery/auth`. It is built on a small
 `AuthManager` plus a set of plugins. The manager owns shared state
 (user store, session store, JWT settings, rate-limit config); plugins
-own individual authentication methods. Every plugin is opt-in — a
+own individual authentication methods. Every plugin is opt-in: a
 service that only needs OAuth and 2FA never compiles the
 password-reset code in.
 
 The lower-level primitives live in `battery/auth` alongside the plugins
-that use them: password hashing (bcrypt by default, argon2id optional — set `auth.DefaultHasher` before Init), the rate-limit
+that use them: password hashing (bcrypt by default, argon2id optional; set `auth.DefaultHasher` before Init), the rate-limit
 `Guard` (`ratelimit.go`), and the session/token stores. They are
-dependencies of the plugins, not a second API to reach for directly —
-apps wire the `AuthManager` and its plugins.
+dependencies of the plugins, not a second API to reach for directly.
+Apps wire the `AuthManager` and its plugins.
 
 ## Quickstart
 
@@ -54,14 +54,14 @@ name, sets `Secure=true`, and a seven-day session TTL.
 
 When `DevMode: true` and `JWTSecret` is empty, `New` mints a random
 per-process secret and logs a WARN. That lets demo/boilerplate apps
-skip the "change-me" literal — sessions invalidate on restart, which
+skip the "change-me" literal: sessions invalidate on restart, which
 is the right trade for dev.
 
 In production mode (`DevMode: false`) `JWTSecret` is **mandatory**:
 `Init` fails closed with
 `auth: production mode requires AuthConfig.JWTSecret — set it from
 your secret store, or set DevMode: true for local development`, and
-`App.Start` refuses to boot. There is no warn-and-continue path — an
+`App.Start` refuses to boot. There is no warn-and-continue path: an
 empty HMAC key would make every JWT forgeable.
 
 ### Rotating JWTSecret
@@ -73,7 +73,7 @@ drain window. The idiom mirrors the CSRF `AdditionalKeys` rotation path.
 
 1. Set `JWTSecret` to the new secret and move the old one into
    `JWTPreviousSecrets`. Deploy across every replica.
-2. Hold both for the drain window — one `JWTExpiry` (default 1h).
+2. Hold both for the drain window: one `JWTExpiry` (default 1h).
 3. Once every pre-rotation token has expired, remove the old secret from
    `JWTPreviousSecrets` and redeploy.
 
@@ -85,7 +85,7 @@ mgr := auth.New(auth.AuthConfig{
 })
 ```
 
-Production mode still requires a non-empty `JWTSecret` — a previous-only
+Production mode still requires a non-empty `JWTSecret`: a previous-only
 configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
 `Init`, because a verify-only setup cannot sign new tokens.
 
@@ -95,7 +95,7 @@ configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
 |---|---|---|
 | `CorePlugin` | `POST /auth/{login,register,logout}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
-| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does) — fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
+| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable}`, `GET /auth/2fa/backup-codes` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. |
@@ -122,7 +122,7 @@ type UserStore interface {
 Return `auth.ErrUserNotFound` from the `FindBy*` methods when no row
 matches. Return `auth.ErrEmailTaken` from `CreateUser` on a unique-
 violation. Any other error is treated as a transport failure and
-propagated — plugins refuse to silently auto-create users when they
+propagated: plugins refuse to silently auto-create users when they
 can't tell "not found" from "DB unreachable".
 
 `auth.EntityUserStore` is a ready-made implementation that adapts a
@@ -137,17 +137,17 @@ safe-but-reduced path.
 
 | Interface | Used by | Effect when implemented |
 |---|---|---|
-| `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production — the legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
+| `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production. The legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
 | `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
 | `OAuthUserCreator` | `OAuth2Plugin`, `MagicLinkPlugin` | Record at creation time that the user has no password. Lets `PasswordChecker.HasPassword` return false correctly. |
 | `OAuthTokenRefresher` | `RefreshOAuthToken` / `ValidOAuthToken` | Exchange a stored refresh token for a fresh access token. Implemented by `GoogleProvider` and `GitHubProvider`. See "OAuth token store + refresh". |
 | `AccountLister` | `AccountsPlugin` | Power `GET /auth/accounts`. Required. |
 | `AccountUnlinker` | `AccountsPlugin` | Power `DELETE /auth/unlink/{provider}`. Required. |
-| `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining" — fine when the user has linked accounts, less accurate when they only have a password. |
+| `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
 | `EmailVerifier` | `EmailVerificationPlugin` | Set the `email_verified` flag. Required. |
 | `PasswordSetter` | `PasswordResetPlugin` | Persist the new bcrypt hash. Required. |
-| `SessionTwoFAMarker` | `TwoFAPlugin` | Mark a session as having completed the second factor. Required for `RequireTwoFA` to ever pass — stores that omit it fail closed. |
-| `SessionPendingMarker` | `CorePlugin` | Set `Session.PendingTwoFactor` after login for users who have 2FA enabled. **Fail-closed:** if any registered `TwoFactorChecker` reports a user enrolled and the store omits this interface (or the mark call errors), login is rejected and the session destroyed — a custom store cannot silently downgrade 2FA accounts to password-only auth. |
+| `SessionTwoFAMarker` | `TwoFAPlugin` | Mark a session as having completed the second factor. Required for `RequireTwoFA` to ever pass; stores that omit it fail closed. |
+| `SessionPendingMarker` | `CorePlugin` | Set `Session.PendingTwoFactor` after login for users who have 2FA enabled. **Fail-closed:** if any registered `TwoFactorChecker` reports a user enrolled and the store omits this interface (or the mark call errors), login is rejected and the session destroyed. A custom store cannot silently downgrade 2FA accounts to password-only auth. |
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
 | `UserLister` | Host code (`AuthManager.ListUsers`) | Enumerate accounts for a back-office. Returns `ErrListUsersUnsupported` when absent, so a missing implementation fails loudly instead of returning an empty list. See [Listing users](#listing-users). |
 
@@ -156,7 +156,7 @@ provided in this package implement every relevant interface; if you
 start from `EntityUserStore` you get the full feature matrix.
 
 The default stores are **in-memory**: fine for dev and tests, a trap
-in production — sessions vanish on restart and never resolve on a
+in production: sessions vanish on restart and never resolve on a
 second replica, and in-memory 2FA enrollment reverts accounts to
 password-only auth after a restart. Production mode enforces this at
 Init: **both** the in-memory session store and the in-memory 2FA store
@@ -176,8 +176,8 @@ still leaves a WARN trace so the downgrade stays visible). See
 
 ## Default roles for new accounts
 
-Every newly created account — register, magic-link auto-create, and
-OAuth auto-create — is stamped with `AuthConfig.DefaultRoles`. The
+Every newly created account, from register, magic-link auto-create, or
+OAuth auto-create, is stamped with `AuthConfig.DefaultRoles`. The
 default is `["user"]`.
 
 ```go
@@ -191,7 +191,7 @@ These are **operator configuration, never request data.** The
 registration and auto-create flows are anonymous, so honoring a
 client-supplied `roles` field would let anyone self-promote to any
 role. The handlers read the value through `mgr.DefaultRoles()` and
-ignore any `roles` key on the incoming request — role elevation is a
+ignore any `roles` key on the incoming request; role elevation is a
 separate admin-gated flow.
 
 ## HTML form support
@@ -210,7 +210,7 @@ runtime's [form interceptor](runtime-contract.md#forms)
 follows the `Location` header and lands the user on the next page.
 
 Open-redirect protection: the `?next=` (query or form) override is
-honored only for same-origin paths starting with `/` — `//evil.example`
+honored only for same-origin paths starting with `/`. `//evil.example`
 and full URLs are rejected, falling back to `/`.
 
 Wire a plain HTML login form like this:
@@ -226,18 +226,18 @@ Wire a plain HTML login form like this:
 
 No client-side JavaScript needed beyond the framework runtime.
 
-### Owner extractor — global state and its limit
+### Owner extractor: global state and its limit
 
 `battery/auth.init()` installs a global owner extractor in
 `framework/owner` so any entity with `OwnerField` set in the process
 scopes by the current `auth.GetCurrentUser(ctx)`. **The extractor is
-process-global** — one extractor per process, last-import wins. Apps
+process-global**: one extractor per process, last-import wins. Apps
 that need different extractors per `framework.App` instance (e.g. a
 single process hosting two unrelated apps) can't have them today.
 
 If you need a different identity source, call
 `owner.SetExtractor(yourFunc)` AFTER `battery/auth` is imported (the
-last call wins). Document this clearly in your app — the import-order
+last call wins). Document this clearly in your app: the import-order
 coupling is subtle.
 
 **Safety**: when an entity has `OwnerField` set and the extractor
@@ -267,8 +267,8 @@ flows) on any route that needs a logged-in user.
 ## Service accounts & scoped API tokens
 
 The self-service token endpoints require an **interactive session**. An API
-token cannot mint another token — that would let a scoped token escape its own
-leash — and neither can an embeddable surface's grant, for the same reason and
+token cannot mint another token, because that would let a scoped token escape its own
+leash, and neither can an embeddable surface's grant, for the same reason and
 more so: a grant is delegated authority, bounded to one surface and one origin
 with a deadline, sitting in a page the app does not control. Minting from it
 would exchange a bounded credential for an unbounded one.
@@ -279,7 +279,7 @@ answer is a scope on the surface plus `embeds.RequireScope`, not a wider
 credential.
 
 
-Non-human identities — CI runners, background workers, internal scripts —
+Non-human identities such as CI runners, background workers, and internal scripts
 authenticate with **API tokens** (`gfsk_`-prefixed PATs) instead of session
 cookies or JWTs. Tokens are issued to a human user or to a **service
 account**: a non-interactive identity that holds roles like a user but has
@@ -312,7 +312,7 @@ plaintext, rec, err := auth.IssueToken(ctx, ts, auth.TokenSpec{
     Scopes:    []string{"posts:read", "deploys:run"},
     TTL:       30 * 24 * time.Hour,   // 0 = no expiry
 })
-// Store `plaintext` in your secret manager NOW — it cannot be retrieved again.
+// Store `plaintext` in your secret manager NOW. It cannot be retrieved again.
 _ = rec // {ID, Name, Prefix, Scopes, ExpiresAt, …}
 ```
 
@@ -326,7 +326,7 @@ intercepts `Authorization: Bearer gfsk_…` credentials; non-`gfsk_` bearers
 (JWTs) and header-less requests pass through untouched for the session/JWT
 middleware to handle. A `gfsk_` credential that fails validation (unknown,
 revoked, expired, disabled owner) clears any prior ctx identity and
-proceeds anonymous — it never falls back to an outer identity.
+proceeds anonymous: it never falls back to an outer identity.
 
 ```go
 app.Use(auth.SessionMiddleware(mgr))
@@ -341,7 +341,7 @@ On the consumer side, the generated typed client
 ([entity declarations](entity-declarations.md#code-generation))
 carries the token for you: set `client.Token` to a plaintext PAT and every
 request sends `Authorization: Bearer gfsk_…`. Bearer requests skip CSRF by
-design, so scripts and CLIs need no cookie or CSRF-token handling — the
+design, so scripts and CLIs need no cookie or CSRF-token handling. The
 customer flow is: log in to the app's web UI, mint a scoped token via
 `POST /auth/tokens` (TokensPlugin), paste it into the tool once. The
 generated customer CLI ([Ship your API as a CLI](app-cli.md)) packages
@@ -349,7 +349,7 @@ exactly this flow as its `login` command.
 
 ### Scopes
 
-Sessions and JWTs are **unscoped** — a logged-in user carries their full
+Sessions and JWTs are **unscoped**: a logged-in user carries their full
 capability. API tokens are **additionally restricted** by their scope list:
 
 - exact: `"posts:read"` grants `"posts:read"`
@@ -359,7 +359,7 @@ capability. API tokens are **additionally restricted** by their scope list:
 - empty scopes: the token authenticates but `RequireScope` always 403s
 
 `RequireScope` only gates the routes you mount it on, and sessions pass
-it unscoped — mount it on the machine-facing routes you actually want
+it unscoped. Mount it on the machine-facing routes you actually want
 scope-limited, and don't rely on it as a blanket gate for human traffic.
 
 ```go
@@ -372,9 +372,9 @@ r.Group("/posts", auth.RequireScope("posts:write")).Post("", handler)
 ```
 
 For the auto-CRUD tree there is a blanket gate: `RequireAPIScopes(prefix)`
-derives the required scope from the route itself — the first path segment
+derives the required scope from the route itself: the first path segment
 after the prefix is the resource, GET/HEAD need `<resource>:read`,
-everything else `<resource>:write` — so one mount makes every minted scope
+everything else `<resource>:write`, so one mount makes every minted scope
 real across `/api`:
 
 ```go
@@ -383,14 +383,14 @@ app.Use(auth.RequireAPIScopes("/api")) // ["customers:*"] token ⇒ 403 off /api
 ```
 
 Without it (or per-route `RequireScope`), a token's scope list is
-**advisory only** — the token still authenticates as its owner everywhere.
+**advisory only**: the token still authenticates as its owner everywhere.
 Session/JWT callers and paths outside the prefix are untouched.
 
 `auth.TokenScopes(ctx)` returns `(scopes, true)` only for
 token-authenticated requests; `(nil, false)` for sessions/JWT.
 
 **The token-management endpoints are session-only.** `POST/GET/DELETE
-/auth/tokens` require an interactive session — a request authenticated by
+/auth/tokens` require an interactive session. A request authenticated by
 an API token is rejected with 401, even under the recommended global
 `TokenMiddleware` wiring. Otherwise a leaked scoped (or empty-scoped)
 token could mint a `*:*` token for its owner and escape its own scope
@@ -399,7 +399,7 @@ their tokens by logging in, not with the token itself.
 
 ### Service accounts (programmatic-only)
 
-A service account authenticates **only** via tokens — there is no login
+A service account authenticates **only** via tokens. There is no login
 path. Create one in Go; its roles flow to `RequireRole` / `access.Can`
 through the `User` interface:
 
@@ -409,7 +409,7 @@ ss.Create(ctx, sa)
 // then auth.IssueToken with OwnerKind: "service", OwnerID: sa.ID
 ```
 
-Service-account management has **no HTTP endpoints in v1** — create and
+Service-account management has **no HTTP endpoints in v1**: create and
 disable them from trusted server code (`SetDisabled`).
 
 ### Management endpoints (`TokensPlugin`)
@@ -418,8 +418,8 @@ Self-service token management for logged-in users:
 
 | Endpoint | Effect |
 |---|---|
-| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session — `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. |
-| `GET {base}/tokens` | List the caller's tokens (prefix only — never the plaintext or hash). |
+| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. |
+| `GET {base}/tokens` | List the caller's tokens (prefix only, never the plaintext or hash). |
 | `DELETE {base}/tokens/{id}` | Revoke one of the caller's tokens. A foreign id is a 404 (owner-scoped). |
 
 ```go
@@ -434,7 +434,7 @@ mgr.Use(auth.NewTokensPlugin(apiTokens))
 | `token.revoked` | `DELETE /auth/tokens/{id}` succeeds | `token_id` |
 | `token.auth_failed` | a `gfsk_` credential fails in `TokenMiddleware` | `reason` ∈ unknown\|revoked\|expired\|owner_missing\|owner_disabled, `token` (prefix) |
 
-Only the token **prefix** ever appears in an audit event — never the
+Only the token **prefix** ever appears in an audit event, never the
 credential itself.
 
 ## Per-SSR-screen policies (`auth.SessionPolicy`, `auth.RolePolicy`)
@@ -447,18 +447,18 @@ evaluates it before `Load()` runs:
 ```go
 import "github.com/DonaldMurillo/gofastr/core-ui/app"
 
-// Public marketing pages — no policy, no gate.
+// Public marketing pages: no policy, no gate.
 application.RegisterScreen(app.NewScreen("/",      &HomeScreen{}),  nil)
 application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}), nil)
 
-// Gated dashboard group — every screen inherits SessionPolicy.
+// Gated dashboard group: every screen inherits SessionPolicy.
 dash := app.NewScreenGroup("/dashboard", dashLayout, auth.SessionPolicy())
 dash.Screen(app.NewScreen("home",    &Home{}),    nil)
 dash.Screen(app.NewScreen("billing", &Billing{}).
     WithPolicy(auth.RolePolicy(auth.Roles("admin"))), nil)
 application.Router.ScreenGroup(dash)
 
-// Same-URL marketing/dashboard duo via RenderAlt — factory, NOT
+// Same-URL marketing/dashboard duo via RenderAlt: factory, NOT
 // singleton, so each request gets a fresh instance (no cross-user
 // data leak on shared alt state).
 application.RegisterScreen(
@@ -479,12 +479,12 @@ The dispatcher resolves each request as one of four outcomes:
 | RenderAlt    | The alt component takes the screen's place; its Load runs.      |
 | Block        | HTTP status from `WithBlock(status, msg)`, default 401/403.     |
 
-### Option precedence — last-write-wins per call, alt > redirect > block on fail
+### Option precedence: last-write-wins per call, alt > redirect > block on fail
 
 Each `With*` option overwrites the others' fields on the way in. If
-you chain `auth.WithRedirect("/x").WithBlock(403)` the Block wins —
-the second option clears the redirect URL. There is no "compose two
-failure outcomes" — pick one per policy.
+you chain `auth.WithRedirect("/x").WithBlock(403)` the Block wins.
+The second option clears the redirect URL. There is no "compose two
+failure outcomes"; pick one per policy.
 
 When more than one applies (e.g. through some custom option-builder),
 `failureDecision` resolves them in order: `RenderAlt` first if its
@@ -508,7 +508,7 @@ import "github.com/DonaldMurillo/gofastr/battery/auth"
 auth.SessionPolicy(auth.WithRedirect("/marketing", auth.NoNext()))
 ```
 
-`RenderAlt` takes a factory, not an instance — the framework calls it
+`RenderAlt` takes a factory, not an instance: the framework calls it
 once per request so the alt component cannot leak data across users:
 
 ```go
@@ -518,7 +518,7 @@ auth.SessionPolicy(auth.WithRenderAlt(
 ```
 
 Inside a `RenderCtx`, call `auth.SessionFrom(ctx)` for in-component
-gating (sidebar nav, conditional CTAs) — no policy machinery needed
+gating (sidebar nav, conditional CTAs); no policy machinery needed
 for a per-widget branch:
 
 ```go
@@ -531,12 +531,12 @@ func (s *Header) RenderCtx(ctx context.Context) render.HTML {
 ```
 
 Pair with `SessionMiddleware` upstream so the policy sees the loaded
-user. JSON/API routes still use `RequireSession` middleware as before
-— policies are for the SSR page layer specifically.
+user. JSON/API routes still use `RequireSession` middleware as before.
+Policies are for the SSR page layer specifically.
 
 ## Auth entities are private by default
 
-The user / session tables back the auth subsystem — exposing them via
+The user / session tables back the auth subsystem: exposing them via
 auto-CRUD would leak password hashes and session tokens. Use the
 pre-built configs:
 
@@ -548,7 +548,7 @@ mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 ```
 
 `auth.UserEntityFields()` and `auth.SessionEntityFields()` are still
-exported for hosts that want to assemble their own config — but the
+exported for hosts that want to assemble their own config, but the
 `*EntityConfig()` helpers are the safe default.
 
 ## Durable store schema and PostgreSQL first boot
@@ -575,7 +575,7 @@ after upgrading.
 ## Listing users
 
 Back-offices that need to enumerate accounts (an admin user list, a
-back-office screen) should call `mgr.ListUsers` — the supported
+back-office screen) should call `mgr.ListUsers`, the supported
 replacement for raw SQL against `auth_users`. It pages through the
 store in a stable email-ordered sequence and returns only
 `id`/`email`/`roles`, never `password_hash`.
@@ -588,13 +588,13 @@ users, total, err := mgr.ListUsers(ctx, auth.ListUsersOptions{
 ```
 
 `total` is the full row count (independent of the page), so a UI can
-render "showing 1–50 of 832". There is **no HTTP route** — call it
+render "showing 1–50 of 832". There is **no HTTP route**; call it
 from trusted server code (an admin handler you mount yourself), not
 the auth plugin's routes.
 
 `ListUsers` type-asserts the configured `UserStore` for the optional
 `UserLister` interface. `EntityUserStore` implements it; a custom
-store that does not gets `auth.ErrListUsersUnsupported` — a loud
+store that does not gets `auth.ErrListUsersUnsupported`, a loud
 failure rather than a silently empty list, so a deployment that forgot
 a listable store is told explicitly.
 
@@ -620,23 +620,23 @@ hidden `_csrf` field (HTML forms) or as the `X-CSRF-Token` header (XHR /
 fetch flows that don't go through a form).
 
 Bearer-token requests (`Authorization: Bearer …`, `X-API-Key: …`) are
-skipped — they don't ride on cookies and aren't subject to CSRF.
+skipped: they don't ride on cookies and aren't subject to CSRF.
 
 The CSRF cookie is `Secure`/`__Host-`-prefixed whenever the request is
-HTTPS — including behind a TLS-terminating proxy that sets
+HTTPS, including behind a TLS-terminating proxy that sets
 `X-Forwarded-Proto: https` (the app itself sees plain HTTP there).
 
 **Login/register/logout carry their own cross-site guard.** Those
-endpoints can't rely on the CSRF cookie — a login CSRF needs no
+endpoints can't rely on the CSRF cookie: a login CSRF needs no
 pre-existing cookie, so an attacker's page could silently log a victim
 into an attacker-controlled account. The guard refuses any POST a
-cross-site page can send without a CORS preflight — the three HTML form
+cross-site page can send without a CORS preflight: the three HTML form
 enctypes (`application/x-www-form-urlencoded`, `multipart/form-data`, and
 `text/plain`), plus a bodyless `fetch()` that carries no `Content-Type`
-at all — when `Origin` (or `Sec-Fetch-Site: cross-site`) names another
+at all, when `Origin` (or `Sec-Fetch-Site: cross-site`) names another
 site. `text/plain` and the missing `Content-Type` are the two shapes the
-old `urlencoded`/`multipart`-only check missed, and both are preflight-free
-— which is why a `text/plain` cross-site form could complete a magic-link
+old `urlencoded`/`multipart`-only check missed, and both are preflight-free.
+That is why a `text/plain` cross-site form could complete a magic-link
 sign-in before this guard widened. JSON stays exempt on purpose: a
 cross-site JSON POST is preflighted, and these routes answer no preflight,
 so a cross-origin SPA reaching them through configured CORS depends on the
@@ -676,14 +676,14 @@ explicit non-browser automation.
 wildcards. The protected prefix comes from `framework.AppConfig.APIPrefix`
 (default `/api`), so `WithAPIPrefix` and `WithBFFPosture` may appear in either
 option order without duplicating configuration. Because cookies are always
-`Secure`, run this posture behind HTTPS—even if `AuthConfig.DevMode` is true.
+`Secure`, run this posture behind HTTPS, even if `AuthConfig.DevMode` is true.
 
 `framework/ui.SignOut` remains compatible with this preset. Its static logout
 form is exempt from the generic CSRF token check only at the configured auth
 logout path; the auth handler still rejects cross-origin form submissions.
 All other cookie-authenticated mutations require a CSRF token.
 
-## Naming conventions — DB columns vs. wire JSON
+## Naming conventions: DB columns vs. wire JSON
 
 Mixing DB-column casing with wire-JSON casing trips up most first-time
 users. The rule:
@@ -691,12 +691,12 @@ users. The rule:
 | Layer | Convention | Where set |
 |---|---|---|
 | DB column names | `snake_case` (e.g. `password_hash`, `user_id`) | Entity declarations + `UserEntityFields()` |
-| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `EntityConfig.JSONCase` or `AppConfig.JSONCase` — defaults to camelCase |
+| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `EntityConfig.JSONCase` or `AppConfig.JSONCase`; defaults to camelCase |
 
 The framework automatically converts snake_case DB columns to
 camelCase JSON keys at the response layer (via `crud.JSONCase`). You
 do NOT need to match auth's snake_case column names in your own
-entities — define your columns however you like at the DB layer and
+entities: define your columns however you like at the DB layer and
 the wire format stays consistent.
 
 ```go
@@ -720,8 +720,8 @@ client's expectations), set `AppConfig.JSONCase = "snake_case"`.
 
 - **Production** (default): `SessionCookie = "__Host-session"`,
   `SessionSecure = true`. The `__Host-` prefix forces the browser to
-  reject the cookie unless `Path=/`, `Secure`, and no `Domain` are set
-  — this blocks sibling-subdomain cookie injection.
+  reject the cookie unless `Path=/`, `Secure`, and no `Domain` are set,
+  which blocks sibling-subdomain cookie injection.
 - **Dev** (`DevMode: true`): `SessionCookie = "session_id"`,
   `SessionSecure = false`. Use only over plain HTTP in local
   development.
@@ -742,13 +742,13 @@ auth.PasswordResetConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on
 auth.EmailVerificationConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on send-verification
 ```
 
-Per-IP + per-account on login is the recommended posture in production
-— per-IP alone is bypassed by an attacker rotating through a botnet;
+Per-IP + per-account on login is the recommended posture in production:
+per-IP alone is bypassed by an attacker rotating through a botnet;
 per-account alone is bypassed by spreading load across many target
 accounts.
 
 Login (per-IP + per-account) **and** register (per-IP) carry defaults
-even when you set nothing — credential stuffing and account-table
+even when you set nothing: credential stuffing and account-table
 flooding are network attacks, not config-mode ones. Pass a config with a
 large `MaxAttempts` to loosen, not to leave them off.
 
@@ -757,7 +757,7 @@ verification tooling that hammers `/auth/login` from one IP (localhost)
 would otherwise trip the per-IP flood throttle and get locked out. When
 `DevMode: true`, the framework sets `RateLimiterConfig.DevMode` on the
 per-IP login limiter, which short-circuits it (every attempt admitted).
-This is a dev-only affordance — production (`DevMode: false`) is
+This is a dev-only affordance; production (`DevMode: false`) is
 unchanged and fail-closed. The **per-account** login limiter is
 deliberately NOT relaxed in dev: it guards brute-force even there, so an
 attacker who pivots IPs is still throttled on the email key. Set
@@ -788,14 +788,14 @@ auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{Store: shared} }
 One store instance can back every limiter: keys are namespaced by
 `RateLimiterConfig.Scope`, which each built-in limiter defaults to a
 distinct value (`login_ip`, `login_account`, `register`, `twofa`, …).
-A store error **fails closed** (denies with a short Retry-After) — an
+A store error **fails closed** (denies with a short Retry-After): an
 attacker must never lift the limit by degrading its backend. See
 [Horizontal scaling](scaling.md).
 
 ## Security audit trail
 
-Security-sensitive auth events — login success/failure, the 2FA lifecycle,
-password resets, OAuth links, magic-link issuance — are emitted to an
+Login success/failure, the 2FA lifecycle, password resets, OAuth links, and
+magic-link issuance are security-sensitive auth events emitted to an
 `AuditSink` on `AuthConfig` and land in the same `audit_log` table as the
 CRUD hooks. One line of wiring:
 
@@ -805,7 +805,7 @@ mgr := auth.New(auth.AuthConfig{ AuditSink: sink, … })
 ```
 
 Events use a closed vocabulary (e.g. `login.succeeded`, `2fa.enrolled`,
-`password.reset_requested`) and never carry credentials — see the
+password.reset_requested`) and never carry credentials; see the
 [audit log](audit-log.md#auth-security-events) page for the full taxonomy
 and the redaction posture. A nil sink disables auditing entirely.
 
@@ -818,7 +818,7 @@ POST /auth/2fa/challenge    → 200, server clears PendingTwoFactor + sets TwoFa
 GET  /auth/me               → 200
 ```
 
-The login response still returns 200 — clients can't tell whether 2FA
+The login response still returns 200, so clients can't tell whether 2FA
 is required by the status code alone. A pending JSON login carries
 `"two_factor_required": true` and **omits the JWT `token` field** (a
 stateless JWT issued before the challenge would bypass the second
@@ -826,22 +826,22 @@ factor on every JWT-authenticated route). Clients either read the flag
 or notice a follow-up endpoint returning 403, then drive the user
 through `/auth/2fa/challenge` with the TOTP code or a backup code.
 
-If the session store cannot record the pending state — it doesn't
+If the session store cannot record the pending state, whether because it doesn't
 implement `SessionPendingMarker`, the mark call fails, or the 2FA
-state lookup itself errors — login **fails closed** with a 500 and the
+state lookup itself errors, login **fails closed** with a 500 and the
 just-minted session is destroyed. A degraded 2FA backend never means
 "2FA is off".
 
 `TwoFAPlugin.RequireTwoFA()` returns a middleware you can install on
 any route that needs step-up authentication. The middleware is a
-no-op for users who haven't enrolled in 2FA — only enrolled users are
+no-op for users who haven't enrolled in 2FA; only enrolled users are
 gated.
 
 ### Every login path mints through `MintSession`
 
 `AuthManager.MintSession(ctx, userID, ttl)` creates the session **and**
-applies the pending-2FA mark. Every built-in login path — password,
-magic link, OAuth callback, and the form-register auto-login — goes
+applies the pending-2FA mark. Every built-in login path, whether password,
+magic link, OAuth callback, or the form-register auto-login, goes
 through it, and a host-added plugin that mints its own sessions must
 too. Calling `SessionStore().Create` directly produces a session the
 2FA enforcement never learns about: `PendingTwoFactor` stays false, so
@@ -856,7 +856,7 @@ destroyed, and the caller must reject the login.
 
 The 2FA self-service endpoints (`enroll`, `verify`, `disable`,
 `backup-codes`) require `Session.TwoFactorVerified` when the user has an
-enabled factor — not merely the absence of `PendingTwoFactor`. A session
+enabled factor, not merely the absence of `PendingTwoFactor`. A session
 minted **before** the user enrolled carries `PendingTwoFactor=false`
 forever, so a negative-only test would leave it able to disable a factor
 it never proved. `/auth/2fa/verify` marks the enrolling session verified,
@@ -882,7 +882,7 @@ accounts and whether the user has set a real password.
 ### Linking a provider to a logged-in account (the recovery path)
 
 When an OAuth login's verified email matches an existing **password**
-account, the login callback refuses with `409` — a bare OAuth round-trip
+account, the login callback refuses with `409`: a bare OAuth round-trip
 must not take over a local credential (see the decision table below). The
 supported way to add that provider is the **authenticated link flow**:
 
@@ -903,7 +903,7 @@ provider whose email matches a password account. A forged or altered
 `state` fails the HMAC; a mismatched session is rejected (`403`); no
 session is rejected (`401`).
 
-### Following a magic link does not sign you in — confirming does
+### Following a magic link does not sign you in; confirming does
 
 `GET {basePath}/magic-link/verify?token=…` renders a confirmation
 screen ("Continue to sign in as x@y?") and redeems nothing. A
@@ -915,7 +915,7 @@ could request a link for **their own** account and get a victim to open
 it: the victim's browser would silently hold a session for the
 attacker's account, and everything typed next would land there. The GET
 is invisible to the cross-site form rejection, and the usual fixes do
-not fit — a browser-binding cookie breaks cross-device links (request on
+not fit: a browser-binding cookie breaks cross-device links (request on
 a laptop, open on a phone) and refusing `Sec-Fetch-Site: cross-site`
 breaks every webmail client. A confirmation keeps both working.
 
@@ -954,13 +954,13 @@ auth.MagicLinkConfig{
 
 Render `d.CSRFField` inside the form. `ConfirmPageData` carries no
 request and no context, so this is the only way to reach the `_csrf`
-input — omit it and the submit 403s under `auth.CSRF()`, which
+input. Omit it and the submit 403s under `auth.CSRF()`, which
 `WithBFFPosture` mounts app-wide. A custom `ConfirmPage` written before
 this field existed must add it, or passwordless sign-in stops at the
 confirmation step.
 
 Leave it nil and you get an unstyled but correct fallback. The battery
-does not import `framework/ui` itself — API-only apps use auth too and
+does not import `framework/ui` itself: API-only apps use auth too and
 should not pay for the design system.
 
 The screen names the account when the token store implements
@@ -975,7 +975,7 @@ Starting an OAuth flow (`GET /auth/oauth/{provider}` or
 goes into the redirect URL. The callback requires the two to match and
 clears the cookie either way.
 
-Without it the state token — unforgeable and single-use though it is —
+Without it the state token, unforgeable and single-use though it is,
 binds the callback to nothing about the caller: an attacker could start
 a flow in their own browser, capture the resulting callback URL, and
 get a victim to load it, leaving the victim's browser holding a session
@@ -991,13 +991,13 @@ replayed into any other browser carries no cookie and is refused with
 
 OAuth login MUST bind the returned identity to `(provider, provider_id)`
 via a durable link store. `(provider, provider_id)` is the only assertion
-an IdP makes that survives an email change — email is mutable, names
+an IdP makes that survives an email change: email is mutable, names
 collide, and an unverified email is attacker-controllable. The link store
 is the serialization point that closes the account-takeover hole where an
 IdP emitting an unverified email signs in as an existing local account.
 
 `EntityUserStore` implements `OAuthLinker` and creates its link table on
-`EnsureSchema` — named `<user_table>_oauth_links` by convention, with a
+`EnsureSchema`, named `<user_table>_oauth_links` by convention, with a
 composite primary key on `(provider, provider_id)` and a `user_id` index
 that powers `ListAccounts` / `UnlinkOAuth`. The table is created
 automatically; hosts never hand-roll the DDL. A user may link more than
@@ -1038,7 +1038,7 @@ downgrading.
    existing account has a password:
    - **Password account** → refuse with `409 errOAuthEmailCollision`.
      The user must log in with their password and link the provider
-     from `/auth/accounts` — a verified email alone must not bind to a
+     from `/auth/accounts`: a verified email alone must not bind to a
      credential the IdP didn't issue.
    - **Passwordless account** → AUTO-LINK and log in. Safe migration:
      the account was created by a prior OAuth login, and the verified
@@ -1048,11 +1048,11 @@ downgrading.
    all → create a new passwordless user and link the `(provider,
    provider_id)`. A concurrent create that wins the link PK is
    authoritative; the just-created user is left as an orphan
-   (best-effort ignore — the email-unique constraint means a future
+   (best-effort ignore; the email-unique constraint means a future
    callback re-resolves cleanly).
 
 **An unverified email NEVER binds to an existing account.** It falls
-through to step 3 as if the email didn't match — the core takeover
+through to step 3 as if the email didn't match: the core takeover
 regression. If the email happens to collide with an existing account,
 the unique-email constraint then blocks the fresh create and the
 callback fails closed.
@@ -1065,7 +1065,7 @@ strictly:
 - **OIDC**: parsed from the id_token's `email_verified` claim (or the
    configured `OIDCClaimsMapping.EmailVerifiedClaim`). Accepts a JSON
    bool or the string `"true"` (some IdPs emit the value as a string).
-   Defaults to `false` when absent — a missing assertion is never a
+   Defaults to `false` when absent: a missing assertion is never a
    verified email.
 - **Google**: from the `email_verified` (modern) or `verified_email`
    (legacy) userinfo field.
@@ -1096,7 +1096,7 @@ After upgrade:
    verified-email callback re-binds it without operator action.
 - **Password accounts must link a provider from settings.** The first
    OAuth login for an email that belongs to a password account is
-   refused with `409` by design — the user must log in with their
+   refused with `409` by design: the user must log in with their
    password and link the provider via `/auth/oauth/{provider}` while
    authenticated, then `/auth/accounts` reflects the bind. This blocks
    an attacker controlling a verified-but-not-theirs email from taking
@@ -1113,7 +1113,7 @@ A provider access token is short-lived (Google's is ~1h). Without a
 durable store, the provider's refresh token is discarded at login and
 any call made on the user's behalf fails once the access token expires,
 with no recovery. The `OAuthTokenStore` makes that recoverable. It is
-**opt-in** — OAuth login behaves exactly as before when no store is
+**opt-in**: OAuth login behaves exactly as before when no store is
 configured.
 
 ```go
@@ -1130,14 +1130,14 @@ oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
 
 With a store wired in, the callback handler persists the access and
 refresh tokens (upsert per `(user_id, provider)`). Both token columns are
-sealed with AES-GCM before they touch the database — a raw table dump does
+sealed with AES-GCM before they touch the database; a raw table dump does
 not surface live secrets. `EncryptionKey` is **required and non-empty**:
 stored refresh tokens are password-equivalent, so `NewSQLOAuthTokenStore`
 fails closed rather than sealing them with a default key. Source it from a
 secret manager, not source code.
 
 > **Pass the authenticated user's id.** `RefreshOAuthToken` / `ValidOAuthToken`
-> take a `userID` — it must be the resolved session principal, never a
+> take a `userID`; it must be the resolved session principal, never a
 > request-supplied value, or it is an IDOR onto another user's tokens.
 
 Making a call on the user's behalf:
@@ -1151,7 +1151,7 @@ accessToken, err := auth.ValidOAuthToken(ctx, tokStore, google, userID)
 rec, err := auth.RefreshOAuthToken(ctx, tokStore, google, userID)
 ```
 
-Refresh is concrete per provider — there is no generic provider registry.
+Refresh is concrete per provider; there is no generic provider registry.
 `GoogleProvider` and `GitHubProvider` implement `OAuthTokenRefresher`
 (`RefreshToken(ctx, refreshToken)`), POSTing a `refresh_token` grant to the
 provider's token endpoint. Providers commonly omit the refresh token on a
@@ -1159,7 +1159,7 @@ refresh grant (Google does), so the stored refresh token is retained.
 `GoogleProvider.AuthURL` now requests `access_type=offline` so Google
 actually issues a refresh token.
 
-`RefreshOAuthToken` errors when no refresh token is stored — the user must
+`RefreshOAuthToken` errors when no refresh token is stored; the user must
 re-authenticate. **Security-sensitive code:** route changes here through
 the auth audit gate before merge.
 
@@ -1167,7 +1167,7 @@ the auth audit gate before merge.
 
 `OIDCProvider` adapts any OpenID Connect-compliant identity provider
 (Keycloak, Authentik, Authelia, Zitadel, Entra ID, Okta) to the same
-`OAuth2Provider` interface as the built-in Google/GitHub providers — one
+`OAuth2Provider` interface as the built-in Google/GitHub providers: one
 config block, discovered endpoints, JWKS-verified id_tokens.
 
 <!-- gofastr:compile
@@ -1196,14 +1196,14 @@ oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
 Discovery (`<issuer>/.well-known/openid-configuration`) runs lazily on
 first use and is cached for the life of the process; a restart picks up
 IdP endpoint moves. The document's `issuer` MUST match the configured
-`Issuer` exactly (OIDC §4.3 — issuer-spoofing guard). `Issuer` must be
+`Issuer` exactly (OIDC §4.3, issuer-spoofing guard). `Issuer` must be
 an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
 (local IdPs and tests).
 
 **What gets verified** before `ExchangeCode` returns:
 
 - the id_token signature against the IdP's JWKS;
-- `alg` is pinned to **RS256 or ES256** — `none`, `HS256`, and case
+- `alg` is pinned to **RS256 or ES256**; `none`, `HS256`, and case
   variants are rejected before any key lookup (alg-confusion defense);
 - the signing key's `kty`/`crv` matches the `alg` (no RSA-vs-EC
   confusion); RSA moduli below 2048 bits and off-curve EC points are
@@ -1215,20 +1215,20 @@ an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
 - a non-empty `sub`.
 
 No `nonce` is sent on the authorize request: this is the
-confidential-client authorization-code flow — the code is single-use and
+confidential-client authorization-code flow: the code is single-use and
 exchanged server-to-server with the secret, and the plugin's HMAC state
 token already binds the callback. A nonce only matters for the
 implicit/hybrid flow.
 
 No **PKCE** `code_challenge` is sent. PKCE's payload is protecting a
-*public* client that has no secret; the flow here is confidential — the
+*public* client that has no secret; the flow here is confidential: the
 single-use code is exchanged server-to-server under the client secret,
 which is the actual protection on the code→token step, and the HMAC state
 token binds the callback. A verifier derived from that same secret (or
 from the public state) would add no defense a client-secret holder doesn't
 already have, so it is deliberately omitted. Supporting public clients
-(SPA/mobile) would need genuine PKCE — a random per-request verifier bound
-via a cookie or store — and is out of scope for the confidential provider.
+(SPA/mobile) would need genuine PKCE, meaning a random per-request verifier bound
+via a cookie or store, and is out of scope for the confidential provider.
 
 **Claims mapping.** `OIDCClaimsMapping` overrides which claim supplies
 each field (defaults `sub`, `email`, `name`, `picture`, `email_verified`)
@@ -1241,7 +1241,7 @@ Claims: auth.OIDCClaimsMapping{EmailClaim: "upn", NameClaim: "preferred_username
 **`email_verified` is enforced.** The callback reads the IdP's
 `email_verified` claim (JSON bool, or the string `"true"` for IdPs that
 emit it that way) and refuses to bind an UNVERIFIED email to an existing
-account — see [OAuth identity linking](#oauth-identity-linking). A
+account; see [OAuth identity linking](#oauth-identity-linking). A
 missing claim defaults to `false`: a missing assertion is never a
 verified email.
 
@@ -1264,9 +1264,9 @@ path.
   enforces this on the browser side. Cross-subdomain attacker?
   Blocked by the prefix.
 - The session store is trusted. A compromise of the session table is
-  game over — sessions are bearer tokens by design.
+  game over: sessions are bearer tokens by design.
 - The `EmailSender` is reliable. Plugins that need email return 503
-  if no sender is configured and `DevMode` is off — they refuse to
+  if no sender is configured and `DevMode` is off: they refuse to
   silently log live tokens to stdout in production.
 - The `crypto/rand` source is available. If it fails, the process
   panics (entropy starvation makes the rest of the system unsound).
@@ -1276,7 +1276,7 @@ path.
 - **Wiring a custom token store for one plugin only.** The magic-link,
   email-verification, and password-reset plugins each construct their
   own `MemoryMagicLinkTokenStore`. If you replace one with a Redis
-  store, replace all three — they share the same shape but not the
+  store, replace all three; they share the same shape but not the
   same instance.
 - **Forgetting `DevMode` over plain HTTP.** Without it, browsers
   refuse to accept the production `__Host-session` cookie over an
@@ -1286,12 +1286,12 @@ path.
   verification fail closed with a 503 (`magic link delivery not
   configured` / `email delivery not configured`). Password reset is the
   exception: to preserve its anti-enumeration guarantee it still returns
-  200 and simply sends nothing — so the reset flow is silently
+  200 and simply sends nothing, so the reset flow is silently
   non-functional until an `EmailSender` is wired. A failing (non-nil)
   sender now logs a server-side `password-reset email send failed`
   warning while keeping the 200; a nil sender is the quiet footgun to
   watch for.
-  Don't set `DevMode=true` as a workaround — that logs live tokens.
+  Don't set `DevMode=true` as a workaround; that logs live tokens.
 - **Trusting X-Forwarded-For without a proxy.** Per the docs above:
   default is off, and turning it on without a stripping proxy
   defeats every per-IP rate limit.
@@ -1300,6 +1300,6 @@ path.
   `/auth/2fa/challenge`. Don't read user PII from a session that's
   still pending.
 - **Storing TOTP secrets cleartext.** The `User.TwoFactorSecret`
-  column is plaintext base32 at the framework layer — operators are
+  column is plaintext base32 at the framework layer; operators are
   responsible for column-level or disk-level encryption. A DB leak
   with cleartext TOTP secrets is a full second-factor bypass.

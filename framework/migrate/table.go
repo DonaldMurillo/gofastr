@@ -9,11 +9,11 @@ import (
 
 // Non-entity table path
 //
-// Some tables don't want the entity machinery — no auto-CRUD, no HTTP routes,
+// Some tables don't want the entity machinery: no auto-CRUD, no HTTP routes,
 // no validation, no auto-injected id/timestamps/tenant columns. Join tables,
 // analytics roll-ups, tables owned by stored procedures, or just a user who is
 // stubborn about declaring entities. Table is a raw schema declaration for
-// exactly those. It carries ONLY the columns you write — nothing is injected.
+// exactly those. It carries ONLY the columns you write. Nothing is injected.
 //
 // A Table reconciles with entities because ToEntity adapts it into the same
 // *entity.Entity the migration engine already consumes: register both in one
@@ -21,7 +21,7 @@ import (
 // uniformly, including foreign keys that cross between an entity and a Table.
 type Table struct {
 	Name        string   // table name; also the registry key for FK references
-	Columns     []Column // exactly the columns emitted — no auto-injection
+	Columns     []Column // exactly the columns emitted, no auto-injection
 	Indices     []Index
 	ForeignKeys []ForeignKey
 }
@@ -75,7 +75,7 @@ func (t Table) ToEntity() *entity.Entity {
 	}
 	// Fail loud rather than silently keeping only the last PK column.
 	if pkCount > 1 {
-		panic(fmt.Sprintf("migrate: table %q marks %d columns PrimaryKey — composite primary keys are not supported on a raw Table; use a single PK plus a Unique index", t.Name, pkCount))
+		panic(fmt.Sprintf("migrate: table %q marks %d columns PrimaryKey: composite primary keys are not supported on a raw Table; use a single PK plus a Unique index", t.Name, pkCount))
 	}
 	var relations []entity.Relation
 	for _, fk := range t.ForeignKeys {
@@ -96,8 +96,8 @@ func (t Table) ToEntity() *entity.Entity {
 		Timestamps: &timestamps,
 		// Raw table: timestamps / soft-delete / multi-tenant all off, so the
 		// diff engine treats every column as user-owned (no managed-column
-		// skip) — exactly what a raw table wants. The groups are materialized
-		// because this constructor bypasses Define()'s normalization — the
+		// skip), exactly what a raw table wants. The groups are materialized
+		// because this constructor bypasses Define()'s normalization. The
 		// diff engine reads Config.Scope directly.
 		Scope:      &entity.ScopeConfig{},
 		Pagination: &entity.PaginationConfig{},

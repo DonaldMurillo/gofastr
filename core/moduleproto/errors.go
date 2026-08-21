@@ -56,13 +56,13 @@ const (
 	// reached; the caller should retry or shed load. Not terminal.
 	CodeInflightCap = -32098
 	// CodeHandshakeMismatch indicates a digest or identity mismatch during
-	// module.handshake. Terminal — a restart cannot fix a bad artifact.
+	// module.handshake. Terminal: a restart cannot fix a bad artifact.
 	CodeHandshakeMismatch = -32097
 	// CodeCapabilityDenied indicates the host's capability broker refused a
 	// reverse host.* call: the module-grant pre-filter (access.ScopeMatch),
 	// the CrossOwnerRead carve-out, the delegation-handle lookup, or the
 	// re-dispatch caller-authority gate (401/403 from the CRUD chokepoint)
-	// failed closed. NOT a protocol fault — the connection stays up; the
+	// failed closed. NOT a protocol fault: the connection stays up; the
 	// child receives a per-call denial it must surface in its own response.
 	// (design #37 §5; the trust boundary.)
 	CodeCapabilityDenied = -32096

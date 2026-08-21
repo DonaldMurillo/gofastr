@@ -10,7 +10,7 @@ import (
 )
 
 // Double-submit CSRF pairs a cookie with a header, and no cookie is ever sent
-// from inside an embed frame — SameSite is computed against the top-level
+// from inside an embed frame. SameSite is computed against the top-level
 // browsing context, which is the customer's site. So an app that installs
 // auth.CSRF() would 403 every embed exchange with "missing cookie" and the
 // feature would be dead in exactly the configuration this framework recommends.
@@ -30,7 +30,7 @@ func TestCSRFExemptsEmbedEndpoints(t *testing.T) {
 	for _, path := range []string{embed.ExchangePath, embed.RefreshPath} {
 		reached = false
 		rec := httptest.NewRecorder()
-		// No cookie, no token — exactly what a frame sends.
+		// No cookie, no token, exactly what a frame sends.
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 		req.Header.Set("Content-Type", "application/json")
 		h.ServeHTTP(rec, req)
@@ -58,8 +58,8 @@ func TestCSRFExemptsEmbedEndpoints(t *testing.T) {
 }
 
 // The PATH exemption covers only the two handshake endpoints. What covers an
-// embed's island RPC to an ordinary app route — which carries the grant header
-// and no cookie — is the header branch, and removing it would 403 every one of
+// embed's island RPC to an ordinary app route, which carries the grant header
+// and no cookie, is the header branch, and removing it would 403 every one of
 // them. It had no test.
 func TestCSRFExemptsGrantBearingRequestsOnOrdinaryRoutes(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/posts", nil)

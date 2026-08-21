@@ -54,7 +54,7 @@ func segmentedPage(form bool, extraInputAttrs, signalSpan string) string {
 }
 
 // planSetHandler records the decoded JSON body and replies with the chosen
-// plan value — falling back to the SAME confident default a real handler
+// plan value, falling back to the SAME confident default a real handler
 // uses when the field is missing. Before the fix the body is empty, so the
 // handler reads plan="" and renders "single" even after the operator clicks
 // "Unlimited machines": the bug is not a missing request, it is a request
@@ -85,7 +85,7 @@ func planSetHandler(t *testing.T, mu *sync.Mutex, recorded *map[string]string, h
 // carrying the CHOSEN segment's name=value so the handler renders the right
 // value, not the default. The old rpc.js only serialized a FORM node, so a
 // radio dispatched with an empty body and the handler fell through to its
-// default — clicking "Unlimited machines" rendered "single".
+// default, clicking "Unlimited machines" rendered "single".
 func TestSegmentedControl_RPCPostsSelectedValue(t *testing.T) {
 	js, err := RuntimeJS()
 	if err != nil {
@@ -143,7 +143,7 @@ func TestSegmentedControl_RPCPostsSelectedValue(t *testing.T) {
 // TestSegmentedControl_RPCExplicitBodyWins pins the precedence contract:
 // an explicit data-fui-rpc-body must still win over form serialization so
 // existing callers that hand-craft a JSON body are not regressed. This test
-// passes before AND after the fix — it is a regression guard for the
+// passes before AND after the fix, it is a regression guard for the
 // precedence the fix must preserve.
 func TestSegmentedControl_RPCExplicitBodyWins(t *testing.T) {
 	js, err := RuntimeJS()
@@ -192,7 +192,7 @@ func TestSegmentedControl_RPCExplicitBodyWins(t *testing.T) {
 
 // TestSegmentedControl_RPCNoFormDoesNotError pins requirement #3: a form
 // control with NO enclosing form (node.form === null) and no explicit body
-// keeps today's behaviour — the request fires with an empty body and the
+// keeps today's behaviour, the request fires with an empty body and the
 // runtime must not throw serializing a null form. This passes before AND
 // after the fix; it guards against the fix introducing a FormData(null) throw.
 func TestSegmentedControl_RPCNoFormDoesNotError(t *testing.T) {
@@ -215,7 +215,7 @@ func TestSegmentedControl_RPCNoFormDoesNotError(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		// No <form> wrapper: node.form is null on every radio. A page-level
 		// error recorder runs BEFORE the runtime so a FormData(null) throw is
-		// observable — hit==1 alone would not distinguish "no body" from "threw
+		// observable, hit==1 alone would not distinguish "no body" from "threw
 		// before fetch".
 		fmt.Fprint(w, `<!doctype html><html><head><title>seg-noform</title></head><body>
 <script>window.__pageErrors=[];window.addEventListener('error',function(e){window.__pageErrors.push(e.message||String(e));});</script>

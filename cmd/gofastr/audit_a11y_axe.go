@@ -51,7 +51,7 @@ func (r axeAuditRun) onlyLogin() bool {
 func (r axeAuditRun) Incomplete() bool { return len(r.Unreachable) > 0 || r.onlyLogin() }
 
 // discoverA11yPages returns the route paths to audit for base: every
-// <loc> in the app's /sitemap.xml (the WithSitemap endpoint — also
+// <loc> in the app's /sitemap.xml (the WithSitemap endpoint, also
 // written by static export), falling back to just "/" when no sitemap
 // is served. Explicit --pages always bypasses discovery.
 func discoverA11yPages(base string) []string {
@@ -98,7 +98,7 @@ func a11yPagesFromSitemap(body string) []string {
 var sitemapLocRE = regexp.MustCompile(`<loc>\s*([^<]+?)\s*</loc>`)
 
 // auditA11yURL runs the vendored axe-core engine against every page
-// under both color schemes via headless Chrome — the same harness the
+// under both color schemes via headless Chrome, the same harness the
 // framework's own a11y gates use. The caller controls the page list;
 // pass nil to audit just "/".
 func auditA11yURL(base string, pages []string, credentials a11yCredentials) (axeAuditRun, error) {
@@ -215,7 +215,7 @@ func cleanPagePath(raw string) string {
 
 // formatAxeReport renders the runtime audit: one block per page×scheme,
 // each violation with impact, help text, the axe help URL, and the DOM
-// targets — enough to find and fix the element without re-running.
+// targets: enough to find and fix the element without re-running.
 func formatAxeReport(run axeAuditRun) string {
 	total := 0
 	for _, r := range run.Results {
@@ -241,7 +241,7 @@ func formatAxeReport(run axeAuditRun) string {
 		}
 		return b.String()
 	}
-	fmt.Fprintf(&b, "Accessibility audit — %d violation(s)\n\n", total)
+	fmt.Fprintf(&b, "Accessibility audit: %d violation(s)\n\n", total)
 	for _, r := range run.Results {
 		fmt.Fprintf(&b, "%s (%s scheme)\n", r.Page, r.Scheme)
 		for _, v := range r.Violations {

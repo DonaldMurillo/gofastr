@@ -9,7 +9,7 @@ import (
 // single chokepoint between untrusted query strings and the SQLite FTS5
 // MATCH operator. No DB needed. Each surviving term is DOUBLE-QUOTED so
 // FTS5 operators (AND/OR/NOT/NEAR), column filters (col:), parens, and
-// quotes are all neutralised — they become literal phrase text. The last
+// quotes are all neutralised, they become literal phrase text. The last
 // term carries a trailing * (outside the quote) for prefix matching.
 func TestBuildFts5Query(t *testing.T) {
 	cases := []struct {
@@ -30,7 +30,7 @@ func TestBuildFts5Query(t *testing.T) {
 		{"fts5 OR operator neutralised", "a OR b", `"a" "or" "b"*`},
 		{"fts5 NOT operator neutralised", "a NOT b", `"a" "not" "b"*`},
 		{"fts5 NEAR operator neutralised", "a NEAR b", `"a" "near" "b"*`},
-		// Parens payload — all stripped, never grouped.
+		// Parens payload, all stripped, never grouped.
 		{"parens payload", "(a) (b)", `"a" "b"*`},
 		{"dedupes repeated", "go go go", `"go"*`},
 		{"dedupes case-insensitive", "Go go GO", `"go"*`},

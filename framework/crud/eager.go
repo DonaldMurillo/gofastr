@@ -21,21 +21,21 @@ import (
 // applies (eager_filtered.go + include.go) is applied here. Four scrubs run,
 // each keyed off the resolved target's EntityConfig:
 //
-//  1. Soft-delete exclusion — a soft-deletable target gets
+//  1. Soft-delete exclusion: a soft-deletable target gets
 //     `deleted_at IS NULL` on its SELECT so trashed rows never resurface.
-//  2. Hidden-column scrub — columns flagged Hidden on the target (e.g.
+//  2. Hidden-column scrub: columns flagged Hidden on the target (e.g.
 //     password_hash) are dropped from every loaded row.
-//  3. Owner scope — an owner-scoped target (OwnerField set) gets
+//  3. Owner scope: an owner-scoped target (OwnerField set) gets
 //     `owner_field = <ctx owner>` ANDed in, exactly like the include path's
 //     applyRelatedOwnerScope. With no user in context the predicate becomes
 //     `owner_field = ""`, matching no real row (fail-closed).
-//  4. Tenant scope — a MultiTenant target gets `tenant_id = <ctx tenant>`
+//  4. Tenant scope: a MultiTenant target gets `tenant_id = <ctx tenant>`
 //     ANDed in, exactly like applyRelatedTenantScope. With no tenant in
 //     context it likewise matches nothing.
 //
 // Owner and tenant scopes are ANDed for every caller except one holding an
 // explicit cross-scope grant (owner.AllowCrossOwner, the target's
-// CrossOwnerRead, tenant.AllowCrossTenant) — the same exemption
+// CrossOwnerRead, tenant.AllowCrossTenant), the same exemption
 // applyRelatedOwnerScope and applyRelatedTenantScope make on the include path.
 // For everyone else the cross-table predicate is the IDOR back-door control
 // and is unconditional: lifting it would let an ?include= or an EagerLoad
@@ -73,7 +73,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 	for _, rel := range relations {
 		// Validate the FK identifier up front. The target TABLE is
 		// resolved after the registry lookup below, so its identifier
-		// check happens there against the real table — which may differ
+		// check happens there against the real table, which may differ
 		// from rel.Entity when a host declares Name != Table.
 		safeFK, err := query.SafeIdent(rel.ForeignKey)
 		if err != nil {
@@ -90,8 +90,8 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 		// unrelated version's Hidden set or resolved to nothing at all.
 		//
 		// And it fails CLOSED. Swallowing the error left target nil, which
-		// makes hiddenColumns(nil) empty and drops the soft-delete predicate
-		// — both scrubs silently off, which is the disclosure this block
+		// makes hiddenColumns(nil) empty and drops the soft-delete predicate,
+		// both scrubs silently off, which is the disclosure this block
 		// exists to prevent. An unresolvable target means we do not know the
 		// schema, so we refuse rather than serve the raw row.
 		var target *entity.Entity
@@ -105,7 +105,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			}
 			target = t
 		}
-		// The SELECT targets the entity's TABLE, not Relation.Entity —
+		// The SELECT targets the entity's TABLE, not Relation.Entity,
 		// that field is the registry key (the entity NAME), and the two
 		// differ whenever a host declares Name != Table. Mirror the live
 		// include path (loadIncludeNode → node.Target.GetTable()). With no
@@ -149,7 +149,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			mtmSoftDelete := softDeleteFilter
 			if mtmSoftDelete != "" {
 				// The ManyToMany SELECT JOINs target + pivot, so a bare
-				// `deleted_at` would be ambiguous — qualify it with the target.
+				// `deleted_at` would be ambiguous, qualify it with the target.
 				mtmSoftDelete = " AND " + query.QuoteIdent(safeRelEntity) + ".deleted_at IS NULL"
 			}
 			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, mtmSoftDelete, scopeFilters, readPreds, hidden, target); err != nil {
@@ -378,7 +378,7 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	}
 
 	// The M2M SELECT JOINs target + pivot, so scope columns MUST be
-	// qualified with the target table (filterClauseQualified) — bare owner
+	// qualified with the target table (filterClauseQualified), bare owner
 	// /tenant columns would be ambiguous, exactly like the soft-delete
 	// qualification below. The read-scope fragment qualifies the same way.
 	scopeClause, scopeArgs := filterClauseQualified(scopeFilters, safeEntity, len(ids)+1)
@@ -452,7 +452,7 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 // each loader's WHERE via filterClause/filterClauseQualified.
 //
 //   - OwnerField set ⇒ `owner_field = <ctx owner>` (OpEq). With no owner in
-//     context the value is "" so the predicate matches no real row —
+//     context the value is "" so the predicate matches no real row,
 //     fail-closed, identical to the include path.
 //   - MultiTenant ⇒ `tenant_id = <ctx tenant>` (OpEq), likewise fail-closed
 //     on an empty ctx tenant.
@@ -461,7 +461,7 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 // cross-scope grant: owner.AllowCrossOwner, the target's own CrossOwnerRead
 // permission, or tenant.AllowCrossTenant. Those callers see every row on the
 // entity's own routes, so narrowing a relation for them removes a capability
-// without protecting anything — and did: EagerLoad returned an empty relation
+// without protecting anything, and did: EagerLoad returned an empty relation
 // where the routes returned everything. For every other caller the predicate
 // is unconditional, and it is the cross-table IDOR control.
 // A nil target (no registry) yields no filters.
@@ -474,7 +474,7 @@ func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.Pars
 		// Cross-owner callers are exempt, exactly as they are on the include
 		// path and on the routes themselves. Omitting the branch here made
 		// EagerLoad answer with an empty relation for a caller every route
-		// serves in full — the same defect the include path had, left behind
+		// serves in full, the same defect the include path had, left behind
 		// when that one was fixed while this comment still claimed parity.
 		crossOwner := owner.IsCrossOwner(ctx)
 		if !crossOwner {

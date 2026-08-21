@@ -10,12 +10,12 @@ import (
 
 // The introspection tool set is the AI-first front door: agents learn it
 // from guidance, not from tools/list, so every surface that teaches it
-// must name the full set. This pins guidance to the live registration —
+// must name the full set. This pins guidance to the live registration:
 // adding a tool to registerIntrospectionTools without updating the
 // guidance fails here (the "five tools" drift already happened once).
 func TestIntrospectionGuidanceNamesEveryTool(t *testing.T) {
 	app := NewApp(WithMCPIntrospection(), WithMCPControl())
-	// Dev-only tools need documenting too — they are the ones an agent
+	// Dev-only tools need documenting too, they are the ones an agent
 	// meets first, in the dev loop. Without this flag they register
 	// nowhere in this test and would be silently exempt from the gate.
 	app.mcpIntrospectionDevImplied = true

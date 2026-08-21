@@ -17,14 +17,14 @@ type patternRedirect struct {
 // Redirect registers an exact-path permanent (308) redirect: a hard GET
 // of `from` is redirected to `to`, and the client-side router rewrites a
 // navigation to `from` without a round-trip. `to` must be a relative
-// same-app path (no scheme/host) — an absolute target panics at
+// same-app path (no scheme/host), an absolute target panics at
 // registration (open-redirect guard). Registering a redirect whose
 // `from` collides with an existing screen (or redirect) panics.
 func (a *App) Redirect(from, to string) {
 	validateRedirectTarget(to)
 	from = normalizeRoutePath(from)
 	if strings.Contains(from, ":") {
-		panic("app: Redirect from " + from + " is dynamic — use RedirectPattern for param passthrough")
+		panic("app: Redirect from " + from + " is dynamic. Use RedirectPattern for param passthrough")
 	}
 	if _, ok := a.Router.screens[from]; ok {
 		panic("app: redirect from " + from + " collides with a registered screen")
@@ -40,7 +40,7 @@ func (a *App) Redirect(from, to string) {
 
 // RedirectPattern registers a dynamic redirect with param passthrough:
 // /old/{id} → /new/{id}. Every param referenced in `to` must be declared
-// in `from` — otherwise registration panics. Catch-all passthrough is
+// in `from`, otherwise registration panics. Catch-all passthrough is
 // allowed when the catch-all segment appears in both. As with Redirect,
 // `to` must be relative and `from` must not collide with a screen or
 // another redirect.
@@ -76,8 +76,8 @@ func (a *App) RedirectPattern(from, to string) {
 	// Exact screens are covered by the same overlap rule as dynamic ones:
 	// a from-pattern that matches a registered literal path shadows it,
 	// because ResolveRedirect runs before screen resolution. (The reverse
-	// carve-out in ResolveRedirect's doc — an EXACT redirect shadowing one
-	// concrete path of a dynamic screen — stays: that follows the router's
+	// carve-out in ResolveRedirect's doc, an EXACT redirect shadowing one
+	// concrete path of a dynamic screen, stays: that follows the router's
 	// own exact-beats-dynamic contract. A pattern redirect swallowing a
 	// more specific exact screen inverts it.) Sorted so the reported
 	// collision is deterministic when several screens overlap.
@@ -90,12 +90,12 @@ func (a *App) RedirectPattern(from, to string) {
 	if len(shadowed) > 0 {
 		sort.Strings(shadowed)
 		panic("app: redirect from " + from + " overlaps registered screen " + shadowed[0] +
-			" — redirects are consulted before screens, so the overlap would silently shadow it")
+			". Redirects are consulted before screens, so the overlap would silently shadow it")
 	}
 	for _, dr := range a.Router.dynamic {
 		if patternsOverlap(dr.segments, fromSegs) {
 			panic("app: redirect from " + from + " overlaps registered screen " + dr.screen.Path +
-				" — redirects are consulted before screens, so the overlap would silently shadow it")
+				". Redirects are consulted before screens, so the overlap would silently shadow it")
 		}
 	}
 	if patternRedirectExists(a.Router.patternRedir, fromSegs) {
@@ -116,7 +116,7 @@ func (a *App) RedirectPattern(from, to string) {
 //
 // Collision checks at registration keep duplicates out (exact-vs-exact,
 // pattern-vs-pattern) and panic whenever a PATTERN redirect overlaps a
-// screen — dynamic or exact, in either registration order. One
+// screen, dynamic or exact, in either registration order. One
 // cross-shape case is deliberately allowed: an EXACT redirect may shadow
 // one concrete path of a dynamic screen, exactly as an exact screen
 // registration would, because that follows the router's own
@@ -157,7 +157,7 @@ func (r *Router) resolveRedirectOnce(path string) (string, bool) {
 			// substituted VALUES come from the request path: a catch-all
 			// passthrough can join an empty segment into a "//host" or
 			// backslash-bearing target that browsers normalize into an
-			// absolute URL. Fail closed — no redirect beats an open one.
+			// absolute URL. Fail closed, no redirect beats an open one.
 			if !safeResolvedTarget(t) {
 				return "", false
 			}
@@ -212,7 +212,7 @@ func validateRedirectTarget(to string) {
 }
 
 // patternRedirectExists reports whether a redirect with the given from-
-// segments is already registered (shape-equality, not specificity —
+// segments is already registered (shape-equality, not specificity,
 // consistent with the no-specificity-ranking routing contract).
 func patternRedirectExists(redirs []patternRedirect, segs []string) bool {
 	for _, pr := range redirs {
@@ -224,8 +224,8 @@ func patternRedirectExists(redirs []patternRedirect, segs []string) bool {
 }
 
 // sameShape reports whether two normalized segment lists match the same
-// set of URLs. Param NAMES are irrelevant to what a pattern matches —
-// "/users/:id" and "/users/:slug" are the same shape — so duplicate
+// set of URLs. Param NAMES are irrelevant to what a pattern matches,
+// "/users/:id" and "/users/:slug" are the same shape, so duplicate
 // checks compare positions: literal segments byte-equal, param segments
 // equivalent when both are plain, both are the same constraint, or both
 // are catch-alls. Used for redirect-vs-redirect duplicates only:
@@ -260,7 +260,7 @@ func sameShape(a, b []string) bool {
 // patterns. Redirect-vs-screen collisions use overlap (not shape
 // equality): redirects are consulted before screen resolution, so ANY
 // shared URL would let the redirect silently shadow the screen with no
-// registration-order recourse — "/users/{n:int}" over "/users/{id}"
+// registration-order recourse, "/users/{n:int}" over "/users/{id}"
 // steals every numeric id. Catch-alls absorb one-or-more trailing
 // segments, so a trailing catch-all overlaps anything that agrees on
 // the prefix and has at least one segment beyond it.
@@ -302,14 +302,14 @@ func patternsOverlap(a, b []string) bool {
 		}
 	}
 	// Positions beyond the shorter prefix are consumed by the other
-	// pattern's catch-all (which matches anything) — no further checks.
+	// pattern's catch-all (which matches anything), no further checks.
 	// For the no-catch-all case n == len(a) == len(b), so every position
 	// was compared.
 	if !catchA && !catchB {
 		return true
 	}
 	// Compare the remaining fixed segments of the longer pattern against
-	// "anything" (the catch-all) — always overlapping.
+	// "anything" (the catch-all), always overlapping.
 	return true
 }
 

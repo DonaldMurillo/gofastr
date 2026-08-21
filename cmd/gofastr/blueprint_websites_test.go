@@ -67,7 +67,7 @@ func TestBlueprint_AppConstsAndRoutes(t *testing.T) {
 		t.Error("app.go missing apiPrefix const")
 	}
 	// Screen routes ({id}->:id conversion) now live in per-screen mount funcs,
-	// not app.go — check the screen files. app.go names no screen.
+	// not app.go: check the screen files. app.go names no screen.
 	screens := allScreenContent(mustRenderBlueprintFiles(t, websitesBlueprint()))
 	if !strings.Contains(screens, `site.Register("/items/:id"`) {
 		t.Errorf("detail screen route not converted {id}->:id for the screen router:\n%s", screens)
@@ -75,7 +75,7 @@ func TestBlueprint_AppConstsAndRoutes(t *testing.T) {
 	if !strings.Contains(app, "func appBaseCSS() string") {
 		t.Error("app.go missing appBaseCSS function")
 	}
-	// The generator ships ZERO bespoke CSS — every surface composes framework/ui
+	// The generator ships ZERO bespoke CSS: every surface composes framework/ui
 	// components + core-ui/app layouts that own their styling.
 	if strings.Contains(app, ".gofastr-entity") || strings.Contains(app, ".gofastr-auth") {
 		t.Error("appBaseCSS must ship no bespoke CSS — components own their styling")
@@ -89,7 +89,7 @@ func TestBlueprint_ScreensAreKilnFree(t *testing.T) {
 	}
 	// Any node rendering uses the first-party core-ui packages, never kiln.
 	// (Most surfaces now compose framework/ui components and use no node
-	// renderer at all — that's fine; the invariant is "never kiln".)
+	// renderer at all. That's fine; the invariant is "never kiln".)
 	if strings.Contains(screens, "noderender") && !strings.Contains(screens, "core-ui/noderender") {
 		t.Error("screens use a non-first-party noderender")
 	}
@@ -131,7 +131,7 @@ func TestBlueprint_FormEnumAndRelationFields(t *testing.T) {
 // TestBlueprint_AppCRUDScreensSynthesized verifies that an entity_list flagged
 // `create: true` and an entity_detail produce writable app screens: a /new
 // create form, a /{id}/edit form, a List "New" affordance, and a CanEdit detail
-// (Edit + Delete) — all server-rendered through the resource engine's Form.
+// (Edit + Delete), all server-rendered through the resource engine's Form.
 func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	bp := Blueprint{
 		App: BlueprintApp{Name: "Shop", Module: "example.com/shop", APIPrefix: "api"},
@@ -174,7 +174,7 @@ func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	// The /new and /{id}/edit routes are registered (in the crud mount funcs).
 	assertContains(t, screens, `"/app/widgets/new"`)
 	assertContains(t, screens, `"/app/widgets/:id/edit"`)
-	// app.go no longer owns any of this — it calls mountGenerated instead.
+	// app.go no longer owns any of this. It calls mountGenerated instead.
 	if strings.Contains(fileContent(files, "app.go"), `appResources["widgets"]`) {
 		t.Error("app.go must not carry the widgets appResources entry")
 	}
@@ -259,7 +259,7 @@ func TestBlueprint_AdminSeedAfterMigrate(t *testing.T) {
 // them), and admin_register.go ships a adminBatteryConfigurators seam +
 // applyAdminBatteryConfigurators helper that main.go calls before admin.New.
 // Together these let a new admin_rbac.go wire admin.Config{Policy, Auth}
-// without editing any generated file — issue #77 item 2.
+// without editing any generated file. Issue #77 item 2.
 func TestBlueprint_AdminAndRBACAdditiveSeam(t *testing.T) {
 	bp := websitesBlueprint()
 	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
@@ -288,7 +288,7 @@ func TestBlueprint_AdminAndRBACAdditiveSeam(t *testing.T) {
 			t.Errorf("app.go missing %q (additive handle):\n%s", want, app)
 		}
 	}
-	// No block-scoped declarations of the handles — they must be assignments
+	// No block-scoped declarations of the handles: they must be assignments
 	// to the package-level vars.
 	for _, gone := range []string{"authMgr := auth.New", "rbac := access.NewRolePolicy"} {
 		if strings.Contains(app, gone) {
@@ -340,7 +340,7 @@ func TestBlueprint_SeedOrderedAndDecimalCoerced(t *testing.T) {
 
 func TestBlueprint_StaticDynamicScreenGetsSetParams(t *testing.T) {
 	// A dynamic route whose body needs no request context still MUST
-	// implement SetParams — the router panics at registration otherwise.
+	// implement SetParams: the router panics at registration otherwise.
 	bp := websitesBlueprint()
 	bp.Screens = append(bp.Screens, BlueprintScreen{
 		Name: "article", Route: "/articles/{slug}",
@@ -356,7 +356,7 @@ func TestBlueprint_StaticDynamicScreenGetsSetParams(t *testing.T) {
 }
 
 func TestBlueprint_ColonRouteGetsSetParams(t *testing.T) {
-	// Sol round-2: the framework accepts both {slug} and :slug — the
+	// Sol round-2: the framework accepts both {slug} and :slug; the
 	// generator must emit SetParams for either, or the app panics at boot.
 	bp := websitesBlueprint()
 	bp.Screens = append(bp.Screens, BlueprintScreen{

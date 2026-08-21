@@ -99,7 +99,7 @@ func TestNoQueryAcrossRelationSurfaces(t *testing.T) {
 	}
 }
 
-// TestNoQueryStillReadableThroughInclude pins the other half — the guard
+// TestNoQueryStillReadableThroughInclude pins the other half, the guard
 // blocks filtering on the column, not reading it. If this ever starts
 // failing, NoQuery has silently become Hidden.
 func TestNoQueryStillReadableThroughInclude(t *testing.T) {
@@ -149,8 +149,8 @@ func TestNoQueryAbsentFromAgentSurfaces(t *testing.T) {
 }
 
 // TestNoQueryCursorFieldRejectedAtDefine pins the keyset half. Cursor columns
-// land in ORDER BY and in the emitted token, which is reversible base64 JSON
-// — so a NoQuery cursor field hands back exactly what the flag withholds.
+// land in ORDER BY and in the emitted token, which is reversible base64 JSON,
+// so a NoQuery cursor field hands back exactly what the flag withholds.
 func TestNoQueryCursorFieldRejectedAtDefine(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -217,7 +217,7 @@ func TestNoQuerySurvivesDeclarationRoundTrip(t *testing.T) {
 	}
 	// Assert the field SURVIVES, not merely that it kept its flag if present.
 	// A loop that only fires "if f.Name == number" passes when the conversion
-	// drops the column entirely — losing the flag and the column together,
+	// drops the column entirely, losing the flag and the column together,
 	// which is strictly worse than losing the flag.
 	var found *schema.Field
 	for i := range cfg.Fields {
@@ -239,7 +239,7 @@ func TestNoQuerySurvivesDeclarationRoundTrip(t *testing.T) {
 // explicitly declared cursor columns, but keyset paging falls back to the
 // primary key when none is configured. A NoQuery primary key was therefore
 // used for ORDER BY and keyset comparison exactly as if it had been named,
-// and its stored value was base64'd into the emitted cursor token — in the
+// and its stored value was base64'd into the emitted cursor token, in the
 // same response whose row showed the masked form. The DSL's after() guard
 // resolved the same default and did check it, so the two guards disagreed.
 func TestNoQueryPrimaryKeyRejectedAsDefaultCursor(t *testing.T) {
@@ -282,7 +282,7 @@ func TestPlainEntityDefinesWithoutCursorPanic(t *testing.T) {
 // check. cursorFields() appends the primary key to any composite that omits
 // it, so CursorFields:["created_at"] silently pages on ("created_at","id")
 // too. Validating only the declared members let a NoQuery id through, and
-// buildCursorPage encodes every keyset value into the token — so the masked
+// buildCursorPage encodes every keyset value into the token, so the masked
 // column came back in reversible base64 alongside the row that hid it.
 func TestNoQueryPKRejectedAsCompositeTiebreak(t *testing.T) {
 	defer func() {

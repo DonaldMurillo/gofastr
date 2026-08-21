@@ -12,8 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// OnReady must fire only after the listener actually bound — with a real
-// port resolved from :0 — so generated apps can print their startup banner
+// OnReady must fire only after the listener actually bound, with a real
+// port resolved from :0, so generated apps can print their startup banner
 // without lying when an earlier phase (auto-migrate, hooks) fails.
 func TestOnReadyFiresAfterBind(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
@@ -68,7 +68,7 @@ func TestStartupBannerUsesAPIPrefix(t *testing.T) {
 	}
 }
 
-// A failing OnStart hook aborts Start before the port binds — OnReady must
+// A failing OnStart hook aborts Start before the port binds. OnReady must
 // not fire (that is the whole point of the hook).
 func TestOnReadySkippedOnStartError(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())

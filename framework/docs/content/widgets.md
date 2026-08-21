@@ -1,4 +1,4 @@
-# Widgets — `core-ui/widget`
+# Widgets: `core-ui/widget`
 
 Widgets are self-mounting overlay UIs that run on top of any page. They
 are distinct from components:
@@ -11,12 +11,12 @@ are distinct from components:
 
 Examples of widgets the framework already supports:
 
-- **FloatingPanel** — corner-anchored chat / devtools / agent panel
-- **Modal** — center dialog with backdrop, ESC + click-outside dismiss
-- **Toast** — ephemeral bottom notifications
-- **Drawer** — edge-mounted sliding panel
-- **Banner** — top strip for build progress, version warnings, etc.
-- **Popover** — click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
+- **FloatingPanel**: corner-anchored chat / devtools / agent panel
+- **Modal**: center dialog with backdrop, ESC + click-outside dismiss
+- **Toast**: ephemeral bottom notifications
+- **Drawer**: edge-mounted sliding panel
+- **Banner**: top strip for build progress, version warnings, etc.
+- **Popover**: click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
 
 `kiln/chat/panel.go` is the canonical real-world consumer: the agent
 chat panel is implemented as a `FloatingPanel` widget.
@@ -40,7 +40,7 @@ widget.Mount(router, &panel)
 ```
 
 To open a widget from the page, wire any element with
-`data-fui-open="<widget-name>"` — the runtime handles the click, shows
+`data-fui-open="<widget-name>"`; the runtime handles the click, shows
 the widget, and (for modals) moves focus in:
 
 ```html
@@ -48,12 +48,12 @@ the widget, and (for modals) moves focus in:
 ```
 
 Widgets built with `.Hidden()` (and click-to-open presets like
-`preset.Popover`) stay closed until such a trigger — or a matching
-deep-link URL — opens them.
+`preset.Popover`) stay closed until such a trigger, or a matching
+deep-link URL, opens them.
 
 `Mount` registers the widget's HTTP routes and adds it to the process-wide
 registry. Any page that carries the framework runtime auto-mounts every
-registered widget — the runtime fetches `/__gofastr/widgets` on boot and
+registered widget: the runtime fetches `/__gofastr/widgets` on boot and
 builds each one. Pages served through `framework/uihost` get the runtime
 injected automatically; a bare-router host calls `widget.MountRuntime(r)`
 once and embeds `widget.RuntimeTag()` in its page HTML.
@@ -93,43 +93,43 @@ panel := widget.New("notifications").
     Build()
 ```
 
-Canonical slot names are `header`, `body`, `footer` — they render in
+Canonical slot names are `header`, `body`, `footer`; they render in
 that order. Other names render after the canonical three.
 
-#### Slot surface contract — what the chrome paints vs what the body owns
+#### Slot surface contract: what the chrome paints vs what the body owns
 
 The widget chrome owns the *panel* every surface sits on; the slot
 component owns only its internal content and layout. Per position:
 
-- **Drawers** (`Edge`, `EdgeRight`) — the position container paints
+- **Drawers** (`Edge`, `EdgeRight`): the position container paints
   the surface background, shadow, and scroll. Slot bodies add their
   own internal padding.
-- **Bottom sheets** (`Bottom`) — the position container paints the
+- **Bottom sheets** (`Bottom`): the position container paints the
   surface background, shadow, and rounded top corners, caps height at
   75vh with internal scroll, and gives the slot default padding (the
   drag handle sits above it).
-- **Anchored popovers** — the widget root paints the surface, border,
+- **Anchored popovers**: the widget root paints the surface, border,
   radius, shadow, size caps, and the directional arrow.
-- **Centered modals** (`Center`) — the chrome groups every slot inside
+- **Centered modals** (`Center`): the chrome groups every slot inside
   a single `.fui-panel` element and paints the default panel on it:
   `var(--color-surface)` background, border, radius, padding, shadow,
   `min/max-inline-size` caps, and `overflow: auto` so tall content
   scrolls inside the dialog. A modal using `header`, `body`, and
   `footer` slots therefore reads as ONE dialog card, and a plain
-  `preset.Modal` looks like a dialog with no extra styling — bodies
+  `preset.Modal` looks like a dialog with no extra styling; bodies
   must **not** re-paint background / padding / radius on their root
   (that double-pads the panel).
 
 Full-bleed modal bodies (media viewers, custom chrome) opt out of the
 centered panel so the body owns every pixel: the panel stays a
 transparent container with no background, border, padding, or shadow.
-`framework/ui.Lightbox` is the canonical bare body — it centers the
+`framework/ui.Lightbox` is the canonical bare body: it centers the
 image directly on the backdrop, no card.
 
 Two rules govern the opt-out (the selector is `.fui-pos-center >
 .fui-panel:not(:has(> .fui-slot > …))`):
 
-1. **The marker must be on the slot content's ROOT element** — the
+1. **The marker must be on the slot content's ROOT element**: the
    direct child of `.fui-slot`. `.fui-slot-bare`, `[data-fui-lightbox]`,
    and `[data-fui-comp="ui-cmd-palette"]` all qualify. A wrapper
    `<div>` between `.fui-slot` and the marker defeats it:
@@ -138,7 +138,7 @@ Two rules govern the opt-out (the selector is `.fui-pos-center >
 2. **One bare slot opts the WHOLE panel out.** The opt-out sits on the
    `.fui-panel`, which wraps every slot, so a single bare slot drops
    the panel chrome for the header and footer too. Bare means "this
-   body owns all the chrome" — if you need a card around some slots
+   body owns all the chrome"; if you need a card around some slots
    but not others, paint that surface inside the bare slot rather
    than relying on the framework panel.
 
@@ -184,7 +184,7 @@ panel := preset.FloatingPanel("ops-panel").
 ```
 
 On each interval the runtime re-fetches the widget's `/state` endpoint
-and re-applies the signals that changed — the same code path an RPC
+and re-applies the signals that changed, the same code path an RPC
 signal update uses. The interval is a `time.Duration`. Unlike the
 page-level `data-fui-poll` attribute (which clamps to a 5-second
 floor because page markup is cheap to typo), the widget path
@@ -196,8 +196,8 @@ does not synchronize, and backs off on a failed fetch.
 
 Polling needs no fanout and no held connection. Any replica can answer
 the `/state` fetch from the DB. This is the recommended tier for
-widget surfaces that show a freshening value — counters, queue
-depths, statuses — without paying for SSE. See
+widget surfaces that show a freshening value, such as counters, queue
+depths, and statuses, without paying for SSE. See
 [Reactivity model](reactivity.md) for where polling sits in the wider
 ladder.
 
@@ -221,7 +221,7 @@ A button or form click can invoke a server handler:
 ```
 
 The response is routed to a signal by the trigger's
-`data-fui-rpc-signal` attribute, not by the registration — name the
+`data-fui-rpc-signal` attribute, not by the registration; name the
 target signal there.
 
 Slot HTML wires it via `data-fui-rpc`:
@@ -267,7 +267,7 @@ Any element with `data-fui-action="close"` dismisses the widget:
 
 Forms inside a widget are **owned by the widget runtime, not the page
 runtime**. The core dispatcher deliberately skips any click or submit
-inside `[data-fui-widget]` — each mounted widget installs its own
+inside `[data-fui-widget]`; each mounted widget installs its own
 scoped handler that intercepts `form[data-fui-rpc]`, prevents the
 native submit, and does the RPC round-trip (`fetch` with the form
 serialized to JSON by input `name`, or multipart when a file input is
@@ -281,7 +281,7 @@ success path:
 | `data-fui-rpc-reset` | the `<form>` only | Calls `form.reset()`, clearing the fields for the next open |
 
 Both are boolean attributes (presence, no value) and both only fire on
-success — a non-2xx response leaves the modal open and untouched, and
+success; a non-2xx response leaves the modal open and untouched, and
 writes `{ok: false, status, text}` into the form's
 `data-fui-rpc-signal` so an error node can display it. A network
 failure writes `{ok: false, status: 0, text: "Network error — please
@@ -315,7 +315,7 @@ widget.Mount(router, &modal)
 Details worth knowing:
 
 - The centered modal chrome already paints the dialog panel (surface,
-  border, padding on the `.fui-panel` that wraps the slots — see the
+  border, padding on the `.fui-panel` that wraps the slots; see the
   slot surface contract above), so the form goes straight into the
   `body` slot with no wrapper card. Full-bleed bodies opt out with
   `fui-slot-bare`.
@@ -328,13 +328,13 @@ Details worth knowing:
   `data-fui-rpc-open="<widget>"` opens another widget (save in a
   drawer → open a results sheet), `data-fui-rpc-navigate="/path"` does
   an SPA navigation (cache-bypassing, and it re-renders even when the
-  path is the page the widget floats over — so a quick-add modal can
+  path is the page the widget floats over, so a quick-add modal can
   refresh the list it inserts into), an `X-Gofastr-Toast` response
   header shows a toast, and an `X-Gofastr-Invalidate` header (set via
-  `ui.InvalidateScreens`) evicts other screens from the SPA cache —
+  `ui.InvalidateScreens`) evicts other screens from the SPA cache,
   applied before `data-fui-rpc-navigate` runs, so the destination is
   fetched fresh.
-- `data-fui-rpc-close` also works on a plain button RPC — "Confirm →
+- `data-fui-rpc-close` also works on a plain button RPC: "Confirm →
   do the thing → dismiss" needs no form at all (that's how
   `ui.ConfirmAction` is built).
 
@@ -352,7 +352,7 @@ Details worth knowing:
 Default paths are filled in on `def` if unset, so the caller can read
 them after `Mount` returns. Mounting is idempotent on `def.Name`. The
 process-wide runtime routes (`/__gofastr/runtime.js`, `/__gofastr/widgets`)
-come from `widget.MountRuntime(r)` — once per host, not per widget.
+come from `widget.MountRuntime(r)`, once per host, not per widget.
 
 ## Theming
 
@@ -362,7 +362,7 @@ theme without extra setup. Token overrides flow through:
 1. `core-ui/widget/theme.PageTheme()` returns the page `style.Theme`.
    Mutate the returned value's typed fields to override tokens, then pass
    it where you build widget chrome.
-2. Or rely on the default — `widget.Mount` builds a stylesheet with
+2. Or rely on the default: `widget.Mount` builds a stylesheet with
    `:root` CSS variables for every token.
 
 Kiln's `set_theme` tool (see `kiln/protocol`) is an example: the agent updates
@@ -387,7 +387,7 @@ separate styling approach and are not part of the current contract.
 
 ## Testing
 
-`examples/site` exercises every widget kind end-to-end —
+`examples/site` exercises every widget kind end-to-end:
 Modal (`/components/modal`), Drawer (`/components/drawer`), Toast
 (`/components/toast`), Menu (`/components/menu`), Sidebar
 (`/components/sidebar`), and the trigger-anchored Popover preset
@@ -398,13 +398,13 @@ scroll-tracking, and the trigger-active highlight contract.
 
 For backend-only verification (no chromedp), see
 `core-ui/widget/widget_test.go` and
-`core-ui/widget/preset/preset_test.go` — they cover the builder
+`core-ui/widget/preset/preset_test.go`; they cover the builder
 semantics, the mounted routes, preset defaults, and JSON state
 encoding.
 
 ## Common mistakes
 
-- **Expecting `Mount` to return a script tag.** It returns nothing —
+- **Expecting `Mount` to return a script tag.** It returns nothing:
   it registers routes and adds the widget to the process registry. The
   widget appears only on pages that carry the framework runtime, which
   auto-mounts everything in `/__gofastr/widgets`. If your widget never
@@ -412,24 +412,24 @@ encoding.
   get it injected; bare hosts must call `widget.MountRuntime(r)` and
   embed `widget.RuntimeTag()` themselves.
 - **Forgetting `data-fui-rpc-signal`.** The RPC fires and succeeds,
-  but the response goes nowhere — no DOM update. Name the target
+  but the response goes nowhere; no DOM update. Name the target
   signal on the trigger (`data-fui-rpc-signal="count"`). This is the
   only way to route an RPC response; there is no registration-side
   binding.
 - **Inline `style=` / `onclick=` in slot HTML.** The default CSP
   blocks both. Use theme-token class names for styling and the
   `data-fui-*` attributes (`data-fui-rpc`, `data-fui-action="close"`)
-  for behavior — `kiln/render` strips the dangerous attrs server-side
+  for behavior; `kiln/render` strips the dangerous attrs server-side
   anyway.
 - **Expecting the page runtime to handle a widget's form.** The core
   dispatcher skips everything inside `[data-fui-widget]`; the widget's
   own scoped handler owns `form[data-fui-rpc]`. A plain `<form
   action=…>` inside a modal (no `data-fui-rpc`) does a native
-  full-page submit — put `data-fui-rpc` on the form and use
+  full-page submit; put `data-fui-rpc` on the form and use
   `data-fui-rpc-close` / `data-fui-rpc-reset` for the success path
   (see the form-in-a-modal recipe above).
 - **Building in-page content as a widget.** Widgets are overlays that
   float above any page. A sortable table, a form section, or anything
-  that belongs to one page's render tree is a component (or an island —
-  the island cookbook is [interactive-patterns](interactive-patterns.md))
-  — see the component/widget table at the top of this doc.
+  that belongs to one page's render tree is a component (or an island;
+  the island cookbook is [interactive-patterns](interactive-patterns.md)).
+  See the component/widget table at the top of this doc.

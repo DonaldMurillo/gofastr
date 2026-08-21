@@ -12,8 +12,8 @@ import (
 )
 
 // leakyScreen reproduces the oatmeal-renders-as-Coffee bug: Load reads
-// a route param, sets s.food if found, returns an error if not — and
-// crucially DOES NOT reset s.food on entry. With the old single-instance
+// a route param, sets s.food if found, returns an error if not, and
+// DOES NOT reset s.food on entry. With the old single-instance
 // model, a request for an unknown slug would inherit s.food from the
 // previous successful render.
 type leakyScreen struct {
@@ -31,7 +31,7 @@ func (s *leakyScreen) Load(ctx context.Context) error {
 		s.food = "Coffee"
 		return nil
 	case "oatmeal":
-		// Simulates "not found" — intentionally does NOT reset s.food.
+		// Simulates "not found", intentionally does NOT reset s.food.
 		return nil
 	default:
 		return nil
@@ -51,7 +51,7 @@ func TestScreen_PerRequestInstance_NoStateLeak(t *testing.T) {
 	a := app.NewApp("t")
 	a.RegisterScreen(app.NewScreen("/foods/:slug", &leakyScreen{}), nil)
 
-	// Request 1: /foods/coffee — sets s.food = "Coffee".
+	// Request 1: /foods/coffee, sets s.food = "Coffee".
 	res1, err := a.RenderPageResult(context.Background(), "/foods/coffee")
 	if err != nil {
 		t.Fatalf("req1 err: %v", err)
@@ -60,7 +60,7 @@ func TestScreen_PerRequestInstance_NoStateLeak(t *testing.T) {
 		t.Fatalf("req1: want 'Coffee' rendered, got: %s", got)
 	}
 
-	// Request 2: /foods/oatmeal — Load doesn't set s.food. With state leak,
+	// Request 2: /foods/oatmeal, Load doesn't set s.food. With state leak,
 	// the page still renders "Coffee" (the previous request's value).
 	// With per-request instancing, s.food starts zero ⇒ empty paragraph.
 	res2, err := a.RenderPageResult(context.Background(), "/foods/oatmeal")
@@ -147,7 +147,7 @@ func (s *configuredScreen) Render() render.HTML { return render.HTML("<p>" + s.G
 
 // TestScreen_PerRequestInstance_RenderPartialAlsoIsolated pins that
 // the partial-render path (used for client-side nav swaps) shares the
-// same per-request guarantee — otherwise the bug returns for SPA
+// same per-request guarantee, otherwise the bug returns for SPA
 // navigation even if full-page renders are fixed.
 func TestScreen_PerRequestInstance_RenderPartialAlsoIsolated(t *testing.T) {
 	a := app.NewApp("t")

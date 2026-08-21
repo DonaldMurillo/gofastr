@@ -14,7 +14,7 @@ import (
 // EmailSender is the lightweight interface this package uses for any
 // outbound transactional email (verification, password reset). Concrete
 // implementations wrap SMTP, SES, Postmark, etc. The body is intentionally
-// "anything you want" — these plugins build the URL and let the caller
+// "anything you want", these plugins build the URL and let the caller
 // decide on templating.
 type EmailSender interface {
 	Send(ctx context.Context, to, body string) error
@@ -42,11 +42,11 @@ type EmailVerificationConfig struct {
 	// "send the URL as the entire body" (the historical behavior).
 	BodyTemplate func(url string) string
 	// TokenStore persists pending verification tokens. Defaults to in-memory
-	// (does not survive restart / scale) — set a durable store
+	// (does not survive restart / scale), set a durable store
 	// (e.g. NewSQLMagicLinkTokenStore(db)) in production.
 	TokenStore MagicLinkTokenStore
 	// DevMode logs the verification URL when EmailSender is nil. NEVER
-	// enable in production — anyone with log read access then takes
+	// enable in production, anyone with log read access then takes
 	// over arbitrary accounts.
 	DevMode bool
 	// RateLimit, when non-nil, applies a per-IP limit to send-verification.
@@ -152,7 +152,7 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 		}
 	case p.cfg.DevMode:
 		// SECURITY: do not log the live verification URL. The URL embeds
-		// the raw token, which is a takeover credential — anyone with
+		// the raw token, which is a takeover credential, anyone with
 		// read access to dev logs could replay it. email_hash +
 		// token_hash give enough signal to correlate with the rendered
 		// email body.
@@ -182,7 +182,7 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 	}
 	verifier, ok := p.mgr.UserStore().(EmailVerifier)
 	if !ok {
-		// The store doesn't expose MarkEmailVerified — refuse rather
+		// The store doesn't expose MarkEmailVerified, refuse rather
 		// than silently no-op; the operator wired the wrong store.
 		writeAuthError(w, http.StatusInternalServerError,
 			"user store does not implement EmailVerifier")

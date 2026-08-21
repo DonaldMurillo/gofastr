@@ -69,7 +69,7 @@ func TestEvaluator_SaltShiftsBuckets(t *testing.T) {
 	e2 := NewEvaluatorWithSalt(s, "process-b")
 
 	ctx := WithContext(context.Background(), EvalContext{UserID: "alice"})
-	// Salt must change SOMETHING — over many users, the two evaluators
+	// Salt must change SOMETHING. Over many users, the two evaluators
 	// can't produce identical decisions. Use a representative sample.
 	disagreements := 0
 	for i := 0; i < 200; i++ {

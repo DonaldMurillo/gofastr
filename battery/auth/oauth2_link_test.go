@@ -81,7 +81,7 @@ func linkCallbackReq(t *testing.T, plugin *OAuth2Plugin, r *router.Router, linkU
 // a PASSWORD account (which the unauthenticated callback would 409) links a
 // provider that returns the same email. Because the user proved ownership of
 // both the account (session) and the provider (OAuth round-trip), the link
-// succeeds — this is the recovery path the docs promise.
+// succeeds, this is the recovery path the docs promise.
 func TestOAuth_AuthenticatedLinkBindsProviderToProvenUser(t *testing.T) {
 	plugin, r, store, mgr := linkFixture(t, &OAuth2UserInfo{
 		ID: "prov-id-1", Email: "owner@example.com", Provider: "stub", EmailVerified: true,
@@ -104,7 +104,7 @@ func TestOAuth_AuthenticatedLinkBindsProviderToProvenUser(t *testing.T) {
 }
 
 // TestOAuth_AuthenticatedLinkRefusesSessionMismatch: a link-state bound to
-// user A cannot be completed under user B's session — even a valid, signed
+// user A cannot be completed under user B's session, even a valid, signed
 // link-state is rejected (403) when it doesn't match the current login, and
 // nothing is linked.
 func TestOAuth_AuthenticatedLinkRefusesSessionMismatch(t *testing.T) {
@@ -131,7 +131,7 @@ func TestOAuth_AuthenticatedLinkRefusesSessionMismatch(t *testing.T) {
 }
 
 // TestOAuth_AuthenticatedLinkRequiresSession: a link-state without any session
-// cookie is rejected (401) — the flow is authenticated by construction.
+// cookie is rejected (401), the flow is authenticated by construction.
 func TestOAuth_AuthenticatedLinkRequiresSession(t *testing.T) {
 	plugin, r, store, _ := linkFixture(t, &OAuth2UserInfo{
 		ID: "prov-id-3", Email: "c@example.com", Provider: "stub", EmailVerified: true,

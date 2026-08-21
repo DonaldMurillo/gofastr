@@ -37,7 +37,7 @@ func TestSubcommandHelpIsCommandSpecific(t *testing.T) {
 			t.Errorf("%s --help missing command-specific %q:\n%s", cmd, want, out)
 		}
 		// "Start dev server with auto-restart" only appears in the global
-		// printHelp() Commands listing — its presence means we fell through.
+		// printHelp() Commands listing. Its presence means we fell through.
 		if strings.Contains(out, "Start dev server with auto-restart") {
 			t.Errorf("%s --help fell back to the global help page:\n%s", cmd, out)
 		}

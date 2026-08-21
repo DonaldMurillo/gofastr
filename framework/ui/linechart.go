@@ -57,7 +57,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			panic("ui: LineChart Series.Name required")
 		}
 		// A line needs ≥2 points to draw a trend; with fewer there's simply
-		// not enough data yet — a calm empty state, not a crash.
+		// not enough data yet. A calm empty state, not a crash.
 		if len(s.Values) < 2 {
 			return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "Not enough data yet")
 		}

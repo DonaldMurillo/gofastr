@@ -13,11 +13,11 @@ import (
 
 // ─── Sparkline ──────────────────────────────────────────────────────
 //
-// Inline SVG trend renderer. Pure render — no JS, no hydration. Takes
+// Inline SVG trend renderer. Pure render, no JS, no hydration. Takes
 // a series of float64 values, normalizes to a unit box, draws as a
 // path. Two shapes: line (default) and area.
 //
-// Pairs with StatCard — use as a Slot under the metric value.
+// Pairs with StatCard. Use as a Slot under the metric value.
 
 // SparklineShape picks line (default) or area.
 type SparklineShape string
@@ -36,13 +36,13 @@ type SparklineConfig struct {
 	Height int
 	// Shape picks line or area. Default line.
 	Shape SparklineShape
-	// Color override — defaults to var(--color-primary) via CSS.
+	// Color override: defaults to var(--color-primary) via CSS.
 	// Set to "danger" / "success" / "warning" / "info" to use the
 	// matching theme token; any other string is passed through as a
 	// raw CSS color.
 	Color string
 	// LabelledBy is the id of an element naming the chart (e.g. the
-	// StatCard label) — used as the SVG's aria-labelledby. Without
+	// StatCard label), used as the SVG's aria-labelledby. Without
 	// it the chart is aria-hidden (decorative).
 	LabelledBy string
 	ID         string
@@ -71,7 +71,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	case SparklineLine, SparklineArea:
 	default:
 		panic("ui: Sparkline unknown Shape " + string(cfg.Shape) +
-			` — pick one of: "" (line), area`)
+			`. Pick one of: "" (line), area`)
 	}
 	w := cfg.Width
 	if w == 0 {

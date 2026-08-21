@@ -306,7 +306,7 @@ func validateJSON(value any) error {
 		}
 		return nil
 	case map[string]any, []any:
-		// already parsed Go value — always valid
+		// already parsed Go value, always valid
 		return nil
 	default:
 		// try marshaling and re-checking

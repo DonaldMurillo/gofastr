@@ -11,7 +11,7 @@ import (
 
 // openAccessDB opens an in-memory SQLite DB serialised to a single
 // connection (the package's test posture), so two stores backed by it share
-// one database — the multi-replica shape.
+// one database, the multi-replica shape.
 func openAccessDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -46,7 +46,7 @@ func seedStore(t *testing.T, db *sql.DB, role string, perms ...Permission) (*Gra
 // TestRevokePropagatesToPeer: stores A and B share one DB and both seed the
 // same code grant (real-boot shape). Revoke on A; drive B's reload the way
 // fanout would (reloadRole directly on B's store). B must drop the
-// permission — its own baseline must not merge the revoked grant back.
+// permission, its own baseline must not merge the revoked grant back.
 func TestRevokePropagatesToPeer(t *testing.T) {
 	ctx := context.Background()
 	db := openAccessDB(t)
@@ -65,7 +65,7 @@ func TestRevokePropagatesToPeer(t *testing.T) {
 		t.Fatalf("Revoke on A: %v", err)
 	}
 
-	// Drive B's reload the way fanout would — directly via reloadRole on B.
+	// Drive B's reload the way fanout would, directly via reloadRole on B.
 	if err := storeB.reloadRole(ctx, "editor"); err != nil {
 		t.Fatalf("B reloadRole: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRevokePropagatesToPeer(t *testing.T) {
 }
 
 // TestRevokeSurvivesPeerBoot: Revoke on A; a NEW store C boots against the
-// same DB and re-seeds the same code grant. C must NOT allow — the tombstone
+// same DB and re-seeds the same code grant. C must NOT allow, the tombstone
 // outlives the code seed.
 func TestRevokeSurvivesPeerBoot(t *testing.T) {
 	ctx := context.Background()
@@ -123,7 +123,7 @@ func TestRegrantLiftsTombstone(t *testing.T) {
 }
 
 // TestTombstoneWinsOverGrantRow: with both a grant row AND a tombstone for
-// the same (role, perm) in the DB, reloadRole must fail closed — the
+// the same (role, perm) in the DB, reloadRole must fail closed, the
 // tombstone wins.
 func TestTombstoneWinsOverGrantRow(t *testing.T) {
 	ctx := context.Background()

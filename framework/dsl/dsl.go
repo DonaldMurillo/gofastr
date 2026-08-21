@@ -18,7 +18,7 @@ import (
 // Without a hard cap a malicious or sloppy client can request an
 // arbitrarily large page, turning a single query into a memory /
 // CPU exhaustion vector. Callers can still apply a smaller policy
-// cap on top — this is the parser's last line of defence.
+// cap on top, this is the parser's last line of defence.
 const maxDSLLimit = 10_000
 
 // dslIdentRe is the allow-list for DSL identifiers: entity names,
@@ -30,7 +30,7 @@ const maxDSLLimit = 10_000
 //
 // Deliberately NOT core/query.identRe (already imported here): that
 // regex additionally allows dot-separated schema.table paths, while
-// DSL identifiers are single names — the tighter shape is
+// DSL identifiers are single names, the tighter shape is
 // load-bearing. The two differ on purpose; unifying them would loosen
 // this allow-list.
 var dslIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -80,7 +80,7 @@ var (
 // Results are cached by input string. The cache is bounded to 256 entries;
 // when full, a single randomly-chosen entry is evicted (Go map iteration
 // is randomised, so the first key returned by `range` is effectively
-// random — this is not LRU).
+// random, this is not LRU).
 func ParseDSL(input string) (DSLQuery, error) {
 	if len(input) > maxDSLInputSize {
 		return DSLQuery{}, fmt.Errorf("dsl: input exceeds %d bytes", maxDSLInputSize)
@@ -210,7 +210,7 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 	entitySchema := ent.Schema()
 	// Project VisibleFields, not Names(): Names() includes Hidden columns, so
 	// selecting it would hand back the password hashes the HTTP read paths
-	// strip. NoQuery columns stay in the projection — they are meant to be
+	// strip. NoQuery columns stay in the projection, they are meant to be
 	// returned, just not queried on.
 	visible := entitySchema.VisibleFields()
 	cols := make([]string, 0, len(visible))

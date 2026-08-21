@@ -13,8 +13,8 @@ import (
 
 // The bridge calls preventDefault() before awaiting src/rpc.js so a click
 // that lands mid-download is not lost. The cost is that a module which
-// never arrives — a host serving runtime.js but not
-// /__gofastr/runtime/<name>.js, or a network blip — would swallow the
+// never arrives, a host serving runtime.js but not
+// /__gofastr/runtime/<name>.js, or a network blip, would swallow the
 // user's submit entirely: prevented from submitting natively, never
 // dispatched. When RPC was compiled into core that could not happen.
 //
@@ -31,7 +31,7 @@ func TestFormSubmitSurvivesMissingRPCModule(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
-	// Deliberately NOT serving /__gofastr/runtime/rpc.js — this is the
+	// Deliberately NOT serving /__gofastr/runtime/rpc.js, this is the
 	// misconfigured host the fallback exists for.
 	mux.HandleFunc("/save", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
@@ -71,8 +71,8 @@ func TestFormSubmitSurvivesMissingRPCModule(t *testing.T) {
 }
 
 // The counterpart: a data-fui-rpc form must NOT be submitted natively when
-// the module is missing. It targets a JSON API — the resource engine emits
-// these with no enctype at all and rpc.js builds the body — so a native
+// the module is missing. It targets a JSON API, the resource engine emits
+// these with no enctype at all and rpc.js builds the body, so a native
 // submit posts urlencoded (415) or cannot issue its declared PUT (405).
 // Either way the browser leaves the page for a raw error and the user's
 // input is gone, which is worse than staying put. Warning is the remedy.

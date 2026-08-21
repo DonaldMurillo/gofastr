@@ -22,7 +22,7 @@ type MigrationRecord struct {
 }
 
 // migKey is the composite identity of a tracking-table row: (Group, Version).
-// Version uniqueness is per group, so the pair — not version alone — is the
+// Version uniqueness is per group, so the pair, not version alone, is the
 // real key. In the legacy (default-group-only) path every key has Group == "",
 // which makes it behave as version alone and keeps that path byte-identical.
 type migKey struct {
@@ -53,8 +53,8 @@ func (m *Migrator) placeholder(n int) string {
 }
 
 // connish is the subset of *sql.DB / *sql.Conn the runner needs. Threading it
-// lets Up/Down run every statement — tracking-table DDL, applied-version
-// reads, and each migration's transaction — on the single connection that
+// lets Up/Down run every statement, tracking-table DDL, applied-version
+// reads, and each migration's transaction, on the single connection that
 // holds the advisory lock, which is what keeps the runner correct on a
 // MaxOpenConns(1) pool.
 type connish interface {
@@ -92,8 +92,8 @@ func (m *Migrator) hasNonDefaultGroup() bool {
 // groupAware reports whether this operation must use the group-aware SQL path.
 // That path is required when any registered migration belongs to a non-default
 // group or the caller explicitly named a non-default group. When false the
-// runner emits the exact legacy SQL sequence — byte-identical behavior for apps
-// that never opt into groups — which is also what lets the pre-group test suite
+// runner emits the exact legacy SQL sequence, byte-identical behavior for apps
+// that never opt into groups. That is also what lets the pre-group test suite
 // pass without modification.
 func (m *Migrator) groupAware(groups []string) bool {
 	if m.hasNonDefaultGroup() {
@@ -153,7 +153,7 @@ func (m *Migrator) CreateMigrationsTable(ctx context.Context) error {
 // composite (group_name, version) PRIMARY KEY so two groups can each own a
 // version 1. CREATE TABLE IF NOT EXISTS never rewrites an existing table, so a
 // legacy table upgraded to group-aware mode gets its key fixed by
-// ensureCompositeKey — called by Up/Down/Force only (they hold the advisory
+// ensureCompositeKey, called by Up/Down/Force only (they hold the advisory
 // lock); Status never performs group-schema DDL.
 func (m *Migrator) createMigrationsTable(ctx context.Context, x connish, tbl string, ga bool) error {
 	var ddl string
@@ -185,7 +185,7 @@ func (m *Migrator) createMigrationsTable(ctx context.Context, x connish, tbl str
 }
 
 // hasGroupColumn reports whether the tracking table physically has a
-// group_name column — the TABLE-STATE signal that picks the read/write SQL
+// group_name column, the TABLE-STATE signal that picks the read/write SQL
 // path. Unlike groupAware (which keys off in-memory registrations), this
 // reflects what is on disk: a table upgraded by a previous group-aware run
 // keeps the column even after the group is de-registered, and reads must
@@ -196,7 +196,7 @@ func (m *Migrator) hasGroupColumn(ctx context.Context, x connish, tbl string) (b
 	var n int
 	if m.dialect == DialectPostgres {
 		// Resolve via ::regclass (search_path-scoped, quoted-identifier
-		// aware) like the PK queries — NOT information_schema.columns,
+		// aware) like the PK queries, NOT information_schema.columns,
 		// which spans every visible schema: a sibling schema's group-aware
 		// table of the same name would false-positive and make the legacy
 		// read path fail on a table that has no group_name column.
@@ -260,12 +260,12 @@ func dirtyError(rec MigrationRecord, ga bool) error {
 //   - an already-applied migration's recorded checksum no longer matches the
 //     registered file (it was edited after being applied).
 //
-// A blank recorded checksum is skipped — those are legacy rows applied before
+// A blank recorded checksum is skipped. Those are legacy rows applied before
 // checksums existed, and flagging them would be a false positive. Integrity is
 // scoped per group: the (Group, Version) key is what matches a registered
 // migration to its applied row. Applied rows whose group is not among the
-// registered migrations (a de-registered module's rows) are ignored — they are
-// another module's property — but are still shown by Status with their real
+// registered migrations (a de-registered module's rows) are ignored. They are
+// another module's property, but are still shown by Status with their real
 // group.
 func (m *Migrator) checkIntegrity(applied map[migKey]MigrationRecord, ga bool) error {
 	registered := make(map[string]bool, len(m.migrations))
@@ -273,8 +273,8 @@ func (m *Migrator) checkIntegrity(applied map[migKey]MigrationRecord, ga bool) e
 		registered[mig.Group] = true
 	}
 	for _, rec := range applied {
-		// A NAMED group with no registered migrations is a disabled module —
-		// its rows (dirty or not) are that module's property, ignored here.
+		// A NAMED group with no registered migrations is a disabled module.
+		// Its rows (dirty or not) are that module's property, ignored here.
 		// The default group is never a module: its dirty rows always block,
 		// preserving the pre-group safety net.
 		if rec.Group != "" && !registered[rec.Group] {
@@ -297,7 +297,7 @@ func (m *Migrator) checkIntegrity(applied map[migKey]MigrationRecord, ga bool) e
 }
 
 // pendingMigrations returns migrations that have not yet been applied, sorted
-// by (Version, Group) ascending — the apply order. Within a group versions
+// by (Version, Group) ascending, the apply order. Within a group versions
 // ascend; when multiple groups run together the tiebreak is group name
 // (deterministic, and byte-identical to the old version-only sort when
 // everything is in the default group).
@@ -391,7 +391,7 @@ func (m *Migrator) up(ctx context.Context, x connish, tbl string, ga bool, group
 // runMigrationUp executes a single migration's Up SQL and records it in the
 // tracking table. Transactional migrations run the DDL and the bookkeeping
 // insert in one atomic transaction. No-transaction migrations record a dirty
-// row first, run the DDL outside any transaction, then clear the dirty flag —
+// row first, run the DDL outside any transaction, then clear the dirty flag,
 // so a failure leaves a dirty marker that blocks subsequent runs.
 func (m *Migrator) runMigrationUp(ctx context.Context, x connish, tbl string, mig Migration, ga bool) error {
 	if mig.NoTransaction {
@@ -455,7 +455,7 @@ func (m *Migrator) runMigrationUpNoTx(ctx context.Context, x connish, tbl string
 	}
 
 	if _, err := x.ExecContext(ctx, mig.Up); err != nil {
-		// Leave the dirty row in place — it's the signal that this migration
+		// Leave the dirty row in place. It's the signal that this migration
 		// half-applied and the database needs manual reconciliation.
 		return fmt.Errorf("exec up (no-transaction, left dirty): %w", err)
 	}
@@ -518,11 +518,11 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bo
 	if err != nil {
 		return fmt.Errorf("querying applied migrations: %w", err)
 	}
-	// A dirty database must be reconciled before any rollback too — running a
+	// A dirty database must be reconciled before any rollback too. Running a
 	// Down against a half-applied schema would compound the damage. Scoped to
 	// REGISTERED groups, mirroring checkIntegrity: a de-registered (disabled)
 	// module's dirty row is that module's property and must not brick another
-	// group's rollback — reconcile it via Force(v, …, "<group>"). The DEFAULT
+	// group's rollback. Reconcile it via Force(v, …, "<group>"). The DEFAULT
 	// group is never a module: its rows always count (see ownGroup).
 	registered := make(map[string]bool, len(m.migrations))
 	for _, mig := range m.migrations {
@@ -538,9 +538,9 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bo
 	}
 
 	// Build sorted list of applied keys in the selected groups, descending by
-	// (Version, Group) — most-recent-first within the selection. Rows of a
+	// (Version, Group), most-recent-first within the selection. Rows of a
 	// NAMED group with no registered migrations at all (a disabled module)
-	// are not rollback candidates — an unscoped Down must not error on, or
+	// are not rollback candidates. An unscoped Down must not error on, or
 	// roll back, another module's rows. The default group and any partially
 	// registered group still hit the applied-but-not-registered error below:
 	// within a group you own, a missing migration is drift, not modularity.
@@ -550,7 +550,7 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bo
 			continue
 		}
 		if !ownGroup(k.Group) {
-			continue // disabled module's row — not ours to roll back
+			continue // disabled module's row, not ours to roll back
 		}
 		keys = append(keys, k)
 	}
@@ -587,7 +587,7 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bo
 // runMigrationDown executes a single migration's Down SQL and removes its
 // tracking row. Transactional migrations do both atomically. No-transaction
 // migrations (the Down counterpart of CREATE INDEX CONCURRENTLY etc.) run the
-// Down outside any transaction — the same protocol as runMigrationUpNoTx — and
+// Down outside any transaction, the same protocol as runMigrationUpNoTx, and
 // mark the row dirty first so a failed concurrent-DDL rollback is detectable.
 func (m *Migrator) runMigrationDown(ctx context.Context, x connish, tbl string, mig Migration, ga bool) error {
 	if mig.NoTransaction {
@@ -638,7 +638,7 @@ func (m *Migrator) runMigrationDownNoTx(ctx context.Context, x connish, tbl stri
 		}
 	}
 	if _, err := x.ExecContext(ctx, mig.Down); err != nil {
-		// Leave the dirty row — the rollback half-applied and needs a human.
+		// Leave the dirty row. The rollback half-applied and needs a human.
 		return fmt.Errorf("exec down (no-transaction, left dirty): %w", err)
 	}
 	if ga {
@@ -752,14 +752,14 @@ func (m *Migrator) Force(ctx context.Context, version uint64, applied bool, grou
 //
 // Status is read-only: it never upgrades the tracking-table PK (that is an
 // unlocked check-then-act left to Up/Down/Force, which hold the advisory
-// lock). It detects the table's actual shape and reads accordingly — legacy
+// lock). It detects the table's actual shape and reads accordingly: legacy
 // SELECT when the group_name column is absent, group-aware SELECT when it is
-// present — so a de-registered group's rows are still shown with their real
+// present, so a de-registered group's rows are still shown with their real
 // group.
 func (m *Migrator) Status(ctx context.Context, groups ...string) (*Status, error) {
 	groups = normalizeGroupSelection(groups)
 	// Status is a read: selection is validated for syntax only, NOT against
-	// the registered set — a de-registered (disabled) module's applied rows
+	// the registered set. A de-registered (disabled) module's applied rows
 	// are legitimately inspectable, and an unknown group simply reports an
 	// empty status.
 	if err := m.validateGroupSelection(groups, false); err != nil {
@@ -771,7 +771,7 @@ func (m *Migrator) Status(ctx context.Context, groups ...string) (*Status, error
 	}
 	// Status performs NO group-schema DDL: it keeps the pre-existing
 	// lazy-create contract (legacy table shape when missing) but never adds
-	// group_name or upgrades the PK — those are check-then-act operations
+	// group_name or upgrades the PK. Those are check-then-act operations
 	// reserved for Up/Down/Force, which hold the advisory lock. Reads key
 	// off the table's ACTUAL shape, so a table upgraded by a previous
 	// group-aware run is read group-aware even here.

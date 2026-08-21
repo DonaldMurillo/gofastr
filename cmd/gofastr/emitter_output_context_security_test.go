@@ -16,7 +16,7 @@ import (
 // emitter_quoting_security_test.go + blueprint_emitter_injection_test.go cover the
 // GO context (literal / identifier / comment), and assertBlueprintGoParses is now
 // the emitter-side backstop for it. Neither says anything about the contexts the
-// emitted Go then *produces at runtime* — CSS custom properties, an <a href>, or
+// emitted Go then *produces at runtime*: CSS custom properties, an <a href>, or
 // (via `gofastr pack`) YAML. A value can be a perfectly well-formed Go string
 // literal and still break out of the CSS declaration or the anchor scheme that
 // literal is fed into, so the Go-side gate cannot see any of the three below.
@@ -24,7 +24,7 @@ import (
 // Threat model is the same one the sibling files state: a blueprint is
 // developer-authored YAML OR agent-transcribed text (the documented workflow has
 // an agent authoring gofastr.yml from natural-language requirements). It is NOT
-// request-borne — no end user reaches these fields.
+// request-borne; no end user reaches these fields.
 
 func bpTheme(light, dark map[string]string) Blueprint {
 	return Blueprint{
@@ -47,14 +47,14 @@ func bpTheme(light, dark map[string]string) Blueprint {
 //   - theme.Colors.<Token>.Value      → `:root { --color-<t>: <v>; }`
 //   - theme.DarkColors[<token>]       → `:root[data-color-scheme="dark"] { … }`
 //     and the `@media (prefers-color-scheme: dark)` copy of it
-//   - theme.Fonts.Body/Heading.Value  → `--font-body: '<family>', …`  (GUARDED —
+//   - theme.Fonts.Body/Heading.Value  → `--font-body: '<family>', …`  (GUARDED:
 //     blueprintFontFamilyName allow-lists it; the control case below)
 //
 // core-ui/style already owns this exact property: cssDeclBreakers + validateColorValue
 // reject `;` `}` `{` `/*` `*/` `<` `>` `\` newline and `url(`. But that validation
 // only runs through ApplyTokens (the `gofastr theme` setter path). The blueprint
 // emitter writes `theme.Colors.X.Value = %q` and `theme.DarkColors = map[...]{…}`
-// as DIRECT STRUCT ASSIGNMENTS, which bypass every setter — and validateBlueprint
+// as DIRECT STRUCT ASSIGNMENTS, which bypass every setter, and validateBlueprint
 // checks only the theme KEY (blueprintThemeColorPath), never the value.
 //
 // The font sibling got the guard in the 2026-08-04 pass
@@ -122,7 +122,7 @@ func TestThemeValueCannotInjectCSS(t *testing.T) {
 				}
 				css := th.CSSCustomProperties()
 				// A raw newline in the value is itself the escape, and it does not
-				// survive the per-line scan below — check the whole sheet for it.
+				// survive the per-line scan below; check the whole sheet for it.
 				if strings.Contains(payload, "\n") && strings.Contains(css, payload) {
 					t.Fatalf("SECURITY: [css-injection] %s: %q reached the stylesheet with its raw newlines intact\n  app.go: %s",
 						tc.site, payload, firstLineWith(appGo, "Value = ", "DarkColors"))
@@ -160,7 +160,7 @@ func TestThemeAcceptsRealColorValues(t *testing.T) {
 
 // The emitter is reachable without validateBlueprint (loadBlueprintPath's
 // validate=false directory pass, a hand-built Blueprint), so the drop backstop
-// carries the property on its own — and its generated comment must not itself
+// carries the property on its own, and its generated comment must not itself
 // become an escape.
 func TestEmitterDropsUnsafeThemeColor(t *testing.T) {
 	note := blueprintUnsafeColorNote("primary", "#fff; } body{display:none} /* */")
@@ -215,20 +215,20 @@ func firstLineWith(s string, needles ...string) string {
 // scheme.
 //
 // Surfaces, and which of them hold the property today:
-//   - block link_button `href`          → ui.LinkButton  — GUARDED (isUnsafeScheme)
-//   - block hero `cta_href`/`secondary_href` → ui.LinkButton — GUARDED
-//   - block pricing plan `cta_href`     → ui.PricingCard → LinkButton — GUARDED
-//   - block type:link `href`            → html.Link → setURLAttr(urlsafe.Anchor) — GUARDED
-//   - node-renderer props `href`        → html.Link/LinkHTML → setURLAttr — GUARDED
-//   - nav item `href`                   → ui.SidebarItem → safeURL — GUARDED
-//   - login_form  props `register_href` → hand-rolled <a> inside render.Raw — UNGUARDED
-//   - signup_form props `login_href`    → same builder — UNGUARDED
+//   - block link_button `href`          → ui.LinkButton:   GUARDED (isUnsafeScheme)
+//   - block hero `cta_href`/`secondary_href` → ui.LinkButton:  GUARDED
+//   - block pricing plan `cta_href`     → ui.PricingCard → LinkButton:  GUARDED
+//   - block type:link `href`            → html.Link → setURLAttr(urlsafe.Anchor):  GUARDED
+//   - node-renderer props `href`        → html.Link/LinkHTML → setURLAttr:  GUARDED
+//   - nav item `href`                   → ui.SidebarItem → safeURL:  GUARDED
+//   - login_form  props `register_href` → hand-rolled <a> inside render.Raw:  UNGUARDED
+//   - signup_form props `login_href`    → same builder:  UNGUARDED
 //
 // blueprintAuthFormExpr builds the card footer as
 //
 //	`<a href="` + htmlEscapeJSString(footerHref) + `">` + … + `</a>`
 //
-// and hands it to render.Raw. htmlEscapeJSString escapes & < > " ' — enough to
+// and hands it to render.Raw. htmlEscapeJSString escapes & < > " ', enough to
 // stay inside the attribute, and nothing at all against the SCHEME, which is the
 // property every sibling anchor sink in the repo enforces. render.Raw is what
 // takes the value around core-ui/html's setURLAttr, the layer whose doc comment
@@ -236,7 +236,7 @@ func firstLineWith(s string, needles ...string) string {
 // where the guard belongs".
 //
 // Impact: the generated login and signup screens ship
-// `<a href="javascript:…">Create an account</a>` — script execution in the
+// `<a href="javascript:…">Create an account</a>`: script execution in the
 // visitor's session on the app's own origin, on the two screens where a
 // credential prompt already is.
 func TestAuthFormHrefRejectsBadScheme(t *testing.T) {
@@ -313,8 +313,8 @@ func TestUILinkNeutralizesBadScheme(t *testing.T) {
 			}
 		}
 	}
-	// Control: a legitimate href survives, so the guard is not just blanking
-	// every anchor the auth screens emit.
+	// Control: a legitimate href survives, so the guard does not blank every
+	// anchor the auth screens emit.
 	if !strings.Contains(string(ui.Link(ui.LinkConfig{Href: "/register", Text: "Create an account"})), `href="/register"`) {
 		t.Error("ui.Link dropped a safe relative href")
 	}
@@ -324,11 +324,11 @@ func TestUILinkNeutralizesBadScheme(t *testing.T) {
 // escaped at EVERY interpolation, not most of them.
 //
 // blueprintEntityFormExpr built `name="` + e(field.Name) + `" id="` + fieldID,
-// where fieldID = "field-" + field.Name — the same value, escaped in one
+// where fieldID = "field-" + field.Name; the same value, escaped in one
 // attribute and raw in the next, three tokens apart. validateBlueprint requires
 // field.Name to produce a Go identifier, so no blueprint reaches this today;
 // the test calls the emitter directly because the asymmetry, not its current
-// reachability, is the bug. `For:` stays raw on purpose — ui.FormField's
+// reachability, is the bug. `For:` stays raw on purpose: ui.FormField's
 // renderer escapes it, and pre-escaping would double-escape.
 func TestFormFieldIDIsEscaped(t *testing.T) {
 	decl := framework.EntityDeclaration{
@@ -351,7 +351,7 @@ func TestFormFieldIDIsEscaped(t *testing.T) {
 // blueprintScreenLayoutExpr maps anything that is not "marketing" to appLayout,
 // so `layout: markting` renders a public marketing page in the authenticated app
 // shell. Access gating is `access:`, so this is wrong chrome rather than a gate
-// bypass — but it is a setting the author believes they set.
+// bypass, but it is a setting the author believes they set.
 func TestScreenLayoutMustBeKnown(t *testing.T) {
 	for _, layout := range []string{"markting", "App", "admin", " marketing"} {
 		bp := bpTheme(nil, nil)
@@ -381,7 +381,7 @@ func TestScreenLayoutMustBeKnown(t *testing.T) {
 // construction.
 //
 // Provenance is the developer's own entities/*.go (packReadEntities → astString,
-// no identifier check), so this is hardening, not a privilege boundary — anyone
+// no identifier check), so this is hardening, not a privilege boundary; anyone
 // who can edit that file can already run code in the project.
 func TestClientJSQuotesEmittedNames(t *testing.T) {
 	decl := framework.EntityDeclaration{
@@ -451,27 +451,27 @@ func TestFontFetchOnlyTrustsGstatic(t *testing.T) {
 }
 
 // Property: `gofastr pack` must emit a scalar that re-parses as the same single
-// scalar — encodeBlueprintYAML is documented as the exact inverse of
+// scalar; encodeBlueprintYAML is documented as the exact inverse of
 // decodeBlueprint (see the banner comment in pack.go).
 //
 // Surfaces: every list-of-strings the writer emits as a YAML FLOW list via
-// writeFlowList — entity field `values:` (enums), `search_fields:`, entity_list
+// writeFlowList: entity field `values:` (enums), `search_fields:`, entity_list
 // `fields:` / `filters:`, `pagination.cursor_fields`, index `columns:`, and any
 // scalar list a future construct adds. Of those, `search_fields` / `fields` /
 // `filters` / `columns` are re-checked against the declaration on decode, so a
 // smuggled sibling there fails the re-parse loudly rather than widening the
-// surface. `values:` (the enum value set) is the one with no such check — hence
+// surface. `values:` (the enum value set) is the one with no such check, hence
 // the assertion below.
 //
 // needsQuote decides whether to quote a scalar. It checks `,` only as the FIRST
 // byte (`strings.ContainsAny(s[:1], "…,…")`), so an interior comma is emitted
-// bare — and bare is exactly where a comma is a flow-list ITEM SEPARATOR. One
+// bare, and bare is exactly where a comma is a flow-list ITEM SEPARATOR. One
 // item becomes two on re-parse.
 //
 // This is the reverse trust boundary: `pack` reads a generated app's Go source
 // and writes the YAML you regenerate from. A list element gains a sibling that
 // the app never declared, and the regenerated blueprint then validates it
-// happily — `search_fields` and `filters:` are the sharp ones, since both widen
+// happily; `search_fields` and `filters:` are the sharp ones, since both widen
 // the query surface of the generated API.
 func TestPackYAMLListItemStaysOneItem(t *testing.T) {
 	// One shape per YAML flow-list metacharacter. The comma is the live one.

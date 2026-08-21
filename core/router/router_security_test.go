@@ -136,7 +136,7 @@ func TestRouter_RoutesIntrospection(t *testing.T) {
 	if len(routes) != 2 {
 		t.Errorf("expected 2 routes, got %d", len(routes))
 	}
-	// Routes() intentionally returns EVERY route — its callers are the
+	// Routes() intentionally returns EVERY route: its callers are the
 	// MCP introspection bridge, debug endpoints, and admin tooling.
 	// Use [RoutesFiltered] when exposing the list to non-admin clients;
 	// the assertion below pins the public-vs-admin separation in that
@@ -284,7 +284,7 @@ func TestRouter_CustomNotFoundKeeps405(t *testing.T) {
 // was pinned, net/http's RedirectHandler was served directly out of
 // ServeHTTP, which skipped the gate (turning the documented "plain
 // 404, existence must not leak" contract into a 307-vs-404 oracle)
-// and skipped every middleware — security headers, recovery, request
+// and skipped every middleware: security headers, recovery, request
 // logging, CORS and rate limiting. Same class as CVE-2026-15704
 // (Eclipse BaSyx) and CVE-2026-33808 (@fastify/express).
 
@@ -371,8 +371,8 @@ func TestRedirectStillRedirectsWhenLive(t *testing.T) {
 
 // TestUnmatchedPathWorkIsBounded pins that the 404/405 fallback does not
 // do work proportional to the route table on every unmatched request.
-// It used to clone the request and rebuild an entire http.ServeMux —
-// parsing and tree-inserting every registered pattern — which measured
+// It used to clone the request and rebuild an entire http.ServeMux,
+// parsing and tree-inserting every registered pattern, which measured
 // ~1200x a matched request (205us / 3704 allocs against 300 routes) on
 // a fully attacker-controlled URL, ahead of the rate limiter.
 func TestUnmatchedPathWorkIsBounded(t *testing.T) {
@@ -400,7 +400,7 @@ func TestUnmatchedPathWorkIsBounded(t *testing.T) {
 // mux would have refused to route. The mux cleans dot-segments and
 // collapses slashes in the REQUEST path (redirecting when it has to), so
 // a "/" inside a single-segment {name}, or a ".." segment in either
-// form, can only have arrived percent-encoded — i.e. deliberately
+// form, can only have arrived percent-encoded, i.e. deliberately
 // smuggled past segment matching. Surfaces: single-segment {name},
 // catch-all {name...}, via Param and via Params.
 

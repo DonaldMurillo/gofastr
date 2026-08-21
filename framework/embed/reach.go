@@ -15,7 +15,7 @@ import (
 // author who cannot get an embed working will reach for a wider prefix, and the
 // prefixes that matter most are the ones they did not write and may not know
 // exist. Refusing at boot is the same move New already makes for
-// GrantMaxAge <= GrantTTL — a configuration that cannot be right should not
+// GrantMaxAge <= GrantTTL. A configuration that cannot be right should not
 // start.
 //
 // This list is deliberately about FRAMEWORK-mounted routes. An app's own
@@ -29,16 +29,16 @@ import (
 // ACTUAL configured prefix at mount, so relocating a battery moves its
 // protection with it.
 var reservedPrefixes = []string{
-	"/mcp",          // framework/app.go — every entity's MCP twin plus the control tools
-	"/openapi.json", // core/openapi — the full route and schema inventory
-	"/api/docs",     // core/openapi — the same, rendered
-	"/api/llm.md",   // framework/crud — every entity, field, validator, relation
-	"/.debug",       // framework/app.go — pid, goroutines, memory
-	"/auth",         // battery/auth — token minting, 2FA, account linking
-	"/admin",        // battery/admin — the back office, behind a wildcard policy
-	"/print",        // battery/print — each request spawns headless Chrome
-	"/semantic",     // battery/semantic — index/query over the whole corpus
-	"/metrics",      // framework/app.go — route inventory and traffic shape
+	"/mcp",          // framework/app.go: every entity's MCP twin plus the control tools
+	"/openapi.json", // core/openapi: the full route and schema inventory
+	"/api/docs",     // core/openapi: the same, rendered
+	"/api/llm.md",   // framework/crud: every entity, field, validator, relation
+	"/.debug",       // framework/app.go: pid, goroutines, memory
+	"/auth",         // battery/auth: token minting, 2FA, account linking
+	"/admin",        // battery/admin: the back office, behind a wildcard policy
+	"/print",        // battery/print: each request spawns headless Chrome
+	"/semantic",     // battery/semantic: index/query over the whole corpus
+	"/metrics",      // framework/app.go: route inventory and traffic shape
 }
 
 // normalizeReach cleans and validates one Path or Reach entry against reserved,
@@ -54,14 +54,14 @@ func normalizeReach(surface, field, p string, reserved []string) (string, error)
 	if cleaned == "/" {
 		return "", fmt.Errorf(
 			"embed: surface %q: %s %q would let an embed reach the whole app, "+
-				"which is the default this exists to replace — list the prefixes the "+
+				"which is the default this exists to replace: list the prefixes the "+
 				"surface actually posts to instead", surface, field, p)
 	}
 	for _, res := range reserved {
 		if pathWithin(res, cleaned) || pathWithin(cleaned, res) {
 			return "", fmt.Errorf(
 				"embed: surface %q: %s %q covers %q, which the framework mounts "+
-					"itself — an embed grant must never reach it", surface, field, p, res)
+					"itself: an embed grant must never reach it", surface, field, p, res)
 		}
 	}
 	return cleaned, nil
@@ -102,13 +102,13 @@ func (h *Host) AddReservedPrefixes(prefixes ...string) error {
 			if pathWithin(reserved, s.path) || pathWithin(s.path, reserved) {
 				return fmt.Errorf(
 					"embed: surface %q: Path %q covers %q, which a mounted battery serves "+
-						"— an embed grant must never reach it", name, s.path, reserved)
+						": an embed grant must never reach it", name, s.path, reserved)
 			}
 			for _, rch := range s.Reach {
 				if pathWithin(reserved, rch) || pathWithin(rch, reserved) {
 					return fmt.Errorf(
 						"embed: surface %q: Reach entry %q covers %q, which a mounted battery "+
-							"serves — an embed grant must never reach it", name, rch, reserved)
+							"serves: an embed grant must never reach it", name, rch, reserved)
 				}
 			}
 		}
@@ -117,8 +117,8 @@ func (h *Host) AddReservedPrefixes(prefixes ...string) error {
 	return nil
 }
 
-// RoutedPath returns the path the ROUTER will dispatch on — decoded one segment
-// at a time — or ok=false when the request must be refused before any
+// RoutedPath returns the path the ROUTER will dispatch on, decoded one segment
+// at a time, or ok=false when the request must be refused before any
 // authorization decision is made.
 //
 // It exists because the gate and the router disagreed about what "the path" is,
@@ -132,7 +132,7 @@ func (h *Host) AddReservedPrefixes(prefixes ...string) error {
 //	GET /api/docs/%2e%2e/%2e%2e/reports
 //
 // decoded to "/api/docs/../../reports", which path.Clean collapsed to
-// "/reports" — inside the surface's own subtree, so the gate admitted it. The
+// "/reports", inside the surface's own subtree, so the gate admitted it. The
 // router collapsed nothing, matched the subtree pattern "/api/docs/", and ran a
 // handler that reservedPrefixes exists to keep grants away from. The mirror
 // image, "/__gofastr%2Fprivate", read as a runtime endpoint to the gate and as
@@ -197,8 +197,8 @@ func pathWithin(prefix, p string) bool {
 // MayReach reports whether a grant for this surface may be used on p.
 //
 // Three things are in reach: the surface's own Path subtree, the runtime's
-// /__gofastr/* endpoints (which are already grant-aware and scoped per surface
-// — the widget catalog substitutes the grant's own surface path rather than
+// /__gofastr/* endpoints (which are already grant-aware and scoped per surface,
+// the widget catalog substitutes the grant's own surface path rather than
 // trusting the caller), and each declared Reach prefix.
 //
 // Pass the result of [RoutedPath], never a raw r.URL.Path. The cleaning below

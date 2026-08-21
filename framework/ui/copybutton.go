@@ -55,7 +55,7 @@ type CopyButtonConfig struct {
 
 	// ToastOnCopy, when true, fires a toast on copy success. The toast
 	// is dispatched via window.__gofastr.toast({...}) so it stacks in
-	// the page's existing ToastStack (or auto-created one) — no extra
+	// the page's existing ToastStack (or auto-created one), no extra
 	// wiring required. Use ToastTitle / ToastBody / ToastVariant to
 	// configure the message; sensible defaults if left blank.
 	ToastOnCopy bool
@@ -66,7 +66,7 @@ type CopyButtonConfig struct {
 	// ToastBody is the toast body when ToastOnCopy=true. Default empty.
 	ToastBody string
 
-	// ToastVariant maps to the toast's variant — "success" (default),
+	// ToastVariant maps to the toast's variant: "success" (default),
 	// "info", "warning", "danger".
 	ToastVariant string
 

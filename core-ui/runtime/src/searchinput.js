@@ -1,4 +1,4 @@
-// SearchInput runtime module — shows/hides the clear button based on
+// SearchInput runtime module, shows/hides the clear button based on
 // input value, and clears the input on clear-button click with refocus.
 //
 // Loaded on-demand when [data-fui-comp="ui-search-input"] markers appear.
@@ -32,7 +32,7 @@
         // Dispatch input event so any form-RPC pipeline sees the change.
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
-      // Escape clears the input — the SearchInput is the canonical
+      // Escape clears the input, the SearchInput is the canonical
       // example of the "clear-on-esc" widget primitive, so it gets
       // the behaviour by default without needing data-fui-clear-on-esc
       // on every callsite.

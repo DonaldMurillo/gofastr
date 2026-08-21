@@ -27,7 +27,7 @@ func TestMountMarker_EscapesValues(t *testing.T) {
 }
 
 // An unsafe attribute NAME (which can't be escaped into a valid name) must be
-// DROPPED, not emitted raw — otherwise it breaks out of the tag.
+// DROPPED, not emitted raw, otherwise it breaks out of the tag.
 func TestMountMarker_DropsUnsafeAttributeName(t *testing.T) {
 	html := string(MountMarker(MountConfig{
 		Plugin: "wysiwyg",

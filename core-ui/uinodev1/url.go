@@ -2,7 +2,7 @@ package uinodev1
 
 // IsValidHostRelative reports whether s is a host-relative same-origin
 // path that is safe to use as a link/image target produced by a third-party
-// module. This is the semantic URL guard required by design §9 — it is NOT
+// module. This is the semantic URL guard required by design §9, it is NOT
 // a substitute for CSP, and CSP is not a substitute for it.
 //
 // Acceptance criteria (all must hold):
@@ -50,12 +50,12 @@ func IsValidHostRelative(s string) bool {
 		return false
 	}
 	// Must start with a single '/'. Anything else is either a scheme
-	// (javascript:, https:, …) or a relative path (foo, ./foo) — both
+	// (javascript:, https:, …) or a relative path (foo, ./foo), both
 	// rejected by design §9 for module-originated URLs.
 	if s[0] != '/' {
 		return false
 	}
-	// Reject scheme-relative "//host" — would resolve off-origin.
+	// Reject scheme-relative "//host", would resolve off-origin.
 	if len(s) >= 2 && s[1] == '/' {
 		return false
 	}
@@ -77,7 +77,7 @@ func IsValidHostRelative(s string) bool {
 	}
 	// Defense-in-depth: scan for a scheme-like token anywhere. Because
 	// s already starts with '/', a literal "scheme:" form is impossible
-	// at position 0 — but a value like "/path?next=blob:evil" or a
+	// at position 0, but a value like "/path?next=blob:evil" or a
 	// fragment could carry a scheme that confuses a downstream parser.
 	// We reject any dangerous scheme token as a contiguous substring.
 	if hasDangerousScheme(s) {

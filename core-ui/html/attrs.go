@@ -120,7 +120,7 @@ func ContainerType(containerType string, name string) Attrs {
 }
 
 // buildAttrs constructs an Attrs map from optional base attrs, ID, and Class.
-// It never returns nil — always returns a usable map.
+// It never returns nil, always returns a usable map.
 func buildAttrs(base Attrs, id, class string) Attrs {
 	attrs := make(Attrs)
 	for k, v := range base {
@@ -151,7 +151,7 @@ func setAttr(attrs Attrs, key, value string) Attrs {
 // to the page. A dropped attribute is inert.
 //
 // This is the lowest layer that renders a caller-supplied URL, so it is
-// where the guard belongs — core-ui/noderender explicitly documents its IR
+// where the guard belongs, core-ui/noderender explicitly documents its IR
 // as untrusted and renders through here, and framework/ui's own safeURL
 // sits above it.
 func setURLAttr(attrs Attrs, key, value string, policy urlsafe.Policy) Attrs {

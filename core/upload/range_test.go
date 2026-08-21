@@ -16,8 +16,8 @@ import (
 // download restarted from zero, and a CDN probing with a range got a 200 with
 // the whole body instead of a 206.
 //
-// The capability exists — LocalStorage.Get already hands back an *os.File —
-// the interface just hid it. RangeGetter is the declared way to ask for it.
+// The capability exists: LocalStorage.Get already hands back an *os.File,
+// and the interface just hid it. RangeGetter is the declared way to ask for it.
 
 func TestServeHandlerAnswersRangeRequest(t *testing.T) {
 	h, body := localServeHandler(t)
@@ -70,7 +70,7 @@ func TestRangeServingKeepsScriptableGuard(t *testing.T) {
 	}
 }
 
-// A backend that declines the capability must still serve whole bodies —
+// A backend that declines the capability must still serve whole bodies:
 // the fallback is the contract, not an error path.
 func TestServeHandlerFallsBackWithoutRangeGetter(t *testing.T) {
 	h := ServeHandler(nonSeekableStorage{data: "hello world"})
@@ -111,7 +111,7 @@ func TestLocalStorageImplementsRangeGetter(t *testing.T) {
 	}
 }
 
-// GetRange must apply the same key sanitization as Get — a capability that
+// GetRange must apply the same key sanitization as Get, a capability that
 // skipped the traversal check would be a path-traversal hole wearing a
 // performance hat.
 func TestGetRangeRejectsTraversal(t *testing.T) {

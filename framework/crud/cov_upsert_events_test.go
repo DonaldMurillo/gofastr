@@ -109,7 +109,7 @@ func TestIsAutoField(t *testing.T) {
 
 func TestEmitEvent_NoBusIsNoop(t *testing.T) {
 	ch, _ := covNotesHandler(t)
-	// No Events set — must not panic.
+	// No Events set, must not panic.
 	ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "1"})
 }
 

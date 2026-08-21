@@ -10,7 +10,7 @@ import (
 )
 
 // statusHandler builds a handler over a table with a multi-word column
-// (status_id) using the framework's DEFAULT JSONCase (CaseCamel) — the
+// (status_id) using the framework's DEFAULT JSONCase (CaseCamel), the
 // configuration every host gets unless it opts into WithJSONCase(CaseSnake).
 // This is the shape issue #69 was filed against: hook-adjacent code expects
 // snake_case keys, but the default handler speaks camelCase.
@@ -34,7 +34,7 @@ func statusHandlerCamel(t *testing.T) *CrudHandler {
 func runUpdateCapturingPre(t *testing.T) map[string]any {
 	t.Helper()
 	ch := statusHandlerCamel(t)
-	// CreateOne/UpdateOne take snake_cased bodies (the in-process contract —
+	// CreateOne/UpdateOne take snake_cased bodies (the in-process contract,
 	// see their doc comments); JSONCase only governs the HTTP request/
 	// response boundary and, per issue #69, the pre-image map.
 	created, err := ch.CreateOne(context.Background(), map[string]any{"status_id": "open", "version": float64(1)})
@@ -63,7 +63,7 @@ func runUpdateCapturingPre(t *testing.T) map[string]any {
 // casing contract on the raw accessor: under the default handler JSONCase,
 // AuditPreImageFromContext keys the pre-image by camelCase ("statusId"),
 // NOT the DB column name ("status_id"). A hook doing pre["status_id"]
-// against a default handler silently gets nothing back — this is the bug
+// against a default handler silently gets nothing back, this is the bug
 // reproduction: before the fix in this change, nothing surfaced that
 // contract, so it was easy to hit and hard to notice (casing-identical
 // keys like "version" happen to work either way).

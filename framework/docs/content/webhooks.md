@@ -2,7 +2,7 @@
 
 `battery/webhook` delivers signed POST requests to subscriber URLs
 with retry-with-backoff and a dead-letter terminal state. It's the
-external mirror of `framework/event` (which is internal pub/sub) — use
+external mirror of `framework/event` (which is internal pub/sub). Use
 events for in-process listeners, webhooks for talking to other
 systems.
 
@@ -60,20 +60,20 @@ when the host is a name (DNS lookup at subscribe time). It also runs
 re-validates the actual resolved IP at connect time. This closes the
 DNS-rebinding / TOCTOU window where a host validates public at
 `Subscribe` and is then re-pointed at `127.0.0.1` /
-`169.254.169.254` / an RFC1918 address before the worker fires — the
+`169.254.169.254` / an RFC1918 address before the worker fires; the
 connection is refused before any bytes leave the process.
 
 Supplying your own `Options.HTTPClient` (proxy, tracing, custom
 timeout) does **not** drop the guard: `New` wraps the client with a
 per-request check that resolves the delivery target and refuses
 internal IPs before your transport runs. Your transport itself is
-used verbatim — a private egress proxy, SSH tunnel, or custom dialer
+used verbatim: a private egress proxy, SSH tunnel, or custom dialer
 keeps working, since it is the *target* that must be public, not the
 route to it. Only `AllowPrivateNetworks: true` opts out.
 
 For development and tests, opt out via `Options.AllowPrivateNetworks =
 true`. This disables both the subscribe-time and the dial-time IP
-checks. The scheme guard still applies — `file://`, `gopher://`, etc.
+checks. The scheme guard still applies: `file://`, `gopher://`, etc.
 are always refused.
 
 ## Delivered request shape
@@ -91,7 +91,7 @@ Binding the timestamp into the signed material is the same convention
 Stripe uses; receivers reject captured payloads outside their tolerance
 window so a leaked delivery cannot replay forever.
 
-The body is whatever you passed to `Publish` — `application/json`
+The body is whatever you passed to `Publish`; `application/json`
 isn't required, but the header advertises it.
 
 ## Verifying inbound webhooks (receiver side)
@@ -184,16 +184,16 @@ type Store interface {
 
 Two stores are bundled:
 
-- `NewMemoryStore()` — in-process maps, suitable for tests and
+- `NewMemoryStore()`: in-process maps, suitable for tests and
   single-instance apps that tolerate restart loss.
-- `NewSQLStore(db, opts...)` — SQL-backed (sqlite + postgres),
+- `NewSQLStore(db, opts...)`: SQL-backed (sqlite + postgres),
   creates `webhook_subscribers` and `webhook_deliveries` on first
   use. Options:
   - `WithSQLSubscribersTable(name)` / `WithSQLDeliveriesTable(name)`
-    — override table names.
-  - `WithSQLSecretCodec(codec)` — encrypt subscriber secrets at rest
+    : override table names.
+  - `WithSQLSecretCodec(codec)`: encrypt subscriber secrets at rest
     (see Secret encryption below).
-  - `WithSQLAllowPlaintext()` — opt into plaintext storage
+  - `WithSQLAllowPlaintext()`: opt into plaintext storage
     (`NoopSecretCodec`).
 
 `NewSQLStore` fails closed: given neither option it returns an error
@@ -211,7 +211,7 @@ type LeasedStore interface {
 `ClaimDueDeliveries` atomically reserves rows for the calling worker
 and pushes their `NextAttemptAt` forward by `leasePeriod`, so a
 concurrent Manager sees them as not-yet-due and skips them. The
-Manager auto-detects the interface and uses the claim path — making
+Manager auto-detects the interface and uses the claim path, which makes
 multi-instance deployments safe against double delivery. Set
 `Options.LeasePeriod` (default 30s) above your worst-case handler
 latency.
@@ -230,7 +230,7 @@ store, _ := webhook.NewSQLStore(db, webhook.WithSQLSecretCodec(codec))
 
 The encoded format is `wbenc:v1:<base64(nonce||ciphertext)>`. Rows
 without the `wbenc:` prefix are returned as-is on read so an existing
-deployment can roll the codec without a one-shot rewrite job — each
+deployment can roll the codec without a one-shot rewrite job; each
 subscriber's secret is re-encrypted the next time the row is
 upserted.
 
@@ -255,12 +255,12 @@ cancel := webhook.Bridge(app.Events(), mgr, "orders.**") // custom list
 
 The bridge subscribes one handler per event type, marshals
 `event.Event.Data` to JSON, and calls `Manager.Publish`. The returned
-`cancel` detaches every subscription at once — call it before
+`cancel` detaches every subscription at once; call it before
 `Manager.Stop` so no Emit lands after the worker exits.
 
 ## Inbound ingestion
 
-Everything above is outbound — you calling other systems. The receiving
+Everything above is outbound: you calling other systems. The receiving
 side is `IngestHandler`: an HTTP handler that verifies a request, persists
 an envelope, acks immediately, and hands the real work to the queue
 battery. It is the inbound mirror of the Manager.
@@ -307,17 +307,17 @@ request path.
 
 1. Non-POST → `405`.
 2. Body read through `http.MaxBytesReader`; oversize → `413`.
-3. **Verify, then persist** — an unverified payload is never written to
+3. **Verify, then persist**: an unverified payload is never written to
    the store. A verification failure responds `401` with a generic body
    (`signature verification failed`); no header value or reason detail
    is echoed.
 4. Dedupe: if `DedupeKeyFunc` returns a non-empty key the store has
    already seen for this source, the handler acks `200` immediately
-   without re-persisting or enqueuing — idempotent redelivery.
+   without re-persisting or enqueuing; idempotent redelivery.
 5. Persist the envelope as `received`, allowlisted headers only. With a
    queue wired, the dedupe key is deliberately **not** stored yet.
 6. Enqueue a `queue.Job{Type: JobType, Payload: {"envelope_id", "source"}}`.
-7. Register the dedupe key on the envelope — only now that the event is
+7. Register the dedupe key on the envelope; only now that the event is
    durably queued may redeliveries be dedupe-acked.
 8. Respond `202` with `{"id": "<envelope id>"}`.
 
@@ -325,7 +325,7 @@ On enqueue failure the handler responds `500` (the sender retries) and
 best-effort marks the just-written envelope `failed` with `LastError` as
 a forensic record. Because the key is registered only *after* a
 successful enqueue (step 7), an envelope that never reached the queue
-can never dedupe-ack the sender's retry — the redelivery persists and
+can never dedupe-ack the sender's retry; the redelivery persists and
 enqueues a fresh copy even if the forensic marking itself failed.
 Without a queue, persistence alone is durable acceptance, so the key is
 stored with the envelope up front. Failures of these best-effort updates
@@ -335,14 +335,14 @@ are reported through `IngestConfig.Logger` (default `log.Printf`).
 
 Two are bundled:
 
-- `TimestampedVerifier(secret, tolerance)` — wraps
+- `TimestampedVerifier(secret, tolerance)`: wraps
   `VerifyTimestamped` over `X-GoFastr-Signature`. The timestamp is bound
   into the signed material, so a captured request can't replay past
   `tolerance`. **Preferred whenever the sender supports it.**
-- `HMACSHA256Verifier(header, prefix, secret)` — GitHub-style
+- `HMACSHA256Verifier(header, prefix, secret)`: GitHub-style
   `<prefix><hex-hmac-sha256-of-body>` (e.g. header
   `X-Hub-Signature-256`, prefix `sha256=`). Uses `hmac.Equal`, but note
-  there is **no timestamp binding** — it offers no replay defense. Use it
+  there is **no timestamp binding**; it offers no replay defense. Use it
   for providers that don't send a timestamp; pair it with a short
   dedupe window if you can.
 
@@ -370,8 +370,8 @@ reschedule it.
 
 Two `InboundStore` implementations ship:
 
-- `NewMemoryInboundStore()` — in-process map; tests and single-instance.
-- `NewSQLInboundStore(db, opts...)` — SQL-backed (sqlite + postgres),
+- `NewMemoryInboundStore()`: in-process map; tests and single-instance.
+- `NewSQLInboundStore(db, opts...)`: SQL-backed (sqlite + postgres),
   creates `webhook_inbound` on first use. `WithInboundTable(name)`
   overrides the table name. Headers persist as a JSON TEXT column.
 
@@ -380,7 +380,7 @@ database unique constraint: a portable partial index (Postgres) can't be
 written in one DDL that also works on SQLite, and a plain unique index
 would forbid two legitimately-undedupe'd (empty-key) requests from
 coexisting. The `(source, dedupe_key)` index keeps the lookup cheap, but
-there is an inherent check-then-insert race window under concurrency —
+there is an inherent check-then-insert race window under concurrency;
 make your `ProcessInbound` handler idempotent to absorb the rare duplicate.
 
 ## Common mistakes
@@ -389,7 +389,7 @@ make your `ProcessInbound` handler idempotent to absorb the rare duplicate.
   per subscriber on registration so a leaked secret only exposes one
   endpoint.
 - **Don't trust an unsigned request.** Even if the URL is private,
-  rotate keys via the same code path you use for public consumers —
+  rotate keys via the same code path you use for public consumers;
   signature checks are cheap insurance.
 - **Don't put a database call on the publish path.** `Publish` writes
   one delivery row per matching subscriber. If you have many
@@ -399,12 +399,12 @@ make your `ProcessInbound` handler idempotent to absorb the rare duplicate.
   that pre-date the subscriber should be backfilled deliberately, not
   resurrected by the retry loop.
 - **Multi-instance writers need the lease path.** The bundled SQL
-  store implements `LeasedStore` — on Postgres via
+  store implements `LeasedStore`: on Postgres via
   `FOR UPDATE SKIP LOCKED` inside an `UPDATE … RETURNING`, on SQLite
   via a serializable `BEGIN IMMEDIATE` transaction. The Manager
   automatically uses it when the store implements the interface.
   Custom stores that don't implement `LeasedStore` are safe for
-  single-instance deployments only — concurrent workers against a
+  single-instance deployments only; concurrent workers against a
   plain `DueDeliveries`-only store can double-deliver.
 - **The bridge calls `Publish` synchronously inside the emitter's
   goroutine.** With a SQL store, that means each `Emit` does a write

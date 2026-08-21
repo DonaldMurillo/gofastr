@@ -60,7 +60,7 @@ func TestEmailChannel_RejectsHTMLInAddress(t *testing.T) {
 }
 
 // TestMapTemplater_StripCRLFFromSubject verifies that a CR/LF/NUL slipped
-// in via a {{placeholder}} value is removed from the rendered Subject —
+// in via a {{placeholder}} value is removed from the rendered Subject,
 // downstream transports treat Subject as a header.
 func TestMapTemplater_StripCRLFFromSubject(t *testing.T) {
 	t.Parallel()

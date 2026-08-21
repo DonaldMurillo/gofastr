@@ -11,7 +11,7 @@ import (
 )
 
 // An entity that opts into MCP tools (Exposure.MCP: true) registers its
-// tools on app.MCP — but without WithMCP() (or a hand-mounted /mcp route)
+// tools on app.MCP, but without WithMCP() (or a hand-mounted /mcp route)
 // nothing serves them in production. Dev auto-mounts /mcp, so the
 // misconfiguration is invisible until deploy day: boot must warn instead.
 func TestStartWarnsWhenEntityMCPToolsUnreachable(t *testing.T) {

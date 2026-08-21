@@ -197,7 +197,7 @@ func q(userInput string) { db.Query(fmt.Sprintf("SELECT * FROM users WHERE name=
 	mustHaveRule(t, got, "sql-concat-user-input")
 }
 
-// New: query-builder .Where with `+` concat — common SQLi anti-pattern
+// New: query-builder .Where with `+` concat, common SQLi anti-pattern
 // from agent-generated code. Should be flagged even without a SQL
 // keyword in the literal.
 func TestLintQueryBuilderWhereConcatFlagged(t *testing.T) {
@@ -274,8 +274,8 @@ func q(userInput string) {
 	mustHaveRule(t, got, "sql-concat-user-input")
 }
 
-// Quote-adjacent interpolation is intrinsically a value position —
-// identifiers are never quoted — so it flags regardless of the
+// Quote-adjacent interpolation is intrinsically a value position,
+// identifiers are never quoted, so it flags regardless of the
 // variable's name.
 func TestLintSQLQuotedConcatFlagsOrdinaryNames(t *testing.T) {
 	got := lintRules(t, `package x

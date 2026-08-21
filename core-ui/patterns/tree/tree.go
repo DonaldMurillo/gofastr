@@ -136,7 +136,7 @@ func renderNode(n Node, level, pos, setSize int, signalPrefix string, isFirstFoc
 
 	liBody := []render.HTML{row}
 	if isBranch {
-		// Render group container — populated up-front (Children) or
+		// Render group container, populated up-front (Children) or
 		// awaiting RPC swap (LazyPath).
 		groupAttrs := map[string]string{
 			"role":  "group",

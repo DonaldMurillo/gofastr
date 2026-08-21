@@ -10,12 +10,12 @@ import (
 )
 
 // =====================================================================
-// Group A — query / scan error propagation via the fault driver.
+// Group A: query / scan error propagation via the fault driver.
 // Reuses covFaultRelWorld (posts/users/comments/tags on a fault DB) and
 // covFaultNotes from the existing fault-test files.
 // =====================================================================
 
-// crud.go:453 — List data scan (rows.Next) error.
+// crud.go:453: List data scan (rows.Next) error.
 func TestList_ScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
@@ -27,11 +27,11 @@ func TestList_ScanErr(t *testing.T) {
 	}
 }
 
-// crud.go:336 — List filter parse error → 400.
+// crud.go:336: List filter parse error → 400.
 func TestList_RejectsUnknownFilter(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	// An unknown filter param (unrecognised field/suffix) is REJECTED, not
-	// silently dropped — silently dropping returns an unfiltered result set
+	// silently dropped, silently dropping returns an unfiltered result set
 	// (#100A). The bad key is named in the body so a client can surface it.
 	req := withTestUser(httptest.NewRequest("GET", "/notes?title_zz=x", nil), "u1")
 	rec := httptest.NewRecorder()
@@ -44,7 +44,7 @@ func TestList_RejectsUnknownFilter(t *testing.T) {
 	}
 }
 
-// crud.go:517 — Get include parse error → 400.
+// crud.go:517: Get include parse error → 400.
 func TestGet_BadInclude(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
 	req := withTestUser(httptest.NewRequest("GET", "/posts/p1?include=ghostrel", nil), "u1")
@@ -56,7 +56,7 @@ func TestGet_BadInclude(t *testing.T) {
 	}
 }
 
-// crud.go:531 — Get projection parse error → 400.
+// crud.go:531: Get projection parse error → 400.
 func TestGet_BadProjection(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	req := withTestUser(httptest.NewRequest("GET", "/notes/n1?fields=nope", nil), "u1")
@@ -68,7 +68,7 @@ func TestGet_BadProjection(t *testing.T) {
 	}
 }
 
-// crud.go:559 + include.go:334/375 — Get with include where the child query
+// crud.go:559 + include.go:334/375. Get with include where the child query
 // fails → 500, exercising applyIncludeTree error propagation.
 func TestGet_IncludeChildQueryErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
@@ -86,7 +86,7 @@ func TestGet_IncludeChildQueryErr(t *testing.T) {
 // crud_api.go in-process query/scan + include errors.
 // =====================================================================
 
-// crud_api.go:145 — GetOne include query failure.
+// crud_api.go:145: GetOne include query failure.
 func TestGetOne_IncludeChildErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
 	covFault.set(func(c *covFaults) { c.queryErrOn = `FROM "comments"` })
@@ -95,7 +95,7 @@ func TestGetOne_IncludeChildErr(t *testing.T) {
 	}
 }
 
-// crud_api.go:142 — GetOne bad include name → buildIncludeNodesFromNames err.
+// crud_api.go:142: GetOne bad include name → buildIncludeNodesFromNames err.
 func TestGetOne_BadInclude(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
 	if _, err := ch.GetOne(context.Background(), "p1", []string{"ghostrel"}); err == nil {
@@ -103,7 +103,7 @@ func TestGetOne_BadInclude(t *testing.T) {
 	}
 }
 
-// crud_api.go:193 — ListAll scan error.
+// crud_api.go:193: ListAll scan error.
 func TestListAll_ScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
@@ -112,7 +112,7 @@ func TestListAll_ScanErr(t *testing.T) {
 	}
 }
 
-// crud_api.go:199 — ListAll bad include name.
+// crud_api.go:199: ListAll bad include name.
 func TestListAll_BadInclude(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
 	if _, err := ch.ListAll(context.Background(), ListOptions{Includes: []string{"ghostrel"}}); err == nil {
@@ -124,7 +124,7 @@ func TestListAll_BadInclude(t *testing.T) {
 // crud_cursor.go / crud_stream.go.
 // =====================================================================
 
-// crud_cursor.go:127 — cursor scan error.
+// crud_cursor.go:127: cursor scan error.
 func TestCursor_ScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
@@ -136,7 +136,7 @@ func TestCursor_ScanErr(t *testing.T) {
 	}
 }
 
-// crud_stream.go:96 — mid-stream scan error breaks the loop (no status change).
+// crud_stream.go:96: mid-stream scan error breaks the loop (no status change).
 func TestStream_MidScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
@@ -154,7 +154,7 @@ func TestStream_MidScanErr(t *testing.T) {
 // typed_query.go.
 // =====================================================================
 
-// typed_query.go:100 — Find scan error.
+// typed_query.go:100: Find scan error.
 func TestTypedFind_ScanErr(t *testing.T) {
 	ch, _ := covFaultNotes(t)
 	covFault.set(func(c *covFaults) { c.nextErrOn = "title" })
@@ -166,7 +166,7 @@ func TestTypedFind_ScanErr(t *testing.T) {
 	}
 }
 
-// typed_query.go:106 — Find bad include name (via First, which calls Find).
+// typed_query.go:106: Find bad include name (via First, which calls Find).
 func TestTypedFirst_BadInclude(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
 	type post struct {

@@ -14,7 +14,7 @@ import (
 
 // "Install this OUTERMOST" was a contract enforced by nothing. Installed inside
 // an authenticator, the header deletions hit an already-spent request while the
-// values that authenticator derived sit on the context out of reach — an embed
+// values that authenticator derived sit on the context out of reach: an embed
 // running as the grant's subject with the COOKIE user's tenant, which is tenant
 // isolation off.
 func TestMiddlewareRefusesToRunAfterAnAuthenticator(t *testing.T) {
@@ -82,7 +82,7 @@ func TestGrantResponsesAreNotCacheable(t *testing.T) {
 	}
 }
 
-// Ordinary traffic must not be tarred with the embed response headers — that
+// Ordinary traffic must not be tarred with the embed response headers. That
 // would silently disable caching for the whole app.
 func TestOrdinaryRequestsKeepTheirCacheability(t *testing.T) {
 	h := middlewareHost(t)
@@ -100,11 +100,11 @@ func TestOrdinaryRequestsKeepTheirCacheability(t *testing.T) {
 }
 
 // Verification happens once, at entry. A handler that then holds the request
-// open — an SSE stream, a long poll — outlives the credential that authorized
+// open, an SSE stream or a long poll, outlives the credential that authorized
 // it, and the deadline is the whole answer to "this token lives in a page the
 // app does not control".
 func TestGrantExpiryBoundsTheRequestContext(t *testing.T) {
-	// Long enough that the grant cannot expire between minting and use — a
+	// Long enough that the grant cannot expire between minting and use: a
 	// tighter TTL made this test flake by 401ing before the handler ran, which
 	// looked exactly like the bug it is meant to catch. Short enough that the
 	// assertion below is still specific.

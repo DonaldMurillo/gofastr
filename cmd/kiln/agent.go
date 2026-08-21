@@ -32,7 +32,7 @@ func runAgent(args []string) int {
 	skillPath, err := installSkill()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[kiln] install skill: %v\n", err)
-		// non-fatal — OMP still runs, just without the framework skill
+		// non-fatal; OMP still runs, just without the framework skill
 	}
 
 	ompBin, err := exec.LookPath("omp")

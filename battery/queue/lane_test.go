@@ -28,7 +28,7 @@ func newSQLiteDB(t *testing.T) *sql.DB {
 // ============================================================================
 // THE starvation test: a dedicated lane worker processes an urgent job while
 // every shared worker is saturated by a long-running bulk handler. Determinism
-// comes from a "bulk started" signal + a release gate — no sleeps on the
+// comes from a "bulk started" signal + a release gate, no sleeps on the
 // critical path, so it cannot flake under -race.
 // ============================================================================
 
@@ -65,7 +65,7 @@ func TestLaneWorkersBeatBulkSaturation(t *testing.T) {
 	<-bulkStarted
 
 	// Now enqueue an urgent job in the reserved "high" lane. Priority alone
-	// could not save it — the shared worker is busy and cannot be preempted.
+	// could not save it, the shared worker is busy and cannot be preempted.
 	// Only the dedicated lane worker can claim it.
 	if err := q.Enqueue(ctx, Job{Type: "urgent", Lane: "high"}); err != nil {
 		t.Fatalf("enqueue urgent: %v", err)
@@ -185,7 +185,7 @@ func TestDBQueueLaneRoundTrip(t *testing.T) {
 func TestDBQueueLaneColumnMigration(t *testing.T) {
 	db := newSQLiteDB(t)
 	// Create the table by hand with the schema that shipped BEFORE lane
-	// isolation — no lane column at all.
+	// isolation, no lane column at all.
 	oldSchema := `CREATE TABLE queue_jobs (
 		id            TEXT PRIMARY KEY,
 		type          TEXT NOT NULL,
@@ -222,7 +222,7 @@ func TestDBQueueLaneColumnMigration(t *testing.T) {
 		t.Fatalf("lane round-trip after migration: got %q want high", job.Lane)
 	}
 
-	// Verify the column is actually present in the schema (not just tolerated).
+	// Verify the column is actually present in the schema (not merely tolerated).
 	var colName string
 	err = db.QueryRow("SELECT name FROM pragma_table_info('queue_jobs') WHERE name='lane'").Scan(&colName)
 	if err != nil {

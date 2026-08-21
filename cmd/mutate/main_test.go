@@ -100,7 +100,7 @@ func TestClassifyRefusesAZeroExitThatRanNoTests(t *testing.T) {
 }
 
 // writeVerified guards the three ways a mutation run can silently prove
-// nothing. Each check is invisible when it fails — the tests simply pass — so
+// nothing. Each check is invisible when it fails, the tests simply pass, so
 // each needs its own case.
 func TestWriteVerifiedCatchesEveryWayAMutationCanBeAFiction(t *testing.T) {
 	dir := t.TempDir()
@@ -148,7 +148,7 @@ func TestWriteVerifiedCatchesEveryWayAMutationCanBeAFiction(t *testing.T) {
 	})
 }
 
-// restore must put the file back byte for byte — the tool writes mutants into
+// restore must put the file back byte for byte. The tool writes mutants into
 // the real source tree, so a restore that drifts corrupts the repository.
 func TestRestoreReturnsTheFileExactly(t *testing.T) {
 	dir := t.TempDir()
@@ -172,8 +172,8 @@ func TestRestoreReturnsTheFileExactly(t *testing.T) {
 
 // The third verdict bug in this tool's history, and the subtlest: the BROKEN
 // arm scanned the whole `go test` stream for compiler-ish words, so a package
-// whose tests legitimately LOG the words "syntax error" — every package that
-// exercises a database error path — had its genuinely caught mutants reported
+// whose tests legitimately LOG the words "syntax error", every package that
+// exercises a database error path, had its genuinely caught mutants reported
 // as BROKEN. It only showed up on full-package runs; -run narrowing hid it,
 // which is how it survived a self-audit.
 func TestClassifyIsNotFooledByApplicationLogOutput(t *testing.T) {
@@ -252,7 +252,7 @@ func TestIsBuildFailureKeysOnStructure(t *testing.T) {
 
 // The signal handler restores every mutated file and exits. Marking the run as
 // stopping BEFORE restoring is what stops a write already in flight from
-// landing afterwards — the mutex made the two data-race-free but did not order
+// landing afterwards. The mutex made the two data-race-free but did not order
 // them against the filesystem, so a restore could be overwritten by the write
 // it was racing and the process would exit with the mutant on disk.
 func TestRestoreSetRefusesNewMutantsOnceStopping(t *testing.T) {

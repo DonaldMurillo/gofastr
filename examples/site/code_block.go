@@ -10,7 +10,7 @@ package main
 // pixel-accurate control over which identifiers are styled as `tk-fn` (the
 // function-call call sites) vs `tk-type` (`framework.Config`, etc.). A
 // generic AST highlighter would mis-bucket those by Go's grammar. The blocks
-// are short — the trade-off is fine. The token palette (.tk-*) lives in
+// are short, the trade-off is fine. The token palette (.tk-*) lives in
 // styles.go because it is intentionally site-specific.
 //
 // All token helpers escape user-supplied strings via render.Text. Literals
@@ -25,7 +25,7 @@ import (
 )
 
 // codeBlock renders the hand-tokenized lines through the framework's
-// ui.CodeBlock — the framework owns the chrome and the line-number gutter; the
+// ui.CodeBlock, the framework owns the chrome and the line-number gutter; the
 // site only supplies the Go token markup (see kw/fn_/… and ln below).
 func codeBlock(filename string, lines []render.HTML) render.HTML {
 	return ui.CodeBlock(ui.CodeBlockConfig{
@@ -38,8 +38,8 @@ func codeBlock(filename string, lines []render.HTML) render.HTML {
 
 // codeBlockScroll renders a raw source file (highlighted via the framework's
 // generic tokenizer) in a framed, copyable, internally-scrolling block. Used
-// for showing a long blueprint file in full — e.g. the Meridian gofastr.yml on
-// /examples — without it dominating the page.
+// for showing a long blueprint file in full, e.g. the Meridian gofastr.yml on
+// /examples, without it dominating the page.
 func codeBlockScroll(filename, code, lang string) render.HTML {
 	return ui.CodeBlock(ui.CodeBlockConfig{
 		Filename:    filename,
@@ -75,7 +75,7 @@ func com(s string) render.HTML  { return render.Tag("span", attrClass("tk-com"),
 func attrClass(c string) map[string]string { return map[string]string{"class": c} }
 
 // itoa avoids a strconv import for the few digits we render. Three digits
-// max — code blocks past 999 lines belong on a different page anyway.
+// max, code blocks past 999 lines belong on a different page anyway.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

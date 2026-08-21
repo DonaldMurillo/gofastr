@@ -1,4 +1,4 @@
-// RangeSlider runtime module — keeps the min thumb ≤ max thumb on
+// RangeSlider runtime module, keeps the min thumb ≤ max thumb on
 // every input event and mirrors "lo – hi" into the optional <output>
 // next to the label.
 //

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The reference vector from https://blurha.sh — a 4×3-component hash.
+// The reference vector from https://blurha.sh, a 4×3-component hash.
 const refHash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
 
 func TestDecodeBlurHashRefVector(t *testing.T) {
@@ -18,7 +18,7 @@ func TestDecodeBlurHashRefVector(t *testing.T) {
 	if b.Dx() != 32 || b.Dy() != 32 {
 		t.Fatalf("dims = %dx%d, want 32x32", b.Dx(), b.Dy())
 	}
-	// Every pixel must be fully opaque and in range — a decoded blur has
+	// Every pixel must be fully opaque and in range. A decoded blur has
 	// no transparency.
 	for y := 0; y < b.Dy(); y++ {
 		for x := 0; x < b.Dx(); x++ {
@@ -98,7 +98,7 @@ func TestDecodeBlurHashPunchIncreasesContrast(t *testing.T) {
 }
 
 func TestDecodeBlurHashRejectsMalformed(t *testing.T) {
-	// A hash arrives from a DB column an upload wrote — it is untrusted
+	// A hash arrives from a DB column an upload wrote. It is untrusted
 	// input and every rejection must happen before any allocation.
 	cases := []struct{ name, hash string }{
 		{"empty", ""},
@@ -141,8 +141,8 @@ func TestDecodeBlurHashDefaultsDims(t *testing.T) {
 	}
 }
 
-// The decoded value must stay chainable with the rest of the pipeline —
-// that is the whole reason it returns *Image rather than raw pixels.
+// The decoded value must stay chainable with the rest of the pipeline.
+// That is the whole reason it returns *Image rather than raw pixels.
 func TestDecodeBlurHashComposesWithEncoders(t *testing.T) {
 	img, err := DecodeBlurHash(refHash, BlurHashRenderConfig{Width: 16, Height: 16})
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 //
 // Composite input wrapper that prepends and/or appends decorative
 // content (text, icons, currency symbols, units) to a core input
-// element. Pure CSS — no runtime JS needed.
+// element. Pure CSS, no runtime JS needed.
 
 // InputGroupConfig configures an InputGroup.
 type InputGroupConfig struct {

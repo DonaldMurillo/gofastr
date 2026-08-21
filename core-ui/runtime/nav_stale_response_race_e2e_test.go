@@ -17,7 +17,7 @@ import (
 // AFTER B's must leave the DOM, currentPath, and URL belonging to B.
 //
 // Without a generation guard, loadPage() swaps <main> to A's content when
-// A's slow response lands last — while the URL bar already says /b and
+// A's slow response lands last, while the URL bar already says /b and
 // currentPath is /b. The user is stranded on A's content; clicking the B
 // link again no-ops because fullPath === currentPath.
 func TestNav_RejectsStaleResponseRace(t *testing.T) {
@@ -36,7 +36,7 @@ func TestNav_RejectsStaleResponseRace(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
-	// /a is the SLOW response — it blocks until the test releases it, so
+	// /a is the SLOW response, it blocks until the test releases it, so
 	// /b's fetch is guaranteed to complete first.
 	mux.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
 		aServed++
@@ -75,7 +75,7 @@ func TestNav_RejectsStaleResponseRace(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		// Click A — kicks off the SLOW /a fetch.
+		// Click A, kicks off the SLOW /a fetch.
 		chromedp.Click(`#goA`, chromedp.ByID),
 		// Wait until the /a handler is mid-flight, then click B so B's
 		// fetch overlaps and resolves first.

@@ -4,11 +4,11 @@ import "net/http"
 
 // WhereClause is an editable SQL predicate that BeforeList / BeforeGet
 // hooks can append to scope read queries (e.g. inject WHERE user_id = $1).
-// CRUD applies appended clauses to the data query — and, for List, also
-// to the count query — so totals reflect the filtered result.
+// CRUD applies appended clauses to the data query, and, for List, also
+// to the count query, so totals reflect the filtered result.
 //
 // SECURITY: SQL is appended VERBATIM to the query. Never concatenate
-// caller-controlled values into SQL — always use placeholders ($1, $2,
+// caller-controlled values into SQL, always use placeholders ($1, $2,
 // …) and pass values as Args. The framework's query builder takes care
 // of parameter binding; user code that bypasses this is the source of
 // every SQL-injection bug a hook can introduce.
@@ -41,14 +41,14 @@ type WhereClause struct {
 // Masking here covers every HTTP path that returns the row: List, Get,
 // keyset pages, ?include= children (via the child entity's own hooks),
 // _events deliveries, and create/update response bodies. Register the same
-// mask on AfterGet too — each path runs the hook matching the shape it
+// mask on AfterGet too, each path runs the hook matching the shape it
 // serves, so a to-one ?include= runs the child's AfterGet, the way its own
 // GET /child/{id} route does.
 //
 // The in-process Go API returns stored values unless the caller passes
 // crud.WithReadHooks, so read-modify-write still works. On an ?include=
-// payload a hook may not change the row count — each row is already keyed to
-// its parent — though sorting Results is harmless there (rows are matched by
+// payload a hook may not change the row count, each row is already keyed to
+// its parent, though sorting Results is harmless there (rows are matched by
 // primary key, so order is free; keep the id when projecting).
 // ?stream=true refuses rather than bypass.
 // A value that must never leave the server raw belongs in a Hidden field,
@@ -64,7 +64,7 @@ type ListPayload struct {
 // one per argument, in order: when the clause is composed into the final
 // query its placeholders are renumbered positionally (by encounter), so
 // pass exactly one argument per placeholder token and do NOT reuse a number
-// as a back-reference to an earlier bind — write the value twice if you need
+// as a back-reference to an earlier bind, write the value twice if you need
 // it twice. The clause is parenthesised when composed, so OR/AND inside it
 // cannot leak past framework-injected scopes, and a $N appearing inside a
 // single-quoted string literal is treated as data and left untouched.

@@ -61,7 +61,7 @@ func TestCarouselDotsByDefault(t *testing.T) {
 			{Content: render.Text("a")}, {Content: render.Text("b")}, {Content: render.Text("c")},
 		},
 	}))
-	// Match the dot CLASS literal — the container class
+	// Match the dot CLASS literal: the container class
 	// "ui-carousel__dots" shares the substring otherwise.
 	if c := strings.Count(h, `class="ui-carousel__dot"`); c != 3 {
 		t.Errorf("expected 3 pagination dots, got %d:\n%s", c, h)
@@ -183,7 +183,7 @@ func TestCarouselVirtualScrollClampsWindow(t *testing.T) {
 }
 
 func TestCarouselConcurrentRenderUniqueIDs(t *testing.T) {
-	// carouselSeqCounter was a plain int — racy under concurrent renders
+	// carouselSeqCounter was a plain int, racy under concurrent renders
 	// (`go test -race`). It also collided with autoID's namespace. Run
 	// N parallel renders and assert every emitted id="ui-carousel-…" is
 	// unique.

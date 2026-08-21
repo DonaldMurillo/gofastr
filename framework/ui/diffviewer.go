@@ -15,8 +15,8 @@ import (
 // Line-by-line diff renderer for unified-format input (the same kind
 // `diff -u` / `git diff` produces). Two modes:
 //
-//   - DiffUnified (default) — single column; +/- prefix per line
-//   - DiffSplit             — two columns: removed on left, added on right
+//   - DiffUnified (default):  single column; +/- prefix per line
+//   - DiffSplit:              two columns: removed on left, added on right
 //
 // Input is the raw diff body (no headers needed). The viewer parses
 // it line by line.
@@ -55,7 +55,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 	case DiffUnified, DiffSplit:
 	default:
 		panic("ui: DiffViewer unknown Mode " + string(cfg.Mode) +
-			` — pick one of: "" (unified), split`)
+			`. Pick one of: "" (unified), split`)
 	}
 
 	cls := "ui-diff-viewer"
@@ -120,7 +120,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 					i++
 					continue
 				}
-				// Context line — flush buffered, emit context in both cols.
+				// Context line: flush buffered, emit context in both cols.
 				flushSplit(&sb, removed, added)
 				removed, added = nil, nil
 				ctx := cur

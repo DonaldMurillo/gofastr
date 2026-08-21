@@ -23,7 +23,7 @@ import (
 const RecommendedMinPasswordBytes = 8
 
 // ErrPasswordEmpty is returned by HashPassword when the input is the
-// empty string — a blank field at signup would be silently accepted
+// empty string, a blank field at signup would be silently accepted
 // otherwise, and every login attempt with no password would match.
 var ErrPasswordEmpty = errors.New("auth: password is empty")
 
@@ -33,7 +33,7 @@ var ErrPasswordTooShort = errors.New("auth: password too short")
 
 // PasswordHasher hashes and verifies passwords. The package ships two
 // implementations: [BcryptHasher] (the default, what HashPassword has always
-// used) and [Argon2Hasher] (argon2id — the modern memory-hard alternative).
+// used) and [Argon2Hasher] (argon2id, the modern memory-hard alternative).
 //
 // To change the algorithm used for NEW passwords, set [DefaultHasher] before
 // auth.Init. Verification auto-detects the stored hash's format from its PHC
@@ -53,7 +53,7 @@ var DefaultHasher PasswordHasher = BcryptHasher{}
 // default).
 //
 // The empty string is rejected with ErrPasswordEmpty. No other length
-// policy is enforced — call [ValidatePasswordStrength] from the registration
+// policy is enforced, call [ValidatePasswordStrength] from the registration
 // flow when you want to require a minimum length.
 //
 // Verification is algorithm-agnostic: [CheckPassword] detects the stored
@@ -82,8 +82,8 @@ func ValidatePasswordStrength(password string) error {
 }
 
 // CheckPassword compares a plaintext password against a stored hash and returns
-// true if it matches. It auto-detects the algorithm from the hash's PHC prefix
-// — "$argon2id$" dispatches to argon2id, anything else to bcrypt — so a single
+// true if it matches. It auto-detects the algorithm from the hash's PHC prefix.
+// "$argon2id$" dispatches to argon2id, anything else to bcrypt, so a single
 // user table can hold a mix during a gradual migration.
 //
 // For bcrypt hashes, the same SHA-256 pre-hash applied in [BcryptHasher.Hash]
@@ -171,7 +171,7 @@ func (h Argon2Hasher) Hash(password string) (string, error) {
 
 // Verify parses the PHC string, re-derives the key with the encoded salt and
 // parameters, and compares in constant time. A malformed string returns false
-// (never an error) — a verify call must never distinguish "bad hash" from
+// (never an error), a verify call must never distinguish "bad hash" from
 // "wrong password" in control flow.
 func (h Argon2Hasher) Verify(password, hash string) bool {
 	p, ok := parseArgon2PHC(hash)
@@ -209,7 +209,7 @@ type argon2PHC struct {
 
 // Sane upper bounds on parameters accepted from a STORED hash. A malicious or
 // corrupted hash could otherwise direct argon2.IDKey to allocate gigabytes
-// (memory is KiB) or spin for unbounded CPU (time) on every verify — a per-login
+// (memory is KiB) or spin for unbounded CPU (time) on every verify, a per-login
 // DoS. Legitimate hashes from this hasher (defaults 64 MiB / t=3 / p=2) sit far
 // below these; anything larger is not a plausible password hash.
 const (
@@ -226,7 +226,7 @@ func parseArgon2PHC(hash string) (argon2PHC, bool) {
 		return argon2PHC{}, false
 	}
 	// parts[2] is "v=19"; only argon2id v19 exists, so it is not parsed
-	// further — but it must be present and well-formed.
+	// further, but it must be present and well-formed.
 	if !strings.HasPrefix(parts[2], "v=") {
 		return argon2PHC{}, false
 	}
@@ -260,7 +260,7 @@ func parseArgon2PHC(hash string) (argon2PHC, bool) {
 	if p.memory == 0 || p.time == 0 || p.threads == 0 || len(salt) == 0 || len(key) == 0 {
 		return argon2PHC{}, false
 	}
-	// Reject resource-exhaustion parameters BEFORE IDKey would honour them —
+	// Reject resource-exhaustion parameters BEFORE IDKey would honour them,
 	// a hostile stored hash must not allocate gigabytes or spin on verify.
 	if p.memory > maxArgon2MemoryKiB || p.time > maxArgon2Time || p.threads > maxArgon2Threads || uint32(len(key)) > maxArgon2KeyLen {
 		return argon2PHC{}, false
@@ -278,19 +278,19 @@ func parseArgon2PHC(hash string) (argon2PHC, bool) {
 //
 // NOTE: this dummy is bcrypt-shaped. If you switch DefaultHasher to
 // Argon2Hasher, real-user logins run argon2 (~tens of ms) while the
-// unknown-user path still runs bcrypt against this dummy — re-aligning the
+// unknown-user path still runs bcrypt against this dummy, re-aligning the
 // dummy to the configured hasher's cost is a follow-up to preserve exact
 // anti-enumeration timing under a full algorithm switch.
 var dummyBcryptHash string
 
 // passwordPlaceholderHash is stored as the password_hash for users created
 // via OAuth or magic-link (they never log in via password). It's a real
-// bcrypt hash of an unguessable random secret — recording it once at init
+// bcrypt hash of an unguessable random secret, recording it once at init
 // avoids a per-signup ~50ms bcrypt + 64-byte allocation that previously
 // happened for every first-time auto-create.
 //
 // Because the input is random and discarded, no password the user types
-// can match — CheckPassword always returns false against this hash.
+// can match. CheckPassword always returns false against this hash.
 // Because the hash IS a real bcrypt structure, CheckPassword still spends
 // real bcrypt time on it, preserving timing safety on the login path.
 var passwordPlaceholderHash string

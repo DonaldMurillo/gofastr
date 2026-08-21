@@ -19,7 +19,7 @@ type Migration struct {
 	Down    string // SQL to roll back the migration
 
 	// Group is the migration group this migration belongs to. An empty value
-	// means the DEFAULT group — the single flat, version-ordered list every
+	// means the DEFAULT group: the single flat, version-ordered list every
 	// existing app uses. A non-empty group lets an optional feature or module
 	// own an independent migration stream that can be applied selectively
 	// (e.g. apply the knowledge module's migrations only when that module is
@@ -28,7 +28,7 @@ type Migration struct {
 	Group string
 
 	// NoTransaction runs Up/Down WITHOUT wrapping them in a transaction. The
-	// escape hatch for statements that cannot run inside a transaction —
+	// escape hatch for statements that cannot run inside a transaction:
 	// CREATE INDEX CONCURRENTLY, VACUUM, CREATE DATABASE on Postgres. The cost
 	// is that a failure mid-statement leaves the database partially migrated:
 	// the runner records the migration dirty before running it and only clears
@@ -119,7 +119,7 @@ const defaultGroupAlias = "default"
 
 // normalizeGroupSelection maps the "default" alias to the empty (default)
 // group in a selection, so `--group=default` / Up(ctx, "default") address
-// the default group — otherwise the CLI has no syntax for it at all.
+// the default group, otherwise the CLI has no syntax for it at all.
 func normalizeGroupSelection(groups []string) []string {
 	out := make([]string, len(groups))
 	for i, g := range groups {
@@ -148,14 +148,14 @@ func groupDisplayName(g string) string {
 }
 
 // validateGroupSelection checks that every group name in the selection is
-// syntactically valid and — when mustBeRegistered is true — matches at least
+// syntactically valid and, when mustBeRegistered is true, matches at least
 // one registered migration's group. An empty selection (no args) means "all
 // groups" and always passes. An unknown group (e.g. a typo) returns a
 // descriptive error naming the known groups, instead of silently no-op-ing.
 //
 // Up and Down require registration: applying or rolling back needs the
 // migration's SQL, and a typo silently doing nothing is the failure mode
-// this guards. Status passes mustBeRegistered=false — it is a read, and a
+// this guards. Status passes mustBeRegistered=false. It is a read, and a
 // de-registered (disabled) module's rows are still legitimately inspectable
 // (an unknown group then simply shows an empty status). Force skips this
 // entirely: it is the escape hatch for reconciling exactly the rows no
@@ -187,7 +187,7 @@ func (m *Migrator) validateGroupSelection(groups []string, mustBeRegistered bool
 // Register adds a migration, rejecting an invalid group name or a duplicate
 // (Group, Version) pair. Migrations are kept sorted by (Version, Group) so the
 // pending list is already in apply order: within a group versions ascend, and
-// when multiple groups run together the tiebreak is group name — deterministic
+// when multiple groups run together the tiebreak is group name, deterministic
 // and byte-identical to the pre-group sort when everything is in the default
 // group. A returned error does not mutate the migrator.
 func (m *Migrator) Register(mig Migration) error {

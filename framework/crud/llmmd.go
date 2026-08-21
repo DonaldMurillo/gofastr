@@ -14,7 +14,7 @@ import (
 
 // EntityLLMMD generates an LLM-friendly markdown document describing all
 // CRUD endpoints for a single entity. The output is designed to be
-// immediately useful as context for an LLM agent — concise, structured,
+// immediately useful as context for an LLM agent, concise, structured,
 // and example-rich.
 //
 // The document covers:
@@ -106,7 +106,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 		// Show scoped filter example if HasMany/ManyToMany
 		for _, rel := range ent.Config.Relations {
 			if rel.Type == entity.RelHasMany || rel.Type == entity.RelManyToMany {
-				fmt.Fprintf(&b, "- `?include=%s(status=published)` — scoped eager-load\n", rel.Name)
+				fmt.Fprintf(&b, "- `?include=%s(status=published)`: scoped eager-load\n", rel.Name)
 				break
 			}
 		}
@@ -116,7 +116,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 	// --- Endpoints ---
 	b.WriteString("## Endpoints\n\n")
 
-	// GET /{table} — List
+	// GET /{table}: List
 	fmt.Fprintf(&b, "### GET %s\n\n", resourcePath)
 	b.WriteString("List records with optional filtering, sorting, and pagination.\n\n")
 	b.WriteString("**Query parameters:**\n\n")
@@ -220,14 +220,14 @@ func EntityLLMMD(ent *entity.Entity) string {
 	fmt.Fprintf(&b, "### DELETE %s/{id}\n\n", resourcePath)
 	b.WriteString("Delete a record.\n\n")
 	if ent.Config.Scope.SoftDelete {
-		b.WriteString("**Note:** This entity uses soft-delete — sets `deleted_at` instead of removing the row.\n\n")
+		b.WriteString("**Note:** This entity uses soft-delete: sets `deleted_at` instead of removing the row.\n\n")
 	}
 	b.WriteString("**Response:** `204` No Content.\n")
 	b.WriteString("**Error:** `404` not found.\n\n")
 
 	// Batch endpoints
 	fmt.Fprintf(&b, "### POST %s/_batch\n\n", resourcePath)
-	b.WriteString("Batch create (atomic — all-or-nothing).\n\n")
+	b.WriteString("Batch create (atomic, all-or-nothing).\n\n")
 	b.WriteString("```json\n{\n  \"items\": [ { ... }, { ... } ]\n}\n```\n")
 	b.WriteString(fmt.Sprintf("Maximum %d items per batch.\n\n", MaxBatchSize))
 
@@ -276,7 +276,7 @@ func EntityLLMMD(ent *entity.Entity) string {
 
 // RegistryLLMMD generates a top-level LLM-friendly markdown index that
 // lists every registered entity with a link to its detailed llm.md page. It
-// lists every entity — callers that serve this to a request (the /api/llm.md
+// lists every entity, callers that serve this to a request (the /api/llm.md
 // index) MUST filter per request via [registryLLMMD] so the index does not
 // disclose entities the caller cannot read.
 func RegistryLLMMD(registry entity.Registry, appName string) string {
@@ -294,7 +294,7 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 	if title == "" {
 		title = "API"
 	}
-	fmt.Fprintf(&b, "# %s — API Reference\n\n", title)
+	fmt.Fprintf(&b, "# %s: API Reference\n\n", title)
 	b.WriteString("Auto-generated LLM-friendly documentation for all registered resources.\n\n")
 
 	entities := registry.AllSorted()
@@ -345,8 +345,8 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 	b.WriteString("### Sorting\n")
 	b.WriteString("Use `?sort=field` (ascending) or `?sort=-field` (descending).\n\n")
 	b.WriteString("### Pagination\n")
-	b.WriteString("- **Offset:** `?page=1&limit=20` — returns `{data, total, page, perPage, totalPages}`\n")
-	b.WriteString("- **Cursor:** `?cursor=xxx&limit=20` — returns `{data, cursor, hasMore, total}`\n\n")
+	b.WriteString("- **Offset:** `?page=1&limit=20`: returns `{data, total, page, perPage, totalPages}`\n")
+	b.WriteString("- **Cursor:** `?cursor=xxx&limit=20`: returns `{data, cursor, hasMore, total}`\n\n")
 	b.WriteString("### Includes\n")
 	b.WriteString("Eager-load relations: `?include=author,comments`\n")
 	b.WriteString("Nested includes: `?include=author.profile`\n")
@@ -360,8 +360,8 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 
 // LLMMDHandler returns an http.Handler that serves the LLM-friendly markdown
 // for a single entity. The schema-disclosure surface is broad (every field,
-// validator, relation), so the handler requires an authenticated context
-// — the framework's auth chain must have set a user before this fires.
+// validator, relation), so the handler requires an authenticated context:
+// the framework's auth chain must have set a user before this fires.
 func LLMMDHandler(ent *entity.Entity) http.Handler {
 	md := EntityLLMMD(ent)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +377,7 @@ func LLMMDHandler(ent *entity.Entity) http.Handler {
 }
 
 // LLMMDHandlerFor is [LLMMDHandler] with the entity's own access gate
-// applied — the form the CRUD routes register.
+// applied, the form the CRUD routes register.
 //
 // LLMMDHandler checks only for a session, while List runs the full scope
 // chain, so an authenticated caller with no `orders:read` grant got 403 on the
@@ -402,7 +402,7 @@ func LLMMDHandlerFor(ch *CrudHandler) http.Handler {
 // for the same reason as [LLMMDHandler].
 //
 // The index is rendered per request, filtered to the entities THIS caller
-// can list — the same read-scope predicate each entity's List route runs
+// can list, the same read-scope predicate each entity's List route runs
 // (see canListEntity). Serving a construction-time-precomputed document
 // instead disclosed every entity's name, base path, endpoint count and
 // soft-delete/multi-tenant flags to an authenticated caller who would get
@@ -426,8 +426,8 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string) http.Handler
 
 // canListEntity reports whether ctx passes every read-scope gate that the
 // entity's List route runs, as a boolean (no HTTP response). It reuses the
-// SAME in-process predicates List's requireScope delegates to —
-// requireOwnerContext, requireTenantContext and CanRead — so the index
+// SAME in-process predicates List's requireScope delegates to,
+// requireOwnerContext, requireTenantContext and CanRead, so the index
 // filter cannot drift from the read path. A caller who would receive 401/403
 // on an entity's rows is hidden from its index entry too. The baseline
 // session gate (requireAuthenticated) is enforced once at the handler entry,

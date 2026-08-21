@@ -110,7 +110,7 @@ func TestTableWithAlignment(t *testing.T) {
 	if !strings.Contains(got, "<table>") || !strings.Contains(got, "<thead>") || !strings.Contains(got, "<tbody>") {
 		t.Errorf("table missing: %s", got)
 	}
-	// Class-based alignment (CSP-safe) — strict-CSP hosts block inline
+	// Class-based alignment (CSP-safe): strict-CSP hosts block inline
 	// style attributes; the rendered output carries .md-align-<dir>
 	// instead, mapped to text-align by the host stylesheet.
 	if !strings.Contains(got, `class="md-align-left"`) || !strings.Contains(got, `class="md-align-right"`) {

@@ -12,7 +12,7 @@ import (
 // Font loading belongs here rather than in each app for the reason every
 // other styling decision does: a generator or an app that writes its own
 // `@font-face` string owns a second styling surface, and the two drift.
-// It is also the shape `gofastr verify` flags (GOFASTR1801) — this type
+// It is also the shape `gofastr verify` flags (GOFASTR1801), this type
 // is the upstream primitive that finding asks for.
 type WebFont struct {
 	// Family is the CSS font-family name, e.g. "Bricolage Grotesque".
@@ -26,7 +26,7 @@ type WebFont struct {
 	Weight string
 	// Style is the CSS font-style. Empty means "normal".
 	Style string
-	// Display is the CSS font-display. Empty means "swap" — text paints
+	// Display is the CSS font-display. Empty means "swap", text paints
 	// immediately in a fallback and swaps when the font arrives, which is
 	// the right default for body copy and headings alike.
 	Display string
@@ -65,7 +65,7 @@ func FontFaceCSS(dir string, fonts ...WebFont) string {
 }
 
 // FontFamilies lists the distinct, non-empty families in declaration
-// order — for building the `--font-*` token values that reference them.
+// order, for building the `--font-*` token values that reference them.
 func FontFamilies(fonts ...WebFont) []string {
 	var out []string
 	seen := map[string]bool{}

@@ -200,7 +200,7 @@ func TestLogSenderWithCCandBCC(t *testing.T) {
 	if !strings.Contains(output, "cc1@example.com") {
 		t.Error("expected output to contain CC recipients")
 	}
-	// BCC must NOT appear — contradicts the old behaviour but matches the
+	// BCC must NOT appear, contradicts the old behaviour but matches the
 	// security contract in TestLogSender_DoesNotExposeBCCRecipients.
 	if strings.Contains(output, "bcc@example.com") {
 		t.Error("LogSender must not expose BCC recipients in logs")
@@ -421,7 +421,7 @@ func TestSMTPConfigValidation(t *testing.T) {
 				Host:     "smtp.example.com",
 				Port:     587,
 				Username: "user@example.com",
-				Password: "password",
+				Password: "password", // not-a-secret: dummy SMTP fixture
 				UseTLS:   false,
 			},
 			wantErr: false,
@@ -431,7 +431,7 @@ func TestSMTPConfigValidation(t *testing.T) {
 			config: SMTPConfig{
 				Port:     587,
 				Username: "user@example.com",
-				Password: "password",
+				Password: "password", // not-a-secret: dummy SMTP fixture
 			},
 			wantErr: true,
 		},

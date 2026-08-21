@@ -19,7 +19,7 @@ type Component interface {
 // loaded into struct fields by Load(ctx).
 //
 // The framework prefers RenderCtx over Render when both exist.
-// ContextComponent intentionally does NOT embed Component — a type
+// ContextComponent intentionally does NOT embed Component, a type
 // that only wants the ctx-aware shape can satisfy Component via the
 // ContextOnly{} embed below, avoiding the
 // `func (c) Render() HTML { return c.RenderCtx(context.Background()) }`
@@ -40,7 +40,7 @@ type ContextComponent interface {
 //	}
 //	func (h *Home) RenderCtx(ctx context.Context) render.HTML { ... }
 //
-// No need to write a Render() stub on Home — ContextOnly provides one.
+// No need to write a Render() stub on Home, ContextOnly provides one.
 type ContextOnly struct{}
 
 // Render satisfies the Component interface. In practice it is never

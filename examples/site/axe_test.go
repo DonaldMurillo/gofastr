@@ -31,7 +31,7 @@ import (
 
 // axeComponentsAllowlist names axe-core rule IDs skipped ONLY on
 // /components/* gallery pages. These are demo CONSTRUCTS (isolated components
-// stacked on one page), not real-app a11y debt — and they do NOT apply
+// stacked on one page), not real-app a11y debt, and they do NOT apply
 // anywhere else. Content, docs, and static pages scan with an EMPTY allowlist
 // so a real heading-order / landmark defect there actually surfaces instead of
 // being silently dropped by a gallery-scoped rule.
@@ -45,23 +45,23 @@ var axeComponentsAllowlist = map[string]string{
 	// ui.AnchoredRail, and ui.StepRail deliberately render complementary
 	// landmarks (the framework's own tests mandate <aside role="complementary">
 	// for info callouts). On /components/<slug> demo pages they appear nested
-	// inside <main> rather than as a top-level region — a demo construct, not
+	// inside <main> rather than as a top-level region, a demo construct, not
 	// an app-structure barrier (the content stays reachable and labelled). A
 	// real app places one complementary region at the top level.
 	//
-	// NOTE: ui.Sidebar is NOT part of this justification — it renders a plain
+	// NOTE: ui.Sidebar is NOT part of this justification, it renders a plain
 	// <div>, not an <aside>, so it contributes no complementary landmark.
 	"landmark-complementary-is-top-level": "framework Callout/AnchoredRail/StepRail landmarks used inline in component demos, not as top-level regions",
 	// heading-order: the /components gallery shows each component in ISOLATION,
 	// so the component's own internal heading (Card heading <h3>, EmptyState
 	// title <h3>, Dropzone label <h3>) and nav-rail labels (<h6>) sit directly
 	// under the page <h1> with no intervening <h2>. In a real page the
-	// component lives inside a section <h2>, so the level doesn't skip — the
+	// component lives inside a section <h2>, so the level doesn't skip, the
 	// skip is a gallery construct, not a content-authoring defect.
 	"heading-order": "gallery shows components in isolation, so their internal headings sit directly under the page h1",
 }
 
-// axeIsComponentsPage reports whether path is a component-gallery demo page —
+// axeIsComponentsPage reports whether path is a component-gallery demo page,
 // the only place the gallery-construct allowlist + region disable apply.
 func axeIsComponentsPage(path string) bool {
 	return strings.HasPrefix(path, "/components/")
@@ -160,8 +160,8 @@ func runAxeMobileScheme(t *testing.T, browser context.Context, base, path, schem
 
 // axePages returns every /components/<slug> route (from the catalog) plus the
 // key static surfaces and EVERY registered /docs/<slug> page. Docs routes are
-// generated from flatDocs() in docs_catalog.go — the same source registerScreens
-// iterates to mount the routes — so a newly added doc is scanned automatically
+// generated from flatDocs() in docs_catalog.go, the same source registerScreens
+// iterates to mount the routes, so a newly added doc is scanned automatically
 // (no drift between "routes that exist" and "routes scanned"). /kiln is a
 // standalone marketing page, not a docs entry, so it is listed explicitly.
 //

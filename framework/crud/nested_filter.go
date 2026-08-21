@@ -42,7 +42,7 @@ type nestedFilter struct {
 	Value    string   // single-value ops (eq/gt/like/…)
 	Values   []string // OpIn: the full value set, emitted as one IN (...)
 	// isBool marks a filter on a Bool-typed target column so
-	// buildExistsSubquery binds a Go bool for true/false spellings —
+	// buildExistsSubquery binds a Go bool for true/false spellings,
 	// a raw string binds TEXT against SQLite's INTEGER storage and
 	// matches nothing (same coercion as filter.ParseFiltersValues).
 	isBool bool
@@ -61,8 +61,8 @@ type nestedFilter struct {
 	// table is the RESOLVED target's table name. Relation.Entity is the
 	// registry KEY (the entity name), and the two differ whenever a host
 	// declares Name != Table or registers a versioned entity. Every check this
-	// file performs — declared fields, Hidden/NoQuery, soft delete, the
-	// owner/tenant refusal — is made against the resolved target, so the SQL
+	// file performs, declared fields, Hidden/NoQuery, soft delete, the
+	// owner/tenant refusal, is made against the resolved target, so the SQL
 	// has to run against that same target's table or the validation describes
 	// one table while the query reads another. The eager path documents the
 	// identical contract (see eager.go, "The SELECT targets the entity's
@@ -82,7 +82,7 @@ type nestedFilter struct {
 //	?author_like.name=al         not supported
 //
 // Unknown relations and unknown fields on the target return an error so
-// the caller can map to 400 — silent ignoring would mask client typos.
+// the caller can map to 400, silent ignoring would mask client typos.
 func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
 	return parseNestedFiltersValues(r.URL.Query(), ent, registry)
 }
@@ -93,7 +93,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		relsByName[rel.Name] = rel
 	}
 
-	// filter.FilterSuffixes is the canonical operator-suffix table — reuse
+	// filter.FilterSuffixes is the canonical operator-suffix table, reuse
 	// it instead of rebuilding a local literal per call. Order is the same
 	// (longer suffixes first) so ?author.name_gte=v matches _gte not _gt.
 
@@ -132,7 +132,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 
 		// Validate the field against the target entity's schema.
 		//
-		// A Hidden column is treated as NOT declared — the identical error to
+		// A Hidden column is treated as NOT declared, the identical error to
 		// a nonexistent field, so the response can't distinguish hidden from
 		// absent. Otherwise a nested predicate (?author.password_hash_like=…)
 		// would resurrect exactly the value-disclosure oracle the flat-filter
@@ -144,7 +144,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		// check on two independent paths: resolution fails precisely when a
 		// name has several versions, so two versions of "users" disabled the
 		// Hidden check; and a relation pointing at a real table that no entity
-		// registers — auth_users is the documented case — dropped it too.
+		// registers, auth_users is the documented case, dropped it too.
 		// isSafeIdentifier gates the SHAPE of a name, not its membership, so
 		// either way ?author.password_hash_like=$2a$ reached SQL as a
 		// value-disclosure oracle. ResolveTarget also errors on a nil registry,
@@ -156,7 +156,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		// Match the column name OR the field's wire key. A client is told the
 		// field is called "content"; ?author.content=x must work for the same
 		// reason ?content=x does on the flat path. Hidden and NoQuery both win
-		// under BOTH names — resolving an alias past a refusal would make the
+		// under BOTH names, resolving an alias past a refusal would make the
 		// wire key a way around the guard.
 		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
@@ -182,11 +182,11 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		if op == filter.OpIn {
 			// Coalesce into ONE filter emitting `col IN (...)`. Splitting into
 			// separate AND-ed EXISTS made a to-one relation (BelongsTo/HasOne)
-			// unmatchable — a single related row can't equal every value — so
+			// unmatchable, a single related row can't equal every value, so
 			// `?author.name_in=a,b` silently returned nothing. One IN matches
 			// the top-level _in semantics, including the union across
 			// repeated keys (filter.SplitINValuesBounded) and the entry cap
-			// the flat path enforces — same cap, same error shape, so the
+			// the flat path enforces, same cap, same error shape, so the
 			// nested surface can't drive uncapped placeholders per request.
 			vals, total := filter.SplitINValuesBounded(values, filter.MaxINListEntries)
 			if total > filter.MaxINListEntries {
@@ -264,7 +264,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
 			if f.Name == field || (f.WireName != "" && f.WireName == field) {
-				// A Hidden target column is treated as not-declared —
+				// A Hidden target column is treated as not-declared,
 				// the same value-disclosure-oracle rejection the HTTP
 				// path applies in parseNestedFilters. Without this, a
 				// typed caller passing a partially user-influenced
@@ -300,7 +300,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 // applyNestedFilters invokes addWhere once per nestedFilter with an EXISTS
 // subquery. EXISTS avoids the row duplication that a plain JOIN would
 // introduce for HasMany / ManyToMany relations and works uniformly across
-// BelongsTo / HasOne too — same SQL pattern, no per-relation special-casing.
+// BelongsTo / HasOne too, same SQL pattern, no per-relation special-casing.
 //
 // addWhere mirrors the Where signature shared by QueryBuilder and
 // CountBuilder so a single call site can wire the same filter chain into
@@ -313,11 +313,11 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, par
 }
 
 // buildExistsSubquery returns the WHERE fragment for one nested filter.
-// Renumbering happens inside QueryBuilder.Build — the args are passed
+// Renumbering happens inside QueryBuilder.Build, the args are passed
 // through carry semantics that make $N adjustment correct downstream.
 //
 // The field name on the target relation comes from a URL query key
-// (?author.name=...) and is interpolated into the SQL directly — there
+// (?author.name=...) and is interpolated into the SQL directly, there
 // is no parameter placeholder for an identifier. We refuse anything
 // that doesn't look like a plain `[A-Za-z_][A-Za-z0-9_]*` identifier so
 // payloads like `name OR 1=1 --` can't smuggle SQL fragments through
@@ -328,7 +328,7 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, par
 // metadata, not request input, so they don't need the same gate.
 func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string, []any) {
 	rel := nf.Relation
-	// relTable, never rel.Entity — see nestedFilter.table.
+	// relTable, never rel.Entity. See nestedFilter.table.
 	relTable := nf.table
 	if relTable == "" {
 		relTable = rel.Entity
@@ -337,7 +337,7 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 	if !isSafeIdentifier(col) {
 		// "1 = 0" is an unconditionally-false predicate that lets the
 		// outer query still build but matches nothing. Better than
-		// returning an error here — buildExistsSubquery has no error
+		// returning an error here, buildExistsSubquery has no error
 		// channel and the parse layer normally catches unsafe names;
 		// this is the last-line defence.
 		return "1 = 0", nil
@@ -413,7 +413,7 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		predicate = scopeClause + " AND " + predicate
 	}
 
-	// Every other read surface hides soft-deleted rows — the routes via
+	// Every other read surface hides soft-deleted rows, the routes via
 	// ApplySoftDeleteFilter, the eager loaders via their softDeleteFilter
 	// argument. This subquery did not, so `?rel.field=` counted trashed rows
 	// and became a value oracle over data that GET /api/<entity>/{id} answers

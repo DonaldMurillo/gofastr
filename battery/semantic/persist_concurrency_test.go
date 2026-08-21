@@ -10,7 +10,7 @@ import (
 
 // snapDelayFlatStore wraps a FlatStore and, during Snapshot, signals once the
 // store copy is taken then sleeps to widen the copy→truncate window. Unlike a
-// channel-blocked store, the sleep completes on its own — so on the fixed build
+// channel-blocked store, the sleep completes on its own, so on the fixed build
 // (where Snapshot holds the index lock across the window) a concurrent Add
 // merely waits for the lock instead of deadlocking. On the buggy build the
 // window is unsynchronized, so a concurrent write slips in and is lost.
@@ -40,7 +40,7 @@ func (s *snapDelayFlatStore) LoadSnapshot(path string) error {
 
 // TestSnapshotVsConcurrentAddKeepsWrite adds a document in the window between
 // the snapshot's store copy and its WAL truncation, then reopens. The write
-// MUST survive replay — the snapshot and WAL truncation must bracket the same
+// MUST survive replay, the snapshot and WAL truncation must bracket the same
 // set of operations, not drop an in-flight one.
 func TestSnapshotVsConcurrentAddKeepsWrite(t *testing.T) {
 	ctx := context.Background()
@@ -71,7 +71,7 @@ func TestSnapshotVsConcurrentAddKeepsWrite(t *testing.T) {
 
 	// Add a document while the snapshot is parked in its window. On the buggy
 	// build its WAL entry is appended after the copy was taken, so the
-	// subsequent truncate drops it — and it is not in the snapshot either →
+	// subsequent truncate drops it, and it is not in the snapshot either →
 	// lost on replay.
 	if err := idx.Add(ctx, Document{ID: "racy", Text: "racy must survive"}); err != nil {
 		t.Fatalf("racy Add: %v", err)

@@ -1,8 +1,8 @@
 # Modules
 
 A **Module** is a Battery plus a manifest. Everything a module registers
-during `Init` — routes, entities, cron jobs, queue consumers, MCP tools —
-is **attributed** to the module, and a runtime **enable/disable** gate
+during `Init` is **attributed** to the module: routes, entities, cron
+jobs, queue consumers, MCP tools. A runtime **enable/disable** gate
 enforces at dispatch time: a disabled module's routes 404, its cron jobs
 and queue consumers skip, and its MCP tools refuse.
 
@@ -18,7 +18,7 @@ via the fanout seam (`WithFanout`).
   background workers.
 - **Module**: a battery that also needs **runtime enable/disable**.
   Use when an operator should be able to turn a feature off without a
-  redeploy — feature flagging at the module level, not the route level.
+  redeploy: feature flagging at the module level, not the route level.
 
 A module IS a battery. Everything batteries do (dependency ordering,
 lifecycle hooks) applies unchanged. The manifest adds the metadata and
@@ -90,7 +90,7 @@ stmt: _ = enabled
 stmt: _ = list
 -->
 ```go
-// Toggle at runtime — no restart:
+// Toggle at runtime, no restart:
 err := app.Modules().Disable(ctx, "feature")
 err = app.Modules().Enable(ctx, "feature")
 
@@ -101,15 +101,15 @@ list := app.Modules().List() // []ModuleInfo
 
 Agents get the same controls over MCP: `framework.WithMCPControl()`
 registers `app_module_enable` / `app_module_disable` (and the dev loop
-implies the option — see [agent-ready](agent-ready.md)). The tools call
+implies the option; see [agent-ready](agent-ready.md)). The tools call
 the exact methods above, so persistence and the fail-closed dependency
 rules apply identically.
 
 - **Disabled → 404, not 403.** A disabled module's routes return a plain
-  `http.NotFound`. The middleware chain does not run — auth, logging,
+  `http.NotFound`. The middleware chain does not run, so auth, logging,
   and recovery never see the request. The module's existence does not
   leak. Method probing (e.g. `DELETE` against a path that only has a
-  gated `GET`) also returns 404 — the `Allow` header in a 405 response
+  gated `GET`) also returns 404: the `Allow` header in a 405 response
   lists only non-gated methods, so a disabled method is never advertised.
 - **Disabled → jobs deferred, not dropped.** Cron jobs skip the tick.
   Queue jobs are released back to pending (without consuming a retry
@@ -119,7 +119,7 @@ rules apply identically.
   (no module name or disabled state is leaked). The tool is also
   excluded from `tools/list` so it is not advertised while disabled.
 - **Fail-closed dependency rules.** `Disable` refuses if any
-  **enabled** module lists it in `DependsOn` — no cascade, no orphaning.
+  **enabled** module lists it in `DependsOn`: no cascade, no orphaning.
   `Enable` refuses if any of the module's `DependsOn` is disabled.
   The error names the blocking dependents or dependencies.
 - **Persist first, then flip.** On a successful toggle the store is
@@ -137,12 +137,12 @@ When the app has a DB (`WithDB`), the module state persists in a
 | `enabled` | BOOLEAN NOT NULL |
 | `updated_at` | TIMESTAMP NOT NULL |
 
-The table is self-migrating (`CREATE TABLE IF NOT EXISTS`) — it is NOT
+The table is self-migrating (`CREATE TABLE IF NOT EXISTS`); it is NOT
 a migrate group. Modules absent from the table are **enabled by default**;
 store rows for unknown module names (a removed module) are kept but
 ignored. Without a DB the state is in-memory and resets on every boot.
 If the table cannot be created (e.g. a read-only or corrupt DB), `Start`
-**fails closed** rather than silently falling back to in-memory — a
+**fails closed** rather than silently falling back to in-memory: a
 deliberately disabled module must not come back enabled on a broken store.
 
 ### Multi-replica propagation
@@ -153,7 +153,7 @@ With `WithFanout` attached, the module manager subscribes to topic
 node-ID envelope so a replica ignores its own publishes. The message is
 treated as a **refresh signal only**: the receiving replica re-reads the
 authoritative state from its own store and sets its cache to whatever the
-store says — never to what the payload says. This makes message ordering
+store says, never to what the payload says. This makes message ordering
 irrelevant (the store is the source of truth) and neuters crafted payloads.
 
 Because the signal carries no state, **cross-replica propagation requires
@@ -174,7 +174,7 @@ and module enable/disable in sync.
 
 **Disabled-module migration policy**: a named migration group with no
 registered migrations is treated as a *disabled module* by the migration
-runner — its applied rows are shown by `status` but never compared,
+runner; its applied rows are shown by `status` but never compared,
 blocked on, rolled back, or dropped. See the migrations doc for details.
 `force --group=<name>` is the reconciliation escape hatch when a module
 is permanently removed.
@@ -184,13 +184,13 @@ is permanently removed.
 The `app_modules` MCP tool (available via `WithMCPIntrospection`) lists
 every module's name, version, description, dependencies, migration
 group, enabled state, and how many routes, entities, and tools it owns.
-Enable/disable is Go-API-only for now — no mutating MCP tools.
+Enable/disable is Go-API-only for now: no mutating MCP tools.
 
 ## Common mistakes
 
 - **Disabling a shared dependency.** If module B depends on module A and
   both are enabled, disabling A fails with an error naming B. Disable B
-  first, then A. The framework refuses to cascade — a silent breakage
+  first, then A. The framework refuses to cascade: a silent breakage
   is worse than a clear error.
 - **Expecting queued jobs to drop.** When a module is disabled, its
   queue jobs are deferred (released to pending), not dropped. They run
@@ -201,13 +201,13 @@ Enable/disable is Go-API-only for now — no mutating MCP tools.
   to any module. The gate cannot block what it cannot see. Keep route
   registration inside the module's `Init`.
 - **Expecting process isolation.** A disabled module's code is still
-  loaded in the process — its types, closures, and goroutines spawned
+  loaded in the process: its types, closures, and goroutines spawned
   outside the gate are still live. The gates cover routes, cron, queue,
   and MCP dispatch, not arbitrary Go code. Process isolation is
   explicitly out of scope.
 - **Existence probing via trailing-slash redirects.** A `GET /modsub`
   for a module that registered `/modsub/` triggers Go ServeMux's
-  automatic 307 redirect to `/modsub/` — before any gate fires.
+  automatic 307 redirect to `/modsub/` before any gate fires.
   Similarly, method probing (trying methods to see which return 405
   vs 404) can reveal a disabled module's registered methods. These
   are inherent to the mux-layer gate; they are only fully closed by

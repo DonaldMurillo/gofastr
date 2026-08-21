@@ -53,8 +53,8 @@ func r5Do(t *testing.T, app *App, method, path, body string) (int, string) {
 
 // A write response is redacted on a COPY, because the raw record has already
 // gone to the async event goroutine. The copy was one level deep, so a hook
-// masking a field INSIDE an embedded object — the ordinary shape when
-// AfterCreate attaches a computed sub-document — wrote straight through the
+// masking a field INSIDE an embedded object, the ordinary shape when
+// AfterCreate attaches a computed sub-document, wrote straight through the
 // shared nested map into the event lane. Deterministic contamination, and a
 // data race with whichever subscriber was reading.
 func TestWriteResponseHookDoesNotReachEventRecord(t *testing.T) {
@@ -127,7 +127,7 @@ func TestWriteResponseHookDoesNotReachEventRecord(t *testing.T) {
 
 // hookCtx strips the read-hook opt-in from the ctx a hook receives. The hook
 // also gets payload.Request, which on the in-process path is synthesised from
-// the caller's context — so reading through p.Request.Context(), which is
+// the caller's context, so reading through p.Request.Context(), which is
 // ordinary style, re-entered the same hook until the stack was gone.
 func TestReadHookCannotRecurseViaPayloadRequest(t *testing.T) {
 	db := r5DB(t, `
@@ -170,7 +170,7 @@ func TestReadHookCannotRecurseViaPayloadRequest(t *testing.T) {
 // A child AfterList that SORTS its results is ordinary list-hook behaviour and
 // correct on the child's own route. The include fold pairs the hook's output
 // with the loader's rows positionally, so a permutation used to write each
-// row's contents into a different parent's attachment — and, mutating rows
+// row's contents into a different parent's attachment, and, mutating rows
 // later iterations read as sources, duplicated one and destroyed another:
 // [A,B,C] came back as [C,B,C]. The order the client sees comes from the
 // attachment, which the fold never touches, so the correct handling is to
@@ -194,7 +194,7 @@ func TestIncludeToleratesReorderingChildHook(t *testing.T) {
 		Relations: []entity.Relation{entity.HasMany("kids", "r5_kids", "parent_id")},
 	}.WithTimestamps(false))
 
-	// Masks AND sorts, in that order — the realistic shape.
+	// Masks AND sorts, in that order, the realistic shape.
 	app.HookRegistry("r5_kids").RegisterHook(hook.AfterList, func(ctx context.Context, data any) error {
 		p, ok := data.(*hook.ListPayload)
 		if !ok {
@@ -231,7 +231,7 @@ func TestIncludeToleratesReorderingChildHook(t *testing.T) {
 }
 
 // A to-one relation serialises as one object, so the surface it mirrors is
-// GET /child/{id} — which runs AfterGet. Running only the child's AfterList
+// GET /child/{id}, which runs AfterGet. Running only the child's AfterList
 // meant an app masking in AfterGet alone, consistent with its own routes,
 // served the stored value through ?include=.
 func TestIncludeAppliesChildAfterGetOnToOne(t *testing.T) {
@@ -247,7 +247,7 @@ func TestIncludeAppliesChildAfterGetOnToOne(t *testing.T) {
 		Relations: []entity.Relation{entity.BelongsTo("owner", "r5_owners", "owner_id")},
 	}.WithTimestamps(false))
 
-	// AfterGet ONLY — no AfterList anywhere.
+	// AfterGet ONLY, no AfterList anywhere.
 	app.HookRegistry("r5_owners").RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
 		p, ok := data.(*hook.GetPayload)
 		if !ok || p.Result == nil {
@@ -337,7 +337,7 @@ func TestWriteHookErrorDegradesToIDNotFiveHundred(t *testing.T) {
 
 // The shape that defeated two earlier versions of the fold: a child hook that
 // redacts by REPLACING each row with a copy (documented) and also sorts
-// (ordinary). Pointer identity cannot see it — every element is a fresh map —
+// (ordinary). Pointer identity cannot see it, every element is a fresh map,
 // so it folded positionally and, with two parents in one page, gave one parent
 // a child it does not own while another lost one. Served as a 200.
 func TestIncludeSurvivesProjectingAndSortingChildHook(t *testing.T) {
@@ -426,7 +426,7 @@ func TestIncludeSurvivesProjectingAndSortingChildHook(t *testing.T) {
 }
 
 // A many-to-many child shared by two parents arrives as two DISTINCT maps
-// carrying the same primary key — eagerLoadManyToMany builds a fresh map per
+// carrying the same primary key, eagerLoadManyToMany builds a fresh map per
 // JOIN row, which is what sharing means. Indexing the fold by id
 // single-valued kept only the last, so both redacted copies resolved to one
 // row and the second tripped the duplicate refusal: a documented hook shape
@@ -451,7 +451,7 @@ func TestIncludeHandlesSharedManyToManyChild(t *testing.T) {
 		Relations: []entity.Relation{entity.ManyToMany("tags", "r7_tags", "r7_post_tags", "post_id", "tag_id")},
 	}.WithTimestamps(false))
 
-	// Redact by REPLACING each row — the documented projection shape, and the
+	// Redact by REPLACING each row, the documented projection shape, and the
 	// one that makes the duplicate ids collide.
 	app.HookRegistry("r7_tags").RegisterHook(hook.AfterList, func(ctx context.Context, data any) error {
 		p, ok := data.(*hook.ListPayload)

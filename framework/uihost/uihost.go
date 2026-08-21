@@ -1,6 +1,6 @@
 // Package uihost wires a core-ui application onto a framework.App's router.
 // It mounts page rendering, runtime.js, compiled action JS, SSE island
-// streaming, and sessions as routes — there is no standalone server. The
+// streaming, and sessions as routes. There is no standalone server. The
 // framework.App owns the HTTP listener.
 package uihost
 
@@ -74,8 +74,8 @@ type UIHost struct {
 	App     *app.App
 	Islands *island.Manager
 	mu      sync.RWMutex
-	// variants holds themes servable under app.css besides App.Theme —
-	// see themevariant.go. Its own lock, not ds.mu: registration happens at
+	// variants holds themes servable under app.css besides App.Theme.
+	// See themevariant.go. Its own lock, not ds.mu: registration happens at
 	// wire time while reads happen per request, and coupling them would put
 	// stylesheet lookups behind the host's general-purpose mutex.
 	variants themeVariants
@@ -106,7 +106,7 @@ type UIHost struct {
 	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
 	headTags            []string                             // typed head tags built from convenience options
-	faviconURL          string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
+	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
 	notFoundScreen      component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
 	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
@@ -116,7 +116,7 @@ type UIHost struct {
 	pwaSWOnce           sync.Once                            // guards the memoized service-worker body below
 	pwaSW               string                               // deployment-constant service worker, computed on first request
 	pwaSWErr            error                                // paired with pwaSW
-	strict              bool                                 // WithStrict — Mount refuses to serve an app that fails the strict checks (strict.go)
+	strict              bool                                 // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
 	strictConfig        StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
 	siteDescription     bool                                 // set by WithDescription; read by the strict site-surface check
 	embedHost           *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
@@ -135,15 +135,15 @@ type UIHost struct {
 	// Default-theme app.css, composed + fingerprinted once at first render.
 	// Every page was re-concatenating the full sheet (theme tokens, layout
 	// base, every style.Contribute fragment) per request, and the response
-	// carried no validator at all. Theme VARIANTS stay uncached here —
-	// they're keyed and evicted through the variant registry.
+	// carried no validator at all. Theme VARIANTS stay uncached here.
+	// They're keyed and evicted through the variant registry.
 	appCSSOnce       sync.Once
 	appCSSBody       string
 	appCSSHash       string
 	appCSSContribN   int
 	appCSSFrozenWarn sync.Once
 	// External data manifest (catalog + module hashes + action hashes),
-	// composed + fingerprinted once after Mount — see manifestjs.go.
+	// composed + fingerprinted once after Mount. See manifestjs.go.
 	manifestOnce sync.Once
 	manifestBody string
 	manifestHash string
@@ -158,7 +158,7 @@ type UIHost struct {
 // Session represents a connected browser session. ID ("sess-…") is the
 // bare identifier used as the SSE stream / presence key and embedded in
 // page chrome; Token is the signed credential stored in the session
-// cookie — the ID plus mint time plus an HMAC any replica sharing the
+// cookie: the ID plus mint time plus an HMAC any replica sharing the
 // key can verify. Only the Token proves anything; the bare ID is public.
 type Session struct {
 	ID      string
@@ -167,11 +167,11 @@ type Session struct {
 }
 
 // sessionMaxAge bounds how old a session token may be. Expiry is
-// seamless: page render re-mints and re-sets the cookie whenever the
+// transparent: page render re-mints and re-sets the cookie whenever the
 // presented token fails verification, so a rollover costs one render.
 const sessionMaxAge = 30 * 24 * time.Hour
 
-// selfMintedSessionKey returns a random per-boot signing key — the
+// selfMintedSessionKey returns a random per-boot signing key: the
 // single-replica zero-config default. Restart invalidates outstanding
 // tokens; page render re-mints transparently. Multi-replica deployments
 // overwrite it via SetSessionKey (framework fails boot if they don't).
@@ -188,7 +188,7 @@ func selfMintedSessionKey() []byte {
 }
 
 // SetSessionKey replaces the session-signing key and clears any
-// previous (rotation) keys — the single-secret path. Called once by
+// previous (rotation) keys: the single-secret path. Called once by
 // framework.App.Mount (before any traffic) with the HKDF-derived key
 // from the app secret; every replica configured with the same secret
 // then accepts every other replica's session tokens. Not intended for
@@ -290,7 +290,7 @@ type ScreenSchema interface {
 // SEO bundles every per-page SEO declaration in one struct. Use it as
 // the return type of ScreenSEO when you'd rather declare everything
 // from one method than implement the per-concern interfaces
-// individually. Empty fields are silently skipped — only what's set
+// individually. Empty fields are silently skipped: only what's set
 // is emitted.
 type SEO struct {
 	Description string         // <meta name="description">
@@ -305,7 +305,7 @@ type SEO struct {
 // ScreenSEO is the bundle-style alternative to the per-concern
 // interfaces. When a screen implements both ScreenSEO AND any of
 // ScreenDescriber / ScreenCanonical / ScreenHreflangs / ScreenSchema,
-// ScreenSEO wins — its fields override.
+// ScreenSEO wins: its fields override.
 //
 // Returning a zero-value SEO from ScreenSEO opts out of all per-page
 // emission for the screen (useful for routes you want fully naked).
@@ -338,7 +338,7 @@ type routeInfoJSON struct {
 }
 
 // interceptJSON mirrors app.Intercept for the browser. `as` is the
-// string form ("drawer"/"sheet"), not the Go enum's number — the
+// string form ("drawer"/"sheet"), not the Go enum's number: the
 // manifest is a wire format and must not encode iota positions.
 type interceptJSON struct {
 	From string `json:"from"`
@@ -357,7 +357,7 @@ func WithCustomCSS(css string) Option {
 
 // WithExtraScripts adds external <script src="…"> URLs to inject before
 // </body> on every page. Use for dev-only tooling like livereload.
-// CSP-safe — every URL becomes an external resource, no inline JS.
+// CSP-safe: every URL becomes an external resource, no inline JS.
 func WithExtraScripts(urls ...string) Option {
 	return func(ds *UIHost) {
 		ds.extraScripts = append(ds.extraScripts, urls...)
@@ -365,8 +365,8 @@ func WithExtraScripts(urls ...string) Option {
 }
 
 // WithHeadHTML injects raw HTML into every page's <head>. This is the
-// escape hatch for arbitrary head content. The HTML is injected verbatim
-// — callers must ensure it is CSP-compatible (no inline <script> or
+// escape hatch for arbitrary head content. The HTML is injected verbatim.
+// Callers must ensure it is CSP-compatible (no inline <script> or
 // <style> tags). For safe, auto-escaped alternatives, see WithFavicon,
 // WithThemeColor, WithDescription, WithOpenGraph, WithTwitterCard,
 // WithCanonicalURL, and WithPreconnect.
@@ -377,7 +377,7 @@ func WithHeadHTML(html string) Option {
 }
 
 // WithLang sets the document language (BCP-47 tag, e.g. "en", "fr", "pt-BR")
-// for the host-emitted document shells — the 404, PWA offline, and embed
+// for the host-emitted document shells: the 404, PWA offline, and embed
 // shells that the host builds directly rather than through app.RenderPage. It
 // overrides the app's own Lang ([app.App.WithLang]); both default to "en".
 func WithLang(lang string) Option {
@@ -386,8 +386,8 @@ func WithLang(lang string) Option {
 
 // WithNotFoundScreen overrides the default bare 404 fallback. When a
 // request misses every registered screen, static file, and configured
-// favicon, the host renders this component through the active layout
-// — so the 404 page sees the same nav/footer chrome every other page
+// favicon, the host renders this component through the active layout,
+// so the 404 page sees the same nav/footer chrome every other page
 // gets. The component's Render() result is wrapped in the default
 // layout; pages without their own layout end up with the framework's
 // bare <main>.
@@ -425,8 +425,8 @@ func WithDescription(desc string) Option {
 
 // WithRobotsMeta adds a sitewide <meta name="robots"> tag to <head>
 // (e.g. "noindex" for a staging deploy). Per-screen directives via
-// [ScreenRobots] or [SEO].Robots are emitted in addition to — and
-// before — this global tag; crawlers apply the most restrictive
+// [ScreenRobots] or [SEO].Robots are emitted in addition to, and
+// before, this global tag; crawlers apply the most restrictive
 // combination.
 func WithRobotsMeta(directives string) Option {
 	return func(ds *UIHost) {
@@ -436,8 +436,8 @@ func WithRobotsMeta(directives string) Option {
 
 // WithOpenGraph adds Open Graph <meta property="og:..."> tags to <head>.
 // Zero-value fields are omitted. URL-typed fields (Image, URL) are
-// dropped if they fail the head-URL allow-list (http(s)/relative only)
-// — a `javascript:`/`data:` URL there is reflected XSS via any social
+// dropped if they fail the head-URL allow-list (http(s)/relative only).
+// A `javascript:`/`data:` URL there is reflected XSS via any social
 // preview crawler that auto-clicks the link.
 func WithOpenGraph(og OG) Option {
 	return func(ds *UIHost) {
@@ -513,7 +513,7 @@ func WithStaticDir(dir string) Option {
 // WithPublicLLMMD opts the host into mounting the page-level LLM-friendly
 // markdown routes (/llm-pages.md, /<screen>/llm.md). Disabled by default
 // because the documents enumerate every screen and the data shape attached
-// to it — useful for AI agents in trusted environments, schema disclosure
+// to it, useful for AI agents in trusted environments, schema disclosure
 // elsewhere.
 func WithPublicLLMMD() Option {
 	return func(ds *UIHost) {
@@ -565,8 +565,8 @@ func (ds *UIHost) AppCSS() string {
 // AppCSSFor renders the app stylesheet against an explicit theme instead of
 // the boot-time App.Theme. Everything except the :root custom-property block
 // and token resolution is theme-independent, so the two callers that need a
-// per-request palette — an embedded surface carrying a host's brand color, and
-// the theme configurator previewing an unsaved theme — go through here rather
+// per-request palette, an embedded surface carrying a host's brand color, and
+// the theme configurator previewing an unsaved theme, go through here rather
 // than mutating App.Theme, which is process-global and shared across requests.
 //
 // Callers are responsible for content-addressing the result: component CSS is
@@ -582,7 +582,7 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	// the sidebar row, the WithContainer centered column). Owned by core-ui/app
 	// next to its markup; injected once here so no app or generator ships it.
 	out += app.LayoutBaseCSS() + "\n"
-	// Overlay chrome for intercepting routes — only when a route declares
+	// Overlay chrome for intercepting routes: only when a route declares
 	// one, so an app that never intercepts ships none of it.
 	if ds.hasInterceptingRoute() {
 		out += app.InterceptOverlayCSS() + "\n"
@@ -592,7 +592,7 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	}
 	out += ds.customCSS
 	// Co-located screen styles registered via style.Contribute. The host
-	// fans them in itself — no WithCustomCSS hand-wiring required — and
+	// fans them in itself, no WithCustomCSS hand-wiring required, and
 	// resolves theme tokens ({spacing.lg} → var(--spacing-lg)) against the
 	// active theme. Emitted LAST so contributed rules can override the
 	// app's customCSS base rules by re-declaring the same selector, the
@@ -605,7 +605,7 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	return out
 }
 
-// frameworkBuiltinCSS ships with every app — minimal helpers the
+// frameworkBuiltinCSS ships with every app: minimal helpers the
 // framework's own SSR output relies on (skip link, polite live
 // region). Apps can override these classes; the framework just
 // guarantees the defaults exist.
@@ -816,7 +816,7 @@ func (ds *UIHost) CompileActions(componentID string, comp component.Component) s
 			// Keep the component the registry came from. The embed boot walk
 			// asks "is a component that ships a server action reachable from
 			// an embeddable screen", and that question needs the component
-			// value, not just the id it was filed under.
+			// value, not only the id it was filed under.
 			ds.actionComps[componentID] = comp
 			return js
 		}
@@ -893,7 +893,7 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 	}
 	ds.routeMarshalCount.Add(1)
 	rgJSON, _ := json.Marshal(infos)
-	// JS body only — no <script> wrapper. The body is served as an
+	// JS body only, no <script> wrapper. The body is served as an
 	// external file via /__gofastr/routes.js (CSP-safe under
 	// default-src 'self'); injectChrome references it with
 	// <script src="…">. SSG writes the same body to disk.
@@ -927,7 +927,7 @@ func (ds *UIHost) GetActionJS() string {
 }
 
 // HasActions reports whether any component has compiled action JS. Use this
-// instead of GetActionJS() != "" — the latter builds the entire concatenated
+// instead of GetActionJS() != "": the latter builds the entire concatenated
 // bundle just to test for any entries, which is pure waste on every page render.
 func (ds *UIHost) HasActions() bool {
 	ds.mu.RLock()
@@ -980,14 +980,14 @@ func (ds *UIHost) CreateSession() *Session {
 
 // sessionCookieSecureName is the cookie name used over a secure (TLS)
 // origin. The __Host- prefix locks the cookie to a Secure, Path=/,
-// Domain-less scope — the browser refuses to accept it unless those
+// Domain-less scope: the browser refuses to accept it unless those
 // hold, which is the defense against subdomain/fixation attacks.
 const sessionCookieSecureName = "__Host-gofastr-session"
 
 // sessionCookieDevName is used on a plaintext loopback dev origin.
 // Browsers won't store (and reject the __Host- prefix on) a Secure
 // cookie sent over http://, so a dev server on http://localhost would
-// never get the cookie back — every island RPC and the SSE stream would
+// never get the cookie back. Every island RPC and the SSE stream would
 // 401, and the console fills with reconnect errors. On loopback the
 // connection is already trusted, so we drop Secure and the prefix there.
 // Any non-loopback or TLS origin keeps the hardened __Host- form.
@@ -1037,13 +1037,13 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	// Audible footgun: a plaintext NON-loopback origin (http://192.168.…)
 	// gets the hardened Secure/__Host- cookie, which browsers refuse to
-	// store over plain HTTP — so the session never lands and every island
+	// store over plain HTTP, so the session never lands and every island
 	// RPC / SSE connect 401s in a loop. The cookie policy is deliberate
 	// (never a relaxed cookie off loopback); the WARN makes the resulting
 	// symptom diagnosable instead of silent. Serve over TLS or loopback.
 	if secure && !requestIsSecure(r) {
 		plaintextRemoteWarnOnce.Do(func() {
-			slog.Default().Warn("uihost: session cookie sent Secure over a plaintext non-loopback origin — browsers will drop it and every session check will 401",
+			slog.Default().Warn("uihost: session cookie sent Secure over a plaintext non-loopback origin: browsers will drop it and every session check will 401",
 				"host", r.Host,
 				"fix", "serve over TLS (or a reverse proxy setting X-Forwarded-Proto), or use http://localhost for development")
 		})
@@ -1061,8 +1061,8 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 // readSessionCookie returns the session id from the cookie that matches
 // this request's security mode. An origin's mode is stable (loopback
 // http is always dev, TLS/remote is always hardened), so reading only
-// the mode-appropriate name avoids picking up a stale cross-mode cookie
-// — e.g. a __Host- cookie left over from a prior https run won't shadow
+// the mode-appropriate name avoids picking up a stale cross-mode cookie,
+// e.g. a __Host- cookie left over from a prior https run won't shadow
 // the dev cookie on a later http://localhost run.
 func readSessionCookie(r *http.Request) string {
 	name := sessionCookieDevName
@@ -1114,7 +1114,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		if ds.serveMarkdownForPage(w, r) {
 			return
 		}
-		// No screen matched — fall through to the normal HTML path.
+		// No screen matched. Fall through to the normal HTML path.
 	}
 
 	// Make the live request available to ScreenLoader.Load(ctx) so
@@ -1151,7 +1151,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// form; everything else keeps the hardened __Host- cookie.
 	//
 	// A cookie whose token fails verification (expired, tampered, minted
-	// under a rotated or per-boot key) must be re-minted, not reused —
+	// under a rotated or per-boot key) must be re-minted, not reused;
 	// otherwise the embedded SSE id and every island RPC would reference
 	// a dead session and 401 until the user manually cleared the cookie.
 	// The cookie stores the signed token; only the bare id goes into the
@@ -1171,7 +1171,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	page := ds.injectChromeFor(string(html), path, sessionID, boundedPresenceParam(r), res.Component)
 	page = injectSignalSeed(ctx, page)
 
-	// SSR-inline registered widgets — open ones whose deep-link
+	// SSR-inline registered widgets: open ones whose deep-link
 	// matches the request URL go in unhidden; hidden ones are
 	// preloaded so the runtime can hydrate without a chrome fetch
 	// when the user clicks. The widget chrome lives just inside
@@ -1186,7 +1186,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 
 // injectWidgetSSR inlines ONLY the widgets the page actually wants
 // open at first paint: deep-link matches or non-hidden auto-mount.
-// Hidden click-to-open widgets are NOT inlined — the runtime
+// Hidden click-to-open widgets are NOT inlined. The runtime
 // fetches their chrome lazily from cfg.chromePath the first time
 // the user clicks data-fui-open. That keeps page responses minimal
 // (no payload for surfaces the user may never trigger) while
@@ -1197,7 +1197,7 @@ func injectWidgetSSR(page string, r *http.Request) string {
 	defer returnBuilder(b)
 	u := r.URL
 	q := u.Query()
-	// Per-page filter — widgets scoped via .Pages / .PagesPrefix /
+	// Per-page filter: widgets scoped via .Pages / .PagesPrefix /
 	// .PagesMatch only appear on paths they declared. Empty Routes
 	// (the default) means the widget is global.
 	for _, d := range widget.AvailableOn(u.Path) {
@@ -1205,13 +1205,13 @@ func injectWidgetSSR(page string, r *http.Request) string {
 		var open bool
 		switch {
 		case d.DeepLinkKey != "" && d.DeepLinkValue != "":
-			// Deep-link widget — open iff the URL says so.
+			// Deep-link widget: open iff the URL says so.
 			open = q.Get(d.DeepLinkKey) == d.DeepLinkValue
 		case !d.Hidden:
 			// Non-hidden auto-mount widget (toast stack, banner, panel).
 			open = true
 		default:
-			// Hidden click-to-open widget — skip; runtime lazy-fetches.
+			// Hidden click-to-open widget: skip; runtime lazy-fetches.
 			continue
 		}
 		if !open {
@@ -1232,7 +1232,7 @@ func injectWidgetSSR(page string, r *http.Request) string {
 
 // replaceChromeMarker replaces the first occurrence of marker in page, the way
 // the chrome-injection sites need. Unlike a bare strings.Replace, it WARNS when
-// the marker is absent instead of silently returning the page unchanged — a
+// the marker is absent instead of silently returning the page unchanged. A
 // missing <head>/</head>/</body> means a custom layout dropped a structural tag
 // the host relies on to inject the runtime, color-scheme bootstrap, SEO head,
 // and widget chrome, so the page would ship subtly broken with no signal.
@@ -1325,7 +1325,7 @@ func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) stri
 	if len(resolved.Schema) > 0 {
 		parts = append(parts, string(seo.Render(resolved.Schema...)))
 	}
-	// Catch-all per-screen HTML escape hatch. Caller-supplied — scrub
+	// Catch-all per-screen HTML escape hatch. Caller-supplied. Scrub
 	// inline <script> tags before injection (XSS defense-in-depth).
 	if seoScreen, ok := screen.Component.(SEOScreen); ok {
 		if h := seoScreen.HeadHTML(); h != "" {
@@ -1349,7 +1349,7 @@ func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) stri
 //
 // Empty bundle fields fall through so a screen can mix the bundle with
 // the per-concern interfaces. The returned SEO is the merged value both
-// the HTML head and the per-screen llm.md front-matter render from —
+// the HTML head and the per-screen llm.md front-matter render from,
 // keeping the two surfaces in lockstep (#108).
 func resolveScreenSEO(screen *app.Screen) SEO {
 	return resolveScreenSEOFor(screen, nil)
@@ -1357,7 +1357,7 @@ func resolveScreenSEO(screen *app.Screen) SEO {
 
 // resolveScreenSEOFor resolves the screen's SEO bundle against the given
 // LOADED per-request component when non-nil, falling back to the shared
-// registration instance. Dynamic routes register a zero-value template —
+// registration instance. Dynamic routes register a zero-value template:
 // only the loaded instance knows the per-URL description/og values (the
 // docs catch-all regression: registration-time description is empty for
 // every dynamic route).
@@ -1412,8 +1412,8 @@ func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
 	// by the AsArticle registration option (screen.Article) OR the
 	// ScreenArticle interface. Headline/description are derived from the
 	// screen's own title/description when not supplied, so a plain screen
-	// becomes an article with no article-specific data. Only gaps are filled
-	// — explicit ScreenSchema / ScreenSEO values win.
+	// becomes an article with no article-specific data. Only gaps are filled,
+	// explicit ScreenSchema / ScreenSEO values win.
 	og := bundle.OG
 	article := screen.Article
 	var meta app.ArticleMeta
@@ -1501,7 +1501,7 @@ func twitterTags(tc TwitterCard) []string {
 
 // injectChromeMode is the underlying chrome injector. bundle=false
 // suppresses the comp-bundle.css endpoint and emits one <link> per
-// component instead — used by static export, since static hosts
+// component instead, used by static export, since static hosts
 // don't typically serve query-parameterized files. Live HTTP mode
 // always passes bundle=true. pagePath is used for SEOScreen resolution.
 func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic string, bundle bool) string {
@@ -1517,7 +1517,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	if sessionID != "" {
 		// The SSE connection URL. presenceTopic (from the page's ?presence=
 		// query param) is appended so the SSE handler joins the connection
-		// onto the named topic — this is what binds a live roster island to
+		// onto the named topic. This is what binds a live roster island to
 		// the viewers of the page. QueryEscaped to keep the value safe inside
 		// the HTML attribute and the downstream URL.
 		sseURL := "/__gofastr/sse?session=" + sessionID
@@ -1537,7 +1537,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// then global typed tags last.
 	//
 	// Rationale: social-preview crawlers (Open Graph, Twitter Card) are
-	// first-match — they stop at the first occurrence of a given property.
+	// first-match: they stop at the first occurrence of a given property.
 	// Putting per-page tags before global sitewide defaults ensures the
 	// per-page og:title / og:description / og:image is the one they pick.
 	// If the page provides no OG data, the global fallback still fires.
@@ -1567,7 +1567,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteByte('\n')
 	}
 	// Route graph + component catalog ship as inline JSON in
-	// <script type="application/json"> blocks — the browser treats
+	// <script type="application/json"> blocks. The browser treats
 	// these as inert data (NOT scripts) so they pass under strict
 	// CSP (default-src 'self'). runtime.js reads + parses them on
 	// boot. Saves two HTTP requests per page load vs separate
@@ -1589,7 +1589,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// app.css comes AFTER the component CSS so it wins cascade ties
 	// against framework defaults. Hosts that override e.g. a button's
 	// padding or a header's drawer position can do so by writing to
-	// the same selector — no specificity gymnastics needed. Live pages
+	// the same selector, no specificity gymnastics needed. Live pages
 	// carry ?v=<fingerprint> so the response is immutable per deploy;
 	// export mode (bundle=false: static site, PWA offline shell) stays
 	// query-free because the files land on disk under their bare paths
@@ -1626,7 +1626,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 			headClose.WriteByte('\n')
 		}
 	}
-	// Module preload hints — emit <link rel="preload" as="script"> per
+	// Module preload hints: emit <link rel="preload" as="script"> per
 	// demand-load runtime module whose marker substring appears in
 	// the rendered page. Lets the browser parallel-fetch modules with
 	// initial render instead of stalling on hover/click. Content-
@@ -1640,7 +1640,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	runtimeSrc := "/__gofastr/runtime.js"
 	if bundle {
 		// manifest.js assigns the catalog/module/action globals and MUST
-		// precede runtime.js — classic scripts execute in order, so the
+		// precede runtime.js: classic scripts execute in order, so the
 		// kernel finds them set at boot.
 		_, mHash := ds.manifestJS()
 		bodyClose.WriteString(`<script src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
@@ -1671,7 +1671,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
 	// (before any CSS parses) so dark-mode tokens take effect during
-	// the same first paint — no FOUC. Reads localStorage("gofastr.
+	// the same first paint, no FOUC. Reads localStorage("gofastr.
 	// colorScheme") + prefers-color-scheme media query, sets
 	// <html data-color-scheme="dark|light">.
 	colorSrc := "/__gofastr/color-scheme.js"
@@ -1697,7 +1697,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 // split.
 // An optional ?t=<themeHash> selects a registered theme variant
 // (RegisterThemeVariant) instead of App.Theme. The hash is a LOOKUP KEY, never
-// a theme description — an unregistered hash falls back to the app theme, so a
+// a theme description: an unregistered hash falls back to the app theme, so a
 // request can neither inject CSS nor mint an unbounded set of cache entries.
 //
 // Requests naming a variant are content-addressed and therefore immutable: the
@@ -1714,8 +1714,8 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, ds.AppCSSFor(t))
 			return
 		}
-		// Unknown variant: serve the app theme, but do NOT mark it immutable —
-		// the URL says one thing and the bytes say another, so caching it under
+		// Unknown variant: serve the app theme, but do NOT mark it immutable.
+		// The URL says one thing and the bytes say another, so caching it under
 		// that key would poison the variant once it is registered.
 		w.Header().Set("Cache-Control", "no-cache")
 		body, _ := ds.appCSSCached()
@@ -1728,7 +1728,7 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 }
 
 // appCSSCached composes the default-theme app.css once and content-
-// addresses it with style.CSSFingerprint — the same digest family the
+// addresses it with style.CSSFingerprint, the same digest family the
 // theme-variant registry keys on, so one addressing scheme covers every
 // app.css response. The sheet freezes at first render: a
 // style.Contribute that lands later can no longer ship, which was
@@ -1741,7 +1741,7 @@ func (ds *UIHost) appCSSCached() (body, hash string) {
 	})
 	if style.ContributedCount() != ds.appCSSContribN {
 		ds.appCSSFrozenWarn.Do(func() {
-			slog.Warn("uihost: style.Contribute called after the first page render — app.css is frozen per process; contribute at package init, before Mount")
+			slog.Warn("uihost: style.Contribute called after the first page render: app.css is frozen per process; contribute at package init, before Mount")
 		})
 	}
 	return ds.appCSSBody, ds.appCSSHash
@@ -1783,11 +1783,11 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 			appName = ds.App.Name
 		}
 		// Build a minimal document shell so injectChrome's strings.Replace
-		// targets (`<head>`, `</head>`, `<body>`) actually exist — without
+		// targets (`<head>`, `</head>`, `<body>`) actually exist. Without
 		// this the customCSS / runtime / color-scheme bootstrap silently
 		// don't attach and the page renders as bare browser-default styles.
 		shell := fmt.Sprintf(
-			`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404 — %s</title></head><body>%s</body></html>`,
+			`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404: %s</title></head><body>%s</body></html>`,
 			stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
 		page := ds.injectChrome(shell, path, "", "")
 		w.WriteHeader(http.StatusNotFound)
@@ -1801,8 +1801,8 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 		appName = ds.App.Name
 	}
 	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Not found — %s</title></head>`+
-			`<body><main role="main"><h1>404 — Page not found</h1><p>No route matched <code>%s</code>.</p>`+
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Not found: %s</title></head>`+
+			`<body><main role="main"><h1>404: Page not found</h1><p>No route matched <code>%s</code>.</p>`+
 			`<p><a href="/">Back to home</a></p></main></body></html>`,
 		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), stdhtml.EscapeString(path))
 }
@@ -1812,7 +1812,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
 	// Stateless-session rollover on the SPA path (#112): a partial
 	// navigation must re-mint an invalid/expired token exactly like a
-	// full render does — otherwise a restart, key rotation, or expiry
+	// full render does; otherwise a restart, key rotation, or expiry
 	// leaves this SPA's islands and SSE 401ing until a hard reload.
 	// The fresh bare id travels in X-Gofastr-Session so the runtime
 	// rewires the SSE meta; the signed token rides Set-Cookie only.
@@ -1821,7 +1821,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// never caches a non-partial response, so the eventual real click
 		// runs the full rollover below. Serving the prefetch instead would
 		// let the click paint entirely from the prefetched entry with the
-		// stale token still in place — islands, SSE, and action scripts
+		// stale token still in place. Islands, SSE, and action scripts
 		// then 401 until some later request happens to hit the network.
 		if r.Header.Get("X-Gofastr-Prefetch") == "1" {
 			w.WriteHeader(http.StatusNoContent)
@@ -1857,7 +1857,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// Intercepting routes (#130 slice 5): the client ASKS for an overlay
 	// by sending X-Gofastr-Intercept plus the location it is navigating
 	// FROM; the server decides. X-Gofastr-From is attacker-controllable,
-	// so it is never trusted as an instruction — InterceptFor re-resolves
+	// so it is never trusted as an instruction: InterceptFor re-resolves
 	// it against the route table and only agrees when the target screen
 	// actually declared that origin. A forged header can therefore change
 	// nothing but the wrapper element: policy, params, Load, and content
@@ -1877,7 +1877,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// Subtree partial: the client names the route it is navigating
 		// FROM; the server renders only the layout layers the two routes
 		// do NOT share and echoes the swap boundary via X-Gofastr-Swap.
-		// Same trust posture as the intercept use of this header — it is
+		// Same trust posture as the intercept use of this header: it is
 		// re-resolved against the route table, and a forged value can
 		// only change how much shared chrome gets re-rendered, never
 		// policy, params, Load, or content.
@@ -1891,7 +1891,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	}
 	switch res.Kind {
 	case app.DecisionRedirect:
-		// MUST be 200 + X-Gofastr-Location, not 3xx — the runtime
+		// MUST be 200 + X-Gofastr-Location, not 3xx. The runtime
 		// fetcher uses redirect:'follow' so a 303 here would be chased
 		// silently and the header would never reach client JS. The
 		// client-side router reads the header and pushState's to the
@@ -1900,7 +1900,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// SAFETY: only emit X-Gofastr-Location for safe same-origin
 		// relative paths. An absolute, protocol-relative, or scheme-
 		// bearing URL would be fed directly into loadPage(), which
-		// does a fetch with credentials — turning the partial-
+		// does a fetch with credentials, turning the partial-
 		// redirect signal into a cross-origin XSRF / credential-leak
 		// vector. For unsafe URLs fall back to a hard 303 redirect;
 		// the browser handles those safely (cross-origin redirects
@@ -1923,7 +1923,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	}
 
 	// Screen title: prefer the post-Load effective title from the render
-	// (dynamic routes register with an empty/generic title — the loaded
+	// (dynamic routes register with an empty/generic title; the loaded
 	// instance knows the real one), falling back to the registration-time
 	// title. Percent-encode it: a title with non-ASCII (e.g. the em-dash
 	// in "Docs — GoFastr") sent raw in an HTTP header is non-conformant
@@ -1954,7 +1954,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// no-store, unconditionally: a partial is per-user rendered HTML, and
 	// on the re-mint path this response carries Set-Cookie (a signed
 	// session token) + X-Gofastr-Session. A shared cache replaying that
-	// pair would hand one visitor another's live session/stream — RFC
+	// pair would hand one visitor another's live session/stream. RFC
 	// 7234 does not exempt 200+Set-Cookie from caching on its own.
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, partialSeedIsland(ctx, string(res.HTML))+string(res.HTML))
@@ -1966,16 +1966,16 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	//
 	// SSE is the one item on the "works inside a frame" list that does not.
 	// EventSource is the only client of this endpoint and it cannot set a
-	// request header, so X-Gofastr-Embed — the frame's ONLY credential, a
-	// header precisely so nothing about it is ambient — can never travel on the
+	// request header, so X-Gofastr-Embed, the frame's ONLY credential, a
+	// header precisely so nothing about it is ambient, can never travel on the
 	// connection. Moving it into the query string would put a bearer token in
 	// access logs, Referer and history, which is the property the header
 	// spelling exists to keep. The client half agrees: the embed runtime
 	// composition ships no session id and the content route emits no
 	// <meta name="gofastr-sse">, so nothing in a frame opens this stream.
 	//
-	// Refusing outright — rather than falling through to the cookie check
-	// below — is the same rule requireSessionOrEmbedGrant states: a presented
+	// Refusing outright, rather than falling through to the cookie check
+	// below, is the same rule requireSessionOrEmbedGrant states: a presented
 	// credential's verdict is final. In a same-site framing the browser really
 	// does send the viewer's Strict cookie, and answering on it would stream
 	// one identity's island updates into a frame authenticated as another.
@@ -1984,7 +1984,7 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// an ordinary fetch, which the frame's fetch wrapper does put the grant on.
 	// See framework/docs/content/embed.md.
 	if r.Header.Get(embedGrantHeader) != "" {
-		http.Error(w, "embed: SSE cannot be authenticated by a grant — EventSource "+
+		http.Error(w, "embed: SSE cannot be authenticated by a grant: EventSource "+
 			"sends no request headers, so the frame's grant never reaches this "+
 			"endpoint. Use data-fui-poll (or widget Builder.Poll) for live updates "+
 			"inside a frame.", http.StatusUnauthorized)
@@ -2000,7 +2000,7 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// credential: it must verify AND its embedded id must match the
 	// requested stream. That closes both the old forged-id hole (an
 	// attacker-chosen id receiving future PushUpdates) and its sibling
-	// the map never closed — subscribing to another user's stream with a
+	// the map never closed: subscribing to another user's stream with a
 	// leaked-but-real id and no matching cookie.
 	cookieID, ok := ds.verifySessionToken(readSessionCookie(r))
 	if !ok || cookieID != sessionID {
@@ -2009,7 +2009,7 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the SERVER-DERIVED identity from the request context (a
-	// READ of the middleware-seeded ctx user — never a client param) and
+	// READ of the middleware-seeded ctx user, never a client param) and
 	// the bounded ?presence= topic list, then delegate to the
 	// presence-aware SSE handler. Anonymous (nil user) is fine: the
 	// manager synthesizes a stable per-session pseudo-identity.
@@ -2025,7 +2025,7 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 const maxPresenceParamLen = 4096
 
 // boundedPresenceParam reads the ?presence= query param from the page request
-// and returns it length-capped (not parsed — the SSE handler parses). Empty
+// and returns it length-capped (not parsed; the SSE handler parses). Empty
 // when absent or oversize. This is the value threaded into the SSE meta tag so
 // the client's EventSource connection joins the named topic(s).
 func boundedPresenceParam(r *http.Request) string {
@@ -2037,7 +2037,7 @@ func boundedPresenceParam(r *http.Request) string {
 }
 
 // NOTE: there is deliberately NO generic HTTP roster endpoint. A presence
-// roster is "who is viewing topic X" — exposing it over an ungated URL leaks
+// roster is "who is viewing topic X". Exposing it over an ungated URL leaks
 // identities (emails) to anyone who can guess a topic string. The framework
 // can't know an app's per-topic authorization, so the roster stays an
 // in-process primitive (island.Manager.PresenceRoster) plus live-push via the
@@ -2052,7 +2052,7 @@ func (ds *UIHost) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", runtime.MustRuntimeJS(), widget.RuntimeHash(), false)
 }
 
-// handleColorSchemeJS serves the color-scheme bootstrap script — a
+// handleColorSchemeJS serves the color-scheme bootstrap script, a
 // tiny synchronous snippet that ships at the top of <head> so dark-
 // mode CSS tokens take effect during first paint with no FOUC.
 func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
@@ -2081,7 +2081,7 @@ func colorSchemeHash() string {
 
 // maxMutatingBodyBytes bounds JSON bodies accepted by mutating
 // /__gofastr/* endpoints (server actions, session creation). Anything
-// past 64 KiB is rejected with 413 — these endpoints take small
+// past 64 KiB is rejected with 413: these endpoints take small
 // structured commands, not file uploads.
 const maxMutatingBodyBytes = 64 * 1024
 
@@ -2123,7 +2123,7 @@ func widgetNameFromPath(p string) string {
 // These endpoints were written when the session cookie was the only way to be
 // somebody, and they all failed the same way once surfaces could be framed: a
 // frame carries no cookie, so cross-site the endpoint refused it and the
-// feature was dead, while same-site an unrelated ambient session answered it —
+// feature was dead, while same-site an unrelated ambient session answered it,
 // making "does my embed work" depend on whether the viewer happens to be logged
 // into the app in another tab.
 //
@@ -2133,14 +2133,14 @@ func widgetNameFromPath(p string) string {
 // routes strip cookies to prevent.
 func (ds *UIHost) requireSessionOrEmbedGrant(w http.ResponseWriter, r *http.Request) bool {
 	if token := r.Header.Get(embedGrantHeader); token != "" {
-		// A grant was PRESENTED. Its verdict is final — refuse rather than fall
+		// A grant was PRESENTED. Its verdict is final: refuse rather than fall
 		// back to whatever else the request happens to carry.
 		//
 		// Falling through was the bug: the runtime deliberately keeps sending an
 		// expired grant so the server answers 401 instead of silently serving an
 		// anonymous render. In a same-site framing the browser also sends the
 		// viewer's Strict session cookie, so the fallback answered that expired
-		// embed request on the strength of an unrelated logged-in session — the
+		// embed request on the strength of an unrelated logged-in session, the
 		// identity confusion the whole feature strips cookies to prevent, and
 		// the opposite of the rule Host.Middleware states for the same case.
 		if !ds.embedGrantOK(r) {
@@ -2158,7 +2158,7 @@ func (ds *UIHost) requireSessionOrEmbedGrant(w http.ResponseWriter, r *http.Requ
 // the request carries an Origin header whose host differs from r.Host.
 // Used by mutating /__gofastr/* endpoints to deny CSRF from
 // attacker-controlled origins. Requests without an Origin header are
-// allowed through — same-origin XHR / fetch may legitimately omit it,
+// allowed through: same-origin XHR / fetch may legitimately omit it,
 // and non-browser callers (curl, server-to-server) never set it.
 func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
@@ -2195,7 +2195,7 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 }
 
 // handleActionsJS serves all compiled action JS. The output enumerates
-// every registered server-action and component id on the host — useful
+// every registered server-action and component id on the host, useful
 // surface for an attacker mapping the app, so we require a session or an
 // embed grant before serving it. The runtime fetches this script after
 // first paint from a same-origin page, by which point the session cookie
@@ -2220,7 +2220,7 @@ func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateSession mints a new session, sets the signed token cookie,
 // and returns the bare session id. The token itself travels only in the
-// Set-Cookie header — the JSON body carries the public id, which is all
+// Set-Cookie header. The JSON body carries the public id, which is all
 // a same-origin caller needs (the cookie rides along automatically).
 func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossOrigin(w, r) {
@@ -2228,14 +2228,14 @@ func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	// Not from inside a frame.
 	//
-	// This route mints an anonymous session to anyone who asks — that is its
+	// This route mints an anonymous session to anyone who asks; that is its
 	// job, since island state needs an id before any user exists. But
 	// handleServerAction gates on "has a valid session", so a frame that could
 	// mint one would defeat that gate in one extra request: POST here, then
 	// POST /__gofastr/action with the cookie. Refusing here is what makes the
 	// refusal there mean something.
 	//
-	// It does not make server actions privileged — any anonymous same-origin
+	// It does not make server actions privileged: any anonymous same-origin
 	// caller can still do both requests. It makes the grant confer nothing
 	// extra, which is the actual claim.
 	if r.Header.Get(fembed.GrantHeader) != "" {
@@ -2301,7 +2301,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// A session, and deliberately NOT an embed grant. The action registry is
 	// app-global and keyed by (componentID, action) with no relationship to any
 	// surface, so accepting a grant here would let a credential minted for one
-	// surface invoke any action registered anywhere in the app — including from
+	// surface invoke any action registered anywhere in the app, including from
 	// a surface with no subject at all, which is the shape a public pricing
 	// table takes. There is no surface a component belongs to for this code to
 	// check against, and the embed runtime publishes every compiled action name,
@@ -2318,7 +2318,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// same-origin caller can POST /__gofastr/session and get one with no
 	// credential, because island state needs an id before any user exists. So
 	// this check does not make server actions privileged, and a server action
-	// is NOT an authorization boundary — a handler that mutates anything must
+	// is NOT an authorization boundary: a handler that mutates anything must
 	// check authorization itself. What the check does buy is that a grant
 	// confers nothing here that an anonymous visitor did not already have,
 	// which is exactly what handleCreateSession's matching refusal preserves.
@@ -2340,7 +2340,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// No Go handler — just acknowledge
+	// No Go handler; just acknowledge
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
@@ -2349,7 +2349,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleWidgetJS serves compiled JavaScript for a specific widget —
+// handleWidgetJS serves compiled JavaScript for a specific widget:
 // the SSR path emits one tag per on-page component and the actionloader
 // module fetches the rest on navigation; lazy hydration keeps using it
 // too. Session-gated like the old whole-app concat was (this per-id
@@ -2397,7 +2397,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
 	// Embeddable surfaces. Registered only when WithEmbed configured a host,
 	// so an app that hands out no pieces of itself serves no embed route at
-	// all — not even a 404 that would confirm the feature exists.
+	// all, not even a 404 that would confirm the feature exists.
 	ds.mountEmbed(r)
 	r.Get("/__gofastr/color-scheme.js", http.HandlerFunc(ds.handleColorSchemeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
@@ -2423,12 +2423,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// runtime; the registry returns an empty list when nothing has
 	// been registered, so plain framework apps still get the safe
 	// "no widgets" response that prevents a 404 in the console.
-	// Widget catalog enumerates every server-registered widget surface
-	// — useful infrastructure for the runtime, but a recon target for
+	// Widget catalog enumerates every server-registered widget surface,
+	// useful infrastructure for the runtime, but a recon target for
 	// anonymous callers. Gate behind the session cookie.
 	r.Get("/__gofastr/widgets", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// An embedded surface has no session cookie — none is ever sent from
-		// inside a frame — so a cookie-only gate meant every widget in an
+		// An embedded surface has no session cookie, none is ever sent from
+		// inside a frame, so a cookie-only gate meant every widget in an
 		// embed silently did nothing: the catalog 401'd, _widgetCatalog stayed
 		// empty, and a modal trigger was dead DOM. Worse, in a same-site
 		// framing an ambient cookie COULD satisfy it, so whether an embed's
@@ -2436,15 +2436,15 @@ func (ds *UIHost) Mount(r *router.Router) {
 		//
 		// A grant answers only for ITS OWN surface. The caller supplies the
 		// page to filter by, and a grant proves nothing about any page but the
-		// one its surface renders — so the grant's path is substituted rather
+		// one its surface renders, so the grant's path is substituted rather
 		// than trusted from the query. Without that, a grant for a public
 		// pricing surface (no subject, handed to every anonymous visitor) asked
 		// for ?page=/admin, or omitted the parameter entirely and read the
 		// unfiltered registry.
 		if token := req.Header.Get(embedGrantHeader); token != "" {
 			// A presented grant's verdict is final here too. Falling through to
-			// the cookie let an EXPIRED embed request — which the runtime keeps
-			// sending on purpose so the server 401s — be answered on the
+			// the cookie let an EXPIRED embed request, which the runtime keeps
+			// sending on purpose so the server 401s, be answered on the
 			// strength of the viewer's unrelated session in a same-site framing,
 			// skipping the per-surface scoping entirely.
 			g, ok := ds.embedGrant(req)
@@ -2474,14 +2474,14 @@ func (ds *UIHost) Mount(r *router.Router) {
 
 	// Install the predicate widget.Definition.RequireSession consults.
 	// Without this the gate has no way to say yes, so a widget that
-	// asked for a session would 403 forever — the gate fails closed by
+	// asked for a session would 403 forever. The gate fails closed by
 	// design, and this is what makes it usable. Same signature check as
 	// requireValidSession, minus the response write.
 	//
 	// An embed grant satisfies it too, and has to: the catalog above already
 	// lists RequireSession widgets to a frame, so without this the frame
-	// fetched the widget's chrome with the only credential it has and got 403
-	// — dead DOM one hop further along than the bug the catalog branch fixed.
+	// fetched the widget's chrome with the only credential it has and got 403,
+	// dead DOM one hop further along than the bug the catalog branch fixed.
 	widget.SetSessionCheck(func(req *http.Request) bool {
 		if token := req.Header.Get(embedGrantHeader); token != "" {
 			// Same rule as the catalog: a presented grant decides this request,
@@ -2513,24 +2513,24 @@ func (ds *UIHost) Mount(r *router.Router) {
 		return ok
 	})
 
-	// Split runtime modules — /__gofastr/runtime/<name>.js. core.js's
+	// Split runtime modules: /__gofastr/runtime/<name>.js. core.js's
 	// loader fetches them on demand (hover prefetch, idle, or click
 	// await). Delegated to core-ui/widget so back-compat for hosts that
 	// already call widget.MountRuntime keeps a single source of truth.
 	r.Get("/__gofastr/runtime/{name}", http.HandlerFunc(widget.ServeRuntimeModule))
-	// Registered worker + WebAssembly assets — content-addressed and
+	// Registered worker + WebAssembly assets: content-addressed and
 	// same-origin so the default CSP can load them without blob: URLs.
 	r.Get("/__gofastr/compute/{name}", http.HandlerFunc(widget.ServeComputeAsset))
 
 	// Page-level LLM documentation endpoints.
-	// - /llm-pages.md — top-level index of all screens
-	// - /{screen-path}/llm.md — per-screen documentation
-	// Disabled by default — apps opt in via [WithPublicLLMMD].
+	// - /llm-pages.md: top-level index of all screens
+	// - /{screen-path}/llm.md: per-screen documentation
+	// Disabled by default. Apps opt in via [WithPublicLLMMD].
 	if ds.App != nil && ds.llmMDPublic {
 		ds.mountPageLLMMD(r)
 	}
 
-	// SEO endpoints — only mounted when WithSitemap / WithRobots
+	// SEO endpoints: only mounted when WithSitemap / WithRobots
 	// were passed, so apps that don't opt in don't accidentally
 	// expose either endpoint.
 	if ds.sitemapConfig != nil {
@@ -2539,12 +2539,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 	if ds.robotsConfig != nil {
 		r.Get("/robots.txt", http.HandlerFunc(ds.handleRobots))
 	}
-	// Generated app icons (WithAppIcon) — including the /favicon.ico
+	// Generated app icons (WithAppIcon), including the /favicon.ico
 	// alias, which takes precedence over serveOrRender's 204 fallback.
 	ds.mountAppIcons(func(path string, h http.HandlerFunc) {
 		r.Get(path, h)
 	})
-	// Installable-PWA surface — only mounted via WithPWA. The manifest
+	// Installable-PWA surface: only mounted via WithPWA. The manifest
 	// and worker live at the root so the worker's default scope covers
 	// the whole app.
 	if ds.pwaConfig != nil {
@@ -2561,7 +2561,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
 	// MethodNotAllowed catch-all: restores fall-through so a screen at
 	// path /x still renders (200) when a non-GET route like POST /x is
-	// registered — without this, the bare 405 from the router's method
+	// registered. Without this, the bare 405 from the router's method
 	// mismatch path shadows the screen. For genuinely unsupported
 	// methods on non-screen paths, serveMethodNotAllowed renders a
 	// styled 405 page preserving the Allow header.
@@ -2594,8 +2594,8 @@ func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 
 // mountPageLLMMD registers LLM-friendly documentation routes for every
 // screen in the app. Two route types are added:
-//   - GET /llm-pages.md — top-level index listing all screens
-//   - GET /{screen-path}/llm.md — per-screen markdown documentation
+//   - GET /llm-pages.md: top-level index listing all screens
+//   - GET /{screen-path}/llm.md: per-screen markdown documentation
 //
 // Dynamic routes (e.g. /products/:slug) are documented with their
 // pattern, not concrete values.
@@ -2633,7 +2633,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
 			// A screen whose policy chain doesn't Allow this request gets
-			// the metadata-free withheld doc — the pattern doc's title,
+			// the metadata-free withheld doc: the pattern doc's title,
 			// description, SEO front matter, AND content are all
 			// component-supplied, which the policy protects on the page
 			// render too. No front matter on the withheld path.
@@ -2657,7 +2657,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 			route = "/llm.md"
 		}
 		// A group index registered at both the slashless and trailing-slash
-		// path (/studio and /studio/) collapses to the same llm.md route —
+		// path (/studio and /studio/) collapses to the same llm.md route;
 		// register it once, else the second r.Get panics on a dup pattern (#89).
 		if seen[route] {
 			continue
@@ -2672,7 +2672,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 // (filesystem or embedded FS), a registered screen, or the favicon
 // shortcut. It MIRRORS serveOrRender's resolution steps without serving
 // (serveOrRender interleaves resolution with ServeFile/redirect calls,
-// so the steps can't be shared outright) — any change to serveOrRender's
+// so the steps can't be shared outright). Any change to serveOrRender's
 // resolution order or checks must be reflected here; the agreement is
 // pinned by TestResolvePredicateMatchesServeOrRender.
 func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
@@ -2733,7 +2733,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 // serveMethodNotAllowed is the router's 405 catch-all. For safe
 // methods (GET/HEAD) where a static file or screen resolves at the
 // path, it delegates to serveOrRender so the page renders normally
-// (200) — this restores fall-through for a screen that shares its path
+// (200). This restores fall-through for a screen that shares its path
 // with a POST-only sibling route. For all other cases it renders a
 // styled 405 page through the default layout, preserving the Allow
 // header the router already set.
@@ -2749,14 +2749,14 @@ func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) 
 // default layout, mirroring serveNotFound's page-building machinery so
 // the 405 is visually consistent with the 404. The Allow header is
 // preserved (set by the router before dispatching). Composed entirely
-// from design-system elements — zero bespoke CSS.
+// from design-system elements, zero bespoke CSS.
 func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
 
 	children := []render.HTML{
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("405 — Method Not Allowed")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("405: Method Not Allowed")),
 		html.Paragraph(html.TextConfig{}, render.Text("Method "+r.Method+" is not allowed for "),
 			html.Code(html.TextConfig{}, render.Text(path)), render.Text("."),
 		),
@@ -2779,7 +2779,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 		appName = ds.App.Name
 	}
 	shell := fmt.Sprintf(
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405 — %s</title></head><body>%s</body></html>`,
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405: %s</title></head><body>%s</body></html>`,
 		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
 	page := ds.injectChrome(shell, path, "", "")
 	w.WriteHeader(http.StatusMethodNotAllowed)
@@ -2789,8 +2789,8 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 // serveOrRender is the catch-all NotFound handler. It first tries static
 // file resolution (filesystem or embedded FS), and if no file matches it
 // falls through to page rendering. Resolution steps are mirrored by
-// resolvesStaticOrScreen (the MethodNotAllowed fall-through predicate) —
-// keep the two in sync.
+// resolvesStaticOrScreen (the MethodNotAllowed fall-through predicate).
+// Keep the two in sync.
 func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/favicon.ico" {
@@ -2836,7 +2836,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// WithFavicon configured a URL but no real file lives there — 204
+	// WithFavicon configured a URL but no real file lives there: 204
 	// rather than 404 so the browser's per-page favicon fetch doesn't
 	// noisily fail in the dev console.
 	if ds.faviconURL != "" && path == ds.faviconURL {
@@ -2848,7 +2848,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// dynamic route's concrete URLs (/docs/<slug>/llm.md,
 	// /products/42/llm.md) can't be pre-registered, so they land here.
 	// Serve the per-instance doc when the base path resolves to a screen.
-	// Mirrored in resolvesStaticOrScreen — keep the two in sync.
+	// Mirrored in resolvesStaticOrScreen. Keep the two in sync.
 	if md, ok := ds.dynamicPageLLMMD(r, path); ok {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -2861,7 +2861,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 // dynamicPageLLMMD serves the llm.md for a concrete URL of a dynamic
 // route. Returns ok=false unless path ends in "/llm.md", llm.md is
 // enabled, and the base path resolves to a screen that hasn't opted out.
-// Static routes never reach it — their explicit mountPageLLMMD handlers
+// Static routes never reach it: their explicit mountPageLLMMD handlers
 // match first, so this only fires for dynamic-route URLs (which fall
 // through to the NotFound catch-all).
 func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) {
@@ -2889,7 +2889,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	md := res.MD
 	// SEO front matter ONLY for an allowed render, resolved against the
 	// LOADED instance (the registration instance is a zero-value template
-	// for dynamic routes — and for a non-Allow decision, all
+	// for dynamic routes, and for a non-Allow decision, all
 	// component-supplied metadata is policy-protected).
 	if res.Allowed {
 		title := res.Title
@@ -2905,7 +2905,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 }
 
 // PolicyBlockedError reports a static render refused by the screen's
-// policy — a redirect or a block, never a render failure. The static
+// policy: a redirect or a block, never a render failure. The static
 // builder skips such routes (with a warning) instead of aborting the
 // whole export. The route stays reachable via SSR on the live server.
 type PolicyBlockedError struct {
@@ -2920,14 +2920,14 @@ func (e *PolicyBlockedError) Error() string {
 // RenderStaticPage produces a fully-rendered page suitable for static-site
 // generation: it runs the screen's Load(ctx) hook, applies layout/theme,
 // and injects runtime.js, compiled actions, custom CSS, and the route
-// graph — but skips the SSE meta tag because there is no live session.
+// graph, but skips the SSE meta tag because there is no live session.
 // The result is safe to write to disk and serve from any static host.
 func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, error) {
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
 	// RenderPageResult (not RenderPage) so the loaded per-request
-	// component reaches the chrome injection — a dynamic route's meta
+	// component reaches the chrome injection: a dynamic route's meta
 	// description only exists on the loaded instance.
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
@@ -3012,7 +3012,7 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 // the components rendered on this page. It scans page for
 // data-fui-comp markers, adds every LoadAlways entry, and emits one
 // bundled link when ≥2 names are involved (single direct link
-// otherwise). Inline emission is forbidden — the bundle endpoint is
+// otherwise). Inline emission is forbidden: the bundle endpoint is
 // content-addressed so the browser caches it across pages with the
 // same component set.
 func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
@@ -3035,7 +3035,7 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	sort.Strings(names)
 	theme := ds.activeTheme()
 	if len(names) == 1 || !bundle {
-		// Static-export path also takes this branch — emit one <link>
+		// Static-export path also takes this branch: emit one <link>
 		// per component to avoid the query-paramed bundle URL.
 		b := borrowBuilder()
 		defer returnBuilder(b)
@@ -3072,7 +3072,7 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 
 // catalogJSONScript returns the inline JSON block embedding the
 // component catalog into the SSR'd page. The browser parses it as
-// inert data because of type="application/json" — no JS execution,
+// inert data because of type="application/json", no JS execution,
 // so strict CSP (default-src 'self') is happy.
 //
 // runtime.js reads it on boot:
@@ -3084,7 +3084,7 @@ func catalogJSONScript(ds *UIHost) string {
 	// the active theme are fixed before serving), so marshal it once and reuse
 	// on every page render instead of rebuilding the map + json.Marshal per
 	// request. Themed variants (catalogJSONScriptFor with a variantKey) are NOT
-	// cached here — they vary per variant and stay on the embed path.
+	// cached here: they vary per variant and stay on the embed path.
 	ds.catalogCacheOnce.Do(func() {
 		ds.catalogCache = catalogJSONScriptFor(ds, ds.activeTheme(), "")
 	})
@@ -3096,7 +3096,7 @@ func catalogJSONScript(ds *UIHost) string {
 // variantKey, when set, is appended to every stylePath so the runtime's CSS
 // scanner fetches each component's stylesheet under the SAME theme the page was
 // rendered with. Without it an embed served the customer's palette in app.css
-// and the app's palette in every component stylesheet — and only components
+// and the app's palette in every component stylesheet, and only components
 // whose StyleFn reads theme values directly showed it, so the page came back
 // half-rebranded in a way no DOM assertion can see.
 func catalogJSONScriptFor(ds *UIHost, theme style.Theme, variantKey string) string {
@@ -3207,7 +3207,7 @@ func runtimeModuleManifestScript() string {
 // rel="preload" as="script", NOT rel="modulepreload": the loader injects
 // classic scripts (boot.js loadModule, s.async=false for ordering), and
 // a modulepreload'd response is fetched with module destination/
-// credentials semantics the classic request does not match — the browser
+// credentials semantics the classic request does not match. The browser
 // would not reuse it, so every hinted module was fetched twice.
 func runtimeModulePreloadLinks(pageHTML string) string {
 	mods := runtime.NeededModules(pageHTML)
@@ -3255,7 +3255,7 @@ func routesJSONScript(ds *UIHost) string {
 // prematurely terminate an inline <script>…</script> block: the
 // closing `</` characters. JSON itself never produces `</` (no
 // language feature emits it), but URL strings in the payload might
-// (e.g. a path like `/foo</bar` — exotic, but defending against it
+// (e.g. a path like `/foo</bar`; exotic, but defending against it
 // is cheap).
 func escapeJSONForScript(buf []byte) string {
 	return strings.ReplaceAll(string(buf), "</", `<\/`)
@@ -3281,11 +3281,11 @@ var scriptTagRe = regexp.MustCompile(`(?is)<scrip` + `t\b[^>]*?(/>|>.*?</scrip` 
 // in a server-controlled <head>: iframes, inline styles, scriptable
 // media (svg/math/audio/video), forms, the marquee/portal grab-bag,
 // and template/noscript wrappers. The opening tag alone is enough to
-// match — an UNCLOSED opener like `<svg onload=alert(1)>` (no `/>`, no
+// match: an UNCLOSED opener like `<svg onload=alert(1)>` (no `/>`, no
 // closing tag) is created and its handler fired by the browser's lenient
 // parser, so requiring a closing tag would let it slip through. The
 // optional closing-tag group greedily consumes any inner content +
-// matching close so the whole element (not just its opener) is removed
+// matching close so the whole element (not only its opener) is removed
 // when it IS closed.
 var dangerousHeadTagsRe = regexp.MustCompile(
 	`(?is)<(iframe|object|style|svg|math|audio|video|form|button|picture|marquee|portal|template|noscript|foreignObject|details|summary)\b[^>]*?(/>|>(.*?</\s*\w+\s*>)?)`,
@@ -3303,12 +3303,12 @@ var voidHeadTagsRe = regexp.MustCompile(
 // single-quoted, or bare value) plus the bare `autofocus` boolean. Form
 // controls (input/select/textarea/keygen) are hoisted into <body> by the
 // browser's lenient parser, and an `autofocus` on one fires its `onfocus`
-// handler with no user interaction — an XSS vector that survives the
+// handler with no user interaction: an XSS vector that survives the
 // tag-family block-lists because those tags aren't in them. Stripping the
 // attributes (rather than the tags) also future-proofs any new
 // interactive element that lands in caller-supplied head HTML.
 //
-// The leading boundary is [\s/], not just \s: HTML5 treats '/' as an
+// The leading boundary is [\s/], not only \s: HTML5 treats '/' as an
 // attribute separator (no whitespace required), so `<input/onfocus=…>`
 // is a live handler the browser parses. A whitespace-only boundary would
 // miss the slash-delimited form. The same [\s/] applies to the value's
@@ -3336,7 +3336,7 @@ var linkTagRe = regexp.MustCompile(`(?is)<link\b[^>]*?/?>`)
 // SEOScreen.HeadHTML). The name is kept for back-compat; the behavior
 // is now defense-in-depth across the whole "active in head" tag set.
 // Allowed survivors: <meta> (except http-equiv=refresh), <link> with
-// http(s)/relative href, <title>, and inline text content — and even
+// http(s)/relative href, <title>, and inline text content. Even
 // those have any on*= event-handler / autofocus attribute scrubbed.
 func stripInlineScripts(s string) string {
 	if s == "" {
@@ -3362,10 +3362,10 @@ func stripInlineScripts(s string) string {
 // isSafeLinkTag reports whether a <link …> tag's href and rel are safe
 // to inject into the head from a caller-supplied head HTML escape
 // hatch. The framework's own per-render <link> emissions never go
-// through this path — they're constructed directly.
+// through this path; they're constructed directly.
 func isSafeLinkTag(tag string) bool {
 	low := strings.ToLower(tag)
-	// Reject preload/modulepreload/prefetch — they pull arbitrary
+	// Reject preload/modulepreload/prefetch: they pull arbitrary
 	// resources into the page on the framework's behalf.
 	for _, rel := range []string{`rel="modulepreload"`, `rel='modulepreload'`, `rel=modulepreload`, `rel="prefetch"`, `rel='prefetch'`, `rel=prefetch`, `rel="preload"`, `rel='preload'`, `rel=preload`} {
 		if strings.Contains(low, rel) {
@@ -3382,7 +3382,7 @@ func isSafeLinkTag(tag string) bool {
 }
 
 // extractAttrValue is a permissive attribute-value extractor for the
-// scrub path. Not for production rendering — only for "is this href
+// scrub path. Not for production rendering, only for "is this href
 // safe enough to keep" decisions on caller-supplied HTML fragments.
 func extractAttrValue(tag, attr string) string {
 	low := strings.ToLower(tag)
@@ -3415,7 +3415,7 @@ func extractAttrValue(tag, attr string) string {
 // (og:image, canonical, alternate), so the Resource policy applies: http(s)
 // and relative references, nothing else.
 //
-// The rule set is core-ui/urlsafe's, not a local copy — this guard had been
+// The rule set is core-ui/urlsafe's, not a local copy; this guard had been
 // re-derived six times across the repo.
 func isSafeHeadURL(u string) bool {
 	return urlsafe.OK(u, urlsafe.Resource)
@@ -3426,7 +3426,7 @@ func isSafeHeadURL(u string) bool {
 //
 // Cache policy: the URL is content-addressed via ?v=<hash>. We only
 // stamp the response as `immutable` when the supplied v matches the
-// current Entry.VersionFor — otherwise a stale cached HTML
+// current Entry.VersionFor. Otherwise a stale cached HTML
 // referencing an old ?v= URL would receive fresh bytes back and
 // the browser would cache the (old-URL, new-body) pair as immutable
 // for a year. On mismatch we serve no-cache so the browser
@@ -3455,14 +3455,14 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCompBundleCSS serves /__gofastr/comp-bundle.css?names=a,b,c
-// — concatenates the named components' scoped CSS. Names come in
+// It concatenates the named components' scoped CSS. Names come in
 // sorted order (the host emits them sorted) so cache keys are
 // stable across requests.
 //
 // Cache policy mirrors handleComponentCSS: `immutable` only when
 // the supplied v matches the freshly-computed combined hash;
 // otherwise no-cache to avoid pinning a stale URL to fresh bytes.
-// Unknown names 404 — the contract is that the client requests
+// Unknown names 404: the contract is that the client requests
 // names it learned from the SSR-emitted <link>, which by
 // construction lists only registered entries.
 func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
@@ -3472,13 +3472,13 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names := strings.Split(namesParam, ",")
-	// requestTheme, not activeTheme — the SAME rule handleComponentCSS
+	// requestTheme, not activeTheme: the SAME rule handleComponentCSS
 	// follows. The single-component handler was converted to per-request
 	// theming and this one, which serves the identical CSS in bulk, was left
 	// reading the boot-time theme. A component whose StyleFn reads
 	// style.Theme directly (rather than emitting a var(--*) token) then kept
 	// painting the base palette under a requested variant, so both the embed
-	// frame and the theme editor's preview showed a half-applied theme — and
+	// frame and the theme editor's preview showed a half-applied theme, and
 	// the editor could write a theme its operator had never actually seen.
 	theme := ds.requestTheme(r)
 	versions := make([]string, 0, len(names))

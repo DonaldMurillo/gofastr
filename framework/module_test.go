@@ -344,14 +344,14 @@ func TestDisabledModuleCronSkips(t *testing.T) {
 	}
 
 	// Before disable: job runs.
-	// We can't easily call RunOnce on the scheduler from here — verify
+	// We can't easily call RunOnce on the scheduler from here, verify
 	// via the gate instead. The scheduler's gate should be set.
 	// Check that disabling prevents execution via Enabled check.
 	app.Modules().Disable(context.Background(), "m1")
 	if app.Modules().Enabled("m1") {
 		t.Fatal("module should be disabled")
 	}
-	// The gate closure checks Enabled — since disabled, it returns false.
+	// The gate closure checks Enabled, since disabled, it returns false.
 	// Re-enable for cleanup.
 	app.Modules().Enable(context.Background(), "m1")
 }

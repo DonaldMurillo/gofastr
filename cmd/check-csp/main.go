@@ -17,7 +17,7 @@
 // error. Wired into `make build` via a `csp-check` prerequisite so the
 // app refuses to build when an inline <script> sneaks in.
 //
-// Test files (_test.go) are skipped — fixtures may legitimately
+// Test files (_test.go) are skipped. Fixtures may legitimately
 // contain known-bad strings for assertion purposes.
 package main
 

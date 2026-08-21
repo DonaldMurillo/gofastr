@@ -10,8 +10,8 @@ import (
 // TestHTMLBuildersDropJSSchemes pins the URL-scheme allow-list across every
 // core-ui/html builder that emits a URL attribute.
 //
-// The property — "a URL attribute never carries a script-executing or
-// origin-ambiguous scheme" — was enforced in framework/ui (safeURL) and in
+// The property, "a URL attribute never carries a script-executing or
+// origin-ambiguous scheme", was enforced in framework/ui (safeURL) and in
 // core-ui/patterns/combobox (safePushHref) but NOT in core-ui/html, the
 // layer both of those sit on top of and the layer core-ui/noderender
 // renders its explicitly-untrusted IR through. The guard belongs at the
@@ -61,7 +61,7 @@ func TestHTMLBuildersDropJSSchemes(t *testing.T) {
 				}
 			}
 
-			// Legitimate URLs must survive — a guard that drops everything
+			// Legitimate URLs must survive, a guard that drops everything
 			// is not a guard.
 			for _, ok := range []string{"/relative/path", "https://ok.example/x", "#frag"} {
 				got := string(s.render(ok))

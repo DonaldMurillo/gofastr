@@ -178,7 +178,7 @@ func TestWrapGTInAttributeValue(t *testing.T) {
 }
 
 func TestWrapRawHTMLGTInAttrValue(t *testing.T) {
-	// Raw HTML with a literal > inside a quoted attribute — this is the
+	// Raw HTML with a literal > inside a quoted attribute, this is the
 	// actual bug scenario: the old strings.Index found the > inside the
 	// quoted title value instead of the real tag close.
 	raw := render.HTML(`<button title="1>2">Click</button>`)
@@ -495,7 +495,7 @@ func TestOptimisticUpdateRendersComponentAttrs(t *testing.T) {
 	if !strings.Contains(s, `data-fui-optimistic-endpoint="/api/like/42"`) {
 		t.Fatalf("missing endpoint attr: %s", s)
 	}
-	// POST is the default — method attr should NOT be emitted.
+	// POST is the default, method attr should NOT be emitted.
 	if strings.Contains(s, `data-fui-optimistic-method`) {
 		t.Fatalf("POST default should not emit method attr: %s", s)
 	}

@@ -54,7 +54,7 @@ All call sites depend only on this interface. Swap `MemoryCache` for
 | `WithMaxEntries(n)` | unbounded | LRU-evict least-recently-used entries past the cap. |
 
 The background cleanup goroutine runs until `MemoryCache.Close()` is
-called.  **Always call `Close()`** — or use the Battery wrapper
+called.  **Always call `Close()`**, or use the Battery wrapper
 (below) so the framework calls it during graceful shutdown.
 
 ### Memory bounds
@@ -65,7 +65,7 @@ whenever cache keys are influenced by untrusted input (path, query,
 user id) to prevent unbounded memory growth (OOM/DoS).
 
 A `MemoryCache` built with **neither** `WithTTL` **nor** `WithMaxEntries`
-retains every distinct key forever — the OOM shape. `NewMemoryCache`
+retains every distinct key forever, the OOM shape. `NewMemoryCache`
 logs a WARN in that configuration; set a TTL, a size cap, or both to
 silence it.
 
@@ -83,7 +83,7 @@ methods: `Get`, `Set`, `Del`, `Exists`, `FlushDB`). Any go-redis,
 redigo, or mock client that implements those five methods works without
 importing a specific library.
 
-`RedisCache` has no background goroutine and no `Close` — expiry is
+`RedisCache` has no background goroutine and no `Close`. Expiry is
 handled by the Redis server's own `maxmemory` policy.
 
 ## Stampede protection (`GetOrSet`)
@@ -159,7 +159,7 @@ entry appears in the generated `AGENTS.md` output from
 ## Common mistakes
 
 - **Forgetting `Close()` on a `MemoryCache`.** The background cleanup
-  goroutine runs until `Close()` is called — every cache you construct
+  goroutine runs until `Close()` is called. Every cache you construct
   and drop leaks one. Register it via `cache.NewBattery(c)` so graceful
   shutdown closes it for you.
 - **Caching untrusted-input keys without `WithMaxEntries`.** Keys
@@ -174,5 +174,5 @@ entry appears in the generated `AGENTS.md` output from
 - **Hand-rolling get-miss-then-set under concurrency.** N concurrent
   misses run the loader N times (thundering herd). `cache.GetOrSet`
   collapses concurrent misses per key via singleflight so the loader
-  runs exactly once — and a loader error propagates without being
+  runs exactly once, and a loader error propagates without being
   cached.

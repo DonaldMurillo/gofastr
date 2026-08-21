@@ -16,7 +16,7 @@ import (
 // (EnvSource.Get returns ("", true) for `SECRET=`), which is what made
 // present-but-empty skip the !found guard entirely and bind the zero
 // value. `SECRET=` in a .env file, a k8s ConfigMap key with no value, or
-// a secret-manager miss that writes an empty string all take that path —
+// a secret-manager miss that writes an empty string all take that path,
 // so a signing key or DB URL silently downgrades to "" instead of
 // refusing to boot.
 func TestRequiredRejectsEmptyValue(t *testing.T) {
@@ -45,7 +45,7 @@ func TestRequiredRejectsEmptyValue(t *testing.T) {
 	}
 
 	// A required field WITH a default still binds the default when the
-	// key is absent — the escape hatch stays open.
+	// key is absent; the escape hatch stays open.
 	type withDefault struct {
 		Port string `config:"PORT" required:"true" default:"8080"`
 	}

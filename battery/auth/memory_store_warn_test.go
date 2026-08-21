@@ -26,7 +26,7 @@ func captureSlog(t *testing.T, fn func()) string {
 // Production mode on the default in-memory session store is the silent
 // multi-replica failure: replica B never resolves replica A's cookie,
 // and nothing survives a restart. A warn-only Init lets a broken
-// deployment boot undiscovered — so, like the in-memory 2FA store,
+// deployment boot undiscovered, so, like the in-memory 2FA store,
 // production must REFUSE to boot unless the host explicitly opts in via
 // AllowInMemoryStores.
 func TestProdMemorySessionStoreFailsClosed(t *testing.T) {
@@ -72,7 +72,7 @@ func TestNoMemoryStoreWarnInDevMode(t *testing.T) {
 // The default in-memory 2FA store is worse than a scaling gap: a restart
 // wipes enrollment, silently switching every account back to
 // password-only. A security control that quietly stops applying is not
-// warning-grade — production must refuse to boot.
+// warning-grade, production must refuse to boot.
 func TestProdRefusesMemoryTwoFAStore(t *testing.T) {
 	mgr := auth.New(auth.AuthConfig{JWTSecret: "k", SessionStore: stubDurableSessions{}}) // durable sessions → Init reaches the 2FA gate, not the session gate
 	mgr.Use(auth.NewCorePlugin())

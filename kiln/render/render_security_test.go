@@ -21,7 +21,7 @@ import (
 //
 // The private quoteIdent this replaced escaped `"` and then wrote each rune
 // with `append(out, byte(r))`, truncating to the low byte AFTER the escape
-// test. Any rune whose low byte is 0x22 — U+2022 '•', U+0122, U+0222, … —
+// test. Any rune whose low byte is 0x22, U+2022 '•', U+0122, U+0222, …,
 // became a literal quote the escape never saw, closing the identifier:
 //
 //	quoteIdent("users•) VALUES(1);--")  ->  "users") VALUES(1);--"
@@ -93,7 +93,7 @@ func openSeedDB(t *testing.T) *sql.DB {
 // TestThemeRejectsCSSInjection pins that theme tokens from the IR cannot
 // escape their declaration. core-ui/style emits `--color-<key>: <value>;`
 // with no escaping of either side, so an unvalidated value closes the rule
-// block and appends arbitrary CSS to the app stylesheet — a bypass of the
+// block and appends arbitrary CSS to the app stylesheet, a bypass of the
 // node renderer's deliberate strip of `class` and inline styles.
 func TestThemeRejectsCSSInjection(t *testing.T) {
 	cfg := world.AppConfig{
@@ -181,7 +181,7 @@ func TestSafeHrefStillRenders(t *testing.T) {
 // /kiln/tool/ to an arbitrary same-origin route carrying the operator's
 // cookies and CSRF token.
 //
-// The attribute stays supported — kiln/integration's
+// The attribute stays supported, kiln/integration's
 // TestBrowser_ButtonToolCallFires pins that a button naming a real tool
 // still fires it, and that contract is deliberately kept.
 func TestKilnToolNameRejectsTraversal(t *testing.T) {

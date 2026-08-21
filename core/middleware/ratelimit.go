@@ -13,7 +13,7 @@ import (
 //
 // KeyFunc selects the per-bucket identity (per IP, per session, per API
 // key, etc.). When KeyFunc is nil the default extractor uses
-// r.RemoteAddr — X-Forwarded-For is *ignored* unless TrustProxyHeaders
+// r.RemoteAddr; X-Forwarded-For is *ignored* unless TrustProxyHeaders
 // is set, because a caller in front of the origin can spoof XFF freely
 // and would otherwise get a fresh bucket per request.
 //
@@ -36,12 +36,12 @@ type RateLimitConfig struct {
 	// TrustProxyHeaders enables reading the client IP from the
 	// leftmost X-Forwarded-For (or X-Real-IP) entry. Only set this
 	// when the origin is behind a reverse proxy you control that
-	// rewrites or appends the header — otherwise an attacker can
+	// rewrites or appends the header. Otherwise an attacker can
 	// trivially defeat per-IP limiting by sending random XFF values.
 	//
 	// SECURITY: TrustProxyHeaders alone is NOT sufficient. The
 	// middleware will only trust the header when r.RemoteAddr (the
-	// immediate TCP peer) is one of TrustedProxies — see below.
+	// immediate TCP peer) is one of TrustedProxies. See below.
 	// Without a trusted-proxy whitelist, XFF/X-Real-IP are ignored
 	// and the key falls back to r.RemoteAddr, so an attacker sending
 	// rotating header values from the same source can't get fresh
@@ -180,7 +180,7 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 		return true, 0, remaining, s.timeToFull(remaining, now, now)
 	}
 
-	// Refill — add floor(elapsed / rate) * refill tokens, capped at capacity.
+	// Refill: add floor(elapsed / rate) * refill tokens, capped at capacity.
 	if elapsed := now.Sub(b.lastSeen); elapsed > 0 {
 		gained := int(elapsed/s.rate) * s.refill
 		if gained > 0 {
@@ -257,7 +257,7 @@ func (s *bucketStore) reapLocked(now time.Time) {
 
 // defaultRateLimitKey extracts a per-client identity from the request
 // using r.RemoteAddr only (port stripped). X-Forwarded-For / X-Real-IP
-// are deliberately ignored — a client talking directly to the origin
+// are deliberately ignored: a client talking directly to the origin
 // can put any value in those headers and would otherwise get a fresh
 // bucket per request, defeating per-IP rate limiting entirely.
 //
@@ -271,7 +271,7 @@ func defaultRateLimitKey(r *http.Request) string {
 // newProxyAwareRateLimitKey returns a KeyFunc that trusts the leftmost
 // X-Forwarded-For (then X-Real-IP) entry ONLY when r.RemoteAddr matches
 // one of the configured trusted proxies. The trusted value must also
-// parse as a well-formed public IP — private / loopback / link-local
+// parse as a well-formed public IP: private / loopback / link-local
 // ranges and arbitrary strings are rejected so an attacker sending
 // junk from a trusted hop can't create fresh buckets per request.
 //
@@ -382,7 +382,7 @@ func trimSpaces(s string) string {
 
 // stripPort returns the host portion of addr in the canonical form used
 // as a rate-limit / proxy-trust key. Both bracketed IPv6 ("[::1]:8080")
-// and bare-IPv6 forms ("::1", "2001:db8::1") must round-trip cleanly —
+// and bare-IPv6 forms ("::1", "2001:db8::1") must round-trip cleanly;
 // a last-colon split mangles "2001:db8::1" to "2001:db8:" and silently
 // shards the rate-limit bucket per-address.
 func stripPort(addr string) string {

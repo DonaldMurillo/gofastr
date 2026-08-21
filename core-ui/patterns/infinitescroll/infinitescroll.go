@@ -7,7 +7,7 @@ import (
 
 // Style is the registered stylesheet handle. The component's CSS
 // auto-loads on first appearance via the runtime's data-fui-comp
-// scanner — no app-side wiring required. Apps that want to override
+// scanner, no app-side wiring required. Apps that want to override
 // the defaults do so via theme tokens (--color-*, --spacing-*,
 // --radii-*); the scoped selectors below ensure overrides cascade.
 var Style = registry.RegisterStyle("infinitescroll", styleFn)
@@ -21,7 +21,7 @@ func Render(cfg Config) render.HTML {
 		panic("infinitescroll: Render requires RPCPath")
 	}
 	if len(cfg.Items) == 0 {
-		panic("infinitescroll: Render requires at least one initial Item — empty feeds should render an empty-state block instead")
+		panic("infinitescroll: Render requires at least one initial Item. Empty feeds should render an empty-state block instead")
 	}
 	ariaLabel := cfg.AriaLabel
 	if ariaLabel == "" {

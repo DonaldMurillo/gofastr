@@ -44,7 +44,7 @@ func TestWithMCP_MountsEndpoint(t *testing.T) {
 }
 
 func TestWithMCP_NotMountedByDefault(t *testing.T) {
-	// Without WithMCP, /mcp is not registered by the framework — a client
+	// Without WithMCP, /mcp is not registered by the framework, a client
 	// must not get a valid initialize response.
 	app, cleanup := startApp(t, NewApp())
 	defer cleanup()

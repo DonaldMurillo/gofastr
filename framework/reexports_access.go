@@ -24,8 +24,8 @@ type (
 	// RoleWithOrigin labels an effective role with where it came from
 	// ("direct" vs "resolved") for the admin users screen.
 	RoleWithOrigin = access.RoleWithOrigin
-	// Ref, Decision and Decider form the resource-scoped decision seam —
-	// "member can edit project 42" — consulted before the role policy.
+	// Ref, Decision and Decider form the resource-scoped decision seam:
+	// "member can edit project 42", consulted before the role policy.
 	Ref      = access.Ref
 	Decision = access.Decision
 	Decider  = access.Decider
@@ -64,7 +64,7 @@ func WithRoles(ctx context.Context, roles []string) context.Context {
 }
 
 // GetRoles reads the roles installed via WithRoles back out of the
-// request context — the reader half of the role-context seam, for
+// request context, the reader half of the role-context seam, for
 // role-based UI branching.
 func GetRoles(ctx context.Context) []string { return access.GetRoles(ctx) }
 

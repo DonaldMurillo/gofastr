@@ -19,7 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// Data export/import — anti-lock-in.
+// Data export/import: anti-lock-in.
 //
 // This is a DATA export: it dumps every entity's rows (plus every registered
 // battery table) to a portable archive of NDJSON files + a manifest, and
@@ -29,7 +29,7 @@ import (
 // # Fidelity (design decision D1)
 //
 // Export/import is an operator/admin operation that round-trips data
-// FAITHFULLY — original primary keys, timestamps, owner_id, tenant_id, hidden
+// FAITHFULLY, original primary keys, timestamps, owner_id, tenant_id, hidden
 // columns, and soft-deleted rows included. It therefore reads and writes RAW,
 // bypassing the CRUD pipeline (which regenerates ids, stamps tenant/owner,
 // drops hidden columns, and filters soft-deleted rows). Regenerating ids on
@@ -42,7 +42,7 @@ import (
 // derived from the registry schema (entity.GetTable / entity.GetFields) or a
 // registered DataExporter, and each is passed through core/query.SafeIdent
 // before QuoteIdent. An archive's table/column names are NEVER trusted into
-// SQL — they are validated against the live known set first and unknown ones
+// SQL, they are validated against the live known set first and unknown ones
 // are rejected. All VALUES are $n bound arguments.
 //
 // # Format (design decision D3)
@@ -99,7 +99,7 @@ type manifestEntry struct {
 }
 
 // exportSource is the unified, internal description of one table to dump or
-// restore — whether it came from the entity registry or a DataExporter.
+// restore, whether it came from the entity registry or a DataExporter.
 type exportSource struct {
 	name       string
 	source     string
@@ -146,7 +146,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 	for _, src := range sources {
 		// Identifiers come from the registry/exporter and are validated +
 		// quoted at the single raw-SQL boundary (rawReadAll / tableExists) via
-		// query.MustIdent — a misconfigured registration fails loud (panic)
+		// query.MustIdent, a misconfigured registration fails loud (panic)
 		// there rather than silently interpolating an unsafe name.
 		pk := src.primaryKey
 		if pk == "" {
@@ -195,7 +195,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 // ImportData restores an archive written by ExportData into the live database.
 // It validates the WHOLE archive before writing a single row (missing
 // manifest, unknown source, incompatible columns, checksum mismatch are all
-// rejected up front), then writes every source inside a single transaction —
+// rejected up front), then writes every source inside a single transaction,
 // rolling back on any error. Original ids/timestamps/owner/tenant and
 // soft-deleted rows are preserved verbatim.
 func (a *App) ImportData(ctx context.Context, dir string) error {
@@ -220,7 +220,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 
 	// Build the live known-source index: only tables present in the live
 	// registry or a registered exporter may be restored. Archive entries that
-	// don't match a live source are rejected — a malicious archive's table
+	// don't match a live source are rejected, a malicious archive's table
 	// names never reach this map as keys and therefore never reach SQL.
 	live := a.collectSources()
 	liveByID := make(map[string]exportSource, len(live))
@@ -302,8 +302,8 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 // entity table. Identifiers are SafeIdent-checked at the use sites (export
 // read / import write), so a single choke point enforces D2.
 //
-// Registry entities are collapsed through migrate.UnionEntities — the same
-// version-union helper migration, snapshot, and the seed runner use — so two
+// Registry entities are collapsed through migrate.UnionEntities, the same
+// version-union helper migration, snapshot, and the seed runner use, so two
 // versions of one entity name produce exactly ONE source (one <name>.ndjson)
 // for their shared table. Without this, iterating AllSorted() emits one source
 // per version under the same <name>.ndjson path; the second write clobbers the
@@ -312,7 +312,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 //
 // Distinct entity names that explicitly target the same physical table are
 // also collapsed to one source (the lex-first name) whose column list is the
-// union across every entity sharing the table — a faithful backup reads every
+// union across every entity sharing the table, a faithful backup reads every
 // physical column, not just one name's projection.
 func (a *App) collectSources() []exportSource {
 	var out []exportSource
@@ -377,7 +377,7 @@ func (a *App) collectSources() []exportSource {
 	}
 	for _, ex := range datexport.All() {
 		if seenTable[ex.Table] || seenName[ex.Name] {
-			// Already covered by an entity (or a name collision) — registry wins.
+			// Already covered by an entity (or a name collision), registry wins.
 			continue
 		}
 		pk := ex.PrimaryKey
@@ -404,7 +404,7 @@ func (a *App) registryView() entity.Registry {
 }
 
 // rawReadAll reads every physical row of table, all columns, ordered and paged
-// by primary-key keyset. No soft-delete filter, no owner/tenant scope — a full
+// by primary-key keyset. No soft-delete filter, no owner/tenant scope, a full
 // backup. Scanned values are normalized so the JSON form round-trips: []byte →
 // string, time.Time → RFC3339 string; int64/float64/bool/nil pass through.
 func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string, pk string, pageSize int) ([]map[string]any, error) {
@@ -489,7 +489,7 @@ func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string,
 
 // rawWriteAll inserts every row into table (all values verbatim) inside the
 // given transaction. The INSERT column list and table name are re-validated
-// through SafeIdent here — the single SQL-building choke point — so even a
+// through SafeIdent here, the single SQL-building choke point, so even a
 // caller mistake cannot interpolate an unsafe identifier. All values are $n
 // bound arguments.
 func rawWriteAll(ctx context.Context, tx *sql.Tx, table string, columns []string, rows []map[string]any) error {

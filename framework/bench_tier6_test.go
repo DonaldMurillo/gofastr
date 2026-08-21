@@ -13,7 +13,7 @@ import (
 )
 
 // ============================================================================
-// Tier 6 — latency percentiles + concurrency
+// Tier 6: latency percentiles + concurrency
 //
 // Raw ns/op is a mean and hides tail behaviour. These benchmarks record per-
 // operation latencies, sort them, and emit p50/p90/p99/p99.9 via
@@ -73,7 +73,7 @@ func (l *latencyRecorder) report(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 6.1 — Read-heavy: GET /posts at varying concurrency
+// 6.1. Read-heavy: GET /posts at varying concurrency
 // ----------------------------------------------------------------------------
 
 // BenchmarkT6_ListConcurrency drives a GET /posts list endpoint through
@@ -110,7 +110,7 @@ func BenchmarkT6_ListConcurrency(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 6.2 — Write-heavy: POST /posts at varying concurrency
+// 6.2. Write-heavy: POST /posts at varying concurrency
 // ----------------------------------------------------------------------------
 
 // BenchmarkT6_CreateConcurrency drives POST /posts at parallelism 1, 8, 64.
@@ -160,7 +160,7 @@ func BenchmarkT6_CreateConcurrency(b *testing.B) {
 }
 
 // ----------------------------------------------------------------------------
-// 6.3 — Mixed read/write at concurrency — closer to production traffic
+// 6.3. Mixed read/write at concurrency, closer to production traffic
 // ----------------------------------------------------------------------------
 
 // BenchmarkT6_MixedRW runs a 9:1 read:write mix at parallelism 8 and 64.

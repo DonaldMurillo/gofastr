@@ -18,7 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// #29 — a materialized view is created as MATERIALIZED (not a plain view),
+// #29: a materialized view is created as MATERIALIZED (not a plain view),
 // re-applies idempotently (DROP+CREATE), holds a refreshable snapshot, and
 // generates a reversible DROP.
 func TestMatView_MigratesQueryableReversible(t *testing.T) {
@@ -81,7 +81,7 @@ func TestMatView_MigratesQueryableReversible(t *testing.T) {
 	}
 }
 
-// #30 — a view that DependsOn two tables is created after BOTH (topo order)
+// #30: a view that DependsOn two tables is created after BOTH (topo order)
 // and is queryable.
 func TestView_MultiDependencyTopoOrder(t *testing.T) {
 	db := openTestDB(t, DialectPostgres)
@@ -107,7 +107,7 @@ func TestView_MultiDependencyTopoOrder(t *testing.T) {
 	}
 }
 
-// #30 — a trigger routine (table + plpgsql function + trigger) actually fires.
+// #30: a trigger routine (table + plpgsql function + trigger) actually fires.
 func TestRoutine_TriggerFiresOnPostgres(t *testing.T) {
 	db := openTestDB(t, DialectPostgres)
 	ctx := context.Background()
@@ -145,7 +145,7 @@ func TestRoutine_TriggerFiresOnPostgres(t *testing.T) {
 	}
 }
 
-// #30 — a stored procedure routine is created and CALL-able on Postgres.
+// #30: a stored procedure routine is created and CALL-able on Postgres.
 func TestRoutine_ProcedureOnPostgres(t *testing.T) {
 	db := openTestDB(t, DialectPostgres)
 	ctx := context.Background()

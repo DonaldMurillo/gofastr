@@ -54,7 +54,7 @@ func TestAuthConfirmPageDocRendersCSRFField(t *testing.T) {
 
 // rejectCrossSiteForm now keys on isForgeableRequest, which also refuses
 // text/plain and a bodyless fetch (no Content-Type). The doc must name
-// text/plain — it is the third form enctype and needs no CORS preflight.
+// text/plain: it is the third form enctype and needs no CORS preflight.
 func TestAuthCrossSiteGuardDocCoversTextPlain(t *testing.T) {
 	section := sectionAfter(t, readDoc(t, "auth.md"), "carry their own cross-site guard", 900)
 	if !strings.Contains(section, "text/plain") {
@@ -123,7 +123,7 @@ func TestSecurityDocStaticExportCSPCaveat(t *testing.T) {
 
 // NoQuery refuses every WIRE query surface. The in-process typed API
 // (TypedQuery.Where) deliberately accepts caller-built conditions and
-// returns stored values — read-modify-write and aggregates need them.
+// returns stored values: read-modify-write and aggregates need them.
 // security.md must not claim "every query surface" without that carve-out.
 func TestSecurityDocNoQueryCarvesOutTypedAPI(t *testing.T) {
 	sec := readDoc(t, "security.md")
@@ -145,7 +145,7 @@ func TestSecurityDocNoQueryCarvesOutTypedAPI(t *testing.T) {
 // RenderNode/RenderKind strip data-action*/data-param-*; the first-party
 // pair RenderTrustedNode/RenderTrustedKind does not. The contract doc's
 // noderender bullet must name the split (and that data-island is refused
-// outright — it is the SSE swap target), or a first-party caller following
+// outright, it is the SSE swap target), or a first-party caller following
 // it loses every action attribute.
 func TestCoreUIArchitectureDocumentsTrustedRenderers(t *testing.T) {
 	doc := readRepo(t, "core-ui/ARCHITECTURE.md")
@@ -192,7 +192,7 @@ func TestHooksDocReadSurfacesIncludeTypedQuery(t *testing.T) {
 // means somebody reads the wrong story.
 //
 // This replaced a gate pinned to the Unreleased heading, which stopped
-// looking the moment the section was rolled to its version number — the one
+// looking the moment the section was rolled to its version number, the one
 // commit in a release where the marker matters most.
 func TestChangelogAgreesWithUpgradesOnBreaking(t *testing.T) {
 	breakingByVersion := upgradeRegistryBreaking(t)
@@ -223,7 +223,7 @@ func TestChangelogAgreesWithUpgradesOnBreaking(t *testing.T) {
 // marksBreaking reports whether a changelog section flags a breaking change.
 //
 // The marker is the all-caps word, which the file spells four ways across its
-// history — `**BREAKING:` at the head of an entry, `BREAKING.**` at the tail
+// history: `**BREAKING:` at the head of an entry, `BREAKING.**` at the tail
 // of one, a `### BREAKING` heading, and plain prose ("Most entries below are
 // BREAKING"). Matching the word covers all four. Two uses are not markers and
 // are removed first: a section stating it has none, and the v0.26.1 entry

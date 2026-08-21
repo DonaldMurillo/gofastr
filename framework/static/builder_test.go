@@ -26,7 +26,7 @@ func (homeScreen) Render() render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home"))
 }
 
-// loadingScreen sets a body string from Load(ctx) — ensures Load runs at SSG time.
+// loadingScreen sets a body string from Load(ctx), ensuring Load runs at SSG time.
 type loadingScreen struct {
 	Body string
 }
@@ -146,7 +146,7 @@ func TestBuildEmitsSplitRuntimeModules(t *testing.T) {
 
 	// runtime.js dynamically injects <script src="/__gofastr/runtime/<name>.js?v=<hash>">
 	// for each split module (themeswitch, shortcut, copy, widgets, sse, …). A static host
-	// ignores the ?v= query and resolves the file by path — so every module MUST exist on
+	// ignores the ?v= query and resolves the file by path, so every module MUST exist on
 	// disk, query-free, or the module load 404s and all client interactivity dies. This is
 	// the regression the wget crawl had (it baked ?v= into the filename and 404'd).
 	names := runtime.ModuleNames()
@@ -211,7 +211,7 @@ func TestBuildExpandsDynamicRoutesViaStaticPaths(t *testing.T) {
 }
 
 func TestBuildSkipsDynamicRoutesWithoutStaticPaths(t *testing.T) {
-	// No StaticPaths method on this screen — should be skipped silently.
+	// No StaticPaths method on this screen, so it should be skipped silently.
 	type plainProduct struct{ productScreenWithoutPaths }
 	a := coreapp.NewApp("SSGTest")
 	a.Register("/items/:id", &plainProduct{}, nil)
@@ -353,7 +353,7 @@ func TestBuildMarksPagesStaticAndInjectsNotice(t *testing.T) {
 		t.Errorf("exported page must stamp <html data-fui-static; got head:\n%s", head)
 	}
 	// 2. The run-locally notice is injected (doctrine: one styling
-	//    surface — framework/ui.Banner).
+	//    surface: framework/ui.Banner).
 	if !strings.Contains(s, "Static preview") {
 		t.Errorf("exported page must carry the run-locally notice")
 	}
@@ -435,7 +435,7 @@ func TestRewriteBaseURLs_PrefixesCatalogJSON(t *testing.T) {
 	b := &Builder{BasePath: "/gofastr"}
 	// The component catalog seeds inline JSON with stylePath values the
 	// runtime lazy-loads. These are quoted root-absolute URLs, not
-	// attributes — the regex path misses them, so they need the quoted-
+	// attributes. The regex path misses them, so they need the quoted-
 	// value prefix pass.
 	in := `<script>{"ui-banner":{"stylePath":"/__gofastr/comp/ui-banner.css","version":"abc"}}</script>` +
 		`<a href="/about">x</a>`
@@ -456,7 +456,7 @@ func TestRewriteBaseURLs_PrefixesCatalogJSON(t *testing.T) {
 
 // data-fui-push-state carries the navigation target a combobox/palette option
 // routes to on selection. On a subpath deploy these root-absolute paths must
-// be base-prefixed just like href/src — otherwise selecting a command navigates
+// be base-prefixed just like href/src. Otherwise selecting a command navigates
 // to the apex path and 404s. External and protocol-relative values are left alone.
 func TestRewriteBaseURLs_PrefixesPushState(t *testing.T) {
 	b := &Builder{BasePath: "/gofastr"}

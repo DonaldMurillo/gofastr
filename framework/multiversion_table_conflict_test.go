@@ -14,8 +14,8 @@ import (
 // consequence as between two versions of one name: migrate emits DDL for the
 // table twice and the surviving schema depends on map iteration order.
 //
-// This is the "distinct names, shared table" shape — the workaround people
-// reached for before the registry became version-aware — so it stays reachable
+// This is the "distinct names, shared table" shape, the workaround people
+// reached for before the registry became version-aware, so it stays reachable
 // and has to be caught by the same rule.
 func TestSharedTableConflict_DifferentNames(t *testing.T) {
 	defer func() {

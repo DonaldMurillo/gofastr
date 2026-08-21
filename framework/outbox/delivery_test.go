@@ -16,7 +16,7 @@ func noopHandler(context.Context, event.Event) error { return nil }
 
 // ---------------------------------------------------------------------------
 // Expansion creates exactly one pending delivery per declared consumer
-// whose event type matches the row — and is idempotent.
+// whose event type matches the row, and is idempotent.
 // ---------------------------------------------------------------------------
 
 func TestExpand_OneDeliveryPerMatchingConsumer(t *testing.T) {
@@ -72,7 +72,7 @@ func TestExpand_OneDeliveryPerMatchingConsumer(t *testing.T) {
 func TestSiblingIsolation_ErrorDoesNotBlockSibling(t *testing.T) {
 	db, o := openOutbox(t, WithMaxAttempts(1000), WithPollInterval(5*time.Millisecond))
 	// Large backoff so A never exhausts its attempts within the test
-	// window — it stays pending, keeping the parent pending.
+	// window, it stays pending, keeping the parent pending.
 	o.backoffBase = 200 * time.Millisecond
 	o.backoffMax = 500 * time.Millisecond
 	ctx := context.Background()
@@ -263,7 +263,7 @@ func TestPerDelivery_AttemptsIndependent(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Removed consumer: a delivery whose consumer has no handler anywhere is
-// ABANDONED once past the grace, so it no longer blocks parent completion —
+// ABANDONED once past the grace, so it no longer blocks parent completion,
 // whether the surviving sibling is still pending or already dispatched.
 // Uses grace=0 + a direct pump for determinism.
 // ---------------------------------------------------------------------------
@@ -303,7 +303,7 @@ func TestRemovedConsumer_AbandonedSiblingDispatched(t *testing.T) {
 	id, _ := o.Append(ctx, tx, "t", nil)
 	tx.Commit()
 	// Surviving sibling already delivered in a prior process; the removed
-	// consumer's delivery is still pending — nothing settles inline to
+	// consumer's delivery is still pending, nothing settles inline to
 	// complete the parent, so abandonment must both settle it and complete.
 	insertDelivery(t, db, o, id, "keep", "dispatched", 0, "")
 	insertDelivery(t, db, o, id, "oldsvc", "pending", 1, "")
@@ -321,7 +321,7 @@ func TestRemovedConsumer_AbandonedSiblingDispatched(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Rolling-deploy ADD safety: a FRESH delivery for a consumer this replica
 // doesn't declare (a newly-added consumer, still deploying) must be REQUEUED,
-// never abandoned — otherwise a lagging replica would silently drop the new
+// never abandoned, otherwise a lagging replica would silently drop the new
 // consumer's events. Uses a large grace so the fresh delivery is within it.
 // ---------------------------------------------------------------------------
 
@@ -340,7 +340,7 @@ func TestAddedConsumer_FreshDeliveryNotAbandoned(t *testing.T) {
 	o.pump(ctx)
 
 	// The lagging replica must NOT have abandoned the fresh delivery, and must
-	// NOT have completed/dropped the parent — the new replica still owes it.
+	// NOT have completed/dropped the parent, the new replica still owes it.
 	if got := findDelivery(t, mustDeliveries(t, o, id), "newsvc").Status; got != "pending" {
 		t.Errorf("fresh removed-elsewhere delivery = %q, want pending (requeued, not abandoned)", got)
 	}
@@ -351,7 +351,7 @@ func TestAddedConsumer_FreshDeliveryNotAbandoned(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Orphan parent (event type nobody subscribes to): dropped once past the
-// grace, but NOT before — so a rolling deploy adding a type's first consumer
+// grace, but NOT before, so a rolling deploy adding a type's first consumer
 // doesn't lose fresh events.
 // ---------------------------------------------------------------------------
 
@@ -395,7 +395,7 @@ func TestOrphanType_NotDroppedWithinGrace(t *testing.T) {
 // Rolling-deploy ADD, premature-completion variant: a parent must NOT be
 // completed while young, because a consumer added on another replica hasn't
 // had its delivery row created yet. If the parent completes first, expand
-// (WHERE status='pending') can never create that delivery — the new consumer
+// (WHERE status='pending') can never create that delivery, the new consumer
 // silently loses the event. The completion path must be age-gated like the
 // abandon path. Here c2 is declared AFTER the parent was already fully
 // delivered to c1; with a large grace, c2 must still pick the parent up.
@@ -414,7 +414,7 @@ func TestRollingAdd_YoungParentNotCompletedBeforeNewConsumerExpands(t *testing.T
 	}
 
 	// A new consumer is rolled out and now declared; the still-pending parent
-	// must be expanded and delivered to it — not lost.
+	// must be expanded and delivered to it, not lost.
 	o.Consume("c2", "t", noopHandler)
 	o.pump(ctx)
 	if got := findDelivery(t, mustDeliveries(t, o, id), "c2").Status; got != "dispatched" {
@@ -423,7 +423,7 @@ func TestRollingAdd_YoungParentNotCompletedBeforeNewConsumerExpands(t *testing.T
 }
 
 // Backlog catch-up: an OLD, not-yet-expanded parent of a STILL-CONSUMED type
-// must NOT be orphan-dropped — expand (batch-bounded, oldest-first) will reach
+// must NOT be orphan-dropped, expand (batch-bounded, oldest-first) will reach
 // it. Regression guard: a pure-time orphan drop (age only) would lose it after
 // a >grace relay outage with a backlog. Here grace=0 makes every parent "old",
 // and sweepParents runs BEFORE any expand.

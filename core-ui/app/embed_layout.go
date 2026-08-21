@@ -12,7 +12,7 @@ const EmbedLayoutName = "embed"
 // page already has a header, and a second one framed inside their content reads
 // as a broken page rather than as an integration.
 //
-// So the embed layout has no chrome — only the <main> landmark. It is a real
+// So the embed layout has no chrome, only the <main> landmark. It is a real
 // layout rather than a flag on the embed route for two reasons. An app author
 // can register a screen with it and see locally exactly what their customer
 // will see; and the landmark stays in one place, so the frame document has

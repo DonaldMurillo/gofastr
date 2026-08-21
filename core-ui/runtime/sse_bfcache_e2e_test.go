@@ -17,7 +17,7 @@ import (
 // the tab's ~6 per-host HTTP/1.1 connections hoarded from inside the
 // back/forward cache. Without the pagehide close, Chrome retains the
 // dead page's stream socket (never sends FIN) and 6 SSE-bearing
-// navigations starve the tab — the server here observes exactly that:
+// navigations starve the tab, the server here observes exactly that:
 // its stream handler never unblocks.
 func TestSSEClosesStreamOnHardNav(t *testing.T) {
 	var active int32

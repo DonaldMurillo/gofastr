@@ -8,15 +8,15 @@ import (
 
 // chartEmpty renders the zero-data placeholder shared by every chart
 // component. Data-bound charts (dashboards, reports) legitimately receive no
-// rows — a brand-new user has no customers yet — so an empty dataset is a
+// rows, a brand-new user has no customers yet, so an empty dataset is a
 // normal runtime state, NOT misuse. A chart must show a calm empty state in
 // that case; panicking would crash the whole screen (and, behind the SSR
 // host's panic recovery, surface as a 404 on the first page a user ever sees).
 //
 // Genuine programmer errors (negative values, missing series names, unknown
-// shapes) still panic — those are bugs, not states.
+// shapes) still panic. Those are bugs, not states.
 // The height argument is accepted for call-site symmetry with the chart
-// constructors but is intentionally not turned into an inline style — the
+// constructors but is intentionally not turned into an inline style: the
 // framework forbids inline styles (everything ships via registered CSS), so the
 // placeholder's min-height is a fixed token in the stylesheet below.
 func chartEmpty(_ int, labelledBy, class, message string) render.HTML {

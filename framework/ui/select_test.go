@@ -17,7 +17,7 @@ func requiredSelect() string {
 }
 
 // The component root is display: grid, so a marker rendered as a SIBLING of
-// the <label> becomes its own grid row — "Policy" on one line, "*" on the
+// the <label> becomes its own grid row: "Policy" on one line, "*" on the
 // next. Inside the label it shares the line, matching ui.FormField.
 func TestSelectMarkerRendersInsideLabel(t *testing.T) {
 	h := requiredSelect()

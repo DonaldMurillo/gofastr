@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// finishErrorStore is a first-writer store whose Finish always fails — the
+// finishErrorStore is a first-writer store whose Finish always fails, the
 // DB-blip case: Begin claims the key, the handler runs and answers the
 // client, then persisting the cached response strands the claim.
 type finishErrorStore struct{}
@@ -24,8 +24,8 @@ func (finishErrorStore) Finish(context.Context, string, string, *IdempotentRespo
 }
 
 // TestIdempotency_FinishErrorLogged pins fix #3: a Finish failure must produce
-// a log record (the claim is stranded — retries of the same key 409 until the
-// entry TTLs — and the failure is otherwise invisible). Critically, the client
+// a log record (the claim is stranded, retries of the same key 409 until the
+// entry TTLs, and the failure is otherwise invisible). Critically, the client
 // still receives its original response unchanged: this is observability, not a
 // control-flow change.
 func TestIdempotency_FinishErrorLogged(t *testing.T) {

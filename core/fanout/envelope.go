@@ -18,12 +18,12 @@ type envelopeJSON struct {
 
 // NewNodeID returns 16 random bytes hex-encoded (32 chars). Random rather
 // than counter-based avoids both global-contention and the assumption that
-// every replica is built from the same source — two replicas that happen to
+// every replica is built from the same source. Two replicas that happen to
 // both start at counter zero would loop on each other's broadcasts.
 //
 // crypto/rand.Read on the default Reader does not fail on a supported
 // platform (getrandom/SecRandomCopyBytes/RtlGenRandom), so the error is
-// ignored — the modern idiom used elsewhere in the framework (e.g.
+// ignored, the modern idiom used elsewhere in the framework (e.g.
 // core/middleware request ids).
 func NewNodeID() string {
 	var buf [16]byte

@@ -8,10 +8,10 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Test helpers — lightweight component implementations used across tests
+// Test helpers, lightweight component implementations used across tests
 // ---------------------------------------------------------------------------
 
-// staticComp is the simplest possible Component — it just returns fixed HTML.
+// staticComp is the simplest possible Component, it just returns fixed HTML.
 type staticComp struct {
 	html render.HTML
 }
@@ -30,7 +30,7 @@ func (ic *interactiveComp) Render() render.HTML {
 
 func (ic *interactiveComp) Actions() {
 	On("click", func(ctx *ComponentContext) {
-		// handler body intentionally empty — we just need it registered
+		// handler body intentionally empty, we just need it registered
 	})
 	On("hover", func(ctx *ComponentContext) {})
 }

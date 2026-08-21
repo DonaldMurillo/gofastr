@@ -12,13 +12,13 @@ import (
 // ─── AvatarGroup ────────────────────────────────────────────────────
 //
 // Overlapping stack of avatars with a "+N" overflow indicator. The
-// stack uses CSS negative margins (no inline styles — strict-CSP
+// stack uses CSS negative margins (no inline styles, strict-CSP
 // safe) and propagates the group Size to its children unless the
 // individual AvatarConfig already set one.
 
 // AvatarGroupConfig configures an avatar group / stack.
 type AvatarGroupConfig struct {
-	// Avatars is the source list — at least one. Order matters: the
+	// Avatars is the source list: at least one. Order matters: the
 	// first element renders on top.
 	Avatars []AvatarConfig
 
@@ -96,7 +96,7 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		// aria-label on <span> (the implicit role doesn't accept it);
 		// either drop aria-label OR promote the span to a role that
 		// supports the attribute. role=img reads "image, N more" to
-		// screen readers — close enough to the visual "+N" chip.
+		// screen readers, close enough to the visual "+N" chip.
 		items = append(items, html.Span(html.TextConfig{
 			Class: "ui-avatar-group__overflow",
 			ExtraAttrs: html.Attrs{
@@ -122,7 +122,7 @@ var avatarGroupStyle = registry.RegisterStyle("ui-avatar-group", avatarGroupCSS)
 
 func avatarGroupCSS(_ style.Theme) string {
 	// Overlap is sized per-variant so the stack looks tight regardless
-	// of Avatar size — roughly 10% of each avatar's width tucks under
+	// of Avatar size: roughly 10% of each avatar's width tucks under
 	// the previous one. This preserves identity initials while still
 	// reading as one group. Stacking order (z-index via :nth-child reverse)
 	// keeps the first avatar on top, which matches the natural reading

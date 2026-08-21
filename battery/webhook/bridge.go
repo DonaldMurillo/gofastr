@@ -21,7 +21,7 @@ type bridgeOpts struct {
 // marshalled and POSTed to subscriber URLs.
 //
 // This bridge is an OUTBOUND delivery to third-party endpoints, and the event
-// record is the row the write produced — stored values. The framework's own
+// record is the row the write produced, stored values. The framework's own
 // read redaction (an AfterGet hook) applies to responses and to the SSE
 // stream, but this bridge has no handler to run it through, so by default a
 // masked field leaves the server here in full.
@@ -36,7 +36,7 @@ type bridgeOpts struct {
 //	        return maskCardNumber(ev)
 //	    }))
 //
-// The transform must not mutate ev in place — other subscribers hold the
+// The transform must not mutate ev in place, other subscribers hold the
 // same event. Return a copy.
 func WithBridgeRedactor(fn func(eventType string, ev event.Event) event.Event) BridgeOption {
 	return func(o *bridgeOpts) { o.redact = fn }
@@ -61,7 +61,7 @@ func WithBridgePublishError(fn func(eventType string, err error)) BridgeOption {
 // that an Emit/EmitAsync automatically fans out to matching webhook
 // subscribers.
 //
-// The returned cancel function detaches every subscription at once —
+// The returned cancel function detaches every subscription at once,
 // call it from your shutdown path before stopping the Manager so no
 // in-flight Emit lands after the workers have exited.
 //

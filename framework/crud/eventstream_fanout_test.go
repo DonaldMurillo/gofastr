@@ -20,7 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
 
-// installInt64OwnerExtractor maps the test user "alice" to int64(7) — the
+// installInt64OwnerExtractor maps the test user "alice" to int64(7), the
 // shape a host whose users table has a BIGINT primary key produces.
 func installInt64OwnerExtractor(t *testing.T) {
 	t.Helper()
@@ -41,7 +41,7 @@ func installInt64OwnerExtractor(t *testing.T) {
 // TestEventStream_DeliversRemoteIntOwnerEvent: two replicas share one fanout.
 // Replica B holds alice's SSE EventStream; replica A performs the write and
 // emits the CRUD event through the real EmitEvent → eventData path. The event
-// matches alice's owner (int64 7) on both sides and reaches her stream —
+// matches alice's owner (int64 7) on both sides and reaches her stream,
 // ownerId is stamped and compared as a string, so the JSON round-trip cannot
 // retype it.
 func TestEventStream_DeliversRemoteIntOwnerEvent(t *testing.T) {

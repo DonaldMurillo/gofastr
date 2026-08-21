@@ -25,7 +25,7 @@ type BurnStore interface {
 	//
 	// First caller wins: it stores grant and returns (grant, false, nil).
 	// A later caller arriving while the stored grant is still valid gets that
-	// SAME grant back with replay=true — the exchange is idempotent, so a
+	// SAME grant back with replay=true. The exchange is idempotent, so a
 	// prefetched iframe, a double-mounted loader or a page refresh does not
 	// break the embed.
 	// A caller arriving after the stored grant has expired gets
@@ -45,7 +45,7 @@ type BurnStore interface {
 // MemoryBurnStore is an in-process BurnStore.
 //
 // Correct on one replica AND across one process lifetime. Two replicas each
-// keep their own map, so the same nonce can be spent once per replica — and a
+// keep their own map, so the same nonce can be spent once per replica, and a
 // restart forgets every burn, so a nonce still inside its (short) TTL becomes
 // spendable again. [NewSQLBurnStore] is the answer to both. Kept for tests and
 // single-process apps, and named so the limitation is visible at the call site.
@@ -122,7 +122,7 @@ func (s *MemoryBurnStore) Burn(_ context.Context, nonceID, grant string, expires
 		}
 		return "", true, nil
 	}
-	// Record the burn either way — the row IS the tombstone, and refusing to
+	// Record the burn either way: the row IS the tombstone, and refusing to
 	// write it would leave the nonce unburnt and spendable by the next caller,
 	// which is worse than what this guard prevents.
 	s.rows[nonceID] = memoryBurn{grant: grant, expires: expires}
@@ -134,8 +134,8 @@ func (s *MemoryBurnStore) Burn(_ context.Context, nonceID, grant string, expires
 	// But hand back a usable grant only if the deadline has not already passed.
 	//
 	// Verification happens before the burn and is not atomic with it, so a
-	// request that verified a nonce and then stalled — a slow resolver, a
-	// paused goroutine, a long GC — could arrive after Prune had removed the
+	// request that verified a nonce and then stalled, a slow resolver, a
+	// paused goroutine or a long GC, could arrive after Prune had removed the
 	// winning row. Without this it would insert a fresh one and mint a SECOND
 	// grant from a nonce already spent; with it, the tombstone is restored and
 	// the caller is told the nonce is spent.
@@ -184,7 +184,7 @@ func (s *MemoryBurnStore) Prune(_ context.Context, now time.Time) error {
 // Burn refuses a claim whose deadline has passed, using the calling replica's
 // clock. Prune deletes using its own. Two replicas whose clocks differ can
 // therefore disagree about whether a row is still live, and the dangerous
-// direction is a fast pruner deleting a row a slow verifier is about to need —
+// direction is a fast pruner deleting a row a slow verifier is about to need,
 // which un-burns the nonce and lets it mint a second grant.
 //
 // A margin costs one extra row per spent nonce for its duration and removes the
@@ -215,7 +215,7 @@ func WithBurnTable(name string) SQLBurnStoreOption {
 
 // NewSQLBurnStore creates the burn table if it does not exist and returns a
 // store bound to it. The table is created here rather than through the entity
-// migrator because it is framework plumbing, not app data — the same choice the
+// migrator because it is framework plumbing, not app data, the same choice the
 // auth battery's token tables make.
 func NewSQLBurnStore(database *sql.DB, opts ...SQLBurnStoreOption) (*SQLBurnStore, error) {
 	if database == nil {
@@ -250,7 +250,7 @@ func NewSQLBurnStore(database *sql.DB, opts ...SQLBurnStoreOption) (*SQLBurnStor
 // zero-row success rather than an error, so the replay path is a plain follow-up
 // SELECT instead of driver-specific constraint-error sniffing.
 //
-// expires is the retention deadline, not the grant's expiry — see BurnStore.
+// expires is the retention deadline, not the grant's expiry. See BurnStore.
 func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires time.Time) (string, bool, error) {
 	ins := fmt.Sprintf(
 		`INSERT INTO %s (nonce_id, grant_token, expires_at) VALUES ($1, $2, $3) ON CONFLICT (nonce_id) DO NOTHING`,
@@ -260,7 +260,7 @@ func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires 
 		return "", false, fmt.Errorf("embed: burn nonce: %w", err)
 	}
 	if n, err := res.RowsAffected(); err == nil && n == 1 {
-		// The row is written either way — it IS the tombstone, and refusing to
+		// The row is written either way: it IS the tombstone, and refusing to
 		// write it would leave the nonce unburnt and spendable by the next
 		// caller. But a claim whose retention deadline has already passed hands
 		// back nothing usable.
@@ -281,7 +281,7 @@ func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires 
 	// Note what this deliberately does NOT do: compare the stored grant to the
 	// one we just minted and call a match "we won". Grants are a deterministic
 	// function of their claims, so two exchanges of the same nonce inside the
-	// same second mint byte-identical tokens — that comparison reported every
+	// same second mint byte-identical tokens. That comparison reported every
 	// such replay as a first use. The replay flag is informational (the caller
 	// answers both cases identically), so a driver that cannot report rows
 	// affected loses only the label, never the single-use guarantee.
@@ -290,7 +290,7 @@ func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires 
 	var storedExp time.Time
 	switch err := s.db.QueryRowContext(ctx, sel, nonceID).Scan(&stored, &storedExp); {
 	case errors.Is(err, sql.ErrNoRows):
-		// The row vanished between the insert and the read — only Prune
+		// The row vanished between the insert and the read: only Prune
 		// deletes, and it only deletes expired rows, so the nonce's window is
 		// over. Treat it as spent rather than retrying the insert, which is
 		// the only answer that cannot loop.

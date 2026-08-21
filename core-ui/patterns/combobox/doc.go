@@ -16,13 +16,13 @@
 // Server contract for the search RPC handler:
 //
 //   - Request body: form-encoded with `query=<text>` (whatever the
-//     input's `name` attribute is — default "q").
+//     input's `name` attribute is, default "q").
 //   - Response: `<li role="option" id="...">label</li>` fragments,
 //     swapped into the listbox via data-fui-rpc-signal. Each option
 //     SHOULD carry a `data-value` attribute that becomes the input's
-//     selected value on pick — if absent, the option's textContent
+//     selected value on pick, if absent, the option's textContent
 //     is used.
 //   - To indicate "no results", emit a single `<li role="option"
-//     aria-disabled="true">No results</li>` — the keyboard nav skips
+//     aria-disabled="true">No results</li>`, the keyboard nav skips
 //     disabled options.
 package combobox

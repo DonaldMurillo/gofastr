@@ -49,7 +49,7 @@ type StepWizardConfig struct {
 
 	// Ctx carries the per-request context used to resolve i18n strings
 	// (Back, Continue, Submit button labels). When nil, context.Background()
-	// is used and English fallbacks are returned — preserving today's behaviour.
+	// is used and English fallbacks are returned, preserving today's behaviour.
 	Ctx context.Context
 }
 

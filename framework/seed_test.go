@@ -180,7 +180,7 @@ func TestRunSeeds_SeedDataFromContext(t *testing.T) {
 }
 
 // TestRunSeeds_NoSeedNoOp verifies that registries with no Seed-bearing
-// entities don't even create the ledger table — the framework stays out
+// entities don't even create the ledger table, the framework stays out
 // of the way when seeding is unused.
 func TestRunSeeds_NoSeedNoOp(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -230,7 +230,7 @@ func TestRegisterEntities_SortsByName(t *testing.T) {
 		"bravo":   {Fields: []schema.Field{{Name: "n", Type: schema.String, Required: true}}},
 	})
 
-	// Probe registration-order observable via router.Routes() — each
+	// Probe registration-order observable via router.Routes(), each
 	// entity registers its CRUD routes in a single batch, and the
 	// listing reflects insertion order. The first GET route for each
 	// entity is the list endpoint at /<table>.
@@ -306,7 +306,7 @@ func TestAppStart_CancelsAppCtxOnStartHookFailure(t *testing.T) {
 		seenCtx = ctx
 		return nil
 	})
-	// Second hook fails — Start must abort and cancel appCtx so the
+	// Second hook fails. Start must abort and cancel appCtx so the
 	// "worker" the first hook would have spawned doesn't outlive Start.
 	app.OnStart(func(ctx context.Context) error {
 		return errBoomStartHook
@@ -359,7 +359,7 @@ func TestEntity_PanicsWhenSeedFSWithoutSeedPath(t *testing.T) {
 			return nil
 		},
 		SeedFS:   seedFixtures, // set
-		SeedPath: "",           // empty — misconfiguration
+		SeedPath: "",           // empty: misconfiguration
 	})
 }
 

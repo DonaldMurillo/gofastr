@@ -41,7 +41,7 @@ type engineState struct {
 	clients   map[ids.ClientID]control.Client
 
 	// Total-ordering: turnBusy is atomic; turnOriginator is stored
-	// atomically too — the rejection path and the pending-permission
+	// atomically too, the rejection path and the pending-permission
 	// path read it from other goroutines while the turn goroutine's
 	// release() clears it, so a plain field is a data race. A slightly
 	// stale originator in a rejection message is acceptable; a torn
@@ -118,7 +118,7 @@ func (m *Mux) Attach(session ids.SessionID, c control.Client) error {
 	return nil
 }
 
-// Detach removes a client. Non-destructive at the engine level — the
+// Detach removes a client. Non-destructive at the engine level, the
 // EngineRun continues, events still flow to other attached clients.
 func (m *Mux) Detach(session ids.SessionID, clientID ids.ClientID) {
 	m.mu.RLock()
@@ -186,7 +186,7 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	}
 	st.turnOriginator.Store(c.ID())
 	// Release the slot via the engine's OnTurnEnd hook so it happens
-	// BEFORE the TurnEnded event is published — prevents a subscriber
+	// BEFORE the TurnEnded event is published, prevents a subscriber
 	// reacting to TurnEnded from racing into the slot. The deferred
 	// fallback below catches the case where RunTurn returns without
 	// going through publishTurnEnd (shouldn't happen but defends).
@@ -199,7 +199,7 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	}
 	st.engine.OnTurnEnd = release
 	// Use the engine's CancelTree as the parent context for the
-	// turn — NOT the caller's ctx. The caller's ctx may be a
+	// turn. NOT the caller's ctx. The caller's ctx may be a
 	// short-lived HTTP request context that would cancel the turn
 	// the instant the POST handler returns. Engine.Tree honors
 	// CancelTurn properly.
@@ -257,7 +257,7 @@ func (m *Mux) handleAnswer(ctx context.Context, c control.Client, cmd control.An
 	}
 }
 
-// Subscribe implements engine.AnswerRouter — the permission middleware
+// Subscribe implements engine.AnswerRouter, the permission middleware
 // calls Subscribe to wait for answers.
 func (m *Mux) Subscribe(session ids.SessionID, callID ids.CallID) <-chan engine.PermissionAnswer {
 	m.mu.RLock()

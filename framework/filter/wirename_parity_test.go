@@ -29,7 +29,7 @@ func TestWireName_SortAcceptsAliasAndResolvesToColumn(t *testing.T) {
 	if len(sorts) != 1 {
 		t.Fatalf("got %d sort clauses, want 1", len(sorts))
 	}
-	// Field reaches ORDER BY — it must be the column, not the wire name.
+	// Field reaches ORDER BY, it must be the column, not the wire name.
 	if sorts[0].Field != "author_id" {
 		t.Errorf("sort field = %q, want the column %q", sorts[0].Field, "author_id")
 	}
@@ -53,7 +53,7 @@ func TestWireName_WhereAcceptsAliasAndResolvesToColumn(t *testing.T) {
 	if p == nil {
 		t.Fatal("nil predicate")
 	}
-	// Field reaches the WHERE clause — must be the real column.
+	// Field reaches the WHERE clause, must be the real column.
 	if p.Field != "author_id" {
 		t.Errorf("predicate field = %q, want the column %q", p.Field, "author_id")
 	}
@@ -62,7 +62,7 @@ func TestWireName_WhereAcceptsAliasAndResolvesToColumn(t *testing.T) {
 	}
 }
 
-// Nested groups resolve too — the alias map has to reach every leaf, not just
+// Nested groups resolve too, the alias map has to reach every leaf, not just
 // a top-level one.
 func TestWireName_WhereResolvesAliasInNestedGroup(t *testing.T) {
 	p, err := ParseWhere(

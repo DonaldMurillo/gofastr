@@ -18,7 +18,7 @@ func newReserving(p ...string) *reservingOnly            { return &reservingOnly
 
 // fwTestScreen is a minimal embed.Screen for framework-root tests, which build
 // an embed.Host directly (no UIHost.Mount) to exercise key derivation and
-// reserved-prefix wiring — not rendering.
+// reserved-prefix wiring, not rendering.
 type fwTestScreen struct{ path string }
 
 func (s fwTestScreen) RoutePath() string { return s.path }
@@ -83,8 +83,8 @@ func TestInitPluginsReadsReservationsFromBatteries(t *testing.T) {
 // A battery that relocated its prefix takes its protection with it.
 //
 // The built-in reserved list can only name DEFAULTS, so an app that sets
-// admin.Config.PathPrefix = "/back-office" kept the guard on "/admin" — which it
-// no longer serves — and lost it on the prefix it does. Surfaces are declared
+// admin.Config.PathPrefix = "/back-office" kept the guard on "/admin", which it
+// no longer serves, and lost it on the prefix it does. Surfaces are declared
 // before anything is mounted, so this has to be caught at InitPlugins or not at
 // all.
 func TestInitPluginsRefusesASurfaceOverAMountedBatteryPrefix(t *testing.T) {

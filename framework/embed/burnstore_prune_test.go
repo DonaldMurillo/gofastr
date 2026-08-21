@@ -14,7 +14,7 @@ import (
 // TestMemoryBurnStoreSelfPrunesExpiredRows: with a low threshold (and no
 // interval gate), piling a live burn on top of an expired one triggers a sweep
 // that deletes the expired row. Re-burning the expired nonce then looks like a
-// fresh claim (replay=false) — proving the row vanished instead of lingering.
+// fresh claim (replay=false), proving the row vanished instead of lingering.
 func TestMemoryBurnStoreSelfPrunesExpiredRows(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
@@ -48,7 +48,7 @@ func TestMemoryBurnStoreSelfPruneKeepsLiveRows(t *testing.T) {
 		t.Fatalf("Burn trigger: %v", err)
 	}
 
-	// "live" is unexpired — the sweep must NOT have removed it.
+	// "live" is unexpired: the sweep must NOT have removed it.
 	if _, replay, _ := s.Burn(ctx, "live", "g2", now.Add(time.Hour)); !replay {
 		t.Fatal("opportunistic prune removed a still-live burn — the nonce became reusable")
 	}

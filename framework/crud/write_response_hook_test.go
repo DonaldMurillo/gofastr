@@ -18,8 +18,8 @@ import (
 )
 
 // A response hook runs after the write has committed and after the event has
-// shipped. Its failure mode is therefore not "reject the request" — the
-// request already happened — but "say so without echoing what the hook was
+// shipped. Its failure mode is therefore not "reject the request", the
+// request already happened, but "say so without echoing what the hook was
 // supposed to mask".
 
 func setupWriteHookHandler(t *testing.T) (*CrudHandler, *sql.DB) {
@@ -204,8 +204,8 @@ func TestBatchCreateDegradesToIDsWhenTheHookFails(t *testing.T) {
 	}
 }
 
-// When the transaction rolled back there is nothing to redact — every item's
-// Data is scrubbed by writeBatchResponse anyway — and running the hook there
+// When the transaction rolled back there is nothing to redact, every item's
+// Data is scrubbed by writeBatchResponse anyway, and running the hook there
 // replaced a per-item error report with an opaque 500.
 func TestBatchRollbackKeepsThePerItemReport(t *testing.T) {
 	ch, db := setupWriteHookHandler(t)

@@ -43,7 +43,7 @@ func testingRun(t *testing.T, cfg *contracts.Config, files map[string]string) []
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1103 — entity CRUD not exercised
+// GOFASTR1103: entity CRUD not exercised
 // ----------------------------------------------------------------------
 
 const entitySource = `package main
@@ -70,7 +70,7 @@ func TestUnexercisedEntityIsReported(t *testing.T) {
 
 func TestExercisedEntityIsNotReported(t *testing.T) {
 	// One entity covered, one not. The uncovered finding is what proves
-	// the analyzer looked at this tree at all — without it, a manifest
+	// the analyzer looked at this tree at all. Without it, a manifest
 	// the analyzer never read would make this test pass vacuously.
 	ds := hookFixture(t, entitySource,
 		`{"version":1,"routes":{},"entities":{"posts":["create"]},"hooks":{}}`)
@@ -86,7 +86,7 @@ func TestExercisedEntityIsNotReported(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1104 — line-coverage floor
+// GOFASTR1104: line-coverage floor
 // ----------------------------------------------------------------------
 
 // coverageFloorConfig turns the floor on. MinimumSet is what gates the
@@ -118,7 +118,7 @@ func TestCoverageBelowFloorIsReported(t *testing.T) {
 }
 
 func TestCoverageAtFloorIsClean(t *testing.T) {
-	// Exactly at the floor must pass — the boundary where an inverted
+	// Exactly at the floor must pass: the boundary where an inverted
 	// comparison would flip. The debt skip alongside it exists so the
 	// clean result is provably "analyzer ran and accepted the profile",
 	// not "analyzer never ran": if the testing analyzer were skipped
@@ -136,7 +136,7 @@ func TestCoverageAtFloorIsClean(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------
-// GOFASTR1105 — disabled tests
+// GOFASTR1105: disabled tests
 // ----------------------------------------------------------------------
 
 func TestDebtSkipIsReported(t *testing.T) {
@@ -216,14 +216,14 @@ func wire(c *Catalog) {
 	assertNot(t, ds, contracts.RuleEntityNotExercised, "the call is not a GoFastr entity registration")
 
 	// The same shape in a file that DOES import the framework is still
-	// collected — the guard must not have turned the rule off wholesale.
+	// collected. The guard must not have turned the rule off wholesale.
 	ds = hookFixture(t, entitySource, `{"version":1,"routes":{},"entities":{},"hooks":{}}`)
 	assertHas(t, ds, contracts.RuleEntityNotExercised)
 }
 
 // The sibling of TestForeignEntityMethodIsIgnored. Hook collection reads
 // the entity name from the SECOND argument, which is also the shape of an
-// ordinary trigger helper — `OnBeforeCreate(db, "orders", fn)`. Without an
+// ordinary trigger helper, `OnBeforeCreate(db, "orders", fn)`. Without an
 // import guard the two are indistinguishable.
 func TestForeignHookFunctionIsIgnored(t *testing.T) {
 	const declaring = `package main
@@ -253,8 +253,8 @@ func setup(db *sql.DB) {
 	})
 	assertNot(t, ds, contracts.RuleHookNotFired, "a local helper is not a framework hook")
 
-	// The real constructor in a framework-importing file is still read —
-	// the guard must narrow the match, not disable the rule.
+	// The real constructor in a framework-importing file is still read.
+	// The guard must narrow the match, not disable the rule.
 	ds = testingRun(t, contracts.DefaultConfig(), map[string]string{
 		"main.go": `package main
 
@@ -276,7 +276,7 @@ func wire(app *framework.App) {
 // evidence known to be broken.
 //
 // This was one rule with an analyzer-set Severity, which Run discards by
-// design — so corruption reported at info and the run exited 0 saying
+// design, so corruption reported at info and the run exited 0 saying
 // "Contracts verified".
 func TestUnreadableManifestFailsTheRun(t *testing.T) {
 	src := "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\n" +

@@ -148,7 +148,7 @@ func TestBlueprintPWACustomPrefixesDenied(t *testing.T) {
 		t.Errorf("custom api_prefix + auth base_path should be emitted as DenyPaths:\n%s", mainGo)
 	}
 
-	// Default mounts need no extension — /api and /auth are built in.
+	// Default mounts need no extension: /api and /auth are built in.
 	plain := pwaTestBlueprint(t, pwaBlockYAML)
 	plainMain, _ := pwaRenderedMain(t, plain)
 	if strings.Contains(plainMain, "DenyPaths") {

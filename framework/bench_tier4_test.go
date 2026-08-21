@@ -10,12 +10,12 @@ import (
 )
 
 // ============================================================================
-// Tier 4 — startup & infra (mixed: AutoMigrate + SchemaDiff need DB)
+// Tier 4: startup & infra (mixed: AutoMigrate + SchemaDiff need DB)
 // ============================================================================
 
 // BenchmarkAutoMigrate_Idempotent measures the cost of re-running AutoMigrate
 // against an unchanged database. This is the "safe to run on every boot"
-// claim — if it costs significantly, apps will skip it and drift.
+// claim, if it costs significantly, apps will skip it and drift.
 //
 // Runs against both SQLite and Postgres. The first call creates the tables;
 // the timed loop re-runs against an already-correct schema.

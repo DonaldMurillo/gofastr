@@ -51,7 +51,7 @@ func mintedSession(rec *httptest.ResponseRecorder) string {
 //
 // That guard used to run only for x-www-form-urlencoded and multipart.
 // text/plain is the third enctype an HTML <form> can use and is a
-// CORS-simple request (no preflight), so the guard never ran — and since
+// CORS-simple request (no preflight), so the guard never ran, and since
 // verifyHandler falls back to the query-string token, the attacker needed
 // no body at all:
 //
@@ -106,8 +106,8 @@ func TestVerifyRejectsCrossSiteNoBody(t *testing.T) {
 	}
 }
 
-// A cross-origin JSON caller is NOT forgeable — it needs a preflight the
-// framework never answers — and legitimate cross-origin SPAs depend on
+// A cross-origin JSON caller is NOT forgeable, it needs a preflight the
+// framework never answers, and legitimate cross-origin SPAs depend on
 // reaching these routes through a configured CORS middleware. Widening
 // the guard must not have swept JSON in.
 func TestVerifyAllowsCrossOriginJSON(t *testing.T) {
@@ -140,7 +140,7 @@ var csrfInputRe = regexp.MustCompile(`name="_csrf"\s+value="([^"]*)"`)
 //
 // The default confirmation page used to render one hidden field ("token")
 // and nothing else, so following a magic link produced a screen whose only
-// button 403'd — passwordless sign-in was unreachable in the documented
+// button 403'd, passwordless sign-in was unreachable in the documented
 // wiring. ConfirmPageData carries no request and no context, so a custom
 // page could not reach the token either; hence ConfirmPageData.CSRFField.
 //

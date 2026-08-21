@@ -49,18 +49,18 @@ func (s *entityListScreen) RenderCtx(ctx context.Context) render.HTML {
 	q := appui.QueryFromContext(ctx)
 
 	// "New" is a real anchor (not a button) so the runtime intercepts it for
-	// SPA navigation to the form screen — no scripting.
+	// SPA navigation to the form screen, no scripting.
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:   s.ent.GetName(),
 		Actions: ui.Link(ui.LinkConfig{Href: base + "/new", Text: "New " + singular(s.ent.GetName()), Variant: ui.LinkAction}),
 	})
 
 	// Toolbar: search + sort controls in a dedicated area, OUTSIDE the island so
-	// they survive sort/page RPC swaps. Both work on every viewport — crucially
+	// they survive sort/page RPC swaps. Both work on every viewport; in particular
 	// the sort dropdown replaces the clickable column headers on mobile, where
 	// the table collapses to cards and the headers disappear. Search is a GET
 	// <form>, sort is anchors; both SPA-navigate (no reload) and the server does
-	// the filtering/sorting — the admin never sorts or filters in JS.
+	// the filtering/sorting, the admin never sorts or filters in JS.
 	body := []render.HTML{header}
 	var controls []render.HTML
 	if searchField(s.ent) != "" {
@@ -87,7 +87,7 @@ func (s *entityListScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 // renderTable fetches the current page via the CrudHandler and renders the
-// DataTable (bare — the signal wrapper is added by the caller / is the existing
+// DataTable (bare, the signal wrapper is added by the caller / is the existing
 // DOM node on island swap). Errors render an inline notice instead of panicking.
 func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Values) render.HTML {
 	base := b.entityBase(ent)
@@ -113,7 +113,7 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	search := strings.TrimSpace(q.Get("q"))
 
 	// Build the CrudHandler query: sorting and search are SERVER-side. The
-	// admin never sorts or filters rows in Go/JS — it just forwards intent.
+	// admin never sorts or filters rows in Go/JS, it just forwards intent.
 	crudQ := url.Values{}
 	crudQ.Set("page", strconv.Itoa(page))
 	crudQ.Set("limit", strconv.Itoa(limit))
@@ -146,7 +146,7 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	columns := make([]ui.Column, 0, len(cols)+1)
 	for _, c := range cols {
 		// A NoQuery column still shows its (masked) value, but ?sort= on it
-		// is a 400 that blanks the grid — so it renders unsortable.
+		// is a 400 that blanks the grid, so it renders unsortable.
 		columns = append(columns, ui.Column{Key: c, Header: prettyLabel(c), Sortable: !noQuery[c]})
 	}
 	columns = append(columns, ui.Column{Key: "_actions", Header: "", Align: "end"})
@@ -183,7 +183,7 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 		carrySearch.Set("q", search)
 	}
 	// Sort headers + pagination are plain links (NOT island RPCs) so a click
-	// SPA-navigates and re-renders the whole screen — keeping the toolbar Sort
+	// SPA-navigates and re-renders the whole screen, keeping the toolbar Sort
 	// summary, the active-search chip, and the table all in one consistent
 	// state. (Delete still island-swaps via the signal wrapper around this
 	// table, so removing a row doesn't reload the page.)
@@ -226,7 +226,7 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	parts := make([]render.HTML, 0, 3)
 	if search != "" {
 		// Active-search chip: the term + match count, with a real link back to the
-		// unfiltered list — so "clear" always returns to the full view and the user
+		// unfiltered list, so "clear" always returns to the full view and the user
 		// always sees what they searched for.
 		parts = append(parts, render.Tag("div", map[string]string{"class": "admin-filter-row"},
 			render.Tag("span", map[string]string{"class": "admin-filter"},
@@ -277,7 +277,7 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-// sortControl renders the toolbar sort dropdown — a native <details> menu (no
+// sortControl renders the toolbar sort dropdown, a native <details> menu (no
 // JS) of the sortable columns. On mobile, where the DataTable collapses to
 // cards and the clickable column headers vanish, this is the way to sort.
 // Each option SPA-navigates to the list with the chosen sort, preserving the
@@ -361,7 +361,7 @@ func containsStr(ss []string, want string) bool {
 	return false
 }
 
-// labelField picks the column used to LABEL a row — an FK cell in the grid,
+// labelField picks the column used to LABEL a row, an FK cell in the grid,
 // an <option> in a relation picker. Display only: the value is read out of a
 // row the API already returned, never put in a query, so a NoQuery column is
 // a perfectly good label and excluding it only downgrades the label to a raw
@@ -399,7 +399,7 @@ func searchField(ent *entity.Entity) string {
 	}
 	// Hidden and NoQuery are both refused by ParseFilters, so picking one
 	// here renders a search box whose every query 400s and blanks the grid.
-	// The preferred-name pass has to check them too — a Hidden "email" or a
+	// The preferred-name pass has to check them too, a Hidden "email" or a
 	// masked "name" is exactly the kind of column that lands in this list.
 	//
 	// Use labelField, not this, to choose a column for DISPLAY: a NoQuery
@@ -445,7 +445,7 @@ func (b *Battery) relationLabelMaps(ctx context.Context, ent *entity.Entity) map
 	for fkField, targetName := range rels {
 		// Resolve at the SOURCE entity's version. b.registry.Get reports an
 		// ambiguity error for a name mounted under several versions, and the
-		// `continue` below turns that into a silently degraded screen —
+		// `continue` below turns that into a silently degraded screen,
 		// relation labels fall back to raw UUIDs and relation pickers to bare
 		// text inputs, with nothing in the log to explain it.
 		target, err := entity.ResolveTarget(b.registry, ent, targetName)
@@ -494,7 +494,7 @@ func formatValue(col string, ft schema.FieldType, raw any, relLabels map[string]
 		if label, ok := labels[val]; ok {
 			return render.Text(label)
 		}
-		// Referenced row not visible/loaded — show the id, quietly.
+		// Referenced row not visible/loaded, show the id, quietly.
 		return render.Tag("span", map[string]string{"class": "admin-id", "title": val}, render.Text(val))
 	}
 	if ft == schema.Bool {
@@ -537,8 +537,8 @@ func formatValue(col string, ft schema.FieldType, raw any, relLabels map[string]
 		if i := strings.LastIndexAny(val, "/\\"); i >= 0 && i < len(val)-1 {
 			name = val[i+1:]
 		}
-		// `download` does not defuse a javascript: href — browsers ignore
-		// the attribute for non-http(s) schemes — so an unguarded stored
+		// `download` does not defuse a javascript: href, browsers ignore
+		// the attribute for non-http(s) schemes, so an unguarded stored
 		// value here would execute in the admin's origin on click.
 		href := urlsafe.Clean(val, urlsafe.Resource)
 		if href == "" {
@@ -564,7 +564,7 @@ func formatValue(col string, ft schema.FieldType, raw any, relLabels map[string]
 		}
 		return render.Tag("span", map[string]string{"class": "admin-mono"}, render.Text(val))
 	case schema.Timestamp:
-		// "2026-01-15T09:30:00Z" → "2026-01-15 09:30" — drop seconds + zone noise.
+		// "2026-01-15T09:30:00Z" → "2026-01-15 09:30", drop seconds + zone noise.
 		v := strings.Replace(val, "T", " ", 1)
 		if i := strings.IndexAny(v, ".Z+"); i > 11 {
 			v = v[:i]
@@ -605,7 +605,7 @@ func relationFields(ent *entity.Entity) map[string]string {
 }
 
 // relationOptions loads, for every BelongsTo FK column on ent, the related
-// records to offer as <select> options — fetched through the target entity's
+// records to offer as <select> options, fetched through the target entity's
 // CrudHandler so the same owner/tenant scope applies (you can only link to
 // records you can see). The current value (selected) is pre-marked. A target
 // that isn't registered or fails to load is skipped, so its field falls back
@@ -619,7 +619,7 @@ func (b *Battery) relationOptions(ctx context.Context, ent *entity.Entity, selec
 	for fkField, targetName := range rels {
 		// Resolve at the SOURCE entity's version. b.registry.Get reports an
 		// ambiguity error for a name mounted under several versions, and the
-		// `continue` below turns that into a silently degraded screen —
+		// `continue` below turns that into a silently degraded screen,
 		// relation labels fall back to raw UUIDs and relation pickers to bare
 		// text inputs, with nothing in the log to explain it.
 		target, err := entity.ResolveTarget(b.registry, ent, targetName)
@@ -660,7 +660,7 @@ const relationOptionLimit = 100
 // data-fui-confirm + data-fui-rpc DELETE bound to the list's island signal: the
 // handler returns the refreshed table fragment, which the runtime swaps in
 // place. (Navigating back to the same list path would hit the SPA cache and
-// show stale rows — the signal swap is the correct island update.) No JS.
+// show stale rows, the signal swap is the correct island update.) No JS.
 func (b *Battery) rowActions(ent *entity.Entity, id string, viewState url.Values) render.HTML {
 	base := b.entityBase(ent)
 	rpc := base + "/_delete/" + url.PathEscape(id)
@@ -703,7 +703,7 @@ type entityFormScreen struct {
 }
 
 // maskedHint is the placeholder and help text on a write-only field.
-const maskedHint = "hidden — leave blank to keep the stored value"
+const maskedHint = "hidden: leave blank to keep the stored value"
 
 // maskedUnchanged is the blank option on a write-only select. It has to be a
 // real, selectable option: a masked select has nothing preselected, so without
@@ -718,7 +718,7 @@ func (s *entityFormScreen) Load(ctx context.Context) error {
 
 	if s.edit {
 		// getRowForEdit, not getRow: these values round-trip back on submit.
-		// It also reports which columns an AfterGet hook masks — those render
+		// It also reports which columns an AfterGet hook masks, those render
 		// empty, so the admin neither reads the stored value nor writes a mask
 		// over it by pressing Save.
 		row, masked, err := s.b.getRowForEdit(ctx, s.ent, s.id)
@@ -813,7 +813,7 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 		if masked {
 			// Nothing is preselected, so the browser would post the first
 			// option and silently reassign the row's foreign key. An explicit
-			// blank placeholder — which formToJSON drops — is the only choice
+			// blank placeholder, which formToJSON drops, is the only choice
 			// that means "leave it".
 			ph = maskedUnchanged
 		}
@@ -828,7 +828,7 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 	case schema.Bool:
 		if masked {
 			// A checkbox cannot express "unchanged": unchecked and absent look
-			// identical, and formToJSON emits a bool either way — so a masked
+			// identical, and formToJSON emits a bool either way, so a masked
 			// bool was written back as false on every save. A three-state
 			// select can, and blank is the default.
 			return ui.Select(ui.SelectConfig{
@@ -887,7 +887,7 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 // It exists because cellText is shared with the list and detail screens, where
 // a full RFC 3339 timestamp is the right thing to show, while
 // <input type="date"> accepts ONLY yyyy-mm-dd and silently blanks itself on
-// anything else — so a date column round-tripped through the edit form came
+// anything else, so a date column round-tripped through the edit form came
 // back empty and the save wiped it.
 func formValueText(f schema.Field, v any) string {
 	if f.Type == schema.Date {
@@ -1030,8 +1030,8 @@ func cellText(v any) string {
 	case time.Time:
 		// RFC 3339, because this text goes straight into the edit form's
 		// <input> and posts back on submit. The in-process read API hands
-		// back what the driver scanned — a time.Time for date/timestamp
-		// columns, where the JSON round-trip used to hand back a string — and
+		// back what the driver scanned, a time.Time for date/timestamp
+		// columns, where the JSON round-trip used to hand back a string, and
 		// fmt.Sprint renders Go's default layout ("2026-01-02 03:04:05 +0000
 		// UTC"), which the validator then rejects. The user's other edits on
 		// that form were lost with it.
@@ -1044,7 +1044,7 @@ func cellText(v any) string {
 	case map[string]any, []any:
 		// A schema.JSON column comes back decoded. This string feeds the
 		// list cell AND the edit form's textarea, which posts it back on
-		// save — Go's map syntax would be shown to the operator and then
+		// save. Go's map syntax would be shown to the operator and then
 		// submitted as the new value.
 		if raw, err := json.Marshal(t); err == nil {
 			return string(raw)

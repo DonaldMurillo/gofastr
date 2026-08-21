@@ -70,7 +70,7 @@ The end.
 }
 
 func TestLangAwareReChunksOverlongStructuralChunks(t *testing.T) {
-	// A single giant func — structurally one chunk, but should be split
+	// A single giant func, structurally one chunk, but should be split
 	// by the fallback because it exceeds MaxRunes.
 	body := strings.Repeat("println(\"x\")\n", 200)
 	src := "package big\n\nfunc Big() {\n" + body + "}\n"

@@ -142,7 +142,7 @@ func TestLocalStoragePathTraversalBlocked(t *testing.T) {
 
 	// Windows device / ADS names are a portability rule on the WRITE path.
 	// Reads deliberately stay permissive so objects stored by earlier
-	// releases remain reachable — see TestExistingKeysStayReadableAndDeletable.
+	// releases remain reachable. See TestExistingKeysStayReadableAndDeletable.
 	for _, key := range []string{"CON.txt", "nested/NUL", "file.txt:secret"} {
 		if err := ls.Save(ctx, key, bytes.NewReader([]byte("bad"))); err == nil {
 			t.Errorf("Save(%q) should reject Windows device/ADS names", key)
@@ -169,7 +169,7 @@ func TestLocalStorageAtomicWrite(t *testing.T) {
 		t.Fatalf("Save (overwrite): %v", err)
 	}
 
-	// Read back — should have the updated content, never partial
+	// Read back, should have the updated content, never partial
 	rc, err := ls.Get(ctx, key)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -390,7 +390,7 @@ func TestMemoryStorageConcurrentAccess(t *testing.T) {
 			key := fmt.Sprintf("key-%d", id%10)
 			rc, err := ms.Get(ctx, key)
 			if err != nil {
-				// Key may not exist yet — that's fine
+				// Key may not exist yet, that's fine
 				return
 			}
 			defer rc.Close()

@@ -24,12 +24,12 @@ import (
 // navigates to `<action>?facet=value&sort=…&q=…`; the screen's
 // Load(ctx) reads those params via app.QueryFromContext and renders the
 // filtered list server-side. Refresh, share, and back-button all reduce
-// to "same URL → same view" with no client state — exactly the
+// to "same URL → same view" with no client state, exactly the
 // "URL params are the source of truth" contract in core-ui/ARCHITECTURE.md.
 // Reset is a plain <a> back to the bare action, so it clears every param
 // with zero JavaScript.
 //
-// Responsive by construction (this is the whole point — two independent
+// Responsive by construction (this is the whole point, two independent
 // eval apps hand-rolled this and clipped the Apply button off-screen at
 // 375px). The toolbar declares itself a container (`container-type:
 // inline-size`) and lays its controls out with flex-wrap + `min-inline-
@@ -49,7 +49,7 @@ type FacetKind string
 
 const (
 	// FacetSelect renders the facet as a labelled native <select>
-	// (the default — best for many options / long labels).
+	// (the default: best for many options / long labels).
 	FacetSelect FacetKind = ""
 	// FacetPills renders the facet as a wrapping radio-pill group
 	// (best for a small set of short, glanceable choices).
@@ -68,7 +68,7 @@ type FacetOption struct {
 // Facet is one filter dimension: a labelled group of mutually-exclusive
 // options (a status filter, a plan filter, …).
 type Facet struct {
-	// Name is the form field name — becomes the URL query key. Required.
+	// Name is the form field name: it becomes the URL query key. Required.
 	Name string
 	// Label is the group's accessible name (the <select> label or the
 	// pill <fieldset> legend). Required.
@@ -249,7 +249,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		// HTML attribute names are case-insensitive, so a case-variant key
 		// ("Action"/"ACTION"/"AcTiOn") would survive a lowercase-only drop,
 		// render as a second attribute, and fold back onto "action" in the
-		// parser (first occurrence wins) — silently reversing the
+		// parser (first occurrence wins), silently reversing the
 		// urlsafe.CleanAnchor pass below. Drop every case-variant here.
 		if strings.EqualFold(k, "action") {
 			continue

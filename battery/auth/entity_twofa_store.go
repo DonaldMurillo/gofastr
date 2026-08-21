@@ -14,12 +14,12 @@ import (
 
 // Placeholder invariant: every statement below lists $1..$N in ascending
 // order of first textual appearance. lib/pq binds $N positionally, but
-// mattn/go-sqlite3 treats $N as a NAMED param indexed by first occurrence
-// — so a statement that mentions $2 before $1 would bind args correctly on
+// mattn/go-sqlite3 treats $N as a NAMED param indexed by first occurrence,
+// so a statement that mentions $2 before $1 would bind args correctly on
 // Postgres yet misbind on SQLite. Keep new SQL in ascending placeholder
 // order (and lean on the Postgres tests to catch regressions).
 
-// EntityTwoFAStore adapts a database table to the TwoFAStore interface —
+// EntityTwoFAStore adapts a database table to the TwoFAStore interface,
 // the durable sibling of MemoryTwoFAStore, mirroring EntitySessionStore.
 // Without it, a restart (or a second replica) silently reverts every
 // enrolled 2FA account to password-only auth, because enrollment lives
@@ -215,19 +215,19 @@ func (s *EntityTwoFAStore) DeleteTwoFA(ctx context.Context, userID string) error
 // longer finds the code, and returns false.
 //
 // The bytes predicate is what makes the CAS ABA-proof. version is NOT
-// monotonic across a row's lifetime — DeleteTwoFA drops the row and
-// SetTwoFA's INSERT arm recreates it at version 0 — so a CAS on version
+// monotonic across a row's lifetime. DeleteTwoFA drops the row and
+// SetTwoFA's INSERT arm recreates it at version 0, so a CAS on version
 // alone would let a consume that read the OLD row pass against a row that
 // was since deleted and re-enrolled (version wrapped back to 0),
 // overwriting the freshly issued code list with the stale one. Predicating
 // on the raw bytes this round read makes the re-enrolled row fail the CAS
 // (its bytes differ) so the loop re-reads the fresh codes. Comparing the
-// stored bytes against themselves — the exact string this round's SELECT
-// returned — is formatting-proof: a non-canonically-formatted row matches
+// stored bytes against themselves, the exact string this round's SELECT
+// returned, is formatting-proof: a non-canonically-formatted row matches
 // itself, so such a row still consumes.
 func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string, code string) (bool, error) {
 	// A lost CAS means the row changed under us (another code consumed, or a
-	// SetTwoFA) — re-read and retry. Bound the loop by the initial code
+	// SetTwoFA), re-read and retry. Bound the loop by the initial code
 	// count + slack: each failed CAS corresponds to one competing write, so
 	// the code we're after either wins or is proven gone within that many
 	// rounds. (A fixed 2-retry bound wrongly rejected a still-valid code
@@ -247,8 +247,8 @@ func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string,
 			maxRounds = len(state.BackupCodes) + 2
 		}
 		if round >= maxRounds {
-			// Extreme contention: fail closed (the code is NOT burned — no
-			// UPDATE we ran removed it — so a client retry still works).
+			// Extreme contention: fail closed (the code is NOT burned, no
+			// UPDATE we ran removed it, so a client retry still works).
 			return false, nil
 		}
 

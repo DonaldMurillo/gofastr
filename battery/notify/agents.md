@@ -12,7 +12,7 @@ user X happened". (Outbound webhook triggers belong to
 
 **Import:** `github.com/DonaldMurillo/gofastr/battery/notify`
 
-**Shape (dev — log only):**
+**Shape (dev, log only):**
 ```go
 tmpl := notify.NewMapTemplater()
 tmpl.Set("password.reset", "log", notify.Template{
@@ -30,7 +30,7 @@ _ = n.Send(ctx, notify.Notification{
 })
 ```
 
-**Shape (prod — email):**
+**Shape (prod, email):**
 ```go
 emailCh := notify.NewEmailChannel(emailSender, "noreply@example.com")
 n := notify.New(notify.WithTemplater(tmpl), notify.WithChannel(emailCh))
@@ -43,5 +43,5 @@ custom sink is one small `Channel` implementation away. For signed
 outbound webhooks with retry, use `battery/webhook` directly.
 
 **For PHI-bearing apps:** templates are rendered with `Data` you pass
-in — don't put PHI in `Data` if the channel writes to a long-lived
+in. Don't put PHI in `Data` if the channel writes to a long-lived
 sink (logs, webhook receivers you don't control).

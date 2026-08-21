@@ -21,7 +21,7 @@ import (
 // SitemapConfig configures the /sitemap.xml endpoint.
 type SitemapConfig struct {
 	// BaseURL is the canonical origin (scheme + host) for emitted
-	// <loc> elements. Required — sitemap.xml entries must be absolute
+	// <loc> elements. Required: sitemap.xml entries must be absolute
 	// URLs per the protocol spec.
 	BaseURL string
 
@@ -71,7 +71,7 @@ type RobotsConfig struct {
 }
 
 // WithRobots registers a /robots.txt handler. A nil-zero RobotsConfig
-// is fine — it ships the open default (allow everything).
+// is fine: it ships the open default (allow everything).
 func WithRobots(cfg RobotsConfig) Option {
 	return func(ds *UIHost) {
 		ds.robotsConfig = &cfg
@@ -143,7 +143,7 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 // RobotsTXT builds the robots.txt document WithRobots configured. Like
 // [UIHost.SitemapXML] it serves both the live handler and the static
 // exporter. basePath only affects the derived Sitemap: URL (Allow/
-// Disallow prefixes are emitted as authored — they are the app's own
+// Disallow prefixes are emitted as authored: they are the app's own
 // route prefixes, and a subpath deploy that needs them prefixed should
 // author them that way). ok is false when WithRobots was not configured.
 func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
@@ -170,7 +170,7 @@ func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 		}
 	}
 	if len(cfg.Allow) == 0 && len(cfg.Disallow) == 0 {
-		// Open default — explicit so it's obvious the file isn't empty.
+		// Open default, explicit so it's obvious the file isn't empty.
 		b.WriteString("Allow: /\n")
 	}
 	for _, p := range cfg.Allow {
@@ -186,7 +186,7 @@ func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 	// stricter than any host rule, so separate groups don't shadow the
 	// generic group's path-specific rules. (The ALLOW case is handled
 	// above by listing the bots as consecutive User-agent lines in the
-	// main group, so they inherit the host's Allow/Disallow — a
+	// main group, so they inherit the host's Allow/Disallow. A
 	// standalone Allow:/ group would shadow those rules for the bots,
 	// since RFC 9309 applies only a crawler's most-specific group.)
 	if ds.agentReady != nil && ds.agentReady.allowAIBots != nil && !*ds.agentReady.allowAIBots {

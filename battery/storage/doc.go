@@ -5,9 +5,9 @@ battery.
 Three concrete backends ship, each constructed directly (there is no
 registry or factory indirection):
 
-  - NewLocalStorage(dir, ...)  — the local filesystem.
-  - NewMemoryStorage(...)      — an in-process store for tests and ephemeral data.
-  - NewS3Storage(bucket, reg)  — S3 (or S3-compatible) object storage.
+  - NewLocalStorage(dir, ...) , the local filesystem.
+  - NewMemoryStorage(...)     , an in-process store for tests and ephemeral data.
+  - NewS3Storage(bucket, reg) , S3 (or S3-compatible) object storage.
 
 All implement the Storage interface (a re-export of upload.Storage), which
 covers save / get / delete / list. LocalStorage and MemoryStorage also

@@ -10,7 +10,7 @@ import (
 
 // TestUnionEntities_SingleVersionUnchanged proves the core invariant: a
 // registry where every name has exactly one version produces the exact same
-// map as Registry.All() — unionEntities returns the registered pointer
+// map as Registry.All(). unionEntities returns the registered pointer
 // directly, not a clone, so the single-version migration path is
 // byte-for-byte identical to the pre-union behaviour.
 func TestUnionEntities_SingleVersionUnchanged(t *testing.T) {
@@ -22,7 +22,7 @@ func TestUnionEntities_SingleVersionUnchanged(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("unionEntities returned %d entries, want 2", len(got))
 	}
-	// Pointers must be identical — no cloning for single-version names.
+	// Pointers must be identical, no cloning for single-version names.
 	if got["posts"] != e1 {
 		t.Error("unionEntities cloned a single-version entity (posts) — must return the registered pointer")
 	}
@@ -81,7 +81,7 @@ func TestUnionEntities_MultiVersionMergesFields(t *testing.T) {
 	if !fieldNames["summary"] {
 		t.Error("union field set missing 'summary' (v2-only column that must be created)")
 	}
-	// The merged entity must NOT be the same pointer as v1 or v2 — it is a clone
+	// The merged entity must NOT be the same pointer as v1 or v2, it is a clone
 	// so the registered entities are never mutated.
 	if merged == v1 || merged == v2 {
 		t.Error("unionEntities returned a registered pointer for a multi-version name — must clone")
@@ -118,7 +118,7 @@ func TestUnionEntities_PrefersUnversionedAsBase(t *testing.T) {
 	got := UnionEntities(reg)
 	merged := got["posts"]
 	// The merged entity's base is the unversioned one, so it carries the
-	// unversioned Version ("") — even though the clone itself is a new pointer.
+	// unversioned Version (""), even though the clone itself is a new pointer.
 	if merged.Version != "" {
 		t.Errorf("merged base should be the unversioned entity (Version=''), got %q", merged.Version)
 	}

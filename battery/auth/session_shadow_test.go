@@ -15,7 +15,7 @@ import (
 // A jar can hold several cookies with the session name at once: a stale
 // cookie from an old deployment at a more specific Path, or another
 // localhost port's cookie (localhost cookies ignore ports). Browsers send
-// the most path-specific first, and r.Cookie returns only that one — so a
+// the most path-specific first, and r.Cookie returns only that one, so a
 // dead cookie shadows a live session and login silently fails while a valid
 // cookie sits one position later. Every session read must try ALL
 // candidates. (Found live in a host app; see its fix this ports upstream.)
@@ -64,8 +64,8 @@ func TestSessionReadsTryEveryCookieCandidate(t *testing.T) {
 	})
 
 	t.Run("logout revokes every candidate", func(t *testing.T) {
-		// A second live session for the same user — logout must revoke both
-		// cookies' sessions, not just the first, or a shadowed-but-valid
+		// A second live session for the same user, logout must revoke both
+		// cookies' sessions, not only the first, or a shadowed-but-valid
 		// session survives logout.
 		sess2, err := mgr.SessionStore().Create(context.Background(), user.GetID(), time.Hour)
 		if err != nil {

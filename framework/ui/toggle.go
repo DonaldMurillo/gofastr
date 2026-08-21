@@ -7,7 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── Toggle controls — Checkbox / Radio / Switch ─────────────────────
+// ─── Toggle controls: Checkbox / Radio / Switch ─────────────────────
 //
 // Three labelled, FieldErrors-aware form controls that wrap a native
 // <input type={checkbox,radio}> with a properly associated <label>.
@@ -71,7 +71,7 @@ func Radio(cfg ToggleConfig) render.HTML {
 }
 
 // Switch renders a checkbox styled as an iOS-style toggle switch.
-// Same form-submission semantics as Checkbox — submits Value (or
+// Same form-submission semantics as Checkbox: submits Value (or
 // "on") when checked, omits when unchecked.
 func Switch(cfg ToggleConfig) render.HTML {
 	return renderToggle("checkbox", "ui-toggle--switch", cfg)
@@ -88,7 +88,7 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	if id == "" {
 		// Default to Name for checkbox/switch (one-per-Name); for radio
 		// groups, append the Value so each input in the group gets a
-		// distinct id — otherwise multiple <label for=…> point at the
+		// distinct id, otherwise multiple <label for=…> point at the
 		// same id and label-click activates the wrong (first) radio.
 		id = cfg.Name
 		if cfg.Value != "" && inputType == "radio" {

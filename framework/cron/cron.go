@@ -13,7 +13,7 @@ import (
 
 // MaxJobNameBytes caps the length of a job name. The cap exists to keep
 // names cheap to log; it is not a security boundary on the name itself
-// (names are opaque labels — sanitise them at any rendering call site).
+// (names are opaque labels, sanitise them at any rendering call site).
 const MaxJobNameBytes = 256
 
 // ErrInvalidJobName is returned by Register when Name is empty or longer
@@ -27,12 +27,12 @@ var ErrNilJobRun = errors.New("cron: job Run is nil")
 
 // CronJob is the unit of scheduled work.
 //
-// Run is invoked on every firing — its context is derived from the
+// Run is invoked on every firing, its context is derived from the
 // scheduler's parent context, so cancelling the scheduler cancels in-flight
 // runs at the next yield point.
 //
 // If Run returns an error it is forwarded to the scheduler's OnError
-// callback (if set); otherwise it is silently dropped — jobs should not
+// callback (if set); otherwise it is silently dropped, jobs should not
 // crash the process.
 type CronJob struct {
 	Name string
@@ -49,20 +49,20 @@ type CronJob struct {
 //
 // This is per-tick mutual exclusion (two replicas never fire the same job in
 // the same minute), NOT exactly-once execution for a job that overruns the
-// tick interval — for durable, exactly-once background work use the DB-backed
+// tick interval, for durable, exactly-once background work use the DB-backed
 // queue (battery/queue.DurableScheduler).
 type LeaderElection interface {
 	// Acquire attempts to take the lease for this tick. held is true when the
 	// caller is the leader and should fire jobs; in that case release (non-nil)
 	// relinquishes it. A non-leader returns (false, nil, nil). Acquire must not
-	// block indefinitely — a non-leader should return promptly so the replica
+	// block indefinitely, a non-leader should return promptly so the replica
 	// can skip to the next tick.
 	Acquire(ctx context.Context) (held bool, release func(), err error)
 }
 
 // Scheduler is a tiny in-process cron driver. It is intentionally minimal:
 // no persistence, and by default no overlap protection across replicas (every
-// replica fires every tick — fine for a single instance). For horizontally
+// replica fires every tick, fine for a single instance). For horizontally
 // scaled deployments, install a [LeaderElection] via WithLeaderElection so
 // only one replica fires each tick, or use the DB-backed queue
 // (battery/queue.DurableScheduler) for durable, exactly-once work.
@@ -105,7 +105,7 @@ func NewScheduler() *Scheduler {
 }
 
 // Register adds a job. Returns an error if the spec is invalid, the name
-// is empty or oversize, or Run is nil — callers catch typos at registration
+// is empty or oversize, or Run is nil, callers catch typos at registration
 // time rather than silently failing forever or nil-pointering at firing.
 func (s *Scheduler) Register(job CronJob) error {
 	if job.Name == "" || len(job.Name) > MaxJobNameBytes {
@@ -134,7 +134,7 @@ func (s *Scheduler) SetGate(gate func(jobName string) bool) {
 }
 
 // WithLeaderElection installs a leader-election gate so the scheduler fires
-// jobs only when it holds the lease — making cron safe across replicas. With
+// jobs only when it holds the lease, making cron safe across replicas. With
 // none set (the default) every replica fires every tick. Build a lease with
 // [NewPostgresAdvisoryLease] or supply a custom [LeaderElection].
 func (s *Scheduler) WithLeaderElection(le LeaderElection) {
@@ -163,7 +163,7 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 		return false
 	}
 	// Hold the lease until the tick's jobs finish so a peer replica can't
-	// also fire this tick — but in a background goroutine, NOT inline: the
+	// also fire this tick, but in a background goroutine, NOT inline: the
 	// run loop must stay selectable on s.stop / ctx.Done() so a job that
 	// ignores its context cannot pin the loop and defeat StopContext's
 	// deadline-bounded join (which itself waits on inflight). Registered
@@ -191,9 +191,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 // Stop signals the loop to exit and blocks until it has, then joins any
-// in-flight job goroutines — a job mid-write must finish before graceful
+// in-flight job goroutines, a job mid-write must finish before graceful
 // shutdown lets the process exit. Safe to call multiple times, and safe
-// to call before Start — if the loop was never launched there is nothing
+// to call before Start, if the loop was never launched there is nothing
 // to wait for, so Stop returns immediately instead of blocking forever
 // on a channel the loop never closes (which would hang graceful shutdown
 // when boot aborts before Start runs).
@@ -207,8 +207,8 @@ func (s *Scheduler) Stop() {
 
 // StopContext is Stop with a deadline on the in-flight join: it signals
 // the loop to exit, waits for it, then waits for running job goroutines
-// until ctx expires. Jobs receive the scheduler's parent context — which
-// App.Shutdown cancels before draining — so well-behaved jobs exit
+// until ctx expires. Jobs receive the scheduler's parent context, which
+// App.Shutdown cancels before draining, so well-behaved jobs exit
 // promptly; a job that ignores its context is abandoned at the deadline
 // and ctx.Err() is returned.
 func (s *Scheduler) StopContext(ctx context.Context) error {
@@ -239,7 +239,7 @@ func (s *Scheduler) StopContext(ctx context.Context) error {
 //
 // Iterates under the lock without copying the slice. Jobs that mutate state
 // (Register during tick) are safe because the mutex is held only for the
-// read — new jobs appear on the next tick.
+// read, new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

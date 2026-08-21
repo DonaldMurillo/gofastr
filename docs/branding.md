@@ -24,13 +24,13 @@ monochrome variants.
 Four deliberately different follow-up directions are stored alongside the
 initial concept:
 
-- `gofastr-logo-v2-speed-kiln.png` — blueprint ribbon enters an abstract
+- `gofastr-logo-v2-speed-kiln.png`: blueprint ribbon enters an abstract
   compiler chamber and exits as a finished artifact.
-- `gofastr-logo-v3-gf-monogram.png` — interlocking `g` and `f` geometry built
+- `gofastr-logo-v3-gf-monogram.png`: interlocking `g` and `f` geometry built
   from nested, declaration-like strokes.
-- `gofastr-logo-v4-lambda-forward.png` — the existing lambda motif reduced to
+- `gofastr-logo-v4-lambda-forward.png`: the existing lambda motif reduced to
   one continuous forward gesture.
-- `gofastr-logo-v5-wordmark.png` — a wordmark-first direction using a small
+- `gofastr-logo-v5-wordmark.png`: a wordmark-first direction using a small
   amber colon as the declaration/code detail.
 
 These are raster concept studies. Select the strongest visual idea before
@@ -56,19 +56,19 @@ clearance.
   other intended markets.
 
 If the v3 direction is retained, redraw it around a GoFastr-specific structural
-idea—such as a one-to-many blueprint expansion or literal YAML indentation—so
+idea, such as a one-to-many blueprint expansion or literal YAML indentation, so
 the silhouette is more than an interlocking pair of initials. Avoid the common
 orange-on-black stock-monogram treatment in the final master.
 
 Four v3 refinement studies apply that recommendation:
 
-- `gofastr-logo-v3a-yaml-nesting.png` — three progressively indented
+- `gofastr-logo-v3a-yaml-nesting.png`: three progressively indented
   declaration strokes resolve into a compact mark.
-- `gofastr-logo-v3b-one-to-many.png` — one amber input becomes four charcoal
+- `gofastr-logo-v3b-one-to-many.png`: one amber input becomes four charcoal
   outputs inside an open code-block silhouette.
-- `gofastr-logo-v3c-owned-code.png` — an amber YAML colon sits between open
+- `gofastr-logo-v3c-owned-code.png`: an amber YAML colon sits between open
   square brackets, emphasizing readable, editable output.
-- `gofastr-logo-v3d-blueprint-fold.png` — indented declaration lines fold into
+- `gofastr-logo-v3d-blueprint-fold.png`: indented declaration lines fold into
   a generated document or code artifact.
 
 Of these, v3b expresses the framework's differentiator most directly and has

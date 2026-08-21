@@ -5,7 +5,7 @@ import "context"
 // serverWritesKey is an unexported context-key type so the marker can only
 // be set by calling WithServerWrites from Go code. There is no path for an
 // HTTP-derived context to carry it: the auto-CRUD HTTP handlers never set
-// it, so the default — skip ReadOnly/Hidden fields — always holds on the
+// it, so the default, skip ReadOnly/Hidden fields, always holds on the
 // wire.
 type serverWritesKey struct{}
 
@@ -24,7 +24,7 @@ type serverWritesKey struct{}
 //     bypass.
 //   - The owner and tenant columns remain protected regardless: InjectOwner
 //     still stamps/overwrites the owner value, and the tenant column is
-//     always taken from the context-derived tenant id — never the body.
+//     always taken from the context-derived tenant id, never the body.
 //
 // Note: Hidden fields stay absent from the RETURNING clause / response maps
 // even when persisted. visibleFields shapes the projection, not the write

@@ -2,7 +2,7 @@ package main
 
 // Browser-level e2e for the client-side interactivity components and the
 // signal-store primitive. These assert RENDERED BEHAVIOR (computed styles,
-// fan-out), not just DOM attributes — and a console/CSP-error guard that
+// fan-out), not just DOM attributes, and a console/CSP-error guard that
 // catches the class of breakage where a demo used inline style="…" that
 // strict CSP silently strips.
 
@@ -22,7 +22,7 @@ import (
 // uncaught exceptions, AND Log-domain entries (where CSP violations
 // AND network-resource failures land). Log entries keep their source,
 // text, and URL so the test can tell an EXPECTED 4xx (a demo's reject
-// endpoint) from an unrelated 404/500 — the former is tolerated, the
+// endpoint) from an unrelated 404/500, the former is tolerated, the
 // latter stays fatal.
 type consoleErrSink struct {
 	mu   sync.Mutex
@@ -35,9 +35,9 @@ type consoleErrSink struct {
 // resource (network errors, CSP violation sources).
 type consoleErr struct {
 	msg    string // human-readable line, surfaced in test output
-	source string // cdplog.Source* value ("network", "violation", …) — "" for non-Log entries
+	source string // cdplog.Source* value ("network", "violation", …), "" for non-Log entries
 	text   string // raw entry text
-	url    string // resource URL — "" when Chrome did not attach one
+	url    string // resource URL, "" when Chrome did not attach one
 }
 
 func (s *consoleErrSink) add(msg string) {
@@ -87,7 +87,7 @@ func (s *consoleErrSink) errors() []string {
 }
 
 // matchesReject reports whether the entry is a network-resource error
-// for one of the supplied reject path substrings — the demo endpoints
+// for one of the supplied reject path substrings, the demo endpoints
 // that intentionally return 4xx (e.g. "/__site/optimistic/edit/fail").
 // Source MUST be "network" so a same-path CSP or script error stays
 // fatal; the URL/text must mention one of the paths so an UNRELATED
@@ -110,7 +110,7 @@ func (e consoleErr) matchesReject(paths []string) bool {
 // errorsExcludingExpectedReject returns the collected errors minus
 // network-resource errors whose URL or text matches one of the
 // expected reject path substrings. Those entries are Chrome's
-// automatic record of an HTTP non-2xx — they fire whenever a test
+// automatic record of an HTTP non-2xx, they fire whenever a test
 // exercises a demo's intentional reject path (e.g. Save (reject) →
 // 422 → rollback, or Delete (will fail) → 422 → list unchanged).
 //
@@ -187,7 +187,7 @@ func TestE2E_InteractiveComponents_NoConsoleErrors(t *testing.T) {
 }
 
 // TestE2E_InteractiveComponents_RenderCorrectly asserts the components
-// actually RENDER as UI — not just that the elements exist. It catches
+// actually RENDER as UI, not just that the elements exist. It catches
 // unstyled controls (transparent bg + no border = bare text), dropdowns
 // that aren't floating menus, switches whose thumb doesn't move, and
 // pages that overflow horizontally. These are the failures DOM-presence
@@ -282,7 +282,7 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 
 	// dropdown-themes-with-the-page catches the white-menu-on-dark-theme
 	// bug: framework components must use the host's theme tokens, so the
-	// panel surface lands on the SAME light/dark side as the page — never
+	// panel surface lands on the SAME light/dark side as the page, never
 	// a hardcoded white on a dark theme.
 	t.Run("dropdown-themes-with-page", func(t *testing.T) {
 		ctx := siteBrowserCtx(t)
@@ -349,7 +349,7 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 
 // TestE2E_BreadcrumbCategoryScrollsToSection proves the fragment-nav fix:
 // clicking the category crumb (href="/components/#<category>") must
-// navigate to the index AND scroll to that category section — not land at
+// navigate to the index AND scroll to that category section, not land at
 // the top. Exercises both the section id and the SPA router preserving +
 // honoring the hash on client-side navigation.
 func TestE2E_BreadcrumbCategoryScrollsToSection(t *testing.T) {
@@ -385,7 +385,7 @@ func TestE2E_BreadcrumbCategoryScrollsToSection(t *testing.T) {
 	if sectionTop >= innerH || sectionTop < -20 {
 		t.Errorf("section not scrolled into view (top=%.0f, viewport=%.0f)", sectionTop, innerH)
 	}
-	// The heading must clear the sticky header — otherwise the fragment
+	// The heading must clear the sticky header, otherwise the fragment
 	// lands the section *under* the header and the title is covered.
 	if sectionTop < headerBottom-2 {
 		t.Errorf("section heading is covered by the sticky header: section top=%.0f but header bottom=%.0f — needs scroll-margin-top", sectionTop, headerBottom)

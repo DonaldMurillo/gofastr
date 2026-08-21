@@ -40,7 +40,7 @@ func newUsage() {
 	fmt.Println("  -h, --help   Show this help")
 }
 
-// runNew handles the `gofastr new` subcommand — a lower-level scaffolding
+// runNew handles the `gofastr new` subcommand, a lower-level scaffolding
 // alternative to kiln's visual builder.
 func runNew(args []string) {
 	// `gofastr new -h` / `gofastr new --help` exits 0 with help.
@@ -162,7 +162,7 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 		}
 	}
 
-	content := fmt.Sprintf(`// %s handler — scaffolded by gofastr new handler.
+	content := fmt.Sprintf(`// %s handler: scaffolded by gofastr new handler.
 package main
 
 import (

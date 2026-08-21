@@ -17,7 +17,7 @@ mgr := webhook.New(store, webhook.Options{
     MaxAttempts:        6,
     PollInterval:       2 * time.Second,
     SignatureTolerance: 5 * time.Minute,
-    // AllowPrivateNetworks left false on purpose — SSRF guard.
+    // AllowPrivateNetworks left false on purpose, the SSRF guard.
 })
 mgr.Start()
 defer mgr.Stop(context.Background()) // bounds the drain; returns error
@@ -30,13 +30,13 @@ cancel := webhook.Bridge(app.Events(), mgr, "order.shipped", "user.deleted")
 defer cancel()
 ```
 
-**AI-typical anti-pattern** — if you're about to write any of these,
+**AI-typical anti-pattern.** If you're about to write any of these,
 stop and use `Manager` instead:
 - `http.Post(url, "application/json", body)` in a goroutine to
-  "deliver the event" — no retry, no signing, no dead-letter, no
+  "deliver the event": no retry, no signing, no dead-letter, no
   visibility when the receiver is down
-- `hmac.New(sha256.New, secret); h.Write(body); sig := hex.EncodeToString(h.Sum(nil))`
-  — re-invents the signing primitive without timestamp tolerance
+- `hmac.New(sha256.New, secret); h.Write(body); sig := hex.EncodeToString(h.Sum(nil))`:
+  re-invents the signing primitive without timestamp tolerance
   (= replay-attackable)
 - A `for i := 0; i < 5; i++ { try(); time.Sleep(...) }` retry loop
 - A `subscribers` table you wrote yourself with `url`, `secret`,

@@ -57,7 +57,7 @@ func runGenerate(args []string) {
 }
 
 func printGenerateHelp() {
-	fmt.Println(`gofastr generate — generate an app or add owned code
+	fmt.Println(`gofastr generate: generate an app or add owned code
 
 Usage:
   gofastr generate --from=<gofastr.yml> [--dry-run] [--force]
@@ -80,8 +80,8 @@ Run "gofastr docs blueprints", "gofastr docs app-cli", or
 }
 
 // generateScaffoldEntity is the `gofastr generate entity <name>` quick-stub
-// path. It synthesizes a one-entity blueprint fragment — a single placeholder
-// "name" field the user renames — and routes it through the SAME additive
+// path. It synthesizes a one-entity blueprint fragment, a single placeholder
+// "name" field the user renames, and routes it through the SAME additive
 // machinery as `--add` (generateBlueprint with add forced on). No yml is
 // required; the stub is a starting point the user immediately edits, while a
 // blueprint yml remains the way to express real intent. CRUD stays default,
@@ -106,10 +106,11 @@ func generateScaffoldEntity(args []string) {
 }
 
 // generateScaffoldScreen is the `gofastr generate screen <name>` quick-stub
-// path. It synthesizes a one-screen fragment — route /<kebab-name>, title
-// <Title name>, a heading plus a paragraph noting it is a generated stub —
-// and routes it through the additive machinery so screen order continuity,
-// skip-existing, and the legacy-layout refusal all hold for free.
+// path. It synthesizes a one-screen fragment: route /<kebab-name>, title
+// <Title name>, a heading plus a paragraph noting it is a generated stub.
+// It routes the fragment through the additive machinery so screen order
+// continuity, skip-existing, and the legacy-layout refusal all hold for
+// free.
 func generateScaffoldScreen(args []string) {
 	name, opts, ok := parseScaffoldArgs(args, "screen")
 	if !ok {
@@ -138,7 +139,7 @@ func generateScaffoldScreen(args []string) {
 // parseScaffoldArgs parses the flags accepted by the `generate entity|screen
 // <name>` scaffold subcommands: exactly one positional name plus --out,
 // --dry-run, and --json. --force and --add are rejected (scaffolding is
-// additive by definition — it never overwrites existing files), and any extra
+// additive by definition; it never overwrites existing files), and any extra
 // positional or unknown flag fails with usage guidance. It returns the parsed
 // name and options; ok is false (after printing a failure) when the arguments
 // are invalid, so the caller exits non-zero.
@@ -164,7 +165,7 @@ func parseScaffoldArgs(args []string, kind string) (name string, opts generateOp
 			opts.outputDir = args[i]
 			opts.outputSet = true
 		case arg == "--force", arg == "--add":
-			fail("%q is not supported on `gofastr generate %s` — scaffolding is additive (it never overwrites existing files)", arg, kind)
+			fail("%q is not supported on `gofastr generate %s`: scaffolding is additive (it never overwrites existing files)", arg, kind)
 			info("Usage: gofastr generate %s <name> [--out=DIR] [--dry-run] [--json]", kind)
 			return "", opts, false
 		case strings.HasPrefix(arg, "--"):
@@ -190,7 +191,7 @@ func parseScaffoldArgs(args []string, kind string) (name string, opts generateOp
 //
 // Auto-discovery of gofastr.yml is deliberately avoided: `--from` keeps
 // generation an explicit, reviewable step. (The isolation config no longer
-// collides — `gofastr init` now writes gofastr.isolation.yml — but a
+// collides, because `gofastr init` now writes gofastr.isolation.yml, but a
 // project may still legitimately have no blueprint, so guessing would
 // misfire.)
 func generateProject(args []string) {
@@ -243,7 +244,7 @@ func parseGenerateOptions(args []string) generateOptions {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		// Space form for the value-taking flags: `--from x` ≡ `--from=x`.
-		// The next arg is consumed only when it is not itself a flag —
+		// The next arg is consumed only when it is not itself a flag;
 		// silently dropping `--from x` used to yield a misleading
 		// "Nothing to generate".
 		nextValue := func() (string, bool) {
@@ -452,14 +453,15 @@ func generateFromBlueprint(options generateOptions) {
 // already-loaded Blueprint. generateFromBlueprint (the --from / --add yml
 // path) and the `generate entity|screen <name>` scaffold subcommands (which
 // synthesize a fragment in memory rather than loading yml) both route here,
-// so the additive machinery — union, order offsets, skip-existing partition,
-// legacy-layout refusal, client.go staleness warn, and the --dry-run/--json
-// reporting shapes — has exactly one implementation. options.add selects the
-// additive branch; the scaffold subcommands force it on (scaffolding is
-// additive by definition — it never overwrites owned files).
+// so the additive machinery has exactly one implementation: union, order
+// offsets, skip-existing partition, legacy-layout refusal, client.go
+// staleness warn, and the --dry-run/--json reporting shapes. options.add
+// selects the additive branch; the scaffold subcommands force it on
+// (scaffolding is additive by definition, so it never overwrites owned
+// files).
 func generateBlueprint(bp Blueprint, options generateOptions) {
 	// Generated imports are <module>/<output-dir> with the output dir
-	// relative to the working directory — so the go.mod that matters is the
+	// relative to the working directory, so the go.mod that matters is the
 	// one enclosing the cwd. Derive app.module from it when omitted; refuse
 	// a conflicting declaration (the output would not compile).
 	if err := resolveBlueprintModule(&bp, "."); err != nil {
@@ -473,7 +475,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 	// The blueprint is a one-shot generator: it emits ordinary owned app code
 	// (flat package main at the module root by default, or a subpackage under
 	// --out=DIR / app.output_dir), then gets out of the way. There is no
-	// regen/merge workflow — generating into a directory that already holds any
+	// regen/merge workflow: generating into a directory that already holds any
 	// target file REFUSES (see below), and --force is the explicit overwrite
 	// escape. No quarantined gen/, no clean-wipe.
 	outDir := ""
@@ -501,7 +503,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			warn("%s", f.Message())
 		}
 		// Broader net: any unscoped auto-exposed entity lets every OTHER
-		// authenticated user read/write its rows — warn even when no
+		// authenticated user read/write its rows; warn even when no
 		// field name looks like PII (the token list can't know
 		// "journal_entry" is private). Auto-CRUD already requires a
 		// session by default (issue #65), so this is cross-user
@@ -513,7 +515,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			warn("%s", f.Message())
 		}
 		// public: true is a full, deliberate opt-out of the session
-		// requirement — the ACTUAL anonymous-access surface. Always
+		// requirement: the ACTUAL anonymous-access surface. Always
 		// surfaced (never suppressed by the PII/unscoped warnings above)
 		// so a generated app's open surface is never silent.
 		for _, f := range lintPublicEntities(bp) {
@@ -544,7 +546,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			osExit(1)
 		}
 	}
-	// writeRoot is where files land on disk — the output dir, or "." for
+	// writeRoot is where files land on disk: the output dir, or "." for
 	// the module root. Computed early so additive generation can read the
 	// existing entities/ before rendering.
 	writeRoot := outDir
@@ -556,11 +558,11 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 	entityOffset, screenOffset := 0, 0
 	if options.add {
 		// A pre-0.15 aggregated entities/register.go holds the app.Entity
-		// calls inline and has no registrar seam — a per-entity file dropped
+		// calls inline and has no registrar seam: a per-entity file dropped
 		// next to it references types that don't exist and the project stops
 		// compiling. Refuse rather than emit broken output.
 		if legacy, lerr := packReadLegacyRegister(filepath.Join(writeRoot, "entities", "register.go")); lerr == nil && len(legacy) > 0 {
-			lerr = fmt.Errorf("entities/ uses the pre-0.15 aggregated layout, which --add cannot extend — recover your blueprint with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<blueprint> --force`")
+			lerr = fmt.Errorf("entities/ uses the pre-0.15 aggregated layout, which --add cannot extend. Recover your blueprint with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<blueprint> --force`")
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(lerr)
 				osExit(1)
@@ -573,7 +575,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// per-screen file dropped next to it self-registers against a seam
 		// that doesn't exist, so the project stops compiling. Refuse.
 		if packHasAggregatedScreens(writeRoot) {
-			serr := fmt.Errorf("screens use the pre-per-screen aggregated layout (screens.go), which --add cannot extend — recover your blueprint with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<blueprint> --force`")
+			serr := fmt.Errorf("screens use the pre-per-screen aggregated layout (screens.go), which --add cannot extend. Recover your blueprint with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<blueprint> --force`")
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(serr)
 				osExit(1)
@@ -585,7 +587,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// screens-only fragment may reference an entity that lives in the
 		// project, and (b) validation sees the same world rendering will.
 		// The recovered entities come first in their authored order; their
-		// files already exist so they are skipped at write time — only the
+		// files already exist so they are skipped at write time; only the
 		// fragment's genuinely-new pieces land on disk. On a name collision
 		// the project's declaration wins (re-declaring is a documented no-op).
 		recovered, rerr := packReadEntities(writeRoot)
@@ -596,7 +598,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// entity name: "Posts" and "posts" both render to entities/posts.go
 		// and the same Go type, so a case/separator variant IS a
 		// redeclaration. Keying on the raw name would let the variant slip
-		// past as "new", then get silently skipped when its file collides —
+		// past as "new", then get silently skipped when its file collides,
 		// dropping the entity the user asked to add.
 		have := make(map[string]bool, len(recovered))
 		for _, d := range recovered {
@@ -613,11 +615,11 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// Screens aren't rendered from the union (only entities are), so
 		// validateBlueprint can't see the project's existing screen routes.
 		// Reject a fragment screen whose route collides with one already
-		// mounted in the project — otherwise two site.Register calls hit the
+		// mounted in the project; otherwise two site.Register calls hit the
 		// same path and the new screen silently shadows (or is shadowed by)
 		// the old. The taken set is scanned from the actual Register calls in
 		// the generated source, so it INCLUDES synthesized CRUD form routes
-		// (/new, /{id}/edit) that packReadScreens drops — a fragment claiming
+		// (/new, /{id}/edit) that packReadScreens drops: a fragment claiming
 		// one of those would otherwise double-register invisibly. A fragment
 		// screen whose own file already exists is skipped by the write
 		// partition below (idempotent re-add, matching entity redeclaration),
@@ -630,7 +632,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			if fileExistsUnder(writeRoot, screenFileName(s.Name)) {
 				continue // same screen being re-added → handled as skip-existing
 			}
-			cerr := fmt.Errorf("screen %q route %q collides with a route already mounted in the project — pick a different route (--add cannot replace an owned screen; use --force to regenerate the whole app)", s.Name, s.Route)
+			cerr := fmt.Errorf("screen %q route %q collides with a route already mounted in the project. Pick a different route (--add cannot replace an owned screen; use --force to regenerate the whole app)", s.Name, s.Route)
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(cerr)
 				osExit(1)
@@ -673,12 +675,12 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 	}
 	// Self-hosted fonts: if the generate-time fetch couldn't reach the CDN,
 	// the app still ships (system fonts render) but the intended type is
-	// missing. Say so LOUDLY with the exact files to drop in — the CSP
+	// missing. Say so LOUDLY with the exact files to drop in: the CSP
 	// (default-src 'self') blocks the Google CDN at runtime, so the woff2
 	// must be self-hosted; there is no silent fallback to a webfont link.
 	if !options.json {
 		if missing := blueprintMissingFontSlugs(bp, files); len(missing) > 0 {
-			warn("could not fetch %d webfont file(s) — the app will fall back to system fonts until you supply them. Drop the matching .woff2 into your project so these paths exist: %s. (The strict CSP blocks the Google Fonts CDN at runtime, so fonts must be self-hosted.)", len(missing), strings.Join(missing, ", "))
+			warn("could not fetch %d webfont file(s): the app will fall back to system fonts until you supply them. Drop the matching .woff2 into your project so these paths exist: %s. (The strict CSP blocks the Google Fonts CDN at runtime, so fonts must be self-hosted.)", len(missing), strings.Join(missing, ", "))
 		}
 	}
 	displayDir := outDir
@@ -736,7 +738,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 				osExit(1)
 			}
 		}
-		// Warn about stale client.go — a silently-stale generated API surface
+		// Warn about stale client.go: a silently-stale generated API surface
 		// is a trap the other aggregates aren't.
 		if !options.json {
 			hasNewEntities := false
@@ -750,7 +752,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			if hasNewEntities {
 				for _, f := range skipped {
 					if filepath.ToSlash(f.name) == "entities/client/client.go" {
-						warn("entities/client/client.go already exists and was not updated — it does not include the new entities. Regenerate it from a full blueprint with --force, or extend it by hand.")
+						warn("entities/client/client.go already exists and was not updated: it does not include the new entities. Regenerate it from a full blueprint with --force, or extend it by hand.")
 						break
 					}
 				}
@@ -758,7 +760,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			// The added pieces self-register against their seam, but the seam
 			// only runs if the owned shell calls it. Fresh generates always
 			// emit both call sites; if this project's owned file lost (or
-			// predates) its call, say exactly which line to add — otherwise
+			// predates) its call, say exactly which line to add; otherwise
 			// the new files compile and then silently never register/mount.
 			hasNewScreens := false
 			for _, f := range written {
@@ -768,10 +770,10 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 				}
 			}
 			if hasNewEntities && missingCallSite(writeRoot, "main.go", "entities.RegisterAll(") {
-				warn("main.go never calls entities.RegisterAll — the added entities will not register. Add `entities.RegisterAll(fwApp)` (importing your module's entities package) to main.go.")
+				warn("main.go never calls entities.RegisterAll: the added entities will not register. Add `entities.RegisterAll(fwApp)` (importing your module's entities package) to main.go.")
 			}
 			if hasNewScreens && missingCallSite(writeRoot, "app.go", "mountGenerated(") {
-				warn("app.go never calls mountGenerated — the added screens will not mount. Add `mountGenerated(fwApp, site, db)` inside RegisterGenerated in app.go.")
+				warn("app.go never calls mountGenerated: the added screens will not mount. Add `mountGenerated(fwApp, site, db)` inside RegisterGenerated in app.go.")
 			}
 		}
 		if options.json {
@@ -806,7 +808,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		osExit(1)
 	}
 	// One-shot: the emitted files are ordinary owned app code, not a
-	// re-runnable scaffold. Refuse to clobber an existing project — if any
+	// re-runnable scaffold. Refuse to clobber an existing project: if any
 	// target file already exists, list the conflicts and stop. --force is the
 	// explicit overwrite escape.
 	if !options.force {
@@ -818,7 +820,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		}
 		if len(conflicts) > 0 {
 			sort.Strings(conflicts)
-			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s — the emitted code is yours to own. To ADD to an existing project (new entities/screens) use `gofastr generate --add --from=<blueprint>`; to overwrite everything, re-run with --force", strings.Join(conflicts, ", "))
+			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s. The emitted code is yours to own. To ADD to an existing project (new entities/screens) use `gofastr generate --add --from=<blueprint>`; to overwrite everything, re-run with --force", strings.Join(conflicts, ", "))
 			if options.json {
 				printGeneratedErrorsJSON(cerr)
 				osExit(1)
@@ -832,7 +834,7 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// unregenerable one without anyone noticing (issue #131). Say
 		// what is being destroyed; the user asked to overwrite, so do
 		// not stop them.
-		warn("--force is overwriting %d file(s) that no longer match generator output — hand edits in them are being discarded:", len(edited))
+		warn("--force is overwriting %d file(s) that no longer match generator output: hand edits in them are being discarded:", len(edited))
 		for _, name := range edited {
 			warn("    %s", name)
 		}
@@ -860,13 +862,13 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 	success("Generated %d file(s) in %s", len(files), displayDir)
 	devCmd := "gofastr dev"
 	if outDir != "" && outDir != "." {
-		// output_dir blueprints put the app in a subpackage — plain
+		// output_dir blueprints put the app in a subpackage: plain
 		// `gofastr dev` would watch/build a root with no main package.
 		devCmd = "gofastr dev --dir " + outDir
 	}
 	fmt.Println()
 	// The generated code imports itself by module path (<module>/entities), so
-	// outside a Go module nothing just written can build — and `go mod tidy`,
+	// outside a Go module nothing just written can build, and `go mod tidy`,
 	// the step this block used to lead with, fails with a raw toolchain error
 	// before anything else runs. resolveBlueprintModule already refuses the
 	// adjacent case (a go.mod declaring a DIFFERENT module) with the exact
@@ -876,27 +878,27 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 	// about to become a module is legitimate, and app.module is declared, so
 	// the runnable command can be printed instead of the work being rejected.
 	if modulePath, _ := findEnclosingGoMod(absOrDot(".")); modulePath == "" {
-		warn("No go.mod here or in any parent — the generated code imports itself\n" +
+		warn("No go.mod here or in any parent: the generated code imports itself\n" +
 			"    by module path, so it cannot build until this directory is a Go module.")
 		fmt.Println()
 		fmt.Println("  Next steps:")
 		// Never echo a module path that cannot build. When app.module collides
 		// with the framework's own module, `go mod init <that path>` is the one
-		// command guaranteed to fail with "ambiguous import" — printing it as
+		// command guaranteed to fail with "ambiguous import"; printing it as
 		// the remedy sent readers further into the trap the warning above just
 		// described.
 		if len(lintModuleCollision(bp)) > 0 {
-			fmt.Println("    (set app.module to a path you own first — see the warning above)")
+			fmt.Println("    (set app.module to a path you own first: see the warning above)")
 		} else {
 			fmt.Printf("    go mod init %s\n", bp.App.Module)
 		}
-		fmt.Println("    go mod tidy          — the generated code pulls new imports")
-		fmt.Printf("    %-20s — dev server with hot-reload\n", devCmd)
+		fmt.Println("    go mod tidy          : the generated code pulls new imports")
+		fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
 		return
 	}
 	fmt.Println("  Next steps:")
-	fmt.Println("    go mod tidy          — the generated code pulls new imports")
-	fmt.Printf("    %-20s — dev server with hot-reload\n", devCmd)
+	fmt.Println("    go mod tidy          : the generated code pulls new imports")
+	fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
 }
 
 // absOrDot resolves dir to an absolute path, falling back to the input when
@@ -947,12 +949,12 @@ func removeRetiredBlueprintFiles(writeRoot string) error {
 // and then read by nobody: an extension answering `{"diagnostics":[{"severity":
 // "error","message":"…"}]}` had its error discarded and `gofastr generate`
 // printed success. An extension is the one participant that cannot fail the run
-// any other way — a non-zero exit means "the process broke", while a diagnostic
+// any other way: a non-zero exit means "the process broke", while a diagnostic
 // is how the protocol says "the input is wrong". Dropping it turned a refusal
 // into a silent pass.
 //
 // Extension output reaches a terminal, so messages go through the same scrub the
-// child's stderr does — an extension does not get to drive the operator's
+// child's stderr does; an extension does not get to drive the operator's
 // terminal through a JSON field either.
 func reportCodegenDiagnostics(diags []codegen.Diagnostic) bool {
 	failed := false
@@ -1026,7 +1028,7 @@ func fileSetFromGeneratedFiles(files []generatedFile, owner string) (*codegen.Fi
 }
 
 // editedTargets returns the target files that already exist on disk with
-// content the generator is NOT about to reproduce — i.e. files someone
+// content the generator is NOT about to reproduce, i.e. files someone
 // edited by hand after scaffolding.
 //
 // This is the signal --force needs. Provenance headers can't serve: the
@@ -1038,7 +1040,7 @@ func editedTargets(files []generatedFile, writeRoot, outDir string) []string {
 	for _, file := range files {
 		existing, err := os.ReadFile(filepath.Join(writeRoot, file.name))
 		if err != nil {
-			continue // absent (or unreadable) — nothing to lose
+			continue // absent (or unreadable): nothing to lose
 		}
 		if string(existing) != formatGenerated(file.name, file.content) {
 			edited = append(edited, filepath.Join(outDir, file.name))
@@ -1051,13 +1053,13 @@ func editedTargets(files []generatedFile, writeRoot, outDir string) []string {
 // renderGeneratedProject emits the entities package for a set of entity
 // declarations. Output is ONE FILE PER ENTITY plus a thin registration seam:
 //
-//   - entities/register.go — the RegisterAll seam. It is byte-identical for
+//   - entities/register.go: the RegisterAll seam. It is byte-identical for
 //     every project regardless of entity count; each entity file appends
 //     itself to registrars in init(), so adding an entity means adding one
 //     new file and never editing an existing one.
-//   - entities/<snake_name>.go — everything for one entity: model struct,
+//   - entities/<snake_name>.go: everything for one entity: model struct,
 //     column constants, typed repo, event helpers, and its registration func.
-//   - client/client.go — a standalone typed HTTP client (separate package).
+//   - client/client.go: a standalone typed HTTP client (separate package).
 //
 // Declaration order is carried by the registrar.order field so RegisterAll
 // registers entities in blueprint order and gofastr pack can recover it.
@@ -1070,14 +1072,14 @@ func renderGeneratedProject(decls []framework.EntityDeclaration) ([]generatedFil
 // to a project that already has N entities (orders 0..N-1) continue at N, N+1,
 // … keeping RegisterAll's declaration order and pack recovery coherent.
 func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderOffset int) ([]generatedFile, error) {
-	// Validate up front so a bad entity fails fast — with its name in the
-	// error — before any file is emitted.
+	// Validate up front so a bad entity fails fast, with its name in the
+	// error, before any file is emitted.
 	for _, decl := range decls {
 		if _, err := decl.Config(); err != nil {
 			return nil, err
 		}
 		if len(decl.Endpoints) > 0 {
-			return nil, fmt.Errorf("entity %q: code generation does not support endpoints — endpoints require Go handlers and must be wired in code (use app.Entity with EntityConfig.Endpoints)", decl.Name)
+			return nil, fmt.Errorf("entity %q: code generation does not support endpoints: endpoints require Go handlers and must be wired in code (use app.Entity with EntityConfig.Endpoints)", decl.Name)
 		}
 	}
 	files := []generatedFile{
@@ -1098,7 +1100,7 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 	return files, nil
 }
 
-// renderRegisterSeam emits entities/register.go — the fixed registration seam.
+// renderRegisterSeam emits entities/register.go, the fixed registration seam.
 // It carries no entity-specific text, so its bytes are identical whether the
 // project declares one entity or a hundred.
 func renderRegisterSeam() string {
@@ -1404,7 +1406,7 @@ func renderIndexLiteral(idx framework.Index) string {
 	// Expression replaces Columns for function/constant indices (see
 	// framework/entity Index). Dropping it silently downgraded the declaration:
 	// a `{Name: …, Expression: "LOWER(email)", Unique: true}` came back out as
-	// `{Name: …, Unique: true}` — an index with no key at all, so the UNIQUE
+	// `{Name: …, Unique: true}`, an index with no key at all, so the UNIQUE
 	// constraint the developer declared simply did not exist in the generated
 	// app. Case-insensitive uniqueness is the usual reason to reach for one, so
 	// the failure mode was duplicate rows differing only by case.
@@ -1573,7 +1575,7 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", toCamelCase(field.Name), goTypeForField(field.Type), toCamelJSON(field.Name)))
 	}
-	// Relation fields — populated by TypedQuery.Include() and Repo.Get(...,
+	// Relation fields: populated by TypedQuery.Include() and Repo.Get(...,
 	// includes...). Singular relations (HasOne/BelongsTo) get *Target;
 	// collections (HasMany/ManyToMany) get []*Target. Pointer so the absent
 	// case marshals as null (matches the framework's nil-for-missing
@@ -1680,7 +1682,7 @@ func validateOutputDir(dir string) error {
 }
 
 // safeCleanOutputDir removes only the files this generator owns. It refuses to
-// remove the directory if it contains files the generator did not write — this
+// remove the directory if it contains files the generator did not write. This
 // prevents accidental data loss when --out points at a populated directory.
 func safeCleanOutputDir(dir string) error {
 	if err := codegen.EnsureNoSymlinkPath(dir); err != nil {
@@ -1715,7 +1717,7 @@ func safeCleanOutputDir(dir string) error {
 	}
 	for _, entry := range entries {
 		if !owned[entry.Name()] {
-			return fmt.Errorf("refusing to clean %s — contains unknown entry %q (move it or use --no-clean)", dir, entry.Name())
+			return fmt.Errorf("refusing to clean %s: contains unknown entry %q (move it or use --no-clean)", dir, entry.Name())
 		}
 	}
 	for name := range owned {
@@ -1819,8 +1821,8 @@ func fileExistsUnder(writeRoot, rel string) bool {
 // registeredScreenRoutes returns the set of routes actually mounted by the
 // generated app under writeRoot, scanned from every `site.Register(route, …)`
 // and `app.NewScreen(route, …)` (the arg to site.RegisterScreen) call in its
-// *.go files. Unlike packReadScreens — which reconstructs only the AUTHORED
-// screens and deliberately drops synthesized CRUD form screens — this sees the
+// *.go files. Unlike packReadScreens, which reconstructs only the AUTHORED
+// screens and deliberately drops synthesized CRUD form screens, this sees the
 // full mounted set, including the /new and /{id}/edit routes those forms add,
 // so the --add collision guard can't be fooled into double-registering one.
 func registeredScreenRoutes(writeRoot string) map[string]bool {
@@ -1862,7 +1864,7 @@ func registeredScreenRoutes(writeRoot string) map[string]bool {
 }
 
 // missingCallSite reports whether the named owned file exists under
-// writeRoot yet nowhere mentions the given call — the additive trap where
+// writeRoot yet nowhere mentions the given call: the additive trap where
 // freshly added seam-registered files compile but are never invoked. A file
 // that doesn't exist is NOT missing the call (it will be written this run).
 func missingCallSite(writeRoot, rel, call string) bool {

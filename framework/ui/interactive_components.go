@@ -29,14 +29,14 @@ var tabsStyle = registry.RegisterStyle("fui-tabs", tabsCSS)
 
 // tabsMaxPanels bounds how many tab indices the generated CSS covers.
 // Both the active-button highlight and the visible-panel rule are
-// emitted per index (the registered CSS is global — it can't know a
+// emitted per index (the registered CSS is global: it can't know a
 // given strip's tab count), so we cover a generous fixed ceiling and
 // reject anything beyond it loudly rather than silently hiding panels.
 const tabsMaxPanels = 24
 
 // Tabs renders a signal-driven tab strip. Clicking a tab sets the signal;
 // the runtime mirrors it to data-active on the wrapper, and CSS lights up
-// both the matching button and panel — so the highlight moves with the
+// both the matching button and panel, so the highlight moves with the
 // selection.
 //
 // Panics if SignalName is empty, Tabs is empty, or there are more than
@@ -94,8 +94,8 @@ func Tabs(cfg TabsConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	// The signal binding lives on the outer wrapper — the common ancestor
-	// of the nav buttons and the panels — so one data-active drives both.
+	// The signal binding lives on the outer wrapper, the common ancestor
+	// of the nav buttons and the panels, so one data-active drives both.
 	wrapper := render.Tag("div", map[string]string{
 		"class":                cls,
 		"data-fui-signal":      name,

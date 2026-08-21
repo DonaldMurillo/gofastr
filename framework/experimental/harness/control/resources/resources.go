@@ -167,7 +167,7 @@ func (c *Catalog) ListSlashCommands() []SlashCommandInfo {
 			Name: b.Name, Description: b.Description, ArgsHelp: b.ArgsHelp, IsBuiltin: true,
 		})
 	}
-	// Reserved namespaces (without specific verbs — caller can
+	// Reserved namespaces (without specific verbs, caller can
 	// enumerate skills, profiles, etc. via dedicated endpoints).
 	for _, ns := range slash.AllNamespaces() {
 		out = append(out, SlashCommandInfo{

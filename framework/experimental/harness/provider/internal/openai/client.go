@@ -165,7 +165,7 @@ func translateOutbound(m provider.Message) []openaiMessage {
 			}
 		}
 		// OpenAI-compatible spec: when an assistant message carries
-		// tool_calls, content should be null (omitted) — emitting
+		// tool_calls, content should be null (omitted), emitting
 		// `"content": ""` confuses some providers (notably ZAI GLM,
 		// which silently returns an empty next-turn response). Pass
 		// `any(nil)` so omitempty actually skips the field.
@@ -173,7 +173,7 @@ func translateOutbound(m provider.Message) []openaiMessage {
 		if t := text.String(); t != "" {
 			contentField = t
 		} else if len(toolCalls) == 0 {
-			// No text AND no tool_calls — still need to emit an empty
+			// No text AND no tool_calls, still need to emit an empty
 			// assistant message rather than nothing, so keep "".
 			contentField = ""
 		}
@@ -250,7 +250,7 @@ type streamChoice struct {
 		ToolCalls []deltaToolCall `json:"tool_calls,omitempty"`
 		// ReasoningContent is where ZAI GLM and DeepSeek surface
 		// thinking-block text on the OpenAI-compatible wire. Some
-		// providers use `reasoning` instead — accept both.
+		// providers use `reasoning` instead, accept both.
 		ReasoningContent string `json:"reasoning_content,omitempty"`
 		Reasoning        string `json:"reasoning,omitempty"`
 	} `json:"delta"`

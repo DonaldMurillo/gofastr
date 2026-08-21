@@ -11,7 +11,7 @@
 // props reach HTML attributes through its extraAttrs passthrough, which
 // drops only style, srcdoc, and on* and forwards everything else verbatim.
 // That lets a third party forge the exact trusted-runtime attributes
-// (data-fui-rpc, data-fui-*) that runtime.js acts on — a trusted-channel
+// (data-fui-rpc, data-fui-*) that runtime.js acts on, a trusted-channel
 // forgery that CSP does not catch (design §9).
 //
 // This package's wire type makes the attack UNREPRESENTABLE rather than
@@ -47,7 +47,7 @@
 // [Validate] accepts a []byte whose length is bounded by [Limits.MaxInputBytes]
 // (default 1 MiB, mirroring core/mcp's maxMCPBodyBytes). Callers receiving
 // the tree from an unbounded source (e.g. an io.Reader from the wire) MUST
-// cap the reader first — e.g. via io.LimitReader — so a hostile publisher
+// cap the reader first, e.g. via io.LimitReader, so a hostile publisher
 // cannot exhaust host memory before Validate even runs.
 package uinodev1
 
@@ -59,7 +59,7 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 //
 //   - It maps each [Component] to a framework/ui or core-ui/html primitive,
 //     assigning every id, class, ARIA attribute, and visual variant itself.
-//     Modules cannot influence these — there are no such fields on any prop
+//     Modules cannot influence these, there are no such fields on any prop
 //     struct by design.
 //
 //   - It resolves every [Node.ActionRef] to a real data-fui-rpc URL by
@@ -78,7 +78,7 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 type Renderer interface {
 	// Render converts a validated tree to HTML. The returned HTML is
 	// trusted by the host's renderer pipeline (it produced it); callers
-	// must not feed unvalidated input through this interface — always
+	// must not feed unvalidated input through this interface, always
 	// run [Validate] first and pass the resulting [Tree].
 	Render(t *Tree) (render.HTML, error)
 }

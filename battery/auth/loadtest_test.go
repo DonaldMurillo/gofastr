@@ -20,16 +20,16 @@ import (
 // in a tight loop for a short bursty window, and verifies:
 //
 //   - The per-IP limiter eventually 429s (the budget is small relative
-//     to the burst — otherwise the burst would pass the limiter and
+//     to the burst, otherwise the burst would pass the limiter and
 //     the limiter wouldn't be doing its job).
 //   - At least the configured MaxAttempts requests are admitted (the
 //     limiter doesn't fail closed on first request).
 //   - Goroutine count returns to baseline after the burst completes.
-//   - No requests succeed (every login uses a wrong password) — pins
+//   - No requests succeed (every login uses a wrong password), pins
 //     "rate limit returning 429" vs "wrong-password 401".
 //
 // Realistic numbers: the suite already takes ~13s and we don't want to
-// slow it down 3x. The burst is 200 requests across 16 workers — small
+// slow it down 3x. The burst is 200 requests across 16 workers, small
 // enough to keep wall-clock under 1s, large enough to exercise the
 // limiter's sliding window. The full vegeta / k6 multi-RPS test
 // belongs in CI-only soak runs.
@@ -49,7 +49,7 @@ func TestLoad_LoginEndpoint_RateLimiterHoldsUnderConcurrency(t *testing.T) {
 			Window:        time.Minute,
 			BlockDuration: time.Minute,
 		},
-		// This test isolates the per-IP limiter's behaviour — disable
+		// This test isolates the per-IP limiter's behaviour, disable
 		// the per-account limiter (which AuthConfig.defaults() would
 		// otherwise install) so it can't trip first and skew counts.
 		LoginRateLimitPerAccount: &RateLimiterConfig{
@@ -133,7 +133,7 @@ func TestLoad_LoginEndpoint_RateLimiterHoldsUnderConcurrency(t *testing.T) {
 // TestLoad_OAuthStateNonces_BoundedUnderRedirectStorm pins that the
 // new stateless OAuth state design does not grow the in-process memory
 // footprint as a function of redirect volume. Pre-stateless, every
-// /oauth/{provider} request inserted a row into stateStore — an
+// /oauth/{provider} request inserted a row into stateStore, an
 // attacker could blow up RAM by spamming redirects. After this PR,
 // generateState writes nothing to the plugin, and the usedNonces map
 // only grows on successful callbacks (which require a valid HMAC + a
@@ -182,7 +182,7 @@ func TestLoad_OAuthStateNonces_GarbageCollectsExpired(t *testing.T) {
 		t.Fatalf("test precondition: expected to plant >= %d entries, got %d", nonceGCThreshold, expiredCount)
 	}
 
-	// Now trigger the GC by validating one fresh state — that path is
+	// Now trigger the GC by validating one fresh state, that path is
 	// where the size-gated purge runs.
 	fresh, err := p.generateState("mock", "")
 	if err != nil {

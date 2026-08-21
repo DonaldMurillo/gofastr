@@ -28,7 +28,7 @@ const (
 type SpinnerVariant string
 
 const (
-	SpinnerRing SpinnerVariant = "" // default — bordered ring
+	SpinnerRing SpinnerVariant = "" // default: bordered ring
 	SpinnerDots SpinnerVariant = "dots"
 	// SpinnerGrid renders a 3×3 grid of small squares animated in a
 	// staggered ripple. Distinct enough from ring/dots to be the

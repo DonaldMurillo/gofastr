@@ -154,7 +154,7 @@ func TestDBQueueGateNoHotLoop(t *testing.T) {
 
 // TestDBQueueGateNoClaimChurn asserts the worker never claims gated jobs at
 // all. Before M3 the loop claimed every gated job then released it every
-// ~100ms — DB churn. With eligibleTypes() filtering gated types out before
+// ~100ms: DB churn. With eligibleTypes() filtering gated types out before
 // Dequeue, gated rows stay untouched: attempts never bump and scheduled_at
 // is never pushed forward by release().
 func TestDBQueueGateNoClaimChurn(t *testing.T) {

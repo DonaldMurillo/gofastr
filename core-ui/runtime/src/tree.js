@@ -1,4 +1,4 @@
-// GoFastr runtime module — TreeView
+// GoFastr runtime module, TreeView
 //
 // WAI-ARIA Tree pattern: roving tabindex, arrow-key navigation,
 // expand/collapse via Right/Left, Home/End, Enter/Space, and
@@ -22,20 +22,20 @@
 
   // Toggle click flips aria-expanded + child group visibility AND
   // redirects focus to the parent treeitem. The toggle button itself
-  // is aria-hidden="true" (decorative chevron — screen readers get
+  // is aria-hidden="true" (decorative chevron, screen readers get
   // expand state from the treeitem's aria-expanded), so leaving focus
   // ON it would put aria-hidden on a focused element and trigger
   // Chrome's "Blocked aria-hidden on an element because its
   // descendant retained focus" platform warning. Refocusing the
   // treeitem also matches what ArrowRight/Left already do via the
-  // keyboard handler — both routes end with focus on the row.
+  // keyboard handler, both routes end with focus on the row.
   document.addEventListener('click', (e) => {
     const toggle = e.target && e.target.closest && e.target.closest('[data-fui-tree-toggle]');
     if (!toggle) return;
     const item = toggle.closest('[role="treeitem"]');
     if (!item) return;
     const current = item.getAttribute('aria-expanded');
-    if (current === null) return; // leaf — nothing to toggle
+    if (current === null) return; // leaf: nothing to toggle
     const next = current === 'true' ? 'false' : 'true';
     item.setAttribute('aria-expanded', next);
     const group = item.querySelector(':scope > [role="group"]');
@@ -57,7 +57,7 @@
 
   // Click anywhere on a treeitem's row moves the roving tabindex to
   // it (and gives it focus). Without this, clicking row B while row A
-  // is the focused item leaves A as the keyboard entry point — so the
+  // is the focused item leaves A as the keyboard entry point, so the
   // user has to first press Tab+ArrowDown to "catch up" to where they
   // clicked. The WAI-ARIA Tree pattern explicitly recommends that a
   // pointer click on a treeitem put it into the focus state.
@@ -77,14 +77,14 @@
     );
     item.setAttribute('tabindex', '0');
     // Only steal focus if the user didn't click an interactive child
-    // (e.g. an <a> label on a leaf) — in that case the click target
+    // (e.g. an <a> label on a leaf), in that case the click target
     // handles focus naturally.
     const interactive = e.target.closest('a, button, input, select, textarea');
     if (!interactive) item.focus();
   });
 
   // _treeRows walks the tree and returns the visible (non-hidden)
-  // treeitems in document order — used for ArrowDown/Up nav and
+  // treeitems in document order, used for ArrowDown/Up nav and
   // type-ahead jumps.
   const treeRows = (tree) =>
     Array.from(tree.querySelectorAll('[role="treeitem"]')).filter((n) => {

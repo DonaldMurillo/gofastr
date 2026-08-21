@@ -1,7 +1,7 @@
 # battery/auth
 
-Sessions, password handling, CSRF, role checks, user/session stores —
-all the auth primitives a host app would otherwise hand-roll.
+Sessions, password handling, CSRF, role checks, and user/session
+stores. All the auth primitives a host app would otherwise hand-roll.
 
 **Use this when** the prompt mentions: login, signup, session, password,
 bcrypt, CSRF, "require admin", "log out everywhere", role check,
@@ -29,7 +29,7 @@ app.Router().Use(auth.SessionMiddleware(mgr))
 | Add `<input>` for CSRF token in a form | `render.HTML(auth.CSRFInputFromCtx(ctx))` |
 | Send `X-CSRF-Token` from JS fetch | Read cookie `auth_csrf` / `__Host-auth_csrf`, send as header |
 | Declare a User entity that satisfies auth | `auth.UserEntityFields()` returns the canonical schema fields |
-| Auth-gate a custom MCP tool | `mcp.Gated(auth.MCPUser(), handler)` or `mcp.Gated(auth.MCPRole("admin"), handler)` — needs global `SessionMiddleware` so the /mcp request resolves the caller |
+| Auth-gate a custom MCP tool | `mcp.Gated(auth.MCPUser(), handler)` or `mcp.Gated(auth.MCPRole("admin"), handler)`. Needs global `SessionMiddleware` so the /mcp request resolves the caller |
 
 ## Hard rules
 
@@ -51,8 +51,8 @@ app.Router().Use(auth.SessionMiddleware(mgr))
 ## Don't reinvent
 
 - A `users` table with `password_hash` / `email_verified_at` / `roles`
-  columns — `UserEntityFields()` ships it.
-- A session table + cookie issuance — the SessionStore + middleware
+  columns: `UserEntityFields()` ships it.
+- A session table + cookie issuance: the SessionStore + middleware
   handle minting, refresh, expiration, and "log out everywhere".
-- A login handler — auth-plugin lifecycle composes login/signup/oauth/
+- A login handler: auth-plugin lifecycle composes login/signup/oauth/
   magic-link/2FA. See `framework/docs/content/auth.md`.

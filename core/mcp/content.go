@@ -13,7 +13,7 @@ import (
 type Content struct {
 	Type     string            // "text" | "image" | "audio" | "resource"
 	Text     string            // type=="text"
-	Data     string            // type=="image"/"audio" — base64-encoded bytes
+	Data     string            // type=="image"/"audio": base64-encoded bytes
 	MimeType string            // type=="image"/"audio"
 	Resource *EmbeddedResource // type=="resource"
 	Meta     map[string]any    // optional per-block _meta

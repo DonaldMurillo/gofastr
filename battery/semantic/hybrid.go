@@ -10,7 +10,7 @@ import (
 
 // rrfK is the conventional reciprocal-rank-fusion constant. 60 dampens
 // the contribution of low-ranked items from either list and is
-// effectively the published default — varying it within ±20 doesn't
+// effectively the published default, varying it within ±20 doesn't
 // change top-K composition meaningfully for our use case.
 const rrfK = 60.0
 
@@ -28,7 +28,7 @@ func fuseRRF(vec, kw []Hit) []Hit {
 	for rank, h := range kw {
 		scores[h.Chunk.ID] += 1.0 / (rrfK + float64(rank+1))
 		// Only set chunks[id] if not already present from the vector
-		// pass — the vector pass carries the embedding, which MMR
+		// pass, the vector pass carries the embedding, which MMR
 		// needs.
 		if _, ok := chunks[h.Chunk.ID]; !ok {
 			chunks[h.Chunk.ID] = h
@@ -56,8 +56,8 @@ func fuseRRF(vec, kw []Hit) []Hit {
 //
 // It scores documents using a simplified BM25-flavoured formula: term
 // frequency in the document, normalised by document length and scaled
-// by inverse document frequency. This is not BM25 — there is no IDF
-// saturation parameter — but it is the right shape for fusing with
+// by inverse document frequency. This is not BM25, there is no IDF
+// saturation parameter, but it is the right shape for fusing with
 // vector scores via RRF, where only the rank order matters.
 type MemoryKeyword struct {
 	mu     sync.RWMutex
@@ -206,7 +206,7 @@ func keywordTokens(s string) []string {
 
 // logBase is a tiny natural-log-ish helper that avoids math.Log on the
 // hot path while preserving monotonicity. Strict accuracy is not
-// needed — fusion only uses rank, not magnitude.
+// needed, fusion only uses rank, not magnitude.
 func logBase(x float64) float64 {
 	if x <= 1 {
 		return 0

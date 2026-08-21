@@ -15,10 +15,10 @@ type CacheAttribution struct {
 	// freshly added to its cache. Non-zero only on Anthropic-shape.
 	WriteTokens int
 	// Quality categorizes how reliable the attribution is:
-	//   - "explicit"     — provider returned a structured cache breakdown
-	//   - "midstream"    — markers parsed mid-stream (Anthropic-shape on partial)
-	//   - "estimate"     — heuristic when the provider doesn't surface cache info
-	//   - "none"         — the provider doesn't support prompt caching
+	//   - "explicit":     provider returned a structured cache breakdown
+	//   - "midstream":    markers parsed mid-stream (Anthropic-shape on partial)
+	//   - "estimate":     heuristic when the provider doesn't surface cache info
+	//   - "none":         the provider doesn't support prompt caching
 	Quality string
 }
 

@@ -1,6 +1,6 @@
 package ui
 
-// SiteHeader — the top bar that wraps every page of a content/marketing
+// SiteHeader: the top bar that wraps every page of a content/marketing
 // site (docs, landing, examples gallery). Composition is generic;
 // brand glyph + action affordances stay per-consumer as slots.
 //
@@ -27,7 +27,7 @@ type SiteHeaderLink struct {
 	// Href is the navigation target.
 	Href string
 	// MatchPrefix, when true, lights the link active on Href itself and
-	// on any URL that continues it at a segment boundary — /docs matches
+	// on any URL that continues it at a segment boundary: /docs matches
 	// /docs and /docs/getting-started, but not /docs-old. The trailing
 	// slash is optional: /docs and /docs/ behave identically.
 	// Wires the data-fui-match-prefix runtime attribute.
@@ -38,7 +38,7 @@ type SiteHeaderLink struct {
 }
 
 // SiteHeaderConfig configures a SiteHeader. Brand and Actions are
-// slots — the framework owns layout + drawer mechanics; the consumer
+// slots. The framework owns layout + drawer mechanics; the consumer
 // owns visual identity.
 type SiteHeaderConfig struct {
 	// Brand is the left-most slot. Usually a link with logo + wordmark.
@@ -74,7 +74,7 @@ type SiteHeaderConfig struct {
 	NavUnderline bool
 	// Drawer selects the mobile nav shape. The default is a compact
 	// trigger-anchored popover; SiteHeaderDrawerSheet renders a full-height
-	// slide-in side drawer with a backdrop scrim — the component owns the
+	// slide-in side drawer with a backdrop scrim: the component owns the
 	// layout, so consumers don't hand-roll drawer CSS.
 	Drawer SiteHeaderDrawerVariant
 	// Class is appended to the ui-site-header wrapper.

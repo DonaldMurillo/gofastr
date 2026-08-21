@@ -17,13 +17,13 @@ import (
 // VerifyAuthEntitiesPrivate (battery/auth/verify_private.go:35) resolves the
 // users/sessions entity with reg.Get(name). Registry.Get was changed in this
 // release range to return an AMBIGUITY ERROR when a name is registered under
-// several versions and none is unversioned — the shape App.GroupEntity
+// several versions and none is unversioned, the shape App.GroupEntity
 // produces. The audit reads that error as "not registered yet", logs a
 // misleading "call AFTER app.Entity(...)" hint, and SKIPS the check.
 //
 // So a host that mounts its users table at /api/v1 and /api/v2 with auto-CRUD
 // left on gets no warning that its password_hash column is behind a public
-// CRUD route — from the one function whose entire job is to say so. The
+// CRUD route, from the one function whose entire job is to say so. The
 // operator is additionally sent to fix a registration-order problem that does
 // not exist.
 //
@@ -38,7 +38,7 @@ func TestAuditSeesEveryVersion(t *testing.T) {
 				{Name: "email", Type: schema.String},
 				{Name: "password_hash", Type: schema.String},
 			}, Exposure: &entity.ExposureConfig{
-				// explicitly exposed — exactly what the audit must catch
+				// explicitly exposed, exactly what the audit must catch
 				CRUD: &crudOn},
 		}.WithTimestamps(false))
 		e.Version = version

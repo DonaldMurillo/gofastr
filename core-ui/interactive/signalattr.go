@@ -5,10 +5,10 @@ import "strings"
 // signalAttrAllowList is the set of attribute names a signal may drive.
 //
 // Allow-list, not deny-list. A deny-list has to enumerate every
-// attribute that executes — `srcdoc` (a whole document), `style` (CSS),
+// attribute that executes, `srcdoc` (a whole document), `style` (CSS),
 // `data-behavior` (the runtime's <script src> sink), `sandbox` (removes
 // an iframe's restrictions), every `on*`, and every privileged
-// `data-fui-*` — and it loses the moment a new one is added. The
+// `data-fui-*`, and it loses the moment a new one is added. The
 // allow-list only has to name what bindings legitimately write.
 //
 // The URL-valued members are additionally scheme-checked, at SSR by
@@ -29,8 +29,8 @@ var signalAttrAllowList = map[string]bool{
 // case-insensitive to the parser, so `OnClick` is an event handler no
 // matter how it was cased.
 //
-// Exported so both emitters of data-fui-signal-attr — BindAttr here
-// and core-ui/store's Slice.BindAttr — enforce the same list instead
+// Exported so both emitters of data-fui-signal-attr, BindAttr here
+// and core-ui/store's Slice.BindAttr, enforce the same list instead
 // of growing a second copy.
 func SignalAttrAllowed(htmlAttr string) bool {
 	n := strings.ToLower(htmlAttr)

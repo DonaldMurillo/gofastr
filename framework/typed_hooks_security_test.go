@@ -14,7 +14,7 @@ import (
 // IsAdmin=false, Balance=0, Role="") must still override the
 // attacker-supplied value already in the pending body. If the merge-back
 // relies on json.Marshal's omitempty, the forced-zero field is dropped
-// and the attacker's value survives — a privilege-escalation primitive.
+// and the attacker's value survives, a privilege-escalation primitive.
 type hookSecPost struct {
 	ID      string `json:"id,omitempty"`
 	Title   string `json:"title,omitempty"`
@@ -123,8 +123,8 @@ func TestTypedHook_UpdateNoForcedFieldUnchanged(t *testing.T) {
 
 // TestTypedAfterHooksCanRedact pins the property that a typed AfterCreate /
 // AfterUpdate hook can redact a field from the HTTP response body. The crud
-// layer hands ExecuteHooks the live result map — the very map serialised into
-// the create/update response — so an untyped After-hook redacts by mutating
+// layer hands ExecuteHooks the live result map, the very map serialised into
+// the create/update response, so an untyped After-hook redacts by mutating
 // that map directly. The typed wrappers must merge the mutated *T back into
 // the same map, or a host that redacts via the ergonomic typed API ships the
 // secret while believing it is masked. One redaction shape per surface; both
@@ -228,7 +228,7 @@ func TestHooks_RecoverPanicsAsErrors(t *testing.T) {
 }
 
 // TestHooks_AfterRecoveryStillCallsLater ensures recovery doesn't break
-// the existing first-error-stops loop semantic — recovered panics
+// the existing first-error-stops loop semantic, recovered panics
 // behave like any other error.
 func TestHooks_AfterRecoveryStillCallsLater(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())

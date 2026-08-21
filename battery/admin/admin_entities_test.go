@@ -3,7 +3,7 @@ package admin
 // Tests for the entity CRUD admin. The entity screens render THROUGH a mounted
 // UI host (so they hydrate with runtime.js), so the harness builds a framework
 // App + a uihost + the admin battery, exactly as a real app would. The admin
-// layer is dialect-agnostic (it never builds SQL itself — the CrudHandler does,
+// layer is dialect-agnostic (it never builds SQL itself, the CrudHandler does,
 // and that is dialect-tested in framework/crud); SQLite in-memory is therefore
 // sufficient coverage for the proxy logic.
 
@@ -71,7 +71,7 @@ func notesConfig() entity.EntityConfig {
 func f64(v float64) *float64 { return &v }
 
 // newHostedApp builds a framework App with the given entities migrated AND a
-// mounted UI host — the configuration the entity admin requires.
+// mounted UI host, the configuration the entity admin requires.
 func newHostedApp(t *testing.T, db *sql.DB, configs map[string]entity.EntityConfig) *framework.App {
 	t.Helper()
 	fapp := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware())
@@ -89,7 +89,7 @@ func newHostedApp(t *testing.T, db *sql.DB, configs map[string]entity.EntityConf
 
 // mountAdminBattery initializes the admin battery against app (registering entity
 // screens on the host + RPC/form routes on the router) and returns the router.
-// Init must run at most once per app — re-registering routes panics — so
+// Init must run at most once per app, re-registering routes panics, so
 // multi-actor tests mount once here and wrap per-request with asUser.
 func mountAdminBattery(t *testing.T, app *framework.App, cfg Config) http.Handler {
 	t.Helper()
@@ -357,7 +357,7 @@ func TestEntity_OnlyConfiguredEntitiesAreExposed(t *testing.T) {
 	})
 	h := mountEntityAdmin(t, app, Config{Entities: []string{"posts"}}, testUser{"u1"})
 
-	// notes is a real, migrated entity — but not in Config.Entities, so no
+	// notes is a real, migrated entity, but not in Config.Entities, so no
 	// screen is registered for it (no accidental exposure).
 	if rr := get(h, "/admin/e/notes"); rr.Code != http.StatusNotFound {
 		t.Fatalf("SECURITY: [admin] /admin/e/notes returned %d, want 404 (entity not opted-in)", rr.Code)
@@ -391,7 +391,7 @@ func TestEntity_AllEntitiesExposesCrudEntities(t *testing.T) {
 	db := newDB(t)
 	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
 	// AllEntities → expose every CRUD-enabled entity. (Empty Entities
-	// exposes nothing — see admin_exposure_test.go.)
+	// exposes nothing. See admin_exposure_test.go.)
 	h := mountEntityAdmin(t, app, Config{AllEntities: true}, testUser{"u1"})
 
 	if rr := get(h, "/admin/e/posts"); rr.Code != http.StatusOK {

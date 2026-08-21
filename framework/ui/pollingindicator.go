@@ -15,14 +15,14 @@ import (
 // Tiny pulsing dot + label that confirms a polling RPC or live-update
 // pipeline is firing. Pairs with `data-fui-rpc-trigger="input"` to give
 // users feedback that the live-search / live-validate is actually
-// searching. Pure CSS — no runtime module needed.
+// searching. Pure CSS, no runtime module needed.
 
 // PollingIndicatorConfig configures a PollingIndicator.
 type PollingIndicatorConfig struct {
 	// Label is the text rendered next to the pulsing dot.
 	// Defaults to "Live".
 	Label string
-	// Paused freezes the pulse animation and dims the dot — use when
+	// Paused freezes the pulse animation and dims the dot, use when
 	// the upstream polling has been paused or completed.
 	Paused bool
 	ID     string

@@ -14,7 +14,7 @@ import (
 //
 // The RFC's long-term goal is inline diagnostics as you type. This is the
 // practical approximation: you already save and wait for a rebuild, so
-// the findings arrive in that same beat — but they must not delay it.
+// the findings arrive in that same beat, but they must not delay it.
 // Analysis takes about a second on a large tree, and a second added to
 // every save is the difference between a loop people use and one they
 // turn off. So the server restarts first, this runs behind it, and the
@@ -70,7 +70,7 @@ func (w *devContractWatch) Run() {
 func (w *devContractWatch) analyse() {
 	// Every failure of the analysis ITSELF is reported, once. A silent
 	// return here leaves the loop printing nothing while the analyzers
-	// have not actually looked — and in a loop, nothing reads as "clean".
+	// have not actually looked, and in a loop, nothing reads as "clean".
 	cfg, err := contracts.LoadConfig(w.root, "")
 	if err != nil {
 		w.printErrOnce(err)
@@ -100,15 +100,15 @@ func (w *devContractWatch) analyse() {
 	}
 	// Narrow to what is actually being worked on. Outside a repository
 	// this returns nil and nothing narrows, which is the right fallback.
-	// A repository where the changed-set CANNOT be computed — no commits
-	// yet, a broken index — also falls back to the whole tree, but says
-	// so: silently widening the report is how "what did I just break"
-	// becomes "what is wrong with everything".
+	// A repository where the changed-set CANNOT be computed, whether
+	// from no commits yet or a broken index, also falls back to the
+	// whole tree, but says so: silently widening the report is how
+	// "what did I just break" becomes "what is wrong with everything".
 	var note string
 	files, cerr := contracts.ChangedFiles(w.root, "")
 	switch {
 	case cerr != nil:
-		note = fmt.Sprintf("    changed-set unavailable (%v) — showing the whole tree\n", cerr)
+		note = fmt.Sprintf("    changed-set unavailable (%v); showing the whole tree\n", cerr)
 	case files != nil:
 		report.RestrictTo(files)
 	}
@@ -126,12 +126,12 @@ func (w *devContractWatch) analyse() {
 	w.printOnce(note + w.summarise(report))
 }
 
-// printErrOnce reports a failure of the analysis itself — config, scan,
-// run, baseline — once per distinct message, under a plain warning
-// rather than the findings header. The "err:" key keeps an error from
-// colliding with a findings summary in the dedupe, and a later clean or
-// failing run replaces it, so recovery is announced like any other
-// transition.
+// printErrOnce reports a failure of the analysis itself, whether in
+// config, scan, run, or baseline, once per distinct message, under a
+// plain warning rather than the findings header. The "err:" key keeps
+// an error from colliding with a findings summary in the dedupe, and a
+// later clean or failing run replaces it, so recovery is announced like
+// any other transition.
 func (w *devContractWatch) printErrOnce(err error) {
 	key := "err:" + err.Error()
 	w.mu.Lock()
@@ -146,14 +146,14 @@ func (w *devContractWatch) printErrOnce(err error) {
 
 // summarise renders the compact dev-loop form: one line per finding, with
 // the rule ID so `gofastr verify --explain` is one copy-paste away. The
-// full report — reasons, examples, fixes — is what `gofastr verify` is
+// full report, with reasons, examples, fixes, is what `gofastr verify` is
 // for; repeating it on every save would bury the loop.
 func (w *devContractWatch) summarise(r *contracts.Report) string {
 	var b strings.Builder
 	shown := 0
 	for _, d := range r.Diagnostics {
 		if shown == devContractMaxLines {
-			fmt.Fprintf(&b, "    … %d more — run `gofastr verify --changed`\n",
+			fmt.Fprintf(&b, "    … %d more; run `gofastr verify --changed`\n",
 				len(r.Diagnostics)-shown)
 			break
 		}
@@ -195,7 +195,7 @@ func (w *devContractWatch) printOnce(summary string) {
 	w.mu.Unlock()
 
 	fmt.Println()
-	warn("contracts — findings in what you changed:")
+	warn("contracts: findings in what you changed:")
 	fmt.Println(summary)
 }
 

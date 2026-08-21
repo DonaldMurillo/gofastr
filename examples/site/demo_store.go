@@ -1,13 +1,13 @@
 package main
 
 // =============================================================================
-// demoSessionStore — the bounded per-visitor map behind the interactive demos.
+// demoSessionStore, the bounded per-visitor map behind the interactive demos.
 //
 // Concrete and unexported on purpose. An earlier draft made this a generic
 // core/store.BoundedMap, but a review found it cleanly served only this one
 // consumer: the other in-tree maps that look similar (the SSE stream registry,
 // the rate-limiter buckets, the idempotency store) each need semantics this
-// doesn't have — reject-on-full admission rather than LRU eviction, or an
+// doesn't have: reject-on-full admission rather than LRU eviction, or an
 // atomic mutate-under-lock the get-or-create model can't express. So the map +
 // list + janitor lives here, specialized to string -> *demoState, and a shared
 // package waits for a real second consumer with matching semantics.
@@ -15,7 +15,7 @@ package main
 // Two eviction axes, both load-bearing on a public origin:
 //   - max: a hard LRU cap. A flood of cookie-minting requests evicts the
 //     least-recently-used session rather than growing memory without bound.
-//   - ttl: idle expiry swept by a background janitor — reclaims sessions from
+//   - ttl: idle expiry swept by a background janitor, reclaims sessions from
 //     visitors who left.
 // =============================================================================
 
@@ -43,7 +43,7 @@ type demoSessionStore struct {
 }
 
 // newDemoSessionStoreBare builds the store WITHOUT starting the janitor. The
-// real constructor and the deterministic tests share it — tests then swap in a
+// real constructor and the deterministic tests share it, tests then swap in a
 // fake clock before any goroutine reads it, so there's no clock data race.
 func newDemoSessionStoreBare(max int, ttl time.Duration) *demoSessionStore {
 	return &demoSessionStore{
@@ -57,7 +57,7 @@ func newDemoSessionStoreBare(max int, ttl time.Duration) *demoSessionStore {
 }
 
 // newDemoSessionStore builds the store and starts the idle-expiry janitor when
-// ttl > 0. The site's global never needs Close — it lives for the process.
+// ttl > 0. The site's global never needs Close, it lives for the process.
 func newDemoSessionStore(max int, ttl time.Duration) *demoSessionStore {
 	s := newDemoSessionStoreBare(max, ttl)
 	if ttl > 0 {

@@ -14,7 +14,7 @@ import (
 
 // buildStepForm composes the wizard body for one step: a progress
 // indicator (ProgressSteps) + the form (AuthCard wrapping Form +
-// FormField rows). Zero bespoke CSS, zero hand-rolled structural markup —
+// FormField rows). Zero bespoke CSS, zero hand-rolled structural markup,
 // everything is typed framework/ui composition.
 func (r *Runner) buildStepForm(stepIdx int, steps []Step, fieldErrors map[string]string) render.HTML {
 	// 1. Progress indicator.
@@ -134,10 +134,10 @@ func (r *Runner) renderStep(w http.ResponseWriter, _ *http.Request) {
 
 	if stepIdx >= len(steps) {
 		// Steps exhausted but this request got PAST handleSetup's
-		// completeAndSwap gate — so Complete is still false (or erroring).
+		// completeAndSwap gate, so Complete is still false (or erroring).
 		// Never claim completion here; explain instead.
 		r.renderIncomplete(w, "Every step ran, but setup still reports incomplete. "+
-			"The Complete predicate does not observe the steps' writes — e.g. AdminStep configured "+
+			"The Complete predicate does not observe the steps' writes, e.g. AdminStep configured "+
 			"with a different users table than the auth store writes to. Fix the wiring and restart.")
 		return
 	}
@@ -146,7 +146,7 @@ func (r *Runner) renderStep(w http.ResponseWriter, _ *http.Request) {
 }
 
 // renderIncomplete writes an honest "steps ran, but setup is not complete"
-// page: a danger notification with the reason, never the completion page —
+// page: a danger notification with the reason, never the completion page,
 // the app is still serving 503s, and saying "ready" would strand the
 // operator on a lie.
 func (r *Runner) renderIncomplete(w http.ResponseWriter, reason string) {

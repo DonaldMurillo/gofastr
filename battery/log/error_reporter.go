@@ -102,7 +102,7 @@ func NewHTTPErrorReporter(url string, opts WebhookOpts) *HTTPErrorReporter {
 }
 
 // Report marshals r and enqueues it for delivery. A marshal failure (the only
-// error path) is silently dropped — the reporter must never block or panic
+// error path) is silently dropped, the reporter must never block or panic
 // the request path.
 func (h *HTTPErrorReporter) Report(r ErrorReport) {
 	if h == nil || h.sink == nil {

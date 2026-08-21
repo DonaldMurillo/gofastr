@@ -1,4 +1,4 @@
-// GoFastr runtime module — Web Worker + WebAssembly compute assets.
+// GoFastr runtime module, Web Worker + WebAssembly compute assets.
 (() => {
   'use strict';
 

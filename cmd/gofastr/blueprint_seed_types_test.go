@@ -59,7 +59,7 @@ func loadSeedTypesBlueprint(t *testing.T, seedRows string) error {
 
 // The blog-blueprint defect: a numeric literal seeded into a relation
 // field. Relation columns are UUID strings at runtime, so the generated
-// app dies at boot with "seed comments: validation failed" — zero
+// app dies at boot with "seed comments: validation failed", zero
 // actionable detail, after generate said everything was fine. The check
 // must fire at generate/validate time and teach the @ref form.
 func TestSeedRejectsNumericRelationValue(t *testing.T) {
@@ -130,9 +130,10 @@ func TestSeedAcceptsSatisfiableValueTypes(t *testing.T) {
 	}
 }
 
-// One pass must report every unsatisfiable seed value, not just the first
-// — and in a stable order: the rows are maps, so iterating them raw makes
-// the reported field change between runs when a row has two bad values.
+// One pass must report every unsatisfiable seed value rather than only
+// the first, and in a stable order: the rows are maps, so iterating them
+// raw makes the reported field change between runs when a row has two
+// bad values.
 // Both findings in one row, and bad values across two rows, must all
 // appear, sorted by field name within each row.
 func TestSeedErrorsReportEveryField(t *testing.T) {

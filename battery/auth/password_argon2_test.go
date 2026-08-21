@@ -90,7 +90,7 @@ func TestDefaultHasherArgon2OptIn(t *testing.T) {
 
 // TestArgon2_VerifyRejectsResourceExhaustionParams: a malicious/corrupted
 // stored hash demanding ~4 TiB of memory (or huge time/threads) must NOT be
-// fed to argon2.IDKey — that would OOM/peg-CPU the process on every verify, a
+// fed to argon2.IDKey, that would OOM/peg-CPU the process on every verify, a
 // per-login DoS. Verify rejects it fast, before any heavy allocation.
 func TestArgon2_VerifyRejectsResourceExhaustionParams(t *testing.T) {
 	enc := base64.RawStdEncoding.EncodeToString
@@ -104,7 +104,7 @@ func TestArgon2_VerifyRejectsResourceExhaustionParams(t *testing.T) {
 	if got {
 		t.Error("SECURITY: Verify accepted a resource-exhaustion argon2 hash")
 	}
-	// Must reject BEFORE invoking IDKey — a sub-second bound proves it never
+	// Must reject BEFORE invoking IDKey, a sub-second bound proves it never
 	// attempted the multi-TiB allocation.
 	if elapsed > time.Second {
 		t.Errorf("Verify took %v on a hostile hash; it must reject before IDKey runs", elapsed)

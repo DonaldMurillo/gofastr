@@ -22,7 +22,7 @@ type seedLoggerKey struct{}
 
 // WithSeedLogger attaches a slog.Logger to ctx so RunSeeds emits per-seed
 // lifecycle events under it. When no logger is attached, RunSeeds writes
-// to a discard handler — operators opt in.
+// to a discard handler. Operators opt in.
 func WithSeedLogger(ctx context.Context, logger *slog.Logger) context.Context {
 	if logger == nil {
 		return ctx
@@ -40,7 +40,7 @@ func seedLoggerFromCtx(ctx context.Context) *slog.Logger {
 // ensureSeedLedger creates the _gofastr_seeded tracking table when
 // missing. Mirrors the shape of core/migrate's _migrations table.
 func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
-	// seedLedgerTable is a compile-time constant valid identifier — MustIdent
+	// seedLedgerTable is a compile-time constant valid identifier: MustIdent
 	// (panic on invalid) over SafeIdent avoids an unreachable error branch.
 	safe := query.MustIdent(seedLedgerTable)
 	now := "CURRENT_TIMESTAMP"
@@ -89,7 +89,7 @@ func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string)
 		placeholder = "$1"
 	}
 	// SQLite ≥3.24 and Postgres both accept ON CONFLICT … DO NOTHING.
-	// Future dialects (MySQL, MSSQL) need their own branch — split here
+	// Future dialects (MySQL, MSSQL) need their own branch. Split here
 	// so the dialect mapping is the only thing that has to change.
 	q := fmt.Sprintf(
 		"INSERT INTO %s (entity_name) VALUES (%s) ON CONFLICT (entity_name) DO NOTHING",
@@ -110,10 +110,10 @@ func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string)
 // replica wins the lock runs the body and records the row; the others
 // wait, then short-circuit on the ledger. SQLite serializes at the file
 // level so the lock is a no-op there. A crashed lock holder's
-// session-level lock is released automatically by Postgres — no
+// session-level lock is released automatically by Postgres. No
 // permanent block.
 //
-// Exception — MaxOpenConns(1): the advisory lock pins a connection, so a
+// Exception, MaxOpenConns(1): the advisory lock pins a connection, so a
 // Postgres pool capped at ONE connection would deadlock the seed body's
 // own queries. Such a pool SKIPS the lock (logging a WARN) and runs
 // unlocked, so N single-connection replicas are NOT coordinated and can
@@ -140,7 +140,7 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	}
 	// Route through the version union, NOT Registry.All(). All() returns one
 	// representative per name, so a Seed declared only on a non-representative
-	// version is invisible — hasSeed stays false and the seed silently never
+	// version is invisible. hasSeed stays false and the seed silently never
 	// runs. The union propagates the sole seed (registration guarantees at
 	// most one) into the merged entity regardless of which version is the
 	// representative (F11).
@@ -156,10 +156,10 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	if !hasSeed {
 		return nil
 	}
-	// Detect the dialect lazily — only once we know a Seed will run. The
+	// Detect the dialect lazily, only once we know a Seed will run. The
 	// dialect gates the cross-replica seed advisory lock, so a transiently-
 	// unreachable database must fail closed here rather than be guessed (the
-	// v0.62 migration invariant). Seedless registries — the common case —
+	// v0.62 migration invariant). Seedless registries, the common case,
 	// skip the probe entirely.
 	dialect, err := detectDialectFailClosed(db)
 	if err != nil {
@@ -169,11 +169,11 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	// Serialize the seed phase across replicas behind a Postgres advisory
 	// lock DISTINCT from the migration lock. Seed funcs receive the pool db
 	// (their signature requires *sql.DB), so the lock pins its own conn and
-	// the body runs against the pool — correct on Postgres where every conn
+	// the body runs against the pool, correct on Postgres where every conn
 	// shares the database. A MaxOpenConns(1) pool (e.g. test harness, or a
 	// deployment that deliberately serializes all DB access on one conn)
 	// would deadlock: the pinned lock conn IS the only conn, so the body's
-	// pool queries block forever. Skip the lock in that case — a
+	// pool queries block forever. Skip the lock in that case: a
 	// single-conn pool already serializes this process's access, and the
 	// lock only coordinates ACROSS processes. SQLite is single-process and
 	// file-serialized, so the lock is meaningless there too; run unwrapped.
@@ -187,13 +187,13 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 		// Cannot take the advisory lock on a 1-conn pool: WithAdvisoryLock
 		// pins a connection, leaving none for the seed body's pool queries →
 		// deadlock. We run UNLOCKED here, so seeds are NOT coordinated across
-		// replicas in this configuration — N replicas each with a 1-conn pool
+		// replicas in this configuration: N replicas each with a 1-conn pool
 		// can each observe "not seeded" and race a Seed (the ledger's ON
 		// CONFLICT DO NOTHING dedupes the row, not the Seed execution). Warn
 		// loudly on the default logger (the ctx seed logger defaults to
 		// Discard, and this gap must always surface) rather than silently
 		// weaken the single-run guarantee.
-		slog.Default().Warn("seed advisory lock skipped: Postgres pool has MaxOpenConns(1), so startup seeds are NOT serialized across replicas — raise MaxOpenConns above 1 to enable cross-replica seed coordination")
+		slog.Default().Warn("seed advisory lock skipped: Postgres pool has MaxOpenConns(1), so startup seeds are NOT serialized across replicas: raise MaxOpenConns above 1 to enable cross-replica seed coordination")
 	}
 	return runSeedsBody(ctx, db, dialect, merged)
 }
@@ -222,7 +222,7 @@ func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, all map[stri
 
 	for _, ent := range ordered {
 		// Honour context cancellation between seeds as well as during
-		// a Seed call — keeps the loop responsive even when a previous
+		// a Seed call, keeping the loop responsive even when a previous
 		// Seed completed but a SIGTERM landed mid-loop.
 		if err := ctx.Err(); err != nil {
 			return err

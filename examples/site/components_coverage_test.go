@@ -14,8 +14,8 @@ import (
 // exported component constructor in framework/ui (a `func Name(cfg NameConfig,
 // …)`) must either appear in componentCatalog or be listed in
 // notShowcased with a reason. Without this, new components land in framework/ui
-// and the gallery — plus docs/content/ui-new-components.md, which claims to
-// index "every UI component" — silently fall behind. When this fails, either
+// and the gallery, plus docs/content/ui-new-components.md, which claims to
+// index "every UI component", silently fall behind. When this fails, either
 // add a catalog entry in components.go or an allow-list line below.
 func TestComponentGalleryCoversUI(t *testing.T) {
 	// Constructors deliberately not given their own gallery tile, each with

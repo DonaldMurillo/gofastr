@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// HasTool must see every registered name — including tools the filtered
-// listings hide — because it exists to answer "is this name taken",
+// HasTool must see every registered name, including tools the filtered
+// listings hide, because it exists to answer "is this name taken",
 // not "is this tool visible".
 func TestHasToolSeesGatedTools(t *testing.T) {
 	s := NewServer()

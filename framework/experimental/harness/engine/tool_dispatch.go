@@ -16,7 +16,7 @@ import (
 // per-session event bus so tool progress events get broadcast.
 //
 // The dispatcher is the only thing in the engine that knows about
-// concrete tools — middleware sees the abstract Tool interface and
+// concrete tools, middleware sees the abstract Tool interface and
 // the EventSink, never the registry.
 type Dispatcher struct {
 	bus      *Bus
@@ -35,7 +35,7 @@ func (d *Dispatcher) Registry() *tool.Registry { return d.registry }
 
 // Dispatch executes a tool call through the middleware chain.
 //
-// originator is the Client.ID() that triggered this turn — surfaces in
+// originator is the Client.ID() that triggered this turn, surfaces in
 // PermissionRequested events so the multiplexer can address answers
 // correctly and so identity_class self-approval guards apply.
 func (d *Dispatcher) Dispatch(ctx context.Context, originator ids.ClientID, call tool.ToolCall) (*tool.ToolResult, error) {

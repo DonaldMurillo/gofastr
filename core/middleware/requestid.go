@@ -28,7 +28,7 @@ func GetRequestID(ctx context.Context) string {
 // length the inbound header is rejected and a fresh ID generated.
 //
 // Without a cap, an attacker can stuff arbitrary multi-KB strings into
-// every request — they'd be logged in every access entry, reflected on
+// every request; they'd be logged in every access entry, reflected on
 // the response, and amplified across webhook sinks.
 const MaxRequestIDLen = 128
 
@@ -65,7 +65,7 @@ func validRequestID(s string) bool {
 //
 // Validation defends against: (1) huge headers amplified across every
 // log entry, (2) header-reflection into response, (3) control chars
-// (already blocked by net/http) — but our charset is stricter.
+// (already blocked by net/http), but our charset is stricter.
 func RequestID() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -3,7 +3,7 @@
 // directly to bundled clients (TUI, web) and Commands from those
 // clients back into the multiplexer.
 //
-// inproc is the only transport that runs entirely in one process —
+// inproc is the only transport that runs entirely in one process,
 // the others (rest, ws, mcpserver) are the same logical Client
 // interface but with HTTP/WS/JSON-RPC framing.
 package inproc

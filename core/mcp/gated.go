@@ -6,11 +6,11 @@ import "context"
 // handler on every call. Use it to auth-gate custom tools: the gate
 // receives the tool call's context, which carries the inbound HTTP
 // request (RequestFromContext) and whatever identity the router's
-// middleware chain resolved onto it — so a gate can require a signed-in
+// middleware chain resolved onto it, so a gate can require a signed-in
 // user, a role, or any other per-caller policy. A refused call returns
 // the gate's error as the JSON-RPC tool error; the handler never runs.
 //
-// The entity CRUD tools don't need this — they re-dispatch through the
+// The entity CRUD tools don't need this. They re-dispatch through the
 // router and inherit HTTP auth wholesale. Gated exists for DIRECT
 // handlers: app.MCP.RegisterTool(...) registrations and
 // entity.Endpoint.MCPHandler twins, which bypass the route middleware.

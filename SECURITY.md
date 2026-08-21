@@ -27,13 +27,13 @@ Honest expectations:
 ## Supported versions
 
 GoFastr is pre-1.0. Only the **latest minor release** (currently `0.67.x`)
-receives security fixes. Older `0.x` lines are not patched — upgrade to
+receives security fixes. Older `0.x` lines are not patched. Upgrade to
 the latest release to stay supported.
 
 ## Audit trail
 
 The codebase has been through repeated adversarial audit campaigns (100+
-verified findings, each of which survived a refute pass — all fixed and
+verified findings, each of which survived a refute pass, all fixed and
 pinned by `*_security_test.go` tests throughout the tree). The full
 finding-by-finding ledger lives in git history (`SECURITY_FINDINGS.md`,
 removed 2026-07-15 after every row was re-verified fixed). Release gates

@@ -12,7 +12,7 @@ import (
 
 // /{table}/llm.md checked for a session but not for the entity's declared
 // permission, while List checks both. An authenticated user with no
-// `orders:read` grant got 403 on the data and 200 on the schema — every field
+// `orders:read` grant got 403 on the data and 200 on the schema, every field
 // name, type and enum of an entity they cannot read.
 //
 // This is the REST twin of the MCP tools/list disclosure: the schema is the
@@ -43,7 +43,7 @@ func TestLLMMDStillRefusesAnonymous(t *testing.T) {
 	}
 }
 
-// A caller who holds the permission must still get the docs — the whole point
+// A caller who holds the permission must still get the docs, the whole point
 // of the endpoint is that an agent with access can read it.
 func TestLLMMDServesPermittedCaller(t *testing.T) {
 	ch := ordersHandlerWithReadPermission(t)
@@ -73,7 +73,7 @@ func ordersHandlerWithReadPermission(t *testing.T) *CrudHandler {
 // (name, base path, endpoint count, soft-delete/multi-tenant flags) to any
 // authenticated caller, while each entity's List runs the full scope chain.
 // An authenticated caller with no orders:read grant got 403 on the rows and
-// 200 on the index — the index itself is the disclosure. The fix renders the
+// 200 on the index, the index itself is the disclosure. The fix renders the
 // index per request, filtered to the entities this caller can actually list
 // (the same read-scope predicate List runs).
 func TestLLMMDIndexHidesUngrantedEntities(t *testing.T) {

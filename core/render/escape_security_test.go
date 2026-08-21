@@ -41,12 +41,12 @@ func TestEscape_AllFiveSpecialChars(t *testing.T) {
 // characters to prevent double-escaping. Attack: &lt; becoming
 // &amp;lt; which renders as literal &lt;.
 func TestEscape_AmpersandFirst(t *testing.T) {
-	// If we escape < first: &lt; → &amp;lt; — WRONG (double-escaped)
+	// If we escape < first: &lt; → &amp;lt;. WRONG (double-escaped)
 	// Escape() should escape & first: & → &amp; then < → &lt;
 	input := "&lt;script&gt;"
 	got := Escape(input)
 	if strings.Contains(got, "&amp;lt;") && !strings.Contains(got, ";script") {
-		// Double-escaped — the & in &lt; was escaped first, which is correct
+		// Double-escaped: the & in &lt; was escaped first, which is correct
 		t.Logf("Correct: ampersand is escaped first, so &lt; becomes %q", got)
 	}
 }
@@ -62,7 +62,7 @@ func TestTag_EmptyNameHandled(t *testing.T) {
 }
 
 // TestTag_SpecialCharsInAttributes verifies that special characters in
-// attribute values are properly escaped — the rendered element must
+// attribute values are properly escaped: the rendered element must
 // contain exactly one `<div …>` open tag and one `</div>` close tag,
 // with no break-out into new attributes or sibling elements.
 func TestTag_SpecialCharsInAttributes(t *testing.T) {

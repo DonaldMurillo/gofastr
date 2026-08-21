@@ -10,7 +10,7 @@ import (
 // tag and captures the bare slice name (the part before any ":value").
 // The leading [\s/] boundary restricts matches to attribute positions
 // (preceded by whitespace or a self-closing slash), so a literal mention
-// inside <pre>/<code>/text content never registers a false reference —
+// inside <pre>/<code>/text content never registers a false reference,
 // mirrors registry.markerRe in core-ui/registry/render.go.
 var refRe = regexp.MustCompile(`[\s/]data-fui-(?:signal-set|signal-inc|signal-toggle|signal|computed)="([^":]+)`)
 
@@ -35,7 +35,7 @@ func ScanReferenced(html string) []string {
 // ResolveSeed builds the seed map for the given names: each registered
 // name resolves to its per-request value (if a producer seeded one) or
 // its declared default. Unregistered names (hand-written attrs with no
-// declaration) are skipped — there is nothing to seed. The returned
+// declaration) are skipped, there is nothing to seed. The returned
 // values are raw Go values ready for JSON marshaling by the host.
 func ResolveSeed(ctx context.Context, names []string) map[string]any {
 	bag := valuesFrom(ctx)

@@ -1,12 +1,12 @@
 package interactive
 
-// SectionMenu — a grouped, collapsible navigation menu for documentation and
+// SectionMenu: a grouped, collapsible navigation menu for documentation and
 // component galleries: sections (collapsible groups) → items (links), with an
 // active-item highlight.
 //
 //   Desktop (≥ 900px): a sticky rail with every group expanded.
 //   Mobile (< 900px): a "Sections" trigger button that opens the framework's
-//     drawer widget — a real slide-in sheet with a dim backdrop that closes on
+//     drawer widget, a real slide-in sheet with a dim backdrop that closes on
 //     outside-click / Escape, locks background scroll, and traps focus. None of
 //     that is re-implemented here: SectionMenuDrawer returns a preset.Drawer
 //     (the same primitive ui.Sidebar uses), which the app mounts once.
@@ -80,7 +80,7 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	}
 
 	children := []render.HTML{}
-	// Mobile trigger — a plain button that opens the drawer widget. It stays
+	// Mobile trigger, a plain button that opens the drawer widget. It stays
 	// in normal flow (no layout shift) and is hidden on the desktop rail.
 	if cfg.DrawerName != "" {
 		children = append(children, render.Tag("button",
@@ -106,7 +106,7 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	))
 }
 
-// SectionMenuDrawer returns the mobile drawer widget for a SectionMenu — a
+// SectionMenuDrawer returns the mobile drawer widget for a SectionMenu, a
 // left-edge preset.Drawer (backdrop + click-outside / Escape close + scroll
 // lock + focus trap) carrying the same menu body. Mount it once at startup:
 //
@@ -120,14 +120,14 @@ func SectionMenuDrawer(cfg SectionMenuConfig) *widget.Builder {
 		Slot("body", sectionMenuDrawerSlot{cfg: cfg})
 }
 
-// sectionMenuDrawerSlot renders the menu body for the drawer — the same groups
+// sectionMenuDrawerSlot renders the menu body for the drawer, the same groups
 // and links as the rail, wrapped in the component marker so the scoped CSS
 // applies inside the drawer chrome too.
 type sectionMenuDrawerSlot struct{ cfg SectionMenuConfig }
 
 func (s sectionMenuDrawerSlot) Render() render.HTML {
 	// A visible close control. data-fui-action="close" is the framework's
-	// declarative widget-dismiss hook — the drawer's own runtime closes it.
+	// declarative widget-dismiss hook, the drawer's own runtime closes it.
 	closeBtn := render.Tag("button",
 		map[string]string{
 			"class":           "fui-section-menu__close",

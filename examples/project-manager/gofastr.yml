@@ -90,7 +90,7 @@ entities:
 
   - name: project_members
     crud: true
-    # user_email is PII: membership rosters are internal team data — every
+    # user_email is PII: membership rosters are internal team data; every
     # operation is RBAC-gated (fail-closed 403 for anonymous).
     access:
       read: projects:read
@@ -121,6 +121,7 @@ entities:
         foreign_key: project_id
 
   - name: boards
+    crud: true
     # Listed on the boards screen. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses. Boards
@@ -208,7 +209,7 @@ entities:
   - name: tasks
     crud: true
     mcp: true
-    # assignee_email / reporter_email are PII: tasks are internal team data —
+    # assignee_email / reporter_email are PII: tasks are internal team data;
     # every operation is RBAC-gated (fail-closed 403 for anonymous).
     access:
       read: projects:read
@@ -358,7 +359,7 @@ entities:
 
   - name: comments
     crud: true
-    # author_email is PII: comments are internal team data — every operation
+    # author_email is PII: comments are internal team data; every operation
     # is RBAC-gated (fail-closed 403 for anonymous).
     access:
       read: projects:read

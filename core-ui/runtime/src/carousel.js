@@ -1,4 +1,4 @@
-// Carousel runtime module — wires Prev/Next buttons, pagination
+// Carousel runtime module, wires Prev/Next buttons, pagination
 // dots, ArrowLeft/Right keyboard nav, and optional AutoRotate.
 //
 // Layout-side: the track is `display: flex; overflow-x: auto;
@@ -107,7 +107,7 @@
       });
     }
 
-    // Click delegation — Prev/Next + dots scoped to this carousel.
+    // Click delegation, Prev/Next + dots scoped to this carousel.
     carousel.addEventListener('click', function (ev) {
       const prev = ev.target.closest('[data-fui-carousel-prev]');
       if (prev) { ev.preventDefault(); step(carousel, -1); return; }
@@ -122,7 +122,7 @@
       }
     });
 
-    // Keyboard — when the carousel or any descendant has focus.
+    // Keyboard, when the carousel or any descendant has focus.
     carousel.addEventListener('keydown', function (ev) {
       if (ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
       if (ev.key === 'ArrowLeft')  { ev.preventDefault(); step(carousel, -1); return; }
@@ -137,7 +137,7 @@
         let timer = null;
         // userPaused tracks pointer/focus interaction. visibilitychange
         // returning the tab to foreground must NOT auto-resume when the
-        // user has actively hovered or focused the carousel — that
+        // user has actively hovered or focused the carousel, that
         // would yank a slide out from under their pointer.
         let userPaused = false;
         function start() {
@@ -187,7 +187,7 @@
     try { manifest = JSON.parse(manifestEl.textContent || '{}'); } catch (_) { return; }
     if (!manifest || typeof manifest !== 'object') return;
     if (typeof IntersectionObserver === 'undefined') {
-      // No observer support — hydrate everything upfront so the
+      // No observer support, hydrate everything upfront so the
       // carousel is at least functional.
       for (const k of Object.keys(manifest)) {
         const ph = carousel.querySelector('[data-fui-carousel-defer="' + k + '"]');

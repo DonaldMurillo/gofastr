@@ -4,7 +4,7 @@
 //	sess-<128-bit random>.<unix-seconds>.<base64url HMAC-SHA256>
 //
 // and carries no state beyond its own id and mint time, so any replica
-// holding the same key accepts a token minted by any other — the
+// holding the same key accepts a token minted by any other, the
 // multi-replica session contract (issue #112). The id portion
 // ("sess-…") doubles as the SSE stream / presence key, exactly like the
 // map-era session ids did.
@@ -27,7 +27,7 @@ import (
 const macContext = "gofastr-uihost-session-v1"
 
 // clockSkew is how far in the future a token's mint time may sit before
-// verification rejects it — tolerance for replicas with drifting clocks,
+// verification rejects it: tolerance for replicas with drifting clocks,
 // not a feature.
 const clockSkew = 2 * time.Minute
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Intercepting routes — a detail screen that presents as an overlay when
+// Intercepting routes, a detail screen that presents as an overlay when
 // you reach it from inside the app, and as its own full page when you
 // land on it directly.
 //
@@ -19,7 +19,7 @@ import (
 // link when the overlay is the ONLY way to see that content and the URL
 // stays on the list (`/users?modal=user-edit&user_id=42`). Use an
 // intercept when the detail has its own canonical page that must render
-// standalone — the deep link is the canonical render, and the overlay is
+// standalone, the deep link is the canonical render, and the overlay is
 // a presentation optimization layered on top of it.
 //
 // Scoping to a declared origin, rather than "any soft navigation", is
@@ -31,7 +31,7 @@ import (
 // navigation from a declared origin route.
 type Intercept struct {
 	// From is the registered route PATTERN the overlay presentation is
-	// allowed from — "/products", not "/products?page=2". Arriving from
+	// allowed from, "/products", not "/products?page=2". Arriving from
 	// anywhere else renders the full page.
 	From string
 	// As is the overlay presentation: ScreenDrawer or ScreenSheet.
@@ -51,7 +51,7 @@ type ScreenOption func(*Screen)
 //	site.Register("/products/:id", &ProductScreen{}, nil,
 //	    app.InterceptFrom("/products", app.ScreenDrawer))
 //
-// The screen stays a normal page registration — SSR-first holds and the
+// The screen stays a normal page registration, SSR-first holds and the
 // deep link remains the canonical render. Only the soft-navigation path
 // changes.
 //
@@ -73,8 +73,8 @@ func InterceptFrom(from string, as ScreenType) ScreenOption {
 //
 // It answers with an overlay ONLY when the target screen declares an
 // intercept AND origin resolves to the screen whose registered pattern
-// the intercept named. Everything else — no intercept, an origin that
-// matches nothing, an origin that is a different screen — reports false,
+// the intercept named. Everything else, no intercept, an origin that
+// matches nothing, an origin that is a different screen, reports false,
 // so the caller renders the ordinary page. The failure direction matters:
 // the client asks for an overlay, the server decides, and any doubt
 // resolves to the canonical full render.
@@ -88,7 +88,7 @@ func (r *Router) InterceptFor(target, origin string) (*Intercept, bool) {
 		return nil, false
 	}
 	// The origin arrives as a live browser location, so it carries the
-	// list's own state — "/products?page=2&sort=name#row-9". Resolve the
+	// list's own state, "/products?page=2&sort=name#row-9". Resolve the
 	// path alone: a filtered or scrolled list is still the list, and
 	// intercepting has to survive the user having paged through it.
 	if i := strings.IndexAny(origin, "?#"); i >= 0 {

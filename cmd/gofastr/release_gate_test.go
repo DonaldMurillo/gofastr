@@ -35,7 +35,7 @@ func manifestSource(t *testing.T) string {
 // release.yml's only gate was a changelog section existing. This pins the
 // closed hole: the release gate consults check runs on the tag's commit SHA,
 // and those come from the main-push CI run (a release tag points at a merge
-// commit on main), so ci.yml must run on main pushes — and must NOT also
+// commit on main), so ci.yml must run on main pushes, and must NOT also
 // trigger on v* tags, which re-ran the identical pipeline on the same SHA
 // (v0.62.0 ran twice, concurrently). A tag on a commit with no CI run finds
 // zero check runs and the gate times out red, so dropping the tag trigger
@@ -52,7 +52,7 @@ func TestMainPushCICoversReleaseTags(t *testing.T) {
 
 // The required-check manifest (scripts/release-required-checks.txt) is the
 // gate's source of truth. It must enumerate EXACTLY the blocking check names
-// ci.yml produces — no more, no less. PR #193 renamed CI jobs and orphaned
+// ci.yml produces, no more, no less. PR #193 renamed CI jobs and orphaned
 // branch-protection contexts; this test makes the sibling failure (a rename
 // that desyncs the manifest) break the BUILD instead of silently making the
 // gate wait an hour and fail at release time.
@@ -141,7 +141,7 @@ func sameSet(a, b []string) bool {
 }
 
 // The gate lives in a script so it is locally testable; this assertion keeps
-// the workflow and the script from drifting apart — release.yml MUST invoke
+// the workflow and the script from drifting apart: release.yml MUST invoke
 // scripts/release-gate.sh with the manifest, or the (well-tested) script is
 // orphaned and an untested inline gate ships instead.
 func TestReleaseWorkflowInvokesGate(t *testing.T) {
@@ -156,7 +156,7 @@ func TestReleaseWorkflowInvokesGate(t *testing.T) {
 	}
 	// The pre-extraction gate inlined check-run polling directly in the YAML.
 	// If its signature string reappears, the gate was re-inlined instead of
-	// delegated to the (tested) script — fail so the logic stays in one place.
+	// delegated to the (tested) script. Fail so the logic stays in one place.
 	if strings.Contains(rel, "blocking checks failed") {
 		t.Fatal("release.yml re-inlines the blocking-check gate — delegate to scripts/release-gate.sh; only the script has test coverage for it")
 	}
@@ -466,7 +466,7 @@ func writeFixture(t *testing.T, path, content string) {
 
 // GitHub parses ${…} expressions file-wide, including inside what looks like
 // a shell comment in a run: block. An EMPTY expression is invalid syntax and
-// fails the whole workflow at startup with no jobs — which is exactly how a
+// fails the whole workflow at startup with no jobs, which is exactly how a
 // comment explaining expression injection took the release workflow down.
 // Every expression in a workflow must have a body.
 func TestWorkflowsHaveNoEmptyExpressions(t *testing.T) {

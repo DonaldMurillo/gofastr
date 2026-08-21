@@ -173,7 +173,7 @@ func TestUpgradeRegistryThroughCoversNewestEntry(t *testing.T) {
 
 // TestUpgradeRegistryThroughMatchesChangelog is the maintenance
 // tripwire: every release PR bumps CHANGELOG.md, and the registry's
-// `through` marker must move with it — otherwise `gofastr upgrade`
+// `through` marker must move with it, otherwise `gofastr upgrade`
 // wrongly warns (or worse, wrongly reassures) about registry coverage.
 func TestUpgradeRegistryThroughMatchesChangelog(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))

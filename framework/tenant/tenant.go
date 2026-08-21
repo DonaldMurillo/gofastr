@@ -14,8 +14,8 @@ import (
 type tenantIDKey struct{}
 
 // crossTenantKey marks a context as deliberately cross-tenant. It must ONLY
-// ever be set server-side (admin routes, background jobs) — never derived from
-// a client-supplied header — or it becomes a tenant-isolation bypass.
+// ever be set server-side (admin routes, background jobs), never derived from
+// a client-supplied header, or it becomes a tenant-isolation bypass.
 type crossTenantKey struct{}
 
 // AllowCrossTenant marks ctx as permitted to operate without a tenant id.
@@ -24,7 +24,7 @@ type crossTenantKey struct{}
 // refusing the request.
 //
 // SECURITY: use ONLY on deliberately-admin routes, and gate those routes with
-// your own permission check — there is no built-in role check. Never set this
+// your own permission check, there is no built-in role check. Never set this
 // from a request header or any other client-controlled value.
 func AllowCrossTenant(ctx context.Context) context.Context {
 	return context.WithValue(ctx, crossTenantKey{}, true)
@@ -44,7 +44,7 @@ type TenantConfig struct {
 	Field string
 
 	// Header is a legacy field retained for API compatibility. It is NOT
-	// read anywhere — the tenant ID is resolved exclusively from the
+	// read anywhere, the tenant ID is resolved exclusively from the
 	// server-side authenticated context (never a client-sent header), so
 	// setting this changes no behavior. See TenantMiddleware.
 	Header string
@@ -80,7 +80,7 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 
 // ApplyTenantFilter adds a WHERE tenant_id = ? clause to the query
 // builder. The tenantID is parameterized to prevent SQL injection. An
-// empty tenantID is FAIL-CLOSED — the query is scoped to a guaranteed-
+// empty tenantID is FAIL-CLOSED, the query is scoped to a guaranteed-
 // empty result set ("WHERE 1 = 0") rather than being left unscoped. Apps
 // that genuinely want cross-tenant queries (admin tooling) must construct
 // them with the tenant filter disabled deliberately, not by handing in
@@ -88,7 +88,7 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 //
 // This standalone helper always uses the default "tenant_id" column. For an
 // entity with a custom EntityConfig.TenantField, the CRUD auto-scope
-// (CrudHandler.ApplyTenantScope*) already filters by the right column — use
+// (CrudHandler.ApplyTenantScope*) already filters by the right column, use
 // that rather than this helper, which has no entity context.
 func ApplyTenantFilter(builder *query.QueryBuilder, tenantID string) {
 	if tenantID == "" {
@@ -113,7 +113,7 @@ func ApplyTenantFilter(builder *query.QueryBuilder, tenantID string) {
 // claim, etc.) should compose their own middleware and call SetTenantID
 // directly.
 //
-// The `header` parameter is IGNORED — it is retained only so existing
+// The `header` parameter is IGNORED, it is retained only so existing
 // call sites keep compiling from the era when the header was consulted.
 // Passing a header name here does not (and must not) make the
 // middleware read it.

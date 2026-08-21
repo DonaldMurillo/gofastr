@@ -130,7 +130,7 @@ func TestHandleRemoteToggleRefreshFromStore(t *testing.T) {
 	// mm1 disables m1 (writes to the shared store).
 	mm1.Disable(context.Background(), "m1")
 
-	// mm2 receives the remote toggle — should refresh from the store.
+	// mm2 receives the remote toggle, should refresh from the store.
 	payload := buildTogglePayload(mm1.nodeID, "m1", false)
 	mm2.handleRemoteToggle(payload)
 	if mm2.Enabled("m1") {
@@ -144,7 +144,7 @@ func TestHandleRemoteToggleIgnoresUnknown(t *testing.T) {
 	mm.register("m1", ModuleManifest{})
 	mm.loadFromStore(context.Background())
 
-	// Crafted payload for an unregistered module — must not pollute cache.
+	// Crafted payload for an unregistered module, must not pollute cache.
 	payload := buildTogglePayload("other-node", "bogus", false)
 	mm.handleRemoteToggle(payload)
 	// "bogus" is not registered; cache should be unchanged.
@@ -165,7 +165,7 @@ func TestHandleRemoteToggleCraftedPayloadIgnored(t *testing.T) {
 	mm.enabled["m1"] = false
 	mm.mu.Unlock()
 
-	// Crafted payload claims enabled — must NOT override the store.
+	// Crafted payload claims enabled, must NOT override the store.
 	payload := buildTogglePayload("other-node", "m1", true)
 	mm.handleRemoteToggle(payload)
 	if mm.Enabled("m1") {

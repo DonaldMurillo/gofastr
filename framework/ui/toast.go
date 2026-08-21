@@ -15,21 +15,21 @@ import (
 //
 //  1. **Frontend**: `window.__gofastr.toast({variant, title, body, ttl})`
 //     called from inline JS or component bindings.
-//  2. **Server response header**: any HTTP response — typically an RPC
-//     handler's reply — can set `X-Gofastr-Toast: <json>`; the runtime
+//  2. **Server response header**: any HTTP response, typically an RPC
+//     handler's reply, can set `X-Gofastr-Toast: <json>`; the runtime
 //     scans every `data-fui-rpc` response for the header and dispatches
 //     it through the same client API.
 //
 // Both paths converge on `__gofastr.toast(cfg)`, which builds the item
 // HTML inline from a small template, appends it to the stack
 // container, and wires the TTL + dismiss handlers. No server-side
-// queue, no SSE connection — the stack lives entirely in the browser.
+// queue, no SSE connection. The stack lives entirely in the browser.
 //
 // Use AddToast from server handlers; use TriggerHeader / TriggerJSON
 // when composing the header value manually.
 
 // ToastTrigger is the JSON shape carried by the X-Gofastr-Toast
-// header — and the same shape accepted by __gofastr.toast(cfg) on
+// header, and the same shape accepted by __gofastr.toast(cfg) on
 // the client. Field names match the runtime template; keep both in
 // sync when extending.
 type ToastTrigger struct {
@@ -48,7 +48,7 @@ type ToastTrigger struct {
 // data-fui-rpc fetch resolves with 2xx.
 //
 // Multiple AddToast calls accumulate into a single header whose value
-// is a JSON array — robust against fetch's header-value coalescing
+// is a JSON array, unaffected by fetch's header-value coalescing
 // across browsers. Apps that need to surface several toasts from one
 // handler just call AddToast multiple times.
 //
@@ -118,7 +118,7 @@ var _ component.Component = toastSlot{}
 // build its own custom layout while sharing the runtime contract.
 func ToastSlot(name string) component.Component { return toastSlot{name: name} }
 
-// SignalSource for the toast stack — returns the empty container.
+// SignalSource for the toast stack. Returns the empty container.
 // Surface state is purely client-side; this exists so the widget
 // /state endpoint stays a no-op rather than 404.
 type toastStackSource struct{ name string }

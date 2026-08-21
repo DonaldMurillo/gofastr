@@ -64,7 +64,7 @@ func lintRepo(root string) ([]finding, error) {
 				File:    filepath.ToSlash(rel),
 				Line:    1,
 				Rule:    "process-artifact-markdown",
-				Message: "process ledgers/journals/handoffs don't live as tracked markdown — the rationale goes in commit messages and pinning tests; the history IS git history",
+				Message: "process ledgers/journals/handoffs don't live as tracked markdown: the rationale goes in commit messages and pinning tests; the history IS git history",
 			})
 		}
 		if name := d.Name(); hasControlChar(name) {
@@ -72,7 +72,7 @@ func lintRepo(root string) ([]finding, error) {
 			if relErr != nil {
 				rel = path
 			}
-			// Don't ToSlash — a newline in the name would render the path
+			// Don't ToSlash. A newline in the name would render the path
 			// unreadable; quote it so the finding is legible.
 			findings = append(findings, finding{
 				File:    strconv.Quote(filepath.ToSlash(rel)),
@@ -184,7 +184,7 @@ func lintBytes(rel string, body []byte) []finding {
 			File:    rel,
 			Line:    line,
 			Rule:    "duplicate-url-guard",
-			Message: "re-derived URL-scheme allow-list — call core-ui/urlsafe (urlsafe.OK / urlsafe.Clean) instead of growing another copy",
+			Message: "re-derived URL-scheme allow-list: call core-ui/urlsafe (urlsafe.OK / urlsafe.Clean) instead of growing another copy",
 		})
 	}
 	lines := strings.Split(string(body), "\n")
@@ -225,7 +225,7 @@ func lintBytes(rel string, body []byte) []finding {
 		// EMIT island wiring, so they must teach the typed
 		// core-ui/interactive layer (interactive.OnClick/OnSubmit or
 		// Action.Attrs()), never a raw "data-fui-rpc" attribute literal.
-		// Scoped narrowly — examples/site legitimately renders raw
+		// Scoped narrowly because examples/site legitimately renders raw
 		// data-fui-* attrs in doc copy shown to visitors, and the
 		// pattern data-fui-rpc" matches only the bare rpc attribute
 		// (not -method/-body/-close/-reset/-navigate/-signal).
@@ -262,13 +262,13 @@ func lintBytes(rel string, body []byte) []finding {
 // inherited by every application that imports the framework: Go records a
 // checksum for each of the dependency's requirements, so `go mod tidy` in a
 // hello-world app resolves them all. Measured before this rule existed, the
-// testcontainers require dragged the whole Docker client stack — go-winio,
-// go-ansiterm, plan9stats, perfstat, purego, wmi, go-ole — into a scaffold
+// testcontainers require dragged the whole Docker client stack, go-winio,
+// go-ansiterm, plan9stats, perfstat, purego, wmi, go-ole, into a scaffold
 // that never starts a container.
 //
 // The escape route is not a build tag: `go mod tidy` considers every build
 // configuration, so a tagged file's imports are recorded anyway. A test-only
-// dependency has to be absent from the module's packages entirely — reached
+// dependency has to be absent from the module's packages entirely, reached
 // through an env var the CI lane supplies, or moved to a nested module.
 //
 // chromedp and lib/pq deliberately are NOT listed: battery/print renders PDFs
@@ -326,7 +326,7 @@ func lintConsumerModuleGraph(root string) ([]finding, error) {
 		// `// indirect` marker follow it.
 		path, _, _ := strings.Cut(entry, " ")
 		for _, mod := range testOnlyModules {
-			// Exact match, or a submodule of it — testcontainers-go and
+			// Exact match, or a submodule of it: testcontainers-go and
 			// testcontainers-go/modules/postgres are both the same problem,
 			// while a hypothetical testcontainers-go-helpers is not.
 			if path != mod && !strings.HasPrefix(path, mod+"/") {
@@ -377,8 +377,8 @@ func lintRepositoryTruth(root string) ([]finding, error) {
 // lintFrontDoor keeps the README pointing at the deployed docs site.
 //
 // The site is the project's best asset and was, for months, reachable from
-// nowhere: the repo homepage field pointed at pkg.go.dev and the README — the
-// only page a stranger actually lands on — contained zero links to it. Every
+// nowhere: the repo homepage field pointed at pkg.go.dev and the README, the
+// only page a stranger actually lands on, contained zero links to it. Every
 // individual artifact was fine; the path between them did not exist. A
 // published site nobody can navigate to is indistinguishable from no site.
 func lintFrontDoor(root string) ([]finding, error) {
@@ -400,7 +400,7 @@ func lintFrontDoor(root string) ([]finding, error) {
 				File:    "README.md",
 				Line:    1,
 				Rule:    "front-door-missing",
-				Message: "README.md does not exist — it is the only page a stranger lands on",
+				Message: "README.md does not exist: it is the only page a stranger lands on",
 			}}, nil
 		}
 		return nil, err
@@ -416,7 +416,7 @@ func lintFrontDoor(root string) ([]finding, error) {
 		File:    "README.md",
 		Line:    1,
 		Rule:    "front-door-missing",
-		Message: "README must link the deployed docs site (" + siteURL + ") — a site nothing links to is unreachable",
+		Message: "README must link the deployed docs site (" + siteURL + "): a site nothing links to is unreachable",
 	}}, nil
 }
 
@@ -449,7 +449,7 @@ func lineContaining(body, needle string) int {
 // rootMarkdownAllowlist is the complete set of markdown files permitted
 // at the repository root: the GitHub-recognized community-health files
 // plus the roadmap and the agent entry points. Everything else is a
-// process artifact that belongs in git history, a gate, or a skill —
+// process artifact that belongs in git history, a gate, or a skill,
 // not on the repo's front porch.
 var rootMarkdownAllowlist = map[string]bool{
 	"README.md":          true,
@@ -479,7 +479,7 @@ func lintRootMarkdown(root string) ([]finding, error) {
 				File:    name,
 				Line:    1,
 				Rule:    "root-markdown",
-				Message: "not in the root markdown allowlist — audits/journals/plans go to git history or an enforceable gate, feature docs go to framework/docs/content/",
+				Message: "not in the root markdown allowlist: audits/journals/plans go to git history or an enforceable gate, feature docs go to framework/docs/content/",
 			})
 		}
 	}
@@ -532,7 +532,7 @@ func isBuildScript(rel string) bool {
 }
 
 // isUntypedFUIWiringScope reports whether rel is a non-test Go file under
-// the blueprint generator or a battery — the code that EMITS island wiring
+// the blueprint generator or a battery, the code that EMITS island wiring
 // and so must use the typed core-ui/interactive layer instead of raw
 // "data-fui-rpc" attribute literals. Examples and docs are deliberately
 // excluded: the showcase renders raw data-fui-* attributes in copy shown
@@ -549,9 +549,9 @@ func isUntypedFUIWiringScope(rel string) bool {
 //
 // The fingerprint is the percent-encoded CR/LF rejection, which every copy of
 // this guard carries and almost nothing else does. The guard had been written
-// five times — framework/ui, framework/uihost, framework/crud,
-// framework/experimental/apiversions and three core-ui/patterns builders —
-// each copy byte-identical on the day it was written and free to drift the
+// five times: framework/ui, framework/uihost, framework/crud,
+// framework/experimental/apiversions and three core-ui/patterns builders.
+// Each copy byte-identical on the day it was written and free to drift the
 // day after. core-ui/urlsafe is the one definition; this rule is what keeps
 // it the only one.
 func duplicateURLGuardLine(rel string, body []byte) int {
@@ -637,7 +637,7 @@ var exampleAbsoluteURLRe = regexp.MustCompile(`(?i)https://([A-Za-z0-9._-]+)`)
 func allowedExampleHost(host string) bool {
 	switch host {
 	case "example.com", "example.net", "example.org",
-		// Loopback in any spelling — "localhost" was allowed while the
+		// Loopback in any spelling. "localhost" was allowed while the
 		// equivalent literal address was not, which flagged correct code.
 		"localhost", "127.0.0.1", "::1",
 		"schema.org", "www.schema.org", "www.sitemaps.org", "www.w3.org",
@@ -661,7 +661,7 @@ func allowedExampleHost(host string) bool {
 // The site advertised canonical URLs, a sitemap, and an agent card on a domain
 // with no DNS record for months. Fixing that one file by name left the same bug
 // one directory over in the flagship example, on a sibling of the same dead
-// domain — which is the whole lesson: the defect is not a string, it is
+// domain, which is the whole lesson: the defect is not a string, it is
 // "an example claims an origin nobody serves". This rule enumerates by that
 // invariant, so the next one fails the build instead of waiting to be noticed.
 //
@@ -707,7 +707,7 @@ func lintExampleOrigins(root string) ([]finding, error) {
 					File:    filepath.ToSlash(rel),
 					Line:    i + 1,
 					Rule:    "example-dead-origin",
-					Message: "example advertises origin " + host + " — use a reserved documentation domain (example.com) for a demo that is not deployed, or a host the project actually serves",
+					Message: "example advertises origin " + host + " : use a reserved documentation domain (example.com) for a demo that is not deployed, or a host the project actually serves",
 				})
 			}
 		}
@@ -746,7 +746,7 @@ func moduleIs(root, module string) (bool, error) {
 		}
 		// `module path // comment` is valid go.mod. Comparing the whole
 		// remainder made the comment part of the path, so the module never
-		// matched and every rule scoped to it silently stopped running — a
+		// matched and every rule scoped to it silently stopped running. A
 		// gate that disables itself is worse than no gate.
 		if i := strings.Index(rest, "//"); i >= 0 {
 			rest = rest[:i]
@@ -766,8 +766,9 @@ type goLexState struct {
 // stripGoComments returns the code on one line of Go source with both comment
 // forms removed, plus the lexical state the next line starts in.
 //
-// The three contexts — line comment, block comment, string literal — have to be
-// recognised in a single left-to-right pass, because each one turns the others'
+// The three contexts, line comment, block comment and string literal, have to
+// be recognised in a single left-to-right pass, because each one turns the
+// others'
 // delimiters into ordinary text. Scanning for one before the others is what
 // made the previous version under-report: it looked for "/*" with a plain
 // strings.Index before it had considered "//" or a quote, so `// see /* here`
@@ -778,7 +779,7 @@ type goLexState struct {
 // String literals are also what protect "https://host": a "//" inside a string
 // is content, not a comment, and a URL in Go source is always inside one. An
 // earlier version instead kept any "//" preceded by a colon, on the theory that
-// a URL scheme has one and a comment does not — but a label, `case`, or
+// a URL scheme has one and a comment does not. But a label, `case`, or
 // `default` may be followed immediately by a comment with no space
 // (`default:// note` is valid Go), so that rule left those comments unstripped
 // and let prose inside them read as emitted code.
@@ -840,7 +841,7 @@ func stripGoComments(line string, st goLexState) (string, goLexState) {
 // drops the binary at /<name>.
 //
 // .gitignore cannot glob a directory listing, so the entries are written out
-// by hand — and a hand-written list of names rots the moment a command is
+// by hand, and a hand-written list of names rots the moment a command is
 // added. It rotted twice: a 12MB embed-demo binary reached a commit that way,
 // and the very change set that added this rule shipped a 3.4MB /mutate
 // untracked, under a comment telling the reader to "enumerate the package dir,
@@ -857,7 +858,7 @@ func lintCommandBinariesIgnored(root string) ([]finding, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	// A missing .gitignore is not "clean" — it ignores nothing, so EVERY
+	// A missing .gitignore is not "clean". It ignores nothing, so EVERY
 	// command binary would be untracked. Treating absence as clean was the
 	// rule's worst blind spot: it read the one state where the problem is
 	// total as the one state where there is no problem. body stays nil and
@@ -868,7 +869,7 @@ func lintCommandBinariesIgnored(root string) ([]finding, error) {
 		// Skipping blanks and comments is tidiness, not correctness: neither
 		// can match a command name once the leading "/" is trimmed, so a
 		// mutation removing this line changes no verdict. Mutation testing
-		// reports it as a survivor for that reason — it is equivalent code,
+		// reports it as a survivor for that reason. It is equivalent code,
 		// not an untested guard.
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -893,7 +894,7 @@ func lintCommandBinariesIgnored(root string) ([]finding, error) {
 		out = append(out, finding{
 			File: ".gitignore",
 			Rule: "cmd-binary-not-ignored",
-			Message: "cmd/" + name + " builds to /" + name + " but .gitignore has no entry for it — " +
+			Message: "cmd/" + name + " builds to /" + name + " but .gitignore has no entry for it: " +
 				"a `go build ./cmd/" + name + "` from the root leaves an untracked binary",
 		})
 	}

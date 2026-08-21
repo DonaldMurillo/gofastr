@@ -39,7 +39,7 @@ func TestMetrics_CollectorAppearsInScrape(t *testing.T) {
 }
 
 // TestMetrics_CollectorsOrderedByName ensures deterministic scrape output
-// regardless of registration order — operators and diff tools rely on it.
+// regardless of registration order; operators and diff tools rely on it.
 func TestMetrics_CollectorsOrderedByName(t *testing.T) {
 	m := NewMetrics()
 	// Register out of order.
@@ -75,7 +75,7 @@ func TestMetrics_RegisterCollectorReplaces(t *testing.T) {
 }
 
 // A collector registered while a scrape is in flight must not race the
-// handler's map access — the scrape iterates a snapshot taken under the
+// handler's map access: the scrape iterates a snapshot taken under the
 // lock, never the live map.
 func TestMetrics_ConcurrentRegisterAndScrape(t *testing.T) {
 	m := NewMetrics()

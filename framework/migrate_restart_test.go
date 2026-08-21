@@ -47,20 +47,20 @@ func countTickets(t *testing.T, db *sql.DB) int {
 }
 
 // TestRepeatedStartsPreserveExistingRows closes the second of the two
-// highest-leverage next moves the 2026-07-26 backend eval left open:
+// highest-value next moves the 2026-07-26 backend eval left open:
 //
 //	"GoFastr run two also lost the original grader-created ticket after
 //	 repeated post-migration starts, while run one preserved it."
 //
 // A row disappearing on restart is the worst failure class in the framework
-// and it had no regression net at all — nothing in framework/ or cmd/ booted
+// and it had no regression net at all, nothing in framework/ or cmd/ booted
 // an app twice against a populated database and checked the rows were still
 // there. The nondeterminism between the eval's two runs is exactly what a test
 // like this is for: it either holds every time or it does not hold.
 //
 // The sequence is the eval's: seed a row, restart unchanged, evolve the schema
 // the way the maintenance ticket did, then restart repeatedly on the evolved
-// schema. The row must survive all of it, with its data intact — a surviving
+// schema. The row must survive all of it, with its data intact, a surviving
 // row whose title was blanked is the same bug wearing a different hat.
 //
 // This passed the first time it was run, which for a data-loss guard is a
@@ -148,7 +148,7 @@ func TestRepeatedStartsPreserveEveryRow(t *testing.T) {
 		}
 
 		// The count alone would pass if a migration rebuilt the table with
-		// duplicated or blanked titles — same cardinality, different data,
+		// duplicated or blanked titles, same cardinality, different data,
 		// which is still data loss. Compare every value.
 		rows, err := db.Query(`SELECT title FROM tickets ORDER BY title`)
 		if err != nil {

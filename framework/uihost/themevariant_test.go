@@ -33,7 +33,7 @@ func getAppCSS(t *testing.T, ds *UIHost, query string) *httptest.ResponseRecorde
 	return rec
 }
 
-// The default URL is untouched by the variant mechanism — same bytes, same
+// The default URL is untouched by the variant mechanism: same bytes, same
 // no-cache posture as before variants existed.
 func TestAppCSS_DefaultURLUnchanged(t *testing.T) {
 	ds := hostWithTheme(t, brandTheme("#4F46E5"))

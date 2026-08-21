@@ -2,7 +2,7 @@ package main
 
 import "strings"
 
-// Casing converters — the single in-package set. Before this file,
+// Casing converters: the single in-package set. Before this file,
 // generate.go and pack.go each carried private converters that disagreed
 // on acronyms: toSnakeCase smashed them ("HTTPServer" → "httpserver")
 // while camelToSnake split every letter ("HTTPServer" →
@@ -13,7 +13,7 @@ import "strings"
 // "http_server", "APIKey" → "api_key").
 
 // toCamelCase converts a separator-delimited name ("_", "-", " ") to
-// PascalCase. It never splits inside CamelCase input — there are no
+// PascalCase. It never splits inside CamelCase input: there are no
 // case-based boundaries, only separator-based ones.
 func toCamelCase(s string) string {
 	parts := strings.FieldsFunc(s, func(r rune) bool {

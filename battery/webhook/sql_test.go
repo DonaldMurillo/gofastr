@@ -29,7 +29,7 @@ func openSQLStore(t *testing.T) (*sql.DB, *SQLStore) {
 
 // TestSQLStore_RefusesPlaintextWithoutOptIn verifies that NewSQLStore
 // fails fast when neither WithSQLSecretCodec(...) nor
-// WithSQLAllowPlaintext() is supplied — silently storing subscriber
+// WithSQLAllowPlaintext() is supplied, silently storing subscriber
 // secrets in cleartext was the previous default and is exactly the
 // kind of accidental cleartext store that the agent's audit flagged.
 func TestSQLStore_RefusesPlaintextWithoutOptIn(t *testing.T) {
@@ -119,7 +119,7 @@ func TestSQLStore_DeliveryUpdateRoundTrip(t *testing.T) {
 	d.Status = StatusDead
 	d.LastError = "boom"
 	d.UpdatedAt = now.Add(time.Minute)
-	d.NextAttemptAt = time.Time{} // dead — no future attempt
+	d.NextAttemptAt = time.Time{} // dead: no future attempt
 	if err := s.UpdateDelivery(ctx, d); err != nil {
 		t.Fatalf("update: %v", err)
 	}

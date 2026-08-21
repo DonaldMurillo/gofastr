@@ -9,14 +9,14 @@ import (
 )
 
 // Property: every value spliced into generated DDL is escaped for the
-// literal context it lands in — for a DEFAULT clause that means a
+// literal context it lands in: for a DEFAULT clause that means a
 // single-quoted string literal that cannot be closed from inside.
 //
 // Surfaces: SQLDefault feeds ColumnDefaultClause, which feeds BOTH
 // columnDefs (CREATE TABLE) and diffEntityFromLive (ALTER TABLE ADD
 // COLUMN). schema.Field.Default is `any`, and only the `case string`
 // arm doubled quotes; the default: arm rendered fmt.Sprintf("'%v'", v)
-// raw. A named string type, a fmt.Stringer, or — the reachable one — a
+// raw. A named string type, a fmt.Stringer, or, the reachable one, a
 // []any / map[string]any decoded from JSON took that arm.
 //
 // Reachability: entity.Declaration's Default is `any` and kiln's
@@ -90,7 +90,7 @@ func isSingleQuotedLiteral(s string) bool {
 // read validates its identifier like every one of its siblings. It is
 // the only identifier site in the package that interpolated without
 // SafeIdent, justified by a comment claiming the table name "is taken
-// from our own registry, not user input" — which is false: kiln's
+// from our own registry, not user input", which is false: kiln's
 // add_entity / update_entity ops accept a `table` override over HTTP
 // (kiln/journal/replay.go validates only the entity Name), and this
 // read runs at AutoMigratePlanContext BEFORE any SafeIdent call.

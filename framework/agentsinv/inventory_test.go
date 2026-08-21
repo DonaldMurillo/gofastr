@@ -26,7 +26,7 @@ func TestRegisterAndAll(t *testing.T) {
 	}
 }
 
-// Empty markdown must NOT panic — that would kill the gofastr binary
+// Empty markdown must NOT panic, that would kill the gofastr binary
 // at startup for every subcommand, including ones unrelated to agents
 // (build / dev / migrate / version). Track the missing entry so it
 // surfaces via MissingMarkdown() instead.

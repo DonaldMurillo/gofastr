@@ -11,7 +11,7 @@ import (
 // modal pushes its query onto the URL, and Back pops it closed again.
 //
 // This characterizes behavior that was previously wired up across three
-// places in the core runtime — a boot-time index build, a second index
+// places in the core runtime: a boot-time index build, a second index
 // build on SPA navigation, and a popstate listener. Deriving that state
 // from the widget catalog on demand is a refactor, and this test is what
 // makes it a refactor rather than a rewrite: if the sync stops running
@@ -19,8 +19,8 @@ import (
 //
 // Forward is deliberately NOT asserted. It does not restore the modal
 // today, and the cause is older and wider than this file: the SPA
-// popstate handler keys on pathname+search, so a widget deep link —
-// which changes only the query — reads as a page navigation and
+// popstate handler keys on pathname+search, so a widget deep link,
+// which changes only the query, reads as a page navigation and
 // re-fetches the screen, discarding the client-mounted widget. Fixing
 // that means teaching the router which query parameters describe
 // in-page state, which is its own change.

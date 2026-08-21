@@ -15,10 +15,10 @@ import (
 type EncryptionMode int
 
 const (
-	// EncryptionNone — plaintext SQLite file. The default for v0.1.
+	// EncryptionNone: plaintext SQLite file. The default for v0.1.
 	EncryptionNone EncryptionMode = iota
 
-	// EncryptionAtRest — the SQLite file is encrypted in place
+	// EncryptionAtRest: the SQLite file is encrypted in place
 	// using file-level AES-GCM whenever the harness is not running.
 	// On Open(), the file is decrypted to a sidecar; on Close(), the
 	// sidecar is re-encrypted and the decrypted copy is removed.

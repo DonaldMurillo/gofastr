@@ -1,6 +1,6 @@
 package ui
 
-// SiteFooter — multi-column credits grid + optional bottom strip. The
+// SiteFooter: multi-column credits grid + optional bottom strip. The
 // column model is intentionally simple: a brand-style intro on the
 // left, then any number of link columns. A bottom strip below holds
 // copyright + small text. Composes via core-ui/html primitives so a

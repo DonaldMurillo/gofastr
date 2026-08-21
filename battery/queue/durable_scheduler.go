@@ -148,7 +148,7 @@ func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableSchedu
 		}
 		b.payload = data
 	}
-	// An EMPTY payload is "no payload", not malformed JSON — a nil or empty
+	// An EMPTY payload is "no payload", not malformed JSON, a nil or empty
 	// []byte / json.RawMessage / "" is what the common conditional-marshal
 	// shape produces:
 	//
@@ -189,7 +189,7 @@ func (b *DurableScheduleBuilder) Priority(p int) *DurableScheduleBuilder {
 }
 
 // MaxAttempts bounds the retry ceiling carried into every Job fired by this
-// schedule. Zero (the default) lets Enqueue resolve it to 3 — matching the
+// schedule. Zero (the default) lets Enqueue resolve it to 3, matching the
 // pre-options behaviour. The value persists alongside the schedule
 // definition; re-registering the same schedule ID updates it.
 func (b *DurableScheduleBuilder) MaxAttempts(n int) *DurableScheduleBuilder {
@@ -299,7 +299,7 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 			continue
 		}
 		if len(ticks) == 0 {
-			// Even with no ticks due, the cursor may need advancing — the
+			// Even with no ticks due, the cursor may need advancing, the
 			// cadence-change path returns a corrected nextRun strictly after
 			// the stored watermark. Persist it so the schedule stops waking
 			// the loop every heartbeat and resumes firing on the new cadence.

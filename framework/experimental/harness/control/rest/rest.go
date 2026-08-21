@@ -106,7 +106,7 @@ func (s *Server) handle(inner http.HandlerFunc, requireToken bool) http.HandlerF
 
 func (s *Server) hostOK(r *http.Request) bool {
 	if len(s.AllowedHosts) == 0 {
-		// No restriction configured — typical for Unix socket.
+		// No restriction configured, typical for Unix socket.
 		return true
 	}
 	for _, h := range s.AllowedHosts {
@@ -118,7 +118,7 @@ func (s *Server) hostOK(r *http.Request) bool {
 }
 
 // originOK reports whether the request's Origin is permitted. See the
-// ws.Handler.originOK doc for the rationale — an empty AllowedOrigins
+// ws.Handler.originOK doc for the rationale, an empty AllowedOrigins
 // denies a browser-set Origin rather than admitting it, matching the
 // convention core/middleware/cors.go states.
 func (s *Server) originOK(r *http.Request) bool {
@@ -149,7 +149,7 @@ func claimsFrom(r *http.Request) (auth.Claims, bool) {
 func (s *Server) verifyToken(r *http.Request) (auth.Claims, error) {
 	tok := r.Header.Get("X-Harness-Token")
 	if tok == "" {
-		// Authorization: Bearer <token> fallback — common header.
+		// Authorization: Bearer <token> fallback, common header.
 		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 			tok = strings.TrimPrefix(h, "Bearer ")
 		}
@@ -217,7 +217,7 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Enforce the token's session scope before touching the session
-	// at all — a token bound to session A must not drive session B,
+	// at all, a token bound to session A must not drive session B,
 	// nor read its event stream/tasks. Mirrors ws.go:AllowsSession.
 	claims, ok := claimsFrom(r)
 	if !ok || !claims.AllowsSession(sessID) {
@@ -230,7 +230,7 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case verb == "" && r.Method == http.MethodGet:
-		// Session meta — minimal for v0.1: just whatever the catalog
+		// Session meta, minimal for v0.1: just whatever the catalog
 		// already exposes for the matching SessionID.
 		for _, si := range s.Catalog.ListSessions() {
 			if si.SessionID == sessID {
@@ -260,7 +260,7 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 // cmdSeed is a zero-value of the expected type used to discriminate.
 func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.SessionID, cmdSeed control.Command) {
 	defer r.Body.Close()
-	// Enforce the token's command scope before decoding/dispatching —
+	// Enforce the token's command scope before decoding/dispatching:
 	// a token scoped to SendInput must not answer permission prompts.
 	// Session scope was already checked in handleSessionItem.
 	if claims, ok := claimsFrom(r); !ok || !claims.AllowsCommand(cmdSeed.CommandKind()) {
@@ -304,7 +304,7 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 	}
 
 	// Synthesize an ephemeral Client for the dispatch. For v0.1 the
-	// REST transport's Client is HTTP-shaped — request-scoped, no
+	// REST transport's Client is HTTP-shaped, request-scoped, no
 	// persistent ID. In v0.2 we'll persist a per-token attach so
 	// originator IDs are stable across HTTP requests.
 	c := &restClient{id: ids.NewClientID(), class: control.IdentityHuman}
@@ -317,7 +317,7 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 
 // handleSSE streams events for the session via the SSE protocol.
 // handleTasks returns the current TaskList snapshot for a session.
-// Read-only — the model writes via the TaskList tool dispatch, and
+// Read-only, the model writes via the TaskList tool dispatch, and
 // the snapshot is kept by the tool. Clients (web sidebar, TUI panel,
 // external dashboards) poll this endpoint to render the plan.
 func (s *Server) handleTasks(w http.ResponseWriter, _ *http.Request, sessID ids.SessionID) {
@@ -369,7 +369,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	}
 }
 
-// Catalog endpoints — read-only.
+// Catalog endpoints, read-only.
 
 func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
 	// v0.1 ships two presets shipped in profile/; their names are exposed here.
@@ -414,7 +414,7 @@ func classifyMuxError(err error) string {
 }
 
 // restClient is the per-HTTP-request synthesized Client. For v0.1
-// it's request-scoped and doesn't subscribe to events directly —
+// it's request-scoped and doesn't subscribe to events directly:
 // callers stream via /events SSE.
 type restClient struct {
 	id    ids.ClientID

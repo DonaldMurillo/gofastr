@@ -1,15 +1,15 @@
 package uihost
 
-// agentready.go — the agent-discovery surface that makes a GoFastr site
+// agentready.go: the agent-discovery surface that makes a GoFastr site
 // score well on scanners like isitagentready.com. It is purely additive:
 // every endpoint is opt-in, and the existing robots.txt / sitemap.xml /
 // llm.md / OpenAPI surfaces are untouched. The pieces:
 //
-//   - /llms.txt                            (llmstxt.org) — curated markdown index
-//   - /.well-known/agent-card.json         (A2A v1.0) — agent identity + skills
-//   - /.well-known/agent.json              (legacy alias) — older A2A clients
-//   - Link: response headers on HTML pages — point agents at all of the above
-//   - Accept: text/markdown negotiation    — markdown for any HTML page
+//   - /llms.txt                            (llmstxt.org): curated markdown index
+//   - /.well-known/agent-card.json         (A2A v1.0): agent identity + skills
+//   - /.well-known/agent.json              (legacy alias): older A2A clients
+//   - Link: response headers on HTML pages: point agents at all of the above
+//   - Accept: text/markdown negotiation: markdown for any HTML page
 //
 // WithAgentReady turns on the sane defaults in one call; WithLLMsTxt /
 // WithAgentCard expose each piece granularly. AI-bot-aware robots rules
@@ -35,7 +35,7 @@ type AgentReadyConfig struct {
 	// BaseURL is the canonical origin (scheme://host) used to
 	// absolutize URLs in the agent card and Link headers. When empty,
 	// handlers derive it per request from the forwarded Host + the
-	// request TLS/scheme — correct behind a proxy that sets Host.
+	// request TLS/scheme: correct behind a proxy that sets Host.
 	BaseURL string
 
 	// Title is the /llms.txt H1 and the agent-card name fallback.
@@ -48,7 +48,7 @@ type AgentReadyConfig struct {
 	// (requires WithPublicLLMMD) and the per-screen /llm.md docs.
 	Sections []LLMsTxtSection
 
-	// FullText, when non-empty, is served verbatim at /llms-full.txt —
+	// FullText, when non-empty, is served verbatim at /llms-full.txt:
 	// the second tier of the llmstxt.org convention: /llms.txt is the
 	// small index an agent fetches first; /llms-full.txt is the whole
 	// docs corpus in one markdown file for agents that want everything
@@ -164,12 +164,12 @@ type AgentSecurityScheme map[string]any
 func WithAgentReady(cfg AgentReadyConfig) Option {
 	ar := &agentReadyConfig{baseURL: cfg.BaseURL}
 
-	// /llms.txt — on whenever a Title is set or sections are provided.
+	// /llms.txt: on whenever a Title is set or sections are provided.
 	if cfg.Title != "" || len(cfg.Sections) > 0 {
 		ar.llms = &llmsCfg{title: cfg.Title, summary: cfg.Summary, sections: cfg.Sections}
 	}
 
-	// Agent card — explicit config, or a minimal derived card when the
+	// Agent card: explicit config, or a minimal derived card when the
 	// bundle is on with a title.
 	switch {
 	case cfg.AgentCard != nil:
@@ -184,31 +184,31 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		ar.allowAIBots = &b
 	}
 
-	// Link headers — default on for the bundle.
+	// Link headers: default on for the bundle.
 	lh := true
 	if cfg.LinkHeaders != nil {
 		lh = *cfg.LinkHeaders
 	}
 	ar.linkHeaders = lh
 
-	// Content negotiation — default off.
+	// Content negotiation: default off.
 	if cfg.ContentNegotiation != nil {
 		ar.contentNeg = *cfg.ContentNegotiation
 	}
 
-	// OpenAPI service-desc link — opt-in (path the host serves the spec at).
+	// OpenAPI service-desc link: opt-in (path the host serves the spec at).
 	ar.openAPI = cfg.OpenAPIEndpoint
 
-	// Full-corpus tier — opt-in content for /llms-full.txt.
+	// Full-corpus tier: opt-in content for /llms-full.txt.
 	ar.fullTxt = cfg.FullText
 
-	// Content-Signal robots directive — opt-in preference string.
+	// Content-Signal robots directive: opt-in preference string.
 	ar.contentSignals = cfg.ContentSignals
 
 	return func(ds *UIHost) {
 		// The zero value is a no-op (matches the doc): don't install the
 		// surface unless something meaningful is configured. linkHeaders
-		// alone — with nothing to link to — doesn't justify it. A granular
+		// alone, with nothing to link to, doesn't justify it. A granular
 		// option may already have installed ds.agentReady; the early return
 		// leaves it untouched rather than wiping it.
 		if ar.llms == nil && ar.card == nil && ar.allowAIBots == nil &&
@@ -275,7 +275,7 @@ func WithLLMsTxt(title, summary string, sections []LLMsTxtSection) Option {
 	}
 }
 
-// WithLLMsFullTxt serves the given markdown verbatim at /llms-full.txt —
+// WithLLMsFullTxt serves the given markdown verbatim at /llms-full.txt,
 // the full-corpus tier of the llmstxt.org convention. Pair it with
 // WithLLMsTxt (or the bundle) and add a Sections link to /llms-full.txt
 // so agents reading the index can find it. Granular alternative to the
@@ -382,7 +382,7 @@ func (ds *UIHost) handleLLMsTxt(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleLLMsFullTxt serves the full-corpus tier verbatim. text/plain to
-// match /llms.txt — agents fetch both the same way.
+// match /llms.txt. Agents fetch both the same way.
 func (ds *UIHost) handleLLMsFullTxt(w http.ResponseWriter, req *http.Request) {
 	full := ds.agentReady.fullTxt
 	if full == "" {
@@ -432,7 +432,7 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 // defaultLLMsSections builds a Docs section linking the app's existing
 // /llm-pages.md markdown index, so a bundle host with WithPublicLLMMD
 // gets a useful llms.txt for free. The index itself enumerates every
-// screen + its /llm.md doc — we link just the index rather than every
+// screen + its /llm.md doc. We link just the index rather than every
 // route, because non-screen routes (/api/*, /healthz, /.well-known/*,
 // …) have no markdown counterpart and would produce dead links.
 func defaultLLMsSections(ds *UIHost) []LLMsTxtSection {
@@ -514,7 +514,7 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 		"defaultInputModes":  in,
 		"defaultOutputModes": out,
 	}
-	// skills is REQUIRED in A2A v1.0 — a nil slice marshals to null, so
+	// skills is REQUIRED in A2A v1.0: a nil slice marshals to null, so
 	// force a non-nil empty array when there are no skills.
 	if len(skills) == 0 {
 		doc["skills"] = []AgentSkill{}
@@ -522,7 +522,7 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 	// supportedInterfaces is REQUIRED (proto field 3) and is the ONLY place
 	// the service endpoint lives in v1.0 (no top-level url). Advertise the
 	// JSON-RPC endpoint: the MCP endpoint when configured (it genuinely
-	// speaks JSON-RPC — initialize/tools-list work), else the service URL.
+	// speaks JSON-RPC; initialize/tools-list work), else the service URL.
 	ifaceURL := serviceURL
 	if cfg.MCPEndpoint != "" {
 		ifaceURL = strings.TrimRight(baseURL, "/") + cfg.MCPEndpoint
@@ -557,7 +557,7 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	// endpoint). Trusting it makes those a cache-poisoning primitive.
 	// A host that terminates TLS at a proxy which rewrites Host should
 	// set the sitemap BaseURL above, which takes precedence and is
-	// server-controlled — the same shape battery/print documents.
+	// server-controlled, the same shape battery/print documents.
 	scheme := "http"
 	if req.TLS != nil {
 		scheme = "https"
@@ -642,7 +642,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		return false
 	}
 	// Per-instance doc (SetParams → DI → Load) so a dynamic route's
-	// negotiated markdown carries the page's real title + content —
+	// negotiated markdown carries the page's real title + content,
 	// and, critically, the policy chain is evaluated with the live
 	// request: a non-Allow decision degrades to the metadata-free
 	// withheld doc instead of leaking the screen's rendered content,

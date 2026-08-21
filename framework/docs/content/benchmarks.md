@@ -41,10 +41,10 @@ make bench-pg            # only the /postgres/ sub-benchmarks
 
 Tunable via env:
 
-- `BENCHTIME` — `-benchtime` value (default `1s`).
-- `BENCH_COUNT` — `-count` value (default `3`). Pair with `benchstat`.
-- `BENCH_TIMEOUT` — `-timeout` value (default `30m`).
-- `BENCH_PKGS` — which packages to scan (default `./framework/... ./core/router/... ./battery/search/...`).
+- `BENCHTIME`: `-benchtime` value (default `1s`).
+- `BENCH_COUNT`: `-count` value (default `3`). Pair with `benchstat`.
+- `BENCH_TIMEOUT`: `-timeout` value (default `30m`).
+- `BENCH_PKGS`: which packages to scan (default `./framework/... ./core/router/... ./battery/search/...`).
 
 Output captures land under `dist/bench/<scope>.txt` so they survive across
 runs and can be compared with `benchstat dist/bench/old.txt
@@ -57,7 +57,7 @@ suite:
 
 1. `TEST_POSTGRES_DSN` env var (`make postgres-up` starts one via
    docker-compose and prints the DSN), or
-2. **skip** — Postgres sub-benchmarks are silently skipped, not failed.
+2. **skip**: Postgres sub-benchmarks are silently skipped, not failed.
 
 `make bench-pg` fails fast if neither path is available; `make bench` and
 the tier targets will just skip the Postgres half.
@@ -81,7 +81,7 @@ BenchmarkTier1_IncludesVsN1/sqlite3/eager-include/limit=100-14  607  1834105 ns/
 For benchmarks that report custom metrics (`b.ReportMetric`), look for
 named columns like `drop_rate`, `delivered`, `dropped`, `response_bytes`.
 
-## Tier 1 — what to look for
+## Tier 1: what to look for
 
 These exist to either back up the README or expose a hole.
 
@@ -107,45 +107,45 @@ workload streaming is meant for (`limit ≥ streamListThreshold =
 exercises streaming at limit=100, which measures the per-row encode/write
 overhead but does not show the bounded-memory advantage. Worth fixing.
 
-## Tier 2 — what to look for
+## Tier 2: what to look for
 
-- **Router lookup** — should be near-flat across N=1..1000 routes
+- **Router lookup**: should be near-flat across N=1..1000 routes
   (tree match, not linear scan). Compare against `http.ServeMux`.
-- **Middleware chain** — measure the cost of `Recovery → RequestID →
+- **Middleware chain**: measure the cost of `Recovery → RequestID →
   Logging → SecurityHeaders → Timeout`. The Logging middleware writes
   stdout; benchmarks that don't redirect it will see I/O overhead.
-- **JSON casing** — every request runs `mapToCamelCase` once
+- **JSON casing**: every request runs `mapToCamelCase` once
   (write paths run `mapToSnakeCase` too). ~26 allocations per row is
   the current baseline; opportunities for buffer reuse exist.
-- **DSL parse** — agents may invoke this per prompt. Should stay well
+- **DSL parse**: agents may invoke this per prompt. Should stay well
   under 100µs for a complex query.
 
-## Tier 3 — what to look for
+## Tier 3: what to look for
 
-- **Event bus fan-out** — synchronous is dominated by handler slice
+- **Event bus fan-out**: synchronous is dominated by handler slice
   copy + handler calls; per-emit allocations should scale linearly with
   N (the snapshot copy).
-- **SSE backpressure** — a bounded subscriber buffer paired with a slow
+- **SSE backpressure**: a bounded subscriber buffer paired with a slow
   consumer should drop the oldest surplus in default mode; the
   `drop_rate` metric records this. `?slow=block` is the opt-in
   stronger-delivery mode and intentionally trades emitter latency for
   delivery.
-- **Cron tick** — scanning N jobs at minute boundaries. ~175µs for N=1000
+- **Cron tick**: scanning N jobs at minute boundaries. ~175µs for N=1000
   baseline; budget for in-process schedulers running many jobs.
 
-## Tier 4 — what to look for
+## Tier 4: what to look for
 
-- **AutoMigrate re-run** — the "safe to run on every boot" claim. Should
+- **AutoMigrate re-run**: the "safe to run on every boot" claim. Should
   stay under ~10ms even at 50 entities. Postgres is much slower than
   SQLite because the live-schema read (one bulk
   `information_schema.columns` query feeding both existence and
   column-add detection) is a network round-trip.
-- **Schema diff** — same shape, but pays for the full information_schema
+- **Schema diff**: same shape, but pays for the full information_schema
   lookup. Acceptable as a one-shot CLI command, not as a hot path.
-- **In-memory search** — confirms O(corpus) scan. 10k docs ≈ 3ms per
+- **In-memory search**: confirms O(corpus) scan. 10k docs ≈ 3ms per
   query is fine for tests/demos; production needs a real backend.
 
-## Tier 5 — TechEmpower-style endpoints
+## Tier 5: TechEmpower-style endpoints
 
 The six canonical comparable workloads. Numbers here can be cross-
 referenced with the published TechEmpower Framework Benchmarks
@@ -157,9 +157,9 @@ Gin/Echo/Fiber/Actix/etc.
 | `Plaintext`         | Return `Hello, World!`. Pure routing + write cost. |
 | `Plaintext_WithDefaults` | Same, through default middleware chain.       |
 | `JSON`              | Encode `{"message":"Hello, World!"}`.              |
-| `SingleQuery`       | `GET /worlds/{id}` — one row by PK.                |
+| `SingleQuery`       | `GET /worlds/{id}`, one row by PK.                 |
 | `MultiQuery`        | Same, N times per request (1/5/10/20).             |
-| `FortunesLike`      | List a small full table — closest API analogue.    |
+| `FortunesLike`      | List a small full table, the closest API analogue. |
 | `Updates`           | GET-modify-PUT N rows (1/5/10/20).                 |
 
 Throughput in req/s = `1e9 / ns_per_op`. Compare with caution: the
@@ -169,7 +169,7 @@ which is faster than the wire. The relative shape (Plaintext > JSON >
 SingleQuery > MultiQuery > Updates) holds; absolute numbers don't
 translate one-to-one.
 
-## Tier 6 — latency percentiles + concurrency
+## Tier 6: latency percentiles + concurrency
 
 `BenchmarkT6_*` benchmarks record per-operation latencies and emit
 `p50_ns`, `p90_ns`, `p99_ns`, `p999_ns`, and `max_ns` via
@@ -181,20 +181,20 @@ where N is the multiplier over `GOMAXPROCS`. So `parallelism=8` on an
 
 What to look for:
 
-- **p99 ÷ p50 ratio** — under load, anything above 3× means significant
+- **p99 ÷ p50 ratio**: under load, anything above 3× means significant
   tail growth. SQLite write-heavy workloads will hit this immediately
   because writes serialise.
-- **List concurrency slope** — read-only list endpoints should scale
+- **List concurrency slope**: read-only list endpoints should scale
   near-linearly on Postgres (no write lock) but stay flat (or get worse)
   on SQLite (single connection).
-- **Mixed RW reads vs writes ratio** — should match the 9:1 mix the
+- **Mixed RW reads vs writes ratio**: should match the 9:1 mix the
   benchmark drives. If reads drastically outnumber that, writes are
   starving on the lock.
 
-## Tier 7 — stdlib baselines (the overhead tax)
+## Tier 7: stdlib baselines (the overhead tax)
 
 Hand-rolled `net/http` + `database/sql` implementations of plaintext,
-JSON, single-query, and filtered list endpoints — paired with the same
+JSON, single-query, and filtered list endpoints, paired with the same
 endpoints expressed through the framework. The delta is what the
 declare-once style actually costs.
 
@@ -211,7 +211,7 @@ What to look for:
   generated CRUD requires a session by default, so `BenchmarkT7_FilteredList_GoFastr`
   and `BenchmarkTier1_IncludesVsN1` build their requests with
   `benchAuthedGet` (helper in `bench_tier1_test.go`), which stamps a
-  user into the request context via `handler.SetUser` — the same shape
+  user into the request context via `handler.SetUser`, the same shape
   production auth middleware produces. Without it the `setupBlogDomain`
   entities (no `OwnerField`/`Access`/`Config.Public`) 401 before the
   List body runs and the bench measures the rejection, not the list.
@@ -225,7 +225,7 @@ What to look for:
   originals remain as thin wrappers so external callers are unaffected.
   See `perf-results.md` for the resulting before/after benchstat.
 
-## Tier 9 — UI runtime: streams, islands, full SSR
+## Tier 9: UI runtime streams, islands, and full SSR
 
 The framework does more than JSON CRUD: it also has an SSR-with-hydration
 runtime, SSE/island plumbing, and a UI host. These benchmarks measure
@@ -233,7 +233,7 @@ those paths.
 
 | Bench | Workload |
 |-------|----------|
-| `StreamingListRealVolume` | Calls `serveStreamingList` directly with 1k / 5k / 10k row limits — bypasses parsePagination's ≤100 cap. The honest streaming-throughput measurement. |
+| `StreamingListRealVolume` | Calls `serveStreamingList` directly with 1k / 5k / 10k row limits, which bypasses parsePagination's ≤100 cap. The honest streaming-throughput measurement. |
 | `StreamingVsBuffered_RealVolume` | Buffered (50 paginated requests × 100 rows = 5000) vs streaming (one request × 5000). Apples-to-apples comparison at real volume. |
 | `SSEEventStream` | Subscribes to `/posts/_events` via the real handler, fires 500 events, reports `events_delivered`, `events_dropped`, `delivery_ratio`, `bytes_received`. |
 | `IslandRPC` | One island RPC swap end-to-end: GET against an island endpoint that renders ~10 row fragments. Measures the canonical "click → fetch → swap" pattern. |
@@ -244,7 +244,7 @@ those paths.
 
 - **Streaming wins over buffered-paginated** at any volume that pays
   network round-trips. The first SQLite smoke run showed 14ms vs 15ms
-  (small win); Postgres showed 12ms vs 46ms — a **3.9× win** because
+  (small win); Postgres showed 12ms vs 46ms, a **3.9× win**, because
   one query beats 50 round-trips.
 - **SSE delivery_ratio** ≪ 1.0 under bursty emit. Default subscribers
   drop oldest events on overflow; this is documented behaviour. A
@@ -253,7 +253,7 @@ those paths.
   This is the response-time floor for "click → see new content."
 - **UIHostPageRender** vs `BenchmarkT7_JSON_GoFastr` (~500ns) tells
   you what SSR + hydration shell adds over a bare framework JSON
-  response — expect 50-100µs at minimum because of the HTML tree
+  response. Expect 50-100µs at minimum because of the HTML tree
   build and runtime script injection.
 
 ### Caveats
@@ -267,8 +267,8 @@ those paths.
 
 ## Resource benchmarks (separate from the Tier 1-9 Go bench suite)
 
-Resource numbers — binary size, peak RAM during `go build`, idle and
-under-load RAM of each running binary — are produced by a separate
+Resource numbers cover binary size, peak RAM during `go build`, and idle
+and under-load RAM of each running binary. They are produced by a separate
 runner under `cmd/bench-resources/` rather than `go test`. They aren't
 expressed as Go benchmarks because the unit of measurement is "one
 fully-built and warmed binary", not "one operation".
@@ -284,7 +284,7 @@ Three bench apps under `benchmarks/apps/<name>/`:
 |-----------|----------------------------------------------------------------------|
 | `minimal` | `NewApp` + one plaintext route. No DB, no entities. Establishes the floor. |
 | `crud`    | One entity, SQLite + auto-migrate + CRUD routes.                     |
-| `full`    | Upper bound — every supported framework feature wired on: three related entities with relations, audit log, cron, MCP, UI host + one screen, file storage, in-memory search backend, RolePolicy + RequirePermission, multi-tenant scope, custom endpoints, plugin, OpenAPI + Swagger UI, lifecycle hooks. |
+| `full`    | Upper bound, every supported framework feature wired on: three related entities with relations, audit log, cron, MCP, UI host + one screen, file storage, in-memory search backend, RolePolicy + RequirePermission, multi-tenant scope, custom endpoints, plugin, OpenAPI + Swagger UI, lifecycle hooks. |
 
 Plus the two cmd binaries (`gofastr`, `kiln`) for build-only comparison.
 
@@ -305,13 +305,13 @@ Output is Markdown to stdout and `dist/bench/resources.md`:
 - **Bin size delta `full` − `crud`** is what every other framework
   feature costs at once: UI host, file storage, search backend, audit,
   cron, MCP, access control, multi-tenant, OpenAPI/Swagger, plugins.
-  About **+0.6 MB** total — they're code paths inside the framework
+  About **+0.6 MB** total. They're code paths inside the framework
   and its sibling packages, not separate binaries' worth of code.
 - **Build peak RAM** is mostly the cgo toolchain. CI machines need to
   budget ~1 GB headroom for the compile step.
 - **Idle vs Loaded RAM** should be roughly equal after a warmup. A
   significant climb under load means GC pressure, retained slices, or
-  goroutine leaks — pair with Tier 8's `HeapAfterLoad`.
+  goroutine leaks. Pair with Tier 8's `HeapAfterLoad`.
 
 ### Dev-server RAM
 
@@ -319,20 +319,20 @@ Output is Markdown to stdout and `dist/bench/resources.md`:
 re-runs it. Its long-running RAM is the same as the running binary
 (see Idle RAM column for `full`), with brief spikes to the build peak
 (~750 MB on cgo builds) during rebuilds. There is no separate
-dev-server overhead worth measuring — it's a thin shell loop around
+dev-server overhead worth measuring. It's a thin shell loop around
 `go build` + `exec`.
 
-## Tier 8 — operational
+## Tier 8: operational
 
-- **`ColdStart_*`** — time from `NewApp` through first request served.
+- **`ColdStart_*`**: time from `NewApp` through first request served.
   Reported as ns/op; with `benchtime=1x` that's effectively the cold-
   start latency for a single binary instance.
-- **`HeapAfterLoad`** — drives 5000 list requests, then reads
+- **`HeapAfterLoad`**: drives 5000 list requests, then reads
   `runtime.MemStats`. Reports `heap_alloc_bytes` (live heap),
   `heap_objects`, `mallocs`, `frees`, `gc_pause_total_ms`, `gc_cycles`.
   A regression in live heap means we're retaining state across
   requests; a regression in pause time means GC pressure grew.
-- **`GoroutinesAfterLoad`** — sanity check for goroutine leaks.
+- **`GoroutinesAfterLoad`**: sanity check for goroutine leaks.
   `gor_delta` should always be 0 (or very small).
 
 The Tier 8 benchmarks deliberately use `-benchtime=1x` because they're
@@ -378,7 +378,7 @@ geometric mean + p-value so noise doesn't show up as a regression.
 ## Common mistakes
 
 - **Not skipping Postgres when it's unavailable.** Use
-  `forEachBenchDialect` — it calls `b.Skip` correctly. Don't fail.
+  `forEachBenchDialect`, which calls `b.Skip` correctly. Don't fail.
 - **Allocating inside the timed loop.** Build payloads before
   `b.ResetTimer()`.
 - **Benchmarking through stdout-writing middleware.** Some default
@@ -389,7 +389,7 @@ geometric mean + p-value so noise doesn't show up as a regression.
 
 ## Improvement opportunities
 
-The prioritized list of optimizations these benchmarks surfaced —
-together with the specific bench that exposed each one and a verify
-step — the verification results live in [`perf-results.md`](perf-results.md).
+The prioritized list of optimizations these benchmarks surfaced,
+together with the specific bench that exposed each one, a verify
+step, and the verification results, lives in [`perf-results.md`](perf-results.md).
 Update it whenever a new hotspot appears or a fix lands.

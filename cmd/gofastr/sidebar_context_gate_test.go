@@ -14,7 +14,7 @@ import (
 // role-gated entries reflect the live session. That fix has been reverted once
 // already in review, and a mutation audit showed the whole cmd/gofastr suite
 // stayed green when the emission was reverted to a static
-// `ui.Sidebar(cfg)` — the regression it repairs (admin-only nav entries
+// `ui.Sidebar(cfg)`. The regression it repairs (admin-only nav entries
 // rendered to anonymous visitors, and "Sign out" offered to someone with no
 // session) shipped with no guard at all.
 //
@@ -112,7 +112,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	cmd.Dir = work
 	cmd.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(work, "gate.db"))
 	// syncBuffer, not bytes.Buffer: os/exec copies the child's output from its
-	// own goroutines until Wait returns, and Wait runs in t.Cleanup — so every
+	// own goroutines until Wait returns, and Wait runs in t.Cleanup, so every
 	// read of this below races the copier. The package already has the
 	// mutex-guarded writer for exactly this.
 	var output syncBuffer
@@ -146,7 +146,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 
 	// Anonymous: no session, so no Sign out, and a role-gated entry must not
 	// appear. (Role filtering also survives a static sidebar, because the
-	// layout renders the slot through SafeRenderCtx — so this pair documents
+	// layout renders the slot through SafeRenderCtx, so this pair documents
 	// the contract but does not, on its own, distinguish the two shapes.)
 	if strings.Contains(html, "Sign out") {
 		t.Errorf("anonymous visitor is offered Sign out:\n%s", snippetAround(html, "Sign out"))
@@ -158,7 +158,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 		t.Fatalf("the sidebar rendered no ordinary nav entry:\n%s", html)
 	}
 
-	// This blueprint enables auth but routes no login screen — the shape six
+	// This blueprint enables auth but routes no login screen, the shape six
 	// of the seven shipped blueprints have. The sidebar is the app shell's
 	// only auth affordance, so offering "Sign in" here would send a
 	// first-time visitor to a route nothing serves. Nothing else in this file
@@ -170,7 +170,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	}
 
 	// THE DISCRIMINATING ASSERTION. A sidebar built once at startup resolves
-	// its footer from a background context — anonymous, forever. Only a
+	// its footer from a background context. Anonymous, forever. Only a
 	// per-request sidebar can offer Sign out to someone who is signed in, so
 	// this is the assertion that fails if the emission reverts to
 	// `ui.Sidebar(sidebarConfig(context.Background()))`.

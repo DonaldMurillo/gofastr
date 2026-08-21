@@ -23,7 +23,7 @@ import (
 //
 // Audit rows are written via lifecycle hooks: AfterCreate, AfterUpdate, and
 // AfterDelete. The hook fires inside the same transaction as the operation
-// it audits, so partial writes are impossible — a rollback drops the audit
+// it audits, so partial writes are impossible, a rollback drops the audit
 // row along with the change.
 type AuditConfig struct {
 	// Table is the destination table for audit rows. Defaults to "audit_log".
@@ -39,11 +39,11 @@ type AuditConfig struct {
 
 	// Redact, when non-nil, is called with the entity name and a
 	// defensive copy of the row about to be serialised into the
-	// `diff` column. Return either the modified input (safe to mutate
-	// — the framework already copied it) or a fresh map. Either works.
+	// `diff` column. Return either the modified input (safe to mutate:
+	// the framework already copied it) or a fresh map. Either works.
 	//
 	// When nil, the framework applies a default sensitive-field scrub
-	// (see defaultSensitiveSuffixes) — fields whose names look like
+	// (see defaultSensitiveSuffixes), fields whose names look like
 	// passwords, tokens, secrets, or keys are dropped from the diff so
 	// a host that forgot to configure Redact doesn't accidentally
 	// stream credentials into the audit log.
@@ -53,7 +53,7 @@ type AuditConfig struct {
 	// returned map's "id" value (if any) becomes the audit row's
 	// record_id, letting hosts pseudonymise the natural key on delete
 	// too. If the callback returns a map with no `id` key the framework
-	// falls back to the original — silently erasing the record_id is
+	// falls back to the original, silently erasing the record_id is
 	// an audit-forensics erasure primitive we don't want to expose.
 	//
 	// Returning nil is equivalent to returning an empty map. A panic
@@ -143,7 +143,7 @@ func auditColumnExists(db *sql.DB, table, col string) bool {
 // (or the subset named in cfg.Entities). Call AFTER Entity registrations.
 //
 // Returns the app for fluent chaining. Panics if the audit table cannot be
-// created — this is initialization-time work so loud failure is preferable
+// created, this is initialization-time work so loud failure is preferable
 // to silent log loss.
 func (a *App) WithAuditLog(cfg AuditConfig) *App {
 	if a.DB == nil {
@@ -198,7 +198,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			// describes: a one-key map the host can transform.
 			//
 			// If the callback omits the "id" key entirely, fall back
-			// to the original — silently erasing the natural key
+			// to the original, silently erasing the natural key
 			// gives a malformed redact callback an audit-forensics
 			// erasure primitive (see
 			// TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID).
@@ -230,7 +230,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 
 // actor returns the resolved actor id, recovering from any panic in the
 // host-provided callback (audit must never crash the request it's
-// auditing — losing the actor is preferable to aborting the user write
+// auditing, losing the actor is preferable to aborting the user write
 // or to losing audit coverage entirely). The result is passed through
 // sanitizeAuditField to defuse log-injection via control characters.
 func (c AuditConfig) actor(ctx context.Context) string {
@@ -276,7 +276,7 @@ func sanitizeAuditField(s string) string {
 // scrubs from the audit `diff` column when the host did NOT set a
 // custom Redact callback. Match is case-insensitive: `password`,
 // `Password`, `password_hash`, `api_key`, `oauth_token`, and
-// `recovery_secret` all qualify. The list is intentionally narrow —
+// `recovery_secret` all qualify. The list is intentionally narrow:
 // any host with broader scrubbing needs should provide a Redact
 // callback.
 var defaultSensitiveSuffixes = []string{
@@ -330,7 +330,7 @@ func isDefaultSensitiveField(name string) bool {
 
 // auditMeta extracts client IP and User-Agent from the live request
 // (if CRUD attached one to ctx) so audit rows record where a write
-// came from. Returns nil when there's no request — async /
+// came from. Returns nil when there's no request, async /
 // system-driven hooks omit the meta block rather than emitting empty
 // fields.
 func auditMeta(ctx context.Context) map[string]any {
@@ -368,7 +368,7 @@ func clientIP(r *http.Request) string {
 // buildAuditCreateDiff renders `{"new": redacted, "meta": {...}}`.
 // Falls back to the unredacted row if the redacted form contains
 // something json.Marshal can't represent (functions, channels,
-// circular references) — audit evidence must not vanish when a host
+// circular references), audit evidence must not vanish when a host
 // returns a malformed redact output, because that turns the redact
 // callback into an audit-erasure primitive.
 func buildAuditCreateDiff(redacted, original map[string]any, meta map[string]any) []byte {
@@ -389,7 +389,7 @@ func buildAuditCreateDiff(redacted, original map[string]any, meta map[string]any
 // buildAuditUpdateDiff renders `{"old": redactedOld, "new":
 // redactedNew, "meta": {...}}`. Same evidence-preserving fallback
 // chain as buildAuditCreateDiff. The "old" block is omitted (rather
-// than set to null) when no pre-image was captured — keeps the
+// than set to null) when no pre-image was captured, keeps the
 // column shape predictable for older callers that grep for `"old"`.
 func buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, originalNew map[string]any, meta map[string]any) []byte {
 	payload := map[string]any{"new": redactedNew}
@@ -421,7 +421,7 @@ func buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, originalNew map
 
 // buildAuditDeleteDiff renders `{"old": redactedOld, "meta": {...}}`
 // for the deleted record snapshot. Returns nil when neither a
-// pre-image nor any meta was captured — preserves the legacy
+// pre-image nor any meta was captured, preserves the legacy
 // behaviour where async delete hooks emit a NULL diff column.
 func buildAuditDeleteDiff(redactedOld, originalOld map[string]any, meta map[string]any) []byte {
 	if redactedOld == nil && meta == nil {
@@ -450,11 +450,11 @@ func buildAuditDeleteDiff(redactedOld, originalOld map[string]any, meta map[stri
 // sensitive-field scrub (see defaultSensitiveSuffixes). Always
 // defensive-copies the row before handing it to a host callback so
 // a callback that mutates its input can't corrupt the live response
-// payload — the docstring warns against mutation but the runtime
+// payload, the docstring warns against mutation but the runtime
 // enforces it.
 //
 // When Redact returns nil, substitutes an empty map so the audit
-// diff JSON is `{"new":{}}` rather than `{"new":null}` — matching
+// diff JSON is `{"new":{}}` rather than `{"new":null}`, matching
 // the "nil equivalent to empty map" contract on
 // AuditConfig.Redact.
 //
@@ -518,7 +518,7 @@ func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditO
 	if diff != nil {
 		diffArg = string(diff)
 	}
-	// Prefer the active CRUD transaction when present — keeps the audit row
+	// Prefer the active CRUD transaction when present, keeps the audit row
 	// atomic with the change it describes. Outside a tx (e.g. async hooks)
 	// we fall back to the plain pool.
 	var exec interface {

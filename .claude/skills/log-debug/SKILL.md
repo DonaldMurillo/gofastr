@@ -9,7 +9,7 @@ The `battery/log` plugin registers JSON-RPC tools on the App's MCP
 server: three read-only (`log_recent`, `log_filter`, `log_metrics`)
 unconditionally, plus `log_set_level` only when
 `log.Config.AllowMCPMutation` is true. Use these to investigate a
-running app — agent live-debugging, not log greps from the user.
+running app: agent live-debugging, not log greps from the user.
 
 ## Prerequisites
 
@@ -18,13 +18,13 @@ The user's app must be:
    apps and `examples/site` both do).
 2. In the dev loop (`gofastr dev` sets `GOFASTR_DEV`, which
    auto-enables the tools + the `/mcp` mount; opt-out
-   `GOFASTR_DEV_MCP=0`) — OR built with `log.Config{EnableMCP: true}`
+   `GOFASTR_DEV_MCP=0`); OR built with `log.Config{EnableMCP: true}`
    and an `/mcp` mount (`framework.WithMCP()`) for non-dev processes.
 
 Quickest way to spin up a known-good target in this repo:
 
 ```bash
-./scripts/dev-watch.sh   # examples/site on :8082, auto-rebuilds — tools auto-enable
+./scripts/dev-watch.sh   # examples/site on :8082, auto-rebuilds; tools auto-enable
 # or
 GOFASTR_DEV=1 go run ./examples/site   # :8083; plain go-run without the env has NO log tools
 ```
@@ -37,14 +37,14 @@ Then curl `http://localhost:8082/mcp` (or whatever port your app uses).
 |-----------------|--------------------------------------------------------------------------------------|
 | `log_recent`    | Last N entries in chrono order. Optional `limit` (default 50) + `level` filter.       |
 | `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level`. `historical=true` tails the file sink for entries evicted from the ring. |
-| `log_metrics`   | Counter snapshot — `post_stop_drops`, `sink_write_failures`, `webhook_dropped`, `webhook_gave_up`. |
+| `log_metrics`   | Counter snapshot: `post_stop_drops`, `sink_write_failures`, `webhook_dropped`, `webhook_gave_up`. |
 | `log_set_level` | Flip the runtime log level (DEBUG/INFO/WARN/ERROR). Returns the previous value. **Only registered when `log.Config.AllowMCPMutation` is `true`.** |
 
 ## How to invoke
 
 Use the Bash tool to curl the MCP endpoint with a JSON-RPC payload.
 The MCP URL is `http://localhost:<PORT>/mcp` (ask the user if you
-don't know the port — common defaults are 8082 (dev-watch) / 8083
+don't know the port; common defaults are 8082 (dev-watch) / 8083
 (plain `go run ./examples/site`); prefer the URL the launch output prints).
 
 ### Last 5 access entries
@@ -101,7 +101,7 @@ If the agent needs verbose output for an investigation:
 
 ```bash
 # Flip to DEBUG. The response returns {.level:"DEBUG", .previous_level:"<X>"}
-# — save previous_level so you can restore what was actually there.
+# save previous_level so you can restore what was actually there.
 RESP=$(curl -s http://localhost:8082/mcp \
   -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
@@ -111,7 +111,7 @@ PREV=$(echo "$RESP" | jq -r '.result.content[0].text' | jq -r '.previous_level')
 
 # ...reproduce the bug, then call log_recent / log_filter...
 
-# Restore the captured level (always restore — leaving DEBUG on in prod is rude;
+# Restore the captured level (always restore; leaving DEBUG on in prod is rude;
 # the starting level comes from log.Config.Level, NOT guaranteed INFO)
 curl -s http://localhost:8082/mcp \
   -X POST -H 'Content-Type: application/json' \
@@ -133,7 +133,7 @@ curl -s http://localhost:8082/mcp \
 ```
 
 Non-zero `sink_write_failures` or `post_stop_drops` means the
-plugin lost entries — anything queried might be incomplete.
+plugin lost entries; anything queried might be incomplete.
 
 ## Anti-patterns
 
@@ -142,10 +142,10 @@ plugin lost entries — anything queried might be incomplete.
   when the ring window's been exhausted.
 - **Don't leave DEBUG on after an investigation.** Other observers
   see the firehose. Restore the `previous_level` the DEBUG call
-  returned — not a hard-coded INFO (the app may start at WARN/ERROR).
+  returned, not a hard-coded INFO (the app may start at WARN/ERROR).
 - **Don't treat `remote` as authoritative.** Unless the app set
   `Config.TrustForwardedFor`, `remote` is just `r.RemoteAddr`;
-  `forwarded_for` is the raw client header — attacker-controlled.
+  `forwarded_for` is the raw client header, attacker-controlled.
 - **Don't filter for what isn't structured.** The plugin's
   `http.access` entries carry `method`/`path`/`status`/`bytes`/
   `dur_ms`/`request_id`/`remote`/`forwarded_for`. Anything else

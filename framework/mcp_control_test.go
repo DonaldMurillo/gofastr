@@ -19,7 +19,7 @@ import (
 //
 // The explicit opt-in gates its tools on an authenticated caller
 // (TestControlToolsGatedInProduction), so these calls carry a user on
-// the context — as a real /mcp request would, via the session
+// the context, as a real /mcp request would, via the session
 // middleware on that route.
 func TestMCPControlTogglesModules(t *testing.T) {
 	app := NewApp(WithMCPControl())
@@ -108,7 +108,7 @@ func TestDevMCPOffInProductionEnv(t *testing.T) {
 }
 
 // Older scaffolds hand-mount POST /mcp. The dev-implied auto-mount must
-// yield to it — running an existing app under `gofastr dev` can never
+// yield to it, running an existing app under `gofastr dev` can never
 // become a route-conflict panic.
 func TestDevImpliedMountYieldsToManualMCPRoute(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "1")
@@ -134,7 +134,7 @@ func TestDevImpliedMountYieldsToManualMCPRoute(t *testing.T) {
 }
 
 // In the dev loop, entity DATA tools are implied too: every
-// CRUD-enabled entity serves its MCP tools without `MCP: true` — the
+// CRUD-enabled entity serves its MCP tools without `MCP: true`, the
 // local agent can read and write app data. Outside dev the explicit
 // flag stays the only path.
 func TestDevLoopImpliesEntityMCPTools(t *testing.T) {
@@ -152,7 +152,7 @@ func TestDevLoopImpliesEntityMCPTools(t *testing.T) {
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 		},
-		// No MCP: true — dev implies it for CRUD-enabled entities.
+		// No MCP: true, dev implies it for CRUD-enabled entities.
 	})
 	got := map[string]bool{}
 	for _, tool := range app.MCP.ListTools() {

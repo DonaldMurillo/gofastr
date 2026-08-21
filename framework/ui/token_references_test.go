@@ -13,7 +13,7 @@ import (
 // Every var(--color-X) a component references must resolve: either a
 // canonical ColorSet token (emitted per-theme) or a derived alias from
 // style's aliasTokenCSS block. A reference to an undefined token is NOT a
-// build error — the hardcoded fallback silently applies, and those fallbacks
+// build error. The hardcoded fallback silently applies, and those fallbacks
 // are tuned for light themes, so dark themes render light-on-light hover
 // states and similar contrast failures (found live: ui-copy-btn:hover used
 // --color-muted, which never existed, giving a near-white button with light
@@ -21,7 +21,7 @@ import (
 func TestEveryColorTokenReferenceResolves(t *testing.T) {
 	defined := map[string]bool{}
 
-	// Canonical tokens: walk the default theme's emitted :root block —
+	// Canonical tokens: walk the default theme's emitted :root block, which
 	// includes every ColorSet field plus the alias block.
 	theme := style.DefaultTheme()
 	re := regexp.MustCompile(`--color-[a-z0-9-]+`)

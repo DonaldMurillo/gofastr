@@ -142,7 +142,7 @@ func (m routerMounter) MountWidget(def *widget.Definition) { widget.Mount(m.r, d
 // core-ui/style emits `--color-<name>: <value>;` (tokens.go darkSchemeCSS,
 // CSSCustomPropertiesOf) with NO escaping on either side, and the result is
 // served as the app stylesheet. An unfiltered value closes its declaration
-// and appends arbitrary rules — which is a privilege escalation relative to
+// and appends arbitrary rules, which is a privilege escalation relative to
 // the node renderer, whose whole job is to strip `class` and inline styles
 // from this same untrusted IR. Escaping belongs upstream in core-ui/style;
 // this is the ingestion-side guard for the one caller that feeds it

@@ -37,7 +37,7 @@ type RepeaterConfig struct {
 
 	// Ctx carries the per-request context used to resolve i18n strings
 	// (AddLabel, RemoveLabel defaults). When nil, context.Background() is
-	// used and English fallbacks are returned — preserving today's behaviour.
+	// used and English fallbacks are returned, preserving today's behaviour.
 	Ctx context.Context
 }
 

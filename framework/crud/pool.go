@@ -40,7 +40,7 @@ var ptrSlicePool = sync.Pool{
 // anySlicePool caches the per-row []any scratch buffer handed to rows.Scan
 // (the slice whose element addresses become sql.RawBytes / string / int64
 // destinations). Without this pool the previous code allocated a fresh
-// []any per row — at 50 rows that's 50 small allocations that live just
+// []any per row, at 50 rows that's 50 small allocations that live just
 // long enough to drive GC. The slice is borrowed per row and returned
 // after the row map is built, mirroring borrowPtrSlice/returnPtrSlice.
 var anySlicePool = sync.Pool{

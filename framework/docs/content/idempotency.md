@@ -7,7 +7,7 @@ back instead of a duplicated side effect.
 
 ## Wiring
 
-The simplest form is `framework.WithIdempotency` — the middleware
+The simplest form is `framework.WithIdempotency`. The middleware
 slots into the default chain between `RequestID` and
 `SecurityHeaders`:
 
@@ -21,7 +21,7 @@ import "github.com/DonaldMurillo/gofastr/battery/auth"
 ```go
 app := framework.NewApp(framework.WithIdempotency(middleware.IdempotencyConfig{
     Principal: func(r *http.Request) string {
-        // Extract the authenticated subject — user-id, tenant-id, or both.
+        // Extract the authenticated subject: user-id, tenant-id, or both.
         if u, ok := auth.SessionFrom(r.Context()); ok {
             return u.GetID()
         }
@@ -53,15 +53,15 @@ app.Use(router.Middleware(middleware.Idempotency(middleware.IdempotencyConfig{
 })))
 ```
 
-`Required: true` makes the header mandatory on unsafe writes — useful
+`Required: true` makes the header mandatory on unsafe writes, useful
 on payment / order endpoints.
 
-### Configure `Principal` — it's the cross-tenant defense
+### Configure `Principal`, the cross-tenant defense
 
 `Idempotency-Key` is client-controlled and frequently collides
 (`"1"`, `"retry-1"`). Without principal namespacing, two authenticated
 users posting to `/orders` with the same key see each other's cached
-response — including any session cookie or auth header the handler
+response, including any session cookie or auth header the handler
 set on the original request.
 
 `Principal` returns the authenticated subject id from the request; the
@@ -72,7 +72,7 @@ separate caches. Wire it from your auth middleware:
 ```go
 Principal: func(r *http.Request) string {
     // handler.GetUser returns the value your auth middleware stored,
-    // as `any` — assert it to whatever your app puts there.
+    // as `any`. Assert it to whatever your app puts there.
     if u, ok := handler.GetUser(r.Context()); ok {
         if user, ok := u.(auth.User); ok && user.GetID() != "" {
             return user.GetID()
@@ -84,8 +84,8 @@ Principal: func(r *http.Request) string {
 ```
 
 `handler` is `core/handler` and `framework.GetTenantID` re-exports
-`tenant.GetTenantID`. There is no exported "current user id" accessor —
-the user value is whatever your middleware stored, so the assertion is
+`tenant.GetTenantID`. There is no exported "current user id" accessor.
+The user value is whatever your middleware stored, so the assertion is
 yours to write.
 
 When `Principal` is unset, the middleware disables replay caching
@@ -124,14 +124,14 @@ yourself before returning.
 | Duplicate key while first is still running        | `409 Conflict` + `Retry-After: 1`              |
 | First request returned non-2xx                    | Claim released; retry runs the handler again   |
 | Body larger than `MaxBodyBytes`                   | Pass through with `Idempotent-Bypass: body-too-large`; handler still sees full body |
-| Store backend failure (FailOpen=false, default)   | `503 Service Unavailable` — fail closed         |
-| Store backend failure (FailOpen=true)             | Pass through — fail open (legacy availability) |
+| Store backend failure (FailOpen=false, default)   | `503 Service Unavailable`, fail closed         |
+| Store backend failure (FailOpen=true)             | Pass through, fail open (legacy availability) |
 
 The cache is keyed by `(principal, Idempotency-Key)`. The
 **fingerprint** that guards against accidental key reuse is
 `sha256(principal ∥ method ∥ path ∥ raw query ∥ Content-Type ∥ body)`.
-Other headers (auth tokens, request IDs) are intentionally excluded
-— they aren't part of the client's intent.
+Other headers (auth tokens, request IDs) are intentionally excluded.
+They aren't part of the client's intent.
 
 Only `2xx` responses are cached. `4xx` / `5xx` release the claim so
 the client can retry against a recovered server.
@@ -151,7 +151,7 @@ type IdempotencyStore interface {
 that `Begin` created under that exact fingerprint. An in-flight claim can expire
 while its handler is still running and be re-claimed by a *different* caller
 under a *different* fingerprint; if `Finish` wrote by key alone, the first
-caller's late `Finish` would staple its response onto the second caller's row —
+caller's late `Finish` would staple its response onto the second caller's row,
 and because `Begin` never rewrites the fingerprint column, the second caller's
 retry would match the fingerprint and be served the **first caller's body**.
 That is a cross-user disclosure whenever `Principal` returns a user/tenant id,
@@ -161,14 +161,14 @@ both scope their `UPDATE`/`DELETE` by `key AND fingerprint`.
 
 Two stores are bundled:
 
-- `NewMemoryIdempotencyStore(ttl)` — single-process map.
-- `NewSQLIdempotencyStore(db, opts...)` — SQL-backed (sqlite + postgres),
+- `NewMemoryIdempotencyStore(ttl)`: single-process map.
+- `NewSQLIdempotencyStore(db, opts...)`: SQL-backed (sqlite + postgres),
   creates `idempotency_keys` on first use. Options:
-  - `WithSQLIdempotencyTable(name)` — override the default table name.
-  - `WithSQLIdempotencyTTL(d)` — override the 24h cached-response TTL.
-  - `WithSQLIdempotencyInFlightTTL(d)` — override the 30s in-flight
+  - `WithSQLIdempotencyTable(name)`: override the default table name.
+  - `WithSQLIdempotencyTTL(d)`: override the 24h cached-response TTL.
+  - `WithSQLIdempotencyInFlightTTL(d)`: override the 30s in-flight
     claim TTL. Set above your worst-case handler latency.
-  - `WithSQLIdempotencyDialect("postgres"|"sqlite")` — pin the dialect
+  - `WithSQLIdempotencyDialect("postgres"|"sqlite")`: pin the dialect
     instead of auto-detecting.
 
 The SQL store uses `INSERT … ON CONFLICT DO NOTHING` to claim rows
@@ -178,7 +178,7 @@ either bypass the middleware (legacy) or block legitimate retries
 behind a 503 (current default).
 
 For clustered deployments without a database, drop a Redis adapter
-behind the same interface — only `Begin` and `Finish` need
+behind the same interface. Only `Begin` and `Finish` need
 implementing. `Finish` receives the fingerprint the claim was created
 with; a custom store MUST scope its write and its release to the row
 matching that fingerprint (see the note above), or a late `Finish` from
@@ -186,15 +186,15 @@ an expired claim can overwrite another principal's row.
 
 `Begin` returns one of:
 
-- `(replay, true, nil)` — replay cached response, skip handler.
-- `(nil, false, nil)` — fresh claim; caller proceeds and must `Finish`.
-- `(nil, false, ErrFingerprintMismatch)` — same key, different request.
-- `(nil, false, ErrInFlight)` — concurrent claim still running.
-- `(nil, false, otherErr)` — backend failure; middleware fails closed
+- `(replay, true, nil)`: replay cached response, skip handler.
+- `(nil, false, nil)`: fresh claim; caller proceeds and must `Finish`.
+- `(nil, false, ErrFingerprintMismatch)`: same key, different request.
+- `(nil, false, ErrInFlight)`: concurrent claim still running.
+- `(nil, false, otherErr)`: backend failure; middleware fails closed
   by default (503) and falls through to the handler only when
   `FailOpen: true` is set.
 
-`Finish(ctx, key, fingerprint, nil)` releases the claim without caching —
+`Finish(ctx, key, fingerprint, nil)` releases the claim without caching,
 used on non-success responses.
 
 `Finish` is invoked with a fresh `context.WithTimeout(context.Background(),
@@ -206,14 +206,14 @@ next reap cycle.
 
 - **Don't forget `Principal`.** Without it the middleware disables
   replay caching entirely (a pass-through that logs a warning) rather
-  than cache into a namespace shared across callers — so you silently
-  lose duplicate-suppression, you don't leak cross-request.
+  than cache into a namespace shared across callers. You silently
+  lose duplicate-suppression, but you don't leak cross-request.
 - **Don't ignore the fingerprint in a custom `Finish`.** `Finish` is
   fingerprint-bound for a reason: a claim can expire mid-handler and be
   re-claimed by another principal, and a `Finish` that writes by key alone
   then overwrites that principal's row and serves the first caller's body
   on retry. Scope the write (`UPDATE … WHERE key AND fingerprint`) and the
-  release (`DELETE … WHERE key AND fingerprint`) — the bundled stores do.
+  release (`DELETE … WHERE key AND fingerprint`), as the bundled stores do.
 - **Don't put state-mutating side effects in middleware that runs
   before `Idempotency`.** The cached response only covers downstream
   handlers; anything that happened earlier in the chain runs every
@@ -231,7 +231,7 @@ next reap cycle.
 - **Don't expect cached headers to include request-scoped values.**
   Only headers the handler itself writes are cached, and the
   always-stripped identity headers (Set-Cookie, Authorization, …)
-  never enter the cache at all — request-id, date, security headers,
+  never enter the cache at all. Request-id, date, security headers,
   and other middleware-set values come from the *replay* request's
   chain, not the original.
 - **Handlers slower than 30 seconds may race with retries.** The

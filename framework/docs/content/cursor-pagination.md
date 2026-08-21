@@ -19,7 +19,7 @@ If both are sent, `cursor` wins.
 ## Opting in
 
 ```bash
-# First page — send empty cursor to choose cursor mode:
+# First page: send empty cursor to choose cursor mode:
 curl 'http://localhost:8080/posts?cursor=&limit=20'
 # → {"data":[…], "cursor":"<opaque>", "hasMore":true}
 
@@ -36,8 +36,8 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 - `MaxPageSize = 100` (`limit` is clamped silently)
 - `Pagination.MaxListLimit` caps the cursor path too: a `limit` above
   the entity's cap is clamped to it, same as the offset and streaming
-  list paths. (An oversized `limit` never falls back to the default —
-  it clamps.)
+  list paths. (An oversized `limit` is clamped, never reset to the
+  default.)
 - `limit < 1` falls back to `DefaultPageSize`
 - `direction` defaults to `"forward"`; only `"forward"` and
   `"backward"` are accepted.
@@ -70,7 +70,7 @@ unique tiebreak, two rows with identical sort keys break paging.
 ## Wire format
 
 The cursor is opaque base64 JSON. Clients must not decode or modify
-it — only echo it back on the next request. The exact encoding
+it, only echo it back on the next request. The exact encoding
 (single-field vs multi-field) is chosen by the server based on the
 entity's `CursorField` / `CursorFields` config.
 
@@ -82,16 +82,16 @@ entity's `CursorField` / `CursorFields` config.
   the ORDER BY to match the cursor key. Configure cursor fields
   instead.
 - **No total count.** `CursorPage.Total` is reserved but not
-  populated — cursor mode's point is avoiding the table scan a count
+  populated. Cursor mode's point is avoiding the table scan a count
   requires. Use offset mode if you need a total.
 - **Backward paging starts from `hasMore`'s end.** Backward responses
   use `<` instead of `>` and reverse the ORDER BY direction.
 
 ## When to use which mode
 
-- **Offset** — for admin tables with stable data, "page 5 of 23", or
+- **Offset**: for admin tables with stable data, "page 5 of 23", or
   any UI that exposes the page number to the user.
-- **Cursor** — for infinite-scroll feeds, real-time-ish lists, or
+- **Cursor**: for infinite-scroll feeds, real-time-ish lists, or
   anything where the source data churns while users page.
 
 ## Common mistakes

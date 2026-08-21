@@ -21,7 +21,7 @@ func strictDecode(raw json.RawMessage, dst any) error {
 // componentDecoders maps each closed-enum component to a typed prop
 // decoder. Every entry here corresponds to one Component constant. The
 // validator looks up a decoder by component name and rejects any name
-// not present — that is the closed enum check.
+// not present, that is the closed enum check.
 //
 // To add a component (rare; design §9 lists the v1 set): add the
 // Component constant, define a prop struct that implements Props, add

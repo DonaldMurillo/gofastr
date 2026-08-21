@@ -11,28 +11,28 @@ import (
 // ─── NetworkRetryBanner ─────────────────────────────────────────────
 //
 // Persistent banner that auto-shows when network connectivity looks
-// degraded — either the SSE stream has gone silent for too long or
+// degraded: either the SSE stream has gone silent for too long or
 // the app has reported a consecutive run of RPC failures. The banner
 // hides when (a) the Retry button's health-check returns 2xx, or
 // (b) app code explicitly calls
 // `window.__gofastr.networkStatus.reportRecovery()`. The runtime does
 // NOT wrap `window.fetch`, so unrelated successful requests do not
-// auto-dismiss the banner — apps wire reportFailure / reportRecovery
+// auto-dismiss the banner: apps wire reportFailure / reportRecovery
 // into their RPC error handlers themselves.
 //
 // Place once near the top of the page chrome (above the main content,
 // inside the persistent shell so SPA navigation doesn't remove it).
-// The banner is hidden by default — the runtime un-hides it when
+// The banner is hidden by default: the runtime un-hides it when
 // thresholds trip.
 //
 // Public runtime API (window.__gofastr.networkStatus):
 //
-//	reportFailure()  — call from any RPC failure handler. After
+//	reportFailure():   call from any RPC failure handler. After
 //	                    FailureThreshold consecutive calls without an
 //	                    intervening reportRecovery(), the banner shows.
-//	reportRecovery() — call on any successful RPC. Resets the counter
+//	reportRecovery():  call on any successful RPC. Resets the counter
 //	                    and hides the banner.
-//	checkHealth()    — manually fire the health-check ping (the same
+//	checkHealth():     manually fire the health-check ping (the same
 //	                    one the Retry button triggers).
 
 // NetworkRetryBannerConfig configures the banner.
@@ -49,7 +49,7 @@ type NetworkRetryBannerConfig struct {
 	FailureThreshold int
 
 	// SSESilenceMs triggers the banner if no SSE event arrives for
-	// this many milliseconds. Default 0 (disabled — opt-in). When set,
+	// this many milliseconds. Default 0 (disabled, opt-in). When set,
 	// the runtime polls window.__gofastr.sseStatus.lastEventAt (kept
 	// current by the SSE module on every frame) and shows the banner
 	// after this much silence; on SSE reconnect a gofastr:sse-status

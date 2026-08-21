@@ -1,5 +1,5 @@
 // =============================================================================
-// examples/site — the GoFastr product site AND the canonical feature gallery.
+// examples/site, the GoFastr product site AND the canonical feature gallery.
 // The single example app: the product/marketing pages, the docs, and a
 // one-page-per-primitive component showcase plus SEO / wizard / print demos.
 //
@@ -38,7 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
-// appIconPNG generates the site's app-icon source at startup — a diagonal
+// appIconPNG generates the site's app-icon source at startup, a diagonal
 // gradient in the site's single amber accent (hex approximations of the
 // oklch tokens in theme.go). uihost.WithAppIcon derives /favicon.ico, the
 // sized PNGs under /__gofastr/icons/, and the head links from this one
@@ -59,7 +59,7 @@ func main() {
 	fwApp := setupServer()
 
 	// `site --export <dir>` renders the whole site to static HTML + assets
-	// and exits — the native replacement for the wget mirror pages.yml used
+	// and exits, the native replacement for the wget mirror pages.yml used
 	// to ship. Declaration-driven (no crawling) and dumps the split runtime
 	// modules the crawl broke. See framework.App.ExportStatic.
 	if dir := exportDir(os.Args[1:]); dir != "" {
@@ -77,7 +77,7 @@ func main() {
 		addr = ":" + p
 	}
 	fmt.Println("━─────────────────────────────────────────────")
-	fmt.Println("  GoFastr — product site (v2)")
+	fmt.Println("  GoFastr product site (v2)")
 	fmt.Println("  http://localhost" + addr)
 	fmt.Println("━─────────────────────────────────────────────")
 	if err := fwApp.Start(addr); err != nil {
@@ -123,7 +123,7 @@ func exportBase(args []string) string {
 var siteIslands *island.Manager
 
 // setupServer wires the whole site and returns the framework.App without
-// binding a port — main() calls Start, tests drive app.Router() directly so
+// binding a port, main() calls Start, tests drive app.Router() directly so
 // the site is testable end-to-end.
 func setupServer() *framework.App {
 	site := app.NewApp("GoFastr")
@@ -131,7 +131,7 @@ func setupServer() *framework.App {
 	t := createTheme()
 	site.WithTheme(t)
 
-	// CommandPalette — the global ⌘K palette. We only need the widget
+	// CommandPalette, the global ⌘K palette. We only need the widget
 	// definition; the header's own search button opens it and binds the
 	// shortcut, so the returned trigger is discarded.
 	_, paletteBuilder := ui.CommandPalette(ui.CommandPaletteConfig{
@@ -155,7 +155,7 @@ func setupServer() *framework.App {
 	// robots.txt advertises explicit AI-crawler rules.
 	allowAIBots := true
 	// markdownNeg turns on Accept: text/markdown content negotiation (paired
-	// with WithPublicLLMMD above) — lights up the scanner's Markdown check.
+	// with WithPublicLLMMD above), lights up the scanner's Markdown check.
 	markdownNeg := true
 
 	host := uihost.New(site,
@@ -167,13 +167,13 @@ func setupServer() *framework.App {
 		// ContentNegotiation field below.
 		uihost.WithPublicLLMMD(),
 		uihost.WithAppIcon(appIconPNG()),
-		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder — plain Go you own. Early (v0.x)."),
+		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder, plain Go you own. Early (v0.x)."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
 			URL:   siteOrigin,
 			Type:  "website",
 		}),
-		// No global WithCanonicalURL — a fixed canonical on every page would
+		// No global WithCanonicalURL, a fixed canonical on every page would
 		// declare the homepage canonical site-wide. Pages that need one
 		// implement ScreenCanonical (see /seo); the rest omit it.
 		// Sitewide SEO endpoints backing the /seo demo page.
@@ -182,7 +182,7 @@ func setupServer() *framework.App {
 		uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}),
 		// Agent-readiness bundle: /llms.txt + A2A agent card + AI-bot
 		// robots rules + Link response headers on every HTML page.
-		// BaseURL is intentionally omitted — resolveBaseURL reuses the
+		// BaseURL is intentionally omitted, resolveBaseURL reuses the
 		// sitemap's canonical origin above, so one origin drives all
 		// discovery URLs.
 		uihost.WithAgentReady(uihost.AgentReadyConfig{
@@ -203,7 +203,7 @@ func setupServer() *framework.App {
 			},
 		}),
 		// Live-dashboard demo: ship the computed-slice reducer as an
-		// external script (CSP-safe — no inline JS). Must load AFTER
+		// external script (CSP-safe, no inline JS). Must load AFTER
 		// runtime.js, which is the WithExtraScripts order. The reducer
 		// mirrors dashStatusLabel in screen_livedash.go.
 		uihost.WithExtraScripts("/__site/livedash-reducers.js"),
@@ -213,7 +213,7 @@ func setupServer() *framework.App {
 	// Expose the island manager to the presence screen and wire the live
 	// roster push: when a topic's roster changes (join/leave), re-render the
 	// AvatarGroup and push it to every session on that topic via the existing
-	// island SSE lane. This reuses PushUpdate — no new transport.
+	// island SSE lane. This reuses PushUpdate, no new transport.
 	siteIslands = host.Islands
 	host.Islands.SetOnPresenceChange(func(topic string) {
 		rosterHTML := string(renderPresenceRoster(host.Islands.PresenceRoster(topic)))
@@ -238,7 +238,7 @@ func setupServer() *framework.App {
 	)
 
 	// Structured logging (battery/log). Its MCP debug tools (log_recent,
-	// log_filter, …) auto-register in the dev loop only — access logs
+	// log_filter, …) auto-register in the dev loop only, access logs
 	// carry client IPs and the deployed site's /mcp is public by design.
 	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
 
@@ -259,22 +259,22 @@ func setupServer() *framework.App {
 
 	// Mount the palette widget AFTER the host so its routes land on the
 	// same router instance. The palette's RPC handler runs an in-memory
-	// fuzzy match over a curated route catalog — no DB roundtrip.
+	// fuzzy match over a curated route catalog, no DB roundtrip.
 	widget.MountBuilder(fwApp.Router(), paletteBuilder)
 	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
 
-	// Raw markdown for every embedded doc at /docs/<name>.md — the URLs
+	// Raw markdown for every embedded doc at /docs/<name>.md, the URLs
 	// /llms.txt indexes. The HTML page stays at /docs/<name>.
 	registerDocMarkdownRoutes(fwApp.Router())
 
-	// SectionMenu mobile drawers — the docs + components navs each mount a
+	// SectionMenu mobile drawers, the docs + components navs each mount a
 	// preset.Drawer once (backdrop + click-outside/Escape close + scroll lock
 	// + focus trap, all from the framework widget). The inline rails render
 	// the same config per page.
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig("")))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(componentsSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(demoSectionMenuConfig()))
-	// Kiln panel approve/reject — no-op endpoints. The OptimisticAction
+	// Kiln panel approve/reject, no-op endpoints. The OptimisticAction
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
 	// is genuine (network panel will show the POST).
@@ -284,20 +284,20 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/kiln/reject", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	// ToggleAction demo — same deal: the toggle runtime keeps the
+	// ToggleAction demo, same deal: the toggle runtime keeps the
 	// committed (or reverted) state only on a real 2xx, so the demo
 	// buttons round-trip through this no-op.
 	fwApp.Router().Post("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	// Optimistic UI demo endpoints — see framework/docs/content/optimistic-ui.md
+	// Optimistic UI demo endpoints. See framework/docs/content/optimistic-ui.md
 	// and the four /components/optimistic-* demos. Each endpoint is a
 	// demo-only no-op or in-memory mutation; same caveat as the rest of
 	// the /__site/* family: no CSRF, no rate limit, no auth.
 
 	// Recipe 2 (inline edit): one endpoint returns 2xx so the
 	// OptimisticAction commits; the other returns 422 so it shakes and
-	// reverts. Neither reads a body — the OptimisticAction runtime is
+	// reverts. Neither reads a body, the OptimisticAction runtime is
 	// fire-and-forget.
 	fwApp.Router().Post("/__site/optimistic/edit/ok", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -369,7 +369,7 @@ func setupServer() *framework.App {
 	}))
 
 	// Recipe 4 failure path: the demo's "Delete n1 (will fail)" trigger
-	// posts here. Always 422, never mutates the store — exercised by
+	// posts here. Always 422, never mutates the store, exercised by
 	// TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged to pin the
 	// "failed delete leaves the list/row unchanged" invariant. The
 	// runtime broadcasts the auto-built error object into opt-delete-list
@@ -378,7 +378,7 @@ func setupServer() *framework.App {
 		http.Error(w, "delete rejected (demo)", http.StatusUnprocessableEntity)
 	}))
 
-	// ConfirmAction modals for the optimistic-delete demo — one per row
+	// ConfirmAction modals for the optimistic-delete demo, one per row
 	// in the current notes list, mounted once at startup. After a
 	// delete the matching trigger is gone from the rendered list, so a
 	// stale modal is simply unreachable; reload re-renders without it.
@@ -386,7 +386,7 @@ func setupServer() *framework.App {
 		widget.MountBuilder(fwApp.Router(), b)
 	}
 
-	// Interactive demo endpoints — each returns JSON the runtime pushes
+	// Interactive demo endpoints, each returns JSON the runtime pushes
 	// into a signal or triggers a widget open / SPA navigate.
 	//
 	// NOTE: The endpoints below are unauthenticated demo handlers for the
@@ -406,7 +406,7 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Cap the body — this handler buffers the decoded message, so an
+		// Cap the body: this handler buffers the decoded message, so an
 		// uncapped POST is a memory lever on a public origin. 4 KiB is far
 		// more than the demo's one short field needs.
 		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
@@ -427,10 +427,10 @@ func setupServer() *framework.App {
 	// Sortable kanban demo (/components/sortablelist): a 3-column board held
 	// per visitor in demoState (see demo_state.go). The move endpoint accepts
 	// order/moved/container/version; the conflict endpoint returns fresh <li>
-	// HTML for 409 reconciliation. Each visitor moves their own board — no
+	// HTML for 409 reconciliation. Each visitor moves their own board, no
 	// shared global to vandalize.
 	fwApp.Router().Post("/__site/sortable/move", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Cap the body — a move carries a handful of short card ids; without
+		// Cap the body, a move carries a handful of short card ids; without
 		// this an attacker could POST a 10 MiB order=k1,k1,k1,… and inflate
 		// the persisted board. Handle the parse error rather than swallow it.
 		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
@@ -471,7 +471,7 @@ func setupServer() *framework.App {
 
 		// Parse the new destination order. Dedup by key so a repeated id
 		// (order=k1,k1,k1,…) can't inflate the column past the real card
-		// count — each known card lands at most once.
+		// count, each known card lands at most once.
 		var newCards []kanbanCard
 		seen := make(map[string]bool, len(cardMap))
 		for _, k := range strings.Split(orderStr, ",") {
@@ -539,7 +539,7 @@ func setupServer() *framework.App {
 	// detail HTML fragment the pane-host's data-fui-signal (mode=html)
 	// regions swap in. The runtime uses r.text() for non-JSON responses,
 	// so we return trusted server-rendered HTML with a text/html type.
-	// Read-only demo lookups — no CSRF needed (see the note above).
+	// Read-only demo lookups, no CSRF needed (see the note above).
 	fwApp.Router().Get("/__site/workspace/ticket", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t, ok := wsTicketByID(r.URL.Query().Get("id"))
 		if !ok {
@@ -563,7 +563,7 @@ func setupServer() *framework.App {
 		fmt.Fprint(w, "something went wrong")
 	}))
 	// Modal for the "RPC → Open Widget" demo.
-	// Hidden by default — only appears when data-fui-rpc-open triggers it.
+	// Hidden by default, only appears when data-fui-rpc-open triggers it.
 	modalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
 		html.Paragraph(html.TextConfig{Class: "demo-modal-emoji"}, render.Text("🎉")),
 		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
@@ -581,7 +581,7 @@ func setupServer() *framework.App {
 	// (always inlined) so a toast has somewhere to land on any page.
 	demoModalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-modal-heading"}, render.Text("Edit user")),
-		html.Paragraph(html.TextConfig{}, render.Text("Center-mounted dialog with a backdrop, focus trap, and Escape-to-close. Open a deeplinked variant and the URL gains ?modal=user-edit&user_id=42 — refresh re-opens it.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Center-mounted dialog with a backdrop, focus trap, and Escape-to-close. Open a deeplinked variant and the URL gains ?modal=user-edit&user_id=42. Refresh re-opens it.")),
 	)
 	widget.MountBuilder(fwApp.Router(), preset.Modal("site-demo-modal").
 		LabelledBy("site-demo-modal-heading").
@@ -592,7 +592,7 @@ func setupServer() *framework.App {
 
 	demoDrawerBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-drawer-heading"}, render.Text("Filters")),
-		html.Paragraph(html.TextConfig{}, render.Text("Side-mounted sliding panel. Same dismiss affordances as Modal — backdrop, Escape, focus trap, scroll lock.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Side-mounted sliding panel. Same dismiss affordances as Modal: backdrop, Escape, focus trap, scroll lock.")),
 	)
 	widget.MountBuilder(fwApp.Router(), preset.Drawer("site-demo-drawer").
 		LabelledBy("site-demo-drawer-heading").
@@ -628,7 +628,7 @@ func setupServer() *framework.App {
 	}))
 
 	// Multi-step wizard round-trip demo (self-contained full-page form that
-	// POSTs to itself — no site chrome). GET renders step 0; POST advances.
+	// POSTs to itself, no site chrome). GET renders step 0; POST advances.
 	fwApp.Router().Get(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))
 	fwApp.Router().Post(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))
 
@@ -636,7 +636,7 @@ func setupServer() *framework.App {
 	registerPrintDemos(fwApp)
 
 	// ── Live-dashboard demo wiring (additive) ───────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo — a queue
+	// /examples/live-dashboard?presence=live-dashboard-demo, a queue
 	// ops dashboard fed by SSE island push. The demo state lives in
 	// the package-level liveDash value (screen_livedash.go); this block
 	// starts the ticker that advances it, registers the four island
@@ -644,9 +644,9 @@ func setupServer() *framework.App {
 	// backs the store.Computed status pill.
 
 	// Reducer JS for dash.status (the store.Computed pill). External
-	// script via WithExtraScripts — CSP-clean, loaded AFTER runtime.js
+	// script via WithExtraScripts, CSP-clean, loaded AFTER runtime.js
 	// so window.__gofastr._reducers isn't clobbered on boot. The body
-	// mirrors dashStatusLabel in screen_livedash.go — keep them in
+	// mirrors dashStatusLabel in screen_livedash.go, keep them in
 	// sync or the SSR label flashes on hydration.
 	fwApp.Router().Get("/__site/livedash-reducers.js", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
@@ -672,7 +672,7 @@ func setupServer() *framework.App {
 	}))
 
 	// Rung-3 demo fragment: the polled StatCards on /examples/live-dashboard.
-	// A plain GET returning server-rendered HTML — the data-fui-poll region
+	// A plain GET returning server-rendered HTML, the data-fui-poll region
 	// swaps it in every 5s. Stateless by construction: no stream, no fanout,
 	// any replica serves it.
 	fwApp.Router().Get("/__site/livedash/poll-fragment", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -680,7 +680,7 @@ func setupServer() *framework.App {
 		fmt.Fprint(w, string(renderDashPollCards(liveDash.snapshot())))
 	}))
 
-	// Reconnect/refresh endpoint. SSE is lossy — a dropped frame is
+	// Reconnect/refresh endpoint. SSE is lossy, a dropped frame is
 	// gone. This endpoint returns the CURRENT rendered island HTML so
 	// an app can reconcile after the SSE stream reconnects. The runtime
 	// does NOT call this automatically; the doc shows the one-line
@@ -706,7 +706,7 @@ func setupServer() *framework.App {
 
 	// Ticker goroutine: advance the demo state and push fresh island
 	// HTML to every session on liveDashTopic. The push targets are
-	// presence sessions — only viewers who joined the topic receive
+	// presence sessions, only viewers who joined the topic receive
 	// updates. To isolate tenants, push per-tenant topics with per-tenant
 	// state (a fixed topic broadcasts identical HTML to all viewers; see
 	// docs/live-dashboards "Tenant isolation").
@@ -725,7 +725,7 @@ func setupServer() *framework.App {
 		}
 	}()
 	// Stop the ticker on shutdown so RunWithSignals / SIGTERM drains
-	// cleanly — no orphaned goroutine pushing into a closed manager.
+	// cleanly, no orphaned goroutine pushing into a closed manager.
 	fwApp.OnStop(func() error {
 		stopLiveDash()
 		return nil
@@ -743,22 +743,22 @@ var paletteCatalog = []paletteRoute{
 	{"Home", "/"},
 	{"Get started", "/get-started"},
 	{"Docs index", "/docs/"},
-	{"Entity declarations — modeling the domain", "/docs/entity-declarations"},
-	{"Examples — six reference apps", "/examples"},
-	{"Workspace — master-detail pane-host example", "/examples/workspace"},
-	{"Live dashboard — SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
-	{"Live presence — viewer roster demo", "/examples/presence?presence=presence-demo"},
-	{"Kiln — agent build mode (experimental)", "/kiln"},
-	{"Philosophy — the convictions essay", "/philosophy"},
-	{"Reader-ready pages — browser Reader Mode", "/reader"},
-	{"Components — gallery index", "/components/"},
-	{"SEO — per-page meta, canonical, JSON-LD", "/seo"},
-	{"Forms wizard — multi-step round-trip", "/forms/wizard"},
-	{"Print — invoice / receipt documents", "/print/invoice/1"},
+	{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
+	{"Examples: six reference apps", "/examples"},
+	{"Workspace: master-detail pane-host example", "/examples/workspace"},
+	{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
+	{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
+	{"Kiln: agent build mode (experimental)", "/kiln"},
+	{"Philosophy: the convictions essay", "/philosophy"},
+	{"Reader-ready pages: browser Reader Mode", "/reader"},
+	{"Components: gallery index", "/components/"},
+	{"SEO: per-page meta, canonical, JSON-LD", "/seo"},
+	{"Forms wizard: multi-step round-trip", "/forms/wizard"},
+	{"Print: invoice / receipt documents", "/print/invoice/1"},
 }
 
 // paletteCommands maps the curated route catalog into static palette
-// commands so ⌘K search is fully client-side — instant on the live server
+// commands so ⌘K search is fully client-side, instant on the live server
 // and functional on the static export with no search endpoint.
 func paletteCommands() []ui.PaletteCommand {
 	cmds := make([]ui.PaletteCommand, 0, len(paletteCatalog))
@@ -769,7 +769,7 @@ func paletteCommands() []ui.PaletteCommand {
 }
 
 // servePaletteSearch returns matching options as <li role="option">
-// fragments — the format ui.CommandPalette's combobox expects.
+// fragments, the format ui.CommandPalette's combobox expects.
 func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	q := strings.ToLower(strings.TrimSpace(r.FormValue("q")))
@@ -793,14 +793,14 @@ func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // htmlEscape escapes the palette options. The catalog values are
-// compile-time constants, so this is defensive only — it delegates to
+// compile-time constants, so this is defensive only, it delegates to
 // the canonical 5-char escaper so no reduced-shape escaper survives in
 // the tree.
 func htmlEscape(s string) string {
 	return render.Escape(s)
 }
 
-// registerScreens wires every route — the main pages plus the per-
+// registerScreens wires every route, the main pages plus the per-
 // component showcase pages. Lives in main.go so the route catalog and
 // the palette seed stay editable side by side.
 func registerScreens(site *app.App) {
@@ -812,7 +812,7 @@ func registerScreens(site *app.App) {
 	// the entry from the slug (SetParams), 404s unknown slugs (Load),
 	// and enumerates every page via StaticPaths so export, sitemap,
 	// llm.md, and the strict coverage gate stay in sync with the
-	// catalog — the same URL set the old per-slug loop emitted.
+	// catalog, the same URL set the old per-slug loop emitted.
 	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
 	site.Register("/examples", &ExamplesScreen{}, nil)
 	// Advanced, full-page interactive example: a master-detail workspace
@@ -822,23 +822,23 @@ func registerScreens(site *app.App) {
 	// Intercepting route: the detail is a normal page registration, and
 	// InterceptFrom only changes how a soft nav that STARTED on the list
 	// presents it. Hard load, refresh, or an external link still render
-	// the full page — the deep link stays the canonical render.
+	// the full page, the deep link stays the canonical render.
 	site.Register("/examples/catalog", &CatalogScreen{}, nil)
 	site.Register("/examples/catalog/:id", &CatalogItemScreen{}, nil,
 		app.InterceptFrom("/examples/catalog", app.ScreenDrawer))
 	// ── Presence demo (additive) ───────────────────────────────────
-	// /examples/presence?presence=presence-demo — a live avatar roster.
+	// /examples/presence?presence=presence-demo, a live avatar roster.
 	// The ?presence= param is threaded into the SSE <meta> tag by
 	// handlePage so the connection joins the topic.
 	site.Register("/examples/presence", &PresenceScreen{}, nil)
 	// ── Live-dashboard demo (additive) ──────────────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo — an ops
+	// /examples/live-dashboard?presence=live-dashboard-demo, an ops
 	// dashboard fed by SSE island push. The ticker that advances the
 	// demo state is wired in setupServer; see screen_livedash.go.
 	site.Register("/examples/live-dashboard", &LiveDashboardScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
-	// /reader — a reader-ready article, the seamless way. This is a normal
+	// /reader: a reader-ready article, the simple way. This is a normal
 	// screen; app.AsArticle() on its registration is the whole reader-mode
 	// switch (wraps content in <article>, emits Article JSON-LD +
 	// og:type=article, derives the headline from ScreenTitle). Load it in
@@ -848,11 +848,11 @@ func registerScreens(site *app.App) {
 	site.Register("/seo", &SEOScreen{}, nil)
 	site.Register("/seo-bundle", &SEOBundleScreen{}, nil)
 
-	// Components — registered through a ScreenGroup so every /components/*
+	// Components, registered through a ScreenGroup so every /components/*
 	// page shares an inner layout. The inner layout puts the multi-level
 	// ComponentsSidebar in the sidebar slot; the framework's runtime
 	// detects sibling-nav inside the group (via data-fui-screen-group on
-	// the layout wrapper) and swaps ONLY the inner content cell — the
+	// the layout wrapper) and swaps ONLY the inner content cell, the
 	// sidebar stays in place across navigations, no full reload.
 	componentsLayout := app.NewLayout("components").
 		WithSidebar(&ComponentsSidebar{})

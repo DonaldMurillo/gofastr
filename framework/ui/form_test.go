@@ -179,7 +179,7 @@ func TestValidationSummarySafeWithSpecialChars(t *testing.T) {
 	}
 }
 
-// D-1: Form Method must be GET or POST — anything else silently produces
+// D-1: Form Method must be GET or POST. Anything else silently produces
 // invalid HTML that browsers treat as GET, potentially exposing sensitive data.
 func TestFormPanicOnInvalidMethod(t *testing.T) {
 	defer func() {
@@ -226,7 +226,7 @@ func TestFormAutoStampsCSRFInput(t *testing.T) {
 }
 
 // TestFormCSRFOmittedWithoutCtx guards backward compat: forms rendered
-// without Ctx (legacy callers) emit no hidden input — same as today.
+// without Ctx (legacy callers) emit no hidden input, same as today.
 func TestFormCSRFOmittedWithoutCtx(t *testing.T) {
 	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := string(Form(FormConfig{Action: "/save"},
@@ -238,7 +238,7 @@ func TestFormCSRFOmittedWithoutCtx(t *testing.T) {
 }
 
 // TestFormCSRFOmittedOnGET pins that GET forms never get a CSRF input
-// — they aren't behind CSRF middleware (safe method), and a hidden
+// they aren't behind CSRF middleware (safe method), and a hidden
 // input in a search form would surface the token in URLs.
 func TestFormCSRFOmittedOnGET(t *testing.T) {
 	ctx, _ := ctxWithCSRFToken(t)

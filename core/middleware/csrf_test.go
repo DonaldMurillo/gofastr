@@ -37,7 +37,7 @@ func TestCSRF_PostBlockedWithoutToken(t *testing.T) {
 }
 
 func TestCSRF_PostAllowedWithMatchingHeader(t *testing.T) {
-	// Tokens are signed (P1-8 hardening) — generate a real one.
+	// Tokens are signed (P1-8 hardening); generate a real one.
 	secret := []byte("0123456789abcdef0123456789abcdef")
 	h := CSRF(CSRFConfig{SecretKey: secret})(csrfHandler())
 	tok, err := generateSignedCSRFToken(secret)
@@ -83,8 +83,8 @@ func TestCSRF_SkipPredicateBypasses(t *testing.T) {
 // Two notions of "secure" had drifted: the Secure FLAG is computed per
 // request (r.TLS or X-Forwarded-Proto), while the __Host- NAME was
 // resolved once at construction from CookieSecure. On the standard
-// deployment — TLS terminated at a proxy, the host never calling
-// WithCSRFCookieSecure(true) — the cookie came back Secure but named
+// deployment, TLS terminated at a proxy, the host never calling
+// WithCSRFCookieSecure(true), the cookie came back Secure but named
 // plainly. The signed token is not session-bound, so the __Host- prefix
 // was the whole defense against a sibling subdomain planting a valid
 // token and driving a same-site POST (the session cookie is
@@ -102,7 +102,7 @@ func TestCSRFCookieHostPrefixedBehindProxy(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			// A host-supplied cookie name, which is what battery/auth
-			// passes — the branch the per-request resolution skipped.
+			// passes; the branch the per-request resolution skipped.
 			h := CSRF(CSRFConfig{CookieName: "auth_csrf", HostPrefixWhenSecure: true})(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 

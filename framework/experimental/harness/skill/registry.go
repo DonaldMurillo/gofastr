@@ -3,7 +3,7 @@
 //
 // Tier 1: name + description loaded at startup (~100 tokens/skill).
 // Tier 2: full SKILL.md body fetched on activation.
-// Tier 3: supporting files in scripts/, references/, assets/ —
+// Tier 3: supporting files in scripts/, references/, assets/,
 //
 //	fetched only on explicit reference from tier 2.
 package skill

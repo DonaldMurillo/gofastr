@@ -24,7 +24,7 @@ func TestPartialTitleHeaderIsEncoded(t *testing.T) {
 	if h == "" {
 		t.Fatal("partial response should carry X-Gofastr-Title")
 	}
-	// Must be header-safe ASCII — a raw UTF-8 title (em-dash separator)
+	// Must be header-safe ASCII: a raw UTF-8 title (em-dash separator)
 	// would arrive mojibaked when a reader decodes the header as Latin-1.
 	for i := 0; i < len(h); i++ {
 		if h[i] > 127 {
@@ -79,7 +79,7 @@ func TestLoopbackDevCookieRoundTrips(t *testing.T) {
 	}
 
 	// The minted cookie must satisfy requireValidSession on a gated
-	// endpoint — this is the path that was 401-storming the console.
+	// endpoint. This is the path that was 401-storming the console.
 	rec2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodGet, "/__gofastr/widgets?page=/", nil)
 	req2.Host = "localhost:8090"
@@ -200,7 +200,7 @@ func TestUIHost_SSERejectsUnknownSessionID(t *testing.T) {
 // embedded in it. A caller holding a fully valid cookie for session A must
 // NOT be able to attach to session B's SSE stream by naming B in ?session=.
 // The stream id is deliberately public (embedded in page chrome), so a
-// leaked-but-real id must still be useless without the matching cookie —
+// leaked-but-real id must still be useless without the matching cookie:
 // the sibling of the forged-id hole the old in-memory map never closed
 // (see handleSSE, "subscribing to another user's stream with a
 // leaked-but-real id and no matching cookie"). Loopback origin so the
@@ -227,7 +227,7 @@ func TestSSEStreamIDMustMatchCookie(t *testing.T) {
 	}
 
 	// Control: the same valid cookie against its OWN stream id must NOT be
-	// rejected — otherwise the test would pass for the wrong reason.
+	// rejected. Otherwise the test would pass for the wrong reason.
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	cancel2()
 	req2 := httptest.NewRequest(http.MethodGet, "/__gofastr/sse?session="+url.QueryEscape(attacker.ID), nil).WithContext(ctx2)

@@ -20,7 +20,7 @@ import (
 )
 
 // proxyRetryAfter is the Retry-After header value (seconds) returned with
-// every 503 the proxy emits. Bounded — a client retrying once per second
+// every 503 the proxy emits. Bounded, a client retrying once per second
 // self-corrects the moment the supervisor publishes Ready.
 const proxyRetryAfter = "1"
 
@@ -58,7 +58,7 @@ var proxyCallID atomic.Uint64
 
 // ProxyHandler returns the http.Handler the host router mounts for one
 // declared route. The route gate (Enabled) has ALREADY run by the time this
-// handler is invoked — if the module is disabled, the route 404'd upstream
+// handler is invoked, if the module is disabled, the route 404'd upstream
 // and this handler was never reached.
 //
 // This handler implements the SECOND layer of the §8 two-layer gate: the
@@ -106,7 +106,7 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 	callID := proxyCallID.Add(1)
 	requestID := fmt.Sprintf("%s-%d", name, callID)
 	// F6: bind the delegation handle to THIS module (name) so it cannot be
-	// replayed under another module's reverse handler — the handle table is
+	// replayed under another module's reverse handler, the handle table is
 	// app-global.
 	r = r.WithContext(withDelegationModule(r.Context(), name))
 	handle, release := s.broker.MintDelegation(r, callID)
@@ -129,7 +129,7 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 	go s.watchCancel(peer, requestID, callCtx)
 
 	// Issue the call. The result is FULLY BUFFERED in the response before
-	// any header commit — a child that dies mid-call returns an error
+	// any header commit, a child that dies mid-call returns an error
 	// here, which we surface as a buffered 503. Never a truncated 200.
 	raw, err := peer.Call(callCtx, moduleproto.MethodHTTP, params)
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 // uiRenderer builds the ui.node.v1 → design-system renderer for this module.
 // The ActionResolver maps a tree's ActionRef (a descriptor-local route id) to
 // that route's mounted path, so a module can wire a button to one of its OWN
-// declared routes and nothing else — an ActionRef that names no declared
+// declared routes and nothing else, an ActionRef that names no declared
 // route fails the render closed (design §9). Rebuilt per call from the
 // descriptor's routes (a handful of entries; no hot-path cost).
 func (sl *moduleSlot) uiRenderer() *uinoderender.Renderer {
@@ -193,7 +193,7 @@ func writeProxy503(w http.ResponseWriter, retryAfter string) {
 // HTTP request. Headers are allowlisted; body is base64-encoded; the caller
 // block carries the resolved end-user context the broker re-attaches on
 // reverse host.* calls (design §5). Subject/Tenant are diagnostic on the
-// wire — the child echoes them, but the broker re-attaches the real request
+// wire, the child echoes them, but the broker re-attaches the real request
 // context via the delegation handle (the load-bearing seam); it never trusts
 // a child-supplied value for the authorization decision.
 func buildHTTPRequestParams(r *http.Request, moduleName, routeID, requestID, delegationHandle string, deadline time.Duration) (moduleproto.HTTPRequestParams, error) {
@@ -302,7 +302,7 @@ func commitBufferedResponse(w http.ResponseWriter, res *moduleproto.HTTPResponse
 
 // decodeBody materializes the response body and returns (bytes, contentType, err).
 // For ui.node.v1 (a later-wave surface), returns an error so the proxy
-// emits a buffered 503 — the validator is not built yet (design §9).
+// emits a buffered 503, the validator is not built yet (design §9).
 func decodeBody(b *moduleproto.HTTPResponseBody, renderer *uinoderender.Renderer) ([]byte, string, error) {
 	if b == nil {
 		return nil, "", nil

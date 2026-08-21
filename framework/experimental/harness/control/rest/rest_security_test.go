@@ -10,7 +10,7 @@ import (
 )
 
 // TestRESTTokenScopeEnforced asserts the REST control plane honours a
-// capability token's session/command scope — a token bound to session A
+// capability token's session/command scope, a token bound to session A
 // must not be able to drive a different live session B, nor issue a
 // command kind its claims forbid. Mirrors the ws.go AllowsSession check.
 func TestRESTTokenScopeEnforced(t *testing.T) {
@@ -30,7 +30,7 @@ func TestRESTTokenScopeEnforced(t *testing.T) {
 		return tok
 	}
 
-	// Token scoped to sessA, but only allowed to SendInput — must not
+	// Token scoped to sessA, but only allowed to SendInput, must not
 	// be able to answer a permission prompt.
 	inputOnlyTok := func(s *Server) string {
 		tok, err := s.Encoder.Encode(auth.Claims{
@@ -52,7 +52,7 @@ func TestRESTTokenScopeEnforced(t *testing.T) {
 		body   string
 		tok    func(*Server) string
 		// wantForbidden true means the request must NOT reach the mux
-		// (403). We do not assert the success body — only that scope is
+		// (403). We do not assert the success body, only that scope is
 		// the gate.
 		wantForbidden bool
 	}{

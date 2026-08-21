@@ -1,9 +1,9 @@
-// GoFastr embed loader — the only GoFastr code that runs on a customer's page.
+// GoFastr embed loader: the only GoFastr code that runs on a customer's page.
 //
 // It creates the iframe, hands the single-use nonce to it by postMessage, and
 // keeps the frame's height in sync. Everything else happens inside the frame,
 // where GoFastr is same-origin with itself. This file lands on a stranger's
-// critical path, so its budget is the tightest in the repo — new behaviour
+// critical path, so its budget is the tightest in the repo, new behaviour
 // belongs in boot-embed, not here.
 //
 // Usage:
@@ -46,12 +46,12 @@
     // (the right frame-ancestors list for an OriginSource, the right
     // stylesheet) instead of swapping after paint. Neither is secret:
     // customer is an identifier, theme is colours. The customer id is the one
-    // that breaks silently — an app with an OriginSource fails closed to
+    // that breaks silently, an app with an OriginSource fails closed to
     // frame-ancestors 'none' on an empty id, blocking EVERY customer (even
     // ones the static list covered), so the loader forwards it the way it
     // already forwarded theme. It is attacker-chosen at the unauthenticated
     // navigation GET, so bound it (256, the server's maxCustomerIDBytes) and
-    // encode it like any URL value — a malformed snippet must not turn the
+    // encode it like any URL value, a malformed snippet must not turn the
     // loader into a URL builder.
     const q = [];
     if (opts.customer) q.push('customer=' + encodeURIComponent((opts.customer + '').slice(0, 256)));
@@ -64,7 +64,7 @@
     // omitting top-navigation and forms keeps the frame inside this one screen.
     // The browser-enforced containment. Absent this attribute an embeddable
     // screen containing <a target="_top"> replaces the CUSTOMER's page when
-    // clicked — proven in Chromium, and the failure that ends a customer
+    // clicked, proven in Chromium, and the failure that ends a customer
     // relationship.
     //
     //   allow-scripts      the runtime, handshake, hydration and RPC need it
@@ -88,7 +88,7 @@
     frame.style.cssText = 'display:block;width:100%;border:0;';
     frame.style.height = (opts.height || 150) + 'px';
     // The nonce travels by postMessage, never in the URL, but the frame's URL
-    // still names the surface — keep it out of the app's own logs' Referer.
+    // still names the surface, keep it out of the app's own logs' Referer.
     frame.setAttribute('referrerpolicy', 'no-referrer');
     frame.setAttribute('scrolling', 'no');
     if (opts.className) frame.className = opts.className;
@@ -129,7 +129,7 @@
         // a browser retry of a transient error. Its WindowProxy identity
         // survives all of those, so the source and origin checks above still
         // pass and the message is genuinely ours. Refusing to repeat the token
-        // left that frame waiting for something that would never arrive —
+        // left that frame waiting for something that would never arrive,
         // empty root, state stuck at "loading", nothing in either console.
         //
         // Repeating costs nothing. The nonce is single-use at the server and
@@ -138,7 +138,7 @@
         frame.contentWindow.postMessage({ proto: PROTO, type: 'token', token: token }, origin);
       } else if (d.type === 'height') {
         // Clamp. The frame is our own origin, but the host page is not ours to
-        // break — a bad measurement should shrink an embed, never blow out the
+        // break, a bad measurement should shrink an embed, never blow out the
         // customer's layout.
         const h = Number(d.height);
         if (Number.isFinite(h) && h > 0) frame.style.height = Math.min(Math.ceil(h), 20000) + 'px';
@@ -191,8 +191,8 @@
       const surface = self.getAttribute('data-surface');
       const token = self.getAttribute('data-token');
       // Name the missing attribute. A snippet whose template rendered an empty
-      // data-token — the variable was misspelled, or minting failed server-side
-      // — otherwise produced an empty container and absolute silence, which is
+      // data-token, the variable was misspelled, or minting failed server-side,
+      // otherwise produced an empty container and absolute silence, which is
       // indistinguishable from the script never having loaded.
       if (!surface || !token) {
         console.warn('[gofastr/embed] missing ' +
@@ -225,14 +225,14 @@
   } catch (e) {
     // This runs on someone else's page. A malformed data-target selector
     // throws from querySelector, and a tag with no parent throws from
-    // insertBefore — either would abort before window.GoFastrEmbed is defined
+    // insertBefore, either would abort before window.GoFastrEmbed is defined
     // and surface in the customer's error reporting as a GoFastr exception on
     // their site. Contain it and say what happened.
     console.warn('[gofastr/embed] loader failed to auto-mount', e);
   }
 
   // Programmatic mounting, for hosts that render their page after this script
-  // loads. Same code path — there is no second implementation to drift.
+  // loads. Same code path, there is no second implementation to drift.
   window.GoFastrEmbed = {
     mount(opts) {
       const target = typeof opts.target === 'string' ? document.querySelector(opts.target) : opts.target;

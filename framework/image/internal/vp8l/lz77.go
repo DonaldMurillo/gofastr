@@ -24,7 +24,7 @@ const matchMaxLen = 4096
 const maxBackrefDistance = (1 << 20) - 120
 
 // hashBits / hashSize control the LZ77 hash table. 14 bits → 16384
-// buckets — good locality, low collision rate for typical inputs.
+// buckets, good locality, low collision rate for typical inputs.
 const (
 	hashBits = 14
 	hashSize = 1 << hashBits

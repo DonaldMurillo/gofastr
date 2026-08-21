@@ -29,7 +29,7 @@ type placeholderGeometry struct {
 	DeltaW    float64 `json:"deltaW"`
 	DeltaH    float64 `json:"deltaH"`
 	// TopMostIsRealImage records what a user actually sees at the centre of
-	// the frame — the real image has to be in front.
+	// the frame, the real image has to be in front.
 	TopMostIsRealImage bool   `json:"topMostIsRealImage"`
 	TopMostClass       string `json:"topMostClass"`
 	Position           string `json:"position"`
@@ -37,7 +37,7 @@ type placeholderGeometry struct {
 	Decoding           string `json:"decoding"`
 }
 
-// placeholderProbe inspects the PipelineImage instance on the showcase page —
+// placeholderProbe inspects the PipelineImage instance on the showcase page,
 // the one with a placeholder stacked behind a real image.
 const placeholderProbe = `(() => {
   const lqip = document.querySelector('.ui-image--placeheld .ui-image__lqip');
@@ -152,7 +152,7 @@ func TestE2EPlaceholderPaints(t *testing.T) {
 
 // screenshotIsColourful reports an error unless some pixel is meaningfully
 // saturated. With the real image hidden, an all-grey screenshot means the
-// decoded blur never painted — exactly the pre-fix behaviour, where the
+// decoded blur never painted, exactly the pre-fix behaviour, where the
 // component fell back to --color-surface-soft.
 func screenshotIsColourful(data []byte) error {
 	img, err := png.Decode(bytes.NewReader(data))

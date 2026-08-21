@@ -53,7 +53,7 @@ func TestWebServerSpeaksSSE(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	// Subscribe to the engine bus directly in the test goroutine to
-	// avoid SSE buffering complications — the test is about the web
+	// avoid SSE buffering complications, the test is about the web
 	// server wiring SendInput into the engine, not the SSE stream
 	// reliability (which the inproc transport test already covers).
 	ctx, cancel := context.WithCancel(context.Background())

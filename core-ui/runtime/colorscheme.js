@@ -4,10 +4,10 @@
 // dark-mode tokens take effect during the same first paint. Reads,
 // in order:
 //
-//   1. localStorage["gofastr.colorScheme"] — explicit user choice
+//   1. localStorage["gofastr.colorScheme"]: explicit user choice
 //      (auto | light | dark). Apps that ship a theme toggle write
 //      here.
-//   2. window.matchMedia('(prefers-color-scheme: dark)') — OS hint.
+//   2. window.matchMedia('(prefers-color-scheme: dark)'): OS hint.
 //
 // Sets <html data-color-scheme="dark|light"> + the matching
 // `<meta name="color-scheme">` so native UA controls (scrollbars,

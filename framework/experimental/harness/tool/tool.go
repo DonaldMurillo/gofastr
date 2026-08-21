@@ -36,7 +36,7 @@ func WithSession(ctx context.Context, s ids.SessionID) context.Context {
 }
 
 // SessionFromContext extracts the session ID set by WithSession.
-// Returns (zero, false) when no session is attached — tools that
+// Returns (zero, false) when no session is attached, tools that
 // REQUIRE the session should error in that case.
 func SessionFromContext(ctx context.Context) (ids.SessionID, bool) {
 	v, ok := ctx.Value(sessionCtxKey{}).(ids.SessionID)
@@ -85,7 +85,7 @@ func SpawnDepthFromContext(ctx context.Context) int {
 const MaxSpawnDepth = 2
 
 // Spawner lets a tool launch a fresh sub-agent inside the current
-// session. The engine implements this — sub-agents share the parent's
+// session. The engine implements this, sub-agents share the parent's
 // Provider, Model, Tools, and middleware, but get a fresh History.
 // The Spawn call blocks until the sub-agent finishes and returns the
 // final assistant text.
@@ -156,7 +156,7 @@ type ToolResult struct {
 type EventSink interface {
 	// EmitProgress publishes a ToolCallProgress event for the
 	// current ToolCall. The partial string is informational; the
-	// model never sees these directly — surfaces render them.
+	// model never sees these directly, surfaces render them.
 	EmitProgress(partial string)
 
 	// EmitEvent publishes an arbitrary engine event. Used sparingly
@@ -175,7 +175,7 @@ type Handler func(ctx context.Context, call ToolCall, sink EventSink) (*ToolResu
 type Middleware func(ctx context.Context, call ToolCall, sink EventSink, next Handler) (*ToolResult, error)
 
 // Chain composes a Handler from a base handler and a sequence of
-// middleware. Middleware are wrapped in registration order — the
+// middleware. Middleware are wrapped in registration order, the
 // first middleware listed sees the request first.
 func Chain(base Handler, ms ...Middleware) Handler {
 	// Wrap from inside out so first middleware is outermost.

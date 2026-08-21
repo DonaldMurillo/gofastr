@@ -11,14 +11,14 @@ import (
 
 // TestStart_BindFailureRunsShutdown pins the cleanup contract: when
 // ListenAndServe fails (the canonical case being the port already in use),
-// Start must still drain — running OnStop hooks and cancelling the lifecycle
-// context — instead of returning early and leaking every worker, cron, and
+// Start must still drain, running OnStop hooks and cancelling the lifecycle
+// context, instead of returning early and leaking every worker, cron, and
 // queue an earlier start phase spawned.
 func TestStart_BindFailureRunsShutdown(t *testing.T) {
 	// This test pins the bind-FAILURE contract, so worktree isolation must
 	// not rescue the bind: in a linked git worktree (the default "worktree"
 	// isolation mode) Start remaps the occupied port to a free one, binds
-	// successfully, and serves forever — failing this test with a
+	// successfully, and serves forever, failing this test with a
 	// misleading "Start did not return" in any worktree checkout while
 	// passing on a plain clone.
 	t.Setenv("GOFASTR_ISOLATION", "off")

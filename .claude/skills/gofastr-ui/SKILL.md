@@ -1,13 +1,13 @@
 ---
 name: gofastr-ui
-description: Auto-loads when working on UI, runtime, or framework/uihost code in the GoFastr repo. Encodes the SSR-with-hydration architecture (no hard refresh, page-nav swaps content, in-page state is island RPC) and the three failure modes that have already happened. Triggers on edits to core-ui/, framework/ui/, framework/uihost/, examples/site/, or runtime.js — and on phrases like "pagination", "sort header", "tab click", "navigation", "SPA", "hydration".
+description: Auto-loads when working on UI, runtime, or framework/uihost code in the GoFastr repo. Encodes the SSR-with-hydration architecture (no hard refresh, page-nav swaps content, in-page state is island RPC) and the three failure modes that have already happened. Triggers on edits to core-ui/, framework/ui/, framework/uihost/, examples/site/, or runtime.js, and on phrases like "pagination", "sort header", "tab click", "navigation", "SPA", "hydration".
 ---
 
-# GoFastr UI architecture — load this before writing UI code
+# GoFastr UI architecture: load this before writing UI code
 
 This skill auto-loads whenever you touch the UI surface. The model has been
 misread three times in this repo. The canonical document is
-`core-ui/ARCHITECTURE.md` — **read it now if you have not already.**
+`core-ui/ARCHITECTURE.md`. **Read it now if you have not already.**
 
 ## The model (one paragraph)
 
@@ -18,27 +18,27 @@ In-page state changes (pagination, sort, filter, expand) are **islands**:
 a click fires an RPC, the server returns new island HTML, the runtime
 swaps just that island's content.
 
-## The reactivity ladder — pick the cheapest rung that works
+## The reactivity ladder: pick the cheapest rung that works
 
 Liveness escalates through four rungs; each is opt-in and pull beats push
 (canonical doc: `framework/docs/content/reactivity.md`):
 
-1. **Client signals** (`data-fui-signal-*`) — UI-only state, zero server.
-2. **RPC** — user acts, server renders from the DB, runtime swaps. The
+1. **Client signals** (`data-fui-signal-*`): UI-only state, zero server.
+2. **RPC**: user acts, server renders from the DB, runtime swaps. The
    default for anything touching data. Stateless; any replica answers.
-3. **Polling** (`data-fui-poll`, `widget Builder.Poll`) — passive freshness
+3. **Polling** (`data-fui-poll`, `widget Builder.Poll`): passive freshness
    (dashboards, counters, statuses). No held connection, no fanout needed.
-4. **SSE push** (the single `/__gofastr/sse` bus) — ONLY for semantics
+4. **SSE push** (the single `/__gofastr/sse` bus): ONLY for semantics
    that need a connection: presence, collaborative editing, sub-second
    internal dashboards. Push-only, never responses to user actions.
    Requires `WithFanout` + `WithSecret`/`GOFASTR_SECRET` multi-replica.
 
-State lives in the DB or the client signal store — never in server RAM.
+State lives in the DB or the client signal store, never in server RAM.
 Never open a bespoke `EventSource` on an app surface; the bus is the only
-push channel. (Dev-mode tooling — `framework/dev` livereload, kiln's
-build-mode reload — ships its own; that's the whole exception class.)
+push channel. (Dev-mode tooling like `framework/dev` livereload and kiln's
+build-mode reload ships its own; that's the whole exception class.)
 
-## The three failure modes — refuse to do these
+## The three failure modes: refuse to do these
 
 ### ❌ Treating in-page state as a route
 **Symptom**: pagination/sort renders as `<a href="?p=2">` and triggers
@@ -57,13 +57,13 @@ page stays.
 **Symptom**: pagination math lives in JS; the server doesn't know about
 page 2.
 **Correct**: server is the source of truth. Always. JS shipped to the
-browser is the generic runtime (`runtime.js`) — never feature-specific
+browser is the generic runtime (`runtime.js`), never feature-specific
 code.
 
 ### ❌ Reaching for SSE when a cheaper rung works
 **Symptom**: a metrics card / status badge / count subscribes to the SSE
 bus (or worse, opens its own `EventSource`) just to stay fresh.
-**Correct**: rung 3 — `data-fui-poll` (page region) or `Builder.Poll`
+**Correct**: rung 3, `data-fui-poll` (page region) or `Builder.Poll`
 (widget). SSE is earned by presence/collab/sub-second semantics only,
 and always via the shared bus.
 
@@ -79,12 +79,12 @@ and always via the shared bus.
 | An interactive component (RPC, signals, widget chaining) | `core-ui/interactive` (`OnClick(html, Post("/path").OnSuccess(...))`) |
 | **Per-component CSS** (loaded on demand, dedup'd, never re-fetched) | `core-ui/registry` (`RegisterStyle` + `Style.WrapHTML`) |
 
-## Theme — typed, always emits var()
+## Theme: typed, always emits var()
 
-The framework's design tokens live in `style.Theme` — a typed Go struct.
+The framework's design tokens live in `style.Theme`, a typed Go struct.
 Every token (`style.Color`, `style.Spacing`, `style.Shadow`, etc.) has a
 `.CSS()` method that returns `var(--<category>-<name>)`. Build-time
-literal resolution is gone — every reference goes through a CSS variable,
+literal resolution is gone: every reference goes through a CSS variable,
 which is what lets section-level theme overrides cascade.
 
 **Common patterns:**
@@ -94,10 +94,10 @@ which is what lets section-level theme overrides cascade.
 
 **Hard rules:**
 - ❌ Never write literal `#hex` colors in component CSS. Always `var(--color-x)` or `t.Colors.X.CSS()`.
-- ❌ Don't try `MergeThemes(...)` — it was removed. Mutate fields directly.
+- ❌ Don't try `MergeThemes(...)`; it was removed. Mutate fields directly.
 - ✅ `app.WithTheme(theme)` is the binding pattern. The host emits `:root` from the theme and components reference it.
 
-**Section-level theme overrides** (dark sidebar in a light app, branded sections, multi-tenant subtrees) — use `style.RegisterThemeOverride` + `ui.Themed`:
+For **section-level theme overrides** (dark sidebar in a light app, branded sections, multi-tenant subtrees), use `style.RegisterThemeOverride` + `ui.Themed`:
 
 ```go
 var Dark = style.RegisterThemeOverride(darkTheme)
@@ -109,9 +109,9 @@ ui.Themed(Dark,
 ) // wrapped subtree's var(--color-*) reads from Dark via CSS cascade
 ```
 
-Framework emits a `.fui-theme-<hash>` block in `app.css`; the CSS cascade does the rest. Content-addressed — registering the same theme twice ships CSS once.
+Framework emits a `.fui-theme-<hash>` block in `app.css`; the CSS cascade does the rest. Content-addressed: registering the same theme twice ships CSS once.
 
-## Per-component CSS — the registry pattern
+## Per-component CSS: the registry pattern
 
 Component-owned CSS ships as a real `<link>` (never inline), loaded
 lazily on first appearance, dedup'd globally, and always scoped to
@@ -119,7 +119,7 @@ lazily on first appearance, dedup'd globally, and always scoped to
 stay in `theme.css` or `WithCustomCSS`.
 
 ```go
-// styles_mything.go — registration + builder
+// styles_mything.go: registration + builder
 var myThingStyle = registry.RegisterStyle("ui-my-thing", myThingCSS)
 
 func myThingCSS(t style.Theme) string {
@@ -130,22 +130,22 @@ func myThingCSS(t style.Theme) string {
         MustBuild()
 }
 
-// at the render site — wrap the outer tag with .WrapHTML
+// at the render site: wrap the outer tag with .WrapHTML
 func MyThing(cfg MyThingConfig) render.HTML {
     return myThingStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-my-thing"}, …))
 }
 ```
 
 **Load modes:**
-- `LoadAuto` (default) — load when marker first hits DOM. SSR emits link on pages that use it.
-- `LoadPrewarm` — same as Auto + throttled `requestIdleCallback` prefetch.
-- `LoadAlways` — emit link on every page (use for chrome on essentially every screen).
+- `LoadAuto` (default): load when marker first hits DOM. SSR emits link on pages that use it.
+- `LoadPrewarm`: same as Auto + throttled `requestIdleCallback` prefetch.
+- `LoadAlways`: emit link on every page (use for chrome on essentially every screen).
 
 **The contract applies to `core-ui/patterns/*` too.** Patterns
 (accordion, breadcrumbs, nestedlist, pagination, progress, skeleton,
 tabs, …) register via `registry.RegisterStyle("<name>", styleFn)` and
 wrap their top-level `Render()` element in `Style.WrapHTML(...)`. The
-legacy `func BaseCSS() string` export pattern is **forbidden** — the
+legacy `func BaseCSS() string` export pattern is **forbidden**: the
 2026-05-19 nestedlist incident shipped without styling because the
 host's theme.go was never updated to concatenate it. The lint
 `core-ui/check.LintNoPatternBaseCSS` fails CI on any new pattern that
@@ -154,8 +154,8 @@ re-exports `BaseCSS`. The pattern-CSS unification landed 2026-05-19.
 **Hard rules:**
 - ❌ Never export `func BaseCSS() string` from a `core-ui/patterns/*`
   package. Register via `RegisterStyle` and wrap via `WrapHTML`.
-- ❌ Never write inline `<style>` blocks for component CSS — always go through the registry.
-- ❌ Never write selectors that try to escape the scope (`body`, `html`, `:root`, `*`, `::backdrop`) — `ComponentSheet` rejects them at process startup.
+- ❌ Never write inline `<style>` blocks for component CSS; always go through the registry.
+- ❌ Never write selectors that try to escape the scope (`body`, `html`, `:root`, `*`, `::backdrop`); `ComponentSheet` rejects them at process startup.
 - ✅ Use `&` in `ComponentSheet` to reference the marker element itself.
 - ✅ Test CSS without chromedp by building the `ComponentSheet` directly.
 
@@ -168,11 +168,11 @@ re-exports `BaseCSS`. The pattern-CSS unification landed 2026-05-19.
 | `data-fui-signal="<name>"` mode=`text\|html\|attr` | Element auto-updates when the signal changes |
 | `data-fui-poll="<interval>"` + `data-fui-poll-src="<path>"` | Region re-fetches + swaps on the interval (≥5s, jittered, pauses hidden) |
 | `data-fui-open="<widget>"` | Opens a mounted widget |
-| `data-fui-comp="<name>"` | Marker for a registered styled component — runtime loads `/__gofastr/comp/<name>.css` once |
+| `data-fui-comp="<name>"` | Marker for a registered styled component: runtime loads `/__gofastr/comp/<name>.css` once |
 
 The runtime + the data-attributes ARE the API surface for hydration.
 Adding new attributes requires updating `core-ui/ARCHITECTURE.md` and
-the runtime test suite — every attribute is a public contract.
+the runtime test suite. Every attribute is a public contract.
 
 ## URL as source of truth
 
@@ -188,13 +188,13 @@ The flow:
 
 ## Before you ship UI code, check
 
-- [ ] Initial render is full SSR — refresh on the URL produces the same DOM.
+- [ ] Initial render is full SSR: refresh on the URL produces the same DOM.
 - [ ] No `<a href="?…">` for state changes; that's an island RPC.
 - [ ] In-page state worth sharing/bookmarking is in the URL via the
       `X-Gofastr-Push-State` response header.
 - [ ] No `location.href = …` in JS or in the server response.
 - [ ] No JS feature code; only the generic runtime.
-- [ ] Cross-page links are normal `<a>` — the runtime intercepts them
+- [ ] Cross-page links are normal `<a>`; the runtime intercepts them
       transparently for the partial-fetch + cache flow.
 - [ ] `Screen.Load(ctx)` populates state from route params + query so
       deep-links / refresh / SSG all work.

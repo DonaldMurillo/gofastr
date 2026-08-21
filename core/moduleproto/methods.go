@@ -11,8 +11,8 @@ import "encoding/json"
 //   - [MethodReady]: one-time warmup probe (distinct from liveness).
 //   - [MethodHealth]: ongoing liveness ping (idle-only).
 //   - [MethodDrain]: ask the child to finish in-flight work.
-//   - [MethodToolList]: optional MCP tool surface — list tools.
-//   - [MethodToolCall]: optional MCP tool surface — invoke a tool.
+//   - [MethodToolList]: optional MCP tool surface: list tools.
+//   - [MethodToolCall]: optional MCP tool surface: invoke a tool.
 //
 // Module → host (reverse requests, each capability-checked by the supervisor's broker):
 //
@@ -72,10 +72,10 @@ var DefaultLimits = Limits{
 
 // HandshakeExpected carries the caller-supplied values the host expects the
 // child to round-trip in module.handshake (design §4.7 steps 1-3). Every field
-// here is an OPAQUE caller-supplied value — this package verifies the
+// here is an OPAQUE caller-supplied value; this package verifies the
 // round-trip and emits a terminal [HandshakeMismatchError] on divergence; it
 // does NOT decide whether the expected values are themselves trustworthy
-// (that is the supervisor's policy — design §5 decision B).
+// (that is the supervisor's policy, design §5 decision B).
 type HandshakeExpected struct {
 	// Name is the module's operator-approved name (descriptor-supplied).
 	Name string `json:"name"`
@@ -85,7 +85,7 @@ type HandshakeExpected struct {
 	//
 	// Unlike every other field here it is NOT round-trip-verified:
 	// [HandshakeResult] has no corresponding field and crossCheck never
-	// looks at it. That is deliberate — asking the child to echo the hash
+	// looks at it. That is deliberate. Asking the child to echo the hash
 	// of its own binary proves nothing, since a substituted binary echoes
 	// whatever it was handed. Executable integrity is verified by the
 	// supervisor hashing the file BEFORE spawn (see
@@ -119,7 +119,7 @@ type HandshakeParams struct {
 }
 
 // Identity is the child's echoed identity in module.handshake's result. The
-// host compares every field against [HandshakeExpected] — instance_id and
+// host compares every field against [HandshakeExpected]; instance_id and
 // desired_generation MUST round-trip exactly (they are the spawn-freshness and
 // generation-staleness anchors; §4.4 vocabulary note).
 type Identity struct {
@@ -134,7 +134,7 @@ type HandshakeResult struct {
 	// Proto is the child's advertised proto range. The negotiated version
 	// is computed by the host via [Negotiate] and returned alongside.
 	Proto ProtoRange `json:"proto"`
-	// Identity is the child's echoed identity — round-trips the host's
+	// Identity is the child's echoed identity; round-trips the host's
 	// [HandshakeExpected] values.
 	Identity Identity `json:"identity"`
 	// SurfaceSHA256 is the child's view of its surface digest; the host
@@ -184,7 +184,7 @@ type HTTPRequestParams struct {
 }
 
 // Caller is the resolved end-user context the host attaches to an OUTBOUND
-// proxied call — [HTTPRequestParams] and [ToolCallParams]. The host fills
+// proxied call: [HTTPRequestParams] and [ToolCallParams]. The host fills
 // every field, so the child may trust all of them.
 //
 // It is deliberately NOT the type on inbound reverse calls; those carry
@@ -199,12 +199,12 @@ type Caller struct {
 	//
 	// It is a JSON field on the wire, not a shared-memory handle: it is
 	// minted in host memory but SENT to the child, so it is a bearer
-	// capability — unguessable, per-request, and invalidated when the
+	// capability: unguessable, per-request, and invalidated when the
 	// originating request completes.
 	Delegation string `json:"delegation,omitempty"`
 }
 
-// CallerRef is the caller context on an INBOUND reverse call —
+// CallerRef is the caller context on an INBOUND reverse call:
 // host.entity.*, host.search.query, host.event.emit. It carries the
 // delegation handle and nothing else.
 //
@@ -213,7 +213,7 @@ type Caller struct {
 // and dispatched under it would be a confused deputy: a compromised module
 // could name any subject or tenant it liked and the host's own CRUD scoping
 // would honour it. Documenting "do not trust these fields" is not enough
-// while the fields sit right there on the decoded struct — so the inbound
+// while the fields sit right there on the decoded struct, so the inbound
 // type does not have them, and the broker has nothing to resolve a principal
 // from except Delegation.
 //
@@ -229,7 +229,7 @@ type CallerRef struct {
 
 // HTTPResponseBodyKind enumerates the three kinds of body a module.http
 // response may carry (design §4.4). kind:"ui.node.v1" is the closed UI node
-// tree — validated, mapped, rendered, and hydrated by the host (design §9);
+// tree: validated, mapped, rendered, and hydrated by the host (design §9);
 // the module NEVER emits raw HTML/CSS/JS.
 type HTTPResponseBodyKind string
 
@@ -245,7 +245,7 @@ const (
 
 // HTTPResponseBody is the body of a module.http response. The host buffers the
 // entire response before committing any headers (the buffered-503 guarantee,
-// design §8) — no streaming in v1.
+// design §8); no streaming in v1.
 type HTTPResponseBody struct {
 	Kind  HTTPResponseBodyKind `json:"kind"`
 	Value json.RawMessage      `json:"value"`
@@ -258,7 +258,7 @@ type HTTPResponseResult struct {
 	Body    HTTPResponseBody  `json:"body"`
 }
 
-// ReadyParams is empty — module.ready takes no params (design §4.4).
+// ReadyParams is empty: module.ready takes no params (design §4.4).
 type ReadyParams struct{}
 
 // ReadyResult is the result of module.ready. ready:true means the child has
@@ -268,7 +268,7 @@ type ReadyResult struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-// HealthParams is empty — module.health takes no params.
+// HealthParams is empty: module.health takes no params.
 type HealthParams struct{}
 
 // HealthResult is the result of module.health. ok:false means the child is
@@ -293,7 +293,7 @@ type DrainResult struct {
 // Tool is one entry in the module.tool.list result. The host registers these
 // into its existing core/mcp.Server under a per-module prefix (design §5.1).
 // At handshake the host verifies byte-equality with the descriptor's tool
-// digests — the child cannot add, rename, or reshape at runtime.
+// digests. The child cannot add, rename, or reshape at runtime.
 type Tool struct {
 	ID          string          `json:"id"`
 	Name        string          `json:"name"`
@@ -322,7 +322,7 @@ type ToolCallResult struct {
 
 // EntityQueryParams is the module→host reverse call host.entity.query.
 // Filter/Sort/Select are json.RawMessage because their shape is the host's
-// existing DSL (framework/filter, framework/dsl) — and this package must NOT
+// existing DSL (framework/filter, framework/dsl), and this package must NOT
 // import any framework/* leaf. The supervisor's broker parses these with the
 // host's real query machinery on the receive side.
 type EntityQueryParams struct {

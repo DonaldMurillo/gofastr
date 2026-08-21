@@ -1,7 +1,7 @@
 // Package vp8l implements a pure-Go VP8L (WebP lossless) encoder.
 //
 // The bitstream is decoded by golang.org/x/image/webp; this package
-// is the matching encoder. Coverage today is Phase A — literal-only
+// is the matching encoder. Coverage today is Phase A: literal-only
 // emission with canonical Huffman codes per channel and no transforms.
 // Phase B (subtract-green) and Phase C (LZ77 + color cache) extend
 // the encoder without changing this public API.
@@ -29,17 +29,17 @@ import (
 // error rather than producing an empty WebP.
 // candidatePredictorModes is the set of uniform predictor modes the
 // encoder tries on every input. We pick the smallest output across
-// the set — a cheap "try N strategies, ship the best" approach that
+// the set, a cheap "try N strategies, ship the best" approach that
 // avoids the bad-cost-metric tax of greedy per-block selection.
 //
-//	mode 1  (L)            — libwebp baseline; great for column-wise gradients
-//	mode 2  (T)            — row-wise gradients
-//	mode 11 (Select)       — picks between L and T per pixel
-//	mode 12 (ClampAdd-Sub) — best for diagonal/smooth gradients
-//	mode 13 (ClampAdd-Half)— variant that wins on photographic content
+//	mode 1  (L)            : libwebp baseline; great for column-wise gradients
+//	mode 2  (T)            : row-wise gradients
+//	mode 11 (Select)       : picks between L and T per pixel
+//	mode 12 (ClampAdd-Sub) : best for diagonal/smooth gradients
+//	mode 13 (ClampAdd-Half): variant that wins on photographic content
 //
 // Together this set covers most real-world inputs. Encoding cost is
-// 5× a single pass — `Encode` short-circuits to 1 pass when a cheap
+// 5× a single pass. `Encode` short-circuits to 1 pass when a cheap
 // uniformity probe confirms every mode would produce identical output.
 var candidatePredictorModes = []int{1, 2, 11, 12, 13}
 
@@ -94,7 +94,7 @@ func Encode(w io.Writer, m image.Image) error {
 
 // isUniform reports whether every pixel in m's bounds has the same
 // 32-bit ARGB value. Used by Encode to short-circuit the multi-pass
-// candidate sweep — no predictor mode produces a smaller stream for
+// candidate sweep. No predictor mode produces a smaller stream for
 // a uniform image, so running 5 of them is pure waste.
 //
 // Fast-path only the two concrete types the framework hands us in
@@ -217,7 +217,7 @@ const (
 )
 
 // packARGB packs (R,G,B,A) into the 32-bit value the color cache hashes
-// against, per the VP8L spec — A in the high byte, then R, G, B.
+// against, per the VP8L spec: A in the high byte, then R, G, B.
 func packARGB(r, g, b, a uint8) uint32 {
 	return uint32(a)<<24 | uint32(r)<<16 | uint32(g)<<8 | uint32(b)
 }
@@ -253,7 +253,7 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle, m
 	// one with minimum L1 residual cost is chosen. Big win for smooth
 	// content (gradients, photos) where local pixel correlation varies.
 	// First row uses mode 1 (L), first column uses mode 2 (T), and
-	// pixel (0,0) uses mode 0 (opaque black) — these are wired into
+	// pixel (0,0) uses mode 0 (opaque black). These are wired into
 	// the decoder regardless of sub-image mode.
 	modes := chooseBlockModes(pixels, w, h, predictorBits, mode)
 	bw.writeBits(1, 1)                       // transform-present

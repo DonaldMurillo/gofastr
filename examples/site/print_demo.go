@@ -22,7 +22,7 @@ import (
 //
 // It mounts the routes directly via RegisterRoutes (rather than
 // fwApp.RegisterBattery) because setupServer composes the router eagerly and
-// the example is served via app.Router() without App.Start — the same reason
+// the example is served via app.Router() without App.Start, the same reason
 // the island/demo handlers in main.go register directly. The real host-app
 // recipe is `app.RegisterBattery(pb)`, which runs the same RegisterRoutes at
 // Start.
@@ -30,7 +30,7 @@ func registerPrintDemos(fwApp *framework.App) {
 	pb := print.New(print.Config{
 		// Demo pages carry no per-user data, so they're Public. Real
 		// invoices/statements should keep the RequireAuth default or use
-		// print.RequireOwner — see the "statement" doc below.
+		// print.RequireOwner. See the "statement" doc below.
 		DefaultAccess: print.Public,
 		AppCSSURL:     "/__gofastr/app.css", // inherit the site's design tokens
 	}).
@@ -58,7 +58,7 @@ func registerPrintDemos(fwApp *framework.App) {
 			Title: "Statement",
 			// Override the Public default: a statement is per-user data, so it
 			// stays behind RequireAuth. With no auth chain wired on the demo
-			// site, anonymous callers always get 401 — which is the point of
+			// site, anonymous callers always get 401, which is the point of
 			// the safe default.
 			Access: print.RequireAuth,
 			Build: func(r *http.Request) (component.Component, error) {
@@ -70,7 +70,7 @@ func registerPrintDemos(fwApp *framework.App) {
 }
 
 // printInvoiceDemo is a tiny standalone invoice body used by the print demos.
-// It renders only the document content — the battery's shell adds the
+// It renders only the document content, the battery's shell adds the
 // <html>/<head>/@page chrome.
 type printInvoiceDemo struct{ id string }
 
@@ -106,5 +106,5 @@ func (printReceiptDemo) Render() render.HTML {
   </tbody>
   <tfoot><tr><th>Total</th><th>$7.50</th></tr></tfoot>
 </table>
-<p>Thanks — come again!</p>`)
+<p>Thanks, and come again!</p>`)
 }

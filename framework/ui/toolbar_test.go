@@ -13,7 +13,7 @@ func TestToolbarRequiresLabel(t *testing.T) {
 			t.Fatal("Toolbar without Label should panic")
 		}
 	}()
-	Toolbar(ToolbarConfig{Groups: []ToolbarGroup{{Children: []render.HTML{}}}}) // shouldn't matter — panics before
+	Toolbar(ToolbarConfig{Groups: []ToolbarGroup{{Children: []render.HTML{}}}}) // shouldn't matter, panics before
 }
 
 func TestToolbarRequiresAtLeastOneGroup(t *testing.T) {

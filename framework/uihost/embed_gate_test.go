@@ -19,7 +19,7 @@ import (
 
 // The frame's only credential is the grant header. Every /__gofastr/* endpoint
 // an embedded surface needs has to accept it, because a frame never has a
-// cookie and never will — and the ones that don't fail silently rather than
+// cookie and never will, and the ones that don't fail silently rather than
 // loudly, which is why this file exists.
 
 func TestContentRenderExposesTheGrant(t *testing.T) {
@@ -199,7 +199,7 @@ func TestRejectedThemesLeaveNoBookkeeping(t *testing.T) {
 // Asserting on the maps after the request is not enough: release cleans them
 // either way, so that version of this test passed with the bound in the wrong
 // place. What the placement actually decides is whether garbage can consume a
-// slot — and with a cap of 2, consuming a slot means EVICTING a customer's real
+// slot, and with a cap of 2, consuming a slot means EVICTING a customer's real
 // branding. That is observable.
 func TestOversizeThemeCannotEvictARealTheme(t *testing.T) {
 	f := newEmbedFixture(t) // reports declares MaxVariants: 2
@@ -217,7 +217,7 @@ func TestOversizeThemeCannotEvictARealTheme(t *testing.T) {
 	render(second)
 
 	// The cap is now full. A parameter too large to be usable must not take a
-	// slot — taking one means evicting a customer's real branding.
+	// slot. Taking one means evicting a customer's real branding.
 	//
 	// The eviction is not observable through the served key: keys are content
 	// addresses, so a variant that is evicted and then re-registered comes back
@@ -245,7 +245,7 @@ func TestOversizeThemeCannotEvictARealTheme(t *testing.T) {
 // Regression: the response body carries expires_in_ms, which is derived from
 // the wall clock at write time. Comparing whole bodies made this test fail
 // roughly once in a thousand runs with the message "one nonce bought two
-// identities" — sending anyone who read it after a single-use violation that
+// identities", sending anyone who read it after a single-use violation that
 // had not happened. The property is about the GRANT.
 func TestExchangeIsIdempotentOnTheGrant(t *testing.T) {
 	f := newEmbedFixture(t)
@@ -272,7 +272,7 @@ func TestExchangeIsIdempotentOnTheGrant(t *testing.T) {
 	// MintGrant is deterministic in its claims and its two time fields are
 	// truncated to whole seconds, so two mints inside one second are
 	// byte-identical. Comparing the grants back to back therefore passed even
-	// with the replay branch deleted and Exchange re-minting every time — the
+	// with the replay branch deleted and Exchange re-minting every time. The
 	// equality came from the clock, not from the store. This sleep is what makes
 	// the assertion load-bearing: a re-mint now lands in a different second and
 	// produces different bytes.
@@ -315,7 +315,7 @@ func TestReserveDistinguishesDuplicateFromFull(t *testing.T) {
 //
 // So build the URL the way the runtime builds it, fetch it, and check the bytes.
 //
-// This covers the SERVER half only — it reimplements kernel.js's concatenation
+// This covers the SERVER half only: it reimplements kernel.js's concatenation
 // rather than executing it, so mutating the fragment cannot fail it. The client
 // half is gated separately by TestKernelAppendsVersionWithTheRightSeparator in
 // core-ui/runtime, which is where the bug actually lived. Neither test is
@@ -371,7 +371,7 @@ func TestEmbedComponentCSSFollowsTheCustomerTheme(t *testing.T) {
 }
 
 // A reservation is stored as an empty key, and reporting that as a hit made the
-// caller render under the app theme — the very failure the duplicate branch was
+// caller render under the app theme, the very failure the duplicate branch was
 // added to prevent. The window is the whole of resolveEmbedTheme, so a second
 // request for the same theme almost always lands inside it.
 func TestInFlightThemeIsNotAHit(t *testing.T) {
@@ -394,12 +394,12 @@ func TestInFlightThemeIsNotAHit(t *testing.T) {
 // A presented credential's verdict is final. The runtime keeps sending an
 // expired grant on purpose (so the server answers 401 rather than serving an
 // anonymous render), and in a same-site framing the browser sends the viewer's
-// session cookie alongside it — so falling back to the cookie answered the
+// session cookie alongside it, so falling back to the cookie answered the
 // embed request as an entirely different, unrelated user.
 func TestInvalidGrantDoesNotFallBackToASession(t *testing.T) {
 	f := newEmbedFixture(t)
 
-	// A REAL, valid session for this host — the point of the test is that a
+	// A REAL, valid session for this host. The point of the test is that a
 	// working cookie must not rescue a refused grant. A bogus cookie would make
 	// this pass on the cookie's own invalidity and prove nothing.
 	sess := f.host.CreateSession()
@@ -436,8 +436,8 @@ func TestServerActionRefusesAnEmbedGrant(t *testing.T) {
 
 // The catalog and the widget gate must follow the same rule as the shared
 // endpoint gate: a presented grant decides the request. Falling back to a
-// cookie let an EXPIRED embed — which the runtime keeps sending on purpose so
-// the server 401s — be answered as the viewer's unrelated logged-in user, with
+// cookie let an EXPIRED embed, which the runtime keeps sending on purpose so
+// the server 401s, be answered as the viewer's unrelated logged-in user, with
 // the per-surface scoping skipped entirely.
 func TestRefusedGrantNeverFallsBackOnWidgetRoutes(t *testing.T) {
 	only := func(path string) []widget.RouteMatcher {
@@ -470,7 +470,7 @@ func TestRefusedGrantNeverFallsBackOnWidgetRoutes(t *testing.T) {
 // A duplicate must WAIT for the in-flight owner, not resolve its own copy.
 //
 // Resolving independently and releasing the extra registration looked
-// equivalent because the key is a content address — but when the duplicate got
+// equivalent because the key is a content address, but when the duplicate got
 // there first, its register took the refcount 0→1 and its release took it 1→0,
 // deleting the variant before the owner registered anything. The duplicate then
 // returned a key nothing held.

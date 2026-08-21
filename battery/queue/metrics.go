@@ -21,7 +21,7 @@ func MetricsCollector(q Browsable, lane string) func(io.Writer) {
 		if err != nil {
 			return
 		}
-		// Missing status keys default to 0 — a fresh queue has nothing
+		// Missing status keys default to 0, a fresh queue has nothing
 		// pending or dead-lettered yet.
 		pending := stats["pending"]
 		dead := stats["dead"]

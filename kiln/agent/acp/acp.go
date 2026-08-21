@@ -161,7 +161,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req rpcRequest) rpcRespons
 }
 
 // handlePrompt is a "user said this" notification from the harness. We
-// journal it as a chat message — the actual reasoning happens in the
+// journal it as a chat message, the actual reasoning happens in the
 // harness; Kiln is only the tool surface.
 func (s *Server) handlePrompt(ctx context.Context, req rpcRequest) rpcResponse {
 	var p struct {
@@ -178,7 +178,7 @@ func (s *Server) handlePrompt(ctx context.Context, req rpcRequest) rpcResponse {
 }
 
 // PromptString builds the system prompt the harness should pass to its
-// LLM so the model knows about Kiln tools — useful when the harness
+// LLM so the model knows about Kiln tools, useful when the harness
 // (e.g. Codex) wants to inline Kiln's instructions instead of relying
 // on its own system prompt.
 func (s *Server) PromptString() string {

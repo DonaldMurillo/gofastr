@@ -19,7 +19,7 @@ import (
 // it with the same bcrypt hasher the battery uses, and creates a user
 // with roles ["admin"].
 //
-// The Complete predicate probes the users table directly —
+// The Complete predicate probes the users table directly,
 // auth.UserStore has no count/list surface and the brief forbids adding
 // methods to battery/auth. The narrowest exported surface is the *sql.DB
 // the host already holds (the same one passed to
@@ -28,7 +28,7 @@ import (
 // usersTable MUST match the table name passed to
 // auth.NewEntityUserStore (typically "auth_users"). The identifier is
 // validated with query.SafeIdent and quoted with query.QuoteIdent since
-// it can't be parameterized. An empty or unsafe name panics — fail loud,
+// it can't be parameterized. An empty or unsafe name panics, fail loud,
 // never silently fall back to a hardcoded default.
 //
 // EnvVars: GOFASTR_ADMIN_EMAIL / GOFASTR_ADMIN_PASSWORD.
@@ -81,7 +81,7 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 
 	complete := func(ctx context.Context) (bool, error) {
 		var exists bool
-		// SELECT 1 FROM <quotedTable> LIMIT 1 — one row means at least
+		// SELECT 1 FROM <quotedTable> LIMIT 1, one row means at least
 		// one user. The table is guaranteed to exist (EnsureSchema ran
 		// in AuthManager.Init before setup).
 		err := db.QueryRowContext(ctx, "SELECT 1 FROM "+quotedTable+" LIMIT 1").Scan(&exists)

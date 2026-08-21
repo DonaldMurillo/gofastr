@@ -50,7 +50,7 @@ func buildDemo(t *testing.T) (appSrv, customerSrv *httptest.Server, embeds *femb
 
 // The customer's page must carry a FRESH nonce on every load. A nonce baked
 // into a template is spent by the first visitor, and every visitor after them
-// arrives as the same identity — the failure single-use exists to prevent.
+// arrives as the same identity, the failure single-use exists to prevent.
 func TestCustomerPageMintsAFreshNoncePerLoad(t *testing.T) {
 	_, customer, _ := buildDemo(t)
 
@@ -60,7 +60,7 @@ func TestCustomerPageMintsAFreshNoncePerLoad(t *testing.T) {
 		t.Fatal("the customer page carries no nonce")
 	}
 	if first == second {
-		t.Fatal("two page loads served the SAME nonce — it would be spent by the first visitor")
+		t.Fatal("two page loads served the SAME nonce; it would be spent by the first visitor")
 	}
 }
 
@@ -102,7 +102,7 @@ func TestDemoHandshakeYieldsAnAuthenticatedPanel(t *testing.T) {
 
 // The customer id the loader forwards (data-customer) reaches the shell as
 // ?customer=<id>, and the shell asks the OriginSource for THAT customer's
-// origins — writing only them into frame-ancestors. An unknown customer fails
+// origins, writing only them into frame-ancestors. An unknown customer fails
 // closed to 'none'. This is the path the loader's customer forwarding exists to
 // feed: without it the shell sees an empty id and (with a source) blocks every
 // frame for every customer.
@@ -127,7 +127,7 @@ func TestShellServesOnlyTheRequestingCustomersOrigins(t *testing.T) {
 			demoCustomer, customerOrigin, csp)
 	}
 	if csp := shellCSP(t, "nobody"); strings.Contains(csp, customerOrigin) {
-		t.Fatalf("an unknown customer leaked another customer's origin into frame-ancestors — the source must fail closed\nCSP: %s", csp)
+		t.Fatalf("an unknown customer leaked another customer's origin into frame-ancestors; the source must fail closed\nCSP: %s", csp)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestCustomerPageCarriesTheCustomerIdForTheLoader(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if want := `data-customer="` + demoCustomer + `"`; !strings.Contains(string(body), want) {
-		t.Fatalf("customer page has no %q — the loader cannot forward the customer id", want)
+		t.Fatalf("customer page has no %q: the loader cannot forward the customer id", want)
 	}
 }
 

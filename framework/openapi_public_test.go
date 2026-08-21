@@ -59,7 +59,7 @@ func TestOpenAPI_GatedByDefault(t *testing.T) {
 }
 
 // TestOpenAPI_PublicWhenOptedIn confirms WithPublicOpenAPI serves the spec
-// unauthenticated — the fix for the quickstart curl that always 401'd.
+// unauthenticated, the fix for the quickstart curl that always 401'd.
 func TestOpenAPI_PublicWhenOptedIn(t *testing.T) {
 	app, cleanup := startApp(t, openapiApp(t, WithPublicOpenAPI()))
 	defer cleanup()

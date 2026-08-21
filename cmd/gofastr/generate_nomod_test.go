@@ -16,8 +16,8 @@ import (
 //	  go mod tidy   →  go.mod file not found in current directory or any parent
 //
 // The generated code imports itself by module path (…/entities), so without a
-// go.mod nothing it emitted can build. The adjacent case — a go.mod that
-// declares a DIFFERENT module — already fails with a message naming the exact
+// go.mod nothing it emitted can build. The adjacent case, a go.mod that
+// declares a DIFFERENT module, already fails with a message naming the exact
 // remedy (resolveBlueprintModule). Only the absent case was unhandled, and it
 // is the one a first-time user hits.
 //
@@ -38,7 +38,7 @@ func TestGenerateWithoutGoModWarnsAndNamesTheInitCommand(t *testing.T) {
 	if !strings.Contains(out, "go.mod") {
 		t.Errorf("generating outside a module never mentioned go.mod:\n%s", out)
 	}
-	// The remedy must be the runnable command, not a description of it — the
+	// The remedy must be the runnable command, not a description of it. The
 	// module-mismatch guard sets that bar and this path should meet it.
 	module := blueprintModuleFromYAML(t, testBlueprintYAML())
 	wantInit := "go mod init " + module

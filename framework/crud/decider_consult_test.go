@@ -57,7 +57,7 @@ func TestDeciderConsult_GetSeesEntityAndID(t *testing.T) {
 }
 
 // TestDeciderConsult_ListSeesEmptyID confirms collection-level ops pass an empty
-// record id — the decider sees Ref{Type: "docs", ID: ""}, not a fabricated id.
+// record id, the decider sees Ref{Type: "docs", ID: ""}, not a fabricated id.
 func TestDeciderConsult_ListSeesEmptyID(t *testing.T) {
 	ch, _ := setupPermissionedHandler(t)
 	cd := &capturingDecider{ret: access.DecisionAbstain}
@@ -107,7 +107,7 @@ func TestDeciderConsult_AllowPermitsUngatedRead(t *testing.T) {
 	}
 	cd := &capturingDecider{ret: access.DecisionAllow}
 
-	// grantReq with NO docs:read — only a dummy permission so policy is present.
+	// grantReq with NO docs:read, only a dummy permission so policy is present.
 	req := grantReq(httptest.NewRequest(http.MethodGet, "/api/docs/d1", nil), "docs:nopenope")
 	req.SetPathValue("id", "d1")
 	req = reqWithDecider(req, cd.fn)
@@ -121,7 +121,7 @@ func TestDeciderConsult_AllowPermitsUngatedRead(t *testing.T) {
 
 // TestDeciderConsult_NoDeciderUnchanged confirms byte-identical behaviour with
 // no decider installed: the existing crud permission-gate semantics (the suite
-// in permission_gate_test.go) must hold — a granted role is allowed, an
+// in permission_gate_test.go) must hold, a granted role is allowed, an
 // ungranted one is denied, with no resource-aware path involved.
 func TestDeciderConsult_NoDeciderUnchanged(t *testing.T) {
 	ch, _ := setupPermissionedHandler(t)

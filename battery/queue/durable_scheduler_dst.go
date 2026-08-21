@@ -12,7 +12,7 @@ import (
 // bitmask matching. The framework parser/matcher is unchanged: it evaluates
 // cron fields against a time.Time's wall-clock fields (.Minute(), .Hour(),
 // .Day(), .Month(), .Weekday()) regardless of zone, so the only thing it
-// gets wrong on its own is the DST transition itself — a minute-by-minute
+// gets wrong on its own is the DST transition itself, a minute-by-minute
 // absolute-time walk skips over (spring-forward) or double-counts
 // (fall-back) the transition's wall-clock minutes. The two helpers below
 // wrap that walk to recover vixie semantics:
@@ -32,7 +32,7 @@ import (
 // semantics belong to the durable scheduler's location-aware catch-up, not
 // to the location-agnostic in-process scheduler that shares the parser.
 
-// wallMinuteKey is the Y-M-D H:M tuple of a time rendered in its location —
+// wallMinuteKey is the Y-M-D H:M tuple of a time rendered in its location,
 // the identity of a "wall-clock minute" independent of the zone offset it
 // was reached through. Used to dedupe fall-back repeats: two absolute
 // instants with the same wallMinuteKey but different offsets are the same
@@ -108,7 +108,7 @@ func nextFire(parsed cron.Schedule, loc *time.Location, after, prevFire time.Tim
 // Spring-forward: when the absolute-minute step skipped wall minutes, each
 // skipped wall minute is tested; if any matches, a single tick is emitted at
 // the transition instant (the post-step minute). At most one transition tick
-// per transition — matching vixie cron, which fires skipped-window jobs once
+// per transition, matching vixie cron, which fires skipped-window jobs once
 // at the transition rather than once per matching skipped minute.
 func firesInRange(parsed cron.Schedule, loc *time.Location, cursor, now time.Time, limit int) ([]time.Time, error) {
 	if limit <= 0 {
@@ -173,7 +173,7 @@ func firesInRange(parsed cron.Schedule, loc *time.Location, cursor, now time.Tim
 //
 // A spring-forward is detected by the zone offset INCREASING from a to b
 // (e.g., US Eastern EST→EDT shifts the offset from -5 to -4). Real-world DST
-// is ≤ 1h so the skipped window is at most 60 minutes — but the loop is
+// is ≤ 1h so the skipped window is at most 60 minutes, but the loop is
 // bounded by the wall-clock gap regardless, so a pathological shift would
 // still terminate.
 //

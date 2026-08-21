@@ -37,7 +37,7 @@ func upsertApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 }
 
 // ============================================================================
-// First UpsertOne acts as INSERT — row didn't exist
+// First UpsertOne acts as INSERT, row didn't exist
 // ============================================================================
 
 func TestUpsert_InsertOnNew(t *testing.T) {
@@ -94,7 +94,7 @@ func TestUpsert_FiresHooks(t *testing.T) {
 }
 
 // ============================================================================
-// UpsertOne rolls back when validation fails — required field missing
+// UpsertOne rolls back when validation fails, required field missing
 // ============================================================================
 
 func TestUpsert_ValidationRollsBack(t *testing.T) {
@@ -143,7 +143,7 @@ func TestUpsert_PreservesIDOnConflict(t *testing.T) {
 		if _, err := ch.UpsertOne(context.Background(), map[string]any{"id": "p1", "title": "v1"}); err != nil {
 			t.Fatalf("first: %v", err)
 		}
-		// Re-upsert with the same id — id field should remain "p1" (not regenerate).
+		// Re-upsert with the same id, id field should remain "p1" (not regenerate).
 		got, err := ch.UpsertOne(context.Background(), map[string]any{"id": "p1", "title": "v2"})
 		if err != nil {
 			t.Fatalf("second: %v", err)

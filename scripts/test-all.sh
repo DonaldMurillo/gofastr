@@ -2,7 +2,7 @@
 # Shell scripts are pinned to LF in .gitattributes so this entrypoint also
 # executes directly from WSL against a Windows checkout.
 # Run every Go test in the repo. Use before/after large refactors to
-# verify nothing regressed — including the slow chromedp suite in
+# verify nothing regressed, including the slow chromedp suite in
 # examples/site and the long kiln/integration suite.
 #
 # Flags:
@@ -18,7 +18,7 @@
 #              address" / "connect: can't assign requested address" on
 #              tests that succeed in isolation. Capping at 2 keeps
 #              intra-package t.Parallel() at full GOMAXPROCS while
-#              keeping the kernel ephemeral pool from saturating —
+#              keeping the kernel ephemeral pool from saturating,
 #              picked 2 (not higher) because the heaviest packages
 #              (cmd/gofastr blueprint subprocesses, kiln/integration
 #              chromedp, examples/site chromedp, core-ui/runtime
@@ -30,7 +30,7 @@
 # Resource-contention self-heal: even at -p 2 a long run can momentarily
 # drain the ephemeral pool (loopback-heavy packages like battery/auth,
 # battery/setup, battery/webhook landing next to a chromedp or
-# subprocess suite). When — and only when — the failing run's output
+# subprocess suite). When, and only when, the failing run's output
 # carries the kernel signature ("can't assign requested address"), the
 # failed packages are re-run serially (-p 1) after a TIME_WAIT drain.
 # Meridian's 16-surface visual canary can also exhaust its bounded capture
@@ -38,14 +38,14 @@
 # signature: "capture attempt N failed: context deadline exceeded"), and the
 # evalrunner capture tests can hit their 90s deadlines under the same Chrome
 # contention (looser signature: an evalrunner FAIL plus a capture/screenshot
-# deadline message anywhere in the log — its tests fail through varied
+# deadline message anywhere in the log, its tests fail through varied
 # t.Fatalf texts, so this pairing accepts the same narrow residual risk as
 # the port class below). Both retry serially without the port-drain delay.
 # A DETERMINISTIC real failure fails the retry too (the retry re-runs the
 # actual tests with -count=1), and failures without either known resource
 # signature fail immediately with no retry. The residual risk is narrow:
 # a genuinely flaky race in package A that happens to co-occur with a
-# port message from package B could pass on the serial retry — acceptable
+# port message from package B could pass on the serial retry, acceptable
 # versus the alternative of a suite that can't complete in parallel at all.
 #   -race      optional, opt-in via RACE=1 (slows full run ~2x)
 #
@@ -85,7 +85,7 @@ if [ "$status" -eq 0 ]; then
 fi
 
 # Only self-heal the two known resource-contention signatures. Anything else
-# is a real failure — surface it untouched.
+# is a real failure, surface it untouched.
 port_exhausted=0
 browser_starved=0
 grep -q "can't assign requested address" "$LOG" && port_exhausted=1

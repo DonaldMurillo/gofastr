@@ -23,7 +23,7 @@ func TestDataTableColumnRequiresKey(t *testing.T) {
 func TestSortableEmptyHeaderAriaLabel(t *testing.T) {
 	// A sortable column with an empty Header (icon-only / key-only
 	// columns) must still expose an accessible label on its sort
-	// control, derived from the column Key — otherwise screen readers
+	// control, derived from the column Key, otherwise screen readers
 	// announce a nameless button/link. Plain (link) mode.
 	h := string(DataTable(DataTableConfig{
 		Columns:         []Column{{Key: "price", Header: "", Sortable: true}},
@@ -201,7 +201,7 @@ func TestDataTableMissingCellRendersEmpty(t *testing.T) {
 		}}},
 	}))
 	// Two cells should render even when the second is missing from
-	// the Cells map — they collapse to empty content.
+	// the Cells map. They collapse to empty content.
 	if strings.Count(h, "<td") != 2 {
 		t.Errorf("expected 2 <td even with missing cell, got %d in: %s",
 			strings.Count(h, "<td"), h)
@@ -269,7 +269,7 @@ func TestDataTable_ResponsiveCards_AddsDataLabelOnCells(t *testing.T) {
 }
 
 func TestDataTable_ResponsiveScroll_DoesNotAddDataLabel(t *testing.T) {
-	// Default (ResponsiveScroll / "") should NOT emit data-label —
+	// Default (ResponsiveScroll / "") should NOT emit data-label:
 	// avoid noisy attributes on the typical wide-viewport table.
 	h := string(DataTable(DataTableConfig{
 		Columns: []Column{{Key: "name", Header: "Name"}},
@@ -287,7 +287,7 @@ func TestDataTable_ResponsiveScroll_DoesNotAddDataLabel(t *testing.T) {
 
 func TestDataTable_ResponsiveCards_EmptyHeaderHasNoDataLabel(t *testing.T) {
 	// Columns with empty Header (e.g. icon-only / actions column)
-	// shouldn't get data-label="" — the CSS hides the ::before pseudo
+	// shouldn't get data-label="": the CSS hides the ::before pseudo
 	// for cells without the attribute. Keep the attribute absent so
 	// the CSS rule matches.
 	h := string(DataTable(DataTableConfig{

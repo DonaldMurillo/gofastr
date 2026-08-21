@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// RoutineChecksum returns the lowercase-hex sha256 of a routine's Up body —
+// RoutineChecksum returns the lowercase-hex sha256 of a routine's Up body,
 // the same identifier the routine ledger records (gofastr_routines.checksum)
 // and that introspection (app_routines) compares against the ledger row to
 // flag drift. Stable across boots for an unchanged Up; differs on any byte
@@ -39,11 +39,11 @@ const (
 //	<name>.sqlite.down.sql → Down for the SQLite-only routine
 //
 // A name MUST NOT have both a plain Up (`<name>.sql`) AND a dialect-suffixed
-// Up (`<name>.pg.sql` or `<name>.sqlite.sql`) — that's an authoring error
+// Up (`<name>.pg.sql` or `<name>.sqlite.sql`). That's an authoring error
 // (which body is canonical?). Two dialect suffixes for the same name are
 // likewise rejected. A name with only a Down file and no Up is an error
 // (rollback-without-forward). Empty/whitespace-only Up files and empty
-// directories are errors — the framework screams rather than silently
+// directories are errors: the framework screams rather than silently
 // no-op'ing, the same posture as a misconfigured entity.
 //
 // Only top-level files in dir are considered. Sub-directories, dotfiles,
@@ -74,7 +74,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		}
 		name := e.Name()
 		// Skip dotfiles (".#foo.sql" editor swaps, ".gitkeep") and non-sql.
-		// Only top-level — sub-directories of dir are walked by ReadDir only
+		// Only top-level: sub-directories of dir are walked by ReadDir only
 		// one level deep, so a nested "routines/v2/x.sql" is naturally ignored.
 		if strings.HasPrefix(name, ".") {
 			continue
@@ -99,7 +99,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 
 		routineName, dialect, dsuffix := splitDialectSuffix(base)
 		if dsuffix != "" && dialect == "" {
-			// Unknown dialect suffix — reject loud rather than silently
+			// Unknown dialect suffix: reject loud rather than silently
 			// treating "foo.mysql.sql" as a name called "foo.mysql".
 			return nil, fmt.Errorf("migrate.RoutinesFS: %q: unknown dialect suffix %q (want %s or %s)",
 				name, dsuffix, dialectPostgres, dialectSQLite)
@@ -131,7 +131,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 			// A name with two Ups is one of two authoring errors:
 			//  - plain + dialect (e.g. foo.sql + foo.pg.sql)
 			//  - two dialects (e.g. foo.pg.sql + foo.sqlite.sql)
-			// Both are ambiguous — surface the names so the operator sees
+			// Both are ambiguous: surface the names so the operator sees
 			// exactly which files collide.
 			return nil, fmt.Errorf("migrate.RoutinesFS: routine %q has multiple up definitions (declare exactly one of plain/%s%s/%s%s)",
 				routineName, dialectPostgres, sqlExt, dialectSQLite, sqlExt)
@@ -142,13 +142,13 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 
 	if len(ups) == 0 {
 		// Either the directory was empty, or it only had non-.sql / dotfiles.
-		// Both are screams — a misconfigured embed path that points at the
+		// Both are screams: a misconfigured embed path that points at the
 		// parent of the routines dir silently no-ops today, and that's the
 		// exact failure mode the brief asks us to eliminate.
 		return nil, fmt.Errorf("migrate.RoutinesFS: no .sql up files found in %q", dir)
 	}
 
-	// A Down file with no matching Up is a rollback-without-forward — reject.
+	// A Down file with no matching Up is a rollback-without-forward: reject.
 	for name := range downs {
 		if _, ok := ups[name]; !ok {
 			return nil, fmt.Errorf("migrate.RoutinesFS: routine %q has a down file but no up file", name)
@@ -179,7 +179,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 // trailing segment (so the caller can decide whether to reject).
 //
 // The routine name is everything before the dialect suffix. A name may itself
-// contain dots ("audit.log_fn") — we only strip a known suffix, so
+// contain dots ("audit.log_fn"). We only strip a known suffix, so
 // "audit.log_fn.pg" → ("audit.log_fn", DialectPostgres, ".pg") and
 // "audit.log_fn.else" → ("audit.log_fn.else", "", ".else") (rejected upstream).
 func splitDialectSuffix(base string) (name string, dialect Dialect, suffix string) {

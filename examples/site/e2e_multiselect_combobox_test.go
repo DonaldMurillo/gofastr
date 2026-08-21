@@ -34,7 +34,7 @@ func TestE2E_MultiselectChipShowsLabel(t *testing.T) {
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.multiselect)`),
 		settle(),
-		// Go ships Selected:true — the boot scan must render its chip
+		// Go ships Selected:true, the boot scan must render its chip
 		// with the visible Label.
 		chromedp.Evaluate(`document.querySelector('.ui-multiselect__chip span')?.textContent || ''`, &bootChip),
 		// Open the disclosure and pick C++ (Value "cpp").

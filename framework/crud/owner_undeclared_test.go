@@ -17,8 +17,8 @@ import (
 
 // setupUndeclaredOwnerWorld builds the README "Donald's Way" shape: an
 // entity whose Scope names an owner column that is NOT declared in
-// Fields. The table is created by migrate.AutoMigrate — the production
-// boot path — so the test sees exactly what a running app gets: before
+// Fields. The table is created by migrate.AutoMigrate, the production
+// boot path, so the test sees exactly what a running app gets: before
 // the Define fix, a table with no user_id column at all.
 func setupUndeclaredOwnerWorld(t *testing.T) (*CrudHandler, *sql.DB) {
 	t.Helper()
@@ -63,7 +63,7 @@ func tableColumns(t *testing.T, db *sql.DB, table string) map[string]bool {
 }
 
 // AutoMigrate builds columns from GetFields(). When OwnerField names an
-// undeclared column, the table must still get it — otherwise every
+// undeclared column, the table must still get it, otherwise every
 // owner-scoped read targets a column that does not exist.
 func TestOwnerScope_UndeclaredOwnerColumnAutoCreated(t *testing.T) {
 	_, db := setupUndeclaredOwnerWorld(t)
@@ -73,7 +73,7 @@ func TestOwnerScope_UndeclaredOwnerColumnAutoCreated(t *testing.T) {
 }
 
 // Regression: authenticated POST on an owner-scoped entity that never
-// declared the owner field returned 201 but persisted an UNOWNED row —
+// declared the owner field returned 201 but persisted an UNOWNED row,
 // InjectOwner stamped body["user_id"] and doCreate silently dropped it,
 // because the INSERT column list comes from GetFields().
 func TestOwnerScope_UndeclaredOwnerPersistedOnCreate(t *testing.T) {
@@ -104,7 +104,7 @@ func TestOwnerScope_UndeclaredOwnerPersistedOnCreate(t *testing.T) {
 }
 
 // Regression: authenticated GET/LIST on such an entity 500'd with
-// "no such column: user_id" — ApplyOwnerScope adds WHERE user_id = ?
+// "no such column: user_id". ApplyOwnerScope adds WHERE user_id = ?
 // against a column AutoMigrate never created.
 func TestOwnerScope_UndeclaredOwnerScopesReads(t *testing.T) {
 	ch, _ := setupUndeclaredOwnerWorld(t)

@@ -57,8 +57,8 @@ func TestConflictingRegistrationPanics(t *testing.T) {
 		}
 		// The panic must name file:line of both call sites so the
 		// dev knows which Register to rename. Raw uintptrs are
-		// useless. We check for "registry_test.go:" in the message
-		// — it must point back to this very test file twice.
+		// useless. We check for "registry_test.go:" in the message,
+		// it must point back to this very test file twice.
 		if strings.Count(msg, "registry_test.go:") < 2 {
 			t.Errorf("panic message must include file:line for both styleFns, got:\n%s", msg)
 		}
@@ -143,7 +143,7 @@ func TestScanIgnoresOtherAttrs(t *testing.T) {
 }
 
 func TestScanRequiresAttributeBoundary(t *testing.T) {
-	// xdata-fui-comp="y" must NOT match — the anchor requires a
+	// xdata-fui-comp="y" must NOT match, the anchor requires a
 	// preceding whitespace or `/`, so an attribute-name prefix
 	// like xdata-fui-comp doesn't masquerade as the marker.
 	htmlBad := `<div xdata-fui-comp="masquerade"></div>`
@@ -208,7 +208,7 @@ func TestCSSAndVersionCacheStable(t *testing.T) {
 	}
 }
 
-// Catch panic with string message — RegisterStyle panics with
+// Catch panic with string message, RegisterStyle panics with
 // fmt.Sprintf, so the value is a string.
 func init() {
 	// Ensure component package is reachable for type checks.

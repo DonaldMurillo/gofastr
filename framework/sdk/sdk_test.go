@@ -101,7 +101,7 @@ func TestPackZipPrefixesEntries(t *testing.T) {
 		t.Fatalf("unexpected entries: %+v", zr.File)
 	}
 	// A zero Modified round-trips through the DOS timestamp as the 1979/80
-	// epoch — anything later means a real mtime leaked in.
+	// epoch, anything later means a real mtime leaked in.
 	if zr.File[0].Modified.Year() > 1980 {
 		t.Fatalf("entry carries a real timestamp (%v); archives must be deterministic", zr.File[0].Modified)
 	}

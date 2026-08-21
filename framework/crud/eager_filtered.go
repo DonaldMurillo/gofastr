@@ -17,7 +17,7 @@ import (
 //
 // Filters are appended as additional WHERE predicates after the IN-clause
 // that ties children to their parents. EXISTS isn't used here because we
-// want the matching child rows themselves attached to each parent — a
+// want the matching child rows themselves attached to each parent, a
 // straight WHERE on the inner SELECT is the correct shape.
 //
 // Result map keys/values mirror EagerLoad: outer key = parent id, inner map =
@@ -35,7 +35,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 	}
 
 	// When the related entity is soft-deletable, hide logically-removed
-	// rows from the eager-load — the direct read paths do this via
+	// rows from the eager-load, the direct read paths do this via
 	// ApplySoftDeleteFilter, and an include must not be a back door around
 	// it. Rendered as a static (non-parameterised) `deleted_at IS NULL`.
 	softDeleteFilter := ""
@@ -44,7 +44,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 	}
 
 	// Validate relation-derived identifiers before dispatching. The SELECT
-	// targets the entity's TABLE, not Relation.Entity — that field is the
+	// targets the entity's TABLE, not Relation.Entity, that field is the
 	// registry key (the entity NAME), and the two differ whenever a host
 	// declares Name != Table.
 	safeEntity, err := query.SafeIdent(node.Target.GetTable())
@@ -69,7 +69,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 
 	// Build the set of Hidden columns on the related entity so the loaders
 	// can scrub them from each attached row. The direct read paths project
-	// only VisibleFields() (crud.go) — an include must not be a back door
+	// only VisibleFields() (crud.go), an include must not be a back door
 	// that leaks a related entity's Hidden fields (e.g. password_hash).
 	hidden := hiddenColumns(node.Target)
 
@@ -90,7 +90,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 		mtmSoftDelete := softDeleteFilter
 		if mtmSoftDelete != "" {
 			// The ManyToMany SELECT JOINs target + pivot, so a bare
-			// `deleted_at` would be ambiguous — qualify it with the target.
+			// `deleted_at` would be ambiguous, qualify it with the target.
 			mtmSoftDelete = " AND " + query.QuoteIdent(safeEntity) + ".deleted_at IS NULL"
 		}
 		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Target, node.Filters, node.ReadScopes, ids, result, mtmSoftDelete, hidden, budget)
@@ -395,7 +395,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 // `col IN ($a, $b, …)` predicate. parseScopedFilters expands a piped
 // `status_in=a|b|c` clause into one OpIn ParsedFilter per value; rendering
 // each as `col = $N` ANDed together would require a single row to equal
-// every value at once — i.e. match nothing. The IN coalescing restores
+// every value at once, i.e. match nothing. The IN coalescing restores
 // the intended OR semantics.
 //
 // f.Field values MUST be validated before calling this function.
@@ -405,7 +405,7 @@ func filterClause(filters []filter.ParsedFilter, startIdx int) (string, []any) {
 
 // filterClauseQualified is like filterClause but prefixes each column with
 // the given table name. Used by the ManyToMany loader where the SELECT
-// JOINs the target + pivot — bare column names would be ambiguous.
+// JOINs the target + pivot, bare column names would be ambiguous.
 //
 // Both `table` and f.Field values MUST be validated before calling.
 func filterClauseQualified(filters []filter.ParsedFilter, table string, startIdx int) (string, []any) {

@@ -24,7 +24,7 @@ func (f *failAppendJournal) Append(e journal.Entry) (int, error) {
 }
 
 // TestApplyRollsBackOnAppendFailure asserts that when the durable journal
-// Append fails, the in-memory session is NOT left ahead of the log — state
+// Append fails, the in-memory session is NOT left ahead of the log, state
 // must never outlive the durable record. (finding k-live-1)
 func TestApplyRollsBackOnAppendFailure(t *testing.T) {
 	fj := &failAppendJournal{Journal: journal.NewMemory()}

@@ -32,7 +32,7 @@ const (
 // secret shared across replicas is all a multi-replica deployment
 // configures. Equivalent zero-code path: set GOFASTR_SECRET in the
 // environment (or a .env file); an explicit WithSecret wins over the
-// env var. Panics on a secret shorter than 32 characters — a short
+// env var. Panics on a secret shorter than 32 characters, a short
 // secret weakens every derived key at once.
 func WithSecret(secret string) AppOption {
 	validated := validateSecret(secret)
@@ -52,7 +52,7 @@ func WithSecret(secret string) AppOption {
 // one-liners.
 func validateSecret(secret string) string {
 	if len(secret) < minSecretLen {
-		panic("framework: app secret must be at least 32 characters — generate one with `openssl rand -base64 32` and pass it via WithSecret or GOFASTR_SECRET")
+		panic("framework: app secret must be at least 32 characters: generate one with `openssl rand -base64 32` and pass it via WithSecret or GOFASTR_SECRET")
 	}
 	return secret
 }
@@ -82,7 +82,7 @@ func WithSecretRotation(current string, previous ...string) AppOption {
 }
 
 // deriveKey derives a 32-byte subsystem key from the app secret via
-// HKDF-SHA256 with a per-purpose info string. Purposes are constants —
+// HKDF-SHA256 with a per-purpose info string. Purposes are constants:
 // a bad parameter is a programming error, hence panic.
 func deriveKey(secret []byte, purpose string) []byte {
 	key, err := hkdf.Key(sha256.New, secret, nil, purpose, 32)
@@ -94,7 +94,7 @@ func deriveKey(secret []byte, purpose string) []byte {
 
 // sessionKeyForMount resolves the single session-signing key handed to a
 // mounted UI host (the no-rotation path). A nil, nil return means "no key
-// to hand over" — the host self-mints a per-boot key, which is only sound
+// to hand over", the host self-mints a per-boot key, which is only sound
 // on a single replica. With a fanout attached (the multi-replica signal)
 // and no secret configured, it errors so boot fails closed instead of half
 // of all session checks 401ing in production. For graceful rotation use
@@ -123,7 +123,7 @@ func sessionKeysForMount(secret []byte, previous [][]byte, fanoutAttached bool) 
 		return current, prevKeys, nil
 	}
 	if fanoutAttached {
-		return nil, nil, errors.New("framework: WithFanout requires an app secret — session tokens minted on one replica must verify on every other. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
+		return nil, nil, errors.New("framework: WithFanout requires an app secret: session tokens minted on one replica must verify on every other. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
 	}
 	return nil, nil, nil
 }
@@ -147,14 +147,14 @@ func splitSecretList(s string) []string {
 //
 // Unlike sessions there is no self-minted per-boot fallback. A session that
 // fails to verify is re-minted on the next render and the visitor never
-// notices; an embed nonce that fails to verify is GONE — it is single-use, it
+// notices; an embed nonce that fails to verify is GONE, it is single-use, it
 // lives for a minute, and it was rendered into a page on someone else's site
 // that the app cannot re-render. So a secret is required, and an app that
 // hands out pieces of itself without one fails at boot rather than serving
 // embeds that break on every restart and on every second replica.
 func embedKeysForMount(secret []byte) (nonceKey, grantKey []byte, err error) {
 	if len(secret) == 0 {
-		return nil, nil, errors.New("framework: embeddable surfaces require an app secret — a per-boot key would invalidate every outstanding nonce on restart and would never verify on a second replica. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
+		return nil, nil, errors.New("framework: embeddable surfaces require an app secret: a per-boot key would invalidate every outstanding nonce on restart and would never verify on a second replica. Set WithSecret or GOFASTR_SECRET to the same random value (≥32 chars) on every replica")
 	}
 	return deriveKey(secret, embedNoncePurpose), deriveKey(secret, embedGrantPurpose), nil
 }
@@ -162,7 +162,7 @@ func embedKeysForMount(secret []byte) (nonceKey, grantKey []byte, err error) {
 // embedPreviousKeysForMount derives the verify-only embed keys for each
 // retired app secret, so a rotation does not invalidate outstanding nonces
 // and grants. Previous secrets go through the SAME HKDF derivation as the
-// current one — a raw secret is never used as a key.
+// current one, a raw secret is never used as a key.
 func embedPreviousKeysForMount(previous [][]byte) (nonceKeys, grantKeys [][]byte) {
 	for _, p := range previous {
 		if len(p) == 0 {

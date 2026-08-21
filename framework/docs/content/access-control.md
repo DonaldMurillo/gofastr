@@ -25,7 +25,7 @@ app.Router().Post("/posts",
 ```
 
 The policy + roles wiring above is common enough that there's a one-liner
-for it — `framework.AccessMiddleware`:
+for it, `framework.AccessMiddleware`:
 
 ```go
 app.Use(framework.AccessMiddleware(policy, currentUserRoles))
@@ -53,7 +53,7 @@ app.Entity("posts", framework.EntityConfig{
 
 Each blank field leaves that operation un-gated by RBAC (owner and tenant
 scoping still apply). When a field is set, auto-CRUD refuses a request
-whose context lacks the permission with **403** — on List, Get, Create,
+whose context lacks the permission with **403**: on List, Get, Create,
 Update, Delete, the batch/stream variants, and the `_events` SSE feed. The
 roles + policy must be in the request context first; mount
 `framework.AccessMiddleware` (above) ahead of the CRUD routes.
@@ -68,18 +68,18 @@ when it is empty, any signed-in caller, sees every row). The two compose:
 
 The generated OpenAPI spec (`/openapi.json`) advertises **401** (authentication
 required) and **403** (authenticated but forbidden) on every operation of an
-RBAC-gated entity — including the `_batch` and `_events` endpoints. This means
+RBAC-gated entity, including the `_batch` and `_events` endpoints. This means
 generated SDKs and agents see the correct error contract instead of treating
 RBAC-gated routes as public.
 
 The spec also declares **how** callers authenticate. Auto-CRUD is
 secure-by-default (see [security](security.md) → "Default CRUD
-authentication"), so every entity is auth-gated in the spec — owner-scoped,
-multi-tenant, RBAC-gated, or just the plain default session requirement —
-UNLESS it declares `Public: true`. Every gated operation carries
+authentication"), so every entity, whether owner-scoped, multi-tenant,
+RBAC-gated, or just under the plain default session requirement, is
+auth-gated in the spec UNLESS it declares `Public: true`. Every gated operation carries
 `components.securitySchemes` with two schemes it accepts: `bearerAuth`
 (HTTP bearer, JWT) and `cookieAuth` (the auth battery's session cookie),
-listed in a per-operation `security` block — either scheme authorises the
+listed in a per-operation `security` block. Either scheme authorises the
 call. Only `Public: true` entities are left unmarked, so clients and
 codegen correctly treat exactly those (and nothing else) as publicly
 reachable. Auth is per-operation, not global: the spec never sets a
@@ -88,10 +88,10 @@ top-level `security` requirement.
 The `cookieAuth` name is the auth battery's production default
 (`__Host-session`, set in `battery/auth` `AuthConfig.defaults()`); `DevMode`
 flips it to `session_id`. If your deployment overrides
-`AuthConfig.SessionCookie`, overwrite the scheme after building the spec —
+`AuthConfig.SessionCookie`, overwrite the scheme after building the spec:
 `Spec.SetSecurityScheme("cookieAuth", …)` replaces it by name.
 
-> **Important — `Exposure.Access` is HTTP-only.** It gates the HTTP
+> **Important: `Exposure.Access` is HTTP-only.** It gates the HTTP
 > CRUD routes, not in-process repository or `CrudHandler` calls. This is
 > intentional: in-process Go code is trusted, while owner and tenant
 > isolation still apply at the data layer. SSR screens do not inherit
@@ -105,7 +105,7 @@ flips it to `session_id`. If your deployment overrides
 >
 > **Declarative cross-owner read.** `Scope.CrossOwnerRead` names a
 > permission that, when held by the request context, lifts owner scoping
-> for READ operations only on that entity — letting a staff or admin role
+> for READ operations only on that entity, so a staff or admin role can
 > see every owner's rows on List/Get/Count while writes stay scoped. It
 > is fail-closed (no policy ⇒ no widening) and requires `OwnerField`. See
 > [entity-declarations](entity-declarations.md) → "Letting a role read
@@ -118,21 +118,21 @@ flips it to `session_id`. If your deployment overrides
 
 ## Concepts
 
-- **Permission** — string capability. By convention `"<resource>:<verb>"`
+- **Permission**: string capability. By convention `"<resource>:<verb>"`
   (`"posts:read"`, `"users:delete"`). A capability registry can validate
   grants, but the registry is optional and the string format remains yours.
-- **Role** — string key that holds a list of permissions.
-- **Policy** — maps role → permissions. `RolePolicy` is the shipped
+- **Role**: string key that holds a list of permissions.
+- **Policy**: maps role → permissions. `RolePolicy` is the shipped
   implementation; the `Policy` interface lets you swap in your own.
 
-The framework never asks who the user *is* — only what permissions
+The framework never asks who the user *is*, only what permissions
 their context carries. Get the roles into context however you want:
 JWT claims, session cookie, API key lookup. **Service accounts** (see
 [Authentication → Service accounts & API tokens](auth.md#service-accounts--scoped-api-tokens))
 hold roles exactly like users and flow through the same `Policy.Can`
 path; an API token's **scopes** (`posts:read`, `*:*`) are an additional
 token-level restriction layered on top, enforced by `auth.HasScope` /
-`auth.RequireScope` — independent of the role/permission model here.
+`auth.RequireScope`, independent of the role/permission model here.
 
 ## API
 
@@ -156,7 +156,7 @@ caps := p.Capabilities() // sorted defensive copy
 ```
 
 `Wildcard` is the one symbol here that is not re-exported on the
-`framework` facade — import `github.com/DonaldMurillo/gofastr/framework/access`
+`framework` facade. Import `github.com/DonaldMurillo/gofastr/framework/access`
 for it.
 
 `Register` is idempotent and thread-safe. `Grant` ignores duplicate entries.
@@ -177,7 +177,7 @@ if err := p.Grant("editor", "usres:write"); err != nil {
 Strict rejections are typed: `errors.As(err, &e)` with
 `*access.UnknownCapabilityError` distinguishes a caller's typo (`e.Grant`,
 `e.Nearest`) from a real store failure, so handlers can answer 400 instead of
-500 — the admin grant screen does exactly this.
+500. The admin grant screen does exactly this.
 
 The global `access.Wildcard` (`"*"`) remains the superuser grant. A
 resource wildcard such as `"teams:*"` is different: with a non-empty
@@ -199,7 +199,7 @@ ctx = framework.WithRoles(ctx, []string{"editor", "reader"})
 ```
 
 Both calls are required. Without them, every permission check
-denies — fail-closed.
+denies, fail-closed.
 
 ### Checking from a handler
 
@@ -219,7 +219,7 @@ import "slices"
 -->
 ```go
 roles := framework.GetRoles(ctx)
-// [editor reader] — the same slice installed by WithRoles
+// [editor reader], the same slice installed by WithRoles
 if slices.Contains(roles, "admin") {
     // render the admin-only nav
 }
@@ -227,7 +227,7 @@ if slices.Contains(roles, "admin") {
 
 `GetRoles` is the reader half of the role-context seam: `WithRoles`
 puts roles in, `GetRoles` reads them back. It returns `nil` for a nil
-context or one carrying no roles — never panics, so it is safe to call
+context or one carrying no roles. It never panics, so it is safe to call
 on an un-wired (anonymous) request. Permission checks should still go
 through `GetPermissions` / `Can`; `GetRoles` is for role-shaped
 branching where the permission grant map isn't the right granularity.
@@ -280,7 +280,7 @@ type Policy interface {
 }
 ```
 
-The check takes only the `ctx` and the permission string — there is
+The check takes only the `ctx` and the permission string. There is
 **no** resource argument. Everything a policy needs (subject, roles,
 tenant, request metadata) travels in the context. Implement this to
 plug in:
@@ -293,12 +293,12 @@ installed via `WithRoles` against its grant map.
 
 ### Row-level ("can user X update post Y?") checks
 
-The `Policy` interface is **coarse-grained** — it answers "does this
+The `Policy` interface is **coarse-grained**: it answers "does this
 context hold permission P?", not "may this context act on record R?".
 There is no resource argument, so per-record decisions are made
 elsewhere:
 
-- **Owner scoping** — set `Scope.OwnerField` so auto-CRUD only
+- **Owner scoping**: set `Scope.OwnerField` so auto-CRUD only
   ever reads/writes rows owned by the caller. See
   [entity-declarations.md](entity-declarations.md) → "Per-user scoping".
 - **Row-level read scoping**: `Exposure.ReadScope` filters reads by
@@ -307,23 +307,23 @@ elsewhere:
   read returns (List, Get, count, include, nested filters) rather than
   refusing. See [entity-declarations.md](entity-declarations.md) →
   "Row-level read scoping".
-- **`BeforeCreate` / `BeforeUpdate` / `BeforeDelete` hooks** — these run
+- **`BeforeCreate` / `BeforeUpdate` / `BeforeDelete` hooks**: these run
   with the candidate record (and, for updates, the patch) in hand, so
   they can deny per-row. Return an error from the hook to reject. This is
   the supported seam for "can user X update post Y?".
 
 Keep coarse permission checks in the `Policy` and put record-aware logic
-in a hook or owner scoping — don't try to smuggle the resource through
+in a hook or owner scoping. Don't try to smuggle the resource through
 `Can`.
 
 ## Where to apply checks
 
 Two patterns, both supported:
 
-1. **Per-route middleware** — `RequirePermission` is one line per
+1. **Per-route middleware**: `RequirePermission` is one line per
    route, easy to audit, but disconnects the permission name from
    the entity declaration.
-2. **In a `BeforeCreate` / `BeforeUpdate` hook** — closer to the
+2. **In a `BeforeCreate` / `BeforeUpdate` hook**: closer to the
    data, can inspect the patch, can deny per-record. More code; use
    when row-level checks matter.
 
@@ -336,7 +336,7 @@ entity declarations. Pick a convention (`posts:read`, `posts:write`,
 The CRUD routes enforce every gate for the entity they serve. Two things do
 NOT inherit that automatically, and both have to check for themselves:
 
-1. **Another surface reading the same rows** — a server-rendered screen, an
+1. **Another surface reading the same rows**: a server-rendered screen, an
    island fragment, a report, an export. It never enters the route middleware,
    so it is a second door to the same data.
 2. **The same route reaching a DIFFERENT entity.** `?include=rel` eager-loads
@@ -349,12 +349,12 @@ NOT inherit that automatically, and both have to check for themselves:
    - **`?include=rel`** answers 403 when you may not read the target, at every
      depth. When you may read it, the rows come back scoped: owner- and
      tenant-scoped targets return the rows you are entitled to, which for a
-     caller with no owner is *none* — a 200 with an empty relation rather than
+     caller with no owner is *none*: a 200 with an empty relation rather than
      a refusal. Soft-deleted rows never appear.
    - **`?rel.field=`** compiles to an `EXISTS` clause that counts rows without
      selecting them, so it cannot narrow them by selecting. It answers 403 when
      you may not read the target, and for a target you may read it carries your
-     owner and tenant predicates into the subquery — so it counts exactly the
+     owner and tenant predicates into the subquery, so it counts exactly the
      rows that target's own list route would serve you, and no others. A guess
      that matches another owner's row reads the same as a guess that matches
      nothing. A caller holding a cross-owner or cross-tenant grant gets no
@@ -384,7 +384,7 @@ an entity in the default secure-by-default shape declares no `Access` at all, so
 default-posture entity to anonymous visitors. Prefer `CanReadScoped` unless you
 specifically want the RBAC-only question.
 
-For a single record — a detail page, an edit form — use
+For a single record, such as a detail page or an edit form, use
 `CanReadRecordScoped(ctx, id)` instead. It asks the same question about a
 specific row, which matters when a resource-aware `Decider` allows the listing
 and denies one record; the collection-level predicate would render a row the
@@ -396,11 +396,11 @@ search index has no posture to consult. A custom source fronting real entity
 rows must implement `CanReadScoped` itself.
 
 `framework/ui/resource` calls these for you, so generated screens
-inherit the check — on `List`, `Table`, `Detail`, and the pre-filled edit
+inherit the check: on `List`, `Table`, `Detail`, and the pre-filled edit
 `Form` for the screen's own entity, and separately on the RELATED entity
 behind relation labels, reverse-relation sections, and dashboard aggregates.
 A relation to an entity the caller may not read renders muted (an em dash),
-never the raw foreign key — a bare id is useless to a reader and discloses an
+never the raw foreign key. A bare id is useless to a reader and discloses an
 internal identifier. A reverse-relation section the caller may not read is
 omitted entirely rather than replaced with a notice, because a notice on a
 public page tells every visitor which entities exist.
@@ -418,7 +418,7 @@ gate.
   ignore the granted one.
 - **Encoding business logic in permission strings.** Keep them
   resource:verb. Express logic in `Policy` implementations or
-  hooks — strings should be data, not code.
+  hooks. Strings should be data, not code.
 - **Trusting client-supplied roles.** Roles come from your auth
   layer; never from a request header or body the user controls.
 - **Gating a screen on `CanRead` instead of `CanReadScoped`.** The
@@ -459,7 +459,7 @@ store.Revoke(ctx, "editor", "posts:write") // DB DELETE + policy.Revoke
 The store **holds a reference** to the live `*RolePolicy` (store-holds-policy).
 `NewGrantStore(db, policy)` binds the policy; `LoadInto(ctx, policy)` loads
 persisted rows into it (call once at boot). Subsequent `Grant`/`Revoke` calls
-mutate both the DB and the policy in one call — the policy's RWMutex covers
+mutate both the DB and the policy in one call. The policy's RWMutex covers
 concurrent `Can` checks, so a grant/revoke is "atomic enough": a reader sees
 the state before or after, never a torn map.
 
@@ -467,7 +467,7 @@ the state before or after, never a torn map.
 
 `GrantStore.Grant`/`Revoke` mutate the LOCAL `*RolePolicy` only. With N
 replicas behind a load balancer sharing one database, the other replicas'
-in-memory policies stay stale until restart — an editor granted on replica
+in-memory policies stay stale until restart: an editor granted on replica
 A still fails `Can("posts:write")` on replica B until B reboots.
 
 Attaching a fanout closes that window. Register the store with the app
@@ -491,7 +491,7 @@ On every `Grant`/`Revoke`, the store publishes a refresh-signal on the
 subscriber re-reads that role's grants from `access_grants` and atomically
 swaps them into its local policy via `RolePolicy.ReplaceRole` (the store
 rebuilds the role as `(code baseline ∪ DB grants) − revocation tombstones`).
-The message body is never trusted — a crafted payload can only trigger a
+The message body is never trusted: a crafted payload can only trigger a
 re-read, never pollute the policy directly.
 
 ### Revocation tombstones
@@ -504,14 +504,14 @@ revoked grant stays revoked on every replica:
 
 - **Revokes propagate to peers.** A peer's fanout-driven reload reads the
   tombstone from the shared DB, so it no longer merges a revoked
-  code-seeded grant back in — even though the peer's own code baseline
+  code-seeded grant back in, even though the peer's own code baseline
   still declares it.
 - **Revokes survive restarts.** A replica that boots after the revoke runs
   `LoadInto`, which subtracts tombstones from both the captured baseline
   and the installed DB grants (and revokes them from the live policy), so
   a re-seeded code grant does not resurrect the permission.
 - **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes any
-  matching tombstone — it is the ONE way to un-revoke. A tombstoned
+  matching tombstone. It is the ONE way to un-revoke. A tombstoned
   permission stays revoked even if the code keeps declaring it, until
   `Grant()` is called. DB intent outlives code declarations, the same
   precedence the store already gives DB grants over the code baseline.
@@ -522,11 +522,11 @@ revoked grant stays revoked on every replica:
 **Consistency window.** Fanout is lossy best-effort. A publish that
 doesn't reach a peer (the peer's queue overflowed, the bus was briefly
 down) leaves that peer stale until the NEXT grant/revoke on the same
-role, or until restart. The store itself remains correct — it always
+role, or until restart. The store itself remains correct: it always
 reads from and writes to the DB; only the in-memory cache lags. A
 reconnecting replica's `LoadInto` reloads authoritative state on boot,
 and because tombstones live in the DB, a missed revoke signal does not
-resurrect on restart — the boot re-applies the tombstone.
+resurrect on restart. The boot re-applies the tombstone.
 
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,
@@ -537,9 +537,9 @@ non-empty and marks existing non-global grants outside the registry as
 
 ### Security
 
-- Role and permission strings are **bound as `$n` parameters** — never
+- Role and permission strings are **bound as `$n` parameters**, never
   interpolated into SQL. The table name is validated via `query.SafeIdent`.
-- `Grant`/`Revoke` do **not** check authorization — they are trusted
+- `Grant`/`Revoke` do **not** check authorization: they are trusted
   server-side calls. The admin battery gates them behind its default-deny
   `b.gate` (see [Admin UI](admin.md)).
 - There is no unauthenticated or self-service grant path.
@@ -554,7 +554,7 @@ perms := policy.PermissionsOf("editor")    // []Permission (copy)
 caps  := policy.Capabilities()             // sorted []Permission (copy)
 ```
 
-All three return defensive copies — callers iterate without holding the lock.
+All three return defensive copies. Callers iterate without holding the lock.
 
 ### Effective roles in the admin
 
@@ -580,11 +580,11 @@ keeps its direct-roles-only output.
 
 ## Resource-scoped decisions
 
-The `Policy.Can` check is coarse-grained by design — "does this context hold
+The `Policy.Can` check is coarse-grained by design: "does this context hold
 permission P?", with no resource argument (see [Row-level checks](#row-level-can-user-x-update-post-y-checks)).
 Owner scoping and lifecycle hooks cover most per-row needs. When you need a
-per-resource authority that those don't express — "a team **maintainer** may
-edit **their** team's projects, but not other teams'" — without standing up a
+per-resource authority that those don't express, such as "a team **maintainer** may
+edit **their** team's projects, but not other teams'", without standing up a
 ReBAC/tuple store, install a **Decider**. The decider is consulted *before* the
 role policy on resource-aware checks, so it can tighten *or* loosen the coarse
 `Can` answer per record.
@@ -615,14 +615,14 @@ type Decider func(ctx context.Context, roles []string, capability Permission, re
    `DecisionAbstain` → fall through.
 2. Otherwise (or after Abstain) → exactly `access.Can(ctx, capability)`.
 
-`access.Can` itself is untouched — there is no wildcard or resource-segment
+`access.Can` itself is untouched: there is no wildcard or resource-segment
 logic in the hot path. The resource-aware path is a separate entrypoint you opt
 into; with no decider installed, `CanResource` answers byte-identically to `Can`.
 
 ### Wiring it: DeciderMiddleware
 
 `access.DeciderMiddleware(d)` installs a decider into request context. Mount it
-alongside `access.Middleware` — the two compose; the policy+roles middleware
+alongside `access.Middleware`. The two compose; the policy+roles middleware
 feeds the decider its `roles` argument:
 
 ```go
@@ -669,20 +669,20 @@ Auto-CRUD consults this automatically: `Exposure.Access` gates route through
 `CanResource`, passing `Ref{Type: <entity name>, ID: <path id>}` for item-scoped
 ops (read-one/update/delete) and `Ref{Type: <entity name>, ID: ""}` for
 collection-level ops (list/create/batch/the `_events` feed). No handler change
-is needed — declaring the `Access` block and mounting `DeciderMiddleware` is the
+is needed: declaring the `Access` block and mounting `DeciderMiddleware` is the
 whole wiring.
 
 ### When to Deny vs Abstain
 
 - **Deny** when the decider has *positive knowledge* the caller must not act on
-  this resource — e.g. "this project belongs to a team the caller is not on".
+  this resource, e.g. "this project belongs to a team the caller is not on".
   Deny short-circuits to false; the role policy never runs, so even a wildcard
   grant cannot override it. Use Deny to tighten below the role policy.
-- **Abstain** when the decider has *no opinion* — the resource type isn't one it
+- **Abstain** when the decider has *no opinion*: the resource type isn't one it
   governs, the caller's relationship is unknown, or you want the role policy to
   decide. Abstain is the zero value, so a decider that forgets to return is
   safe (falls through to `Can`). Use Abstain to delegate.
-- **Allow** when the decider grants access the role policy would not — e.g. the
+- **Allow** when the decider grants access the role policy would not, e.g. the
   team-maintainer case above. Allow short-circuits to true; use it to loosen
   beyond the role policy for a specific resource.
 
@@ -694,25 +694,25 @@ role-policy-only world. That is the safe default while you roll the decider out.
 An app-side pattern (the framework does **not** interpret this) encodes the
 resource into the permission string itself: `"projects:42:update"`. Combined
 with `GrantStore`, each such string becomes a row in `access_grants`, so the
-grant matrix is visible in the admin UI and editable at runtime — every
+grant matrix is visible in the admin UI and editable at runtime. Every
 per-resource grant is a real, enumerable row.
 
 The tradeoff is **row explosion**: one row per (role, resource, capability),
 which is fine for dozens of resources but does not scale to thousands. The
 framework's `Can` performs exact-string matching, so it never parses the
-`resource:id:capability` segments — that decomposition is a convention your
+`resource:id:capability` segments. That decomposition is a convention your
 code (or a wrapper policy) owns. If you need per-resource authority at scale,
 or with inheritance ("a maintainer of team T may edit all of T's projects"),
 use the **Decider seam** above: one membership check replaces unbounded grant
 rows, and the rule lives in your code where it can consult any table or
-service. The two compose — a Decider can fall back to `Abstain` and let a
+service. The two compose: a Decider can fall back to `Abstain` and let a
 `resource:id:capability` grant row in the policy decide.
 
 ## ScopeMatch (module/token scope algebra)
 
 `Can` is the RBAC hot path and stays deliberately blunt: it matches an
 **exact** permission string, or the global `Wildcard` (`"*"`). It does **not**
-understand `posts:*` or `*:read` — widening it would silently change live
+understand `posts:*` or `*:read`. Widening it would silently change live
 RBAC for every caller, so it is untouched.
 
 `access.ScopeMatch(granted []Permission, required Permission) bool` is the
@@ -730,7 +730,7 @@ access.ScopeMatch([]access.Permission{"*:*"}, "anything:here")   // true
 access.ScopeMatch(nil, "posts:read")                             // false (deny by default)
 ```
 
-It is a function of its two arguments only — it **does not consult the
+It is a function of its two arguments only: it **does not consult the
 capability registry and does not expand resource wildcards** the way
 `RolePolicy.Grant` does at grant time (`teams:*` matches literally here; it
 is not fanned out to registered `teams:` capabilities). Matching and

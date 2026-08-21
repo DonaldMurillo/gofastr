@@ -1,5 +1,5 @@
 // widgets-boot-static.js (spec fragment `widgets-boot-static`, boot class;
-// deps: kernel). The static counterpart of widgets-boot — MUTUALLY EXCLUSIVE
+// deps: kernel). The static counterpart of widgets-boot, MUTUALLY EXCLUSIVE
 // with it (never compose both). Composed into the `static` bundle in place
 // of widgets-boot; serves the same role (catalog fetch + auto-mount pass +
 // eager open/toast delegators) against the DUMPED catalog the static
@@ -9,7 +9,7 @@
 // the composition IS the switch (kernel+rpc-stub+signals+nav+widgets-boot-
 // static+boot vs. kernel+rpc+signals+nav+widgets-boot+boot). The static
 // exporter (framework/static.Builder.dumpWidgetAssets) writes
-// /__gofastr/widgets.json — the unfiltered every-widget catalog — and the
+// /__gofastr/widgets.json, the unfiltered every-widget catalog, and the
 // per-widget chrome HTML at /core-ui/widget/<name>/chrome. The live
 // endpoint /__gofastr/widgets?page=… is session-gated and ABSENT on a
 // serverless host, so fetching it would 404. This fragment fetches the
@@ -20,7 +20,7 @@
 //
 // Duplication vs. sharing with widgets-boot: this file mirrors
 // widgets-boot.js line-for-line except for the catalog URL (no ?page=
-// filter — the dumped catalog is already the unfiltered every-widget
+// filter, the dumped catalog is already the unfiltered every-widget
 // list). The rpc/rpc-stub pair already duplicates _sameOrigin/_originOK
 // for the same reason: mutually-exclusive fragments are not a shared
 // code surface. Pulling the eager delegators into a third shared
@@ -32,7 +32,7 @@
 // `full` byte-identical and keeps the static composition honest.
 //
 // data-fui-open / data-fui-toast / data-fui-deeplink are still OWNED by
-// widgets-boot (see fragments.go) — this fragment cross-references them
+// widgets-boot (see fragments.go), this fragment cross-references them
 // the way rpc-stub cross-references the rpc family. The attrdoc gate
 // treats cross-references as non-transferable; that holds here.
 
@@ -40,7 +40,7 @@
   // exporter (framework/static.Builder.dumpWidgetAssets) calls
   // widget.ServeWidgetList with no page filter, so this is the
   // unfiltered every-widget list. 404 / empty array means no widgets
-  // were registered — silently skip (the runtime works for plain
+  // were registered, silently skip (the runtime works for plain
   // pages too).
   //
   // The eager click delegator (installed below) awaits this readiness
@@ -54,7 +54,7 @@
   let _wcr;
   const _wready = new Promise((resolve) => { _wcr = resolve; });
 
-  // Catalog fetch — the dumped file. The live endpoint is session-gated
+  // Catalog fetch, the dumped file. The live endpoint is session-gated
   // and absent on a serverless host; the static exporter dumps the
   // canonical registry shape to /__gofastr/widgets.json. Processing is
   // identical to widgets-boot.
@@ -64,7 +64,7 @@
     .then(async (list) => {
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime ships as a split module. Make sure it's
-      // loaded before iterating mounts — covers the case where no
+      // loaded before iterating mounts, covers the case where no
       // [data-fui-widget] marker is present in initial HTML (the
       // marker scanner wouldn't have fired) but the catalog says there
       // are widgets to mount.
@@ -84,7 +84,7 @@
           window.__gofastr._widgetCatalog[item.cfg.name] = item;
           if (item.hidden) continue; // open later via openWidget(name)
           // Non-hidden widgets auto-mount at boot. Chrome HTML is
-          // fetched lazily from cfg.chromePath — the static exporter
+          // fetched lazily from cfg.chromePath, the static exporter
           // dumps the same bytes, so the fetch resolves against the
           // static tree.
           window.__gofastr._mountByName(item.cfg.name);
@@ -93,7 +93,7 @@
         window.__gofastr._syncDeepLinks();
 
         // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise — resolve so queued clicks unblock now
+        // awaiting this Promise, resolve so queued clicks unblock now
         // that the catalog is populated.
         _wcr();
       };
@@ -106,7 +106,7 @@
   // capability being restored). Installed here at boot, before the
   // catalog fetch, so a click on an open trigger before the catalog
   // resolves is queued (via _wready) rather than lost. Idempotent via
-  // document.__fuiOpenDispatch — the same flag widgets-boot uses; the
+  // document.__fuiOpenDispatch, the same flag widgets-boot uses; the
   // two fragments are never composed together so the flag stays honest.
   function _installEagerWidgetDelegators() {
     if (document.__fuiOpenDispatch) return;

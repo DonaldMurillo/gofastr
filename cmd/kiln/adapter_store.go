@@ -20,7 +20,7 @@ var (
 // Empty Adapter (zero value) means "no agent runs"; equivalent to
 // --agent none. The watcher silently no-ops in that case.
 //
-// Set() cancels any in-flight turn — switching agents mid-session is
+// Set() cancels any in-flight turn: switching agents mid-session is
 // a hard supersede (the running subprocess gets SIGKILL'd, the
 // goroutine journals "(superseded by agent harness switch)"). Callers
 // surface this in the UI before applying.

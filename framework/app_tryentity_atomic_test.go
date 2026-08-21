@@ -25,7 +25,7 @@ func atomicTestApp(t *testing.T) *App {
 }
 
 // A rejected declaration must leave no registry entry, and the corrected
-// retry must succeed — otherwise an agent authoring loop that does the
+// retry must succeed, otherwise an agent authoring loop that does the
 // right thing (check the error, fix the config, retry) is stuck: the
 // poisoned name already owns the slot.
 func TestFailedEntityRetryable(t *testing.T) {
@@ -83,7 +83,7 @@ func TestFailedEntityMountsNoRoutes(t *testing.T) {
 }
 
 // A custom endpoint whose route is already taken must be rejected during
-// validation, not by a panic inside the commit phase — by then the
+// validation, not by a panic inside the commit phase, by then the
 // registry entry, CRUD routes and MCP tools have all been published, and
 // the corrected retry then fails on the leaked state.
 func TestEndpointRouteConflictIsAtomic(t *testing.T) {
@@ -111,7 +111,7 @@ func TestEndpointRouteConflictIsAtomic(t *testing.T) {
 }
 
 // Two endpoints on one entity claiming the same route collide with each
-// other — the second Handle panics mid-commit. Catch it in validation.
+// other. The second Handle panics mid-commit. Catch it in validation.
 func TestDuplicateEndpointPathsRejected(t *testing.T) {
 	app := atomicTestApp(t)
 	noop := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
@@ -157,7 +157,7 @@ func TestFailedEntityRegistersNoTools(t *testing.T) {
 }
 
 // An endpoint can also collide with a CRUD route the SAME call is about to
-// mount — "_batch" and "{id}" live under the entity's own mount path. The
+// mount, "_batch" and "{id}" live under the entity's own mount path. The
 // commit phase registers CRUD first and endpoints last, so this collision
 // used to panic with the registry entry and every CRUD route already
 // published, poisoning the name until restart.
@@ -204,8 +204,8 @@ func TestEndpointCollidesWithOwnCrudRoute(t *testing.T) {
 
 // A screen registered at a path auto-CRUD will claim must be caught before
 // the commit phase, whatever the wildcard is NAMED: net/http's ServeMux
-// conflicts on a pattern's shape, so a detail page at /posts/{slug} — the
-// idiom the collision message itself suggests — clashes with the generated
+// conflicts on a pattern's shape, so a detail page at /posts/{slug}, the
+// idiom the collision message itself suggests, clashes with the generated
 // /posts/{id}. Catching it late left the registry entry and the first CRUD
 // routes published, and the leaked routes then made the retry fail with a
 // diagnostic pointing at a path the author never registered.
@@ -246,7 +246,7 @@ func TestEntityCollidesWithExistingScreenRoute(t *testing.T) {
 }
 
 // A method the CRUD mount does not claim on a path it does must NOT be
-// rejected — POST /posts/{id} is free, and refusing it would be a false
+// rejected. POST /posts/{id} is free, and refusing it would be a false
 // positive that blocks a legitimate route.
 func TestEntityAllowsUnclaimedMethodOnClaimedPath(t *testing.T) {
 	app := atomicTestApp(t)
@@ -262,7 +262,7 @@ func TestEntityAllowsUnclaimedMethodOnClaimedPath(t *testing.T) {
 // The endpoint pre-flight compared raw pattern strings while the CRUD
 // pre-flight normalized wildcard shape. ServeMux conflicts on SHAPE, so an
 // endpoint at {slug} aliased the generated {id} (or an existing screen's
-// wildcard) and slipped through validation — then panicked in the commit
+// wildcard) and slipped through validation, then panicked in the commit
 // phase with the registry entry and CRUD routes already published.
 func TestEndpointWildcardAliasIsRejected(t *testing.T) {
 	t.Run("aliases the entity's own CRUD wildcard", func(t *testing.T) {

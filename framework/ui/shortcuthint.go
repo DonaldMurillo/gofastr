@@ -13,7 +13,7 @@ import (
 //
 // Renders a keyboard chord (e.g. "Mod+K", "/", "Esc") as a sequence
 // of <kbd> chips. Used to surface available keyboard shortcuts next
-// to triggers — Command Palette buttons, search inputs, menu items.
+// to triggers: Command Palette buttons, search inputs, menu items.
 //
 // Mod-key glyphs auto-resolve to ⌘ on Mac / Ctrl elsewhere via the
 // runtime-set <html data-fui-os> attribute, with both labels rendered

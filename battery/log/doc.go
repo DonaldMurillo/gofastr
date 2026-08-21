@@ -21,7 +21,7 @@
 //
 // By default (Config.Console == ConsoleAuto, the zero value) a
 // colorized ConsoleSink is also attached to stderr when stderr is a
-// terminal and NO_COLOR is unset — giving local devs a readable feed
+// terminal and NO_COLOR is unset, giving local devs a readable feed
 // with no config, and staying out of prod where stderr is captured.
 // Set Config.Console to ConsoleOn/ConsoleOff to force it.
 package log

@@ -73,7 +73,9 @@ entities:
         foreign_key: instructor_id
 
   - name: courses
-    # Course catalog — the public marketing pages list these. Reads are opened with a blank `read:`; every write still
+    crud: true
+    # Course catalog: the public marketing pages list these. Reads are opened
+    # with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # read_scope narrows the anonymous read to published courses; drafts
@@ -191,6 +193,7 @@ entities:
         foreign_key: course_id
 
   - name: modules
+    crud: true
     # Part of the public course outline. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
@@ -308,7 +311,7 @@ entities:
   - name: students
     crud: true
     mcp: true
-    # The student roster holds PII (email) and is managed by school staff —
+    # The student roster holds PII (email) and is managed by school staff.
     # RBAC-gate every operation so anonymous callers can't enumerate students.
     access:
       read: students:read
@@ -500,7 +503,7 @@ nav:
 screens:
   - name: home
     route: /
-    title: LearnHub — Online Courses
+    title: "LearnHub: Online Courses"
     description: Learning management system
     body:
       - type: heading
@@ -684,7 +687,7 @@ seed:
         slug: intro-web-dev
         instructor_id: "@instructors.email=sarah@learnhub.dev"
         subtitle: Learn HTML, CSS, and JavaScript from scratch
-        description: A comprehensive beginner course covering the fundamentals of web development. No prior experience required.
+        description: A complete beginner course covering the fundamentals of web development. No prior experience required.
         category: Web Development
         level: beginner
         status: published

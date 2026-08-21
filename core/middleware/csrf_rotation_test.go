@@ -18,7 +18,7 @@ func TestCSRF_KeyRotationAcceptsAdditionalKeys(t *testing.T) {
 	oldKey := mustRandomKey()
 	newKey := mustRandomKey()
 
-	// "Old" middleware — mints a token with oldKey.
+	// "Old" middleware: mints a token with oldKey.
 	old := CSRF(CSRFConfig{SecretKey: oldKey, FormField: "_csrf"})
 	primeRec := httptest.NewRecorder()
 	old(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})).
@@ -33,7 +33,7 @@ func TestCSRF_KeyRotationAcceptsAdditionalKeys(t *testing.T) {
 		t.Fatal("no cookie from old middleware")
 	}
 
-	// "New" middleware — primary key is newKey, but oldKey is listed in
+	// "New" middleware: primary key is newKey, but oldKey is listed in
 	// AdditionalKeys so verification still succeeds for in-flight tokens.
 	mw := CSRF(CSRFConfig{
 		SecretKey:      newKey,
@@ -59,7 +59,7 @@ func TestCSRF_KeyRotationAcceptsAdditionalKeys(t *testing.T) {
 // after rolling SecretKey forward (with the old key listed as
 // AdditionalKeys for transitional verification), the next safe-method
 // GET that lands a fresh cookie must sign with the NEW primary key,
-// NOT the old one. Otherwise the rotation never completes — operators
+// NOT the old one. Otherwise the rotation never completes; operators
 // could never drop the old key from AdditionalKeys.
 func TestCSRF_KeyRotationRemintsWithPrimary(t *testing.T) {
 	oldKey := mustRandomKey()
@@ -85,7 +85,7 @@ func TestCSRF_KeyRotationRemintsWithPrimary(t *testing.T) {
 		t.Fatal("no cookie minted")
 	}
 
-	// The freshly-minted cookie must verify against newKey alone — NOT
+	// The freshly-minted cookie must verify against newKey alone, NOT
 	// require AdditionalKeys to pass. Verify with primary-only.
 	if !verifySignedCSRFToken(ck.Value, newKey) {
 		t.Errorf("freshly minted token did not verify against new primary key (still signed by old?)")
