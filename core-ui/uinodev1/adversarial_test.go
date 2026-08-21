@@ -201,7 +201,7 @@ func balancedJSON(leavesPerChild int) string {
 		inner.WriteString(`{"component":"divider"}`)
 	}
 	var child strings.Builder
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if i > 0 {
 			child.WriteByte(',')
 		}
@@ -220,7 +220,7 @@ func flatChildrenJSON(totalNodes int) string {
 	children := totalNodes - 1
 	var b strings.Builder
 	b.WriteString(`{"component":"stack","props":{},"children":[`)
-	for i := 0; i < children; i++ {
+	for i := range children {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -258,7 +258,7 @@ func TestValidateRejectsTotalTextBomb(t *testing.T) {
 	chunk := strings.Repeat("x", 4096)
 	var b strings.Builder
 	b.WriteString(`{"component":"stack","props":{},"children":[`)
-	for i := 0; i < 65; i++ {
+	for i := range 65 {
 		if i > 0 {
 			b.WriteByte(',')
 		}

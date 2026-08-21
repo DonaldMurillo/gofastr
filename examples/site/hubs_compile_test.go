@@ -39,7 +39,6 @@ func TestFrameworkHubGoBlocksCompile(t *testing.T) {
 	}
 
 	for _, b := range blocks {
-		b := b
 		t.Run(b.label, func(t *testing.T) {
 			src, ok := wrapHubFrameworkSnippet(b.source)
 			if !ok {

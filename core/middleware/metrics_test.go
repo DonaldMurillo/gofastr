@@ -22,7 +22,7 @@ func TestMetrics_RecordsRequests(t *testing.T) {
 
 	h := MetricsMiddleware(m)(mux)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", "/posts/p1", nil))
 		if w.Code != 200 {
@@ -100,7 +100,7 @@ func TestMetrics_ConcurrentSafe(t *testing.T) {
 	const N = 200
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for range N {
 		go func() {
 			defer wg.Done()
 			w := httptest.NewRecorder()

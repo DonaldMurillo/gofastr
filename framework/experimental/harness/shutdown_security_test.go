@@ -63,7 +63,7 @@ func TestShutdownReleasesSessions(t *testing.T) {
 	baseline := waitGoroutinesSettle(0, time.Second)
 
 	const n = 8
-	for i := 0; i < n; i++ {
+	for range n {
 		h.CreateSession(h.Providers[0], "openrouter:test")
 	}
 

@@ -71,7 +71,7 @@ func hasDataScheme(s string) bool {
 	if len(s) < len(p) {
 		return false
 	}
-	for i := 0; i < len(p); i++ {
+	for i := range len(p) {
 		c := s[i]
 		if c >= 'A' && c <= 'Z' {
 			c += 'a' - 'A'

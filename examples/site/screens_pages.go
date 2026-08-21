@@ -31,7 +31,9 @@ func cardCopy(s string) string { return strings.ReplaceAll(s, " — ", ": ") }
 // boolPtr returns a pointer to b, used for *bool config fields like
 // ui.CalloutConfig.Landmark where nil means "default" and false must be
 // distinguishable from unset.
-func boolPtr(b bool) *bool { return &b }
+//
+//go:fix inline
+func boolPtr(b bool) *bool { return new(b) }
 
 // tagAccent, the version pill used in multiple page heroes. Thin adapter
 // over the framework's ui.StatusPill (accent tone + dot).
@@ -142,7 +144,7 @@ func gsBody() render.HTML {
 	// landmark-complementary-is-top-level (a nested complementary landmark).
 	callout := func(title, body string) render.HTML {
 		return ui.Callout(
-			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo, Landmark: boolPtr(false)},
+			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo, Landmark: new(false)},
 			html.Paragraph(html.TextConfig{}, render.Text(body)),
 		)
 	}

@@ -95,8 +95,7 @@ func (e *Error) Is(target error) bool {
 // wire error (already *Error) or nil otherwise. Convenience for callers that
 // want the structured code/message pair.
 func AsError(err error) *Error {
-	var we *Error
-	if errors.As(err, &we) {
+	if we, ok := errors.AsType[*Error](err); ok {
 		return we
 	}
 	return nil

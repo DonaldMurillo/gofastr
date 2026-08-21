@@ -70,7 +70,7 @@ func TestRedisBrowsable_ListJobsLimit(t *testing.T) {
 	ctx := context.Background()
 
 	// Push 5 jobs directly to the dead list.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = q.Enqueue(ctx, Job{ID: "dead-lim-" + string(rune('a'+i)), Type: "x", MaxAttempts: 1})
 		job, _ := q.Dequeue(ctx)
 		_ = q.Nack(ctx, job)

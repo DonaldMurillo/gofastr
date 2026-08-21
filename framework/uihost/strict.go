@@ -306,7 +306,7 @@ func invalidSitemapBaseURL(base string) string {
 // isDynamicRoute reports whether a route pattern contains a parameter
 // or wildcard segment (":id", "{path...}").
 func isDynamicRoute(pattern string) bool {
-	for _, seg := range strings.Split(pattern, "/") {
+	for seg := range strings.SplitSeq(pattern, "/") {
 		if strings.HasPrefix(seg, ":") || strings.HasPrefix(seg, "{") {
 			return true
 		}

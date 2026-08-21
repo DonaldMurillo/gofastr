@@ -16,7 +16,7 @@ import (
 
 func TestDeadWidgetAPIIsRemoved(t *testing.T) {
 	builderMethods := []string{"Bootstrap", "RPCWithSignal"}
-	bt := reflect.TypeOf(&Builder{})
+	bt := reflect.TypeFor[*Builder]()
 	for _, name := range builderMethods {
 		if m, ok := bt.MethodByName(name); ok {
 			t.Errorf("dead method %s still present on *Builder — delete it (zero-carryover)", m.Name)
@@ -24,14 +24,14 @@ func TestDeadWidgetAPIIsRemoved(t *testing.T) {
 	}
 
 	defFields := []string{"Bootstrap", "BootstrapPath"}
-	dt := reflect.TypeOf(Definition{})
+	dt := reflect.TypeFor[Definition]()
 	for _, name := range defFields {
 		if f, ok := dt.FieldByName(name); ok {
 			t.Errorf("dead field %s still present on Definition — delete it (zero-carryover)", f.Name)
 		}
 	}
 
-	if _, ok := reflect.TypeOf(RPCEndpoint{}).FieldByName("ResponseSignal"); ok {
+	if _, ok := reflect.TypeFor[RPCEndpoint]().FieldByName("ResponseSignal"); ok {
 		t.Error("dead field ResponseSignal still present on RPCEndpoint — delete it (zero-carryover)")
 	}
 }

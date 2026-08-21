@@ -142,7 +142,7 @@ func (ds *UIHost) serverActionOffenders() []serverActionOffender {
 
 // ---- reachability -------------------------------------------------------
 
-var componentInterface = reflect.TypeOf((*component.Component)(nil)).Elem()
+var componentInterface = reflect.TypeFor[component.Component]()
 
 // reachWalkBudget caps how many values one walk visits. A component that holds
 // a reference into a large data graph must not turn a boot check into a heap
@@ -278,8 +278,8 @@ func (w *reachWalker) walk(v reflect.Value, depth int) {
 		w.walk(v.Elem(), depth+1)
 	case reflect.Struct:
 		w.record(t)
-		for i := 0; i < v.NumField(); i++ {
-			w.walk(v.Field(i), depth+1)
+		for _, field := range v.Fields() {
+			w.walk(field, depth+1)
 		}
 	case reflect.Slice:
 		if v.IsNil() || !w.mark(t, v.Pointer()) {

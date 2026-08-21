@@ -84,8 +84,7 @@ func TestApplySchemaDiff_RefusesDestructive(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected ApplySchemaDiff to refuse the destructive change")
 		}
-		var de *DestructiveChangeError
-		if !errors.As(err, &de) {
+		if _, ok := errors.AsType[*DestructiveChangeError](err); !ok {
 			t.Fatalf("expected *DestructiveChangeError, got %T: %v", err, err)
 		}
 		if n != 0 {

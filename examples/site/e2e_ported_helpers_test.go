@@ -49,7 +49,7 @@ func (c *consoleSink) hasErrors() []string {
 // listenConsoleErrors subscribes to runtime console events and records
 // error-level lines. Call once per browser context.
 func listenConsoleErrors(browserCtx context.Context, sink *consoleSink) {
-	chromedp.ListenTarget(browserCtx, func(ev interface{}) {
+	chromedp.ListenTarget(browserCtx, func(ev any) {
 		if e, ok := ev.(*runtime.EventConsoleAPICalled); ok && e.Type == "error" {
 			parts := make([]string, 0, len(e.Args))
 			for _, a := range e.Args {

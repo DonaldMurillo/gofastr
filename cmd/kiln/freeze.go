@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
@@ -199,12 +200,12 @@ func defaultStr(s, fallback string) string {
 }
 
 func joinComma(parts []string) string {
-	out := ""
+	var out strings.Builder
 	for i, p := range parts {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += p
+		out.WriteString(p)
 	}
-	return out
+	return out.String()
 }

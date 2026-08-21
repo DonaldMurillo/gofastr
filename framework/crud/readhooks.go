@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"reflect"
 
@@ -474,9 +475,7 @@ func foldHookRow(relation string, i int, row, want map[string]any) error {
 	for k := range row {
 		delete(row, k)
 	}
-	for k, v := range want {
-		row[k] = v
-	}
+	maps.Copy(row, want)
 	return nil
 }
 

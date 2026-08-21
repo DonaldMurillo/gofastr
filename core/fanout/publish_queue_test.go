@@ -42,7 +42,7 @@ func TestPublishQueueSendNeverBlocks(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			send([]byte("x"))
 		}
 		close(done)

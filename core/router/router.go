@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -757,8 +758,8 @@ func (r *Router) effectiveChain() []Middleware {
 // so it executes first on the way in and last on the way out.
 func (r *Router) wrap(handler http.Handler) http.Handler {
 	chain := r.effectiveChain()
-	for i := len(chain) - 1; i >= 0; i-- {
-		handler = chain[i](handler)
+	for _, c := range slices.Backward(chain) {
+		handler = c(handler)
 	}
 	return handler
 }

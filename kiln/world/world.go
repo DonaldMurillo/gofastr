@@ -81,9 +81,9 @@ type AppConfig struct {
 	OutputDir      string      `json:"output_dir,omitempty"`
 	APIPrefix      string      `json:"api_prefix,omitempty"`
 	LLMMD          bool        `json:"llm_md,omitempty"`
-	Auth           AuthConfig  `json:"auth,omitempty"`
-	Admin          AdminConfig `json:"admin,omitempty"`
-	PWA            PWAConfig   `json:"pwa,omitempty"`
+	Auth           AuthConfig  `json:"auth"`
+	Admin          AdminConfig `json:"admin"`
+	PWA            PWAConfig   `json:"pwa"`
 
 	// Theme and ThemeDark are optional semantic token overrides applied to
 	// the framework theme. Light keys include colors such as "background",
@@ -311,7 +311,7 @@ type Page struct {
 	Type        string     `json:"type,omitempty"` // "page" | "drawer" | "sheet" | "dialog"
 	Version     int        `json:"version,omitempty"`
 	Layout      *Layout    `json:"layout,omitempty"`
-	Access      PageAccess `json:"access,omitempty"`
+	Access      PageAccess `json:"access"`
 	Tree        Node       `json:"tree"`
 }
 

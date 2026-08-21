@@ -286,7 +286,7 @@ func TestSSEPublishConcurrentSafe(t *testing.T) {
 	const n = 8
 	cancels := make([]context.CancelFunc, n)
 	dones := make([]chan struct{}, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancels[i] = cancel
 		r := httptest.NewRequest("GET", "/events", nil).WithContext(ctx)
@@ -308,14 +308,12 @@ func TestSSEPublishConcurrentSafe(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 200; j++ {
+	for range 16 {
+		wg.Go(func() {
+			for range 200 {
 				broker.Publish("burst", "x")
 			}
-		}()
+		})
 	}
 
 	finished := make(chan struct{})
@@ -401,7 +399,7 @@ func (s *syncRecorder) snapshot() string {
 // Finding 21: generated subscriber IDs must be unguessable (hex, length).
 func TestSSEGeneratedIDUnguessable(t *testing.T) {
 	seen := make(map[string]struct{}, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		id := generateSubscriberID()
 		if len(id) < 16 {
 			t.Fatalf("generated id %q length %d < 16", id, len(id))

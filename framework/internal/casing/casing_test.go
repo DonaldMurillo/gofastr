@@ -11,7 +11,7 @@ func TestSnakeCacheBounded(t *testing.T) {
 	snakeCache = make(map[string]string)
 	snakeCacheMu.Unlock()
 
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		ToSnake(fmt.Sprintf("uniqueKey%d", i))
 	}
 
@@ -28,7 +28,7 @@ func TestCamelCacheBounded(t *testing.T) {
 	camelCache = make(map[string]string)
 	camelCacheMu.Unlock()
 
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		ToCamel(fmt.Sprintf("unique_key_%d", i))
 	}
 

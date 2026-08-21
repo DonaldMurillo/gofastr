@@ -84,8 +84,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		for _, p := range paths {
 			html, err := b.Host.RenderStaticPage(ctx, p)
 			if err != nil {
-				var blocked *uihost.PolicyBlockedError
-				if errors.As(err, &blocked) {
+				if blocked, ok := errors.AsType[*uihost.PolicyBlockedError](err); ok {
 					slog.Warn("static: skipped gated screen: policy refused the static render; the route stays reachable via the live server. Use a policy that RenderAlts (e.g. a login prompt) to keep the page in the export.",
 						"path", p, "decision", blocked.Decision)
 					continue
@@ -423,7 +422,7 @@ func validateCatchAllValue(key, v string) error {
 	if strings.ContainsRune(v, '\x00') {
 		return fmt.Errorf("static: catch-all StaticPaths value for %q contains NUL: %q", key, v)
 	}
-	for _, comp := range strings.Split(v, "/") {
+	for comp := range strings.SplitSeq(v, "/") {
 		if comp == "" || comp == "." || comp == ".." {
 			return fmt.Errorf("static: catch-all StaticPaths value for %q has an empty or traversal component: %q", key, v)
 		}

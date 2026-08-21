@@ -589,10 +589,7 @@ func (ds *UIHost) writeEmbedGrant(w http.ResponseWriter, grant string, expiresUn
 	// A grant is a bearer credential for one viewer. Nothing may cache it.
 	w.Header().Set("Cache-Control", "no-store")
 	nowMS := time.Now().UnixMilli()
-	ttl := expiresUnixMS - nowMS
-	if ttl < 0 {
-		ttl = 0
-	}
+	ttl := max(expiresUnixMS-nowMS, 0)
 	_ = json.NewEncoder(w).Encode(embedGrantResponse{Grant: grant, ExpiresInMS: ttl})
 }
 

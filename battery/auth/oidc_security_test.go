@@ -3,9 +3,9 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"maps"
 	"math/big"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -26,17 +26,15 @@ func mustFailExchange(t *testing.T, p *OIDCProvider) error {
 }
 
 // cloneClaims returns a shallow copy so each test can mutate freely.
-func cloneClaims(base map[string]interface{}) map[string]interface{} {
-	out := make(map[string]interface{}, len(base))
-	for k, v := range base {
-		out[k] = v
-	}
+func cloneClaims(base map[string]any) map[string]any {
+	out := make(map[string]any, len(base))
+	maps.Copy(out, base)
 	return out
 }
 
 // baseClaims is a valid claim set for f that tests then perturb.
-func baseClaims(f *fakeIdP) map[string]interface{} {
-	return map[string]interface{}{
+func baseClaims(f *fakeIdP) map[string]any {
+	return map[string]any{
 		"iss": f.issuer, "sub": "user-123", "aud": f.clientID,
 		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
 		"email": "alice@example.com",
@@ -48,7 +46,7 @@ func baseClaims(f *fakeIdP) map[string]interface{} {
 // TestOIDCSec_AlgNone: an unsigned ("none") token is rejected.
 func TestOIDCSec_AlgNone(t *testing.T) {
 	f := newFakeIdP(t)
-	f.header = map[string]interface{}{"alg": "none"}
+	f.header = map[string]any{"alg": "none"}
 	f.sign = func([]byte) []byte { return nil } // empty signature
 	p := newTestProvider(t, f)
 	mustFailExchange(t, p)
@@ -58,7 +56,7 @@ func TestOIDCSec_AlgNone(t *testing.T) {
 // classic alg-confusion attack) is rejected at the alg allowlist.
 func TestOIDCSec_AlgHS256(t *testing.T) {
 	f := newFakeIdP(t)
-	f.header = map[string]interface{}{"alg": "HS256"}
+	f.header = map[string]any{"alg": "HS256"}
 	f.sign = func(signingInput []byte) []byte {
 		mac := hmac.New(sha256.New, f.rsaKey.PublicKey.N.Bytes())
 		mac.Write(signingInput)
@@ -71,7 +69,7 @@ func TestOIDCSec_AlgHS256(t *testing.T) {
 // TestOIDCSec_AlgLowercase: "rs256" is not "RS256", exact match only.
 func TestOIDCSec_AlgLowercase(t *testing.T) {
 	f := newFakeIdP(t)
-	f.header = map[string]interface{}{"alg": "rs256"} // validly RS256-signed below
+	f.header = map[string]any{"alg": "rs256"} // validly RS256-signed below
 	p := newTestProvider(t, f)
 	mustFailExchange(t, p)
 }
@@ -120,9 +118,9 @@ func TestOIDCSec_MalformedIDToken(t *testing.T) {
 // rejected (kty/alg mismatch), even though the kid matches.
 func TestOIDCSec_ECKeyForRS256(t *testing.T) {
 	f := newFakeIdP(t)
-	f.jwksFn = func(int) []map[string]interface{} {
+	f.jwksFn = func(int) []map[string]any {
 		// Serve the EC public key under the RSA kid the token references.
-		return []map[string]interface{}{ecJWKMap(f.rsaKID, &f.ecKey.PublicKey)}
+		return []map[string]any{ecJWKMap(f.rsaKID, &f.ecKey.PublicKey)}
 	}
 	// Token stays RS256, signed with the RSA key, kid rsa-1.
 	p := newTestProvider(t, f)
@@ -137,8 +135,8 @@ func TestOIDCSec_ES256DERSig(t *testing.T) {
 	f.sign = func(signingInput []byte) []byte {
 		return signES256DER(t, f.ecKey, signingInput)
 	}
-	f.jwksFn = func(int) []map[string]interface{} {
-		return []map[string]interface{}{ecJWKMap(f.ecKID, &f.ecKey.PublicKey)}
+	f.jwksFn = func(int) []map[string]any {
+		return []map[string]any{ecJWKMap(f.ecKID, &f.ecKey.PublicKey)}
 	}
 	p := newTestProvider(t, f)
 	mustFailExchange(t, p)
@@ -245,8 +243,8 @@ func TestOIDCSec_DiscoveryIssuerMismatch(t *testing.T) {
 func TestOIDCSec_WeakRSAKey(t *testing.T) {
 	f := newFakeIdP(t)
 	weak := mustRSAKey(t, 1024)
-	f.jwksFn = func(int) []map[string]interface{} {
-		return []map[string]interface{}{rsaJWKMap(f.rsaKID, &weak.PublicKey)}
+	f.jwksFn = func(int) []map[string]any {
+		return []map[string]any{rsaJWKMap(f.rsaKID, &weak.PublicKey)}
 	}
 	p := newTestProvider(t, f)
 	mustFailExchange(t, p)
@@ -258,16 +256,16 @@ func TestOIDCSec_WeakRSAKey(t *testing.T) {
 func TestOIDCSec_UnknownKidRotationSpent(t *testing.T) {
 	f := newFakeIdP(t)
 	// Token claims a kid the JWKS never serves; JWKS only has the real key.
-	f.header = map[string]interface{}{"alg": "RS256", "kid": "absent-kid"}
-	f.jwksFn = func(int) []map[string]interface{} {
-		return []map[string]interface{}{rsaJWKMap(f.rsaKID, &f.rsaKey.PublicKey)}
+	f.header = map[string]any{"alg": "RS256", "kid": "absent-kid"}
+	f.jwksFn = func(int) []map[string]any {
+		return []map[string]any{rsaJWKMap(f.rsaKID, &f.rsaKey.PublicKey)}
 	}
 	p := newTestProvider(t, f)
 
 	if err := mustFailExchange(t, p); err == nil {
 		t.Fatal("first exchange should fail")
 	}
-	afterFirst := atomic.LoadInt32(&f.jwksHit)
+	afterFirst := f.jwksHit.Load()
 	if afterFirst != 2 {
 		t.Fatalf("jwks hits after first = %d, want 2 (initial + one rotation)", afterFirst)
 	}
@@ -275,7 +273,7 @@ func TestOIDCSec_UnknownKidRotationSpent(t *testing.T) {
 	if err := mustFailExchange(t, p); err == nil {
 		t.Fatal("second exchange should fail")
 	}
-	if got := atomic.LoadInt32(&f.jwksHit); got != 2 {
+	if got := f.jwksHit.Load(); got != 2 {
 		t.Fatalf("jwks hits after second = %d, want 2 (refetch suppressed)", got)
 	}
 }
@@ -285,10 +283,10 @@ func TestOIDCSec_UnknownKidRotationSpent(t *testing.T) {
 // encryption key repurposed for signing is outside its certified use.
 func TestOIDCSec_EncUseKeyRejected(t *testing.T) {
 	f := newFakeIdP(t)
-	f.jwksFn = func(int) []map[string]interface{} {
+	f.jwksFn = func(int) []map[string]any {
 		jwk := rsaJWKMap(f.rsaKID, &f.rsaKey.PublicKey)
 		jwk["use"] = "enc"
-		return []map[string]interface{}{jwk}
+		return []map[string]any{jwk}
 	}
 	p := newTestProvider(t, f)
 	mustFailExchange(t, p)
@@ -298,10 +296,10 @@ func TestOIDCSec_EncUseKeyRejected(t *testing.T) {
 // verify an RS256 token, the key's own alg binding wins.
 func TestOIDCSec_JWKAlgMismatchRejected(t *testing.T) {
 	f := newFakeIdP(t)
-	f.jwksFn = func(int) []map[string]interface{} {
+	f.jwksFn = func(int) []map[string]any {
 		jwk := rsaJWKMap(f.rsaKID, &f.rsaKey.PublicKey)
 		jwk["alg"] = "PS256"
-		return []map[string]interface{}{jwk}
+		return []map[string]any{jwk}
 	}
 	p := newTestProvider(t, f)
 	mustFailExchange(t, p)
@@ -329,7 +327,7 @@ func TestOIDCSec_UserinfoSubMismatch(t *testing.T) {
 	c := baseClaims(f)
 	delete(c, "email") // force the userinfo merge path
 	f.claims = c
-	f.userinfo = map[string]interface{}{"email": "ui@example.com"}
+	f.userinfo = map[string]any{"email": "ui@example.com"}
 	f.userinfoSub = "different-subject" // != id_token sub "user-123"
 	p := newTestProvider(t, f)
 
@@ -355,7 +353,7 @@ func TestOIDCSec_NoSecretsInErrors(t *testing.T) {
 		{
 			name: "alg none",
 			setup: func(f *fakeIdP) {
-				f.header = map[string]interface{}{"alg": "none"}
+				f.header = map[string]any{"alg": "none"}
 				f.sign = func([]byte) []byte { return nil }
 			},
 			drive: func(t *testing.T, p *OIDCProvider, f *fakeIdP) error { return mustFailExchange(t, p) },

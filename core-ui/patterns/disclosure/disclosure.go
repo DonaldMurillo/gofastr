@@ -15,6 +15,8 @@
 package disclosure
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -49,9 +51,7 @@ func Render(cfg Config, body ...render.HTML) render.HTML {
 	if cfg.Open {
 		attrs["open"] = ""
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 	return disclosureStyle.WrapHTML(render.Tag("details", attrs,
 		render.Tag("summary",
 			map[string]string{"class": "ui-disclosure__summary"},

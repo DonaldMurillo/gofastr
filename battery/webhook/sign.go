@@ -90,7 +90,7 @@ func parseTimestampedHeader(header string) (int64, string, bool) {
 		tsSeen     bool
 		sigSeen    bool
 	)
-	for _, part := range strings.Split(header, ",") {
+	for part := range strings.SplitSeq(header, ",") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
 		if len(kv) != 2 {
 			continue

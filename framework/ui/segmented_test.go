@@ -40,15 +40,15 @@ func TestSegmentedControlBasic(t *testing.T) {
 // inputTagFor returns the substring spanning a single <input ...> tag
 // containing the literal value="<val>", used by tests to assert per-input attrs.
 func inputTagFor(html, val string) string {
-	for _, seg := range strings.Split(html, "<input") {
+	for seg := range strings.SplitSeq(html, "<input") {
 		if !strings.Contains(seg, `value="`+val+`"`) {
 			continue
 		}
-		end := strings.Index(seg, ">")
-		if end < 0 {
+		before, _, ok := strings.Cut(seg, ">")
+		if !ok {
 			continue
 		}
-		return seg[:end]
+		return before
 	}
 	return ""
 }

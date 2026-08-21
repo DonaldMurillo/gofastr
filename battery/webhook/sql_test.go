@@ -136,9 +136,9 @@ func TestSQLStore_DeliveryUpdateRoundTrip(t *testing.T) {
 func TestManager_DrivenBySQLStore_EndToEnd(t *testing.T) {
 	_, store := openSQLStore(t)
 
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -170,12 +170,12 @@ func TestManager_DrivenBySQLStore_EndToEnd(t *testing.T) {
 	// many package processes concurrently; PollInterval is not a delivery SLA.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&calls) > 0 {
+		if calls.Load() > 0 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if atomic.LoadInt32(&calls) == 0 {
+	if calls.Load() == 0 {
 		t.Fatalf("SQL-backed manager never delivered")
 	}
 }

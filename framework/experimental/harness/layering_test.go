@@ -26,7 +26,7 @@ func TestFrameworkRootDoesNotImportHarness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list -deps %s: %v\n%s", root, err, out)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		pkg := strings.TrimSpace(line)
 		if pkg == "" {
 			continue

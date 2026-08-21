@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -36,10 +37,8 @@ func ValidateMIME(file io.ReadSeeker, allowed []string) error {
 
 	detected := http.DetectContentType(buf[:n])
 
-	for _, a := range allowed {
-		if detected == a {
-			return nil
-		}
+	if slices.Contains(allowed, detected) {
+		return nil
 	}
 
 	return fmt.Errorf("unsupported MIME type: %s (allowed: %s)", detected, strings.Join(allowed, ", "))

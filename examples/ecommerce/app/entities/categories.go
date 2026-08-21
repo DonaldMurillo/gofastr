@@ -269,18 +269,18 @@ func extractCategoriesRecord(ev framework.Event, entityName string) (*Categories
 func registerCategories(app *framework.App) {
 	app.Entity("categories", framework.EntityConfig{
 		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true, Max: floatPtr(100)},
+			{Name: "name", Type: schema.String, Required: true, Max: new(float64(100))},
 			{Name: "slug", Type: schema.String, Required: true, Unique: true, Pattern: "^[a-z0-9-]+$"},
 			{Name: "description", Type: schema.Text},
 			{Name: "image", Type: schema.Image},
-			{Name: "sort_order", Type: schema.Int, Default: 0, Min: floatPtr(0)},
+			{Name: "sort_order", Type: schema.Int, Default: 0, Min: new(float64(0))},
 			{Name: "active", Type: schema.Bool, Default: true},
 		},
 		Relations: []framework.Relation{
 			{Type: framework.RelHasMany, Name: "products", Entity: "products", ForeignKey: "category_id"},
 		},
 		Exposure: &framework.ExposureConfig{
-			CRUD:   boolPtr(true),
+			CRUD:   new(true),
 			MCP:    true,
 			Access: framework.AccessControl{Create: "catalog:write", Update: "catalog:write", Delete: "catalog:admin"},
 		},

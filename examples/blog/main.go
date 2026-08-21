@@ -93,7 +93,7 @@ func registerEntities(app *framework.App) {
 		// Public: true would also grant anonymous create/update/delete.
 		Read: "", Create: "posts:write", Update: "posts:write", Delete: "posts:admin",
 	}}, Scope: &framework.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
-		{Name: "title", Type: schema.String, Required: true, Max: ptr(300.0)},
+		{Name: "title", Type: schema.String, Required: true, Max: new(300.0)},
 		{Name: "body", Type: schema.Text},
 		{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
 		{Name: "author_id", Type: schema.String},
@@ -134,7 +134,8 @@ func listenAddr() string {
 	return port
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 func searchPosts(index search.Backend) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

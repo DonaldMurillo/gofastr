@@ -184,7 +184,7 @@ func TestCovJSONFieldName(t *testing.T) {
 		Plain   string
 		Skipped string `json:"-"`
 	}
-	tp := reflect.TypeOf(s{})
+	tp := reflect.TypeFor[s]()
 	plain, skip := jsonFieldName(tp.Field(0))
 	if skip || plain != "Plain" {
 		t.Fatalf("plain field: name=%q skip=%v", plain, skip)

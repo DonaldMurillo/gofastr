@@ -13,7 +13,7 @@ import (
 // worked yesterday. Boot is the only place to catch it.
 func TestOriginListIsCappedAtBoot(t *testing.T) {
 	many := make([]string, 0, 300)
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		many = append(many, fmt.Sprintf("https://customer-%03d.example.com", i))
 	}
 	_, err := New(Config{
@@ -37,7 +37,7 @@ func TestOriginListIsCappedAtBoot(t *testing.T) {
 func TestOrdinaryOriginListsStillBoot(t *testing.T) {
 	for _, n := range []int{1, 10, 50} {
 		origins := make([]string, 0, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			origins = append(origins, fmt.Sprintf("https://customer-%03d.example.com", i))
 		}
 		if _, err := New(Config{

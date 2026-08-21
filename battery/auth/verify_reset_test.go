@@ -41,11 +41,11 @@ func (s *stubEmailSender) snapshot() (string, string) {
 // extractTokenFromBody pulls the token query-string value out of the
 // "magic" URL the email-sender stub captured.
 func extractTokenFromBody(body string) string {
-	idx := strings.Index(body, "token=")
-	if idx < 0 {
+	_, after, ok := strings.Cut(body, "token=")
+	if !ok {
 		return ""
 	}
-	rest := body[idx+len("token="):]
+	rest := after
 	if amp := strings.IndexByte(rest, '&'); amp > 0 {
 		return rest[:amp]
 	}

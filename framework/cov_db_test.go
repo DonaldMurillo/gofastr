@@ -75,7 +75,7 @@ func TestCovEntityMCPWithoutCRUDPanics(t *testing.T) {
 				t.Fatal("expected panic: MCP=true with CRUD=false")
 			}
 		}()
-		app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true, CRUD: boolPtr(false)}})
+		app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true, CRUD: new(false)}})
 	})
 }
 
@@ -89,7 +89,7 @@ func TestCovGroupEntityMCPWithoutCRUDPanics(t *testing.T) {
 				t.Fatal("expected panic: group MCP=true with CRUD=false")
 			}
 		}()
-		app.GroupEntity(g, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true, CRUD: boolPtr(false)}})
+		app.GroupEntity(g, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{MCP: true, CRUD: new(false)}})
 	})
 }
 

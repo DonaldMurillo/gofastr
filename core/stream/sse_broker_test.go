@@ -75,7 +75,7 @@ func TestSSEBrokerBufferParamFromQuery(t *testing.T) {
 func TestSSEBrokerPublishToMultipleSubscribers(t *testing.T) {
 	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 32})
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		go func() {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest("GET", "/events", nil)
@@ -104,7 +104,7 @@ func TestSSEBrokerDropOnFullBuffer(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Publish more than buffer can hold; should not block
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		broker.Publish("burst", strings.Repeat("x", 100))
 	}
 	// If we reach here, backpressure drop worked without blocking
@@ -117,7 +117,7 @@ func TestSSEBrokerBackpressureDropsOldestAndKeepsLatest(t *testing.T) {
 	broker.subscribers["slow"] = sub
 	broker.mu.Unlock()
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		broker.Publish("burst", "payload", fmt.Sprintf("%d", i))
 	}
 

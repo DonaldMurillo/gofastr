@@ -115,8 +115,8 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		fieldName := fieldRaw
 		op := filter.OpEq
 		for _, s := range filter.FilterSuffixes {
-			if strings.HasSuffix(fieldRaw, s.Suffix) {
-				fieldName = strings.TrimSuffix(fieldRaw, s.Suffix)
+			if before, ok0 := strings.CutSuffix(fieldRaw, s.Suffix); ok0 {
+				fieldName = before
 				op = s.Op
 				break
 			}

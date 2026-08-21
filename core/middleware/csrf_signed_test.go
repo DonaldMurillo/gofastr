@@ -65,7 +65,7 @@ func TestCSRF_UnsignedHeaderRejected(t *testing.T) {
 
 	// An attacker who plants a fake cookie and matching header (both being
 	// just the random part, no signature) must be rejected.
-	random := strings.SplitN(cookieVal, ".", 2)[0]
+	random, _, _ := strings.Cut(cookieVal, ".")
 	req2 := httptest.NewRequest(http.MethodPost, "/", nil)
 	req2.AddCookie(&http.Cookie{Name: cookieName, Value: random})
 	req2.Header.Set("X-CSRF-Token", random)

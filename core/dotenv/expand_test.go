@@ -76,7 +76,7 @@ func TestExpand_DeepChainBounded(t *testing.T) {
 	// Build a chain longer than the depth cap; the cap should kick
 	// in before stack-blowing, leaving the deeper refs verbatim.
 	local := map[string]string{}
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		local["K"+strings.Repeat("X", i)] = "${K" + strings.Repeat("X", i+1) + "}"
 	}
 	// Add a terminator so a depth-bounded result is meaningful.

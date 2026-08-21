@@ -131,8 +131,8 @@ func LoadFromDir(dir string) (map[string]Template, error) {
 			// Extract subject from first line if not already set.
 			if tmpl.Subject == "" {
 				lines := strings.SplitN(text, "\n", 2)
-				if strings.HasPrefix(lines[0], "Subject: ") {
-					tmpl.Subject = strings.TrimPrefix(lines[0], "Subject: ")
+				if after, ok0 := strings.CutPrefix(lines[0], "Subject: "); ok0 {
+					tmpl.Subject = after
 					if len(lines) > 1 {
 						text = lines[1]
 					} else {
@@ -148,8 +148,8 @@ func LoadFromDir(dir string) (map[string]Template, error) {
 			// Extract subject from first line if not already set.
 			if tmpl.Subject == "" {
 				lines := strings.SplitN(html, "\n", 2)
-				if strings.HasPrefix(lines[0], "Subject: ") {
-					tmpl.Subject = strings.TrimPrefix(lines[0], "Subject: ")
+				if after, ok0 := strings.CutPrefix(lines[0], "Subject: "); ok0 {
+					tmpl.Subject = after
 					if len(lines) > 1 {
 						html = lines[1]
 					} else {
@@ -213,8 +213,8 @@ func LoadFromFS(fsys fs.FS) (map[string]Template, error) {
 		if text, ok := files[".txt"]; ok {
 			if tmpl.Subject == "" {
 				lines := strings.SplitN(text, "\n", 2)
-				if strings.HasPrefix(lines[0], "Subject: ") {
-					tmpl.Subject = strings.TrimPrefix(lines[0], "Subject: ")
+				if after, ok0 := strings.CutPrefix(lines[0], "Subject: "); ok0 {
+					tmpl.Subject = after
 					if len(lines) > 1 {
 						text = lines[1]
 					} else {
@@ -228,8 +228,8 @@ func LoadFromFS(fsys fs.FS) (map[string]Template, error) {
 		if html, ok := files[".html"]; ok {
 			if tmpl.Subject == "" {
 				lines := strings.SplitN(html, "\n", 2)
-				if strings.HasPrefix(lines[0], "Subject: ") {
-					tmpl.Subject = strings.TrimPrefix(lines[0], "Subject: ")
+				if after, ok0 := strings.CutPrefix(lines[0], "Subject: "); ok0 {
+					tmpl.Subject = after
 					if len(lines) > 1 {
 						html = lines[1]
 					} else {

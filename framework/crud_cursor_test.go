@@ -100,7 +100,7 @@ func TestCursor_WalksToLastPage(t *testing.T) {
 
 		cursor := ""
 		seen := []string{}
-		for page := 0; page < 5; page++ {
+		for range 5 {
 			// Always include cursor= so cursor mode is engaged
 			path := "/posts?limit=10&cursor=" + url.QueryEscape(cursor)
 			resp := ta.Get(path)

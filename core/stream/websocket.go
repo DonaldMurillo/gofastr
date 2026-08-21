@@ -284,7 +284,7 @@ func pickSubprotocol(r *http.Request, serverPrefs []string) string {
 		return ""
 	}
 	offered := make(map[string]struct{})
-	for _, p := range strings.Split(raw, ",") {
+	for p := range strings.SplitSeq(raw, ",") {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			offered[p] = struct{}{}
@@ -469,13 +469,7 @@ func (c *WebSocketConn) keepalive() {
 		pongTimeout = 10 * time.Second
 	}
 	// Check at a granularity finer than the smaller of the two thresholds.
-	tick := idle / 4
-	if pongTimeout/4 < tick {
-		tick = pongTimeout / 4
-	}
-	if tick < 10*time.Millisecond {
-		tick = 10 * time.Millisecond
-	}
+	tick := max(min(pongTimeout/4, idle/4), 10*time.Millisecond)
 	t := time.NewTicker(tick)
 	defer t.Stop()
 
@@ -904,7 +898,7 @@ func minInt(a, b int) int {
 // headerHasToken reports whether a comma-separated header value
 // contains token (case-insensitive), e.g. "keep-alive, Upgrade".
 func headerHasToken(value, token string) bool {
-	for _, part := range strings.Split(value, ",") {
+	for part := range strings.SplitSeq(value, ",") {
 		if strings.EqualFold(strings.TrimSpace(part), token) {
 			return true
 		}

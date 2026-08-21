@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -416,13 +417,7 @@ func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string,
 	// column; if pk isn't a declared column we append it for paging only and
 	// keep it OUT of the emitted row map.
 	readCols := append([]string(nil), columns...)
-	hasPK := false
-	for _, c := range columns {
-		if c == pk {
-			hasPK = true
-			break
-		}
-	}
+	hasPK := slices.Contains(columns, pk)
 	if !hasPK {
 		readCols = append(readCols, pk)
 	}

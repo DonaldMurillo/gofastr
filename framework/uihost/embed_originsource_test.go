@@ -3,6 +3,7 @@ package uihost
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -188,10 +189,8 @@ func (s *perCustomerSource) Allows(_ context.Context, _, origin string) (bool, e
 		return false, s.err
 	}
 	for _, list := range s.byCustomer {
-		for _, o := range list {
-			if o == origin {
-				return true, nil
-			}
+		if slices.Contains(list, origin) {
+			return true, nil
 		}
 	}
 	return false, nil

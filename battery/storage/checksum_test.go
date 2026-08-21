@@ -185,11 +185,8 @@ func (s *patternStream) Read(p []byte) (int, error) {
 	if s.remain <= 0 {
 		return 0, io.EOF
 	}
-	max := int64(len(p))
-	if s.remain < max {
-		max = s.remain
-	}
-	for i := int64(0); i < max; i++ {
+	max := min(s.remain, int64(len(p)))
+	for i := range max {
 		p[i] = s.b
 		s.b++
 	}

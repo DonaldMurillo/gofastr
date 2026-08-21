@@ -170,7 +170,7 @@ func TestHubBroadcastDropsOnFullBuffer(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Send more messages than the buffer can hold
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		hub.Broadcast([]byte("msg"))
 	}
 	// Should not block: messages are dropped for this conn
@@ -187,7 +187,7 @@ func TestHubConcurrentOperations(t *testing.T) {
 	done := make(chan struct{})
 
 	// Concurrent registers and broadcasts
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			conn := newTestConn()
 			go conn.writePump()

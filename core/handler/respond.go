@@ -152,7 +152,7 @@ func writeSSEFrame(w http.ResponseWriter, evt SSE) {
 		fmt.Fprintf(w, "event: %s\n", event)
 	}
 	data := sanitizeSSEData(evt.Data)
-	for _, line := range strings.Split(data, "\n") {
+	for line := range strings.SplitSeq(data, "\n") {
 		fmt.Fprintf(w, "data: %s\n", line)
 	}
 	fmt.Fprint(w, "\n")

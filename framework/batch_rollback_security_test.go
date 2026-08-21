@@ -59,7 +59,7 @@ func TestBatchUpdate_RollbackScrubsData(t *testing.T) {
 			return nil
 		})
 	}, func(t *testing.T, db *sql.DB, ta *TestApp) {
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			if _, err := db.Exec("INSERT INTO posts(id, title) VALUES ($1, $2)", "p"+string(rune('1'+i)), "seed-"+string(rune('1'+i))); err != nil {
 				t.Fatalf("seed row %d: %v", i, err)
 			}
@@ -85,7 +85,7 @@ func TestBatchDelete_RollbackScrubsData(t *testing.T) {
 			return nil
 		})
 	}, func(t *testing.T, db *sql.DB, ta *TestApp) {
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			if _, err := db.Exec("INSERT INTO posts(id, title) VALUES ($1, $2)", "p"+string(rune('1'+i)), "seed-"+string(rune('1'+i))); err != nil {
 				t.Fatalf("seed row %d: %v", i, err)
 			}

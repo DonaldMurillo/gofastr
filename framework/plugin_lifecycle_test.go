@@ -173,7 +173,6 @@ func TestPluginNameRejected(t *testing.T) {
 		{"too long", strings.Repeat("x", 200)},
 	}
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			app := NewApp()
 			defer func() {

@@ -38,7 +38,6 @@ func TestSuccessRedirect_RejectsBackslashBypass(t *testing.T) {
 		{"url-encoded NUL", "/normal%00/evil"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/auth/login?next="+url.QueryEscape(tc.next),
 				strings.NewReader(""))

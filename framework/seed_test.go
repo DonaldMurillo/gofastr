@@ -59,7 +59,7 @@ func TestRunSeeds_FiresOnceAndShortCircuits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := migrate.RunSeeds(context.Background(), db, reg); err != nil {
 			t.Fatalf("run %d: %v", i, err)
 		}
@@ -455,7 +455,7 @@ func TestRunSeeds_UsesBatchLedgerRead(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	ents := make([]*entity.Entity, 0, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		nm := "batched_" + string(rune('a'+i))
 		cfg := entity.EntityConfig{
 			Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}},

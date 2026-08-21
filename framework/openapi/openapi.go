@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/openapi"
@@ -605,9 +606,7 @@ func fieldToFilterSchema(f schema.Field) map[string]any {
 // excludeFieldsByBehavior returns a copy of an OpenAPI schema excluding auto-generated, read-only, and hidden fields.
 func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) map[string]any {
 	cp := make(map[string]any, len(specSchema))
-	for k, v := range specSchema {
-		cp[k] = v
-	}
+	maps.Copy(cp, specSchema)
 
 	// Collect field names to exclude
 	exclude := make(map[string]bool)

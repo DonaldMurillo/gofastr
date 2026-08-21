@@ -20,7 +20,7 @@ import (
 // navigations starve the tab, the server here observes exactly that:
 // its stream handler never unblocks.
 func TestSSEClosesStreamOnHardNav(t *testing.T) {
-	var active int32
+	var active atomic.Int32
 	mux := http.NewServeMux()
 	js, err := RuntimeJS()
 	if err != nil {
@@ -47,8 +47,8 @@ func TestSSEClosesStreamOnHardNav(t *testing.T) {
 		if fl != nil {
 			fl.Flush()
 		}
-		atomic.AddInt32(&active, 1)
-		defer atomic.AddInt32(&active, -1)
+		active.Add(1)
+		defer active.Add(-1)
 		<-r.Context().Done()
 	})
 	// Page A carries the SSE meta; page B is a plain document, so the
@@ -80,7 +80,7 @@ func TestSSEClosesStreamOnHardNav(t *testing.T) {
 	waitStreams := func(want int32, timeout time.Duration) bool {
 		deadline := time.Now().Add(timeout)
 		for time.Now().Before(deadline) {
-			if atomic.LoadInt32(&active) == want {
+			if active.Load() == want {
 				return true
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -88,7 +88,7 @@ func TestSSEClosesStreamOnHardNav(t *testing.T) {
 		return false
 	}
 	if !waitStreams(1, 15*time.Second) {
-		t.Fatalf("page A never opened its SSE stream (active = %d)", atomic.LoadInt32(&active))
+		t.Fatalf("page A never opened its SSE stream (active = %d)", active.Load())
 	}
 
 	// Hard navigation: a full document load of /b, which puts page A into
@@ -101,6 +101,6 @@ func TestSSEClosesStreamOnHardNav(t *testing.T) {
 	}
 	if !waitStreams(0, 10*time.Second) {
 		t.Fatalf("page A's SSE stream survived the hard navigation: server still sees %d open stream(s)",
-			atomic.LoadInt32(&active))
+			active.Load())
 	}
 }

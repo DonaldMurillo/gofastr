@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
@@ -257,9 +258,9 @@ func Dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Re
 // "" if there is none. Used by ContextHook to score retrieval against
 // the live user intent rather than the full transcript.
 func lastUserText(msgs []Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == "user" {
-			return msgs[i].Text
+	for _, msg := range slices.Backward(msgs) {
+		if msg.Role == "user" {
+			return msg.Text
 		}
 	}
 	return ""

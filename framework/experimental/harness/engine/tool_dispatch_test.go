@@ -46,8 +46,7 @@ func TestDispatchPublishesStartAndResult(t *testing.T) {
 	}
 	d := NewDispatcher(bus, reg)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sub := bus.Subscribe(ctx)
 
 	originator := ids.NewClientID()

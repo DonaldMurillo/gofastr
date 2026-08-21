@@ -35,7 +35,7 @@ CREATE TABLE notes (
 			{Name: "title", Type: schema.String},
 		},
 		func(c *entity.EntityConfig) {
-			c.Exposure = &entity.ExposureConfig{CRUD: boolPtrGate(true), Public: true}
+			c.Exposure = &entity.ExposureConfig{CRUD: new(true), Public: true}
 		},
 	)
 	ch, db := setupSecurityTestHandler(t, cfg, ddl)

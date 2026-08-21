@@ -69,7 +69,7 @@ func TestWriteTimeoutDefaultStopsBlockedPeer(t *testing.T) {
 // Item 1b: RequireMask must be unexported. Caller-visible config struct
 // must not expose it (so callers can't accidentally disable masking).
 func TestWSConfigNoRequireMaskField(t *testing.T) {
-	tp := reflect.TypeOf(WSConfig{})
+	tp := reflect.TypeFor[WSConfig]()
 	if _, ok := tp.FieldByName("RequireMask"); ok {
 		t.Fatal("WSConfig.RequireMask must be unexported — Upgrade overrides it anyway")
 	}
@@ -324,7 +324,7 @@ func TestBroadcastSkipsDeadConn(t *testing.T) {
 
 	conn.Close()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		hub.Broadcast([]byte("x"))
 	}
 
@@ -341,7 +341,7 @@ func TestBroadcastSkipsDeadConn(t *testing.T) {
 // concurrent OnClose() registration during Close() can't race. The
 // callback must fire exactly once.
 func TestOnCloseRaceFiresOnce(t *testing.T) {
-	for trial := 0; trial < 10; trial++ {
+	for trial := range 10 {
 		conn := &WebSocketConn{
 			conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
 			sendBuffer: make(chan []byte, 1),

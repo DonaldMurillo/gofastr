@@ -132,12 +132,10 @@ func TestCanIsConcurrencySafeWithAnObserver(t *testing.T) {
 	ctx := WithRoles(WithPolicy(context.Background(), policy), []string{"editor"})
 
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 32 {
+		wg.Go(func() {
 			Can(ctx, "posts:write")
-		}()
+		})
 	}
 	wg.Wait()
 

@@ -22,7 +22,7 @@ func TestRegistry_RejectsConflictingRelationsAcrossVersions(t *testing.T) {
 			Table:     "widgets",
 			Fields:    []schema.Field{{Name: "title", Type: schema.String}},
 			Relations: rels,
-			Exposure:  &ExposureConfig{CRUD: boolPtr(false)},
+			Exposure:  &ExposureConfig{CRUD: new(false)},
 		}.WithTimestamps(false)
 	}
 

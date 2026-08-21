@@ -28,7 +28,7 @@ func TestRegisterRateLimitedByDefault(t *testing.T) {
 	mgr.RegisterRoutes(r)
 
 	sawTooMany := false
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		body, _ := json.Marshal(map[string]string{
 			"email":    fmt.Sprintf("user%d@example.com", i),
 			"password": "long-enough-password-123",
@@ -61,7 +61,7 @@ func TestCrossSitePostsDontBurnRateBudget(t *testing.T) {
 	r := router.New()
 	mgr.RegisterRoutes(r)
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		vals := url.Values{"email": {"victim@example.com"}, "password": {"long-enough-password-123"}}
 		req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(vals.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -100,7 +100,7 @@ func TestRegisterFormRateLimit303(t *testing.T) {
 	mgr.RegisterRoutes(r)
 
 	sawRedirect := false
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		vals := url.Values{"email": {fmt.Sprintf("user%d@example.com", i)}, "password": {"long-enough-password-123"}}
 		req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(vals.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

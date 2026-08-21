@@ -86,7 +86,7 @@ func TestAuthBypass_DefaultBruteForceLimiter(t *testing.T) {
 
 	// Attempt 20 failed logins
 	successCount := 0
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		body, _ := json.Marshal(map[string]string{
 			"email":    "target@example.com",
 			"password": fmt.Sprintf("wrong-password-%d", i),

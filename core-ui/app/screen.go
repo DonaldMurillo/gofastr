@@ -283,7 +283,7 @@ func (s *Screen) newInstance() component.Component {
 		return nil
 	}
 	v := reflect.ValueOf(s.Component)
-	if v.Kind() != reflect.Ptr || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
 		return s.Component
 	}
 	fresh := reflect.New(v.Elem().Type())

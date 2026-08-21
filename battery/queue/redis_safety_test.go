@@ -27,7 +27,7 @@ func (f *opFailingRedis) RPop(ctx context.Context, key string) (string, error) {
 	return f.RedisClient.RPop(ctx, key)
 }
 
-func (f *opFailingRedis) HSet(ctx context.Context, key string, values ...interface{}) error {
+func (f *opFailingRedis) HSet(ctx context.Context, key string, values ...any) error {
 	if f.hsetErr != nil {
 		return f.hsetErr
 	}

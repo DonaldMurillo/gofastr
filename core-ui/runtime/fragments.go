@@ -13,6 +13,8 @@ package runtime
 // This map extends that obligation: a new attribute must also declare an
 // owning fragment here, or the build fails.
 
+import "slices"
+
 // fragmentClass labels HOW a fragment enters a composition.
 //
 // The distinction is the whole safety story for composition (spec §"Two
@@ -459,17 +461,13 @@ const (
 // the namespace use the kind.
 func attrOwner(attr string) (kind ownerKind, name string) {
 	for frag, attrs := range fragmentAttrs {
-		for _, a := range attrs {
-			if a == attr {
-				return ownsByFragment, frag
-			}
+		if slices.Contains(attrs, attr) {
+			return ownsByFragment, frag
 		}
 	}
 	for mod, attrs := range moduleAttrs {
-		for _, a := range attrs {
-			if a == attr {
-				return ownsByModule, mod
-			}
+		if slices.Contains(attrs, attr) {
+			return ownsByModule, mod
 		}
 	}
 	return "", ""

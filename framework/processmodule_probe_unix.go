@@ -180,10 +180,7 @@ func runProbeChildBody(id ProbeID) int {
 			}
 		}
 		got := forkBombCount(want)
-		threshold := cap * 2
-		if threshold < cap+8 {
-			threshold = cap + 8
-		}
+		threshold := max(cap*2, cap+8)
 		if got > threshold {
 			breach(fmt.Sprintf("forked %d children (cap=%d, threshold=%d not enforced)", got, cap, threshold))
 			return 0
@@ -235,10 +232,7 @@ func forkBombCount(want int) int {
 	const wave = 16
 	successes := 0
 	for started := 0; started < want; started += wave {
-		end := started + wave
-		if end > want {
-			end = want
-		}
+		end := min(started+wave, want)
 		cmds := make([]*exec.Cmd, 0, wave)
 		for i := started; i < end; i++ {
 			c := exec.Command("/bin/true")

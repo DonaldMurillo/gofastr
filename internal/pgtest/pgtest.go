@@ -235,7 +235,7 @@ func RedactDSN(dsn string) string {
 
 func ping(db *sql.DB) error {
 	var err error
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		err = db.PingContext(ctx)
 		cancel()

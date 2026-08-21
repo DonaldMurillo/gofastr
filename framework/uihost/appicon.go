@@ -5,6 +5,7 @@ import (
 	stdimage "image"
 	"image/draw"
 	"log/slog"
+	"maps"
 	"net/http"
 	"sort"
 
@@ -73,10 +74,7 @@ func squareCrop(img *fwimage.Image) *fwimage.Image {
 	if w == h {
 		return img
 	}
-	side := w
-	if h < side {
-		side = h
-	}
+	side := min(h, w)
 	x0 := b.Min.X + (w-side)/2
 	y0 := b.Min.Y + (h-side)/2
 	dst := stdimage.NewNRGBA(stdimage.Rect(0, 0, side, side))
@@ -93,9 +91,7 @@ func (ds *UIHost) AppIconAssets() map[string][]byte {
 		return nil
 	}
 	out := make(map[string][]byte, len(ds.appIcons)+1)
-	for p, b := range ds.appIcons {
-		out[p] = b
-	}
+	maps.Copy(out, ds.appIcons)
 	out["/favicon.ico"] = ds.appIcons[appIconPath(32)]
 	return out
 }

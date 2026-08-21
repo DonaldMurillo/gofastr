@@ -2192,8 +2192,7 @@ func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
 func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxMutatingBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return false
 		}
@@ -2341,7 +2340,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		actionDef.Handler(ctx)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"status":  "ok",
 			"action":  actionName,
 			"message": "Server action processed",
@@ -2351,7 +2350,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 
 	// No Go handler; just acknowledge
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"status":  "ok",
 		"action":  actionName,
 		"message": "Server action acknowledged (no handler)",

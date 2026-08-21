@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -131,9 +132,7 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	} else if cfg.Help != "" {
 		inputAttrs["aria-describedby"] = id + "-help"
 	}
-	for k, v := range cfg.ExtraAttrs {
-		inputAttrs[k] = v
-	}
+	maps.Copy(inputAttrs, cfg.ExtraAttrs)
 
 	// Switch uses an extra visual "track" element painted via CSS;
 	// no extra DOM beyond input + label needed because the

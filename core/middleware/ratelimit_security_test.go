@@ -62,21 +62,21 @@ func TestRateLimit_XFFRotationDoesNotBypass(t *testing.T) {
 	}
 	mw := RateLimit(cfg)
 
-	var allowed int32
+	var allowed atomic.Int32
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&allowed, 1)
+		allowed.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	// Send 10 requests with different XFF values
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("1.2.3.%d", i))
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 	}
 
-	got := atomic.LoadInt32(&allowed)
+	got := allowed.Load()
 	// With XFF rotation, each request gets a different key, so all 10 pass.
 	// This test DOCUMENTS the behavior: XFF rotation defeats the rate limiter
 	// when the KeyFunc trusts the leftmost XFF entry without validation.
@@ -96,25 +96,23 @@ func TestRateLimit_ConcurrentBurstCapped(t *testing.T) {
 	}
 	mw := RateLimit(cfg)
 
-	var allowed int32
+	var allowed atomic.Int32
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&allowed, 1)
+		allowed.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
-		}()
+		})
 	}
 	wg.Wait()
 
-	got := atomic.LoadInt32(&allowed)
+	got := allowed.Load()
 	if got > 5 {
 		t.Errorf("SECURITY: [ratelimit] concurrent burst allowed %d requests (cap=5). Attack: concurrent request race bypasses bucket.", got)
 	}
@@ -131,9 +129,9 @@ func TestRateLimit_HexIPNormalizesToSameBucket(t *testing.T) {
 	}
 	mw := RateLimit(cfg)
 
-	var allowed int32
+	var allowed atomic.Int32
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&allowed, 1)
+		allowed.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -145,7 +143,7 @@ func TestRateLimit_HexIPNormalizesToSameBucket(t *testing.T) {
 		srv.ServeHTTP(rr, req)
 	}
 
-	got := atomic.LoadInt32(&allowed)
+	got := allowed.Load()
 	// Both should use the same bucket (after port stripping)
 	// So we expect exactly 2 allowed since capacity is 2
 	if got != 2 {
@@ -165,9 +163,9 @@ func TestRateLimit_HeaderSplitKeyCollision(t *testing.T) {
 	}
 	mw := RateLimit(cfg)
 
-	var allowed int32
+	var allowed atomic.Int32
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&allowed, 1)
+		allowed.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -183,7 +181,7 @@ func TestRateLimit_HeaderSplitKeyCollision(t *testing.T) {
 	rr2 := httptest.NewRecorder()
 	srv.ServeHTTP(rr2, req2)
 
-	got := atomic.LoadInt32(&allowed)
+	got := allowed.Load()
 	// Both use key "1.2.3.4", first-hop extraction, so only 2 should pass
 	if got != 2 {
 		t.Logf("SECURITY: [ratelimit] XFF comma-split gave %d allowed (want 2). Attack: multi-value XFF header may create unexpected buckets.", got)
@@ -202,14 +200,14 @@ func TestRateLimit_NoProxyXFFSpoofing(t *testing.T) {
 	}
 	mw := RateLimit(cfg)
 
-	var allowed int32
+	var allowed atomic.Int32
 	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&allowed, 1)
+		allowed.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	// Send requests with different spoofed XFF but same RemoteAddr
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "10.0.0.1:1234"
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("spoofed-%d", i))
@@ -217,7 +215,7 @@ func TestRateLimit_NoProxyXFFSpoofing(t *testing.T) {
 		srv.ServeHTTP(rr, req)
 	}
 
-	got := atomic.LoadInt32(&allowed)
+	got := allowed.Load()
 	// The default KeyFunc trusts XFF leftmost entry. If spoofed XFF
 	// creates separate buckets, the rate limiter is defeated.
 	if got > 2 {

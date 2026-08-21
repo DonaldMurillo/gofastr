@@ -76,7 +76,7 @@ func TestLoadHappyPath(t *testing.T) {
 	// We're guarding against "battery/log leaked a goroutine per
 	// request" (would be hundreds), not "net/http's bookkeeping takes
 	// a few ms longer".
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		runtime.GC()
 		if runtime.NumGoroutine()-goroutinesBefore <= 16 {
 			break
@@ -229,10 +229,8 @@ func hammer(t *testing.T, url string, workers int, dur time.Duration) {
 
 	deadline := time.Now().Add(dur)
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			for time.Now().Before(deadline) {
 				resp, err := client.Get(url)
 				if err != nil {
@@ -241,7 +239,7 @@ func hammer(t *testing.T, url string, workers int, dur time.Duration) {
 				_, _ = io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

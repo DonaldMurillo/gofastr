@@ -33,7 +33,7 @@ func TestSQLRateLimit_BlocksAtMax(t *testing.T) {
 	ctx := context.Background()
 	cfg := rlTestConfig()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ok, _, err := s.Allow(ctx, "ip:1.2.3.4", cfg)
 		if err != nil || !ok {
 			t.Fatalf("attempt %d: got %v, %v; want allowed", i+1, ok, err)
@@ -58,7 +58,7 @@ func TestSQLRateLimit_KeysIndependent(t *testing.T) {
 	ctx := context.Background()
 	cfg := rlTestConfig()
 
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		s.Allow(ctx, "ip:1.1.1.1", cfg) // drive to blocked
 	}
 	ok, _, err := s.Allow(ctx, "ip:2.2.2.2", cfg)
@@ -120,7 +120,7 @@ func TestSQLRateLimit_WindowExpiry(t *testing.T) {
 	cfg := rlTestConfig()
 
 	old := time.Now().Add(-2 * cfg.Window).UnixMilli()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ('ip:5.5.5.5', $1)", old); err != nil {
 			t.Fatalf("backdate attempt: %v", err)
 		}
@@ -243,7 +243,7 @@ func TestSQLRateLimit_SweepNotStarvedByBusyScope(t *testing.T) {
 
 	// 50 abandoned password_reset attempts, all far out of window.
 	old := time.Now().Add(-2 * time.Hour).UnixMilli()
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ($1, $2)", fmt.Sprintf("password_reset|bot-%d", i), old); err != nil {
 			t.Fatalf("seed: %v", err)
 		}

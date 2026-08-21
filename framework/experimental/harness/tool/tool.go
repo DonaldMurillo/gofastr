@@ -14,6 +14,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
@@ -180,8 +181,8 @@ type Middleware func(ctx context.Context, call ToolCall, sink EventSink, next Ha
 func Chain(base Handler, ms ...Middleware) Handler {
 	// Wrap from inside out so first middleware is outermost.
 	h := base
-	for i := len(ms) - 1; i >= 0; i-- {
-		m := ms[i]
+	for _, m := range slices.Backward(ms) {
+
 		next := h
 		h = func(ctx context.Context, call ToolCall, sink EventSink) (*ToolResult, error) {
 			return m(ctx, call, sink, next)

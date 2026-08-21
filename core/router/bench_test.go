@@ -22,10 +22,9 @@ func BenchmarkRouter_Lookup(b *testing.B) {
 	sizes := []int{1, 10, 100, 1000}
 
 	for _, n := range sizes {
-		n := n
 		b.Run(fmt.Sprintf("gofastr-static-N=%d", n), func(b *testing.B) {
 			r := New()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				r.GetFunc(fmt.Sprintf("/route-%d", i), noop)
 			}
 			target := fmt.Sprintf("/route-%d", n-1)
@@ -39,7 +38,7 @@ func BenchmarkRouter_Lookup(b *testing.B) {
 
 		b.Run(fmt.Sprintf("gofastr-param-N=%d", n), func(b *testing.B) {
 			r := New()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				r.GetFunc(fmt.Sprintf("/users/{id}/route-%d", i), noop)
 			}
 			target := fmt.Sprintf("/users/42/route-%d", n-1)
@@ -53,7 +52,7 @@ func BenchmarkRouter_Lookup(b *testing.B) {
 
 		b.Run(fmt.Sprintf("servemux-static-N=%d", n), func(b *testing.B) {
 			mux := http.NewServeMux()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				mux.HandleFunc(fmt.Sprintf("/route-%d", i), noop)
 			}
 			target := fmt.Sprintf("/route-%d", n-1)

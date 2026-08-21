@@ -180,13 +180,11 @@ func TestGrantRevokeReloadConcurrentRace(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 200 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = store.Grant(ctx, "editor", Permission("posts:read"))
 			_ = store.Revoke(ctx, "editor", Permission("posts:write"))
 			_ = store.reloadRole(ctx, "editor")
-		}()
+		})
 	}
 	wg.Wait()
 

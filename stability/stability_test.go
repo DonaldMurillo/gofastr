@@ -30,7 +30,7 @@ func modulePackages(t *testing.T) []string {
 		t.Fatalf("go list ./... in %s: %v", root, err)
 	}
 	var pkgs []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			pkgs = append(pkgs, line)
 		}

@@ -273,7 +273,7 @@ func registerInvoices(app *framework.App) {
 	app.Entity("invoices", framework.EntityConfig{Fields: []schema.Field{
 		{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
 		{Name: "number", Type: schema.String, Required: true, Unique: true},
-		{Name: "amount", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+		{Name: "amount", Type: schema.Decimal, Required: true, Min: new(float64(0))},
 		{Name: "status", Type: schema.Enum, Default: "draft", Values: []string{"draft", "open", "paid", "past_due", "void"}},
 		{Name: "issued_on", Type: schema.Date},
 		{Name: "due_on", Type: schema.Date},
@@ -282,7 +282,7 @@ func registerInvoices(app *framework.App) {
 	},
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
-		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Invoices"},
+		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: new(true), MCP: true}, Properties: map[string]any{"label": "Invoices"},
 	})
 	_ = Invoices{}
 }

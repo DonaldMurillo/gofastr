@@ -30,8 +30,7 @@ func TestBusPublishMonotonic(t *testing.T) {
 func TestBusSubscribeDelivery(t *testing.T) {
 	bus := NewBus(ids.NewSessionID())
 	defer bus.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := bus.Subscribe(ctx)
 
 	originator := ids.NewClientID()
@@ -43,7 +42,7 @@ func TestBusSubscribeDelivery(t *testing.T) {
 	}
 	got := []string{}
 	timeout := time.After(time.Second)
-	for i := 0; i < len(want); i++ {
+	for range want {
 		select {
 		case env := <-ch:
 			e, err := control.DecodeEvent(env)
@@ -89,8 +88,7 @@ func TestBusSubscribeCancellation(t *testing.T) {
 
 func TestBusCloseClosesSubscribers(t *testing.T) {
 	bus := NewBus(ids.NewSessionID())
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := bus.Subscribe(ctx)
 
 	bus.Close()
@@ -111,8 +109,7 @@ func TestBusCloseClosesSubscribers(t *testing.T) {
 func TestBusSlowSubscriberDoesntBlock(t *testing.T) {
 	bus := NewBus(ids.NewSessionID())
 	defer bus.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// Subscribe but never read.
 	_ = bus.Subscribe(ctx)
 
@@ -120,7 +117,7 @@ func TestBusSlowSubscriberDoesntBlock(t *testing.T) {
 	// Publish more than the buffer; should not block.
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 1024; i++ {
+		for range 1024 {
 			_, _ = bus.Publish(control.TextDelta{Text: "x"}, originator)
 		}
 		close(done)

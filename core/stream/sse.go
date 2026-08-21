@@ -105,7 +105,7 @@ func (s *SSEWriter) WriteEvent(event, data string) error {
 	// multi-line data: strip CR/NUL per the WHATWG SSE parser, which
 	// terminates a field on CR, LF, or CRLF. A `data: foo\rbar` field
 	// would otherwise split into two values on Windows EventSource impls.
-	for _, line := range strings.Split(scrubSSEDataLines(data), "\n") {
+	for line := range strings.SplitSeq(scrubSSEDataLines(data), "\n") {
 		b.WriteString("data: ")
 		b.WriteString(line)
 		b.WriteByte('\n')
@@ -137,7 +137,7 @@ func (s *SSEWriter) WriteData(data string) error {
 		s.nextID = ""
 	}
 
-	for _, line := range strings.Split(scrubSSEDataLines(data), "\n") {
+	for line := range strings.SplitSeq(scrubSSEDataLines(data), "\n") {
 		b.WriteString("data: ")
 		b.WriteString(line)
 		b.WriteByte('\n')

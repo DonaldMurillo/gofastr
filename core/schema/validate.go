@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -245,10 +246,8 @@ func validateEnum(f Field, value any) error {
 	if !ok {
 		return fmt.Errorf("must be a string")
 	}
-	for _, allowed := range f.Values {
-		if s == allowed {
-			return nil
-		}
+	if slices.Contains(f.Values, s) {
+		return nil
 	}
 	return fmt.Errorf("must be one of %v", f.Values)
 }

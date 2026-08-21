@@ -36,7 +36,7 @@ func includeGateApp(t *testing.T) *App {
 	app.Entity("owners", EntityConfig{
 		Fields: []schema.Field{{Name: "email", Type: schema.String}},
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrInc(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "owners:read"},
 		},
 	})
@@ -49,12 +49,13 @@ func includeGateApp(t *testing.T) *App {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	return app
 }
 
-func boolPtrInc(b bool) *bool { return &b }
+//go:fix inline
+func boolPtrInc(b bool) *bool { return new(b) }
 
 func TestIncludeRespectsTargetEntityReadGate(t *testing.T) {
 	app := includeGateApp(t)
@@ -124,7 +125,7 @@ func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
 	app := NewApp(WithConfig(AppConfig{Name: "incok", APIPrefix: "/api"}), WithDB(db))
 	app.Entity("owners", EntityConfig{
 		Fields:   []schema.Field{{Name: "email", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("notes", EntityConfig{
 		Fields: []schema.Field{
@@ -134,7 +135,7 @@ func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -182,7 +183,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 			{Name: "owner_id", Type: schema.Relation, To: "owners"},
 		},
 		Exposure: &entity.ExposureConfig{
-			CRUD:   boolPtrInc(true),
+			CRUD:   new(true),
 			Access: entity.AccessControl{Read: "profiles:read"},
 		},
 	})
@@ -192,7 +193,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelHasOne, Name: "profile", Entity: "profiles", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("notes", EntityConfig{
 		Fields: []schema.Field{
@@ -202,7 +203,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -326,7 +327,7 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 			{Name: "board_id", Type: schema.Relation, To: "boards"},
 		},
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	// Public parent that relates to it.
 	app.Entity("boards", EntityConfig{
@@ -334,7 +335,7 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -430,14 +431,14 @@ func TestNestedFilterHidesSoftDeletedTargetRows(t *testing.T) {
 			{Name: "pub_id", Type: schema.Relation, To: "spubs"},
 		},
 		Scope:    &entity.ScopeConfig{SoftDelete: true},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("spubs", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "snotes", Entity: "snotes", ForeignKey: "pub_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -509,14 +510,14 @@ func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
 			// grants cross-owner reads and the refusal is unconditional.
 			CrossOwnerRead: "notes:read:all",
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	app.Entity("boards", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
 			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	// What a generated app installs: the policy travels on the request
 	// context, so crossOwnerReadGranted sees it through the real HTTP chain
@@ -617,7 +618,7 @@ func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
 	app.Entity("authors", EntityConfig{
 		Table:    "acct_authors",
 		Fields:   []schema.Field{{Name: "name", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	app.Entity("articles", EntityConfig{
 		Fields: []schema.Field{
@@ -627,7 +628,7 @@ func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "author", Entity: "authors", ForeignKey: "author_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()
@@ -679,7 +680,7 @@ func TestIncludeGateRefusesADefaultPostureTarget(t *testing.T) {
 	// a session for every operation.
 	app.Entity("profiles", EntityConfig{
 		Fields:   []schema.Field{{Name: "email", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true)},
+		Exposure: &entity.ExposureConfig{CRUD: new(true)},
 	})
 	app.Entity("notes", EntityConfig{
 		Fields: []schema.Field{
@@ -689,7 +690,7 @@ func TestIncludeGateRefusesADefaultPostureTarget(t *testing.T) {
 		Relations: []entity.Relation{
 			{Type: entity.RelManyToOne, Name: "profile", Entity: "profiles", ForeignKey: "profile_id"},
 		},
-		Exposure: &entity.ExposureConfig{CRUD: boolPtrInc(true), Public: true},
+		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	stop := covStartAndStop(t, app)
 	defer stop()

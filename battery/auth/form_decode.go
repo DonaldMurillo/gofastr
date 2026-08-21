@@ -73,8 +73,7 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 		// body wrapper first.
 		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 		if err := r.ParseForm(); err != nil {
-			var maxErr *http.MaxBytesError
-			if errors.As(err, &maxErr) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return "", "", true, false
 			}

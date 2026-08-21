@@ -433,7 +433,7 @@ func TestE2E_Full(t *testing.T) {
 		// --- Step 7: cursor pagination over posts
 		t.Run("cursor_pagination", func(t *testing.T) {
 			// Add 4 more posts so cursor has something to walk.
-			for i := 0; i < 4; i++ {
+			for i := range 4 {
 				req := env.jsonReq(t, "POST", "/posts",
 					map[string]any{"title": fmt.Sprintf("Post %d", i+2), "author_id": "u1"})
 				env.withCSRF(req)

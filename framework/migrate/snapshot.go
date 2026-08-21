@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -185,8 +186,8 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Down is the inverse in REVERSE order so dependencies unwind correctly
 	// (e.g. drop the FK-holding table before the one it references).
 	downs := make([]string, 0, len(changes))
-	for i := len(changes) - 1; i >= 0; i-- {
-		if d := strings.TrimSpace(changes[i].Down); d != "" {
+	for _, change := range slices.Backward(changes) {
+		if d := strings.TrimSpace(change.Down); d != "" {
 			downs = append(downs, strings.TrimRight(d, ";"))
 		}
 	}

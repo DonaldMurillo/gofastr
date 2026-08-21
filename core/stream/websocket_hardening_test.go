@@ -95,7 +95,7 @@ func TestWSPingFloodNoStackOverflow(t *testing.T) {
 	const N = 5000
 	var frame bytes.Buffer
 	mask := [4]byte{0x01, 0x02, 0x03, 0x04}
-	for i := 0; i < N; i++ {
+	for range N {
 		frame.WriteByte(0x80 | wsopcodePing)
 		frame.WriteByte(0x80 | 0) // masked, length 0
 		frame.Write(mask[:])

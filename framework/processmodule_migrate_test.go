@@ -211,7 +211,7 @@ func pgCoordEnv(t *testing.T) (adminDB *sql.DB, adminDSN string) {
 		// retries for the same reason); mirror that so a just-started
 		// container does not fail the admin ping.
 		var perr error
-		for i := 0; i < 30; i++ {
+		for range 30 {
 			pctx, pcancel := context.WithTimeout(context.Background(), 2*time.Second)
 			perr = db.PingContext(pctx)
 			pcancel()
