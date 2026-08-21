@@ -3,8 +3,10 @@ package crud
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -500,5 +502,89 @@ func TestRenderReadScopeOps(t *testing.T) {
 	sql, _ = renderReadScope([]filter.ParsedFilter{{Field: "x", Op: filter.FilterOp("weird")}}, "", 1)
 	if !strings.Contains(sql, "1 = 0") {
 		t.Errorf("unknown op rendered %s, want fail-closed 1 = 0", sql)
+	}
+}
+
+// Every operator the declaration accepts has to filter real rows, not just
+// render plausible SQL. TestRenderReadScopeOps pins the SQL string; this runs
+// each operator against a live table, which is what catches a predicate that
+// renders correctly and binds a value nothing matches.
+//
+// `eq` was the only operator any end-to-end test exercised, so `neq`, `in` and
+// `not_in` reached the wire on the word of the renderer alone. A read scope
+// that silently matches nothing looks like a working guard and serves an empty
+// list; one that silently matches everything looks like a working guard and
+// serves the whole table.
+func TestReadScope_EveryOperatorFiltersRealRows(t *testing.T) {
+	cases := []struct {
+		name    string
+		pred    entity.RowPredicate
+		wantIDs []string
+	}{
+		{"eq", entity.RowPredicate{Field: "status", Op: "eq", Value: "published"}, []string{"n1"}},
+		{"empty op defaults to eq", entity.RowPredicate{Field: "status", Value: "published"}, []string{"n1"}},
+		{"neq", entity.RowPredicate{Field: "status", Op: "neq", Value: "draft"}, []string{"n1", "n3"}},
+		{"in", entity.RowPredicate{Field: "status", Op: "in", Values: []string{"published", "archived"}}, []string{"n1", "n3"}},
+		{"not_in", entity.RowPredicate{Field: "status", Op: "not_in", Values: []string{"draft", "archived"}}, []string{"n1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ddl := `CREATE TABLE notes (id TEXT PRIMARY KEY, status TEXT, body TEXT);`
+			cfg := makeEntityConfig("notes", "notes", "", []schema.Field{
+				{Name: "status", Type: schema.String},
+				{Name: "body", Type: schema.String},
+			})
+			cfg.Exposure = &entity.ExposureConfig{
+				Public:    true,
+				ReadScope: &entity.ReadScopeConfig{Filter: []entity.RowPredicate{tc.pred}},
+			}
+			ch, db := setupSecurityTestHandler(t, cfg, ddl)
+			seedRows(t, db, "notes", []map[string]any{
+				{"id": "n1", "status": "published", "body": "a"},
+				{"id": "n2", "status": "draft", "body": "b"},
+				{"id": "n3", "status": "archived", "body": "c"},
+			})
+
+			req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/notes?sort=id"})
+			rr := httptest.NewRecorder()
+			ch.List()(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET /notes = %d: %s", rr.Code, rr.Body.String())
+			}
+			var env struct {
+				Data  []map[string]any `json:"data"`
+				Total int              `json:"total"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			var got []string
+			for _, row := range env.Data {
+				got = append(got, fmt.Sprintf("%v", row["id"]))
+			}
+			if !slices.Equal(got, tc.wantIDs) {
+				t.Errorf("anonymous list = %v, want %v — the %q predicate does not filter the rows it claims to",
+					got, tc.wantIDs, tc.name)
+			}
+			// The count has to agree, or the envelope reports a total the
+			// caller may not read.
+			if env.Total != len(tc.wantIDs) {
+				t.Errorf("total = %d, want %d — the count query and the data query disagree", env.Total, len(tc.wantIDs))
+			}
+			// And a signed-in caller lifts it, so the filter is the scope and
+			// not an accidental always-false predicate.
+			sReq := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/notes?sort=id", UserID: "u1"})
+			sRR := httptest.NewRecorder()
+			ch.List()(sRR, sReq)
+			var sEnv struct {
+				Data []map[string]any `json:"data"`
+			}
+			if err := json.Unmarshal(sRR.Body.Bytes(), &sEnv); err != nil {
+				t.Fatalf("decode signed-in: %v", err)
+			}
+			if len(sEnv.Data) != 3 {
+				t.Errorf("signed-in list returned %d rows, want all 3 — the blank unrestricted lift is not working", len(sEnv.Data))
+			}
+		})
 	}
 }
