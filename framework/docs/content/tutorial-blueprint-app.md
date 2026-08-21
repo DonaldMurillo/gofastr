@@ -24,7 +24,7 @@ Every command below is copy-paste runnable. Each step ends with a
 
 ## 0. Prerequisites
 
-- Go 1.26+ (the floor comes from an optional battery; see
+- Go 1.27+ (see
   [deploy](deploy.md) for the nuance)
 - the `gofastr` CLI:
 

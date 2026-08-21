@@ -80,7 +80,7 @@ func gsHero() render.HTML {
 		return html.DescriptionDetail(html.TextConfig{}, body...)
 	}
 	facts := html.DescriptionList(html.TextConfig{Class: "gs-facts"},
-		dt("Prereqs"), dd(render.Text("Go 1.26+, git")),
+		dt("Prereqs"), dd(render.Text("Go 1.27+, git")),
 		dt("OS"), dd(render.Text("macOS, Linux, Windows (WSL)")),
 		dt("Storage"), dd(render.Text("SQLite by default, Postgres opt-in")),
 		dt("Time"), dd(render.Text("~4 minutes")),

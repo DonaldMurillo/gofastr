@@ -25,15 +25,15 @@ gofastr build
 gofastr build --pkg ./cmd/server
 ```
 
-> **Go version.** `go.mod` declares `go 1.26.6`. The floor comes from
-> `chromedp/chromedp` (v0.15.1 declares `go 1.26`), which the root module
-> imports directly for browser-driven tooling: `framework/testkit/axetest`,
-> the `gofastr` CLI accessibility audit, and the eval harness. The floor does
-> not come from the
-> optional print/PDF battery. `battery/print/chromepdf` is a nested module
-> (same import path) that isolates the print feature's own chromedp usage, but
-> the floor stays 1.26 while `chromedp` is a build dependency: Go 1.21+ refuses
-> to build a module whose `go` directive is below a dependency's.
+> **Go version.** `go.mod` declares `go 1.27.0`. The framework uses the 1.27
+> standard library directly: `uuid` for request ids and entity keys,
+> `strings.CutLast`, and the runtime's `goroutineleak` profile behind
+> `/.debug/goroutineleak`. Go 1.21+ refuses to build a module whose `go`
+> directive is below a dependency's, so the floor can only rise: `chromedp`
+> (v0.15.1, `go 1.26`) is a direct dependency of the browser-driven tooling in
+> `framework/testkit/axetest`, the CLI accessibility audit, and the eval
+> harness. `battery/print/chromepdf` is a nested module that isolates the print
+> feature's own chromedp usage and does not set the floor.
 
 > **SQLite vs Postgres.** The bundled `gofastr` CLI uses SQLite. For a
 > Postgres deployment, import a Postgres driver in your app and pass a
@@ -47,7 +47,7 @@ Multi-stage, distroless runtime, non-root, pure-Go build (Postgres):
 
 ```dockerfile
 # ---- build ----
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -64,7 +64,7 @@ ENTRYPOINT ["/app"]
 ```
 
 > Using the CGO SQLite driver (`mattn/go-sqlite3`) instead? Build with
-> `CGO_ENABLED=1` on `golang:1.26` and run on `gcr.io/distroless/base-debian12`
+> `CGO_ENABLED=1` on `golang:1.27` and run on `gcr.io/distroless/base-debian12`
 > (has libc) rather than `static`.
 
 ## Configuration (env)
@@ -172,7 +172,7 @@ out of luck regardless of its own `ctx` deadline. Override any of them through
 field). Each field is a `*time.Duration`: leave it `nil` to keep the default,
 or point at a value, including `0`, which **disables** that one deadline
 (matching `net/http`, where a zero duration means "no timeout"). Build the
-pointers with the Go 1.26 `new(expr)` builtin:
+pointers with the `new(expr)` builtin:
 
 <!-- gofastr:compile
 stmt: _ = app

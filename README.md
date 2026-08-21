@@ -18,7 +18,7 @@ Start with [the quickstart](#quickstart). Or scaffold a whole app in one command
 
 ## Quickstart
 
-Requires Go 1.26+. Install the CLI:
+Requires Go 1.27+. Install the CLI:
 
 ```bash
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest
