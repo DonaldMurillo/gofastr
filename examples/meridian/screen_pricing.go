@@ -32,7 +32,7 @@ func (s *PricingScreen) ScreenSEO() uihost.SEO {
 	return uihost.SEO{
 		Canonical: siteOrigin + "/pricing",
 		OG: &uihost.OG{
-			Title:       "Meridian pricing — start free",
+			Title:       "Meridian pricing: start free",
 			Description: "Plans for teams of every size. Upgrade when revenue does.",
 			URL:         siteOrigin + "/pricing",
 			Type:        "website",

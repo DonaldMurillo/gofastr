@@ -26,7 +26,7 @@ func TestStyleRegistry_PackageInitReachesAppCSS(t *testing.T) {
 	base := archStartServer(t)
 	css := archFetch(t, base, "/__gofastr/app.css")
 	switch n := strings.Count(css, ".__test-style-registry-package-init-sentinel"); n {
-	case 1: // exactly once — uihost fan-in, no hand-wiring duplicate
+	case 1: // exactly once, uihost fan-in, no hand-wiring duplicate
 	case 0:
 		t.Error("style.Contribute sentinel did NOT reach /__gofastr/app.css — package-init or uihost AppCSS fan-in is broken")
 	default:

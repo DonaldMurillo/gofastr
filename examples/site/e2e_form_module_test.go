@@ -10,23 +10,23 @@ import (
 )
 
 // =============================================================================
-// Form module E2E tests — retargeted from /components/forms to per-page routes
+// Form module E2E tests, retargeted from /components/forms to per-page routes
 // =============================================================================
 //
 // The original tests targeted the website's combined /components/forms page.
-// The site has NO combined forms page — each component lives at its own
+// The site has NO combined forms page, each component lives at its own
 // /components/<slug> URL. Tests are retargeted below; several are dropped.
 //
 // DROPPED sub-tests (no equivalent in site):
 //   - TestE2E_ConditionalField_TogglesVisibility
-//     /components/conditionalfield is a "Note" page (not live — no radio toggle).
+//     /components/conditionalfield is a "Note" page (not live, no radio toggle).
 //   - TestE2E_StepWizard_Renders (from combined page)
-//     The site's /components/stepwizard page has a static demo (Action="#") — no
+//     The site's /components/stepwizard page has a static demo (Action="#"), no
 //     real POST endpoint, so button/back state can't be relied on for the same
 //     interactive assertions. Wizard behavior is fully covered by
 //     e2e_wizard_followon_test.go against the real /forms/wizard endpoint.
 //   - TestE2E_FormRepeater_* (all repeater island tests)
-//     /components/formrepeater is a "Note" page — no live island is wired. All
+//     /components/formrepeater is a "Note" page, no live island is wired. All
 //     add/remove/value-preservation tests require a running RPC island.
 //   - TestE2E_ValidationRoundTrip_ShowsErrors
 //     Required a pre-submitted validation state from the combined page.
@@ -238,7 +238,7 @@ func TestE2E_ValidationSummary_RendersLinks(t *testing.T) {
 // TestE2EFieldOrderAndTitle verifies deterministic order + custom-title
 // features. The site demo uses FieldOrder=["email","password"] with no
 // custom Title (so the default title text is shown). Anchors are "#email"
-// and "#password" (not "#val-*" — that was the website's demo).
+// and "#password" (not "#val-*", that was the website's demo).
 //
 // Softened from website: we only assert field order is deterministic and
 // anchors start with "#"; we do NOT assert a custom title (site uses default).

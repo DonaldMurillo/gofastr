@@ -49,7 +49,7 @@ func NewPlansRepo(app *framework.App) *PlansRepo {
 	return &PlansRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler, useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *PlansRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -220,7 +220,7 @@ func OnPlansUpdated(app *framework.App, fn func(ctx context.Context, row *Plans)
 }
 
 // OnPlansDeleted subscribes to entity.deleted events scoped to "plans". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only, by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnPlansDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

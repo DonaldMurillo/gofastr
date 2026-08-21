@@ -1,7 +1,7 @@
 package main
 
 // A dedicated, full-page example of ui.PaneHost used as a real
-// master-detail workspace — the intended use of the primitive, at the
+// master-detail workspace, the intended use of the primitive, at the
 // scale it's designed for (not a component-card demo).
 //
 // Flow, all without a page navigation:
@@ -10,7 +10,7 @@ package main
 //     returns the ticket's detail HTML, which the runtime swaps into a
 //     data-fui-signal="ws-ticket" (mode=html) region inside that pane.
 //   - "View customer" inside the detail opens the tertiary pane and
-//     loads the customer HTML the same way — a link filling a pane
+//     loads the customer HTML the same way, a link filling a pane
 //     instead of navigating.
 //   - Below 768px the open side pane collapses to an overlay drawer
 //     (backdrop, focus trap, ESC), handled entirely by the pane-host
@@ -19,7 +19,7 @@ package main
 // The ticket pane round-trips through the URL: opening one writes
 // ?pane=secondary:<id>, refreshing or sharing that link renders the pane
 // open and filled from the SERVER (RenderCtx below), and Back closes it.
-// The customer pane deliberately does NOT — its trigger carries no pane
+// The customer pane deliberately does NOT, its trigger carries no pane
 // key, so it opens without touching the URL. That is the intended split:
 // address the state worth sharing, leave the rest as in-page state.
 //
@@ -47,7 +47,7 @@ const wsPaneParam = "pane"
 
 // wsTicket / wsCustomer are the in-memory demo records. Package-level
 // slices, read both at render time (to build the list) and in the RPC
-// handlers (to look one up by id) — the demoCompany placement idiom.
+// handlers (to look one up by id), the demoCompany placement idiom.
 type wsTicket struct {
 	ID, Subject, Requester, Priority, Body, CustomerID string
 	Status                                             ui.StatusVariant
@@ -68,7 +68,7 @@ var wsTickets = []wsTicket{
 }
 
 var wsCustomers = map[string]wsCustomer{
-	"north":  {ID: "north", Name: "Northwind Trading", Plan: "Enterprise", OpenTickets: "2 open tickets", Note: "SSO via Okta. Renewal in 3 months — treat auth issues as priority."},
+	"north":  {ID: "north", Name: "Northwind Trading", Plan: "Enterprise", OpenTickets: "2 open tickets", Note: "SSO via Okta. Renewal in 3 months. Treat auth issues as priority."},
 	"acme":   {ID: "acme", Name: "Acme Corp", Plan: "Growth", OpenTickets: "2 open tickets", Note: "Heavy export/API user. Sensitive to data-completeness bugs."},
 	"globex": {ID: "globex", Name: "Globex", Plan: "Growth", OpenTickets: "1 open ticket", Note: "Runs its own webhook consumers; cares about delivery semantics."},
 }
@@ -89,19 +89,19 @@ type WorkspaceScreen struct{ component.ContextOnly }
 
 func (s *WorkspaceScreen) ScreenTitle() string { return "Workspace example" }
 func (s *WorkspaceScreen) ScreenDescription() string {
-	return "A full-page master-detail workspace built on ui.PaneHost — click a ticket to load its detail into a pane, no navigation."
+	return "A full-page master-detail workspace built on ui.PaneHost. Click a ticket to load its detail into a pane, no navigation."
 }
 func (s *WorkspaceScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
-	// ?pane=secondary:<ticket-id> — the deep link the pane host writes
+	// ?pane=secondary:<ticket-id>, the deep link the pane host writes
 	// when a row is clicked. The server owns first paint, so resolve it
 	// here: a shared or refreshed link must arrive with the pane already
 	// open AND already filled, not open-then-flash.
 	slot, key, linked := ui.PaneDeepLink(app.QueryFromContext(ctx), wsPaneParam)
 	openTicket, ticketLinked := wsTicket{}, false
 	if linked && slot == "secondary" {
-		// key is untrusted URL input — look it up, never reflect it. An
+		// key is untrusted URL input: look it up, never reflect it. An
 		// unknown id just renders the ordinary empty state.
 		openTicket, ticketLinked = wsTicketByID(key)
 	}
@@ -143,7 +143,7 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 	intro := html.Div(html.DivConfig{Class: "ws-intro"},
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Support workspace")),
 		html.Paragraph(html.TextConfig{Class: "ws-lede"}, render.Text(
-			"A master-detail layout on ui.PaneHost. Clicking a ticket loads its detail into the pane beside the list via an RPC — no page navigation — and “View customer” fills a third pane the same way. Narrow the window to see the pane become an overlay drawer.")),
+			"A master-detail layout on ui.PaneHost. Clicking a ticket loads its detail into the pane beside the list via an RPC without page navigation, and “View customer” fills a third pane the same way. Narrow the window to see the pane become an overlay drawer.")),
 	)
 
 	return html.Div(html.DivConfig{Class: "ws-page"},
@@ -168,7 +168,7 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 // data-fui-rpc GETs the detail into the ws-ticket signal region.
 // The ticket pane is addressable, so its rows carry a pane key: clicking
 // one writes ?pane=secondary:<id>, and Back replays it by re-clicking
-// this same button — which re-runs the RPC and refills the region.
+// this same button, which re-runs the RPC and refills the region.
 func workspaceRow(t wsTicket) render.HTML {
 	action := interactive.Get("/__site/workspace/ticket?id=" + t.ID).OnSuccess(interactive.SetSignal("ws-ticket"))
 	return interactive.PaneKey(render.Tag("button", html.MergeAttrs(map[string]string{

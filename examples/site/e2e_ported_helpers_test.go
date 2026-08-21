@@ -20,13 +20,13 @@ import (
 )
 
 // startE2EServer boots site against an httptest server and returns the base
-// URL — alias for the native siteE2EServer.
+// URL, alias for the native siteE2EServer.
 func startE2EServer(t *testing.T) string {
 	t.Helper()
 	return siteE2EServer(t)
 }
 
-// newE2EBrowserCtx returns a headless Chrome context — alias for siteBrowserCtx.
+// newE2EBrowserCtx returns a headless Chrome context, alias for siteBrowserCtx.
 func newE2EBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
 	return siteBrowserCtx(t)

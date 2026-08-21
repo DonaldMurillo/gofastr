@@ -2,7 +2,7 @@ package main
 
 // HMR-readiness sweep: every runnable example, booted the way `gofastr dev`
 // boots it (GOFASTR_DEV=1), must expose the livereload endpoint, and every
-// example that serves HTML must inject the livereload client into its pages —
+// example that serves HTML must inject the livereload client into its pages,
 // otherwise the developer editing that surface gets no browser refresh and
 // silently loses the framework's hot-reload loop.
 //
@@ -113,7 +113,7 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 		"DATABASE_URL=file:"+filepath.Join(t.TempDir(), s.name+".db"),
 		// Isolate the axe-coverage root: this test asserts HMR READINESS,
 		// not a11y coverage. The repo-root manifest is shared across every
-		// example — when a parallel package's axe tests record into it
+		// example, when a parallel package's axe tests record into it
 		// first, strict mode flips from absence-warns to gap-fails for
 		// this app's screens and the boot panics, scheduling-dependent.
 		"GOFASTR_AXE_COVERAGE_DIR="+t.TempDir(),
@@ -144,7 +144,7 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("%s: /__livereload.js = %d under GOFASTR_DEV=1 — the dev SSE surface is not wired", s.name, resp.StatusCode)
+		t.Errorf("%s: /__livereload.js = %d under GOFASTR_DEV=1: the dev SSE surface is not wired", s.name, resp.StatusCode)
 	}
 
 	// Contract 2 (HTML-serving apps): pages inject the livereload client so
@@ -162,7 +162,7 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 		t.Fatalf("%s GET %s = %d", s.name, s.page, pageResp.StatusCode)
 	}
 	if !strings.Contains(string(body), "/__livereload.js") {
-		t.Errorf("%s: %s does not inject the livereload client under GOFASTR_DEV=1 — edits rebuild but the browser never refreshes", s.name, s.page)
+		t.Errorf("%s: %s does not inject the livereload client under GOFASTR_DEV=1: edits rebuild but the browser never refreshes", s.name, s.page)
 	}
 }
 

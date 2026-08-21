@@ -13,7 +13,7 @@ import (
 // The contract PaneHost deep-linking promises is that a URL carrying
 // ?pane= renders the pane open FROM THE SERVER. Asserting that in a
 // browser would not distinguish "server rendered it open" from "the
-// runtime opened it after hydration", which is the whole difference —
+// runtime opened it after hydration", which is the whole difference,
 // the second is a flash of closed pane on every shared link. So this
 // half runs over plain HTTP with no JavaScript at all.
 func TestWorkspaceDeepLinkRendersServerSide(t *testing.T) {
@@ -119,7 +119,7 @@ func TestWorkspaceDeepLinkRoundTrip(t *testing.T) {
 		chromedp.Evaluate(paneParam, &afterBack),
 		chromedp.Evaluate(secOpen, &backState),
 
-		// Forward reopens — and refills, which is the part a naive
+		// Forward reopens, and refills, which is the part a naive
 		// implementation gets wrong (column back, content blank).
 		chromedp.Evaluate(`history.forward()`, nil),
 		chromedp.Sleep(2*time.Second),

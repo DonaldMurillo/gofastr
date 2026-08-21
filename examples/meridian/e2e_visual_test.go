@@ -46,7 +46,7 @@ func TestE2EVisualSurfaces(t *testing.T) {
 	}{
 		{name: "marketing", path: "/"},
 		{name: "auth", path: "/login"},
-		// Public SDK docs (sdkdocs.Mount): overview + one entity reference —
+		// Public SDK docs (sdkdocs.Mount): overview + one entity reference,
 		// the CodeTabs/DataTable-heavy surfaces most likely to overflow.
 		{name: "sdkdocs", path: "/docs/api"},
 		{name: "sdkdocs-entity", path: "/docs/api/entities/customers"},
@@ -90,7 +90,7 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 					tab, tabCancel := chromedp.NewContext(browser)
 					// 30s, not ~12s: CI runners raster in software on two
 					// cores and routinely need >12s for a cold 1440px
-					// navigate+capture even serialized — a tight deadline
+					// navigate+capture even serialized, a tight deadline
 					// there burns every attempt and times the package out.
 					ctx, timeoutCancel := context.WithTimeout(tab, 30*time.Second)
 					shot = nil
@@ -103,7 +103,7 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 						// another target held focus (the warm-up tab, the
 						// login tab) can stay occluded, and the fromSurface
 						// screenshot below then waits forever for a frame that
-						// never comes — deterministic on CI, invisible on
+						// never comes, deterministic on CI, invisible on
 						// macOS. Activate the tab before capturing.
 						chromedp.ActionFunc(func(ctx context.Context) error {
 							return page.BringToFront().Do(ctx)

@@ -28,7 +28,7 @@ entities:
     crud: true
     mcp: true
     # Agency records carry contact PII (phone, email, address) and are
-    # back-office data — RBAC-gate every CRUD operation.
+    # back-office data; RBAC-gate every CRUD operation.
     access:
       read: agencies:read
       create: agencies:write
@@ -143,7 +143,7 @@ entities:
   - name: properties
     crud: true
     mcp: true
-    # A listing's address is the public product, not personal PII — reads
+    # A listing's address is the public product, not personal PII; reads
     # stay open so the catalog screens work for everyone, but writes are
     # RBAC-gated so anonymous callers can't create or mutate listings.
     access:
@@ -403,7 +403,7 @@ nav:
 screens:
   - name: home
     route: /
-    title: HomeList — Find Your Home
+    title: "HomeList: Find Your Home"
     description: Real estate listing platform
     body:
       - type: heading

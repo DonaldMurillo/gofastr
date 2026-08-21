@@ -2,12 +2,12 @@ package main
 
 // =============================================================================
 // Header (.nav) + Footer (.foot) components, mounted on the default Layout so
-// they wrap every screen the site registers. SSR-first — the prototype's
+// they wrap every screen the site registers. SSR-first, the prototype's
 // markup is reproduced byte-for-byte (minus the search palette + mobile
 // drawer, both intentionally deferred to follow-up commits).
 //
-// Built with core-ui/html primitives — html.Link, html.UnorderedList,
-// html.LinkHTML — so attribute escaping + landmark roles are handled by
+// Built with core-ui/html primitives, html.Link, html.UnorderedList,
+// html.LinkHTML, so attribute escaping + landmark roles are handled by
 // typed builders rather than ad-hoc render.Tag calls. The two framework
 // chrome elements (header role="banner", footer role="contentinfo") are
 // supplied by the Layout wrapper; this component returns the inside.
@@ -39,7 +39,7 @@ type HeaderComponent struct{}
 //	-ldflags "-X 'main.siteVersion=$(git describe --tags --abbrev=0 | sed s/^v//)'"
 //
 // (see scripts/dev-watch.sh, Makefile build-examples, .github/workflows/pages.yml).
-// The "dev" fallback is what an un-injected `go build`/`go run` shows locally —
+// The "dev" fallback is what an un-injected `go build`/`go run` shows locally,
 // so the deployed site always matches the tag it was built from, instead of a
 // hand-bumped constant drifting behind releases.
 var siteVersion = "dev"
@@ -53,7 +53,7 @@ var siteVersion = "dev"
 //
 // The default is the origin the site is actually served from today. It used to
 // be hardcoded to a domain that resolves to nothing, which pointed every link
-// preview, sitemap entry, and agent card at a dead host — the one class of SEO
+// preview, sitemap entry, and agent card at a dead host, the one class of SEO
 // bug that no page-level test catches, because each page was internally
 // consistent with the wrong origin.
 var siteOrigin = "https://donaldmurillo.github.io/gofastr"
@@ -79,7 +79,7 @@ func siteInstallTarget() string {
 }
 
 func (h *HeaderComponent) Render() render.HTML {
-	// Brand stays site-local — the λ mark, lowercase wordmark, and the
+	// Brand stays site-local: the λ mark, lowercase wordmark, and the
 	// amber version status pulse are GoFastr's identity. The framework's
 	// SiteHeader takes Brand as a slot so each consuming site renders
 	// whatever brand it wants. See ui.SiteHeader docs for the contract.
@@ -116,7 +116,7 @@ func (h *HeaderComponent) Render() render.HTML {
 			"data-fui-open":           "site-command-palette",
 			"data-fui-shortcut-click": "Meta+K",
 		},
-		// Magnifier glyph — shown only on phones (CSS swap below).
+		// Magnifier glyph, shown only on phones (CSS swap below).
 		// Desktop: hidden; the placeholder text + ⌘K hint carries
 		// the affordance. Mobile: visible; replaces the pill.
 		render.Raw(`<svg class="site-cmd__glyph" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`),
@@ -163,7 +163,7 @@ func (h *HeaderComponent) Render() render.HTML {
 	})
 }
 
-// FooterComponent — credits grid + bottom strip. Composition shipped
+// FooterComponent, credits grid + bottom strip. Composition shipped
 // by ui.SiteFooter; this consumer only fills in lead/columns/bottom.
 type FooterComponent struct{}
 

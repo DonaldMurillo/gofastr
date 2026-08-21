@@ -3,11 +3,11 @@
 //
 // Two servers run in one process, deliberately on different ports, because
 // everything interesting about this feature only exists across an origin
-// boundary — the session cookie that is never sent, the CSP frame-ancestors
+// boundary: the session cookie that is never sent, the CSP frame-ancestors
 // allowlist, the postMessage handshake that carries the nonce.
 //
-//	:8087  the app          — owns the data, mints the nonce, serves the frame
-//	:8088  "acme.example"   — a customer's site, which just pastes a <script>
+//	:8087  the app          : owns the data, mints the nonce, serves the frame
+//	:8088  "acme.example"   : a customer's site, which just pastes a <script>
 //
 // Run it:
 //
@@ -44,7 +44,7 @@ const (
 	customerAddr = ":8088"
 	appOrigin    = "http://localhost" + appAddr
 	// The customer's origin, exactly as it must appear in the allowlist.
-	// Exact origins only — http://localhost:8088 does not cover
+	// Exact origins only, http://localhost:8088 does not cover
 	// http://127.0.0.1:8088, and that is the point.
 	customerOrigin = "http://localhost" + customerAddr
 	// demoCustomer is the OriginSource key for Acme. It rides the frame URL as
@@ -53,7 +53,7 @@ const (
 	// frame-ancestors. Onboarding Acme is adding this row, not editing config.
 	demoCustomer = "acme"
 	// demoTenant is what Config.ResolveTenant returns. The tenant comes from a
-	// lookup on the grant's subject, never from anything the request carried —
+	// lookup on the grant's subject, never from anything the request carried,
 	// a stolen grant cannot pick its own tenant. The demo has one tenant.
 	demoTenant = "tenant-acme"
 )
@@ -99,8 +99,8 @@ func (s *reportsScreen) RenderCtx(ctx context.Context) render.HTML {
 // so the demo runs with no database. Two methods, because the shell and the
 // grant path ask different questions: the shell knows the customer (it arrives
 // on the frame URL) and needs their LIST to build frame-ancestors; the grant
-// path (MintNonce/VerifyGrant) knows only an origin — MintNonce takes an
-// origin, not a customer — and needs a yes/no. See embed.OriginSource.
+// path (MintNonce/VerifyGrant) knows only an origin. MintNonce takes an
+// origin, not a customer, and needs a yes/no. See embed.OriginSource.
 type demoSource struct {
 	origins map[string][]string // customer id -> exact origins allowed to frame
 }
@@ -130,7 +130,7 @@ func (s *demoSource) Allows(_ context.Context, _, origin string) (bool, error) {
 func main() {
 	secret := os.Getenv("GOFASTR_SECRET")
 	if secret == "" {
-		// Embeds require a real secret — a per-boot key would invalidate every
+		// Embeds require a real secret, a per-boot key would invalidate every
 		// outstanding nonce on restart and would never verify on a second
 		// replica. A fixed literal is fine HERE and nowhere else: this file is
 		// a demo that runs on one machine for one session.
@@ -151,7 +151,7 @@ func main() {
 			// least one origin) and the fallback if OriginSource is removed.
 			// With a source wired the shell serves ONLY the requesting
 			// customer's origins from it, so this list stops driving
-			// frame-ancestors the moment the source is configured — and an
+			// frame-ancestors the moment the source is configured, and an
 			// empty or unknown customer fails closed to 'none' rather than
 			// falling back to it. That fail-closed-on-empty is exactly why the
 			// loader must forward data-customer, and is the F1 break this demo
@@ -162,8 +162,8 @@ func main() {
 			// that declares no scopes gives RequireScope nothing to gate on.
 			Scopes: []string{"reports:read"},
 			// And where it may go. A grant reaches this surface's own Path
-			// subtree and /__gofastr/* by default; anything else — the API route
-			// a form posts to, for instance — is listed here or answers 403.
+			// subtree and /__gofastr/* by default; anything else, the API route
+			// a form posts to, for instance, is listed here or answers 403.
 			// This demo's surface only renders, so it needs nothing extra.
 			Reach: nil,
 			Theme: fembed.ThemeConfig{AllowTokens: []string{"color-primary"}},
@@ -185,8 +185,8 @@ func main() {
 			return demoTenant, nil
 		},
 		// Per-customer origins at request time. The customer id reaches the
-		// shell as ?customer=<id> on the frame URL — forwarded by the loader
-		// from the snippet's data-customer — and the shell asks this source for
+		// shell as ?customer=<id> on the frame URL, forwarded by the loader
+		// from the snippet's data-customer, and the shell asks this source for
 		// that customer's origins only.
 		OriginSource: &demoSource{origins: map[string][]string{
 			demoCustomer: {customerOrigin},
@@ -204,7 +204,7 @@ func main() {
 	// The embed ROUTES verify the grant themselves, so first paint works
 	// without this. Everything the surface does afterwards does not: an island
 	// RPC, a form post, a poll all target ordinary app routes that know nothing
-	// about embeds, and without this middleware they run anonymously — the
+	// about embeds, and without this middleware they run anonymously, the
 	// panel paints as its viewer and then acts as nobody.
 	//
 	// It goes OUTERMOST, before any authentication middleware, because it
@@ -216,7 +216,7 @@ func main() {
 	//	reports := fwApp.Group("/reports")
 	//	reports.Use(embeds.RequireScope("reports:read"))
 	//
-	// The grant is delegated authority sitting in someone else's page — it
+	// The grant is delegated authority sitting in someone else's page, it
 	// should reach the surface's own routes and nothing more.
 	var appHandler http.Handler = embeds.Middleware()(site)
 
@@ -252,7 +252,7 @@ func customerSite(embeds *fembed.Host) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// The customer's brand colour. Not a secret — it is a colour — so it
+		// The customer's brand colour. Not a secret, it is a colour, so it
 		// rides in the frame URL, which lets the frame link the right
 		// stylesheet in its first response instead of swapping it after paint.
 		brand, _ := json.Marshal(map[string]string{"color-primary": "#0f766e"})
@@ -272,7 +272,7 @@ const customerPage = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Acme — Dashboard</title>
+<title>Acme: Dashboard</title>
 <style>
   body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
   header { padding: 24px 32px; background: #0f766e; color: #fff; }
@@ -285,7 +285,7 @@ const customerPage = `<!doctype html>
 <body>
 <header><h1>Acme Supply Co.</h1></header>
 <main>
-  <p>Everything on this page is Acme's, except the panel below — that is served
+  <p>Everything on this page is Acme's, except the panel below. That is served
      by a GoFastr app on a different origin and rendered for this viewer.</p>
   <h2>Reports</h2>
   <div class="panel" id="reports"></div>

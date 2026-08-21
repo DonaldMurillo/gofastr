@@ -19,7 +19,7 @@ const scratchPkg = "blueprintgen"
 // TestBlueprintStillGenerates compiles gofastr.yml.
 //
 // Meridian's checked-in Go is hand-maintained and deliberately no longer
-// matches generator output (see doc.go), so — unlike examples/ecommerce —
+// matches generator output (see doc.go), so, unlike examples/ecommerce,
 // there is nothing here to regenerate in place. What still has to hold is
 // weaker but not nothing: the blueprint that seeded this app must keep
 // producing an app that BUILDS. Without this gate, gofastr.yml can rot
@@ -54,7 +54,7 @@ func TestBlueprintStillGenerates(t *testing.T) {
 	const realModule = "github.com/DonaldMurillo/gofastr/examples/meridian"
 	moduleLine := "module: " + realModule
 	if !strings.Contains(string(src), moduleLine) {
-		t.Fatalf("gofastr.yml no longer declares %q — update this test's rewrite", moduleLine)
+		t.Fatalf("gofastr.yml no longer declares %q: update this test's rewrite", moduleLine)
 	}
 	rewritten := strings.Replace(string(src), moduleLine, moduleLine+"/"+scratchPkg, 1)
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(rewritten), 0o644); err != nil {
@@ -70,7 +70,7 @@ func TestBlueprintStillGenerates(t *testing.T) {
 		t.Fatalf("gofastr generate --from=gofastr.yml: %v\n%s", err, out)
 	}
 
-	// Compile the result. The binary goes to a temp dir — never the
+	// Compile the result. The binary goes to a temp dir, never the
 	// worktree. Building the main package pulls in the generated
 	// entities package transitively; ./entities/... covers the rest
 	// (non-main packages compile without emitting artifacts).
@@ -78,7 +78,7 @@ func TestBlueprintStillGenerates(t *testing.T) {
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = dir
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("generated app does not compile — gofastr.yml has rotted:\n%s", out)
+		t.Fatalf("generated app does not compile: gofastr.yml has rotted:\n%s", out)
 	}
 
 	rest := exec.Command("go", "build", "./entities/...")

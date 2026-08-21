@@ -1,6 +1,6 @@
 package main
 
-// ── Presence demo (additive — /examples/presence) ───────────────────
+// ── Presence demo (additive, /examples/presence) ───────────────────
 //
 // A self-contained live-presence roster. It composes the v0.19
 // ui.AvatarGroup + AvatarConfig.Status (the presence dot) with the
@@ -16,10 +16,10 @@ package main
 //   - The roster region below is a data-island slot. On any join/leave
 //     the manager fires OnPresenceChange (wired in setupServer), which
 //     re-renders the AvatarGroup and pushes it to every session on the
-//     topic — so every open tab updates live.
+//     topic, so every open tab updates live.
 //
 // To see two viewers: open /examples/presence?presence=presence-demo in
-// TWO browsers (or one normal + one private window — they get distinct
+// TWO browsers (or one normal + one private window, they get distinct
 // sessions). Each appears in the other's roster; close one and it drops.
 
 import (
@@ -46,7 +46,7 @@ const (
 func renderPresenceRoster(members []island.PresenceMember) render.HTML {
 	if len(members) == 0 {
 		return html.Paragraph(html.TextConfig{Class: "presence-empty"},
-			render.Text("No one is here yet — open this page in a second browser to see a viewer appear live."))
+			render.Text("No one is here yet. Open this page in a second browser to see a viewer appear live."))
 	}
 	avatars := make([]ui.AvatarConfig, len(members))
 	for i, m := range members {
@@ -58,7 +58,7 @@ func renderPresenceRoster(members []island.PresenceMember) render.HTML {
 	return ui.AvatarGroup(ui.AvatarGroupConfig{Avatars: avatars})
 }
 
-// PresenceScreen is the /examples/presence page — a live avatar roster of
+// PresenceScreen is the /examples/presence page, a live avatar roster of
 // who's currently viewing it.
 type PresenceScreen struct{}
 
@@ -96,9 +96,9 @@ func (s *PresenceScreen) Render() render.HTML {
 			html.Div(html.DivConfig{Class: "presence-notes"},
 				html.Heading(html.HeadingConfig{Level: 2}, render.Text("Try it")),
 				html.UnorderedList(html.ListConfig{},
-					html.ListItem(html.ListItemConfig{}, render.Text("Open this URL in a second browser (or a private window) — a second avatar appears within a second.")),
-					html.ListItem(html.ListItemConfig{}, render.Text("Close the second tab — its avatar drops from the roster.")),
-					html.ListItem(html.ListItemConfig{}, render.Text("Two tabs of the SAME browser share one session, so they show as one viewer (correct — it's the same person).")),
+					html.ListItem(html.ListItemConfig{}, render.Text("Open this URL in a second browser (or a private window). A second avatar appears within a second.")),
+					html.ListItem(html.ListItemConfig{}, render.Text("Close the second tab. Its avatar drops from the roster.")),
+					html.ListItem(html.ListItemConfig{}, render.Text("Two tabs of the SAME browser share one session, so they show as one viewer (correct: it's the same person).")),
 				),
 				html.Heading(html.HeadingConfig{Level: 2}, render.Text("How identity works")),
 				html.Paragraph(html.TextConfig{},

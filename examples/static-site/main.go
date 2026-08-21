@@ -24,7 +24,7 @@ func main() {
 	static.Mount(app.Router(), static.Config{
 		FS:     os.DirFS(pagesDir),
 		Prefix: "",
-		// No SPA mode — only serve files that actually exist.
+		// No SPA mode, only serve files that actually exist.
 		// index.html is served automatically for "/".
 	})
 

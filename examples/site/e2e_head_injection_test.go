@@ -12,13 +12,13 @@ import (
 // E2E tests for the head injection API.
 //
 // These tests verify that ALL tiers of head injection actually render in a
-// real browser — not just in unit-test string checks.
+// real browser, not just in unit-test string checks.
 //
 // Tier 1: WithHeadHTML escape hatch (tested via site integration)
-// Tier 2: Typed helpers — favicon, og, twitter, description
-// Tier 3: Per-page SEO interfaces (ScreenCanonical etc.) — tested on /seo
+// Tier 2: Typed helpers, favicon, og, twitter, description
+// Tier 3: Per-page SEO interfaces (ScreenCanonical etc.), tested on /seo
 //
-// NOTE: The site has no global WithCanonicalURL — that is intentional (a
+// NOTE: The site has no global WithCanonicalURL, that is intentional (a
 // fixed global canonical would declare the homepage canonical on every page).
 // Only /seo and /seo-bundle emit a canonical; sub-tests that check for it
 // target /seo rather than /.
@@ -83,13 +83,13 @@ func TestE2E_HeadInjection_CanonicalOnSEOPage(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	// /seo implements ScreenCanonical — must emit a canonical link.
+	// /seo implements ScreenCanonical, must emit a canonical link.
 	seoHead := collectHeadHTML(t, ctx, base+"/seo")
 	if !strings.Contains(seoHead, `<link rel="canonical"`) {
 		t.Errorf("/seo should emit a canonical link; head:\n%s", seoHead)
 	}
 
-	// Home page has no canonical configured — must NOT emit one.
+	// Home page has no canonical configured, must NOT emit one.
 	homeHead := collectHeadHTML(t, ctx, base+"/")
 	if strings.Contains(homeHead, `<link rel="canonical"`) {
 		t.Errorf("home page should NOT emit a canonical link (no global canonical configured); head:\n%s", homeHead)
@@ -117,7 +117,7 @@ func TestE2E_HeadInjection_NoSEOLeakageAcrossPages(t *testing.T) {
 }
 
 // TestE2E_HeadInjection_MultiplePagesAllGetGlobalTags verifies that
-// several different pages all receive the global head tags — proving
+// several different pages all receive the global head tags, proving
 // the injection isn't accidentally scoped to a single route.
 func TestE2E_HeadInjection_MultiplePagesAllGetGlobalTags(t *testing.T) {
 	if testing.Short() {
@@ -139,7 +139,7 @@ func TestE2E_HeadInjection_MultiplePagesAllGetGlobalTags(t *testing.T) {
 }
 
 // TestE2E_HeadInjection_TitleTag verifies that the <title> element
-// renders correctly in the browser's document.title — proving the
+// renders correctly in the browser's document.title, proving the
 // SSR title generation works end-to-end through the full rendering
 // pipeline (app.RenderPage → injectChrome → browser).
 func TestE2E_HeadInjection_TitleTag(t *testing.T) {

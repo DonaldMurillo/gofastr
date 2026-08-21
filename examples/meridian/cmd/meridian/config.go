@@ -22,7 +22,7 @@ func configPath() (string, error) {
 }
 
 // loadConfig returns the stored config, or the zero value when there is
-// none — a missing or unreadable file is not an error, it just means the
+// none. A missing or unreadable file is not an error, it just means the
 // caller falls through to flags/env.
 func loadConfig() storedConfig {
 	var cfg storedConfig

@@ -7,10 +7,10 @@ package main
 // are the first Go a reader pastes. They drifted before: the entity sample
 // used a top-level `CRUD:` field after that field moved onto
 // entity.ExposureConfig, so the sample stopped compiling as Go and nobody
-// noticed — there was no test rendering the page and compiling what it shows.
+// noticed, there was no test rendering the page and compiling what it shows.
 //
 // This gate renders GetStartedScreen, extracts every Go code block (the
-// ui.CodeBlock samples — the terminal blocks are shell, not Go), wraps each
+// ui.CodeBlock samples, the terminal blocks are shell, not Go), wraps each
 // snippet in a minimal harness that supplies the package context + imports a
 // reader would already have, and compiles it against the local tree via a
 // replace directive. A snippet that drifts from the framework's real API
@@ -60,8 +60,8 @@ type gsCodeBlock struct {
 // extractGetStartedGoBlocks finds every framed ui.CodeBlock whose filename
 // ends in .go and returns the tag-stripped source. Non-Go blocks (yaml,
 // shell terminal output) are skipped. The CodeBlock chrome emits a stable
-// pair — a <span class="ui-code-block__file">NAME</span> header and a
-// <pre class="ui-code-block__body">…</pre> body — in document order; we pair
+// pair, a <span class="ui-code-block__file">NAME</span> header and a
+// <pre class="ui-code-block__body">…</pre> body, in document order; we pair
 // them by count. If the framework reshapes that chrome the count check fails
 // loudly, which is the intent: the gate must track what the page renders.
 func extractGetStartedGoBlocks(t *testing.T, page string) []gsCodeBlock {
@@ -97,7 +97,7 @@ func gsStripTags(s string) string { return gsTagRe.ReplaceAllString(s, "") }
 // Each rendered line is wrapped in <span class="ui-code-block__line">…</span>;
 // tokens inside are further <span class="tk-*">text</span> spans (or escaped
 // plain text). Splitting on the line-wrapper open tag, then stripping every
-// remaining tag and unescaping entities, reconstructs the exact Go source —
+// remaining tag and unescaping entities, reconstructs the exact Go source,
 // the token palette only adds styling, never alters text.
 func gsSplitLines(body string) []string {
 	const lineOpen = `<span class="ui-code-block__line">`
@@ -116,7 +116,7 @@ func gsSplitLines(body string) []string {
 // filename. The entity snippet is a bare app.Entity(...) statement, so it
 // needs a host function; the screen snippet is a type + methods, so it just
 // needs a package and imports. Adding a new Go block to the page means adding
-// a case here — the default returns false so a missing harness fails loudly
+// a case here, the default returns false so a missing harness fails loudly
 // instead of silently compiling the wrong thing.
 func wrapGetStartedSnippet(filename, source string) (string, bool) {
 	switch {

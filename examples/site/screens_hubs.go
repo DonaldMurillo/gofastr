@@ -1,6 +1,6 @@
 package main
 
-// Area hubs — one taught landing page per top-level area from the homepage
+// Area hubs, one taught landing page per top-level area from the homepage
 // explore grid (Primitives, Framework, Agents, Interactivity, Generator). Each
 // hub reads top to bottom: a short intro with the area's pieces named up front,
 // then one "concept → show it → reference link" block per piece, then where to
@@ -8,7 +8,7 @@ package main
 //
 // The teaching machinery (TeachHubScreen, hubConcept, renderHubConcept) is
 // shared; each area supplies its own concepts. Every code sample is verified
-// real API — the site's standing rule is that no snippet teaches an API that
+// real API, the site's standing rule is that no snippet teaches an API that
 // doesn't exist.
 
 import (
@@ -28,7 +28,7 @@ func registerHubs(site *app.App) {
 }
 
 // -----------------------------------------------------------------------------
-// Teaching hub — a taught area page. It reads top to bottom: a short intro with
+// Teaching hub, a taught area page. It reads top to bottom: a short intro with
 // the area's pieces named up front, then one "concept → show it → reference
 // link" block per piece, then where to go next. This is the exemplar for
 // /interactivity; the same shape repeats for every area, only the pieces change.
@@ -69,7 +69,7 @@ type hubNextLink struct {
 
 // TeachHubScreen renders a taught area page from its concepts.
 type TeachHubScreen struct {
-	Name     string // area name — the eyebrow pill and the page <title>
+	Name     string // area name, the eyebrow pill and the page <title>
 	Title    string // the h1
 	Desc     string // meta description
 	Lede     render.HTML
@@ -157,13 +157,13 @@ func interactivityHub() *TeachHubScreen {
 	return &TeachHubScreen{
 		Name:  "Interactivity",
 		Title: "The server drives the UI",
-		Desc:  "The server-driven UI model in GoFastr: islands, signals, server push over SSE, server-validated forms, and optimistic actions — no client framework to ship.",
+		Desc:  "The server-driven UI model in GoFastr: islands, signals, server push over SSE, server-validated forms, and optimistic actions. No client framework to ship.",
 		Lede:  render.Text("You write Go. The browser gets HTML. There's no client framework to ship. Almost everything you'll do is one of five moves:"),
 		Moves: []string{"islands", "signals", "push (SSE)", "forms", "optimistic actions"},
 		Concepts: []hubConcept{
 			{
 				Title:    "Islands",
-				Body:     []render.HTML{p("A click changes one part of the page. The click calls the server, the server returns new HTML for that part, and the runtime swaps it in. Use it for sort, paginate, expand, add a row — anything that isn't a whole new page.")},
+				Body:     []render.HTML{p("A click changes one part of the page. The click calls the server, the server returns new HTML for that part, and the runtime swaps it in. Use it for sort, paginate, expand, add a row, anything that isn't a whole new page.")},
 				CodeFile: "customers.go",
 				CodeLang: "go",
 				Code: `// Sort headers fire an RPC instead of navigating. The handler
@@ -180,7 +180,7 @@ ui.DataTable(ui.DataTableConfig{
 				Body:     []render.HTML{p("Typed client state you declare once. Many parts of the page read the same value; change it in one place and every reader updates. Use it for a cart count, a selected row, a filter shared across widgets.")},
 				CodeFile: "signals.go",
 				CodeLang: "go",
-				Code: `// One declaration — namespaced, typed, seeded into the client store.
+				Code: `// One declaration: namespaced, typed, seeded into the client store.
 company := store.New("app").String("company", "Acme Corp")
 
 // Any number of readers; change it once and every binding updates.
@@ -206,7 +206,7 @@ host.Islands.SetOnPresenceChange(func(topic string) {
 			},
 			{
 				Title:    "Forms",
-				Body:     []render.HTML{p("The server validates. On error it returns the form with the messages already in place, swapped like any island — no full reload, and no client-side validation to keep in sync with the server's.")},
+				Body:     []render.HTML{p("The server validates. On error it returns the form with the messages already in place, swapped like any island: no full reload, and no client-side validation to keep in sync with the server's.")},
 				CodeFile: "login.go",
 				CodeLang: "go",
 				Code: `// errs is the server's validation result (ui.FieldErrors). On error
@@ -218,7 +218,7 @@ ui.Form(ui.FormConfig{Method: "POST", Action: "/login", SubmitLabel: "Sign in", 
 			},
 			{
 				Title:    "Optimistic actions",
-				Body:     []render.HTML{p("The button updates before the server answers. The runtime fires the request, shows the success label right away, and rolls back if the server returns an error. Use it for approve, archive, like — actions that almost always succeed.")},
+				Body:     []render.HTML{p("The button updates before the server answers. The runtime fires the request, shows the success label right away, and rolls back if the server returns an error. Use it for approve, archive, like: actions that almost always succeed.")},
 				CodeFile: "actions.go",
 				CodeLang: "go",
 				Code: `ui.OptimisticAction(ui.OptimisticActionConfig{
@@ -240,20 +240,20 @@ ui.Form(ui.FormConfig{Method: "POST", Action: "/login", SubmitLabel: "Sign in", 
 // hubP is the plain-paragraph helper shared by the taught hubs.
 func hubP(s string) render.HTML { return html.Paragraph(html.TextConfig{}, render.Text(s)) }
 
-// primitivesHub is the taught /primitives page — core + core-ui, the
+// primitivesHub is the taught /primitives page, core + core-ui, the
 // stdlib-first building blocks. Snippets verified against the real packages.
 func primitivesHub() *TeachHubScreen {
 	pkg := "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/"
 	return &TeachHubScreen{
 		Name:  "Primitives",
 		Title: "Stdlib-first building blocks",
-		Desc:  "The core layer of GoFastr: router, typed handlers, render, schema, the MCP server, and a client store — plain stdlib-first Go you can use on their own.",
-		Lede:  render.Text("core and core-ui are small Go packages, each usable on its own — no framework required. When you want more, the framework composes them for you."),
+		Desc:  "The core layer of GoFastr: router, typed handlers, render, schema, the MCP server, and a client store, plain stdlib-first Go you can use on their own.",
+		Lede:  render.Text("core and core-ui are small Go packages, each usable on its own, no framework required. When you want more, the framework composes them for you."),
 		Moves: []string{"router", "typed handlers", "render", "schema", "MCP server", "client store"},
 		Concepts: []hubConcept{
 			{
 				Title:    "Router",
-				Body:     []render.HTML{hubP("Built on net/http. Make a router and register routes with path patterns — the same shapes as the standard library.")},
+				Body:     []render.HTML{hubP("Built on net/http. Make a router and register routes with path patterns, the same shapes as the standard library.")},
 				CodeFile: "main.go",
 				CodeLang: "go",
 				Code: `r := router.New()
@@ -280,7 +280,7 @@ r.Get("/api/ping", handler.HandlerAdapter(
 			},
 			{
 				Title:    "Render HTML from Go",
-				Body:     []render.HTML{hubP("Return HTML from a Go function. The html primitives map one-to-one to tags, and render.Text escapes text for you — no template language.")},
+				Body:     []render.HTML{hubP("Return HTML from a Go function. The html primitives map one-to-one to tags, and render.Text escapes text for you. No template language.")},
 				CodeFile: "screen.go",
 				CodeLang: "go",
 				Code: `render.HTMLHandler(func(req *http.Request) render.HTML {
@@ -292,7 +292,7 @@ r.Get("/api/ping", handler.HandlerAdapter(
 			},
 			{
 				Title:    "Schema",
-				Body:     []render.HTML{hubP("Describe a field once — name, type, required, unique, enum values, default. The same []schema.Field drives the table, the validation, and the API.")},
+				Body:     []render.HTML{hubP("Describe a field once: name, type, required, unique, enum values, default. The same []schema.Field drives the table, the validation, and the API.")},
 				CodeFile: "schema.go",
 				CodeLang: "go",
 				Code: `Fields: []schema.Field{
@@ -304,7 +304,7 @@ r.Get("/api/ping", handler.HandlerAdapter(
 			},
 			{
 				Title:    "MCP server",
-				Body:     []render.HTML{hubP("The MCP server is a core package too — not something only entities produce. Register a tool with a name, a JSON schema, and a Go function.")},
+				Body:     []render.HTML{hubP("The MCP server is a core package too, not something only entities produce. Register a tool with a name, a JSON schema, and a Go function.")},
 				CodeFile: "mcp.go",
 				CodeLang: "go",
 				Code: `s := mcp.NewServer()
@@ -336,19 +336,19 @@ count := cart.Int("count", 0)`,
 	}
 }
 
-// frameworkHub is the taught /framework page — framework + framework/ui, the
+// frameworkHub is the taught /framework page, framework + framework/ui, the
 // opinionated layer on top of core. Code samples are verified real API.
 func frameworkHub() *TeachHubScreen {
 	return &TeachHubScreen{
 		Name:  "Framework",
 		Title: "The framework layer, on top of core",
-		Desc:  "The framework layer of GoFastr: entities and CRUD on the backend, composed components on the front — auth, access control, migrations, and theming.",
+		Desc:  "The framework layer of GoFastr: entities and CRUD on the backend, composed components on the front: auth, access control, migrations, and theming.",
 		Lede:  render.Text("framework and framework/ui sit on top of the primitives. Declare an entity and get the database, API, and tools; compose screens from components that already match your theme."),
 		Moves: []string{"entities", "auth", "access control", "migrations", "components", "theming"},
 		Concepts: []hubConcept{
 			{
 				Title:    "Entities",
-				Body:     []render.HTML{hubP("Declare an entity in Go — fields, types, relations. One call gives you the table, REST endpoints, validation, an OpenAPI entry, and MCP tools.")},
+				Body:     []render.HTML{hubP("Declare an entity in Go: fields, types, relations. One call gives you the table, REST endpoints, validation, an OpenAPI entry, and MCP tools.")},
 				CodeFile: "main.go",
 				CodeLang: "go",
 				Code: `app.Entity("posts", framework.EntityConfig{
@@ -418,11 +418,11 @@ if err := framework.AutoMigrate(db, app.Registry); err != nil {
     Actions:  ui.Button(ui.ButtonConfig{Label: "Save changes", Variant: ui.ButtonPrimary}),
 })`,
 				RefHref: "/components",
-				RefText: "/components — the live gallery →",
+				RefText: "/components: the live gallery →",
 			},
 			{
 				Title:    "Theming",
-				Body:     []render.HTML{hubP("One typed theme drives every color, space, and font as CSS variables. Change a token and every component updates — you never edit a component's CSS to reskin an app.")},
+				Body:     []render.HTML{hubP("One typed theme drives every color, space, and font as CSS variables. Change a token and every component updates. You never edit a component's CSS to reskin an app.")},
 				CodeFile: "theme.go",
 				CodeLang: "go",
 				Code: `t := theme.Default(theme.Overrides{
@@ -441,7 +441,7 @@ site.WithTheme(t)`,
 	}
 }
 
-// agentsHub is the taught /agents page — the two MCP layers. Code samples are
+// agentsHub is the taught /agents page, the two MCP layers. Code samples are
 // filled from verified real API.
 func agentsHub() *TeachHubScreen {
 	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
@@ -454,7 +454,7 @@ func agentsHub() *TeachHubScreen {
 		Concepts: []hubConcept{
 			{
 				Title:    "Production MCP tools",
-				Body:     []render.HTML{hubP("Turn on MCP and every CRUD entity gets tools an agent can call. The tools run through the same auth, owner, and tenant checks as your HTTP API — an agent gets exactly the access its user has, and nothing more.")},
+				Body:     []render.HTML{hubP("Turn on MCP and every CRUD entity gets tools an agent can call. The tools run through the same auth, owner, and tenant checks as your HTTP API. An agent gets exactly the access its user has, and nothing more.")},
 				CodeFile: "main.go",
 				CodeLang: "go",
 				Code: `fwApp := framework.NewUIHostApp(host,
@@ -468,7 +468,7 @@ func agentsHub() *TeachHubScreen {
 				Title: "Dev MCP",
 				Body: []render.HTML{html.Paragraph(html.TextConfig{},
 					codeText("gofastr dev"),
-					render.Text(" hands your coding agent — Claude Code, Codex — the running app over MCP: it reads routes, config, readiness, embedded docs, and recent logs, and it can write app data through the same entity tools your API serves. It's livereload for agents; opt out with "),
+					render.Text(" hands the running app to your coding agent, whether Claude Code or Codex, over MCP: it reads routes, config, readiness, embedded docs, and recent logs, and it can write app data through the same entity tools your API serves. It's livereload for agents; opt out with "),
 					codeText("GOFASTR_DEV_MCP=0"),
 					render.Text(".")),
 				},
@@ -484,7 +484,7 @@ gofastr dev`,
 				Body: []render.HTML{html.Paragraph(html.TextConfig{},
 					render.Text("Every screen and every entity ships an "),
 					codeText("llm.md"),
-					render.Text(" automatically — a plain-text description an agent reads to understand the page or the API. On by default; opt one out with "),
+					render.Text(" automatically: a plain-text description an agent reads to understand the page or the API. On by default; opt one out with "),
 					codeText("NoLLMMD"),
 					render.Text(".")),
 				},
@@ -492,7 +492,7 @@ gofastr dev`,
 			},
 			{
 				Title:    "Discovery endpoints",
-				Body:     []render.HTML{hubP("Turn on the agent-ready host options and your app serves the files agent scanners look for — an llms.txt and the .well-known endpoints — so an agent can find what your app does.")},
+				Body:     []render.HTML{hubP("Turn on the agent-ready host options and your app serves the files agent scanners look for, an llms.txt and the .well-known endpoints, so an agent can find what your app does.")},
 				CodeLang: "",
 				Code: `GET /llms.txt
 GET /.well-known/agent-card.json
@@ -501,7 +501,7 @@ GET /.well-known/agent.json`,
 			},
 			{
 				Title:    "Local semantic search",
-				Body:     []render.HTML{hubP("battery/semantic indexes a corpus locally and answers similarity queries — no external API key, works offline.")},
+				Body:     []render.HTML{hubP("battery/semantic indexes a corpus locally and answers similarity queries. No external API key, works offline.")},
 				CodeFile: "search.go",
 				CodeLang: "go",
 				Code: `idx, _ := semantic.Open(semantic.Options{
@@ -520,15 +520,15 @@ hits, _ := idx.Query(ctx, semantic.Query{Text: "how do hooks work", K: 5, Hybrid
 	}
 }
 
-// generatorHub is the taught /generator page — scaffold plain Go from a
+// generatorHub is the taught /generator page, scaffold plain Go from a
 // declaration. Commands verified against cmd/gofastr.
 func generatorHub() *TeachHubScreen {
 	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 	return &TeachHubScreen{
 		Name:  "Generator",
 		Title: "Scaffold plain Go from a declaration",
-		Desc:  "GoFastr's code generators: app code from a blueprint, client SDKs, and a customer CLI. Each writes plain Go you own and edit — not a runtime you configure.",
-		Lede:  render.Text("When you want a head start, generate the code. It writes plain Go to disk — you own it, read it, and edit it. One shot: nothing to keep regenerating against."),
+		Desc:  "GoFastr's code generators: app code from a blueprint, client SDKs, and a customer CLI. Each writes plain Go you own and edit, not a runtime you configure.",
+		Lede:  render.Text("When you want a head start, generate the code. It writes plain Go to disk. You own it, read it, and edit it. One shot: nothing to keep regenerating against."),
 		Moves: []string{"code generation", "SDKs", "customer CLI", "blueprints"},
 		Concepts: []hubConcept{
 			{
@@ -564,7 +564,7 @@ echo "$TOKEN" | ./meridian login --url https://app.example.com --with-token`,
 				Body: []render.HTML{html.Paragraph(html.TextConfig{},
 					render.Text("A "), codeText("gofastr.yml"), render.Text(" is a bundle of entities and screens. "),
 					codeText("gofastr generate --from=gofastr.yml"),
-					render.Text(" writes the app as plain package main to your module root — a one-shot scaffold you then own, not a tree you keep regenerating.")),
+					render.Text(" writes the app as plain package main to your module root: a one-shot scaffold you then own, not a tree you keep regenerating.")),
 				},
 				CodeFile: "gofastr.yml",
 				CodeLang: "yaml",

@@ -28,7 +28,7 @@ import (
 )
 
 func main() {
-	// Load .env before anything reads the environment — the DB (and
+	// Load .env before anything reads the environment: the DB (and
 	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
 	// would run. Existing process env always wins over the files.
 	//
@@ -55,7 +55,7 @@ func main() {
 		// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);
 		// WithMCPIntrospection adds read-only orientation tools
 		// (app_routes, app_readiness, framework_docs_search, …). The
-		// introspection tools reveal the app's shape — remove the option
+		// introspection tools reveal the app's shape: remove the option
 		// if /mcp is reachable by untrusted callers in production.
 		// Under `gofastr dev` the framework additionally auto-enables the
 		// mutating control tools + log debug tools (opt-out:
@@ -72,7 +72,7 @@ func main() {
 	// sink, access log, panic recovery, colorized dev console. Under
 	// `gofastr dev` its MCP debug tools (log_recent, log_filter,
 	// log_metrics, log_set_level) auto-register so a connected agent
-	// can read recent requests and errors; they stay OFF outside dev —
+	// can read recent requests and errors; they stay OFF outside dev,
 	// access logs carry client IPs. Set EnableMCP: true here only when
 	// a production /mcp is reachable solely by trusted callers.
 	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
@@ -108,12 +108,12 @@ func main() {
 		}
 		return nil
 	})
-	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithDescription("ShopFront — manage categories, products, orders, order_items, and reviews."), uihost.WithAppIcon(appIconPNG()), uihost.WithSitemap(uihost.SitemapConfig{BaseURL: appBaseURL()}), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}), uihost.WithStrict()))
+	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithDescription("ShopFront: manage categories, products, orders, order_items, and reviews."), uihost.WithAppIcon(appIconPNG()), uihost.WithSitemap(uihost.SitemapConfig{BaseURL: appBaseURL()}), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}), uihost.WithStrict()))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Banner fires via OnReady — only after auto-migrate, hooks, and the
+	// Banner fires via OnReady: only after auto-migrate, hooks, and the
 	// port bind all succeeded. Printing before Start would announce a
 	// server that may never come up.
 	fwApp.OnReady(func(boundAddr string) {
@@ -151,7 +151,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// appIconPNG generates the app's icon source at startup — a diagonal
+// appIconPNG generates the app's icon source at startup: a diagonal
 // gradient in the blueprint's primary color. uihost.WithAppIcon derives
 // /favicon.ico, the sized PNGs, and the head links from this one image.
 // Have a real logo? Embed it and return those bytes instead:
@@ -211,11 +211,11 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 
 // seedCreateError renders a failed seed insert with the per-field detail
 // the CRUD validator already computed. ValidationError.Error() is the
-// bare string "validation failed" — the messages worth reading live in
-// Fields() — so a plain %w would abort the boot with zero actionable
+// bare string "validation failed": the messages worth reading live in
+// Fields(), so a plain %w would abort the boot with zero actionable
 // information. Unwrap, print every field message (sorted, so the output
 // is stable), and name the row by its one-based position in the
-// blueprint's seed: block. The position — never a row value — is the
+// blueprint's seed: block. The position, never a row value, is the
 // label: this error aborts boot through log.Fatal, so its text lands
 // in application logs, and seed rows carry admin emails and passwords.
 func seedCreateError(entity string, index int, err error) error {

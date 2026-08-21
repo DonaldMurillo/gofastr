@@ -77,7 +77,7 @@ func TestInterceptRouteIsStillAPage(t *testing.T) {
 		if !strings.Contains(body, `role="complementary"`) {
 			t.Error("overlay variant is missing its drawer scaffolding")
 		}
-		// Same content as the canonical render — the overlay is a
+		// Same content as the canonical render, the overlay is a
 		// wrapper, not a second version of the screen.
 		if !strings.Contains(body, "Pour-over kettle") {
 			t.Error("overlay variant lost the screen's content")
@@ -134,7 +134,7 @@ func TestInterceptOpensAsDrawerAndClosesToList(t *testing.T) {
 		chromedp.Evaluate(overlay, &overlayOpen),
 		chromedp.Evaluate(`document.querySelector('[data-fui-intercept-overlay]')?.getAttribute('data-fui-intercept-as') || ""`, &overlayAs),
 		chromedp.Evaluate(`document.querySelector('[data-fui-intercept-overlay]')?.textContent || ""`, &overlayText),
-		// The list is still mounted underneath — that is what makes the
+		// The list is still mounted underneath, that is what makes the
 		// close cheap and the scroll position survive.
 		chromedp.Evaluate(listAlive, &listStillThere),
 

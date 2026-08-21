@@ -1,20 +1,20 @@
 package main
 
-// Keyboard-only traversal gate — the WCAG chunk axe cannot automate.
+// Keyboard-only traversal gate, the WCAG chunk axe cannot automate.
 //
 // For each page we drive ONLY the keyboard (chromedp.KeyEvent with kb.Tab /
-// kb.Enter / kb.Escape — never a synthetic focus() to "advance") and assert:
+// kb.Enter / kb.Escape, never a synthetic focus() to "advance") and assert:
 //
 //  a) TERMINATION / NO TRAP: repeated Tab from <body> visits a finite
 //     sequence and cycles back to the first tabbable (or browser chrome)
 //     within a sane bound. A focus trap = focus stuck in a strict subset
 //     of the page's tabbables with some never reached.
 //  b) VISIBILITY: every element that receives focus is actually visible
-//     (non-zero rect, not visibility:hidden, rect intersects the viewport
-//     — measured AFTER focus so browsers' auto-scroll-on-focus makes an
+//     (non-zero rect, not visibility:hidden, rect intersects the viewport,
+//     measured AFTER focus so browsers' auto-scroll-on-focus makes an
 //     off-screen skip-link pass, exactly as a real keyboard user sees it).
 //  c) FOCUS INDICATION PAINTS: for each focused element a visible focus
-//     indicator is present — outline-style != none with width > 0, OR a
+//     indicator is present: outline-style != none with width > 0, OR a
 //     non-trivial box-shadow, OR a border/background/text-decoration change
 //     vs the element's blurred snapshot. Real Tab presses set :focus-visible
 //     so computed styles reflect those rules.
@@ -38,7 +38,7 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// kbgateSetupJS installs window.__kbgate — a tiny a11y probe that enumerates
+// kbgateSetupJS installs window.__kbgate, a tiny a11y probe that enumerates
 // the tabbable elements, snapshots each one's blurred computed style, and
 // (called once per Tab press) records the currently-focused element's
 // visibility + focus-indicator verdict.
@@ -323,13 +323,13 @@ type kbgateReport struct {
 	Visits        []kbgateFocus
 	FailVisible   []string
 	FailIndicator []string
-	Missing       []string // completeness — enumerated but never reached
+	Missing       []string // completeness, enumerated but never reached
 	Trap          bool
 	Dynamic       []string // focusables discovered on the fly (informational)
 }
 
 // kbgateWalk boots the probe on the current page, then drives real Tab key
-// presses (chromedp.KeyEvent(kb.Tab)) — never a synthetic focus() to advance —
+// presses (chromedp.KeyEvent(kb.Tab)), never a synthetic focus() to advance,
 // recording each focused element until focus cycles back to the start or the
 // press budget is exhausted.
 func kbgateWalk(t *testing.T, ctx context.Context, maxPresses int) (kbgateEnum, []kbgateFocus) {
@@ -418,7 +418,7 @@ func kbgateLabelIdx(enum kbgateEnum, i int) string {
 }
 
 // reportGate asserts all four gates and emits every collected failure. It
-// never aborts on the first defect — the whole picture is reported per page.
+// never aborts on the first defect, the whole picture is reported per page.
 func reportGate(t *testing.T, r kbgateReport) {
 	t.Helper()
 	t.Logf("[%s] tabbables=%d presses=%d cycled=%v dynamic=%d",

@@ -31,7 +31,7 @@ var (
 	CategoriesActive      = framework.NewBoolColumn("active")
 )
 
-// Categories include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Categories include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	CategoriesInclProducts = "products"
 )
@@ -58,7 +58,7 @@ func NewCategoriesRepo(app *framework.App) *CategoriesRepo {
 	return &CategoriesRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler — useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *CategoriesRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -229,7 +229,7 @@ func OnCategoriesUpdated(app *framework.App, fn func(ctx context.Context, row *C
 }
 
 // OnCategoriesDeleted subscribes to entity.deleted events scoped to "categories". Callback
-// receives the deleted row's id only — by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnCategoriesDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {

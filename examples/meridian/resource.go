@@ -1,5 +1,5 @@
 // Seeded by `gofastr generate --from=gofastr.yml`, then hand-evolved.
-// Meridian is hand-maintained and NOT regenerable — see doc.go.
+// Meridian is hand-maintained and NOT regenerable. See doc.go.
 
 package main
 
@@ -38,7 +38,7 @@ func authError(ctx context.Context) render.HTML {
 	case "credentials_required":
 		return render.Text("Enter your email and password.")
 	case "rate_limit":
-		return render.Text("Too many attempts — please wait a moment and try again.")
+		return render.Text("Too many attempts. Please wait a moment and try again.")
 	case "email_taken", "user_exists", "duplicate":
 		return render.Text("That email is already registered.")
 	default:

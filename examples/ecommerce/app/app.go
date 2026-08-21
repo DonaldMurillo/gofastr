@@ -109,7 +109,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		widget.Mount(fwApp.Router(), &stack)
 	}
 	{
-		// WARNING: auth runs in DEV MODE — HTTP-friendly cookies (no
+		// WARNING: auth runs in DEV MODE: HTTP-friendly cookies (no
 		// Secure flag, plain session_id name) and a per-process JWT
 		// secret minted at startup. Do NOT deploy like this: set
 		// `dev_mode: false` and `jwt_secret` under app.auth in the
@@ -136,7 +136,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			// password; an already-seeded deployment boots without it.
 			seedPw := os.Getenv("ADMIN_SEED_PASSWORD")
 			if seedPw == "" {
-				return fmt.Errorf("ADMIN_SEED_PASSWORD is not set — admin %q cannot be seeded on a fresh database", "admin@shop.example")
+				return fmt.Errorf("ADMIN_SEED_PASSWORD is not set: admin %q cannot be seeded on a fresh database", "admin@shop.example")
 			}
 			h, err := auth.HashPassword(seedPw)
 			if err != nil {
@@ -156,7 +156,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// signed-in user's roles resolve to those permissions on the gated
 		// CRUD API. The admin role holds the wildcard (full access, the same
 		// surface the back-office manages). Add finer per-role Grants here,
-		// OR from a new file that appends to rolePolicy — both are additive
+		// OR from a new file that appends to rolePolicy: both are additive
 		// now that rolePolicy is package-level. Without this, every write 403s.
 		rolePolicy = access.NewRolePolicy()
 		rolePolicy.Grant("admin", access.Wildcard)
@@ -171,10 +171,10 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// auth.CSRF is intentionally NOT mounted: this generated surface
 		// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s
 		// any unsafe-method request that doesn't echo the csrf cookie as
-		// an X-CSRF-Token header — which plain JSON/MCP clients don't.
+		// an X-CSRF-Token header, which plain JSON/MCP clients don't.
 		// Session cookies are SameSite=Strict, so cross-site form posts
 		// don't carry the session in modern browsers. If you add browser
-		// HTML forms, mount auth.CSRF — see `gofastr docs blueprints`
+		// HTML forms, mount auth.CSRF: see `gofastr docs blueprints`
 		// (Auth section) and `gofastr docs auth`.
 	}
 	mountGenerated(fwApp, site, db)

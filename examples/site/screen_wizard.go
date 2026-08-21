@@ -1,14 +1,14 @@
 package main
 
 // =============================================================================
-// Wizard E2E demo — /forms/wizard (ported from examples/website).
+// Wizard E2E demo, /forms/wizard (ported from examples/website).
 //
 // A self-contained 3-step wizard with a real round-trip server: Continue/Back
 // post the form, the handler accumulates entered values via hidden fields, the
 // wizard re-renders at the new step, and the final Submit captures the payload
 // to a package-local var the wizard E2E tests assert against.
 //
-// The page is intentionally minimal — no site chrome, no SPA shell — because
+// The page is intentionally minimal, no site chrome, no SPA shell, because
 // the form submits to itself with method=POST and the response must be served
 // as the next full page. The wizard handler is registered in main.go.
 // =============================================================================
@@ -101,7 +101,7 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch action {
 	case "next":
-		// Final-step Next means Submit — capture and confirm. Guard against
+		// Final-step Next means Submit, capture and confirm. Guard against
 		// a stale POST with _step=last pushing past the last index.
 		if submittedStep >= totalSteps-1 {
 			wizardDemoStore(values)

@@ -4,9 +4,9 @@ package main
 //
 // Every code sample on a taught hub is a contract: a reader pastes it and it
 // must compile against the framework's real API. The /framework hub had
-// drifted before — its entity and access-control samples used the pre-grouped
+// drifted before, its entity and access-control samples used the pre-grouped
 // flat EntityConfig shape (Public: / OwnerField: / Access: at the top level)
-// after those fields moved onto ExposureConfig and ScopeConfig — and nothing
+// after those fields moved onto ExposureConfig and ScopeConfig, and nothing
 // caught it because no test compiled what the page renders.
 //
 // This gate renders the /framework hub, extracts every Go code block, wraps
@@ -17,7 +17,7 @@ package main
 //
 // It reuses the extraction + compile machinery shared with the /get-started
 // gate (get_started_compile_test.go): extractGetStartedGoBlocks and
-// compileGetStartedSnippet are generic over the ui.CodeBlock chrome — only
+// compileGetStartedSnippet are generic over the ui.CodeBlock chrome, only
 // the per-fragment wrapping is hub-specific, because a hub page repeats
 // filenames (two main.go blocks) so dispatch is by what the snippet says, not
 // the filename it claims.
@@ -52,7 +52,7 @@ func TestFrameworkHubGoBlocksCompile(t *testing.T) {
 
 // wrapHubFrameworkSnippet wraps an extracted hub snippet in the package
 // context + imports a reader pasting it would already have, keyed by what the
-// snippet contains (a hub page repeats filenames — two main.go blocks — so the
+// snippet contains (a hub page repeats filenames, two main.go blocks, so the
 // filename alone can't pick the harness). Each branch supplies exactly the
 // declarations the fragment references and no more, so the snippet compiles
 // for the reasons a reader's file would. The default returns false so a new Go
@@ -63,7 +63,7 @@ func wrapHubFrameworkSnippet(source string) (string, bool) {
 	// Entities + Access-control concepts: a bare app.Entity(...) statement.
 	// Needs a host function holding the *framework.App and framework (EntityConfig
 	// / ExposureConfig / ScopeConfig / AccessControl are aliased at the package
-	// root). core/schema is pulled in only when the snippet references it — the
+	// root). core/schema is pulled in only when the snippet references it, the
 	// Entities sample declares a field list, the Access-control one does not, and
 	// an unconditional import would be "imported and not used" for the latter.
 	case strings.Contains(source, "app.Entity("):

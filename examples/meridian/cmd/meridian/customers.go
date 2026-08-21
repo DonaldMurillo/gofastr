@@ -89,9 +89,9 @@ func runCustomersList(args []string) int {
 	if *outF == "table" {
 		printListTable([]string{"id", "name", "email", "company", "status", "mrr"}, []string{"id", "name", "email", "company", "status", "mrr"}, resp.Data)
 		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows — next cursor: %s\n", len(resp.Data), resp.Cursor)
+			fmt.Printf("%d rows; next cursor: %s\n", len(resp.Data), resp.Cursor)
 		} else {
-			fmt.Printf("page %d/%d — %d total\n", resp.Page, resp.TotalPages, resp.Total)
+			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
 		}
 		return 0
 	}
@@ -294,7 +294,7 @@ func runCustomersBatchUpdate(args []string) int {
 }
 
 // runCustomersBatchDelete deletes the positional ids in one transaction. Ids may
-// appear before or after flags — flag.Parse stops at the first positional,
+// appear before or after flags, flag.Parse stops at the first positional,
 // so the trailing ones are collected from fs.Args().
 func runCustomersBatchDelete(args []string) int {
 	var ids []string

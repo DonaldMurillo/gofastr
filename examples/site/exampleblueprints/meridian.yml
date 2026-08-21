@@ -1,12 +1,12 @@
 # =============================================================================
-# Meridian — SaaS billing & revenue console (GoFastr flagship demo)
+# Meridian: SaaS billing & revenue console (GoFastr flagship demo)
 #
 # A believable product: a public marketing site + an authenticated billing
 # console (customers, subscriptions, invoices with real status workflows, MRR
 # metrics, live activity) + an admin back-office. Generated entirely from this
 # one blueprint. Design: calm, light, refined (Stripe/Notion).
 #
-# NOTE: this blueprint is the TARGET SPEC — some block kinds / features used
+# NOTE: this blueprint is the TARGET SPEC: some block kinds / features used
 # here are being built into the generator (server-rendered entity screens,
 # the full framework/ui block catalog, marketing layout, auth/RBAC). It is
 # authored first so the product is concrete; the generator is made to render it.
@@ -30,7 +30,7 @@ app:
     login_path: /login
     seed_email: admin@meridian.dev
     seed_password: change-me-now-123
-  # Calm, light, refined — warm paper, ink text, one confident indigo accent.
+  # Calm, light, refined: warm paper, ink text, one confident indigo accent.
   theme:
     # Type: a distinctive editorial display face (Bricolage Grotesque) for
     # headings + a warm humanist grotesk (Hanken Grotesk) with true tabular
@@ -54,7 +54,7 @@ app:
     warning: "#854D0E"
     danger: "#B91C1C"
     info: "#1D4ED8"
-    # Dark scheme — a calm warm-charcoal tinted toward the indigo brand hue.
+    # Dark scheme: a calm warm-charcoal tinted toward the indigo brand hue.
     # The header's theme toggle flips to this; every surface that reads the
     # --color-* tokens (marketing, app, components) recolors from one place.
     dark:
@@ -76,7 +76,7 @@ app:
       info: "#60A5FA"
 
 # =============================================================================
-# DATA MODEL — the revenue domain: plans → subscriptions ← customers,
+# DATA MODEL: the revenue domain: plans → subscriptions ← customers,
 # invoices, payments. Status enums are the real workflows the operator drives.
 # =============================================================================
 
@@ -250,7 +250,7 @@ entities:
         foreign_key: customer_id
 
 # =============================================================================
-# SCREENS — three layers, two layouts:
+# SCREENS in three layers and two layouts:
 #   layout: marketing  → public site (SiteHeader + SiteFooter)
 #   layout: app        → authenticated console (sidebar shell), access-gated
 # =============================================================================
@@ -261,14 +261,14 @@ screens:
   - name: home
     route: /
     layout: marketing
-    title: Meridian — billing that runs itself
+    title: "Meridian: billing that runs itself"
     description: The revenue console for modern SaaS.
     body:
       - kind: hero
         props:
           eyebrow: Billing & revenue
           title: See your revenue the moment it moves.
-          subtitle: Meridian gives SaaS teams one calm place to manage customers, subscriptions, and invoices — with the metrics that matter, live.
+          subtitle: Meridian gives SaaS teams one calm place to manage customers, subscriptions, and invoices, with the metrics that matter, live.
           cta_text: Start free
           cta_href: /signup
           secondary_text: See pricing
@@ -285,13 +285,13 @@ screens:
           - kind: card
             props:
               heading: Subscriptions that flow
-              text: Trialing, active, past-due, canceled — drive the whole lifecycle from one screen.
+              text: "Trialing, active, past-due, canceled: drive the whole lifecycle from one screen."
           - kind: card
             props:
               heading: Invoices, handled
-              text: Open, paid, void — track every invoice and mark them paid in a click.
+              text: "Open, paid, void: track every invoice and mark them paid in a click."
       # The app's closing CTA (an ink-band ui.Themed card in screens.go) is
-      # hand-authored past the blueprint vocabulary — generate once, then own
+      # hand-authored past the blueprint vocabulary: generate once, then own
       # the Go. pack skips it, so it has no block here.
 
   - name: pricing
@@ -341,9 +341,9 @@ screens:
         level: 1
         text: We think billing should feel calm.
       - type: paragraph
-        text: Meridian is a demonstration product built entirely from a GoFastr blueprint — a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.
+        text: Meridian is a demonstration product built entirely from a GoFastr blueprint, a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.
       - type: paragraph
-        text: It exists to show that a framework can generate a real, polished web application — not a CRUD scaffold.
+        text: It exists to show that a framework can generate a real, polished web application, not a CRUD scaffold.
 
   # ---- Terms + Privacy: the markdown content path (rich long-form prose) ------
   - name: terms
@@ -352,7 +352,7 @@ screens:
     title: Terms of Service
     body:
       - kind: markdown
-        text: "# Terms of Service\n\nThis is a demonstration application. The text below is placeholder content that shows long-form, **readable** typography rendered from Markdown in the marketing layout.\n\n## Acceptance\n\nBy using Meridian you agree these terms are illustrative only — there is no real service, billing, or obligation.\n\n## Use of the service\n\n- Evaluate Meridian freely for any purpose.\n- Sample data is reset periodically without notice.\n- Don't rely on it for anything that matters.\n\n## Liability\n\nMeridian is provided *as-is*, without warranty of any kind."
+        text: "# Terms of Service\n\nThis is a demonstration application. The text below is placeholder content that shows long-form, **readable** typography rendered from Markdown in the marketing layout.\n\n## Acceptance\n\nBy using Meridian you agree these terms are illustrative only: there is no real service, billing, or obligation.\n\n## Use of the service\n\n- Evaluate Meridian freely for any purpose.\n- Sample data is reset periodically without notice.\n- Don't rely on it for anything that matters.\n\n## Liability\n\nMeridian is provided *as-is*, without warranty of any kind."
 
   - name: privacy
     route: /privacy
@@ -360,7 +360,7 @@ screens:
     title: Privacy Policy
     body:
       - kind: markdown
-        text: "# Privacy Policy\n\nMeridian is a demo and stores only the sample data you create while exploring it. The content below is placeholder Markdown.\n\n## What we collect\n\nNothing personal. A demo account and any records you add in the console — all reset periodically.\n\n## What we share\n\nNothing. There are no third parties, trackers, or analytics in this demonstration app."
+        text: "# Privacy Policy\n\nMeridian is a demo and stores only the sample data you create while exploring it. The content below is placeholder Markdown.\n\n## What we collect\n\nNothing personal. A demo account and any records you add in the console, all reset periodically.\n\n## What we share\n\nNothing. There are no third parties, trackers, or analytics in this demonstration app."
 
   # ---- Auth ------------------------------------------------------------------
   - name: login
@@ -460,7 +460,7 @@ screens:
         filters: [status]
         limit: 8
         create: true
-        empty_text: No customers yet — add your first to get started.
+        empty_text: No customers yet. Add your first to get started.
 
   - name: customer_detail
     route: /app/customers/{id}
@@ -540,7 +540,7 @@ screens:
             variant: danger
 
 # =============================================================================
-# NAV — marketing header/footer + app sidebar
+# NAV: marketing header/footer + app sidebar
 # =============================================================================
 
 nav:
@@ -557,7 +557,7 @@ nav:
     role: admin          # only signed-in admins see this link
 
 # =============================================================================
-# SEED — realistic sample data so a fresh boot shows a populated console.
+# SEED: realistic sample data so a fresh boot shows a populated console.
 # =============================================================================
 
 seed:
@@ -633,7 +633,7 @@ seed:
 
   # Relational seed: customer_id / plan_id reference rows seeded above by a
   # natural key ("@entity.field=value"); the seed runner resolves them to the
-  # generated ids before insert. Order matters — plans + customers first.
+  # generated ids before insert. Order matters: plans + customers first.
   - entity: subscriptions
     rows:
       - customer_id: "@customers.email=ada@acme.io"

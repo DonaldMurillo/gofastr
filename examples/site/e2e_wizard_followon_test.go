@@ -226,7 +226,7 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 		t.Fatalf("chromedp drive to step 3: %v", err)
 	}
 
-	// On step 3, query for buttons — confirm Submit is the active action.
+	// On step 3, query for buttons, confirm Submit is the active action.
 	var raw string
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`JSON.stringify((() => {
@@ -257,7 +257,7 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 	}
 
 	// Now click Submit and confirm the wizard either submits OR re-renders
-	// at the final step — never advances to a non-existent step 4.
+	// at the final step, never advances to a non-existent step 4.
 	err = chromedp.Run(ctx,
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
 		pageReady(),
@@ -387,7 +387,7 @@ func TestE2E_SearchInputClearOnEsc(t *testing.T) {
 }
 
 // ─── Repeater MaxItems: Add button is disabled at 5 ────────────────
-// The formrepeater catalog entry is a "Note" (not a live island) in site —
+// The formrepeater catalog entry is a "Note" (not a live island) in site,
 // this sub-test is dropped because the site's /components/formrepeater page
 // does NOT wire up a live repeater with MaxItems. The full island behavior is
 // tested via dedicated formrepeater tests in e2e_form_module_test.go once a

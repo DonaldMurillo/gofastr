@@ -28,10 +28,10 @@ func main() {
 		framework.WithConfig(framework.AppConfig{Name: "spa-example", APIPrefix: "/api"}),
 	)
 
-	// --- Entities — auto-CRUD is on (DB set); APIPrefix puts the routes under /api. ---
+	// --- Entities, auto-CRUD is on (DB set); APIPrefix puts the routes under /api. ---
 
 	app.Entity("articles", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true},
 		{Name: "summary", Type: schema.Text},
@@ -41,7 +41,7 @@ func main() {
 	})
 
 	app.Entity("projects", framework.EntityConfig{Scope:
-	// public demo content — see "Default CRUD authentication" in the security docs
+	// public demo content. See "Default CRUD authentication" in the security docs.
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "name", Type: schema.String, Required: true},
 		{Name: "description", Type: schema.Text},
@@ -53,7 +53,7 @@ func main() {
 	framework.AutoMigrate(db, app.Registry)
 	seed(db)
 
-	// Custom API endpoint — site metadata. Entity CRUD already mounts under
+	// Custom API endpoint, site metadata. Entity CRUD already mounts under
 	// /api via APIPrefix; this just adds one more route alongside it.
 	app.Router().Get("/api/site", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -65,7 +65,7 @@ func main() {
 	}))
 
 	// --- SPA static file serving ---
-	// Vue Router uses History API — real URLs like /articles, /about.
+	// Vue Router uses History API, real URLs like /articles, /about.
 	// The server must serve index.html for all non-API, non-static routes.
 
 	staticDir := resolveStaticDir()
@@ -106,7 +106,7 @@ func resolveStaticDir() string {
 func seed(db *sql.DB) {
 	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a1', 'Getting Started with Go', 'A beginner''s guide to Go.', 'Go is a statically typed, compiled language designed at Google. It is simple, fast, and has excellent concurrency support. In this article we cover the basics: installation, hello world, and your first HTTP server.', 'tutorial')`)
 	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a2', 'Why We Built GoFastr', 'The story behind the framework.', 'Every framework we tried assumed humans write every route by hand. We wanted something designed for AI coding agents as the primary author. GoFastr is a two-layer framework: core primitives for control, entity system for speed.', 'story')`)
-	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a3', 'MCP-Native Apps', 'Making your app an MCP server.', 'The Model Context Protocol lets AI tools interact with your app directly. With GoFastr, every entity can auto-generate MCP tools — list, get, create, update, delete — so any MCP client can work with your data out of the box.', 'tutorial')`)
+	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a3', 'MCP-Native Apps', 'Making your app an MCP server.', 'The Model Context Protocol lets AI tools interact with your app directly. With GoFastr, every entity can auto-generate MCP tools for list, get, create, update, and delete, so any MCP client can work with your data out of the box.', 'tutorial')`)
 
 	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p1', 'GoFastr', 'Go fullstack framework for the AI era', 'https://github.com/DonaldMurillo/gofastr')`)
 	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p2', 'GoFastr CLI', 'Command-line tools for scaffolding and dev', 'https://github.com/DonaldMurillo/gofastr')`)

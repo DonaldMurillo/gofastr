@@ -74,11 +74,11 @@ entities:
 
   - name: courses
     crud: true
-    # Course catalog — the public marketing pages list these. Reads are opened with a blank `read:`; every write still
+    # Course catalog: the public marketing pages list these. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -196,7 +196,7 @@ entities:
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -248,7 +248,7 @@ entities:
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
     # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows — the framework has no
+    # caller, and a posture is all-rows or no-rows; the framework has no
     # row-level read filter, so an entity cannot say "anonymous sees
     # published rows only". Where the entity below carries a draft, approved
     # or is_public flag, those rows are served anonymously too, through both
@@ -312,7 +312,7 @@ entities:
   - name: students
     crud: true
     mcp: true
-    # The student roster holds PII (email) and is managed by school staff —
+    # The student roster holds PII (email) and is managed by school staff.
     # RBAC-gate every operation so anonymous callers can't enumerate students.
     access:
       read: students:read
@@ -504,7 +504,7 @@ nav:
 screens:
   - name: home
     route: /
-    title: LearnHub — Online Courses
+    title: "LearnHub: Online Courses"
     description: Learning management system
     body:
       - type: heading
@@ -688,7 +688,7 @@ seed:
         slug: intro-web-dev
         instructor_id: "@instructors.email=sarah@learnhub.dev"
         subtitle: Learn HTML, CSS, and JavaScript from scratch
-        description: A comprehensive beginner course covering the fundamentals of web development. No prior experience required.
+        description: A complete beginner course covering the fundamentals of web development. No prior experience required.
         category: Web Development
         level: beginner
         status: published

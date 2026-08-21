@@ -25,12 +25,12 @@ import (
 // optimistically, then shakes and reverts when the 4xx lands. Both
 // reconciliation paths in one test.
 //
-// The reject half INTENTIONALLY triggers a 422 from the demo handler —
+// The reject half INTENTIONALLY triggers a 422 from the demo handler,
 // that 4xx is what flips the button into its error/shake state and back
 // to idle. Chrome logs the failed network resource as a console entry;
 // the test tolerates ONLY entries for the demo's reject endpoint
 // (sink.errorsExcludingExpectedReject) AND asserts the 422 actually
-// fired (sink.rejectSeen) — an unrelated 404/500 still fails the test.
+// fired (sink.rejectSeen), an unrelated 404/500 still fails the test.
 func TestE2E_Optimistic_InlineEdit_SuccessAndRollback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -78,7 +78,7 @@ func TestE2E_Optimistic_InlineEdit_SuccessAndRollback(t *testing.T) {
 		t.Errorf("ok button state after click = %q, want committed", okAfterCommit)
 	}
 	// After the 4xx the button MUST be in the deterministic `error`
-	// (shake) state — the runtime holds it ~600ms before reverting to
+	// (shake) state, the runtime holds it ~600ms before reverting to
 	// idle. The reject endpoint fails immediately, so by `settle()` the
 	// 422 has landed and the button has flipped to error. Accepting
 	// `idle` here would let a no-op click (the RPC never fired, the
@@ -161,7 +161,7 @@ func TestE2E_Optimistic_Create_AppendsAndPersists(t *testing.T) {
 		t.Errorf("newest row id unchanged after append — got %q before and after (expected a fresh n4/n5/… id)", lastAfter)
 	}
 
-	// Reload — the persisted append should be visible on a fresh SSR.
+	// Reload, the persisted append should be visible on a fresh SSR.
 	err = chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/optimisticcreate"),
 		pageReady(),
@@ -209,7 +209,7 @@ func TestE2E_Optimistic_Delete_RemovesOnConfirm(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(listItemCount, &before),
 		chromedp.Evaluate(n1Present, &n1Before),
-		// Click the row's Delete trigger — opens the ConfirmAction modal.
+		// Click the row's Delete trigger, opens the ConfirmAction modal.
 		chromedp.Evaluate(trigger+`.click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="opt-delete-n1"]')`, &dialogVisible),

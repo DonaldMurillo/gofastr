@@ -16,7 +16,7 @@ import (
 // /components/switch for the ui.Switch component and the existing
 // e2e_test.go already covers that via TestE2E_ToggleFlipsValue).
 // RadioGroup/CheckboxGroup tests from website's e2e_wave7_test.go all
-// hit /components/toggle — there is no equivalent slug in site that
+// hit /components/toggle, there is no equivalent slug in site that
 // exposes .ui-toggle-group markup, so those are dropped.
 // =============================================================================
 

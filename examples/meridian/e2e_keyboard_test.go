@@ -1,12 +1,12 @@
 package main
 
-// Keyboard-only traversal gate for the Meridian flagship — the WCAG chunk
+// Keyboard-only traversal gate for the Meridian flagship, the WCAG chunk
 // axe cannot automate. Mirrors examples/site/e2e_keyboard_test.go's probe
 // (the two apps are separate packages, so the JS + Go helpers are duplicated
 // rather than shared) and adds the quick-add MODAL trap-then-release gate.
 //
 // For each page we drive ONLY the keyboard (chromedp.KeyEvent with kb.Tab /
-// kb.Enter / kb.Escape — never a synthetic focus() to advance the walk) and
+// kb.Enter / kb.Escape, never a synthetic focus() to advance the walk) and
 // assert:
 //
 //  a) TERMINATION / NO TRAP: repeated Tab from <body> cycles back to the
@@ -37,7 +37,7 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// kbgateSetupJS installs window.__kbgate — see the examples/site counterpart.
+// kbgateSetupJS installs window.__kbgate. See the examples/site counterpart.
 const kbgateSetupJS = `(() => {
   const NS = window.__kbgate = window.__kbgate || {};
   const TAB_SEL = 'a[href], area[href], button:not([disabled]):not([aria-disabled="true"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"]), iframe, audio[controls], video[controls]';
@@ -401,7 +401,7 @@ func kbgateAnalyze(page string, enum kbgateEnum, visits []kbgateFocus) kbgateRep
 					" (w="+strconv.Itoa(f.W)+",h="+strconv.Itoa(f.H)+",inVP="+strconv.FormatBool(f.InViewport)+")")
 			}
 			if !f.HasIndicator && !f.NewEl {
-				r.FailIndicator = append(r.FailIndicator, label+" — no visible focus indicator")
+				r.FailIndicator = append(r.FailIndicator, label+": no visible focus indicator")
 			}
 		}
 	}
@@ -437,7 +437,7 @@ func reportGate(t *testing.T, r kbgateReport) {
 	}
 	failed := false
 	if r.Count == 0 {
-		t.Errorf("[%s] no tabbable elements found — keyboard access is impossible", r.Page)
+		t.Errorf("[%s] no tabbable elements found: keyboard access is impossible", r.Page)
 		return
 	}
 	if !r.Cycled {
@@ -464,7 +464,7 @@ func reportGate(t *testing.T, r kbgateReport) {
 		t.Errorf("[%s] FOCUS-INDICATOR: %s", r.Page, ind)
 	}
 	if !failed {
-		t.Logf("[%s] PASS — all keyboard gates green", r.Page)
+		t.Logf("[%s] PASS: all keyboard gates green", r.Page)
 	}
 }
 
@@ -547,7 +547,7 @@ func TestModalFocusTrap(t *testing.T) {
 	const widgetSel = `[data-fui-widget="customer-quick-add"]`
 
 	// 1. Open the modal with Enter on the trigger (focus positioned, then a
-	//    real Enter keypress — Enter on a focused <button> fires click).
+	//    real Enter keypress. Enter on a focused <button> fires click).
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/app/customers"),
 		chromedp.WaitVisible(triggerSel, chromedp.ByQuery),
@@ -619,16 +619,16 @@ func TestModalFocusTrap(t *testing.T) {
 	t.Logf("[modal] presses=%d cycled=%v escaped=%v closed=%v focusReturned=%v",
 		presses, cycled, escaped, closed, focusReturned)
 	if !cycled {
-		t.Errorf("[modal] focus did not cycle within the modal after %d Tab presses (modal focusables=%d) — trap may be wrapping incorrectly or not at all", presses, menum.Count)
+		t.Errorf("[modal] focus did not cycle within the modal after %d Tab presses (modal focusables=%d): trap may be wrapping incorrectly or not at all", presses, menum.Count)
 	}
 	if len(escaped) > 0 {
-		t.Errorf("[modal] focus ESCAPED the modal on Tab press(es) %v — focus trap failed (focus must stay within %s while open)", escaped, widgetSel)
+		t.Errorf("[modal] focus ESCAPED the modal on Tab press(es) %v: focus trap failed (focus must stay within %s while open)", escaped, widgetSel)
 	}
 	for _, v := range failVis {
 		t.Errorf("[modal] VISIBILITY: focused modal element not visible: %s", v)
 	}
 	for _, ind := range failInd {
-		t.Errorf("[modal] FOCUS-INDICATOR: %s — no visible focus indicator", ind)
+		t.Errorf("[modal] FOCUS-INDICATOR: %s has no visible focus indicator", ind)
 	}
 	if !closed {
 		t.Error("[modal] Escape did not close the modal")

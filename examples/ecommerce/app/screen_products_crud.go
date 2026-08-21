@@ -16,7 +16,7 @@ import (
 
 type HomeScreen struct{ component.ContextOnly }
 
-func (s *HomeScreen) ScreenTitle() string        { return "ShopFront — Home" }
+func (s *HomeScreen) ScreenTitle() string        { return "ShopFront: Home" }
 func (s *HomeScreen) ScreenDescription() string  { return "E-commerce storefront homepage" }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -65,7 +65,7 @@ type ProductsEditScreen struct {
 
 func (s *ProductsEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
 func (s *ProductsEditScreen) ScreenTitle() string           { return "Edit Product" }
-func (s *ProductsEditScreen) ScreenSEO() uihost.SEO         { return uihost.SEO{} } // deliberate SEO opt-out — set description in the blueprint or replace with real copy
+func (s *ProductsEditScreen) ScreenSEO() uihost.SEO         { return uihost.SEO{} } // deliberate SEO opt-out: set description in the blueprint or replace with real copy
 func (s *ProductsEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *ProductsEditScreen) RenderCtx(ctx context.Context) render.HTML {

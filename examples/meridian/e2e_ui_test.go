@@ -1,5 +1,5 @@
 // Seeded by `gofastr generate --from=gofastr.yml`, then hand-evolved.
-// Meridian is hand-maintained and NOT regenerable — see doc.go.
+// Meridian is hand-maintained and NOT regenerable. See doc.go.
 
 package main
 
@@ -7,7 +7,7 @@ package main
 // plain-HTTP TestE2E can't see: the quick-add customer modal (a plain
 // preset.Modal relying on the default centered panel) and the Customers
 // DataTable running in island mode (sort + pagination via RPC, swapping
-// just the table — never a document navigation).
+// just the table, never a document navigation).
 
 import (
 	"context"
@@ -78,7 +78,7 @@ func e2eBrowser(t *testing.T) context.Context {
 	t.Cleanup(browserCancel)
 
 	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's —
+	// browser context so the browser's lifetime is the browser context's,
 	// passing a timeout context here would make the browser die when that
 	// deadline passed. The watchdog bounds only the startup wait.
 	started := make(chan error, 1)
@@ -98,7 +98,7 @@ func e2eBrowser(t *testing.T) context.Context {
 }
 
 // e2eLogin signs the seeded admin in through the real login form.
-// chromedp.Submit doesn't fire the submit event — click the button.
+// chromedp.Submit doesn't fire the submit event, click the button.
 func e2eLogin(t *testing.T, ctx context.Context, base string) {
 	t.Helper()
 	if err := chromedp.Run(ctx,
@@ -122,7 +122,7 @@ func TestE2E_QuickAddModal(t *testing.T) {
 	e2eLogin(t, ctx, base)
 
 	// A dismissed widget is hidden in place when it hydrated from SSR
-	// chrome, and detached when it was lazy-mounted — both count as closed.
+	// chrome, and detached when it was lazy-mounted, both count as closed.
 	const closedJS = `(() => {
 		const w = document.querySelector('[data-fui-widget="customer-quick-add"]');
 		return !w || w.hidden;
@@ -157,7 +157,7 @@ func TestE2E_QuickAddModal(t *testing.T) {
 		t.Fatalf("modal flow: %v", err)
 	}
 	if panelBG == "" || panelBG == "rgba(0, 0, 0, 0)" || panelBG == "transparent" {
-		t.Errorf("modal panel background = %q — default panel surface missing", panelBG)
+		t.Errorf("modal panel background = %q: default panel surface missing", panelBG)
 	}
 	if !closedAfterEsc {
 		t.Error("Escape did not close the modal")
@@ -201,7 +201,7 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 		t.Errorf("first row after desc name sort = %q, want Tim Berners-Lee", first)
 	}
 	if mark != 1 {
-		t.Error("window marker lost — sort caused a document navigation, not an island swap")
+		t.Error("window marker lost: sort caused a document navigation, not an island swap")
 	}
 	if loc != "?sort=name&dir=desc" {
 		t.Errorf("push-state URL = %q, want ?sort=name&dir=desc", loc)
@@ -236,7 +236,7 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 		t.Errorf("page 2 rows = %d, want 2", rows)
 	}
 	if mark != 1 {
-		t.Error("window marker lost — paging caused a document navigation, not an island swap")
+		t.Error("window marker lost: paging caused a document navigation, not an island swap")
 	}
 	if loc != "?p=2" {
 		t.Errorf("push-state URL = %q, want ?p=2", loc)
