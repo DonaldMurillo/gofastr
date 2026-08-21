@@ -18,11 +18,8 @@ type registrar struct {
 
 var registrars []registrar
 
-//go:fix inline
-func boolPtr(v bool) *bool { return new(v) }
-
-//go:fix inline
-func floatPtr(v float64) *float64 { return new(v) }
+func boolPtr(v bool) *bool        { return &v }
+func floatPtr(v float64) *float64 { return &v }
 
 // RegisterAll registers every generated entity declaration with app, in
 // declaration order. This file never holds an entity name: add an entity by
