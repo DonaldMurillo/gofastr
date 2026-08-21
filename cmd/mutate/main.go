@@ -510,12 +510,40 @@ func truncate(s string) string {
 
 // packageFiles resolves a package pattern to its directory and non-test Go
 // files. Test files are excluded: mutating a test proves nothing about it.
+//
+// The pattern must name exactly ONE package. A wildcard like ./framework/...
+// makes `go list` print a directory line per package, and the old parser read
+// every line after the first as a file name — so a run failed later with
+// `read <dir>/<some absolute path>`, which names neither the wildcard nor the
+// rule it broke. This tool rewrites real source files in place; the one thing
+// it must never do is start work on a set of files it has mis-parsed.
 func packageFiles(pkg string) (string, []string, error) {
-	out, err := exec.Command("go", "list", "-f", "{{.Dir}}\n{{range .GoFiles}}{{.}}\n{{end}}", pkg).Output()
+	// -f prints one record per package, so a count of records is a count of
+	// packages regardless of how many files each one holds.
+	out, err := exec.Command("go", "list", "-f", "{{.Dir}}\n{{range .GoFiles}}{{.}}\n{{end}}{{\"\\x00\"}}", pkg).Output()
 	if err != nil {
 		return "", nil, fmt.Errorf("go list %s: %w", pkg, err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	records := strings.Split(string(out), "\x00")
+	// A trailing empty record follows the last separator.
+	var pkgs []string
+	for _, rec := range records {
+		if strings.TrimSpace(rec) != "" {
+			pkgs = append(pkgs, rec)
+		}
+	}
+	if len(pkgs) == 0 {
+		return "", nil, fmt.Errorf("no Go packages matched %s", pkg)
+	}
+	if len(pkgs) > 1 {
+		var dirs []string
+		for _, rec := range pkgs {
+			dirs = append(dirs, strings.SplitN(strings.TrimSpace(rec), "\n", 2)[0])
+		}
+		return "", nil, fmt.Errorf("pattern %s matches %d packages (%s) — mutate rewrites source in place and takes one package at a time; name it directly",
+			pkg, len(dirs), strings.Join(dirs, ", "))
+	}
+	lines := strings.Split(strings.TrimSpace(pkgs[0]), "\n")
 	if len(lines) < 2 {
 		return "", nil, fmt.Errorf("no Go files in %s", pkg)
 	}

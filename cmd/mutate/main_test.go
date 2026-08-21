@@ -318,3 +318,44 @@ func TestRestoreSetIsSafeUnderConcurrentUse(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// A wildcard pattern makes `go list` print one record per package. The old
+// parser took line 0 as the directory and every later line as a file name, so
+// a second package's directory path became a "file" and the run died with
+// `read <dir>/<abs path>` — an error that names neither the wildcard nor what
+// it broke. This tool rewrites source files in place, so a mis-parsed file set
+// is the one failure it must refuse before doing any work.
+func TestPackageFilesRejectsAMultiPackagePattern(t *testing.T) {
+	_, _, err := packageFiles("github.com/DonaldMurillo/gofastr/cmd/...")
+	if err == nil {
+		t.Fatal("a wildcard matching several packages must be refused, not parsed")
+	}
+	for _, want := range []string{"matches", "one package at a time"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error must say why the pattern is refused, missing %q: %v", want, err)
+		}
+	}
+}
+
+// The single-package path still resolves, and the directory it returns is a
+// directory rather than the first source file.
+func TestPackageFilesResolvesOnePackage(t *testing.T) {
+	dir, files, err := packageFiles("github.com/DonaldMurillo/gofastr/cmd/mutate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+		t.Fatalf("dir = %q, want an existing directory (err %v)", dir, statErr)
+	}
+	if len(files) == 0 {
+		t.Fatal("no Go files returned")
+	}
+	for _, f := range files {
+		if filepath.IsAbs(f) {
+			t.Errorf("file %q is absolute — that is a package directory read as a file name", f)
+		}
+		if !strings.HasSuffix(f, ".go") {
+			t.Errorf("file %q is not a Go file", f)
+		}
+	}
+}
