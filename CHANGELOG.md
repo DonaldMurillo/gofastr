@@ -11,10 +11,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 - **Row-level read scoping.** `Exposure.ReadScope` narrows WHICH rows a caller
   may read. `Exposure.Access.Read` only decided WHETHER an entity was readable,
-  so an entity was readable in full or not at all, and the most ordinary
-  content posture there is had no declaration: anonymous visitors see published
-  rows, signed-in editors see drafts. Three shipped example blueprints served
-  their own draft and unapproved rows to anonymous callers, each with a
+  so an entity was readable in full or not at all. That left the most ordinary
+  content posture there is with no way to declare it: what an author wants is
+  "anonymous visitors see published rows, signed-in editors see drafts", and
+  before this there was no declaration for it. Three shipped example blueprints
+  served their own draft and unapproved rows to anonymous callers, each with a
   `KNOWN EXPOSURE` comment saying so. A read scope carries predicates on the
   entity's own columns plus the permission that lifts them; a blank
   `unrestricted` means any signed-in caller reads everything, which is a weak

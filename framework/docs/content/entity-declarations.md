@@ -750,7 +750,14 @@ caller must not learn it exists.
 carry the predicate in this version; a write is authorized by the write
 gates (owner, tenant, `Access`), not by the read posture. If callers can
 write but not read everything, they can still modify a row they cannot
-see. Close that with an `Access` block on the write operations.
+see.
+
+`Access` does not close that on its own. An `Access` block checks whether the
+caller holds a permission for the OPERATION, not whether they may touch a
+particular row, so a caller with `update` can still update a row `ReadScope`
+hides from them. To make write permission depend on the row, use
+`Scope.OwnerField` or `Scope.MultiTenant`, which narrow the write itself, or
+decide it in a `BeforeUpdate` / `BeforeDelete` hook, which sees the row.
 
 A declaration is validated at registration and a bad one fails the app's
 start (`app.Entity` panics, `app.TryEntity` returns the error, both naming

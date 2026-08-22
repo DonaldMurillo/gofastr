@@ -122,8 +122,10 @@ entities:
 
   - name: boards
     crud: true
-    # Listed on the boards screen. Reads are opened with a blank `read:`; every write still
-    # requires the permission below, because auto-CRUD is secure by
+    # Listed on the boards screen. Reads require `projects:read`, because a row here
+    # names a project the caller may not be able to read; it is gated like
+    # tasks and comments rather than opened with a blank `read:`. Every
+    # write requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses. Boards
     # inherit their project's visibility; they carry no flag of their own.
     access:
@@ -171,8 +173,10 @@ entities:
 
   - name: columns
     crud: true
-    # Board structure, read with the board. Reads are opened with a blank `read:`; every write still
-    # requires the permission below, because auto-CRUD is secure by
+    # Board structure, read with the board. Reads require `projects:read`, because a row here
+    # names a project the caller may not be able to read; it is gated like
+    # tasks and comments rather than opened with a blank `read:`. Every
+    # write requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses. Columns
     # carry no visibility flag; the board and project decide reach.
     access:
@@ -335,8 +339,10 @@ entities:
 
   - name: task_labels
     crud: true
-    # Read alongside tasks. Reads are opened with a blank `read:`; every write still
-    # requires the permission below, because auto-CRUD is secure by
+    # Read alongside tasks. Reads require `projects:read`, because a row here
+    # names a project the caller may not be able to read; it is gated like
+    # tasks and comments rather than opened with a blank `read:`. Every
+    # write requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses. Join rows
     # carry no visibility flag of their own.
     access:

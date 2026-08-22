@@ -198,6 +198,9 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err != nil {
 		return nil, err
 	}
+	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+		return nil, err
+	}
 	// Search: fail loud when Search is set on an entity without SearchFields.
 	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
 		return nil, fmt.Errorf("ListAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
@@ -356,6 +359,9 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	}
 	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
 	if err != nil {
+		return 0, err
+	}
+	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 		return 0, err
 	}
 	// Search: fail loud when Search is set on an entity without SearchFields.

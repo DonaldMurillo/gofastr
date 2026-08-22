@@ -164,10 +164,10 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 // eagerLoadHasMany handles HasOne and HasMany: target table has a FK pointing back to us.
 func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, hidden map[string]bool, target *entity.Entity) error {
 	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
+	args := make([]any, 0, len(ids))
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = id
+		args = append(args, id)
 	}
 
 	scopeClause, scopeArgs := filterClause(scopeFilters, len(ids)+1)
@@ -288,10 +288,10 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, s
 	}
 
 	fkPlaceholders := make([]string, len(uniqueFKs))
-	fkArgs := make([]any, len(uniqueFKs))
+	fkArgs := make([]any, 0, len(uniqueFKs))
 	for i, fk := range uniqueFKs {
 		fkPlaceholders[i] = fmt.Sprintf("$%d", i+1)
-		fkArgs[i] = fk
+		fkArgs = append(fkArgs, fk)
 	}
 
 	// Owner/tenant scope applies to the TARGET rows, not the source SELECT.
@@ -371,10 +371,10 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
+	args := make([]any, 0, len(ids))
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = id
+		args = append(args, id)
 	}
 
 	// The M2M SELECT JOINs target + pivot, so scope columns MUST be

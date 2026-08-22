@@ -22,7 +22,7 @@ func legacyDB(t *testing.T, ddl ...string) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	// One connection, so a PRAGMA set here governs every statement below and
 	// every assertion after — with a pool, the pragma and the query land on
 	// different connections and the test measures nothing.
@@ -701,5 +701,109 @@ func TestRepairRestoresLegacyAlterTable(t *testing.T) {
 	}
 	if legacy != 0 {
 		t.Error("legacy_alter_table was left on for the pooled connection; a later rename will not update its references")
+	}
+}
+
+// Three defects introduced by the previous round's own fixes, each caught by
+// re-review rather than by the tests that shipped with them.
+func TestRepairHandlesAwkwardButLegalDDL(t *testing.T) {
+	t.Run("quoted owner column with an inline key", func(t *testing.T) {
+		// stripLeadingComments used skipInert, which treats a QUOTED run as
+		// inert too. At offset zero the first token is the column name, so
+		// `"user_id" TEXT REFERENCES …` was stripped to ` TEXT REFERENCES …`,
+		// the matcher compared TEXT against the owner column, and the repair
+		// refused a table it can rebuild.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			`CREATE TABLE tasks (
+				"id"      TEXT PRIMARY KEY,
+				"user_id" TEXT NOT NULL REFERENCES users(id),
+				"title"   TEXT
+			)`,
+			`INSERT INTO tasks ("id", "user_id", "title") VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+
+	t.Run("modifier wrapped across lines", func(t *testing.T) {
+		// The modifier match required a literal single space, so a wrapped
+		// `ON DELETE\n CASCADE` consumed nothing and left the action stranded
+		// without its REFERENCES clause, which SQLite rejects.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT REFERENCES users(id)\n\t\tON DELETE\n\t\tCASCADE,\n\ttitle TEXT\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+}
+
+// repairAndAssertCreatable runs the repair and checks the thing that matters:
+// the rows survived and the create the framework makes on every request works.
+func repairAndAssertCreatable(t *testing.T, db *sql.DB) {
+	t.Helper()
+	ctx := context.Background()
+	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("the owner key was not found: %+v", stale)
+	}
+	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+		t.Fatalf("repair refused a table it can rebuild: %v", err)
+	}
+	var title string
+	if err := db.QueryRow(`SELECT title FROM tasks WHERE id='t1'`).Scan(&title); err != nil || title != "kept" {
+		t.Errorf("row lost in the rebuild: %q %v", title, err)
+	}
+	if _, err := db.Exec("PRAGMA foreign_keys=on"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO tasks (id, user_id, title) VALUES ('t2','auth-user-2','new')`); err != nil {
+		t.Errorf("create still refused after the repair: %v", err)
+	}
+}
+
+// Enforcement must be restored on EVERY early return, including the one
+// between turning foreign keys off and the rebuild. That window was reachable:
+// if enabling legacy_alter_table failed the function returned before `restore`
+// existed, and the deferred cleanup only closed the connection, which returns
+// it to the pool.
+//
+// Driven by closing the database so the pragma exec fails.
+func TestRepairRestoresEnforcementWhenTheSecondPragmaFails(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
+	)
+	stale, err := FindStaleOwnerForeignKeys(context.Background(), db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Without this the whole test is vacuous: RepairStaleOwnerForeignKeys
+	// returns immediately on an empty slice, so it never sets the pragmas and
+	// the assertions below would pass on a scanner that stopped reporting.
+	if len(stale) != 1 {
+		t.Fatalf("the owner key was not found, so the repair never ran: %+v", stale)
+	}
+	// Every exit path from the repair must leave the pragma restored, so the
+	// invariant is asserted after a normal run too; the early-return path is
+	// covered by TestRepairRestoresEnforcementOnTheFailurePath.
+	if err := RepairStaleOwnerForeignKeys(context.Background(), db, stale); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"foreign_keys", "legacy_alter_table"} {
+		var v int
+		if err := db.QueryRow("PRAGMA " + p).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+		if p == "legacy_alter_table" {
+			want = 0
+		}
+		if v != want {
+			t.Errorf("PRAGMA %s = %d after the repair, want %d", p, v, want)
+		}
 	}
 }

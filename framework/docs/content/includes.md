@@ -83,7 +83,7 @@ filters:
 | `_lt`    | `<`             |
 | `_lte`   | `<=`            |
 | `_like`  | literal `contains`: `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
-| `_in`    | `IN (...)` (pipe-separated values)  |
+| `_in`    | `IN (...)`. Separator differs by surface: a top-level or `?rel.field_in=` query param takes COMMA-separated values, while a scoped include filter `include=rel(field_in=a\|b)` takes pipe-separated ones, because a comma already separates the filters inside the parentheses |
 
 Filters validate against the **target** entity's fields, not the
 parent's. `include=comments(post_id=x)` validates `post_id` on

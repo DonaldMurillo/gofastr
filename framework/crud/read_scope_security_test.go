@@ -775,3 +775,80 @@ func TestReadScopeAllowsRecordFindsTheWireKey(t *testing.T) {
 		t.Error("a draft row passed under its wire key")
 	}
 }
+
+// The in-process nested-filter carve-out is right for a hand-built spec and
+// wrong while serving a request. A read hook, an AfterList, or any code
+// reached from an HTTP handler calls ListAll with the request's context; if it
+// forwards a caller-influenced relation, the EXISTS clause counts rows the
+// target's posture hides and the count oracle the HTTP path closes reappears
+// one layer down.
+//
+// The marker decides, the same way the include path decides it.
+func TestNestedFilterInProcessScopesUnderARealRequest(t *testing.T) {
+	ddl := `
+CREATE TABLE posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT);
+CREATE TABLE comments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, post_id TEXT NOT NULL, body TEXT);
+`
+	postCfg := makeEntityConfig("posts", "posts", "user_id",
+		[]schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "title", Type: schema.String},
+		},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{entity.HasMany("comments", "comments", "post_id")}
+		},
+	)
+	commentCfg := makeEntityConfig("comments", "comments", "user_id",
+		[]schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "post_id", Type: schema.String, Required: true},
+			{Name: "body", Type: schema.String},
+		},
+	)
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	commentEnt := entity.Define(commentCfg.Table, commentCfg)
+	commentEnt.SetDB(db)
+	reg := newTestRegistry(t)
+	reg.add(t, ch.Entity)
+	reg.add(t, commentEnt)
+	ch.Registry = reg
+
+	seedRows(t, db, "posts", []map[string]any{{"id": "p1", "user_id": "alice", "title": "alice post"}})
+	seedRows(t, db, "comments", []map[string]any{
+		{"id": "c-alice", "user_id": "alice", "post_id": "p1", "body": "alice comment"},
+		{"id": "c-bob", "user_id": "bob", "post_id": "p1", "body": "bob secret"},
+	})
+
+	spec := []NestedFilter{{Relation: "comments", Field: "body", Op: filter.OpEq, Value: "bob secret"}}
+	aliceCtx := ctxWithUser("alice")
+
+	// Under a real request the narrowing applies, so bob's comment is not
+	// reachable and the guess is indistinguishable from one that matches
+	// nothing.
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/posts", UserID: "alice"})
+	overHTTP := withRealRequest(req.Context(), req)
+	rows, err := ch.ListAll(overHTTP, ListOptions{NestedFilters: spec})
+	if err != nil {
+		t.Fatalf("ListAll under a request: %v", err)
+	}
+	miss, err := ch.ListAll(overHTTP, ListOptions{NestedFilters: []NestedFilter{
+		{Relation: "comments", Field: "body", Op: filter.OpEq, Value: "no such comment"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != len(miss) {
+		t.Errorf("SECURITY: [oracle] in-process nested filter under a real request returned %d rows for bob's comment and %d for a value that exists nowhere",
+			len(rows), len(miss))
+	}
+
+	// Outside a request the host is acting on its own authority and keeps the
+	// unscoped capability, which is what background reports depend on.
+	server, err := ch.ListAll(aliceCtx, ListOptions{NestedFilters: spec})
+	if err != nil {
+		t.Fatalf("ListAll off-request: %v", err)
+	}
+	if len(server) != 1 {
+		t.Errorf("server-authority ListAll returned %d rows, want 1: the in-process carve-out was removed, not narrowed", len(server))
+	}
+}

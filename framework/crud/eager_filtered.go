@@ -118,10 +118,10 @@ func hiddenColumns(target *entity.Entity) map[string]bool {
 
 func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool, budget *includeBudget) error {
 	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
+	args := make([]any, 0, len(ids))
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = id
+		args = append(args, id)
 	}
 
 	extra, extraArgs := filterClause(filters, len(ids)+1)
@@ -236,10 +236,10 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	}
 
 	fkPlaceholders := make([]string, len(unique))
-	fkArgs := make([]any, len(unique))
+	fkArgs := make([]any, 0, len(unique))
 	for i, fk := range unique {
 		fkPlaceholders[i] = fmt.Sprintf("$%d", i+1)
-		fkArgs[i] = fk
+		fkArgs = append(fkArgs, fk)
 	}
 	extra, extraArgs := filterClause(filters, len(unique)+1)
 	readClause, readArgs := renderReadScope(readScopes, "", len(unique)+len(extraArgs)+1)
@@ -317,10 +317,10 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
+	args := make([]any, 0, len(ids))
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = id
+		args = append(args, id)
 	}
 
 	extra, extraArgs := filterClauseQualified(filters, safeEntity, len(ids)+1)

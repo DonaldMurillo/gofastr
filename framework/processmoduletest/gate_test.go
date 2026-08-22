@@ -438,23 +438,22 @@ func TestGate_DDLIsolation_ReadyGate(t *testing.T) {
 // =====================================================================
 
 // TestGate_UIContainment proves the closed ui.node.v1 validator is the render
-// path's gate, end to end through the real child:
+// path's gate, end to end through the real child.
 //
-//   - DEMO_FORGE_DATAFUI: the child returns a tree that smuggles a
-//     data-fui-rpc prop. The proxy's render path is deferred (it 503s on
-//     ui.node.v1 today), so /hello is served-safe and the forged attribute
-//     never reaches the wire. The /tree route returns the SAME bytes as a
-//     json body (which the proxy passes through), and uinodev1.Validate
-//     whole-tree rejects them, proving the validator is what the render
-//     path will check.
-//   - Clean tree: Validate passes (so it WILL render once the render path
-//     lands); /hello is served-safe (503) until then.
+// decodeBody (processmodule_proxy.go) validates a ui.node.v1 body through
+// uinodev1.Validate and renders it host-side as text/html, with the host
+// assigning every id, class, ARIA attribute and data-fui-rpc. A validation or
+// render failure is fail-safe: it surfaces as a buffered 503 and the module's
+// content never reaches the wire.
 //
-// Missing seam (deferred, not in scope for this wave): a ui.node.v1 →
-// design-system renderer wired into the proxy's decodeBody (currently
-// processmodule_proxy.go returns a 503 for BodyKindUINodeV1). This test
-// proves the load-bearing control (the closed validator) today and the
-// proxy's fail-safe; the render path is the 4a-deferred follow-on.
+//   - DEMO_FORGE_DATAFUI: the child returns a tree smuggling a data-fui-rpc
+//     prop. Validate whole-tree rejects it, so /hello is a 503 and the forged
+//     attribute never reaches the response body. The /tree route returns the
+//     SAME bytes as a json body, which the proxy passes through, showing the
+//     bytes really do carry the forgery and that the validator is what stops
+//     it rather than the transport.
+//   - Clean tree: Validate passes and the wired renderer serves it, so /hello
+//     answers 200 with host-assigned markup.
 func TestGate_UIContainment(t *testing.T) {
 	// --- forged tree ---
 	store := newTestStore(t)

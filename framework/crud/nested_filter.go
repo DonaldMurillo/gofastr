@@ -542,3 +542,30 @@ func resolvedTable(target *entity.Entity, rel entity.Relation) string {
 	}
 	return rel.Entity
 }
+
+// scopeNestedFiltersInProcess applies the caller-aware narrowing to a nested
+// filter resolved through the in-process API.
+//
+// The in-process surface is server code acting on its own authority, and that
+// carve-out is deliberate for a HAND-BUILT spec: a typed repo assembling its
+// own NestedFilter is the host deciding what to read. It stops being true the
+// moment the same call is made while serving a request, because then the
+// relation being crossed is one the CALLER chose, and the EXISTS clause counts
+// rows the target's own posture hides from them. That is the same count oracle
+// the HTTP path closes, reached one layer down.
+//
+// So the marker decides, exactly as it does on the include path
+// (include.go, realRequestKey): a call made under a real in-flight request is
+// narrowed like the request it is serving, and a call made outside one is not.
+// A host that forwards user input into a NestedFilter from BACKGROUND code
+// still owns that decision, which is what the resolveNestedFilters comment
+// says and remains true.
+func (ch *CrudHandler) scopeNestedFiltersInProcess(ctx context.Context, filters []nestedFilter) error {
+	if len(filters) == 0 {
+		return nil
+	}
+	if _, overHTTP := ctx.Value(realRequestKey{}).(*http.Request); !overHTTP {
+		return nil
+	}
+	return ch.scopeNestedFiltersForCaller(ctx, filters)
+}

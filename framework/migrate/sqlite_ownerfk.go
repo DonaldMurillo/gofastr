@@ -192,38 +192,6 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=off"); err != nil {
 		return fmt.Errorf("disable foreign keys for the rebuild: %w", err)
 	}
-	// legacy_alter_table=ON for the duration, because a VIEW that references
-	// the table stops the rebuild dead without it. Modern ALTER TABLE RENAME
-	// re-resolves every object that names the table, and at the point of the
-	// rename the original has already been dropped, so SQLite fails the whole
-	// transaction with `error in view <name>: no such table`. Reproduced with
-	// a one-line view over the rebuilt table.
-	//
-	// Legacy rename is the documented mode for exactly this procedure: it
-	// renames the table and leaves referencing objects alone, which is what we
-	// want since the replacement takes the original's name and the view
-	// resolves against it again afterwards.
-	if _, err := conn.ExecContext(ctx, "PRAGMA legacy_alter_table=ON"); err != nil {
-		return fmt.Errorf("enable legacy_alter_table for the rebuild: %w", err)
-	}
-	// Restoring the pragma is not optional: this connection goes back to the
-	// pool and would serve every later write with enforcement silently off,
-	// the exact condition v0.67 exists to end, reintroduced by the tool meant
-	// to fix it.
-	//
-	// Two things make that harder than it looks.
-	//
-	// The restore runs on a context that cannot be cancelled. Using the
-	// caller's ctx meant a cancelled repair skipped the restore entirely and
-	// handed the pool a connection with enforcement off, which is the worst
-	// outcome of the three and the easiest to trigger: cancel during the row
-	// copy.
-	//
-	// And sql.Conn.Close does NOT destroy a connection, it returns it to the
-	// pool. An earlier version of this comment claimed otherwise. Retiring a
-	// connection is what driver.ErrBadConn from Raw is for, so a connection
-	// whose pragma could not be restored is marked bad and never serves
-	// another query.
 	restore := func() error {
 		// legacy_alter_table goes back first and unconditionally: it changes
 		// how every later ALTER on this pooled connection behaves, and leaving
@@ -244,6 +212,46 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 				"the connection was retired so it cannot serve unenforced writes (retire: %v, close: %v)", err, bad, cerr)
 		}
 	}
+
+	// legacy_alter_table=ON for the duration, because a VIEW that references
+	// the table stops the rebuild dead without it. Modern ALTER TABLE RENAME
+	// re-resolves every object that names the table, and at the point of the
+	// rename the original has already been dropped, so SQLite fails the whole
+	// transaction with `error in view <name>: no such table`. Reproduced with
+	// a one-line view over the rebuilt table.
+	//
+	// Legacy rename is the documented mode for exactly this procedure: it
+	// renames the table and leaves referencing objects alone, which is what we
+	// want since the replacement takes the original's name and the view
+	// resolves against it again afterwards.
+	if _, err := conn.ExecContext(ctx, "PRAGMA legacy_alter_table=ON"); err != nil {
+		// restore is already defined above precisely for this: an early return
+		// here used to leave the pool a connection with foreign keys OFF,
+		// because the deferred cleanup only closes and Close returns the
+		// connection to the pool.
+		if rerr := restore(); rerr != nil {
+			return fmt.Errorf("enable legacy_alter_table for the rebuild: %w; additionally: %v", err, rerr)
+		}
+		return fmt.Errorf("enable legacy_alter_table for the rebuild: %w", err)
+	}
+	// Restoring the pragma is not optional: this connection goes back to the
+	// pool and would serve every later write with enforcement silently off,
+	// the exact condition v0.67 exists to end, reintroduced by the tool meant
+	// to fix it.
+	//
+	// Two things make that harder than it looks.
+	//
+	// The restore runs on a context that cannot be cancelled. Using the
+	// caller's ctx meant a cancelled repair skipped the restore entirely and
+	// handed the pool a connection with enforcement off, which is the worst
+	// outcome of the three and the easiest to trigger: cancel during the row
+	// copy.
+	//
+	// And sql.Conn.Close does NOT destroy a connection, it returns it to the
+	// pool. An earlier version of this comment claimed otherwise. Retiring a
+	// connection is what driver.ErrBadConn from Raw is for, so a connection
+	// whose pragma could not be restored is marked bad and never serves
+	// another query.
 
 	for _, s := range tables {
 		if err := rebuildWithoutOwnerFK(ctx, conn, s); err != nil {
@@ -463,9 +471,37 @@ func ddlWithoutForeignKeyOn(createSQL, ownerCol, newName string) (string, bool, 
 	return ddl, true, nil
 }
 
+// skipComment returns the index just past a comment beginning at i, or i when
+// no comment starts there. The comment half of skipInert, without the quoted
+// runs: callers that are looking for an identifier must not have it eaten.
+func skipComment(s string, i int) int {
+	if i >= len(s) {
+		return i
+	}
+	if s[i] == '-' && i+1 < len(s) && s[i+1] == '-' {
+		if nl := strings.IndexByte(s[i:], '\n'); nl >= 0 {
+			return i + nl
+		}
+		return len(s)
+	}
+	if s[i] == '/' && i+1 < len(s) && s[i+1] == '*' {
+		if end := strings.Index(s[i+2:], "*/"); end >= 0 {
+			return i + 2 + end + 2
+		}
+		return len(s)
+	}
+	return i
+}
+
 // stripLeadingComments removes comment runs from the front of a column or
 // constraint definition, so the identifier checks below see the definition
 // itself.
+//
+// Only COMMENTS are skipped, never a quoted run. skipInert treats a quoted
+// identifier as inert too, and at offset zero the first token is the column
+// NAME, so `"user_id" TEXT REFERENCES users(id)` was stripped down to
+// ` TEXT REFERENCES …`; the matcher then compared TEXT against the owner column,
+// found nothing, and the repair refused a table it can perfectly well rebuild.
 //
 // Splitting on top-level commas leaves a comment that preceded a definition
 // attached to the FRONT of it, and both callers identify a definition by its
@@ -476,7 +512,7 @@ func ddlWithoutForeignKeyOn(createSQL, ownerCol, newName string) (string, bool, 
 func stripLeadingComments(item string) string {
 	for {
 		trimmed := strings.TrimLeft(item, " \t\n\r")
-		next := skipInert(trimmed, 0)
+		next := skipComment(trimmed, 0)
 		if next == 0 || trimmed == "" {
 			return trimmed
 		}
@@ -556,21 +592,33 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	// stored a different default than the one it was asked to preserve.
 	rest = strings.TrimLeft(rest, " \t\n\r")
 	for {
-		up := strings.ToUpper(rest)
+		// Matched on TOKENS, never on a literal prefix with one space in it.
+		// SQLite stores the CREATE TABLE text verbatim, so a hand-written
+		// migration may wrap a modifier across lines: `ON DELETE\n\t\tCASCADE`
+		// matched nothing, the loop consumed nothing, and the rebuilt column
+		// kept `ON DELETE CASCADE` with no REFERENCES clause in front of it,
+		// which SQLite rejects. The table survived, so this was a refusal, but
+		// the repair was unavailable for that table.
+		f := strings.Fields(strings.ToUpper(rest))
+		tok := func(i int) string {
+			if i < len(f) {
+				return f[i]
+			}
+			return ""
+		}
 		var n int // words to consume
 		switch {
-		case strings.HasPrefix(up, "ON DELETE "), strings.HasPrefix(up, "ON UPDATE "):
+		case tok(0) == "ON" && (tok(1) == "DELETE" || tok(1) == "UPDATE"):
 			// "ON", the action word, then one or two words of action.
-			f := strings.Fields(up)
 			n = 3
-			if len(f) > 2 && (f[2] == "SET" || f[2] == "NO") {
+			if tok(2) == "SET" || tok(2) == "NO" {
 				n = 4
 			}
-		case strings.HasPrefix(up, "NOT DEFERRABLE"):
+		case tok(0) == "NOT" && tok(1) == "DEFERRABLE":
 			n = 2
-		case strings.HasPrefix(up, "DEFERRABLE"):
+		case tok(0) == "DEFERRABLE":
 			n = 1
-		case strings.HasPrefix(up, "INITIALLY "), strings.HasPrefix(up, "MATCH "):
+		case tok(0) == "INITIALLY", tok(0) == "MATCH":
 			n = 2
 		default:
 			n = 0
