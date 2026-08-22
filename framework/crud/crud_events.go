@@ -180,6 +180,18 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		tenantScope := ch.Entity.Config.Scope.MultiTenant
 		tenantID := tenant.GetTenantID(r.Context())
 		ownerScope := ch.Entity.Config.Scope.OwnerField != ""
+		// The read scope is a property of THIS subscriber, decided once from
+		// the subscribing request rather than per event: the emitter's context
+		// belongs to whoever wrote the row, not to whoever is listening.
+		//
+		// Without this the feed was a second door to rows every other surface
+		// hides. A caller who gets 404 from GET /<entity>/<id> and an empty
+		// list from GET /<entity> received the full draft record here the
+		// moment an editor saved it, which is the existence disclosure the
+		// 404 exists to prevent. The comment above about a real-time read of
+		// all writes is the same argument one level down: entity-level
+		// posture was enforced, row-level was not.
+		readScoped := !readScopeUnrestricted(r.Context(), ch.Entity)
 
 		buf := make(chan event.Event, 32)
 
@@ -195,6 +207,9 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 				return nil
 			}
 			if ownerScope && ownerID != nil && fmt.Sprint(data[eventKeyOwnerID]) != fmt.Sprint(ownerID) {
+				return nil
+			}
+			if readScoped && !ch.readScopeAllowsRecord(data[eventKeyRecord]) {
 				return nil
 			}
 			select {

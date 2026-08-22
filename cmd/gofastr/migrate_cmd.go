@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
+	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -45,15 +46,16 @@ func runMigrate(args []string) {
 		// migration instead. See framework/ARCHITECTURE.md.
 		fail("`gofastr migrate diff` has been removed.")
 		info("It applied a blueprint directly onto a live DB. Use `gofastr migrate generate <name>` to emit a reviewable migration, then `gofastr migrate up`. See `gofastr docs migrations`.")
-		osExit(1)
 	case "generate":
 		runMigrateGenerate(rest)
 	case "force":
 		runMigrateForce(rest)
+	case "repair":
+		runMigrateRepair(rest)
 	default:
 		fail("Unknown migrate subcommand: %q", subcmd)
-		info("Available: up, down, status, generate, force")
-		info("Usage: gofastr migrate [up|down|status|generate|force]")
+		info("Available: up, down, status, generate, force, repair")
+		info("Usage: gofastr migrate [up|down|status|generate|force|repair]")
 		osExit(1)
 	}
 }
@@ -101,6 +103,111 @@ func runMigrateForce(args []string) {
 		osExit(1)
 	}
 	success("Tracking table reconciled for version %d", version)
+}
+
+// runMigrateRepair reports — and with --apply rebuilds — SQLite tables still
+// carrying the pre-v0.67 foreign key on an entity's owner column.
+//
+//	gofastr migrate repair --from=<blueprint.yml> [--apply]
+//
+// The scan needs each entity's owner column, so it reads the blueprint the
+// same way `migrate generate` does. Without --apply it prints each finding
+// and exits non-zero (0 when the database is clean), so a release check can
+// gate on it. With --apply it names every table it is about to rebuild
+// before rewriting anything, repairs, then re-scans to confirm the database
+// is clean — a repair that reports success while leaving a key behind is
+// worse than no repair, because the operator stops looking.
+func runMigrateRepair(args []string) {
+	fmt.Printf("\n  %s\n\n", bold("Scanning for stale owner-column foreign keys..."))
+
+	from := ""
+	for _, a := range args {
+		if strings.HasPrefix(a, "--from=") {
+			from = strings.TrimPrefix(a, "--from=")
+		}
+	}
+	if from == "" {
+		fail("Usage: gofastr migrate repair --from=<blueprint.yml> [--apply] [--db-url=<url>]")
+		info("The scan reads the entity declarations to know each table's owner column.")
+		osExit(1)
+	}
+	dbURL := getMigrateDBURL(args)
+	if dbURL == "" {
+		fail("database URL is required; set DATABASE_URL or pass --db-url=<url>")
+		osExit(1)
+	}
+	driver := getMigrateDriver(args)
+	if err := ensureDriverRegistered(driver); err != nil {
+		fail("%v", err)
+		osExit(1)
+	}
+	db, err := sql.Open(driver, dbURL)
+	if err != nil {
+		fail("%v", err)
+		osExit(1)
+	}
+	defer func() { _ = db.Close() }()
+
+	reg := framework.NewRegistry()
+	bp, err := loadBlueprint(from)
+	if err != nil {
+		fail("Failed to load blueprint %s: %v", from, err)
+		osExit(1)
+	}
+	if len(bp.Entities) == 0 {
+		fail("Blueprint %s declares no entities.", from)
+		osExit(1)
+	}
+	for _, decl := range bp.Entities {
+		cfg, err := decl.Config()
+		if err != nil {
+			fail("entity %q: %v", decl.Name, err)
+			osExit(1)
+		}
+		if err := reg.Register(framework.Define(decl.Name, cfg)); err != nil {
+			fail("entity %q: %v", decl.Name, err)
+			osExit(1)
+		}
+	}
+
+	stale, err := fwmigrate.FindStaleOwnerForeignKeys(context.Background(), db, reg)
+	if err != nil {
+		fail("Scan failed: %v", err)
+		osExit(1)
+	}
+	if len(stale) == 0 {
+		success("No stale owner-column foreign keys")
+		return
+	}
+	for _, s := range stale {
+		fmt.Printf("    %s %s\n", yellow("⚠"), s)
+	}
+
+	if !hasFlag(args, "--apply") {
+		info("Report only. Re-run with --apply to rebuild the listed tables without the stale key.")
+		info("The rebuild keeps every row, column, default, index and other constraint.")
+		info("The scan reads the schema only. A key whose referenced table really does hold the stamped owner ids is satisfiable, and --apply would drop it. Check the listed tables first.")
+		osExit(1)
+	}
+
+	fmt.Printf("\n  %s\n\n", bold("Rebuilding..."))
+	for _, s := range stale {
+		fmt.Printf("    %s rewriting %s without the stale key\n", yellow("→"), s.Table)
+	}
+	if err := fwmigrate.RepairStaleOwnerForeignKeys(context.Background(), db, stale); err != nil {
+		fail("Repair failed: %v", err)
+		osExit(1)
+	}
+	after, err := fwmigrate.FindStaleOwnerForeignKeys(context.Background(), db, reg)
+	if err != nil {
+		fail("Re-scan failed after repair: %v", err)
+		osExit(1)
+	}
+	if len(after) > 0 {
+		fail("Repair reported success but the re-scan still finds: %v", after)
+		osExit(1)
+	}
+	success("Rebuilt %d table(s); re-scan clean", len(stale))
 }
 
 func runMigrateUp(args []string) {

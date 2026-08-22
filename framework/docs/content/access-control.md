@@ -58,6 +58,14 @@ Update, Delete, the batch/stream variants, and the `_events` SSE feed. The
 roles + policy must be in the request context first; mount
 `framework.AccessMiddleware` (above) ahead of the CRUD routes.
 
+`Access` decides **whether** a caller may read the entity at all. **Which
+rows** they see is a second question with its own knob: `Exposure.ReadScope`
+declares row predicates on the entity's own columns (anonymous visitors see
+`status=published`; a caller holding the `Unrestricted` permission, or,
+when it is empty, any signed-in caller, sees every row). The two compose:
+`Access.Read` gates the route, then `ReadScope` narrows the rows. See
+[entity-declarations](entity-declarations.md) → "Row-level read scoping".
+
 The generated OpenAPI spec (`/openapi.json`) advertises **401** (authentication
 required) and **403** (authenticated but forbidden) on every operation of an
 RBAC-gated entity, including the `_batch` and `_events` endpoints. This means
@@ -293,6 +301,12 @@ elsewhere:
 - **Owner scoping**: set `Scope.OwnerField` so auto-CRUD only
   ever reads/writes rows owned by the caller. See
   [entity-declarations.md](entity-declarations.md) → "Per-user scoping".
+- **Row-level read scoping**: `Exposure.ReadScope` filters reads by
+  predicates on the entity's own columns, lifting the filter for a caller
+  holding the declared `Unrestricted` permission. It narrows WHICH rows a
+  read returns (List, Get, count, include, nested filters) rather than
+  refusing. See [entity-declarations.md](entity-declarations.md) →
+  "Row-level read scoping".
 - **`BeforeCreate` / `BeforeUpdate` / `BeforeDelete` hooks**: these run
   with the candidate record (and, for updates, the patch) in hand, so
   they can deny per-row. Return an error from the hook to reject. This is
@@ -338,15 +352,15 @@ NOT inherit that automatically, and both have to check for themselves:
      caller with no owner is *none*: a 200 with an empty relation rather than
      a refusal. Soft-deleted rows never appear.
    - **`?rel.field=`** compiles to an `EXISTS` clause that counts rows without
-     selecting them, so it cannot scope them to you. It therefore answers 403
-     both when you may not read the target AND whenever the target declares
-     `Scope.OwnerField` or `Scope.MultiTenant`, **even if you can read it**,
-     because the resulting row count would otherwise confirm values in other
-     owners' or tenants' rows one guess at a time. The exception is a caller
-     holding a cross-owner or cross-tenant grant, who can already list the
-     target wholesale and learns nothing from the count. To filter by a scoped
-     entity's field, query that entity's own list route and filter the parent
-     by the ids it returns.
+     selecting them, so it cannot narrow them by selecting. It answers 403 when
+     you may not read the target, and for a target you may read it carries your
+     owner and tenant predicates into the subquery, so it counts exactly the
+     rows that target's own list route would serve you, and no others. A guess
+     that matches another owner's row reads the same as a guess that matches
+     nothing. A caller holding a cross-owner or cross-tenant grant gets no
+     predicate for that axis, since they can already list the target wholesale.
+     The axes are independent: a cross-owner grant narrows nothing on the
+     tenant axis, and vice versa.
 
 Use `CrudHandler.CanReadScoped(ctx)`. It answers the whole read posture as a
 boolean, with no HTTP response written:

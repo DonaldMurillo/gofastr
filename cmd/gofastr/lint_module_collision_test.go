@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -53,24 +54,38 @@ func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 	}
 }
 
-// Every blueprint shipped in examples/ is expected to collide: they are
-// generated inside this module, where the local package legitimately wins.
-// Pinning that keeps the lint honest about which case it is warning on: if a
-// shipped example ever stops colliding, the warning a copying reader depends on
-// is no longer being exercised by anything.
+// Every blueprint shipped in examples/ declares an app.module under the
+// framework's own path, so every one of them is a fixture for this rule —
+// asserting against one, or against "at least one", leaves the rest untested
+// and lets a silent change to any of them go unnoticed. Pinning all of them
+// keeps the lint honest about which case it warns on: a shipped example that
+// stops colliding is a reader copying it out of the repo into a build error the
+// warning no longer covers.
 func TestShippedExampleBlueprintsAreTheCollidingCase(t *testing.T) {
-	paths := exampleBlueprints(t)
-	colliding := 0
-	for _, path := range paths {
-		bp, err := loadBlueprint(path)
-		if err != nil {
-			t.Fatalf("load %s: %v", path, err)
-		}
-		if len(lintModuleCollision(bp)) > 0 {
-			colliding++
-		}
+	// Globbed here rather than through exampleBlueprints, which SKIPS on an
+	// empty match. A skip reads as a pass, so a broken glob would have retired
+	// this rule's entire fixture set silently. These blueprints are committed;
+	// finding none of them is a failure, not a reason to stand down.
+	paths, err := filepath.Glob("../../examples/*/gofastr.yml")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
 	}
-	if colliding == 0 {
-		t.Fatalf("no shipped blueprint declares a framework-subpath module — the copy-out-of-repo warning is unexercised across %d examples", len(paths))
+	if len(paths) == 0 {
+		t.Fatal("no shipped blueprints found: this rule has no fixtures and proves nothing")
+	}
+	for _, path := range paths {
+		bp, lerr := loadBlueprint(path)
+		if lerr != nil {
+			t.Fatalf("load %s: %v", path, lerr)
+		}
+		findings := lintModuleCollision(bp)
+		if len(findings) != 1 {
+			t.Errorf("%s declares module %q and got %d findings, want 1 — the copy-out-of-repo warning is unexercised for this example",
+				path, bp.App.Module, len(findings))
+			continue
+		}
+		if msg := findings[0].Message(); !strings.Contains(msg, bp.App.Module) {
+			t.Errorf("%s: finding must quote the offending path %q:\n%s", path, bp.App.Module, msg)
+		}
 	}
 }
