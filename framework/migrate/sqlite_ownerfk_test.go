@@ -823,6 +823,18 @@ func TestRepairHandlesAwkwardButLegalDDL(t *testing.T) {
 		repairAndAssertCreatable(t, db)
 	})
 
+	t.Run("a comment between two of the key's modifiers", func(t *testing.T) {
+		// The pre-loop trim was comment-aware but the in-loop one was not, so
+		// a comment AFTER the first modifier stopped the loop dead and left
+		// the second stranded without its REFERENCES clause.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT REFERENCES users(id) ON DELETE CASCADE -- why\n\t\tON UPDATE CASCADE,\n\ttitle TEXT\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+
 	t.Run("MATCH taking a quoted name with a space", func(t *testing.T) {
 		// MATCH takes a NAME, and a name may be quoted and hold spaces.
 		// Consuming its two words by whitespace stopped inside the quotes and

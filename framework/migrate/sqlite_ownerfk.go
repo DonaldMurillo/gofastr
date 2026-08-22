@@ -707,7 +707,12 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 		if n == 0 {
 			break
 		}
-		rest = strings.TrimLeft(consumeWords(rest, n), " \t\n\r")
+		// Comment-aware between modifiers too, not only before the first one.
+		// `ON DELETE CASCADE -- why\n ON UPDATE CASCADE` left the comment at
+		// the head, the next iteration read `--` as its token, matched
+		// nothing, and broke — stranding ON UPDATE CASCADE with no REFERENCES
+		// clause in front of it, which SQLite rejects.
+		rest = trimLeadingInert(consumeWords(rest, n))
 	}
 	rest = strings.TrimRight(rest, " \t\n\r")
 	if rest != "" {
