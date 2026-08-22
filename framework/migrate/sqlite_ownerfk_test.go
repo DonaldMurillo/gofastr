@@ -744,6 +744,22 @@ func TestRepairHandlesAwkwardButLegalDDL(t *testing.T) {
 		repairAndAssertCreatable(t, db)
 	})
 
+	t.Run("MATCH taking a quoted name with a space", func(t *testing.T) {
+		// MATCH takes a NAME, and a name may be quoted and hold spaces.
+		// Consuming its two words by whitespace stopped inside the quotes and
+		// left a stray `mode"` in the rebuilt DDL, so SQLite rejected the
+		// rebuild and the table kept its contradictory key.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			`CREATE TABLE tasks (
+				id TEXT PRIMARY KEY,
+				user_id TEXT REFERENCES users(id) MATCH "legacy mode" ON DELETE CASCADE,
+				title TEXT
+			)`,
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
 }
 
 // repairAndAssertCreatable runs the repair and checks the thing that matters:

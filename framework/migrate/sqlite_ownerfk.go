@@ -640,16 +640,39 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 // cannot alter whitespace inside what is left, which matters because what is
 // left may be a quoted DEFAULT or CHECK whose spacing is part of the value.
 func consumeWords(s string, n int) string {
+	space := func(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\r' }
 	i := 0
 	for w := 0; w < n; w++ {
-		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+		for i < len(s) && space(s[i]) {
 			i++
 		}
-		for i < len(s) && s[i] != ' ' && s[i] != '\t' && s[i] != '\n' && s[i] != '\r' {
+		for i < len(s) && !space(s[i]) {
+			// A quoted identifier is ONE word even when it holds spaces.
+			// MATCH takes a name, and `MATCH "legacy mode"` consumed by byte
+			// stopped after `"legacy`, so the rebuilt DDL carried a stray
+			// `mode"` and SQLite rejected the whole rebuild.
+			if j := skipQuoted(s, i); j > i {
+				i = j
+				continue
+			}
 			i++
 		}
 	}
 	return s[i:]
+}
+
+// skipQuoted returns the index just past the quoted run opening at i, or i
+// when s[i] does not open one. Unlike skipInert it does not treat `--` or
+// `/*` as a comment: inside a word those are part of the word.
+func skipQuoted(s string, i int) int {
+	if i >= len(s) {
+		return i
+	}
+	switch s[i] {
+	case '"', '\'', '`', '[':
+		return skipInert(s, i)
+	}
+	return i
 }
 
 // unquoteIdent strips the four quoting styles SQLite accepts on an identifier.
