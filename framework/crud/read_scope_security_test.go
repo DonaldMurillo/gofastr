@@ -702,6 +702,9 @@ func TestReadScopeAllowsRecordEveryBranch(t *testing.T) {
 	}
 	pub := map[string]any{"id": "n1", "status": "published"}
 	draft := map[string]any{"id": "n2", "status": "draft"}
+	// A nullable scoped column is declarable: registration checks the column
+	// exists and is not Hidden, not that it is NOT NULL.
+	nullStatus := map[string]any{"id": "n3", "status": nil}
 
 	cases := []struct {
 		name   string
@@ -723,6 +726,17 @@ func TestReadScopeAllowsRecordEveryBranch(t *testing.T) {
 			entity.RowPredicate{Field: "status", Value: "published"},
 			entity.RowPredicate{Field: "user_id", Value: "u1"},
 		), pub, false},
+		// A NULL scoped column is outside the scope on every operator,
+		// because that is what SQL does with it: `status <> 'draft'` is
+		// UNKNOWN for a NULL status, so the list, the count, and the get all
+		// omit the row. The evaluator rendered NULL as "<nil>", which is
+		// unequal to any declared value, so neq and not_in ADMITTED it and
+		// the SSE feed announced a row GET answers 404 for. eq and in were
+		// already consistent; these four pin all of them together.
+		{"neq withholds a NULL column", mk(entity.RowPredicate{Field: "status", Op: "neq", Value: "draft"}), nullStatus, false},
+		{"not_in withholds a NULL column", mk(entity.RowPredicate{Field: "status", Op: "not_in", Values: []string{"draft"}}), nullStatus, false},
+		{"eq withholds a NULL column", mk(entity.RowPredicate{Field: "status", Op: "eq", Value: "published"}), nullStatus, false},
+		{"in withholds a NULL column", mk(entity.RowPredicate{Field: "status", Op: "in", Values: []string{"published"}}), nullStatus, false},
 		// Fail-closed cases.
 		{"record is not a map", mk(entity.RowPredicate{Field: "status", Value: "published"}), "not-a-map", false},
 		{"record omits the column", mk(entity.RowPredicate{Field: "status", Value: "published"}), map[string]any{"id": "n3"}, false},

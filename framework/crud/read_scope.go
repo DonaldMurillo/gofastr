@@ -260,6 +260,15 @@ func (ch *CrudHandler) readScopeAllowsRecord(record any) bool {
 		if !found {
 			return false
 		}
+		// NULL is outside the scope on EVERY operator, because that is what
+		// SQL does: `col <> 'draft'` and `col NOT IN ('draft')` are UNKNOWN
+		// for a NULL col, so the row is excluded from the list, the count,
+		// and the get. Without this, fmt.Sprint rendered NULL as "<nil>",
+		// which is unequal to any declared value, so neq and not_in ADMITTED
+		// the row and the SSE feed announced a row that GET answers 404 for.
+		if v == nil {
+			return false
+		}
 		// fmt.Sprint on both sides, matching the owner filter above it: the
 		// same value arrives as int64 locally and float64 after the fanout
 		// bridge's JSON round trip, and a typed comparison would drop every
