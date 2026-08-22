@@ -34,7 +34,7 @@ GOFASTR_DEV=1 is injected so the app wires livereload.
 }
 
 func printMigrateUsage() {
-	fmt.Println(`Usage: gofastr migrate [up|down|status|generate|force] [flags]
+	fmt.Println(`Usage: gofastr migrate [up|down|status|generate|force|repair] [flags]
 
 Run database migrations. The subcommand defaults to 'up'.
 
@@ -43,6 +43,7 @@ Run database migrations. The subcommand defaults to 'up'.
   status   show applied/pending migrations
   generate <name>  emit a reviewable migration from a blueprint (--from=<yml>)
   force <V>        mark version V applied without running its SQL (--not-applied removes it)
+  repair           report stale owner-column foreign keys on SQLite (--from=<yml>, --apply rebuilds)
 
 Common flags: --db-url=<path> --db=<sqlite3|postgres|mysql> --group=<name> --create-db`)
 }

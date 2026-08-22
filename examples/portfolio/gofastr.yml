@@ -28,14 +28,14 @@ entities:
     # Public portfolio content. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # read_scope narrows the anonymous read to published rows. A blank
+    # unrestricted lifts the filter for any caller with a session, which is
+    # "signed in", not an editor role; writes stay permission-gated below.
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
     access:
       read:
       create: content:write
@@ -102,14 +102,6 @@ entities:
     # Public portfolio content. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
     access:
       read:
       create: content:write
@@ -141,15 +133,8 @@ entities:
     crud: true
     # Public portfolio content. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
-    # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # default and a screen may not render rows the API refuses. Join rows
+    # carry no draft flag, so there is nothing to filter.
     access:
       read:
       create: content:write
@@ -182,15 +167,9 @@ entities:
     crud: true
     # Public portfolio content. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
-    # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # default and a screen may not render rows the API refuses. Every
+    # status value here is presentable portfolio work, so there is no
+    # unpublished row to filter.
     access:
       read:
       create: content:write
@@ -258,14 +237,14 @@ entities:
     # Public portfolio content. Reads are opened with a blank `read:`; every write still
     # requires the permission below, because auto-CRUD is secure by
     # default and a screen may not render rows the API refuses.
-    # KNOWN EXPOSURE: a blank `read:` opens the LIST route to every anonymous
-    # caller, and a posture is all-rows or no-rows; the framework has no
-    # row-level read filter, so an entity cannot say "anonymous sees
-    # published rows only". Where the entity below carries a draft, approved
-    # or is_public flag, those rows are served anonymously too, through both
-    # the API and any screen. That is tolerable in a demo whose data is
-    # fixtures; do NOT copy it for real content. Gate reads behind a
-    # permission and serve a separate public projection instead.
+    # read_scope holds the anonymous read to approved testimonials (approved
+    # defaults false, so a fresh submission is invisible until reviewed).
+    # A blank unrestricted lifts the filter for any signed-in caller.
+    read_scope:
+      filter:
+        - field: approved
+          op: eq
+          value: "true"
     access:
       read:
       create: content:write
@@ -557,6 +536,14 @@ seed:
         status: published
         category: Engineering
         featured: false
+      # A draft row so the read_scope posture is visible: anonymous callers
+      # must not see this post, signed-in ones can finish editing it.
+      - title: "Draft: Shipping Row-Level Read Scopes"
+        slug: draft-row-level-read-scopes
+        body: Work in progress. Covers the read_scope declaration and how each predicate binds.
+        status: draft
+        category: Engineering
+        featured: false
   - entity: projects
     rows:
       - title: GoFastr Web Framework
@@ -595,6 +582,14 @@ seed:
         rating: 5
         featured: true
         approved: true
+      # Unapproved on purpose (approved defaults false): an anonymous caller
+      # must not see it until someone runs the approve_testimonial endpoint.
+      - author_name: Priya Natarajan
+        author_title: Engineering Lead
+        author_company: StartupCo
+        quote: Reviewed the draft migration plan; approving once the rollout finishes.
+        rating: 4
+        featured: false
       - author_name: Mark Wilson
         author_title: Product Manager
         author_company: BigCorp

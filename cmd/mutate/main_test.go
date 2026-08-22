@@ -318,3 +318,91 @@ func TestRestoreSetIsSafeUnderConcurrentUse(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// A wildcard pattern makes `go list` print one record per package. The old
+// parser took line 0 as the directory and every later line as a file name, so
+// a second package's directory path became a "file" and the run died with
+// `read <dir>/<abs path>` — an error that names neither the wildcard nor what
+// it broke. This tool rewrites source files in place, so a mis-parsed file set
+// is the one failure it must refuse before doing any work.
+func TestPackageFilesRejectsAMultiPackagePattern(t *testing.T) {
+	_, _, err := packageFiles("github.com/DonaldMurillo/gofastr/cmd/...")
+	if err == nil {
+		t.Fatal("a wildcard matching several packages must be refused, not parsed")
+	}
+	for _, want := range []string{"matches", "one package at a time"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error must say why the pattern is refused, missing %q: %v", want, err)
+		}
+	}
+}
+
+// The single-package path still resolves, and the directory it returns is a
+// directory rather than the first source file.
+func TestPackageFilesResolvesOnePackage(t *testing.T) {
+	dir, files, err := packageFiles("github.com/DonaldMurillo/gofastr/cmd/mutate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+		t.Fatalf("dir = %q, want an existing directory (err %v)", dir, statErr)
+	}
+	if len(files) == 0 {
+		t.Fatal("no Go files returned")
+	}
+	for _, f := range files {
+		if filepath.IsAbs(f) {
+			t.Errorf("file %q is absolute — that is a package directory read as a file name", f)
+		}
+		if !strings.HasSuffix(f, ".go") {
+			t.Errorf("file %q is not a Go file", f)
+		}
+	}
+}
+
+// `go list -f` prints GoFiles as raw newline-delimited values, so a Go file
+// whose NAME contains a newline split into two bogus entries and the tool then
+// read and wrote paths that are not in the package. It writes the files it is
+// handed, so acting on a mis-parsed set is the one thing it must never do.
+//
+// Only the filename half of this is reachable: the go command refuses a
+// package directory containing a newline outright ("invalid package
+// directory"), so Dir can never carry one. It reports such a FILENAME without
+// complaint, which is what makes structured output necessary rather than
+// merely tidier.
+func TestPackageFilesHandlesANewlineInAFilename(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Skipf("the filesystem refuses this name: %v", err)
+		}
+	}
+	write("go.mod", "module oddmod\n\ngo 1.27.0\n")
+	write("a.go", "package odd\n\nfunc A() int { return 1 }\n")
+	write("b\nc.go", "package odd\n\nfunc B() int { return 2 }\n")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	gotDir, files, err := packageFiles(".")
+	if err != nil {
+		t.Fatalf("packageFiles: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("files = %q, want the two real files: the newline split one name into two", files)
+	}
+	// The decisive check: every returned name must be a file that exists in
+	// the reported directory. A line-wise parse yields names that do not, and
+	// the tool would read and write them.
+	for _, f := range files {
+		if _, err := os.Stat(filepath.Join(gotDir, f)); err != nil {
+			t.Errorf("returned file %q does not exist under %q: the tool would act on a path outside the package", f, gotDir)
+		}
+	}
+}

@@ -66,9 +66,11 @@ each command to the doc that covers it.
 
 ## Ship
 
-- `gofastr migrate up|down|status|generate|force`: versioned
+- `gofastr migrate up|down|status|generate|force|repair`: versioned
   migrations, advisory-locked, checksum- and dirty-state-guarded
-  ([migrations](migrations.md)).
+  ([migrations](migrations.md)); `repair` rebuilds SQLite tables carrying
+  the stale pre-v0.67 owner-column key
+  ([SQLite driver](sqlite-driver.md)).
 - `gofastr generate cli`: a customer-facing terminal client for your
   API, with scoped API-token auth ([app-cli](app-cli.md)).
 - `gofastr generate sdk`: Go + JS/TS clients your app can host behind

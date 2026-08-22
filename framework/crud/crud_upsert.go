@@ -216,6 +216,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				Where(ch.PrimaryKey+" = $1", body[ch.PrimaryKey])
 			ch.ApplyTenantScope(selQB, req)
 			ch.ApplyOwnerScope(selQB, req)
+			// This fallback is a READ (it hands the row to the caller), so
+			// it carries the read scope: a caller outside the scope must not
+			// read back a row the write produced. The upsert WRITE above
+			// deliberately does not carry it; see ApplyReadScope.
+			ch.ApplyReadScope(selQB, req)
 			ch.ApplySoftDeleteFilter(selQB, req)
 			selSQL, selArgs := selQB.Build()
 			sel := ch.DB.QueryRowContext(ctx, selSQL, selArgs...)

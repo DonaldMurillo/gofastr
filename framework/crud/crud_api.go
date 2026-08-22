@@ -135,6 +135,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
+	ch.ApplyReadScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
 
 	sqlStr, args := qb.Build()
@@ -197,6 +198,9 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err != nil {
 		return nil, err
 	}
+	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+		return nil, err
+	}
 	// Search: fail loud when Search is set on an entity without SearchFields.
 	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
 		return nil, fmt.Errorf("ListAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
@@ -208,6 +212,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
+	ch.ApplyReadScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
@@ -356,6 +361,9 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if err != nil {
 		return 0, err
 	}
+	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+		return 0, err
+	}
 	// Search: fail loud when Search is set on an entity without SearchFields.
 	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
 		return 0, fmt.Errorf("CountAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
@@ -366,6 +374,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScopeCount(cb, req)
 	ch.ApplyOwnerScopeCount(cb, req)
+	ch.ApplyReadScopeCount(cb, req)
 	ch.ApplySoftDeleteFilterCount(cb, req)
 	applyNestedFilters(
 		func(sql string, args ...any) { cb.Where(sql, args...) },

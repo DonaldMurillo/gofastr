@@ -524,8 +524,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		// Filtering across a relation reads that relation's rows, so its
 		// entity's posture applies, without this the row count is an oracle
-		// for values in a column the related entity refuses to serve.
-		if err := ch.checkNestedFiltersReadable(r.Context(), nested); err != nil {
+		// for values in a column the related entity refuses to serve. This
+		// call both refuses the targets the caller may not read and narrows
+		// the ones they may to their own rows. The `nested` slice is mutated
+		// in place, and every downstream sink (count, data, cursor, stream)
+		// reads the same slice.
+		if err := ch.scopeNestedFiltersForCaller(r.Context(), nested); err != nil {
 			writeIncludeError(w, "list", err)
 			return
 		}
@@ -632,6 +636,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToCountQuery(countQb, filters)
 		ch.ApplyTenantScopeCount(countQb, r)
 		ch.ApplyOwnerScopeCount(countQb, r)
+		ch.ApplyReadScopeCount(countQb, r)
 		ch.applySoftDeleteFilterCountQ(countQb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
@@ -653,6 +658,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplyToQuery(qb, filters)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
+		ch.ApplyReadScope(qb, r)
 		ch.applySoftDeleteFilterQ(qb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
@@ -867,6 +873,10 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		qb.Where(ch.PrimaryKey+" = $1", id)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
+		// A row outside the read scope must 404, not 403: the filter lives
+		// in the WHERE clause, so the row is simply not found: the caller
+		// must not learn it exists. Same shape as the owner-scope path.
+		ch.ApplyReadScope(qb, r)
 		ch.ApplySoftDeleteFilter(qb, r)
 		for _, c := range getPayload.Where {
 			qb.Where(c.SQL, c.Args...)

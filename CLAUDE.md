@@ -104,11 +104,24 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
     first page, so a multi-page review (exactly the miss this rule exists to
     catch) looks empty. The line-level review lives there, NOT in
     `repos/DonaldMurillo/gofastr/issues/<N>/comments`, which returns only
-    issue-level comments. A review bot showing `pass`
+    issue-level comments. Read `/pulls/<N>/reviews` too, and read the BODY,
+    not just its "Actionable comments posted" count: findings the bot could
+    not attach to a line sit there under "Outside diff range comments", and
+    PR #206 hid five that way, including a Major on the change set's own
+    anti-vacuity gate. A review bot showing `pass`
     in `gh pr checks` means it RAN, not that it found nothing: PR #198
     showed `CodeRabbit pass` while holding 12 unread comments, six of
     them Major. Triage every finding on merit and say which you rejected
     and why. Silence is not triage.
+
+11. **Prove the guard, don't reason about it.** A condition you argued was
+    correct is untested until you have watched it fail. Break it, run the
+    test, put it back. v0.67.0's review found three guards written that same
+    week that nobody had made fail: a DSN check that read a bare key as
+    consent nobody gave, a scope exemption where a cross-tenant grant cleared
+    an owner refusal, and an anti-vacuity gate that skipped its own assertion
+    on a populated table. Each took one mutation to expose and none had cost
+    more than a minute to prove.
 
 ## Common operations
 

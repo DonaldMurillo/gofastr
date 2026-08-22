@@ -299,10 +299,17 @@ func TestIncludeGateAppliesToReadOneAndCursor(t *testing.T) {
 
 // An owner-scoped target is the case the first version of this gate missed.
 // It used a narrow predicate that skipped owner and tenant, on the reasoning
-// that the include path scopes rows per node, true there, false here:
-// buildExistsSubquery emits no owner, tenant, or soft-delete predicate, so
-// `?rel.field=` counts across every owner's rows while the target's own route
-// answers 401.
+// that the include path scopes rows per node. That was true there and false
+// here, because buildExistsSubquery emitted no owner or tenant predicate at
+// all, so `?rel.field=` counted across every owner's rows while the target's
+// own route answered 401.
+//
+// The subquery now carries the caller's owner predicate, so a signed-in owner
+// gets 200 with only their own rows counted rather than a blanket 403. The
+// property under test is unchanged and is the only one that matters: a guess
+// that hits another owner's row must be indistinguishable from a guess that
+// hits nothing. Status alone is too weak an assertion for that now, since both
+// answers are 200 — the BODIES have to match too.
 func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -339,6 +346,14 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	if _, err := app.DB.Exec(`INSERT INTO notes (id, body, owner_id, board_id) VALUES ('n1','someone secret note','u-other','b1')`); err != nil {
 		t.Fatal(err)
 	}
+	// A note the SIGNED-IN caller does own, on the same board. Without it the
+	// narrowed subquery matches nothing for u-self whatever it does, so the
+	// hit/miss equality below would hold just as well for a subquery that is
+	// inert, or one that collapsed to `1 = 0` for every caller. The positive
+	// control is what tells those apart from real narrowing.
+	if _, err := app.DB.Exec(`INSERT INTO notes (id, body, owner_id, board_id) VALUES ('n2','my own note','u-self','b1')`); err != nil {
+		t.Fatal(err)
+	}
 
 	if got := ta.Get("/api/notes").Status(); got != http.StatusUnauthorized && got != http.StatusForbidden {
 		t.Fatalf("GET /api/notes = %d, want 401/403 — the owner-scoped baseline this test rests on", got)
@@ -346,14 +361,13 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 
 	// A right guess and a wrong one must be indistinguishable, and that has to
 	// hold for a SIGNED-IN caller too, not just an anonymous one. CanReadScoped
-	// only establishes that the caller has an owner; the EXISTS subquery counts
-	// rows without selecting them, so it cannot narrow to that owner. An
-	// owner-bearing caller would otherwise enumerate every other owner's rows
-	// one guess at a time.
+	// only establishes that the caller has an owner; it is the owner predicate
+	// inside the subquery that decides which rows the count can see. Without
+	// it an owner-bearing caller enumerates every other owner's rows one guess
+	// at a time.
 	// A caller who genuinely HAS an owner: without registering an extractor the
-	// probe would fail owner resolution and 403 for the wrong reason, which
-	// cannot distinguish "refused because the subquery can't scope" from
-	// "refused because there is no owner".
+	// probe would fail owner resolution and refuse for the wrong reason, which
+	// cannot distinguish "narrowed to nothing" from "no owner at all".
 	prev := owner.GetExtractor()
 	owner.SetExtractor(func(ctx context.Context) (any, bool) {
 		if u, ok := handler.GetUser(ctx); ok && u != nil {
@@ -366,22 +380,35 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	signedIn := ta.AsUser(struct{ ID string }{ID: "u-self"})
 	sHit := signedIn.Get("/api/boards?notes.body=someone+secret+note")
 	sMiss := signedIn.Get("/api/boards?notes.body=not+the+value")
-	if sHit.Status() != sMiss.Status() {
-		t.Errorf("signed-in nested filter answers %d for a correct guess and %d for a wrong one — the count is an oracle over other owners' rows",
-			sHit.Status(), sMiss.Status())
+	if sHit.Status() != sMiss.Status() || sHit.Body() != sMiss.Body() {
+		t.Errorf("signed-in nested filter distinguishes a correct guess from a wrong one, so the count is an oracle over another owner's rows.\nhit  %d %s\nmiss %d %s",
+			sHit.Status(), sHit.Body(), sMiss.Status(), sMiss.Body())
 	}
-	if sHit.Status() != http.StatusForbidden {
-		t.Errorf("signed-in nested filter on an owner-scoped target = %d, want 403 — the subquery cannot scope these rows, so the filter must be refused", sHit.Status())
+	// n1 belongs to u-other, so the narrowed subquery matches nothing and the
+	// board must not come back. A 200 that still contained b1 would mean the
+	// predicate reached another owner's row.
+	if strings.Contains(sHit.Body(), "b1") {
+		t.Errorf("the signed-in filter matched a board through another owner's note:\n%s", sHit.Body())
+	}
+	// The positive control: the same caller filtering on their OWN note must
+	// reach the board. This is the arm that fails if the narrowing is inert.
+	own := signedIn.Get("/api/boards?notes.body=my+own+note")
+	if own.Status() != http.StatusOK || !strings.Contains(own.Body(), "b1") {
+		t.Errorf("a signed-in owner could not reach a board through their OWN note (= %d): the subquery matches nothing for anyone, so the assertions above prove nothing:\n%s",
+			own.Status(), own.Body())
 	}
 
+	// Anonymous is refused earlier and for a different reason: an owner-scoped
+	// entity with nobody to scope to is not readable at all, so CanReadScoped
+	// rejects before any narrowing happens.
 	hit := ta.Get("/api/boards?notes.body=someone+secret+note")
 	miss := ta.Get("/api/boards?notes.body=not+the+value")
 	if hit.Status() != miss.Status() {
-		t.Errorf("nested filter on an owner-scoped target answers %d for a correct guess and %d for a wrong one — the row count is an oracle over rows the target's route refuses",
+		t.Errorf("anonymous nested filter answers %d for a correct guess and %d for a wrong one — the row count is an oracle over rows the target's route refuses",
 			hit.Status(), miss.Status())
 	}
 	if hit.Status() != http.StatusForbidden {
-		t.Errorf("nested filter on an owner-scoped target = %d, want 403", hit.Status())
+		t.Errorf("anonymous nested filter on an owner-scoped target = %d, want 403", hit.Status())
 	}
 }
 
@@ -459,7 +486,7 @@ func TestNestedFilterHidesSoftDeletedTargetRows(t *testing.T) {
 }
 
 // A caller who may already read every row of the target learns nothing from a
-// hit/miss count, so the blanket refusal must not apply to them, refusing
+// hit/miss count, so the subquery must not be narrowed for them. Narrowing
 // would remove a capability without protecting anything. The exemption is the
 // same pair the routes honour.
 func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
@@ -529,10 +556,14 @@ func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
 
 	ta := TestHarness(t, app)
 
-	// An ordinary owner is refused (the oracle case).
+	// An ordinary owner is narrowed to their own rows, so n1 (owned by u-other)
+	// stays invisible. This is the oracle case the exemption must not widen.
 	ordinary := ta.AsUser(xoUser{id: "u-self"}).Get("/api/boards?notes.body=someone+note")
-	if ordinary.Status() != http.StatusForbidden {
-		t.Fatalf("an ordinary owner = %d, want 403 — the oracle case this exemption must not widen", ordinary.Status())
+	if ordinary.Status() != http.StatusOK {
+		t.Fatalf("an ordinary owner = %d, want 200: %s", ordinary.Status(), ordinary.Body())
+	}
+	if strings.Contains(ordinary.Body(), "b1") {
+		t.Fatalf("an ordinary owner reached another owner's note through the subquery:\n%s", ordinary.Body())
 	}
 
 	// The caller holding the entity's declared CrossOwnerRead keeps the

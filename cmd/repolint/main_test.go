@@ -578,3 +578,67 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 		}
 	})
 }
+
+// A "/*" that is not the start of a block comment — inside a line comment, or
+// inside a string literal — used to open one anyway, and nothing on any later
+// line was scanned. The under-report is the dangerous half: the rule reports
+// "clean" for a file it stopped reading, which is indistinguishable from a file
+// it read and found nothing wrong with.
+func TestExampleOriginsKeepsScanningPastAFalseBlockComment(t *testing.T) {
+	for name, prelude := range map[string]string{
+		"in a line comment":    "// the glob is /* and it is prose\n",
+		"in a string literal":  "var pattern = \"/*\"\n",
+		"in a raw string":      "var pattern = `/*`\n",
+		"unclosed on its own":  "// see /*\n",
+		"after a real comment": "/* a real block comment */ // and /* trailing prose\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			body := "package main\n\n" + prelude + "\nvar origin = \"https://meridian.gofastr.dev/x\"\n"
+			writeRepoFile(t, root, filepath.Join("examples", "demo", "main.go"), body)
+			findings, err := lintExampleOrigins(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(findings) != 1 {
+				t.Fatalf("the origin after the prelude went unreported; got %v", findings)
+			}
+		})
+	}
+}
+
+// The inverse: a genuine multi-line block comment must still suppress, and a
+// raw string that spans lines must still protect its content from being read
+// as a comment delimiter.
+func TestExampleOriginsRespectsMultiLineContexts(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"multi-line block comment is prose": {
+			body: "package main\n\n/*\nSee https://meridian.gofastr.dev for context.\n*/\n",
+			want: 0,
+		},
+		"raw string spanning lines is code": {
+			body: "package main\n\nvar page = `\n<a href=\"https://meridian.gofastr.dev\">x</a>\n`\n",
+			want: 1,
+		},
+		"comment delimiter inside a spanning raw string": {
+			body: "package main\n\nvar page = `\n/* not a comment\n`\nvar origin = \"https://meridian.gofastr.dev\"\n",
+			want: 1,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeRepoFile(t, root, filepath.Join("examples", "demo", "main.go"), tc.body)
+			findings, err := lintExampleOrigins(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(findings) != tc.want {
+				t.Fatalf("got %d findings, want %d: %v", len(findings), tc.want, findings)
+			}
+		})
+	}
+}

@@ -237,36 +237,43 @@ jobs:
 
       - name: Race detector (concurrency packages)
         # The recurring defect class in this repo's release history is
-        # concurrency, queue claim/lease fencing, per-consumer outbox
-        # cursors, fanout subscriber queues, and until now no gate could
-        # see a data race at all: -race was a local RACE=1 opt-in in
-        # scripts/test-all.sh and appeared nowhere in CI. Every one of those
-        # bugs was found by an audit reading code, never by a test.
+        # concurrency — queue claim/lease fencing, per-consumer outbox
+        # cursors, fanout subscriber queues — and until this gate existed
+        # no CI check could see a data race at all: -race was a local
+        # RACE=1 opt-in in scripts/test-all.sh and appeared nowhere in CI.
+        # Every one of those bugs was found by an audit reading code,
+        # never by a test.
         #
         # Scoped to the packages that actually coordinate goroutines rather
         # than -race over ./..., which would roughly double the whole suite
         # to re-prove thread-safety for packages that never spawn. Add a
         # package here when it grows a goroutine, a lease, or a shared
-        # cursor. Whole set runs in ~90s.
+        # cursor.
         #
-        # The `framework` root package is deliberately NOT in this list even
-        # though it spawns goroutines (app.go, health.go, the process-module
-        # supervisor). It also holds chromedp browser e2e tests and
-        # supervisor timing tests whose deadlines do not reliably absorb race
-        # instrumentation: TestSupervisor_* has been observed flaking under
-        # -race while passing repeatedly in isolation, and one full-package
-        # -race run also timed out TestUIE2E_OwnerScope_CrossUserIsolation
-        # (not reproducible on every machine, it is load-dependent, so expect
-        # it to bite hardest on a 2-core runner). That is slowdown, not a data
-        # race, but a gate that goes red for timing teaches people to ignore
-        # it.
-        #
-        # This exclusion is meant to be temporary: the goroutine-heaviest code
-        # in the repo (app.go, health.go, the process-module supervisor) is the
-        # part with no race gate. Covering it needs the browser and timing
-        # suites split into their own package first.
+        # `./framework` (the root: app.go, health.go, the process-module
+        # supervisor — the goroutine-heaviest code in the repo) is raced
+        # since the #208 split moved its two timing-hostile suites out:
+        #   - framework/uie2e — the chromedp browser e2e suite. A
+        #     full-package -race run timed out
+        #     TestUIE2E_OwnerScope_CrossUserIsolation: load-dependent
+        #     slowdown, not a data race.
+        #   - framework/processmoduletest — the TestSupervisor_* scenarios
+        #     drive real child processes against compressed timings
+        #     (50ms polls, 500ms leases, 3s spawn deadlines) that flaked
+        #     under -race while passing repeatedly in isolation.
+        # A handful of process-module tests stayed in ./framework because
+        # they reach unexported supervisor internals (moduleSlot
+        # construction, Slot's live child, the store's raw db) and
+        # exporting seams for them would be API that exists only for
+        # tests. They spawn real children too, but against generous
+        # deadlines (5-6s state waits, a 15s probe cap, transport ceilings
+        # written to tolerate -race). If one ever flakes under this gate,
+        # the fix is an exported test seam — not a timeout bump.
+        # 20m (not the old 15m) because the root package suite is larger
+        # than the rest of this list combined.
         run: |
-          go test -race -timeout=15m \
+          go test -race -timeout=20m \
+            ./framework \
             ./battery/queue/... ./battery/cache/... \
             ./framework/outbox/... ./framework/fanout/... ./core/fanout/... \
             ./framework/cron/... ./framework/event/... ./framework/hook/... \

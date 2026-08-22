@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.67.0
+through: v0.68.0
 
 releases:
   - version: v0.3.0
@@ -760,3 +760,17 @@ releases:
         breaking: true
         guidance: "Both read another entity's rows through the parent's route and neither consulted that entity's own posture, so an include returned rows the target refuses to serve and a nested filter changed the row count with a guessed value. Both now resolve the target and refuse with 403 when the caller may not read it. Owner- and tenant-scoped targets are refused on the nested-filter path outright, because an EXISTS clause counts rows without selecting them and cannot narrow them to the caller's own; filter on that entity's own list route instead. The detector points at your relation declarations: every one of them is reachable by ?include= and ?rel.field=, so check that each target entity declares the read posture you actually want."
         detect: "Relations:\\s*\\[\\]"
+  - version: v0.68.0
+    title: Row-level read scoping, in-process nested filters scoped, stale owner-key repair
+    notes:
+      - change: "BREAKING: ListAll and CountAll scope a NestedFilters spec to the caller"
+        breaking: true
+        guidance: "Owner, tenant, and read-scope predicates now narrow ListOptions.NestedFilters on every call, not only over HTTP. The narrowing was previously gated on a context marker no host could set, so the safe branch was unreachable and a host forwarding a caller-influenced relation into ListAll mid-request had a count oracle over rows the target hides. Server-side code that means across every owner now says so with owner.AllowCrossOwner or tenant.AllowCrossTenant; both already exist for this surface and neither is reachable from an HTTP route. The posture check (may this caller read the target at all) stays HTTP-only, matching ApplyIncludes, because it is the baseline session gate and in-process code has no session."
+        detect: "NestedFilters"
+      - change: gofastr migrate repair rebuilds a table carrying a pre-v0.67 owner-column foreign key
+        breaking: false
+        guidance: "v0.67 turned SQLite foreign-key enforcement on and stopped emitting the key an entity gets when one column is both Scope.OwnerField and a relation, but it could not remove one already in a table, and SQLite has no DROP CONSTRAINT. Run `gofastr migrate repair --from=<blueprint.yml> --db-url=<url>` to report and `--apply` to rebuild. The replacement DDL is the original minus the offending clause, so columns, defaults, other constraints, indices and triggers survive. The scan reads the schema only: a key whose referenced table really does hold the stamped owner ids is satisfiable and --apply would drop it, so check the listed tables first."
+        detect: "OwnerField"
+      - change: Exposure.ReadScope narrows which rows a caller may read
+        breaking: false
+        guidance: "New, so nothing changes until an entity declares it. A read scope carries predicates on the entity's own columns plus the permission that lifts them, and one builder feeds every read: list and count, get, cursor, stream, the in-process API, typed queries, the upsert read-back, and the include and eager loaders at every depth. A row outside the scope answers 404 rather than 403. Writes are deliberately not filtered. Three shipped example blueprints served their own draft and unapproved rows to anonymous callers before this and now declare a scope."

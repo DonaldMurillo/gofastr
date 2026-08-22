@@ -132,7 +132,7 @@ func printHelp() {
                        --pkg ./cmd/<name> when main lives under cmd/, so the
                        watcher still sees internal/ and relative paths resolve
                        against the project root
-  migrate (m) [up|down|status|generate|force]  Run database migrations
+  migrate (m) [up|down|status|generate|force|repair]  Run database migrations
   test (t)              Run project tests
   semantic <sub>        Local semantic index (index/watch/query/stats/clear): experimental
   harness               Start the AI agent harness (interactive loop / TUI): experimental

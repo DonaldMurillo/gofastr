@@ -218,6 +218,11 @@ entities:
       create: posts:write
       update: posts:write
       delete: posts:admin
+    read_scope:      # which ROWS a caller reads; see "Row-level read scoping"
+      filter:
+        - field: status
+          op: eq
+          value: published
     public: false   # default; see "Default CRUD authentication" below
     crud: true
     mcp: true
@@ -684,6 +689,147 @@ app.Entity("sessions", auth.SessionEntityConfig()) // CRUD=false, MCP=false
 `auth.UserEntityFields()` and `auth.SessionEntityFields()` remain for
 hosts that want full control; the `*EntityConfig()` helpers are the
 safer default.
+
+## Row-level read scoping (`Exposure.ReadScope`)
+
+`Exposure.Access` answers **whether** a caller may read an entity.
+`Exposure.ReadScope` answers **which rows** they see. It exists for the
+most ordinary content posture there is: anonymous visitors see published
+rows, signed-in editors see drafts.
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+var app = framework.NewApp()
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/core/schema"
+-->
+```go
+app.Entity("posts", entity.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "status", Type: schema.String, Default: "draft"},
+        {Name: "title", Type: schema.String},
+    },
+    Exposure: &entity.ExposureConfig{
+        Public: true, // reads (and writes) are open; ReadScope narrows the rows
+        ReadScope: &entity.ReadScopeConfig{
+            Filter: []entity.RowPredicate{
+                {Field: "status", Op: "eq", Value: "published"},
+            },
+            Unrestricted: "", // any signed-in caller reads every row
+        },
+    },
+})
+```
+
+The predicates are conditions on the entity's **own columns**, and they
+AND together. Each `RowPredicate` names a `Field`, an `Op` (`eq`, `neq`,
+`in`, `not_in`; an empty `Op` means `eq`), and either `Value` (single-value
+ops) or `Values` (`in` / `not_in`). There is **no OR form** in this
+version: a row must satisfy every predicate. Model "one of several
+values" with `in`, not with multiple declarations.
+
+`Unrestricted` decides who reads **every** row:
+
+- **Non-empty**: it names an RBAC permission. A caller holding it reads
+  every row; everyone else gets the filter. Like every permission check
+  this is fail-closed: no policy in context means no widening.
+- **Empty**: any caller **with a session** reads every row, and an
+  anonymous caller gets the filter. That is the posture above, and it is
+  a weak one on purpose: "any signed-in user" means exactly that, not an
+  editor role. If drafts should be limited to editors, give the entity an
+  `Unrestricted` permission and grant it to the editor role.
+
+The filter applies to every read of the entity's own table: List, Get,
+count, cursor and stream variants, the in-process API (`GetOne`,
+`ListAll`, `CountAll`), typed queries, and, when the entity is the
+target of a relation, `?include=`, eager loading, and `?rel.field=`
+subqueries. A filtered-out row answers **404** on Get, not 403: the
+caller must not learn it exists.
+
+**Writes are not filtered.** Update, delete, and the upsert write do not
+carry the predicate in this version; a write is authorized by the write
+gates (owner, tenant, `Access`), not by the read posture. If callers can
+write but not read everything, they can still modify a row they cannot
+see.
+
+`Access` does not close that on its own. An `Access` block checks whether the
+caller holds a permission for the OPERATION, not whether they may touch a
+particular row, so a caller with `update` can still update a row `ReadScope`
+hides from them. To make write permission depend on the row, use
+`Scope.OwnerField` or `Scope.MultiTenant`, which narrow the write itself, or
+decide it in a `BeforeUpdate` / `BeforeDelete` hook, which sees the row.
+
+A declaration is validated at registration and a bad one fails the app's
+start (`app.Entity` panics, `app.TryEntity` returns the error, both naming
+the field): `Field` must be a declared column, must not be `Hidden` (a
+predicate on a masked column leaks its values through the row set), `Op`
+must be one of the four, and `in`/`not_in` require a non-empty `Values`
+while the single-value ops require an empty one. A typo must never
+silently serve every row.
+
+An entity with no `ReadScope` (or an empty `Filter`) is untouched: a
+true no-op for every existing entity.
+
+### Blueprint spelling (`read_scope:`)
+
+In a `gofastr.yml` blueprint the same scope is declared under the entity,
+beside `access:` (or nested under `exposure:`; the two spellings must
+agree if both appear). This is the `posts` entity of
+`examples/portfolio/gofastr.yml`, trimmed to the relevant keys:
+
+```yaml
+entities:
+  - name: posts
+    crud: true
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
+    access:
+      read:            # blank: anonymous callers may read the entity
+      create: content:write
+      update: content:write
+      delete: content:admin
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: status
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+```
+
+Anonymous callers get published rows only; any caller with a session reads
+every row. To name a permission instead, set `unrestricted:`:
+
+```yaml
+    read_scope:
+      unrestricted: content:review
+      filter:
+        - field: approved
+          op: eq
+          value: "true"
+```
+
+A boolean predicate takes the string `"true"` or `"false"`; the framework
+binds it as the column's bool type, exactly as `?approved=true` would.
+Quote it in YAML so it stays a string.
+
+The blueprint decoder validates the block where a typo matters, and fails
+the generate with the YAML location: unknown keys at any level, an `op`
+outside `eq`/`neq`/`in`/`not_in`, `value` and `values` together, a
+predicate with no `field`, an undeclared or `Hidden` `field`, and a
+`read_scope:` that declares neither a filter nor an `unrestricted`. The
+framework re-checks at registration; the decode check exists so a broken
+posture fails at `gofastr generate`, not at app boot.
+
+One seed caveat: seed rows resolve `@entity.field=value` references
+through the read-scoped list path. A seed row cannot reference a row the
+scope hides: the lookup finds nothing and the insert fails its foreign
+key at boot. Seed draft demo rows on published parents, or not
+at all.
 
 ## Free-text search (`SearchFields` + `?q=`)
 
