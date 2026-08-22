@@ -353,7 +353,7 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	}
 	quoted := make([]string, len(cols))
 	for i, c := range cols {
-		quoted[i] = fmt.Sprintf("%q", c)
+		quoted[i] = quoteIdent(c)
 	}
 	colList := strings.Join(quoted, ", ")
 
@@ -526,21 +526,27 @@ func stripLeadingComments(item string) string {
 // include the owner column is left alone: dropping it would remove a
 // constraint on the other columns too, which nobody asked for.
 func isTableLevelFKOn(item, ownerCol string) bool {
+	// Token by token, never strings.Fields plus a literal prefix. Fields
+	// splits `CONSTRAINT "fk owner" FOREIGN KEY` inside the quotes, and a
+	// "FOREIGN KEY" prefix test demands exactly one space, so `FOREIGN\nKEY`
+	// missed. Both ended as "found the key via PRAGMA but not in the DDL",
+	// which refuses a table the repair can rebuild.
 	rest := stripLeadingComments(item)
-	if up := strings.ToUpper(rest); strings.HasPrefix(up, "CONSTRAINT") {
-		// Skip "CONSTRAINT <name>".
-		fields := strings.Fields(rest)
-		if len(fields) < 2 {
-			return false
-		}
-		rest = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rest[len(fields[0]):]), fields[1]))
+	tok, after := nextSQLToken(rest)
+	if strings.EqualFold(tok, "CONSTRAINT") {
+		// The constraint's own name, which may be quoted and hold spaces.
+		_, after = nextSQLToken(after)
+		tok, after = nextSQLToken(after)
 	}
-	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(rest)), "FOREIGN KEY") {
+	if !strings.EqualFold(tok, "FOREIGN") {
 		return false
 	}
-	rest = strings.TrimSpace(rest)
+	if tok, after = nextSQLToken(after); !strings.EqualFold(tok, "KEY") {
+		return false
+	}
+	rest = trimLeadingInert(after)
 	open := strings.IndexByte(rest, '(')
-	if open < 0 {
+	if open != 0 {
 		return false
 	}
 	closeIdx := matchingParen(rest, open)
@@ -568,16 +574,36 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	if idx < 0 {
 		return item, false
 	}
-	head := strings.TrimSpace(item[:idx])
+	// Right-trimmed WITHOUT the newline, which is load-bearing: it is what
+	// terminates a `--` comment. TrimSpace ate it, so
+	// `user_id TEXT -- stamped from the session\n  REFERENCES users(id) NOT NULL`
+	// rebuilt as `user_id TEXT -- stamped from the session NOT NULL` and the
+	// NOT NULL fell inside the comment. SQLite ACCEPTS that, so the repair
+	// reported success on a table that had silently lost a constraint. The
+	// list comma the caller joins on lands on that line too, which loses the
+	// following column the same way.
+	head := strings.TrimRight(item[:idx], " \t\r")
 	rest := item[idx+len("REFERENCES"):]
-	// Consume the target table and its optional (col) list.
-	rest = strings.TrimLeft(rest, " \t\n")
-	// Table name: up to whitespace or '('.
+	// Consume the target table and its optional (col) list. Whitespace AND
+	// comments, because a comment may legally sit between REFERENCES and its
+	// target, and a plain TrimLeft left it in place for the name scan to
+	// swallow as the table name.
+	rest = trimLeadingInert(rest)
+	// Table name: up to whitespace or '(', with a quoted name counting as one
+	// token. `REFERENCES "user table"(id)` stopped at the space INSIDE the
+	// quotes and stranded `table"(id)` in the rebuilt column.
 	i := 0
-	for i < len(rest) && rest[i] != ' ' && rest[i] != '\t' && rest[i] != '\n' && rest[i] != '(' {
+	for i < len(rest) {
+		if j := skipQuoted(rest, i); j > i {
+			i = j
+			continue
+		}
+		if rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r' || rest[i] == '(' {
+			break
+		}
 		i++
 	}
-	rest = strings.TrimLeft(rest[i:], " \t\n")
+	rest = trimLeadingInert(rest[i:])
 	if strings.HasPrefix(rest, "(") {
 		if end := matchingParen(rest, 0); end >= 0 {
 			rest = rest[end+1:]
@@ -590,7 +616,10 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	// quoted literal that follows: `ON DELETE CASCADE DEFAULT 'guest  account'`
 	// rejoined as `DEFAULT 'guest account'`, and the rebuilt table silently
 	// stored a different default than the one it was asked to preserve.
-	rest = strings.TrimLeft(rest, " \t\n\r")
+	// Comment-aware: `REFERENCES u(id) -- why\n ON DELETE CASCADE` left the
+	// comment at the head, so the modifier loop matched nothing and the
+	// action was stranded without its clause.
+	rest = trimLeadingInert(rest)
 	for {
 		// Matched on TOKENS, never on a literal prefix with one space in it.
 		// SQLite stores the CREATE TABLE text verbatim, so a hand-written
@@ -659,6 +688,59 @@ func consumeWords(s string, n int) string {
 		}
 	}
 	return s[i:]
+}
+
+// trimLeadingInert drops leading whitespace AND comments from s. The scanners
+// below are looking for the next real token, and a comment sitting where they
+// expect one is read as that token.
+func trimLeadingInert(s string) string {
+	i := 0
+	for i < len(s) {
+		if s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r' {
+			i++
+			continue
+		}
+		if j := skipComment(s, i); j > i {
+			i = j
+			continue
+		}
+		break
+	}
+	return s[i:]
+}
+
+// nextSQLToken returns the first token of s and the remainder. A quoted
+// identifier is ONE token even when it holds spaces, '(' ends a token and is
+// returned as one itself, and leading whitespace and comments are skipped.
+func nextSQLToken(s string) (string, string) {
+	s = trimLeadingInert(s)
+	if s == "" {
+		return "", ""
+	}
+	if s[0] == '(' {
+		return "(", s[1:]
+	}
+	i := 0
+	for i < len(s) {
+		if j := skipQuoted(s, i); j > i {
+			i = j
+			continue
+		}
+		if s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r' || s[i] == '(' {
+			break
+		}
+		i++
+	}
+	return s[:i], s[i:]
+}
+
+// quoteIdent wraps an identifier the way SQLite escapes one: a literal double
+// quote is DOUBLED. Go's %q escapes it as \" instead, which SQLite has no
+// notion of, so a column named `we"ird` — legal, written `"we""ird"` in DDL,
+// and preserved correctly by the rewriter — produced a syntax error at the
+// row copy and refused a table the repair had already rebuilt.
+func quoteIdent(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // skipQuoted returns the index just past the quoted run opening at i, or i

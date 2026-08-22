@@ -744,6 +744,85 @@ func TestRepairHandlesAwkwardButLegalDDL(t *testing.T) {
 		repairAndAssertCreatable(t, db)
 	})
 
+	t.Run("a line comment before REFERENCES, owner column last", func(t *testing.T) {
+		// THE dangerous shape: DDL SQLite ACCEPTS, so the repair reported
+		// success on a mangled table. head was TrimSpace'd, which ate the
+		// newline terminating the comment, so everything re-appended after it
+		// fell INSIDE the comment. NOT NULL vanished and nothing said so.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\ttitle TEXT,\n\tuser_id TEXT -- stamped from the session\n\t\tREFERENCES users(id) NOT NULL\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+		if _, err := db.Exec(`INSERT INTO tasks (id, title) VALUES ('t-null','no owner')`); err == nil {
+			t.Error("NOT NULL was silently dropped: the rebuild commented it out and reported success")
+		}
+	})
+
+	t.Run("a line comment before REFERENCES, owner column mid-list", func(t *testing.T) {
+		// Same root cause, louder: the list comma the caller joins on lands
+		// on the comment's line too, so the FOLLOWING column disappears.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT -- stamped from the session\n\t\tREFERENCES users(id),\n\ttitle TEXT\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+
+	t.Run("REFERENCES a quoted table name with a space", func(t *testing.T) {
+		// The target scan stopped at the space INSIDE the quotes and stranded
+		// `table"(id)` in the rewritten column, so SQLite refused the rebuild.
+		db := legacyDB(t,
+			`CREATE TABLE "user table" (id TEXT PRIMARY KEY)`,
+			`CREATE TABLE tasks (
+				id TEXT PRIMARY KEY,
+				user_id TEXT REFERENCES "user table"(id),
+				title TEXT
+			)`,
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+
+	t.Run("a comment between the target and the key's modifiers", func(t *testing.T) {
+		// The modifier loop saw the comment, matched nothing, and left
+		// ON DELETE CASCADE stranded with no REFERENCES clause in front.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT REFERENCES users(id) -- why\n\t\tON DELETE CASCADE,\n\ttitle TEXT\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+
+	t.Run("table-level CONSTRAINT with a quoted name holding a space", func(t *testing.T) {
+		// strings.Fields split the name inside its quotes, so the matcher
+		// never reached FOREIGN KEY and refused a rebuildable table.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			`CREATE TABLE tasks (
+				id TEXT PRIMARY KEY,
+				user_id TEXT,
+				title TEXT,
+				CONSTRAINT "fk owner" FOREIGN KEY (user_id) REFERENCES users(id)
+			)`,
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+
+	t.Run("table-level FOREIGN KEY wrapped across lines", func(t *testing.T) {
+		// The prefix test demanded exactly one space between the two words.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT,\n\ttitle TEXT,\n\tFOREIGN\n\t\tKEY (user_id) REFERENCES users(id)\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+	})
+
 	t.Run("MATCH taking a quoted name with a space", func(t *testing.T) {
 		// MATCH takes a NAME, and a name may be quoted and hold spaces.
 		// Consuming its two words by whitespace stopped inside the quotes and
@@ -867,5 +946,37 @@ func TestRepairRestoresEnforcementAfterASuccessfulRun(t *testing.T) {
 		if v != want {
 			t.Errorf("PRAGMA %s = %d after the repair, want %d", p, v, want)
 		}
+	}
+}
+
+// The row copy quoted column names with Go's %q, which escapes a literal
+// double quote as \" — an escape SQLite does not have. A column named we"ird
+// is legal, is written "we""ird" in DDL, and survived the rewriter intact;
+// the INSERT that copies the rows is where it broke, so the repair refused a
+// table it had already rebuilt correctly.
+func TestRepairCopiesAColumnNameHoldingAQuote(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (
+			id TEXT PRIMARY KEY,
+			user_id TEXT REFERENCES users(id),
+			"we""ird" TEXT
+		)`,
+		`INSERT INTO tasks (id, user_id, "we""ird") VALUES ('t1','auth-user-1','kept')`,
+	)
+	ctx := context.Background()
+	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("the owner key was not found: %+v", stale)
+	}
+	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+		t.Fatalf("repair refused a table it can rebuild: %v", err)
+	}
+	var got string
+	if err := db.QueryRow(`SELECT "we""ird" FROM tasks WHERE id='t1'`).Scan(&got); err != nil || got != "kept" {
+		t.Errorf("row lost in the rebuild: %q %v", got, err)
 	}
 }
