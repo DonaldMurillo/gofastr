@@ -980,3 +980,59 @@ func TestRepairCopiesAColumnNameHoldingAQuote(t *testing.T) {
 		t.Errorf("row lost in the rebuild: %q %v", got, err)
 	}
 }
+
+// AUTOINCREMENT's high-water mark lives in sqlite_sequence, and DROP TABLE
+// deletes that row. The rebuild re-seeded it from the copied rows, so a table
+// whose highest rows had been deleted handed the next insert a rowid it had
+// already used — the one guarantee AUTOINCREMENT makes over plain rowid.
+func TestRepairKeepsTheAutoincrementHighWaterMark(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id TEXT REFERENCES users(id),
+			title TEXT
+		)`,
+		`INSERT INTO tasks (user_id, title) VALUES ('auth-user-1','one')`,
+		`INSERT INTO tasks (user_id, title) VALUES ('auth-user-1','two')`,
+		`INSERT INTO tasks (user_id, title) VALUES ('auth-user-1','three')`,
+		`DELETE FROM tasks WHERE title='three'`,
+	)
+	ctx := context.Background()
+	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": autoIncTaskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("the owner key was not found: %+v", stale)
+	}
+	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO tasks (user_id, title) VALUES ('auth-user-2','four')`); err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	if err := db.QueryRow(`SELECT id FROM tasks WHERE title='four'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if id != 4 {
+		t.Errorf("new row got id %d, want 4: the rebuild reused a deleted rowid", id)
+	}
+}
+
+// autoIncTaskEntity is taskEntity with an integer id, matching the
+// AUTOINCREMENT fixture.
+func autoIncTaskEntity(t *testing.T) *entity.Entity {
+	t.Helper()
+	return entity.Define("tasks", entity.EntityConfig{
+		Table: "tasks",
+		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.Int},
+			{Name: "user_id", Type: schema.String},
+			{Name: "title", Type: schema.String},
+		},
+		Relations: []entity.Relation{entity.BelongsTo("user", "users", "user_id")},
+	}.WithTimestamps(false))
+}

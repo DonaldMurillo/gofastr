@@ -441,18 +441,25 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	}
 	// Post-migration scan for the pre-v0.67 owner-column foreign key. A
 	// database created by those releases may still carry one, and with
-	// foreign_keys now on, every create on the table fails with a bare
-	// constraint error that names neither the cause nor the fix. A warning,
-	// not an error: an app that creates no rows is otherwise fine, and
-	// failing its boot on migration day would trade a loud write failure for
-	// a dead app.
+	// foreign_keys now on, a create on the table fails with a bare constraint
+	// error that names neither the cause nor the fix. A warning, not an
+	// error: an app that creates no rows is otherwise fine, and failing its
+	// boot on migration day would trade a loud write failure for a dead app.
+	//
+	// The scan reads the schema, so it cannot know where the app's identities
+	// actually live. A single-column key on the owner column pointing at a
+	// table that DOES hold the stamped ids is satisfiable and harmless, and
+	// the scan reports it anyway. The warning says what was found and leaves
+	// the conclusion to the reader for that reason: claiming "every create
+	// fails" was wrong for exactly that database, and `repair --apply` would
+	// drop a constraint that was doing its job.
 	if dialect == DialectSQLite {
 		stale, scanErr := FindStaleOwnerForeignKeys(ctx, db, plan.Registry)
 		if scanErr != nil {
 			slog.Warn("migrate: could not scan for stale owner-column foreign keys", "err", scanErr)
 		}
 		for _, s := range stale {
-			slog.Warn("migrate: table still carries the pre-v0.67 foreign key on its owner column; every create on it fails while it remains",
+			slog.Warn("migrate: table carries a foreign key on the column its entity declares as Scope.OwnerField; creates that stamp it from the session fail unless the referenced table holds those ids",
 				"table", s.Table,
 				"column", s.Column,
 				"references", s.References,

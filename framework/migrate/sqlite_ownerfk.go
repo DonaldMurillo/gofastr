@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -357,6 +358,17 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	}
 	colList := strings.Join(quoted, ", ")
 
+	// AUTOINCREMENT's high-water mark lives in sqlite_sequence keyed by table
+	// name, and DROP TABLE deletes that row. The rebuild then re-seeds it from
+	// the copied rows, so a table whose highest rows had been DELETEd handed
+	// the next insert a rowid it had already used — the one thing
+	// AUTOINCREMENT exists to prevent. Read before the drop, put back after
+	// the rename.
+	seq, hasSeq, err := autoincrementSeq(ctx, conn, s.Table)
+	if err != nil {
+		return err
+	}
+
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -375,7 +387,47 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 			return fmt.Errorf("%w\nwhile running: %s", err, stmt)
 		}
 	}
+	if hasSeq {
+		if err := restoreAutoincrementSeq(ctx, tx, s.Table, seq); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+// autoincrementSeq reads the table's AUTOINCREMENT high-water mark, if it has
+// one. An absent sqlite_sequence row, or an absent sqlite_sequence table,
+// means the table does not use AUTOINCREMENT and there is nothing to carry.
+func autoincrementSeq(ctx context.Context, conn *sql.Conn, table string) (int64, bool, error) {
+	var seq int64
+	err := conn.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = ?`, table).Scan(&seq)
+	switch {
+	case err == nil:
+		return seq, true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return 0, false, nil
+	case strings.Contains(strings.ToLower(err.Error()), "no such table"):
+		// No AUTOINCREMENT table has ever existed in this database.
+		return 0, false, nil
+	default:
+		return 0, false, err
+	}
+}
+
+// restoreAutoincrementSeq puts the saved high-water mark back. The rebuild
+// re-seeds the row from the rows it copied, so the UPDATE normally finds one;
+// the INSERT covers a table whose highest rows were all deleted before the
+// repair, which is exactly the case where the mark matters.
+func restoreAutoincrementSeq(ctx context.Context, tx *sql.Tx, table string, seq int64) error {
+	res, err := tx.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = ? WHERE name = ?`, seq, table)
+	if err != nil {
+		return err
+	}
+	if n, aerr := res.RowsAffected(); aerr == nil && n > 0 {
+		return nil
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)`, table, seq)
+	return err
 }
 
 // tableColumnNames returns the table's columns in declaration order, so the
