@@ -441,8 +441,11 @@ Server-side code that genuinely means "read across every owner" says so with
 Both are explicit at the call site, both are unreachable from an HTTP route,
 and both are already how every other in-process read widens its scope.
 
-`Hidden` and `NoQuery` apply on both surfaces throughout, because those
-describe the data rather than the caller.
+`Hidden` and `NoQuery` are enforced when a nested-filter spec is RESOLVED, on
+both surfaces, because those describe the data rather than the caller: a masked
+column stays masked no matter who asks. That is specific to nested filters —
+`TypedQuery.Where` remains deliberately ungated for `NoQuery`, as described
+above.
 
 ### Foreign keys on writes are not permission-checked
 
