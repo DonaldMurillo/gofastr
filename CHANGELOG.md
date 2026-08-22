@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-08-22
+
 ### Added
 
 - **Row-level read scoping.** `Exposure.ReadScope` narrows WHICH rows a caller
