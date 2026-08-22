@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
 
 // The read-scope world: authors (unscoped) each carry published and draft
@@ -790,15 +791,19 @@ func TestReadScopeAllowsRecordFindsTheWireKey(t *testing.T) {
 	}
 }
 
-// The in-process nested-filter carve-out is right for a hand-built spec and
-// wrong while serving a request. A read hook, an AfterList, or any code
-// reached from an HTTP handler calls ListAll with the request's context; if it
-// forwards a caller-influenced relation, the EXISTS clause counts rows the
-// target's posture hides and the count oracle the HTTP path closes reappears
-// one layer down.
+// An in-process nested filter narrows to the caller ALWAYS, with no marker and
+// no carve-out. A read hook, an AfterList, or any code reached from an HTTP
+// handler calls ListAll with the request's context; if it forwards a
+// caller-influenced relation, the EXISTS clause counts rows the target's
+// posture hides and the count oracle the HTTP path closes reappears one layer
+// down.
 //
-// The marker decides, the same way the include path decides it.
-func TestNestedFilterInProcessScopesUnderARealRequest(t *testing.T) {
+// This used to be decided by a context marker, which no host could set: the
+// setter is unexported and crud's own three call sites hand it to
+// applyIncludeTree, which never reaches ListAll. So the branch was dead and
+// the default was the unsafe one. Server-authority code now says so out loud
+// with owner.AllowCrossOwner, the escape the in-process surface already has.
+func TestInProcessNestedFilterScopesByDefault(t *testing.T) {
 	ddl := `
 CREATE TABLE posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT);
 CREATE TABLE comments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, post_id TEXT NOT NULL, body TEXT);
@@ -856,13 +861,44 @@ CREATE TABLE comments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, post_id TEXT 
 			len(rows), len(miss))
 	}
 
-	// Outside a request the host is acting on its own authority and keeps the
-	// unscoped capability, which is what background reports depend on.
-	server, err := ch.ListAll(aliceCtx, ListOptions{NestedFilters: spec})
+	// A PLAIN in-process context, with no marker of any kind, narrows the same
+	// way. This is the arm that used to read bob's comment.
+	plain, err := ch.ListAll(aliceCtx, ListOptions{NestedFilters: spec})
 	if err != nil {
 		t.Fatalf("ListAll off-request: %v", err)
 	}
+	plainMiss, err := ch.ListAll(aliceCtx, ListOptions{NestedFilters: []NestedFilter{
+		{Relation: "comments", Field: "body", Op: filter.OpEq, Value: "no such comment"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain) != len(plainMiss) {
+		t.Errorf("SECURITY: [oracle] a plain in-process nested filter returned %d rows for bob's comment and %d for a value that exists nowhere",
+			len(plain), len(plainMiss))
+	}
+
+	// Alice filtering by her OWN comment still works: the fix narrows, it does
+	// not refuse. Without this the test would pass on a build that returned
+	// nothing for every nested filter.
+	own, err := ch.ListAll(aliceCtx, ListOptions{NestedFilters: []NestedFilter{
+		{Relation: "comments", Field: "body", Op: filter.OpEq, Value: "alice comment"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(own) != 1 {
+		t.Errorf("alice could not filter by her own comment: got %d rows, want 1", len(own))
+	}
+
+	// Server-authority code that genuinely means "every owner" says so. This
+	// is the supported replacement for the carve-out, and it is explicit at
+	// the call site in a way an absent context marker never was.
+	server, err := ch.ListAll(owner.AllowCrossOwner(aliceCtx), ListOptions{NestedFilters: spec})
+	if err != nil {
+		t.Fatalf("ListAll under AllowCrossOwner: %v", err)
+	}
 	if len(server) != 1 {
-		t.Errorf("server-authority ListAll returned %d rows, want 1: the in-process carve-out was removed, not narrowed", len(server))
+		t.Errorf("AllowCrossOwner ListAll returned %d rows, want 1: the escape hatch does not reach the nested filter", len(server))
 	}
 }

@@ -222,17 +222,12 @@ type NestedFilter struct {
 // unsafe identifiers return an error so typed callers see the same 400-class
 // failures.
 //
-// It deliberately does NOT run scopeNestedFiltersForCaller, so a spec resolved
-// here carries no owner or tenant narrowing. The asymmetry with the HTTP path
-// is intentional and worth stating, because it looks like an omission:
-// Hidden/NoQuery are enforced here because those are properties of the DATA — a
-// masked column stays masked no matter who asks — while the read posture is a
-// question about the CALLER, and an in-process caller is server code acting on
-// its own authority, the same carve-out ApplyIncludes makes via realRequestKey. The consequence is real and belongs to the host: a typed
-// repo that forwards a user-influenced NestedFilter rebuilds the count oracle
-// the HTTP gate exists to close, exactly as forwarding a user-influenced
-// Filters entry would. Validate the spec before passing it, or route the
-// request through the HTTP surface.
+// It does NOT itself run scopeNestedFiltersForCaller — it validates the shape,
+// nothing more. Its in-process callers, ListAll and CountAll, run the
+// narrowing separately and unconditionally (scopeNestedFiltersInProcess), so a
+// spec resolved here and executed there carries the same owner, tenant, and
+// read-scope predicates the HTTP path applies. Anything that resolves a spec
+// and skips that step is reintroducing the count oracle.
 func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []NestedFilter) ([]nestedFilter, error) {
 	if len(specs) == 0 {
 		return nil, nil
@@ -511,6 +506,22 @@ func opToSQL(op filter.FilterOp) string {
 // stay independent: a cross-owner grant narrows nothing on the tenant axis and
 // vice versa, because eagerScopeFilters emits them separately.
 func (ch *CrudHandler) scopeNestedFiltersForCaller(ctx context.Context, filters []nestedFilter) error {
+	return ch.scopeNestedFilters(ctx, filters, true)
+}
+
+// scopeNestedFilters narrows every filter to the caller. checkPosture asks the
+// target's Exposure whether this caller may read it at all, which is the
+// baseline SESSION gate and therefore an HTTP-only question, exactly as it is
+// on the include path (include.go): in-process callers are server-side code
+// running with no session by construction, so asking it there refuses every
+// nested filter a background job or a typed repo makes and protects nothing.
+//
+// The SCOPE predicates below are the other half and they are unconditional.
+// They are data scoping — owner, tenant, read scope — and data scoping applies
+// to both surfaces, because they are what stops the EXISTS clause counting
+// rows the caller may not see. Splitting the two is the whole fix: the leak
+// was never the missing posture check, it was the missing predicates.
+func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedFilter, checkPosture bool) error {
 	if len(filters) == 0 || ch.Registry == nil {
 		return nil
 	}
@@ -522,7 +533,7 @@ func (ch *CrudHandler) scopeNestedFiltersForCaller(ctx context.Context, filters 
 			return &includeForbiddenError{Entity: filters[i].Relation.Entity}
 		}
 		probe := &CrudHandler{Entity: target, DB: ch.DB, Registry: ch.Registry}
-		if !probe.CanReadScoped(ctx) {
+		if checkPosture && !probe.CanReadScoped(ctx) {
 			return &includeForbiddenError{Entity: target.GetName()}
 		}
 		var scopes []filter.ParsedFilter
@@ -544,28 +555,33 @@ func resolvedTable(target *entity.Entity, rel entity.Relation) string {
 }
 
 // scopeNestedFiltersInProcess applies the caller-aware narrowing to a nested
-// filter resolved through the in-process API.
+// filter resolved through the in-process API. It narrows ALWAYS.
 //
-// The in-process surface is server code acting on its own authority, and that
-// carve-out is deliberate for a HAND-BUILT spec: a typed repo assembling its
-// own NestedFilter is the host deciding what to read. It stops being true the
-// moment the same call is made while serving a request, because then the
-// relation being crossed is one the CALLER chose, and the EXISTS clause counts
-// rows the target's own posture hides from them. That is the same count oracle
-// the HTTP path closes, reached one layer down.
+// It used to narrow only when the context carried realRequestKey, on the
+// theory that an in-process call is server code acting on its own authority
+// and a call made while serving a request is not. The theory was fine; the
+// mechanism could not implement it. withRealRequest is unexported and is set
+// at exactly three sites, all of them wrapping the context crud hands to
+// applyIncludeTree inside its own HTTP handlers — and applyIncludeTree never
+// reaches ListAll or CountAll. So no caller outside this package could ever
+// set the marker, the narrowing branch was unreachable in every production
+// shape, and the only thing proving it worked was a test that could call the
+// unexported setter because it lives in-package.
 //
-// So the marker decides, exactly as it does on the include path
-// (include.go, realRequestKey): a call made under a real in-flight request is
-// narrowed like the request it is serving, and a call made outside one is not.
-// A host that forwards user input into a NestedFilter from BACKGROUND code
-// still owns that decision, which is what the resolveNestedFilters comment
-// says and remains true.
+// The default is now the safe one. A host handler that forwards a
+// caller-influenced NestedFilter into ListAll or CountAll gets the same
+// narrowing the HTTP path applies, so the EXISTS clause cannot count rows the
+// target's own posture hides — the count oracle, reached one layer down.
+//
+// Server-authority code that genuinely means "read across every owner" says so
+// with the escape that already exists for exactly this and that every other
+// read path honours: owner.AllowCrossOwner and tenant.AllowCrossTenant. Both
+// are documented as an escape for the in-process Go surface, both are
+// unreachable from an HTTP route, and both are explicit at the call site,
+// which an absent context marker never was.
 func (ch *CrudHandler) scopeNestedFiltersInProcess(ctx context.Context, filters []nestedFilter) error {
 	if len(filters) == 0 {
 		return nil
 	}
-	if _, overHTTP := ctx.Value(realRequestKey{}).(*http.Request); !overHTTP {
-		return nil
-	}
-	return ch.scopeNestedFiltersForCaller(ctx, filters)
+	return ch.scopeNestedFilters(ctx, filters, false)
 }

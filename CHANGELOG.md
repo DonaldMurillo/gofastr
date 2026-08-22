@@ -72,6 +72,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   drift into three different answers. A caller holding a cross-scope grant
   gets no predicate on that axis, and the axes stay independent.
 
+  **BREAKING for in-process callers.** `ListAll` and `CountAll` now apply
+  those predicates to a `ListOptions.NestedFilters` spec on every call, not
+  only over HTTP. The narrowing was previously gated on a context marker that
+  no host could set: the setter is unexported and crud's three call sites hand
+  it to the include loader, which never reaches `ListAll`, so the safe branch
+  was unreachable and the default was the unsafe one. A host handler
+  forwarding a caller-influenced relation into `ListAll` mid-request had a
+  count oracle over rows the target's posture hides. Server-side code that
+  means "across every owner" now says so with `owner.AllowCrossOwner` or
+  `tenant.AllowCrossTenant`, the escape the in-process surface already had.
+  The posture check — may this caller read the target at all — stays HTTP-only,
+  because it is the baseline session gate and in-process code has no session;
+  applying it there refuses every background nested filter and protects nothing.
+
 - **A list filter narrowed the total but not the rows.** `filter.ApplyToQuery`
   reached the count query and not the data query, so `?field=value` returned
   the whole table under a correct-looking total. Nothing asserted that a filter

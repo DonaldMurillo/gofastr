@@ -424,14 +424,25 @@ the three surfaces answer alike. A caller holding a cross-owner or cross-tenant
 grant gets no predicate on that axis, since they can already list the target
 wholesale; the axes are independent. See [access control](access-control.md).
 
-Both gates are HTTP-only. An in-process caller, such as a typed repo passing
-`ListOptions.NestedFilters` or `ApplyIncludes` outside a request, is server
-code acting on its own authority, and neither gate runs for it. `Hidden` and
-`NoQuery` still do, because those describe the data rather than the caller. A
-host that forwards a user-influenced relation or field into a typed query
-rebuilds the oracle the HTTP gate closes, the same way forwarding a
-user-influenced filter would; validate the spec first, or serve the request
-through the HTTP surface.
+The two gates part company in process. The **posture** gate, which asks whether
+the caller may read the target entity at all, is HTTP-only: it is the baseline
+session requirement, and in-process code runs with no session by construction,
+so asking it there refuses every nested filter a background job makes and
+protects nothing. `ApplyIncludes` draws the line in the same place.
+
+The **scope predicates** are not HTTP-only. Owner, tenant, and read scope
+narrow a nested filter on every surface, in-process included, because they are
+what stops the `EXISTS` clause counting rows the caller may not see. A host
+handler that forwards a caller-influenced relation into `ListAll` or
+`CountAll` gets the same narrowing the HTTP path applies.
+
+Server-side code that genuinely means "read across every owner" says so with
+[`owner.AllowCrossOwner`](access-control.md) or `tenant.AllowCrossTenant`.
+Both are explicit at the call site, both are unreachable from an HTTP route,
+and both are already how every other in-process read widens its scope.
+
+`Hidden` and `NoQuery` apply on both surfaces throughout, because those
+describe the data rather than the caller.
 
 ### Foreign keys on writes are not permission-checked
 
