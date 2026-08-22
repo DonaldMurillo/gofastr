@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/json"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -493,7 +494,20 @@ func TestRunSeeds_UsesBatchLedgerRead(t *testing.T) {
 // declare EntityConfig.Seed actually seed at startup. Regression risk if
 // the call site in app.go gets moved or deleted.
 func TestAppStart_WiresRunSeeds(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	// A FILE, not ":memory:". modernc gives every pooled connection to
+	// ":memory:" its own empty database, so the seed's INSERT landed on one
+	// connection and this test's SELECT ran against another that had never seen
+	// the migration. The pool only opens a second connection under contention,
+	// which is why it read as a timing flake, and why raising the deadline from
+	// 3s to 30s did not fix it: the poll could never succeed, it just spent the
+	// whole budget before failing. CI caught it once the framework package
+	// joined the race gate.
+	//
+	// A file rather than testdb.Open's SetMaxOpenConns(1), because App.Start is
+	// live in a goroutine here and a one-connection pool can park the poll
+	// behind the server.
+	path := filepath.Join(t.TempDir(), "seed.db")
+	db, err := sql.Open("sqlite3", "file:"+path)
 	if err != nil {
 		t.Skip("sqlite3 driver not available")
 	}
@@ -529,10 +543,21 @@ func TestAppStart_WiresRunSeeds(t *testing.T) {
 	}
 	_ = app.Shutdown(context.Background())
 	select {
-	case <-startErr:
-	case <-time.After(2 * time.Second):
+	case err := <-startErr:
+		// Start's error IS the diagnosis when the row does not land: a failing
+		// seed comes back through here as `run seeds: ...` and a failing
+		// migration as `auto-migrate: ...`. Discarding it is what turned a
+		// named cause into "got 0 rows" in CI, with nothing to act on. Start
+		// returns nil on a graceful shutdown, so any error here is real.
+		if err != nil {
+			t.Fatalf("App.Start: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("App.Start did not return within 10s of Shutdown")
 	}
 
+	// Read only AFTER receiving from startErr, which orders this against the
+	// goroutine's write.
 	if !seedCalled {
 		t.Fatal("App.Start did not invoke EntityConfig.Seed")
 	}
