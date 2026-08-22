@@ -835,6 +835,57 @@ func TestRepairHandlesAwkwardButLegalDDL(t *testing.T) {
 		repairAndAssertCreatable(t, db)
 	})
 
+	t.Run("a comment INSIDE a modifier", func(t *testing.T) {
+		// A comment is legal anywhere a space is, so both of these parse in
+		// SQLite. Matching whitespace-delimited words read `/*` as the action
+		// word, matched nothing, and stranded the modifier.
+		for _, ddl := range []string{
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT REFERENCES users(id) ON /* n */ DELETE CASCADE,\n\ttitle TEXT\n)",
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT REFERENCES users(id) ON DELETE /* n */ CASCADE,\n\ttitle TEXT\n)",
+		} {
+			db := legacyDB(t,
+				`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+				ddl,
+				`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+			)
+			repairAndAssertCreatable(t, db)
+		}
+	})
+
+	t.Run("a comment butted against a modifier with no space", func(t *testing.T) {
+		// `CASCADE-- why` is CASCADE followed by a comment. Without the
+		// comment check inside the token scan it is one long token, so the
+		// modifier never matches and is stranded.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT REFERENCES users(id) ON DELETE CASCADE-- why\n\t,\n\ttitle TEXT\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+		// Creatability alone is too weak here. Treating `CASCADE-- why` as one
+		// token consumes `CASCADE--` and leaves `why` behind, and SQLite
+		// accepts multi-word type names, so the column comes back declared
+		// `TEXT why` and every row still copies. The TYPE is what catches it.
+		assertColumnType(t, db, "tasks", "user_id", "TEXT")
+	})
+
+	t.Run("a trailing line comment before the list comma", func(t *testing.T) {
+		// The rewritten definition ends inside a `--` comment, and the caller
+		// appends the list comma to it. Without a terminating newline the
+		// comma is swallowed and `title` merges into the previous column —
+		// the same failure an eaten newline caused for NOT NULL, arrived at
+		// from the other end.
+		db := legacyDB(t,
+			`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+			"CREATE TABLE tasks (\n\tid TEXT PRIMARY KEY,\n\tuser_id TEXT REFERENCES users(id) NOT NULL -- why\n\t,\n\ttitle TEXT\n)",
+			`INSERT INTO tasks (id, user_id, title) VALUES ('t1','auth-user-1','kept')`,
+		)
+		repairAndAssertCreatable(t, db)
+		if _, err := db.Exec(`INSERT INTO tasks (id, title) VALUES ('t-null','no owner')`); err == nil {
+			t.Error("NOT NULL was dropped by the rebuild")
+		}
+	})
+
 	t.Run("MATCH taking a quoted name with a space", func(t *testing.T) {
 		// MATCH takes a NAME, and a name may be quoted and hold spaces.
 		// Consuming its two words by whitespace stopped inside the quotes and
@@ -1047,4 +1098,30 @@ func autoIncTaskEntity(t *testing.T) *entity.Entity {
 		},
 		Relations: []entity.Relation{entity.BelongsTo("user", "users", "user_id")},
 	}.WithTimestamps(false))
+}
+
+// assertColumnType fails when a rebuilt column's declared type is not exactly
+// want. SQLite accepts a multi-word type name, so a rewriter that strands a
+// stray word after the type produces a table that looks fine to every row
+// operation and is wrong in the schema.
+func assertColumnType(t *testing.T, db *sql.DB, table, column, want string) {
+	t.Helper()
+	rows, err := db.Query(`SELECT name, type FROM pragma_table_info(?)`, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, typ string
+		if err := rows.Scan(&name, &typ); err != nil {
+			t.Fatal(err)
+		}
+		if name == column {
+			if typ != want {
+				t.Errorf("column %q declared type %q, want %q", column, typ, want)
+			}
+			return
+		}
+	}
+	t.Errorf("column %q not found after the rebuild", column)
 }

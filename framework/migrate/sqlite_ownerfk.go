@@ -673,21 +673,26 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	// action was stranded without its clause.
 	rest = trimLeadingInert(rest)
 	for {
-		// Matched on TOKENS, never on a literal prefix with one space in it.
-		// SQLite stores the CREATE TABLE text verbatim, so a hand-written
-		// migration may wrap a modifier across lines: `ON DELETE\n\t\tCASCADE`
-		// matched nothing, the loop consumed nothing, and the rebuilt column
-		// kept `ON DELETE CASCADE` with no REFERENCES clause in front of it,
-		// which SQLite rejects. The table survived, so this was a refusal, but
-		// the repair was unavailable for that table.
-		f := strings.Fields(strings.ToUpper(rest))
+		// Matched and consumed on TOKENS carrying their SOURCE SPANS, because
+		// a comment is legal ANYWHERE a space is: `ON /* n */ DELETE CASCADE`
+		// and `ON DELETE /* n */ CASCADE` both parse in SQLite. Every earlier
+		// shape of this loop matched whitespace-delimited words, so it read
+		// `/*` as the action word, matched nothing, broke, and left the
+		// modifier stranded without the REFERENCES clause it belongs to.
+		//
+		// Three review rounds each found one more input this way — a wrapped
+		// modifier, a comment before the first one, a comment between two —
+		// which is the signal that matching on words was the wrong SHAPE,
+		// not that any one case had been missed. Consuming by span takes the
+		// comments out with the modifier they sit inside.
+		toks := sqlTokens(rest)
 		tok := func(i int) string {
-			if i < len(f) {
-				return f[i]
+			if i < len(toks) {
+				return toks[i].up
 			}
 			return ""
 		}
-		var n int // words to consume
+		var n int // tokens to consume
 		switch {
 		case tok(0) == "ON" && (tok(1) == "DELETE" || tok(1) == "UPDATE"):
 			// "ON", the action word, then one or two words of action.
@@ -704,47 +709,107 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 		default:
 			n = 0
 		}
-		if n == 0 {
+		if n == 0 || n > len(toks) {
 			break
 		}
-		// Comment-aware between modifiers too, not only before the first one.
-		// `ON DELETE CASCADE -- why\n ON UPDATE CASCADE` left the comment at
-		// the head, the next iteration read `--` as its token, matched
-		// nothing, and broke — stranding ON UPDATE CASCADE with no REFERENCES
-		// clause in front of it, which SQLite rejects.
-		rest = trimLeadingInert(consumeWords(rest, n))
+		rest = rest[toks[n-1].end:]
 	}
 	rest = strings.TrimRight(rest, " \t\n\r")
 	if rest != "" {
-		return head + " " + rest, true
+		return terminateLineComment(head + " " + rest), true
 	}
-	return head, true
+	return terminateLineComment(head), true
 }
 
-// consumeWords returns s with its first n whitespace-separated words removed,
-// preserving the remainder byte for byte. Unlike strings.Fields plus a join it
-// cannot alter whitespace inside what is left, which matters because what is
-// left may be a quoted DEFAULT or CHECK whose spacing is part of the value.
-func consumeWords(s string, n int) string {
+// sqlToken is one token of a column definition, with the source span it
+// occupies. The span is what the modifier loop consumes, so a comment sitting
+// between the words of a modifier is removed along with it rather than
+// stopping the scan.
+type sqlToken struct {
+	up         string // upper-cased, for keyword matching
+	start, end int    // byte span in the source
+}
+
+// sqlTokens splits s into tokens, skipping whitespace and comments and
+// treating a quoted identifier as a single token.
+func sqlTokens(s string) []sqlToken {
 	space := func(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\r' }
+	var out []sqlToken
 	i := 0
-	for w := 0; w < n; w++ {
-		for i < len(s) && space(s[i]) {
+	for i < len(s) {
+		if space(s[i]) {
 			i++
+			continue
 		}
-		for i < len(s) && !space(s[i]) {
-			// A quoted identifier is ONE word even when it holds spaces.
-			// MATCH takes a name, and `MATCH "legacy mode"` consumed by byte
-			// stopped after `"legacy`, so the rebuilt DDL carried a stray
-			// `mode"` and SQLite rejected the whole rebuild.
+		if j := skipComment(s, i); j > i {
+			i = j
+			continue
+		}
+		start := i
+		if s[i] == '(' || s[i] == ',' {
+			i++
+			out = append(out, sqlToken{up: strings.ToUpper(s[start:i]), start: start, end: i})
+			continue
+		}
+		for i < len(s) {
 			if j := skipQuoted(s, i); j > i {
 				i = j
 				continue
 			}
+			if space(s[i]) || s[i] == '(' || s[i] == ',' {
+				break
+			}
+			// A comment ends the word it touches: `CASCADE-- why` is CASCADE
+			// followed by a comment, not one long token.
+			if j := skipComment(s, i); j > i {
+				break
+			}
 			i++
 		}
+		if i == start {
+			// A zero-length token would spin forever. Unreachable while the
+			// comment skip above runs first, which is exactly why it is here:
+			// a mutation that removed that skip hung the test binary rather
+			// than failing it, and a scanner that can hang is worse than one
+			// that is wrong.
+			i++
+		}
+		out = append(out, sqlToken{up: strings.ToUpper(s[start:i]), start: start, end: i})
 	}
-	return s[i:]
+	return out
+}
+
+// terminateLineComment appends a newline when s ends inside an unterminated
+// comment, because the caller appends to what this returns: the list comma, or
+// the closing paren. Without it a definition ending in a trailing comment
+// swallows that comma and takes the NEXT column with it — the same failure an
+// eaten newline once caused for a NOT NULL.
+func terminateLineComment(s string) string {
+	i := 0
+	for i < len(s) {
+		if j := skipQuoted(s, i); j > i {
+			i = j
+			continue
+		}
+		if s[i] == '-' && i+1 < len(s) && s[i+1] == '-' {
+			nl := strings.IndexByte(s[i:], '\n')
+			if nl < 0 {
+				return s + "\n"
+			}
+			i += nl
+			continue
+		}
+		if s[i] == '/' && i+1 < len(s) && s[i+1] == '*' {
+			e := strings.Index(s[i+2:], "*/")
+			if e < 0 {
+				return s + "\n"
+			}
+			i += 2 + e + 2
+			continue
+		}
+		i++
+	}
+	return s
 }
 
 // trimLeadingInert drops leading whitespace AND comments from s. The scanners
