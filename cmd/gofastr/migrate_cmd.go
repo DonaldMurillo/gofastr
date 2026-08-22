@@ -186,6 +186,7 @@ func runMigrateRepair(args []string) {
 	if !hasFlag(args, "--apply") {
 		info("Report only. Re-run with --apply to rebuild the listed tables without the stale key.")
 		info("The rebuild keeps every row, column, default, index and other constraint.")
+		info("The scan reads the schema only. A key whose referenced table really does hold the stamped owner ids is satisfiable, and --apply would drop it. Check the listed tables first.")
 		osExit(1)
 	}
 
