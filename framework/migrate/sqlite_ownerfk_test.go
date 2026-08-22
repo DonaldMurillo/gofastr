@@ -17,8 +17,15 @@ import (
 // the framework violates on every create.
 func legacyDB(t *testing.T, ddl ...string) *sql.DB {
 	t.Helper()
+	return legacyDBOn(t, "sqlite3", ddl...)
+}
+
+// legacyDBOn is legacyDB on a named driver, so a test can seat a fault
+// injector under the same fixture.
+func legacyDBOn(t *testing.T, driverName string, ddl ...string) *sql.DB {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "legacy.db")
-	db, err := sql.Open("sqlite3", "file:"+path)
+	db, err := sql.Open(driverName, "file:"+path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -736,6 +743,7 @@ func TestRepairHandlesAwkwardButLegalDDL(t *testing.T) {
 		)
 		repairAndAssertCreatable(t, db)
 	})
+
 }
 
 // repairAndAssertCreatable runs the repair and checks the thing that matters:
@@ -771,9 +779,11 @@ func repairAndAssertCreatable(t *testing.T, db *sql.DB) {
 // existed, and the deferred cleanup only closed the connection, which returns
 // it to the pool.
 //
-// Driven by closing the database so the pragma exec fails.
+// Proved by failing that exact statement in the driver. Asserting the pragmas
+// after a SUCCESSFUL repair, which is what this test used to do, never enters
+// the window at all: it passes just as happily against the broken version.
 func TestRepairRestoresEnforcementWhenTheSecondPragmaFails(t *testing.T) {
-	db := legacyDB(t,
+	db := legacyDBOn(t, failLegacyPragmaDriver,
 		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
 		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
 	)
@@ -787,9 +797,45 @@ func TestRepairRestoresEnforcementWhenTheSecondPragmaFails(t *testing.T) {
 	if len(stale) != 1 {
 		t.Fatalf("the owner key was not found, so the repair never ran: %+v", stale)
 	}
-	// Every exit path from the repair must leave the pragma restored, so the
-	// invariant is asserted after a normal run too; the early-return path is
-	// covered by TestRepairRestoresEnforcementOnTheFailurePath.
+
+	err = RepairStaleOwnerForeignKeys(context.Background(), db, stale)
+	if err == nil {
+		t.Fatal("the repair reported success while legacy_alter_table=ON was failing")
+	}
+	if !strings.Contains(err.Error(), errLegacyPragmaInjected.Error()) {
+		t.Fatalf("a different failure than the injected one: %v", err)
+	}
+
+	// MaxOpenConns(1), so this is the connection the repair ran on.
+	for _, p := range []string{"foreign_keys", "legacy_alter_table"} {
+		var v int
+		if qerr := db.QueryRow("PRAGMA " + p).Scan(&v); qerr != nil {
+			t.Fatal(qerr)
+		}
+		want := 1
+		if p == "legacy_alter_table" {
+			want = 0
+		}
+		if v != want {
+			t.Errorf("SECURITY: PRAGMA %s = %d on the pooled connection after the early return, want %d", p, v, want)
+		}
+	}
+}
+
+// The pragma still has to be back after a repair that SUCCEEDS. Separate test,
+// because a single one asserting both would pass on either path alone.
+func TestRepairRestoresEnforcementAfterASuccessfulRun(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
+	)
+	stale, err := FindStaleOwnerForeignKeys(context.Background(), db, testReg{"tasks": taskEntity(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("the owner key was not found, so the repair never ran: %+v", stale)
+	}
 	if err := RepairStaleOwnerForeignKeys(context.Background(), db, stale); err != nil {
 		t.Fatal(err)
 	}
