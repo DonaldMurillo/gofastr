@@ -85,6 +85,17 @@ var (
 	// Without this, `&t.Colors.Background: "#15141B"` was reported as a
 	// stylesheet. That is a theme token assignment, the exact thing this
 	// rule exists to encourage.
+	//
+	// Matches containing `:=` are rejected IN CODE (looksLikeCSS), not
+	// here: Go's regexp is RE2 and has no lookahead, so `:(?!=)` cannot
+	// be written. The guard is needed because `fill` and `stroke` are
+	// property names AND legal Go identifiers, and in `fill :=
+	// "var(--color-surface)"` (issue #220) the `:` of `:=` satisfied
+	// the colon, `= "` the value gap, and the token reference the value
+	// shape. A stylesheet declaration never carries `=` directly after
+	// its colon, so a match containing `:=` is Go, not CSS.
+	// reCSSHyphenRule needs no such guard: a hyphen cannot occur in a
+	// Go identifier, so no Go construct can match it.
 	reCSSValueRule = regexp.MustCompile(notPropChar + `(?:` + cssPlainProps + `)\s*:\s*[^;{}]*` + cssValueShape)
 	reCSSAtRule    = regexp.MustCompile(`(?i)@(?:font-face|media|keyframes|supports|layer)\b`)
 	// A `<style>` block opened inside a string.
@@ -107,11 +118,34 @@ var (
 	reEventSource = regexp.MustCompile(`\bnew\s+EventSource\s*\(`)
 )
 
-// looksLikeCSS reports whether a line carries a stylesheet declaration.
-func looksLikeCSS(line string) bool {
-	return reCSSAtRule.MatchString(line) ||
-		reCSSHyphenRule.MatchString(line) ||
-		reCSSValueRule.MatchString(line)
+// looksLikeCSS reports whether a line carries a stylesheet declaration,
+// returning the text that matched so the diagnostic can name the trigger
+// (empty string: nothing did). A reCSSValueRule match containing `:=` is
+// rejected: see the comment above that regex.
+func looksLikeCSS(line string) string {
+	if m := reCSSAtRule.FindString(line); m != "" {
+		return m
+	}
+	if m := reCSSHyphenRule.FindString(line); m != "" {
+		return m
+	}
+	if m := reCSSValueRule.FindString(line); m != "" && !strings.Contains(m, ":=") {
+		return m
+	}
+	return ""
+}
+
+// clipTrigger trims a matched fragment and caps it, so a long line
+// produces a readable diagnostic rather than a wall of text.
+func clipTrigger(m string) string {
+	m = strings.TrimSpace(m)
+	r := []rune(m)
+	// Cut on runes, not bytes: a CSS value can hold any UTF-8, and
+	// slicing mid-rune puts invalid bytes in the diagnostic.
+	if len(r) > 48 {
+		return string(r[:45]) + "…"
+	}
+	return m
 }
 
 // designSystemPrefixes are the trees that OWN styling. CSS there is the
@@ -170,14 +204,22 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			}
 
 			if !ownsStyling {
-				if reStyleTag.MatchString(line) || looksLikeCSS(line) {
+				if trigger := looksLikeCSS(line); trigger != "" || reStyleTag.MatchString(line) {
 					what := "a CSS rule"
+					// Issue #220: the reporter read "a CSS rule is defined
+					// outside the design system" as being about the value on
+					// the line and went looking at what was assigned, when
+					// the match was on the property name. Name the half of
+					// the line that matched. The <style> wording is already
+					// unambiguous, so it stays as it was.
+					detail := fmt.Sprintf(": matched `%s`", clipTrigger(trigger))
 					if reStyleTag.MatchString(line) {
 						what = "a <style> block"
+						detail = ""
 					}
 					out = append(out, contracts.Diagnostic{
 						RuleID: contracts.RuleBespokeCSS, File: f.Rel, Line: lineNo,
-						Message: fmt.Sprintf("%s is defined outside the design system", what),
+						Message: fmt.Sprintf("%s is defined outside the design system%s", what, detail),
 						Snippet: strings.TrimSpace(lines[i]),
 					})
 				}

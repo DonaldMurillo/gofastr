@@ -736,15 +736,20 @@ func renderingRules() []Rule {
 	return []Rule{{
 		ID: RuleBespokeCSS, Slug: "rendering/bespoke-css",
 		Title: "CSS outside the design system", Capability: CapRendering, Severity: SeverityError,
-		Summary: "An app or generator ships its own CSS rules.",
+		Summary: "An app or generator ships its own CSS rules: CSS declarations in strings, not Go assigning token values.",
 		Why: "Two styling surfaces means every future change has to be made twice and stays consistent " +
 			"by luck. Bespoke CSS also loads in an order you do not control relative to component CSS, " +
-			"so it wins or loses by specificity accident rather than by intent.",
+			"so it wins or loses by specificity accident rather than by intent. The rule matches CSS " +
+			"declarations, a property-colon-value shape in a string; a Go assignment of a design-system " +
+			"token reference to a variable, `fill := \"var(--color-surface)\"`, is not one and does not fire.",
 		Fix: "Compose `framework/ui` components and `core-ui/style` tokens. If the design system genuinely lacks what you need, add the component or token upstream and use it here. That is the fix, not a local rule.",
 		Doc: "ui-getting-started",
 		Examples: []Example{{
 			Bad:  "const baseCSS = `.my-card { padding: 16px; border-radius: 8px; }`",
 			Good: `ui.Card(ui.CardConfig{Padding: style.SpaceMD})`,
+		}, {
+			Bad:  "const btnCSS = `.btn { padding: var(--spacing-md); }`",
+			Good: "fill := \"var(--color-surface)\" // a token reference assigned in Go is the encouraged shape",
 		}},
 	}, {
 		ID: RuleHardNavigation, Slug: "rendering/hard-navigation",

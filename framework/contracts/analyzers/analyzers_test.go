@@ -621,6 +621,60 @@ func TestCSSInACommentIsNotReported(t *testing.T) {
 	assertNot(t, ds, contracts.RuleBespokeCSS, "prose about CSS is not CSS")
 }
 
+func TestShortVarDeclarationIsNotCSS(t *testing.T) {
+	// Issue #220: `fill` and `stroke` are CSS property names AND legal Go
+	// identifiers. In a short variable declaration the `:` of `:=`
+	// satisfied the property-colon and the token reference satisfied the
+	// value shape, so assigning a design-system token to a local read as
+	// bespoke CSS — the exact thing this rule exists to encourage,
+	// reported as the thing to stop doing.
+	ds := fixture(t, map[string]string{
+		"x.go": `package app
+
+func f() string {
+	fill := "var(--color-surface)"
+	stroke := "var(--color-border)"
+	_ = stroke
+	return fill
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleBespokeCSS, "a Go short variable declaration assigning a token reference is not CSS")
+}
+
+func TestCSSVarValueInGoStringIsReported(t *testing.T) {
+	// The := rejection must not widen into "any single-word property is
+	// fine": a real declaration in a Go string, with no := anywhere near
+	// the colon, still fires. This one only matches through the
+	// CSS-shaped-value path (padding + var(--…)), not the hyphen rule.
+	ds := fixture(t, map[string]string{
+		"page.go": "package main\n\nconst css = `.my-card { padding: var(--spacing-md); }`\n",
+	})
+	assertHas(t, ds, contracts.RuleBespokeCSS)
+}
+
+func TestStructLiteralWithCSSValueIsReported(t *testing.T) {
+	// A struct literal with a lowercase field name and a CSS-shaped
+	// value has no := inside the match, so the := narrowing must leave
+	// it caught. (A QUOTED map key, `{"color": "#fff"}`, does not match
+	// at all — the quote between key and colon breaks property-colon
+	// contiguity — and that is fine: a quoted key is data, not CSS.)
+	ds := fixture(t, map[string]string{
+		"m.go": "package main\n\ntype palette struct{ color string }\n\nvar p = palette{color: \"#fff\"}\n",
+	})
+	assertHas(t, ds, contracts.RuleBespokeCSS)
+}
+
+func TestBespokeCSSMessageNamesTheTrigger(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"page.go": "package main\n\nconst css = `.my-card { border-radius: 8px; }`\n",
+	})
+	d := assertHas(t, ds, contracts.RuleBespokeCSS)
+	if !strings.Contains(d.Message, "matched") || !strings.Contains(d.Message, "border-radius:") {
+		t.Errorf("message does not name the trigger that matched: %q", d.Message)
+	}
+}
+
 func TestHardNavigationIsReported(t *testing.T) {
 	ds := fixture(t, map[string]string{
 		"js.go": "package main\n\nconst script = `document.getElementById('x').onclick = () => { location.href = '/orders' }`\n",
