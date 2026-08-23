@@ -198,3 +198,41 @@ func TestCSSWithoutDirectiveStillReports(t *testing.T) {
 	})
 	assertHas(t, ds, contracts.RuleUnknownThemeToken)
 }
+
+// A feature query's condition asks whether the browser can PARSE a
+// declaration; it does not make one. Counting `@supports (--radius-lg: 0)`
+// as a declaration marked the token known and silenced the real typo
+// below it — the rule's own failure mode, reached from the other side.
+func TestSupportsConditionDoesNotDeclare(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": "@supports (--radius-lg: 0) {\n  .a { border-radius: var(--radius-lg); }\n}\n",
+	})
+	found := countRule(t, ds, contracts.RuleUnknownThemeToken)
+	if len(found) != 1 {
+		t.Fatalf("want the typo inside the feature query reported once, got %d: %v", len(found), found)
+	}
+	if found[0].Line != 2 {
+		t.Errorf("finding at line %d, want 2", found[0].Line)
+	}
+}
+
+// The other direction, which a careless fix breaks: a declaration INSIDE
+// an at-rule block is a real declaration, however deeply nested. Losing
+// this turns valid CSS into a build failure, which is worse than the
+// missed finding above.
+func TestDeclarationInsideAtRuleCounts(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": "@media screen {\n  @supports (display: grid) {\n    :root { --brand: #fff; }\n  }\n}\n.b { color: var(--brand); }\n",
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "--brand is declared inside the nested at-rule blocks")
+}
+
+// `@property --name { … }` registers a custom property with no colon
+// after the name, so the declaration scan cannot see it. Reading a
+// registered property is not a typo.
+func TestAtPropertyRegistrationCounts(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": "@property --brand {\n  syntax: \"<color>\";\n  inherits: false;\n  initial-value: #fff;\n}\n.b { color: var(--brand); }\n",
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "--brand is registered with @property")
+}

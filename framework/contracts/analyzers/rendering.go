@@ -293,9 +293,7 @@ func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
 		}
 		clean := blankCSSCommentsAndStrings(string(body))
 		cleaned[f.Rel] = clean
-		for _, m := range reCSSCustomProp.FindAllStringSubmatch(clean, -1) {
-			declared[m[1]] = true
-		}
+		collectDeclared(clean, declared)
 	}
 	known := make(map[string]bool)
 	names := style.TokenNames()
@@ -333,6 +331,52 @@ func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
 // reCSSCustomProp matches a custom-property declaration, `--name:`; the
 // captured group is the name without the leading dashes.
 var reCSSCustomProp = regexp.MustCompile(`--([A-Za-z0-9_-]+)\s*:`)
+
+// reAtProperty matches an `@property --name` registration. It has no
+// colon after the name, so reCSSCustomProp cannot see it, and a project
+// that registers a property this way and then reads it would otherwise
+// be told the token does not exist.
+var reAtProperty = regexp.MustCompile(`@property\s+--([A-Za-z0-9_-]+)`)
+
+// collectDeclared adds every custom property a stylesheet DECLARES to
+// into. Position matters: `--name:` only declares inside a rule block and
+// outside parentheses.
+//
+// The case that forced this is `@supports (--brand: red) { … }`. A feature
+// query's condition asks whether the browser can PARSE that declaration;
+// it does not make one. Counting it marked `--brand` declared and silenced
+// every real finding for it, which is the failure mode this rule exists to
+// prevent, arrived at from the other side.
+//
+// Depth is counted on the cleaned text, where comments and strings are
+// already blanked, so a brace or paren inside either cannot skew it.
+func collectDeclared(clean string, into map[string]bool) {
+	for _, m := range reAtProperty.FindAllStringSubmatch(clean, -1) {
+		into[m[1]] = true
+	}
+	var brace, paren, pos int
+	for _, m := range reCSSCustomProp.FindAllStringSubmatchIndex(clean, -1) {
+		for ; pos < m[0]; pos++ {
+			switch clean[pos] {
+			case '{':
+				brace++
+			case '}':
+				if brace > 0 {
+					brace--
+				}
+			case '(':
+				paren++
+			case ')':
+				if paren > 0 {
+					paren--
+				}
+			}
+		}
+		if brace > 0 && paren == 0 {
+			into[clean[m[2]:m[3]]] = true
+		}
+	}
+}
 
 // reVarRef matches a var() reference; the captured group is the
 // referenced name without the leading dashes.

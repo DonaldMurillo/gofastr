@@ -1445,7 +1445,11 @@
     // Skip any non-_self target (covers _blank, _top, _parent, named
     // frames). Previously only _blank was checked, so <a target="_top">
     // inside an iframe got hijacked instead of breaking out.
-    if (anchor.target && anchor.target !== '_self') return;
+    // Lowercased because HTML matches the underscore keywords
+    // ASCII-case-insensitively: target="_SELF" IS _self, and comparing
+    // raw sent it down the skip path, so a link that should have been a
+    // soft navigation became a full page load.
+    if (anchor.target && anchor.target.toLowerCase() !== '_self') return;
     if (!isKnownRoute(href)) return;
     // data-fui-rpc anchors are RPC triggers, not navigation.
     if (anchor.hasAttribute('data-fui-rpc')) return;

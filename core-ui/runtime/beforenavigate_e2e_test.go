@@ -23,6 +23,8 @@ func beforeNavigatePage() string {
   <nav aria-label="Primary">
     <a id="selfhash" href="/#top">Top</a>
     <a id="go" href="/other#section">Other</a>
+    <a id="upper" href="/other" target="_SELF">Other, shouting</a>
+    <a id="blank" href="/other" target="_blank">Other, new tab</a>
   </nav>
   <main>home screen</main>
   <span id="ready">ready</span>
@@ -179,5 +181,74 @@ func TestBeforeNavigateSkipsSamePathFragment(t *testing.T) {
 	}
 	if stamp != "alive" {
 		t.Error("same-path #fragment click must stay a same-document navigation — window stamp was wiped")
+	}
+}
+
+// TestUppercaseSelfTargetIsSoftNavigated: HTML matches the underscore
+// target keywords ASCII-case-insensitively, so `target="_SELF"` names
+// the current browsing context exactly as `_self` does. Comparing the
+// attribute raw sent it down the skip path, and a link that should have
+// been a soft navigation became a full page load.
+//
+// The window stamp is the assertion that matters: a full load wipes it,
+// so it distinguishes "the router handled this" from "the browser did,
+// and happened to land on the same URL".
+func TestUppercaseSelfTargetIsSoftNavigated(t *testing.T) {
+	var fetches atomic.Int32
+	srv := beforeNavigateServer(t, &fetches)
+	ctx := newSeedBrowserCtx(t)
+
+	var path, stamp string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Evaluate(`window.__upStamp = 'alive'`, nil),
+		chromedp.Click(`#upper`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`location.pathname`, &path),
+		chromedp.Evaluate(`window.__upStamp || 'gone'`, &stamp),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if path != "/other" {
+		t.Errorf("target=\"_SELF\" did not navigate, at %q", path)
+	}
+	if stamp != "alive" {
+		t.Error(`target="_SELF" became a full page load; the underscore keywords match case-insensitively, so it is _self and the router owns it`)
+	}
+	if n := fetches.Load(); n < 1 {
+		t.Error("no SPA partial was fetched — the router did not take the click")
+	}
+}
+
+// The other half, and the reason the guard is not simply deleted: a real
+// non-_self target must still fall through to the browser. Without this,
+// a fix for the case above could quietly hijack every target.
+func TestBlankTargetStillEscapesTheRouter(t *testing.T) {
+	var fetches atomic.Int32
+	srv := beforeNavigateServer(t, &fetches)
+	ctx := newSeedBrowserCtx(t)
+
+	var path, fired string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Evaluate(`window.__bnFired = 'no';
+			document.addEventListener('gofastr:beforenavigate', function () { window.__bnFired = 'yes'; });`, nil),
+		chromedp.Click(`#blank`, chromedp.ByID),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`location.pathname`, &path),
+		chromedp.Evaluate(`window.__bnFired`, &fired),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if path != "/" {
+		t.Errorf("target=\"_blank\" must not be soft-navigated in place, at %q", path)
+	}
+	if fired != "no" {
+		t.Error(`gofastr:beforenavigate fired for a target="_blank" click; the router must not claim it`)
+	}
+	if n := fetches.Load(); n != 0 {
+		t.Errorf("target=\"_blank\" must not fetch a partial, got %d", n)
 	}
 }

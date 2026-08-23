@@ -6,10 +6,18 @@ import (
 )
 
 // DarkPaletteGaps returns the color tokens a theme declares in Colors but
-// has no usable dark value for, sorted by token name. A key present with
-// an EMPTY value counts as a gap: darkSchemeCSS writes it out as
-// `--color-surface: ;`, a malformed declaration the browser drops, so the
-// token falls back to its light value exactly as a missing key would.
+// has no usable dark value for, sorted by token name.
+//
+// A key present with an EMPTY value counts as a gap, and is in fact the
+// worse of the two cases. An empty custom property is valid CSS, not a
+// malformed declaration the browser discards, so darkSchemeCSS writing
+// `--color-surface: ;` OVERRIDES the light declaration with an empty
+// value. Every `var(--color-surface)` then substitutes to nothing, which
+// makes the consuming declaration invalid at computed-value time and
+// drops it to the property's inherited or initial value. Measured in
+// Chrome against a green light value: a re-declared empty token paints
+// `rgba(0, 0, 0, 0)`, while a token simply left out of the dark map
+// paints the light green. Missing falls back; empty does not.
 //
 // An empty DarkColors is a supported, deliberate configuration (a
 // light-only theme, see Theme.DarkColors) and returns nil. A non-empty

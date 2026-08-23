@@ -24,7 +24,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   when one is within an edit distance of two. It stays quiet for a reference
   carrying a fallback, because `var(--x, 8px)` degrades instead of dropping
   the declaration; for a custom property declared in any scanned stylesheet;
-  and for the `--ui-*` and `--fui-*` component knobs. `style.TokenNames()` is
+  and for the `--ui-*` and `--fui-*` component knobs. A `--name:` counts as a
+  declaration only inside a rule block and outside parentheses, so the
+  condition of a feature query (`@supports (--brand: red)`, which asks whether
+  the browser can parse that declaration rather than making one) no longer
+  marks the token known; `@property --name` registrations do count. `style.TokenNames()` is
   the manifest it checks against, built from the same reflection walk that
   emits the CSS, so the two cannot drift apart. The scan is string-aware:
   `content: "var(--x)"` is content rather than a reference, and a quoted `/*`
@@ -67,6 +71,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   becomes a hard page load, and then does nothing else. No `pushState`, no
   partial fetch, no intercept overlay.
 
+  The same guard now matches the `target` keywords the way HTML does,
+  ASCII-case-insensitively: `target="_SELF"` names the current browsing
+  context exactly as `_self` does, and comparing the attribute raw sent it
+  down the skip path, turning a soft navigation into a full page load. The
+  core runtime's level-1 budget moved 128 bytes (14336 to 14464) to carry the
+  five bytes that costs, and the reason sits beside the constant: the usual
+  answer of carving a feature into a demand module is the one thing
+  unavailable for a guard that IS the click path.
+
 - **`data-fui-activelink-skip` opts a nav link out of active-route
   highlighting.** The `activelink` module neither sets nor clears
   `aria-current` or `.active` on a link carrying it, at load or after
@@ -84,11 +97,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   both compile, and nothing said which one was being read.
   `style.DarkPaletteGaps` returns the color tokens a non-empty `DarkColors`
   has no usable dark value for, missing keys and keys present with an empty
-  value alike (an empty one emits `--color-surface: ;`, which the browser
-  drops, so it fails exactly as a missing key does), and the UI host logs them
-  once at boot: those tokens keep their light
-  values in dark mode, which is usually a contrast bug. An empty `DarkColors`
-  is a light-only theme by design and stays silent. The framework theme now
+  value alike, and the UI host logs them once at boot. A missing key leaves
+  the light value painting in dark mode, which is usually a contrast bug. An
+  empty value is worse: an empty custom property is valid CSS, so
+  `--color-surface: ;` overrides the light declaration and every
+  `var(--color-surface)` substitutes to nothing, dropping the consuming
+  declaration at computed-value time. The token paints transparent rather
+  than light. An empty `DarkColors` is a light-only theme by design and stays
+  silent. The framework theme now
   declares dark values for `code-surface`, `code-text`, and `code-border`
   matching its light ones, which was always the intent and existed only as an
   omission.

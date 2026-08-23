@@ -46,10 +46,12 @@ func TestDarkPaletteGapsSortedMissing(t *testing.T) {
 	}
 }
 
-// A key present with an empty value is a gap, not a declaration.
-// darkSchemeCSS writes it as `--color-surface: ;`, which the browser
-// drops, so the token keeps its light value exactly as a missing key
-// would. Counting only missing keys called a broken palette complete.
+// A key present with an empty value is a gap, and a worse one than a
+// missing key. An empty custom property is valid CSS: it overrides the
+// light declaration, so `var(--color-surface)` substitutes to nothing and
+// the consuming declaration is dropped at computed-value time rather than
+// falling back. Counting only missing keys called a broken palette
+// complete.
 func TestEmptyDarkValueIsAGap(t *testing.T) {
 	th := DefaultTheme()
 	th.DarkColors = completeDarkMap()
