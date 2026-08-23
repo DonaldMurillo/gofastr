@@ -195,8 +195,10 @@ var fragmentAttrs = map[string][]string{
 var moduleAttrs = map[string][]string{
 	"activelink": {
 		// Carved out of the nav fragment (level-1 budget): the idle-loaded
-		// module owns prefix-matched aria-current highlighting.
+		// module owns prefix-matched aria-current highlighting and the
+		// data-fui-activelink-skip opt-out from it.
 		"data-fui-match-prefix",
+		"data-fui-activelink-skip",
 	},
 	"animate": {
 		"data-fui-animate-signal",

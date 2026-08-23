@@ -161,11 +161,12 @@ server side and the runtime does the work.
 | `data-fui-menu` | Marks a `<details data-fui-disclosure>` as a `framework/ui.Menu` dropdown. The runtime focuses the first `[role=menuitem]` when the disclosure opens; arrow keys / Home / End / type-ahead navigate within the panel; Tab closes the menu and lets focus escape naturally. |
 | `data-fui-menu-panel` | Emitted by `framework/ui.Menu` on the `role="menu"` panel `<div>`. No runtime or CSS consumer today (the menu module scopes by `data-fui-menu` + `.ui-menu__panel`); emit-only structural marker. |
 | `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
+| `data-fui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-fui-fileupload` | Marks the drag-drop zone surrounding a `framework/ui.FileUpload` `<input type="file">`. The runtime wires dragover/dragleave/drop handlers that forward dropped File objects into the input's `files` property and dispatch a `change` event so form RPC pipelines fire uniformly whether the user clicked-to-pick or dragged-to-drop. |
 | `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances; popovers are click-driven and don't deep-link. |
 | `data-fui-banner-dismiss` | On the X button inside a `framework/ui.Banner`: clicking sets `hidden` on the nearest `[data-fui-comp="ui-banner"]` ancestor. The runtime delegates the click globally so dismissal survives partial-island swaps. |
-| `data-fui-scrollspy` | Marks a scrollspy container. The runtime observes section heading targets via IntersectionObserver and tags the matching `data-fui-scrollspy-target` link with `aria-current="true"` as the user scrolls. |
-| `data-fui-scrollspy-target` | On a nav link inside a scrollspy: the value identifies the section heading the link tracks. Updated to `aria-current="true"` when its target enters the active band. |
+| `data-fui-scrollspy` | Marks a scrollspy wrapper (`core-ui/patterns/scrollspy.Wrap` emits a `<div>` around a nav of `<a href="#id">` anchors). The runtime demand-loads the scrollspy module, which IntersectionObserves the anchored targets inside the configured region and tags the link whose target is in the active band with `aria-current="true"` + `.is-active`. The `activelink` module leaves these links alone: scrollspy owns their current-state. |
+| `data-fui-scrollspy-target` | On the scrollspy wrapper: a CSS selector for ADDITIONAL target elements when sections aren't headings (default `h2[id], h3[id]`, e.g. `section[id]`). Only anchors whose `href="#id"` resolves to an element inside the observed region participate; the active link is still whichever anchored target is in view. |
 | `data-fui-optimistic-idle` / `data-fui-optimistic-success` / `data-fui-optimistic-endpoint` / `data-fui-optimistic-method` | On an OptimisticAction button: the runtime flips the visible label between the idle and success copy as it dispatches a fetch to the endpoint+method, rolling back on error. Used by `framework/ui.OptimisticAction` for "Save / Saved!" patterns without per-button JS. |
 | `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`, `framework/ui/toggleaction.go`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` (same method) if set; with NO untoggle endpoint configured the button flips back to idle locally without issuing any request. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
 | `data-fui-toggle-idle` / `data-fui-toggle-committed` | Markers on the two label spans inside a ToggleAction button. The runtime shows/hides them as the button transitions between idle and committed states. SSR ships the initial visible state. |
@@ -298,6 +299,21 @@ whose request carried it, and an evicted entry costs nothing until that
 tab actually navigates; surfaces that must stay fresh across tabs
 belong on the polling rung (`data-fui-poll`), not on cache eviction.
 Iframe embeds have no screen cache, so the header is a no-op there.
+
+**Active-link highlighting.** After every navigation (and at module
+load) the idle-loaded `activelink` module walks every `nav a` with an
+`href` and tags the one matching the current path with
+`aria-current="page"` and the `active` class — the value is `page`, the
+ARIA-correct value for a page link, NOT `true`, so
+`[aria-current="true"]` selectors do not match it. Every other `nav a`
+with an href that does not match loses both. Left completely untouched
+(neither set nor cleared): href-less links (server-managed), links
+inside a `[data-fui-scrollspy]` wrapper (the scrollspy module owns
+their `aria-current="true"`), and links carrying
+`data-fui-activelink-skip` (the opt-out for a current-state owned by
+app code or a hand-set attribute). `data-fui-match-prefix` opts a link
+into segment-prefix matching: `/docs` lights up on `/docs` and
+`/docs/getting-started`, never on `/docs-old`.
 
 **The flow for an in-page update** (e.g. clicking "page 2" on a pagination island):
 
