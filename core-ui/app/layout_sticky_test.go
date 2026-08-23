@@ -53,6 +53,41 @@ func TestStickyHeaderCSSRule(t *testing.T) {
 	}
 }
 
+// A sticky header makes the shell's dead scroll visible: .layout-body is
+// min-height: 100vh, so a header above it makes a short page scroll by
+// exactly the header's height with nothing in the overflow. Under a
+// pinned header that reads as broken. The sticky shell is a flex column
+// so it fills the viewport instead of exceeding it.
+//
+// Measured in a browser at 900x800 with a 64px header and one paragraph:
+// scrollHeight 864 before this rule, 800 after, while a long page still
+// scrolls (3440) with the header at rect.top 0.
+func TestStickyShellDoesNotOverflow(t *testing.T) {
+	css := LayoutBaseCSS()
+	_, after, found := strings.Cut(css, ".layout--sticky-header {")
+	if !found {
+		t.Fatal("LayoutBaseCSS has no .layout--sticky-header shell rule: a short page scrolls by the header's height")
+	}
+	shell, _, _ := strings.Cut(after, "}")
+	for _, decl := range []string{"display: flex", "flex-direction: column", "min-height: 100vh"} {
+		if !strings.Contains(shell, decl) {
+			t.Errorf("sticky shell must set %s, got: %s", decl, shell)
+		}
+	}
+	_, after, found = strings.Cut(css, ".layout--sticky-header > .layout-body {")
+	if !found {
+		t.Fatal("the sticky shell's body cell has no rule, so it keeps min-height: 100vh and the overflow stays")
+	}
+	body, _, _ := strings.Cut(after, "}")
+	// flex-grow keeps a short page full-height; min-height: 0 drops the
+	// 100vh floor that caused the overflow. Both are load-bearing.
+	for _, decl := range []string{"flex: 1 0 auto", "min-height: 0"} {
+		if !strings.Contains(body, decl) {
+			t.Errorf("sticky shell body must set %s, got: %s", decl, body)
+		}
+	}
+}
+
 // Modifiers compose: a contained layout with a sticky header carries both
 // classes on the same wrapper, the way layout--has-sidebar does today.
 func TestStickyComposesWithContainer(t *testing.T) {

@@ -67,8 +67,16 @@ but project files serve at plain URLs (`/nav.js`, `/app.css`), where a
 bare `Last-Modified` invites heuristic caching: the browser keeps
 executing the old bytes after an edit even though a fresh fetch returns
 the new ones. Under `gofastr dev`, files served from the static dir or
-the embedded static FS go out with `Cache-Control: no-store`, so an
-edited `.js` or `.css` is picked up on reload without a server restart.
+the embedded static FS go out with `Cache-Control: no-store`, so the
+browser asks the server for them instead of replaying what it cached.
+
+That is the whole of what the header buys, and what it buys differs by
+where the file comes from. A file in the static dir is read from disk
+on every request, so editing it and reloading is enough. A file in an
+embedded static FS is compiled into the binary, so an edit there still
+needs a rebuild; `no-store` only guarantees you are looking at what the
+running binary holds rather than at a stale copy of it.
+
 Production caching is unchanged: when dev mode is off, no header is
 set at all.
 

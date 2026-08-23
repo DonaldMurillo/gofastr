@@ -291,7 +291,7 @@ func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
 		if !ok {
 			continue
 		}
-		clean := stripCSSComments(string(body))
+		clean := blankCSSCommentsAndStrings(string(body))
 		cleaned[f.Rel] = clean
 		for _, m := range reCSSCustomProp.FindAllStringSubmatch(clean, -1) {
 			declared[m[1]] = true
@@ -361,39 +361,94 @@ func varRefHasFallback(s string, i int) bool {
 	return false
 }
 
-// stripCSSComments removes `/* */` comments from a stylesheet,
-// preserving the line structure so offsets still map to original line
-// numbers. Unlike the Go stripper it does NOT treat `//` as a comment:
-// that would truncate `url(https://…)` and every protocol-relative URL
+// blankCSSCommentsAndStrings blanks the bodies of `/* */` comments and
+// of '…' / "…" strings, replacing their characters with spaces so every
+// byte offset and newline position survives: checkStyleTokens computes
+// reported line numbers from the cleaned text, and anything that moves
+// would misattribute a finding.
+//
+// One left-to-right scan over four states (text, comment, 'string',
+// "string") is the whole job, because the only ambiguity in CSS is
+// which of those four a character belongs to:
+//
+//   - `/*` opens a comment in text ONLY; inside a string it is content
+//     (the false negative: an unterminated "comment" used to swallow
+//     the rest of the file, hiding real references after it);
+//   - a quote opens a string in text ONLY; inside a comment it is
+//     prose (the inverse: a quoted `*/` must not close a comment);
+//   - a backslash inside a string escapes the next character, so
+//     `"a\"b"` is one string; a backslash before a newline continues
+//     the string onto the next line, which CSS allows.
+//
+// A RAW newline inside a string terminates it rather than continuing
+// the scan to EOF: that is the spec's bad-string recovery, and it is
+// the safe reading for a pre-pass, since the text after the newline
+// resumes as ordinary CSS instead of being swallowed. Blanked bytes
+// become spaces, newlines stay newlines.
+//
+// Unlike the Go stripper it does NOT treat `//` as a comment: that
+// would truncate `url(https://…)` and every protocol-relative URL
 // mid-line, hiding real references after it.
-func stripCSSComments(src string) string {
+func blankCSSCommentsAndStrings(src string) string {
 	var b strings.Builder
 	b.Grow(len(src))
-	inBlock := false
-	for _, line := range strings.Split(src, "\n") {
-		out := line
-		if inBlock {
-			if i := strings.Index(out, "*/"); i >= 0 {
-				out, inBlock = out[i+2:], false
-			} else {
+	const (
+		stText = iota
+		stComment
+		stSingle
+		stDouble
+	)
+	state := stText
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		switch state {
+		case stText:
+			switch {
+			case c == '/' && i+1 < len(src) && src[i+1] == '*':
+				b.WriteString("  ")
+				i++
+				state = stComment
+			case c == '"':
+				b.WriteByte(' ')
+				state = stDouble
+			case c == '\'':
+				b.WriteByte(' ')
+				state = stSingle
+			default:
+				b.WriteByte(c)
+			}
+		case stComment:
+			if c == '*' && i+1 < len(src) && src[i+1] == '/' {
+				b.WriteString("  ")
+				i++
+				state = stText
+			} else if c == '\n' {
 				b.WriteByte('\n')
-				continue
+			} else {
+				b.WriteByte(' ')
+			}
+		default: // stSingle / stDouble
+			switch {
+			case c == '\\' && i+1 < len(src):
+				// Escaped character: blank both without interpreting
+				// the second (a quote, a newline, anything).
+				b.WriteByte(' ')
+				if src[i+1] == '\n' {
+					b.WriteByte('\n')
+				} else {
+					b.WriteByte(' ')
+				}
+				i++
+			case state == stDouble && c == '"', state == stSingle && c == '\'':
+				b.WriteByte(' ')
+				state = stText
+			case c == '\n': // unescaped newline: bad-string recovery
+				b.WriteByte('\n')
+				state = stText
+			default:
+				b.WriteByte(' ')
 			}
 		}
-		for {
-			bs := strings.Index(out, "/*")
-			if bs < 0 {
-				break
-			}
-			if e := strings.Index(out[bs+2:], "*/"); e >= 0 {
-				out = out[:bs] + out[bs+2+e+2:]
-				continue
-			}
-			out, inBlock = out[:bs], true
-			break
-		}
-		b.WriteString(out)
-		b.WriteByte('\n')
 	}
 	return b.String()
 }

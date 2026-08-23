@@ -6,7 +6,10 @@ import (
 )
 
 // DarkPaletteGaps returns the color tokens a theme declares in Colors but
-// omits from a non-empty DarkColors, sorted by token name.
+// has no usable dark value for, sorted by token name. A key present with
+// an EMPTY value counts as a gap: darkSchemeCSS writes it out as
+// `--color-surface: ;`, a malformed declaration the browser drops, so the
+// token falls back to its light value exactly as a missing key would.
 //
 // An empty DarkColors is a supported, deliberate configuration (a
 // light-only theme, see Theme.DarkColors) and returns nil. A non-empty
@@ -31,7 +34,7 @@ func DarkPaletteGaps(t Theme) []string {
 			continue
 		}
 		name := strings.TrimPrefix(key, "color-")
-		if _, ok := t.DarkColors[name]; !ok {
+		if strings.TrimSpace(t.DarkColors[name]) == "" {
 			gaps = append(gaps, name)
 		}
 	}

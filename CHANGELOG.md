@@ -26,7 +26,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the declaration; for a custom property declared in any scanned stylesheet;
   and for the `--ui-*` and `--fui-*` component knobs. `style.TokenNames()` is
   the manifest it checks against, built from the same reflection walk that
-  emits the CSS, so the two cannot drift apart. A stylesheet can waive it with
+  emits the CSS, so the two cannot drift apart. The scan is string-aware:
+  `content: "var(--x)"` is content rather than a reference, and a quoted `/*`
+  does not open a comment that swallows the rest of the file along with the
+  real typos in it. A stylesheet can waive it with
   `/* gofastr:allow(GOFASTR1806) reason */`, which meant teaching the
   suppression scanner to read `.css` files at all: it walked Go source only,
   leaving the one rule that fires on stylesheets with no escape hatch in the
@@ -43,10 +46,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `layout--sticky-header` modifier and `LayoutBaseCSS` sticks the wrapper on
   the theme's `--z-sticky` layer, with a background from
   `--ui-layout-header-bg` so page content does not scroll visibly through it.
-  The wrapper and its banner role stay. `layouts.md` now writes down what each
-  layout slot is wrapped in, which is the fact whose absence cost the time.
+  The wrapper and its banner role stay. The sticky shell is also a flex column
+  that fills the viewport rather than exceeding it: `.layout-body` carries
+  `min-height: 100vh`, so a header above it made a short page scroll by exactly
+  the header's height with nothing in the overflow, which under a pinned header
+  reads as broken. `layouts.md` now writes down what each layout slot is wrapped
+  in, which is the fact whose absence cost the time.
 
-- **`gofastr:beforenavigate`, a cancellable event the SPA router fires before
+- **`gofastr:beforenavigate`, a cancelable event the SPA router fires before
   it takes a click.** A userland click handler that checked
   `e.defaultPrevented` and stood down, which is the polite thing for a
   userland handler to do, never ran: the router had already called
@@ -76,7 +83,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   dark, editing `Colors` changes nothing on screen. Both maps are valid Go,
   both compile, and nothing said which one was being read.
   `style.DarkPaletteGaps` returns the color tokens a non-empty `DarkColors`
-  omits, and the UI host logs them once at boot: those tokens keep their light
+  has no usable dark value for, missing keys and keys present with an empty
+  value alike (an empty one emits `--color-surface: ;`, which the browser
+  drops, so it fails exactly as a missing key does), and the UI host logs them
+  once at boot: those tokens keep their light
   values in dark mode, which is usually a contrast bug. An empty `DarkColors`
   is a light-only theme by design and stays silent. The framework theme now
   declares dark values for `code-surface`, `code-text`, and `code-border`

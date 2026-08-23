@@ -45,3 +45,18 @@ func TestDarkPaletteGapsSortedMissing(t *testing.T) {
 		t.Errorf("DarkPaletteGaps = %v, want %v", got, want)
 	}
 }
+
+// A key present with an empty value is a gap, not a declaration.
+// darkSchemeCSS writes it as `--color-surface: ;`, which the browser
+// drops, so the token keeps its light value exactly as a missing key
+// would. Counting only missing keys called a broken palette complete.
+func TestEmptyDarkValueIsAGap(t *testing.T) {
+	th := DefaultTheme()
+	th.DarkColors = completeDarkMap()
+	th.DarkColors["surface"] = ""
+	th.DarkColors["text"] = "   "
+	got := DarkPaletteGaps(th)
+	if len(got) != 2 || got[0] != "surface" || got[1] != "text" {
+		t.Errorf("DarkPaletteGaps = %v, want [surface text]", got)
+	}
+}

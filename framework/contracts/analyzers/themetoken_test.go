@@ -106,6 +106,72 @@ func TestTokenInCSSCommentIsClean(t *testing.T) {
 	assertNot(t, ds, contracts.RuleUnknownThemeToken, "prose in a comment is not a reference")
 }
 
+// Text inside a CSS string is content, not a token reference. Nothing
+// is dropped, so an Error here would fail a build on valid CSS.
+func TestTokenInCSSStringIsClean(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": `.x::after { content: "var(--not-a-token)"; }` + "\n",
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "text inside a CSS string is content, not a reference")
+}
+
+// A `/*` inside a string used to open a comment that never closed,
+// swallowing the rest of the file and hiding a real typo on a later
+// line. The line number is asserted because preserving it is the whole
+// risk of blanking spans in the pre-pass.
+func TestTokenAfterStringWithOpenComment(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": `.x::after { content: "/*"; }
+.y { color: var(--radius-lg); }
+`,
+	})
+	found := countRule(t, ds, contracts.RuleUnknownThemeToken)
+	if len(found) != 1 {
+		t.Fatalf("want exactly 1 GOFASTR1806, got %d: %v", len(found), found)
+	}
+	if found[0].File != "app.css" || found[0].Line != 2 {
+		t.Errorf("finding at %s:%d, want app.css:2", found[0].File, found[0].Line)
+	}
+}
+
+// Both regex scans run on the blanked text: a declaration after a
+// string must still count, and the reference it satisfies stays clean.
+func TestDeclarationAfterStringStillCounts(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": `.x::after { content: "/*"; }
+:root { --brand: #fff; }
+.a { color: var(--brand); }
+`,
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "--brand is declared on line 2, after the string")
+}
+
+func TestEscapedQuoteDoesNotEndString(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": `.x::after { content: "a\"var(--nope)b"; }` + "\n",
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "the escaped quote does not end the string")
+}
+
+func TestSingleQuotedStringIsClean(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": `.x::after { content: 'var(--not-a-token)'; }` + "\n",
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "single-quoted strings are strings too")
+}
+
+// The case a naive "blank from the first quote to end of line" fix
+// would break: a real reference after a closed string on the same line.
+func TestReferenceAfterClosedStringReports(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": `.x { content: "hi"; color: var(--radius-lg); }` + "\n",
+	})
+	found := countRule(t, ds, contracts.RuleUnknownThemeToken)
+	if len(found) != 1 || found[0].Line != 1 {
+		t.Fatalf("want exactly 1 GOFASTR1806 at app.css:1, got %d: %v", len(found), found)
+	}
+}
+
 // A stylesheet is the one place GOFASTR1806 fires, so it has to be a
 // place a suppression can be written. collectSuppressions read Go files
 // only, which left the rule with no escape hatch in the file it reports.

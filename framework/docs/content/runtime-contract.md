@@ -301,7 +301,7 @@ belong on the polling rung (`data-fui-poll`), not on cache eviction.
 Iframe embeds have no screen cache, so the header is a no-op there.
 
 **Cancelling a navigation (`gofastr:beforenavigate`).** The router
-dispatches this cancellable event on the anchor element (`bubbles`,
+dispatches this cancelable event on the anchor element (`bubbles`,
 `cancelable`, so a `document`-level listener sees it and `target` is the
 link) immediately before committing an intercepted click — after every
 fall-through check, so it fires only for clicks the router would
