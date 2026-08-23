@@ -68,6 +68,37 @@ name, so a per-screen layout override inside a group compares as a
 different layer than its siblings and gets its shell re-rendered on
 navigation instead of silently keeping whichever was on screen.
 
+Each level also wraps its slots in elements of its own: the header
+component renders inside a `<header role="banner">`, the sidebar inside
+a `<nav aria-label="Sidebar">`, the footer inside a
+`<footer role="contentinfo">`, and the content cell is the page's
+single `<main id="main-content">` at the root layer or a
+`.layout-content` div below it. Your components supply the inner
+content; the landmark elements belong to the layout.
+
+That wrapper matters for CSS. A sticky element only travels inside its
+parent's box, so a header component with `position: sticky` sticks for
+the header's own height and then scrolls away: its parent is the
+layout's `<header>`, whose box ends where the header ends. To pin the
+header for the whole page, make the layout's wrapper the sticky
+element:
+
+```go
+site := app.NewLayout("site").
+    WithHeader(header).
+    WithFooter(footer).
+    WithStickyHeader()
+```
+
+`WithStickyHeader()` sticks the layout's own `<header role="banner">`
+wrapper to the top of the viewport (the landmark stays, the component
+keeps supplying the content) and gives the wrapper a background so
+page content does not scroll visibly underneath it. Stacking uses the
+theme's `--z-sticky` layer; the background comes from
+`--ui-layout-header-bg`, overridable per app like the other
+`--ui-layout-*` variables. It composes with `WithContainer()` and
+`WithSidebar()` (both modifiers land on the same wrapper).
+
 ## What the client swaps
 
 On navigation the runtime compares the target's chain against the
@@ -123,6 +154,12 @@ unaware of the change and breaks both behaviors above.
   it.** An explicit layout on `Register` replaces the default; only
   `ScreenGroup` screens nest under it. To add a section sidebar inside
   the site shell, put the screen in a group.
+- **Giving the header component `position: sticky` and watching it
+  scroll away.** The layout renders the component inside its own
+  `<header>` wrapper, and a sticky element only travels inside its
+  parent's box, so it sticks for exactly the header's height and then
+  leaves. Call `WithStickyHeader()` on the layout; the wrapper is the
+  element that sticks.
 - **Reusing one layout name for two different layouts.** Layer keys
   embed the name; two distinct `*Layout` values named `"docs"` at the
   same depth compare as the same layer, and navigation between them
