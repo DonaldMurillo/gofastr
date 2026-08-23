@@ -28,7 +28,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   declaration only inside a rule block and outside parentheses, so the
   condition of a feature query (`@supports (--brand: red)`, which asks whether
   the browser can parse that declaration rather than making one) no longer
-  marks the token known; `@property --name` registrations do count. `style.TokenNames()` is
+  marks the token known; `@property --name` registrations do count. The
+  `var(` and `@property` keywords match case-insensitively, as CSS does, while
+  the token name stays case-sensitive, as CSS also does: `VAR(--radii-lg)`
+  resolves, and `var(--mixed)` against a declared `--Mixed` does not. `style.TokenNames()` is
   the manifest it checks against, built from the same reflection walk that
   emits the CSS, so the two cannot drift apart. The scan is string-aware:
   `content: "var(--x)"` is content rather than a reference, and a quoted `/*`
