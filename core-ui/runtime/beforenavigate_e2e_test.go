@@ -26,6 +26,9 @@ func beforeNavigatePage() string {
     <a id="upper" href="/other" target="_SELF">Other, shouting</a>
     <a id="blank" href="/other" target="_blank">Other, new tab</a>
   </nav>
+  <svg width="20" height="20" aria-hidden="true"><a id="svglink" href="/other"><rect id="svgrect" width="20" height="20" fill="#ccc"></rect></a></svg>
+  <nav aria-label="Secondary">
+  </nav>
   <main>home screen</main>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
@@ -250,5 +253,52 @@ func TestBlankTargetStillEscapesTheRouter(t *testing.T) {
 	}
 	if n := fetches.Load(); n != 0 {
 		t.Errorf("target=\"_blank\" must not fetch a partial, got %d", n)
+	}
+}
+
+// An SVG <a href> matches a[href] and closest() reaches it from a child,
+// but SVGAElement.target is an SVGAnimatedString rather than a string.
+// Calling .toLowerCase() on it throws, which aborts the router's handling
+// of that click and surfaces as an uncaught error. The guard stringifies
+// first.
+//
+// The stringified object cannot equal '_self', so the click still falls
+// through to the browser exactly as it did before: the router has never
+// claimed SVG links and this does not start. The test suppresses only the
+// browser's navigation (so the error collector survives long enough to be
+// read) and asserts nothing threw.
+func TestSVGAnchorDoesNotBreakTheClickPath(t *testing.T) {
+	var fetches atomic.Int32
+	srv := beforeNavigateServer(t, &fetches)
+	ctx := newSeedBrowserCtx(t)
+
+	var errs, path string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		// Collect uncaught errors, and stop the browser from actually
+		// leaving the page on the SVG click. The runtime's own listener
+		// is registered first and has already run by this point in the
+		// dispatch, so its guard is exercised either way.
+		chromedp.Evaluate(`window.__errs = [];
+			window.addEventListener('error', function (e) { window.__errs.push(String(e.message)); });
+			document.addEventListener('click', function (e) {
+				if (e.target.closest && e.target.closest('svg')) e.preventDefault();
+			});`, nil),
+		chromedp.Click(`#svgrect`, chromedp.ByID),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Evaluate(`JSON.stringify(window.__errs || ['COLLECTOR-GONE'])`, &errs),
+		chromedp.Evaluate(`location.pathname`, &path),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if errs != "[]" {
+		t.Errorf("clicking an SVG link threw in the router's click handler: %s", errs)
+	}
+	if path != "/" {
+		t.Errorf("SVG link was navigated in place, at %q; the router does not claim SVG anchors", path)
+	}
+	if n := fetches.Load(); n != 0 {
+		t.Errorf("SVG link fetched a partial, got %d", n)
 	}
 }

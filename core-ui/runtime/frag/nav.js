@@ -631,7 +631,15 @@
     // ASCII-case-insensitively: target="_SELF" IS _self, and comparing
     // raw sent it down the skip path, so a link that should have been a
     // soft navigation became a full page load.
-    if (anchor.target && anchor.target.toLowerCase() !== '_self') return;
+    //
+    // String() first because this is not always an HTMLAnchorElement.
+    // An SVG <a href> matches a[href] and closest() reaches it, and
+    // SVGAElement.target is an SVGAnimatedString, not a string: calling
+    // .toLowerCase() on it throws, and a throw here kills the whole
+    // delegated click handler. Stringifying keeps the old outcome for
+    // those (it cannot equal '_self', so the click falls through to the
+    // browser) instead of turning a rare element into a broken page.
+    if (anchor.target && String(anchor.target).toLowerCase() !== '_self') return;
     if (!isKnownRoute(href)) return;
     // data-fui-rpc anchors are RPC triggers, not navigation.
     if (anchor.hasAttribute('data-fui-rpc')) return;
