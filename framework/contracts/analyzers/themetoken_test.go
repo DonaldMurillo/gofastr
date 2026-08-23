@@ -236,3 +236,41 @@ func TestAtPropertyRegistrationCounts(t *testing.T) {
 	})
 	assertNot(t, ds, contracts.RuleUnknownThemeToken, "--brand is registered with @property")
 }
+
+// CSS function names are ASCII case-insensitive: `VAR(--x)` resolves in a
+// browser exactly as `var(--x)` does. Matching the keyword case-sensitively
+// let an uppercase reference to a nonexistent token through unreported.
+func TestUppercaseVarIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": ".a { border-radius: VAR(--radius-lg); }\n.b { color: Var(--nope-at-all); }\n",
+	})
+	found := countRule(t, ds, contracts.RuleUnknownThemeToken)
+	if len(found) != 2 {
+		t.Fatalf("want both uppercase/mixed-case references reported, got %d: %v", len(found), found)
+	}
+}
+
+// The at-rule keyword folds case for the same reason.
+func TestUppercaseAtPropertyCounts(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": "@PROPERTY --brand {\n  syntax: \"<color>\";\n}\n.b { color: var(--brand); }\n",
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "@PROPERTY registers --brand; the at-rule keyword is case-insensitive")
+}
+
+// The property NAME is the half that must NOT fold. Custom property names
+// are case-sensitive: measured in Chrome, `var(--mixed)` against a declared
+// `--Mixed` resolves to nothing. Folding them would call a real miss a
+// match and hide exactly the bug this rule exists for.
+func TestCustomPropertyNameStaysCaseSensitive(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": ":root { --Mixed: #fff; }\n.b { color: var(--mixed); }\n",
+	})
+	found := countRule(t, ds, contracts.RuleUnknownThemeToken)
+	if len(found) != 1 {
+		t.Fatalf("want --mixed reported as unknown despite --Mixed being declared, got %d: %v", len(found), found)
+	}
+	if !strings.Contains(found[0].Message, "mixed") {
+		t.Errorf("message should name the referenced token: %q", found[0].Message)
+	}
+}

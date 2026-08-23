@@ -336,7 +336,10 @@ var reCSSCustomProp = regexp.MustCompile(`--([A-Za-z0-9_-]+)\s*:`)
 // colon after the name, so reCSSCustomProp cannot see it, and a project
 // that registers a property this way and then reads it would otherwise
 // be told the token does not exist.
-var reAtProperty = regexp.MustCompile(`@property\s+--([A-Za-z0-9_-]+)`)
+//
+// Case-insensitive on the at-rule keyword for the same reason reVarRef
+// is on the function name; the captured NAME keeps its case.
+var reAtProperty = regexp.MustCompile(`(?i)@property\s+--([A-Za-z0-9_-]+)`)
 
 // collectDeclared adds every custom property a stylesheet DECLARES to
 // into. Position matters: `--name:` only declares inside a rule block and
@@ -380,7 +383,17 @@ func collectDeclared(clean string, into map[string]bool) {
 
 // reVarRef matches a var() reference; the captured group is the
 // referenced name without the leading dashes.
-var reVarRef = regexp.MustCompile(`var\(\s*--([A-Za-z0-9_-]+)`)
+//
+// The FUNCTION name folds case, because CSS function names are ASCII
+// case-insensitive: `VAR(--radii-lg)` and `Var(--radii-lg)` both resolve
+// in a browser, so a case-sensitive match let an uppercase reference to a
+// nonexistent token through unreported.
+//
+// The custom-property NAME does not fold, and must not: property names
+// ARE case-sensitive. Measured in Chrome, `var(--mixed)` against a
+// declared `--Mixed` resolves to nothing, so treating the two as the same
+// token would call a real miss a match.
+var reVarRef = regexp.MustCompile(`(?i)var\(\s*--([A-Za-z0-9_-]+)`)
 
 // varRefHasFallback reports whether the var() reference whose name ends
 // at s[i-1] carries a fallback: a comma at the TOP level of its
