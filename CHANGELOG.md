@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-08-23
+
 ### Added
 
 - **`gofastr verify` catches a theme token that does not exist
