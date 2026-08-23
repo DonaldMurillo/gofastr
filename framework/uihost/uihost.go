@@ -2786,6 +2786,19 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	fmt.Fprint(w, page)
 }
 
+// devStaticNoStore marks a project static response uncacheable while the
+// process runs under `gofastr dev` (#219). Project assets serve at
+// unversioned URLs (/nav.js, /app.css) with Last-Modified but no explicit
+// freshness, so browsers apply heuristic caching and keep executing the OLD
+// script after an edit even though a fresh fetch returns the new bytes.
+// Only a dev restart cleared it. no-store closes that loop; production is
+// untouched: when dev.Enabled() is false no header is set at all.
+func devStaticNoStore(w http.ResponseWriter) {
+	if dev.Enabled() {
+		w.Header().Set("Cache-Control", "no-store")
+	}
+}
+
 // serveOrRender is the catch-all NotFound handler. It first tries static
 // file resolution (filesystem or embedded FS), and if no file matches it
 // falls through to page rendering. Resolution steps are mirrored by
@@ -2820,6 +2833,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 			absStatic, _ := filepath.Abs(ds.staticDir)
 			if strings.HasPrefix(absPath, absStatic+string(filepath.Separator)) || absPath == absStatic {
 				if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+					devStaticNoStore(w)
 					http.ServeFile(w, r, filePath)
 					return
 				}
@@ -2830,6 +2844,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 			if cleanPath != "" {
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
 					f.Close()
+					devStaticNoStore(w)
 					http.ServeFileFS(w, r, ds.staticFS, cleanPath)
 					return
 				}

@@ -60,6 +60,18 @@ When enabled:
 One persistent SSE connection per tab, near-zero idle traffic, no
 polling.
 
+### Project static assets are served uncached
+
+Framework assets are content-versioned (`/__gofastr/runtime.js?v=…`),
+but project files serve at plain URLs (`/nav.js`, `/app.css`), where a
+bare `Last-Modified` invites heuristic caching: the browser keeps
+executing the old bytes after an edit even though a fresh fetch returns
+the new ones. Under `gofastr dev`, files served from the static dir or
+the embedded static FS go out with `Cache-Control: no-store`, so an
+edited `.js` or `.css` is picked up on reload without a server restart.
+Production caching is unchanged: when dev mode is off, no header is
+set at all.
+
 ## How `gofastr dev` wires it
 
 `cmd/gofastr/dev.go` injects `GOFASTR_DEV=1` into the child binary's
