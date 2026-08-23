@@ -300,6 +300,27 @@ tab actually navigates; surfaces that must stay fresh across tabs
 belong on the polling rung (`data-fui-poll`), not on cache eviction.
 Iframe embeds have no screen cache, so the header is a no-op there.
 
+**Cancelling a navigation (`gofastr:beforenavigate`).** The router
+dispatches this cancellable event on the anchor element (`bubbles`,
+`cancelable`, so a `document`-level listener sees it and `target` is the
+link) immediately before committing an intercepted click — after every
+fall-through check, so it fires only for clicks the router would
+actually handle. `detail` carries `href` (the raw attribute value),
+`path` (the resolved path+search the router would navigate to), `hash`
+(the `#fragment`, `''` when there is none), and `anchor` (the element).
+A listener calling `preventDefault()` on it claims the click: the
+router still suppresses the browser default (a cancelled click never
+becomes a hard page load) and then does nothing — no `pushState`, no
+partial fetch, no intercept overlay. This is the supported way for
+userland to take over a link (e.g. smooth-scroll to an in-page section)
+instead of racing the router with a capture-phase click listener. The
+event does NOT fire for clicks the router ignores: modifier-key clicks,
+external / `mailto:` / `tel:` links, `<a download>`, non-`_self`
+targets, unknown routes, `data-fui-rpc` anchors, and links to the
+current path — including a link whose only difference from the current
+URL is the `#fragment`; that click falls through to native hash
+behavior.
+
 **Active-link highlighting.** After every navigation (and at module
 load) the idle-loaded `activelink` module walks every `nav a` with an
 `href` and tags the one matching the current path with

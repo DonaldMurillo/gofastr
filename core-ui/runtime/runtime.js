@@ -1445,7 +1445,7 @@
     // Skip any non-_self target (covers _blank, _top, _parent, named
     // frames). Previously only _blank was checked, so <a target="_top">
     // inside an iframe got hijacked instead of breaking out.
-    if (anchor.target && anchor.target !== '' && anchor.target !== '_self') return;
+    if (anchor.target && anchor.target !== '_self') return;
     if (!isKnownRoute(href)) return;
     // data-fui-rpc anchors are RPC triggers, not navigation.
     if (anchor.hasAttribute('data-fui-rpc')) return;
@@ -1455,18 +1455,31 @@
       // Already there, let the browser handle the click (focus, scroll, etc.).
       return;
     }
-    e.preventDefault();
-    // Eagerly close an enclosing dismissible disclosure (mobile nav
-    // hamburger). Without this, the menu floats over stale content
-    // for the entire SPA fetch duration, the user perceives the
-    // click as "didn't take".
-    anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // Preserve the #fragment: resolvePath strips it (path-only is what
     // route matching + cache keys want), but the URL bar and the
     // post-nav scroll target need it. loadPage reads location.hash, so
     // pushState must carry the fragment.
     let navHash = '';
     try { navHash = new URL(href, location.href).hash; } catch (_) { /* malformed href */ }
+    // Suppress the browser default up front: with or without a
+    // cancellation below, an intercepted click never becomes a hard
+    // page load.
+    e.preventDefault();
+    // gofastr:beforenavigate: cancellable hook fired on the anchor
+    // (bubbles, cancelable) only for clicks the router is about to
+    // intercept, after every fall-through check above. A listener that
+    // calls preventDefault() claims the click: the router stands down
+    // entirely (no pushState, no partial fetch, no intercept overlay)
+    // and userland owns the URL and the scroll from that point.
+    if (!anchor.dispatchEvent(new CustomEvent('gofastr:beforenavigate', {
+      bubbles: true, cancelable: true,
+      detail: { href, path: fullPath, hash: navHash, anchor },
+    }))) return;
+    // Eagerly close an enclosing dismissible disclosure (mobile nav
+    // hamburger). Without this, the menu floats over stale content
+    // for the entire SPA fetch duration, the user perceives the
+    // click as "didn't take".
+    anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // An intercepting route presents as an overlay when reached from its
     // declared origin. The module owns the URL and the fetch in that
     // case; returning true means it took the navigation.
