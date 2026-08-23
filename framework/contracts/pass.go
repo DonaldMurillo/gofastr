@@ -32,6 +32,12 @@ type SourceFile struct {
 	Abs string
 	// IsTest is true for _test.go files.
 	IsTest bool
+	// IsCSS is true for stylesheet files (.css). Discovery reads them
+	// like any source file, but they are not Go: Files/AppFiles/
+	// TestFiles exclude them and StyleFiles returns them, so no analyzer
+	// that assumes Go source ever sees one. AST parsing is refused
+	// rather than attempted (and recorded as a parse failure).
+	IsCSS bool
 	// IsGenerated is true when the file carries a `Code generated … DO NOT
 	// EDIT` header. Analyzers skip these by default: the developer cannot
 	// fix a finding there, only the generator can.
@@ -125,7 +131,9 @@ func (p *Pass) discover() error {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".go") {
+		isGo := strings.HasSuffix(path, ".go")
+		isCSS := strings.HasSuffix(path, ".css")
+		if !isGo && !isCSS {
 			return nil
 		}
 		rel, relErr := filepath.Rel(p.Root, path)
@@ -138,12 +146,17 @@ func (p *Pass) discover() error {
 			return nil
 		}
 		p.sources[rel] = body
+		pkg := ""
+		if isGo {
+			pkg = importPathFor(p.ModulePath, p.Root, filepath.Dir(path))
+		}
 		p.files = append(p.files, SourceFile{
 			Rel:         rel,
 			Abs:         path,
-			IsTest:      strings.HasSuffix(rel, "_test.go"),
+			IsTest:      isGo && strings.HasSuffix(rel, "_test.go"),
+			IsCSS:       isCSS,
 			IsGenerated: IsGeneratedSource(body),
-			Package:     importPathFor(p.ModulePath, p.Root, filepath.Dir(path)),
+			Package:     pkg,
 		})
 		return nil
 	})
@@ -154,15 +167,26 @@ func (p *Pass) discover() error {
 	return nil
 }
 
-// Files returns every discovered Go file, in path order.
-func (p *Pass) Files() []SourceFile { return p.files }
+// Files returns every discovered Go file, in path order. Stylesheets are
+// excluded: every analyzer in the tree assumes the files handed to it
+// parse as Go.
+func (p *Pass) Files() []SourceFile {
+	var out []SourceFile
+	for _, f := range p.files {
+		if f.IsCSS {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
 
 // AppFiles returns the files analyzers care about by default: non-test,
 // non-generated Go source that configuration has not exempted.
 func (p *Pass) AppFiles() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
-		if f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
+		if f.IsCSS || f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
 			continue
 		}
 		out = append(out, f)
@@ -175,7 +199,24 @@ func (p *Pass) AppFiles() []SourceFile {
 func (p *Pass) TestFiles() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
-		if !f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
+		if f.IsCSS || !f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// StyleFiles returns the .css files configuration has not exempted.
+// They get the same discovery rules as Go source (skipDirs, hidden
+// directories, generated headers, global exemptions) and are readable
+// through Source; the difference is that no Go accessor will hand them
+// out. Per-rule exemptions are applied later, at diagnostic filtering,
+// exactly as for Go files.
+func (p *Pass) StyleFiles() []SourceFile {
+	var out []SourceFile
+	for _, f := range p.files {
+		if !f.IsCSS || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
 			continue
 		}
 		out = append(out, f)
@@ -218,15 +259,21 @@ func (p *Pass) FileSet() *token.FileSet {
 	return p.fset
 }
 
-// AST parses a discovered file once and caches the result. Comments are
+// AST parses a discovered Go file once and caches the result. Comments are
 // retained because suppression directives live in them. A file that fails
 // to parse returns (nil, false) rather than an error: a project mid-edit
-// should still get findings from every file that *does* parse.
+// should still get findings from every file that *does* parse. A
+// stylesheet is refused outright: parsing CSS as Go would fail and land
+// in Unparsed, reporting every discovered stylesheet as unreadable.
 func (p *Pass) AST(rel string) (*ast.File, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if f, ok := p.asts[rel]; ok {
 		return f, f != nil
+	}
+	if strings.HasSuffix(rel, ".css") {
+		p.asts[rel] = nil
+		return nil, false
 	}
 	body, ok := p.sources[rel]
 	if !ok {

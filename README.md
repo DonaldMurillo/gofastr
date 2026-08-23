@@ -367,7 +367,7 @@ them offline, and the `framework_docs_*` MCP tools expose them to agents
 connected to a running app.
 
 - [The gofastr CLI](framework/docs/content/cli.md): init, dev, migrate, generate, verify, audit, and upgrade, each subcommand mapped to its doc
-- [Contracts](framework/docs/content/contracts.md): **`gofastr verify`**, the 50 rules that say whether an app is still an idiomatic GoFastr app, semantic coverage beyond line coverage, and how an existing codebase adopts the gate with a baseline
+- [Contracts](framework/docs/content/contracts.md): **`gofastr verify`**, the 51 rules that say whether an app is still an idiomatic GoFastr app, semantic coverage beyond line coverage, and how an existing codebase adopts the gate with a baseline
 - [Blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md): **generate a whole app from one file**. Blueprint → generated UI + API → auth + owner scoping + RBAC → customize in plain Go → deploy
 - [Kiln (experimental)](framework/docs/content/kiln.md): agent-driven build mode
 - [UI capability map](framework/docs/content/ui-capability-map.md): **start from the job**. Architecture, state ownership, delivery/scaling semantics, runnable proof, and explicit non-goals

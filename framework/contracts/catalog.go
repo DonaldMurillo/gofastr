@@ -137,6 +137,7 @@ const (
 	RuleBespokeEventSource = "GOFASTR1803"
 	RuleInlineStyle        = "GOFASTR1804"
 	RuleInlineScript       = "GOFASTR1805"
+	RuleUnknownThemeToken  = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
 )
 
 // Permission rules.
@@ -789,6 +790,21 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  "html.Raw(`<div style=\"margin-top: 12px\">…</div>`)",
 			Good: "ui.Stack(ui.StackConfig{Gap: \"md\"}, children...)",
+		}},
+	}, {
+		ID: RuleUnknownThemeToken, Slug: "rendering/unknown-theme-token",
+		Title: "var() references a token the theme does not emit", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Project CSS reads `var(--name)` where `name` is not a theme token.",
+		Why: "An invalid var() is not a CSS error: it resolves to nothing and the declaration is " +
+			"silently dropped, so a typo is invisible to the build, the browser console, and every " +
+			"linter, and the only symptom is the styling not applying. Issue #214's reporter wrote " +
+			"`--radius-lg` where the theme emits `--radii-lg`, and every rounded corner on the site " +
+			"rendered square for days.",
+		Fix: "Spell the token the theme emits (see `style.TokenNames()` or `gofastr docs theming`), declare the custom property in your own stylesheet if it is yours, or add a fallback: `var(--x, 8px)` degrades instead of dropping the declaration.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "border-radius: var(--radius-lg);",
+			Good: "border-radius: var(--radii-lg);",
 		}},
 	}}
 }

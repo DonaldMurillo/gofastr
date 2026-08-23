@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func init() {
@@ -20,6 +21,7 @@ func init() {
 			contracts.RuleBespokeEventSource,
 			contracts.RuleInlineStyle,
 			contracts.RuleInlineScript,
+			contracts.RuleUnknownThemeToken,
 		},
 		Run: runRendering,
 	})
@@ -250,7 +252,188 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 	}
 	out = append(out, checkInlineScripts(p)...)
+	out = append(out, checkStyleTokens(p)...)
 	return out, nil
+}
+
+// checkStyleTokens reports var(--name) references in project
+// stylesheets whose name the theme does not emit (GOFASTR1806).
+//
+// The typed theme checks the DEFINITION (a style.Radius is
+// compiler-checked), but a reference in a stylesheet is just a string,
+// and nothing connects the two. An invalid var() is not a CSS error: it
+// resolves to nothing, the declaration is silently dropped, and the
+// only symptom is missing styling (issue #214: `--radius-lg` for
+// `--radii-lg`, every rounded corner square for days).
+//
+// A reference is left alone when any of these hold:
+//
+//   - it carries a fallback, `var(--x, 8px)`: the declaration degrades
+//     instead of being dropped, so the failure this rule exists to
+//     catch cannot happen;
+//   - the name is declared as a custom property in any scanned
+//     stylesheet: the set is built across all of them, because a base
+//
+// sheet declaring what another sheet uses is normal;
+//   - it starts with `ui-` or `fui-`: per-component override knobs and
+//     runtime-owned properties, not theme tokens (see the theming doc's
+//     `--ui-*` section);
+//   - it is one of the names style.TokenNames() says the theme emits.
+func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
+	files := p.StyleFiles()
+	if len(files) == 0 {
+		return nil
+	}
+	declared := map[string]bool{}
+	cleaned := make(map[string]string, len(files))
+	for _, f := range files {
+		body, ok := p.Source(f.Rel)
+		if !ok {
+			continue
+		}
+		clean := stripCSSComments(string(body))
+		cleaned[f.Rel] = clean
+		for _, m := range reCSSCustomProp.FindAllStringSubmatch(clean, -1) {
+			declared[m[1]] = true
+		}
+	}
+	known := make(map[string]bool)
+	names := style.TokenNames()
+	for _, n := range names {
+		known[n] = true
+	}
+
+	var out []contracts.Diagnostic
+	for _, f := range files {
+		clean := cleaned[f.Rel]
+		for _, loc := range reVarRef.FindAllStringSubmatchIndex(clean, -1) {
+			name := clean[loc[2]:loc[3]]
+			if varRefHasFallback(clean, loc[3]) ||
+				declared[name] ||
+				strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") ||
+				known[name] {
+				continue
+			}
+			msg := fmt.Sprintf("theme emits no `--%s`", name)
+			if fix, ok := closestToken(name, names); ok {
+				msg += fmt.Sprintf("; did you mean `--%s`?", fix)
+			}
+			out = append(out, contracts.Diagnostic{
+				RuleID:  contracts.RuleUnknownThemeToken,
+				File:    f.Rel,
+				Line:    1 + strings.Count(clean[:loc[0]], "\n"),
+				Message: msg,
+				Snippet: p.Line(f.Rel, 1+strings.Count(clean[:loc[0]], "\n")),
+			})
+		}
+	}
+	return out
+}
+
+// reCSSCustomProp matches a custom-property declaration, `--name:`; the
+// captured group is the name without the leading dashes.
+var reCSSCustomProp = regexp.MustCompile(`--([A-Za-z0-9_-]+)\s*:`)
+
+// reVarRef matches a var() reference; the captured group is the
+// referenced name without the leading dashes.
+var reVarRef = regexp.MustCompile(`var\(\s*--([A-Za-z0-9_-]+)`)
+
+// varRefHasFallback reports whether the var() reference whose name ends
+// at s[i-1] carries a fallback: a comma at the TOP level of its
+// arguments, before the matching close paren. `var(--a, var(--b))` has
+// one; `var(--a)` does not. Parentheses nest, so depth is counted.
+func varRefHasFallback(s string, i int) bool {
+	depth := 1 // already inside the var( the name belongs to
+	for ; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return false
+			}
+		case ',':
+			if depth == 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stripCSSComments removes `/* */` comments from a stylesheet,
+// preserving the line structure so offsets still map to original line
+// numbers. Unlike the Go stripper it does NOT treat `//` as a comment:
+// that would truncate `url(https://…)` and every protocol-relative URL
+// mid-line, hiding real references after it.
+func stripCSSComments(src string) string {
+	var b strings.Builder
+	b.Grow(len(src))
+	inBlock := false
+	for _, line := range strings.Split(src, "\n") {
+		out := line
+		if inBlock {
+			if i := strings.Index(out, "*/"); i >= 0 {
+				out, inBlock = out[i+2:], false
+			} else {
+				b.WriteByte('\n')
+				continue
+			}
+		}
+		for {
+			bs := strings.Index(out, "/*")
+			if bs < 0 {
+				break
+			}
+			if e := strings.Index(out[bs+2:], "*/"); e >= 0 {
+				out = out[:bs] + out[bs+2+e+2:]
+				continue
+			}
+			out, inBlock = out[:bs], true
+			break
+		}
+		b.WriteString(out)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// closestToken returns the token within edit distance 2 of name, if any.
+// names must be sorted, so equal distances resolve deterministically to
+// the first. Distance 2 is enough for the typo class this rule exists
+// for (`radius-lg` vs `radii-lg` is 2) without proposing nonsense for
+// every unknown name.
+func closestToken(name string, names []string) (string, bool) {
+	best, bestDist := "", 3
+	for _, cand := range names {
+		if d := levenshtein(name, cand); d < bestDist {
+			best, bestDist = cand, d
+		}
+	}
+	return best, best != ""
+}
+
+// levenshtein returns the edit distance between a and b: the smallest
+// number of single-character insertions, deletions, and substitutions
+// that turns one into the other.
+func levenshtein(a, b string) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
 }
 
 func hasPrefixAny(rel string, prefixes []string) bool {
