@@ -3,6 +3,8 @@ package theme
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestDefaultHasCanonicalTokens(t *testing.T) {
@@ -100,5 +102,14 @@ func TestDefaultShipsAdaptiveDarkPalette(t *testing.T) {
 		if !strings.Contains(css, want) {
 			t.Errorf("adaptive theme CSS missing %q\n%s", want, css)
 		}
+	}
+}
+
+// The framework default must stay silent under the host's dark-gap boot
+// check (#215): every color token needs a dark value, including the
+// code-surface trio that deliberately reuses its light values.
+func TestDefaultDarkPaletteComplete(t *testing.T) {
+	if gaps := style.DarkPaletteGaps(Default()); len(gaps) != 0 {
+		t.Errorf("Default() dark palette gaps: %v", gaps)
 	}
 }

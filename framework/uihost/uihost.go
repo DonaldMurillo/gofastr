@@ -792,6 +792,15 @@ func New(application *app.App, opts ...Option) *UIHost {
 	if dev.LiveReloadEnabled() {
 		ds.extraScripts = append(ds.extraScripts, dev.LiveReloadScriptURL)
 	}
+	// #215: a partial DarkColors silently keeps light values in dark mode
+	// (the map is what renders under a dark preference; editing Colors
+	// alone changes nothing on screen). One warning naming the exact
+	// tokens, so the fix loop doesn't dead-end at "nothing happened".
+	if gaps := style.DarkPaletteGaps(ds.activeTheme()); len(gaps) > 0 {
+		slog.Default().Warn(fmt.Sprintf(
+			"uihost: theme declares a dark palette but %d color tokens have no dark value; under a dark preference they keep their light value. Add them to Theme.DarkColors.",
+			len(gaps)), "tokens", gaps)
+	}
 	return ds
 }
 

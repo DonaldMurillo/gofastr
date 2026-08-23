@@ -190,6 +190,20 @@ hasn't forced light mode. The **`data-color-scheme` attribute on
 bootstrap set it (and remember the choice), and any element reading a
 theme CSS variable picks up the new color the moment it flips.
 
+Which map is read when: `Colors` paints the light scheme, and
+`DarkColors` re-declares the same custom properties under a dark
+preference. Under a dark preference, editing `Colors` alone changes
+nothing on screen; the dark value wins wherever one exists.
+
+A partial `DarkColors` is not an error: tokens you leave out keep
+their light values in dark mode, which is usually a contrast bug. The
+UI host warns once at boot listing exactly which tokens those are
+(`style.DarkPaletteGaps` computes the list), so the omission is
+visible instead of silent.
+
+The framework theme (`framework/ui/theme.Default()`) ships a complete
+dark palette; `style.DefaultTheme()` is light-only by design.
+
 Follow these rules:
 
 1. **Never gate your own light/dark styling on
