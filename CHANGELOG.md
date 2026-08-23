@@ -7,6 +7,118 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **`gofastr verify` catches a theme token that does not exist
+  (`GOFASTR1806`).** An invalid `var()` is not a CSS error. It resolves to
+  nothing, the browser drops the declaration, and nothing reports it: not the
+  build, not the console, not the linter. One reporter wrote `--radius-lg`
+  where the theme emits `--radii-lg`, and every rounded corner on the site
+  rendered square for days. The typed theme already checked the definition,
+  since a `style.Radius` is compiler-checked, but a reference in a stylesheet
+  is just a string and nothing connected the two. `contracts.Pass` now
+  discovers `.css` files alongside Go source and hands them out through
+  `StyleFiles()`; `Files()`, `AppFiles()`, and `TestFiles()` stay Go-only, so
+  no analyzer that assumes Go source ever sees one. The rule reports a
+  `var(--name)` whose name the theme does not emit and names the nearest token
+  when one is within an edit distance of two. It stays quiet for a reference
+  carrying a fallback, because `var(--x, 8px)` degrades instead of dropping
+  the declaration; for a custom property declared in any scanned stylesheet;
+  and for the `--ui-*` and `--fui-*` component knobs. `style.TokenNames()` is
+  the manifest it checks against, built from the same reflection walk that
+  emits the CSS, so the two cannot drift apart. A stylesheet can waive it with
+  `/* gofastr:allow(GOFASTR1806) reason */`, which meant teaching the
+  suppression scanner to read `.css` files at all: it walked Go source only,
+  leaving the one rule that fires on stylesheets with no escape hatch in the
+  file it fires in. The catalog is now 51 rules.
+
+- **`Layout.WithStickyHeader()` pins the header wrapper the layout emits.** A
+  header component given `position: sticky; top: 0` stuck for exactly its own
+  height and then scrolled away. `app.Layout` renders the header component
+  inside a `<header role="banner">` of its own, and a sticky element only
+  travels inside its parent's box, so the component was sticky inside a box
+  65px tall. It looked deliberate, which is why it survived so long. The fix
+  belongs in the layout: the app-side workaround is a project CSS rule against
+  a wrapper the app does not own. `WithStickyHeader()` adds a
+  `layout--sticky-header` modifier and `LayoutBaseCSS` sticks the wrapper on
+  the theme's `--z-sticky` layer, with a background from
+  `--ui-layout-header-bg` so page content does not scroll visibly through it.
+  The wrapper and its banner role stay. `layouts.md` now writes down what each
+  layout slot is wrapped in, which is the fact whose absence cost the time.
+
+- **`gofastr:beforenavigate`, a cancellable event the SPA router fires before
+  it takes a click.** A userland click handler that checked
+  `e.defaultPrevented` and stood down, which is the polite thing for a
+  userland handler to do, never ran: the router had already called
+  `preventDefault` on its way past. Winning meant a capture-phase listener
+  plus `stopPropagation`, racing the router rather than cooperating with it.
+  The router now dispatches `gofastr:beforenavigate` on the anchor (bubbling,
+  cancelable) after every fall-through check, so it fires only for clicks the
+  router would actually handle. `detail` carries `href`, the resolved `path`,
+  the `hash`, and the `anchor`. A listener that cancels it claims the click:
+  the router still suppresses the browser default, so a cancelled click never
+  becomes a hard page load, and then does nothing else. No `pushState`, no
+  partial fetch, no intercept overlay.
+
+- **`data-fui-activelink-skip` opts a nav link out of active-route
+  highlighting.** The `activelink` module neither sets nor clears
+  `aria-current` or `.active` on a link carrying it, at load or after
+  navigation. The escape hatch for a link whose current-state belongs to
+  something else: a hand-set attribute, app code, a signal binding. Both
+  attribute tables now state what `activelink` writes (`aria-current="page"`,
+  the ARIA-correct value for a page link, so an `[aria-current="true"]`
+  selector will not match it), what it removes, and which links it leaves
+  alone.
+
+- **A theme with a partial dark palette says which tokens it left out.**
+  `Theme.Colors` paints the light scheme and `Theme.DarkColors` re-declares
+  the same custom properties under a dark preference, so on a page rendering
+  dark, editing `Colors` changes nothing on screen. Both maps are valid Go,
+  both compile, and nothing said which one was being read.
+  `style.DarkPaletteGaps` returns the color tokens a non-empty `DarkColors`
+  omits, and the UI host logs them once at boot: those tokens keep their light
+  values in dark mode, which is usually a contrast bug. An empty `DarkColors`
+  is a light-only theme by design and stays silent. The framework theme now
+  declares dark values for `code-surface`, `code-text`, and `code-border`
+  matching its light ones, which was always the intent and existed only as an
+  omission.
+
+### Fixed
+
+- **`gofastr dev` served project JavaScript and CSS that the browser then
+  ignored.** Editing a project `.js` file and hard-reloading kept running the
+  old code. `fetch('/nav.js', {cache:'reload'})` returned the new bytes while
+  the executing script was the old one, and only restarting `gofastr dev`
+  cleared it. Framework assets are content-versioned
+  (`/__gofastr/runtime.js?v=…`), but project assets serve at plain URLs with a
+  bare `Last-Modified`, which invites heuristic caching. Under `gofastr dev`
+  they now go out with `Cache-Control: no-store`, from both the static
+  directory and the embedded static FS. Production is untouched: with dev mode
+  off, no header is set. The cost was out of proportion to the fix, because
+  you do not doubt the cache, you doubt your own change and go looking in the
+  wrong file.
+
+- **`activelink` cleared an `aria-current` the scrollspy module had just
+  set.** The module walks every `nav a` and removes `aria-current` from any
+  link whose href is not the current path, which an in-page anchor never is. A
+  scrollspy rail is a `<nav>` of `#section` links, so every navigation wiped
+  the section indicator scrollspy had written. Links inside a
+  `[data-fui-scrollspy]` wrapper are now left alone, the same hands-off rule
+  href-less links already had. The `data-fui-scrollspy-target` rows in both
+  attribute tables were wrong while this went unnoticed: it is a selector on
+  the wrapper naming additional target elements, not a marker on a link.
+
+- **GOFASTR1801 reported a Go short variable declaration as a stylesheet.**
+  `fill := "var(--color-surface)"` failed the build. `fill` and `stroke` are
+  CSS property names and legal Go identifiers, so the `:` of `:=` satisfied
+  the property colon, `= "` filled the value gap, and the token reference
+  matched the value shape. A CSS declaration never carries `=` directly after
+  its colon, so a match containing `:=` is now rejected; the hyphenated
+  properties need no such guard, since a hyphen cannot occur in a Go
+  identifier. The diagnostic also names the fragment that matched, because the
+  reporter read "a CSS rule is defined outside the design system" as being
+  about the value and went looking at what they had assigned.
+
 ## [0.68.0] - 2026-08-22
 
 ### Added
