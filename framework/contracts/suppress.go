@@ -66,9 +66,9 @@ type suppressionSet struct {
 	issues []Diagnostic
 }
 
-// collectSuppressions scans every discovered file, including test and
-// generated files, since a directive may legitimately sit in either, for
-// allow directives.
+// collectSuppressions scans every discovered file for allow directives:
+// Go source and stylesheets alike, including test and generated files,
+// since a directive may legitimately sit in any of them.
 //
 // Only text inside a *comment* counts. That distinction is load-bearing:
 // a directive spelled out in a string literal is documentation about the
@@ -79,7 +79,11 @@ type suppressionSet struct {
 // mid-edit still honours its suppressions.
 func collectSuppressions(p *Pass) *suppressionSet {
 	set := &suppressionSet{byFile: map[string][]*suppression{}}
-	for _, f := range p.Files() {
+	// p.files, not p.Files(): that accessor is Go-only, and a stylesheet
+	// needs the same escape hatch as any other source. Without this,
+	// GOFASTR1806 (the one rule that fires on .css) had no way to be
+	// waived in the file it fires in.
+	for _, f := range p.files {
 		body, ok := p.Source(f.Rel)
 		if !ok {
 			continue
@@ -126,7 +130,11 @@ func commentRanges(p *Pass, rel string, lines []string) []commentText {
 	var out []commentText
 	for i, raw := range lines {
 		trimmed := strings.TrimSpace(raw)
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "*") {
+		// `/*` belongs here even though the AST path covers it for Go:
+		// this branch is also how a stylesheet's comments are read, and
+		// CSS has no other comment syntax.
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") ||
+			strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "/*") {
 			out = append(out, commentText{line: i + 1, text: trimmed})
 		}
 	}

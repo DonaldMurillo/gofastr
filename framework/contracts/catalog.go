@@ -137,6 +137,7 @@ const (
 	RuleBespokeEventSource = "GOFASTR1803"
 	RuleInlineStyle        = "GOFASTR1804"
 	RuleInlineScript       = "GOFASTR1805"
+	RuleUnknownThemeToken  = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
 )
 
 // Permission rules.
@@ -736,15 +737,20 @@ func renderingRules() []Rule {
 	return []Rule{{
 		ID: RuleBespokeCSS, Slug: "rendering/bespoke-css",
 		Title: "CSS outside the design system", Capability: CapRendering, Severity: SeverityError,
-		Summary: "An app or generator ships its own CSS rules.",
+		Summary: "An app or generator ships its own CSS rules: CSS declarations in strings, not Go assigning token values.",
 		Why: "Two styling surfaces means every future change has to be made twice and stays consistent " +
 			"by luck. Bespoke CSS also loads in an order you do not control relative to component CSS, " +
-			"so it wins or loses by specificity accident rather than by intent.",
+			"so it wins or loses by specificity accident rather than by intent. The rule matches CSS " +
+			"declarations, a property-colon-value shape in a string; a Go assignment of a design-system " +
+			"token reference to a variable, `fill := \"var(--color-surface)\"`, is not one and does not fire.",
 		Fix: "Compose `framework/ui` components and `core-ui/style` tokens. If the design system genuinely lacks what you need, add the component or token upstream and use it here. That is the fix, not a local rule.",
 		Doc: "ui-getting-started",
 		Examples: []Example{{
 			Bad:  "const baseCSS = `.my-card { padding: 16px; border-radius: 8px; }`",
 			Good: `ui.Card(ui.CardConfig{Padding: style.SpaceMD})`,
+		}, {
+			Bad:  "const btnCSS = `.btn { padding: var(--spacing-md); }`",
+			Good: "fill := \"var(--color-surface)\" // a token reference assigned in Go is the encouraged shape",
 		}},
 	}, {
 		ID: RuleHardNavigation, Slug: "rendering/hard-navigation",
@@ -784,6 +790,21 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  "html.Raw(`<div style=\"margin-top: 12px\">…</div>`)",
 			Good: "ui.Stack(ui.StackConfig{Gap: \"md\"}, children...)",
+		}},
+	}, {
+		ID: RuleUnknownThemeToken, Slug: "rendering/unknown-theme-token",
+		Title: "var() references a token the theme does not emit", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Project CSS reads `var(--name)` where `name` is not a theme token.",
+		Why: "An invalid var() is not a CSS error: it resolves to nothing and the declaration is " +
+			"silently dropped, so a typo is invisible to the build, the browser console, and every " +
+			"linter, and the only symptom is the styling not applying. Issue #214's reporter wrote " +
+			"`--radius-lg` where the theme emits `--radii-lg`, and every rounded corner on the site " +
+			"rendered square for days.",
+		Fix: "Spell the token the theme emits (see `style.TokenNames()` or `gofastr docs theming`), declare the custom property in your own stylesheet if it is yours, or add a fallback: `var(--x, 8px)` degrades instead of dropping the declaration.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "border-radius: var(--radius-lg);",
+			Good: "border-radius: var(--radii-lg);",
 		}},
 	}}
 }

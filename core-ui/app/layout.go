@@ -24,6 +24,14 @@ type Layout struct {
 	// vertical rhythm, the calm editorial shape for marketing/content pages.
 	// Width is themeable via --ui-layout-container-width. Off by default.
 	Container bool
+	// StickyHeader, when true, makes the layout's own <header> wrapper stick
+	// to the top of the viewport for the whole page. A header component
+	// cannot do this itself: the layout renders it inside the wrapper, and a
+	// sticky element only travels inside its parent's box, so its own
+	// position:sticky lasts exactly the header's height. Background is
+	// themeable via --ui-layout-header-bg, stacking via the --z-sticky theme
+	// layer. Off by default.
+	StickyHeader bool
 }
 
 // NewLayout creates a named layout.
@@ -54,6 +62,16 @@ func (l *Layout) WithFooter(c component.Component) *Layout {
 // chaining. The calm editorial shape for marketing/content pages.
 func (l *Layout) WithContainer() *Layout {
 	l.Container = true
+	return l
+}
+
+// WithStickyHeader makes the layout's own <header> wrapper stick to the top
+// of the viewport for the whole page and returns the layout for chaining.
+// Use it instead of giving the header component position: sticky — a sticky
+// element only travels inside its parent's box, and the component's parent
+// is the wrapper, whose height is the header itself.
+func (l *Layout) WithStickyHeader() *Layout {
+	l.StickyHeader = true
 	return l
 }
 
@@ -177,6 +195,9 @@ func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost b
 	}
 	if l.Sidebar != nil {
 		cls += " layout--has-sidebar"
+	}
+	if l.StickyHeader {
+		cls += " layout--sticky-header"
 	}
 	// Every layer is marked: data-fui-layout names the shell (CSS/debug
 	// contract), data-fui-layout-key is the identity the runtime compares

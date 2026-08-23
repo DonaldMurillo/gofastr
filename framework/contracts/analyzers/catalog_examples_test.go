@@ -155,6 +155,7 @@ var examplesNeedingMoreContext = map[string]string{
 	contracts.RuleNoCoverageManifest:     "fires on the ABSENCE of a manifest; its example is the absence, not a snippet",
 	contracts.RuleHandrolledBattery:      "needs the hand-rolled subsystem's imports, which a snippet does not carry",
 	contracts.RuleRawSQLOverRepo:         "needs an entity declaration whose table the raw query targets",
+	contracts.RuleUnknownThemeToken:      "fires on a .css file; its example is CSS, which no Go snippet can carry", // not-a-secret: a rule id, flagged only because the constant name ends in "Token"
 }
 
 // The other half: a rule whose bad example does NOT produce it has either

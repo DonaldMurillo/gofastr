@@ -80,19 +80,27 @@ func baseTheme() style.Theme {
 		"background":    "#111113",
 		"border":        "#3F3F46",
 		"border-strong": "#71717A",
-		"danger":        "#F87171",
-		"info":          "#60A5FA",
-		"primary":       "#A5B4FC",
-		"primary-fg":    "#111827",
-		"secondary":     "#D4D4D8",
-		"secondary-fg":  "#18181B",
-		"success":       "#4ADE80",
-		"surface":       "#18181B",
-		"surface-soft":  "#27272A",
-		"text":          "#FAFAFA",
-		"text-muted":    "#D4D4D8",
-		"text-subtle":   "#A1A1AA",
-		"warning":       "#FBBF24",
+		// Code-surface tokens: the dark values match the light ones on
+		// purpose — the code surface is already dark in both schemes
+		// (see style.ColorSet.CodeSurface), so dark mode reuses the
+		// inkwell. Declared explicitly so the dark-gap boot check sees
+		// the theme as complete rather than warning about an omission.
+		"code-border":  "#27272A",
+		"code-surface": "#18181B",
+		"code-text":    "#E4E4E7",
+		"danger":       "#F87171",
+		"info":         "#60A5FA",
+		"primary":      "#A5B4FC",
+		"primary-fg":   "#111827",
+		"secondary":    "#D4D4D8",
+		"secondary-fg": "#18181B",
+		"success":      "#4ADE80",
+		"surface":      "#18181B",
+		"surface-soft": "#27272A",
+		"text":         "#FAFAFA",
+		"text-muted":   "#D4D4D8",
+		"text-subtle":  "#A1A1AA",
+		"warning":      "#FBBF24",
 	}
 	return t
 }

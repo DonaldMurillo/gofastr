@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func init() {
@@ -20,6 +21,7 @@ func init() {
 			contracts.RuleBespokeEventSource,
 			contracts.RuleInlineStyle,
 			contracts.RuleInlineScript,
+			contracts.RuleUnknownThemeToken,
 		},
 		Run: runRendering,
 	})
@@ -85,6 +87,17 @@ var (
 	// Without this, `&t.Colors.Background: "#15141B"` was reported as a
 	// stylesheet. That is a theme token assignment, the exact thing this
 	// rule exists to encourage.
+	//
+	// Matches containing `:=` are rejected IN CODE (looksLikeCSS), not
+	// here: Go's regexp is RE2 and has no lookahead, so `:(?!=)` cannot
+	// be written. The guard is needed because `fill` and `stroke` are
+	// property names AND legal Go identifiers, and in `fill :=
+	// "var(--color-surface)"` (issue #220) the `:` of `:=` satisfied
+	// the colon, `= "` the value gap, and the token reference the value
+	// shape. A stylesheet declaration never carries `=` directly after
+	// its colon, so a match containing `:=` is Go, not CSS.
+	// reCSSHyphenRule needs no such guard: a hyphen cannot occur in a
+	// Go identifier, so no Go construct can match it.
 	reCSSValueRule = regexp.MustCompile(notPropChar + `(?:` + cssPlainProps + `)\s*:\s*[^;{}]*` + cssValueShape)
 	reCSSAtRule    = regexp.MustCompile(`(?i)@(?:font-face|media|keyframes|supports|layer)\b`)
 	// A `<style>` block opened inside a string.
@@ -107,11 +120,34 @@ var (
 	reEventSource = regexp.MustCompile(`\bnew\s+EventSource\s*\(`)
 )
 
-// looksLikeCSS reports whether a line carries a stylesheet declaration.
-func looksLikeCSS(line string) bool {
-	return reCSSAtRule.MatchString(line) ||
-		reCSSHyphenRule.MatchString(line) ||
-		reCSSValueRule.MatchString(line)
+// looksLikeCSS reports whether a line carries a stylesheet declaration,
+// returning the text that matched so the diagnostic can name the trigger
+// (empty string: nothing did). A reCSSValueRule match containing `:=` is
+// rejected: see the comment above that regex.
+func looksLikeCSS(line string) string {
+	if m := reCSSAtRule.FindString(line); m != "" {
+		return m
+	}
+	if m := reCSSHyphenRule.FindString(line); m != "" {
+		return m
+	}
+	if m := reCSSValueRule.FindString(line); m != "" && !strings.Contains(m, ":=") {
+		return m
+	}
+	return ""
+}
+
+// clipTrigger trims a matched fragment and caps it, so a long line
+// produces a readable diagnostic rather than a wall of text.
+func clipTrigger(m string) string {
+	m = strings.TrimSpace(m)
+	r := []rune(m)
+	// Cut on runes, not bytes: a CSS value can hold any UTF-8, and
+	// slicing mid-rune puts invalid bytes in the diagnostic.
+	if len(r) > 48 {
+		return string(r[:45]) + "…"
+	}
+	return m
 }
 
 // designSystemPrefixes are the trees that OWN styling. CSS there is the
@@ -170,14 +206,22 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			}
 
 			if !ownsStyling {
-				if reStyleTag.MatchString(line) || looksLikeCSS(line) {
+				if trigger := looksLikeCSS(line); trigger != "" || reStyleTag.MatchString(line) {
 					what := "a CSS rule"
+					// Issue #220: the reporter read "a CSS rule is defined
+					// outside the design system" as being about the value on
+					// the line and went looking at what was assigned, when
+					// the match was on the property name. Name the half of
+					// the line that matched. The <style> wording is already
+					// unambiguous, so it stays as it was.
+					detail := fmt.Sprintf(": matched `%s`", clipTrigger(trigger))
 					if reStyleTag.MatchString(line) {
 						what = "a <style> block"
+						detail = ""
 					}
 					out = append(out, contracts.Diagnostic{
 						RuleID: contracts.RuleBespokeCSS, File: f.Rel, Line: lineNo,
-						Message: fmt.Sprintf("%s is defined outside the design system", what),
+						Message: fmt.Sprintf("%s is defined outside the design system%s", what, detail),
 						Snippet: strings.TrimSpace(lines[i]),
 					})
 				}
@@ -208,7 +252,300 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 	}
 	out = append(out, checkInlineScripts(p)...)
+	out = append(out, checkStyleTokens(p)...)
 	return out, nil
+}
+
+// checkStyleTokens reports var(--name) references in project
+// stylesheets whose name the theme does not emit (GOFASTR1806).
+//
+// The typed theme checks the DEFINITION (a style.Radius is
+// compiler-checked), but a reference in a stylesheet is just a string,
+// and nothing connects the two. An invalid var() is not a CSS error: it
+// resolves to nothing, the declaration is silently dropped, and the
+// only symptom is missing styling (issue #214: `--radius-lg` for
+// `--radii-lg`, every rounded corner square for days).
+//
+// A reference is left alone when any of these hold:
+//
+//   - it carries a fallback, `var(--x, 8px)`: the declaration degrades
+//     instead of being dropped, so the failure this rule exists to
+//     catch cannot happen;
+//   - the name is declared as a custom property in any scanned
+//     stylesheet: the set is built across all of them, because a base
+//
+// sheet declaring what another sheet uses is normal;
+//   - it starts with `ui-` or `fui-`: per-component override knobs and
+//     runtime-owned properties, not theme tokens (see the theming doc's
+//     `--ui-*` section);
+//   - it is one of the names style.TokenNames() says the theme emits.
+func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
+	files := p.StyleFiles()
+	if len(files) == 0 {
+		return nil
+	}
+	declared := map[string]bool{}
+	cleaned := make(map[string]string, len(files))
+	for _, f := range files {
+		body, ok := p.Source(f.Rel)
+		if !ok {
+			continue
+		}
+		clean := blankCSSCommentsAndStrings(string(body))
+		cleaned[f.Rel] = clean
+		collectDeclared(clean, declared)
+	}
+	known := make(map[string]bool)
+	names := style.TokenNames()
+	for _, n := range names {
+		known[n] = true
+	}
+
+	var out []contracts.Diagnostic
+	for _, f := range files {
+		clean := cleaned[f.Rel]
+		for _, loc := range reVarRef.FindAllStringSubmatchIndex(clean, -1) {
+			name := clean[loc[2]:loc[3]]
+			if varRefHasFallback(clean, loc[3]) ||
+				declared[name] ||
+				strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") ||
+				known[name] {
+				continue
+			}
+			msg := fmt.Sprintf("theme emits no `--%s`", name)
+			if fix, ok := closestToken(name, names); ok {
+				msg += fmt.Sprintf("; did you mean `--%s`?", fix)
+			}
+			out = append(out, contracts.Diagnostic{
+				RuleID:  contracts.RuleUnknownThemeToken,
+				File:    f.Rel,
+				Line:    1 + strings.Count(clean[:loc[0]], "\n"),
+				Message: msg,
+				Snippet: p.Line(f.Rel, 1+strings.Count(clean[:loc[0]], "\n")),
+			})
+		}
+	}
+	return out
+}
+
+// reCSSCustomProp matches a custom-property declaration, `--name:`; the
+// captured group is the name without the leading dashes.
+var reCSSCustomProp = regexp.MustCompile(`--([A-Za-z0-9_-]+)\s*:`)
+
+// reAtProperty matches an `@property --name` registration. It has no
+// colon after the name, so reCSSCustomProp cannot see it, and a project
+// that registers a property this way and then reads it would otherwise
+// be told the token does not exist.
+//
+// Case-insensitive on the at-rule keyword for the same reason reVarRef
+// is on the function name; the captured NAME keeps its case.
+var reAtProperty = regexp.MustCompile(`(?i)@property\s+--([A-Za-z0-9_-]+)`)
+
+// collectDeclared adds every custom property a stylesheet DECLARES to
+// into. Position matters: `--name:` only declares inside a rule block and
+// outside parentheses.
+//
+// The case that forced this is `@supports (--brand: red) { … }`. A feature
+// query's condition asks whether the browser can PARSE that declaration;
+// it does not make one. Counting it marked `--brand` declared and silenced
+// every real finding for it, which is the failure mode this rule exists to
+// prevent, arrived at from the other side.
+//
+// Depth is counted on the cleaned text, where comments and strings are
+// already blanked, so a brace or paren inside either cannot skew it.
+func collectDeclared(clean string, into map[string]bool) {
+	for _, m := range reAtProperty.FindAllStringSubmatch(clean, -1) {
+		into[m[1]] = true
+	}
+	var brace, paren, pos int
+	for _, m := range reCSSCustomProp.FindAllStringSubmatchIndex(clean, -1) {
+		for ; pos < m[0]; pos++ {
+			switch clean[pos] {
+			case '{':
+				brace++
+			case '}':
+				if brace > 0 {
+					brace--
+				}
+			case '(':
+				paren++
+			case ')':
+				if paren > 0 {
+					paren--
+				}
+			}
+		}
+		if brace > 0 && paren == 0 {
+			into[clean[m[2]:m[3]]] = true
+		}
+	}
+}
+
+// reVarRef matches a var() reference; the captured group is the
+// referenced name without the leading dashes.
+//
+// The FUNCTION name folds case, because CSS function names are ASCII
+// case-insensitive: `VAR(--radii-lg)` and `Var(--radii-lg)` both resolve
+// in a browser, so a case-sensitive match let an uppercase reference to a
+// nonexistent token through unreported.
+//
+// The custom-property NAME does not fold, and must not: property names
+// ARE case-sensitive. Measured in Chrome, `var(--mixed)` against a
+// declared `--Mixed` resolves to nothing, so treating the two as the same
+// token would call a real miss a match.
+var reVarRef = regexp.MustCompile(`(?i)var\(\s*--([A-Za-z0-9_-]+)`)
+
+// varRefHasFallback reports whether the var() reference whose name ends
+// at s[i-1] carries a fallback: a comma at the TOP level of its
+// arguments, before the matching close paren. `var(--a, var(--b))` has
+// one; `var(--a)` does not. Parentheses nest, so depth is counted.
+func varRefHasFallback(s string, i int) bool {
+	depth := 1 // already inside the var( the name belongs to
+	for ; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return false
+			}
+		case ',':
+			if depth == 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// blankCSSCommentsAndStrings blanks the bodies of `/* */` comments and
+// of '…' / "…" strings, replacing their characters with spaces so every
+// byte offset and newline position survives: checkStyleTokens computes
+// reported line numbers from the cleaned text, and anything that moves
+// would misattribute a finding.
+//
+// One left-to-right scan over four states (text, comment, 'string',
+// "string") is the whole job, because the only ambiguity in CSS is
+// which of those four a character belongs to:
+//
+//   - `/*` opens a comment in text ONLY; inside a string it is content
+//     (the false negative: an unterminated "comment" used to swallow
+//     the rest of the file, hiding real references after it);
+//   - a quote opens a string in text ONLY; inside a comment it is
+//     prose (the inverse: a quoted `*/` must not close a comment);
+//   - a backslash inside a string escapes the next character, so
+//     `"a\"b"` is one string; a backslash before a newline continues
+//     the string onto the next line, which CSS allows.
+//
+// A RAW newline inside a string terminates it rather than continuing
+// the scan to EOF: that is the spec's bad-string recovery, and it is
+// the safe reading for a pre-pass, since the text after the newline
+// resumes as ordinary CSS instead of being swallowed. Blanked bytes
+// become spaces, newlines stay newlines.
+//
+// Unlike the Go stripper it does NOT treat `//` as a comment: that
+// would truncate `url(https://…)` and every protocol-relative URL
+// mid-line, hiding real references after it.
+func blankCSSCommentsAndStrings(src string) string {
+	var b strings.Builder
+	b.Grow(len(src))
+	const (
+		stText = iota
+		stComment
+		stSingle
+		stDouble
+	)
+	state := stText
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		switch state {
+		case stText:
+			switch {
+			case c == '/' && i+1 < len(src) && src[i+1] == '*':
+				b.WriteString("  ")
+				i++
+				state = stComment
+			case c == '"':
+				b.WriteByte(' ')
+				state = stDouble
+			case c == '\'':
+				b.WriteByte(' ')
+				state = stSingle
+			default:
+				b.WriteByte(c)
+			}
+		case stComment:
+			if c == '*' && i+1 < len(src) && src[i+1] == '/' {
+				b.WriteString("  ")
+				i++
+				state = stText
+			} else if c == '\n' {
+				b.WriteByte('\n')
+			} else {
+				b.WriteByte(' ')
+			}
+		default: // stSingle / stDouble
+			switch {
+			case c == '\\' && i+1 < len(src):
+				// Escaped character: blank both without interpreting
+				// the second (a quote, a newline, anything).
+				b.WriteByte(' ')
+				if src[i+1] == '\n' {
+					b.WriteByte('\n')
+				} else {
+					b.WriteByte(' ')
+				}
+				i++
+			case state == stDouble && c == '"', state == stSingle && c == '\'':
+				b.WriteByte(' ')
+				state = stText
+			case c == '\n': // unescaped newline: bad-string recovery
+				b.WriteByte('\n')
+				state = stText
+			default:
+				b.WriteByte(' ')
+			}
+		}
+	}
+	return b.String()
+}
+
+// closestToken returns the token within edit distance 2 of name, if any.
+// names must be sorted, so equal distances resolve deterministically to
+// the first. Distance 2 is enough for the typo class this rule exists
+// for (`radius-lg` vs `radii-lg` is 2) without proposing nonsense for
+// every unknown name.
+func closestToken(name string, names []string) (string, bool) {
+	best, bestDist := "", 3
+	for _, cand := range names {
+		if d := levenshtein(name, cand); d < bestDist {
+			best, bestDist = cand, d
+		}
+	}
+	return best, best != ""
+}
+
+// levenshtein returns the edit distance between a and b: the smallest
+// number of single-character insertions, deletions, and substitutions
+// that turns one into the other.
+func levenshtein(a, b string) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
 }
 
 func hasPrefixAny(rel string, prefixes []string) bool {

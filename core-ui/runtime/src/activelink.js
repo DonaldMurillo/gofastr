@@ -16,13 +16,20 @@
   // Prefix matching is OFF by default so breadcrumbs and sidebars (where
   // multiple links share a path prefix) keep their server-rendered
   // single aria-current. Non-matching links get aria-current cleared.
-  // Links with NO href (server-rendered MatchPath items in a sidebar
-  // where the active determination is prefix-based) are left untouched,
-  // only the server has the prefix-match context for those.
+  // Links whose current-state another party owns are left untouched,
+  // the same hands-off rule as href-less links: links with NO href
+  // (server-rendered MatchPath items in a sidebar where the active
+  // determination is prefix-based, only the server has the prefix-match
+  // context), links inside a [data-fui-scrollspy] wrap (the scrollspy
+  // module tracks scroll position and writes aria-current="true"), and
+  // links carrying data-fui-activelink-skip (an author-side escape
+  // hatch for a highlight owned by app code or a hand-set attribute).
   const update = (path) => {
     for (const link of document.querySelectorAll('nav a')) {
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
+      if (link.hasAttribute('data-fui-activelink-skip')) continue;
+      if (link.closest('[data-fui-scrollspy]')) continue;
       let active = href === path;
       if (!active && link.hasAttribute('data-fui-match-prefix')) {
         const hrefPath = href.split('?')[0].split('#')[0];

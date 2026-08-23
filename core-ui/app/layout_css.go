@@ -96,6 +96,38 @@ func LayoutBaseCSS() string {
   background-color: var(--color-surface, #fff);
   border-bottom: 1px solid var(--color-border, #e4e4e7);
 }
+
+/* Sticky header (WithStickyHeader): a header component cannot stick to the
+   page from inside the wrapper, because a sticky element only travels
+   inside its parent's box and the component's parent is the wrapper, whose
+   height is the header itself. The WRAPPER is the element that sticks.
+   Background: the wrapper is transparent by default, so without one the
+   page content scrolls visibly underneath it. --ui-layout-header-bg
+   follows the --ui-layout-* override convention; stacking uses the
+   theme's --z-sticky layer (200, above app chrome, below overlays). */
+.layout--sticky-header > header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky, 200);
+  background-color: var(--ui-layout-header-bg, var(--color-background, #fff));
+}
+/* A sticky header makes the shell's dead scroll visible. .layout-body is
+   min-height: 100vh, so a header above it means a short page scrolls by
+   exactly the header's height with nothing in the overflow — under a
+   pinned header that reads as broken rather than as a stray pixel. The
+   contained and sidebar shells each fix this their own way already
+   (min-height: 0 there, a calc() subtracting a FIXED header height here);
+   a flex column fixes it for a header of any height, which is what a
+   caller-supplied component is. */
+.layout--sticky-header {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.layout--sticky-header > .layout-body {
+  flex: 1 0 auto;
+  min-height: 0;
+}
 /* .layout-body is min-height: 100vh, so a banner above it makes every page
    scroll by exactly the header height with nothing in the overflow; the
    body under a sidebar-shell banner subtracts it. */
