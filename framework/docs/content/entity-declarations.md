@@ -90,16 +90,24 @@ To publish nothing at all, say so:
 noCRUD := false
 app.Entity("posts", framework.EntityConfig{
     Fields:   []schema.Field{ /* … */ },
-    Exposure: &framework.ExposureConfig{CRUD: &noCRUD}, // no routes, no MCP tools
+    Exposure: &framework.ExposureConfig{CRUD: &noCRUD}, // no generated routes or tools
 })
 ```
 
 The entity is still registered, migrated, and usable from Go
-(`app.CrudHandler("posts")` builds a handler from the registry whether or not
-routes were mounted, and hooks and typed queries work as usual); it just has
-no HTTP or MCP surface. Setting `MCP: true` alongside `CRUD: false` is a
-registration error, not a silent mismatch: MCP tools dispatch through the
-routes.
+(`app.CrudHandler("posts")` builds a handler from the registry whether routes
+were mounted or not, and hooks and typed queries work as usual). Setting
+`MCP: true` alongside `CRUD: false` is a registration error, not a silent
+mismatch: MCP CRUD tools dispatch through the routes.
+
+`CRUD: false` turns off the **generated** surface, and only that. Anything in
+the entity's `Endpoints` list is registered either way, so an entity with
+`CRUD: false` and a declared endpoint still answers HTTP on that endpoint's
+path, and an `Endpoint` with `MCP: true` still registers its tool regardless
+of `Exposure.MCP`. To end up with no surface at all, the entity needs
+`CRUD: false` **and** no endpoints; if it keeps endpoints, they carry their
+own access rules (an `Endpoint`'s HTTP handler inherits the route's
+middleware chain, its MCP twin does not — see `Endpoint.MCPGate`).
 
 Default-on routes are not default-open routes. Every one of them refuses an
 anonymous caller with 401 unless the entity declares `OwnerField`, `Access`,

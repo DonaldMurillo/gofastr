@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -31,17 +32,21 @@ func bareEntityApp(t *testing.T, db *sql.DB) *App {
 func TestBareEntityMountsCRUDRoutes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := bareEntityApp(t, db)
-		for _, c := range []struct{ method, path string }{
-			{http.MethodGet, "/posts"},
-			{http.MethodGet, "/posts/some-id"},
-			{http.MethodPost, "/posts"},
-			{http.MethodPatch, "/posts/some-id"},
-			{http.MethodDelete, "/posts/some-id"},
-		} {
+		// Drive the table from the framework's own enumeration of what
+		// RegisterCrudRoutes mounts, so this test cannot drift from the
+		// route set (or from the docs that list it). Reject 405 as well
+		// as 404: with one method dropped, the PATH still resolves and a
+		// bare not-404 check would pass while the verb is gone.
+		for _, pattern := range crud.CrudRoutePatterns("/posts") {
+			method, path, ok := strings.Cut(pattern, " ")
+			if !ok {
+				t.Fatalf("unparseable route pattern %q", pattern)
+			}
+			path = strings.ReplaceAll(path, "{id}", "some-id")
 			rec := httptest.NewRecorder()
-			app.Router().ServeHTTP(rec, httptest.NewRequest(c.method, c.path, strings.NewReader(`{"title":"x"}`)))
-			if rec.Code == http.StatusNotFound {
-				t.Errorf("%s %s = 404: no route is mounted, so the default is NOT exposing CRUD", c.method, c.path)
+			app.Router().ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(`{"title":"x"}`)))
+			if rec.Code == http.StatusNotFound || rec.Code == http.StatusMethodNotAllowed {
+				t.Errorf("%s %s = %d: not mounted, so the default is NOT exposing it", method, path, rec.Code)
 			}
 		}
 	})
@@ -189,6 +194,54 @@ func TestExplicitCRUDFalseMountsNothing(t *testing.T) {
 			if strings.HasPrefix(tool.Name, "posts_") {
 				t.Errorf("SECURITY: [exposure] CRUD:false entity still registered MCP tool %q", tool.Name)
 			}
+		}
+	})
+}
+
+// CRUD:false turns off the GENERATED surface. It does not touch
+// Endpoints: those register unconditionally (framework/app.go, and the
+// GroupEntity mirror), so an entity can have CRUD:false and still answer
+// HTTP. Documenting CRUD:false as "no HTTP surface" without that caveat
+// would be wrong, so pin the caveat.
+func TestCRUDFalseStillServesEndpoints(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTable(t, db)
+		off := false
+		app := NewApp(WithDB(db))
+		app.Entity("posts", entity.EntityConfig{Table: "posts",
+			Fields:   []schema.Field{{Name: "title", Type: schema.String, Required: true}},
+			Exposure: &entity.ExposureConfig{CRUD: &off},
+			Endpoints: []entity.Endpoint{{
+				Method: http.MethodGet, Path: "stats", Name: "posts_stats", // relative: mounts under the entity
+				MCP: true,
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{"ok":true}`))
+				}),
+				MCPHandler: func(context.Context, map[string]any) (any, error) {
+					return map[string]any{"ok": true}, nil
+				},
+			}},
+		})
+		// The generated routes are gone...
+		rec := httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/posts", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("generated list route = %d, want 404 under CRUD:false", rec.Code)
+		}
+		// ...but the declared endpoint still answers.
+		rec = httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/posts/stats", nil))
+		if rec.Code == http.StatusNotFound {
+			t.Fatal("custom endpoint 404s under CRUD:false; the docs' caveat about Endpoints would be unnecessary")
+		}
+		if rec.Code != http.StatusOK {
+			t.Errorf("custom endpoint = %d, want 200", rec.Code)
+		}
+		// Same for the endpoint's MCP twin: it does not consult
+		// Exposure.MCP, which is unset here.
+		if !app.MCP.HasTool("posts_stats") {
+			t.Error("endpoint MCP twin was not registered; the docs' Exposure.MCP caveat would be unnecessary")
 		}
 	})
 }
