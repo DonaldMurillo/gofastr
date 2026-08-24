@@ -179,15 +179,20 @@ func TestExplicitCRUDFalseMountsNothing(t *testing.T) {
 			Fields:   []schema.Field{{Name: "title", Type: schema.String, Required: true}},
 			Exposure: &entity.ExposureConfig{CRUD: &off},
 		})
-		for _, c := range []struct{ method, path string }{
-			{http.MethodGet, "/posts"},
-			{http.MethodPost, "/posts"},
-			{http.MethodDelete, "/posts/p1"},
-		} {
+		// Same enumeration as the positive case, so the control cannot
+		// check a narrower set than the default it is controlling for.
+		// 404 (not 405) is right here: with nothing mounted the path
+		// itself does not exist.
+		for _, pattern := range crud.CrudRoutePatterns("/posts") {
+			method, path, ok := strings.Cut(pattern, " ")
+			if !ok {
+				t.Fatalf("unparseable route pattern %q", pattern)
+			}
+			path = strings.ReplaceAll(path, "{id}", "p1")
 			rec := httptest.NewRecorder()
-			app.Router().ServeHTTP(rec, httptest.NewRequest(c.method, c.path, strings.NewReader(`{"title":"x"}`)))
+			app.Router().ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(`{"title":"x"}`)))
 			if rec.Code != http.StatusNotFound {
-				t.Errorf("SECURITY: [exposure] CRUD:false still answers %s %s with %d", c.method, c.path, rec.Code)
+				t.Errorf("SECURITY: [exposure] CRUD:false still answers %s %s with %d", method, path, rec.Code)
 			}
 		}
 		for _, tool := range app.MCP.ListTools() {
