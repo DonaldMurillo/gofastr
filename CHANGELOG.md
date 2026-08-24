@@ -7,9 +7,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-08-24
+
 ### Added
 
-- **Go 1.27.** The toolchain directive names `go 1.27.0`. Request ids and
+- **BREAKING: Go 1.27.** The toolchain directive names `go 1.27.0`, so this
+  is the minimum toolchain that can build the module. Request ids and
   entity keys use the standard library `uuid` package instead of hand-rolled
   RFC 4122 bytes, six `LastIndex` slicing sites become `strings.CutLast`, and
   the runtime's `goroutineleak` profile is surfaced three ways:
