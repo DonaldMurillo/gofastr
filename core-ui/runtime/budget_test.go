@@ -22,19 +22,27 @@ const (
 	// runtime source unchanged by a single byte. The old line was clearing by
 	// 30 bytes, so a compressor revision was always going to decide it.
 	//
-	// Same call as the 12 KB to 12.5 KB move below: the code did not grow, the
-	// ruler moved. This is NOT licence to raise it when the code DOES grow.
-	// That case still means carving a feature into a demand module. Before
-	// moving this line again, dump the bundle on both revisions and confirm
-	// the byte count is identical, the way this was confirmed.
+	// Same call as the 12 KB to 12.5 KB move recorded on
+	// TestTypicalPagePayloadBudget: the code did not grow, the ruler moved.
+	// That doc comment has the policy for the other case, where the code DOES
+	// grow; a ruler change is not a licence to skip it. Before re-baselining
+	// again, dump the bundle on both toolchains and confirm the byte count is
+	// identical, the way this was confirmed.
 	//
 	// The value is bracketed on BOTH sides and cannot simply be raised.
 	// TestCoreBudgetRejectsCliffOverflow builds a bundle sitting exactly on the
-	// level-6 goal and requires it to cross this line, which under Go 1.27.0
-	// puts a ceiling at 14825. The real bundle is 14602. The whole usable band
-	// is those 223 bytes, so a raise past the ceiling turns the cliff guard
-	// vacuous rather than making room.
-	coreCongestionWindowGZ = 14*1024 + 364 // 14700: 98 over the real bundle, 125 under the cliff fixture
+	// level-6 goal and requires it to cross this line; raise the line past that
+	// fixture and the guard stops guarding instead of making room. The ceiling
+	// is between 14800 (still guards) and 14825 (vacuous), measured by moving
+	// the constant and watching that test, not by arithmetic.
+	//
+	// The band is tighter than it looks. The bundle measured 14602 when this
+	// line was first re-baselined against a 41812-byte artifact; v0.69.0's
+	// click-path work took it to 41968 raw and 14660 compressed, so 14700 now
+	// clears the real bundle by 40 bytes, not 98. At that margin the next
+	// feature almost certainly needs a carve rather than another raise, which
+	// is the situation the policy describes rather than an exception to it.
+	coreCongestionWindowGZ = 14*1024 + 364 // 14700: 40 over the real bundle (14660), 124 under the cliff fixture
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {
