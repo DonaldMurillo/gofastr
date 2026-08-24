@@ -69,7 +69,7 @@ app.Entity("posts", framework.EntityConfig{
 })
 ```
 
-### What registering an entity publishes
+## What registering an entity publishes
 
 That declaration has no `Exposure` block, and it still mounts the whole REST
 surface: `GET /posts`, `GET /posts/{id}`, `POST /posts`, `PUT` and `PATCH` on
