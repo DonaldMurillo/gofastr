@@ -27,13 +27,10 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 		}
 		elapsed := now.Sub(cursor)
 		total := int64(elapsed/schedule.interval) + 1
-		kept := total
-		if kept > int64(limit) {
-			kept = int64(limit)
-		}
+		kept := min(total, int64(limit))
 		first := cursor.Add(time.Duration(total-kept) * schedule.interval)
 		ticks := make([]time.Time, 0, int(kept))
-		for i := int64(0); i < kept; i++ {
+		for i := range kept {
 			ticks = append(ticks, first.Add(time.Duration(i)*schedule.interval))
 		}
 		return ticks, ticks[len(ticks)-1].Add(schedule.interval), nil

@@ -40,7 +40,6 @@ func TestGetStartedGoBlocksCompile(t *testing.T) {
 	}
 
 	for _, b := range blocks {
-		b := b
 		t.Run(b.label, func(t *testing.T) {
 			src, ok := wrapGetStartedSnippet(b.filename, b.source)
 			if !ok {
@@ -191,7 +190,7 @@ func gsGoVersion(repoRoot string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		f := strings.Fields(line)
 		if len(f) >= 2 && f[0] == "go" {
 			return f[1], nil

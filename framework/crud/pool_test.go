@@ -16,7 +16,7 @@ func TestRowMapPoolDropsHugeMap(t *testing.T) {
 	// pathological one.
 	s := borrowRowSlice()
 	huge := make(map[string]any, maxPooledMapEntries+100)
-	for i := 0; i < maxPooledMapEntries+100; i++ {
+	for i := range maxPooledMapEntries + 100 {
 		huge[intStr(i)] = i
 	}
 	*s = append(*s, huge)
@@ -24,7 +24,7 @@ func TestRowMapPoolDropsHugeMap(t *testing.T) {
 
 	// The map was put back only if its size was bounded. Confirm by
 	// pulling enough maps that we should be sampling the pool.
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		got := rowMapPool.Get().(*map[string]any)
 		// A returned map should have zero length; cap is not directly
 		// readable but len(map) after delete-all is 0. The signal we
@@ -43,7 +43,7 @@ func TestPtrSlicePoolDropsHugeSlice(t *testing.T) {
 	returnPtrSlice(p)
 
 	// All subsequent borrows must have bounded cap.
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		got := ptrSlicePool.Get().(*[]any)
 		if cap(*got) > maxPooledMapEntries {
 			t.Fatalf("pool surfaced slice with cap=%d (> maxPooledMapEntries %d)", cap(*got), maxPooledMapEntries)

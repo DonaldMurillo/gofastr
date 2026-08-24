@@ -19,8 +19,8 @@ import (
 func testIconPNGStatic(t *testing.T) []byte {
 	t.Helper()
 	img := stdimage.NewNRGBA(stdimage.Rect(0, 0, 512, 512))
-	for y := 0; y < 512; y++ {
-		for x := 0; x < 512; x++ {
+	for y := range 512 {
+		for x := range 512 {
 			img.Set(x, y, color.NRGBA{R: 30, G: 90, B: 200, A: 255})
 		}
 	}

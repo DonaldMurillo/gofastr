@@ -50,7 +50,7 @@ func (bw *bitWriter) Bytes() []byte {
 // reverseBits reverses the low n bits of v.
 func reverseBits(v uint32, n uint) uint32 {
 	var r uint32
-	for i := uint(0); i < n; i++ {
+	for range n {
 		r = (r << 1) | (v & 1)
 		v >>= 1
 	}

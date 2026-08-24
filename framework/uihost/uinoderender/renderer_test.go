@@ -475,7 +475,6 @@ func TestRenderAllComponentsNoPanic(t *testing.T) {
 		node(uinodev1.CompImage, uinodev1.ImageProps{Src: "/x.png", Alt: "x"}),
 	}
 	for i, n := range nodes {
-		n := n
 		t.Run(string(n.Component)+"#"+itoa(i), func(t *testing.T) {
 			// If a framework/ui primitive panics on a minimal-but-valid
 			// node, this test fails, surfacing the bug rather than

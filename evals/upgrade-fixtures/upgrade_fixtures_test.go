@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -92,7 +93,6 @@ func TestHistoricalUpgrades(t *testing.T) {
 	root := repoRoot(t)
 	manifest := mustLoadManifest(t)
 	for _, fx := range historicalFixtures {
-		fx := fx
 		t.Run(fx.name, func(t *testing.T) {
 			t.Parallel()
 			upgradeAndAssert(t, root, fx, manifest[fx.name])
@@ -531,7 +531,7 @@ func mustLoadManifest(t *testing.T) map[string]manifestEntry {
 	var cur string
 	// manifest.yml shape (fixed): "fixtures:" then 2-space "  <name>:" blocks
 	// whose 4-space "    key: N" lines carry the expected counts.
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		trim := strings.TrimSpace(line)
 		if trim == "" || strings.HasPrefix(trim, "#") {
 			continue
@@ -647,7 +647,7 @@ func repoGoDirective(t *testing.T, repoRoot string) string {
 	if err != nil {
 		t.Fatalf("read repo go.mod: %v", err)
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == "go" {
 			return fields[1]
 		}
@@ -688,7 +688,7 @@ func latestRegistryVersion(t *testing.T, root string) string {
 		t.Fatalf("read upgrades.yml: %v", err)
 	}
 	last := ""
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if v, ok := strings.CutPrefix(trimmed, "- version: "); ok {
 			last = strings.TrimSpace(v)
@@ -733,12 +733,7 @@ func titles(rows []map[string]any) []string {
 }
 
 func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s, v)
 }
 
 func jsonField(t *testing.T, body, field string) string {

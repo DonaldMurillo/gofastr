@@ -588,7 +588,7 @@ func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
 
 	const samples = 5
 	var total time.Duration
-	for i := 0; i < samples; i++ {
+	for i := range samples {
 		email := "fresh" + string(rune('a'+i)) + "@example.com"
 		tok, err := plugin.tokenStore.CreateToken(context.Background(), email, time.Hour)
 		if err != nil {

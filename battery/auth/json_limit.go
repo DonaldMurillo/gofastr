@@ -53,8 +53,7 @@ func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
 			return false
 		}

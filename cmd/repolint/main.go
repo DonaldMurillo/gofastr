@@ -421,7 +421,7 @@ func lintFrontDoor(root string) ([]finding, error) {
 }
 
 func latestReleaseMinor(changelog string) string {
-	for _, line := range strings.Split(changelog, "\n") {
+	for line := range strings.SplitSeq(changelog, "\n") {
 		if !strings.HasPrefix(line, "## [") || strings.HasPrefix(line, "## [Unreleased]") {
 			continue
 		}
@@ -733,7 +733,7 @@ func moduleIs(root, module string) (bool, error) {
 		}
 		return false, err
 	}
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "module") {
 			continue
@@ -864,7 +864,7 @@ func lintCommandBinariesIgnored(root string) ([]finding, error) {
 	// total as the one state where there is no problem. body stays nil and
 	// every command falls through to the report below.
 	ignored := map[string]bool{}
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		// Skipping blanks and comments is tidiness, not correctness: neither
 		// can match a command name once the leading "/" is trimmed, so a

@@ -125,9 +125,9 @@ func TestPostgres_PoisonDeadLetters(t *testing.T) {
 	o.backoffMax = 5 * time.Millisecond
 	ctx := context.Background()
 
-	var calls int32
+	var calls atomic.Int32
 	o.Consume("poison", "t", func(context.Context, event.Event) error {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		panic("boom")
 	})
 	o.Consume("ok", "t", noopHandler)

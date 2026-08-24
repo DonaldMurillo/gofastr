@@ -1,11 +1,13 @@
 package stream
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -24,90 +26,102 @@ func TestSSEBrokerCustomBuffer(t *testing.T) {
 }
 
 func TestSSEBrokerPublishDeliversToSubscriber(t *testing.T) {
-	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 16})
+	synctest.Test(t, func(t *testing.T) {
+		broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 16})
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		w := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", "/events", nil)
-		broker.Subscribe(w, r)
-	}()
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/events", nil).WithContext(ctx)
+			broker.Subscribe(w, r)
+		}()
 
-	// Wait for subscriber to register
-	time.Sleep(50 * time.Millisecond)
-	broker.Publish("message", "hello")
+		// Wait for subscriber to register
+		synctest.Wait()
+		broker.Publish("message", "hello")
+		synctest.Wait()
 
-	select {
-	case <-done:
-		// subscriber exited (would happen if client disconnects in real use)
-	case <-time.After(2 * time.Second):
-		// subscriber still listening; that's fine, the publish went through
-	}
-
-	if broker.SubscriberCount() > 1 {
-		t.Errorf("SubscriberCount = %d, want 0 or 1", broker.SubscriberCount())
-	}
+		if broker.SubscriberCount() != 1 {
+			t.Errorf("SubscriberCount = %d, want 1", broker.SubscriberCount())
+		}
+		cancel()
+		<-done
+	})
 }
 
 func TestSSEBrokerBufferParamFromQuery(t *testing.T) {
-	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test"})
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/events?buffer=256", nil)
+	synctest.Test(t, func(t *testing.T) {
+		broker := NewSSEBroker(SSEBrokerConfig{Topic: "test"})
+		ctx, cancel := context.WithCancel(context.Background())
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/events?buffer=256", nil).WithContext(ctx)
 
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		broker.Publish("test", "data")
-	}()
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			broker.Publish("test", "data")
+		}()
 
-	done := make(chan struct{})
-	go func() {
-		broker.Subscribe(w, r)
-		close(done)
-	}()
+		done := make(chan struct{})
+		go func() {
+			broker.Subscribe(w, r)
+			close(done)
+		}()
 
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-	}
+		// Let the delayed publish fire and the subscriber consume it.
+		time.Sleep(100 * time.Millisecond)
+		synctest.Wait()
+		cancel()
+		<-done
+	})
 }
 
 func TestSSEBrokerPublishToMultipleSubscribers(t *testing.T) {
-	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 32})
+	synctest.Test(t, func(t *testing.T) {
+		broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 32})
+		ctx, cancel := context.WithCancel(context.Background())
 
-	for i := 0; i < 3; i++ {
-		go func() {
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", "/events", nil)
-			broker.Subscribe(w, r)
-		}()
-	}
+		for range 3 {
+			go func() {
+				w := httptest.NewRecorder()
+				r := httptest.NewRequest("GET", "/events", nil).WithContext(ctx)
+				broker.Subscribe(w, r)
+			}()
+		}
 
-	time.Sleep(100 * time.Millisecond)
-	if count := broker.SubscriberCount(); count != 3 {
-		t.Errorf("SubscriberCount = %d, want 3", count)
-	}
+		synctest.Wait()
+		if count := broker.SubscriberCount(); count != 3 {
+			t.Errorf("SubscriberCount = %d, want 3", count)
+		}
 
-	broker.Publish("update", "payload")
+		broker.Publish("update", "payload")
+		synctest.Wait()
+		cancel()
+	})
 }
 
 func TestSSEBrokerDropOnFullBuffer(t *testing.T) {
-	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 2})
+	synctest.Test(t, func(t *testing.T) {
+		broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 2})
+		ctx, cancel := context.WithCancel(context.Background())
 
-	// Subscriber that never reads: buffer fills immediately
-	go func() {
-		w := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", "/events?buffer=2", nil)
-		broker.Subscribe(w, r)
-	}()
+		// Subscriber that never reads, buffer fills immediately
+		go func() {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/events?buffer=2", nil).WithContext(ctx)
+			broker.Subscribe(w, r)
+		}()
 
-	time.Sleep(50 * time.Millisecond)
+		synctest.Wait()
 
-	// Publish more than buffer can hold; should not block
-	for i := 0; i < 10; i++ {
-		broker.Publish("burst", strings.Repeat("x", 100))
-	}
-	// If we reach here, backpressure drop worked without blocking
+		// Publish more than buffer can hold, should not block
+		for range 10 {
+			broker.Publish("burst", strings.Repeat("x", 100))
+		}
+		// If we reach here, backpressure drop worked without blocking
+		cancel()
+	})
 }
 
 func TestSSEBrokerBackpressureDropsOldestAndKeepsLatest(t *testing.T) {
@@ -117,7 +131,7 @@ func TestSSEBrokerBackpressureDropsOldestAndKeepsLatest(t *testing.T) {
 	broker.subscribers["slow"] = sub
 	broker.mu.Unlock()
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		broker.Publish("burst", "payload", fmt.Sprintf("%d", i))
 	}
 
@@ -213,26 +227,36 @@ func TestSSESlowModeIgnoredWhenNotOptedIn(t *testing.T) {
 }
 
 func TestSSEBrokerEventFilter(t *testing.T) {
-	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test"})
+	synctest.Test(t, func(t *testing.T) {
+		broker := NewSSEBroker(SSEBrokerConfig{Topic: "test"})
+		ctx, cancel := context.WithCancel(context.Background())
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/events?event=alert", nil)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/events?event=alert", nil).WithContext(ctx)
 
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		broker.Publish("info", "should-be-filtered")
-		broker.Publish("alert", "should-pass")
-		time.Sleep(50 * time.Millisecond)
-	}()
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			broker.Publish("info", "should-be-filtered")
+			broker.Publish("alert", "should-pass")
+		}()
 
-	done := make(chan struct{})
-	go func() {
-		broker.Subscribe(w, r)
-		close(done)
-	}()
+		done := make(chan struct{})
+		go func() {
+			broker.Subscribe(w, r)
+			close(done)
+		}()
 
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-	}
+		// Let the delayed publishes land, then check the filter's work.
+		time.Sleep(100 * time.Millisecond)
+		synctest.Wait()
+		body := w.Body.String()
+		if strings.Contains(body, "should-be-filtered") {
+			t.Fatalf("filtered event leaked into stream: %q", body)
+		}
+		if !strings.Contains(body, "should-pass") {
+			t.Fatalf("matching event missing from stream: %q", body)
+		}
+		cancel()
+		<-done
+	})
 }

@@ -58,8 +58,7 @@ func TestValidationErrorMatchesErrorsAs(t *testing.T) {
 	// Missing both required fields → validation error.
 	_, err := ch.CreateOne(context.Background(), map[string]any{})
 
-	var ve *crud.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*crud.ValidationError](err); !ok {
 		t.Fatalf("errors.As(err, *crud.ValidationError) = false; err=%v", err)
 	}
 }

@@ -299,11 +299,18 @@ func formatUpgradeNotes(root string, releases []upgradeRelease) string {
 			fmt.Fprintf(&b, "%s\n", r.Version)
 		}
 		for _, n := range r.Notes {
-			marker := "•"
+			marker, change := "•", n.Change
 			if n.Breaking {
 				marker = "! BREAKING:"
+				// The registry's own convention writes "BREAKING: …" into
+				// the change line as well, so the two stack up and every
+				// breaking note has read "! BREAKING: BREAKING: …" since
+				// the first one. Drop the redundant half at render time
+				// rather than rewriting entries that are already correct
+				// as prose.
+				change = strings.TrimSpace(trimBreakingPrefix(change))
 			}
-			fmt.Fprintf(&b, "  %s %s\n", marker, n.Change)
+			fmt.Fprintf(&b, "  %s %s\n", marker, change)
 			fmt.Fprintf(&b, "      %s\n", n.Guidance)
 			if n.Detect != "" {
 				if hits := detectHits(root, n.Detect); len(hits) > 0 {
@@ -479,4 +486,14 @@ func runUpgrade(args []string) {
 	fmt.Println("Upgraded. Two manual steps remain:")
 	fmt.Println("  • go install " + gofastrModule + "/cmd/gofastr@" + target + "   (the CLI doesn't update with go.mod)")
 	fmt.Println("  • review the go.mod / go.sum diff before committing")
+}
+
+// trimBreakingPrefix removes a leading "BREAKING:" from a note's change
+// line, case-insensitively. The renderer supplies that marker itself.
+func trimBreakingPrefix(change string) string {
+	const p = "breaking:"
+	if len(change) >= len(p) && strings.EqualFold(change[:len(p)], p) {
+		return change[len(p):]
+	}
+	return change
 }

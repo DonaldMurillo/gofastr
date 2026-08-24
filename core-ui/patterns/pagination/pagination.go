@@ -89,10 +89,7 @@ func New(cfg Config) render.HTML {
 		panic("pagination: HrefPattern must contain %d")
 	}
 
-	window := cfg.Window
-	if window < 1 {
-		window = 1
-	}
+	window := max(cfg.Window, 1)
 	label := cfg.Label
 	if label == "" {
 		label = "Pagination"
@@ -256,7 +253,7 @@ func relativeQuery(hrefPattern string, page int) string {
 func pageNumbers(total, current, window int) []int {
 	if total <= 7+2*(window-1) {
 		out := make([]int, total)
-		for i := 0; i < total; i++ {
+		for i := range total {
 			out[i] = i + 1
 		}
 		return out

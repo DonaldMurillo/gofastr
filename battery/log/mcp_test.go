@@ -109,7 +109,7 @@ func TestMCPRecentReturnsRingEntries(t *testing.T) {
 	}))
 	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		resp, _ := http.Get(srv.URL + "/p")
 		resp.Body.Close()
 	}
@@ -209,7 +209,7 @@ func TestMCPSetLevelMutatesThreshold(t *testing.T) {
 func TestMCPFilterReturnsNewestMatches(t *testing.T) {
 	app := newMCPApp(t)
 	// Emit 10 worker.tick entries; ask for the last 3.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		app.Logger().Info("worker.tick", "i", i)
 	}
 	result, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
@@ -262,7 +262,7 @@ func TestMCPFilterSinceAfterUntilErrors(t *testing.T) {
 func TestMCPLimitClampedToRingCap(t *testing.T) {
 	app := newMCPApp(t)
 	// Ring cap is 64 in newMCPApp.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		app.Logger().Info("e", "i", i)
 	}
 	result, err := app.MCP.CallTool(context.Background(), "log_recent", map[string]any{

@@ -285,3 +285,21 @@ func TestNewestReleaseBreakingNotesHaveDetectors(t *testing.T) {
 		}
 	}
 }
+
+// The registry writes "BREAKING: …" into the change line and the renderer
+// prefixes "! BREAKING:" of its own, so every breaking note rendered as
+// "! BREAKING: BREAKING: …" from the first one onward.
+func TestBreakingMarkerIsNotDoubled(t *testing.T) {
+	cases := map[string]string{
+		"BREAKING: the module requires Go 1.27": " the module requires Go 1.27",
+		"breaking: lowercase form":              " lowercase form",
+		"BREAKING:no space":                     "no space",
+		"a plain change line":                   "a plain change line",
+		"the word BREAKING: mid-sentence":       "the word BREAKING: mid-sentence",
+	}
+	for in, want := range cases {
+		if got := trimBreakingPrefix(in); got != want {
+			t.Errorf("trimBreakingPrefix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -140,7 +140,7 @@ func tokenize(q string) []string {
 		"or": true, "i": true, "want": true, "need": true,
 	}
 	var out []string
-	for _, w := range strings.Fields(strings.ToLower(q)) {
+	for w := range strings.FieldsSeq(strings.ToLower(q)) {
 		w = strings.Trim(w, ".,!?:;()[]{}\"'")
 		if w == "" || stop[w] {
 			continue

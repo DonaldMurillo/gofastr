@@ -66,7 +66,7 @@ func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
 
 func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {
 	app := NewApp()
-	app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: boolPtr(false)}, Endpoints: []entity.Endpoint{
+	app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: new(false)}, Endpoints: []entity.Endpoint{
 		{
 			Method:      http.MethodPost,
 			Path:        "{id}/publish",

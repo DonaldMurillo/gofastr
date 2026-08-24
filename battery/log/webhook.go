@@ -291,8 +291,7 @@ type retryableError struct{ code int }
 func (e retryableError) Error() string { return fmt.Sprintf("log: webhook %d (retryable)", e.code) }
 
 func isRetryable(err error) bool {
-	var r retryableError
-	if errors.As(err, &r) {
+	if _, ok := errors.AsType[retryableError](err); ok {
 		return true
 	}
 	// Network errors (timeout, refused), http.Client returns *url.Error.

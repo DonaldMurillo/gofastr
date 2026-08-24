@@ -532,7 +532,7 @@ func TestRouterUseRaceWithRequests(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			r.Use(func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 					next.ServeHTTP(w, req)
@@ -541,7 +541,7 @@ func TestRouterUseRaceWithRequests(t *testing.T) {
 		}
 	}()
 
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		req := httptest.NewRequest(http.MethodGet, "/probe", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)

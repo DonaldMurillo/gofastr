@@ -7,6 +7,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-08-24
+
+### Added
+
+- **BREAKING: Go 1.27.** The toolchain directive names `go 1.27.0`, so this
+  is the minimum toolchain that can build the module. Request ids and
+  entity keys use the standard library `uuid` package instead of hand-rolled
+  RFC 4122 bytes, six `LastIndex` slicing sites become `strings.CutLast`, and
+  the runtime's `goroutineleak` profile is surfaced three ways:
+  `goroutineLeaks` in `/.debug/stats`, `/.debug/goroutineleak` for the stacks
+  (auth-gated), and an `app_goroutine_leaks` MCP introspection tool. In-memory
+  timing tests run in `testing/synctest` bubbles, which takes `core/stream`
+  from 35.7s to 13.3s; tests touching a database, Redis, or a real socket stay
+  on the real clock. The `go fix` modernizers are applied across the tree,
+  with the `embedlit` analyzer excluded because it corrupts source (see below).
+
+### Known issues
+
+- **`go fix`'s `embedlit` analyzer corrupts source in Go 1.27.0.** Rewriting a
+  composite literal with an embedded struct field, it deleted the field name
+  and its closing brace and left unparseable Go. One file in 571, which makes
+  its other edits untrustworthy by the same token. The sweep here runs with
+  `-embedlit=false`, and every changed file is checked to parse afterwards,
+  which is how it was found.
+
 ## [0.69.0] - 2026-08-23
 
 ### Added

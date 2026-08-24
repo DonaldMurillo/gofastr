@@ -22,6 +22,8 @@
 package multiselect
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -143,9 +145,7 @@ func Render(cfg Config) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 
 	return multiSelectStyle.WrapHTML(render.Tag("div", attrs,
 		chips,

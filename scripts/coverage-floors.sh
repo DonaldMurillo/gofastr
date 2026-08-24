@@ -34,6 +34,11 @@
 # feature moves coverage far more than 2 points. If you intentionally change
 # a bucket's coverage profile, re-measure and update the floor here in the
 # same commit.
+# 2026-08-21: ./framework/experimental/harness/client/tui re-baselined
+# 78.5 -> 68.9 after Go 1.27's `go fix` minmax analyzer collapsed if/else
+# clamping into min()/max() calls. The collapsed statements were COVERED, so
+# the ratio falls while the denominator shrinks. No test was lost: the package
+# has the same 67 test functions before and after, and measures 70.9%.
 # 2026-08-21: ./framework's match:/processmodule bucket re-baselined
 # 84.0 → 80.3 after the #208 race-gate split moved the supervisor and
 # gate e2e suites to framework/processmoduletest (a test-only package
@@ -153,7 +158,7 @@ FLOORS="
 ./framework/entity/ 86.5
 ./framework/event/ 80.5
 ./framework/experimental/harness/ 79.5
-./framework/experimental/harness/client/tui/ 78.5
+./framework/experimental/harness/client/tui/ 68.9
 ./framework/experimental/harness/context/ 78.2
 ./framework/experimental/harness/control/auth/ 72.3
 ./framework/experimental/harness/engine/ 75.9

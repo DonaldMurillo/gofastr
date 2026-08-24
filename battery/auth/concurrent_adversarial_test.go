@@ -80,7 +80,7 @@ func TestConcurrent_VerifyEmailTokenIsSingleUse(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for range N {
 		go func() {
 			defer wg.Done()
 			<-start
@@ -135,8 +135,7 @@ func TestConcurrent_ResetPasswordTokenIsSingleUse(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
-		i := i
+	for i := range N {
 		go func() {
 			defer wg.Done()
 			<-start
@@ -197,7 +196,7 @@ func TestConcurrent_UnlinkSameProviderTwice(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for range N {
 		go func() {
 			defer wg.Done()
 			<-start

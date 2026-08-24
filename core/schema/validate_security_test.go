@@ -5,12 +5,13 @@ import (
 	"testing"
 )
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }
 
 // Decimal/Float must reject non-finite values so Min/Max bounds can't be
 // bypassed via NaN/Inf (IEEE-754 makes every comparison false for NaN).
 func TestNonFiniteBoundsBypass(t *testing.T) {
-	dec := Field{Name: "amount", Type: Decimal, Min: f64(0)}
+	dec := Field{Name: "amount", Type: Decimal, Min: new(float64(0))}
 	for _, s := range []string{"NaN", "nan", "Inf", "-Inf", "+Inf", "inf"} {
 		if err := validateField(dec, s); err == nil {
 			t.Errorf("Decimal Min:0 accepted non-finite %q (bound bypassed)", s)
@@ -21,7 +22,7 @@ func TestNonFiniteBoundsBypass(t *testing.T) {
 		t.Errorf("Decimal rejected valid 12.50: %v", err)
 	}
 	// Float field receiving a genuine NaN float64 must also be rejected.
-	flt := Field{Name: "rate", Type: Float, Min: f64(0)}
+	flt := Field{Name: "rate", Type: Float, Min: new(float64(0))}
 	if err := validateField(flt, math.NaN()); err == nil {
 		t.Error("Float Min:0 accepted NaN float (bound bypassed)")
 	}
@@ -48,7 +49,7 @@ func TestIntFloatOverflowRejected(t *testing.T) {
 // Int Min/Max must be enforced in integer space; widening to float64 loses
 // precision above 2^53 and admits values strictly greater than Max.
 func TestIntBoundPrecision(t *testing.T) {
-	capped := Field{Name: "n", Type: Int, Max: f64(1e18)}
+	capped := Field{Name: "n", Type: Int, Max: new(1e18)}
 	// 1e18 + 1 is strictly over the bound but rounds to the same float64.
 	if err := validateField(capped, "1000000000000000001"); err == nil {
 		t.Error("Int Max:1e18 accepted 1e18+1 (float64 precision bypass)")
@@ -61,12 +62,12 @@ func TestIntBoundPrecision(t *testing.T) {
 
 // String Min/Max length constraints bound characters (runes), not UTF-8 bytes.
 func TestStringLengthRuneCount(t *testing.T) {
-	minFive := Field{Name: "code", Type: String, Min: f64(5)}
+	minFive := Field{Name: "code", Type: String, Min: new(float64(5))}
 	// "👍👍" is 2 runes / 8 bytes, must fail a 5-character minimum.
 	if err := validateField(minFive, "👍👍"); err == nil {
 		t.Error("String Min:5 accepted a 2-character multibyte string (byte count)")
 	}
-	maxThree := Field{Name: "code", Type: String, Max: f64(3)}
+	maxThree := Field{Name: "code", Type: String, Max: new(float64(3))}
 	// "日本語" is 3 runes / 9 bytes, must pass a 3-character maximum.
 	if err := validateField(maxThree, "日本語"); err != nil {
 		t.Errorf("String Max:3 rejected a valid 3-character string: %v", err)
@@ -78,7 +79,7 @@ func TestStringLengthRuneCount(t *testing.T) {
 func TestDecimalBoundPrecision(t *testing.T) {
 	// Max = 2^53; "2^53 + 1" parses to exactly 2^53 in float64, so a float
 	// comparison would let the over-cap value through.
-	capped := Field{Name: "amount", Type: Decimal, Max: f64(9007199254740992)}
+	capped := Field{Name: "amount", Type: Decimal, Max: new(float64(9007199254740992))}
 	if err := validateField(capped, "9007199254740993"); err == nil {
 		t.Error("Decimal Max:2^53 accepted 2^53+1 (float64 precision bypass)")
 	}
@@ -88,12 +89,12 @@ func TestDecimalBoundPrecision(t *testing.T) {
 	}
 	// Min precision bypass: 2^53-1 is strictly under a 2^53 floor but the float
 	// round-trip of the floor must not admit it.
-	floored := Field{Name: "amount", Type: Decimal, Min: f64(9007199254740992)}
+	floored := Field{Name: "amount", Type: Decimal, Min: new(float64(9007199254740992))}
 	if err := validateField(floored, "9007199254740991"); err == nil {
 		t.Error("Decimal Min:2^53 accepted 2^53-1 (float64 precision bypass)")
 	}
 	// Sub-precision fraction strictly over an integral Max must be rejected.
-	hundred := Field{Name: "amount", Type: Decimal, Max: f64(1000)}
+	hundred := Field{Name: "amount", Type: Decimal, Max: new(float64(1000))}
 	if err := validateField(hundred, "1000.0000000000000001"); err == nil {
 		t.Error("Decimal Max:1000 accepted 1000.0000000000000001 (fraction over cap)")
 	}

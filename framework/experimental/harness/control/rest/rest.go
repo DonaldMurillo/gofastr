@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -109,12 +110,7 @@ func (s *Server) hostOK(r *http.Request) bool {
 		// No restriction configured, typical for Unix socket.
 		return true
 	}
-	for _, h := range s.AllowedHosts {
-		if r.Host == h {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.AllowedHosts, r.Host)
 }
 
 // originOK reports whether the request's Origin is permitted. See the
@@ -127,12 +123,7 @@ func (s *Server) originOK(r *http.Request) bool {
 		// curl-style callers without Origin are accepted.
 		return true
 	}
-	for _, o := range s.AllowedOrigins {
-		if origin == o {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.AllowedOrigins, origin)
 }
 
 // claimsKey is the context key under which verified token claims are

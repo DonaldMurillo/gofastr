@@ -167,11 +167,11 @@ func TestBuildPWAPrecacheEntriesAllResolve(t *testing.T) {
 	}
 	out := buildPWASite(t, "/sub", pwaStyledOffline{styles})
 	sw := readOut(t, out, "service-worker.js")
-	i := strings.Index(sw, "var PRECACHE = ")
-	if i < 0 {
+	_, after, ok := strings.Cut(sw, "var PRECACHE = ")
+	if !ok {
 		t.Fatalf("no PRECACHE in sw:\n%s", sw)
 	}
-	line := sw[i+len("var PRECACHE = "):]
+	line := after
 	line = line[:strings.Index(line, ";\n")]
 	var precache []string
 	if err := json.Unmarshal([]byte(line), &precache); err != nil {

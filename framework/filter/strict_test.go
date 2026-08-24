@@ -132,7 +132,7 @@ func TestStrictFieldWinsOverReservedName(t *testing.T) {
 func TestStrictConsumedFieldNotUnknown(t *testing.T) {
 	// Run many times: Go map iteration order is randomized, so a flaky
 	// misclassification would surface across iterations.
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		filters, err := parseQuery(t, "priority=high&priority_gte=2")
 		if err != nil {
 			t.Fatalf("known field sent plain+suffixed must not error, got %v", err)

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -119,10 +120,8 @@ func extractBearerToken(r *http.Request) string {
 func hasAnyRole(user User, targetRoles []string) bool {
 	userRoles := user.GetRoles()
 	for _, target := range targetRoles {
-		for _, role := range userRoles {
-			if role == target {
-				return true
-			}
+		if slices.Contains(userRoles, target) {
+			return true
 		}
 	}
 	return false

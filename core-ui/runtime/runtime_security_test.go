@@ -113,14 +113,8 @@ func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	}
 	// The headers block sits just before/around the URL in the kiln-tool
 	// handler; scan a window spanning both sides of the call site.
-	start := tIdx - 400
-	if start < 0 {
-		start = 0
-	}
-	end := tIdx + 400
-	if end > len(w) {
-		end = len(w)
-	}
+	start := max(tIdx-400, 0)
+	end := min(tIdx+400, len(w))
 	if !strings.Contains(w[start:end], "_csrf") {
 		t.Error("SECURITY: [csrf] src/rpc.js kiln-tool POST (/kiln/tool/) does not use _csrf — auth.CSRF middleware rejects the JSON RPC")
 	}
@@ -160,7 +154,7 @@ func TestHtmlSignalDoesNotInjectObjectMarkup(t *testing.T) {
 	// JSON.stringify output to innerHTML, non-string values go to
 	// textContent. Detect the unsafe pairing: innerHTML on the same
 	// statement as JSON.stringify.
-	for _, line := range strings.Split(htmlBranch, "\n") {
+	for line := range strings.SplitSeq(htmlBranch, "\n") {
 		l := strings.TrimSpace(line)
 		if strings.Contains(l, "innerHTML") && strings.Contains(l, "JSON.stringify") {
 			t.Errorf("SECURITY: [html-signal] non-string signal value reaches innerHTML via JSON.stringify (no HTML-escape) — a reflected RPC error object {text:'<img onerror=…>'} executes; line:\n%s", l)
@@ -204,7 +198,7 @@ func TestHtmlSignalSkipsNonStringValues(t *testing.T) {
 	}
 	// The corruption shape, writing JSON.stringify(value) into textContent,
 	// must be gone from the html-mode branch entirely.
-	for _, line := range strings.Split(htmlBranch, "\n") {
+	for line := range strings.SplitSeq(htmlBranch, "\n") {
 		l := strings.TrimSpace(line)
 		if strings.Contains(l, "textContent") && strings.Contains(l, "JSON.stringify") {
 			t.Errorf("SECURITY: [html-signal] html-mode branch still writes JSON.stringify(value) into textContent — a non-2xx broadcast overwrites the trusted region with a JSON blob; line:\n%s", l)

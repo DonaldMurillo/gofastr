@@ -158,7 +158,7 @@ func TestPG_ManyConcurrentDeployersExactlyOnce(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	errs := make([]error, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

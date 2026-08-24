@@ -131,12 +131,12 @@ func parseFrontmatter(src string, s *Skill) error {
 		if !startsAtCol0(line) {
 			continue
 		}
-		colon := strings.Index(line, ":")
-		if colon < 0 {
+		before, after, ok := strings.Cut(line, ":")
+		if !ok {
 			return fmt.Errorf("frontmatter: line %d missing ':' (%q)", i+1, line)
 		}
-		key := strings.TrimSpace(line[:colon])
-		val := strings.TrimSpace(line[colon+1:])
+		key := strings.TrimSpace(before)
+		val := strings.TrimSpace(after)
 		// Strip surrounding quotes on scalars.
 		val = trimYAMLQuotes(val)
 		if val == "" {

@@ -1,8 +1,11 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"runtime"
+	"runtime/pprof"
 
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -26,6 +29,7 @@ import (
 //   - app_batteries:  list registered batteries with deps + lifecycle status.
 //   - app_config:     return the AppConfig snapshot (Name, JSONCase, timeouts…).
 //   - app_readiness:  run every registered readiness check and report results.
+//   - app_goroutine_leaks: count + stacks of runtime-proven leaked goroutines.
 //   - framework_docs_list / framework_docs_get / framework_docs_search:
 //     expose the framework's markdown docs (embedded at
 //     build time, so they match the framework version
@@ -78,6 +82,12 @@ func (a *App) registerIntrospectionTools() error {
 			description: "Run every registered readiness check (the same set /readyz consults) and return per-check status. Use to verify the app is ready to serve traffic before issuing real requests.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolReadiness,
+		},
+		{
+			name:        "app_goroutine_leaks",
+			description: "Report goroutines the Go runtime has proven leaked — blocked forever on channels or sync primitives nothing can reach (the goroutineleak profile). Returns count plus the leaked stacks; zero is healthy, a count that grows across calls means a worker or stream is being abandoned. Read-only.",
+			schema:      map[string]any{"type": "object"},
+			handler:     a.toolGoroutineLeaks,
 		},
 		{
 			name:        "app_routines",
@@ -297,6 +307,36 @@ func (a *App) toolDocsSearch(_ context.Context, params map[string]any) (any, err
 		"term":  term,
 		"hits":  out,
 		"count": len(out),
+	}, nil
+}
+
+func (a *App) toolGoroutineLeaks(_ context.Context, _ map[string]any) (any, error) {
+	p := pprof.Lookup("goroutineleak")
+	if p == nil {
+		return nil, fmt.Errorf("goroutineleak profile unavailable in this runtime")
+	}
+	// Detection is GC-reachability-based; force a cycle so the report
+	// reflects now, not the last collection.
+	runtime.GC()
+	var buf bytes.Buffer
+	// debug=1 is the leak report; debug>=2 degrades to ALL goroutine
+	// stacks (leaked or not) by stdlib design.
+	if err := p.WriteTo(&buf, 1); err != nil {
+		return nil, err
+	}
+	// Bound the payload — each leaked stack is small, but a mass leak
+	// must not turn an introspection reply into a megabyte dump.
+	const maxStackBytes = 64 << 10
+	stacks := buf.String()
+	truncated := false
+	if len(stacks) > maxStackBytes {
+		stacks = stacks[:maxStackBytes]
+		truncated = true
+	}
+	return map[string]any{
+		"count":     p.Count(),
+		"stacks":    stacks,
+		"truncated": truncated,
 	}, nil
 }
 

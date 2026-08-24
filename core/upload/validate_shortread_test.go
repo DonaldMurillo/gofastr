@@ -19,10 +19,7 @@ func (s *shortReadSeeker) Read(p []byte) (int, error) {
 	if s.pos >= len(s.data) {
 		return 0, io.EOF
 	}
-	n := len(p)
-	if n > s.maxChunk {
-		n = s.maxChunk
-	}
+	n := min(len(p), s.maxChunk)
 	if rem := len(s.data) - s.pos; n > rem {
 		n = rem
 	}

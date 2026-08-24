@@ -59,7 +59,7 @@ func TestSampledLoggingUsesInjectedLogger(t *testing.T) {
 		}),
 	)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 	}

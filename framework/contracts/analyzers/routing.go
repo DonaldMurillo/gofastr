@@ -186,7 +186,7 @@ func checkStateRoutes(p *contracts.Pass, table *RouteTable) []contracts.Diagnost
 	}
 	var out []contracts.Diagnostic
 	for _, r := range table.Routes {
-		for _, seg := range strings.Split(strings.Trim(r.Pattern, "/"), "/") {
+		for seg := range strings.SplitSeq(strings.Trim(r.Pattern, "/"), "/") {
 			// Only LITERAL segments carry the rule's evidence. A wildcard
 			// named {page} is a resource identifier, a CMS page slug, not
 			// pagination; stripping the braces before matching erased

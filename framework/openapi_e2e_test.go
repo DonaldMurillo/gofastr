@@ -3,6 +3,7 @@ package framework
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/openapi"
@@ -97,7 +98,7 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true, Max: ptrFloat64(200)},
+			{Name: "title", Type: schema.String, Required: true, Max: new(float64(200))},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}},
 			{Name: "views", Type: schema.Int},
@@ -552,10 +553,10 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	ent := entity.Define("everything", entity.EntityConfig{
 		Table: "everything",
 		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true, Min: ptrFloat64(1), Max: ptrFloat64(255)},
+			{Name: "name", Type: schema.String, Required: true, Min: new(float64(1)), Max: new(float64(255))},
 			{Name: "content", Type: schema.Text},
-			{Name: "count", Type: schema.Int, Min: ptrFloat64(0)},
-			{Name: "score", Type: schema.Float, Min: ptrFloat64(0), Max: ptrFloat64(100)},
+			{Name: "count", Type: schema.Int, Min: new(float64(0))},
+			{Name: "score", Type: schema.Float, Min: new(float64(0)), Max: new(float64(100))},
 			{Name: "price", Type: schema.Decimal},
 			{Name: "active", Type: schema.Bool},
 			{Name: "status", Type: schema.Enum, Values: []string{"active", "inactive", "pending"}},
@@ -714,7 +715,8 @@ func TestE2E_OpenAPI_FilterParameters_SnakeCase(t *testing.T) {
 // Helpers
 // ============================================================================
 
-func ptrFloat64(f float64) *float64 { return &f }
+//go:fix inline
+func ptrFloat64(f float64) *float64 { return new(f) }
 
 func assertEqual(t *testing.T, label string, expected, actual any) {
 	t.Helper()
@@ -727,10 +729,8 @@ func assertEqual(t *testing.T, label string, expected, actual any) {
 
 func assertContains(t *testing.T, label string, slice []string, item string) {
 	t.Helper()
-	for _, s := range slice {
-		if s == item {
-			return
-		}
+	if slices.Contains(slice, item) {
+		return
 	}
 	t.Errorf("%s: expected to contain %q, got %v", label, item, slice)
 }

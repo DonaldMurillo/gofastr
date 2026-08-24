@@ -52,7 +52,7 @@ func TestReindexIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	idx, _ := Open(Options{Embedder: NewStubEmbedder(64)})
 	doc := Document{ID: "doc1", Text: "hello world from gofastr"}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := idx.Add(ctx, doc); err != nil {
 			t.Fatalf("Add iter %d: %v", i, err)
 		}

@@ -114,7 +114,6 @@ func newChainSite(t *testing.T) *chainSite {
 	for _, p := range []struct{ path, id, label string }{
 		{"/docs/a", "screen-a", "A"}, {"/docs/b", "screen-b", "B"},
 	} {
-		p := p
 		mux.HandleFunc(p.path, func(w http.ResponseWriter, r *http.Request) {
 			c.record(r)
 			if r.Header.Get("X-Gofastr-Navigate") == "1" {

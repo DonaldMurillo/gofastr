@@ -28,7 +28,7 @@ func covItems(t *testing.T, cfg func(*entity.EntityConfig), n int) (*CrudHandler
 	ent := entity.Define("items", base)
 	ent.SetDB(db)
 	rows := make([]map[string]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		rows[i] = map[string]any{"id": string(rune('a' + i)), "seq": i, "name": "n"}
 	}
 	seedRows(t, db, "items", rows)

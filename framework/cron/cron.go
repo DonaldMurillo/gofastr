@@ -360,7 +360,7 @@ func ParseCron(spec string) (cronExpr, error) {
 // Supports comma-separated lists, ranges (a-b), and step values (*/N or a-b/N).
 func parseField(s string, min, max int) (uint64, error) {
 	var mask uint64
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		m, err := parseFieldPart(part, min, max)
 		if err != nil {
 			return 0, err

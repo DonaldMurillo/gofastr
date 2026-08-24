@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewIsValid(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		u, err := New()
 		if err != nil {
 			t.Fatalf("New: %v", err)
@@ -23,7 +23,7 @@ func TestNewIsValid(t *testing.T) {
 }
 
 func TestRoundTrip(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		u, _ := New()
 		s := u.String()
 		parsed, err := Parse(s)

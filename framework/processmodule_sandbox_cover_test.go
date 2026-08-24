@@ -107,8 +107,7 @@ func TestSandboxRunner_StartSHAErrorBeforeWrap(t *testing.T) {
 
 func TestExecutableSHAMismatchError_isIntegrity(t *testing.T) {
 	e := &ExecutableSHAMismatchError{Path: "x", Expected: "a", Actual: "b"}
-	var target *ExecutableSHAMismatchError
-	if !errors.As(e, &target) {
+	if _, ok := errors.AsType[*ExecutableSHAMismatchError](e); !ok {
 		t.Error("errors.As must match *ExecutableSHAMismatchError")
 	}
 }

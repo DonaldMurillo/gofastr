@@ -298,7 +298,7 @@ func TestReachWalkTerminatesOnCycle(t *testing.T) {
 	a, b := &cyclicComp{}, &cyclicComp{kid: &childActionComp{}}
 	a.peer, b.peer = b, a
 	got := reachableComponentTypes(a)
-	if !got[reflect.TypeOf(childActionComp{})] {
+	if !got[reflect.TypeFor[childActionComp]()] {
 		t.Fatal("walk did not reach the child on the far side of a cycle")
 	}
 }

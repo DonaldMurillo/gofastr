@@ -172,12 +172,12 @@ func TestOllamaEmbedder_DimRaceFree(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 50; i++ {
+		for range 50 {
 			_ = e.Dim()
 		}
 		close(done)
 	}()
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if _, err := e.Embed(context.Background(), []string{"x"}); err != nil {
 			t.Fatalf("Embed: %v", err)
 		}

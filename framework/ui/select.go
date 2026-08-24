@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -102,9 +104,7 @@ func Select(cfg SelectConfig) render.HTML {
 	} else if cfg.Help != "" {
 		selAttrs["aria-describedby"] = id + "-help"
 	}
-	for k, v := range cfg.ExtraAttrs {
-		selAttrs[k] = v
-	}
+	maps.Copy(selAttrs, cfg.ExtraAttrs)
 
 	// The marker lives INSIDE the <label>: the component root is a grid,
 	// so a sibling span would become its own row under the label text.

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -361,11 +362,8 @@ func orderChildrenFirst(tables []string, merged map[string]*entity.Entity, names
 func childrenOf(parent string, parents map[string][]string) []string {
 	var out []string
 	for child, ps := range parents {
-		for _, p := range ps {
-			if p == parent {
-				out = append(out, child)
-				break
-			}
+		if slices.Contains(ps, parent) {
+			out = append(out, child)
 		}
 	}
 	sort.Strings(out)

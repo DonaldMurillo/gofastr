@@ -158,12 +158,10 @@ func (s *AssetServer) AddBytes(path, contentType string, framed bool, b []byte) 
 // router panics on duplicate patterns otherwise).
 func (s *AssetServer) Register(rt *router.Router) {
 	for _, spec := range s.specs {
-		spec := spec
 		path := joinPath(s.prefix, spec.Name)
 		rt.Get(path, s.serveFS(spec))
 	}
 	for _, a := range s.extra {
-		a := a
 		rt.Get(a.path, serveBytes(a))
 	}
 }

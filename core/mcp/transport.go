@@ -407,7 +407,7 @@ func StreamSSE(w io.Writer, event, data string) {
 	// Normalise CR/CRLF to LF, then emit one `data:` line per payload
 	// line. A single blank line at the end dispatches the event.
 	nd := strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(data)
-	for _, line := range strings.Split(nd, "\n") {
+	for line := range strings.SplitSeq(nd, "\n") {
 		fmt.Fprintf(w, "data: %s\n", line)
 	}
 	fmt.Fprint(w, "\n")

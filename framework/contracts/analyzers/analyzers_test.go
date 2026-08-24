@@ -1035,7 +1035,7 @@ func TestReportIsDeterministic(t *testing.T) {
 		"db.go":   "package main\n\nimport \"regexp\"\n\nfunc f() { _ = regexp.MustCompile(`x`) }\n",
 	}
 	var first string
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ds := fixture(t, files)
 		var b strings.Builder
 		for _, d := range ds {

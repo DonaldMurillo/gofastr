@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"sync"
@@ -120,9 +121,7 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // into the underlying ResponseWriter's. Caller holds tw.mu.
 func (tw *timeoutWriter) copyHeadersToUnderlyingLocked() {
 	dst := tw.w.Header()
-	for k, v := range tw.h {
-		dst[k] = v
-	}
+	maps.Copy(dst, tw.h)
 }
 
 // commitBufferedLocked writes the buffered headers, status, and body to

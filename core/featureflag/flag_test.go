@@ -85,7 +85,7 @@ func TestEvaluator_RolloutZeroOff(t *testing.T) {
 	s := NewMemoryStore()
 	_ = s.Set(Flag{Key: "x", Enabled: true, Rollout: 0})
 	e := NewEvaluator(s)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		ctx := WithContext(context.Background(), EvalContext{UserID: "u" + string(rune('0'+i%10))})
 		if e.Bool(ctx, "x") {
 			t.Fatalf("rollout 0 should be uniformly off")
@@ -97,7 +97,7 @@ func TestEvaluator_RolloutHundredOn(t *testing.T) {
 	s := NewMemoryStore()
 	_ = s.Set(Flag{Key: "x", Enabled: true, Rollout: 100})
 	e := NewEvaluator(s)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		ctx := WithContext(context.Background(), EvalContext{UserID: "u" + string(rune('0'+i%10))})
 		if !e.Bool(ctx, "x") {
 			t.Fatalf("rollout 100 should be uniformly on")
@@ -111,7 +111,7 @@ func TestEvaluator_RolloutStableAcrossCalls(t *testing.T) {
 	e := NewEvaluator(s)
 	ctx := WithContext(context.Background(), EvalContext{UserID: "alice"})
 	first := e.Bool(ctx, "x")
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if got := e.Bool(ctx, "x"); got != first {
 			t.Fatalf("same subject must return stable result, flipped on call %d", i)
 		}
@@ -124,7 +124,7 @@ func TestEvaluator_RolloutPartiallyDistributes(t *testing.T) {
 	e := NewEvaluator(s)
 	on := 0
 	const N = 1000
-	for i := 0; i < N; i++ {
+	for i := range N {
 		ctx := WithContext(context.Background(), EvalContext{UserID: testSubject(i)})
 		if e.Bool(ctx, "x") {
 			on++

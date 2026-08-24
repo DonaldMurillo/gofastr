@@ -42,7 +42,7 @@ func TestHubStopFastWithSlowClose(t *testing.T) {
 	hub.Register(slow)
 
 	// 99 normal conns
-	for i := 0; i < 99; i++ {
+	for range 99 {
 		conn := newTestConn()
 		go conn.writePump()
 		hub.Register(conn)
@@ -73,18 +73,16 @@ func TestHubStopFastWithSlowClose(t *testing.T) {
 
 // Finding 10: Register racing with Stop must not deadlock the caller.
 func TestHubRegisterRaceWithStop(t *testing.T) {
-	for trial := 0; trial < 20; trial++ {
+	for trial := range 20 {
 		hub := NewHub()
 		go hub.Run()
 
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			conn := newTestConn()
 			go conn.writePump()
 			hub.Register(conn)
-		}()
+		})
 
 		// Stop concurrently
 		hub.Stop()
@@ -111,7 +109,7 @@ func TestHubAllUnregisterOnMassClose(t *testing.T) {
 
 	const N = 10
 	conns := make([]*WebSocketConn, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		c := newTestConn()
 		go c.writePump()
 		hub.Register(c)

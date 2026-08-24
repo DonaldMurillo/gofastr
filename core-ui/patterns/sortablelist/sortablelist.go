@@ -32,6 +32,8 @@
 package sortablelist
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -126,9 +128,7 @@ func Render(cfg Config) render.HTML {
 	if cfg.ConflictRPC != "" {
 		listAttrs["data-fui-sortable-conflict"] = cfg.ConflictRPC
 	}
-	for k, v := range cfg.ExtraAttrs {
-		listAttrs[k] = v
-	}
+	maps.Copy(listAttrs, cfg.ExtraAttrs)
 
 	rows := renderRows(cfg)
 

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -55,10 +56,8 @@ func authPolicy(loginPath, role string) app.Policy {
 		}
 		if role != "" {
 			if rh, ok := u.(interface{ GetRoles() []string }); ok {
-				for _, r := range rh.GetRoles() {
-					if r == role {
-						return decide.Allow()
-					}
+				if slices.Contains(rh.GetRoles(), role) {
+					return decide.Allow()
 				}
 			}
 			return decide.Block(403, "Forbidden")

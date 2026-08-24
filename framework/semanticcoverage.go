@@ -2,6 +2,7 @@ package framework
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -147,8 +148,8 @@ func (a *App) entityForPattern(pattern string) string {
 	segments := strings.Split(trimmed, "/")
 	// Walk from the end so a prefixed mount ("/api/v1/posts/{id}") finds
 	// "posts" rather than "api".
-	for i := len(segments) - 1; i >= 0; i-- {
-		seg := segments[i]
+	for _, seg := range slices.Backward(segments) {
+
 		if seg == "" || strings.HasPrefix(seg, "{") {
 			continue
 		}

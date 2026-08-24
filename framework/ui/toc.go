@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"maps"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -66,9 +68,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, cfg.ExtraAttrs)
 	return tocStyle.WrapHTML(render.Tag("nav", attrs,
 		// Empty <ol> the runtime fills.
 		render.Tag("ol", map[string]string{"class": "ui-toc__list"}),

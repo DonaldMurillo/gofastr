@@ -108,8 +108,7 @@ func printListTable(headers, keys []string, rows []map[string]any) {
 // apiFail prints err and maps it to an exit code: 4 for auth failures
 // (401/403), 1 for every other API or transport error.
 func apiFail(err error) int {
-	var apiErr *client.APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*client.APIError](err); ok {
 		fmt.Fprintln(os.Stderr, apiErr.Error())
 		if apiErr.Status == 401 || apiErr.Status == 403 {
 			fmt.Fprintf(os.Stderr, "auth failed: mint a token in the app and run `%s login`\n", binaryName)

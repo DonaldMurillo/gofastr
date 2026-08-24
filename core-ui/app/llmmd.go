@@ -431,7 +431,7 @@ func AppLLMMDHandler(a *App) http.Handler {
 // and returns the parameter names ["slug", "id"].
 func extractParamNames(path string) []string {
 	var names []string
-	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
+	for seg := range strings.SplitSeq(strings.Trim(path, "/"), "/") {
 		if isParamSeg(seg) {
 			names = append(names, segParamName(seg))
 		}

@@ -61,7 +61,7 @@ func (a *App) RedirectPattern(from, to string) {
 		}
 	}
 	// Every param in `to` must be declared in `from`.
-	for _, seg := range strings.Split(strings.Trim(to, "/"), "/") {
+	for seg := range strings.SplitSeq(strings.Trim(to, "/"), "/") {
 		if isParamSeg(seg) {
 			name := segParamName(seg)
 			if !fromParams[name] {
@@ -135,7 +135,7 @@ func (r *Router) resolveRedirect(path string) (string, bool) {
 	// valid), so cap the walk and fail closed when it doesn't terminate.
 	// The initial resolve above consumed hop 1; ten more iterations let a
 	// chain of up to 10 edges reach AND verify its terminal target.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		next, ok := r.resolveRedirectOnce(target)
 		if !ok {
 			return target, true
@@ -292,11 +292,8 @@ func patternsOverlap(a, b []string) bool {
 	default: // both catch-alls: always length-compatible
 	}
 
-	n := prefixA
-	if prefixB < n {
-		n = prefixB
-	}
-	for i := 0; i < n; i++ {
+	n := min(prefixB, prefixA)
+	for i := range n {
 		if !segsOverlap(a[i], b[i]) {
 			return false
 		}

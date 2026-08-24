@@ -19,7 +19,7 @@ func TestRace_PerRequestValueIsolation(t *testing.T) {
 	const n = 64
 	var wg sync.WaitGroup
 	errs := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -53,12 +53,10 @@ func TestRace_PerRequestValueIsolation(t *testing.T) {
 func TestRace_ConcurrentIdenticalRegistration(t *testing.T) {
 	resetForTest()
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 32 {
+		wg.Go(func() {
 			_ = New("x").Int("count", 0)
-		}()
+		})
 	}
 	wg.Wait()
 }

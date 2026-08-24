@@ -40,13 +40,13 @@ type Provider interface {
 // adapter translates it to its wire format.
 type Request struct {
 	Model       string
-	System      string                 // system prompt (already assembled by middleware)
-	Messages    []Message              // canonical history
-	Tools       []ToolSchema           // available tools for tool_use
-	Temperature float64                // 0.0 = deterministic
-	MaxTokens   int                    // 0 = provider default
-	CacheHints  []CacheBreakpoint      // provider-aware cache placement
-	Extra       map[string]interface{} // provider-specific knobs (rarely used)
+	System      string            // system prompt (already assembled by middleware)
+	Messages    []Message         // canonical history
+	Tools       []ToolSchema      // available tools for tool_use
+	Temperature float64           // 0.0 = deterministic
+	MaxTokens   int               // 0 = provider default
+	CacheHints  []CacheBreakpoint // provider-aware cache placement
+	Extra       map[string]any    // provider-specific knobs (rarely used)
 }
 
 // Message is a canonical Anthropic-shape message (role + content blocks).

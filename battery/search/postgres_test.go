@@ -61,7 +61,7 @@ func openSearchPG(t *testing.T) *sql.DB {
 		t.Fatalf("open pg: %v", err)
 	}
 	db.SetMaxOpenConns(1)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		if err := db.PingContext(ctx); err == nil {
 			cancel()
@@ -284,7 +284,7 @@ func TestPostgresPrefixMatch(t *testing.T) {
 func TestPostgresAdversarialQuery(t *testing.T) {
 	ctx := context.Background()
 	idx := newSearchIndex(t, nil)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_ = idx.Index(ctx, Document{
 			ID:   fmt.Sprintf("safe-%d", i),
 			Text: fmt.Sprintf("benign document number %d about gofastr", i),

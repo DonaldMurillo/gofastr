@@ -6,7 +6,9 @@ import (
 )
 
 // helper to create a float64 pointer
-func fPtr(v float64) *float64 { return &v }
+//
+//go:fix inline
+func fPtr(v float64) *float64 { return new(v) }
 
 // ---------- String ----------
 
@@ -46,7 +48,7 @@ func TestValidateString_WrongType(t *testing.T) {
 }
 
 func TestValidateString_MinLength(t *testing.T) {
-	f := Field{Name: "name", Type: String, Min: fPtr(3)}
+	f := Field{Name: "name", Type: String, Min: new(float64(3))}
 	if err := Validate(f, "ab"); err == nil {
 		t.Fatal("expected error for string shorter than min")
 	}
@@ -56,7 +58,7 @@ func TestValidateString_MinLength(t *testing.T) {
 }
 
 func TestValidateString_MaxLength(t *testing.T) {
-	f := Field{Name: "name", Type: String, Max: fPtr(5)}
+	f := Field{Name: "name", Type: String, Max: new(float64(5))}
 	if err := Validate(f, "abcdef"); err == nil {
 		t.Fatal("expected error for string longer than max")
 	}
@@ -85,7 +87,7 @@ func TestValidateText_Valid(t *testing.T) {
 }
 
 func TestValidateText_MinMax(t *testing.T) {
-	f := Field{Name: "body", Type: Text, Min: fPtr(10), Max: fPtr(100)}
+	f := Field{Name: "body", Type: Text, Min: new(float64(10)), Max: new(float64(100))}
 	if err := Validate(f, "short"); err == nil {
 		t.Fatal("expected error for text shorter than min")
 	}
@@ -121,7 +123,7 @@ func TestValidateInt_WrongType(t *testing.T) {
 }
 
 func TestValidateInt_MinMax(t *testing.T) {
-	f := Field{Name: "age", Type: Int, Min: fPtr(0), Max: fPtr(150)}
+	f := Field{Name: "age", Type: Int, Min: new(float64(0)), Max: new(float64(150))}
 	if err := Validate(f, -1); err == nil {
 		t.Fatal("expected error below min")
 	}
@@ -153,7 +155,7 @@ func TestValidateFloat_WrongType(t *testing.T) {
 }
 
 func TestValidateFloat_MinMax(t *testing.T) {
-	f := Field{Name: "price", Type: Float, Min: fPtr(0), Max: fPtr(100)}
+	f := Field{Name: "price", Type: Float, Min: new(float64(0)), Max: new(float64(100))}
 	if err := Validate(f, -0.1); err == nil {
 		t.Fatal("expected error below min")
 	}
@@ -189,7 +191,7 @@ func TestValidateDecimal_WrongType(t *testing.T) {
 }
 
 func TestValidateDecimal_MinMax(t *testing.T) {
-	f := Field{Name: "amount", Type: Decimal, Min: fPtr(0), Max: fPtr(1000)}
+	f := Field{Name: "amount", Type: Decimal, Min: new(float64(0)), Max: new(float64(1000))}
 	if err := Validate(f, "-1.00"); err == nil {
 		t.Fatal("expected error below min")
 	}
@@ -450,7 +452,7 @@ func TestValidateAll_MissingRequired(t *testing.T) {
 func TestValidateAll_MultipleErrors(t *testing.T) {
 	s := Schema{Fields: []Field{
 		{Name: "name", Type: String, Required: true},
-		{Name: "age", Type: Int, Min: fPtr(0)},
+		{Name: "age", Type: Int, Min: new(float64(0))},
 	}}
 	result := ValidateAll(s, map[string]any{"age": -1})
 	if result.Valid {
@@ -577,8 +579,8 @@ func TestJSONSchema_Basic(t *testing.T) {
 
 func TestJSONSchema_WithConstraints(t *testing.T) {
 	fields := []Field{
-		{Name: "username", Type: String, Min: fPtr(3), Max: fPtr(20), Pattern: `^[a-z]+$`},
-		{Name: "score", Type: Float, Min: fPtr(0), Max: fPtr(100)},
+		{Name: "username", Type: String, Min: new(float64(3)), Max: new(float64(20)), Pattern: `^[a-z]+$`},
+		{Name: "score", Type: Float, Min: new(float64(0)), Max: new(float64(100))},
 		{Name: "status", Type: Enum, Values: []string{"active", "inactive"}},
 	}
 	schema := JSONSchema(fields)

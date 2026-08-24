@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -70,7 +71,7 @@ func TestRedisBrowsable_ListJobsLimit(t *testing.T) {
 	ctx := context.Background()
 
 	// Push 5 jobs directly to the dead list.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = q.Enqueue(ctx, Job{ID: "dead-lim-" + string(rune('a'+i)), Type: "x", MaxAttempts: 1})
 		job, _ := q.Dequeue(ctx)
 		_ = q.Nack(ctx, job)
@@ -133,29 +134,31 @@ func (c *slogCapture) WithAttrs(_ []slog.Attr) slog.Handler { return c }
 func (c *slogCapture) WithGroup(_ string) slog.Handler      { return c }
 
 func TestSchedulerEnqueueErrorLogsViaSlog(t *testing.T) {
-	cap := &slogCapture{}
-	logger := slog.New(cap)
+	synctest.Test(t, func(t *testing.T) {
+		cap := &slogCapture{}
+		logger := slog.New(cap)
 
-	sched := NewSchedulerWithLogger(&failQueue{}, logger)
-	sched.Every(50*time.Millisecond).Job("test-job", nil).Register()
+		sched := NewSchedulerWithLogger(&failQueue{}, logger)
+		sched.Every(50*time.Millisecond).Job("test-job", nil).Register()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	sched.Start(ctx)
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		sched.Start(ctx)
 
-	if len(cap.records) == 0 {
-		t.Fatal("expected slog to capture enqueue error, got no records")
-	}
-	found := false
-	for _, rec := range cap.records {
-		if strings.Contains(rec.Message, "enqueue") || strings.Contains(rec.Message, "scheduler") {
-			found = true
-			break
+		if len(cap.records) == 0 {
+			t.Fatal("expected slog to capture enqueue error, got no records")
 		}
-	}
-	if !found {
-		t.Errorf("expected a scheduler enqueue-error log, got: %+v", cap.records)
-	}
+		found := false
+		for _, rec := range cap.records {
+			if strings.Contains(rec.Message, "enqueue") || strings.Contains(rec.Message, "scheduler") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected a scheduler enqueue-error log, got: %+v", cap.records)
+		}
+	})
 }
 
 // ─── F18: MemoryQueue handler timeout is configurable ───────────────────────
@@ -169,63 +172,67 @@ func TestMemoryQueue_DefaultTimeout30s(t *testing.T) {
 }
 
 func TestMemoryQueue_WithHandlerTimeout_SlowJobCompletes(t *testing.T) {
-	// With a 200ms timeout, a 100ms handler should succeed.
-	q := NewMemoryQueue(1, WithHandlerTimeout(200*time.Millisecond))
-	defer q.Close()
+	synctest.Test(t, func(t *testing.T) {
+		// With a 200ms timeout, a 100ms handler should succeed.
+		q := NewMemoryQueue(1, WithHandlerTimeout(200*time.Millisecond))
+		defer q.Close()
 
-	done := make(chan struct{})
-	q.RegisterHandler("slow", func(ctx context.Context, job Job) error {
+		done := make(chan struct{})
+		q.RegisterHandler("slow", func(ctx context.Context, job Job) error {
+			select {
+			case <-time.After(100 * time.Millisecond):
+				close(done)
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+		q.Start()
+
+		if err := q.Enqueue(context.Background(), Job{Type: "slow", MaxAttempts: 1}); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		}
+
 		select {
-		case <-time.After(100 * time.Millisecond):
-			close(done)
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-done:
+			// Handler completed successfully, the timeout was long enough.
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("handler did not complete within the configured timeout window")
 		}
 	})
-	q.Start()
-
-	if err := q.Enqueue(context.Background(), Job{Type: "slow", MaxAttempts: 1}); err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
-
-	select {
-	case <-done:
-		// Handler completed successfully, timeout was long enough.
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("handler did not complete within the configured timeout window")
-	}
 }
 
 func TestMemoryQueue_WithHandlerTimeout_ShortTimeoutCancels(t *testing.T) {
-	// With a 10ms timeout, a handler sleeping 100ms should be cancelled and
-	// the job retried (or dead-lettered after MaxAttempts), but not silently succeed.
-	cancelled := make(chan struct{}, 1)
-	q := NewMemoryQueue(1, WithHandlerTimeout(10*time.Millisecond))
-	defer q.Close()
+	synctest.Test(t, func(t *testing.T) {
+		// With a 10ms timeout, a handler sleeping 100ms should be cancelled and
+		// the job retried (or dead-lettered after MaxAttempts), but not silently succeed.
+		cancelled := make(chan struct{}, 1)
+		q := NewMemoryQueue(1, WithHandlerTimeout(10*time.Millisecond))
+		defer q.Close()
 
-	q.RegisterHandler("long", func(ctx context.Context, job Job) error {
-		select {
-		case <-time.After(100 * time.Millisecond):
-			return nil
-		case <-ctx.Done():
+		q.RegisterHandler("long", func(ctx context.Context, job Job) error {
 			select {
-			case cancelled <- struct{}{}:
-			default:
+			case <-time.After(100 * time.Millisecond):
+				return nil
+			case <-ctx.Done():
+				select {
+				case cancelled <- struct{}{}:
+				default:
+				}
+				return ctx.Err()
 			}
-			return ctx.Err()
+		})
+		q.Start()
+
+		if err := q.Enqueue(context.Background(), Job{Type: "long", MaxAttempts: 1}); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		}
+
+		select {
+		case <-cancelled:
+			// Context was cancelled due to the short timeout, as expected.
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("handler was not cancelled within the short timeout window")
 		}
 	})
-	q.Start()
-
-	if err := q.Enqueue(context.Background(), Job{Type: "long", MaxAttempts: 1}); err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
-
-	select {
-	case <-cancelled:
-		// Context was cancelled due to short timeout, expected.
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("handler was not cancelled within the short timeout window")
-	}
 }

@@ -230,7 +230,7 @@ func TestLogSinksScrubAndBound(t *testing.T) {
 // FS (0x1c) reached the log attribute verbatim. Property: no raw C0/DEL
 // byte survives scrubbing, for every byte in the range.
 func TestScrubControlBytes_FullC0Range(t *testing.T) {
-	for b := byte(0); b < 0x20; b++ {
+	for b := range byte(0x20) {
 		out := scrubControlBytes("x" + string(b) + "y")
 		if strings.ContainsRune(out, rune(b)) {
 			t.Errorf("byte %#02x reached output raw: %q", b, out)

@@ -15,7 +15,7 @@ type dlqFailingRedis struct {
 	dlqErr error
 }
 
-func (f *dlqFailingRedis) LPush(ctx context.Context, key string, values ...interface{}) error {
+func (f *dlqFailingRedis) LPush(ctx context.Context, key string, values ...any) error {
 	if f.dlqErr != nil && strings.HasSuffix(key, ":dead") {
 		return f.dlqErr
 	}
@@ -72,7 +72,7 @@ type pushFailingRedis struct {
 	err error
 }
 
-func (f *pushFailingRedis) LPush(ctx context.Context, key string, values ...interface{}) error {
+func (f *pushFailingRedis) LPush(ctx context.Context, key string, values ...any) error {
 	if f.err != nil {
 		return f.err
 	}

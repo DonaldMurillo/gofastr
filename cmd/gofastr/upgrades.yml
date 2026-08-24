@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.69.0
+through: v0.70.0
 
 releases:
   - version: v0.3.0
@@ -788,3 +788,19 @@ releases:
         breaking: false
         guidance: "fill := \"var(--color-surface)\" failed the build: fill and stroke are CSS property names and legal Go identifiers, so the colon of := satisfied the property colon. Only a fix, so nothing to do on upgrade, but a suppression added to work around it is now stale and gofastr verify will report it as such."
         detect: "gofastr:allow\\(GOFASTR1801"
+  - version: v0.70.0
+    title: "Go 1.27 is the floor"
+    notes:
+      - change: "BREAKING: the module requires Go 1.27"
+        breaking: true
+        guidance: "go.mod names go 1.27.0, so a toolchain older than that cannot build the module at all: `go build` reports the requirement and stops. Install Go 1.27 (or let GOTOOLCHAIN=auto fetch it) before upgrading, and raise your own go directive to 1.27.0 if you pin one. Nothing in your code has to change for the floor itself; the entries below are what moved behind it."
+        detect: "^go 1\\.2[0-6]"
+      - change: Request ids and entity keys use the standard library uuid package
+        breaking: false
+        guidance: "Go 1.27 ships crypto/rand-backed UUIDs, so the hand-rolled RFC 4122 byte assembly is gone. Values are the same shape and version; nothing that reads an id needs to change. Mentioned because the generation path moved, and a project that vendored the old helper should drop it."
+      - change: The goroutine-leak profile is surfaced on the debug and MCP surfaces
+        breaking: false
+        guidance: "Go 1.27's runtime goroutineleak profile reaches three places: goroutineLeaks in /.debug/stats, /.debug/goroutineleak for the stacks (auth-gated, like the rest of the debug surface), and an app_goroutine_leaks MCP introspection tool. New surface, nothing removed. The stacks endpoint is behind the same gate as the other debug routes, so check that gate is configured the way you want before relying on it in a deployed environment."
+      - change: "`go fix`'s embedlit analyzer corrupts source in Go 1.27.0"
+        breaking: false
+        guidance: "Not a framework change, a warning for your own tree. Rewriting a composite literal with an embedded struct field, embedlit deleted the field name and its closing brace and left unparseable Go: one file in 571 here, which makes its other edits untrustworthy by the same token. Run the modernizers with -embedlit=false and check that every changed file still parses, which is how it was found."

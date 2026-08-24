@@ -70,10 +70,7 @@ func (m *Memory) Search(_ context.Context, query Query) ([]Result, error) {
 	// Clamp pagination bounds before slicing. Query is a public type whose
 	// Offset/Limit fields may carry any int (e.g. a host mapping raw ?offset=
 	// /?limit= params), so guard against negatives and integer overflow.
-	offset := query.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(query.Offset, 0)
 	if offset >= len(results) {
 		return nil, nil
 	}

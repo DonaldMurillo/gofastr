@@ -44,8 +44,7 @@ func TestInprocSendInputReachesEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sub := c.Subscribe(ctx)
 
 	if err := c.Send(context.Background(), control.SendInput{

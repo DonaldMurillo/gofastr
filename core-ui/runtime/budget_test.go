@@ -7,8 +7,42 @@ import (
 )
 
 const (
-	coreGoalGZ             = 12*1024 + 512
-	coreCongestionWindowGZ = 14*1024 + 128
+	coreGoalGZ = 12*1024 + 512
+	// 14.7 KB, not the 14 KB initial congestion window it started as.
+	//
+	// The window is still the constraint that matters, and the artifact still
+	// fits inside it in every deployment: nothing in the framework compresses
+	// runtime.js, so the bytes a browser receives are compressed by nginx, a
+	// CDN, or whatever proxy fronts the app, all of which use zlib. This line
+	// measures Go's own BestSpeed encoder as a worst-case proxy for those.
+	//
+	// Go 1.27 made that proxy pessimistic. Its compress/flate BestSpeed
+	// encoder emits ~2% more for identical input: the same 41812-byte bundle
+	// went from 14306 bytes under Go 1.26.6 to 14602 under Go 1.27.0, with the
+	// runtime source unchanged by a single byte. The old line was clearing by
+	// 30 bytes, so a compressor revision was always going to decide it.
+	//
+	// Same call as the 12 KB to 12.5 KB move recorded on
+	// TestTypicalPagePayloadBudget: the code did not grow, the ruler moved.
+	// That doc comment has the policy for the other case, where the code DOES
+	// grow; a ruler change is not a licence to skip it. Before re-baselining
+	// again, dump the bundle on both toolchains and confirm the byte count is
+	// identical, the way this was confirmed.
+	//
+	// The value is bracketed on BOTH sides and cannot simply be raised.
+	// TestCoreBudgetRejectsCliffOverflow builds a bundle sitting exactly on the
+	// level-6 goal and requires it to cross this line; raise the line past that
+	// fixture and the guard stops guarding instead of making room. The ceiling
+	// is between 14800 (still guards) and 14825 (vacuous), measured by moving
+	// the constant and watching that test, not by arithmetic.
+	//
+	// The band is tighter than it looks. The bundle measured 14602 when this
+	// line was first re-baselined against a 41812-byte artifact; v0.69.0's
+	// click-path work took it to 41968 raw and 14660 compressed, so 14700 now
+	// clears the real bundle by 40 bytes, not 98. At that margin the next
+	// feature almost certainly needs a carve rather than another raise, which
+	// is the situation the policy describes rather than an exception to it.
+	coreCongestionWindowGZ = 14*1024 + 364 // 14700: 40 over the real bundle (14660), 124 under the cliff fixture
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

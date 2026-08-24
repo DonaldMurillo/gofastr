@@ -766,7 +766,7 @@ func generateBackupCodes(n int) (plain []string, hashed []string, err error) {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	plain = make([]string, n)
 	hashed = make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		code, err := randomString(8, charset)
 		if err != nil {
 			return nil, nil, err

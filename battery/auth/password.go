@@ -231,7 +231,7 @@ func parseArgon2PHC(hash string) (argon2PHC, bool) {
 		return argon2PHC{}, false
 	}
 	var p argon2PHC
-	for _, field := range strings.Split(parts[3], ",") {
+	for field := range strings.SplitSeq(parts[3], ",") {
 		kv := strings.SplitN(field, "=", 2)
 		if len(kv) != 2 {
 			return argon2PHC{}, false

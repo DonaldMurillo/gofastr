@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -58,11 +59,11 @@ func TestBuildChildEnv_dedupAndOverride(t *testing.T) {
 	)
 	have := map[string]string{}
 	for _, kv := range env {
-		idx := strings.IndexByte(kv, '=')
-		if idx < 0 {
+		before, after, ok := strings.Cut(kv, "=")
+		if !ok {
 			continue
 		}
-		have[kv[:idx]] = kv[idx+1:]
+		have[before] = after
 	}
 	if have["EXPLICIT"] != "1" {
 		t.Errorf("EXPLICIT = %q, want 1 (first wins)", have["EXPLICIT"])
@@ -102,13 +103,7 @@ func TestDefaultChildEnvAllowlistIncludesWindowsProcessBasics(t *testing.T) {
 	}
 	allow := DefaultChildEnvAllowlist()
 	for _, want := range []string{"SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE"} {
-		found := false
-		for _, name := range allow {
-			if name == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(allow, want)
 		if !found {
 			t.Errorf("Windows default child env missing %s: %v", want, allow)
 		}

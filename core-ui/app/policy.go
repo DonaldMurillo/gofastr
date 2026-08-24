@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -98,8 +99,8 @@ func EffectivePolicies(s *Screen) []Policy {
 		for g := s.group; g != nil; g = g.parent {
 			groups = append(groups, g)
 		}
-		for i := len(groups) - 1; i >= 0; i-- {
-			chain = append(chain, groups[i].policies...)
+		for _, group := range slices.Backward(groups) {
+			chain = append(chain, group.policies...)
 		}
 	}
 	chain = append(chain, s.policies...)

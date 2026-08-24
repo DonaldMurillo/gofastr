@@ -96,7 +96,7 @@ func assemble(directive, code string) string {
 		return code
 	}
 	var extraImports, decls, stmts []string
-	for _, l := range strings.Split(directive, "\n") {
+	for l := range strings.SplitSeq(directive, "\n") {
 		t := strings.TrimSpace(l)
 		switch {
 		case t == "":
@@ -158,7 +158,7 @@ func repoGoDirective(t *testing.T, repoRoot string) string {
 	if err != nil {
 		t.Fatalf("read repo go.mod: %v", err)
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == "go" {
 			return fields[1]
 		}

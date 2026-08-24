@@ -30,7 +30,7 @@ func TestRuntimeContractCoversArchitectureAttrs(t *testing.T) {
 	attrRe := regexp.MustCompile(`data-fui-[a-z0-9-]+`)
 	var missing []string
 	seen := map[string]bool{}
-	for _, ln := range strings.Split(string(arch), "\n") {
+	for ln := range strings.SplitSeq(string(arch), "\n") {
 		// Attribute-table rows start with a backticked data-fui-* name
 		// in the first cell.
 		if !strings.HasPrefix(ln, "| `data-fui-") {

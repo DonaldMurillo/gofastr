@@ -56,8 +56,7 @@ func TestWebServerSpeaksSSE(t *testing.T) {
 	// avoid SSE buffering complications, the test is about the web
 	// server wiring SendInput into the engine, not the SSE stream
 	// reliability (which the inproc transport test already covers).
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sub := bus.Subscribe(ctx)
 
 	// Trigger a turn via the web server's /input.

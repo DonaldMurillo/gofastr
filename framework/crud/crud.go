@@ -2,7 +2,6 @@ package crud
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -1108,13 +1108,11 @@ var (
 // Sentinel and typed errors are translated to specific status codes; anything
 // else becomes a 500.
 func writeCRUDError(w http.ResponseWriter, err error) {
-	var bhe *beforeHookError
-	if errors.As(err, &bhe) {
+	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, bhe.Error())
 		return
 	}
-	var ve *ValidationError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*ValidationError](err); ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]any{
@@ -1124,8 +1122,7 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	var tme *tenantMissingError
-	if errors.As(err, &tme) {
+	if tme, ok := errors.AsType[*tenantMissingError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, tme.Error())
 		return
 	}
@@ -1254,10 +1251,7 @@ func explicitOffsetValues(q url.Values) (int, bool) {
 func listLimitCap(entityMax int) int {
 	limitCap := 100
 	if entityMax > 0 {
-		limitCap = entityMax
-		if limitCap > streamListThreshold {
-			limitCap = streamListThreshold
-		}
+		limitCap = min(entityMax, streamListThreshold)
 	}
 	return limitCap
 }
@@ -1467,12 +1461,7 @@ func generateFieldValue(strategy schema.AutoGenerate) any {
 
 // generateUUID creates a new random UUID v4 string.
 func generateUUID() string {
-	var uuid [16]byte
-	rand.Read(uuid[:])
-	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
+	return uuid.NewV4().String()
 }
 
 // compile-time check

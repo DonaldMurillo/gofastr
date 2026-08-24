@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"path"
 	"sort"
@@ -629,9 +630,9 @@ func parseAcceptLanguage(header string) []string {
 			continue
 		}
 		tag, q := seg, 1.0
-		if i := strings.IndexByte(seg, ';'); i >= 0 {
-			tag = strings.TrimSpace(seg[:i])
-			params := seg[i+1:]
+		if before, after, ok := strings.Cut(seg, ";"); ok {
+			tag = strings.TrimSpace(before)
+			params := after
 			for n := 0; params != "" && n < maxParams; n++ {
 				kv := params
 				if j := strings.IndexByte(params, ';'); j >= 0 {
@@ -685,9 +686,7 @@ func normalize(s string) string {
 func mergeParams(in []map[string]any) map[string]any {
 	out := map[string]any{}
 	for _, p := range in {
-		for k, v := range p {
-			out[k] = v
-		}
+		maps.Copy(out, p)
 	}
 	return out
 }

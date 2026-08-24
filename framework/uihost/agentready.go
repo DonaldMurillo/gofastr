@@ -405,7 +405,7 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 	}
 	fmt.Fprintf(&b, "# %s\n\n", title)
 	if cfg.summary != "" {
-		for _, line := range strings.Split(strings.TrimSpace(cfg.summary), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(cfg.summary), "\n") {
 			fmt.Fprintf(&b, "> %s\n", line)
 		}
 		b.WriteString("\n")
@@ -571,7 +571,7 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 // acceptsMarkdown reports whether the request's Accept header asks for
 // text/markdown. Used by the content-negotiation path in handlePage.
 func acceptsMarkdown(r *http.Request) bool {
-	for _, part := range strings.Split(r.Header.Get("Accept"), ",") {
+	for part := range strings.SplitSeq(r.Header.Get("Accept"), ",") {
 		ct := strings.TrimSpace(strings.Split(part, ";")[0])
 		if strings.EqualFold(ct, "text/markdown") {
 			return true

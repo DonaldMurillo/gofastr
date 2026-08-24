@@ -121,7 +121,7 @@ func validOriginHost(host string) bool {
 	if looksNumericHost(host) && net.ParseIP(host) == nil {
 		return false
 	}
-	for _, label := range strings.Split(host, ".") {
+	for label := range strings.SplitSeq(host, ".") {
 		if label == "" || len(label) > 63 {
 			return false
 		}
@@ -151,7 +151,7 @@ func looksNumericHost(host string) bool {
 	if host == "" {
 		return false
 	}
-	for _, label := range strings.Split(host, ".") {
+	for label := range strings.SplitSeq(host, ".") {
 		if label == "" {
 			return false
 		}

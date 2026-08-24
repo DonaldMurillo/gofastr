@@ -27,7 +27,7 @@ func benchSetup(b *testing.B, n int, hybrid bool) (Index, context.Context) {
 	if err != nil {
 		b.Fatalf("Open: %v", err)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		err := idx.Add(ctx, Document{
 			ID:   fmt.Sprintf("doc-%d", i),
 			Text: synthChunk(i),
@@ -53,7 +53,6 @@ func synthChunk(i int) string {
 
 func BenchmarkEmbed_Add(b *testing.B) {
 	for _, n := range []int{100, 1000, 10000} {
-		n := n
 		b.Run(fmt.Sprintf("corpus=%d", n), func(b *testing.B) {
 			idx, ctx := benchSetup(b, n, false)
 			b.ResetTimer()
@@ -70,7 +69,6 @@ func BenchmarkEmbed_Add(b *testing.B) {
 
 func BenchmarkEmbed_Query_VecOnly(b *testing.B) {
 	for _, n := range []int{100, 1000, 10000} {
-		n := n
 		b.Run(fmt.Sprintf("corpus=%d", n), func(b *testing.B) {
 			idx, ctx := benchSetup(b, n, false)
 			q := Query{Text: "router middleware request", K: 10}
@@ -87,7 +85,6 @@ func BenchmarkEmbed_Query_VecOnly(b *testing.B) {
 
 func BenchmarkEmbed_Query_Hybrid(b *testing.B) {
 	for _, n := range []int{100, 1000, 10000} {
-		n := n
 		b.Run(fmt.Sprintf("corpus=%d", n), func(b *testing.B) {
 			idx, ctx := benchSetup(b, n, true)
 			q := Query{Text: "router middleware request", K: 10, Hybrid: true}
@@ -104,7 +101,6 @@ func BenchmarkEmbed_Query_Hybrid(b *testing.B) {
 
 func BenchmarkEmbed_Query_MMR(b *testing.B) {
 	for _, n := range []int{1000, 10000} {
-		n := n
 		b.Run(fmt.Sprintf("corpus=%d", n), func(b *testing.B) {
 			idx, ctx := benchSetup(b, n, true)
 			q := Query{Text: "router middleware request", K: 10, Hybrid: true, MMRLambda: 0.4}

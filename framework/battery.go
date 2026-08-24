@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -262,8 +263,8 @@ func (bm *BatteryManager) StartAll(ctx context.Context) error {
 // in reverse dependency order (dependents first, then dependencies).
 func (bm *BatteryManager) StopAll(ctx context.Context) error {
 	var firstErr error
-	for i := len(bm.sorted) - 1; i >= 0; i-- {
-		name := bm.sorted[i]
+	for _, name := range slices.Backward(bm.sorted) {
+
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
 			if err := lc.OnStop(ctx); err != nil && firstErr == nil {
 				firstErr = fmt.Errorf("battery %q stop failed: %w", name, err)

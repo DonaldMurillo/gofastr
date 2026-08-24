@@ -60,8 +60,7 @@ func TestSpawnEventsDoNotLeakToParentBus(t *testing.T) {
 	e := NewEngine(session, parentBus, prov, "m", d)
 
 	// Subscribe to parent bus BEFORE Spawn.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	parentSub := parentBus.Subscribe(ctx)
 	collected := make(chan []control.EventEnvelope, 1)
 	go func() {

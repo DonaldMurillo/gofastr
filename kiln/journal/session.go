@@ -46,10 +46,10 @@ type Plan struct {
 	Reason       string       `json:"reason,omitempty"`
 	Targets      []PlanTarget `json:"targets,omitempty"`
 	Approved     bool         `json:"approved,omitempty"`
-	ApprovedAt   time.Time    `json:"approved_at,omitempty"`
+	ApprovedAt   time.Time    `json:"approved_at"`
 	Modified     bool         `json:"modified,omitempty"`
 	Rejected     bool         `json:"rejected,omitempty"`
-	RejectedAt   time.Time    `json:"rejected_at,omitempty"`
+	RejectedAt   time.Time    `json:"rejected_at"`
 	RejectReason string       `json:"reject_reason,omitempty"`
 }
 

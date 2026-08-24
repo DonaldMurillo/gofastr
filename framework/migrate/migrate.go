@@ -80,7 +80,7 @@ func DetectDialectStrict(db *sql.DB) (Dialect, error) {
 func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
 	const attempts = 3
 	var lastErr error
-	for i := 0; i < attempts; i++ {
+	for i := range attempts {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		var v string
 		err := db.QueryRowContext(ctx, "SELECT version()").Scan(&v)

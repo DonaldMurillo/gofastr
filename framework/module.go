@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -110,9 +112,7 @@ func (s *InMemoryModuleStore) Load(_ context.Context) (map[string]bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make(map[string]bool, len(s.data))
-	for k, v := range s.data {
-		out[k] = v
-	}
+	maps.Copy(out, s.data)
 	return out, nil
 }
 
@@ -433,12 +433,9 @@ func (mm *ModuleManager) dependents(name string) []string {
 		if entry == nil {
 			continue
 		}
-		for _, d := range entry.manifest.DependsOn {
-			if d == name {
-				if mm.enabled[modName] { // only block if the dependent is enabled
-					deps = append(deps, modName)
-				}
-				break
+		if slices.Contains(entry.manifest.DependsOn, name) {
+			if mm.enabled[modName] { // only block if the dependent is enabled
+				deps = append(deps, modName)
 			}
 		}
 	}

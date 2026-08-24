@@ -177,7 +177,7 @@ func TestRejectedThemesLeaveNoBookkeeping(t *testing.T) {
 	for _, bad := range []string{"!!!not-base64!!!", "bm90LWpzb24", "e30", strings.Repeat("A", 32<<10)} {
 		f.do(t, http.MethodGet, "/__gofastr/embed/reports?theme="+bad, "")
 	}
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		f.do(t, http.MethodGet, "/__gofastr/embed/reports?theme=zzz"+strings.Repeat("q", i), "")
 	}
 

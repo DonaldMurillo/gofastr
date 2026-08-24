@@ -90,7 +90,9 @@ func TestCatalog_PollMsEmittedOnlyWithSignals(t *testing.T) {
 
 // ptrBool returns a pointer to b, used to parameterise the
 // PollTerminal subtests (nil pointer ⇒ no predicate wired).
-func ptrBool(b bool) *bool { return &b }
+//
+//go:fix inline
+func ptrBool(b bool) *bool { return new(b) }
 
 // TestServeState_PollTerminalHeader pins the server side of issue #192:
 // a widget built with Builder.PollTerminal emits X-Gofastr-Poll-Stop on
@@ -104,8 +106,8 @@ func TestServeState_PollTerminalHeader(t *testing.T) {
 		terminal *bool // nil = no PollTerminal predicate wired
 		wantStop bool
 	}{
-		{"terminal true sets header", ptrBool(true), true},
-		{"terminal false omits header", ptrBool(false), false},
+		{"terminal true sets header", new(true), true},
+		{"terminal false omits header", new(false), false},
 		{"no predicate omits header", nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -149,7 +149,7 @@ type Manager struct {
 	// mutates a topic's merged roster. See presence.go (local) and
 	// presence_fanout.go (cross-replica).
 	presenceConns  map[uint64]*presenceConn
-	nextPresenceID uint64
+	nextPresenceID atomic.Uint64
 	nextSubID      uint64 // stream-subscriber id source; guarded by mu
 
 	// OnPresenceChange, when set, is fired outside the lock after a local OR
