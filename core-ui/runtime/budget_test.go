@@ -96,7 +96,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	case gzip.DefaultCompression:
 		t.Errorf("core runtime.js gzip = %d bytes — exceeds %d byte budget (goal %d)", got, limit, coreGoalGZ)
 	case gzip.BestSpeed:
-		t.Errorf("core runtime.js gzip at level 1 = %d bytes — exceeds the %d-byte initial congestion window; carve a feature into a demand module, do not raise the line", got, limit)
+		t.Errorf("core runtime.js gzip at level 1 = %d bytes — exceeds the %d-byte initial congestion window; carve a feature into a demand module first, and if it cannot be carved, move the line by the smallest step that fits and say in the commit what bought it", got, limit)
 	}
 
 	for _, name := range ModuleNames() {
@@ -142,27 +142,42 @@ func TestComputeModuleSizeBudget(t *testing.T) {
 // 12.5 KB budget protects, that's the cliff; shrinking below it buys
 // nothing, exceeding it costs a whole RTT on cold connections. The
 // typical-page line (20 KB) is core 12.5 + widgets 5 + drift room.
-// When either budget trips, the answer is carving a feature into a
-// demand module rather than raising the line, but nav and island RPC
-// must stay in core: a demand module costs one request at first use,
-// which is fine for drag-dismiss and fatal for the click path.
+// When either budget trips, the FIRST answer is carving a feature into a
+// demand module, but nav and island RPC must stay in core: a demand
+// module costs one request at first use, which is fine for drag-dismiss
+// and fatal for the click path. When carving is not available, see the
+// policy below for what moving the line costs and what has to be said.
 //
-// The level-6 line moved once, from 12 KB to 12.5 KB, when the
-// measurement was corrected from gzip level 9 to level 6 (see gzipSize).
-// That was a ruler correction, not a concession: the artifact did not
-// grow.
+// These lines move. Not often and not quietly, but a budget that can
+// never move is one that gets lied to instead, so the rule is what has to
+// be true before it does, not that it never does. Two kinds of change
+// move it and they are not the same kind of decision.
 //
-// The level-1 line moved once too, from 14336 to 14464 bytes, and that
-// one WAS a concession, so it is written down. It bought a correctness
-// fix in the anchor-click guard: HTML matches the underscore target
-// keywords ASCII-case-insensitively, so `target="_SELF"` is `_self`, and
-// comparing raw turned a soft navigation into a full page load. The fix
-// costs 5 gzipped bytes and the core had 2. The usual answer, carving
-// the feature into a demand module, is the one thing unavailable here:
-// this guard is the click path, which this comment already says must
-// stay in core. 14464 stays under the physical figure the cliff comes
-// from (10 packets at a 1460-byte MSS is ~14600 bytes); the next request
-// for room should be met with a carve, not another 128 bytes.
+// A RULER change re-measures the same bytes. The level-6 line went from
+// 12 KB to 12.5 KB when the measurement was corrected from gzip level 9
+// to level 6 (see gzipSize): the artifact did not grow, the ruler was
+// wrong. A compressor revision is the same thing arriving from outside,
+// and Go's compress/flate has changed what BestSpeed emits for identical
+// input before. Re-baseline, and say in the commit which release moved
+// it and by how much, so the number keeps meaning something.
+//
+// A SOURCE change is the concession, and gets written down here. The
+// level-1 line went from 14336 to 14464 for one: HTML matches the
+// underscore target keywords ASCII-case-insensitively, so `target="_SELF"`
+// is `_self`, and comparing raw turned a soft navigation into a full page
+// load. The fix cost 5 gzipped bytes and the core had 2.
+//
+// Carve first: that fix took the bytes because the usual answer was
+// unavailable, not because it was easier. The guard IS the click path,
+// which this comment already says stays in core. When a feature CAN move
+// to a demand module, it moves. When it cannot, take the smallest step
+// that fits and name what bought it.
+//
+// What does not move is the cliff. TCP's initial congestion window is
+// about 10 packets, ~14600 bytes at a 1460-byte MSS, and a core past it
+// costs a whole round trip on a cold connection. Every byte above 14336
+// is borrowed from the first paint of every cold visit, so spend it
+// deliberately and keep the running total in view.
 func TestTypicalPagePayloadBudget(t *testing.T) {
 	const typicalBudgetGZ = 20 * 1024
 
@@ -176,7 +191,7 @@ func TestTypicalPagePayloadBudget(t *testing.T) {
 	}
 	got := gzipSize(t, core) + gzipSize(t, widgets)
 	if got > typicalBudgetGZ {
-		t.Errorf("typical page payload (core+widgets) gzip = %d bytes — exceeds %d byte budget; carve a feature into a demand module, don't raise the line", got, typicalBudgetGZ)
+		t.Errorf("typical page payload (core+widgets) gzip = %d bytes — exceeds %d byte budget; carve a feature into a demand module first, and if it cannot be carved, move the line by the smallest step that fits and say in the commit what bought it", got, typicalBudgetGZ)
 	}
 }
 
