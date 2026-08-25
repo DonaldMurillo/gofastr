@@ -1,6 +1,6 @@
 ---
 name: gofastr-host
-description: Auto-loads when working on a *host application* that imports the GoFastr framework (not the framework itself). Encodes the "don't reinvent: reach for the battery first" rule and the import paths an agent needs. Triggers on edits to Go files in repos that import `github.com/DonaldMurillo/gofastr/...`, on `main.go` files calling `framework.NewApp`, and on phrases like "login", "signup", "session", "user table", "log out", "magic link", "forgot password", "reset password", "add admin page", "back office", "audit log", "audit trail", "compliance log", "send email", "transactional email", "welcome email", "send a notification", "notify the user", "background job", "async task", "schedule", "cron", "run every hour", "retry on failure", "upload", "store images", "store files", "S3", "MinIO", "attachments", "avatar", "full-text search", "find records containing", "outbound webhook", "signed callback", "POST to a customer URL", "cache", "memoize", "remember for N seconds", "CSRF", "RBAC", "require admin", "roles", "rate limit", "throttle", "request log", "access log", "panic recovery", "structured logging", "live debug", "per-test isolated DB", "test fixture", "favicon", "app icon", "SEO", "meta tags", "Open Graph", "JSON-LD", "structured data", "sitemap", "robots.txt", "accessibility", "a11y", "WCAG", "aria-label", "upgrade gofastr", "bump the framework version", "migrate to the new version", "live updates", "auto-refresh", "real-time", "websocket", "polling", "multiple replicas", "horizontal scaling".
+description: Auto-loads when working on a *host application* that imports the GoFastr framework (not the framework itself). Encodes the "don't reinvent: reach for the battery first" rule and the import paths an agent needs. Triggers on edits to Go files in repos that import `github.com/DonaldMurillo/gofastr/...`, on `main.go` files calling `framework.NewApp`, and on phrases like "login", "signup", "session", "user table", "log out", "magic link", "forgot password", "reset password", "add admin page", "back office", "audit log", "audit trail", "compliance log", "send email", "transactional email", "welcome email", "send a notification", "notify the user", "background job", "async task", "schedule", "cron", "run every hour", "retry on failure", "upload", "store images", "store files", "S3", "MinIO", "attachments", "avatar", "full-text search", "find records containing", "outbound webhook", "signed callback", "POST to a customer URL", "cache", "memoize", "remember for N seconds", "CSRF", "RBAC", "require admin", "roles", "rate limit", "throttle", "request log", "access log", "panic recovery", "structured logging", "live debug", "per-test isolated DB", "test fixture", "favicon", "app icon", "SEO", "meta tags", "Open Graph", "JSON-LD", "structured data", "sitemap", "robots.txt", "accessibility", "a11y", "WCAG", "aria-label", "upgrade gofastr", "bump the framework version", "migrate to the new version", "live updates", "auto-refresh", "real-time", "websocket", "polling", "multiple replicas", "horizontal scaling", "PostHog", "Statsig", "Plausible", "analytics", "product analytics", "A/B test", "experiment", "feature flag vendor", "ad blocker", "first-party proxy", "reverse proxy a vendor".
 ---
 
 # GoFastr host-app: load this before writing app code
@@ -70,6 +70,7 @@ generated guidance.
 | image upload wanting thumbnails, srcset, blur placeholder | `framework.WithImagePipeline(imagefield.MustNew(...))`: every `schema.Image` upload gets renditions + a BlurHash, written to `<field>_blurhash` / `<field>_variants` / `<field>_placeholder` sibling columns you declare. Render with `image.BlurHashDataURL` + `ui.PipelineImage`. Per-field variation via `WithImagePipelineFor`. Never hand-roll resize/encode in an upload handler |
 | full-text search | `battery/search` |
 | outbound signed webhooks with retry | `battery/webhook` |
+| PostHog, Statsig, Plausible, product analytics, A/B test, experiment behind a vendor, ad blocker eating the vendor script, first-party proxy | `battery/relay` + a host-authored bootstrap: `gofastr docs analytics-recipes` (relay routes, `uihost.ScriptHandler` + `RegisterExternalScript(uihost.ScriptURL(...))`, one pageview per `gofastr:navigate`, `{"id":...}` endpoint over `handler.GetUser`) |
 | cache key/value, memoize, "remember for N seconds" | `battery/cache` |
 | UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components): `gofastr docs ui-composition-recipes` for page grammar, `gofastr docs ui-new-components` for the catalog, live demos at `/components/<slug>` on the docs site (`examples/site`) |
 | live/auto-refreshing dashboard, counter, status ("websockets"?) | the reactivity ladder (`gofastr docs reactivity`): passive freshness = `data-fui-poll` / widget `Builder.Poll` (no connection, no infra); SSE bus ONLY for presence/collab/sub-second; never WebSockets, never a bespoke `EventSource` |
@@ -88,6 +89,22 @@ generated guidance.
 | upgrading the framework version, migration notes between releases | install the target CLI first, then `gofastr upgrade [--to vX.Y.Z] [--apply]`. It shows every migration-relevant change in range with file:line hits in your app; `gofastr docs upgrading`; finish with `gofastr agents sync` |
 | customer-facing CLI, "ship a terminal client", stripe/gh-style CLI for my API | `gofastr generate cli`: standalone stdlib binary, scoped `gfsk_` token auth, `custom.go` extension seam; `gofastr docs app-cli` |
 | client SDKs, "publish an SDK", downloadable Go/JS/TS client, API docs site for customers | `gofastr generate sdk` (Go module zip + client.js/client.d.ts under `gen/sdk/`) + `sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS("gen/sdk/dist")})` for the hosted docs site + downloads; `gofastr docs sdk` |
+
+## First-party analytics and experiments
+
+When the task is wiring a hosted analytics or experimentation vendor
+(PostHog, Statsig, Plausible), do not link their CDN and do not punch
+`script-src`/`connect-src` holes into the CSP. The shipped pattern:
+`battery/relay` mounts the vendor's SDK and endpoints under one
+same-origin path with fixed upstreams; your own bootstrap JS is served
+via `uihost.ScriptHandler` and registered with
+`RegisterExternalScript(uihost.ScriptURL(...))`, so it ships on every
+full-page render and survives client-side navigation; pageviews ride the
+runtime's `gofastr:navigate` event (fire the initial one yourself; never
+count on `gofastr:beforenavigate`, it is cancelable and pre-commit);
+identity comes from a same-origin endpoint over `handler.GetUser`.
+`gofastr docs analytics-recipes` has both vendors wired end to end, plus
+a `featureflag.Store` adapter for server-side boolean gates.
 
 ## Hard rules
 
