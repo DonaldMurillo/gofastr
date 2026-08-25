@@ -552,8 +552,12 @@ func TestAppStart_WiresRunSeeds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("App.Start: %v", err)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("App.Start did not return within 10s of Shutdown")
+	case <-time.After(30 * time.Second):
+		// Same budget rationale as the poll above: only ever spent on
+		// failure. 10s was a real flake on race-detector runners under
+		// full parallel-job load (twice on 2026-08-25 alone); a graceful
+		// drain on a starved box can exceed it without anything hanging.
+		t.Fatal("App.Start did not return within 30s of Shutdown")
 	}
 
 	// Read only AFTER receiving from startErr, which orders this against the
