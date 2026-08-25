@@ -595,6 +595,31 @@ client-side with no per-consumer round-trip.
 
 See `framework/docs/content/signal-store.md` for the full guide.
 
+### Extra scripts (the body-close script rail)
+
+`uihost.WithExtraScripts` adds external `<script src="…">` tags just
+before `</body>`, after `runtime.js` and the per-screen action scripts.
+They are same-origin resources under the default CSP (`default-src
+'self'`), so every URL on the rail must be a path the app itself serves;
+the dev livereload client is the canonical example. The tags ship only on
+full shell renders — SPA partial responses never carry them.
+
+Options freeze at `New`, but plugins and batteries wire themselves in
+`Init`, which runs after `Mount`. `(*uihost.UIHost).RegisterExternalScript`
+exists for that window: it appends to the same rail, in
+first-registration order, and is idempotent. `src` must be a same-origin
+absolute path (`/x.js`), optionally with a query (`/x.js?v=abc`);
+schemes, protocol-relative URLs, backslashes, control characters, and
+`.`/`..` segments (raw or percent-encoded) are rejected. Registration
+returns an error once the host has rendered its first full shell: a late
+registration would ship on some pages and not others.
+
+`uihost.ScriptHandler(js)` and `uihost.ScriptURL(path, js)` are the
+serving half for host apps: mount the handler at `path`, register the
+returned `path?v=<hash>` URL, and the response follows the same
+strong-ETag + immutable-on-match policy as every `/__gofastr` script,
+with the hash changing whenever the bytes do.
+
 ### Background compute (`core-ui/compute`)
 
 Applications register self-contained worker JavaScript and WebAssembly bytes

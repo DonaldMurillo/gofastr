@@ -100,6 +100,8 @@ type UIHost struct {
 	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
 	customCSS           string                               // extra CSS to inject (e.g. demo.css)
 	extraScripts        []string                             // extra <script src="…"> URLs to inject before </body>
+	scriptMu            sync.Mutex                           // guards post-construction extraScripts appends + the servingStarted latch (see register_script.go)
+	servingStarted      atomic.Bool                          // latched on the first full-shell render; RegisterExternalScript refuses after it
 	staticDir           string                               // directory to serve static files from
 	staticFS            fs.FS                                // embedded filesystem for static files
 	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
@@ -1518,6 +1520,9 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic stri
 }
 
 func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
+	// First full-shell render freezes the extra-script rail: registering
+	// after this point would ship a script on some pages and not others.
+	ds.markServingBegun()
 	headClose := borrowBuilder()
 	defer returnBuilder(headClose)
 	bodyClose := borrowBuilder()

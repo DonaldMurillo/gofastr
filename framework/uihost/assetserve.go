@@ -49,3 +49,25 @@ func serveVersionedText(w http.ResponseWriter, r *http.Request, contentType, bod
 	}
 	_, _ = w.Write([]byte(body))
 }
+
+// ScriptHandler serves js as "application/javascript; charset=utf-8" with
+// nosniff, a strong ETag, and immutable caching when the request's ?v=
+// matches the content hash — the same serveVersionedText policy every
+// /__gofastr script follows. The hash is computed once, at construction.
+//
+// It is the serving half for host-app page scripts registered via
+// (*UIHost).RegisterExternalScript; see ScriptURL for the URL to register.
+func ScriptHandler(js []byte) http.Handler {
+	body := string(js)
+	hash := hashStrings(body)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveVersionedText(w, r, "application/javascript; charset=utf-8", body, hash, false)
+	})
+}
+
+// ScriptURL returns path plus "?v=" + the content hash of js: the URL to
+// pass to RegisterExternalScript so the bytes ScriptHandler serves cache
+// immutably and cache-bust automatically whenever js changes.
+func ScriptURL(path string, js []byte) string {
+	return path + "?v=" + hashStrings(string(js))
+}
