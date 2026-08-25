@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-08-25
+
 ### Added
 
 - **uihost: host-page scripts registered before serving.**

@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.70.0
+through: v0.71.0
 
 releases:
   - version: v0.3.0
@@ -804,3 +804,12 @@ releases:
       - change: "`go fix`'s embedlit analyzer corrupts source in Go 1.27.0"
         breaking: false
         guidance: "Not a framework change, a warning for your own tree. Rewriting a composite literal with an embedded struct field, embedlit deleted the field name and its closing brace and left unparseable Go: one file in 571 here, which makes its other edits untrustworthy by the same token. Run the modernizers with -embedlit=false and check that every changed file still parses, which is how it was found."
+  - version: v0.71.0
+    title: First-party analytics mechanisms
+    notes:
+      - change: battery/relay serves fixed third-party routes same-origin
+        breaking: false
+        guidance: "New battery; nothing changes until you mount it. The route table is fixed at New with per-route method allow-lists and body caps, credentials are stripped in both directions, inbound X-Forwarded-* is never trusted, and upstream redirects are refused rather than followed or leaked — so an upstream that answers with a redirect needs its final host in the route table."
+      - change: uihost registers external host-page scripts before serving
+        breaking: false
+        guidance: "New surface for plugins and batteries wiring in Init, after construction-time options froze. RegisterExternalScript adds a same-origin <script src> to every full-page render and refuses registration once a page has been served, so register during Init, never lazily. ScriptHandler serves the bytes under the versioned-script policy (strong ETag, immutable on a matching ?v=) and ScriptURL produces that URL."
