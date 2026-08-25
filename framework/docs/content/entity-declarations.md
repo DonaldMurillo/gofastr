@@ -69,6 +69,53 @@ app.Entity("posts", framework.EntityConfig{
 })
 ```
 
+## What registering an entity publishes
+
+That declaration has no `Exposure` block, and it still mounts the whole REST
+surface: `GET /posts`, `GET /posts/{id}`, `POST /posts`, `PUT` and `PATCH` on
+`/posts/{id}`, `DELETE /posts/{id}`, the batch endpoints on `/posts/_batch`,
+the `/posts/_events` stream, and `/posts/llm.md`. Route generation is **on by
+default**: `Exposure.CRUD` is a `*bool`, and nil means generate. Omitting the
+block is not "declare no surface"; it is "take the default surface".
+
+MCP tools are the opposite. They are **off by default** and need
+`Exposure: &framework.ExposureConfig{MCP: true}`. The one exception is the dev
+loop: under `gofastr dev`, every CRUD-enabled entity also serves its data
+tools so a local agent can read and write app data without a per-entity
+opt-in. A production binary registers none of them without the explicit flag.
+
+To publish nothing at all, say so:
+
+```go
+noCRUD := false
+app.Entity("posts", framework.EntityConfig{
+    Fields:   []schema.Field{ /* … */ },
+    Exposure: &framework.ExposureConfig{CRUD: &noCRUD}, // no generated routes or tools
+})
+```
+
+The entity is still registered, migrated, and usable from Go
+(`app.CrudHandler("posts")` builds a handler from the registry whether routes
+were mounted or not, and hooks and typed queries work as usual). Setting
+`MCP: true` alongside `CRUD: false` is a registration error, not a silent
+mismatch: MCP CRUD tools dispatch through the routes.
+
+`CRUD: false` turns off the **generated** surface, and only that. Anything in
+the entity's `Endpoints` list is registered either way, so an entity with
+`CRUD: false` and a declared endpoint still answers HTTP on that endpoint's
+path, and an `Endpoint` with `MCP: true` still registers its tool regardless
+of `Exposure.MCP`. To end up with no surface at all, the entity needs
+`CRUD: false` **and** no endpoints; if it keeps endpoints, they carry their
+own access rules (an `Endpoint`'s HTTP handler inherits the route's
+middleware chain, its MCP twin does not — see `Endpoint.MCPGate`).
+
+Default-on routes are not default-open routes. Every one of them refuses an
+anonymous caller with 401 unless the entity declares `OwnerField`, `Access`,
+or `Public`. See **Default CRUD authentication** below, and note the limit
+called out in the banner at the top of this page: a session requirement is
+not row scoping. Without `OwnerField`, every authenticated user reads and can
+overwrite every other user's rows.
+
 The same entity shape can also be **declared in a `gofastr.yml` blueprint**
 and emitted as Go by the CLI; see [Blueprints](blueprints.md), the single
 declaration format the `gofastr generate` codegen pipeline reads. The
