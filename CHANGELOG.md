@@ -7,6 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.71.1] - 2026-08-25
+
+### Fixed
+
+- **battery/relay: trailing-slash tails are forwarded, not rejected.**
+  The tail validator treated any empty path segment as the `//`
+  smuggling shape, which 400'd the trailing-slash paths vendor SDKs
+  post to (posthog-js sends `/i/v0/e/` and `/e/`). One final empty
+  segment is now allowed (mid-path empties still refuse) and the
+  validated trailing slash survives the upstream join, so upstreams
+  that distinguish `/e` from `/e/` see the path verbatim.
+
 ## [0.71.0] - 2026-08-25
 
 ### Added
