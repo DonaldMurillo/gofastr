@@ -642,3 +642,24 @@ func TestRefusedRedirectClosesUpstreamBody(t *testing.T) {
 		t.Fatalf("status = %d, want 502", resp.StatusCode)
 	}
 }
+
+func TestTrailingSlashTailForwarded(t *testing.T) {
+	// Vendor SDKs post to trailing-slash paths (posthog-js: /i/v0/e/).
+	base, cap := startRelayCap(t, func(up string) Config {
+		return Config{Routes: []Route{{
+			Prefix: "ph/", Upstream: up, Methods: []string{"POST"},
+		}}}
+	})
+	res, err := http.Post(base+DefaultPath+"/ph/i/v0/e/", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("trailing-slash tail: got %d, want 200", res.StatusCode)
+	}
+	_, uri, _, _, _ := cap.snapshot()
+	if uri != "/cdn/i/v0/e/" {
+		t.Fatalf("upstream saw %q, want /cdn/i/v0/e/ (slash preserved)", uri)
+	}
+}

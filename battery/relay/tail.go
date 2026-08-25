@@ -44,8 +44,15 @@ func validateTail(tail string, rawEncoded bool) error {
 	if strings.Contains(tail, "#") {
 		return fmt.Errorf("path tail contains a fragment marker")
 	}
-	for _, seg := range strings.Split(tail, "/") {
+	segs := strings.Split(tail, "/")
+	for i, seg := range segs {
 		if seg == "" {
+			// A single trailing empty segment is a trailing slash, which
+			// vendor SDKs legitimately use (posthog-js posts /i/v0/e/).
+			// Empty segments anywhere else are the "//" smuggling shape.
+			if i == len(segs)-1 && i > 0 {
+				continue
+			}
 			return fmt.Errorf("path tail contains an empty segment")
 		}
 		if seg == "." || seg == ".." {
@@ -64,5 +71,12 @@ func joinUpstreamPath(base, tail string) string {
 	if base == "" {
 		base = "/"
 	}
-	return path.Join(base, tail)
+	joined := path.Join(base, tail)
+	// path.Join drops a trailing slash; the upstream may distinguish
+	// /e from /e/ (or redirect one to the other, which the relay
+	// refuses), so a validated trailing slash is preserved verbatim.
+	if strings.HasSuffix(tail, "/") && !strings.HasSuffix(joined, "/") {
+		joined += "/"
+	}
+	return joined
 }
