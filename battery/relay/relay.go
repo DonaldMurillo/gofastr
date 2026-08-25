@@ -94,10 +94,12 @@ type Route struct {
 	// development work; any other http:// upstream panics at New.
 	// Private/internal non-loopback hosts (RFC1918, link-local
 	// including cloud metadata, CGNAT, IPv6 unique-local,
-	// *.internal, *.localhost, metadata.google.internal) are refused
-	// at New regardless of scheme: the relay has no per-customer
-	// SSRF story yet, so it refuses to point at anything that smells
-	// like internal infrastructure.
+	// *.internal, metadata.google.internal) are refused at New
+	// regardless of scheme: the relay has no per-customer SSRF story
+	// yet, so it refuses to point at anything that smells like
+	// internal infrastructure. localhost and *.localhost count as
+	// loopback, so they are ACCEPTED (that's how tests and local dev
+	// point at an httptest upstream).
 	Upstream string
 
 	// Methods is the allow-list of HTTP methods the route answers.

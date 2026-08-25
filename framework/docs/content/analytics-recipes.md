@@ -229,6 +229,8 @@ The bootstrap, whole:
       known = id;
       if (id) ph.identify(id);
     }
+    // refreshIdentity is the helper from the Identity section above;
+    // this bootstrap needs it in the same file.
     refreshIdentity(applyIdentity);
 
     // The initial pageview: gofastr:navigate does not fire on first load.
@@ -409,6 +411,7 @@ request:
 
 <!-- gofastr:compile
 import "context"
+import "fmt"
 import "github.com/DonaldMurillo/gofastr/core/handler"
 import "github.com/DonaldMurillo/gofastr/core/featureflag"
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -433,8 +436,14 @@ app.Use(func(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var ec featureflag.EvalContext
 		if u, ok := handler.GetUser(r.Context()); ok && u != nil {
-			if id, ok := u.(string); ok {
-				ec.UserID = id
+			// Same normalization as the identity endpoint: a mismatch
+			// here means flags evaluate anonymous for users the
+			// endpoint identifies.
+			switch v := u.(type) {
+			case string:
+				ec.UserID = v
+			case fmt.Stringer:
+				ec.UserID = v.String()
 			}
 		}
 		next.ServeHTTP(w, r.WithContext(featureflag.WithContext(r.Context(), ec)))
@@ -460,8 +469,9 @@ evaluator itself.
   `auth.SessionMiddleware` (or your equivalent) ran. Without it every
   response is `{"id":null}` and you shipped an anonymous-only funnel.
 - **A global `auth.CSRF()` 403s the beacon POSTs.** Vendor beacons are
-  form-less POSTs with no token. Exempt the mount:
-  `app.Use(auth.CSRF(auth.WithCSRFSkipPaths("/__gofastr/t/")))`. This is
+  form-less POSTs with no token. Exempt the mount, deriving the prefix
+  from the relay so a custom `Path` stays covered:
+  `app.Use(auth.CSRF(auth.WithCSRFSkipPaths(r.Base() + "/")))`. This is
   safe because the relay strips cookies both directions: there is no
   credential in play to forge with.
 - **`auth.RequireSession` app-wide gates the relay.** Beacons fire from

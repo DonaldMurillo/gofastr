@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -233,9 +232,7 @@ func TestForwardedProtoHTTPSOnTLSLeg(t *testing.T) {
 	}
 	srv := httptest.NewTLSServer(app.Router())
 	t.Cleanup(srv.Close)
-	client := &http.Client{Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}}
+	client := srv.Client()
 
 	res, err := client.Get(srv.URL + "/__gofastr/t/e/x")
 	if err != nil {
@@ -617,5 +614,31 @@ func TestShutdownClosesIdleTransportConns(t *testing.T) {
 	}
 	if got := openConns.Load(); got != 0 {
 		t.Fatalf("open upstream conns after Shutdown = %d, want 0 (CloseIdleConnections via OnStop)", got)
+	}
+}
+
+// closeRecorder records whether the wrapped body was closed.
+type closeRecorder struct {
+	io.Reader
+	closed bool
+}
+
+func (c *closeRecorder) Close() error { c.closed = true; return nil }
+
+func TestRefusedRedirectClosesUpstreamBody(t *testing.T) {
+	r := New(defaultCfg("http://127.0.0.1:1/base"))
+	rt := r.routes[0]
+	body := &closeRecorder{Reader: strings.NewReader("moved")}
+	resp := &http.Response{
+		StatusCode: http.StatusFound,
+		Header:     http.Header{"Location": []string{"https://vendor.example/next"}},
+		Body:       body,
+	}
+	r.modifyResponse(rt, resp)
+	if !body.closed {
+		t.Fatal("refused redirect left the upstream body open")
+	}
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", resp.StatusCode)
 	}
 }

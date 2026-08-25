@@ -26,7 +26,7 @@ import (
 app := framework.NewApp(
 	framework.WithConfig(framework.AppConfig{Name: "myapp"}),
 )
-app.RegisterPlugin(relay.New(relay.Config{
+r := relay.New(relay.Config{
 	// Path defaults to "/__gofastr/t"; any absolute path works.
 	Routes: []relay.Route{
 		{
@@ -41,7 +41,8 @@ app.RegisterPlugin(relay.New(relay.Config{
 			CacheOK:  true,   // immutable, versioned scripts may cache
 		},
 	},
-}))
+})
+app.RegisterPlugin(r)
 ```
 
 Point the vendor's client SDK at the mount with `Base()` instead of

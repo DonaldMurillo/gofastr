@@ -187,6 +187,12 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 			"status", resp.StatusCode,
 			"location", resp.Header.Get("Location"),
 			"upstream", rt.upstream.Host)
+		// Drain-and-close the discarded upstream body: ReverseProxy only
+		// closes the body present when ModifyResponse returns, so leaving
+		// the original open would leak one connection per refused
+		// redirect. The bounded drain lets the transport reuse the conn.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+		_ = resp.Body.Close()
 		body := "upstream redirect refused\n"
 		resp.StatusCode = http.StatusBadGateway
 		resp.Status = http.StatusText(http.StatusBadGateway)

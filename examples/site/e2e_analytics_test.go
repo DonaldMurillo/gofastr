@@ -262,7 +262,12 @@ func (n *netRecorder) requestsMatching(prefix string) []netRecorded {
 	var out []netRecorded
 	for _, r := range n.reqs {
 		if strings.HasPrefix(r.URL, prefix) {
-			out = append(out, r)
+			// Deep-copy the header map: the CDP listener keeps writing
+			// into the recorded entry (ExtraInfo events) under the lock,
+			// and callers read the result after the lock is released.
+			cp := r
+			cp.Header = r.Header.Clone()
+			out = append(out, cp)
 		}
 	}
 	return out
@@ -273,7 +278,11 @@ func (n *netRecorder) responseMatching(prefix string) *netRecorded {
 	defer n.mu.Unlock()
 	for i := range n.resps {
 		if strings.HasPrefix(n.resps[i].URL, prefix) {
-			return &n.resps[i]
+			// Copy out (headers included): the listener keeps mutating
+			// the slice entry under the lock after we return.
+			cp := n.resps[i]
+			cp.Header = cp.Header.Clone()
+			return &cp
 		}
 	}
 	return nil
