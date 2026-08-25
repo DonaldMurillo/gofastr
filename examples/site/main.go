@@ -730,6 +730,9 @@ func setupServer() *framework.App {
 		stopLiveDash()
 		return nil
 	})
+	// Fake first-party analytics wiring (test/demo only; inert unless
+	// SITE_ANALYTICS_FAKE=1). See analytics_demo.go.
+	wireFakeAnalytics(host, fwApp)
 
 	return fwApp
 }
