@@ -857,6 +857,12 @@ func TestEmbedThemeCapBoundsTheVariantRegistry(t *testing.T) {
 // microseconds, so the goroutines serialise and the test passes with the bug
 // present. Making the window explicit is the difference between testing the
 // invariant and hoping for a schedule.
+//
+// The gap is a barrier, not a sleep: every racer finishes its reserve before
+// any admitted racer records. A sleep stood here once and flaked on a loaded
+// CI runner, because a goroutine scheduled after the first record is not part
+// of the burst any more — it finds a resolved entry and legitimately takes it
+// over by LRU eviction, which the admission count then misread as a cap breach.
 func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 	const (
 		racers = 40
@@ -864,8 +870,9 @@ func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 	)
 	var state embedThemeState
 	var admitted atomic.Int32
-	var wg sync.WaitGroup
+	var wg, reserved sync.WaitGroup
 	start := make(chan struct{})
+	reserved.Add(racers)
 
 	for i := range racers {
 		wg.Add(1)
@@ -874,13 +881,15 @@ func TestEmbedThemeCapHoldsUnderConcurrency(t *testing.T) {
 			param := fmt.Sprintf("theme-%d", i)
 			<-start
 			ok, _, _ := state.reserve("reports", param, max)
+			reserved.Done()
 			if !ok {
 				return
 			}
 			admitted.Add(1)
 			// Stand in for the CSS render that happens between reserving a slot
-			// and knowing the variant key.
-			time.Sleep(2 * time.Millisecond)
+			// and knowing the variant key. Recording only after every racer has
+			// been through reserve keeps the whole burst inside the window.
+			reserved.Wait()
 			state.record("reports", param, "key-"+param)
 		}(i)
 	}
