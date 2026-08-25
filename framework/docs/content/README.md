@@ -149,6 +149,14 @@ results, the harness contract) are exempt. The exemption list lives in
   rollout percentage, user/tenant/environment allow lists.
 - [Outbound webhooks](webhooks.md): `battery/webhook`: signed
   delivery, retry-with-backoff, dead-letter, glob event filters.
+- [First-party relay](relay.md): `battery/relay`: same-origin reverse
+  proxy for third-party services (analytics, widgets, trackers) with
+  fixed upstreams, stripped credentials both ways, and the strict CSP
+  kept intact.
+- [Analytics recipes](analytics-recipes.md): PostHog and Statsig
+  first-party through `battery/relay`: bootstrap script, pageviews on
+  `gofastr:navigate`, same-origin identity, and a `featureflag.Store`
+  adapter for server-side gates.
 - [Internationalization](i18n.md): `core/i18n` translator,
   JSON catalogs, plurals, `Accept-Language` negotiation.
 - [Unified notifications](notifications.md): `battery/notify` sends

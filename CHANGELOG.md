@@ -7,6 +7,35 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **uihost: host-page scripts registered before serving.**
+  `RegisterExternalScript` adds a same-origin external `<script src>` to
+  every full-page render, emitted just before `</body>` after runtime.js.
+  It exists for plugins and batteries wiring in `Init`, after
+  construction-time options froze, and refuses registration once a page
+  has been served so a script cannot ship on some pages and not others.
+  `ScriptHandler` serves the bytes with the framework's versioned-script
+  policy (strong ETag, immutable on a matching `?v=`), and `ScriptURL`
+  produces that hash-versioned URL.
+- **battery/relay: first-party relay for third-party services.** A
+  declarative reverse proxy: one mount path, a fixed route table of
+  prefix → upstream, per-route method allow-lists and body caps. Vendor
+  scripts and beacons become same-origin, so the strict default CSP
+  needs no script-src/connect-src exceptions and domain-based ad
+  blocking no longer severs a page from its analytics. Not an open proxy
+  by construction: upstreams are fixed at `New`, credentials are
+  stripped both directions, inbound `X-Forwarded-*` is never trusted,
+  and upstream redirects are refused rather than leaked.
+- **Analytics recipes** (`framework/docs/content/analytics-recipes.md`):
+  the first-party pattern for PostHog and Statsig end to end — relay
+  route tables, a host-authored bootstrap served via
+  `ScriptHandler`/`ScriptURL` and registered with
+  `RegisterExternalScript`, pageviews on the runtime's `gofastr:navigate`
+  event, a same-origin identity endpoint over `handler.GetUser`, and a
+  `featureflag.Store` adapter that surfaces the vendor's boolean gates
+  server-side.
+
 ## [0.70.0] - 2026-08-24
 
 ### Added

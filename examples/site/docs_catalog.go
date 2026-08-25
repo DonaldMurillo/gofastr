@@ -181,6 +181,8 @@ var docIntents = []docIntent{
 			{"scaling", "Horizontal scaling", "What's process-local by default and the replica-safe alternative for each."},
 			{"queue", "Job queue", "Durable background jobs via battery/queue."},
 			{"feature-flags", "Feature flags", "Rollout percentage, allow lists, env evaluator."},
+			{"relay", "First-party relay", "Same-origin reverse proxy for third-party services: fixed upstreams, method allow-lists, credentials stripped both ways."},
+			{"analytics-recipes", "Analytics recipes", "PostHog and Statsig first-party through battery/relay: bootstrap script, SPA pageviews, identity, server-side flag gates."},
 			{"i18n", "i18n", "JSON catalogs, plurals, Accept-Language negotiation."},
 			{"cron", "Cron", "Scheduled jobs with retry + jitter."},
 			{"events", "Events", "In-process pub/sub for decoupled side effects."},

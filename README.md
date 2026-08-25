@@ -316,7 +316,7 @@ uploads, and sparse updates. Hooks run inside the write's transaction
 | `core/` | Stdlib-only primitives: router, query, schema, render, mcp, openapi, migrate. Each usable on its own. | you want plain Go building blocks, no framework. |
 | `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting its focused runtime subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
 | `core-ui/` | Server-driven UI runtime: `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
-| `battery/` | Opt-in infrastructure: admin, auth, cache, email, semantic, log, notify, print, queue, search, setup, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
+| `battery/` | Opt-in infrastructure: admin, auth, cache, email, semantic, log, notify, print, queue, relay, search, setup, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
 | `cmd/gofastr` | The CLI: `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `verify`, `docs`, and more. | you're scaffolding, generating, or checking code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
 | `examples/` | Runnable reference apps: the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
@@ -387,6 +387,7 @@ connected to a running app.
 - [Authentication](framework/docs/content/auth.md): the `battery/auth` reference. Password login, magic links, OAuth (Google + GitHub built in, any OIDC IdP), 2FA, password reset, sessions, scoped API tokens. Each method is an opt-in plugin
 - [Access control](framework/docs/content/access-control.md): permission-based RBAC. `RequirePermission` on your own routes, `AccessMiddleware`, gating auto-CRUD per entity, and where owner scoping fits alongside it
 - [Security](framework/docs/content/security.md): defaults, headers, and limits
+- [Analytics recipes](framework/docs/content/analytics-recipes.md): PostHog and Statsig first-party via `battery/relay` + a host bootstrap script: pageviews on `gofastr:navigate`, same-origin identity over `handler.GetUser`, and a `featureflag.Store` adapter for server-side gates
 - [Deployment](framework/docs/content/deploy.md): single-binary build, graceful shutdown, production checklist
 - [Horizontal scaling](framework/docs/content/scaling.md): what's process-local by default and the replica-safe alternative for each
 - [Observability](framework/docs/content/observability.md): metrics and tracing
