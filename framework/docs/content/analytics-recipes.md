@@ -458,12 +458,13 @@ evaluator itself.
 
 ## Common mistakes
 
-- **Beacon URLs need a tail segment.** A subtree route's empty tail
-  joins onto the upstream base without a trailing slash (`/e/` becomes
-  `/e`), and a vendor that answers the bare path with a redirect gets
-  that redirect refused by the relay — the beacon dies as a 502 the
-  SDK's `.catch` swallows. Point event URLs at a tailed path
-  (`.../e/batch`), the shape vendor SDKs use anyway.
+- **A bare mount is not a beacon URL.** A subtree route's fully empty
+  tail joins onto the upstream base without a trailing slash (`.../ph/`
+  becomes the base path itself), and a vendor that answers that bare
+  path with a redirect gets the redirect refused by the relay — a 502
+  the SDK's `.catch` swallows. Tailed paths are fine, including
+  trailing-slash ones (`/i/v0/e/` is forwarded verbatim); it is only
+  the empty tail that has nothing to forward.
 - **No auth middleware on the identity chain.** The endpoint reads
   `handler.GetUser`, which carries a value only when
   `auth.SessionMiddleware` (or your equivalent) ran. Without it every
