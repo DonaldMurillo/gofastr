@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.71.0
+through: v0.71.1
 
 releases:
   - version: v0.3.0
@@ -813,3 +813,9 @@ releases:
       - change: uihost registers external host-page scripts before serving
         breaking: false
         guidance: "New surface for plugins and batteries wiring in Init, after construction-time options froze. RegisterExternalScript adds a same-origin <script src> to every full-page render and refuses registration once a page has been served, so register during Init, never lazily. ScriptHandler serves the bytes under the versioned-script policy (strong ETag, immutable on a matching ?v=) and ScriptURL produces that URL."
+  - version: v0.71.1
+    title: Relay forwards trailing-slash tails
+    notes:
+      - change: battery/relay forwards trailing-slash subtree tails
+        breaking: false
+        guidance: "Fix only. Vendor SDK paths like /i/v0/e/ previously died as the relay's own 400; they now reach the upstream with the slash intact. Mid-path empty segments are still refused. No configuration changes."
