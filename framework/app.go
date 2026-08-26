@@ -3112,6 +3112,20 @@ func (a *App) Start(addr string) error {
 			srv.WriteTimeout = 0
 		}
 	}
+	// A concurrent Shutdown may have run while the pre-listen phases
+	// were still executing (a host tearing down mid-boot, or a test that
+	// observed a seeded row before the server existed). It found no
+	// server to stop and drained what was started; adopting a server NOW
+	// would serve forever with nobody left to stop it. The cancelled
+	// lifecycle context is the durable record of that Shutdown — checked
+	// under the same lock Shutdown holds, so the window is closed, not
+	// narrowed. abort re-drains whatever started after that Shutdown's
+	// sweep (Shutdown is idempotent) and nil keeps the graceful-shutdown
+	// contract: Start reports no error when told to stop.
+	if a.appCtx != nil && a.appCtx.Err() != nil {
+		a.serverMu.Unlock()
+		return abort(nil)
+	}
 	a.server = srv
 	a.serverMu.Unlock()
 	// Bind first, then Serve, split from ListenAndServe so OnReady hooks

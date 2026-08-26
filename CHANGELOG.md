@@ -11,6 +11,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **framework: a Shutdown during startup stops Start.** `App.Shutdown`
+  racing `App.Start`'s pre-listen phases (migrations, seeds, plugin
+  init) found no server to stop, drained the batteries, and returned —
+  and Start then adopted the listener and served forever with nobody
+  left to stop it. Start now checks the cancelled lifecycle context
+  under the adoption lock, re-drains, and returns nil like any graceful
+  shutdown. This was the intermittent 30s race-job hang in
+  `TestAppStart_WiresRunSeeds`; the window is now pinned by a
+  deterministic regression test.
+
 - **framework/ui: Card footers pin to the card's bottom edge.** A
   config-only card (Heading/Description/Footer, no body children) has
   no flex-stretch element inside, so in a stretch context — a `ui.Grid`
