@@ -142,6 +142,7 @@ func cardCSS(t style.Theme) string {
 [data-fui-comp="ui-card"] .ui-card__inner {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
 }
 [data-fui-comp="ui-card"] .ui-card__header {
   padding: var(--spacing-lg, 16px) var(--spacing-lg, 16px) var(--spacing-md, 8px);
@@ -169,6 +170,7 @@ func cardCSS(t style.Theme) string {
   padding-top: 0;
 }
 [data-fui-comp="ui-card"] .ui-card__footer {
+  margin-top: auto;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border-top: 1px solid var(--color-border, #E4E4E7);
   display: flex;

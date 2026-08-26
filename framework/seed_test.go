@@ -582,3 +582,42 @@ func TestAppStart_WiresRunSeeds(t *testing.T) {
 		t.Errorf("seeded row not present after App.Start; got %d rows", rows)
 	}
 }
+
+// A Shutdown that lands in the window between the last pre-listen start
+// phase and the server adoption used to be swallowed: Shutdown found no
+// server to stop, drained the batteries, and returned — then Start
+// adopted the listener and served forever with nobody left to stop it
+// (caught as a 30s race-job hang in TestAppStart_WiresRunSeeds, where
+// the test's Shutdown raced Start's post-seed phases). The OnStart hook
+// pins Shutdown inside that window deterministically; Start must notice
+// the cancelled lifecycle context at adoption and return instead of
+// serving.
+func TestShutdownDuringStartupStopsStart(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+
+	app := NewApp(WithDB(db))
+	app.OnStart(func(ctx context.Context) error {
+		sdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = app.Shutdown(sdCtx)
+		return nil
+	})
+
+	startErr := make(chan error, 1)
+	go func() { startErr <- app.Start(":0") }()
+
+	select {
+	case err := <-startErr:
+		if err != nil {
+			t.Fatalf("App.Start after mid-startup Shutdown: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+		t.Fatal("Start kept serving after a mid-startup Shutdown")
+	}
+}

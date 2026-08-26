@@ -7,6 +7,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.71.2] - 2026-08-26
+
+### Fixed
+
+- **framework: a Shutdown during startup stops Start.** `App.Shutdown`
+  racing `App.Start`'s pre-listen phases (migrations, seeds, plugin
+  init) found no server to stop, drained the batteries, and returned —
+  and Start then adopted the listener and served forever with nobody
+  left to stop it. Start now checks the cancelled lifecycle context
+  under the adoption lock, re-drains, and returns nil like any graceful
+  shutdown. This was the intermittent 30s race-job hang in
+  `TestAppStart_WiresRunSeeds`; the window is now pinned by a
+  deterministic regression test.
+
+- **framework/ui: Card footers pin to the card's bottom edge.** A
+  config-only card (Heading/Description/Footer, no body children) has
+  no flex-stretch element inside, so in a stretch context — a `ui.Grid`
+  row, an align-stretch flex parent — the footer floated mid-card with
+  dead space beneath it and sibling cards' footer rows misaligned. The
+  footer now carries `margin-top: auto`, and the linked variant's
+  `.ui-card__inner` wrapper grows to fill the stretched anchor so the
+  pin reaches the card edge there too (CodeRabbit caught the linked
+  sibling). A chromium-tagged layout test measures all three shapes'
+  pinned edges in a real Grid.
+
 ## [0.71.1] - 2026-08-25
 
 ### Fixed
