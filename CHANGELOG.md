@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.71.2] - 2026-08-26
+
 ### Fixed
 
 - **framework/ui: Card footers pin to the card's bottom edge.** A

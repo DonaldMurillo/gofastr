@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.71.1
+through: v0.71.2
 
 releases:
   - version: v0.3.0
@@ -819,3 +819,10 @@ releases:
       - change: battery/relay forwards trailing-slash subtree tails
         breaking: false
         guidance: "Fix only. Vendor SDK paths like /i/v0/e/ previously died as the relay's own 400; they now reach the upstream with the slash intact. Mid-path empty segments are still refused. No configuration changes."
+
+  - version: v0.71.2
+    title: Card footers pin to the card edge
+    notes:
+      - change: ui.Card footers carry margin-top auto and the linked variant's inner wrapper grows to fill the anchor
+        breaking: false
+        guidance: "Fix only. Config-only cards (Heading/Description/Footer with no body children) in a stretch context — a ui.Grid row, an align-stretch flex parent — previously floated the footer mid-card; it now pins to the bottom edge, for plain and linked (Href) cards alike. No configuration changes."
