@@ -16,6 +16,13 @@ Start with [the quickstart](#quickstart). Or scaffold a whole app in one command
 > between releases, so pin a version (`go get …@v0.x.y`). A `v1.0.0` tag will
 > mark the stability promise. Ship at your own risk until then.
 
+**A shoutout to [CodeRabbit](https://www.coderabbit.ai):** it reviews every
+PR in this repo and keeps catching what everyone else missed — an upstream
+connection leak in the relay battery, the linked-card sibling of a layout
+fix, six Major findings on a single PR that showed `pass` in the checks
+list. Every finding is triaged on the PR before merge; a lot of them became
+shipped fixes with regression tests.
+
 ## Quickstart
 
 Requires Go 1.27+. Install the CLI:
