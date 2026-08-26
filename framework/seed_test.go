@@ -7,7 +7,9 @@ import (
 	"embed"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -541,7 +543,15 @@ func TestAppStart_WiresRunSeeds(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	_ = app.Shutdown(context.Background())
+	// A deadline is load-bearing: Server.Shutdown waits forever for a
+	// connection that never goes idle (Go 1.27 pools conns that can park
+	// in StateNew — the class documented in the go1.27 adoption notes),
+	// and App.Shutdown's bounded-drain srv.Close() fallback only runs
+	// when this ctx expires. Background gave CI a 30s hang with the
+	// force-close path unreachable.
+	sdCtx, sdCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer sdCancel()
+	_ = app.Shutdown(sdCtx)
 	select {
 	case err := <-startErr:
 		// Start's error IS the diagnosis when the row does not land: a failing
@@ -553,10 +563,11 @@ func TestAppStart_WiresRunSeeds(t *testing.T) {
 			t.Fatalf("App.Start: %v", err)
 		}
 	case <-time.After(30 * time.Second):
-		// Same budget rationale as the poll above: only ever spent on
-		// failure. 10s was a real flake on race-detector runners under
-		// full parallel-job load (twice on 2026-08-25 alone); a graceful
-		// drain on a starved box can exceed it without anything hanging.
+		// Shutdown now carries a 5s deadline that triggers the bounded
+		// drain, so reaching this line means Start is genuinely stuck
+		// somewhere new — dump every goroutine so the CI log carries
+		// the diagnosis instead of a bare timeout.
+		_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
 		t.Fatal("App.Start did not return within 30s of Shutdown")
 	}
 
