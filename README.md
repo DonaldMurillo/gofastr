@@ -16,6 +16,18 @@ Start with [the quickstart](#quickstart). Or scaffold a whole app in one command
 > between releases, so pin a version (`go get …@v0.x.y`). A `v1.0.0` tag will
 > mark the stability promise. Ship at your own risk until then.
 
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/DonaldMurillo/gofastr?utm_source=oss&utm_medium=github&utm_campaign=DonaldMurillo%2Fgofastr&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://www.coderabbit.ai)
+
+**A shoutout to [CodeRabbit](https://www.coderabbit.ai):** it reviews every
+PR in this repo and keeps catching what everyone else missed — a relay
+upstream-body leak on refused redirects
+([#225](https://github.com/DonaldMurillo/gofastr/pull/225)), the linked-card
+case of the Card footer pin
+([#231](https://github.com/DonaldMurillo/gofastr/pull/231)), six Major
+findings on [#198](https://github.com/DonaldMurillo/gofastr/pull/198) while
+the checks list showed `pass`. Every finding is triaged on the PR before
+merge; many became shipped fixes with regression tests.
+
 ## Quickstart
 
 Requires Go 1.27+. Install the CLI:
