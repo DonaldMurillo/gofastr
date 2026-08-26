@@ -132,6 +132,10 @@ func wireFakeAnalytics(host *uihost.UIHost, app *framework.App) {
 			switch v := u.(type) {
 			case string:
 				id = v
+			case interface{ GetID() string }:
+				// battery/auth principals (*auth.BasicUser) carry
+				// their identity here; they don't implement Stringer.
+				id = v.GetID()
 			case fmt.Stringer:
 				id = v.String()
 			}
