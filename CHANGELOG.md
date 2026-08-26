@@ -14,8 +14,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   no flex-stretch element inside, so in a stretch context — a `ui.Grid`
   row, an align-stretch flex parent — the footer floated mid-card with
   dead space beneath it and sibling cards' footer rows misaligned. The
-  footer now carries `margin-top: auto`; a chromium-tagged layout test
-  measures the pinned edge in a real Grid.
+  footer now carries `margin-top: auto`, and the linked variant's
+  `.ui-card__inner` wrapper grows to fill the stretched anchor so the
+  pin reaches the card edge there too (CodeRabbit caught the linked
+  sibling). A chromium-tagged layout test measures all three shapes'
+  pinned edges in a real Grid.
 
 ## [0.71.1] - 2026-08-25
 

@@ -29,23 +29,31 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 		Card(CardConfig{Heading: "Tall", Footer: render.Text("footer")},
 			html.Paragraph(html.TextConfig{}, render.Text(
 				"Long body copy that wraps onto several lines so this card sets "+
-					"the grid row height and the sibling card must stretch to match it, "+
+					"the grid row height and the sibling cards must stretch to match it, "+
 					"padding padding padding padding padding padding padding."))),
 		Card(CardConfig{Heading: "Short", Description: "Config-only card.",
 			Footer: render.Text("footer")}),
+		// The linked variant nests everything in .ui-card__inner; unless
+		// that wrapper grows to fill the stretched <a>, the footer pins
+		// to the inner's edge, not the card's.
+		Card(CardConfig{Heading: "Linked", Description: "Config-only linked card.",
+			Href: "/somewhere", Footer: render.Text("footer")}),
 	)
 	css := layoutStyle.Entry().CSSFor(theme.Default()) + cardStyle.Entry().CSSFor(theme.Default())
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8>
-<style>body{margin:0;width:800px}
+<style>body{margin:0}
 %s</style>%s`, css, string(page))
 	}))
 	defer srv.Close()
 
+	// Viewport width is browser setup, not page styling: 800px makes the
+	// 12rem-min grid pack all three cards into one row deterministically.
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.NoSandbox)...)
+		append(chromedp.DefaultExecAllocatorOptions[:],
+			chromedp.NoSandbox, chromedp.WindowSize(800, 600))...)
 	defer cancelAlloc()
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
@@ -65,8 +73,8 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if len(gaps) != 2 {
-		t.Fatalf("expected 2 cards, measured %d", len(gaps))
+	if len(gaps) != 3 {
+		t.Fatalf("expected 3 cards, measured %d", len(gaps))
 	}
 	for i, gap := range gaps {
 		if math.Abs(gap) > 1 {
