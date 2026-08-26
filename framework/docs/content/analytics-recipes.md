@@ -115,6 +115,10 @@ app.Router().Get("/fp/whoami", http.HandlerFunc(func(w http.ResponseWriter, r *h
 		switch v := u.(type) {
 		case string:
 			id = v
+		case interface{ GetID() string }:
+			// battery/auth principals (*auth.BasicUser) carry their
+			// identity here; they do NOT implement fmt.Stringer.
+			id = v.GetID()
 		case fmt.Stringer:
 			id = v.String()
 		}
@@ -442,6 +446,8 @@ app.Use(func(next http.Handler) http.Handler {
 			switch v := u.(type) {
 			case string:
 				ec.UserID = v
+			case interface{ GetID() string }:
+				ec.UserID = v.GetID()
 			case fmt.Stringer:
 				ec.UserID = v.String()
 			}
