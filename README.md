@@ -1,5 +1,12 @@
 # GoFastr
 
+[![CI](https://github.com/DonaldMurillo/gofastr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DonaldMurillo/gofastr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/DonaldMurillo/gofastr)](https://github.com/DonaldMurillo/gofastr/releases)
+[![Go version](https://img.shields.io/github/go-mod/go-version/DonaldMurillo/gofastr)](go.mod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/DonaldMurillo/gofastr.svg)](https://pkg.go.dev/github.com/DonaldMurillo/gofastr)
+[![License: MIT](https://img.shields.io/github/license/DonaldMurillo/gofastr)](LICENSE)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/DonaldMurillo/gofastr?utm_source=oss&utm_medium=github&utm_campaign=DonaldMurillo%2Fgofastr&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://www.coderabbit.ai)
+
 > The full-stack Go framework that doesn't get in the way of you or your agents.
 
 **[Docs, component gallery, and live demos →](https://donaldmurillo.github.io/gofastr/)**
@@ -15,8 +22,6 @@ Start with [the quickstart](#quickstart). Or scaffold a whole app in one command
 > **Status:** early / `v0.x`. MIT-licensed and usable, but the API may change
 > between releases, so pin a version (`go get …@v0.x.y`). A `v1.0.0` tag will
 > mark the stability promise. Ship at your own risk until then.
-
-[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/DonaldMurillo/gofastr?utm_source=oss&utm_medium=github&utm_campaign=DonaldMurillo%2Fgofastr&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://www.coderabbit.ai)
 
 **A shoutout to [CodeRabbit](https://www.coderabbit.ai):** it reviews every
 PR in this repo and keeps catching what everyone else missed — a relay
