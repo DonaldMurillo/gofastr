@@ -212,6 +212,10 @@ type netRecorder struct {
 	resps  []netRecorded
 	// requestID → index into reqs, for merging ExtraInfo headers.
 	byID map[network.RequestID]int
+	// ExtraInfo events CDP delivered BEFORE their base event — the
+	// ordering is not guaranteed, and dropping an early ExtraInfo
+	// silently loses the Cookie header the credential test asserts on.
+	pendingExtra map[network.RequestID]http.Header
 }
 
 func (n *netRecorder) listen(ctx context.Context) {
@@ -223,11 +227,18 @@ func (n *netRecorder) listen(ctx context.Context) {
 				n.byID = map[network.RequestID]int{}
 			}
 			n.byID[e.RequestID] = len(n.reqs)
-			n.reqs = append(n.reqs, netRecorded{
+			rec := netRecorded{
 				URL:    e.Request.URL,
 				Method: e.Request.Method,
 				Header: headerFromCDP(e.Request.Headers),
-			})
+			}
+			if extra, ok := n.pendingExtra[e.RequestID]; ok {
+				for k, v := range extra {
+					rec.Header[k] = v
+				}
+				delete(n.pendingExtra, e.RequestID)
+			}
+			n.reqs = append(n.reqs, rec)
 			n.mu.Unlock()
 		case *network.EventRequestWillBeSentExtraInfo:
 			n.mu.Lock()
@@ -235,6 +246,11 @@ func (n *netRecorder) listen(ctx context.Context) {
 				for k, v := range headerFromCDP(e.Headers) {
 					n.reqs[i].Header[k] = v
 				}
+			} else {
+				if n.pendingExtra == nil {
+					n.pendingExtra = map[network.RequestID]http.Header{}
+				}
+				n.pendingExtra[e.RequestID] = headerFromCDP(e.Headers)
 			}
 			n.mu.Unlock()
 		case *network.EventResponseReceived:
