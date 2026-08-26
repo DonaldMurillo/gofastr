@@ -60,25 +60,35 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 	ctx, cancelTimeout := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelTimeout()
 
-	// For each card: the gap between the card's bottom edge and its
-	// footer's bottom edge. A pinned footer sits on the edge (≈0); the
-	// regression showed up as the short card's footer floating far above.
-	var gaps []float64
+	// For each card: its top edge, and the gap between the card's bottom
+	// edge and its footer's bottom edge. A pinned footer sits on the edge
+	// (≈0); the regression showed up as the short card's footer floating
+	// far above.
+	var cards []map[string]float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-fui-comp="ui-card"]')).map(c => {
 			const f = c.querySelector('.ui-card__footer');
-			return c.getBoundingClientRect().bottom - f.getBoundingClientRect().bottom;
-		})`, &gaps),
+			return {top: c.getBoundingClientRect().top,
+				gap: c.getBoundingClientRect().bottom - f.getBoundingClientRect().bottom};
+		})`, &cards),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if len(gaps) != 3 {
-		t.Fatalf("expected 3 cards, measured %d", len(gaps))
+	if len(cards) != 3 {
+		t.Fatalf("expected 3 cards, measured %d", len(cards))
 	}
-	for i, gap := range gaps {
-		if math.Abs(gap) > 1 {
-			t.Errorf("card %d: footer bottom is %.1fpx above the card bottom; footers must pin to the card edge", i, gap)
+	// Anti-vacuity: the assertion only exercises stretch while all three
+	// cards share one grid row. A wrapped card is alone in its row, never
+	// stretches, and would pass the gap check without testing anything.
+	for i, c := range cards[1:] {
+		if math.Abs(c["top"]-cards[0]["top"]) > 1 {
+			t.Fatalf("card %d wrapped to another row (top %.1f vs %.1f); widen the viewport so stretch is actually exercised", i+1, c["top"], cards[0]["top"])
+		}
+	}
+	for i, c := range cards {
+		if math.Abs(c["gap"]) > 1 {
+			t.Errorf("card %d: footer bottom is %.1fpx above the card bottom; footers must pin to the card edge", i, c["gap"])
 		}
 	}
 }
