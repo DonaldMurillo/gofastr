@@ -1,0 +1,76 @@
+//go:build chromium
+
+package ui
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/chromedp/chromedp"
+)
+
+// Hard rule 9: footer placement is layout, invisible to markup dumps. A
+// config-only card (Heading/Description/Footer, no body children) has no
+// flex-stretch element inside, so in any stretch context — a Grid row, an
+// align-stretch flex parent — its footer used to float mid-card with dead
+// space beneath it (caught screenshotting the relayboard recipe's pricing
+// grid). The footer's margin-top:auto is the guard; this renders a real
+// Grid in Chrome and measures it.
+func TestCardFooterPinsToBottomInGrid(t *testing.T) {
+	page := Grid(GridConfig{Min: "12rem"},
+		Card(CardConfig{Heading: "Tall", Footer: render.Text("footer")},
+			html.Paragraph(html.TextConfig{}, render.Text(
+				"Long body copy that wraps onto several lines so this card sets "+
+					"the grid row height and the sibling card must stretch to match it, "+
+					"padding padding padding padding padding padding padding."))),
+		Card(CardConfig{Heading: "Short", Description: "Config-only card.",
+			Footer: render.Text("footer")}),
+	)
+	css := layoutStyle.Entry().CSSFor(theme.Default()) + cardStyle.Entry().CSSFor(theme.Default())
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8>
+<style>body{margin:0;width:800px}
+%s</style>%s`, css, string(page))
+	}))
+	defer srv.Close()
+
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
+		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.NoSandbox)...)
+	defer cancelAlloc()
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+	ctx, cancelTimeout := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelTimeout()
+
+	// For each card: the gap between the card's bottom edge and its
+	// footer's bottom edge. A pinned footer sits on the edge (≈0); the
+	// regression showed up as the short card's footer floating far above.
+	var gaps []float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-fui-comp="ui-card"]')).map(c => {
+			const f = c.querySelector('.ui-card__footer');
+			return c.getBoundingClientRect().bottom - f.getBoundingClientRect().bottom;
+		})`, &gaps),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(gaps) != 2 {
+		t.Fatalf("expected 2 cards, measured %d", len(gaps))
+	}
+	for i, gap := range gaps {
+		if math.Abs(gap) > 1 {
+			t.Errorf("card %d: footer bottom is %.1fpx above the card bottom; footers must pin to the card edge", i, gap)
+		}
+	}
+}

@@ -7,6 +7,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **framework/ui: Card footers pin to the card's bottom edge.** A
+  config-only card (Heading/Description/Footer, no body children) has
+  no flex-stretch element inside, so in a stretch context — a `ui.Grid`
+  row, an align-stretch flex parent — the footer floated mid-card with
+  dead space beneath it and sibling cards' footer rows misaligned. The
+  footer now carries `margin-top: auto`; a chromium-tagged layout test
+  measures the pinned edge in a real Grid.
+
 ## [0.71.1] - 2026-08-25
 
 ### Fixed

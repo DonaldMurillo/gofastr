@@ -169,6 +169,7 @@ func cardCSS(t style.Theme) string {
   padding-top: 0;
 }
 [data-fui-comp="ui-card"] .ui-card__footer {
+  margin-top: auto;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border-top: 1px solid var(--color-border, #E4E4E7);
   display: flex;
