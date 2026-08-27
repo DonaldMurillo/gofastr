@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-08-27
+
 ### Added
 
 - **Agent-readiness wave for the is-agentic class of scanners** (the
