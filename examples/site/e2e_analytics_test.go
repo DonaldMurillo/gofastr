@@ -563,19 +563,20 @@ func TestE2E_Analytics_CredentialStripping(t *testing.T) {
 	})
 
 	// Non-vacuity: the browser really sent the cookie on the relay beacon.
-	beacons := net.requestsMatching(base + "/__gofastr/t/e/")
-	if len(beacons) == 0 {
-		t.Fatal("browser never POSTed a beacon to the relay mount — cannot prove stripping")
-	}
-	sent := false
-	for _, b := range beacons {
-		if strings.Contains(b.Header.Get("Cookie"), "e2e_cred") {
-			sent = true
+	// Poll rather than read once: the wait above gates on the SERVER
+	// receiving the beacon, but the Cookie header rides the CDP
+	// ExtraInfo event, and chromedp can deliver that to the recorder
+	// AFTER the upstream already answered — a one-shot read here lost
+	// the race twice in CI even with the recorder's out-of-order
+	// buffering in place.
+	waitForAnalytics(t, "beacon with app-origin cookie recorded", 10*time.Second, func() bool {
+		for _, b := range net.requestsMatching(base + "/__gofastr/t/e/") {
+			if strings.Contains(b.Header.Get("Cookie"), "e2e_cred") {
+				return true
+			}
 		}
-	}
-	if !sent {
-		t.Errorf("browser did not attach the app-origin cookie to the relay beacon(s): %v", beacons)
-	}
+		return false
+	})
 
 	// The vendor never saw ANY credential, on any request, either direction.
 	for _, q := range upstream.requests() {
