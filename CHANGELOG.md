@@ -7,6 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **framework: a Shutdown during a pre-listen phase is a graceful nil.**
+  The v0.71.2 startup-race fix covered a Shutdown landing after the
+  phases but before the server; a Shutdown landing DURING a phase still
+  surfaced as a Start error, because cancelling the lifecycle context
+  made the running phase fail with `context canceled` (seen on main CI
+  as `run seeds: … record ledger: context canceled`; a SIGTERM
+  mid-migration would report the same way). Start's abort funnel now
+  returns nil when the phase error is the app's own shutdown
+  cancellation, pinned by a deterministic mid-seed regression test.
+
 ## [0.71.2] - 2026-08-26
 
 ### Fixed

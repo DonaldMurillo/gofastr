@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -2761,9 +2762,24 @@ func (a *App) Start(addr string) error {
 	a.guardDevMCPBind(addr)
 
 	abort := func(err error) error {
+		// Read the shutdown state BEFORE draining: the drain below calls
+		// Shutdown itself, which always cancels the lifecycle context, so
+		// checking afterwards could not tell an external Shutdown from
+		// abort's own. appCancel nil + appCtx cancelled together mean a
+		// concurrent Shutdown already ran.
+		a.serverMu.Lock()
+		wasShutDown := a.appCancel == nil && a.appCtx != nil && a.appCtx.Err() != nil
+		a.serverMu.Unlock()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 		_ = a.Shutdown(shutdownCtx)
+		// A phase failing with context.Canceled because the app's own
+		// Shutdown cancelled the lifecycle context is a graceful stop,
+		// not a failure: Start returns nil for a shutdown at any later
+		// point, and a SIGTERM mid-migration deserves the same answer.
+		if err != nil && wasShutDown && errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return err
 	}
 
