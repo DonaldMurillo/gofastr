@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -636,16 +637,45 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	return scheme + "://" + req.Host
 }
 
-// acceptsMarkdown reports whether the request's Accept header asks for
-// text/markdown. Used by the content-negotiation path in handlePage.
-func acceptsMarkdown(r *http.Request) bool {
-	for part := range strings.SplitSeq(r.Header.Get("Accept"), ",") {
-		ct := strings.TrimSpace(strings.Split(part, ";")[0])
-		if strings.EqualFold(ct, "text/markdown") {
+// acceptRangeMatches reports whether any member of the request's Accept
+// header names one of wanted with a non-zero quality. RFC 9110 §12.4.2:
+// q=0 means "not acceptable", so `text/markdown;q=0` must NOT select the
+// markdown representation. Only the zero-exclusion is honored; full
+// q-value ranking is not needed to pick between "asked for it" and
+// "did not".
+func acceptRangeMatches(accept string, wanted ...string) bool {
+	for part := range strings.SplitSeq(accept, ",") {
+		fields := strings.Split(part, ";")
+		ct := strings.TrimSpace(fields[0])
+		matched := false
+		for _, w := range wanted {
+			if strings.EqualFold(ct, w) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		for _, param := range fields[1:] {
+			if k, v, ok := strings.Cut(strings.TrimSpace(param), "="); ok &&
+				strings.EqualFold(strings.TrimSpace(k), "q") {
+				if q, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && q == 0 {
+					matched = false
+				}
+			}
+		}
+		if matched {
 			return true
 		}
 	}
 	return false
+}
+
+// acceptsMarkdown reports whether the request's Accept header asks for
+// text/markdown. Used by the content-negotiation path in handlePage.
+func acceptsMarkdown(r *http.Request) bool {
+	return acceptRangeMatches(r.Header.Get("Accept"), "text/markdown")
 }
 
 // acceptsProblemJSON reports whether the request's Accept header asks
@@ -653,13 +683,7 @@ func acceptsMarkdown(r *http.Request) bool {
 // Used by serveNotFound's RFC 9457 arm. A bare */* or text/html does
 // NOT match: browsers keep getting the HTML 404.
 func acceptsProblemJSON(r *http.Request) bool {
-	for part := range strings.SplitSeq(r.Header.Get("Accept"), ",") {
-		ct := strings.TrimSpace(strings.Split(part, ";")[0])
-		if strings.EqualFold(ct, "application/json") || strings.EqualFold(ct, "application/problem+json") {
-			return true
-		}
-	}
-	return false
+	return acceptRangeMatches(r.Header.Get("Accept"), "application/json", "application/problem+json")
 }
 
 // writeAgentLinkHeaders emits the Link response header advertising the

@@ -167,7 +167,14 @@ func TestAgentReady_IsAgentic(t *testing.T) {
 	llms := get("/llms.txt", "").Body.String()
 	mcpManifest := get("/.well-known/mcp.json", "")
 
-	apiMiss := get("/api/posts/does-not-exist", "application/json")
+	// An unmistakably unrouted API path: no entity, no framework mount,
+	// so only the problem+json miss guard can answer it. The strict
+	// assertions below keep a 500-with-JSON from passing vacuously.
+	apiMiss := get("/api/definitely/not/routed", "application/json")
+	apiRecordMiss := get("/api/posts/does-not-exist", "application/json")
+	// RFC 9110 §12.4.2: q=0 excludes a representation; the 404 must fall
+	// back to HTML when JSON and markdown are explicitly rejected.
+	rejected404 := get("/definitely-not-here", "application/problem+json;q=0, text/markdown;q=0, text/html")
 
 	checks := []struct {
 		name string
@@ -193,8 +200,13 @@ func TestAgentReady_IsAgentic(t *testing.T) {
 			strings.Contains(mcpManifest.Header().Get("Content-Type"), "json") &&
 			strings.Contains(mcpManifest.Body.String(), "/mcp") &&
 			strings.Contains(mcpManifest.Body.String(), "streamable")},
-		{"api-json-error", apiMiss.Code != http.StatusOK &&
-			strings.Contains(apiMiss.Header().Get("Content-Type"), "json")},
+		{"api-json-error", apiMiss.Code == http.StatusNotFound &&
+			strings.Contains(apiMiss.Header().Get("Content-Type"), "application/problem+json") &&
+			strings.Contains(apiMiss.Body.String(), `"status":404`)},
+		{"api-record-miss-json", apiRecordMiss.Code == http.StatusNotFound &&
+			strings.Contains(apiRecordMiss.Header().Get("Content-Type"), "json")},
+		{"q0-exclusion-falls-back-to-html", rejected404.Code == http.StatusNotFound &&
+			strings.Contains(rejected404.Header().Get("Content-Type"), "text/html")},
 		{"org-jsonld", func() bool {
 			body := htmlHome.Body.String()
 			return strings.Contains(body, "application/ld+json") &&
