@@ -7,6 +7,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Agent-readiness wave for the is-agentic class of scanners** (the
+  industry successor to the isitagentready checks the framework already
+  passes 11/11). Everything maps to a standard, not a scanner quirk:
+  - `uihost.WithOrganization` embeds schema.org Organization JSON-LD
+    (contactPoint + PostalAddress) in every full page head.
+  - `AgentReadyConfig.WhenToUse` and `.CLI` render "## When to use" and
+    "## CLI" sections in `/llms.txt`; the index now also auto-links the
+    configured OpenAPI endpoint and MCP endpoint.
+  - `/.well-known/mcp.json` is served whenever the MCP server is
+    mounted, naming the `/mcp` endpoint and its streamable-http
+    transport in both manifest conventions.
+  - 404s content-negotiate: `application/problem+json` (RFC 9457) under
+    a JSON Accept — and any miss under the API namespace answers
+    problem+json regardless of Accept (`core/router.WrapNotFound` is
+    the new seam) — plus a markdown recovery body under `text/markdown`
+    when content negotiation is enabled. Neither machine arm reflects
+    the request path.
+  - `TestAgentReady_IsAgentic` pins all twelve reproducible checks the
+    way the old scorecard pins the eleven.
+
+### Fixed
+
+- **Accept-negotiated responses carry `Vary: Accept`.** The markdown
+  content negotiation served two representations of one URL with no
+  Vary member, so a shared cache could hand the markdown variant to a
+  browser (or the HTML variant to an agent). Both page variants and
+  every 404 arm now emit it.
+
 ### Fixed
 
 - **framework: a Shutdown during a pre-listen phase is a graceful nil.**

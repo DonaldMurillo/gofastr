@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -27,7 +28,8 @@ func TestEffectiveLangResolvesConfig(t *testing.T) {
 func TestServeNotFoundUsesConfiguredLang(t *testing.T) {
 	ds := New(app.NewApp("x"), WithLang("es"))
 	rec := httptest.NewRecorder()
-	ds.serveNotFound(rec, "/nope")
+	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	ds.serveNotFound(rec, req, "/nope")
 	if !strings.Contains(rec.Body.String(), `<html lang="es">`) {
 		t.Errorf("404 shell must use the configured lang; got:\n%s", rec.Body.String())
 	}

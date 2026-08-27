@@ -292,7 +292,7 @@ screens/endpoints/middleware/plugins through `RegisterGenerated` (in
 The generated app mounts MCP by default: `framework.WithMCP()` mounts
 `/mcp` (POST JSON-RPC + GET SSE) plus the discovery well-knowns
 (`/mcp/server-card`, `/.well-known/mcp/server-card.json`,
-`/.well-known/mcp/catalog.json`), serving the per-entity CRUD tools
+`/.well-known/mcp/catalog.json`, `/.well-known/mcp.json`), serving the per-entity CRUD tools
 (`mcp: true`) alongside the `framework.WithMCPIntrospection()` set
 (`app_routes`, `app_readiness`, `framework_docs_search`, …). Those tools
 are read-only but let a caller read the app's routes and config. Remove

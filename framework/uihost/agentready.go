@@ -86,6 +86,28 @@ type AgentReadyConfig struct {
 	// rendering of any HTML page when the request Accepts
 	// text/markdown. Default off (nil → bundle leaves it off unless set).
 	ContentNegotiation *bool
+
+	// WhenToUse, when non-empty, renders a "## When to use" section in
+	// /llms.txt: the scanner-recognized phrasing agents read to decide
+	// whether this service fits their task. One or two plain sentences
+	// naming the best-fit use cases.
+	WhenToUse string
+
+	// CLI, when non-nil, renders a "## CLI" section in /llms.txt with
+	// the install command and docs link, so agents (and scanners)
+	// discover the scriptable path without probing package registries.
+	CLI *CLIToolConfig
+}
+
+// CLIToolConfig describes the official CLI advertised in /llms.txt.
+type CLIToolConfig struct {
+	// Name is the binary/package name (e.g. "acme").
+	Name string
+	// Install is the copy-paste install command
+	// (e.g. "npm install -g @acme/cli", "brew install acme").
+	Install string
+	// Docs is an optional root-relative or absolute URL for CLI docs.
+	Docs string
 }
 
 // LLMsTxtSection is one H2 file-list section of /llms.txt.
@@ -164,9 +186,18 @@ type AgentSecurityScheme map[string]any
 func WithAgentReady(cfg AgentReadyConfig) Option {
 	ar := &agentReadyConfig{baseURL: cfg.BaseURL}
 
-	// /llms.txt: on whenever a Title is set or sections are provided.
-	if cfg.Title != "" || len(cfg.Sections) > 0 {
-		ar.llms = &llmsCfg{title: cfg.Title, summary: cfg.Summary, sections: cfg.Sections}
+	// /llms.txt: on whenever a Title is set, sections are provided, or
+	// one of the scanner-oriented content sections (WhenToUse, CLI) is
+	// configured — those only render inside llms.txt, so setting one is
+	// itself the opt-in.
+	if cfg.Title != "" || len(cfg.Sections) > 0 || cfg.WhenToUse != "" || cfg.CLI != nil {
+		ar.llms = &llmsCfg{
+			title:     cfg.Title,
+			summary:   cfg.Summary,
+			sections:  cfg.Sections,
+			whenToUse: cfg.WhenToUse,
+			cli:       cfg.CLI,
+		}
 	}
 
 	// Agent card: explicit config, or a minimal derived card when the
@@ -341,9 +372,11 @@ type agentReadyConfig struct {
 }
 
 type llmsCfg struct {
-	title    string
-	summary  string
-	sections []LLMsTxtSection
+	title     string
+	summary   string
+	sections  []LLMsTxtSection
+	whenToUse string         // "## When to use" section body (AgentReadyConfig.WhenToUse)
+	cli       *CLIToolConfig // "## CLI" section (AgentReadyConfig.CLI)
 }
 
 // ─── Route mounting ────────────────────────────────────────────────
@@ -396,7 +429,13 @@ func (ds *UIHost) handleLLMsFullTxt(w http.ResponseWriter, req *http.Request) {
 
 // renderLLMsTxt builds the markdown per llmstxt.org: H1 title, blockquote
 // summary, then one H2 section per file-list. A nil-sections default links
-// the app's /llm-pages.md index + per-screen docs when public.
+// the app's /llm-pages.md index + per-screen docs when public. On top of
+// the host's sections it renders the scanner-oriented content the bundle
+// configures — "## When to use" (WhenToUse), "## CLI" (CLI) — and
+// auto-links the OpenAPI spec and MCP endpoint the bundle knows about,
+// so agents reading the index find every machine surface without the
+// host hand-writing links. Auto-links are skipped when the rendered
+// output already mentions the path (host sections win).
 func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 	var b strings.Builder
 	title := cfg.title
@@ -409,6 +448,9 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 			fmt.Fprintf(&b, "> %s\n", line)
 		}
 		b.WriteString("\n")
+	}
+	if cfg.whenToUse != "" {
+		fmt.Fprintf(&b, "## When to use\n\n%s\n\n", strings.TrimSpace(cfg.whenToUse))
 	}
 
 	sections := cfg.sections
@@ -425,6 +467,32 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 			}
 		}
 		b.WriteString("\n")
+	}
+	if cfg.cli != nil && cfg.cli.Install != "" {
+		if cfg.cli.Name != "" {
+			fmt.Fprintf(&b, "## CLI\n\nInstall `%s`:\n\n", cfg.cli.Name)
+		} else {
+			b.WriteString("## CLI\n\nInstall:\n\n")
+		}
+		fmt.Fprintf(&b, "```sh\n%s\n```\n\n", cfg.cli.Install)
+		if cfg.cli.Docs != "" {
+			fmt.Fprintf(&b, "Docs: [CLI documentation](%s)\n\n", cfg.cli.Docs)
+		}
+	}
+	// Auto-linked discovery artifacts, appended only when the rendered
+	// document doesn't already reference them: the OpenAPI spec and the
+	// MCP endpoint + well-known manifest. (ds may predate the bundle:
+	// granular WithLLMsTxt hosts have no agentReady config.)
+	if ds != nil && ds.agentReady != nil {
+		if ep := ds.agentReady.openAPI; ep != "" && !strings.Contains(b.String(), ep) {
+			fmt.Fprintf(&b, "## API\n\n- [OpenAPI spec](%s): machine-readable API catalog\n\n", ep)
+		}
+		if ds.agentReady.card != nil && ds.agentReady.card.MCPEndpoint != "" &&
+			!strings.Contains(b.String(), ds.agentReady.card.MCPEndpoint) {
+			fmt.Fprintf(&b, "## MCP\n\n- [MCP endpoint](%s): Streamable HTTP JSON-RPC tool surface\n"+
+				"- [MCP manifest](/.well-known/mcp.json): well-known discovery manifest\n\n",
+				ds.agentReady.card.MCPEndpoint)
+		}
 	}
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
@@ -580,6 +648,20 @@ func acceptsMarkdown(r *http.Request) bool {
 	return false
 }
 
+// acceptsProblemJSON reports whether the request's Accept header asks
+// for a JSON API response (application/json or application/problem+json).
+// Used by serveNotFound's RFC 9457 arm. A bare */* or text/html does
+// NOT match: browsers keep getting the HTML 404.
+func acceptsProblemJSON(r *http.Request) bool {
+	for part := range strings.SplitSeq(r.Header.Get("Accept"), ",") {
+		ct := strings.TrimSpace(strings.Split(part, ";")[0])
+		if strings.EqualFold(ct, "application/json") || strings.EqualFold(ct, "application/problem+json") {
+			return true
+		}
+	}
+	return false
+}
+
 // writeAgentLinkHeaders emits the Link response header advertising the
 // configured discovery artifacts. Called from handlePage for HTML pages.
 func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request) {
@@ -666,6 +748,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 			md = fm + "\n" + md
 		}
 	}
+	w.Header().Add("Vary", "Accept")
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(md))
