@@ -111,6 +111,7 @@ type UIHost struct {
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
 	notFoundScreen      component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
+	organization        *OrganizationConfig                  // when set, Organization JSON-LD is embedded in every full page head (see organization.go)
 	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
@@ -1120,12 +1121,19 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Agent content negotiation: when WithMarkdownNegotiation (or the
 	// bundle) is on and the request prefers markdown, render the page's
-	// markdown via the per-screen LLM doc instead of HTML.
-	if ds.agentReady != nil && ds.agentReady.contentNeg && ds.llmMDPublic && acceptsMarkdown(r) {
-		if ds.serveMarkdownForPage(w, r) {
-			return
+	// markdown via the per-screen LLM doc instead of HTML. Both variants
+	// of a negotiable URL carry Vary: Accept (serveMarkdownForPage adds
+	// it on its arm; the HTML arm below adds it on the fall-through) so
+	// a shared cache never replays one representation to a client that
+	// asked for the other.
+	if ds.agentReady != nil && ds.agentReady.contentNeg && ds.llmMDPublic {
+		if acceptsMarkdown(r) {
+			if ds.serveMarkdownForPage(w, r) {
+				return
+			}
+			// No screen matched. Fall through to the normal HTML path.
 		}
-		// No screen matched. Fall through to the normal HTML path.
+		w.Header().Add("Vary", "Accept")
 	}
 
 	// Make the live request available to ScreenLoader.Load(ctx) so
@@ -1139,7 +1147,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	ctx = store.WithValues(ctx)
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
-		ds.serveNotFound(w, path)
+		ds.serveNotFound(w, r, path)
 		return
 	}
 	switch res.Kind {
@@ -1576,6 +1584,14 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	for _, tag := range ds.headTags {
 		headParts = append(headParts, tag)
 	}
+	// WithOrganization's JSON-LD block: framework-built (encoding/json
+	// from typed config, see organization.go), so like the seo.Render
+	// blocks above it does not go through the caller-HTML scrubber —
+	// stripInlineScripts exists for host-supplied strings, and would
+	// eat the (inert, non-executable) ld+json data block.
+	if ld := ds.organizationJSONLD(); ld != "" {
+		headParts = append(headParts, ld)
+	}
 	if len(headParts) > 0 {
 		headClose.WriteString(strings.Join(headParts, "\n"))
 		headClose.WriteByte('\n')
@@ -1770,12 +1786,52 @@ type NotFoundRenderer interface {
 	RenderNotFound(path string) render.HTML
 }
 
-// serveNotFound writes a 404. When WithNotFoundScreen is set, the
-// configured component renders through the same chrome (default
-// layout, runtime.js, theme bootstrap) as every other page; otherwise
-// the framework falls back to a minimal HTML body so something
-// always renders.
-func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
+// serveNotFound writes a 404, content-negotiated when the request's
+// Accept header names a machine representation: JSON (application/json
+// or application/problem+json) gets an RFC 9457 problem document, and
+// text/markdown gets a recovery-links body when markdown negotiation is
+// enabled. The JSON arm is always on — a correct machine-readable error
+// shape is an error-format fix, not an agent feature. Neither machine
+// arm ever reflects the request path; the HTML fallback escapes it.
+// When WithNotFoundScreen is set, the HTML arm renders that component
+// through the same chrome (default layout, runtime.js, theme bootstrap)
+// as every other page; otherwise the framework falls back to a minimal
+// HTML body so something always renders.
+//
+// Every arm carries Vary: Accept: the 404 body for one URL differs by
+// Accept, so a cache keying without it would serve the wrong variant.
+func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path string) {
+	w.Header().Add("Vary", "Accept")
+	if acceptsProblemJSON(r) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		// The problem document deliberately omits the request path:
+		// echoing a hostile URL into a machine body is a reflection
+		// vector no error page needs.
+		json.NewEncoder(w).Encode(struct {
+			Type   string `json:"type"`
+			Title  string `json:"title"`
+			Status int    `json:"status"`
+			Detail string `json:"detail"`
+		}{
+			Type:   "about:blank",
+			Title:  "Not Found",
+			Status: http.StatusNotFound,
+			Detail: "No route matches this request.",
+		})
+		return
+	}
+	// Markdown recovery arm: agent-readable, gated on the same
+	// content-negotiation opt-in as negotiated pages (the HTML arm
+	// below remains the default 404). Root-relative links only: the
+	// requested path is never echoed back, escaped or otherwise.
+	if ds.agentReady != nil && ds.agentReady.contentNeg && acceptsMarkdown(r) {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, "# Not found\n\nNo page lives at this address. Try:\n\n"+
+			"- [Home](/)\n- [Site map](/sitemap.xml)\n- [llms.txt](/llms.txt)\n")
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if ds.notFoundScreen != nil && ds.App != nil {
@@ -1900,7 +1956,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		res, err = ds.App.RenderPartialResult(ctx, path)
 	}
 	if err != nil {
-		ds.serveNotFound(w, path)
+		ds.serveNotFound(w, r, path)
 		return
 	}
 	switch res.Kind {

@@ -2998,6 +2998,7 @@ func (a *App) Start(addr string) error {
 	}
 	if a.mcpAutoMount {
 		a.router.Get("/.well-known/mcp/server-card.json", http.HandlerFunc(a.handleMCPServerCard))
+		a.router.Get("/.well-known/mcp.json", http.HandlerFunc(a.handleMCPManifest))
 	}
 	a.router.Get("/.well-known/agent-skills/index.json", http.HandlerFunc(a.handleAgentSkillsIndex))
 	if a.oauthAuthServer != nil {
@@ -3015,6 +3016,13 @@ func (a *App) Start(addr string) error {
 	if a.acp != nil {
 		a.router.Get("/.well-known/acp.json", http.HandlerFunc(a.handleACP))
 	}
+
+	// Machine-readable misses in the API namespace (agent-readiness): a
+	// path under the configured APIPrefix (default /api) that no route
+	// owns must answer application/problem+json, not the UI host's HTML
+	// 404. Installed after every mount above so the wrapped fall-through
+	// is the final one. See api_miss.go.
+	a.installAPIMissProblem404()
 
 	// Auto-register a db readiness probe if a DB is configured. Plugins
 	// and batteries that implement ReadinessRegistrar were given a chance

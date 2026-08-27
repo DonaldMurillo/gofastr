@@ -490,6 +490,30 @@ func (r *Router) NotFound(handler http.Handler) {
 	r.mu.Unlock()
 }
 
+// WrapNotFound wraps the router's NotFound fall-through with mw. mw receives
+// the previously installed NotFound handler as next (a plain 404 when none
+// was set) and returns the replacement. The wrapper sees exactly the
+// requests the router would hand to NotFound (genuine misses; 405s and gated
+// routes never reach it), and the middleware chain still wraps the result
+// once at request time — delegating to next does NOT re-run the chain, so a
+// wrapper adds behavior without doubling logging, request IDs, or headers.
+//
+// Call after the mounts that install a NotFound handler (e.g. after a UI
+// host's Mount), so next is the handler being delegated to.
+func (r *Router) WrapNotFound(mw func(next http.Handler) http.Handler) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var next http.Handler = http.NotFoundHandler()
+	// NotFound stores its handler wrapped in a cachedRoute; unwrap to the
+	// raw one so delegation does not re-run the middleware chain.
+	if cr, ok := r.notFound.(*cachedRoute); ok {
+		next = cr.raw
+	} else if r.notFound != nil {
+		next = r.notFound
+	}
+	r.notFound = &cachedRoute{raw: mw(next), router: r}
+}
+
 // effectiveMethodNotAllowed returns the nearest non-nil
 // MethodNotAllowed handler in the parent chain (this router → parent
 // → ...). Mirrors effectiveNotFound so a sub-router served standalone

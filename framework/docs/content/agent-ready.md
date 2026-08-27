@@ -79,6 +79,35 @@ one `## Section` per file-list of `- [name](url): notes`. A section titled
 the app's `/llm-pages.md` index, which itself enumerates every screen and its
 per-screen `/llm.md` doc.
 
+The bundle adds three content pieces on top of the file-list sections:
+
+- **`WhenToUse`** renders a `## When to use` section — one or two plain
+  sentences naming the best-fit use cases. This is the phrasing scanners
+  (and agents deciding whether your service fits their task) read first.
+- **`CLI`** renders a `## CLI` section with the install command in a fenced
+  code block plus a docs link, so an agent reaches for the scriptable path
+  instead of scraping the UI:
+
+  ```go
+  uihost.WithAgentReady(uihost.AgentReadyConfig{
+  	Title: "Acme",
+  	WhenToUse: "Reach for Acme when you need invoices issued or " +
+  		"voided programmatically.",
+  	CLI: &uihost.CLIToolConfig{
+  		Name: "acme", Install: "npm install -g @acme/cli", Docs: "/docs/cli",
+  	},
+  })
+  ```
+
+- **Auto-links**: when `OpenAPIEndpoint` is set the index gains an `## API`
+  section linking it, and when the agent card's `MCPEndpoint` is set it gains
+  an `## MCP` section linking the endpoint and `/.well-known/mcp.json`.
+  Sections you wrote yourself win: if your `Sections` already link a path,
+  the auto-section for it is not appended.
+
+Setting `WhenToUse` or `CLI` alone turns `/llms.txt` on — both only render
+inside the index, so configuring one is itself the opt-in.
+
 ### `/llms-full.txt`: the full-corpus tier
 
 The llmstxt.org convention has two tiers: `/llms.txt` is the small index
@@ -153,6 +182,60 @@ use the resolved base URL (see below).
 when the request's `Accept` header prefers `text/markdown` (the Cloudflare
 convention). Requires `WithPublicLLMMD` so the per-screen renderers are
 available. Requests without the `Accept` header are unaffected.
+
+While negotiation is enabled, **both variants of a page URL — the markdown
+response *and* the HTML one — carry `Vary: Accept`**, so a shared cache keys
+on the Accept header and never replays the markdown body to a browser (or
+the HTML body to an agent). Pages on hosts without the opt-in carry no
+`Vary`, since the URL has a single representation.
+
+### Agent-friendly 404s  (RFC 9457 + markdown recovery)
+
+A request that matches no route gets a 404 shaped like the client asked:
+
+- `Accept: application/json` (or `application/problem+json`) → an
+  `application/problem+json` body per RFC 9457: `{"type":"about:blank",
+  "title":"Not Found","status":404,"detail":"…"}`. This arm is always on —
+  a machine-readable error shape is error-format correctness, not an agent
+  feature. A browser-style `Accept` (`text/html,…,*/*`) still gets the HTML
+  404, custom `WithNotFoundScreen` included.
+- `Accept: text/markdown`, when markdown negotiation is enabled → a
+  `text/markdown` body with recovery links (`[Home](/)`,
+  `[Site map](/sitemap.xml)`, `[llms.txt](/llms.txt)`).
+
+Every 404 arm carries `Vary: Accept`. Neither machine arm reflects the
+requested path back into the body — the markdown arm deliberately says
+nothing about the URL, and the problem document omits it, so a hostile path
+can never land unescaped in a machine-readable error.
+
+### Organization JSON-LD  (`WithOrganization`)
+
+Scanners (and agents doing due diligence) look for an Organization schema
+with a `contactPoint` and a `PostalAddress` to verify the business behind a
+site is real and reachable. `uihost.WithOrganization` declares it once; the
+host embeds it as an `<script type="application/ld+json">` block in every
+full page head:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+-->
+```go
+uihost.WithOrganization(uihost.OrganizationConfig{
+	Name:  "Acme Inc",
+	URL:   "https://example.com",
+	Email: "support@example.com", // and/or Phone
+	Address: uihost.PostalAddress{
+		Street: "1 Main St", Locality: "Springfield",
+		Region: "IL", PostalCode: "62701", Country: "US",
+	},
+})
+```
+
+`Logo` and `SameAs` (GitHub/LinkedIn profile URLs) are optional. The JSON is
+built with `encoding/json`, so host-supplied strings are escaped and cannot
+break out of the data block; unset pieces (`contactPoint`, `address`) are
+omitted rather than emitted empty, and `ContactType` defaults to
+`"customer support"`.
 
 ### Per-screen `llm.md` carries the screen's SEO
 
@@ -415,6 +498,7 @@ scanner scores, so a host wiring the basics passes without per-route work:
 |---|---|---|
 | API Catalog (RFC 9727) | `/.well-known/api-catalog` (linkset+json) | when the app has entities (`/openapi.json` exists) |
 | MCP Server Card (SEP-2127) | `/.well-known/mcp/server-card.json` + spec-reserved `/mcp/server-card` + `/.well-known/mcp/catalog.json` | when `WithMCP` exposes `/mcp` |
+| MCP Manifest | `/.well-known/mcp.json` — flat `endpoint`/`transport` fields AND a nested `mcpServers` map, both naming `/mcp` with `streamable-http` | when `WithMCP` exposes `/mcp` |
 | Agent Skills Index | `/.well-known/agent-skills/index.json` | always (empty list passes; `WithAgentSkills` adds entries) |
 | OAuth Authorization Server (RFC 8414) | `/.well-known/oauth-authorization-server` | opt-in (`WithOAuthAuthorizationServer`) |
 | Content Signals | `Content-Signal:` line in robots.txt | `AgentReadyConfig.ContentSignals` |
@@ -466,7 +550,8 @@ rewrites the host.
 | `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json` + `agent.json` alias. |
 | `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML only. |
 | `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |
-| `framework.WithMCP()` | Auto-mount `/mcp` (Streamable HTTP). |
+| `uihost.WithOrganization(cfg)` | Organization JSON-LD (`contactPoint` + `PostalAddress`) in every full page head. |
+| `framework.WithMCP()` | Auto-mount `/mcp` (Streamable HTTP) + discovery well-knowns (server card, `/.well-known/mcp.json` manifest). |
 | `framework.WithMCPApp(cfg)` | Register an MCP App: a `ui://` HTML widget resource + its linking tool. |
 | `framework.WithOAuthProtectedResource(cfg)` | RFC 9728 metadata doc. |
 | `framework.WithAuthMD(cfg)` | `/auth.md` + `agent_auth` block. |

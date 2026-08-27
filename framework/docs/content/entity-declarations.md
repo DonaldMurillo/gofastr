@@ -1177,8 +1177,18 @@ Every successful single-record response has one stable envelope:
 ```
 
 This applies to create (`201`), get (`200`), PUT (`200`), and PATCH (`200`).
-Lists keep `{"data":[...]}` plus pagination metadata. Error and DELETE
-responses are unchanged.
+Lists keep `{"data":[...]}` plus pagination metadata.
+
+Errors are JSON everywhere in the API namespace, whatever missed. A handled
+record miss (e.g. `GET /api/posts/404-nope`) answers
+`application/json` with `{"error":"not found","success":false,"code":404}`.
+A path no route ever owned — `/api/anything/else`, including on apps with
+no DB and therefore no CRUD routes — answers `404` with an RFC 9457
+`application/problem+json` document (`type`/`title`/`status`/`detail`)
+instead of the UI host's HTML 404 page, so every machine client probing the
+API gets a machine-readable answer. The guarded namespace is
+`AppConfig.APIPrefix` (`WithAPIPrefix`), `/api` by default; misses outside
+it keep the host's normal 404 rendering.
 
 ### `json` fields round-trip
 
