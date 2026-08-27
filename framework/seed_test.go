@@ -621,3 +621,47 @@ func TestShutdownDuringStartupStopsStart(t *testing.T) {
 		t.Fatal("Start kept serving after a mid-startup Shutdown")
 	}
 }
+
+// The sibling of TestShutdownDuringStartupStopsStart, one phase earlier:
+// a Shutdown DURING a pre-listen phase cancels the lifecycle context,
+// and the phase then fails with context.Canceled (here the seed ledger
+// write, exactly CI's "record ledger: context canceled"). That is a
+// graceful stop, not a failure — Start must return nil, the way it does
+// for a shutdown at any later point. The seed pins the interleaving by
+// shutting the app down between its own row insert and the ledger write
+// that follows every seed.
+func TestShutdownDuringSeedIsGraceful(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+
+	app := NewApp(WithDB(db))
+	app.Entity("seed_shutdown_race", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}},
+		Seed: func(ctx context.Context, db *sql.DB) error {
+			if _, err := db.ExecContext(ctx, "INSERT INTO seed_shutdown_race (id, name) VALUES ('1','x')"); err != nil {
+				return err
+			}
+			sdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = app.Shutdown(sdCtx)
+			return nil
+		},
+	})
+
+	startErr := make(chan error, 1)
+	go func() { startErr <- app.Start(":0") }()
+
+	select {
+	case err := <-startErr:
+		if err != nil {
+			t.Fatalf("Start after a mid-seed Shutdown must be a graceful nil, got: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+		t.Fatal("Start did not return after a mid-seed Shutdown")
+	}
+}
