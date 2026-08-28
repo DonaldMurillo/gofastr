@@ -139,6 +139,11 @@ Useful options:
   without recompiling.
 - `uihost.WithNotFoundScreen(c)`, `WithFavicon`, `WithDescription`,
   `WithOpenGraph`, `WithCanonicalURL`: 404 page and head metadata.
+  Custom 404s go through `WithNotFoundScreen`, never
+  `app.Router().NotFound(...)`: screens dispatch through the router's
+  NotFound fall-through, so replacing it disables every page (the
+  router now warns when a NotFound handler is replaced; compose with
+  `Router.WrapNotFound` when both must run).
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.
