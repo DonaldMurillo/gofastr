@@ -9,6 +9,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`ui.SiteFooter` link tap targets reach the 24px AA floor** (#257):
+  inline 13px/1.6 anchors gave a ~17px hit area that padding could not
+  extend; footer links are now `inline-flex` with `min-block-size:
+  24px` (the design system's documented dense-cluster AA relaxation),
+  pinned by a rendered 390px measurement.
+- **Plugin frames get the full theme palette** (#271): the broker
+  discovered token names by walking `document.styleSheets`, which
+  raced stylesheet parsing (a sheet still loading contributed no
+  names) and skipped `@media`/`@supports`-nested declarations — either
+  way a PARTIAL palette bridged, giving dark text on the frame's light
+  fallbacks. The broker now reads the theme's canonical vocabulary
+  (`style.TokenNames()`) from computed style unconditionally; a Go
+  test pins the JS list against the theme so a new token cannot
+  silently go unbridged.
+
 - **Stateless value screen components render again** (#259):
   registering a component by value (the documented stateless form) died
   at render time with a generic "di: target must be a non-nil pointer".
