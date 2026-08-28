@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
@@ -37,6 +38,16 @@ type Router struct {
 	mu          sync.RWMutex
 	middlewares []Middleware
 	patterns    []RegisteredRoute // populated by Handle for introspection
+
+	// timeout is this router's request-timeout override for every route
+	// registered under it (SetTimeout). nil = inherit. Guarded by mu.
+	// routeTimeouts (ROOT only) holds exact-route overrides keyed
+	// "METHOD /full/pattern" (SetRouteTimeout). timeoutOverrides (ROOT
+	// only) flips once any override exists so the per-request resolution
+	// costs nothing until the feature is used.
+	timeout          *time.Duration
+	routeTimeouts    map[string]time.Duration
+	timeoutOverrides atomic.Bool
 
 	// notFound / methodNotAllowed are read on the request path by
 	// effectiveNotFound / effectiveMethodNotAllowed and written by the
@@ -413,6 +424,18 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if served != nil {
 		served(c.method, c.pattern)
 	}
+	// Per-route timeout: stamp the resolution BEFORE the chain runs so
+	// middleware.Timeout picks it up. Behind the root's atomic flag, an
+	// app that never configures an override pays nothing here.
+	if c.router.root.timeoutOverrides.Load() {
+		if d, ok := c.router.effectiveRouteTimeout(c.method, c.pattern); ok {
+			req = req.WithContext(middleware.WithRouteTimeout(req.Context(), middleware.RouteTimeout{
+				Method:  c.method,
+				Pattern: c.pattern,
+				Budget:  d,
+			}))
+		}
+	}
 	curVer := c.router.root.chainVersion.Load()
 	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
 		(*h).ServeHTTP(w, req)
@@ -436,6 +459,70 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // routes by URL (the entity MCP tools re-dispatch through the router) must
 // use this, not the innermost segment.
 func (r *Router) Prefix() string { return r.prefix }
+
+// NoTimeout, passed to SetTimeout or SetRouteTimeout, exempts the
+// route(s) from the request timeout entirely. A zero duration means the
+// same thing (net/http convention: zero disables the deadline; see
+// HTTPServerTimeoutsConfig). Prefer a finite budget; streaming handlers
+// already shed the deadline on first Flush.
+const NoTimeout time.Duration = -1
+
+// SetTimeout sets the request-timeout budget for every route registered
+// under this router (typically a Group). Routes resolve the nearest
+// enclosing router with a timeout set; an exact SetRouteTimeout override
+// wins over any group. Pass NoTimeout to exempt the group. The value is
+// consumed by the default middleware's timeout
+// (middleware.Timeout); with DisableRequestTimeout or without that
+// middleware, it has no effect.
+func (r *Router) SetTimeout(d time.Duration) {
+	r.mu.Lock()
+	r.timeout = &d
+	r.mu.Unlock()
+	r.root.timeoutOverrides.Store(true)
+}
+
+// SetRouteTimeout sets the request-timeout budget for one route. The
+// pattern is relative to this router, exactly as passed to Handle; the
+// override is keyed by the registered "METHOD /full/pattern" and must
+// byte-match it — a key that matches no registered route (typo'd
+// wildcard name, wrong method, wrong router) is silently inert and the
+// route keeps the app-wide default. Pass NoTimeout (or zero) to exempt
+// the route. See SetTimeout for how the value is consumed.
+func (r *Router) SetRouteTimeout(method, pattern string, d time.Duration) {
+	key := method + " " + r.prefix + pattern
+	root := r.root
+	root.mu.Lock()
+	if root.routeTimeouts == nil {
+		root.routeTimeouts = make(map[string]time.Duration)
+	}
+	root.routeTimeouts[key] = d
+	root.mu.Unlock()
+	root.timeoutOverrides.Store(true)
+}
+
+// effectiveRouteTimeout resolves the timeout override for a matched
+// route: exact route override first, then the nearest enclosing router
+// with SetTimeout, walking from the registering router to the root.
+// ok=false means no override is configured and the app-wide default
+// applies.
+func (r *Router) effectiveRouteTimeout(method, pattern string) (time.Duration, bool) {
+	root := r.root
+	root.mu.RLock()
+	d, ok := root.routeTimeouts[method+" "+pattern]
+	root.mu.RUnlock()
+	if ok {
+		return d, true
+	}
+	for cur := r; cur != nil; cur = cur.parent {
+		cur.mu.RLock()
+		t := cur.timeout
+		cur.mu.RUnlock()
+		if t != nil {
+			return *t, true
+		}
+	}
+	return 0, false
+}
 
 // Group creates a sub-router with the given path prefix and optional middleware.
 // The sub-router inherits its parent's middleware chain, resolved at

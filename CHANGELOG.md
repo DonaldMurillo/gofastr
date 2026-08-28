@@ -9,6 +9,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **Per-route request timeouts** (#246): `Router.SetRouteTimeout(method,
+  pattern, d)` overrides `AppConfig.RequestTimeout` for one route, and
+  `group.SetTimeout(d)` for every route under a group — route beats
+  group, nearest group wins, `router.NoTimeout` exempts entirely. The
+  resolution is stamped on the request before the middleware chain runs,
+  so apps that never configure an override pay nothing. When the
+  deadline fires, the 504 now logs a structured `request timeout` line
+  naming the method, path, matched route pattern, and budget.
+
 - **`ExtraAttrs` on every `framework/ui` component Config** (#251): the
   94 component configs that lacked the field (Lightbox included) now
   forward extra attributes (`data-*` test hooks, analytics markers,

@@ -214,6 +214,35 @@ Prefer the smallest raise that covers your slowest real request over disabling
 the deadline entirely. `WriteTimeout` is a whole-response backstop: without
 it, a handler that hangs holds its connection (and a goroutine) forever.
 
+The per-request middleware deadline (`AppConfig.RequestTimeout`, default
+30s) can be overridden per route or per group instead of app-wide:
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/core/router"
+import "time"
+-->
+```go
+app := framework.NewApp()
+// One slow dashboard keeps its own budget; every other route stays at 30s.
+app.Router().SetRouteTimeout("GET", "/reports/{id}", 2*time.Minute)
+// Or budget a whole group; the nearest enclosing group wins, and an
+// exact SetRouteTimeout beats any group.
+admin := app.Router().Group("/admin")
+admin.SetTimeout(5 * time.Minute)
+// router.NoTimeout exempts a route from the middleware deadline entirely.
+app.Router().SetRouteTimeout("POST", "/exports", router.NoTimeout)
+```
+
+When the deadline fires, the 504 logs a structured `request timeout`
+line naming the method, path, budget, and — when a route or group
+override is configured — the matched pattern. Two caveats:
+the server-level `WriteTimeout` above still bounds the whole response,
+so a route budget beyond it needs `WithHTTPServerTimeouts` raised too;
+and `DisableRequestTimeout` removes the middleware entirely, taking the
+per-route budgets with it.
+
 ### SSE and streaming
 
 `WriteTimeout` bounds the whole response, and a Server-Sent Events stream is a
