@@ -2764,8 +2764,10 @@ func (a *App) Start(addr string) error {
 	// isolation.md), but silently honoring a different port than the
 	// one the caller assigned is configuration accepted-but-not-honored:
 	// anything polling the requested port hangs to its deadline (#268).
-	// Scream once with both addresses and both kill switches.
-	if requestedAddr != "" && addr != requestedAddr {
+	// Scream once with both addresses and both kill switches. Gated on
+	// Active(): Addr also normalizes a bare "8080" to ":8080" with
+	// isolation off, and that spelling change is not a remap.
+	if runtimeIsolation.Active() && requestedAddr != "" && addr != requestedAddr {
 		a.Logger().Warn("isolation remapped the listen address",
 			"requested", requestedAddr,
 			"resolved", addr,

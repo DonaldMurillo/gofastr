@@ -263,6 +263,27 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 //     screen's component; HTML holds the full document.
 //   - DecisionBlock: Status holds the HTTP status code; HTML is empty.
 //
+// injectComponent applies the DI/value-component contract (#259) for
+// every render path (full page AND partial): pointer components get
+// injection; value components are the documented stateless form and
+// skip DI; a value STRUCT that asks for injection via inject tags is a
+// wiring mistake that fails naming the type and the pointer remedy —
+// silently rendering it with nil services would be worse.
+func (a *App) injectComponent(comp component.Component, path string) error {
+	if cv := reflect.ValueOf(comp); cv.Kind() == reflect.Pointer {
+		if err := a.Inject(comp); err != nil {
+			return fmt.Errorf("app: DI injection failed for %q: %w", path, err)
+		}
+		return nil
+	}
+	if n := injectTagCount(reflect.TypeOf(comp)); n > 0 {
+		return fmt.Errorf(
+			"app: screen component for %q has %d inject-tagged field(s) but was registered by value as %T; register a pointer (&%T{...}) so DI can fill them",
+			path, n, comp, comp)
+	}
+	return nil
+}
+
 // injectTagCount reports how many inject-tagged fields a component
 // type declares (directly, for struct types). Used to distinguish a
 // legitimately stateless value component from a value struct that
@@ -311,21 +332,10 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		}
 	}
 
-	// Inject DI services into component fields tagged `inject:""`.
-	// Value components are the documented stateless form (newInstance
-	// returns them as-is) and cannot receive injection, so DI is
-	// skipped for them — unless the value struct ASKS for injection
-	// via inject tags, which is a wiring mistake that must fail with
-	// the type and the fix named, not a generic DI error at render
-	// time (#259).
-	if cv := reflect.ValueOf(comp); cv.Kind() == reflect.Pointer {
-		if err := a.Inject(comp); err != nil {
-			return RenderResult{}, fmt.Errorf("app: DI injection failed for %q: %w", path, err)
-		}
-	} else if n := injectTagCount(reflect.TypeOf(comp)); n > 0 {
-		return RenderResult{}, fmt.Errorf(
-			"app: screen component for %q has %d inject-tagged field(s) but was registered by value as %T; register a pointer (&%T{...}) so DI can fill them",
-			path, n, comp, comp)
+	// Inject DI services into component fields tagged `inject:""`;
+	// see injectComponent for the value-component contract (#259).
+	if err := a.injectComponent(comp, path); err != nil {
+		return RenderResult{}, err
 	}
 
 	// Run the component's Load hook if present. Loaders run AFTER DI so they can
@@ -555,8 +565,8 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 		}
 	}
 
-	if err := a.Inject(comp); err != nil {
-		return RenderResult{}, fmt.Errorf("app: DI injection failed for %q: %w", path, err)
+	if err := a.injectComponent(comp, path); err != nil {
+		return RenderResult{}, err
 	}
 
 	if loader, ok := comp.(ScreenLoader); ok {

@@ -71,3 +71,35 @@ func TestStartWarnsWhenIsolationRemapsAddr(t *testing.T) {
 	_ = app.Shutdown(ctx)
 	<-done
 }
+
+// The warn must be gated on isolation being ACTIVE: Addr also
+// normalizes a bare port ("0" → ":0") when isolation is off, and that
+// spelling change is not a remap (PR #274 review finding).
+func TestStartDoesNotWarnWithoutIsolation(t *testing.T) {
+	t.Setenv("GOFASTR_ISOLATION", "off")
+
+	var logs bytes.Buffer
+	app := NewApp(WithoutDefaultMiddleware(), WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	var banner bytes.Buffer
+	app.startupOutput = &banner
+	ready := make(chan string, 1)
+	app.OnReady(func(addr string) { ready <- addr })
+
+	done := make(chan error, 1)
+	go func() { done <- app.Start("0") }() // bare port: normalized to ":0", not remapped
+
+	select {
+	case <-ready:
+		if strings.Contains(logs.String(), "isolation remapped") {
+			t.Errorf("bare-port normalization must not warn with isolation off:\n%s", logs.String())
+		}
+	case err := <-done:
+		t.Fatalf("Start returned before OnReady: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnReady never fired")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = app.Shutdown(ctx)
+	<-done
+}

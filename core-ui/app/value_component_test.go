@@ -38,6 +38,23 @@ func TestRenderValueComponentStateless(t *testing.T) {
 	}
 }
 
+// The partial (SPA navigation) path shares the same contract: a value
+// component that renders as a full page must also render as a partial
+// (PR #274 review finding — renderPartial had its own unconditional
+// Inject call).
+func TestRenderPartialValueComponentStateless(t *testing.T) {
+	a := NewApp("t")
+	a.Register("/", statelessValue{}, nil)
+
+	res, err := a.RenderPartialResult(context.Background(), "/")
+	if err != nil {
+		t.Fatalf("stateless value component must render as a partial: %v", err)
+	}
+	if !strings.Contains(string(res.HTML), "value ok") {
+		t.Fatalf("partial body missing: %s", res.HTML)
+	}
+}
+
 // The other half of #259: a value struct that DECLARES inject tags
 // would silently render with nil services if DI were merely skipped;
 // it must fail naming the type and the pointer remedy.
