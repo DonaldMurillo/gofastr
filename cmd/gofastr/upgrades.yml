@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.72.0
+through: v0.73.0
 
 releases:
   - version: v0.3.0
@@ -839,3 +839,16 @@ releases:
       - change: new opt-in surfaces — WithOrganization JSON-LD, llms.txt WhenToUse/CLI sections, /.well-known/mcp.json when MCP is mounted
         breaking: false
         guidance: "Opt-in via config; nothing renders unless configured (the MCP manifest follows the existing WithMCP mount)."
+  - version: v0.73.0
+    title: WebMCP bridge, per-route timeouts, CLI from OpenAPI, deterministic output
+    notes:
+      - change: ToggleConfig.ExtraAttrs (Checkbox / Radio / Switch) now follows the sanitized contract — extras land on the root <label>, and class/id/for/data-fui-* keys are dropped
+        breaking: true
+        detect: 'ToggleConfig\b'
+        guidance: "The previous raw copy onto the <input> was documented for data-fui-* RPC wiring but had no known callers. If you relied on it, move RPC wiring to the enclosing form or widget; extras that must reach the input element no longer can."
+      - change: SSR/email output bytes are now deterministic (sorted map iteration wherever output was emitted)
+        breaking: false
+        guidance: "Fix only. Anything that fingerprinted the old nondeterministic bytes (snapshot tests, content hashes) re-baselines once."
+      - change: new opt-in surfaces — framework/experimental/webmcp (in-browser agent tools), per-route/per-group request timeouts, gofastr generate cli --from-openapi
+        breaking: false
+        guidance: "All additive and opt-in; nothing changes unless you mount or call them."

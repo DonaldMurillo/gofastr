@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.73.0] - 2026-08-28
 
 ### Fixed
 
@@ -86,12 +86,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
-- **`ToggleConfig.ExtraAttrs` (Checkbox / Radio / Switch) now follows
-  the sanitized contract**: extras land on the root `<label>` instead
-  of being copied raw onto the `<input>`, and `class`/`id`/`for`/
-  `data-fui-*` keys are dropped. The previous raw copy was documented
-  for `data-fui-*` RPC wiring but had no callers; RPC wiring belongs on
-  forms and widgets.
+- **BREAKING: `ToggleConfig.ExtraAttrs` (Checkbox / Radio / Switch) now
+  follows the sanitized contract**: extras land on the root `<label>`
+  instead of being copied raw onto the `<input>`, and `class`/`id`/
+  `for`/`data-fui-*` keys are dropped. The previous raw copy was
+  documented for `data-fui-*` RPC wiring but had no known callers; if
+  you relied on it, move RPC wiring to the enclosing form or widget.
 
 ## [0.72.0] - 2026-08-27
 
