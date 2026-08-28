@@ -7,6 +7,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ui.SearchInput` with `Action` lost its styling** (#239): the
+  stylesheet keyed every rule on the `data-fui-comp` marker as an
+  ancestor, but `WrapHTML` injects the marker into the outermost tag —
+  the `<form>` once `Action` is set — so the box shell landed on the
+  form and the label went unstyled (a ~180px clipped input inside a
+  bordered full-width form). Rules now key on the `.ui-search-input`
+  class, which the label carries in both variants; verified by a
+  rendered-pixel measurement reproducing the issue's repro.
+- **Startup banner advertised URLs that 404** (#244): the banner
+  printed an API URL for every registered entity, including
+  `Exposure.CRUD=false` entities and apps with no DB, whose routes are
+  never registered. It now uses the same predicate as route
+  registration (shared `entityCRUDEnabled`) and prints a summary line
+  for entities registered without API routes.
+
 ### Added
 
 - **`gofastr generate cli --from-openapi <file|url>`** (#240): generates
