@@ -5,10 +5,17 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.73.0] - 2026-08-28
 
 ### Fixed
 
+- **SSR, email, and prompt output bytes are deterministic** (#269):
+  every site the first repo-wide `mapwriter` analyzer run flagged
+  emitted map-iteration-ordered output — island action attributes,
+  widget non-canonical slot order, `GetActionJS` script concatenation
+  (which also churned screen-cache keys and gzip dedup per render),
+  menu item extra attributes, and SMTP wire/logged headers. All now
+  emit in sorted order: same input, same bytes.
 - **`ui.SearchInput` with `Action` lost its styling** (#239): the
   stylesheet keyed every rule on the `data-fui-comp` marker as an
   ancestor, but `WrapHTML` injects the marker into the outermost tag —
