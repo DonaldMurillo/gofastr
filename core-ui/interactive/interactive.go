@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -491,8 +492,9 @@ func injectAttrs(html render.HTML, attrs map[string]string) render.HTML {
 		return html
 	}
 	var buf strings.Builder
-	for k, v := range attrs {
-		a := render.Attr(k, v)
+	// Sorted so injected attribute order is byte-stable across renders.
+	for _, k := range slices.Sorted(maps.Keys(attrs)) {
+		a := render.Attr(k, attrs[k])
 		if a == "" {
 			continue
 		}
@@ -515,8 +517,9 @@ func wrapWithAction(html render.HTML, action Action) render.HTML {
 
 	s := string(html)
 	var attrStr strings.Builder
-	for k, v := range attrs {
-		rendered := render.Attr(k, v)
+	// Sorted so injected attribute order is byte-stable across renders.
+	for _, k := range slices.Sorted(maps.Keys(attrs)) {
+		rendered := render.Attr(k, attrs[k])
 		if rendered == "" {
 			continue // Attr drops unsafe keys
 		}

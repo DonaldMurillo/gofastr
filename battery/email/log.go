@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -80,12 +82,12 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 		sb.WriteString("\n")
 	}
 
-	for k, v := range email.Headers {
+	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
 		if _, isSensitive := sensitiveHeaderNames[strings.ToLower(k)]; isSensitive {
 			sb.WriteString(fmt.Sprintf("Header:  %s: [REDACTED]\n", "[redacted-header]"))
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("Header:  %s: %s\n", k, v))
+		sb.WriteString(fmt.Sprintf("Header:  %s: %s\n", k, email.Headers[k]))
 	}
 
 	if len(email.Attachments) > 0 {

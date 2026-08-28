@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -211,12 +213,13 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 		rpcAttr = ` data-fui-rpc="` + render.Escape(it.RPC) + `" data-fui-rpc-method="` + render.Escape(method) + `"`
 	}
 	var extra strings.Builder
-	for k, v := range it.ExtraAttrs {
+	for _, k := range slices.Sorted(maps.Keys(it.ExtraAttrs)) {
 		// render.Attr validates the key against the same allow-list as
 		// every other ExtraAttrs consumer: render.Escape alone doesn't
 		// touch spaces, so a key like `x onclick` would smuggle a live
-		// event handler into the tag. Unsafe keys are dropped.
-		if a := render.Attr(k, v); a != "" {
+		// event handler into the tag. Unsafe keys are dropped. Sorted
+		// so SSR output is deterministic across renders.
+		if a := render.Attr(k, it.ExtraAttrs[k]); a != "" {
 			extra.WriteString(` ` + a)
 		}
 	}

@@ -23,6 +23,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   never registered. It now uses the same predicate as route
   registration (shared `entityCRUDEnabled`) and prints a summary line
   for entities registered without API routes.
+- **Deterministic output where map iteration order leaked into bytes**:
+  island action attributes and injected attrs (`core-ui/interactive`),
+  non-canonical widget slot DOM order, `uihost` action-JS concatenation,
+  menu item extra attributes, SMTP and logged email header order, the
+  in-memory search battery's field blob, and kiln's world snapshot for
+  the agent prompt all iterate sorted keys now. Same render, same
+  bytes — screen caching, gzip dedup, hydration diffs, and LLM prompt
+  caching stop churning on Go's randomized map order. Found by the new
+  repo analyzers (`internal/analyzers`, run via `make analyze`, the
+  pre-commit hook, and CI's vet step).
 
 ### Added
 

@@ -3,6 +3,8 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -158,7 +160,10 @@ func SummarizeWorld(w *world.World) string {
 		return "(empty world)"
 	}
 	var b strings.Builder
-	for _, e := range w.Entities {
+	// Sorted so the snapshot is byte-stable call to call: the model sees
+	// one consistent world text and prompt caching gets a fair chance.
+	for _, name := range slices.Sorted(maps.Keys(w.Entities)) {
+		e := w.Entities[name]
 		fmt.Fprintf(&b, "%s: ", e.Name)
 		fields := make([]string, 0, len(e.Fields))
 		for _, f := range e.Fields {
