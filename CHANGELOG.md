@@ -9,15 +9,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
-- **`ExtraAttrs` on every `framework/ui` component Config** (#251): all
-  93 component configs now forward extra attributes (`data-*` test
-  hooks, analytics markers, ARIA overrides) to the component's root
-  element. Component-owned keys are dropped case-insensitively —
-  `class`/`id` (use `Class`/`ID`), `data-fui-*`, and behavior-critical
-  attributes like `href` and form-control `type`/`name` — via the new
-  `html.SafeExtraAttrs` helper. A source-level completeness gate
-  (`framework/ui/extraattrs_contract_test.go`) fails the suite if a
-  component Config ships without the field.
+- **`ExtraAttrs` on every `framework/ui` component Config** (#251): the
+  94 component configs that lacked the field (Lightbox included) now
+  forward extra attributes (`data-*` test hooks, analytics markers,
+  ARIA overrides) to the component's root element, with
+  component-owned keys dropped case-insensitively — `class`/`id` (use
+  `Class`/`ID`), `data-fui-*`, and behavior-critical attributes like
+  `href` and form-control `type`/`name` — via the new
+  `html.SafeExtraAttrs` helper. Charts forward to the shared zero-data
+  placeholder too. Two source-level gates
+  (`framework/ui/extraattrs_contract_test.go`) fail the suite if a
+  component Config ships without the field or if new code forwards
+  extras unsanitized. The 24 components whose pass-through predates
+  this contract still forward raw and are enumerated on the gate's
+  legacy allow-list (#262 tracks unifying them).
 
 ### Changed
 

@@ -201,9 +201,10 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
 	}
+	sb.WriteString(` data-fui-comp="ui-bar-chart"`)
 	sb.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"width", "height", "viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")))
-	sb.WriteString(` data-fui-comp="ui-bar-chart">`)
+	sb.WriteString(`>`)
 
 	// Value axis: hairline gridlines at clean ticks + left labels.
 	if cfg.ShowAxis {

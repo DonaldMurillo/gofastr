@@ -44,10 +44,11 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 
 Every component Config carries `ExtraAttrs html.Attrs`, forwarded to
 the component's root element for `data-*` test hooks, analytics
-markers, and ARIA overrides. Component-owned keys (`class`, `id`,
-`data-fui-*`, behavior-critical attributes) are dropped. See
-"Attribute pass-through" in `ui-getting-started`; the contract is
-enforced by `framework/ui/extraattrs_contract_test.go`.
+markers, and ARIA overrides. On components following the sanitized
+contract, component-owned keys (`class`, `id`, `data-fui-*`,
+behavior-critical attributes) are dropped; a legacy set still forwards
+raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
+"Attribute pass-through" in `ui-getting-started`.
 
 ### Primitives & semantic markup
 

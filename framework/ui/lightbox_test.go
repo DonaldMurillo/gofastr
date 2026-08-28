@@ -108,3 +108,18 @@ func TestLightboxLabelledByPointsToCaptionTitle(t *testing.T) {
 		t.Errorf("LabelledBy should point to <name>-title; got %q", d.LabelledBy)
 	}
 }
+
+func TestLightboxExtraAttrsOnViewerRoot(t *testing.T) {
+	b := Lightbox(LightboxConfig{Name: "zoom", ExtraAttrs: map[string]string{
+		"data-test":         "hook",
+		"data-fui-lightbox": "spoof",
+	}})
+	body := string(b.Definition().Slots[0].Component.Render())
+	root := body[:strings.Index(body, ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("viewer root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `data-fui-lightbox="zoom"`) {
+		t.Errorf("owned lightbox wiring overridden by spoof:\n%s", root)
+	}
+}

@@ -559,10 +559,20 @@ component derives from its config (`href` on linked roots, `type` /
 linked Card renders `<a>` instead of `<section>` — the attributes
 follow whichever root is emitted.
 
+A set of components that predate this contract still forwards extras
+raw, where a caller-supplied key can override component-owned
+attributes (Banner, Select, Carousel, and the other files on the
+`extraAttrsRawLegacy` list in
+`framework/ui/extraattrs_contract_test.go`). Until those migrate,
+treat their pass-through as unprotected. `FormConfig`'s raw
+`data-fui-rpc-*` pass-through is deliberate and documented on the
+field.
+
 Component authors: sanitize with `html.SafeExtraAttrs(cfg.ExtraAttrs,
-protected...)` before forwarding, and add the component to the
-completeness gate's coverage (`framework/ui/extraattrs_contract_test.go`
-fails on any component Config without the field).
+protected...)` before forwarding. Two gates in
+`framework/ui/extraattrs_contract_test.go` enforce the contract: one
+fails on any component Config without the field, the other fails on
+any new raw forwarding outside the legacy list.
 
 ## Common mistakes
 
