@@ -21,8 +21,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   config (a Slider's `min`/`max`/`step`/`value`, a FilterToolbar's
   sanitized form `action`, a TextArea's `maxlength`, a Workbench's
   CSP-safe `style`, …) or spoof `class`/`id`/`data-fui-*` — including
-  case-variant keys (`"Type"`), which previously slipped past the
-  hand-rolled guards in SearchInput, PasswordInput, and FilterToolbar.
+  case-variant keys (`"Type"`), which slipped past PasswordInput's
+  lowercase-only re-assert, and the owned keys (placeholder, method,
+  role, aria-label) that SearchInput's and FilterToolbar's hand-rolled
+  guards never covered at all.
   Set owned values through the config fields instead. `ui.Form` stays
   raw by documented contract. `extraAttrsRawLegacy` in the contract
   test shrinks to that one entry.
