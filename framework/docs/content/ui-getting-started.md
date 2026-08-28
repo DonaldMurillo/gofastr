@@ -537,6 +537,43 @@ The matching widget preset is `preset.Popover`, a click-triggered
 anchored surface without backdrop dim or focus trap. Closes on ESC
 and click-outside.
 
+## Attribute pass-through (`ExtraAttrs`)
+
+Every component `Config` carries an `ExtraAttrs html.Attrs` field that
+forwards additional attributes to the component's root element — the
+one that carries `data-fui-comp`. Use it for `data-*` test hooks,
+analytics markers, and ARIA overrides:
+
+```go
+ui.Card(ui.CardConfig{
+    Heading:    "Revenue",
+    ExtraAttrs: html.Attrs{"data-test": "revenue-card"},
+})
+```
+
+Keys the component owns are dropped, case-insensitively: `class` and
+`id` (use the `Class` / `ID` config fields), every `data-fui-*` key
+(reserved for runtime wiring), and behavior-critical attributes the
+component derives from its config (`href` on linked roots, `type` /
+`name` on form controls). When the root shape varies by config — a
+linked Card renders `<a>` instead of `<section>` — the attributes
+follow whichever root is emitted.
+
+A set of components that predate this contract still forwards extras
+raw, where a caller-supplied key can override component-owned
+attributes (Banner, Select, Carousel, and the other files on the
+`extraAttrsRawLegacy` list in
+`framework/ui/extraattrs_contract_test.go`). Until those migrate,
+treat their pass-through as unprotected. `FormConfig`'s raw
+`data-fui-rpc-*` pass-through is deliberate and documented on the
+field.
+
+Component authors: sanitize with `html.SafeExtraAttrs(cfg.ExtraAttrs,
+protected...)` before forwarding. Two gates in
+`framework/ui/extraattrs_contract_test.go` enforce the contract: one
+fails on any component Config without the field, the other fails on
+any new raw forwarding outside the legacy list.
+
 ## Common mistakes
 
 - **Registering a screen at an entity's CRUD path.** An entity named

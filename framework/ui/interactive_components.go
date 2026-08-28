@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -23,6 +24,13 @@ type TabsConfig struct {
 	Slice      *store.Slice[int] // optional; supplies the signal name + initial active index, takes precedence
 	Tabs       []TabItem         // required, at least 1
 	Class      string            // optional extra CSS class
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the tab strip's root
+	// wrapper div. Keys the component owns are dropped: class and id
+	// (use Class), data-fui-*, and data-active (the runtime mirrors
+	// the active tab index there).
+	ExtraAttrs html.Attrs
 }
 
 var tabsStyle = registry.RegisterStyle("fui-tabs", tabsCSS)
@@ -96,13 +104,16 @@ func Tabs(cfg TabsConfig) render.HTML {
 	}
 	// The signal binding lives on the outer wrapper, the common ancestor
 	// of the nav buttons and the panels, so one data-active drives both.
-	wrapper := render.Tag("div", map[string]string{
-		"class":                cls,
-		"data-fui-signal":      name,
-		"data-fui-signal-mode": "attr",
-		"data-fui-signal-attr": "data-active",
-		"data-active":          strconv.Itoa(active),
-	}, nav, content)
+	wrapperAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "data-active")
+	if wrapperAttrs == nil {
+		wrapperAttrs = html.Attrs{}
+	}
+	wrapperAttrs["class"] = cls
+	wrapperAttrs["data-fui-signal"] = name
+	wrapperAttrs["data-fui-signal-mode"] = "attr"
+	wrapperAttrs["data-fui-signal-attr"] = "data-active"
+	wrapperAttrs["data-active"] = strconv.Itoa(active)
+	wrapper := render.Tag("div", wrapperAttrs, nav, content)
 
 	return tabsStyle.WrapHTML(wrapper)
 }

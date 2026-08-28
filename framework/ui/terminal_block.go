@@ -20,6 +20,12 @@ type TerminalBlockConfig struct {
 	Label string // required header text, e.g. "$ install"
 	Class string
 	ID    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the block's root
+	// wrapper <div>. Keys the component owns are dropped: class
+	// and id (use Class / ID), data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // TerminalBlock renders a CLI mock. Body lines are rendered verbatim in a
@@ -41,7 +47,8 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 	)
 	body := html.Div(html.DivConfig{Class: "ui-terminal-block__body"}, lines...)
 	return terminalBlockStyle.WrapHTML(
-		html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, head, body))
+		html.Div(html.DivConfig{Class: cls, ID: cfg.ID,
+			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}, head, body))
 }
 
 // TerminalOut wraps a line of dim, secondary output (echoed commands, noise).

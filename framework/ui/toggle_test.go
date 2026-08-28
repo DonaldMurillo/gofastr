@@ -126,3 +126,52 @@ func TestToggleCSSStylesTheMarker(t *testing.T) {
 		t.Fatal("toggleCSS has no rule for .ui-form-field__required — group markers are unstyled unless ui-form-field happens to be on the page")
 	}
 }
+
+func TestToggleExtraAttrsOnRoot(t *testing.T) {
+	h := Checkbox(ToggleConfig{
+		Name: "n", Label: "x",
+		ExtraAttrs: map[string]string{"data-test": "hook", "for": "evil"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root label missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `for="n"`) {
+		t.Errorf("owned for= must win over ExtraAttrs:\n%s", root)
+	}
+	if !strings.Contains(string(h), `type="checkbox"`) {
+		t.Errorf("input type lost:\n%s", h)
+	}
+}
+
+func TestRadioGroupExtraAttrsOnRoot(t *testing.T) {
+	h := RadioGroup(RadioGroupConfig{
+		Name:       "plan",
+		Legend:     "Plan",
+		Options:    []RadioGroupOption{{Value: "pro", Label: "Pro"}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("fieldset missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `role="radiogroup"`) {
+		t.Errorf("owned role lost:\n%s", root)
+	}
+}
+
+func TestCheckboxGroupExtraAttrsOnRoot(t *testing.T) {
+	h := CheckboxGroup(CheckboxGroupConfig{
+		Name:       "feats",
+		Legend:     "Features",
+		Options:    []CheckboxGroupOption{{Value: "a", Label: "A"}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("fieldset missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `role="group"`) {
+		t.Errorf("owned role lost:\n%s", root)
+	}
+}

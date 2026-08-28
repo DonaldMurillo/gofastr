@@ -70,3 +70,54 @@ func TestTypedFieldsRequireNameAndLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestTextFieldExtraAttrsOnInput(t *testing.T) {
+	h := string(TextField(TextFieldConfig{
+		Name: "email", Label: "Email", ExtraAttrs: map[string]string{"data-test": "hook"},
+	}))
+	start := strings.Index(h, "<input")
+	if start < 0 {
+		t.Fatalf("no input element:\n%s", h)
+	}
+	open := h[start : start+strings.Index(h[start:], ">")+1]
+	if !strings.Contains(open, `data-test="hook"`) {
+		t.Errorf("input missing data-test:\n%s", open)
+	}
+	if !strings.Contains(open, `type="text"`) {
+		t.Errorf("owned type lost:\n%s", open)
+	}
+}
+
+func TestNumberFieldExtraAttrsOnInput(t *testing.T) {
+	h := string(NumberField(NumberFieldConfig{
+		Name: "qty", Label: "Qty", ExtraAttrs: map[string]string{"data-test": "hook"},
+	}))
+	start := strings.Index(h, "<input")
+	if start < 0 {
+		t.Fatalf("no input element:\n%s", h)
+	}
+	open := h[start : start+strings.Index(h[start:], ">")+1]
+	if !strings.Contains(open, `data-test="hook"`) {
+		t.Errorf("input missing data-test:\n%s", open)
+	}
+	if !strings.Contains(open, `type="number"`) || !strings.Contains(open, `name="qty"`) {
+		t.Errorf("owned type/name lost:\n%s", open)
+	}
+}
+
+func TestDateFieldExtraAttrsOnInput(t *testing.T) {
+	h := string(DateField(DateFieldConfig{
+		Name: "when", Label: "When", ExtraAttrs: map[string]string{"data-test": "hook"},
+	}))
+	start := strings.Index(h, "<input")
+	if start < 0 {
+		t.Fatalf("no input element:\n%s", h)
+	}
+	open := h[start : start+strings.Index(h[start:], ">")+1]
+	if !strings.Contains(open, `data-test="hook"`) {
+		t.Errorf("input missing data-test:\n%s", open)
+	}
+	if !strings.Contains(open, `type="date"`) {
+		t.Errorf("owned type lost:\n%s", open)
+	}
+}

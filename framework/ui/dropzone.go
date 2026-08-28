@@ -54,6 +54,12 @@ type FileDropzoneConfig struct {
 	ID    string
 	Class string
 
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the dropzone's root div.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
+
 	// Ctx carries the per-request context used to resolve the prompt
 	// and max-size help labels. When nil, English fallbacks apply.
 	Ctx context.Context
@@ -178,8 +184,12 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 		}, render.Text(help)))
 	}
 
-	return dropzoneStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls}, children...))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	return dropzoneStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 
 func dropzoneIcon() string {

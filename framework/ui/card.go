@@ -65,6 +65,13 @@ type CardConfig struct {
 	Variant CardVariant
 	ID      string
 	Class   string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the card's root element,
+	// whichever shape it takes (<a>, <section>, or <div>). Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, and href.
+	ExtraAttrs html.Attrs
 }
 
 // Card renders a labelled content card with optional header, footer,
@@ -81,6 +88,7 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 	// Card used to emit ui-card--<anything> silently; that let typos
 	// ship unstyled cards with no signal.
 	checkCardVariant(cfg.Variant)
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "href")
 	cls := "ui-card"
 	if cfg.Variant != CardElevated {
 		cls += " ui-card--" + string(cfg.Variant)
@@ -134,17 +142,18 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 		}
 		inner := html.Div(html.DivConfig{Class: "ui-card__inner"}, out...)
 		return cardStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
-			Href:    href,
-			Class:   cls,
-			ID:      cfg.ID,
-			Content: inner,
+			Href:       href,
+			Class:      cls,
+			ID:         cfg.ID,
+			Content:    inner,
+			ExtraAttrs: extra,
 		}))
 	}
 
 	if headingID != "" {
 		return cardStyle.WrapHTML(html.Section(html.SectionConfig{
-			Class: cls, ID: cfg.ID, LabelledBy: headingID,
+			Class: cls, ID: cfg.ID, LabelledBy: headingID, ExtraAttrs: extra,
 		}, out...))
 	}
-	return cardStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...))
+	return cardStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID, ExtraAttrs: extra}, out...))
 }

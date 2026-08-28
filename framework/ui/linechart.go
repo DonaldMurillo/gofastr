@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -45,12 +46,21 @@ type LineChartConfig struct {
 	LabelledBy string
 	ID         string
 	Class      string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the chart's root <svg>
+	// element, or to the shared zero-data placeholder when there is
+	// nothing to draw. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, and the geometry / accessibility
+	// keys the chart derives (width, height, viewBox, xmlns, role,
+	// aria-labelledby, aria-hidden).
+	ExtraAttrs html.Attrs
 }
 
 // LineChart renders a multi-series line chart.
 func LineChart(cfg LineChartConfig) render.HTML {
 	if len(cfg.Series) == 0 {
-		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet")
+		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 	for _, s := range cfg.Series {
 		if s.Name == "" {
@@ -59,7 +69,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		// A line needs ≥2 points to draw a trend; with fewer there's simply
 		// not enough data yet. A calm empty state, not a crash.
 		if len(s.Values) < 2 {
-			return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "Not enough data yet")
+			return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "Not enough data yet", cfg.ExtraAttrs)
 		}
 	}
 	w := cfg.Width
@@ -128,7 +138,10 @@ func LineChart(cfg LineChartConfig) render.HTML {
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
 	}
-	sb.WriteString(` data-fui-comp="ui-line-chart">`)
+	sb.WriteString(` data-fui-comp="ui-line-chart"`)
+	sb.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs, "width", "height",
+		"viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")))
+	sb.WriteString(`>`)
 
 	palette := []string{"primary", "info", "success", "warning", "danger"}
 	for i, s := range cfg.Series {

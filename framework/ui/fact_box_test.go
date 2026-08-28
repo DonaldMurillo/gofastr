@@ -87,3 +87,15 @@ func TestFactBoxRejectsUnknownStyle(t *testing.T) {
 	}()
 	FactBox(FactBoxConfig{Label: "x", Value: "y", Style: "huge"})
 }
+
+func TestFactBoxExtraAttrsOnRoot(t *testing.T) {
+	h := FactBox(FactBoxConfig{
+		Label:      "Prereqs",
+		Value:      "Go",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("fact box root missing data-test:\n%s", root)
+	}
+}

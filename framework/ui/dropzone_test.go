@@ -94,3 +94,15 @@ func TestFileDropzoneMaxSizeMBInHelp(t *testing.T) {
 		t.Errorf("MaxSizeMB should be announced in help text:\n%s", h)
 	}
 }
+
+func TestFileDropzoneExtraAttrsOnRoot(t *testing.T) {
+	h := FileDropzone(FileDropzoneConfig{
+		Name:       "f",
+		Label:      "x",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("dropzone root missing data-test:\n%s", root)
+	}
+}

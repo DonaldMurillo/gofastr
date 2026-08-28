@@ -27,6 +27,12 @@ type PollingIndicatorConfig struct {
 	Paused bool
 	ID     string
 	Class  string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the indicator's root
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, role, and aria-live — the
+	// live-region contract.
+	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the live label.
 	// When nil, English fallbacks apply.
 	Ctx context.Context
@@ -51,11 +57,14 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{
-		"class":     cls,
-		"role":      "status",
-		"aria-live": "polite",
+	// Sanitized extras first, owned keys on top so they win.
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live")
+	if attrs == nil {
+		attrs = html.Attrs{}
 	}
+	attrs["class"] = cls
+	attrs["role"] = "status"
+	attrs["aria-live"] = "polite"
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

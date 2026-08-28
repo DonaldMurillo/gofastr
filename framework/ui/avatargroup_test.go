@@ -139,3 +139,14 @@ func TestAvatarPresenceDotIsInsetInsideCorner(t *testing.T) {
 		}
 	}
 }
+
+func TestAvatarGroupExtraAttrsOnRoot(t *testing.T) {
+	h := AvatarGroup(AvatarGroupConfig{
+		Avatars:    []AvatarConfig{{Name: "A"}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("group root missing data-test:\n%s", root)
+	}
+}

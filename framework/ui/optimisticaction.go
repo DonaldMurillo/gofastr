@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -65,6 +66,13 @@ type OptimisticActionConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the button's root
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-* (endpoint and method wiring),
+	// type, and data-state — the optimistic lifecycle contract.
+	ExtraAttrs html.Attrs
 }
 
 // OptimisticAction renders the button. The runtime listens for clicks
@@ -100,13 +108,16 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	attrs := map[string]string{
-		"class":                        cls,
-		"type":                         "button",
-		"data-fui-optimistic-endpoint": cfg.Endpoint,
-		"data-fui-optimistic-method":   method,
-		"data-state":                   "idle",
+	// Sanitized extras first, owned keys on top so they win.
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "data-state")
+	if attrs == nil {
+		attrs = html.Attrs{}
 	}
+	attrs["class"] = cls
+	attrs["type"] = "button"
+	attrs["data-fui-optimistic-endpoint"] = cfg.Endpoint
+	attrs["data-fui-optimistic-method"] = method
+	attrs["data-state"] = "idle"
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

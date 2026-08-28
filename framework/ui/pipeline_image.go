@@ -104,6 +104,12 @@ type PipelineImageConfig struct {
 	Rounded      bool
 
 	ID, Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the image's root element
+	// (the wrapping <span>, not the inner <img>). Keys the component
+	// owns are dropped: class and id (use Class / ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // PipelineImage renders <picture> with one <source> per MIME type, plus
@@ -216,7 +222,9 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	// over it in DOM order. Both are positioned, so tree order decides,
 	// with no z-index needed.
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: cls, ID: cfg.ID,
+		Class:      cls,
+		ID:         cfg.ID,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, lqip, picture))
 }
 

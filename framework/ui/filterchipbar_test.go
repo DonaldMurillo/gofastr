@@ -115,3 +115,16 @@ func TestFilterChipBarCustomLabel(t *testing.T) {
 		t.Errorf("expected custom Label, got: %s", out)
 	}
 }
+
+func TestFilterChipBarExtraAttrsOnRoot(t *testing.T) {
+	h := FilterChipBar(FilterChipBarConfig{
+		Filters: []FilterChip{
+			{Label: "Status: Active", DismissPath: "/filters/status/clear"},
+		},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("filter bar root missing data-test:\n%s", root)
+	}
+}

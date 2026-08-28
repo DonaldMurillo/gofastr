@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestTagRequiresLabel(t *testing.T) {
@@ -53,5 +55,18 @@ func TestTagNoDismissOmitsButton(t *testing.T) {
 	h := Tag(TagConfig{Label: "x"})
 	if strings.Contains(string(h), "ui-tag__dismiss") {
 		t.Fatalf("Tag without Dismiss should not render × button:\n%s", h)
+	}
+}
+
+func TestTagExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"span": Tag(TagConfig{Label: "x", ExtraAttrs: extra}),
+		"link": Tag(TagConfig{Label: "x", Href: "/f", ExtraAttrs: extra}),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
 	}
 }

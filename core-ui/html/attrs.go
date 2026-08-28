@@ -39,6 +39,50 @@ func Classes(classes map[string]bool) Attrs {
 	return Attrs{"class": strings.Join(active, " ")}
 }
 
+// SafeExtraAttrs returns a copy of a component config's ExtraAttrs with
+// the keys the component owns removed, ready to forward to the
+// component's root element. Dropped: every case-variant of "class",
+// "id", and the listed protected keys, plus any "data-fui-*" key.
+//
+// Case-variants must go, not just exact matches: HTML attribute names
+// are case-insensitive, so a "Class" or "Type" entry survives a
+// lowercase-only overwrite as a distinct map key, renders as a second
+// attribute, and folds back onto the protected one in the parser.
+// "data-fui-*" is reserved for runtime wiring; a caller-supplied value
+// would collide with the marker WrapHTML injects into the root tag.
+//
+// Returns nil when nothing survives, which every ExtraAttrs consumer
+// treats as "no extra attributes".
+func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
+	if len(attrs) == 0 {
+		return nil
+	}
+	out := make(Attrs, len(attrs))
+	for k, v := range attrs {
+		if strings.EqualFold(k, "class") || strings.EqualFold(k, "id") {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(k), "data-fui-") {
+			continue
+		}
+		drop := false
+		for _, p := range protected {
+			if strings.EqualFold(k, p) {
+				drop = true
+				break
+			}
+		}
+		if drop {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // DataAttrs converts a map of key-value pairs into data-* attributes.
 // Keys should not include the "data-" prefix; it is added automatically.
 func DataAttrs(data map[string]string) Attrs {

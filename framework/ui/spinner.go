@@ -54,6 +54,12 @@ type SpinnerConfig struct {
 
 	ID    string
 	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the spinner's root
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, role, aria-live, and aria-busy —
+	// the live-region contract assistive tech depends on.
+	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the loading label.
 	// When nil, English fallbacks apply.
 	Ctx context.Context
@@ -120,11 +126,13 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 
 	return spinnerStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
-		ExtraAttrs: html.Attrs{
-			"role":      "status",
-			"aria-live": "polite",
-			"aria-busy": "true",
-		},
+		ExtraAttrs: html.MergeAttrs(
+			html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live", "aria-busy"),
+			html.Attrs{
+				"role":      "status",
+				"aria-live": "polite",
+				"aria-busy": "true",
+			}),
 	},
 		visual,
 		html.Span(html.TextConfig{Class: "ui-visually-hidden"}, render.Text(label)),

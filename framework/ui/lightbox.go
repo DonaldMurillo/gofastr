@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -62,6 +63,14 @@ type LightboxConfig struct {
 	// context.Background() is used and English fallbacks are returned,
 	// preserving today's behaviour.
 	Ctx context.Context
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) onto the lightbox's own root
+	// (the ui-lightbox__viewer panel; the modal chrome is widget
+	// machinery, and triggers are caller-owned elements). Keys the
+	// component owns are dropped: class, id, and data-fui-* (the
+	// viewer and nav wiring).
+	ExtraAttrs html.Attrs
 }
 
 // Lightbox returns a *widget.Builder for the zoom-overlay modal.
@@ -82,6 +91,7 @@ func Lightbox(cfg LightboxConfig) *widget.Builder {
 		showCaption:   cfg.ShowCaption,
 		allowDownload: cfg.AllowDownload,
 		ctx:           cfg.Ctx,
+		extraAttrs:    html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}
 	titleID := cfg.Name + "-title"
 	mb := preset.Modal(cfg.Name).
@@ -110,7 +120,8 @@ type lightboxSlot struct {
 	showCaption   bool
 	allowDownload bool
 	// ctx carries the per-request locale for i18n resolution. nil = context.Background().
-	ctx context.Context
+	ctx        context.Context
+	extraAttrs html.Attrs
 }
 
 func (s *lightboxSlot) Render() render.HTML {
@@ -181,10 +192,11 @@ func (s *lightboxSlot) Render() render.HTML {
 			render.Tag("div", map[string]string{"class": "ui-lightbox__toolbar"}, toolbar...))
 	}
 
-	wrapAttrs := map[string]string{
-		"class":             "ui-lightbox__viewer",
-		"data-fui-lightbox": s.name,
-	}
+	// Sanitized caller extras first, owned keys on top so they win.
+	wrapAttrs := map[string]string{}
+	maps.Copy(wrapAttrs, s.extraAttrs)
+	wrapAttrs["class"] = "ui-lightbox__viewer"
+	wrapAttrs["data-fui-lightbox"] = s.name
 	if s.navArrows {
 		wrapAttrs["data-fui-lightbox-nav"] = "true"
 	}

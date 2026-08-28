@@ -86,3 +86,14 @@ func TestPieChartLabelledByAddsRole(t *testing.T) {
 		t.Errorf("LabelledBy should set aria-labelledby:\n%s", h)
 	}
 }
+
+func TestPieChartExtraAttrsOnRoot(t *testing.T) {
+	h := PieChart(PieChartConfig{
+		Slices:     []PieSlice{{Label: "A", Value: 2}, {Label: "B", Value: 1}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("PieChart root missing data-test:\n%s", root)
+	}
+}

@@ -143,3 +143,15 @@ func TestMenuEscapesApostrophes(t *testing.T) {
 		}
 	}
 }
+
+func TestMenuExtraAttrsOnRoot(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{
+		Label:      "Actions",
+		Items:      []ui.MenuItem{{Label: "Edit"}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	}))
+	root := out[:strings.Index(out, ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("menu root missing data-test:\n%s", root)
+	}
+}

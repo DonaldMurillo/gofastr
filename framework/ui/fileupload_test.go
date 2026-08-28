@@ -72,3 +72,15 @@ func TestFileUploadNoErrorKeepsHelpVisible(t *testing.T) {
 	}
 	mustContain(t, h, "ui-fileupload__help")
 }
+
+func TestFileUploadExtraAttrsOnRoot(t *testing.T) {
+	h := FileUpload(FileUploadConfig{
+		Name:       "f",
+		Label:      "x",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("file upload root missing data-test:\n%s", root)
+	}
+}

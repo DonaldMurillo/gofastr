@@ -44,6 +44,12 @@ type FactBoxConfig struct {
 	FullWidth bool
 	ID        string
 	Class     string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the fact's root div.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // FactBox renders one labelled tile. Pair with a CSS grid to lay out
@@ -82,7 +88,10 @@ func FactBox(cfg FactBoxConfig) render.HTML {
 	if cfg.Style == FactStyleValueFirst {
 		children = []render.HTML{val, label}
 	}
-	return factBoxStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))
+	return factBoxStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ID: cfg.ID,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, children...))
 }
 
 var factBoxStyle = registry.RegisterStyle("ui-fact-box", factBoxCSS)

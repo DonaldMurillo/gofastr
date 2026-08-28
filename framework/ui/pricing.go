@@ -30,6 +30,11 @@ type PricingCardConfig struct {
 	// intervening section <h2>) so axe's heading-order rule passes.
 	HeadingLevel int
 	Class        string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the card's root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // PricingCard renders a single plan card.
@@ -85,7 +90,11 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		out = append(out, LinkButton(LinkButtonConfig{Label: label, Href: cfg.CTAHref, Variant: variant, Class: "ui-pricing-card__cta"}))
 	}
 
-	return pricingCardStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...))
+	return pricingCardStyle.WrapHTML(html.Div(html.DivConfig{
+		Class:      cls,
+		ID:         cfg.ID,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, out...))
 }
 
 var pricingCardStyle = registry.RegisterStyle("ui-pricing-card", pricingCardCSS)

@@ -81,6 +81,12 @@ type FilterChipBarConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the toolbar's root div.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, role, and aria-label (use Label).
+	ExtraAttrs html.Attrs
 }
 
 // FilterChipBar renders the toolbar.
@@ -103,11 +109,13 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	wrapAttrs := html.Attrs{
-		"class":      cls,
-		"role":       "toolbar",
-		"aria-label": label,
+	wrapAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
+	if wrapAttrs == nil {
+		wrapAttrs = html.Attrs{}
 	}
+	wrapAttrs["class"] = cls
+	wrapAttrs["role"] = "toolbar"
+	wrapAttrs["aria-label"] = label
 	if cfg.ID != "" {
 		wrapAttrs["id"] = cfg.ID
 	}

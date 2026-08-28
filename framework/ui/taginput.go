@@ -37,6 +37,12 @@ type TagInputConfig struct {
 	Disabled bool
 	ID       string
 	Class    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the field's root wrapper
+	// <div>. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-* (the tag-input runtime wiring).
+	ExtraAttrs html.Attrs
 }
 
 // TagInput renders a free-form tag input bound to a chip strip.
@@ -109,8 +115,12 @@ func TagInput(cfg TagInputConfig) render.HTML {
 		}, render.Text(cfg.Help)))
 	}
 
-	return tagInputStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls}, children...))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	return tagInputStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 
 func strItoa(n int) string {

@@ -42,6 +42,14 @@ sets with `ui.RegisterButtonVariant` / `RegisterButtonSize` /
 registration covers StatusBadge, Tag, Callout, and Notification). See
 "Custom variants on framework components" in `ui-getting-started`.
 
+Every component Config carries `ExtraAttrs html.Attrs`, forwarded to
+the component's root element for `data-*` test hooks, analytics
+markers, and ARIA overrides. On components following the sanitized
+contract, component-owned keys (`class`, `id`, `data-fui-*`,
+behavior-critical attributes) are dropped; a legacy set still forwards
+raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
+"Attribute pass-through" in `ui-getting-started`.
+
 ### Primitives & semantic markup
 
 - **kbd**: `core-ui/html.Kbd`, semantic `<kbd>` for keyboard input

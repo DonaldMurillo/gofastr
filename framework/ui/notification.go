@@ -48,6 +48,12 @@ type NotificationConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the notification's root
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, role, and aria-live.
+	ExtraAttrs html.Attrs
 }
 
 // NotificationPosition controls where a Notification renders.
@@ -95,10 +101,12 @@ func Notification(cfg NotificationConfig) render.HTML {
 		role = "alert"
 		live = "assertive"
 	}
-	attrs := html.Attrs{
-		"role":      role,
-		"aria-live": live,
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live")
+	if attrs == nil {
+		attrs = html.Attrs{}
 	}
+	attrs["role"] = role
+	attrs["aria-live"] = live
 
 	icon := html.Span(html.TextConfig{
 		Class:      "ui-notification__icon",

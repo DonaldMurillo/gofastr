@@ -76,6 +76,12 @@ type AnchoredRailConfig struct {
 
 	// ID optionally tags the <aside>.
 	ID string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the rail's root <aside>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and aria-label (use Label).
+	ExtraAttrs html.Attrs
 }
 
 // AnchoredRail returns the rail HTML. When ObserveSelector is set, the
@@ -125,10 +131,15 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	if cfg.Class != "" {
 		asideClass += " " + cfg.Class
 	}
-	asideAttrs := map[string]string{
-		"class":      asideClass,
-		"aria-label": cfg.Label,
+	// Extras land on the <aside> (the element carrying data-fui-comp),
+	// not on scrollspy's sticky wrapper: the component's CSS keys on
+	// the aside.
+	asideAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label")
+	if asideAttrs == nil {
+		asideAttrs = map[string]string{}
 	}
+	asideAttrs["class"] = asideClass
+	asideAttrs["aria-label"] = cfg.Label
 	if cfg.ID != "" {
 		asideAttrs["id"] = cfg.ID
 	}

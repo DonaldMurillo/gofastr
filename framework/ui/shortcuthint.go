@@ -45,6 +45,12 @@ type ShortcutHintConfig struct {
 
 	ID    string
 	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the hint's root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and aria-hidden — the wrapper must stay in the
+	// accessibility tree for its SR-only label.
+	ExtraAttrs html.Attrs
 }
 
 // ShortcutHint renders the visual chord chips.
@@ -74,9 +80,14 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	chips = append(chips, html.Span(html.TextConfig{Class: "ui-visually-hidden"}, render.Text("Shortcut: "+srLabel)))
 
 	return shortcutHintStyle.WrapHTML(html.Span(html.TextConfig{
-		Class:      cls,
-		ID:         cfg.ID,
-		ExtraAttrs: html.Attrs{"aria-hidden": "false"},
+		Class: cls,
+		ID:    cfg.ID,
+		// Owned aria-hidden wins over any caller override (protected
+		// above), so the SR-only label stays reachable.
+		ExtraAttrs: html.MergeAttrs(
+			html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden"),
+			html.Attrs{"aria-hidden": "false"},
+		),
 	}, chips...))
 }
 

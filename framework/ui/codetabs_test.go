@@ -52,3 +52,14 @@ func TestCodeTabsPanics(t *testing.T) {
 		}()
 	}
 }
+
+func TestCodeTabsExtraAttrsOnRoot(t *testing.T) {
+	h := CodeTabs(CodeTabsConfig{
+		Name:       "install",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	}, CodeSample{Label: "Go", Code: "x"})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root div missing data-test:\n%s", root)
+	}
+}

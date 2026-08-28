@@ -97,6 +97,13 @@ type OptimizedImageConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the image's root wrapper
+	// (the outer <span>, in both the single-source and <picture>
+	// shapes). Keys the component owns are dropped: class and id
+	// (use Class / ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // OptimizedImage renders a responsive, lazy-loaded image with
@@ -187,6 +194,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if len(cfg.Sources) == 0 {
 		return imageStyle.WrapHTML(html.Span(html.TextConfig{
 			Class: cls, ID: cfg.ID,
+			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 		}, lqip, html.Image(imgCfg)))
 	}
 
@@ -203,6 +211,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	picture := render.Tag("picture", nil, source, html.Image(imgCfg))
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, lqip, picture))
 }
 

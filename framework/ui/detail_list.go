@@ -22,6 +22,12 @@ type DetailItem struct {
 type DetailListConfig struct {
 	Items []DetailItem
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root <dl>. Keys the
+	// component owns are dropped: class (use Class), id, and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // DetailList renders a label/value description list.
@@ -37,7 +43,12 @@ func DetailList(cfg DetailListConfig) render.HTML {
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
 	}
-	return detailListStyle.WrapHTML(render.Tag("dl", map[string]string{"class": cls}, rows...))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	return detailListStyle.WrapHTML(render.Tag("dl", attrs, rows...))
 }
 
 var detailListStyle = registry.RegisterStyle("ui-detail-list", detailListCSS)

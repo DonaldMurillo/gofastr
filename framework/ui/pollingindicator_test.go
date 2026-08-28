@@ -50,3 +50,11 @@ func TestPollingIndicator_CSSRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestPollingIndicatorExtraAttrsOnRoot(t *testing.T) {
+	h := PollingIndicator(PollingIndicatorConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("PollingIndicator root missing data-test:\n%s", root)
+	}
+}

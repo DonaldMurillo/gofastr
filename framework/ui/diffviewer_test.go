@@ -85,3 +85,14 @@ func TestDiffViewerFileHeaderRenders(t *testing.T) {
 		t.Errorf("--- / +++ headers should render as .ui-diff-viewer__file:\n%s", h)
 	}
 }
+
+func TestDiffViewerExtraAttrsOnRoot(t *testing.T) {
+	h := DiffViewer(DiffViewerConfig{
+		Patch:      "+hello",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+}

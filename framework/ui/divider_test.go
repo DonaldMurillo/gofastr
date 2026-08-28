@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestDividerPlainEmitsHR(t *testing.T) {
@@ -27,4 +29,18 @@ func TestDividerVerticalAlwaysUsesRole(t *testing.T) {
 	mustContain(t, h, `role="separator"`)
 	mustContain(t, h, `aria-orientation="vertical"`)
 	mustContain(t, h, "ui-divider--vertical")
+}
+
+func TestDividerExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"hr":       Divider(DividerConfig{ExtraAttrs: extra}),
+		"vertical": Divider(DividerConfig{Orientation: DividerVertical, ExtraAttrs: extra}),
+		"labelled": Divider(DividerConfig{Label: "OR", ExtraAttrs: extra}),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
 }

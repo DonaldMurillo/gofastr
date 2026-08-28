@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/tabs"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -33,6 +34,13 @@ type CodeTabsConfig struct {
 	LineNumbers bool
 	ID          string
 	Class       string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the tab group's root
+	// element. Keys the component owns are dropped: class (use
+	// Class), id (ID tags the inner tabset, not the root), and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // CodeTabs renders the same snippet in several languages behind a tab strip,
@@ -72,8 +80,13 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if rootAttrs == nil {
+		rootAttrs = map[string]string{}
+	}
+	rootAttrs["class"] = cls
 	return codeTabsStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls},
+		rootAttrs,
 		tabs.New(tabs.Config{Name: cfg.Name, Label: cfg.Label, ID: cfg.ID}, items...),
 	))
 }

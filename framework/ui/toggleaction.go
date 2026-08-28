@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -93,6 +94,13 @@ type ToggleActionConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the button's root <button> element. Keys
+	// the component owns are dropped: class and id (use Class / ID),
+	// data-fui-* (the toggle runtime wiring), type, data-state, and
+	// aria-pressed (mirrored from Committed by the runtime).
+	ExtraAttrs html.Attrs
 }
 
 // ToggleAction renders the button. The runtime listens for clicks via
@@ -129,14 +137,16 @@ func ToggleAction(cfg ToggleActionConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	attrs := map[string]string{
-		"class":                    cls,
-		"type":                     "button",
-		"data-fui-toggle-endpoint": cfg.Endpoint,
-		"data-fui-toggle-method":   method,
-		"data-state":               state,
-		"aria-pressed":             pressed,
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "data-state", "aria-pressed")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["type"] = "button"
+	attrs["data-fui-toggle-endpoint"] = cfg.Endpoint
+	attrs["data-fui-toggle-method"] = method
+	attrs["data-state"] = state
+	attrs["aria-pressed"] = pressed
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

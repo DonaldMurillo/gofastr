@@ -148,3 +148,14 @@ func TestInputGroupComposesPrependInputAppend(t *testing.T) {
 		t.Errorf("missing wrapper class ui-input-group:\n%s", h)
 	}
 }
+
+func TestInputGroupExtraAttrsOnRoot(t *testing.T) {
+	h := InputGroup(InputGroupConfig{
+		Input:      html.Input(html.InputConfig{Type: "text", Name: "price"}),
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("input group root missing data-test:\n%s", root)
+	}
+}

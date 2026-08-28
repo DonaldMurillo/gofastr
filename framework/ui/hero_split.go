@@ -45,6 +45,12 @@ type HeroSplitConfig struct {
 	AriaLabel string
 	// Class is appended to the ui-hero-split wrapper.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the hero's root <section>.
+	// Keys the component owns are dropped: class and id (use Class),
+	// data-fui-*, and aria-label (use AriaLabel).
+	ExtraAttrs html.Attrs
 }
 
 // HeroSplit renders a two-column hero. The wrapper is a <section>;
@@ -64,7 +70,11 @@ func HeroSplit(cfg HeroSplitConfig) render.HTML {
 		cls = cls + " " + cfg.Class
 	}
 
-	attrs := map[string]string{"class": cls}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label")
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
 	if cfg.AriaLabel != "" {
 		attrs["aria-label"] = cfg.AriaLabel
 	}

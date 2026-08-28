@@ -40,6 +40,13 @@ type FormRepeaterConfig struct {
 	RemoveLabel string
 
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the repeater's root div.
+	// Keys the component owns are dropped: class and id (use Class),
+	// data-fui-*, aria-label, and aria-live.
+	ExtraAttrs html.Attrs
+
 	// Ctx carries the per-request context used to resolve i18n labels
 	// (Add / Remove). When nil, English fallbacks apply.
 	Ctx context.Context
@@ -134,12 +141,15 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 		"class": "ui-form-repeater__add",
 	}, addBtn))
 
-	return formRepeaterStyle.WrapHTML(render.Tag("div", map[string]string{
-		"data-fui-comp": "ui-form-repeater",
-		"class":         cls,
-		"aria-label":    cfg.Name + " items",
-		"aria-live":     "polite",
-	}, children...))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label", "aria-live")
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["data-fui-comp"] = "ui-form-repeater"
+	attrs["class"] = cls
+	attrs["aria-label"] = cfg.Name + " items"
+	attrs["aria-live"] = "polite"
+	return formRepeaterStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 
 // formRepeaterStyle is registered in styles_components.go

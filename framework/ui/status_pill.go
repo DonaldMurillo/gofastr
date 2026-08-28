@@ -36,6 +36,11 @@ type StatusPillConfig struct {
 	Dot   bool
 	Class string
 	ID    string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the pill's root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // StatusPill renders a presentational status kicker.
@@ -65,7 +70,7 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 	}
 	children = append(children, render.Text(cfg.Label))
 	return statusPillStyle.WrapHTML(
-		html.Span(html.TextConfig{Class: cls, ID: cfg.ID}, children...))
+		html.Span(html.TextConfig{Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}, children...))
 }
 
 var statusPillStyle = registry.RegisterStyle("ui-status-pill", statusPillCSS)

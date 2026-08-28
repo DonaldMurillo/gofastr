@@ -36,3 +36,15 @@ func TestAnchoredRailScrollspyWrapperUsesRailStickyCSS(t *testing.T) {
 		}
 	}
 }
+
+func TestAnchoredRailExtraAttrsOnRoot(t *testing.T) {
+	h := AnchoredRail(AnchoredRailConfig{
+		Label:      "Sections",
+		Items:      []RailItem{{Text: "A", Anchor: "a"}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("aside root missing data-test:\n%s", root)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -108,6 +109,12 @@ type SidebarConfig struct {
 	// Sidebar (some apps put their hamburger in the page header
 	// instead and call MountSidebar themselves).
 	SuppressDrawerTrigger bool
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the sidebar's root
+	// element. Keys the component owns are dropped: class and
+	// data-fui-* (the sidebar marker and collapse-storage wiring).
+	ExtraAttrs html.Attrs
 }
 
 var sidebarStyle = registry.RegisterStyle("ui-sidebar", sidebarCSS,
@@ -215,6 +222,9 @@ func (s sidebarComponent) render() render.HTML {
 		}
 		b.WriteString(` data-fui-sidebar-storage="` + render.Escape(key) + `"`)
 	}
+	// Caller extras land after the owned attributes. render.Attr
+	// validates the key and escapes the value, matching render.Tag.
+	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs)))
 	b.WriteString(`>`)
 
 	if !cfg.SuppressDrawerTrigger {

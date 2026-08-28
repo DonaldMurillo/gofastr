@@ -98,3 +98,11 @@ func TestSignalToggleCarriesCompMarker(t *testing.T) {
 		t.Fatalf("toggle missing comp marker: %s", s)
 	}
 }
+
+func TestSignalToggleExtraAttrsOnRoot(t *testing.T) {
+	s := string(SignalToggle(SignalToggleConfig{SignalName: "dark", ExtraAttrs: map[string]string{"data-test": "hook"}}))
+	root := s[:strings.Index(s, ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("SignalToggle root missing data-test:\n%s", root)
+	}
+}

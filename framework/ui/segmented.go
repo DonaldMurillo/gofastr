@@ -70,6 +70,11 @@ type SegmentedControlConfig struct {
 
 	ID    string
 	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the control's root
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, role, aria-label, and data-count.
+	ExtraAttrs html.Attrs
 }
 
 // SegmentedControl renders the radiogroup with a sliding indicator.
@@ -102,11 +107,14 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	wrapAttrs := html.Attrs{
-		"class":      cls,
-		"role":       "radiogroup",
-		"data-count": itoaSmall(len(cfg.Options)),
+	// Sanitized extras first, owned keys on top so they win.
+	wrapAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "data-count", "aria-label")
+	if wrapAttrs == nil {
+		wrapAttrs = html.Attrs{}
 	}
+	wrapAttrs["class"] = cls
+	wrapAttrs["role"] = "radiogroup"
+	wrapAttrs["data-count"] = itoaSmall(len(cfg.Options))
 	if cfg.ID != "" {
 		wrapAttrs["id"] = cfg.ID
 	}

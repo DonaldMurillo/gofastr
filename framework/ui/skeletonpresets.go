@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/skeleton"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -24,6 +25,13 @@ type SkeletonCardConfig struct {
 	ShowFooter bool
 	ID         string
 	Class      string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the placeholder's root element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, and aria-hidden (skeletons are always
+	// presentational; the surrounding container announces loading).
+	ExtraAttrs html.Attrs
 }
 
 // SkeletonCard renders a card-shaped loading placeholder: a title
@@ -36,10 +44,12 @@ func SkeletonCard(cfg SkeletonCardConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{
-		"class":       cls,
-		"aria-hidden": "true",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["aria-hidden"] = "true"
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
@@ -66,6 +76,13 @@ type SkeletonRowConfig struct {
 	HideChevron bool
 	ID          string
 	Class       string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the placeholder's root element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, and aria-hidden (skeletons are always
+	// presentational; the surrounding container announces loading).
+	ExtraAttrs html.Attrs
 }
 
 // SkeletonRow renders a list-row loading placeholder: a label line on
@@ -76,10 +93,12 @@ func SkeletonRow(cfg SkeletonRowConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{
-		"class":       cls,
-		"aria-hidden": "true",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["aria-hidden"] = "true"
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
@@ -108,6 +127,13 @@ type SkeletonAvatarConfig struct {
 	HideSubline bool
 	ID          string
 	Class       string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the placeholder's root element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, and aria-hidden (skeletons are always
+	// presentational; the surrounding container announces loading).
+	ExtraAttrs html.Attrs
 }
 
 // SkeletonAvatar renders an avatar-with-text loading placeholder: a
@@ -118,10 +144,12 @@ func SkeletonAvatar(cfg SkeletonAvatarConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{
-		"class":       cls,
-		"aria-hidden": "true",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["aria-hidden"] = "true"
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

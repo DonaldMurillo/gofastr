@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -21,6 +22,11 @@ type SignOutConfig struct {
 	// Variant styles the button; defaults to ButtonGhost.
 	Variant ButtonVariant
 	Class   string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the control's root <form>.
+	// Keys the component owns are dropped: class (use Class),
+	// data-fui-*, method, and action.
+	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the sign-out label.
 	// When nil, English fallbacks apply.
 	Ctx context.Context
@@ -54,7 +60,11 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	var b strings.Builder
 	// csrf-exempt: battery/auth's logout handler enforces same-origin requests,
 	// and auth.WithBFFPosture exempts only this route from its global CSRF gate.
-	b.WriteString(`<form data-fui-comp="ui-sign-out" class="` + render.Escape(cls) + `" method="post" action="` + render.Escape(action) + `">`)
+	b.WriteString(`<form data-fui-comp="ui-sign-out" class="` + render.Escape(cls) + `" method="post" action="` + render.Escape(action) + `"`)
+	// Caller extras land after the owned attributes. render.Attr
+	// validates the key and escapes the value, matching render.Tag.
+	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs, "method", "action")))
+	b.WriteString(`>`)
 	if cfg.Next != "" {
 		b.WriteString(`<input type="hidden" name="next" value="` + render.Escape(cfg.Next) + `">`)
 	}

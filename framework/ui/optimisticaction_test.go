@@ -89,3 +89,14 @@ func TestOptimisticExplicitPrimary(t *testing.T) {
 		t.Errorf("expected ui-button--primary on explicit primary variant, got: %s", got)
 	}
 }
+
+func TestOptimisticActionExtraAttrsOnRoot(t *testing.T) {
+	h := OptimisticAction(OptimisticActionConfig{
+		Endpoint: "/x", IdleLabel: "Follow", SuccessLabel: "Following",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("OptimisticAction root missing data-test:\n%s", root)
+	}
+}

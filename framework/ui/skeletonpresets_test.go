@@ -111,3 +111,27 @@ func TestSkeletonPresets_AllRegisterCSS(t *testing.T) {
 		}
 	}
 }
+
+func TestSkeletonCardExtraAttrsOnRoot(t *testing.T) {
+	h := SkeletonCard(SkeletonCardConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+}
+
+func TestSkeletonRowExtraAttrsOnRoot(t *testing.T) {
+	h := SkeletonRow(SkeletonRowConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+}
+
+func TestSkeletonAvatarExtraAttrsOnRoot(t *testing.T) {
+	h := SkeletonAvatar(SkeletonAvatarConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+}

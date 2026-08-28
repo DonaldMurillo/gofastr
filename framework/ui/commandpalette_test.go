@@ -84,3 +84,15 @@ func TestCommandPalettePanicsWithoutRPC(t *testing.T) {
 	}()
 	CommandPalette(CommandPaletteConfig{})
 }
+
+func TestCommandPaletteExtraAttrsOnRoot(t *testing.T) {
+	_, b := CommandPalette(CommandPaletteConfig{
+		RPCPath:    "/search",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	h := b.Definition().Slots[0].Component.Render()
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("palette root missing data-test:\n%s", root)
+	}
+}

@@ -53,6 +53,13 @@ type ColorFieldConfig struct {
 	TextAttrs   html.Attrs
 
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the row's root element.
+	// Keys the component owns are dropped: class (use Class), id, and
+	// data-fui-*. Per-input attributes belong in SwatchAttrs /
+	// TextAttrs, which merge verbatim.
+	ExtraAttrs html.Attrs
 }
 
 // ColorField renders the swatch + text-input row.
@@ -94,7 +101,12 @@ func ColorField(cfg ColorFieldConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return colorFieldStyle.WrapHTML(render.Tag("div", html.Attrs{"class": cls},
+	root := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if root == nil {
+		root = map[string]string{}
+	}
+	root["class"] = cls
+	return colorFieldStyle.WrapHTML(render.Tag("div", root,
 		render.VoidTag("input", swatch),
 		render.VoidTag("input", text),
 	))

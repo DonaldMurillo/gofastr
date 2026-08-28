@@ -49,6 +49,12 @@ type StepRailConfig struct {
 	MetaHref string
 	// Class is appended to the ui-step-rail wrapper.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the rail's root <aside>
+	// element. Keys the component owns are dropped: class (use
+	// Class), data-fui-*, role, and aria-label (derived from Title).
+	ExtraAttrs html.Attrs
 }
 
 // StepRail renders the sticky numbered nav. The wrapper is an <aside>
@@ -115,14 +121,14 @@ func StepRail(cfg StepRailConfig) render.HTML {
 			meta))
 	}
 
-	return stepRailStyle.WrapHTML(render.Tag("aside",
-		map[string]string{
-			"class":      cls,
-			"role":       "complementary",
-			"aria-label": aria,
-		},
-		body...,
-	))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	attrs["role"] = "complementary"
+	attrs["aria-label"] = aria
+	return stepRailStyle.WrapHTML(render.Tag("aside", attrs, body...))
 }
 
 var stepRailStyle = registry.RegisterStyle("ui-step-rail", stepRailCSS)

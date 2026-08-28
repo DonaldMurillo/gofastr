@@ -33,6 +33,12 @@ type HeroConfig struct {
 	AriaLabel string
 	// Class is appended to the ui-hero wrapper.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the hero's root <section>.
+	// Keys the component owns are dropped: class and id (use Class),
+	// data-fui-*, and aria-label (use AriaLabel).
+	ExtraAttrs html.Attrs
 }
 
 // Hero renders a single-column (or copy+media split) hero section.
@@ -61,7 +67,11 @@ func Hero(cfg HeroConfig) render.HTML {
 	if label == "" {
 		label = cfg.Title
 	}
-	attrs := map[string]string{"class": cls}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label")
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
 	if label != "" {
 		attrs["aria-label"] = label
 	}

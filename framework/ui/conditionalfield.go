@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -29,6 +30,14 @@ type ConditionalFieldConfig struct {
 	Children []render.HTML
 
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root element. Keys
+	// the component owns are dropped: class (use Class), id,
+	// data-fui-*, data-when-name / data-when-value (use WhenName /
+	// WhenValue), hidden, and aria-hidden (the runtime toggles
+	// visibility).
+	ExtraAttrs html.Attrs
 }
 
 // ConditionalField renders a container that is hidden by default and
@@ -50,14 +59,17 @@ func ConditionalField(cfg ConditionalFieldConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	attrs := map[string]string{
-		"data-fui-comp":   "ui-conditional-field",
-		"class":           cls,
-		"data-when-name":  cfg.WhenName,
-		"data-when-value": cfg.WhenValue,
-		"hidden":          "",
-		"aria-hidden":     "true",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"data-when-name", "data-when-value", "hidden", "aria-hidden")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["data-fui-comp"] = "ui-conditional-field"
+	attrs["class"] = cls
+	attrs["data-when-name"] = cfg.WhenName
+	attrs["data-when-value"] = cfg.WhenValue
+	attrs["hidden"] = ""
+	attrs["aria-hidden"] = "true"
 
 	return conditionalFieldStyle.WrapHTML(
 		render.Tag("div", attrs, cfg.Children...))
@@ -88,12 +100,15 @@ func ConditionalFieldVisible(cfg ConditionalFieldConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	attrs := map[string]string{
-		"data-fui-comp":   "ui-conditional-field",
-		"class":           cls,
-		"data-when-name":  cfg.WhenName,
-		"data-when-value": cfg.WhenValue,
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"data-when-name", "data-when-value", "hidden", "aria-hidden")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["data-fui-comp"] = "ui-conditional-field"
+	attrs["class"] = cls
+	attrs["data-when-name"] = cfg.WhenName
+	attrs["data-when-value"] = cfg.WhenValue
 
 	return conditionalFieldStyle.WrapHTML(
 		render.Tag("div", attrs, cfg.Children...))

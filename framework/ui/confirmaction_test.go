@@ -250,3 +250,19 @@ func TestConfirmActionSuccessSignalRejectedNames(t *testing.T) {
 		})
 	}
 }
+
+func TestConfirmActionExtraAttrsOnRoot(t *testing.T) {
+	_, b := ConfirmAction(ConfirmActionConfig{
+		Name:         "delete-x",
+		TriggerLabel: "Delete",
+		Title:        "Delete?",
+		Body:         "Sure?",
+		RPCPath:      "/x",
+		ExtraAttrs:   map[string]string{"data-test": "hook"},
+	})
+	body := string(b.Definition().Slots[0].Component.Render())
+	root := body[:strings.Index(body, ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("dialog root missing data-test:\n%s", root)
+	}
+}

@@ -80,6 +80,13 @@ type CopyButtonConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root wrapper (the
+	// span carrying data-fui-comp). Keys the component owns are
+	// dropped: class, id (ID lands on the button, not the wrapper),
+	// and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // CopyButton renders the button.
@@ -185,7 +192,8 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	})
 
 	return copyButtonStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: "ui-copy-btn-wrap",
+		Class:      "ui-copy-btn-wrap",
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, btn, status))
 }
 

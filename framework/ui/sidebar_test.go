@@ -126,3 +126,22 @@ func TestSidebarOffCanvasEmitsDrawerOnlyVariant(t *testing.T) {
 		t.Errorf("off-canvas sidebar should not emit a collapse control: %s", out)
 	}
 }
+
+func TestSidebarExtraAttrsOnRoot(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, variant := range map[string]ui.SidebarVariant{
+		"persistent":  ui.SidebarPersistent,
+		"collapsible": ui.SidebarCollapsible,
+	} {
+		out := string(ui.Sidebar(ui.SidebarConfig{
+			Variant:    variant,
+			DrawerName: "x",
+			Items:      []ui.SidebarItem{{Label: "A", Href: "/a"}},
+			ExtraAttrs: extra,
+		}).Render())
+		root := out[:strings.Index(out, ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}

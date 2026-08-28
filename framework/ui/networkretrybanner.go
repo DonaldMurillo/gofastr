@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -68,6 +69,13 @@ type NetworkRetryBannerConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the banner's root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, role, aria-live, and hidden (the runtime
+	// un-hides the banner when connectivity degrades).
+	ExtraAttrs html.Attrs
 }
 
 // NetworkRetryBanner renders the (initially hidden) banner.
@@ -96,15 +104,17 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{
-		"class":                              cls,
-		"role":                               "alert",
-		"aria-live":                          "assertive",
-		"data-fui-network-retry-health":      cfg.HealthEndpoint,
-		"data-fui-network-retry-threshold":   fmt.Sprintf("%d", threshold),
-		"data-fui-network-retry-sse-silence": fmt.Sprintf("%d", cfg.SSESilenceMs),
-		"hidden":                             "",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live", "hidden")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["role"] = "alert"
+	attrs["aria-live"] = "assertive"
+	attrs["data-fui-network-retry-health"] = cfg.HealthEndpoint
+	attrs["data-fui-network-retry-threshold"] = fmt.Sprintf("%d", threshold)
+	attrs["data-fui-network-retry-sse-silence"] = fmt.Sprintf("%d", cfg.SSESilenceMs)
+	attrs["hidden"] = ""
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

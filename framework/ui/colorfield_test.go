@@ -125,3 +125,14 @@ func escapeForAttr(s string) string {
 	r := strings.NewReplacer(`&`, "&amp;", `"`, "&#34;", `<`, "&lt;", `>`, "&gt;", `'`, "&#39;")
 	return r.Replace(s)
 }
+
+func TestColorFieldExtraAttrsOnRoot(t *testing.T) {
+	h := ColorField(ColorFieldConfig{
+		SwatchLabel: "Colour",
+		ExtraAttrs:  map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("row root missing data-test:\n%s", root)
+	}
+}

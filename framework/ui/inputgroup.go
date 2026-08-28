@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -22,6 +23,12 @@ type InputGroupConfig struct {
 	Append render.HTML
 	// Class adds extra CSS classes to the wrapper.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the group's root wrapper
+	// div. Keys the component owns are dropped: class and id (use
+	// Class) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // InputGroup renders an input with optional prepend and append addons.
@@ -57,9 +64,12 @@ func InputGroup(cfg InputGroupConfig) render.HTML {
 			}, cfg.Append))
 	}
 
-	return inputGroupStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls},
-		children...))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	return inputGroupStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 
 var inputGroupStyle = registry.RegisterStyle("ui-input-group", inputGroupCSS)

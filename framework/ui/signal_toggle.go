@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -38,6 +39,12 @@ type SignalToggleConfig struct {
 	Slice      *store.Slice[bool] // optional; supplies the signal name + initial value, takes precedence
 	Label      string             // optional:  aria-label (falls back to the signal name)
 	Class      string             // optional:  extra CSS classes
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the toggle's root
+	// <button>. Keys the component owns are dropped: class (use
+	// Class), data-fui-*, role, aria-checked, and aria-label — the
+	// switch contract and signal wiring the runtime drives.
+	ExtraAttrs html.Attrs
 }
 
 // SignalToggle renders a <button role="switch"> that toggles a boolean
@@ -75,6 +82,11 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	escLabel := render.Escape(label)
 	escCls := render.Escape(cls)
 
+	// Caller extras land after the owned attributes. render.Attr
+	// validates the key and escapes the value, matching render.Tag.
+	extraAttrs := serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"role", "aria-checked", "aria-label"))
+
 	// Build inner children as a single HTML string, static structure.
 	inner := fmt.Sprintf(
 		`<span class="fui-toggle__track"><span class="fui-toggle__thumb"></span></span>`+
@@ -89,7 +101,7 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 		`<button class="%s" data-fui-comp="fui-toggle"`+
 			` data-fui-signal-toggle="%s"`+
 			` data-fui-signal="%s" data-fui-signal-mode="attr" data-fui-signal-attr="aria-checked"`+
-			` role="switch" aria-checked="%s" aria-label="%s">%s</button>`,
-		escCls, escName, escName, initStr, escLabel, inner,
+			` role="switch" aria-checked="%s" aria-label="%s"%s>%s</button>`,
+		escCls, escName, escName, initStr, escLabel, extraAttrs, inner,
 	))
 }
