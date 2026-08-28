@@ -391,6 +391,40 @@ func TestMountServesScriptAndManifest(t *testing.T) {
 	}
 }
 
+func TestManifestCarriesAnnotationHints(t *testing.T) {
+	h := New()
+	tl := validTool()
+	tl.ReadOnlyHint = true
+	tl.UntrustedContentHint = true
+	if err := h.Register(tl); err != nil {
+		t.Fatal(err)
+	}
+	plain := validTool()
+	plain.Name = "plain"
+	plain.Path = "/api/plain"
+	if err := h.Register(plain); err != nil {
+		t.Fatal(err)
+	}
+	rt := router.New()
+	if _, err := h.Mount(rt, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	rt.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, ManifestRoute, nil))
+	var m struct{ Tools []Tool }
+	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Tools[0].ReadOnlyHint || !m.Tools[0].UntrustedContentHint {
+		t.Fatalf("annotation hints lost in the manifest: %+v", m.Tools[0])
+	}
+	// omitempty: an unhinted tool must not serialize the fields at all.
+	raw, _ := json.Marshal(m.Tools[1])
+	if strings.Contains(string(raw), "readOnlyHint") || strings.Contains(string(raw), "untrustedContentHint") {
+		t.Fatalf("unhinted tool serialized hint fields: %s", raw)
+	}
+}
+
 func TestMountDefaultsMethodAndSchema(t *testing.T) {
 	h := New()
 	tl := validTool()

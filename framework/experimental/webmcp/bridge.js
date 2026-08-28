@@ -66,12 +66,19 @@
     var warn = function (err) {
       console.warn('gofastr webmcp: registerTool(' + t.name + ') failed: ' + err);
     };
+    var ann;
+    if (t.readOnlyHint || t.untrustedContentHint) {
+      ann = {};
+      if (t.readOnlyHint) ann.readOnlyHint = true;
+      if (t.untrustedContentHint) ann.untrustedContentHint = true;
+    }
     try {
       var p = mc.registerTool({
         name: t.name,
         title: t.title || undefined,
         description: t.description,
         inputSchema: t.inputSchema,
+        annotations: ann,
         execute: function (input) { return dispatch(t, input); }
       });
       if (p && typeof p.catch === 'function') p.catch(warn);

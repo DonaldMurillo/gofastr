@@ -2,7 +2,8 @@
 
 `framework/experimental/webmcp` exposes server-declared tools to
 in-browser AI agents through the [WebMCP proposal](https://developer.chrome.com/docs/ai/webmcp)
-(`navigator.modelContext`). The server declares each tool's name,
+(`document.modelContext`; Chromium also exposes the legacy
+`navigator.modelContext` binding). The server declares each tool's name,
 description, JSON Schema, and the same-origin endpoint that implements
 it; a mounted bridge script registers the set on `navigator.modelContext`
 and proxies each `execute()` call back to that endpoint with the
@@ -73,6 +74,8 @@ returned `scriptURL` into your own markup instead.
 | `InputSchema` | no | JSON Schema object for the input. Defaults to `{"type":"object","properties":{}}`. |
 | `Method` | no | `GET`, `POST`, `PUT`, `PATCH`, or `DELETE`. Defaults to `POST`. |
 | `Path` | yes | Same-origin absolute path of the implementing endpoint. Query strings allowed; schemes, hosts, fragments, backslashes, control characters, and `.`/`..` segments are rejected. |
+| `ReadOnlyHint` | no | Advertises the tool as non-mutating (`annotations.readOnlyHint`). Advisory only — never a substitute for endpoint authorization. |
+| `UntrustedContentHint` | no | Warns the agent the result may carry content the app does not control (`annotations.untrustedContentHint`). Advisory only — never a substitute for output sanitization. |
 
 `Register` returns an error naming the exact field for any violation,
 and refuses registration after `Mount` (the script and manifest are

@@ -88,6 +88,10 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 			// The baked-in query param collides with an input key on
 			// purpose: the bridge must let the input override it.
 			Path: "/api/search?source=baked",
+			// Registration succeeding with annotations set proves the
+			// browser accepts the forwarded annotations object.
+			ReadOnlyHint:         true,
+			UntrustedContentHint: true,
 		},
 		{
 			Name:        "broken",

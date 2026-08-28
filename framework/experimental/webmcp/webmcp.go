@@ -117,6 +117,18 @@ type Tool struct {
 	// hosts, fragments, backslashes, control characters, and "."/".."
 	// segments are rejected.
 	Path string `json:"path"`
+
+	// ReadOnlyHint advertises the tool as non-mutating (forwarded to
+	// the browser as annotations.readOnlyHint). Advisory only: agents
+	// may prefer read-only tools when exploring, but the hint never
+	// replaces endpoint authorization.
+	ReadOnlyHint bool `json:"readOnlyHint,omitempty"`
+
+	// UntrustedContentHint tells the agent the tool's result can carry
+	// content the app does not control (user-generated text), forwarded
+	// as annotations.untrustedContentHint. Advisory only: it never
+	// replaces output sanitization.
+	UntrustedContentHint bool `json:"untrustedContentHint,omitempty"`
 }
 
 // ScriptRegistrar is the seam through which Mount puts the bridge script

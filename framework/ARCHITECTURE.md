@@ -295,10 +295,11 @@ Out-of-contract (NOT part of the layering rules below):
   experimental/apiversions   API versioning (URL prefix, deprecation
                              headers, projections). Experimental surface.
   experimental/webmcp        WebMCP bridge: registers server-declared
-                             tools on navigator.modelContext (Chrome
-                             origin-trial API) and proxies execute() to
-                             same-origin endpoints with the visitor's
-                             session. Experimental surface.
+                             tools on the page's modelContext (the
+                             Chrome origin-trial API on Document, with
+                             the legacy Navigator binding) and proxies
+                             execute() to same-origin endpoints with
+                             the visitor's session. Experimental.
   testkit/, testdata/        Public test helpers + fixtures for host apps.
   factory/                   Rails-style fixture/factory helpers (tests).
   isolation/                 Per-worktree local runtime resource resolution.
