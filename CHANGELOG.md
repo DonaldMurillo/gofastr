@@ -9,7 +9,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
-- **`battery/auth` treats emails as case-insensitive end to end**
+- **`battery/auth` treats emails as case-insensitive end-to-end**
   (#270): `Owner@Example.com` and `owner@example.com` were two
   different accounts — login failed across casings, OAuth created
   duplicate accounts on a case-mismatched provider email, and the

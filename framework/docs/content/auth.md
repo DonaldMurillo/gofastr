@@ -589,18 +589,20 @@ those must be resolved by the operator (merge or delete), not by the
 migration:
 
 ```sql
-SELECT LOWER(email), COUNT(*) FROM auth_users
-GROUP BY LOWER(email) HAVING COUNT(*) > 1;
+SELECT LOWER(TRIM(email)), COUNT(*) FROM auth_users
+GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1;
 ```
 
 With zero collisions, normalize and then keep the invariant honest
-with an expression index (PostgreSQL shown; SQLite supports the same
-expression-index form):
+with an expression index. `TRIM` mirrors the runtime canonicalization
+(`CanonicalEmail` trims before lowercasing) so a legacy
+`"  Bob@Example.com  "` row collapses to the same identity. PostgreSQL
+shown; SQLite supports the same expression-index form:
 
 ```sql
-UPDATE auth_users SET email = LOWER(email);
+UPDATE auth_users SET email = LOWER(TRIM(email));
 CREATE UNIQUE INDEX auth_users_email_canonical
-  ON auth_users (LOWER(email));
+  ON auth_users (LOWER(TRIM(email)));
 ```
 
 ## Listing users
