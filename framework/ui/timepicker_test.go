@@ -71,3 +71,13 @@ func TestTimePickerErrorState(t *testing.T) {
 		t.Errorf("Error should mark aria-invalid:\n%s", h)
 	}
 }
+
+func TestTimePickerExtraAttrsOnRoot(t *testing.T) {
+	h := TimePicker(TimePickerConfig{
+		Name: "at", Label: "At", ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("wrapper div missing data-test:\n%s", root)
+	}
+}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -19,14 +20,18 @@ import (
 // constructors but is intentionally not turned into an inline style: the
 // framework forbids inline styles (everything ships via registered CSS), so the
 // placeholder's min-height is a fixed token in the stylesheet below.
-func chartEmpty(_ int, labelledBy, class, message string) render.HTML {
+// The caller's ExtraAttrs ride along so a host's data-* test hook still
+// resolves when the chart happens to render its zero-data branch.
+func chartEmpty(_ int, labelledBy, class, message string, extra html.Attrs) render.HTML {
 	if message == "" {
 		message = "No data yet"
 	}
-	attrs := map[string]string{
-		"data-fui-comp": "ui-chart-empty",
-		"role":          "img",
+	attrs := html.SafeExtraAttrs(extra, "role", "aria-labelledby", "aria-label")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["data-fui-comp"] = "ui-chart-empty"
+	attrs["role"] = "img"
 	if class != "" {
 		attrs["class"] = class
 	}

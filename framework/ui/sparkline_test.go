@@ -68,3 +68,16 @@ func TestSparklineColorPreset(t *testing.T) {
 		t.Errorf("Color=danger should add modifier class:\n%s", h)
 	}
 }
+
+func TestSparklineExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, out := range map[string]string{
+		"svg":    string(Sparkline(SparklineConfig{Values: []float64{1, 2, 3}, ExtraAttrs: extra})),
+		"nodata": string(Sparkline(SparklineConfig{Values: []float64{1}, ExtraAttrs: extra})),
+	} {
+		root := out[:strings.Index(out, ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}

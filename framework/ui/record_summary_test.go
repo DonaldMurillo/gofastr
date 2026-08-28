@@ -153,3 +153,28 @@ func assertUIPanics(t *testing.T, fn func()) {
 	}()
 	fn()
 }
+
+func TestRecordSummaryExtraAttrsOnRoot(t *testing.T) {
+	h := RecordSummary(RecordSummaryConfig{
+		Title:      "Deploy",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("article missing data-test:\n%s", root)
+	}
+}
+
+func TestMetricBandExtraAttrsOnRoot(t *testing.T) {
+	h := MetricBand(MetricBandConfig{
+		Items:      []MetricBandItem{{Label: "L", Value: "V"}},
+		ExtraAttrs: map[string]string{"data-test": "hook", "aria-label": "evil"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("dl missing data-test:\n%s", root)
+	}
+	if strings.Contains(root, "evil") {
+		t.Errorf("aria-label is owned by Label; ExtraAttrs copy must be dropped:\n%s", root)
+	}
+}

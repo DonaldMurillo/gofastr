@@ -71,3 +71,11 @@ func TestShortcutHintPanicsOnEmptyChord(t *testing.T) {
 	}()
 	ShortcutHint(ShortcutHintConfig{})
 }
+
+func TestShortcutHintExtraAttrsOnRoot(t *testing.T) {
+	h := ShortcutHint(ShortcutHintConfig{Chord: "Mod+K", ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("ShortcutHint root missing data-test:\n%s", root)
+	}
+}

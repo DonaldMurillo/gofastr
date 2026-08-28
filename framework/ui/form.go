@@ -218,6 +218,13 @@ type ValidationSummaryConfig struct {
 	Title string
 	// Class adds extra CSS classes to the wrapper.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the summary's root div.
+	// Keys the component owns are dropped: class and id (use Class),
+	// data-fui-*, role, and aria-live.
+	ExtraAttrs html.Attrs
+
 	// Ctx carries the per-request context used to resolve the i18n
 	// title. When nil, English fallbacks apply.
 	Ctx context.Context
@@ -294,11 +301,14 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 		"class": "ui-validation-summary__list",
 	}, items...)
 
-	return validationSummaryStyle.WrapHTML(render.Tag("div", map[string]string{
-		"class":     cls,
-		"role":      "alert",
-		"aria-live": "assertive",
-	}, title, list))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live")
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	attrs["role"] = "alert"
+	attrs["aria-live"] = "assertive"
+	return validationSummaryStyle.WrapHTML(render.Tag("div", attrs, title, list))
 }
 
 var validationSummaryStyle = registry.RegisterStyle("ui-validation-summary", validationSummaryCSS)

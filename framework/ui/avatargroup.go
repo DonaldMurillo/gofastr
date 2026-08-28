@@ -40,6 +40,12 @@ type AvatarGroupConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the group's root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, role, and aria-label (use Label).
+	ExtraAttrs html.Attrs
 }
 
 // AvatarGroup renders an overlapping stack of avatars. When
@@ -111,10 +117,11 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 	}
 
 	return avatarGroupStyle.WrapHTML(html.Div(html.DivConfig{
-		Class:     cls,
-		ID:        cfg.ID,
-		Role:      "group",
-		AriaLabel: label,
+		Class:      cls,
+		ID:         cfg.ID,
+		Role:       "group",
+		AriaLabel:  label,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label"),
 	}, items...))
 }
 

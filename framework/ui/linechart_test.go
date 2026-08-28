@@ -92,3 +92,14 @@ func TestLineChartEdgeLabelsAnchorInward(t *testing.T) {
 		t.Errorf("last label should anchor end:\n%s", h)
 	}
 }
+
+func TestLineChartExtraAttrsOnRoot(t *testing.T) {
+	h := LineChart(LineChartConfig{
+		Series:     []LineSeries{{Name: "a", Values: []float64{1, 2}}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("line chart root missing data-test:\n%s", root)
+	}
+}

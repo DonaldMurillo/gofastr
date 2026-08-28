@@ -50,6 +50,13 @@ type TagConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the tag's root element,
+	// whichever shape it takes (<a> or <span>). Keys the component
+	// owns are dropped: class and id (use Class / ID), data-fui-*,
+	// and href (use Href; it goes through the URL sanitizer).
+	ExtraAttrs html.Attrs
 }
 
 // Tag renders a small pill: optionally linked (filter chip), optionally
@@ -111,14 +118,17 @@ func Tag(cfg TagConfig) render.HTML {
 			href = "#"
 		}
 		return tagStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
-			Href:    href,
-			Class:   cls,
-			ID:      cfg.ID,
-			Content: render.Join(body...),
+			Href:       href,
+			Class:      cls,
+			ID:         cfg.ID,
+			Content:    render.Join(body...),
+			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "href"),
 		}))
 	}
 	return tagStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: cls, ID: cfg.ID,
+		Class:      cls,
+		ID:         cfg.ID,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, body...))
 }
 

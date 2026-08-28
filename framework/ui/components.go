@@ -27,6 +27,12 @@ type PageHeaderConfig struct {
 	HeadingLevel int
 	Class        string
 	ID           string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the header's root <header>
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // PageHeader renders a top-of-page header with title, optional subtitle
@@ -67,7 +73,9 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 			html.DivConfig{Class: "ui-page-header__actions"}, cfg.Actions))
 	}
 	return pageHeaderStyle.WrapHTML(
-		html.Header(html.HeaderConfig{Class: cls, ID: cfg.ID}, body...),
+		html.Header(html.HeaderConfig{
+			Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+		}, body...),
 	)
 }
 
@@ -125,6 +133,13 @@ type SectionConfig struct {
 	// Ctx carries the per-request context used to resolve the default
 	// Section aria-label. When nil, English fallback applies.
 	Ctx context.Context
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the section's root <section> element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and the accessible-name contract (role,
+	// aria-label, aria-labelledby).
+	ExtraAttrs html.Attrs
 }
 
 // Section renders a content section with consistent spacing and an
@@ -184,6 +199,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		sectionID = slug(cfg.Heading)
 	}
 	secCfg := html.SectionConfig{Class: cls, ID: sectionID}
+	secCfg.ExtraAttrs = html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label", "aria-labelledby")
 	if headingID != "" {
 		secCfg.LabelledBy = headingID
 	} else if cfg.Label != "" {
@@ -208,6 +224,12 @@ type FormFieldConfig struct {
 	Required bool   // adds a visible "required" hint and aria-required
 	Input    render.HTML
 	Class    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the field row's root <div>. Keys the
+	// component owns are dropped: class and id (use Class) and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // FormField renders a labelled form field with optional help and error
@@ -271,7 +293,9 @@ func FormField(cfg FormFieldConfig) render.HTML {
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	}
-	return formFieldStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, out...))
+	return formFieldStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, out...))
 }
 
 // injectAriaInvalid splices ` aria-invalid="true" aria-describedby="<id>"`
@@ -415,6 +439,13 @@ type FormSectionConfig struct {
 	Heading     string // optional
 	Description string // optional
 	Class       string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the group's root element, whichever shape
+	// it takes (<div> without a Heading, <fieldset> with one). Keys the
+	// component owns are dropped: class and id (use Class) and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // FormSection wraps a group of FormFields with a shared heading.
@@ -427,6 +458,7 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs)
 	if cfg.Heading == "" {
 		// No heading → use a plain div, not <fieldset>, to avoid an
 		// unlabelled grouping landmark.
@@ -438,7 +470,7 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 		}
 		out = append(out, html.Div(
 			html.DivConfig{Class: "ui-form-section__fields"}, fields...))
-		return formSectionStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, out...))
+		return formSectionStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ExtraAttrs: extra}, out...))
 	}
 	out := []render.HTML{}
 	if cfg.Description != "" {
@@ -449,7 +481,7 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 	out = append(out, html.Div(
 		html.DivConfig{Class: "ui-form-section__fields"}, fields...))
 	return formSectionStyle.WrapHTML(html.FieldSet(
-		html.FieldSetConfig{Legend: cfg.Heading, Class: cls},
+		html.FieldSetConfig{Legend: cfg.Heading, Class: cls, ExtraAttrs: extra},
 		out...))
 }
 
@@ -667,6 +699,12 @@ type StatusBadgeConfig struct {
 	Variant StatusVariant // defaults to Neutral
 	ID      string
 	Class   string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the pill's root <span>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // StatusBadge renders a small inline pill conveying state.
@@ -683,8 +721,9 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return statusBadgeStyle.WrapHTML(html.Span(html.TextConfig{Class: cls, ID: cfg.ID},
-		render.Text(cfg.Label)))
+	return statusBadgeStyle.WrapHTML(html.Span(html.TextConfig{
+		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, render.Text(cfg.Label)))
 }
 
 // ─── EmptyState ─────────────────────────────────────────────────────
@@ -703,6 +742,12 @@ type EmptyStateConfig struct {
 	// only content under the page <h1> (e.g. an admin list with zero rows)
 	// passes 2 so the outline doesn't skip h1 → h3.
 	HeadingLevel int
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the empty state's root
+	// <div>. Keys the component owns are dropped: class and id (use
+	// Class / ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // EmptyState renders a centered title + description + optional CTA for
@@ -736,7 +781,9 @@ func EmptyState(cfg EmptyStateConfig) render.HTML {
 		out = append(out, html.Div(
 			html.DivConfig{Class: "ui-empty-state__action"}, cfg.Action))
 	}
-	return emptyStateStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...))
+	return emptyStateStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, out...))
 }
 
 // ─── Callout ────────────────────────────────────────────────────────
@@ -754,9 +801,15 @@ type CalloutConfig struct {
 	// flow: a nested complementary landmark trips axe's
 	// landmark-complementary-is-top-level rule, and an inline tip is emphasis,
 	// not a tangential region. Same trade-off Sidebar already made (div, not
-	// aside, to avoid nesting complementary). Danger/warning always use
 	// role="alert" regardless of this flag.
 	Landmark *bool
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the callout's root element, whichever shape
+	// it takes (<aside> landmark, plain <div>, or role="alert" <div>).
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and the landmark contract (role, aria-label).
+	ExtraAttrs html.Attrs
 }
 
 // Callout renders a persistent info/warning/error block. Distinct from
@@ -773,6 +826,7 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 		v = StatusInfo
 	}
 	checkStatusVariant("Callout", v)
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
 	cls := "ui-callout ui-callout--" + string(v)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -794,7 +848,7 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	role := calloutRole(v)
 	if role == "alert" {
 		return calloutStyle.WrapHTML(html.Div(html.DivConfig{
-			Class: cls, ID: cfg.ID, Role: "alert",
+			Class: cls, ID: cfg.ID, Role: "alert", ExtraAttrs: extra,
 		}, out...))
 	}
 	// Note "info" role: html.Aside requires Label/LabelledBy. Use
@@ -808,7 +862,7 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 		// can nest inside <main> without tripping landmark-complementary-
 		// is-top-level. Visually identical to the landmark form.
 		return calloutStyle.WrapHTML(html.Div(html.DivConfig{
-			Class: cls, ID: cfg.ID,
+			Class: cls, ID: cfg.ID, ExtraAttrs: extra,
 		}, out...))
 	}
 	label := cfg.Title
@@ -816,7 +870,7 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 		label = string(v) + " note"
 	}
 	return calloutStyle.WrapHTML(html.Aside(html.AsideConfig{
-		Class: cls, ID: cfg.ID, Label: label,
+		Class: cls, ID: cfg.ID, Label: label, ExtraAttrs: extra,
 	}, out...))
 }
 func calloutRole(v StatusVariant) string {
@@ -850,6 +904,12 @@ type StatCardConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the stat card's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // StatCard renders a metric card: label, value, optional trend pill.
@@ -877,7 +937,9 @@ func StatCard(cfg StatCardConfig) render.HTML {
 			html.TextConfig{Class: "ui-stat-card__trend ui-stat-card__trend--" + string(dir)},
 			render.Text(cfg.Trend)))
 	}
-	return statCardStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...))
+	return statCardStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, out...))
 }
 
 // ─── Avatar ─────────────────────────────────────────────────────────
@@ -927,6 +989,12 @@ type AvatarConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the avatar's root <span>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // Avatar renders a circular avatar with an image fallback to text
@@ -945,7 +1013,8 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	spanCfg := html.TextConfig{Class: cls, ID: cfg.ID}
+	spanCfg := html.TextConfig{Class: cls, ID: cfg.ID,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}
 
 	var inner []render.HTML
 	if cfg.Src != "" {
@@ -1036,6 +1105,14 @@ type CodeBlockConfig struct {
 	Scroll bool
 	ID     string
 	Class  string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the block's root element, whichever shape
+	// it takes (a bare <pre> or a framed <div>). Keys the component
+	// owns are dropped: class and id (use Class / ID), data-fui-*, and
+	// the scroll contract (tabindex, aria-label) that lives on the
+	// <pre> body.
+	ExtraAttrs html.Attrs
 }
 
 // codeBlockSeq mints a process-unique id for a framed block's body so the
@@ -1055,6 +1132,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	if cfg.Language != "" {
 		label = cfg.Language + " source"
 	}
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "tabindex", "aria-label")
 
 	// Body <pre>. WCAG 2.1.1: tabindex=0 so keyboard users can pan the
 	// horizontal scroll. (role=region is intentionally avoided. It would
@@ -1079,7 +1157,13 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 		if cfg.Class != "" {
 			cls += " " + cfg.Class
 		}
-		preAttrs := map[string]string{"class": cls, "tabindex": "0", "aria-label": label}
+		preAttrs := extra
+		if preAttrs == nil {
+			preAttrs = html.Attrs{}
+		}
+		preAttrs["class"] = cls
+		preAttrs["tabindex"] = "0"
+		preAttrs["aria-label"] = label
 		if bodyID != "" {
 			preAttrs["id"] = bodyID
 		}
@@ -1133,7 +1217,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	}
 	pre := render.Tag("pre", preAttrs, body)
 	return codeBlockStyle.WrapHTML(
-		html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, head, pre))
+		html.Div(html.DivConfig{Class: cls, ID: cfg.ID, ExtraAttrs: extra}, head, pre))
 }
 
 // ─── SkipLink ──────────────────────────────────────────────────────
@@ -1163,6 +1247,12 @@ type SkipLinkConfig struct {
 	Text  string
 	Class string
 	ID    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the link's root <a>. Keys the component
+	// owns are dropped: class and id (use Class / ID), data-fui-*, and
+	// href (use Target).
+	ExtraAttrs html.Attrs
 }
 
 // SkipLink renders a WCAG 2.4.1 skip-navigation link.
@@ -1181,10 +1271,11 @@ func SkipLink(cfg SkipLinkConfig) render.HTML {
 	}
 	return skipLinkStyle.WrapHTML(
 		html.Link(html.LinkConfig{
-			Href:  "#" + target,
-			Text:  text,
-			Class: cls,
-			ID:    cfg.ID,
+			Href:       "#" + target,
+			Text:       text,
+			Class:      cls,
+			ID:         cfg.ID,
+			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "href"),
 		}),
 	)
 }

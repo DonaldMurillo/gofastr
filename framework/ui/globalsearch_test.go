@@ -81,3 +81,14 @@ func TestGlobalSearchStickyClass(t *testing.T) {
 		t.Errorf("Sticky=true should add modifier class:\n%s", on)
 	}
 }
+
+func TestGlobalSearchExtraAttrsOnRoot(t *testing.T) {
+	h := GlobalSearch(GlobalSearchConfig{
+		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "sig",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("global search root missing data-test:\n%s", root)
+	}
+}

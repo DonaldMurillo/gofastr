@@ -28,6 +28,13 @@ type DividerConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root element (<hr>,
+	// or the role=separator div for vertical / labelled shapes).
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, role, and aria-orientation (use Orientation).
+	ExtraAttrs html.Attrs
 }
 
 // Divider renders a semantic separator. Plain horizontal dividers use
@@ -44,22 +51,27 @@ func Divider(cfg DividerConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-orientation")
 
 	// Native <hr> is the cleanest case: no label, horizontal, no
 	// extra DOM. Keeps "<hr>" findable in view-source for plain
 	// dividers and avoids unnecessary role announcements.
 	if cfg.Label == "" && cfg.Orientation == DividerHorizontal {
-		return dividerStyle.WrapHTML(render.Tag("hr", map[string]string{
-			"class": cls,
-			"id":    cfg.ID,
-		}))
+		attrs := map[string]string{"class": cls, "id": cfg.ID}
+		for k, v := range extra {
+			attrs[k] = v
+		}
+		return dividerStyle.WrapHTML(render.Tag("hr", attrs))
 	}
 
-	attrs := map[string]string{
-		"class":            cls,
-		"role":             "separator",
-		"aria-orientation": string(orientationOrHorizontal(cfg.Orientation)),
+	attrs := extra
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["role"] = "separator"
+	attrs["aria-orientation"] = string(orientationOrHorizontal(cfg.Orientation))
+
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

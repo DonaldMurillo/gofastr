@@ -65,3 +65,14 @@ func TestRetryBannerCustomRetryLabel(t *testing.T) {
 		t.Errorf("expected custom retry label, got: %s", got)
 	}
 }
+
+func TestRetryBannerExtraAttrsOnRoot(t *testing.T) {
+	h := NetworkRetryBanner(NetworkRetryBannerConfig{
+		HealthEndpoint: "/health",
+		ExtraAttrs:     map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("banner root missing data-test:\n%s", root)
+	}
+}

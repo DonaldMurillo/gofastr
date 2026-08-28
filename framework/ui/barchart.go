@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -68,12 +69,20 @@ type BarChartConfig struct {
 	LabelledBy string
 	ID         string
 	Class      string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root <svg>. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, width, height, viewBox, xmlns, role,
+	// aria-labelledby (use LabelledBy), and aria-hidden. With no Bars
+	// the extras land on the shared zero-data placeholder instead.
+	ExtraAttrs html.Attrs
 }
 
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
 	if len(cfg.Bars) == 0 {
-		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet")
+		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 	w := cfg.Width
 	if w == 0 {
@@ -192,6 +201,8 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
 	}
+	sb.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"width", "height", "viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")))
 	sb.WriteString(` data-fui-comp="ui-bar-chart">`)
 
 	// Value axis: hairline gridlines at clean ticks + left labels.

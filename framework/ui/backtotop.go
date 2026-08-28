@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -106,6 +107,13 @@ type BackToTopConfig struct {
 
 	// Class is an optional extra CSS class.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root <button>. Keys
+	// the component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, type, aria-label (use Label), and inert (the
+	// runtime's initial-hidden wiring).
+	ExtraAttrs html.Attrs
 }
 
 // defaultArrowUpSVG is the chevron-up icon shown by default.
@@ -162,14 +170,16 @@ func BackToTop(cfg BackToTopConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	attrs := map[string]string{
-		"type":                   "button",
-		"data-fui-back-to-top":   "",
-		"data-fui-btt-threshold": fmt.Sprintf("%d", threshold),
-		"aria-label":             label,
-		"inert":                  "",
-		"class":                  cls,
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "aria-label", "inert")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["type"] = "button"
+	attrs["data-fui-back-to-top"] = ""
+	attrs["data-fui-btt-threshold"] = fmt.Sprintf("%d", threshold)
+	attrs["aria-label"] = label
+	attrs["inert"] = ""
+	attrs["class"] = cls
 	if cfg.Smooth != "" {
 		attrs["data-fui-btt-scroll"] = string(cfg.Smooth)
 	}

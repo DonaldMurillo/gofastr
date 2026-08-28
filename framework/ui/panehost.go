@@ -38,6 +38,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -89,6 +90,12 @@ type PaneHostConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the host's root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-* (the pane-host marker and deep-link wiring).
+	ExtraAttrs html.Attrs
 }
 
 // PaneHost renders a primary pane plus one or two openable side panes.
@@ -118,10 +125,13 @@ func PaneHost(cfg PaneHostConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	rootAttrs := map[string]string{
-		"class":              cls,
-		"data-fui-pane-host": "",
+	// Sanitized extras first, owned keys on top so they win.
+	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if rootAttrs == nil {
+		rootAttrs = html.Attrs{}
 	}
+	rootAttrs["class"] = cls
+	rootAttrs["data-fui-pane-host"] = ""
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID
 	}

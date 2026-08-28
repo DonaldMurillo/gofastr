@@ -51,6 +51,12 @@ type DocLayoutConfig struct {
 	Pager *DocPager
 	Class string
 	ID    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the layout's root
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // DocLayout assembles the doc page skeleton around the article body.
@@ -86,7 +92,7 @@ func DocLayout(cfg DocLayoutConfig, body ...render.HTML) render.HTML {
 		shellChildren = append(shellChildren, cfg.Toc)
 	}
 	return docLayoutStyle.WrapHTML(
-		html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, shellChildren...))
+		html.Div(html.DivConfig{Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}, shellChildren...))
 }
 
 func docCrumbs(crumbs []DocCrumb, label string) render.HTML {

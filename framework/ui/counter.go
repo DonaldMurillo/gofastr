@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -43,6 +44,12 @@ type CounterConfig struct {
 	// Ctx carries the per-request context used to resolve the Decrement,
 	// Increment and Counter group aria labels. When nil, English fallbacks apply.
 	Ctx context.Context
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root element. Keys
+	// the component owns are dropped: class (use Class), id, and
+	// data-fui-*, plus role=group and the aria-label it derives.
+	ExtraAttrs html.Attrs
 }
 
 // Counter renders a counter with + and − buttons that mutate a signal
@@ -100,10 +107,13 @@ func Counter(cfg CounterConfig) render.HTML {
 	}
 	incBtn := render.Tag("button", incAttrs, render.Text("+"))
 
-	return render.Tag("div", map[string]string{
-		"class":         cls,
-		"data-fui-comp": "fui-counter",
-		"role":          "group",
-		"aria-label":    i18nui.T(ctx, i18nui.KeyCounterLabel),
-	}, decBtn, display, incBtn)
+	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
+	if rootAttrs == nil {
+		rootAttrs = map[string]string{}
+	}
+	rootAttrs["class"] = cls
+	rootAttrs["data-fui-comp"] = "fui-counter"
+	rootAttrs["role"] = "group"
+	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyCounterLabel)
+	return render.Tag("div", rootAttrs, decBtn, display, incBtn)
 }

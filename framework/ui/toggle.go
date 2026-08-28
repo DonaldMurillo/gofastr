@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -49,7 +48,12 @@ type ToggleConfig struct {
 	// (aria-invalid="true", red ring, role="alert" message).
 	Error string
 
-	// Attrs lets callers attach data-fui-* attributes (e.g. for RPC).
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the control's root
+	// <label> element. Keys the component owns are dropped: class
+	// and id (use Class / ID), data-fui-*, and for (the label→input
+	// association; the runtime keys click and screen-reader wiring
+	// off it).
 	ExtraAttrs html.Attrs
 
 	Class string
@@ -132,7 +136,6 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	} else if cfg.Help != "" {
 		inputAttrs["aria-describedby"] = id + "-help"
 	}
-	maps.Copy(inputAttrs, cfg.ExtraAttrs)
 
 	// Switch uses an extra visual "track" element painted via CSS;
 	// no extra DOM beyond input + label needed because the
@@ -162,10 +165,13 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	// Native <label for=…> wraps the control. The for/id pairing is
 	// what the screen reader uses; the click-on-label-toggles-checkbox
 	// behavior is also native.
-	return toggleStyle.WrapHTML(render.Tag("label", map[string]string{
-		"class": cls,
-		"for":   id,
-	}, children...))
+	labelAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "for")
+	if labelAttrs == nil {
+		labelAttrs = map[string]string{}
+	}
+	labelAttrs["class"] = cls
+	labelAttrs["for"] = id
+	return toggleStyle.WrapHTML(render.Tag("label", labelAttrs, children...))
 }
 
 // ─── RadioGroup / CheckboxGroup ───────────────────────────────────────
@@ -197,6 +203,13 @@ type RadioGroupConfig struct {
 	Required bool
 	ID       string
 	Class    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the group's root
+	// <fieldset> element. Keys the component owns are dropped: class
+	// and id (use Class / ID), data-fui-*, role, and
+	// aria-describedby (wired to the group's help/error message).
+	ExtraAttrs html.Attrs
 }
 
 // RadioGroup renders a <fieldset> of radio buttons with a shared
@@ -263,11 +276,13 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 		}, render.Text(cfg.Help)))
 	}
 
-	attrs := map[string]string{
-		"class": cls,
-		"id":    id,
-		"role":  "radiogroup",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["id"] = id
+	attrs["role"] = "radiogroup"
 	if cfg.Error != "" {
 		attrs["aria-describedby"] = id + "-error"
 	} else if cfg.Help != "" {
@@ -301,6 +316,13 @@ type CheckboxGroupConfig struct {
 	Required bool
 	ID       string
 	Class    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the group's root
+	// <fieldset> element. Keys the component owns are dropped: class
+	// and id (use Class / ID), data-fui-*, role, and
+	// aria-describedby (wired to the group's help/error message).
+	ExtraAttrs html.Attrs
 }
 
 // CheckboxGroup renders a <fieldset> of checkboxes with a shared
@@ -367,11 +389,13 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 		}, render.Text(cfg.Help)))
 	}
 
-	attrs := map[string]string{
-		"class": cls,
-		"id":    id,
-		"role":  "group",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["id"] = id
+	attrs["role"] = "group"
 	if cfg.Error != "" {
 		attrs["aria-describedby"] = id + "-error"
 	} else if cfg.Help != "" {

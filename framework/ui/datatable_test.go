@@ -307,3 +307,23 @@ func TestDataTable_ResponsiveCards_EmptyHeaderHasNoDataLabel(t *testing.T) {
 		t.Errorf("empty-header column should not emit data-label=\"\", got: %s", h)
 	}
 }
+
+func TestDataTableExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"populated": DataTable(DataTableConfig{
+			Columns:    []Column{{Key: "id", Header: "ID"}},
+			Rows:       []Row{{Cells: map[string]render.HTML{"id": render.Text("1")}}},
+			ExtraAttrs: extra,
+		}),
+		"empty": DataTable(DataTableConfig{
+			Columns:    []Column{{Key: "id", Header: "ID"}},
+			ExtraAttrs: extra,
+		}),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}

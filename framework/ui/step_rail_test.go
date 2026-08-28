@@ -126,3 +126,17 @@ func TestStepRailRequiresAtLeastOneItem(t *testing.T) {
 	}()
 	StepRail(StepRailConfig{Items: nil})
 }
+
+func TestStepRailExtraAttrsOnRoot(t *testing.T) {
+	h := StepRail(StepRailConfig{
+		Items:      []StepRailItem{{Number: "01", Anchor: "s1", Label: "One"}},
+		ExtraAttrs: map[string]string{"data-test": "hook", "role": "banner"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("aside missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `role="complementary"`) {
+		t.Errorf("owned role must win over ExtraAttrs:\n%s", root)
+	}
+}

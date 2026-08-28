@@ -82,3 +82,11 @@ func TestRegisterIcon_AddsCustomIcon(t *testing.T) {
 		t.Errorf("expected registered SVG body to render, got: %s", got)
 	}
 }
+
+func TestIconExtraAttrsOnRoot(t *testing.T) {
+	h := Icon("check", IconConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("icon root missing data-test:\n%s", root)
+	}
+}

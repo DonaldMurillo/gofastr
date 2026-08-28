@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -47,6 +48,14 @@ type SparklineConfig struct {
 	LabelledBy string
 	ID         string
 	Class      string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the chart's root element:
+	// the <svg> itself, or the "no trend data" <span> when Values has
+	// fewer than two points. Keys the component owns are dropped:
+	// class and id (use Class / ID), data-fui-*, and the sizing and
+	// naming attributes the SVG derives from config (width, height,
+	// viewBox, xmlns, role, aria-labelledby, aria-hidden).
+	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the no-trend-data label.
 	// When nil, English fallbacks apply.
 	Ctx context.Context
@@ -60,8 +69,14 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	}
 	if len(cfg.Values) < 2 {
 		// Inline trend with too few points: render a calm "no trend" dash
-		// rather than crashing the host that embeds it.
-		attrs := map[string]string{"data-fui-comp": "ui-sparkline", "aria-label": i18nui.T(ctx, i18nui.KeySparklineNoData)}
+		// rather than crashing the host that embeds it. Sanitized extras
+		// first, owned keys on top so they win.
+		attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label")
+		if attrs == nil {
+			attrs = html.Attrs{}
+		}
+		attrs["data-fui-comp"] = "ui-sparkline"
+		attrs["aria-label"] = i18nui.T(ctx, i18nui.KeySparklineNoData)
 		if cfg.Class != "" {
 			attrs["class"] = cfg.Class
 		}
@@ -117,6 +132,12 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		cls += " " + escapeXML(cfg.Class)
 	}
 
+	// Caller extras land after the owned attributes. render.Attr
+	// validates the key and escapes the value, matching what the
+	// html primitives do for map-built roots.
+	extraAttrs := serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"width", "height", "viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden"))
+
 	svgAttrs := strings.Builder{}
 	svgAttrs.WriteString(`width="`)
 	svgAttrs.WriteString(strconv.Itoa(w))
@@ -160,7 +181,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		body = `<path d="` + pathD.String() + `" class="ui-sparkline__line"/>`
 	}
 
-	out := `<svg ` + svgAttrs.String() + ` data-fui-comp="ui-sparkline">` + body + `</svg>`
+	out := `<svg ` + svgAttrs.String() + ` data-fui-comp="ui-sparkline"` + extraAttrs + `>` + body + `</svg>`
 	return sparklineStyle.WrapHTML(render.HTML(out))
 }
 

@@ -35,6 +35,12 @@ type RepeaterConfig struct {
 	Items       []render.HTML
 	RPCPath     string
 
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the repeater's root
+	// element. Keys the component owns are dropped: class and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
+
 	// Ctx carries the per-request context used to resolve i18n strings
 	// (AddLabel, RemoveLabel defaults). When nil, context.Background() is
 	// used and English fallbacks are returned, preserving today's behaviour.
@@ -112,7 +118,10 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 		ExtraAttrs: addAttrs,
 	}))
 
-	return repeaterStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-repeater"}, children...))
+	return repeaterStyle.WrapHTML(html.Div(html.DivConfig{
+		Class:      "ui-repeater",
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, children...))
 }
 
 func repeaterRemoveBtn(cfg RepeaterConfig, index int) render.HTML {

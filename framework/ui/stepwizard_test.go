@@ -175,3 +175,21 @@ func TestStepWizardPanicOnInvalidMethod(t *testing.T) {
 		Method:      "DELETE",
 	})
 }
+
+func TestStepWizardExtraAttrsOnRoot(t *testing.T) {
+	h := StepWizard(StepWizardConfig{
+		Steps:      []StepWizardStep{{Heading: "A"}},
+		Action:     "/wizard",
+		ExtraAttrs: map[string]string{"data-test": "hook", "action": "javascript:alert(1)"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("form missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `action="/wizard"`) {
+		t.Errorf("owned action must win over ExtraAttrs:\n%s", root)
+	}
+	if !strings.Contains(root, `data-fui-comp="ui-step-wizard"`) {
+		t.Errorf("comp marker lost:\n%s", root)
+	}
+}

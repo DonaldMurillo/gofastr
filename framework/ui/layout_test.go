@@ -80,3 +80,68 @@ func TestLayoutCustomClassAppended(t *testing.T) {
 	h := Stack(StackConfig{Class: "my-extra"}, render.Text("x"))
 	mustContain(t, h, "my-extra")
 }
+
+// ─── ExtraAttrs pass-through (#251) ───
+
+func TestStackExtraAttrsOnRoot(t *testing.T) {
+	h := Stack(StackConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Stack root missing data-test:\n%s", root)
+	}
+}
+
+func TestClusterExtraAttrsOnRoot(t *testing.T) {
+	h := Cluster(ClusterConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Cluster root missing data-test:\n%s", root)
+	}
+}
+
+func TestGridExtraAttrsOnRoot(t *testing.T) {
+	h := Grid(GridConfig{ExtraAttrs: map[string]string{"data-test": "hook", "data-min": "evil"}},
+		render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Grid root missing data-test:\n%s", root)
+	}
+	mustContain(t, h, `data-min="16rem"`)
+}
+
+func TestCenterExtraAttrsOnRoot(t *testing.T) {
+	h := Center(CenterConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Center root missing data-test:\n%s", root)
+	}
+}
+
+func TestBoxExtraAttrsOnRoot(t *testing.T) {
+	h := Box(BoxConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Box root missing data-test:\n%s", root)
+	}
+}
+
+func TestStickyExtraAttrsOnRoot(t *testing.T) {
+	h := Sticky(StickyConfig{ExtraAttrs: map[string]string{"data-test": "hook", "data-fui-z-tier": "modal"}},
+		render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Sticky root missing data-test:\n%s", root)
+	}
+	mustContain(t, h, `data-fui-z-tier="sticky"`)
+}
+
+func TestAspectRatioExtraAttrsOnRoot(t *testing.T) {
+	h := AspectRatioComponent(AspectRatioConfig{
+		Ratio: AspectRatio16_9, ExtraAttrs: map[string]string{"data-test": "hook"},
+	}, render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("AspectRatio root missing data-test:\n%s", root)
+	}
+	mustContain(t, h, `data-fui-comp="ui-aspect-ratio"`)
+}

@@ -146,6 +146,13 @@ type DataTableConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the list's root element,
+	// on both the populated and the empty-state shape. Keys the
+	// component owns are dropped: class and id (use Class / ID), and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // DataTable renders the table.
@@ -180,9 +187,11 @@ func DataTable(cfg DataTableConfig) render.HTML {
 				empty.Description = i18nui.T(ctx, i18nui.KeyTableEmptyDesc)
 			}
 		}
+		extra := html.SafeExtraAttrs(cfg.ExtraAttrs)
 		return dataTableStyle.WrapHTML(html.Div(html.DivConfig{
-			Class: wrapClass(cfg.Class, "ui-data-table is-empty"),
-			ID:    cfg.ID,
+			Class:      wrapClass(cfg.Class, "ui-data-table is-empty"),
+			ID:         cfg.ID,
+			ExtraAttrs: extra,
 		}, EmptyState(empty)))
 	}
 
@@ -270,7 +279,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		base += " ui-data-table--responsive-cards"
 	}
 	return dataTableStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: wrapClass(cfg.Class, base), ID: cfg.ID,
+		Class: wrapClass(cfg.Class, base), ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, children...))
 }
 

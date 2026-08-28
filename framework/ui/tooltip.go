@@ -41,6 +41,12 @@ type TooltipConfig struct {
 	ID string
 
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the tooltip's root
+	// wrapper <span>. Keys the component owns are dropped: class
+	// and id (use Class / ID), data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // Tooltip wraps the given trigger HTML and appends a hidden tooltip
@@ -80,6 +86,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	}, render.Text(cfg.Text))
 
 	return tooltipStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: cls,
+		Class:      cls,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, triggerWithDescribedBy, pop))
 }

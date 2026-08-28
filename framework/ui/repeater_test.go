@@ -112,3 +112,11 @@ func TestRepeaterCustomLabels(t *testing.T) {
 	mustContain(t, h, "Add row")
 	mustContain(t, h, "Delete")
 }
+
+func TestRepeaterExtraAttrsOnRoot(t *testing.T) {
+	h := Repeater(RepeaterConfig{Name: "items", ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Repeater root missing data-test:\n%s", root)
+	}
+}

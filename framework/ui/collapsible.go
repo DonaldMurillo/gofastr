@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -33,6 +34,12 @@ type CollapsibleConfig struct {
 	Open    bool   // optional:  start expanded (default: collapsed)
 	Class   string // optional:  additional CSS classes
 	ID      string // optional:  element id
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root <details>. Keys
+	// the component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, and open (use Open).
+	ExtraAttrs html.Attrs
 }
 
 // Collapsible renders a <details> element with a clickable summary.
@@ -46,11 +53,13 @@ func Collapsible(cfg CollapsibleConfig, body ...render.HTML) render.HTML {
 		panic("ui: Collapsible requires Summary")
 	}
 
-	attrs := map[string]string{
-		"class":               "fui-collapsible",
-		"data-fui-comp":       "fui-collapsible",
-		"data-fui-disclosure": "",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "open")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = "fui-collapsible"
+	attrs["data-fui-comp"] = "fui-collapsible"
+	attrs["data-fui-disclosure"] = ""
 	if cfg.Open {
 		attrs["open"] = ""
 	}

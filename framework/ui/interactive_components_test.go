@@ -237,3 +237,15 @@ func TestTabsSingleTab(t *testing.T) {
 	// static class.
 	mustContain(t, html, `data-active="0"`)
 }
+
+func TestTabsExtraAttrsOnRoot(t *testing.T) {
+	html := Tabs(TabsConfig{
+		SignalName: "t",
+		Tabs:       []TabItem{{Label: "A"}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(html)[:strings.Index(string(html), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("tabs root missing data-test:\n%s", root)
+	}
+}

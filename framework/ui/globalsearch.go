@@ -54,6 +54,14 @@ type GlobalSearchConfig struct {
 	// Sticky toggles position: sticky on the wrapper. Default true.
 	Sticky bool
 	Class  string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the search bar's root
+	// wrapper div. Keys the component owns are dropped: class and id
+	// (use Class), data-fui-*, and the shortcut-focus wiring the
+	// runtime keys on.
+	ExtraAttrs html.Attrs
+
 	// Ctx carries the per-request context used to resolve i18n labels
 	// (placeholder). When nil, English fallbacks apply.
 	Ctx context.Context
@@ -125,7 +133,11 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	// per-instance wrapper-level shortcut marker (data-fui-shortcut-
 	// focus + data-fui-shortcut-target="#<input-id>"). The runtime
 	// handler already supports targeting by selector.
-	wrapAttrs := html.Attrs{"class": clsGlobalSearch(cfg)}
+	wrapAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if wrapAttrs == nil {
+		wrapAttrs = html.Attrs{}
+	}
+	wrapAttrs["class"] = clsGlobalSearch(cfg)
 	if shortcut != "" {
 		wrapAttrs["data-fui-shortcut-focus"] = shortcut
 		wrapAttrs["data-fui-shortcut-target"] = "#" + cfg.ID

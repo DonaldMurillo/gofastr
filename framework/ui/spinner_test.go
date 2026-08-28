@@ -54,3 +54,11 @@ func TestSpinnerGridVariantRendersNineCells(t *testing.T) {
 		t.Fatalf("grid variant should not render ring or dots elements:\n%s", h)
 	}
 }
+
+func TestSpinnerExtraAttrsOnRoot(t *testing.T) {
+	h := Spinner(SpinnerConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Spinner root missing data-test:\n%s", root)
+	}
+}

@@ -3,6 +3,7 @@ package ui
 import (
 	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -89,6 +90,12 @@ type RatingConfig struct {
 	Disabled bool
 	ID       string
 	Class    string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the rating's root
+	// <fieldset>. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, role, and aria-label — the
+	// radiogroup contract.
+	ExtraAttrs html.Attrs
 }
 
 // RatingInput renders a star/heart rating bound to a hidden radio
@@ -148,7 +155,14 @@ func RatingInput(cfg RatingConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	fsAttrs := map[string]string{"class": cls, "role": "radiogroup", "aria-label": cfg.Label}
+	// Sanitized extras first, owned keys on top so they win.
+	fsAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
+	if fsAttrs == nil {
+		fsAttrs = html.Attrs{}
+	}
+	fsAttrs["class"] = cls
+	fsAttrs["role"] = "radiogroup"
+	fsAttrs["aria-label"] = cfg.Label
 	if cfg.ID != "" {
 		fsAttrs["id"] = cfg.ID
 	}

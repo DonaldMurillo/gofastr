@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -90,6 +91,12 @@ type MenuConfig struct {
 	// lists (rare).
 	TriggerClass string
 	PanelClass   string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the menu's root <details>
+	// element. Keys the component owns are dropped: class, id, and
+	// data-fui-* (the disclosure wiring).
+	ExtraAttrs html.Attrs
 }
 
 var menuStyle = registry.RegisterStyle("ui-menu", menuCSS)
@@ -127,7 +134,9 @@ func Menu(cfg MenuConfig) render.HTML {
 	if cfg.PanelClass != "" {
 		cls += " " + cfg.PanelClass
 	}
-	b.WriteString(`<details class="` + render.Escape(cls) + `" data-fui-disclosure data-fui-menu="` + render.Escape(id) + `">`)
+	b.WriteString(`<details class="` + render.Escape(cls) + `" data-fui-disclosure data-fui-menu="` + render.Escape(id) + `"`)
+	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs)))
+	b.WriteString(`>`)
 
 	// Summary = trigger. We bolt aria-haspopup="menu" so SR users know
 	// the activation type; the runtime mirrors aria-expanded.

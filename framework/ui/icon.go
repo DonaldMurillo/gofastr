@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -35,6 +36,14 @@ type IconConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the icon's root <svg>
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, and the drawing / accessibility
+	// keys the component derives (xmlns, width, height, viewBox,
+	// fill, stroke*, role, aria-label, aria-hidden).
+	ExtraAttrs html.Attrs
 }
 
 // Icon renders the registered icon with the given name. Returns empty
@@ -56,18 +65,23 @@ func Icon(name string, cfg IconConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	attrs := map[string]string{
-		"class":           cls,
-		"xmlns":           "http://www.w3.org/2000/svg",
-		"width":           size,
-		"height":          size,
-		"viewBox":         "0 0 24 24",
-		"fill":            "none",
-		"stroke":          "currentColor",
-		"stroke-width":    "2",
-		"stroke-linecap":  "round",
-		"stroke-linejoin": "round",
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"xmlns", "width", "height", "viewBox", "fill", "stroke",
+		"stroke-width", "stroke-linecap", "stroke-linejoin",
+		"role", "aria-label", "aria-hidden")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["class"] = cls
+	attrs["xmlns"] = "http://www.w3.org/2000/svg"
+	attrs["width"] = size
+	attrs["height"] = size
+	attrs["viewBox"] = "0 0 24 24"
+	attrs["fill"] = "none"
+	attrs["stroke"] = "currentColor"
+	attrs["stroke-width"] = "2"
+	attrs["stroke-linecap"] = "round"
+	attrs["stroke-linejoin"] = "round"
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

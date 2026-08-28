@@ -62,6 +62,12 @@ type StackConfig struct {
 	Justify Justify // main-axis (vertical) alignment
 	ID      string
 	Class   string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the stack's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // Stack renders children in a vertical column with consistent gap.
@@ -69,8 +75,9 @@ type StackConfig struct {
 // flex-direction:column;gap:…">` patterns.
 func Stack(cfg StackConfig, children ...render.HTML) render.HTML {
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: layoutClass("ui-stack", cfg.Class, cfg.Gap, cfg.Align, cfg.Justify),
-		ID:    cfg.ID,
+		Class:      layoutClass("ui-stack", cfg.Class, cfg.Gap, cfg.Align, cfg.Justify),
+		ID:         cfg.ID,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, children...))
 }
 
@@ -86,6 +93,12 @@ type ClusterConfig struct {
 	NoWrap bool
 	ID     string
 	Class  string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the cluster's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // Cluster renders children in a horizontal row that wraps onto
@@ -96,7 +109,9 @@ func Cluster(cfg ClusterConfig, children ...render.HTML) render.HTML {
 	if cfg.NoWrap {
 		cls += " ui-cluster--nowrap"
 	}
-	return layoutStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))
+	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, children...))
 }
 
 // ─── Grid: responsive CSS grid ─────────────────────────────────────
@@ -110,6 +125,12 @@ type GridConfig struct {
 	Gap   Gap
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the grid's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and data-min (use Min).
+	ExtraAttrs html.Attrs
 }
 
 // Grid renders children in an auto-fitting CSS grid. The default
@@ -129,7 +150,11 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 	// var() chaining for browsers that don't support attr() with
 	// non-string types yet (Chrome ≥ 125; we expose a class hook for
 	// the size buckets to keep older browsers usable).
-	attrs := html.Attrs{"data-min": min}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "data-min")
+	if attrs == nil {
+		attrs = html.Attrs{}
+	}
+	attrs["data-min"] = min
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
 		Class: cls, ID: cfg.ID, ExtraAttrs: attrs,
 	}, children...))
@@ -145,6 +170,12 @@ type CenterConfig struct {
 	MinHeight string
 	ID        string
 	Class     string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the region's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // Center centers its children both horizontally and vertically.
@@ -156,7 +187,9 @@ func Center(cfg CenterConfig, children ...render.HTML) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return layoutStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))
+	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, children...))
 }
 
 // ─── Spacer: flexible filler ───────────────────────────────────────
@@ -192,6 +225,12 @@ type BoxConfig struct {
 	Outlined bool   // when true, applies a 1px border (pairs well with Surface=false)
 	ID       string
 	Class    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the box's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // Box is a wrapper that applies token-scaled padding and optional
@@ -212,7 +251,9 @@ func Box(cfg BoxConfig, children ...render.HTML) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return layoutStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))
+	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, children...))
 }
 
 // ─── Sticky ────────────────────────────────────────────────────────
@@ -269,6 +310,13 @@ type StickyConfig struct {
 
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the sticky wrapper's root
+	// <div>. Keys the component owns are dropped: class and id (use
+	// Class / ID) and data-fui-* (which covers the derived
+	// data-fui-z-tier).
+	ExtraAttrs html.Attrs
 }
 
 // Sticky wraps children in a position:sticky container.
@@ -295,10 +343,12 @@ func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{
-		"class":           cls,
-		"data-fui-z-tier": tier,
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = html.Attrs{}
 	}
+	attrs["class"] = cls
+	attrs["data-fui-z-tier"] = tier
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
@@ -335,6 +385,12 @@ type AspectRatioConfig struct {
 
 	// ID sets the element id.
 	ID string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the wrapper's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // AspectRatio wraps a single child in a container with the given
@@ -348,10 +404,12 @@ func AspectRatioComponent(cfg AspectRatioConfig, child render.HTML) render.HTML 
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{
-		"data-fui-comp": "ui-aspect-ratio",
-		"class":         cls,
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = html.Attrs{}
 	}
+	attrs["data-fui-comp"] = "ui-aspect-ratio"
+	attrs["class"] = cls
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

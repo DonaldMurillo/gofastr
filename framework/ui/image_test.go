@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestOptimizedImageRequiresSrc(t *testing.T) {
@@ -84,5 +86,23 @@ func TestOptimizedImageDecorativeAllowsEmptyAlt(t *testing.T) {
 	})
 	if !strings.Contains(string(h), `alt=""`) {
 		t.Fatalf("decorative image must keep empty alt:\n%s", h)
+	}
+}
+
+func TestOptimizedImageExtraAttrsOnRoot(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"single": OptimizedImage(OptimizedImageConfig{
+			Src: "/a.png", Alt: "a", Width: 1, Height: 1, ExtraAttrs: extra,
+		}),
+		"picture": OptimizedImage(OptimizedImageConfig{
+			Src: "/a.png", Alt: "a", Width: 1, Height: 1,
+			Sources: []ImageSource{{URL: "/a-2x.png", Width: 2}}, ExtraAttrs: extra,
+		}),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
 	}
 }

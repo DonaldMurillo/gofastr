@@ -59,6 +59,12 @@ type FileUploadConfig struct {
 
 	Class string
 
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the field's root <label>
+	// element. Keys the component owns are dropped: class and id
+	// (use Class), data-fui-*, and for (the label→input pairing).
+	ExtraAttrs html.Attrs
+
 	// Ctx carries the per-request context used to resolve the prompt
 	// and max-size help labels. When nil, English fallbacks apply.
 	Ctx context.Context
@@ -158,10 +164,13 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 		}, render.Text(help)))
 	}
 
-	return fileUploadStyle.WrapHTML(render.Tag("label", map[string]string{
-		"class": cls,
-		"for":   id,
-	}, children...))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "for")
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	attrs["for"] = id
+	return fileUploadStyle.WrapHTML(render.Tag("label", attrs, children...))
 }
 
 func uploadPrompt(cfg FileUploadConfig) string {

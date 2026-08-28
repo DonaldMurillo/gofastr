@@ -160,3 +160,21 @@ func TestToggleActionPanics(t *testing.T) {
 		})
 	}
 }
+
+func TestToggleActionExtraAttrsOnRoot(t *testing.T) {
+	h := ToggleAction(ToggleActionConfig{
+		Endpoint:       "/api/follow",
+		IdleLabel:      "Follow",
+		CommittedLabel: "Following",
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "type": "submit", "data-state": "spoofed",
+		},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("button missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `type="button"`) || !strings.Contains(root, `data-state="idle"`) {
+		t.Errorf("owned type/data-state must win:\n%s", root)
+	}
+}

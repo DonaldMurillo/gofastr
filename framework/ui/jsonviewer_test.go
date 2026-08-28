@@ -79,3 +79,14 @@ func TestJSONViewerMaxStringLenTruncates(t *testing.T) {
 		t.Errorf("MaxStringLen should append ellipsis:\n%s", h)
 	}
 }
+
+func TestJSONViewerExtraAttrsOnRoot(t *testing.T) {
+	h := JSONViewer(JSONViewerConfig{
+		Value:      map[string]any{"k": 1},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("json viewer root missing data-test:\n%s", root)
+	}
+}

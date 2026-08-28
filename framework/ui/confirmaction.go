@@ -94,6 +94,14 @@ type ConfirmActionConfig struct {
 	// Ctx carries the per-request context used to resolve the
 	// Confirm/Cancel button labels. When nil, English fallbacks apply.
 	Ctx context.Context
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) onto the dialog's own root
+	// (the ui-confirm-action panel; the modal chrome is widget
+	// machinery, and the trigger is a plain ui.Button — render a
+	// Button yourself for trigger-level extras). Keys the component
+	// owns are dropped: class, id, and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // ConfirmAction returns the trigger button and a *widget.Builder for
@@ -139,7 +147,7 @@ func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 		method = "POST"
 	}
 	trigger := buildConfirmTrigger(cfg.Name, cfg.TriggerLabel, variant)
-	modal := buildConfirmModal(cfg.Name, cfg.Title, cfg.Body, confirm, cancel, method, cfg.RPCPath, cfg.SuccessSignal, cfg.AutofocusConfirm)
+	modal := buildConfirmModal(cfg.Name, cfg.Title, cfg.Body, confirm, cancel, method, cfg.RPCPath, cfg.SuccessSignal, cfg.AutofocusConfirm, html.SafeExtraAttrs(cfg.ExtraAttrs))
 	return trigger, modal
 }
 
@@ -186,7 +194,7 @@ func validSuccessSignalName(name string) bool {
 	return true
 }
 
-func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpcPath, successSignal string, autofocusConfirm bool) *widget.Builder {
+func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpcPath, successSignal string, autofocusConfirm bool, extraAttrs html.Attrs) *widget.Builder {
 	titleID := name + "-title"
 	bodyID := name + "-body"
 	slot := &confirmDialogSlot{
@@ -200,6 +208,7 @@ func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpc
 		rpcPath:          rpcPath,
 		successSignal:    successSignal,
 		autofocusConfirm: autofocusConfirm,
+		extraAttrs:       extraAttrs,
 	}
 	return preset.Modal(name).
 		Hidden().
@@ -215,6 +224,7 @@ type confirmDialogSlot struct {
 	confirmLabel, cancelLabel         string
 	rpcMethod, rpcPath, successSignal string
 	autofocusConfirm                  bool
+	extraAttrs                        html.Attrs
 }
 
 func (s *confirmDialogSlot) Render() render.HTML {
@@ -240,7 +250,7 @@ func (s *confirmDialogSlot) Render() render.HTML {
 		confirmAttrs["autofocus"] = ""
 	}
 
-	return confirmActionStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-confirm-action"},
+	return confirmActionStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-confirm-action", ExtraAttrs: s.extraAttrs},
 		html.Heading(html.HeadingConfig{Level: 2, Class: "ui-confirm-action__title", ID: s.titleID},
 			render.Text(s.title)),
 		html.Paragraph(html.TextConfig{Class: "ui-confirm-action__body", ID: s.bodyID},

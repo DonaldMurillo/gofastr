@@ -78,3 +78,11 @@ func TestSiteFooterWithoutLeadOmitsLeadSlot(t *testing.T) {
 		t.Errorf("Lead slot should be omitted when nil:\n%s", h)
 	}
 }
+
+func TestSiteFooterExtraAttrsOnRoot(t *testing.T) {
+	h := SiteFooter(SiteFooterConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("SiteFooter root missing data-test:\n%s", root)
+	}
+}

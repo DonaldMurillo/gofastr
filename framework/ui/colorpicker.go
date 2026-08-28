@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -30,6 +31,13 @@ type ColorPickerConfig struct {
 	Disabled bool
 	ID       string
 	Class    string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the picker's root element
+	// (the wrapper div, not the <input>). Keys the component owns
+	// are dropped: class, id (the wrapper id derives from ID / Name),
+	// and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // ColorPicker renders a styled native color input with a label.
@@ -75,8 +83,14 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 		}, render.Text(cfg.Label)),
 	}
 
+	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if rootAttrs == nil {
+		rootAttrs = map[string]string{}
+	}
+	rootAttrs["class"] = cls
+	rootAttrs["id"] = id + "-wrap"
 	return colorPickerStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls, "id": id + "-wrap"},
+		rootAttrs,
 		render.Tag("div", map[string]string{"class": "ui-color-picker__row"}, row...),
 	))
 }

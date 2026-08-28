@@ -47,6 +47,13 @@ type StepWizardConfig struct {
 
 	Class string
 
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the wizard's root <form>
+	// element. Keys the component owns are dropped: class and id
+	// (use Class / ID), data-fui-*, method, and action (both
+	// validated above; the form posts wizard_action through them).
+	ExtraAttrs html.Attrs
+
 	// Ctx carries the per-request context used to resolve i18n strings
 	// (Back, Continue, Submit button labels). When nil, context.Background()
 	// is used and English fallbacks are returned, preserving today's behaviour.
@@ -103,11 +110,18 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 	// 4. Navigation buttons.
 	children = append(children, renderStepActions(ctx, cfg.CurrentStep, len(cfg.Steps)))
 
+	// data-fui-comp is set by hand (not left to WrapHTML) so the
+	// marker survives next to the sanitized caller extras.
+	formAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "method", "action")
+	if formAttrs == nil {
+		formAttrs = html.Attrs{}
+	}
+	formAttrs["data-fui-comp"] = "ui-step-wizard"
 	return stepWizardStyle.WrapHTML(html.Form(html.FormConfig{
 		Method:     method,
 		Action:     cfg.Action,
 		Class:      cls,
-		ExtraAttrs: html.Attrs{"data-fui-comp": "ui-step-wizard"},
+		ExtraAttrs: formAttrs,
 	}, children...))
 }
 

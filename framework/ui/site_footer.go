@@ -38,6 +38,11 @@ type SiteFooterConfig struct {
 	Bottom []render.HTML
 	// Class is appended to the ui-site-footer wrapper.
 	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the footer's root
+	// element. Keys the component owns are dropped: class (use
+	// Class) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // SiteFooter renders a multi-column footer. The wrapper is a <div>
@@ -77,7 +82,10 @@ func SiteFooter(cfg SiteFooterConfig) render.HTML {
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
 	}
-	return siteFooterStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, body...))
+	return siteFooterStyle.WrapHTML(html.Div(html.DivConfig{
+		Class:      cls,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, body...))
 }
 
 var siteFooterStyle = registry.RegisterStyle("ui-site-footer", siteFooterCSS)

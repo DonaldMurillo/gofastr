@@ -79,6 +79,11 @@ type SiteHeaderConfig struct {
 	Drawer SiteHeaderDrawerVariant
 	// Class is appended to the ui-site-header wrapper.
 	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the header's root
+	// element. Keys the component owns are dropped: class (use
+	// Class) and data-fui-*.
+	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the nav
 	// aria-labels (primary, mobile, toggle). When nil, English fallbacks apply.
 	Ctx context.Context
@@ -203,7 +208,10 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
 	}
-	return siteHeaderStyle.WrapHTML(html.Div(html.DivConfig{Class: cls},
+	return siteHeaderStyle.WrapHTML(html.Div(html.DivConfig{
+		Class:      cls,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	},
 		brand, primary, right,
 	))
 }

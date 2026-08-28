@@ -551,3 +551,136 @@ func TestInjectAttrsDoesNotSkipDescribedByWhenInvalidPresent(t *testing.T) {
 		t.Errorf("aria-describedby was skipped because aria-invalid already present:\n%s", result)
 	}
 }
+
+// ─── ExtraAttrs pass-through (#251) ───
+
+func TestPageHeaderExtraAttrsOnRoot(t *testing.T) {
+	h := PageHeader(PageHeaderConfig{Title: "x", ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("PageHeader root missing data-test:\n%s", root)
+	}
+}
+
+func TestSectionExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"heading": Section(SectionConfig{Heading: "x", ExtraAttrs: extra}, render.Text("b")),
+		"label":   Section(SectionConfig{Label: "y", ExtraAttrs: extra}, render.Text("b")),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}
+
+func TestFormFieldExtraAttrsOnRoot(t *testing.T) {
+	h := FormField(FormFieldConfig{
+		Label: "Name", For: "f",
+		Input:      html.Input(html.InputConfig{Type: "text", Name: "f", ID: "f"}),
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("FormField root missing data-test:\n%s", root)
+	}
+}
+
+func TestFormSectionExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"div":      FormSection(FormSectionConfig{ExtraAttrs: extra}, render.Text("f")),
+		"fieldset": FormSection(FormSectionConfig{Heading: "h", ExtraAttrs: extra}, render.Text("f")),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}
+
+func TestStatusBadgeExtraAttrsOnRoot(t *testing.T) {
+	h := StatusBadge(StatusBadgeConfig{Label: "ok", ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("StatusBadge root missing data-test:\n%s", root)
+	}
+}
+
+func TestEmptyStateExtraAttrsOnRoot(t *testing.T) {
+	h := EmptyState(EmptyStateConfig{Title: "No items", ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("EmptyState root missing data-test:\n%s", root)
+	}
+}
+
+func TestCalloutExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	inline := false
+	for name, h := range map[string]render.HTML{
+		"aside": Callout(CalloutConfig{Title: "t", ExtraAttrs: extra}, render.Text("b")),
+		"alert": Callout(CalloutConfig{Variant: StatusDanger, ExtraAttrs: extra}, render.Text("b")),
+		"div":   Callout(CalloutConfig{Landmark: &inline, ExtraAttrs: extra}, render.Text("b")),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}
+
+func TestStatCardExtraAttrsOnRoot(t *testing.T) {
+	h := StatCard(StatCardConfig{Label: "l", Value: "1", ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("StatCard root missing data-test:\n%s", root)
+	}
+}
+
+func TestAvatarExtraAttrsOnRoot(t *testing.T) {
+	h := Avatar(AvatarConfig{Name: "Ada Lovelace", ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("Avatar root missing data-test:\n%s", root)
+	}
+}
+
+func TestCodeBlockExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"pre":    CodeBlock(CodeBlockConfig{Code: "x = 1", ExtraAttrs: extra}),
+		"framed": CodeBlock(CodeBlockConfig{Code: "x = 1", Filename: "a.go", ExtraAttrs: extra}),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}
+
+func TestCodeBlockExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := CodeBlock(CodeBlockConfig{
+		Code: "x", Language: "go",
+		ExtraAttrs: map[string]string{
+			"tabindex": "9", "ARIA-LABEL": "evil", "data-fui-comp": "spoof",
+		},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	for _, banned := range []string{`tabindex="9"`, `evil`, `spoof`} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	mustContain(t, h, `tabindex="0"`)
+	mustContain(t, h, `aria-label="go source"`)
+}
+
+func TestSkipLinkExtraAttrsOnRoot(t *testing.T) {
+	h := SkipLink(SkipLinkConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("SkipLink root missing data-test:\n%s", root)
+	}
+}

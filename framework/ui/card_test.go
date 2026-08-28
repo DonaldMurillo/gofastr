@@ -67,3 +67,30 @@ func TestCardWithoutHeadingFallsBackToDiv(t *testing.T) {
 		t.Fatalf("expected ui-card marker:\n%s", h)
 	}
 }
+
+func TestCardExtraAttrsOnEveryRootShape(t *testing.T) {
+	extra := map[string]string{"data-test": "hook"}
+	for name, h := range map[string]render.HTML{
+		"div":     Card(CardConfig{ExtraAttrs: extra}),
+		"section": Card(CardConfig{Heading: "x", ExtraAttrs: extra}),
+		"anchor":  Card(CardConfig{Href: "/a", ExtraAttrs: extra}),
+	} {
+		root := string(h)[:strings.Index(string(h), ">")+1]
+		if !strings.Contains(root, `data-test="hook"`) {
+			t.Errorf("%s root missing data-test:\n%s", name, root)
+		}
+	}
+}
+
+func TestCardExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := Card(CardConfig{Href: "/real", Class: "mine", ExtraAttrs: map[string]string{
+		"Class": "evil", "href": "javascript:alert(1)", "data-fui-comp": "spoof",
+	}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	for _, banned := range []string{"evil", "javascript:", "spoof"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	mustContain(t, h, `href="/real"`)
+}

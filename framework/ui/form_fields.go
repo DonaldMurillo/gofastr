@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -25,6 +26,15 @@ type TextFieldConfig struct {
 	Disabled     bool
 	MinLength    int
 	MaxLength    int
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) onto the field's <input>. The wrapper div
+	// belongs to FormField, which offers no attribute pass-through,
+	// so the input is this component's own root. Keys the input owns
+	// are dropped: class and id (use ID), data-fui-*, type, name,
+	// value, placeholder, autocomplete, minlength, maxlength,
+	// required, disabled, aria-invalid, and aria-describedby.
+	ExtraAttrs html.Attrs
 }
 
 // TextField renders a FormField containing an input[type=text].
@@ -40,6 +50,9 @@ func TextField(cfg TextFieldConfig) render.HTML {
 	if cfg.MaxLength > 0 {
 		attrs["maxlength"] = strconv.Itoa(cfg.MaxLength)
 	}
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "value", "placeholder", "autocomplete", "minlength", "maxlength",
+		"required", "disabled", "aria-invalid", "aria-describedby"))
 	return typedFormField(cfg.Label, cfg.Name, id, "text", cfg.Value, cfg.Placeholder,
 		cfg.Help, cfg.Error, cfg.Class, cfg.Required, attrs)
 }
@@ -60,6 +73,15 @@ type NumberFieldConfig struct {
 	Min         *float64
 	Max         *float64
 	Step        *float64
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) onto the field's <input>. The wrapper div
+	// belongs to FormField, which offers no attribute pass-through,
+	// so the input is this component's own root. Keys the input owns
+	// are dropped: class and id (use ID), data-fui-*, type, name,
+	// value, placeholder, min, max, step, required, disabled,
+	// aria-invalid, and aria-describedby.
+	ExtraAttrs html.Attrs
 }
 
 // NumberField renders a FormField containing an input[type=number]. For the
@@ -72,6 +94,9 @@ func NumberField(cfg NumberFieldConfig) render.HTML {
 			attrs[name] = strconv.FormatFloat(*value, 'f', -1, 64)
 		}
 	}
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "value", "placeholder", "min", "max", "step",
+		"required", "disabled", "aria-invalid", "aria-describedby"))
 	return typedFormField(cfg.Label, cfg.Name, id, "number", cfg.Value, cfg.Placeholder,
 		cfg.Help, cfg.Error, cfg.Class, cfg.Required, attrs)
 }
@@ -91,6 +116,15 @@ type DateFieldConfig struct {
 	Disabled    bool
 	Min         string
 	Max         string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) onto the field's <input>. The wrapper div
+	// belongs to FormField, which offers no attribute pass-through,
+	// so the input is this component's own root. Keys the input owns
+	// are dropped: class and id (use ID), data-fui-*, type, name,
+	// value, placeholder, min, max, required, disabled,
+	// aria-invalid, and aria-describedby.
+	ExtraAttrs html.Attrs
 }
 
 // DateField renders a FormField containing an input[type=date].
@@ -103,6 +137,9 @@ func DateField(cfg DateFieldConfig) render.HTML {
 	if cfg.Max != "" {
 		attrs["max"] = cfg.Max
 	}
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "value", "placeholder", "min", "max",
+		"required", "disabled", "aria-invalid", "aria-describedby"))
 	return typedFormField(cfg.Label, cfg.Name, id, "date", cfg.Value, cfg.Placeholder,
 		cfg.Help, cfg.Error, cfg.Class, cfg.Required, attrs)
 }

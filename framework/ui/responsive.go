@@ -41,9 +41,14 @@ type ResponsiveConfig struct {
 	// desktop variant; < Breakpoint renders the mobile variant.
 	// Defaults to 1024 when zero.
 	Breakpoint int
-
 	// Class is appended to the wrapping <div>'s class list.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the swap's root element.
+	// Keys the component owns are dropped: class (use Class) and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // Responsive emits both variants wrapped in viewport-toggled divs.
@@ -61,7 +66,10 @@ func Responsive(cfg ResponsiveConfig, desktop, mobile render.HTML) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return style.WrapHTML(html.Div(html.DivConfig{Class: cls},
+	return style.WrapHTML(html.Div(html.DivConfig{
+		Class:      cls,
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	},
 		html.Div(html.DivConfig{
 			Class: "ui-responsive__desktop",
 		}, desktop),

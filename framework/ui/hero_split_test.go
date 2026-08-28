@@ -85,3 +85,15 @@ func TestHeroSplitRejectsUnknownRatio(t *testing.T) {
 	}()
 	HeroSplit(HeroSplitConfig{Copy: render.Raw("a"), Media: render.Raw("b"), Ratio: "huge"})
 }
+
+func TestHeroSplitExtraAttrsOnRoot(t *testing.T) {
+	h := HeroSplit(HeroSplitConfig{
+		Copy:       render.Raw("c"),
+		Media:      render.Raw("m"),
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("hero split root missing data-test:\n%s", root)
+	}
+}

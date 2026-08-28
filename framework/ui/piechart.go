@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -47,6 +48,14 @@ type PieChartConfig struct {
 	LabelledBy string
 	ID         string
 	Class      string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the chart's <svg> root,
+	// or to the shared zero-data placeholder when there is nothing to
+	// draw. Keys the component owns are dropped: class and
+	// id (use Class / ID), data-fui-*, and the sizing and naming
+	// attributes the SVG derives from config (width, height, viewBox,
+	// xmlns, role, aria-labelledby, aria-hidden).
+	ExtraAttrs html.Attrs
 }
 
 var pieDefaultPalette = []string{"primary", "info", "success", "warning", "danger"}
@@ -54,7 +63,7 @@ var pieDefaultPalette = []string{"primary", "info", "success", "warning", "dange
 // PieChart renders a pie or donut chart.
 func PieChart(cfg PieChartConfig) render.HTML {
 	if len(cfg.Slices) == 0 {
-		return chartEmpty(cfg.Size, cfg.LabelledBy, cfg.Class, "No data yet")
+		return chartEmpty(cfg.Size, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 	var total float64
 	for _, s := range cfg.Slices {
@@ -65,7 +74,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	}
 	if total == 0 {
 		// Every slice is zero: nothing to draw, but a legitimate empty state.
-		return chartEmpty(cfg.Size, cfg.LabelledBy, cfg.Class, "No data yet")
+		return chartEmpty(cfg.Size, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 
 	size := cfg.Size
@@ -87,6 +96,12 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+
+	// Caller extras land after the owned attributes. render.Attr
+	// validates the key and escapes the value, matching what the
+	// html primitives do for map-built roots.
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"width", "height", "viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")
 
 	var sb strings.Builder
 	sb.WriteString(`<svg width="`)
@@ -112,7 +127,9 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
 	}
-	sb.WriteString(` data-fui-comp="ui-pie-chart">`)
+	sb.WriteString(` data-fui-comp="ui-pie-chart"`)
+	sb.WriteString(serializeExtraAttrs(extra))
+	sb.WriteString(`>`)
 
 	// Draw slices as arc paths.
 	start := -math.Pi / 2 // 12 o'clock start

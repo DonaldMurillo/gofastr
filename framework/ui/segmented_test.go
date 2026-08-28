@@ -195,3 +195,17 @@ func TestSegmentedControlPanics(t *testing.T) {
 		})
 	}
 }
+
+func TestSegmentedExtraAttrsOnRoot(t *testing.T) {
+	h := SegmentedControl(SegmentedControlConfig{
+		Name:    "view",
+		Options: []SegmentedOption{{Label: "A", Value: "a"}, {Label: "B", Value: "b"}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook",
+		},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("SegmentedControl root missing data-test:\n%s", root)
+	}
+}

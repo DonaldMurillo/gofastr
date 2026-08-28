@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -33,6 +34,12 @@ type JSONViewerConfig struct {
 	MaxStringLen int
 	ID           string
 	Class        string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the viewer's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // JSONViewer renders a collapsible tree view of any Go value.
@@ -50,7 +57,11 @@ func JSONViewer(cfg JSONViewerConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{"class": cls}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

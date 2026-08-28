@@ -225,3 +225,11 @@ func TestSiteHeaderNavUnderlineVariantIsOptIn(t *testing.T) {
 		t.Errorf("default header should stay flat (no underline variant):\n%s", off)
 	}
 }
+
+func TestSiteHeaderExtraAttrsOnRoot(t *testing.T) {
+	h := SiteHeader(SiteHeaderConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("SiteHeader root missing data-test:\n%s", root)
+	}
+}

@@ -75,6 +75,13 @@ type CommandPaletteConfig struct {
 	// (placeholder, trigger + dialog titles, hint chips). When nil,
 	// English fallbacks apply.
 	Ctx context.Context
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) onto the palette's own root
+	// (the ui-cmd-palette panel inside the modal; the modal chrome is
+	// widget machinery). Keys the component owns are dropped:
+	// class, id, and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // PaletteCommand is one entry in a static command-palette list.
@@ -135,6 +142,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		navigateLabel: i18nui.T(ctx, i18nui.KeyCommandPaletteNavigate),
 		selectLabel:   i18nui.T(ctx, i18nui.KeyCommandPaletteSelect),
 		closeLabel:    i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
+		extraAttrs:    html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}
 	b := preset.Modal(name).
 		Hidden().
@@ -168,6 +176,7 @@ type commandPaletteSlot struct {
 	navigateLabel string
 	selectLabel   string
 	closeLabel    string
+	extraAttrs    html.Attrs
 }
 
 func (s *commandPaletteSlot) Render() render.HTML {
@@ -212,7 +221,8 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	)
 
 	return commandPaletteStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: "ui-cmd-palette",
+		Class:      "ui-cmd-palette",
+		ExtraAttrs: s.extraAttrs,
 	}, srTitle, combo, footer))
 }
 

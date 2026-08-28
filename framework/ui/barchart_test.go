@@ -214,3 +214,30 @@ func TestBarChartStatusVariantColor(t *testing.T) {
 		t.Errorf("registered status variant should resolve to its accent fill:\n%s", h)
 	}
 }
+
+func TestBarChartExtraAttrsOnRoot(t *testing.T) {
+	h := BarChart(BarChartConfig{
+		Bars:       []BarChartBar{{Label: "x", Value: 1}},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("svg root missing data-test:\n%s", root)
+	}
+}
+
+func TestChartExtraAttrsOnEmptyPlaceholder(t *testing.T) {
+	// Zero-data charts render the shared placeholder; a host's test
+	// hook must still resolve there (chartEmpty is shared by bar,
+	// line, and pie, so one chart covers the branch).
+	h := BarChart(BarChartConfig{
+		ExtraAttrs: map[string]string{"data-test": "hook", "role": "spoofed"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("empty placeholder missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `role="img"`) {
+		t.Errorf("owned role overridden on placeholder:\n%s", root)
+	}
+}

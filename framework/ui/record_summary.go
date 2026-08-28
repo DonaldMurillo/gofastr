@@ -45,6 +45,12 @@ type RecordSummaryConfig struct {
 	HeadingLevel int
 	ID           string
 	Class        string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the summary's root
+	// <article> element. Keys the component owns are dropped: class
+	// and id (use Class / ID), data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // RecordSummary renders a compact semantic <article>. It is the one dominant
@@ -112,7 +118,11 @@ func RecordSummary(cfg RecordSummaryConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{"class": cls}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
@@ -132,6 +142,12 @@ type MetricBandConfig struct {
 	Label string
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the band's root <dl> element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, and aria-label (derived from Label).
+	ExtraAttrs html.Attrs
 }
 
 // MetricBand renders a semantic <dl>. Wide viewports use one row; phones use
@@ -160,7 +176,11 @@ func MetricBand(cfg MetricBandConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := map[string]string{"class": cls}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label")
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

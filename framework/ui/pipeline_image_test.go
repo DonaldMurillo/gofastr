@@ -323,3 +323,14 @@ func TestSrcsetEscapesDataPayloadCommas(t *testing.T) {
 		})
 	}
 }
+
+func TestPipelineImageExtraAttrsOnRoot(t *testing.T) {
+	h := PipelineImage(PipelineImageConfig{
+		Fallback: "/img.jpg", Alt: "A", Width: 10, Height: 10,
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("PipelineImage root missing data-test:\n%s", root)
+	}
+}

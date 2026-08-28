@@ -125,3 +125,14 @@ func TestCustomTitle(t *testing.T) {
 		t.Errorf("expected custom title, got: %s", got)
 	}
 }
+
+func TestValidationSummaryExtraAttrsOnRoot(t *testing.T) {
+	h := ValidationSummary(ValidationSummaryConfig{
+		Errors:     FieldErrors{"email": "required"},
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("validation summary root missing data-test:\n%s", root)
+	}
+}

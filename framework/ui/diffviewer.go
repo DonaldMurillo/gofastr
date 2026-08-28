@@ -44,6 +44,12 @@ type DiffViewerConfig struct {
 	RightLabel string
 	ID         string
 	Class      string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the root element. Keys
+	// the component owns are dropped: class and id (use Class / ID),
+	// and data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // DiffViewer renders a unified-diff body as a styled view.
@@ -169,7 +175,11 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		}
 	}
 
-	attrs := html.Attrs{"class": cls}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

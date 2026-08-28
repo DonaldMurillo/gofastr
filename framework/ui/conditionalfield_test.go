@@ -86,3 +86,15 @@ func TestConditionalFieldEvaluateInitialState(t *testing.T) {
 		t.Error("should not match when value differs from WhenValue")
 	}
 }
+
+func TestConditionalFieldExtraAttrsOnRoot(t *testing.T) {
+	h := ConditionalField(ConditionalFieldConfig{
+		WhenName:   "plan",
+		WhenValue:  "pro",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+}

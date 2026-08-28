@@ -3,6 +3,7 @@ package ui
 import (
 	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -38,6 +39,12 @@ type TimePickerConfig struct {
 	Error string
 	ID    string
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the picker's root
+	// wrapper <div>. Keys the component owns are dropped: class
+	// and id (use Class / ID), data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // TimePicker renders a styled native time input with a label.
@@ -116,8 +123,12 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 		}, render.Text(cfg.Help)))
 	}
 
-	return timePickerStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls}, children...))
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs["class"] = cls
+	return timePickerStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 
 var timePickerStyle = registry.RegisterStyle("ui-time-picker", timePickerCSS)

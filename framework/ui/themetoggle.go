@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -39,6 +40,14 @@ type ThemeToggleConfig struct {
 
 	// Class is an optional extra CSS class.
 	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the toggle's root element, whichever
+	// shape it takes (<button> for icon/label, <div> for pill). Keys
+	// the component owns are dropped: class and id (use Class / ID),
+	// data-fui-* (the colorscheme runtime wiring), type, role, and
+	// aria-label (i18n-resolved).
+	ExtraAttrs html.Attrs
 
 	// LightLabel overrides the light-mode label for label/pill variants.
 	// Defaults to "Light".
@@ -92,11 +101,13 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	attrs := map[string]string{
-		"type":                  "button",
-		"data-fui-theme-toggle": "",
-		"aria-label":            i18nui.T(ctx, i18nui.KeyThemeToggle),
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "role", "aria-label")
+	if attrs == nil {
+		attrs = map[string]string{}
 	}
+	attrs["type"] = "button"
+	attrs["data-fui-theme-toggle"] = ""
+	attrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemeToggle)
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
@@ -143,12 +154,14 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 		autoLabel = i18nui.T(ctx, i18nui.KeyThemeAuto)
 	}
 
-	rootAttrs := map[string]string{
-		"class":                 cls + " ui-theme-toggle--pill",
-		"data-fui-theme-toggle": "pill",
-		"role":                  "radiogroup",
-		"aria-label":            i18nui.T(ctx, i18nui.KeyThemeColorScheme),
+	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "role", "aria-label")
+	if rootAttrs == nil {
+		rootAttrs = map[string]string{}
 	}
+	rootAttrs["class"] = cls + " ui-theme-toggle--pill"
+	rootAttrs["data-fui-theme-toggle"] = "pill"
+	rootAttrs["role"] = "radiogroup"
+	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemeColorScheme)
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID
 	}

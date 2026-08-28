@@ -45,3 +45,14 @@ func TestTooltipCustomIDOverridesSlug(t *testing.T) {
 	mustContain(t, h, `aria-describedby="my-id"`)
 	mustContain(t, h, `id="my-id"`)
 }
+
+func TestTooltipExtraAttrsOnRoot(t *testing.T) {
+	h := Tooltip(TooltipConfig{
+		Text:       "tip",
+		ExtraAttrs: map[string]string{"data-test": "hook"},
+	}, render.Text("trigger"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("wrapper span missing data-test:\n%s", root)
+	}
+}

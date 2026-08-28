@@ -25,6 +25,12 @@ type AuthCardConfig struct {
 	// account" link.
 	Footer render.HTML
 	Class  string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the card's root element.
+	// Keys the component owns are dropped: class (use Class), id, and
+	// data-fui-*.
+	ExtraAttrs html.Attrs
 }
 
 // AuthCard renders a centered, constrained auth card.
@@ -47,7 +53,9 @@ func AuthCard(cfg AuthCardConfig) render.HTML {
 		cls = cls + " " + cfg.Class
 	}
 	panel := html.Div(html.DivConfig{Class: "ui-auth-card__panel"}, inner...)
-	return authCardStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, panel))
+	return authCardStyle.WrapHTML(html.Div(html.DivConfig{
+		Class: cls, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, panel))
 }
 
 var authCardStyle = registry.RegisterStyle("ui-auth-card", authCardCSS)
