@@ -547,6 +547,13 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuff
 		// Scratch-scoped DB file: the scratch dir's cleanup removes it, so
 		// repeated runs never inherit a stale, already-seeded database.
 		"DATABASE_URL=file:"+filepath.Join(appDir, "boot-gate.db"),
+		// The scratch dir lives inside the repo module, so when the repo is
+		// checked out as a linked git worktree, framework/isolation activates
+		// by default and deterministically remaps the listen port — the app
+		// then serves on the remapped port while this probe polls the
+		// assigned one until the 90s deadline. The test assigns its own free
+		// port, so isolation buys it nothing: pin it off.
+		"GOFASTR_ISOLATION=off",
 	)
 	configureTestProcessGroup(cmd)
 	// syncBuffer: exerciseGeneratedApp reads this while the app is running,
