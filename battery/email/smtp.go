@@ -6,9 +6,11 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"mime"
 	"net"
 	"net/smtp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -252,9 +254,9 @@ func buildMessage(email Email) ([]byte, error) {
 	}
 	buf.WriteString("Subject: " + email.Subject + "\r\n")
 
-	// Custom headers
-	for k, v := range email.Headers {
-		buf.WriteString(k + ": " + v + "\r\n")
+	// Custom headers, sorted so the wire message is byte-stable per send.
+	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
+		buf.WriteString(k + ": " + email.Headers[k] + "\r\n")
 	}
 
 	// Determine if we need MIME multipart.

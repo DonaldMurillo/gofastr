@@ -2,6 +2,8 @@ package search
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -128,8 +130,10 @@ func fieldsText(fields map[string]any) string {
 		return ""
 	}
 	var sb strings.Builder
-	for _, value := range fields {
-		if s, ok := value.(string); ok {
+	// Sorted so the searchable blob is stable: an unordered concat makes
+	// cross-field phrase matches come and go between calls.
+	for _, k := range slices.Sorted(maps.Keys(fields)) {
+		if s, ok := fields[k].(string); ok {
 			sb.WriteByte(' ')
 			sb.WriteString(s)
 		}

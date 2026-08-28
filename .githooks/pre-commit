@@ -135,6 +135,11 @@ echo ""
 go vet ./...
 pass "go vet clean"
 
+# ---- 5b. repo analyzers (CLAUDE.md hard rules as vet checks) ----
+go build -o /tmp/gofastr-vettool ./cmd/vettool
+go vet -vettool=/tmp/gofastr-vettool ./...
+pass "repo analyzers clean"
+
 # ---- 6. Deterministic test sweep + coverage floors (CI-identical) ----
 echo ""
 if [ "${GOFASTR_SKIP_COMMIT_TESTS:-}" = "1" ]; then

@@ -1,0 +1,49 @@
+## CodeRabbit configuration. Docs: https://docs.coderabbit.ai/reference/configuration
+## Goal: spend the review budget on source, and point findings at the
+## repo's own contracts (CLAUDE.md hard rules) instead of generic advice.
+
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    # Never spend review budget on generated or vendored artifacts.
+    - "!dist/**"
+    - "!gen/**"
+    - "!**/testdata/**"
+    - "!core-ui/runtime/frag/SYMBOLS.txt"
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        This repo's CLAUDE.md hard rules are the review contract:
+        in-page state changes are islands, never routes; pagination/
+        sort/filter math is server-side; SSE is push-only and lives on
+        the single /__gofastr/sse bus (dev-reload tooling is the only
+        exception); `location.href =` / full reloads are never a fix;
+        generators and apps ship ZERO bespoke CSS and no hand-rolled
+        structural markup (all styling belongs in framework/ui and
+        core-ui); entities holding per-user data must set
+        EntityConfig.Scope.OwnerField; exported API changes must update
+        framework/docs/content/*.md in the same change. A guard
+        condition without a test that makes it fail is untested.
+    - path: "framework/ui/**"
+      instructions: |
+        Component configs carry ExtraAttrs forwarded to the root element
+        through html.SafeExtraAttrs (extras first, owned keys re-asserted;
+        class/id/data-fui-* dropped case-insensitively). The gates in
+        framework/ui/extraattrs_contract_test.go enforce this; flag code
+        that forwards ExtraAttrs raw outside the extraAttrsRawLegacy
+        allow-list. SSR output must be byte-deterministic: never range a
+        map while writing markup — iterate slices.Sorted(maps.Keys(m)).
+    - path: "cmd/gofastr/**"
+      instructions: |
+        Generated code is one-shot owned output: no auto-renaming on
+        collisions (fail with a precise error), custom.go is never
+        overwritten, and every spec- or blueprint-derived string that
+        lands in generated Go source must be validated or %q-quoted —
+        specs can come from URLs.

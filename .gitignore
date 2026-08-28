@@ -126,6 +126,7 @@ demo_server
 !gofastr/
 kiln
 kiln-*
+/vettool
 !kiln/
 /core-ui-demo
 /blog

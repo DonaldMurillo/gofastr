@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -452,12 +454,13 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	}
 	// Render any other slots after the canonical ones.
 	canonical := map[string]bool{"header": true, "body": true, "footer": true}
-	for name, html := range slots {
+	// Sorted so non-canonical slot DOM order is stable across renders.
+	for _, name := range slices.Sorted(maps.Keys(slots)) {
 		if canonical[name] {
 			continue
 		}
 		b.WriteString(`<div class="fui-slot fui-slot-` + render.Escape(name) + `">`)
-		b.WriteString(string(html))
+		b.WriteString(string(slots[name]))
 		b.WriteString(`</div>`)
 	}
 	if def.Position == Center {

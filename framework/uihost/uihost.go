@@ -15,12 +15,14 @@ import (
 	stdhtml "html"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -931,8 +933,11 @@ func (ds *UIHost) GetActionJS() string {
 
 	sb := borrowBuilder()
 	defer returnBuilder(sb)
-	for _, js := range ds.actionJS {
-		sb.WriteString(js)
+	// Sorted so the emitted script (and everything downstream: screen
+	// cache keys, gzip dedup, hydration diffs) is byte-stable across
+	// renders and replicas.
+	for _, name := range slices.Sorted(maps.Keys(ds.actionJS)) {
+		sb.WriteString(ds.actionJS[name])
 		sb.WriteString("\n")
 	}
 	return sb.String()

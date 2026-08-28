@@ -99,6 +99,12 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
    CSS the components don't provide is a gap to fix upstream, never a patch.
 10. **Read the PR's line-level review comments before merging.** After
     opening a PR and after every push to it, run
+    `./scripts/pr-review-findings.sh <N>` — it collects line comments,
+    review bodies, and issue comments (paginated) from every reviewer,
+    and `--gate` exits non-zero while any review thread is unresolved,
+    so triage is enforced, not remembered: reply to each thread with the
+    accept/reject disposition, resolve it, and only then merge. The raw
+    calls behind it, for when you need them:
     `gh api --paginate repos/DonaldMurillo/gofastr/pulls/<N>/comments`. The
     `--paginate` is load-bearing: without it the fetch silently stops at the
     first page, so a multi-page review (exactly the miss this rule exists to
@@ -128,6 +134,15 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 - **Build / run the example website**: `./scripts/dev-watch.sh` (auto-rebuild + livereload, port `:8082`). Dev-watch writes to `/tmp/` because the watched tree must stay clean.
 - **Build canonical binaries**: `make build` (→ `dist/gofastr`, `dist/kiln`) or `make build-all` (also builds every example into `dist/examples/`). The `dist/` directory is the **only** sanctioned build output location and is gitignored.
 - **Test all packages**: `go test ./...`.
+- **Repo analyzers (type-aware invariants as vet checks)**: `make
+  analyze` builds `cmd/vettool` and runs it over the tree. Currently:
+  `mapwriter` — never range a map while writing output (iterate
+  `slices.Sorted(maps.Keys(m))`), so SSR/email/prompt bytes are
+  deterministic. Runs in the pre-commit hook and CI's vet step. New
+  invariants go in `internal/analyzers/` ONLY when they need type
+  information; pattern-shaped rules belong in the contracts pipeline
+  (`framework/contracts`, `gofastr verify`), which already owns bespoke
+  CSS, hard navigation, bespoke EventSource, and inline style/script.
 - **Run the FULL repo suite (build + vet + test, no cache, generous timeout)**: `./scripts/test-all.sh`. Use this before/after large refactors: it covers the slow chromedp suite (`examples/site`) and `kiln/integration`. `RACE=1`, `SHORT=1`, and a trailing package path are all supported.
 - **Test the site end-to-end (chromedp)**: `go test ./examples/site/ -run TestE2E`.
 - **Clean build artifacts**: `make clean` (wipes `dist/`, `bin/`, `gen/`, `.gofastr/`).
