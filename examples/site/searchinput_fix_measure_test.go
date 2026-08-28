@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 
@@ -41,10 +39,9 @@ func TestSearchInputActionVariantPixels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
-	ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
+	// Shared suite browser: per-test Chrome launches flake on CI (see
+	// siteBrowserCtx), and this test needs only a tab on a file:// URL.
+	ctx := siteBrowserCtx(t)
 
 	var formW, labelW, inputW float64
 	measure := `(() => {
