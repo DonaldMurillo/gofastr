@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // Pins #266 for /api/llm.md: the index must describe routes that exist.
