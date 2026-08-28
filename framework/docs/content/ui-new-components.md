@@ -109,7 +109,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **recordsummary**: `framework/ui.RecordSummary`, compact dominant record or event summary with status, next-decision, balanced phone metrics, a bounded support rail, ownership, and a lead-region natural-width action that stays early on phones
 - **skiplink**: `framework/ui.SkipLink`, focus-visible bypass link for jumping to main content
 - **pageheader**: `framework/ui.PageHeader`, top-of-page header with title / eyebrow / subtitle / actions
-- **siteheader**: `framework/ui.SiteHeader`, top bar with brand + nav + actions + mobile drawer; `MobileBrand` swaps in a concise phone identity
+- **siteheader**: `framework/ui.SiteHeader`, top bar with brand + nav + actions + mobile drawer; `MobileBrand` swaps in a concise phone identity; `PersistentActions` keeps one journey-critical control in the bar at every width (no drawer copy)
 - **sitefooter**: `framework/ui.SiteFooter`, multi-column footer grid + bottom strip
 - **anchoredrail**: `framework/ui.AnchoredRail`, sticky in-page nav rail with scrollspy-tracked active state
 - **doclayout**: `framework/ui.DocLayout` / `DocPrevNext`, documentation page skeleton (nav rail + article + prev/next pager)

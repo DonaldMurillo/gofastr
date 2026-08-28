@@ -57,6 +57,14 @@ type SiteHeaderConfig struct {
 	// icon links, etc. Rendered before the mobile drawer trigger so
 	// the trigram glyph sits at the far right.
 	Actions render.HTML
+	// PersistentActions stays visible in the bar at every viewport
+	// width, rendered after Actions and before the drawer trigger. It
+	// is never copied into the drawer. Put the one control the page's
+	// journey depends on here — a sign-in link, a primary CTA — and
+	// leave the rest in Actions, which collapses into the drawer on
+	// phones. Keep it to a single compact control: it shares the
+	// ≤720px bar with brand + hamburger.
+	PersistentActions render.HTML
 	// MobileExtraLinks are appended only to the mobile drawer list
 	// (e.g., "Home", "GitHub ↗"). Lets the consumer surface secondary
 	// destinations on phones without cluttering the desktop bar.
@@ -187,6 +195,12 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 		// also render inside the drawer).
 		rightChildren = append(rightChildren,
 			html.Div(html.DivConfig{Class: "ui-site-header__bar-actions"}, cfg.Actions))
+	}
+	if cfg.PersistentActions != "" {
+		// Bar-only, all widths: no drawer copy exists, so the ≤720px
+		// block must never hide this wrapper.
+		rightChildren = append(rightChildren,
+			html.Div(html.DivConfig{Class: "ui-site-header__persistent-actions"}, cfg.PersistentActions))
 	}
 	rightChildren = append(rightChildren, mobile)
 	right := html.Div(html.DivConfig{Class: "ui-site-header__right"}, rightChildren...)
@@ -365,8 +379,11 @@ func siteHeaderCSS(_ style.Theme) string {
 }
 
 /* Bar actions are layout-transparent on desktop (their cluster participates in
-   the right group directly); the foot-of-drawer copy is hidden until ≤720px. */
+   the right group directly); the foot-of-drawer copy is hidden until ≤720px.
+   Persistent actions get the same transparency but no breakpoint rule: they
+   stay in the bar at every width and have no drawer copy. */
 [data-fui-comp="ui-site-header"] .ui-site-header__bar-actions { display: contents; }
+[data-fui-comp="ui-site-header"] .ui-site-header__persistent-actions { display: contents; }
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile-actions {
   display: flex;
   flex-direction: column;
