@@ -63,7 +63,9 @@ type SiteHeaderConfig struct {
 	// journey depends on here — a sign-in link, a primary CTA — and
 	// leave the rest in Actions, which collapses into the drawer on
 	// phones. Keep it to a single compact control: it shares the
-	// ≤720px bar with brand + hamburger.
+	// ≤720px bar with brand + hamburger. The wrapper is
+	// layout-transparent (display: contents) — style the control, not
+	// the wrapper.
 	PersistentActions render.HTML
 	// MobileExtraLinks are appended only to the mobile drawer list
 	// (e.g., "Home", "GitHub ↗"). Lets the consumer surface secondary

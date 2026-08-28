@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -235,12 +236,13 @@ func TestSiteHeaderPersistentActionsStayInBar(t *testing.T) {
 		t.Error("persistent action must not be copied into the mobile drawer")
 	}
 	// The stylesheet must never hide the persistent wrapper: the only
-	// rule that may mention it is the layout-transparency one.
+	// rule that may mention it is the layout-transparency one. Scan
+	// whole declaration blocks, not lines, so a multi-line rule can't
+	// slip past; visibility:hidden is as much a hide as display:none.
 	css := siteHeaderCSS(style.Theme{})
-	for _, line := range strings.Split(css, "\n") {
-		if strings.Contains(line, "persistent-actions") && strings.Contains(line, "display: none") {
-			t.Errorf("persistent-actions must not be display:none at any width: %s", line)
-		}
+	hideRe := regexp.MustCompile(`persistent-actions[^{]*\{[^}]*(display:\s*none|visibility:\s*hidden)`)
+	if m := hideRe.FindString(css); m != "" {
+		t.Errorf("persistent-actions must stay visible at every width, found: %s", m)
 	}
 	if !strings.Contains(css, ".ui-site-header__persistent-actions { display: contents; }") {
 		t.Error("persistent-actions should be layout-transparent like bar-actions")
