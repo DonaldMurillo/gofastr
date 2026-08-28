@@ -36,6 +36,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **WebMCP bridge (experimental)** (#267): `framework/experimental/webmcp`
+  exposes server-declared tools to in-browser agents through the Chrome
+  WebMCP origin-trial API (the page's `modelContext`). Declare tools
+  (name, description, JSON Schema, same-origin endpoint) and `Mount`
+  serves a bridge script that registers them; each `execute()` proxies
+  to its endpoint with the visitor's session cookies and the app's
+  double-submit CSRF token, so an in-browser agent acts strictly as the
+  signed-in user. Separate from the server MCP surface by design
+  (session auth vs token auth). No-op on browsers without the API;
+  automation enables it with `--enable-blink-features=WebMCP`.
+  Reference: `framework/docs/content/webmcp.md`.
+
 - **`gofastr generate cli --from-openapi <file|url>`** (#240): generates
   the terminal client from an OpenAPI 3 document instead of the entity
   set, for apps with hand-written APIs. One subcommand per
