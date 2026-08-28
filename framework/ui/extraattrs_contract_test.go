@@ -126,14 +126,12 @@ func returnsComponentType(res *ast.FieldList) bool {
 // must go through html.SafeExtraAttrs (or scrubAttrs where on* filtering
 // is the deliberate, documented contract).
 var extraAttrsRawLegacy = map[string]bool{
-	"animatedcounter.go": true, "banner.go": true, "carousel.go": true,
-	"components.go": true, "container.go": true, "filtertoolbar.go": true,
-	"form.go": true, "gallery.go": true, "link.go": true,
-	"markdown.go": true, "menu.go": true, "notificationbell.go": true,
-	"numberinput.go": true, "passwordinput.go": true, "progresssteps.go": true,
-	"rangeslider.go": true, "searchinput.go": true, "select.go": true,
-	"slider.go": true, "textarea.go": true, "timeline.go": true,
-	"toc.go": true, "toolbar.go": true, "workbench.go": true,
+	// form.go stays raw on purpose: its doc comment promises that
+	// ExtraAttrs may override the form's own attributes (the
+	// data-entity-form / interactive wiring pattern the blueprint
+	// generator and examples rely on). It is the documented exception,
+	// not migration debt.
+	"form.go": true,
 }
 
 // TestExtraAttrsForwardingIsSanitized fails when a file outside the
@@ -163,7 +161,10 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 			case *ast.CallExpr:
 				switch fun := d.Fun.(type) {
 				case *ast.SelectorExpr:
-					if fun.Sel.Name == "SafeExtraAttrs" {
+					// SafeCarrierAttrs is the wiring-carrier variant
+					// (ui.Button): owned keys still drop, data-fui-*
+					// passes through by documented contract.
+					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" {
 						sanitized = append(sanitized, d)
 					}
 				case *ast.Ident:

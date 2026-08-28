@@ -83,6 +83,44 @@ func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
 	return out
 }
 
+// SafeCarrierAttrs is SafeExtraAttrs for wiring carriers: components
+// whose ExtraAttrs are the documented attachment point for runtime
+// wiring (interactive.Action.Attrs(), data-fui-open, …) and that emit
+// no data-fui-* wiring of their own. It drops every case-variant of
+// "class", "id", "data-fui-comp" (the style-scope marker WrapHTML
+// injects), and the listed protected keys, but keeps the rest of
+// "data-fui-*" so the interactive package's attrs pass through.
+// ui.Button and ui.Link are the carriers; a component that renders its
+// own data-fui-* attributes must use SafeExtraAttrs instead, or a
+// caller could spoof its wiring.
+func SafeCarrierAttrs(attrs Attrs, protected ...string) Attrs {
+	if len(attrs) == 0 {
+		return nil
+	}
+	out := make(Attrs, len(attrs))
+	for k, v := range attrs {
+		if strings.EqualFold(k, "class") || strings.EqualFold(k, "id") ||
+			strings.EqualFold(k, "data-fui-comp") {
+			continue
+		}
+		drop := false
+		for _, p := range protected {
+			if strings.EqualFold(k, p) {
+				drop = true
+				break
+			}
+		}
+		if drop {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // DataAttrs converts a map of key-value pairs into data-* attributes.
 // Keys should not include the "data-" prefix; it is added automatically.
 func DataAttrs(data map[string]string) Attrs {

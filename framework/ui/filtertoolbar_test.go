@@ -226,3 +226,25 @@ func TestFilterToolbarSearchOnly(t *testing.T) {
 		t.Errorf("expected search field, got: %s", out)
 	}
 }
+
+func TestFilterToolbarExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := FilterToolbar(FilterToolbarConfig{
+		Action: "/list",
+		Sort:   []SortOption{{Value: "x", Label: "X"}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "action": "javascript:alert(1)", "method": "evil", "Class": "evil",
+		},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("form root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `action="/list"`) || !strings.Contains(root, `method="GET"`) {
+		t.Errorf("form action/method lost their framework values:\n%s", root)
+	}
+	for _, banned := range []string{"evil", "javascript:"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+}

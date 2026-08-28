@@ -66,3 +66,29 @@ func TestTextAreaLabelForMatchesID(t *testing.T) {
 		t.Errorf("textarea[id] should default to Name:\n%s", h)
 	}
 }
+
+// ExtraAttrs land on the <textarea> but never override what the
+// component owns (#262): rows keeps its framework value; the
+// data-fui-autogrow wiring cannot be spoofed.
+func TestTextAreaExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(TextArea(TextAreaConfig{
+		Name: "bio", Label: "Bio", Class: "mine", Placeholder: "Tell us",
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "rows": "evil", "Class": "evil", "data-fui-autogrow": "spoof",
+		},
+	}))
+	ta := extraAttrsOpeningTag(t, h, "textarea")
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(ta, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, ta)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `name="bio"`, `rows="3"`, `placeholder="Tell us"`,
+		`class="ui-textarea__input"`,
+	} {
+		if !strings.Contains(ta, want) {
+			t.Errorf("textarea missing %q:\n%s", want, ta)
+		}
+	}
+}

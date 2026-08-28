@@ -85,7 +85,12 @@ type CarouselConfig struct {
 	VirtualPlaceholderHeight string
 	ID                       string
 	Class                    string
-	ExtraAttrs               html.Attrs
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the carousel's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-* (the runtime wiring), and the region contract
+	// (role, aria-roledescription, aria-label).
+	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the Previous/Next,
 	// Go-to-slide and pagination aria labels. When nil, English fallbacks apply.
 	Ctx context.Context
@@ -142,7 +147,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	if cfg.Loop {
 		attrs["data-fui-carousel-loop"] = "true"
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-roledescription", "aria-label"))
 
 	// VirtualScroll prep: figure out the inline window.
 	virtualWindow := 0

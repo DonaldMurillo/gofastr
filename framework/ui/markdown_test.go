@@ -44,3 +44,22 @@ func TestMarkdownDataFuiComp(t *testing.T) {
 		t.Errorf("Markdown should emit data-fui-comp marker:\n%s", h)
 	}
 }
+
+func TestMarkdownExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := Markdown(MarkdownConfig{Source: "hi", ID: "real", ExtraAttrs: map[string]string{
+		"data-test": "hook", "id": "evil", "Class": "evil",
+	}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `id="real"`) {
+		t.Errorf("framework id lost:\n%s", root)
+	}
+	if !strings.Contains(root, "ui-markdown") {
+		t.Errorf("framework class lost:\n%s", root)
+	}
+	if strings.Contains(root, "evil") {
+		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
+	}
+}

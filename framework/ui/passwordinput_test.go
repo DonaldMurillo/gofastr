@@ -148,3 +148,33 @@ func TestPasswordInputRequired(t *testing.T) {
 		t.Errorf("expected required attribute:\n%s", h)
 	}
 }
+
+// ExtraAttrs land on the <input> but never override what the component
+// owns (#262). The old maps.Copy + re-assert left case-variant holes
+// ("Type" folded back onto type in the parser); the SafeExtraAttrs
+// route closes them.
+func TestPasswordInputExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(PasswordInput(PasswordInputConfig{
+		Name: "pw", ID: "pw", Placeholder: "Enter password",
+		Autocomplete: "new-password", Class: "mine",
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "type": "text", "Type": "text", "Class": "evil",
+			"data-fui-comp": "spoof",
+		},
+	}))
+	input := extraAttrsOpeningTag(t, h, "input")
+	for _, banned := range []string{"evil", "spoof", `type="text"`} {
+		if strings.Contains(input, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, input)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `type="password"`, `name="pw"`, `id="pw"`,
+		`placeholder="Enter password"`, `autocomplete="new-password"`,
+		`class="ui-password-input__input`,
+	} {
+		if !strings.Contains(input, want) {
+			t.Errorf("input missing %q:\n%s", want, input)
+		}
+	}
+}

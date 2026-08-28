@@ -45,9 +45,12 @@ type TimelineEvent struct {
 
 // TimelineConfig configures a Timeline.
 type TimelineConfig struct {
-	Events     []TimelineEvent
-	ID         string
-	Class      string
+	Events []TimelineEvent
+	ID     string
+	Class  string
+	// ExtraAttrs forwards additional attributes to the <ol> root.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -64,7 +67,7 @@ func Timeline(cfg TimelineConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
 
 	items := make([]render.HTML, 0, len(cfg.Events))
 	for _, e := range cfg.Events {

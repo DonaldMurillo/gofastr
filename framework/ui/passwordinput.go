@@ -34,7 +34,10 @@ type PasswordInputConfig struct {
 	Error string
 	// Class adds extra CSS classes to the wrapper.
 	Class string
-	// Attrs lets callers attach additional attributes.
+	// ExtraAttrs forwards additional attributes to the <input> element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, type, name, placeholder, required, autocomplete,
+	// aria-invalid, and aria-describedby.
 	ExtraAttrs map[string]string
 
 	// Ctx carries the per-request context used to resolve i18n strings
@@ -83,11 +86,9 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		inputAttrs["aria-invalid"] = "true"
 		inputAttrs["aria-describedby"] = cfg.ID + "-error"
 	}
-	maps.Copy(inputAttrs, cfg.ExtraAttrs)
-	// Protect critical attrs from Attrs override.
-	inputAttrs["type"] = "password"
-	inputAttrs["name"] = cfg.Name
-	inputAttrs["id"] = cfg.ID
+	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "placeholder", "required", "autocomplete",
+		"aria-invalid", "aria-describedby"))
 
 	toggleAttrs := map[string]string{
 		"type":         "button",

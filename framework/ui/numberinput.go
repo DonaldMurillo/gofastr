@@ -43,9 +43,13 @@ type NumberInputConfig struct {
 	// Help renders supporting text under the field.
 	Help string
 	// Error overrides Help with an error message.
-	Error      string
-	ID         string
-	Class      string
+	Error string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes to the <input> element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, type, name, step, value, min, max, disabled,
+	// required, aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the Decrement and
 	// Increment aria labels. When nil, English fallbacks apply.
@@ -109,7 +113,9 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 	} else if cfg.Help != "" {
 		inputAttrs["aria-describedby"] = id + "-help"
 	}
-	maps.Copy(inputAttrs, cfg.ExtraAttrs)
+	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "step", "value", "min", "max",
+		"disabled", "required", "aria-invalid", "aria-describedby"))
 
 	minusAttrs := map[string]string{
 		"type":                 "button",

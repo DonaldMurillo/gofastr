@@ -38,8 +38,12 @@ type WorkbenchConfig struct {
 	// case that motivated the component.
 	Pane render.HTML
 
-	ID         string
-	Class      string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes to the root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and style (RailWidth owns the inline custom
+	// property).
 	ExtraAttrs html.Attrs
 }
 
@@ -60,7 +64,7 @@ func Workbench(cfg WorkbenchConfig) render.HTML {
 		// to allow. See core-ui/check/noinlinescripts.go.
 		attrs["style"] = "--ui-workbench-rail: " + cfg.RailWidth
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "style"))
 	return workbenchStyle.WrapHTML(render.Tag("div", attrs,
 		render.Tag("div", html.Attrs{"class": "ui-workbench__rail"}, cfg.Rail),
 		render.Tag("div", html.Attrs{"class": "ui-workbench__pane"}, cfg.Pane),

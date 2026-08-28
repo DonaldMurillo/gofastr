@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"strings"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -33,7 +33,10 @@ type SearchInputConfig struct {
 	Method string
 	// Class adds extra CSS classes to the wrapper.
 	Class string
-	// Attrs lets callers attach additional attributes.
+	// ExtraAttrs forwards additional attributes to the <input> element.
+	// Keys the component owns are dropped: class and id, data-fui-*,
+	// type, and name. "value" is deliberately NOT owned: the resource
+	// UI prefills the current search term through it.
 	ExtraAttrs map[string]string
 	// Ctx carries the per-request context used to resolve i18n labels
 	// (placeholder, aria-labels). When nil, English fallbacks apply.
@@ -79,22 +82,11 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"placeholder": placeholder,
 		"aria-label":  i18nui.T(ctx, i18nui.KeySearchLabel),
 	}
-	for k, v := range cfg.ExtraAttrs {
-		// HTML attribute names are case-insensitive: a case-variant key
-		// ("Type"/"Name"/"ID") survives a lowercase-only re-assert as a
-		// distinct entry, renders as a second attribute, and folds back onto
-		// the protected one in the parser (e.g. "Type" can flip the search
-		// box to a hidden/submit input, "Name" can clobber the submitted
-		// field). Drop every case-variant of the re-asserted keys here.
-		if strings.EqualFold(k, "type") || strings.EqualFold(k, "name") || strings.EqualFold(k, "id") {
-			continue
-		}
-		inputAttrs[k] = v
-	}
-	// Protect critical attrs from Attrs override.
-	inputAttrs["type"] = "search"
-	inputAttrs["name"] = cfg.Name
-	inputAttrs["id"] = cfg.ID
+	// Extras land on the <input>: SafeExtraAttrs drops every
+	// case-variant of type/name (and id/class/data-fui-*), so a caller
+	// cannot flip the box to a hidden input or clobber the submitted
+	// field name. value survives — see the config comment.
+	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "name"))
 
 	inner := []render.HTML{
 		html.Span(html.TextConfig{

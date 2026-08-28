@@ -155,3 +155,45 @@ func TestMenuExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("menu root missing data-test:\n%s", root)
 	}
 }
+
+func TestMenuItemConfirmEmitsOnRPCItems(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{
+		Label: "Actions",
+		Items: []ui.MenuItem{
+			{Label: "Delete", RPC: "/api/items/1", RPCMethod: "DELETE",
+				Confirm: "Delete this item?", Danger: true},
+			{Label: "Open", Href: "/x", Confirm: "ignored without RPC"},
+		},
+	}))
+	if !strings.Contains(out, `data-fui-confirm="Delete this item?"`) {
+		t.Errorf("rpc item missing data-fui-confirm:\n%s", out)
+	}
+	if strings.Contains(out, "ignored without RPC") {
+		t.Errorf("Confirm must be inert on non-RPC items:\n%s", out)
+	}
+}
+
+func TestMenuItemExtraAttrsCannotOverrideOwned(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{
+		Label: "Actions",
+		Items: []ui.MenuItem{
+			{Label: "Open", Href: "/x", ExtraAttrs: map[string]string{
+				"data-test": "hook-a", "href": "javascript:evil()", "Class": "evil",
+			}},
+			{Label: "Delete", ExtraAttrs: map[string]string{
+				"data-test": "hook-b", "role": "evil", "tabindex": "evil",
+			}},
+		},
+	}))
+	for _, want := range []string{
+		`data-test="hook-a"`, `data-test="hook-b"`,
+		`href="/x"`, `role="menuitem"`, `tabindex="-1"`, `type="button"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("item output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "evil") {
+		t.Errorf("owned item attr overridden by ExtraAttrs:\n%s", out)
+	}
+}

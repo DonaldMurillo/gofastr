@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"strings"
+	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -144,8 +144,13 @@ type FilterToolbarConfig struct {
 	// When nil, English fallbacks are returned.
 	Ctx context.Context
 
-	ID         string
-	Class      string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the toolbar's root <form>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and the form contract (method, action, role,
+	// aria-label) — the sanitized Action is never overridable.
 	ExtraAttrs html.Attrs
 }
 
@@ -245,17 +250,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.ID != "" {
 		formAttrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.ExtraAttrs {
-		// HTML attribute names are case-insensitive, so a case-variant key
-		// ("Action"/"ACTION"/"AcTiOn") would survive a lowercase-only drop,
-		// render as a second attribute, and fold back onto "action" in the
-		// parser (first occurrence wins), silently reversing the
-		// urlsafe.CleanAnchor pass below. Drop every case-variant here.
-		if strings.EqualFold(k, "action") {
-			continue
-		}
-		formAttrs[k] = v
-	}
+	maps.Copy(formAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "action", "method", "role", "aria-label"))
 	// The sanitized action must win: ExtraAttrs is a developer escape hatch,
 	// but letting it rewrite "action" would silently undo the
 	// urlsafe.CleanAnchor pass above (a "javascript:" action would come back

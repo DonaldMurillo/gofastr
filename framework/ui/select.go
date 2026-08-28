@@ -40,9 +40,13 @@ type SelectConfig struct {
 	// Help renders supporting text under the field.
 	Help string
 	// Error overrides Help with an error message + aria-invalid.
-	Error      string
-	ID         string
-	Class      string
+	Error string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes to the <select>
+	// element. Keys the component owns are dropped: class and id (use
+	// Class / ID), data-fui-*, name, disabled, required, aria-invalid,
+	// and aria-describedby.
 	ExtraAttrs html.Attrs
 }
 
@@ -104,7 +108,8 @@ func Select(cfg SelectConfig) render.HTML {
 	} else if cfg.Help != "" {
 		selAttrs["aria-describedby"] = id + "-help"
 	}
-	maps.Copy(selAttrs, cfg.ExtraAttrs)
+	maps.Copy(selAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"name", "disabled", "required", "aria-invalid", "aria-describedby"))
 
 	// The marker lives INSIDE the <label>: the component root is a grid,
 	// so a sibling span would become its own row under the label text.

@@ -25,9 +25,13 @@ type MarkdownConfig struct {
 	Source string
 	// Compact tightens spacing, useful for inline previews where
 	// hero-page paragraph rhythm would feel wrong.
-	Compact    bool
-	ID         string
-	Class      string
+	Compact bool
+	ID      string
+	Class   string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the prose container's
+	// root <div>. Keys the component owns are dropped: class and id
+	// (use Class / ID) and data-fui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -47,7 +51,7 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
 	body := enrichCodeBlocks(string(markdown.RenderHTML(cfg.Source)))
 	return markdownStyle.WrapHTML(render.Tag("div", attrs, render.HTML(body)))
 }

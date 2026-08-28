@@ -39,9 +39,13 @@ type SliderConfig struct {
 	// ShowEdgeLabels renders the Min and Max values under the track.
 	ShowEdgeLabels bool
 	// Disabled disables interaction.
-	Disabled   bool
-	ID         string
-	Class      string
+	Disabled bool
+	ID       string
+	Class    string
+	// ExtraAttrs forwards additional attributes to the <input> element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-* (incl. the slider-mirror wiring), type, name,
+	// min, max, step, value, aria-label, and disabled.
 	ExtraAttrs html.Attrs
 }
 
@@ -103,7 +107,8 @@ func Slider(cfg SliderConfig) render.HTML {
 	if cfg.Disabled {
 		inputAttrs["disabled"] = ""
 	}
-	maps.Copy(inputAttrs, cfg.ExtraAttrs)
+	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "min", "max", "step", "value", "aria-label", "disabled"))
 
 	header := []render.HTML{
 		render.Tag("label", map[string]string{"for": id, "class": "ui-slider__label"},

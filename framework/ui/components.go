@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -514,10 +513,20 @@ const (
 
 // ButtonConfig configures a button.
 type ButtonConfig struct {
-	Label      string        // required visible text + aria-label
-	Variant    ButtonVariant // defaults to ButtonPrimary
-	Size       ButtonSize    // defaults to ButtonSizeDefault
-	Type       string        // "button" (default) | "submit" | "reset"
+	Label string // required visible text + aria-label
+	// Variant defaults to ButtonPrimary.
+	Variant ButtonVariant
+	// Size defaults to ButtonSizeDefault.
+	Size ButtonSize
+	// Type is the button type: "button" (default), "submit", or "reset".
+	Type string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the rendered <button>.
+	// Button is the documented carrier for runtime wiring, so
+	// data-fui-* keys pass through — attach interactive wiring with
+	// interactive.Action.Attrs() (see interactive-patterns). Keys the
+	// component owns are dropped: class and id (use Class / ID), type
+	// (use Type), and aria-label (use Label).
 	ExtraAttrs html.Attrs
 	ID         string
 	Class      string
@@ -558,7 +567,7 @@ func Button(cfg ButtonConfig) render.HTML {
 		Type:       cfg.Type,
 		Class:      cls,
 		ID:         cfg.ID,
-		ExtraAttrs: cfg.ExtraAttrs,
+		ExtraAttrs: html.SafeCarrierAttrs(cfg.ExtraAttrs, "type", "aria-label"),
 	}))
 }
 
@@ -583,9 +592,14 @@ type LinkButtonConfig struct {
 	// Icon, when set, renders the named registered icon (see
 	// RegisterIcon / Icon) before the label. The button's inline-flex
 	// gap handles spacing. Unknown names render the label alone.
-	Icon       string
-	ID         string
-	Class      string
+	Icon  string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the rendered <a>. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, and href (use Href). With External, target and rel
+	// are owned too; without it a caller may still set them.
 	ExtraAttrs html.Attrs
 }
 
@@ -622,9 +636,11 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	extra := html.Attrs{}
-	maps.Copy(extra, cfg.ExtraAttrs)
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "href")
 	if cfg.External {
+		if extra == nil {
+			extra = html.Attrs{}
+		}
 		extra["target"] = "_blank"
 		extra["rel"] = "noopener noreferrer"
 	}

@@ -54,9 +54,14 @@ type BannerConfig struct {
 	// Action is an optional inline call-to-action (a Link or Button
 	// rendered to the right of the body).
 	Action render.HTML
-	// ID / Class / Attrs are passed through to the outer element.
-	ID         string
-	Class      string
+	// ID / Class are passed through to the outer element.
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the banner's root <div>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and the severity contract (role, aria-live,
+	// derived from Variant).
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the dismiss label.
 	// When nil, English fallbacks apply.
@@ -115,7 +120,7 @@ func Banner(cfg BannerConfig) render.HTML {
 		attrs["role"] = "status"
 		attrs["aria-live"] = "polite"
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live"))
 
 	children := []render.HTML{
 		render.Tag("div", map[string]string{"class": "ui-banner__icon", "aria-hidden": "true"},

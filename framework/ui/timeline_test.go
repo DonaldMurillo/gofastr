@@ -62,3 +62,29 @@ func TestTimelineRejectsUnknownVariant(t *testing.T) {
 		Events: []TimelineEvent{{Title: "x", Variant: TimelineEventVariant("bogus")}},
 	})
 }
+
+// ExtraAttrs land on the <ol> root but never override what the
+// component owns (#262): class and data-fui-* variants are dropped
+// (there are no other owned attributes on the root).
+func TestTimelineExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(Timeline(TimelineConfig{
+		Class:  "mine",
+		Events: []TimelineEvent{{Title: "First"}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "Class": "evil", "data-fui-comp": "spoof",
+		},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `class="ui-timeline mine"`,
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("root missing %q:\n%s", want, root)
+		}
+	}
+}

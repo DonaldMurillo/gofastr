@@ -37,9 +37,12 @@ type ToolbarConfig struct {
 	Groups []ToolbarGroup
 	// Align picks justify-content. Default is "start". Options:
 	// "start", "center", "end", "between".
-	Align      string
-	ID         string
-	Class      string
+	Align string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes to the root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, role, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -72,7 +75,7 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label"))
 
 	parts := make([]render.HTML, 0, len(cfg.Groups))
 	for _, g := range cfg.Groups {

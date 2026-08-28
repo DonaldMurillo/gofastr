@@ -559,17 +559,20 @@ component derives from its config (`href` on linked roots, `type` /
 linked Card renders `<a>` instead of `<section>` — the attributes
 follow whichever root is emitted.
 
-A set of components that predate this contract still forwards extras
-raw, where a caller-supplied key can override component-owned
-attributes (Banner, Select, Carousel, and the other files on the
-`extraAttrsRawLegacy` list in
-`framework/ui/extraattrs_contract_test.go`). Until those migrate,
-treat their pass-through as unprotected. `FormConfig`'s raw
-`data-fui-rpc-*` pass-through is deliberate and documented on the
-field.
+Two documented exceptions forward more than the contract's default.
+`FormConfig` forwards raw: its ExtraAttrs may override the form's own
+attributes, which the blueprint generator's `data-entity-form` +
+RPC-wiring pattern relies on. `ButtonConfig` and `LinkConfig` are
+*wiring carriers*: they drop their owned keys like any component but
+keep `data-fui-*`, because attaching `interactive.Action.Attrs()` to a
+button's ExtraAttrs is the documented way to wire a click RPC (the
+resource UI and the admin battery both do it), and an ActionRef link
+ships an href fallback plus a `data-fui-rpc` upgrade the same way.
 
 Component authors: sanitize with `html.SafeExtraAttrs(cfg.ExtraAttrs,
-protected...)` before forwarding. Two gates in
+protected...)` before forwarding — or `html.SafeCarrierAttrs` for a
+component that emits no `data-fui-*` wiring of its own and is meant to
+carry the interactive package's attrs. Two gates in
 `framework/ui/extraattrs_contract_test.go` enforce the contract: one
 fails on any component Config without the field, the other fails on
 any new raw forwarding outside the legacy list.

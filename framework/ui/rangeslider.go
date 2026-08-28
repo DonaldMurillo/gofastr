@@ -41,9 +41,12 @@ type RangeSliderConfig struct {
 	// ShowValue renders a live "lo – hi" text alongside the label.
 	ShowValue bool
 	// Disabled disables both thumbs.
-	Disabled   bool
-	ID         string
-	Class      string
+	Disabled bool
+	ID       string
+	Class    string
+	// ExtraAttrs forwards additional attributes to the root element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, role, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -144,7 +147,7 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label"))
 	return rangeSliderStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 

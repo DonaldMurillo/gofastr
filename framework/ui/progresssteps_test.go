@@ -80,3 +80,29 @@ func TestProgressStepsRejectsUnknownStatus(t *testing.T) {
 		Steps: []ProgressStep{{Label: "x", Status: ProgressStepStatus("bogus")}},
 	})
 }
+
+// ExtraAttrs land on the <nav> root but never override what the
+// component owns (#262): aria-label keeps its framework value; class
+// and data-fui-* case-variants are dropped.
+func TestProgressStepsExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(ProgressSteps(ProgressStepsConfig{
+		Label: "Checkout", Class: "mine",
+		Steps: []ProgressStep{{Label: "A"}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "aria-label": "evil", "Class": "evil", "data-fui-comp": "spoof",
+		},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `aria-label="Checkout"`, `class="ui-progress-steps mine"`,
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("nav missing %q:\n%s", want, root)
+		}
+	}
+}

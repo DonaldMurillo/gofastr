@@ -26,11 +26,19 @@ const (
 
 // LinkConfig configures a Link.
 type LinkConfig struct {
-	Href       string // required
-	Text       string // required visible text
-	Variant    LinkVariant
-	Class      string
-	ID         string
+	Href    string // required
+	Text    string // required visible text
+	Variant LinkVariant
+	Class   string
+	ID      string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the rendered <a>. Link is
+	// a wiring carrier: data-fui-* passes through, which is how a
+	// progressive-enhancement link ships an href fallback plus a
+	// data-fui-rpc upgrade (uinoderender's ActionRef links). Keys the
+	// component owns are dropped: class and id (use Class / ID) and
+	// href (use Href). on* event handlers and values with control
+	// bytes are also scrubbed (see scrubAttrs).
 	ExtraAttrs html.Attrs
 }
 
@@ -62,8 +70,13 @@ func Link(cfg LinkConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	// Drop unsafe href (javascript:, data:, control bytes, …) and
-	// scrub event-handler attributes out of ExtraAttrs. See
-	// framework/ui/safety.go for the allow-list.
+	// route ExtraAttrs through the sanitizer: scrubAttrs removes on*
+	// event handlers and control-byte values, SafeCarrierAttrs removes
+	// the keys this component owns (class, id, href) while letting
+	// data-fui-* wiring through. Both filters must survive any future
+	// refactor: on* filtering is pinned by
+	// TestLink_StripsEventHandlerExtraAttrs, href by the contract
+	// test, wiring pass-through by TestLinkExtraAttrsCarriesWiring.
 	href := urlsafe.CleanAnchor(cfg.Href)
 	if href == "" {
 		href = "#"
@@ -73,7 +86,7 @@ func Link(cfg LinkConfig) render.HTML {
 		Text:       cfg.Text,
 		Class:      cls,
 		ID:         cfg.ID,
-		ExtraAttrs: scrubAttrs(cfg.ExtraAttrs),
+		ExtraAttrs: html.SafeCarrierAttrs(scrubAttrs(cfg.ExtraAttrs), "href"),
 	}))
 }
 

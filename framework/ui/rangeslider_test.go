@@ -78,3 +78,29 @@ func TestRangeSliderModuleMarkersPaired(t *testing.T) {
 		t.Errorf("both inputs should share data-fui-range-slider=<id>, got %d:\n%s", c, h)
 	}
 }
+
+// ExtraAttrs land on the root element but never override what the
+// component owns (#262): role and aria-label keep framework values, and
+// a spoofed data-fui-range-slider wiring key is dropped.
+func TestRangeSliderExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(RangeSlider(RangeSliderConfig{
+		Name: "price", Label: "Price", Class: "mine",
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "role": "evil", "aria-label": "evil", "Class": "evil",
+			"data-fui-range-slider": "spoof",
+		},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `role="group"`, `aria-label="Price"`, `class="ui-range-slider mine"`,
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("root missing %q:\n%s", want, root)
+		}
+	}
+}
