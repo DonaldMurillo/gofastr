@@ -582,6 +582,15 @@ func (a *App) entityMountPath(table string) string {
 	return a.apiPrefix() + "/" + table
 }
 
+// entityCRUDEnabled is THE predicate for "this entity has HTTP CRUD
+// routes": a DB is attached and Exposure.CRUD is unset or true. Route
+// registration, collision checks, and the startup banner must all agree
+// on it — the banner advertising a URL registration never mounted hands
+// a first-run user a 404 (#244).
+func (a *App) entityCRUDEnabled(e *entity.Entity) bool {
+	return a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
+}
+
 // WithRouter sets a custom router.
 func WithRouter(r *router.Router) AppOption {
 	return func(a *App) {
@@ -1091,8 +1100,7 @@ func (a *App) Mount(m Mountable) *App {
 	// diagnostic or an opaque ServeMux panic.
 	if provider, ok := m.(interface{ RoutePatterns() []string }); ok {
 		for _, ent := range a.Registry.AllSorted() {
-			crudEnabled := a.DB != nil && (ent.Config.Exposure.CRUD == nil || *ent.Config.Exposure.CRUD)
-			if !crudEnabled {
+			if !a.entityCRUDEnabled(ent) {
 				continue
 			}
 			mountPath := a.entityMountPath(ent.GetTable())
@@ -1277,7 +1285,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// Read e.Config, not the raw parameter: Define normalized the grouped
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
-	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
+	crudEnabled := a.entityCRUDEnabled(e)
 	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name))
 	}
@@ -1745,7 +1753,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// Read e.Config, not the raw parameter: Define normalized the grouped
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
-	crudEnabled := a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
+	crudEnabled := a.entityCRUDEnabled(e)
 	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 		return fmt.Errorf("entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name)
 	}
@@ -3248,7 +3256,15 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		fmt.Fprintf(w, "  %s Stats: http://%s/.debug/stats\n", arrow(), boundAddr)
 	}
 
+	skipped := 0
 	for _, e := range a.Registry.AllSorted() {
+		// Same predicate as route registration: an entity without CRUD
+		// routes (Exposure.CRUD=false, or no DB) has no URL to
+		// advertise — printing one hands the reader a 404 (#244).
+		if !a.entityCRUDEnabled(e) {
+			skipped++
+			continue
+		}
 		mountPath := "/" + e.GetTable()
 		if e.Version != "" {
 			mountPath = e.Version + mountPath
@@ -3267,6 +3283,13 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 			gate = ""
 		}
 		fmt.Fprintf(w, "  %s %-12s http://%s%s%s\n", arrow(), label, boundAddr, mountPath, gate)
+	}
+	if skipped > 0 {
+		noun := "entities"
+		if skipped == 1 {
+			noun = "entity"
+		}
+		fmt.Fprintf(w, "  %s %d more %s registered without CRUD routes\n", arrow(), skipped, noun)
 	}
 
 	if hasAPI {

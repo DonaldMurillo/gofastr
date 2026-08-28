@@ -50,7 +50,7 @@ func TestOnReadyFiresAfterBind(t *testing.T) {
 }
 
 func TestStartupBannerUsesAPIPrefix(t *testing.T) {
-	app := NewApp(WithAPIPrefix("/api"), WithoutDefaultMiddleware())
+	app := NewApp(WithAPIPrefix("/api"), WithoutDefaultMiddleware(), WithDB(bannerTestDB(t)))
 	app.Entity("posts", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	}.WithTimestamps(false))

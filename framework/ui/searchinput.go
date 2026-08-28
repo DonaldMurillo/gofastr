@@ -138,8 +138,14 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 
 var searchInputStyle = registry.RegisterStyle("ui-search-input", searchInputCSS)
 
+// searchInputCSS keys every rule on the .ui-search-input class, NOT the
+// data-fui-comp marker: WrapHTML injects the marker into the OUTERMOST
+// tag, which is the <label> in the bare variant but the <form> in the
+// Action variant. Attribute-ancestor selectors therefore stop matching
+// the label the moment Action is set (#239) — the class is the one
+// thing the label carries in both shapes.
 func searchInputCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-search-input"] {
+	return `.ui-search-input {
   display: inline-flex;
   align-items: stretch;
   border: 1px solid var(--color-border, #E4E4E7);
@@ -147,7 +153,7 @@ func searchInputCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   overflow: hidden;
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__icon {
+.ui-search-input .ui-search-input__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -156,7 +162,7 @@ func searchInputCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   user-select: none;
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__input {
+.ui-search-input .ui-search-input__input {
   flex: 1;
   border: 0;
   background: transparent;
@@ -169,15 +175,15 @@ func searchInputCSS(_ style.Theme) string {
   appearance: none;
   -webkit-appearance: none;
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__input::-webkit-search-cancel-button,
-[data-fui-comp="ui-search-input"] .ui-search-input__input::-webkit-search-decoration {
+.ui-search-input .ui-search-input__input::-webkit-search-cancel-button,
+.ui-search-input .ui-search-input__input::-webkit-search-decoration {
   -webkit-appearance: none;
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__input:focus-visible {
+.ui-search-input .ui-search-input__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__clear {
+.ui-search-input .ui-search-input__clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -191,14 +197,20 @@ func searchInputCSS(_ style.Theme) string {
   user-select: none;
   padding: 0 var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__clear:hover {
+.ui-search-input .ui-search-input__clear:hover {
   color: var(--color-text, #18181B);
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__clear[hidden] {
+.ui-search-input .ui-search-input__clear[hidden] {
   display: none;
 }
-[data-fui-comp="ui-search-input"] .ui-search-input__form {
+.ui-search-input__form {
   display: inline-flex;
+}
+/* When a parent gives the form a width, the label must fill it so the
+   input's flex:1 spans the box instead of shrink-wrapping. */
+.ui-search-input__form > .ui-search-input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }`
 }
