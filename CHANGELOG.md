@@ -9,6 +9,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`gofastr generate cli --from-openapi <file|url>`** (#240): generates
+  the terminal client from an OpenAPI 3 document instead of the entity
+  set, for apps with hand-written APIs. One subcommand per
+  `operationId` (missing/duplicate ids fail, no auto-naming), typed
+  flags from parameters and JSON object bodies, `--file` for binary
+  bodies, raw streaming of non-JSON responses, `servers[0].url` as the
+  default URL, bearer/apiKey security wired into the existing
+  `--token`/`login` machinery. The generated tree is self-contained
+  (stdlib-only `internal/client`), and `custom.go` works unchanged.
+  The importable `--extend` half of #240 is deferred until a second
+  consumer outgrows `custom.go`.
+
 - **Per-route request timeouts** (#246): `Router.SetRouteTimeout(method,
   pattern, d)` overrides `AppConfig.RequestTimeout` for one route, and
   `group.SetTimeout(d)` for every route under a group — route beats

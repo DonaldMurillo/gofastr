@@ -39,15 +39,16 @@ var cliReservedFlags = map[string]bool{
 }
 
 type cliOptions struct {
-	outDir    string
-	binary    string
-	apiPrefix string
-	only      []string
-	exclude   []string
-	verbs     string
-	force     bool
-	dryRun    bool
-	json      bool
+	outDir      string
+	binary      string
+	apiPrefix   string
+	only        []string
+	exclude     []string
+	verbs       string
+	force       bool
+	dryRun      bool
+	json        bool
+	fromOpenAPI string // spec file or URL; switches off the entity path
 }
 
 // cliField is the derived per-field model the renderers consume.
@@ -84,6 +85,16 @@ type cliSpec struct {
 	ClientImport string
 	Selection    string // flag string echoed into the header for regen
 	Entities     []cliEntity
+
+	// --from-openapi mode (see generate_cli_openapi.go): Ops replace
+	// Entities, SelfClient emits internal/client/ instead of importing
+	// the entity SDK, DefaultURL seeds the server URL from servers[0],
+	// and TokenHeader/TokenPrefix carry the spec's security scheme.
+	Ops         []cliOp
+	SelfClient  bool
+	DefaultURL  string
+	TokenHeader string
+	TokenPrefix string
 }
 
 // runGenerateCLI implements `gofastr generate cli`.
@@ -91,8 +102,13 @@ func runGenerateCLI(args []string) {
 	opts, err := parseCLIOptions(args)
 	if err != nil {
 		fail("%v", err)
-		info("Usage: gofastr generate cli [--out=cmd/<binary>] [--binary=<name>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--verbs=list,get | --verbs='posts=list,get;users=*'] [--force] [--dry-run] [--json]")
+		info("Usage: gofastr generate cli [--from-openapi=<spec.json|url>] [--out=cmd/<binary>] [--binary=<name>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--verbs=list,get | --verbs='posts=list,get;users=*'] [--force] [--dry-run] [--json]")
 		osExit(1)
+		return
+	}
+
+	if opts.fromOpenAPI != "" {
+		runGenerateCLIFromOpenAPI(opts)
 		return
 	}
 
@@ -146,6 +162,12 @@ func runGenerateCLI(args []string) {
 		osExit(1)
 		return
 	}
+	emitCLIFiles(opts, spec)
+}
+
+// emitCLIFiles is the shared write tail for both generation sources:
+// render, preserve custom.go, honor --force/--dry-run/--json, write.
+func emitCLIFiles(opts cliOptions, spec cliSpec) {
 	files := renderCLIFiles(spec)
 	if err := validateOutputDir(opts.outDir); err != nil {
 		fail("%v", err)
@@ -279,9 +301,16 @@ func parseCLIOptions(args []string) (cliOptions, error) {
 				opts.exclude = splitCommaList(v)
 			} else if v, ok := value("--verbs"); ok {
 				opts.verbs = v
+			} else if v, ok := value("--from-openapi"); ok {
+				opts.fromOpenAPI = v
 			} else {
 				return opts, fmt.Errorf("unknown flag: %s", arg)
 			}
+		}
+	}
+	if opts.fromOpenAPI != "" {
+		if len(opts.only) > 0 || len(opts.exclude) > 0 || opts.verbs != "" || opts.apiPrefix != "api" {
+			return opts, fmt.Errorf("--from-openapi is spec-driven: --only/--exclude/--verbs/--api-prefix apply to entity generation only")
 		}
 	}
 	return opts, nil
@@ -611,6 +640,18 @@ func renderCLIFiles(spec cliSpec) []generatedFile {
 			content: renderCLIEntityFile(spec, ent),
 		})
 	}
+	if spec.SelfClient {
+		files = append(files, generatedFile{
+			name:    "internal/client/client.go",
+			content: renderCLISelfClient(spec),
+		})
+	}
+	if len(spec.Ops) > 0 {
+		files = append(files, generatedFile{
+			name:    "operations.go",
+			content: renderCLIOpsFile(spec),
+		})
+	}
 	return files
 }
 
@@ -694,6 +735,9 @@ func builtinCommands() []command {
 		}
 		fmt.Fprintf(&sb, "\tcmds = append(cmds, %sCommands()...)\n", lowerFirst(ent.Struct))
 	}
+	if len(spec.Ops) > 0 {
+		sb.WriteString("\tcmds = append(cmds, operationCommands()...)\n")
+	}
 	sb.WriteString(`	return cmds
 }
 
@@ -737,12 +781,15 @@ func groupUsage(group string, args []string) int {
 	return sb.String()
 }
 
-// exampleCommandName picks a real two-word command for the doc comment.
+// exampleCommandName picks a real command for the doc comment.
 func exampleCommandName(spec cliSpec) string {
 	for _, ent := range spec.Entities {
 		if len(ent.Verbs) > 0 {
 			return ent.Command + " " + ent.Verbs[0]
 		}
+	}
+	if len(spec.Ops) > 0 {
+		return spec.Ops[0].Command
 	}
 	return "entity list"
 }
@@ -821,6 +868,10 @@ import (
 	"os"
 	"strings"
 )
+
+// defaultServerURL is the spec's servers[0].url (--from-openapi mode);
+// empty otherwise. Flags, env, and stored config all win over it.
+const defaultServerURL = ` + fmt.Sprintf("%q", spec.DefaultURL) + `
 
 // parseOrHelp parses args, mapping --help to exit 0 and bad flags to 2.
 func parseOrHelp(fs *flag.FlagSet, args []string) (ok bool, code int) {
@@ -952,7 +1003,7 @@ func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 		return nil, 2
 	}
 	cfg := loadConfig()
-	base := firstNonEmpty(*urlF, os.Getenv(envPrefix+"_URL"), cfg.URL)
+	base := firstNonEmpty(*urlF, os.Getenv(envPrefix+"_URL"), cfg.URL, defaultServerURL)
 	if base == "" {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url, set %s_URL, or run ` + "`%s login`" + `\n", envPrefix, binaryName)
 		return nil, 2
