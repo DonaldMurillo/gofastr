@@ -89,6 +89,10 @@ results, the harness contract) are exempt. The exemption list lives in
   under `gofastr dev`; env kill switches for prod.
 - [Runtime JS minification](runtime-minification.md): embedded
   `runtime.js` minifier, env gating, prod-wins defaults.
+- [WebMCP bridge (experimental)](webmcp.md): expose server-declared
+  tools to in-browser agents via the page's `modelContext` (the Chrome
+  origin-trial WebMCP API); execute() proxies to same-origin endpoints
+  with the visitor's session.
 
 ## Building UI
 
