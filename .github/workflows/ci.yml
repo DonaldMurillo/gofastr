@@ -203,6 +203,14 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Vet (repo analyzers)
+        # CLAUDE.md hard rules as machine checks: no Go-emitted hard
+        # navigation / bespoke EventSource, no *BaseCSS outside the
+        # design system, no map-ordered SSR output. See internal/analyzers.
+        run: |
+          go build -o /tmp/gofastr-vettool ./cmd/vettool
+          go vet -vettool=/tmp/gofastr-vettool ./...
+
       - name: Test (deterministic packages)
         # -timeout=20m, -p 2 to keep httptest/chromedp sockets off the
         # ephemeral-port ceiling. Intentionally NO -count=1: Go's

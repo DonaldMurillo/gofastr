@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -56,6 +56,12 @@ $(DIST_DIR):
 
 test:
 	go test -count=1 -short ./...
+
+# Repo-local go/analysis analyzers (internal/analyzers): CLAUDE.md hard
+# rules as vet checks. Runs in CI's vet step and the pre-commit hook.
+analyze: $(DIST_DIR)
+	go build -o $(DIST_DIR)/vettool ./cmd/vettool
+	go vet -vettool=$(DIST_DIR)/vettool ./...
 
 # Run framework tests against Postgres via TEST_POSTGRES_DSN. Set the DSN to
 # point at a local PG you don't mind us creating per-test schemas in.
