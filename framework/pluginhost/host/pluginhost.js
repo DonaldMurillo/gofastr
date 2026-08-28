@@ -73,42 +73,49 @@
   }
 
   /**
-   * resolveTokens enumerates the --* custom properties the host emits on
-   * :root / html and reads each RESOLVED value via getComputedStyle. Cross-
-   * origin stylesheets throw on cssRules access; those are wrapped in
-   * try/catch and skipped. The resulting map is bridged verbatim into the
-   * frame (§7), which writes its own :root block from it.
+   * THEME_TOKENS is the theme's canonical custom-property vocabulary,
+   * mirrored from style.TokenNames() and pinned by a Go test
+   * (token_bridge_test.go) so it cannot drift from the theme emitter.
+   */
+  var THEME_TOKENS = [
+    "--breakpoint-2xl", "--breakpoint-lg", "--breakpoint-md", "--breakpoint-sm", "--breakpoint-xl",
+    "--color-accent", "--color-background", "--color-border", "--color-border-strong",
+    "--color-code-border", "--color-code-surface", "--color-code-text",
+    "--color-danger", "--color-info", "--color-primary", "--color-primary-fg",
+    "--color-secondary", "--color-secondary-fg", "--color-success",
+    "--color-surface", "--color-surface-soft", "--color-text", "--color-text-muted",
+    "--color-text-subtle", "--color-warning",
+    "--duration-dropdown-enter", "--duration-fast", "--duration-normal",
+    "--duration-overlay-enter", "--duration-overlay-exit", "--duration-slow",
+    "--duration-toast-enter", "--duration-toast-exit",
+    "--easing-ease-in", "--easing-ease-in-out", "--easing-ease-out", "--easing-spring",
+    "--font-body", "--font-heading", "--font-mono",
+    "--radii-full", "--radii-lg", "--radii-md", "--radii-none", "--radii-sm", "--radii-xl",
+    "--shadow-lg", "--shadow-md", "--shadow-none", "--shadow-sm", "--shadow-xl",
+    "--spacing-2xl", "--spacing-3xl", "--spacing-lg", "--spacing-md", "--spacing-sm",
+    "--spacing-touch-target", "--spacing-xl", "--spacing-xs",
+    "--text-2xl", "--text-3xl", "--text-base", "--text-lg", "--text-sm", "--text-xl", "--text-xs",
+    "--tk-com", "--tk-fn", "--tk-kw", "--tk-num", "--tk-pn", "--tk-str", "--tk-type",
+    "--z-dropdown", "--z-modal", "--z-popover", "--z-sticky", "--z-toast"
+  ];
+
+  /**
+   * resolveTokens reads the canonical token set from computed style and
+   * bridges every name with a non-empty value. The old implementation
+   * DISCOVERED names by walking document.styleSheets, which had two
+   * partial-palette failure modes: a stylesheet still parsing when the
+   * frame boots contributed no names (the CI-only invisible-text race,
+   * #271), and rule.type !== 1 skipped tokens declared only inside
+   * @media / @supports. A partial palette is worse than none — a
+   * bridged dark --color-text beside an unbridged --color-surface is
+   * white-on-white. Reading a known vocabulary from computed style has
+   * neither failure mode.
    */
   function resolveTokens() {
-    var names = {};
-    var sheets = document.styleSheets;
-    for (var i = 0; i < sheets.length; i++) {
-      var rules;
-      try {
-        rules = sheets[i].cssRules;
-      } catch (e) {
-        // Cross-origin sheet (SecurityError) — skip, never bridge foreign CSS.
-        continue;
-      }
-      if (!rules) continue;
-      for (var j = 0; j < rules.length; j++) {
-        var rule = rules[j];
-        if (!rule || rule.type !== 1) continue; // STYLE_RULE
-        var sel = rule.selectorText || "";
-        // Only :root / html scoped custom properties bridge across the frame.
-        if (sel.indexOf(":root") === -1 && sel.indexOf("html") === -1) continue;
-        var decls = rule.style;
-        if (!decls) continue;
-        for (var k = 0; k < decls.length; k++) {
-          var prop = decls[k];
-          if (prop.indexOf("--") === 0) names[prop] = true;
-        }
-      }
-    }
     var cs = getComputedStyle(document.documentElement);
     var tokens = {};
-    for (var name in names) {
-      if (!Object.prototype.hasOwnProperty.call(names, name)) continue;
+    for (var i = 0; i < THEME_TOKENS.length; i++) {
+      var name = THEME_TOKENS[i];
       var val = cs.getPropertyValue(name);
       if (val == null) continue;
       val = String(val).trim();

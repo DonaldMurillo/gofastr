@@ -137,6 +137,13 @@ func siteFooterCSS(_ style.Theme) string {
   text-decoration: none;
   font-size: var(--text-sm, 13px);
   line-height: 1.6;
+  /* Touch target: an inline anchor at 13px/1.6 is a ~17px hit area,
+     under even the AA floor. Dense link clusters use the documented
+     24px AA relaxation (see rating.go) rather than the 44px AAA
+     token; inline-flex so min-block-size actually extends the box. */
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 24px;
 }
 [data-fui-comp="ui-site-footer"] li a:hover,
 [data-fui-comp="ui-site-footer"] li a:focus-visible {
