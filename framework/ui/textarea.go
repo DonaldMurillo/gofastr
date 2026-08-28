@@ -41,9 +41,14 @@ type TextAreaConfig struct {
 	// Error overrides Help with an error message + aria-invalid.
 	Error string
 	// MaxLength applies the native maxlength attribute.
-	MaxLength  int
-	ID         string
-	Class      string
+	MaxLength int
+	ID        string
+	Class     string
+	// ExtraAttrs forwards additional attributes to the <textarea>
+	// element. Keys the component owns are dropped: class and id (use
+	// Class / ID), data-fui-* (incl. the autogrow wiring), name, rows,
+	// placeholder, disabled, required, maxlength, aria-invalid, and
+	// aria-describedby.
 	ExtraAttrs html.Attrs
 }
 
@@ -102,7 +107,9 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	} else if cfg.Help != "" {
 		taAttrs["aria-describedby"] = id + "-help"
 	}
-	maps.Copy(taAttrs, cfg.ExtraAttrs)
+	maps.Copy(taAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"name", "rows", "placeholder", "disabled", "required", "maxlength",
+		"aria-invalid", "aria-describedby"))
 
 	children := []render.HTML{
 		render.Tag("label", map[string]string{"for": id, "class": "ui-textarea__label"},

@@ -68,8 +68,11 @@ type ProgressStepsConfig struct {
 	// aria-label. When nil, English fallbacks apply.
 	Ctx context.Context
 
-	ID         string
-	Class      string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes to the <nav> root.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -103,7 +106,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	if cfg.ID != "" {
 		navAttrs["id"] = cfg.ID
 	}
-	maps.Copy(navAttrs, cfg.ExtraAttrs)
+	maps.Copy(navAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label"))
 
 	items := make([]render.HTML, 0, len(cfg.Steps))
 	for i, s := range cfg.Steps {

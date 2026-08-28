@@ -32,9 +32,13 @@ type TOCConfig struct {
 	Levels int
 	// Sticky toggles the position: sticky behaviour. Default true.
 	// When false the nav scrolls with the content.
-	Sticky     bool
-	ID         string
-	Class      string
+	Sticky bool
+	ID     string
+	Class  string
+	// ExtraAttrs forwards additional attributes to the <nav> root.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-* (incl. the toc/levels runtime wiring), and
+	// aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -68,7 +72,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label"))
 	return tocStyle.WrapHTML(render.Tag("nav", attrs,
 		// Empty <ol> the runtime fills.
 		render.Tag("ol", map[string]string{"class": "ui-toc__list"}),

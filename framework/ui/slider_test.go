@@ -81,3 +81,30 @@ func TestSliderHasAriaLabel(t *testing.T) {
 		t.Errorf("Slider input should carry aria-label=Label:\n%s", h)
 	}
 }
+
+// ExtraAttrs land on the <input> but never override what the component
+// owns (#262): min/value (and the other owned keys) keep framework
+// values; the data-fui-slider-mirror wiring cannot be spoofed.
+func TestSliderExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(Slider(SliderConfig{
+		Name: "vol", Label: "Volume", Min: 0, Max: 100, Step: 5, Value: 25, Class: "mine",
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "min": "evil", "value": "evil", "Class": "evil",
+			"data-fui-slider-mirror": "spoof",
+		},
+	}))
+	input := extraAttrsOpeningTag(t, h, "input")
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(input, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, input)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `type="range"`, `name="vol"`, `min="0"`, `max="100"`,
+		`step="5"`, `value="25"`, `aria-label="Volume"`, `class="ui-slider__input"`,
+	} {
+		if !strings.Contains(input, want) {
+			t.Errorf("input missing %q:\n%s", want, input)
+		}
+	}
+}

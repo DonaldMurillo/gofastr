@@ -39,3 +39,28 @@ func TestSelectCSSStylesTheMarker(t *testing.T) {
 		t.Fatal("selectCSS has no rule for .ui-form-field__required — the marker is unstyled unless ui-form-field happens to be on the page")
 	}
 }
+
+// ExtraAttrs land on the <select> but never override what the component
+// owns (#262): name and required keep their framework values.
+func TestSelectExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(Select(SelectConfig{
+		Name: "country", Label: "Country", Class: "mine", Required: true,
+		Options: []SelectOption{{Value: "fr", Text: "France"}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "name": "evil", "Class": "evil", "data-fui-comp": "spoof",
+		},
+	}))
+	sel := extraAttrsOpeningTag(t, h, "select")
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(sel, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, sel)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `name="country"`, `class="ui-select__input"`, `required=""`,
+	} {
+		if !strings.Contains(sel, want) {
+			t.Errorf("select missing %q:\n%s", want, sel)
+		}
+	}
+}

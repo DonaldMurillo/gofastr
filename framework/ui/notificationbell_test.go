@@ -120,3 +120,38 @@ func TestNotificationBellReturnsPopoverBuilder(t *testing.T) {
 		t.Errorf("popover name should match bell name, got %q", def.Name)
 	}
 }
+
+func TestNotificationBellExtraAttrsCannotOverrideOwned(t *testing.T) {
+	trigger, _ := NotificationBell(NotificationBellConfig{
+		Name: "nb", Label: "Notifications", UnreadCount: 3,
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "type": "evil", "Class": "evil",
+		},
+	})
+	root := string(trigger)[:strings.Index(string(trigger), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("bell button missing data-test:\n%s", root)
+	}
+	for _, want := range []string{`type="button"`, `aria-label="Notifications"`, `aria-describedby="nb-count"`} {
+		if !strings.Contains(root, want) {
+			t.Errorf("owned attr lost its framework value (%q):\n%s", want, root)
+		}
+	}
+	if strings.Contains(root, "evil") {
+		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
+	}
+}
+
+func TestNotificationBellZeroUnreadDropsDescribedbyVariant(t *testing.T) {
+	// With no unread count the component never re-asserts
+	// aria-describedby after the merge, so this state proves the
+	// sanitizer's case-insensitive drop alone keeps the attr out.
+	trigger, _ := NotificationBell(NotificationBellConfig{
+		Name: "nb", Label: "Notifications",
+		ExtraAttrs: map[string]string{"ARIA-DESCRIBEDBY": "evil"},
+	})
+	root := string(trigger)[:strings.Index(string(trigger), ">")+1]
+	if strings.Contains(strings.ToLower(root), "aria-describedby") {
+		t.Errorf("zero-unread bell must carry no aria-describedby:\n%s", root)
+	}
+}

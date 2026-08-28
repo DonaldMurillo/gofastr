@@ -30,9 +30,13 @@ type AnimatedCounterConfig struct {
 	// Prefix="$", Suffix="+", Suffix=" users").
 	Prefix string
 	Suffix string
-	// ID / Class / Attrs are passed through.
-	ID         string
-	Class      string
+	// ID / Class are passed through.
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the counter's root <span>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-* (the animation wiring).
 	ExtraAttrs html.Attrs
 }
 
@@ -56,7 +60,7 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
 
 	children := []render.HTML{}
 	if cfg.Prefix != "" {

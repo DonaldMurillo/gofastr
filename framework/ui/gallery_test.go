@@ -170,3 +170,23 @@ func TestGalleryColumnsAreResponsiveMaximum(t *testing.T) {
 		}
 	}
 }
+
+func TestGalleryExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := Gallery(GalleryConfig{
+		Label: "Trips",
+		Items: []GalleryItem{{Src: "/a.jpg", Alt: "A trip"}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "aria-label": "evil", "Class": "evil",
+		},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `aria-label="Trips"`) {
+		t.Errorf("gallery label lost its framework value:\n%s", root)
+	}
+	if strings.Contains(root, "evil") {
+		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
+	}
+}

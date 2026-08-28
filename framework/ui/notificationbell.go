@@ -76,8 +76,13 @@ type NotificationBellConfig struct {
 	// empty-state text. When nil, English fallbacks apply.
 	Ctx context.Context
 
-	ID         string
-	Class      string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the bell's root <button>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-* (the popover wiring), type, aria-label (use
+	// Label), and aria-describedby (the unread-count announcement).
 	ExtraAttrs html.Attrs
 }
 
@@ -118,7 +123,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if cfg.ID != "" {
 		btnAttrs["id"] = cfg.ID
 	}
-	maps.Copy(btnAttrs, cfg.ExtraAttrs)
+	maps.Copy(btnAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "aria-label", "aria-describedby"))
 
 	// Badge: server-rendered count + optional signal-bound override.
 	badgeAttrs := html.Attrs{"class": "ui-notification-bell__badge", "aria-hidden": "true"}

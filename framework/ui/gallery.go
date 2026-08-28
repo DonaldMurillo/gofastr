@@ -93,9 +93,13 @@ type GalleryConfig struct {
 	HrefFn func(i int, it GalleryItem) string
 	// CaptionMode controls caption rendering. Default Below.
 	CaptionMode GalleryCaptionMode
-	// ID / Class / Attrs pass through to the wrapper.
-	ID         string
-	Class      string
+	// ID / Class are passed through to the wrapper.
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the gallery's root <ul>.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -157,7 +161,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label"))
 
 	rows := make([]render.HTML, 0, len(cfg.Items))
 	for i, it := range cfg.Items {

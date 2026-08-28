@@ -154,3 +154,28 @@ func TestSearchInputPanicOnInvalidMethod(t *testing.T) {
 	}()
 	SearchInput(SearchInputConfig{Name: "q", ID: "q", Action: "/s", Method: "DELETE"})
 }
+
+// ExtraAttrs land on the <input>, sanitized (#262): type/name keep
+// framework values, but "value" must stay caller-settable — the
+// resource UI prefills the current search term through it.
+func TestSearchInputExtraAttrsSanitizedValuePasses(t *testing.T) {
+	h := SearchInput(SearchInputConfig{
+		Name: "q", ID: "q", Class: "mine",
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "value": "needle", "type": "hidden", "Name": "evil",
+		},
+	})
+	input := extraAttrsOpeningTag(t, string(h), "input")
+	for _, banned := range []string{"hidden", "evil"} {
+		if strings.Contains(input, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, input)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `value="needle"`, `type="search"`, `name="q"`, `id="q"`,
+	} {
+		if !strings.Contains(input, want) {
+			t.Errorf("input missing %q:\n%s", want, input)
+		}
+	}
+}

@@ -53,3 +53,22 @@ func TestContainerRejectsUnknownWidth(t *testing.T) {
 	}()
 	Container(ContainerConfig{Width: ContainerWidth("huge")})
 }
+
+func TestContainerExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := Container(ContainerConfig{ID: "real", ExtraAttrs: map[string]string{
+		"data-test": "hook", "id": "evil", "Class": "evil",
+	}}, render.Text("x"))
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `id="real"`) {
+		t.Errorf("framework id lost:\n%s", root)
+	}
+	if !strings.Contains(root, "ui-container") {
+		t.Errorf("framework class lost:\n%s", root)
+	}
+	if strings.Contains(root, "evil") {
+		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
+	}
+}

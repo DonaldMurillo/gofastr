@@ -126,14 +126,25 @@ func returnsComponentType(res *ast.FieldList) bool {
 // must go through html.SafeExtraAttrs (or scrubAttrs where on* filtering
 // is the deliberate, documented contract).
 var extraAttrsRawLegacy = map[string]bool{
-	"animatedcounter.go": true, "banner.go": true, "carousel.go": true,
-	"components.go": true, "container.go": true, "filtertoolbar.go": true,
-	"form.go": true, "gallery.go": true, "link.go": true,
-	"markdown.go": true, "menu.go": true, "notificationbell.go": true,
-	"numberinput.go": true, "passwordinput.go": true, "progresssteps.go": true,
-	"rangeslider.go": true, "searchinput.go": true, "select.go": true,
-	"slider.go": true, "textarea.go": true, "timeline.go": true,
-	"toc.go": true, "toolbar.go": true, "workbench.go": true,
+	// form.go stays raw on purpose: its doc comment promises that
+	// ExtraAttrs may override the form's own attributes (the
+	// data-entity-form / interactive wiring pattern the blueprint
+	// generator and examples rely on). It is the documented exception,
+	// not migration debt.
+	"form.go": true,
+}
+
+// safeCarrierAllowed pins the wiring-carrier set: only these files may
+// call html.SafeCarrierAttrs. A carrier keeps data-fui-* pass-through,
+// so a component that emits its own data-fui-* wiring (TextArea
+// autogrow, NotificationBell's trigger, RangeSlider's mirror, …) must
+// never be one — a caller could spoof its wiring, the exact class the
+// SafeExtraAttrs contract closes. Adding an entry is a design
+// decision: the component must emit no wiring of its own and be a
+// documented attachment point for interactive.Action.Attrs().
+var safeCarrierAllowed = map[string]bool{
+	"components.go": true, // ui.Button (interactive-patterns.md)
+	"link.go":       true, // ui.Link (uinoderender ActionRef links)
 }
 
 // TestExtraAttrsForwardingIsSanitized fails when a file outside the
@@ -163,8 +174,16 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 			case *ast.CallExpr:
 				switch fun := d.Fun.(type) {
 				case *ast.SelectorExpr:
-					if fun.Sel.Name == "SafeExtraAttrs" {
+					// SafeCarrierAttrs is the wiring-carrier variant:
+					// owned keys still drop, data-fui-* passes through
+					// by documented contract — allowed only in the
+					// pinned carrier files.
+					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" {
 						sanitized = append(sanitized, d)
+					}
+					if fun.Sel.Name == "SafeCarrierAttrs" && !safeCarrierAllowed[name] {
+						t.Errorf("%s: SafeCarrierAttrs at %s — the carrier set is pinned to %v; a component with its own data-fui-* wiring must use SafeExtraAttrs (see safeCarrierAllowed)",
+							name, fset.Position(d.Pos()), []string{"components.go", "link.go"})
 					}
 				case *ast.Ident:
 					// chartEmpty sanitizes its extra argument internally.
@@ -203,7 +222,7 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 			if extraAttrsRawLegacy[name] {
 				return true
 			}
-			t.Errorf("%s: raw ExtraAttrs read at %s; route it through html.SafeExtraAttrs (issue #262 tracks the legacy allow-list)",
+			t.Errorf("%s: raw ExtraAttrs read at %s; route it through html.SafeExtraAttrs (or html.SafeCarrierAttrs for a pinned wiring carrier — see safeCarrierAllowed)",
 				name, fset.Position(sel.Pos()))
 			return true
 		})

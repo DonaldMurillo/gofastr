@@ -108,3 +108,30 @@ func sectionOf(t *testing.T, css, selector string) string {
 	}
 	return rest[:end]
 }
+
+// ExtraAttrs land on the root element but never override what the
+// component owns (#262): the style attribute belongs to RailWidth
+// (a CSP-safe custom property), so callers cannot swap in arbitrary
+// inline styles.
+func TestWorkbenchExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(Workbench(WorkbenchConfig{
+		RailWidth: "480px", Class: "mine",
+		Rail: render.Text("rail"), Pane: render.Text("pane"),
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "style": "evil", "Class": "evil", "data-fui-comp": "spoof",
+		},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `style="--ui-workbench-rail: 480px"`, `class="ui-workbench mine"`,
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("root missing %q:\n%s", want, root)
+		}
+	}
+}

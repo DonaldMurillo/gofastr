@@ -35,9 +35,13 @@ type ContainerConfig struct {
 	Width ContainerWidth
 	// As lets the caller pick a non-<div> tag (e.g. "section", "main").
 	// Defaults to "div".
-	As         string
-	ID         string
-	Class      string
+	As    string
+	ID    string
+	Class string
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) to the wrapper element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID) and data-fui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -64,7 +68,7 @@ func Container(cfg ContainerConfig, children ...render.HTML) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	maps.Copy(attrs, cfg.ExtraAttrs)
+	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
 	return containerStyle.WrapHTML(render.Tag(tag, attrs, children...))
 }
 

@@ -26,6 +26,41 @@ func TestSafeExtraAttrsDropsProtectedKeys(t *testing.T) {
 	}
 }
 
+func TestSafeCarrierAttrsKeepsWiring(t *testing.T) {
+	got := SafeCarrierAttrs(Attrs{
+		"class":            "evil",
+		"ID":               "evil-case-variant",
+		"Type":             "hidden",
+		"data-fui-comp":    "spoofed-style-scope",
+		"data-test":        "hook",
+		"data-fui-rpc":     "/api/items/42",
+		"data-fui-confirm": "Delete?",
+	}, "type")
+
+	want := Attrs{
+		"data-test":        "hook",
+		"data-fui-rpc":     "/api/items/42",
+		"data-fui-confirm": "Delete?",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("key %q: got %q, want %q", k, got[k], v)
+		}
+	}
+}
+
+func TestSafeCarrierAttrsNilOnEmptyResult(t *testing.T) {
+	if got := SafeCarrierAttrs(nil); got != nil {
+		t.Errorf("nil input: got %v, want nil", got)
+	}
+	if got := SafeCarrierAttrs(Attrs{"class": "x", "Name": "y"}, "name"); got != nil {
+		t.Errorf("all-dropped input: got %v, want nil", got)
+	}
+}
+
 func TestSafeExtraAttrsNilOnEmptyResult(t *testing.T) {
 	if got := SafeExtraAttrs(nil); got != nil {
 		t.Errorf("nil input: got %v, want nil", got)

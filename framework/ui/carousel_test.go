@@ -257,3 +257,28 @@ func TestCarouselVirtualScrollManifestEscapesScripts(t *testing.T) {
 		t.Errorf("manifest body contains an unescaped </script>:\n%s", h)
 	}
 }
+
+func TestCarouselExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := Carousel(CarouselConfig{
+		Label:  "Featured",
+		Slides: []CarouselSlide{{Content: render.Text("a")}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "aria-label": "evil", "Class": "evil",
+		},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `aria-label="Featured"`) {
+		t.Errorf("region label lost its framework value:\n%s", root)
+	}
+	for _, banned := range []string{"evil", `role="presentation"`} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	if !strings.Contains(root, `role="region"`) {
+		t.Errorf("region role lost:\n%s", root)
+	}
+}

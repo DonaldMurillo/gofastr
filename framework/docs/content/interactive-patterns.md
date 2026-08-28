@@ -223,6 +223,10 @@ interactive.OnClick(deleteBtn,
 
 Attribute injected: `data-fui-confirm="message"`.
 
+Menu items have the same gate as a config field: `ui.MenuItem.Confirm`
+emits `data-fui-confirm` alongside the item's `RPC` wiring (ignored on
+non-RPC items — the runtime reads the attribute only on rpc dispatch).
+
 `window.confirm` is native, unthemed, and **blocks browser automation**
 (headless tests can't dismiss it without a dialog handler). For a
 design-system-styled confirmation that matches the rest of your app and is

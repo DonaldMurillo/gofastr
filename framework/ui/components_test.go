@@ -684,3 +684,96 @@ func TestSkipLinkExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("SkipLink root missing data-test:\n%s", root)
 	}
 }
+
+func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := Button(ButtonConfig{Label: "Save", ExtraAttrs: map[string]string{
+		"data-test": "hook", "type": "evil", "Class": "evil",
+		"aria-label": "evil", "data-fui-comp": "evil",
+	}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `type="button"`) {
+		t.Errorf("button type lost its framework value:\n%s", root)
+	}
+	if strings.Contains(root, "evil") {
+		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
+	}
+}
+
+func TestButtonExtraAttrsCarriesWiring(t *testing.T) {
+	// Button is the documented carrier for interactive wiring
+	// (interactive-patterns.md attaches Action.Attrs() via ExtraAttrs):
+	// data-fui-* must pass through, unlike components that own their
+	// own wiring. framework/ui/resource and battery/admin depend on it.
+	h := Button(ButtonConfig{Label: "Delete", ExtraAttrs: map[string]string{
+		"data-fui-rpc":        "/api/items/42",
+		"data-fui-rpc-method": "DELETE",
+		"data-fui-confirm":    "Delete this item?",
+	}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	for _, want := range []string{
+		`data-fui-rpc="/api/items/42"`,
+		`data-fui-rpc-method="DELETE"`,
+		`data-fui-confirm="Delete this item?"`,
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("wiring attr %s dropped from carrier button:\n%s", want, root)
+		}
+	}
+}
+
+func TestLinkButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := LinkButton(LinkButtonConfig{Label: "Go", Href: "/real", ExtraAttrs: map[string]string{
+		"data-test": "hook", "href": "javascript:alert(1)", "Class": "evil",
+	}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `href="/real"`) {
+		t.Errorf("framework href lost:\n%s", root)
+	}
+	for _, banned := range []string{"evil", "javascript:"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+}
+
+func TestLinkButtonExternalDropsCaseVariantTargetRel(t *testing.T) {
+	// "TARGET"/"REL" survive a lowercase-only overwrite as distinct map
+	// keys, sort BEFORE the owned lowercase attrs in the rendered tag,
+	// and first-occurrence-wins in the parser — so without protection a
+	// case-variant clobbers External's noopener contract.
+	h := LinkButton(LinkButtonConfig{
+		Label: "Docs", Href: "https://example.com", External: true,
+		ExtraAttrs: map[string]string{"TARGET": "evil", "REL": "evil"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if strings.Contains(root, "evil") {
+		t.Errorf("case-variant target/rel survived on an External link:\n%s", root)
+	}
+	for _, want := range []string{`target="_blank"`, `rel="noopener noreferrer"`} {
+		if !strings.Contains(root, want) {
+			t.Errorf("External link missing %s:\n%s", want, root)
+		}
+	}
+}
+
+func TestLinkButtonExternalOwnsTargetAndRel(t *testing.T) {
+	// External must win even when extras try to set target/rel — and
+	// the all-dropped (nil-map) branch must still emit both.
+	h := LinkButton(LinkButtonConfig{
+		Label: "Docs", Href: "https://example.com", External: true,
+		ExtraAttrs: map[string]string{"target": "evil", "rel": "evil"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `target="_blank"`) || !strings.Contains(root, `rel="noopener noreferrer"`) {
+		t.Errorf("External target/rel lost:\n%s", root)
+	}
+	if strings.Contains(root, "evil") {
+		t.Errorf("ExtraAttrs target/rel overrode External:\n%s", root)
+	}
+}

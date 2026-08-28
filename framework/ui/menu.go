@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"maps"
-	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -41,12 +39,17 @@ type MenuItem struct {
 	// menu items.
 	RPC, RPCMethod string
 
+	// Confirm asks the user to confirm before the RPC fires. Maps to
+	// data-fui-confirm; only meaningful with RPC (the runtime reads it
+	// on rpc dispatch), ignored otherwise.
+	Confirm string
+
 	// Icon is rendered to the left of Label. Inline HTML; caller
 	// supplies an <svg>, character, or render.Text("⚙").
 	Icon render.HTML
 
 	// Variant tints destructive items (red), purely a visual hint;
-	// the actual confirm step belongs on the RPC via data-fui-confirm.
+	// the actual confirm step is Confirm above.
 	Danger bool
 
 	// Disabled greys the item out and removes it from keyboard
@@ -61,7 +64,11 @@ type MenuItem struct {
 	// for testing or one-off hooks).
 	Class string
 
-	// Attrs sprinkles extra attributes onto the rendered element.
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers, ARIA overrides) onto the rendered item
+	// element. Keys the item owns are dropped: class (use Class), id,
+	// data-fui-* (the disclosure / rpc wiring), and the menuitem
+	// contract (type, href, tabindex, role, aria-disabled, disabled).
 	ExtraAttrs map[string]string
 }
 
@@ -211,20 +218,18 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 			method = "POST"
 		}
 		rpcAttr = ` data-fui-rpc="` + render.Escape(it.RPC) + `" data-fui-rpc-method="` + render.Escape(method) + `"`
-	}
-	var extra strings.Builder
-	for _, k := range slices.Sorted(maps.Keys(it.ExtraAttrs)) {
-		// render.Attr validates the key against the same allow-list as
-		// every other ExtraAttrs consumer: render.Escape alone doesn't
-		// touch spaces, so a key like `x onclick` would smuggle a live
-		// event handler into the tag. Unsafe keys are dropped. Sorted
-		// so SSR output is deterministic across renders.
-		if a := render.Attr(k, it.ExtraAttrs[k]); a != "" {
-			extra.WriteString(` ` + a)
+		if it.Confirm != "" {
+			rpcAttr += ` data-fui-confirm="` + render.Escape(it.Confirm) + `"`
 		}
 	}
+	// ExtraAttrs join the SafeExtraAttrs contract: the item owns
+	// type/href/tabindex/role/aria-disabled/disabled plus the rpc
+	// data-fui-* wiring. serializeExtraAttrs sorts the survivors and
+	// validates each key via render.Attr (unsafe keys drop).
+	extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
+		"type", "href", "tabindex", "role", "aria-disabled", "disabled"))
 	b.WriteString(`<` + tag + ` class="` + render.Escape(cls) + `" ` + openExtra +
-		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra.String() + `>`)
+		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra + `>`)
 	if it.Icon != "" {
 		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 	}

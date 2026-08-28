@@ -102,3 +102,21 @@ func TestBannerCSSAvoidsDecorativeSideStripe(t *testing.T) {
 		t.Errorf("banner variants should still provide a full-outline accent:\n%s", css)
 	}
 }
+
+func TestBannerExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := Banner(BannerConfig{Title: "Heads up", ExtraAttrs: map[string]string{
+		"data-test": "hook", "role": "evil", "Class": "evil",
+	}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `role="status"`) {
+		t.Errorf("severity role lost its framework value:\n%s", root)
+	}
+	for _, banned := range []string{"evil", `role="alert"`} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+}

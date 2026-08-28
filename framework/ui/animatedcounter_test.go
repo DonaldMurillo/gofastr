@@ -45,3 +45,21 @@ func TestAnimatedCounterPrefixSuffix(t *testing.T) {
 		t.Errorf("Suffix should render:\n%s", h)
 	}
 }
+
+func TestAnimatedCounterExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := AnimatedCounter(AnimatedCounterConfig{To: 42, ExtraAttrs: map[string]string{
+		"data-test": "hook", "data-fui-animated-counter": "999", "Class": "evil",
+	}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `data-fui-animated-counter="42"`) {
+		t.Errorf("animation marker lost its framework value:\n%s", root)
+	}
+	for _, banned := range []string{"999", "evil"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+}

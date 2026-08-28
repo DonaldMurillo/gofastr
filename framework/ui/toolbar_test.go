@@ -86,3 +86,29 @@ func TestToolbarRejectsUnknownAlign(t *testing.T) {
 		Groups: []ToolbarGroup{{Children: []render.HTML{Button(ButtonConfig{Label: "Z"})}}},
 	})
 }
+
+// ExtraAttrs land on the root element but never override what the
+// component owns (#262): role and aria-label keep framework values.
+func TestToolbarExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(Toolbar(ToolbarConfig{
+		Label: "Format", Class: "mine",
+		Groups: []ToolbarGroup{{Children: []render.HTML{Button(ButtonConfig{Label: "B"})}}},
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "role": "evil", "aria-label": "evil", "Class": "evil",
+			"data-fui-comp": "spoof",
+		},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	for _, banned := range []string{"evil", "spoof"} {
+		if strings.Contains(root, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+	for _, want := range []string{
+		`data-test="hook"`, `role="toolbar"`, `aria-label="Format"`, `class="ui-toolbar mine"`,
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("root missing %q:\n%s", want, root)
+		}
+	}
+}
