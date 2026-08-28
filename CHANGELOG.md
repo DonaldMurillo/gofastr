@@ -7,6 +7,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **`ExtraAttrs` on every `framework/ui` component Config** (#251): all
+  93 component configs now forward extra attributes (`data-*` test
+  hooks, analytics markers, ARIA overrides) to the component's root
+  element. Component-owned keys are dropped case-insensitively —
+  `class`/`id` (use `Class`/`ID`), `data-fui-*`, and behavior-critical
+  attributes like `href` and form-control `type`/`name` — via the new
+  `html.SafeExtraAttrs` helper. A source-level completeness gate
+  (`framework/ui/extraattrs_contract_test.go`) fails the suite if a
+  component Config ships without the field.
+
+### Changed
+
+- **`ToggleConfig.ExtraAttrs` (Checkbox / Radio / Switch) now follows
+  the sanitized contract**: extras land on the root `<label>` instead
+  of being copied raw onto the `<input>`, and `class`/`id`/`for`/
+  `data-fui-*` keys are dropped. The previous raw copy was documented
+  for `data-fui-*` RPC wiring but had no callers; RPC wiring belongs on
+  forms and widgets.
+
 ## [0.72.0] - 2026-08-27
 
 ### Added
