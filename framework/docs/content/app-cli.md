@@ -139,9 +139,11 @@ gofastr generate cli --from-openapi openapi.json --binary=barc
 gofastr generate cli --from-openapi https://barc.example.com/openapi.json
 ```
 
-One subcommand per operation, named from `operationId` — a missing or
-duplicate id fails generation, no auto-naming. Path, query, and header
-parameters become typed flags (arrays of scalars repeat the flag);
+One subcommand per operation, named from `operationId` — a missing,
+duplicate, or non-identifier id fails generation, no auto-naming.
+Path, query, and header parameters become typed flags (arrays of
+strings repeat the flag; typed arrays are rejected rather than left
+unvalidated);
 `application/json` object bodies get a flag per top-level scalar
 property plus the `--json` raw escape; binary bodies
 (`application/octet-stream` / `format: binary`) take `--file` with `-`
@@ -158,8 +160,11 @@ no entities package, no framework dependency. `custom.go` and
 Supported subset, by design: local `#/components/...` `$ref`s (`allOf`
 of objects shallow-merges; `oneOf`/`anyOf` bodies fall back to
 `--json`), JSON or YAML documents. Cookie parameters, external refs,
-multipart bodies, and OAuth2 flows fail generation with a precise
-error instead of guessing.
+`$ref` cycles, path/template mismatches, and multipart bodies fail
+generation with a precise error instead of guessing. A spec whose
+*only* security scheme is unsupported (OAuth2 flows, apiKey outside a
+header) fails too; a spec offering bearer alongside OAuth2 generates
+against bearer.
 
 ## Extending and regenerating
 

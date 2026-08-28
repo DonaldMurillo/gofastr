@@ -168,15 +168,9 @@ func renderCLIOpsFile(spec cliSpec) string {
 				needsFmt = true
 			}
 		}
-		if op.BodyKind == "binary" {
+		if op.BodyKind == "binary" || op.BodyKind == "json" ||
+			(op.BodyKind == "raw" && op.BodyRequired) {
 			needsFmt = true
-		}
-		if op.BodyKind == "json" {
-			for _, f := range op.BodyFields {
-				if f.Required {
-					needsFmt = true
-				}
-			}
 		}
 	}
 
@@ -343,7 +337,8 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	case "raw":
 		sb.WriteString("\tjsonF := fs.String(\"json\", \"\", \"raw JSON body (inline, @file, or - for stdin)\")\n")
 	case "binary":
-		fmt.Fprintf(sb, "\tfileF := fs.String(\"file\", \"\", \"request body file (%s); - reads stdin (required)\")\n", op.BodyContentType)
+		fmt.Fprintf(sb, "\tfileF := fs.String(\"file\", \"\", %q)\n",
+			fmt.Sprintf("request body file (%s); - reads stdin (required)", op.BodyContentType))
 	}
 
 	sb.WriteString("\tg, code := parseGlobals(fs, args)\n\tif g == nil {\n\t\treturn code\n\t}\n")
@@ -382,7 +377,9 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	// Path assembly.
 	fmt.Fprintf(sb, "\tpath := %q\n", op.PathTemplate)
 	for i, p := range op.PathParams {
-		fmt.Fprintf(sb, "\tpath = strings.Replace(path, \"{%s}\", url.PathEscape(%s), 1)\n", p.Name, paramString(fmt.Sprintf("pp%d", i), p))
+		// The placeholder literal goes through %q so a hostile spec's
+		// param name cannot break out of the generated string.
+		fmt.Fprintf(sb, "\tpath = strings.Replace(path, %q, url.PathEscape(%s), 1)\n", "{"+p.Name+"}", paramString(fmt.Sprintf("pp%d", i), p))
 	}
 
 	// Query assembly: only flags the caller actually set are sent.
@@ -407,25 +404,35 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 		fmt.Fprintf(sb, "\tif visited[%q] {\n\t\thdr.Set(%q, %s)\n\t}\n", p.Flag, p.Name, paramString(v, p))
 	}
 
-	// Body + request. Bodies are optional unless the spec marks fields
-	// required: with no --json and no field flags, nothing is sent.
+	// Body + request. Bodies are optional unless the spec marks the
+	// requestBody required: with no --json and no field flags, nothing
+	// is sent. Body construction is runner-local (NOT buildBody, whose
+	// exclusivity check would count this runner's query and header
+	// flags as body-field flags and refuse valid --json invocations).
 	switch op.BodyKind {
 	case "json":
 		flags := make([]string, 0, len(op.BodyFields))
 		for _, f := range op.BodyFields {
 			flags = append(flags, fmt.Sprintf("%q", f.Flag))
 		}
-		fmt.Fprintf(sb, "\tbodySet := *jsonF != \"\"\n\tfor _, fl := range []string{%s} {\n\t\tif visited[fl] {\n\t\t\tbodySet = true\n\t\t}\n\t}\n", strings.Join(flags, ", "))
-		sb.WriteString("\tct := \"\"\n\tvar rdr io.Reader\n\tif bodySet {\n")
-		sb.WriteString("\t\tbody, code := buildBody(fs, *jsonF, func(flagName string, body map[string]any) error {\n\t\t\tswitch flagName {\n")
-		for i, f := range op.BodyFields {
-			fmt.Fprintf(sb, "\t\t\tcase %q:\n\t\t\t\tbody[%q] = *bf%d\n", f.Flag, f.Wire, i)
+		fmt.Fprintf(sb, "\tfieldSet := false\n\tfor _, fl := range []string{%s} {\n\t\tif visited[fl] {\n\t\t\tfieldSet = true\n\t\t}\n\t}\n", strings.Join(flags, ", "))
+		sb.WriteString("\tif *jsonF != \"\" && fieldSet {\n\t\tfmt.Fprintln(os.Stderr, \"--json and body field flags are mutually exclusive\")\n\t\treturn 2\n\t}\n")
+		sb.WriteString("\tbodySet := *jsonF != \"\" || fieldSet\n")
+		if op.BodyRequired {
+			sb.WriteString("\tif !bodySet {\n\t\tfmt.Fprintln(os.Stderr, \"a request body is required: pass body field flags or --json\")\n\t\treturn 2\n\t}\n")
 		}
-		sb.WriteString("\t\t\t}\n\t\t\treturn nil\n\t\t})\n\t\tif code != 0 {\n\t\t\treturn code\n\t\t}\n")
-		sb.WriteString("\t\tpayload, err := json.Marshal(body)\n\t\tif err != nil {\n\t\t\treturn apiFail(err)\n\t\t}\n")
+		sb.WriteString("\tct := \"\"\n\tvar rdr io.Reader\n\tif bodySet {\n")
+		sb.WriteString("\t\tvar payload []byte\n\t\tif *jsonF != \"\" {\n\t\t\traw, err := readJSONArg(*jsonF)\n\t\t\tif err != nil {\n\t\t\t\treturn apiFail(err)\n\t\t\t}\n\t\t\tvar parsed map[string]any\n\t\t\tif err := json.Unmarshal(raw, &parsed); err != nil {\n\t\t\t\tfmt.Fprintf(os.Stderr, \"--json: %v\\n\", err)\n\t\t\t\treturn 2\n\t\t\t}\n\t\t\tpayload = raw\n\t\t} else {\n\t\t\tbody := map[string]any{}\n")
+		for i, f := range op.BodyFields {
+			fmt.Fprintf(sb, "\t\t\tif visited[%q] {\n\t\t\t\tbody[%q] = *bf%d\n\t\t\t}\n", f.Flag, f.Wire, i)
+		}
+		sb.WriteString("\t\t\tvar err error\n\t\t\tpayload, err = json.Marshal(body)\n\t\t\tif err != nil {\n\t\t\t\treturn apiFail(err)\n\t\t\t}\n\t\t}\n")
 		sb.WriteString("\t\tct = \"application/json\"\n\t\trdr = bytes.NewReader(payload)\n\t}\n")
 		fmt.Fprintf(sb, "\tdata, respCT, err := g.client.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", op.Method)
 	case "raw":
+		if op.BodyRequired {
+			sb.WriteString("\tif *jsonF == \"\" {\n\t\tfmt.Fprintln(os.Stderr, \"a request body is required: pass --json\")\n\t\treturn 2\n\t}\n")
+		}
 		sb.WriteString("\tct := \"\"\n\tvar rdr io.Reader\n\tif *jsonF != \"\" {\n\t\tpayload, err := readJSONArg(*jsonF)\n\t\tif err != nil {\n\t\t\treturn apiFail(err)\n\t\t}\n\t\tct = \"application/json\"\n\t\trdr = bytes.NewReader(payload)\n\t}\n")
 		fmt.Fprintf(sb, "\tdata, respCT, err := g.client.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", op.Method)
 	case "binary":

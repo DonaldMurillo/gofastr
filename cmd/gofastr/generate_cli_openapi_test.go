@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -44,6 +46,9 @@ const oaFixture = `{
     "/api/generate": {
       "post": {
         "operationId": "generateCode",
+        "parameters": [
+          {"name": "dry", "in": "query", "schema": {"type": "boolean"}}
+        ],
         "requestBody": {
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenerateRequest"}}}
         }
@@ -140,6 +145,78 @@ func TestOpenAPICLI_ReservedFlagFails(t *testing.T) {
 	}
 }
 
+func TestOpenAPICLI_CommonQueryNamesAllowed(t *testing.T) {
+	// "limit"/"page"/"sort" are entity-CLI reserved words but ordinary
+	// OpenAPI parameter names; the spec's names ARE the wire contract.
+	doc := `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":"listA",
+	  "parameters":[
+	    {"name":"limit","in":"query","schema":{"type":"integer"}},
+	    {"name":"page","in":"query","schema":{"type":"integer"}},
+	    {"name":"sort","in":"query","schema":{"type":"string"}}]}}}}`
+	var m map[string]any
+	_ = json.Unmarshal([]byte(doc), &m)
+	spec, err := buildOpenAPICLISpec(m, cliOptions{binary: "x"}, "c")
+	if err != nil || len(spec.Ops[0].QueryParams) != 3 {
+		t.Fatalf("common query names must generate: %v %+v", err, spec.Ops)
+	}
+}
+
+func TestOpenAPICLI_BadIdentifierFails(t *testing.T) {
+	for _, id := range []string{"pets/list", "2fa", "___", "ver 🐱 sion"} {
+		doc := `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":` + string(mustJSON(id)) + `}}}}`
+		var m map[string]any
+		_ = json.Unmarshal([]byte(doc), &m)
+		if _, err := buildOpenAPICLISpec(m, cliOptions{binary: "x"}, "c"); err == nil {
+			t.Errorf("operationId %q must fail generation", id)
+		}
+	}
+}
+
+func TestOpenAPICLI_PathTemplateMismatchFails(t *testing.T) {
+	doc := `{"openapi":"3.0.3","paths":{"/lit/{id}":{"get":{"operationId":"getIt",
+	  "parameters":[{"name":"other","in":"path","required":true,"schema":{"type":"string"}}]}}}}`
+	var m map[string]any
+	_ = json.Unmarshal([]byte(doc), &m)
+	if _, err := buildOpenAPICLISpec(m, cliOptions{binary: "x"}, "c"); err == nil {
+		t.Fatal("declared path param without a placeholder must fail")
+	}
+	doc2 := `{"openapi":"3.0.3","paths":{"/lit/{id}":{"get":{"operationId":"getIt"}}}}`
+	_ = json.Unmarshal([]byte(doc2), &m)
+	if _, err := buildOpenAPICLISpec(m, cliOptions{binary: "x"}, "c"); err == nil {
+		t.Fatal("placeholder without a declared path param must fail")
+	}
+}
+
+func TestOpenAPICLI_TypedArrayParamFails(t *testing.T) {
+	doc := `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":"listA",
+	  "parameters":[{"name":"ids","in":"query","schema":{"type":"array","items":{"type":"integer"}}}]}}}}`
+	var m map[string]any
+	_ = json.Unmarshal([]byte(doc), &m)
+	if _, err := buildOpenAPICLISpec(m, cliOptions{binary: "x"}, "c"); err == nil {
+		t.Fatal("array-of-integer param must fail (repeatable flags collect strings)")
+	}
+}
+
+func TestOpenAPICLI_RefCycleFails(t *testing.T) {
+	doc := `{"openapi":"3.0.3",
+	  "components":{"schemas":{"A":{"$ref":"#/components/schemas/B"},"B":{"$ref":"#/components/schemas/A"}}},
+	  "paths":{"/a":{"post":{"operationId":"mk",
+	    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}}}`
+	var m map[string]any
+	_ = json.Unmarshal([]byte(doc), &m)
+	if _, err := buildOpenAPICLISpec(m, cliOptions{binary: "x"}, "c"); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("$ref cycle must fail loudly, got %v", err)
+	}
+}
+
+func mustJSON(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
 func TestOpenAPICLI_ExternalRefFails(t *testing.T) {
 	doc := `{"openapi":"3.0.3","paths":{"/a":{"post":{"operationId":"mk",
 	  "requestBody":{"content":{"application/json":{"schema":{"$ref":"other.json#/X"}}}}}}}}`
@@ -232,15 +309,18 @@ func TestOpenAPICLI_RoundTripLiveServer(t *testing.T) {
 	type seen struct {
 		method, path, query, auth, body, contentType string
 	}
-	var last seen
+	var mu sync.Mutex
+	var lastSeen seen
+	last := func() seen { mu.Lock(); defer mu.Unlock(); return lastSeen }
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b := make([]byte, 1<<16)
-		n, _ := r.Body.Read(b)
-		last = seen{
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		lastSeen = seen{
 			method: r.Method, path: r.URL.Path, query: r.URL.RawQuery,
-			auth: r.Header.Get("Authorization"), body: string(b[:n]),
+			auth: r.Header.Get("Authorization"), body: string(b),
 			contentType: r.Header.Get("Content-Type"),
 		}
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
@@ -252,14 +332,14 @@ func TestOpenAPICLI_RoundTripLiveServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get-spec: %v\n%s", err, out)
 	}
-	if last.method != "GET" || last.path != "/api/spec/qr code" {
-		t.Errorf("path param not routed: %+v", last)
+	if last().method != "GET" || last().path != "/api/spec/qr code" {
+		t.Errorf("path param not routed: %+v", last())
 	}
-	if !strings.Contains(last.query, "verbose=true") || !strings.Contains(last.query, "tag=a") || !strings.Contains(last.query, "tag=b") {
-		t.Errorf("query params wrong: %q", last.query)
+	if !strings.Contains(last().query, "verbose=true") || !strings.Contains(last().query, "tag=a") || !strings.Contains(last().query, "tag=b") {
+		t.Errorf("query params wrong: %q", last().query)
 	}
-	if last.auth != "Bearer tok" {
-		t.Errorf("bearer auth expected, got %q", last.auth)
+	if last().auth != "Bearer tok" {
+		t.Errorf("bearer auth expected, got %q", last().auth)
 	}
 	if !strings.Contains(string(out), `"ok": true`) {
 		t.Errorf("json response should pretty-print: %s", out)
@@ -270,16 +350,32 @@ func TestOpenAPICLI_RoundTripLiveServer(t *testing.T) {
 		"--text", "hello", "--scale", "3").CombinedOutput(); err != nil {
 		t.Fatalf("generate-code: %v\n%s", err, out)
 	}
-	if last.method != "POST" || last.path != "/api/generate" || last.contentType != "application/json" {
-		t.Errorf("json post wrong: %+v", last)
+	if last().method != "POST" || last().path != "/api/generate" || last().contentType != "application/json" {
+		t.Errorf("json post wrong: %+v", last())
 	}
-	if !strings.Contains(last.body, `"text":"hello"`) || !strings.Contains(last.body, `"scale":3`) {
-		t.Errorf("body wrong: %q", last.body)
+	if !strings.Contains(last().body, `"text":"hello"`) || !strings.Contains(last().body, `"scale":3`) {
+		t.Errorf("body wrong: %q", last().body)
 	}
 
 	// Required body field enforced.
 	if out, err := exec.Command(bin, "generate-code", "--url", srv.URL, "--scale", "2").CombinedOutput(); err == nil {
 		t.Errorf("missing required --text must fail:\n%s", out)
+	}
+
+	// --json combined with a query flag: the escape hatch must not be
+	// blocked by non-body flags (PR #264 review finding).
+	if out, err := exec.Command(bin, "generate-code", "--url", srv.URL,
+		"--json", `{"text":"raw"}`, "--dry").CombinedOutput(); err != nil {
+		t.Fatalf("--json with a query flag must work: %v\n%s", err, out)
+	}
+	if !strings.Contains(last().query, "dry=true") || !strings.Contains(last().body, `"text":"raw"`) {
+		t.Errorf("--json + query flag wire wrong: %+v", last())
+	}
+
+	// --json plus a body-field flag stays mutually exclusive.
+	if out, err := exec.Command(bin, "generate-code", "--url", srv.URL,
+		"--json", `{"text":"raw"}`, "--scale", "2").CombinedOutput(); err == nil {
+		t.Errorf("--json with a body field flag must fail:\n%s", out)
 	}
 
 	// Binary body from a file.
@@ -290,7 +386,7 @@ func TestOpenAPICLI_RoundTripLiveServer(t *testing.T) {
 	if out, err := exec.Command(bin, "decode-image", "--url", srv.URL, "--file", img).CombinedOutput(); err != nil {
 		t.Fatalf("decode-image: %v\n%s", err, out)
 	}
-	if last.contentType != "application/octet-stream" || len(last.body) != 4 {
-		t.Errorf("binary body wrong: ct=%q len=%d", last.contentType, len(last.body))
+	if last().contentType != "application/octet-stream" || len(last().body) != 4 {
+		t.Errorf("binary body wrong: ct=%q len=%d", last().contentType, len(last().body))
 	}
 }

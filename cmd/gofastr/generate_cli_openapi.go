@@ -37,6 +37,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/yaml"
@@ -125,6 +126,9 @@ type cliOp struct {
 	BodyKind        string
 	BodyFields      []cliOpBodyField
 	BodyContentType string
+	// BodyRequired mirrors requestBody.required: the runner refuses to
+	// send nothing.
+	BodyRequired bool
 }
 
 // loadOpenAPIDoc reads and decodes the spec from a local path or an
@@ -133,7 +137,8 @@ type cliOp struct {
 func loadOpenAPIDoc(src string) (map[string]any, error) {
 	var data []byte
 	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-		resp, err := http.Get(src)
+		fetcher := &http.Client{Timeout: 30 * time.Second}
+		resp, err := fetcher.Get(src)
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", src, err)
 		}
@@ -204,13 +209,18 @@ func yamlToAny(n *yaml.Node) any {
 }
 
 // oaResolve dereferences a node: local $ref chains and a shallow allOf
-// merge of object schemas. External refs fail (out of scope).
+// merge of object schemas. External refs and $ref cycles fail.
 func oaResolve(root, node map[string]any) (map[string]any, error) {
-	for i := 0; node != nil && i < 32; i++ {
+	visited := map[string]bool{}
+	for node != nil {
 		ref, ok := node["$ref"].(string)
 		if !ok {
 			break
 		}
+		if visited[ref] {
+			return nil, fmt.Errorf("$ref cycle through %q", ref)
+		}
+		visited[ref] = true
 		if !strings.HasPrefix(ref, "#/") {
 			return nil, fmt.Errorf("external $ref %q is not supported (local #/... refs only)", ref)
 		}
@@ -235,7 +245,15 @@ func oaResolve(root, node map[string]any) (map[string]any, error) {
 		merged := map[string]any{"type": "object"}
 		props := map[string]any{}
 		var required []any
-		for _, p := range parts {
+		// OpenAPI 3.1 allows sibling properties next to allOf; merge
+		// the node's own schema last so it wins.
+		own := map[string]any{}
+		for k, v := range node {
+			if k != "allOf" {
+				own[k] = v
+			}
+		}
+		for _, p := range append(parts, any(own)) {
 			pm, ok := p.(map[string]any)
 			if !ok {
 				continue
@@ -330,13 +348,82 @@ func oaGoName(s string) string {
 }
 
 // oaReservedCommands are command words owned by the CLI scaffolding.
-var oaReservedCommands = map[string]bool{"login": true, "logout": true, "help": true}
+var oaReservedCommands = map[string]bool{"login": true, "logout": true, "help": true, "version": true}
+
+// oaReservedFlags are the flags an OpenAPI-mode runner registers itself.
+// Deliberately NOT the entity-mode cliReservedFlags: names like "limit"
+// or "page" are ordinary query parameters here, and an OpenAPI parameter
+// name IS the wire name — telling someone to rename it in the spec would
+// mean changing their API.
+var oaReservedFlags = map[string]bool{
+	"url": true, "token": true, "o": true, "json": true, "file": true,
+	"help": true, "h": true, "with-token": true,
+}
+
+// oaValidIdent reports whether s is a valid exported-ok Go identifier
+// fragment: letters/digits only, not digit-led. Spec-derived names are
+// interpolated into generated Go source, so anything outside this
+// grammar is rejected rather than munged (no auto-renaming) — that also
+// closes the source-injection route for URL-fetched specs.
+func oaValidIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// oaValidFlag reports whether a derived command/flag word is plain
+// kebab: lowercase letters, digits, dashes, letter-or-digit led.
+func oaValidFlag(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+		case r == '-':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 var oaMethods = []string{"get", "put", "post", "delete", "patch", "head", "options"}
 
 // buildOpenAPICLISpec derives the cliSpec for --from-openapi mode.
 // clientImport is the module path of the generated internal client.
 func buildOpenAPICLISpec(doc map[string]any, opts cliOptions, clientImport string) (cliSpec, error) {
+	// Both values land in the generated main.go // header comment, where
+	// a control character (newline) would move source to statement
+	// position — and unlike entity mode, --from-openapi is documented
+	// for URL sources, so the value is not always operator-typed.
+	binary := strings.TrimSpace(opts.binary)
+	if binary == "" {
+		return cliSpec{}, fmt.Errorf("--binary must not be empty")
+	}
+	for _, v := range []string{binary, opts.fromOpenAPI} {
+		for _, r := range v {
+			if r < 0x20 || r == 0x7f {
+				return cliSpec{}, fmt.Errorf("%q contains a control character: it is interpolated into generated source", v)
+			}
+		}
+	}
+	opts.binary = binary
 	spec := cliSpec{
 		Binary:       opts.binary,
 		EnvPrefix:    cliEnvPrefix(opts.binary),
@@ -349,7 +436,9 @@ func buildOpenAPICLISpec(doc map[string]any, opts cliOptions, clientImport strin
 
 	if servers, ok := doc["servers"].([]any); ok && len(servers) > 0 {
 		if s0, ok := servers[0].(map[string]any); ok {
-			if u, ok := s0["url"].(string); ok && strings.HasPrefix(u, "http") {
+			// Templated server URLs ({host} variables) can't seed a
+			// usable default; skip them like relative URLs.
+			if u, ok := s0["url"].(string); ok && strings.HasPrefix(u, "http") && !strings.Contains(u, "{") {
 				spec.DefaultURL = strings.TrimRight(u, "/")
 			}
 		}
@@ -432,11 +521,13 @@ func oaSecurity(doc map[string]any, spec *cliSpec) error {
 			spec.TokenPrefix = "Bearer "
 			return nil
 		case typ == "apiKey" && s["in"] == "header":
-			if name, ok := s["name"].(string); ok && name != "" {
-				spec.TokenHeader = name
-				spec.TokenPrefix = ""
-				return nil
+			name, _ := s["name"].(string)
+			if name == "" || strings.ContainsAny(name, " \t\r\n\"\\") {
+				return fmt.Errorf("apiKey security scheme %q needs a plain header name, got %q", n, name)
 			}
+			spec.TokenHeader = name
+			spec.TokenPrefix = ""
+			return nil
 		default:
 			unsupported = append(unsupported, n+" ("+typ+")")
 		}
@@ -459,6 +550,11 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		Method:       method,
 		PathTemplate: path,
 	}
+	// Derived names land in generated Go source and command tables:
+	// reject anything outside the plain grammar instead of munging.
+	if !oaValidIdent(op.GoName) || !oaValidFlag(op.Command) {
+		return op, fmt.Errorf("operationId %q does not derive a usable command name (letters, digits, - and _ only, not digit-led); rename the operation", id)
+	}
 	if s, ok := opNode["summary"].(string); ok && s != "" {
 		op.Summary = s
 	} else {
@@ -467,7 +563,10 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 
 	flagSeen := map[string]string{}
 	claim := func(flag, owner string) error {
-		if cliReservedFlags[flag] || flag == "file" {
+		if !oaValidFlag(flag) {
+			return fmt.Errorf("%s derives flag --%s, which is not a usable flag name (lowercase letters, digits, dashes); rename it in the spec (no auto-renaming)", owner, flag)
+		}
+		if oaReservedFlags[flag] {
 			return fmt.Errorf("%s derives flag --%s, which the CLI reserves; rename it in the spec (no auto-renaming)", owner, flag)
 		}
 		if prev, dup := flagSeen[flag]; dup {
@@ -508,7 +607,17 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		}
 		goType, repeated, ok := oaGoType(orEmpty(schema))
 		if !ok {
-			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of scalars map to flags", name)
+			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of strings map to flags", name)
+		}
+		if repeated {
+			if in == "path" {
+				return op, fmt.Errorf("path parameter %q is an array; a path segment is one value", name)
+			}
+			if goType != "string" {
+				// A repeatable flag collects strings; typed validation
+				// would be silently skipped, so refuse rather than lie.
+				return op, fmt.Errorf("parameter %q is an array of %s; only arrays of strings map to repeatable flags", name, goType)
+			}
 		}
 		required, _ := pm["required"].(bool)
 		cp := cliOpParam{
@@ -524,8 +633,38 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		case "query":
 			op.QueryParams = append(op.QueryParams, cp)
 		case "header":
+			if strings.ContainsAny(name, " \t\r\n\"\\") {
+				return op, fmt.Errorf("header parameter %q is not a plain header name", name)
+			}
 			op.HeaderParams = append(op.HeaderParams, cp)
 		}
+	}
+
+	// Cross-check the path template against the declared path params:
+	// a declared param with no {placeholder} would be silently dropped,
+	// and an unfilled placeholder would hit the server percent-encoded.
+	placeholders := map[string]bool{}
+	rest := path
+	for {
+		open := strings.Index(rest, "{")
+		if open < 0 {
+			break
+		}
+		closing := strings.Index(rest[open:], "}")
+		if closing < 0 {
+			return op, fmt.Errorf("path template %q has an unclosed '{'", path)
+		}
+		placeholders[rest[open+1:open+closing]] = true
+		rest = rest[open+closing+1:]
+	}
+	for _, p := range op.PathParams {
+		if !placeholders[p.Name] {
+			return op, fmt.Errorf("path parameter %q has no {%s} placeholder in %q", p.Name, p.Name, path)
+		}
+		delete(placeholders, p.Name)
+	}
+	for ph := range placeholders {
+		return op, fmt.Errorf("path template %q has placeholder {%s} with no declared path parameter", path, ph)
 	}
 
 	if body, ok := opNode["requestBody"].(map[string]any); ok {
@@ -533,6 +672,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		if err != nil {
 			return op, err
 		}
+		op.BodyRequired, _ = body["required"].(bool)
 		content, _ := body["content"].(map[string]any)
 		if jsonMedia, ok := content["application/json"].(map[string]any); ok {
 			schema, _ := jsonMedia["schema"].(map[string]any)
