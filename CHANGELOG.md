@@ -9,13 +9,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
-- **SSR, email, and prompt output bytes are deterministic** (#269):
-  every site the first repo-wide `mapwriter` analyzer run flagged
-  emitted map-iteration-ordered output — island action attributes,
-  widget non-canonical slot order, `GetActionJS` script concatenation
-  (which also churned screen-cache keys and gzip dedup per render),
-  menu item extra attributes, and SMTP wire/logged headers. All now
-  emit in sorted order: same input, same bytes.
 - **`ui.SearchInput` with `Action` lost its styling** (#239): the
   stylesheet keyed every rule on the `data-fui-comp` marker as an
   ancestor, but `WrapHTML` injects the marker into the outermost tag —
@@ -93,12 +86,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
-- **`ToggleConfig.ExtraAttrs` (Checkbox / Radio / Switch) now follows
-  the sanitized contract**: extras land on the root `<label>` instead
-  of being copied raw onto the `<input>`, and `class`/`id`/`for`/
-  `data-fui-*` keys are dropped. The previous raw copy was documented
-  for `data-fui-*` RPC wiring but had no callers; RPC wiring belongs on
-  forms and widgets.
+- **BREAKING: `ToggleConfig.ExtraAttrs` (Checkbox / Radio / Switch) now
+  follows the sanitized contract**: extras land on the root `<label>`
+  instead of being copied raw onto the `<input>`, and `class`/`id`/
+  `for`/`data-fui-*` keys are dropped. The previous raw copy was
+  documented for `data-fui-*` RPC wiring but had no known callers; if
+  you relied on it, move RPC wiring to the enclosing form or widget.
 
 ## [0.72.0] - 2026-08-27
 
