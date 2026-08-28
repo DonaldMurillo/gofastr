@@ -9,6 +9,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`battery/auth` treats emails as case-insensitive end to end**
+  (#270): `Owner@Example.com` and `owner@example.com` were two
+  different accounts — login failed across casings, OAuth created
+  duplicate accounts on a case-mismatched provider email, and the
+  rate limiter lowercased while the lookup three lines later did not.
+  Every flow (login, registration, magic links, OAuth matching,
+  password reset, limiter keys) now canonicalizes via the new exported
+  `auth.CanonicalEmail` at its ingestion point, so custom `UserStore`
+  implementations receive canonical input too. **Stores with existing
+  mixed-case rows need the one-time migration in auth.md** (collision
+  check first, then `LOWER(email)` rewrite + expression unique index).
+
 - **`ui.SiteFooter` link tap targets reach the 24px AA floor** (#257):
   inline 13px/1.6 anchors gave a ~17px hit area that padding could not
   extend; footer links are now `inline-flex` with `min-block-size:
