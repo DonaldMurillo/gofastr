@@ -206,5 +206,11 @@ func searchInputCSS(_ style.Theme) string {
 }
 .ui-search-input__form {
   display: inline-flex;
+}
+/* When a parent gives the form a width, the label must fill it so the
+   input's flex:1 spans the box instead of shrink-wrapping. */
+.ui-search-input__form > .ui-search-input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }`
 }

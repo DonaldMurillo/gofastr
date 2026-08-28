@@ -15,8 +15,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the `<form>` once `Action` is set — so the box shell landed on the
   form and the label went unstyled (a ~180px clipped input inside a
   bordered full-width form). Rules now key on the `.ui-search-input`
-  class, which the label carries in both variants; verified by a
-  rendered-pixel measurement reproducing the issue's repro.
+  class, which the label carries in both variants; a browser layout
+  measurement reproducing the issue's repro pins the regression.
 - **Startup banner advertised URLs that 404** (#244): the banner
   printed an API URL for every registered entity, including
   `Exposure.CRUD=false` entities and apps with no DB, whose routes are

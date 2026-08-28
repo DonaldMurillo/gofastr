@@ -46,7 +46,7 @@ func TestBannerSkipsDisabledCRUDEntities(t *testing.T) {
 	if strings.Contains(got, "/secrets") {
 		t.Errorf("CRUD-disabled entity URL advertised (would 404):\n%s", got)
 	}
-	if !strings.Contains(got, "1 more entity registered without API routes") {
+	if !strings.Contains(got, "1 more entity registered without CRUD routes") {
 		t.Errorf("skipped-entity summary missing:\n%s", got)
 	}
 }

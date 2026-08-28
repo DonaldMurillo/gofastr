@@ -25,8 +25,12 @@ func TestSearchInputActionVariantPixels(t *testing.T) {
 	if !ok {
 		t.Fatal("ui-search-input style not registered")
 	}
+	// The form gets a fixed width so the assertions cannot pass by
+	// shrink-wrapping: the label must FILL a constrained form, which is
+	// exactly what the unstyled-label bug broke.
 	page := `<!doctype html><html><head><style>` +
 		entry.CSSFor(style.Theme{}) +
+		`.ui-search-input__form { inline-size: 1000px; }` +
 		`</style></head><body style="margin:0;width:1440px">` +
 		string(ui.SearchInput(ui.SearchInputConfig{
 			Name: "q", ID: "q", Action: "/search",

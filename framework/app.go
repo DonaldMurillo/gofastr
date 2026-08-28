@@ -3289,7 +3289,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		if skipped == 1 {
 			noun = "entity"
 		}
-		fmt.Fprintf(w, "  %s %d more %s registered without API routes\n", arrow(), skipped, noun)
+		fmt.Fprintf(w, "  %s %d more %s registered without CRUD routes\n", arrow(), skipped, noun)
 	}
 
 	if hasAPI {
