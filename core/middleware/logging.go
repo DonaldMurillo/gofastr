@@ -210,6 +210,15 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.NewResponseController walk through this wrapper so
+// SetReadDeadline/SetWriteDeadline reach the real connection instead of
+// failing with a silent ErrNotSupported (a streaming handler that
+// ignores that error then has no per-write deadline, and a half-open
+// client pins its goroutine). Every variant below embeds this type, so
+// the one method covers the whole family — matching the Unwrap the
+// cors/metrics/tracing wrappers already carry.
+func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
 // optional-interface wrappers; we conditionally expose just what the
 // underlying writer actually supports, so a caller's interface assertion
 // reflects the real capabilities of the stack.

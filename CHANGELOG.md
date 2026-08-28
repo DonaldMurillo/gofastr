@@ -5,6 +5,30 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Fixed
+
+- **Stateless value screen components render again** (#259):
+  registering a component by value (the documented stateless form) died
+  at render time with a generic "di: target must be a non-nil pointer".
+  DI is now skipped for value components; a value struct that *asks*
+  for injection via `inject` tags fails with the type and the
+  register-a-pointer remedy named.
+- **`http.NewResponseController` deadlines reach the connection through
+  the logging wrappers** (#260): `middleware.Logging`'s and
+  `battery/log`'s response writers gained `Unwrap`, matching the
+  cors/metrics/tracing wrappers, so streaming handlers behind an access
+  logger can set per-write deadlines instead of getting a silent
+  `ErrNotSupported` (a half-open client then pinned the goroutine).
+- **Silent clobbers now scream** (#258, #268): replacing a router's
+  NotFound handler warns (a UI host dispatches every screen through it,
+  so the replacement disabled all pages; `Router.WrapNotFound` is the
+  compose path, `uihost.WithNotFoundScreen` the supported custom 404),
+  and worktree isolation remapping an explicitly-assigned listen
+  address warns with both addresses and the kill switches instead of
+  banner-printing the remapped port as if it were the configured one.
+
 ## [0.73.0] - 2026-08-28
 
 ### Fixed

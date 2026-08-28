@@ -796,8 +796,10 @@ func WithGrantStore(gs *access.GrantStore) AppOption {
 }
 
 // WithoutDefaultMiddleware disables the default middleware chain
-// (recovery, request-id, logging, security headers, timeout). Use this
-// when you want full control over middleware composition via Use().
+// (recovery, request-id, security headers, timeout; access logging is
+// NOT in the default chain — battery/log or middleware.LoggingFn add
+// it). Use this when you want full control over middleware composition
+// via Use().
 func WithoutDefaultMiddleware() AppOption {
 	return func(a *App) {
 		a.noDefaults = true
@@ -2753,9 +2755,24 @@ func (a *App) Start(addr string) error {
 	if err != nil {
 		return fmt.Errorf("resolve isolation: %w", err)
 	}
+	requestedAddr := addr
 	addr, err = runtimeIsolation.Addr(addr)
 	if err != nil {
 		return fmt.Errorf("resolve isolated addr: %w", err)
+	}
+	// Worktree isolation deliberately remaps the listen address (see
+	// isolation.md), but silently honoring a different port than the
+	// one the caller assigned is configuration accepted-but-not-honored:
+	// anything polling the requested port hangs to its deadline (#268).
+	// Scream once with both addresses and both kill switches. Gated on
+	// Active(): Addr also normalizes a bare "8080" to ":8080" with
+	// isolation off, and that spelling change is not a remap.
+	if runtimeIsolation.Active() && requestedAddr != "" && addr != requestedAddr {
+		a.Logger().Warn("isolation remapped the listen address",
+			"requested", requestedAddr,
+			"resolved", addr,
+			"isolation", runtimeIsolation.ID(),
+			"disable", "GOFASTR_ISOLATION=off (or GOFASTR_ISOLATION_REWRITE=0 for explicit values only)")
 	}
 
 	// Create the app's lifecycle context early so AutoMigrate, RunSeeds,

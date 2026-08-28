@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"sort"
@@ -573,8 +574,20 @@ func (r *Router) effectiveNotFound() http.Handler {
 func (r *Router) NotFound(handler http.Handler) {
 	route := &cachedRoute{raw: handler, router: r}
 	r.mu.Lock()
+	replaced := r.notFound != nil
 	r.notFound = route
 	r.mu.Unlock()
+	// The setter is last-write-wins, and the discarded handler may have
+	// been load-bearing: a UI host dispatches every SCREEN through
+	// NotFound, so an app installing a custom 404 after Mount silently
+	// disables all pages (and the inverse order silently eats the app's
+	// 404) — #258. Scream instead of guessing which side was intended.
+	// (Generic on purpose: this is the framework-agnostic core layer;
+	// the UI host's docs point at its own WithNotFoundScreen.)
+	if replaced {
+		slog.Warn("router: NotFound handler replaced; the previous handler is discarded",
+			"hint", "compose with Router.WrapNotFound if both should run")
+	}
 }
 
 // WrapNotFound wraps the router's NotFound fall-through with mw. mw receives
