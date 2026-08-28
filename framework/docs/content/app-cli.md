@@ -128,6 +128,44 @@ prefix), `--api-prefix=api` (must match your `AppConfig.APIPrefix`:
 it's baked into the client's base URL so customers pass a bare server
 URL), `--dry-run`, `--json`.
 
+## No entities? Generate from an OpenAPI document
+
+An app with a hand-written API has no entity set to generate from, but
+it usually maintains an OpenAPI 3 document. `--from-openapi` generates
+the same style of CLI from that artifact instead:
+
+```bash
+gofastr generate cli --from-openapi openapi.json --binary=barc
+gofastr generate cli --from-openapi https://barc.example.com/openapi.json
+```
+
+One subcommand per operation, named from `operationId` — a missing,
+duplicate, or non-identifier id fails generation, no auto-naming.
+Path, query, and header parameters become typed flags (arrays of
+strings repeat the flag; typed arrays are rejected rather than left
+unvalidated);
+`application/json` object bodies get a flag per top-level scalar
+property plus the `--json` raw escape; binary bodies
+(`application/octet-stream` / `format: binary`) take `--file` with `-`
+for stdin. JSON responses pretty-print; anything else streams raw to
+stdout so `barc generate-code ... > code.png` works. `servers[0].url`
+seeds the default server URL, and an `http: bearer` or header `apiKey`
+security scheme wires into the same `--token`/env/`login` machinery.
+
+The generated tree is fully self-contained (stdlib only, with its own
+`internal/client`), so it runs from any directory inside a Go module —
+no entities package, no framework dependency. `custom.go` and
+`--force` behave exactly as below.
+
+Supported subset, by design: local `#/components/...` `$ref`s (`allOf`
+of objects shallow-merges; `oneOf`/`anyOf` bodies fall back to
+`--json`), JSON or YAML documents. Cookie parameters, external refs,
+`$ref` cycles, path/template mismatches, and multipart bodies fail
+generation with a precise error instead of guessing. A spec whose
+*only* security scheme is unsupported (OAuth2 flows, apiKey outside a
+header) fails too; a spec offering bearer alongside OAuth2 generates
+against bearer.
+
 ## Extending and regenerating
 
 Generation is one-shot owned code: re-running refuses to overwrite and
