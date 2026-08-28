@@ -174,6 +174,13 @@ func (rw *countingResponseWriter) Push(target string, opts *http.PushOptions) er
 	return http.ErrNotSupported
 }
 
+// Unwrap lets http.NewResponseController walk through this wrapper so
+// per-write deadlines reach the real connection. battery/log is the
+// production access-log path, so without this every streaming handler
+// behind it silently loses SetWriteDeadline (ErrNotSupported). Mirrors
+// core/middleware's cors/metrics/tracing/logging wrappers.
+func (rw *countingResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
 // remoteAddr returns the client address the access log should record.
 // When trustXFF is false (default) it returns r.RemoteAddr only;
 // X-Forwarded-For / X-Real-IP are still emitted as a separate
