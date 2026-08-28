@@ -572,6 +572,39 @@ setting a boolean `FALSE` default. This self-heals tables created by
 older GoFastr versions. Back up production data before the first boot
 after upgrading.
 
+## Email identity is canonical (lowercased + trimmed)
+
+Every flow that reads or stores an email — login, registration, magic
+links, OAuth account matching, password reset, and the login
+rate-limiter key — canonicalizes it with `auth.CanonicalEmail`
+(trim + lowercase) at its ingestion point. Custom `UserStore`
+implementations therefore always receive canonical input; a host that
+accepts emails on its own surfaces should call `auth.CanonicalEmail`
+too so its lookups agree with the battery's.
+
+**Upgrading a store with mixed-case rows**: rows written by older
+versions keep their original casing and will no longer match. Before
+rewriting, find casings that would collapse into the same account —
+those must be resolved by the operator (merge or delete), not by the
+migration:
+
+```sql
+SELECT LOWER(TRIM(email)), COUNT(*) FROM auth_users
+GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1;
+```
+
+With zero collisions, normalize and then keep the invariant honest
+with an expression index. `TRIM` mirrors the runtime canonicalization
+(`CanonicalEmail` trims before lowercasing) so a legacy
+`"  Bob@Example.com  "` row collapses to the same identity. PostgreSQL
+shown; SQLite supports the same expression-index form:
+
+```sql
+UPDATE auth_users SET email = LOWER(TRIM(email));
+CREATE UNIQUE INDEX auth_users_email_canonical
+  ON auth_users (LOWER(TRIM(email)));
+```
+
 ## Listing users
 
 Back-offices that need to enumerate accounts (an admin user list, a

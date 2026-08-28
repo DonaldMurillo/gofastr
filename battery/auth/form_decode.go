@@ -80,7 +80,7 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 			writeAuthError(w, http.StatusBadRequest, "invalid form body")
 			return "", "", true, false
 		}
-		email = r.PostFormValue("email")
+		email = CanonicalEmail(r.PostFormValue("email"))
 		password = r.PostFormValue("password")
 		if !emailWithinLimit(w, email) {
 			return "", "", true, false
@@ -95,10 +95,23 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 	if !decodeJSONLimited(w, r, &body) {
 		return "", "", false, false
 	}
-	if !emailWithinLimit(w, body.Email) {
+	email = CanonicalEmail(body.Email)
+	if !emailWithinLimit(w, email) {
 		return "", "", false, false
 	}
-	return body.Email, body.Password, false, true
+	return email, body.Password, false, true
+}
+
+// CanonicalEmail is the battery's single definition of email identity:
+// trimmed and lowercased. Every flow that looks an email up or stores
+// one (login, registration, magic links, OAuth matching, password
+// reset, the login rate-limiter key) canonicalizes at its ingestion
+// point, so custom UserStore implementations always receive canonical
+// input and the limiter key and the lookup key agree by construction
+// (#270). Hosts wrapping UserStore should use it too when they accept
+// emails from their own surfaces.
+func CanonicalEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // maxEmailLen is RFC 5321's 254-octet ceiling on a forward-path address.

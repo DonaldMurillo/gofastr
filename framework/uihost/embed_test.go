@@ -406,6 +406,14 @@ func TestEmbedExchangeIsIdempotent(t *testing.T) {
 	}
 }
 
+// flipChar returns a base64url character guaranteed to differ from c.
+func flipChar(c byte) string {
+	if c == 'A' {
+		return "B"
+	}
+	return "A"
+}
+
 // Which check failed is an oracle: it tells a caller probing with a captured
 // nonce exactly how far they got. Every rejection answers identically.
 func TestEmbedExchangeFailuresAreIndistinguishable(t *testing.T) {
@@ -428,10 +436,16 @@ func TestEmbedExchangeFailuresAreIndistinguishable(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 
+	// Tamper by SUBSTITUTING the final signature character with a
+	// different one, not by appending a fixed suffix: replacing the
+	// tail with a constant ("xy") made the tampered token equal the
+	// real one whenever the HMAC happened to end in that constant — a
+	// 1-in-4096 CI flake that presented as "tampered token accepted".
+	tampered := good[:len(good)-1] + flipChar(good[len(good)-1])
 	cases := map[string]string{
 		"garbage":             "not-a-token",
 		"wrong prefix":        "emg_" + strings.TrimPrefix(good, "emb_"),
-		"tampered":            good[:len(good)-2] + "xy",
+		"tampered":            tampered,
 		"wrong framed origin": good,
 		"already used":        spent,
 	}

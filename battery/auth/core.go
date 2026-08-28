@@ -182,7 +182,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// account existence by measuring per-account 429s either,
 		// every non-empty email gets the same treatment.
 		if c.loginLimitAccount != nil {
-			key := "account:" + strings.ToLower(strings.TrimSpace(email))
+			key := "account:" + CanonicalEmail(email)
 			allowed, retry := c.loginLimitAccount.AllowContext(r.Context(), key)
 			if !allowed {
 				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))

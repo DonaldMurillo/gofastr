@@ -266,6 +266,10 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONLimited(w, r, &body) {
 		return
 	}
+	// Canonicalize at ingestion (#270): the email rides inside the
+	// token and comes back out at consume time, so canonical-in means
+	// the eventual FindByEmail/CreateUser see canonical too.
+	body.Email = CanonicalEmail(body.Email)
 	if body.Email == "" {
 		writeAuthError(w, http.StatusBadRequest, "email is required")
 		return

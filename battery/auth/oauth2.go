@@ -378,6 +378,10 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, http.StatusInternalServerError, "failed to fetch user info")
 			return
 		}
+		// Canonicalize at the single consumer of every provider (#270):
+		// a provider reporting Bob@example.com must match an existing
+		// bob@example.com account instead of creating a duplicate.
+		info.Email = CanonicalEmail(info.Email)
 
 		// Bind the durable (provider, provider_id) link namespace to the
 		// STATE-VALIDATED registry key, NOT the provider-returned Name().
