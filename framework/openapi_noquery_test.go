@@ -27,7 +27,7 @@ func TestOpenAPIOmitsNoQueryFilterParams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := json.Marshal(openapi.EntityOpenAPI(reg, "Test", "1.0.0").Build())
+	raw, err := json.Marshal(openapi.EntityOpenAPI(reg, "Test", "1.0.0", nil).Build())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -31,7 +31,7 @@ func TestCRUDDisabledEntityEmitsNoPaths(t *testing.T) {
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	}.WithTimestamps(false))
 
-	doc := EntityOpenAPI(reg(off, on), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(off, on), "Test", "1.0.0", nil).Build()
 	paths, ok := asMap(doc["paths"])
 	if !ok {
 		t.Fatalf("spec has no paths object")
@@ -47,6 +47,34 @@ func TestCRUDDisabledEntityEmitsNoPaths(t *testing.T) {
 	}
 }
 
+// Pins #266: the crudMounted predicate is route reality — an entity
+// whose CRUD routes were never registered (e.g. the app has no DB) must
+// lose its generated paths even when Exposure.CRUD says "auto", while
+// its declared custom Endpoints stay documented (App mounts those
+// outside the CRUD branch).
+func TestCrudMountedPredicateOverridesExposure(t *testing.T) {
+	auto := entity.Define("posts", entity.EntityConfig{
+		Table:  "posts",
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+		Endpoints: []entity.Endpoint{
+			{Method: "POST", Path: "/posts/{id}/publish", Description: "publish"},
+		},
+	}.WithTimestamps(false))
+
+	notMounted := func(*entity.Entity) bool { return false }
+	doc := EntityOpenAPI(reg(auto), "Test", "1.0.0", notMounted).Build()
+	paths, ok := asMap(doc["paths"])
+	if !ok {
+		t.Fatalf("spec has no paths object")
+	}
+	if _, ok := paths["/posts"]; ok {
+		t.Errorf("predicate=false must drop generated CRUD paths; emitted %v", mapKeys(paths))
+	}
+	if _, ok := paths["/posts/{id}/publish"]; !ok {
+		t.Errorf("declared custom endpoint must stay documented; emitted %v", mapKeys(paths))
+	}
+}
+
 // A nil CRUD pointer means "auto", the router enables CRUD for it, so the
 // spec must too. Only an explicit false opts out.
 func TestNilCRUDStillEmitsPaths(t *testing.T) {
@@ -56,7 +84,7 @@ func TestNilCRUDStillEmitsPaths(t *testing.T) {
 		Exposure: &entity.ExposureConfig{},
 	}.WithTimestamps(false))
 
-	doc := EntityOpenAPI(reg(auto), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(auto), "Test", "1.0.0", nil).Build()
 	paths, ok := asMap(doc["paths"])
 	if !ok {
 		t.Fatalf("spec has no paths object")
@@ -77,7 +105,7 @@ func TestCRUDDisabledEntityKeepsSchema(t *testing.T) {
 		Exposure: &entity.ExposureConfig{CRUD: new(false)},
 	}.WithTimestamps(false))
 
-	doc := EntityOpenAPI(reg(off), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(off), "Test", "1.0.0", nil).Build()
 	components := getMap(t, doc, "components")
 	schemas, ok := asMap(components["schemas"])
 	if !ok {
@@ -107,7 +135,7 @@ func TestCRUDDisabledEntityKeepsEndpoints(t *testing.T) {
 		}},
 	}.WithTimestamps(false))
 
-	doc := EntityOpenAPI(reg(off), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(off), "Test", "1.0.0", nil).Build()
 	paths, ok := asMap(doc["paths"])
 	if !ok {
 		t.Fatalf("spec has no paths object")

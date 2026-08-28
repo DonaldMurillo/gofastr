@@ -43,7 +43,7 @@ func postsWithBareEndpoint() *entity.Entity {
 }
 
 func TestEndpointTypedRequestBody(t *testing.T) {
-	doc := EntityOpenAPI(reg(postsWithTypedEndpoint()), "t", "1").Build()
+	doc := EntityOpenAPI(reg(postsWithTypedEndpoint()), "t", "1", nil).Build()
 	paths := getMap(t, doc, "paths")
 	op := getMap(t, getMap(t, paths, "/posts/{id}/publish"), "post")
 
@@ -84,7 +84,7 @@ func resp200(t *testing.T, op map[string]any) map[string]any {
 }
 
 func TestEndpointBareUnchanged(t *testing.T) {
-	doc := EntityOpenAPI(reg(postsWithBareEndpoint()), "t", "1").Build()
+	doc := EntityOpenAPI(reg(postsWithBareEndpoint()), "t", "1", nil).Build()
 	paths := getMap(t, doc, "paths")
 	op := getMap(t, getMap(t, paths, "/posts/{id}/publish"), "post")
 

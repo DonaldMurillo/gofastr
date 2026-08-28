@@ -36,7 +36,7 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	doc := EntityOpenAPI(reg(ent), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(ent), "Test", "1.0.0", nil).Build()
 
 	// 1. Schema component properties.
 	comps := getMap(t, doc, "components")

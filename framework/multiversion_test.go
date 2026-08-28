@@ -105,7 +105,7 @@ func TestVersionedOpenAPI(t *testing.T) {
 		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "summary", Type: schema.Text}},
 	})
 
-	spec := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0")
+	spec := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0", nil)
 	doc := spec.Build()
 
 	paths, _ := doc["paths"].(map[string]map[string]any)

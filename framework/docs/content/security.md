@@ -270,7 +270,10 @@ verify-email, forgot-password, reset-password, /auth/accounts,
 auto-generated OpenAPI spec.
 
 `framework/openapi.EntityOpenAPI` walks the entity registry to emit
-schemas for entity CRUD routes. Plugin-registered HTTP handlers go
+schemas for entity CRUD routes; the app passes its route predicate so
+the served spec never documents CRUD paths registration did not mount
+(no DB, or `Exposure.CRUD=false` — declared custom endpoints stay
+documented either way). Plugin-registered HTTP handlers go
 through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no
 plugin → OpenAPI extension hook today.

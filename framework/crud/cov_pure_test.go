@@ -77,7 +77,7 @@ func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 		"posts": covRelEntity(),
 		"acct":  entity.Define("acct", entity.EntityConfig{Name: "acct", Table: "acct", Scope: &entity.ScopeConfig{MultiTenant: true, SoftDelete: true}, Fields: []schema.Field{{Name: "n", Type: schema.String}}}.WithTimestamps(false)),
 	}}
-	md := RegistryLLMMD(reg, "MyApp")
+	md := RegistryLLMMD(reg, "MyApp", nil)
 	for _, want := range []string{"MyApp: API Reference", "posts", "acct", "soft-delete", "multi-tenant", "Quick Reference"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("RegistryLLMMD missing %q", want)
@@ -87,7 +87,7 @@ func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 
 func TestRegistryLLMMD_EmptyAndDefaultTitle(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{}}
-	md := RegistryLLMMD(reg, "")
+	md := RegistryLLMMD(reg, "", nil)
 	if !strings.Contains(md, "API: API Reference") {
 		t.Errorf("default title missing: %s", md[:40])
 	}

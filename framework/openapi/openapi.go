@@ -31,7 +31,14 @@ import (
 // and its deterministic grader, and ranked fixing it as the most valuable
 // change available. Repeating the prefix in `servers` as well would double it
 // to /api/api/posts for any client that composes the two, so it does not.
-func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...string) *openapi.Spec {
+//
+// crudMounted reports whether an entity's auto-CRUD routes were actually
+// registered. The app passes its route predicate (DB attached AND
+// Exposure.CRUD), so the spec cannot advertise CRUD paths registration
+// never mounted — the Exposure flag alone misses the no-DB case (#266).
+// nil falls back to the Exposure-only check. Declared custom Endpoints
+// are documented either way; App mounts those outside its CRUD branch.
+func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
 	apiPrefix := ""
 	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
@@ -184,6 +191,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		// neither CRUD nor endpoints would otherwise render as an empty
 		// group.
 		crudExposed := ent.Config.Exposure.CRUD == nil || *ent.Config.Exposure.CRUD
+		if crudMounted != nil {
+			crudExposed = crudMounted(ent)
+		}
 		if !crudExposed {
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")

@@ -32,7 +32,7 @@ func TestOpenAPI_DeterministicAcrossBuilds(t *testing.T) {
 	}
 
 	render := func(reg *Registry) []byte {
-		spec := openapi.EntityOpenAPI(reg, "Test", "1.0.0")
+		spec := openapi.EntityOpenAPI(reg, "Test", "1.0.0", nil)
 		raw, err := json.Marshal(spec.Build())
 		if err != nil {
 			t.Fatal(err)

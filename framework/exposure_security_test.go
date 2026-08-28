@@ -74,7 +74,7 @@ func TestEntityLLMMDHandler_RequiresAuth(t *testing.T) {
 func TestRegistryLLMMDHandler_RequiresAuth(t *testing.T) {
 	app := securityExposureApp(t)
 	rec := httptest.NewRecorder()
-	crudpkg.RegistryLLMMDHandler(app.Registry, "Test App").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/llm.md", nil))
+	crudpkg.RegistryLLMMDHandler(app.Registry, "Test App", nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/llm.md", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("SECURITY: [llmmd] unauthenticated registry llm.md returned %d. Attack: global schema disclosure without auth.", rec.Code)
 	}
@@ -93,7 +93,7 @@ func TestDebugStatsEndpoint_RequiresAuth(t *testing.T) {
 
 func TestOpenAPISpecHandler_RequiresAuth(t *testing.T) {
 	app := securityExposureApp(t)
-	spec := openapipkg.EntityOpenAPI(app.Registry, "Test App", "1.0.0")
+	spec := openapipkg.EntityOpenAPI(app.Registry, "Test App", "1.0.0", nil)
 
 	rec := httptest.NewRecorder()
 	coreoa.Handler(spec).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
@@ -104,7 +104,7 @@ func TestOpenAPISpecHandler_RequiresAuth(t *testing.T) {
 
 func TestDocsHandler_RequiresAuth(t *testing.T) {
 	app := securityExposureApp(t)
-	spec := openapipkg.EntityOpenAPI(app.Registry, "Test App", "1.0.0")
+	spec := openapipkg.EntityOpenAPI(app.Registry, "Test App", "1.0.0", nil)
 
 	rec := httptest.NewRecorder()
 	coreoa.DocsHandler(spec, "/api/docs", false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/docs/", nil))

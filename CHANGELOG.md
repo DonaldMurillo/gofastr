@@ -9,6 +9,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Generated API docs describe routes that exist** (#266, sibling of
+  the v0.73.0 banner fix): `/openapi.json` and `/api/llm.md` documented
+  auto-CRUD endpoints for entities whose routes registration never
+  mounted (no DB attached, or in llm.md's case even `Exposure.CRUD=
+  false`). Both generators now take the app's route predicate: CRUD-less
+  entities keep their declared custom endpoints (unlinked in the llm.md
+  index — the per-entity page rides the CRUD mount), and entities with
+  no routes at all are omitted. **BREAKING for direct callers**:
+  `openapi.EntityOpenAPI` and `crud.RegistryLLMMD`/`RegistryLLMMDHandler`
+  gained a `crudMounted func(*entity.Entity) bool` parameter — pass nil
+  for the previous Exposure-only behavior (the `framework.EntityOpenAPI`
+  re-export is unchanged and passes nil).
+
 - **`battery/auth` treats emails as case-insensitive end-to-end**
   (#270): `Owner@Example.com` and `owner@example.com` were two
   different accounts — login failed across casings, OAuth created

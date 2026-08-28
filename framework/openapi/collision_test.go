@@ -31,5 +31,5 @@ func TestSchemaNameCollisionPanics(t *testing.T) {
 			t.Fatal("EntityOpenAPI with colliding schema names did not panic")
 		}
 	}()
-	EntityOpenAPI(reg(versioned, shadow), "Test", "1.0.0")
+	EntityOpenAPI(reg(versioned, shadow), "Test", "1.0.0", nil)
 }

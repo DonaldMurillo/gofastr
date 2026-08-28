@@ -91,7 +91,7 @@ func TestLLMMDIndexHidesUngrantedEntities(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/llm.md", nil)
 	req = reqWithRolesOnly(req, "u1") // signed in, holds no orders:read grant
-	RegistryLLMMDHandler(reg, "Test API").ServeHTTP(rec, req)
+	RegistryLLMMDHandler(reg, "Test API", nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("index refused an authenticated caller: %d %s", rec.Code, rec.Body.String())
@@ -116,7 +116,7 @@ func TestLLMMDIndexShowsGrantedEntity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/llm.md", nil)
 	req = reqWithGrant(req, "u1", "orders:read")
-	RegistryLLMMDHandler(reg, "Test API").ServeHTTP(rec, req)
+	RegistryLLMMDHandler(reg, "Test API", nil).ServeHTTP(rec, req)
 
 	if !strings.Contains(rec.Body.String(), "orders") {
 		t.Error("index hid orders from a caller who holds orders:read")

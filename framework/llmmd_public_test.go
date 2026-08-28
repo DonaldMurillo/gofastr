@@ -11,10 +11,12 @@ import (
 )
 
 // llmmdApp builds an app with one entity so the /api/llm.md index route
-// registers (hasAPI gates it on a non-empty registry).
+// registers (hasAPI gates it on a non-empty registry). It attaches a DB:
+// the index documents route reality (#266), and without a DB no entity
+// has CRUD routes to document.
 func llmmdApp(t *testing.T, opts ...AppOption) *App {
 	t.Helper()
-	app := NewApp(opts...)
+	app := NewApp(append([]AppOption{WithDB(bannerTestDB(t))}, opts...)...)
 	app.Entity("posts", entity.EntityConfig{
 		Table:  "posts",
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},

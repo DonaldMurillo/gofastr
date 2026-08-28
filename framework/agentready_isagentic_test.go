@@ -89,6 +89,10 @@ func TestAgentReady_IsAgentic(t *testing.T) {
 		WithConfig(AppConfig{Name: "isagentic"}),
 		WithMCP(),
 		WithPublicOpenAPI(),
+		// The spec documents route reality (#266): without a DB the
+		// entity has no CRUD routes and the self-describing check would
+		// rightly see an empty paths object.
+		WithDB(bannerTestDB(t)),
 	)
 	fwApp.Entity("posts", entity.EntityConfig{
 		Table:  "posts",
