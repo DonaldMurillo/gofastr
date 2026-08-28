@@ -85,6 +85,64 @@ func TestTimeoutFireLogsMethodAndPattern(t *testing.T) {
 	}
 }
 
+func TestTimeoutStreamingPastDeadlineDoesNotLog(t *testing.T) {
+	// A flushed response sheds the deadline; the timer still fires but
+	// no 504 is written, so no "request timeout" line may appear.
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	handler := Timeout(20 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.(http.Flusher).Flush()
+		time.Sleep(80 * time.Millisecond)
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, stampedRequest(20*time.Millisecond))
+	if strings.Contains(buf.String(), "request timeout") {
+		t.Errorf("streaming response must not log a timeout:\n%s", buf.String())
+	}
+}
+
+func TestTimeoutClientDisconnectDoesNotLog(t *testing.T) {
+	// A client that leaves mid-handler abandons the request through the
+	// same path as the deadline, but it is not a timeout and must not
+	// log as one.
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	handler := Timeout(5 * time.Second)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	req := stampedRequest(5 * time.Second).WithContext(WithRouteTimeout(ctx, RouteTimeout{
+		Method: "GET", Pattern: "/reports/{id}", Budget: 5 * time.Second,
+	}))
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+	}()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if strings.Contains(buf.String(), "request timeout") {
+		t.Errorf("client disconnect must not log a timeout:\n%s", buf.String())
+	}
+}
+
+func TestTimeoutZeroBudgetExempts(t *testing.T) {
+	handler := Timeout(30 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(120 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, stampedRequest(0))
+	if rec.Code != http.StatusOK {
+		t.Errorf("zero budget means no timeout (net/http convention), got %d", rec.Code)
+	}
+}
+
 func TestRouteTimeoutFromContextRoundTrip(t *testing.T) {
 	rt := RouteTimeout{Method: "POST", Pattern: "/x", Budget: time.Minute}
 	got, ok := RouteTimeoutFromContext(WithRouteTimeout(context.Background(), rt))

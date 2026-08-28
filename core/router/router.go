@@ -461,8 +461,10 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Router) Prefix() string { return r.prefix }
 
 // NoTimeout, passed to SetTimeout or SetRouteTimeout, exempts the
-// route(s) from the request timeout entirely. Prefer a finite budget;
-// streaming handlers already shed the deadline on first Flush.
+// route(s) from the request timeout entirely. A zero duration means the
+// same thing (net/http convention: zero disables the deadline; see
+// HTTPServerTimeoutsConfig). Prefer a finite budget; streaming handlers
+// already shed the deadline on first Flush.
 const NoTimeout time.Duration = -1
 
 // SetTimeout sets the request-timeout budget for every route registered
@@ -481,9 +483,11 @@ func (r *Router) SetTimeout(d time.Duration) {
 
 // SetRouteTimeout sets the request-timeout budget for one route. The
 // pattern is relative to this router, exactly as passed to Handle; the
-// override is keyed by the registered "METHOD /full/pattern". Pass
-// NoTimeout to exempt the route. See SetTimeout for how the value is
-// consumed.
+// override is keyed by the registered "METHOD /full/pattern" and must
+// byte-match it — a key that matches no registered route (typo'd
+// wildcard name, wrong method, wrong router) is silently inert and the
+// route keeps the app-wide default. Pass NoTimeout (or zero) to exempt
+// the route. See SetTimeout for how the value is consumed.
 func (r *Router) SetRouteTimeout(method, pattern string, d time.Duration) {
 	key := method + " " + r.prefix + pattern
 	root := r.root

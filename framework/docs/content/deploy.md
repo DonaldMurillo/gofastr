@@ -236,7 +236,8 @@ app.Router().SetRouteTimeout("POST", "/exports", router.NoTimeout)
 ```
 
 When the deadline fires, the 504 logs a structured `request timeout`
-line naming the method, path, matched pattern, and budget. Two caveats:
+line naming the method, path, budget, and — when a route or group
+override is configured — the matched pattern. Two caveats:
 the server-level `WriteTimeout` above still bounds the whole response,
 so a route budget beyond it needs `WithHTTPServerTimeouts` raised too;
 and `DisableRequestTimeout` removes the middleware entirely, taking the

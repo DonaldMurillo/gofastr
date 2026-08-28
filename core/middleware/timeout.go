@@ -214,8 +214,9 @@ func (c *timeoutCtx) cancel(err error) {
 
 // RouteTimeout is the per-route request-timeout resolution stamped onto
 // the request context by the router before the middleware chain runs.
-// Budget > 0 replaces the app-wide duration for this request; a negative
-// Budget (router.NoTimeout) exempts the request from the deadline
+// Budget > 0 replaces the app-wide duration for this request; Budget <= 0
+// (router.NoTimeout, or an explicit zero, matching net/http where a zero
+// duration means "no timeout") exempts the request from the deadline
 // entirely. Method and Pattern identify the matched route (the
 // registered pattern, not the request path) so the timeout log line
 // points at the route.
@@ -274,7 +275,7 @@ func Timeout(d time.Duration) Middleware {
 			effective := d
 			rt, hasRoute := RouteTimeoutFromContext(r.Context())
 			if hasRoute {
-				if rt.Budget < 0 {
+				if rt.Budget <= 0 {
 					next.ServeHTTP(w, r)
 					return
 				}
