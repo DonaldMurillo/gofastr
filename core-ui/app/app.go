@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -261,6 +262,24 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 //   - DecisionRenderAlt: the alt component took the place of the
 //     screen's component; HTML holds the full document.
 //   - DecisionBlock: Status holds the HTTP status code; HTML is empty.
+//
+// injectTagCount reports how many inject-tagged fields a component
+// type declares (directly, for struct types). Used to distinguish a
+// legitimately stateless value component from a value struct that
+// wanted injection and would otherwise render with nil services.
+func injectTagCount(t reflect.Type) int {
+	if t == nil || t.Kind() != reflect.Struct {
+		return 0
+	}
+	n := 0
+	for i := 0; i < t.NumField(); i++ {
+		if _, ok := t.Field(i).Tag.Lookup("inject"); ok {
+			n++
+		}
+	}
+	return n
+}
+
 func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
@@ -292,9 +311,21 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		}
 	}
 
-	// Inject DI services into component fields tagged `inject:""`
-	if err := a.Inject(comp); err != nil {
-		return RenderResult{}, fmt.Errorf("app: DI injection failed for %q: %w", path, err)
+	// Inject DI services into component fields tagged `inject:""`.
+	// Value components are the documented stateless form (newInstance
+	// returns them as-is) and cannot receive injection, so DI is
+	// skipped for them — unless the value struct ASKS for injection
+	// via inject tags, which is a wiring mistake that must fail with
+	// the type and the fix named, not a generic DI error at render
+	// time (#259).
+	if cv := reflect.ValueOf(comp); cv.Kind() == reflect.Pointer {
+		if err := a.Inject(comp); err != nil {
+			return RenderResult{}, fmt.Errorf("app: DI injection failed for %q: %w", path, err)
+		}
+	} else if n := injectTagCount(reflect.TypeOf(comp)); n > 0 {
+		return RenderResult{}, fmt.Errorf(
+			"app: screen component for %q has %d inject-tagged field(s) but was registered by value as %T; register a pointer (&%T{...}) so DI can fill them",
+			path, n, comp, comp)
 	}
 
 	// Run the component's Load hook if present. Loaders run AFTER DI so they can
