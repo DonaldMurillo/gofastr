@@ -688,6 +688,7 @@ func TestSkipLinkExtraAttrsOnRoot(t *testing.T) {
 func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := Button(ButtonConfig{Label: "Save", ExtraAttrs: map[string]string{
 		"data-test": "hook", "type": "evil", "Class": "evil",
+		"aria-label": "evil", "data-fui-comp": "evil",
 	}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
@@ -696,10 +697,8 @@ func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	if !strings.Contains(root, `type="button"`) {
 		t.Errorf("button type lost its framework value:\n%s", root)
 	}
-	for _, banned := range []string{"evil", `aria-label="evil"`} {
-		if strings.Contains(root, banned) {
-			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
-		}
+	if strings.Contains(root, "evil") {
+		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
 	}
 }
 
@@ -739,6 +738,26 @@ func TestLinkButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	for _, banned := range []string{"evil", "javascript:"} {
 		if strings.Contains(root, banned) {
 			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
+		}
+	}
+}
+
+func TestLinkButtonExternalDropsCaseVariantTargetRel(t *testing.T) {
+	// "TARGET"/"REL" survive a lowercase-only overwrite as distinct map
+	// keys, sort BEFORE the owned lowercase attrs in the rendered tag,
+	// and first-occurrence-wins in the parser — so without protection a
+	// case-variant clobbers External's noopener contract.
+	h := LinkButton(LinkButtonConfig{
+		Label: "Docs", Href: "https://example.com", External: true,
+		ExtraAttrs: map[string]string{"TARGET": "evil", "REL": "evil"},
+	})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if strings.Contains(root, "evil") {
+		t.Errorf("case-variant target/rel survived on an External link:\n%s", root)
+	}
+	for _, want := range []string{`target="_blank"`, `rel="noopener noreferrer"`} {
+		if !strings.Contains(root, want) {
+			t.Errorf("External link missing %s:\n%s", want, root)
 		}
 	}
 }

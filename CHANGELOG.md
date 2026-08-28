@@ -9,14 +9,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
-- **The last 23 `framework/ui` components join the ExtraAttrs
-  sanitization contract** (#262, completing the migration PR #261
-  started): AnimatedCounter, Banner, Button, Carousel, Container,
+- **The last 23 legacy `framework/ui` files (24 components) join the
+  ExtraAttrs sanitization contract** (#262, completing the migration
+  PR #261 started): AnimatedCounter, Banner, Button, Carousel, Container,
   FilterToolbar, Gallery, Link, LinkButton, Markdown, Menu items,
   NotificationBell, NumberInput, PasswordInput, ProgressSteps,
   RangeSlider, SearchInput, Select, Slider, TextArea, Timeline,
   TableOfContents, Toolbar, and Workbench now route caller extras
-  through `html.SafeExtraAttrs`. A caller-supplied ExtraAttrs key can
+  through `html.SafeExtraAttrs` (Button and Link through the carrier
+  variant below). A caller-supplied ExtraAttrs key can
   no longer override the attributes a component derives from its
   config (a Slider's `min`/`max`/`step`/`value`, a FilterToolbar's
   sanitized form `action`, a TextArea's `maxlength`, a Workbench's

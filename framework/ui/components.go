@@ -636,7 +636,16 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "href")
+	extraProtected := []string{"href"}
+	if cfg.External {
+		// External owns target/rel, so their case-variants must drop
+		// too: an unprotected "TARGET"/"REL" entry sorts before the
+		// owned lowercase attr in the rendered tag and wins the
+		// parser's first-occurrence fold, clobbering the noopener
+		// contract.
+		extraProtected = append(extraProtected, "target", "rel")
+	}
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, extraProtected...)
 	if cfg.External {
 		if extra == nil {
 			extra = html.Attrs{}

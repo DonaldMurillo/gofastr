@@ -141,3 +141,17 @@ func TestNotificationBellExtraAttrsCannotOverrideOwned(t *testing.T) {
 		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
 	}
 }
+
+func TestNotificationBellZeroUnreadDropsDescribedbyVariant(t *testing.T) {
+	// With no unread count the component never re-asserts
+	// aria-describedby after the merge, so this state proves the
+	// sanitizer's case-insensitive drop alone keeps the attr out.
+	trigger, _ := NotificationBell(NotificationBellConfig{
+		Name: "nb", Label: "Notifications",
+		ExtraAttrs: map[string]string{"ARIA-DESCRIBEDBY": "evil"},
+	})
+	root := string(trigger)[:strings.Index(string(trigger), ">")+1]
+	if strings.Contains(strings.ToLower(root), "aria-describedby") {
+		t.Errorf("zero-unread bell must carry no aria-describedby:\n%s", root)
+	}
+}

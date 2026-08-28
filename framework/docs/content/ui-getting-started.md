@@ -564,7 +564,9 @@ Two documented exceptions forward more than the contract's default.
 attributes, which the blueprint generator's `data-entity-form` +
 RPC-wiring pattern relies on. `ButtonConfig` and `LinkConfig` are
 *wiring carriers*: they drop their owned keys like any component but
-keep `data-fui-*`, because attaching `interactive.Action.Attrs()` to a
+keep `data-fui-*` — except `data-fui-comp`, the style-scope marker,
+which drops case-insensitively — because attaching
+`interactive.Action.Attrs()` to a
 button's ExtraAttrs is the documented way to wire a click RPC (the
 resource UI and the admin battery both do it), and an ActionRef link
 ships an href fallback plus a `data-fui-rpc` upgrade the same way.

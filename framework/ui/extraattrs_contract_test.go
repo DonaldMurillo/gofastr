@@ -222,7 +222,7 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 			if extraAttrsRawLegacy[name] {
 				return true
 			}
-			t.Errorf("%s: raw ExtraAttrs read at %s; route it through html.SafeExtraAttrs (issue #262 tracks the legacy allow-list)",
+			t.Errorf("%s: raw ExtraAttrs read at %s; route it through html.SafeExtraAttrs (or html.SafeCarrierAttrs for a pinned wiring carrier — see safeCarrierAllowed)",
 				name, fset.Position(sel.Pos()))
 			return true
 		})
