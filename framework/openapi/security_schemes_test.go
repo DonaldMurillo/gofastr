@@ -69,7 +69,7 @@ func TestGatedEntityDeclaresSchemes(t *testing.T) {
 		{Name: "title", Type: schema.String, Required: true},
 	},
 	})
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 
 	schemes := securitySchemesFor(t, doc)
 	if schemes == nil {
@@ -114,7 +114,7 @@ func TestGatedOpsCarryBothSchemes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := EntityOpenAPI(reg(tc.ent), "Test", "1.0.0").Build()
+			doc := EntityOpenAPI(reg(tc.ent), "Test", "1.0.0", nil).Build()
 			for label, op := range allGatedOps(t, doc, tc.table) {
 				if !hasOpScheme(op, "bearerAuth") {
 					t.Errorf("%s op %q missing bearerAuth in security", tc.name, label)
@@ -134,7 +134,7 @@ func TestUngatedEntityHasNoSecurity(t *testing.T) {
 		{Name: "title", Type: schema.String},
 	},
 	})
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 
 	if schemes := securitySchemesFor(t, doc); schemes != nil {
 		t.Errorf("ungated entity: expected no securitySchemes, got %v", schemes)
@@ -155,7 +155,7 @@ func TestUngatedEntityHasNoSecurity(t *testing.T) {
 // Custom (ent.Config.Endpoints) operations are not gated today and must not
 // gain a spurious security block.
 func TestCustomEndpointCarriesNoSecurity(t *testing.T) {
-	doc := EntityOpenAPI(reg(postsWithTypedEndpoint()), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(postsWithTypedEndpoint()), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	op := getMap(t, getMap(t, paths, "/posts/{id}/publish"), "post")
 	if _, ok := op["security"]; ok {

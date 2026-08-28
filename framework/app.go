@@ -2919,7 +2919,7 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0", a.apiPrefix())
+		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.apiPrefix())
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {
@@ -2941,7 +2941,7 @@ func (a *App) Start(addr string) error {
 			// per-request-filtered crud handler, and per-entity
 			// /{table}/llm.md routes keep their own scope gate either way.
 			if a.Config.PublicOpenAPI {
-				doc := []byte(crud.RegistryLLMMD(a.Registry, appName))
+				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCRUDEnabled))
 				a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Cache-Control", "no-store")
 					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -2949,7 +2949,7 @@ func (a *App) Start(addr string) error {
 					w.Write(doc)
 				}))
 			} else {
-				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName))
+				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCRUDEnabled))
 			}
 			hasLLMMD = true
 		}

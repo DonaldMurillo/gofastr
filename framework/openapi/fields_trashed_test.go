@@ -14,7 +14,7 @@ func TestListGetDeclareFields(t *testing.T) {
 		Table:  "posts",
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	})
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 
 	listOp := getMap(t, getMap(t, paths, "/posts"), "get")
@@ -32,7 +32,7 @@ func TestListGetDeclareFields(t *testing.T) {
 // list op only for soft-delete entities.
 func TestSoftDeleteListDeclaresTrashed(t *testing.T) {
 	soft := entity.Define("notes", entity.EntityConfig{Table: "notes", Scope: &entity.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{{Name: "title", Type: schema.String}}})
-	doc := EntityOpenAPI(reg(soft), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(soft), "Test", "1.0.0", nil).Build()
 	listOp := getMap(t, getMap(t, getMap(t, doc, "paths"), "/notes"), "get")
 	if findParam(listOp["parameters"], "trashed") == nil {
 		t.Error("soft-delete list op missing 'trashed' parameter")
@@ -46,7 +46,7 @@ func TestNonSoftDeleteHasNoTrashed(t *testing.T) {
 		Table:  "posts",
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	})
-	doc := EntityOpenAPI(reg(hard), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(hard), "Test", "1.0.0", nil).Build()
 	listOp := getMap(t, getMap(t, getMap(t, doc, "paths"), "/posts"), "get")
 	if findParam(listOp["parameters"], "trashed") != nil {
 		t.Error("non-soft-delete list op should not declare 'trashed'")

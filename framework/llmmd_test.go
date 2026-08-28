@@ -205,7 +205,7 @@ func TestRegistryLLMMD_Index(t *testing.T) {
 		},
 	)
 
-	md := crud.RegistryLLMMD(reg, "Test App")
+	md := crud.RegistryLLMMD(reg, "Test App", nil)
 
 	if !strings.Contains(md, "# Test App") {
 		t.Error("expected app title header")
@@ -303,7 +303,7 @@ func TestRegistryLLMMDHandler_HTTP(t *testing.T) {
 
 	// RegistryLLMMDHandler now requires an authenticated context. See
 	// exposure_security_test.go::TestRegistryLLMMDHandler_RequiresAuth.
-	h := crud.RegistryLLMMDHandler(reg, "Test")
+	h := crud.RegistryLLMMDHandler(reg, "Test", nil)
 	req := httptest.NewRequest("GET", "/llm.md", nil)
 	req = req.WithContext(handlerpkg.SetUser(req.Context(), map[string]string{"id": "test-user"}))
 	rec := httptest.NewRecorder()

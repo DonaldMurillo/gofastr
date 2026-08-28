@@ -52,7 +52,7 @@ func TestEntityOpenAPI_PreservesReadOnly(t *testing.T) {
 					field,
 				},
 			}.WithTimestamps(false))
-			spec := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0").Build()
+			spec := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0", nil).Build()
 			components := spec["components"].(map[string]any)
 			schemas := components["schemas"].(map[string]map[string]any)
 			ent := schemas[name]

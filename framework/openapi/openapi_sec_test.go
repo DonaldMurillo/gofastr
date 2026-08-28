@@ -166,7 +166,7 @@ func TestOwnerScopedOpsDeclare401(t *testing.T) {
 		{Name: "title", Type: schema.String, Required: true},
 	},
 	})
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	for label, op := range gatedOpsFor(t, doc, "notes") {
 		if !hasResponse(op, "401") {
 			t.Errorf("owner-scoped op %q missing 401 response", label)
@@ -179,7 +179,7 @@ func TestMultiTenantOpsDeclare401(t *testing.T) {
 		{Name: "amount", Type: schema.Int, Required: true},
 	},
 	})
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	for label, op := range gatedOpsFor(t, doc, "invoices") {
 		if !hasResponse(op, "401") {
 			t.Errorf("multi-tenant op %q missing 401 response", label)
@@ -194,7 +194,7 @@ func TestUnguardedOpsHaveNo401(t *testing.T) {
 		{Name: "title", Type: schema.String},
 	},
 	})
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	base := getMap(t, paths, "/public_posts")
 	get := getMap(t, base, "get")
@@ -214,7 +214,7 @@ func TestBoolFieldOmitsRangeFilters(t *testing.T) {
 			{Name: "active", Type: schema.Bool},
 		},
 	}.WithTimestamps(false))
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	base := getMap(t, paths, "/flags")
 	get := getMap(t, base, "get")
@@ -238,7 +238,7 @@ func TestJSONFieldOmitsRangeFilters(t *testing.T) {
 			{Name: "payload", Type: schema.JSON},
 		},
 	}.WithTimestamps(false))
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	base := getMap(t, paths, "/blobs")
 	get := getMap(t, base, "get")
@@ -272,7 +272,7 @@ func rbacOnlyEntity() *entity.Entity {
 
 func TestRBACAccessOpsDeclare401And403(t *testing.T) {
 	e := rbacOnlyEntity()
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	for label, op := range gatedOpsFor(t, doc, "rbac_items") {
 		if !hasResponse(op, "401") {
 			t.Errorf("RBAC-only op %q missing 401 response", label)
@@ -285,7 +285,7 @@ func TestRBACAccessOpsDeclare401And403(t *testing.T) {
 
 func TestBatchOpsDeclare401And403WhenGated(t *testing.T) {
 	e := rbacOnlyEntity()
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	batchPath := getMap(t, paths, "/rbac_items/_batch")
 	for _, method := range []string{"post", "patch", "delete"} {
@@ -301,7 +301,7 @@ func TestBatchOpsDeclare401And403WhenGated(t *testing.T) {
 
 func TestSSEOpDeclares401And403WhenGated(t *testing.T) {
 	e := rbacOnlyEntity()
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	eventsPath := getMap(t, paths, "/rbac_items/_events")
 	get := getMap(t, eventsPath, "get")
@@ -319,7 +319,7 @@ func TestUnguardedBatchAndSSEHaveNo401(t *testing.T) {
 		{Name: "val", Type: schema.Int},
 	},
 	}.WithTimestamps(false))
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	batchPath := getMap(t, paths, "/pub_items/_batch")
 	post := getMap(t, batchPath, "post")
@@ -343,7 +343,7 @@ func TestComparableFieldsKeepRangeFilters(t *testing.T) {
 			{Name: "label", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 	base := getMap(t, paths, "/metrics")
 	get := getMap(t, base, "get")

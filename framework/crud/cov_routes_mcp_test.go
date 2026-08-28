@@ -206,7 +206,7 @@ func TestLLMMDHandler_AuthGate(t *testing.T) {
 
 func TestRegistryLLMMDHandler_AuthGate(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{"posts": covRelEntity()}}
-	h := RegistryLLMMDHandler(reg, "App")
+	h := RegistryLLMMDHandler(reg, "App", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/llm.md", nil))
 	if rec.Code != http.StatusUnauthorized {

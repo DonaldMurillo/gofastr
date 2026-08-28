@@ -275,12 +275,18 @@ func EntityLLMMD(ent *entity.Entity) string {
 }
 
 // RegistryLLMMD generates a top-level LLM-friendly markdown index that
-// lists every registered entity with a link to its detailed llm.md page. It
-// lists every entity, callers that serve this to a request (the /api/llm.md
-// index) MUST filter per request via [registryLLMMD] so the index does not
-// disclose entities the caller cannot read.
-func RegistryLLMMD(registry entity.Registry, appName string) string {
-	return registryLLMMD(registry, appName, nil)
+// lists every registered entity with a link to its detailed llm.md page.
+// crudMounted reports whether the entity's auto-CRUD routes were actually
+// registered (the app passes its route predicate: DB attached AND
+// Exposure.CRUD); nil documents standard CRUD for every entity, the
+// pre-#266 behavior. Entities without CRUD routes list only their declared
+// custom endpoints, and entities with no routes at all are omitted — the
+// index must describe routes that exist. It lists every (routed) entity;
+// callers that serve this to a request (the /api/llm.md index) MUST filter
+// per request via [registryLLMMD] so the index does not disclose entities
+// the caller cannot read.
+func RegistryLLMMD(registry entity.Registry, appName string, crudMounted func(*entity.Entity) bool) string {
+	return registryLLMMD(registry, appName, nil, crudMounted)
 }
 
 // registryLLMMD renders the index, keeping only entities for which keep
@@ -288,7 +294,7 @@ func RegistryLLMMD(registry entity.Registry, appName string) string {
 // per-request keep that mirrors List's read-scope predicate (owner, tenant,
 // RBAC) so an authenticated caller with no grant for an entity gets 403 on
 // its rows AND never sees its name, base path or flags in the index.
-func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.Entity) bool) string {
+func registryLLMMD(registry entity.Registry, appName string, keep, crudMounted func(*entity.Entity) bool) string {
 	var b strings.Builder
 	title := appName
 	if title == "" {
@@ -310,6 +316,17 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 		if keep != nil && !keep(ent) {
 			continue
 		}
+		// crudMounted mirrors route registration: nil (direct callers)
+		// documents standard CRUD as before; false lists only declared
+		// custom endpoints; an entity with no routes at all is omitted.
+		crud := crudMounted == nil || crudMounted(ent)
+		numEndpoints := len(ent.Config.Endpoints)
+		if crud {
+			numEndpoints += 8 // standard CRUD + batch + events
+		}
+		if numEndpoints == 0 {
+			continue
+		}
 		table := ent.GetTable()
 		basePath := "/" + table
 		llmLink := "/" + table + "/llm.md"
@@ -317,8 +334,6 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 			basePath = ent.Version + basePath
 			llmLink = ent.Version + "/" + table + "/llm.md"
 		}
-		numEndpoints := 8 // standard CRUD + batch + events
-		numEndpoints += len(ent.Config.Endpoints)
 		desc := ""
 		if ent.Config.Scope.SoftDelete {
 			desc = "soft-delete"
@@ -329,7 +344,13 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 			}
 			desc += "multi-tenant"
 		}
-		fmt.Fprintf(&b, "| [%s](%s) | `%s` | %d | %s |\n", ent.GetName(), llmLink, basePath, numEndpoints, desc)
+		if crud {
+			fmt.Fprintf(&b, "| [%s](%s) | `%s` | %d | %s |\n", ent.GetName(), llmLink, basePath, numEndpoints, desc)
+		} else {
+			// The per-entity llm.md route rides the CRUD mount; without
+			// it the link would 404, so list the name unlinked.
+			fmt.Fprintf(&b, "| %s | `%s` | %d | %s |\n", ent.GetName(), basePath, numEndpoints, desc)
+		}
 	}
 	b.WriteString("\n")
 
@@ -407,7 +428,7 @@ func LLMMDHandlerFor(ch *CrudHandler) http.Handler {
 // instead disclosed every entity's name, base path, endpoint count and
 // soft-delete/multi-tenant flags to an authenticated caller who would get
 // 403 on the rows. The index is the disclosure, not the row.
-func RegistryLLMMDHandler(registry entity.Registry, appName string) http.Handler {
+func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMounted func(*entity.Entity) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		ctx := r.Context()
@@ -417,7 +438,7 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string) http.Handler
 		}
 		md := registryLLMMD(registry, appName, func(ent *entity.Entity) bool {
 			return canListEntity(ctx, ent)
-		})
+		}, crudMounted)
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
 		w.Write([]byte(md))

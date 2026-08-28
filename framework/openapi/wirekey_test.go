@@ -26,7 +26,7 @@ func TestWireNameInFieldsDescAndRequestExclusion(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	paths := getMap(t, doc, "paths")
 
 	// --- ?fields= description must advertise the WireName, not camelCase ---
