@@ -212,6 +212,35 @@ func (c *timeoutCtx) cancel(err error) {
 	close(c.done)
 }
 
+// RouteTimeout is the per-route request-timeout resolution stamped onto
+// the request context by the router before the middleware chain runs.
+// Budget > 0 replaces the app-wide duration for this request; a negative
+// Budget (router.NoTimeout) exempts the request from the deadline
+// entirely. Method and Pattern identify the matched route (the
+// registered pattern, not the request path) so the timeout log line
+// points at the route.
+type RouteTimeout struct {
+	Method  string
+	Pattern string
+	Budget  time.Duration
+}
+
+type routeTimeoutKey struct{}
+
+// WithRouteTimeout returns a context carrying the route's timeout
+// resolution. Called by core/router when a route or group override is
+// configured; the Timeout middleware consumes it.
+func WithRouteTimeout(ctx context.Context, rt RouteTimeout) context.Context {
+	return context.WithValue(ctx, routeTimeoutKey{}, rt)
+}
+
+// RouteTimeoutFromContext reports the route's timeout resolution, if the
+// router stamped one.
+func RouteTimeoutFromContext(ctx context.Context) (RouteTimeout, bool) {
+	rt, ok := ctx.Value(routeTimeoutKey{}).(RouteTimeout)
+	return rt, ok
+}
+
 // Timeout returns middleware that enforces a deadline on request processing.
 // If the downstream handler does not complete within the given duration,
 // a 504 Gateway Timeout response is returned.
@@ -233,9 +262,24 @@ func (c *timeoutCtx) cancel(err error) {
 // Handlers that never start streaming keep the hard guarantee: a hung
 // handler gets its 504 at the deadline, with the context completed as
 // DeadlineExceeded.
+//
+// Per-route budgets: when the router stamped a RouteTimeout on the
+// request context (a route or group override is configured), its Budget
+// replaces d for this request; a negative Budget skips the deadline
+// entirely. When the deadline fires on a buffered response, a structured
+// warning names the method, path, matched pattern, and budget.
 func Timeout(d time.Duration) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			effective := d
+			rt, hasRoute := RouteTimeoutFromContext(r.Context())
+			if hasRoute {
+				if rt.Budget < 0 {
+					next.ServeHTTP(w, r)
+					return
+				}
+				effective = rt.Budget
+			}
 			ctx := newTimeoutCtx(r.Context())
 			// End-of-request cleanup: release the propagation callback
 			// and anyone still selecting on ctx.Done(). A context that
@@ -250,7 +294,7 @@ func Timeout(d time.Duration) Middleware {
 				ctx.cancel(r.Context().Err())
 			})
 			defer stop()
-			timer := time.NewTimer(d)
+			timer := time.NewTimer(effective)
 			defer timer.Stop()
 
 			tw := newTimeoutWriter(w)
@@ -275,7 +319,9 @@ func Timeout(d time.Duration) Middleware {
 			// not": the deadline fired, or the client disconnected while
 			// the handler was still running. cause completes the
 			// handler's context when it hasn't completed already.
-			abandon := func(cause error) {
+			// Reports whether the 504 was actually written (false for a
+			// streaming response, where the deadline no longer applies).
+			abandon := func(cause error) bool {
 				if !tw.expire() {
 					// The response is already streaming (or hijacked): the
 					// handler owns the connection lifetime and the deadline
@@ -294,7 +340,7 @@ func Timeout(d time.Duration) Middleware {
 					if childPanic != nil {
 						panic(childPanic)
 					}
-					return
+					return false
 				}
 				ctx.cancel(cause)
 				http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
@@ -314,6 +360,7 @@ func Timeout(d time.Duration) Middleware {
 						)
 					}
 				}()
+				return true
 			}
 
 			select {
@@ -330,7 +377,20 @@ func Timeout(d time.Duration) Middleware {
 				// written for parity, observed by no one.
 				abandon(r.Context().Err())
 			case <-timer.C:
-				abandon(context.DeadlineExceeded)
+				if abandon(context.DeadlineExceeded) {
+					// Name the route, not just the path: "why does this
+					// endpoint 504" starts from this line. Streaming
+					// responses don't get here; their deadline is shed.
+					attrs := []any{
+						"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
+						"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
+						"timeout", effective,
+					}
+					if hasRoute && rt.Pattern != "" {
+						attrs = append(attrs, "pattern", rt.Pattern)
+					}
+					slog.Warn("request timeout", attrs...)
+				}
 			}
 		})
 	}
