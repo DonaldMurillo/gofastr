@@ -55,6 +55,11 @@ framework serves static files with, so `.html`, `.js`, `.css` and
 override that. Every asset is served `nosniff`, so a type the server
 could not name would leave the browser no way to recover.
 
+Registering specs without a filesystem to read them from is a wiring
+mistake and panics at boot rather than 404ing the frame document on
+every request. A server with no specs at all is the legitimate
+byte-backed case (`AddBytes` only) and is left alone.
+
 ## The wasm opt-in tier
 
 WebAssembly cannot compile inside a plugin frame by default: the framed

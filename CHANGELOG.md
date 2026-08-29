@@ -38,6 +38,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   still wins, `nosniff` is unchanged, and `AddBytes` gets the same
   default.
 
+- **`AssetServer.Register` rejects specs with no filesystem to read them
+  from** instead of panicking the request goroutine later. `fs.ReadFile` on
+  a nil `fs.FS` dereferences the nil interface, so a module that declared
+  specs and shipped no assets took down whichever request first asked for
+  the frame. `ClientModule.Assets` is optional — a plugin may serve its own
+  assets — but such a plugin passes no specs to an `AssetServer` either, so
+  a nil FS carrying specs is a wiring mistake, not a runtime condition, and
+  it now fails at boot with a message naming the fix. A nil FS with no
+  specs stays valid: that is the byte-backed server built from `AddBytes`
+  alone.
+
 ## [0.74.0] - 2026-08-29
 
 ### Changed
