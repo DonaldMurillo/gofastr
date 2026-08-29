@@ -101,6 +101,14 @@ func checkSidebarCollapse(c SidebarCollapse) {
 //	  when closed. For hosts whose contract pins that shape for
 //	  keyboard/AT parity with the rest of their app; the sidebar
 //	  runtime module toggles aria-expanded and hidden on click.
+//
+// Two details-dialect behaviours do not carry over to the button
+// dialect: group open state is not persisted across navigation (the
+// details dialect carries data-fui-disclosure-persist; every swap
+// resets a button-dialect group to its server-rendered state), and
+// the dialect needs JavaScript — <details> opens natively without
+// it, but without the runtime module a closed button-dialect group's
+// links are unreachable.
 type SidebarGroupMarkup string
 
 const (
@@ -342,7 +350,11 @@ func (s sidebarComponent) render() render.HTML {
 	}
 	// Caller extras land after the owned attributes. render.Attr
 	// validates the key and escapes the value, matching render.Tag.
-	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs)))
+	// data-collapsed is owned like class: the root above already
+	// carries the component's value in server-owned mode, and a
+	// caller copy would duplicate the attribute (invalid HTML;
+	// browsers keep the first, so the copy is inert anyway).
+	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs, "data-collapsed")))
 	b.WriteString(`>`)
 
 	if !cfg.SuppressDrawerTrigger {

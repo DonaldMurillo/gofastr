@@ -249,6 +249,7 @@ case "collapsed":
     collapse = ui.SidebarCollapseCollapsed
 case "expanded":
     collapse = ui.SidebarCollapseExpanded
+}
 sbCfg := ui.SidebarConfig{
     Title:         "myapp",
     Variant:       ui.SidebarCollapsible,
@@ -270,7 +271,13 @@ Three more knobs round out the contract surface:
   `Children`) as `button[aria-expanded][aria-controls]` plus a container
   that carries `hidden` when closed, instead of the default
   `<details><summary>`. The sidebar runtime module toggles both on
-  click. For hosts whose specs pin that markup shape.
+  click. For hosts whose specs pin that markup shape. Two `<details>`
+  behaviours do not carry over: group open state is not persisted
+  across navigation (every swap resets a group to its server-rendered
+  state; the details dialect carries `data-fui-disclosure-persist`),
+  and the dialect needs JavaScript — without the runtime module a
+  closed group's links are unreachable, while `<details>` opens
+  natively with JS off.
 - `Variant: ui.SidebarAutoHide` adds the `ui-sidebar--auto-hide` class
   and nothing else — no framework JS, no reveal CSS. Write the
   hover/focus reveal against that class in your own stylesheet.

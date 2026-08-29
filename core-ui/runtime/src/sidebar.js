@@ -49,11 +49,15 @@
   // Button-dialect groups (SidebarGroupMarkup: button): the toggle button
   // owns aria-expanded; the element it names via aria-controls owns hidden.
   const toggleGroup = (button) => {
-    const expanded = button.getAttribute('aria-expanded') !== 'true';
-    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    // Resolve the panel first and bail before touching aria-expanded:
+    // with a broken or absent aria-controls (hand-rolled host markup),
+    // flipping the button's state while the panel never moves would
+    // desync the two permanently.
     const panelId = button.getAttribute('aria-controls');
     const panel = panelId ? document.getElementById(panelId) : null;
     if (!panel) return;
+    const expanded = button.getAttribute('aria-expanded') !== 'true';
+    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     if (expanded) panel.removeAttribute('hidden');
     else panel.setAttribute('hidden', '');
   };

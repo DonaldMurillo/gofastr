@@ -359,3 +359,20 @@ func TestSidebarExtraAttrsOnRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestSidebarExtraAttrsDataCollapsedDropped(t *testing.T) {
+	// The component owns data-collapsed in server-owned mode; a caller
+	// copy via ExtraAttrs would render the attribute twice (invalid
+	// HTML, and browsers keep the first value, so the copy is inert).
+	out := string(ui.Sidebar(ui.SidebarConfig{
+		Variant:    ui.SidebarCollapsible,
+		Collapse:   ui.SidebarCollapseCollapsed,
+		DrawerName: "x",
+		Items:      []ui.SidebarItem{{Label: "A", Href: "/a"}},
+		ExtraAttrs: map[string]string{"data-collapsed": "false"},
+	}).Render())
+	root := out[:strings.Index(out, ">")+1]
+	if strings.Count(root, "data-collapsed") != 1 || !strings.Contains(root, `data-collapsed="true"`) {
+		t.Errorf("caller data-collapsed must be dropped in favour of the component's own value:\n%s", root)
+	}
+}

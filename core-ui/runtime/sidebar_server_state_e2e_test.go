@@ -56,11 +56,16 @@ func startSidebarServer(t *testing.T, pages map[string]string) *httptest.Server 
 	return srv
 }
 
-// serverCollapsedSidebar is what framework/ui.Sidebar renders for
-// Variant: SidebarCollapsible + Collapse: SidebarCollapseCollapsed with
-// custom labels: data-collapsed on the root, NO storage attribute, the
-// expand label + aria-expanded="false" on the button, both custom label
-// overrides riding along.
+// serverCollapsedSidebar mirrors what framework/ui.Sidebar renders for
+// Variant: SidebarCollapsible + Collapse: SidebarCollapseCollapsed:
+// data-collapsed on the root, NO storage attribute, and
+// aria-expanded="false" on the button. One deliberate deviation: the
+// button carries the DEFAULT expand name ("Expand navigation"), not
+// the custom label the component renders with ExpandLabel set — the
+// server-side label wiring is covered in framework/ui
+// (TestSidebarCollapseLabelsConfigurableBothStates). The custom label
+// overrides ride along as data attributes so the post-toggle check
+// still exercises the runtime's custom-label path.
 const serverCollapsedSidebar = `
 <div class="ui-sidebar ui-sidebar--collapsible" id="srv" data-fui-sidebar data-collapsed="true">
   <div class="ui-sidebar__inline" id="srv-inline">
@@ -185,7 +190,7 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 	ctx := newSeedBrowserCtx(t)
 	var autoCollapsed, autoLabel string
 	var storageAfterToggle string
-	var moduleLoaded, grpExpanded, grpHidden, grpLinkShown string
+	var moduleLoaded, grpExpanded, grpHidden, grpLinkShown, grpClosedDisplay string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/seed"),
 		chromedp.WaitVisible(`#seeded`, chromedp.ByID),
@@ -212,6 +217,13 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`String(!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sidebar))`, &moduleLoaded),
 
+		// Before the click: the closed group must actually be laying
+		// out as hidden. computed display:none is the behavioural
+		// consequence of the hidden attribute the button dialect
+		// writes (and of the [hidden] precedence rule in the sidebar
+		// stylesheet).
+		chromedp.Evaluate(`getComputedStyle(document.getElementById('groups-inline-g1')).display`, &grpClosedDisplay),
+
 		chromedp.Click(`#grp`, chromedp.ByID),
 		chromedp.Sleep(150*time.Millisecond),
 		chromedp.Evaluate(`String(document.getElementById('grp').getAttribute('aria-expanded'))`, &grpExpanded),
@@ -232,6 +244,9 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 	}
 	if moduleLoaded != "true" {
 		t.Error("sidebar module did not load: the group-toggle marker alone must demand-load it without a collapse button")
+	}
+	if grpClosedDisplay != "none" {
+		t.Errorf("closed group panel computed display=%q before the click — hidden must translate to display:none", grpClosedDisplay)
 	}
 	if grpExpanded != "true" || grpHidden != "false" {
 		t.Errorf("group toggle click did not expand: aria-expanded=%q hidden=%q (want true/false)", grpExpanded, grpHidden)
