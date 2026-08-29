@@ -145,7 +145,11 @@ func CheckHostRequirements(log *slog.Logger, permissionsPolicy string, modules .
 	if log == nil {
 		log = slog.Default()
 	}
-	if strings.TrimSpace(permissionsPolicy) == "" {
+	// Exactly empty, matching core/middleware.SecurityHeaders: it
+	// substitutes its default only for "". A whitespace-only value is
+	// emitted verbatim, names no feature, and must not be read as the
+	// default policy - that would warn about a denial never sent.
+	if permissionsPolicy == "" {
 		permissionsPolicy = defaultPermissionsPolicy
 	}
 	for _, m := range modules {

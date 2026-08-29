@@ -218,12 +218,13 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 // conn serializes writes on the output stream and routes responses to
 // pending server-to-client requests.
 type conn struct {
-	mu      sync.Mutex
-	w       io.Writer
-	pmu     sync.Mutex
-	pending map[int64]chan pendingResp
-	nextID  atomic.Int64
-	closed  chan struct{}
+	mu        sync.Mutex
+	w         io.Writer
+	pmu       sync.Mutex
+	pending   map[int64]chan pendingResp
+	nextID    atomic.Int64
+	closeOnce sync.Once
+	closed    chan struct{}
 }
 
 func newConn(w io.Writer) *conn {
@@ -269,13 +270,13 @@ func (c *conn) deliver(id int64, resp pendingResp) bool {
 	return true
 }
 
+// close signals teardown to everything selecting on c.closed. The channel
+// is never set to nil: Client.RequestPermission selects on it without
+// holding c.mu, so nilling it would both race that read and kill the arm
+// (a select on a nil channel never fires), leaving a permission request
+// issued after teardown blocked until its own context expires.
 func (c *conn) close() {
-	c.mu.Lock()
-	if c.closed != nil {
-		close(c.closed)
-		c.closed = nil
-	}
-	c.mu.Unlock()
+	c.closeOnce.Do(func() { close(c.closed) })
 }
 
 // --- per-connection server state ----------------------------------------

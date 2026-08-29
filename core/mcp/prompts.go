@@ -193,6 +193,17 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 		return newErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("prompt %q not found", params.Name))
 	}
 
+	// The gate runs BEFORE required-argument validation. Validating first
+	// answers a refused caller with `missing required argument "x"`, which
+	// discloses the argument names of a prompt they cannot access - exactly
+	// what prompts/list withholds from them.
+	if gErr := s.checkPromptGate(ctx, p); gErr != nil {
+		if rpcErr, ok := gErr.(*RPCError); ok {
+			return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
+		}
+		return newErrorResponse(req.ID, ErrInternalError, gErr.Error())
+	}
+
 	// Required-argument validation runs before the handler so a
 	// half-filled prompt never renders.
 	for _, a := range p.Arguments {
@@ -224,14 +235,23 @@ func (s *Server) getPromptMessages(ctx context.Context, p Prompt, args map[strin
 			err = &RPCError{Code: ErrInternalError, Message: "internal prompt error"}
 		}
 	}()
-	// Gate (WithPromptGate) runs before the handler, the same predicate
-	// that decided whether the prompt appeared in prompts/list. Inside the
-	// recover guard so a panicking gate becomes a well-formed error, not a
-	// transport crash. A refusal propagates the gate's error to the caller.
-	if p.gate != nil {
-		if gErr := p.gate(ctx); gErr != nil {
-			return nil, gErr
-		}
-	}
 	return p.handler(ctx, args)
+}
+
+// checkPromptGate runs a prompt's gate (WithPromptGate) under its own
+// recover guard - the same predicate that decided whether the prompt
+// appeared in prompts/list. It is separate from getPromptMessages so the
+// refusal can happen before argument validation without losing the panic
+// protection stdio needs: a panicking gate must become a well-formed error,
+// never a transport crash.
+func (s *Server) checkPromptGate(ctx context.Context, p Prompt) (err error) {
+	if p.gate == nil {
+		return nil
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = &RPCError{Code: ErrInternalError, Message: "internal prompt error"}
+		}
+	}()
+	return p.gate(ctx)
 }

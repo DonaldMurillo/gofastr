@@ -190,6 +190,34 @@ func TestPromptGateRefusesGet(t *testing.T) {
 	}
 }
 
+// A refused caller must not learn a gated prompt's argument names. Argument
+// validation used to run first, answering with `missing required argument
+// "code"` before the gate was consulted - the same disclosure prompts/list
+// withholds, leaked through prompts/get to anyone who guesses the name.
+func TestGatedPromptHidesArgNames(t *testing.T) {
+	s := NewServer()
+	mustRegisterPrompt(t, s, "secret_prompt",
+		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil },
+		WithPromptGate(requireUser),
+		WithPromptArguments(PromptArgument{Name: "code", Required: true}))
+
+	// No arguments supplied, so the required-argument check would fire if it
+	// ran before the gate.
+	resp := callPromptsGet(t, s, context.Background(), `{"name":"secret_prompt"}`)
+	if resp.Error == nil {
+		t.Fatal("SECURITY: [authz] gated prompt answered an unauthenticated caller")
+	}
+	if strings.Contains(resp.Error.Message, "code") {
+		t.Errorf("SECURITY: [disclosure] refusal named the gated prompt's argument: %q", resp.Error.Message)
+	}
+
+	// An authenticated caller still gets the argument validation.
+	resp = callPromptsGet(t, s, authed(context.Background()), `{"name":"secret_prompt"}`)
+	if resp.Error == nil || !strings.Contains(resp.Error.Message, "code") {
+		t.Errorf("an allowed caller must still be told which argument is missing, got %+v", resp.Error)
+	}
+}
+
 // A panic in a prompt handler (or its gate) is a well-formed internal
 // error, never a transport crash: the prompts/get analogue of the
 // readResourceContents recover guard.

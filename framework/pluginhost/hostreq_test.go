@@ -225,3 +225,16 @@ func TestCheckHostRequirementsEmptyMeansDefault(t *testing.T) {
 		}
 	}
 }
+
+// A whitespace-only PermissionsPolicy is emitted verbatim by the middleware
+// (it substitutes its default only for ""), so it names no feature and the
+// check must stay silent. Treating it as the default warned about a denial
+// that was never sent.
+func TestWhitespacePolicyIsNotTheDefault(t *testing.T) {
+	mod := scannerModule(t, "camera")
+	log, buf := captureWarnings()
+	CheckHostRequirements(log, " ", mod)
+	if warnCount(buf) != 0 {
+		t.Errorf("whitespace-only policy must not be read as the default deny, got: %s", buf.String())
+	}
+}
