@@ -494,6 +494,18 @@ func TestButton(t *testing.T) {
 		assertContains(t, b, `type="submit"`)
 	})
 
+	t.Run("AriaLabel alone satisfies the icon-only accessible-name guard", func(t *testing.T) {
+		// An icon-only button with no Label but an AriaLabel has an
+		// accessible name and must not panic.
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("AriaLabel should satisfy the accessible-name guard, got panic: %v", r)
+			}
+		}()
+		b := string(Button(ButtonConfig{AriaLabel: "Close", Class: "icon-btn"}))
+		assertContains(t, render.HTML(b), `aria-label="Close"`)
+	})
+
 	t.Run("AriaLabel overrides the Label-derived accessible name", func(t *testing.T) {
 		b := string(Button(ButtonConfig{Label: "Revoke", AriaLabel: "Revoke admin from Alice"}))
 		assertContains(t, render.HTML(b), `aria-label="Revoke admin from Alice"`)

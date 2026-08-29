@@ -532,7 +532,8 @@ type ButtonConfig struct {
 	// data-fui-* keys pass through — attach interactive wiring with
 	// interactive.Action.Attrs() (see interactive-patterns). Keys the
 	// component owns are dropped: class and id (use Class / ID), type
-	// (use Type), and aria-label (use Label).
+	// (use Type), and aria-label (use Label, or AriaLabel to override
+	// the accessible name).
 	ExtraAttrs html.Attrs
 	ID         string
 	Class      string

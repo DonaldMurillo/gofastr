@@ -112,6 +112,10 @@ func Resolve(projectDir string) (*Runtime, error) {
 			return nil, fmt.Errorf("isolation.mode %q is not supported", cfg.Mode)
 		}
 	}
+	// Read the rewrite knob from the process env for Addr (the app's own
+	// listen port). Env() reads it from the child env map it is handed
+	// instead, so a child launched with REWRITE=0 is consistent — the
+	// child's own Resolve sees the same value in its os.Environ.
 	rewriteExplicit := os.Getenv(envRewriteExplicit) != "0" &&
 		!strings.EqualFold(os.Getenv(envRewriteExplicit), "false")
 	return &Runtime{

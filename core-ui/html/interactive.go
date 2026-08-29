@@ -124,12 +124,12 @@ type ButtonGroupConfig struct {
 
 // Button produces a <button> element.
 // Required: Label (used as both visible text and aria-label). Icon-only
-// buttons may omit Label but must then supply an aria-label via
-// ExtraAttrs, an empty <button> with no accessible name is always a
-// bug, so Button panics on it.
+// buttons may omit Label but must then supply an accessible name via
+// AriaLabel or an ExtraAttrs aria-label; an empty <button> with no
+// accessible name is always a bug, so Button panics on it.
 func Button(cfg ButtonConfig) render.HTML {
-	if cfg.Label == "" && cfg.ExtraAttrs["aria-label"] == "" {
-		panic("html: Button requires Label (or an aria-label in ExtraAttrs for icon-only buttons)")
+	if cfg.Label == "" && cfg.AriaLabel == "" && cfg.ExtraAttrs["aria-label"] == "" {
+		panic("html: Button requires Label (or AriaLabel / an aria-label in ExtraAttrs for icon-only buttons)")
 	}
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	btnType := cfg.Type

@@ -33,9 +33,9 @@ hangs to its deadline. Two things make this visible: `App.Start` logs a
 `slog.Warn` ("isolation remapped the listen address") naming both ports and the
 kill switches whenever it remaps an explicitly-assigned address, and you can
 turn the remap off with `GOFASTR_ISOLATION=off` (all isolation) or
-`GOFASTR_ISOLATION_REWRITE=0` (keep DB/worktree isolation, honor explicit
-`PORT`/`DATABASE_URL`). This is the checkout style agents use most, so a boot
-that "hangs" from a worktree is almost always this.
+`GOFASTR_ISOLATION_REWRITE=0` (keep DB/worktree isolation, honor the explicit
+listen `PORT` and explicit env overrides). This is the checkout style agents
+use most, so a boot that "hangs" from a worktree is almost always this.
 
 ## What is isolated
 
