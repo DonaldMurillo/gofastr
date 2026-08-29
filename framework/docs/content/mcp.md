@@ -571,6 +571,126 @@ The remaining fields are `FrameDomains` (frame-src) and `BaseURIDomains`
 or omitted field allows no external origins, and a zero `AppCSP` emits no
 `csp` key at all.
 
+## MCP Apps widget client
+
+`RegisterApp` ships the server half of an MCP App: the `ui://` resource and
+the linking tool. The widget half — the JavaScript that runs inside the
+host's sandboxed iframe and talks to the chat host — is the widget client,
+a plain embedded script with no imports and no external URLs. It speaks the
+ext-apps widget protocol (spec 2026-01-26): JSON-RPC 2.0 over `postMessage`,
+no extra framing. GoFastr serves the widget side of MCP Apps and is not a
+host: nothing here renders another server's widget, and nothing in the
+framework speaks the host half of this protocol.
+
+Two ways to get the script into your widget's HTML:
+
+<!-- gofastr:compile
+import (
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/router"
+)
+
+var rt *router.Router
+var widgetHTML string
+-->
+```go
+// Hot-link: register the route (idempotent) and reference the URL from a
+// <script src> in the app's HTML. The route serves the script with
+// Cross-Origin-Resource-Policy: cross-origin so the opaque-origin iframe
+// can fetch it; whether the HOST's iframe CSP allows the fetch is governed
+// by the app's declared AppCSP.ResourceDomains, like any cross-origin script.
+mcp.RegisterWidgetClientRoute(rt)
+
+// Or fold the bytes into the HTML you hand to RegisterApp, and the widget
+// carries its own client with no route and no CSP dependency.
+widgetHTML = "<script>" + string(mcp.WidgetClientJS()) + "</script>"
+```
+
+The route is `/__gofastr/mcp/app/widgetclient.js`
+([WidgetClientScriptURL]). Inside the widget document the client exposes
+itself as `window.__gofastrMcpApp`:
+
+```js
+var app = window.__gofastrMcpApp;
+
+app.connect({ availableDisplayModes: ["inline"] }).then(function (host) {
+  // host.protocolVersion, host.hostCapabilities, host.hostInfo,
+  // host.hostContext (theme, locale, displayMode, …)
+});
+
+app.callTool({ name: "search", arguments: { q: "gofastr" } })
+  .then(function (result) { /* result.content, result.isError */ });
+
+app.onToolResult(function (params) { /* a finished tool call */ });
+app.sizeChanged({ width: 320, height: 240 });
+```
+
+### The handshake
+
+`connect(appCapabilities, timeoutMs?)` sends the `ui/initialize` request
+carrying your `appCapabilities` (`experimental`, `tools.listChanged`,
+`availableDisplayModes`), resolves with the host's result — `protocolVersion`,
+`hostCapabilities`, `hostInfo`, `hostContext` — and only then sends the
+`ui/notifications/initialized` notification. Call it once, on load. If the
+host never answers, the promise rejects after `timeoutMs` (default 30s) and
+you may call `connect` again.
+
+### The method surface
+
+Widget → host requests, each a named method plus the generic escape hatch
+(`params` is the spec's params object, passed through verbatim):
+
+| Client call | Wire method |
+|---|---|
+| `callTool(params, timeoutMs?)` | `tools/call` |
+| `readResource(params, timeoutMs?)` | `resources/read` |
+| `openLink(params, timeoutMs?)` | `ui/open-link` |
+| `requestDisplayMode(params, timeoutMs?)` | `ui/request-display-mode` |
+| `message(params, timeoutMs?)` | `ui/message` |
+| `updateModelContext(params, timeoutMs?)` | `ui/update-model-context` |
+| `request(method, params, timeoutMs?)` | any spec request method |
+
+Widget → host notifications: `sizeChanged(params)` sends
+`ui/notifications/size-changed`; `notify(method, params)` sends any other.
+
+Host → widget notifications, each with a named registrar plus the generic
+`on(method, handler)`:
+
+| Registrar | Wire method |
+|---|---|
+| `onToolInput(handler)` | `ui/notifications/tool-input` |
+| `onToolInputPartial(handler)` | `ui/notifications/tool-input-partial` |
+| `onToolResult(handler)` | `ui/notifications/tool-result` |
+| `onToolCancelled(handler)` | `ui/notifications/tool-cancelled` |
+| `onHostContextChanged(handler)` | `ui/notifications/host-context-changed` |
+| `onResourceTeardown(handler)` | `ui/resource-teardown` |
+| `onMessage(handler)` | `notifications/message` |
+
+A notification with no registered handler is ignored, never thrown; a
+handler that throws is logged to `console.error` and does not break the
+dispatch loop. `onResourceTeardown` runs your handler and then fails every
+request still in flight, because the host that is removing the widget will
+never answer them.
+
+### Failures
+
+Every request returns a Promise. It rejects with the host's JSON-RPC error
+object when the host answers with an error, or with one of the client's own
+codes:
+
+| Code | Meaning |
+|---|---|
+| `E_TIMEOUT` | No response within `timeoutMs` (default 30s — pass a larger value for slow `tools/call` turns). |
+| `E_SATURATED` | 64 requests already in flight; rejected before posting. |
+| `E_SEND` | `postMessage` threw — usually params that are not structured-cloneable. |
+| `E_TEARDOWN` | The widget was torn down (`ui/resource-teardown`) or the page hidden. |
+
+Responses that arrive after a timeout or teardown are dropped by request id,
+so a late answer never resolves an already-rejected Promise. Inbound
+messages are accepted only from `window.parent` (`event.source`, not
+`event.origin` — the sandboxed widget's origin is opaque and reports as
+`"null"`), and only when the envelope says `jsonrpc: "2.0"`.
+
 ## Common mistakes
 
 - **Wrapping a handler in `mcp.Gated` and expecting the tool to disappear from

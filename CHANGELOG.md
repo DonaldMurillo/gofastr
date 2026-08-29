@@ -9,6 +9,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **MCP Apps widget client** (#291): `core/mcp` served the app side already
+  (`RegisterApp`, `_meta.ui`), but the JS that runs inside the host's iframe
+  and talks to the chat host did not exist, so every plugin author hand-rolled
+  it. `WidgetClientJS()` / `RegisterWidgetClientRoute` ship it the way
+  pluginhost ships its frame client: the `ui/initialize` handshake followed by
+  `ui/notifications/initialized`, the six widget-to-host requests
+  (`tools/call`, `resources/read`, `ui/open-link`, `ui/request-display-mode`,
+  `ui/message`, `ui/update-model-context`) and handler registration for the
+  host-to-widget notifications.
+
+  Every method-name string is pinned against non-comment JS, so a one-character
+  typo — a widget that silently never fires — fails a test instead of shipping.
+  Requests are correlated by id through a null-prototype map bounded at 64 in
+  flight, rejecting `E_SATURATED` without posting rather than growing, with
+  timeout, send-failure and teardown all rejecting rather than hanging.
+  Messages are accepted only from the host window by `event.source`: the widget
+  frame is opaque-origin, so an origin-string check is the wrong tool.
+
+  GoFastr serves the widget side; it is not a chat host, and the host half is
+  deliberately absent.
+
 - **`RoleAgent` — an agent-only HTTP surface** (#291): `GOFASTR_ROLE=agent`
   (or `WithRole(RoleAgent)`) serves `/mcp` and health only, forwarding MCP to
   the app router so auth and owner scoping are identical to the serve role.
