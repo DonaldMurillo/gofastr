@@ -3,9 +3,11 @@ package pluginhost
 import (
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/static"
 )
 
 // framedCSP builds the Content-Security-Policy for the sandboxed plugin frame,
@@ -125,7 +127,9 @@ type AssetSpec struct {
 	Name string
 
 	// ContentType is the exact Content-Type header (e.g.
-	// "text/html; charset=utf-8").
+	// "text/html; charset=utf-8"). Optional: when empty it is derived from
+	// Name's extension by [static.DetectFromName]. Set it only to override
+	// that default, e.g. to serve a ".js" file as "application/json".
 	ContentType string
 
 	// Framed marks the assets that make up the sandboxed plugin frame (the
@@ -181,11 +185,12 @@ func (s *AssetServer) WithCSP(tokens []string) *AssetServer {
 
 // AddBytes registers an asset from pre-loaded bytes at an explicit full route
 // path. Use it for host-page scripts (the broker adapter) that are not part of
-// the framed FS. framed should be false for host scripts.
-func (s *AssetServer) AddBytes(path, contentType string, framed bool, b []byte) {
+// the framed FS. framed should be false for host scripts. An empty contentType
+// is derived from route's extension, as for [AssetSpec.ContentType].
+func (s *AssetServer) AddBytes(route, contentType string, framed bool, b []byte) {
 	s.extra = append(s.extra, loadedAsset{
-		path:        path,
-		contentType: contentType,
+		path:        route,
+		contentType: resolveContentType(route, contentType),
 		framed:      framed,
 		bytes:       b,
 	})
@@ -194,7 +199,28 @@ func (s *AssetServer) AddBytes(path, contentType string, framed bool, b []byte) 
 // Register mounts every asset on the router. It is safe to register multiple
 // AssetServers on the same router as long as their paths do not collide (the
 // router panics on duplicate patterns otherwise).
+//
+// Specs with no filesystem to read them from are rejected here, at boot.
+// Without this they registered fine and took down whichever request first
+// asked for one, because fs.ReadFile on a nil fs.FS dereferences the nil
+// interface. Boot is also the right place rather than the quieter repair of
+// serving 404 per request. [ClientModule.Assets] is
+// documented as optional — a plugin may serve its own assets — but then it
+// does not pass specs to an AssetServer either, so a nil FS carrying specs is
+// always a wiring mistake and never a runtime condition: the specs are right
+// there in the same call, and a 404 on the frame document would make it one
+// more construction that validates, registers, serves, and yields a frame that
+// cannot work — the failure class [AssetSpec.ContentType] and [Manifest.CSP]
+// already cost a debugging cycle each. A nil FS with no specs is the
+// legitimate byte-backed server ([AssetServer.AddBytes] only) and is left
+// alone.
 func (s *AssetServer) Register(rt *router.Router) {
+	if s.fsys == nil && len(s.specs) > 0 {
+		panic("pluginhost: AssetServer has " + strconv.Itoa(len(s.specs)) +
+			" spec(s) but a nil fs.FS to read them from — pass the plugin's " +
+			"embedded assets (ClientModule.Assets) to NewAssetServer, or use " +
+			"ClientModule.AssetServer which supplies them")
+	}
 	for _, spec := range s.specs {
 		path := joinPath(s.prefix, spec.Name)
 		rt.Get(path, s.serveFS(spec))
@@ -216,14 +242,36 @@ func joinPath(prefix, name string) string {
 }
 
 func (s *AssetServer) serveFS(spec AssetSpec) http.HandlerFunc {
+	contentType := resolveContentType(spec.Name, spec.ContentType)
 	return func(w http.ResponseWriter, r *http.Request) {
 		b, err := fs.ReadFile(s.fsys, spec.Name)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
-		writeAsset(w, r, b, spec.ContentType, spec.Framed, s.csp)
+		writeAsset(w, r, b, contentType, spec.Framed, s.csp)
 	}
+}
+
+// resolveContentType returns the header to send for name, preferring the
+// declared value and otherwise deriving one from the extension via
+// [static.DetectFromName] — the repo's canonical detector, whose own table
+// wins over mime.TypeByExtension so a plugin's .html/.js/.css/.wasm assets
+// get the same type on every host, with the stdlib covering only the long
+// tail and "application/octet-stream" as the floor.
+//
+// The empty string is not a usable header. [writeAsset] sets Content-Type
+// unconditionally and then sets nosniff on the next line, so an omitted
+// ContentType serves a 200 with the right bytes, an empty type, and a browser
+// forbidden from recovering by sniffing: the document is never parsed, and
+// neither the server log nor the console nor a page error says why (#303).
+// nosniff is correct and stays; what changes is that nothing can reach it
+// without the header it makes load-bearing.
+func resolveContentType(name, declared string) string {
+	if declared != "" {
+		return declared
+	}
+	return static.DetectFromName(name)
 }
 
 func (s *AssetServer) serveBytes(a loadedAsset) http.HandlerFunc {
