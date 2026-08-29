@@ -95,14 +95,19 @@ func (s *Server) RegisterResource(uri, name, mimeType string, contents ResourceC
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.resources == nil {
 		s.resources = make(map[string]Resource)
 	}
 	if _, exists := s.resources[uri]; exists {
+		s.mu.Unlock()
 		return fmt.Errorf("mcp: resource %q already registered", uri)
 	}
 	s.resources[uri] = res
+	s.mu.Unlock()
+
+	// Connected clients re-list. Before serving has begun this fans out
+	// to zero subscribers, so boot-time registration notifies nobody.
+	s.NotifyResourcesListChanged()
 	return nil
 }
 

@@ -77,14 +77,20 @@ func (s *Server) RegisterResourceTemplate(uriTemplate, name, mimeType string, op
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.templates == nil {
 		s.templates = make(map[string]ResourceTemplate)
 	}
 	if _, exists := s.templates[uriTemplate]; exists {
+		s.mu.Unlock()
 		return fmt.Errorf("mcp: resource template %q already registered", uriTemplate)
 	}
 	s.templates[uriTemplate] = tpl
+	s.mu.Unlock()
+
+	// The spec folds templates under the one `resources` capability and
+	// has no separate template list_changed, so a template registration
+	// fires the resources one: connected clients re-list both surfaces.
+	s.NotifyResourcesListChanged()
 	return nil
 }
 

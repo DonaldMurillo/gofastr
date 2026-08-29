@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func oversizedMCPRequestBody(t *testing.T) *bytes.Reader {
@@ -129,12 +130,47 @@ func TestServeHTTP_SetsNoStore(t *testing.T) {
 	}
 }
 
+// serveHeldSSEGet invokes the SSE GET handler the way it now runs in
+// production: in a goroutine, holding the connection until the request
+// context is cancelled. It waits until the stream is established
+// (headers and endpoint event written, subscriber registered) or the
+// handler has returned (the refused-before-stream path), then cancels
+// and joins. Reading the returned recorder afterwards is race-free.
+func serveHeldSSEGet(t *testing.T, s *Server, h http.Handler, r *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.ServeHTTP(w, r)
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for sseRegistryCount(s) == 0 {
+		select {
+		case <-done:
+			// Refused before the stream was held (the 403 path).
+			return w
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("SSE GET handler neither registered a subscriber nor returned")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	return w
+}
+
 func TestServeSSEGet_SetsNoStore(t *testing.T) {
 	s := newSecurityTestServer(t)
 	handler := s.ServeSSE("/mcp")
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec := serveHeldSSEGet(t, s, handler, req)
 
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("SECURITY: [mcp-http] SSE GET missing Cache-Control: no-store, got %q. Attack: cacheable event-stream bootstrap.", rec.Header().Get("Cache-Control"))

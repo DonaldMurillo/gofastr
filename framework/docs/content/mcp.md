@@ -43,6 +43,8 @@ the MCP server card mirrors it.
 | `resources/list` | One page of registered resources, URI order, metadata only. |
 | `resources/read` | A resource's contents by `uri`. |
 | `resources/templates/list` | One page of the templates the caller may see, uriTemplate order. |
+| `resources/subscribe` | Arms `resources/updated` notifications for a `uri`. Empty result. |
+| `resources/unsubscribe` | Releases one `resources/subscribe`. Empty result. |
 | `prompts/list` | One page of the prompts the caller may see, name order. |
 | `prompts/get` | A prompt's messages by name and string `arguments`. |
 
@@ -54,9 +56,9 @@ are exported: `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602),
 `initialize` advertises capabilities from the registries: `tools` always;
 `resources` once any resource or template is registered (one capability covers
 both, so a templates-only server advertises it); `prompts` once any prompt is
-registered. All list capabilities report `listChanged: false` and resources
-reports `subscribe: false`: the server emits no change notifications, so a
-client that wants fresh state re-lists.
+registered. Every list capability reports `listChanged: true`, and resources
+reports `subscribe: true`: the server pushes change notifications over the
+SSE stream (see [notifications](#server-initiated-notifications)).
 
 ## Registering a tool
 
@@ -344,12 +346,16 @@ takes only a `ToolHandler`.
 
 `SetGate` installs one server-wide precondition over the data methods
 (`tools/list`, `tools/call`, `resources/list`, `resources/read`,
-`resources/templates/list`, `prompts/list`, `prompts/get`); pass nil to clear
-it. `initialize` and `ping` stay open on purpose: they carry only the protocol
-version, capability booleans, and the server name, and a client that cannot
-complete the handshake cannot present credentials in a way any MCP client
-implements. In a framework app, `framework.WithMCPGate(framework.MCPRequireUser())`
-is this same switch (see [agent-readiness](agent-ready.md)).
+`resources/templates/list`, `resources/subscribe`,
+`resources/unsubscribe`, `prompts/list`, `prompts/get`); pass nil to
+clear it. It also silences notifications for a caller it refuses — see
+[notifications](#server-initiated-notifications). `initialize` and
+`ping` stay open on purpose: they carry only the protocol version,
+capability booleans, and the server name, and a client that cannot
+complete the handshake cannot present credentials in a way any MCP
+client implements. In a framework app,
+`framework.WithMCPGate(framework.MCPRequireUser())` is this same switch
+(see [agent-readiness](agent-ready.md)).
 
 On `tools/call` the checks run in order: resolve the tool (unknown name:
 method-not-found), the framework call gate (disabled module: a generic
@@ -358,6 +364,76 @@ error), then the handler. The handler runs under a recover guard, so a panic
 in handler code becomes an internal error with no detail echoed, instead of
 unwinding the transport loop; the same guard covers resource contents funcs
 and prompt handlers.
+
+## Server-initiated notifications
+
+The GET half of `ServeSSE` holds the connection open and streams
+server-initiated notifications to the client, each as one SSE `message`
+event carrying a JSON-RPC notification (a method, optional params, no id):
+
+| Method | Payload | Raised |
+|---|---|---|
+| `notifications/tools/list_changed` | none | `RegisterTool` |
+| `notifications/resources/list_changed` | none | `RegisterResource`, `RegisterResourceTemplate` |
+| `notifications/prompts/list_changed` | none | `RegisterPrompt` |
+| `notifications/resources/updated` | `{"uri": "..."}` | your code, via `NotifyResourceUpdated(uri)` |
+
+A client subscribes by GETting the SSE endpoint and keeping it open; a
+`list_changed` tells it to re-issue the corresponding list method. For
+resource updates it must also send `resources/subscribe` with the `uri` —
+`NotifyResourceUpdated` is a no-op until at least one subscription is
+active, and `resources/unsubscribe` ends delivery. Raising one from
+server code:
+
+<!-- gofastr:compile
+import (
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+)
+
+var srv *mcp.Server
+-->
+```go
+// the docs resource changed; tell every subscribed, eligible stream
+srv.NotifyResourceUpdated("docs://api/quickstart")
+```
+
+Notifications are filtered per subscriber through the same gates as the
+list methods, so a stream can never be the leak the listings closed:
+
+- Every notification passes the server-wide gate (`SetGate`). A caller
+  refused wholesale receives nothing at all — not even a payload-free
+  `list_changed`, which is otherwise safe to broadcast.
+- `notifications/resources/updated` additionally passes the resource's
+  own `WithResourceGate`. The notification carries the `uri`, so it
+  reaches only streams whose caller may read that resource; pushing it
+  further would disclose the existence and uri of a gated resource.
+- Both gates are evaluated at delivery time against the identity the
+  stream's GET request presented, not once when the stream opened. A
+  session revoked mid-stream stops receiving immediately.
+
+A slow subscriber never blocks the server. Each stream has a bounded
+buffer (16 notifications); a full buffer means the client stopped
+reading, and the server drops that subscriber and closes its stream
+rather than stalling the code that raised the notification — which
+would otherwise stall every other subscriber too. `list_changed` is
+idempotent and `resources/updated` sends the client back to
+`resources/read` for current state, so a dropped client that reconnects
+and re-lists is correct again.
+
+Two transport limits, both inherited from the stream being per process:
+
+- The HTTP transport has no session id linking a POST to a GET stream,
+  so `resources/subscribe` is counted per `uri` across connections: a
+  `uri` one client subscribed to gets updates on every eligible stream.
+- The subscriber registry lives in the process that holds the
+  connections. A notification raised on one replica does not reach
+  clients connected to another — the same class of limit as the
+  per-process cursor signing key (see [pagination](#pagination)). Route
+  SSE sessions to one replica or accept that clients reconnect and
+  re-list.
+
+The stdio transport has no server-push channel, so the `Notify*` methods
+are no-ops there.
 
 ## Pagination
 
@@ -437,7 +513,10 @@ What a client sees at the edges:
   `application/json` content type (parameters allowed, plus the `+json`
   structured-suffix family) and caps the body at 1 MiB.
 - `ServeSSE(path)` returns an http.Handler where POST handles JSON-RPC and GET
-  with `Accept: text/event-stream` streams responses over SSE.
+  with `Accept: text/event-stream` opens a stream the server holds open for
+  the connection's life, carrying server-initiated notifications (see
+  [notifications](#server-initiated-notifications)). The origin/Host gate
+  runs on the GET half too: the stream it protects is a read.
 - `ServeStdio(ctx, in, out)` reads line-delimited JSON-RPC from `in` and writes
   responses to `out`, blocking until EOF or context cancellation. The recover
   guard around handler code matters most here: stdio has no net/http
@@ -487,3 +566,8 @@ tool in one call. The canonical example is in
   handler runs.** A `prompts/get` missing one is refused with invalid-params;
   the handler never sees the call. Handlers can assume required arguments are
   present.
+- **Expecting notifications to cross replicas.** The subscriber registry is
+  per process: a notification raised on one replica reaches only the clients
+  connected to it. Route SSE sessions to one replica, or accept that a
+  client reconnects and re-lists — which the spec's notification handling
+  already assumes.

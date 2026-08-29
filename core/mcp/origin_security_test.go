@@ -93,10 +93,9 @@ func TestMCPHostPinRejectsRebind(t *testing.T) {
 // transport applies the same origin/Host gate its POST sibling does.
 //
 // sseGetHandler discarded the request entirely (`_ *http.Request`), so
-// it never ran originOK. Nothing is disclosed by the static endpoint
-// event it currently writes, which is why this is low, but it is a
-// guard hole in the pair, and the moment that handler starts streaming
-// anything session-derived it becomes a cross-origin read.
+// it never ran originOK. The handler now holds the connection and
+// streams session-derived notifications, so the gate is load-bearing:
+// without it the stream is a cross-origin read.
 func TestSSEGetHandlerEnforcesOrigin(t *testing.T) {
 	get := func(origin, host string) *httptest.ResponseRecorder {
 		s := NewServer()
@@ -106,9 +105,10 @@ func TestSSEGetHandlerEnforcesOrigin(t *testing.T) {
 			r.Header.Set("Origin", origin)
 		}
 		r.Host = host
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w
+		// The handler now HOLDS the connection (it streams
+		// notifications), so run it the held way: goroutine +
+		// cancellable context, joined before the recorder is read.
+		return serveHeldSSEGet(t, s, h, r)
 	}
 
 	if got := get("https://evil.example", "app.example.com").Code; got != 403 {

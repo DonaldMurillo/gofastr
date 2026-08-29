@@ -332,7 +332,18 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// sseGetHandler sets up an SSE connection for streaming.
+// sseGetHandler sets up an SSE connection for streaming and then HOLDS
+// it: the connection stays open for the life of the client, carrying
+// the server-initiated MCP notifications (notifications/*) fanned out
+// to the per-subscriber registry in notifications.go.
+//
+// Hard rule 3 note: SSE here is the MCP transport's own mandated
+// server-push stream (the GET half of the protocol's HTTP transport),
+// not an app surface and not the app's /__gofastr/sse bus. Rule 3
+// ("SSE is push-only, never for responses to user actions") governs
+// app surfaces; this stream carries only protocol notifications the
+// MCP spec requires the server to be able to push. It is not a
+// precedent for app-surface SSE.
 func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Same gate as ssePostHandler. This handler used to discard the
 	// request entirely, so the origin/Host check simply did not run on
@@ -350,8 +361,58 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial connection event
 	StreamSSE(w, "endpoint", "/sse")
-	if f, ok := w.(http.Flusher); ok {
+	f, _ := w.(http.Flusher)
+	if f != nil {
 		f.Flush()
+	}
+
+	// Register a subscriber carrying this caller's identity (the
+	// request context, enriched like the POST path enriches it, with
+	// the inbound request stashed via WithRequest) so per-subscriber
+	// gates can be evaluated against it at delivery time — a
+	// long-lived stream must reflect gate decisions that change
+	// mid-connection, not a snapshot taken now.
+	ctx := context.WithValue(r.Context(), contextKey{}, r)
+	ctx = enrichContext(ctx)
+	sub := s.addSSESubscriber(ctx)
+	defer s.removeSSESubscriber(sub)
+
+	// Hold the connection until the client goes away. Each notification
+	// is filtered per subscriber (server-wide gate + the item's gate,
+	// both evaluated HERE at send time — see subscriberMayReceive) and
+	// flushed as one SSE event.
+	for {
+		select {
+		case <-r.Context().Done():
+			// Client disconnected. The deferred removeSSESubscriber
+			// unregisters; nothing else is needed.
+			return
+		case n, ok := <-sub.ch:
+			if !ok {
+				// The publisher dropped this subscriber for
+				// backpressure (buffer full: a stalled stream loop).
+				// Returning closes the stream — the client's recovery
+				// is to reconnect and re-list. See notifySubscribers.
+				return
+			}
+			if !s.subscriberMayReceive(sub, n) {
+				continue
+			}
+			data, err := json.Marshal(jsonrpcNotification{
+				JSONRPC: "2.0",
+				Method:  n.method,
+				Params:  n.params,
+			})
+			if err != nil {
+				// params are server-built strings; unreachable, but a
+				// marshalling failure must never kill the stream.
+				continue
+			}
+			StreamSSE(w, "message", string(data))
+			if f != nil {
+				f.Flush()
+			}
+		}
 	}
 }
 
