@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -566,6 +568,40 @@ func TestAgentRole_EntityRouteNotServed(t *testing.T) {
 		if r.StatusCode != http.StatusNotFound {
 			t.Fatalf("%s on agent role: got %d want 404", p, r.StatusCode)
 		}
+	}
+}
+
+// In RoleAgent, the MCP Apps widget client script is served: a widget
+// document fetches it from the same public origin that serves /mcp, and
+// in a role-split deployment that origin is the agent listener.
+func TestAgentRole_ServesWidgetClientScript(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	app := NewApp(WithoutDefaultMiddleware(), WithRole(RoleAgent), WithMCP(),
+		WithMCPApp(widgetClientAppCfg()))
+	addr, _ := startOnRandomPort(t, app)
+
+	resp := get(t, addr, mcp.WidgetClientScriptURL)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("widget client script on agent role: got %d want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !bytes.Equal(body, mcp.WidgetClientJS()) {
+		t.Error("agent role must serve the same embedded widget client bytes as the full router")
+	}
+}
+
+// In RoleAgent with no MCP App registered, the script URL is the
+// router's 404: forwarding the path must not mount anything by itself.
+func TestAgentRole_WidgetClientAbsentNoApp(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	app := NewApp(WithoutDefaultMiddleware(), WithRole(RoleAgent), WithMCP())
+	addr, _ := startOnRandomPort(t, app)
+
+	resp := get(t, addr, mcp.WidgetClientScriptURL)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("widget client script with no app on agent role: got %d want 404", resp.StatusCode)
 	}
 }
 

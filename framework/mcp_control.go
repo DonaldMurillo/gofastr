@@ -201,6 +201,18 @@ func (a *App) routerHasMCPRoute() bool {
 	return false
 }
 
+// routerHasWidgetClientRoute reports whether the host already serves the
+// MCP Apps widget client script, so the WithMCPApp auto-mount can yield
+// to it instead of panicking with a route conflict.
+func (a *App) routerHasWidgetClientRoute() bool {
+	for _, r := range a.router.Routes() {
+		if r.Pattern == mcp.WidgetClientScriptURL && r.Method == http.MethodGet {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) toolModuleEnable(ctx context.Context, params map[string]any) (any, error) {
 	return a.toggleModule(ctx, params, true)
 }
