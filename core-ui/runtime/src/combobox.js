@@ -187,10 +187,7 @@
     const lbId = input.getAttribute('aria-controls');
     const lb = lbId ? document.getElementById(lbId) : null;
     if (!lb) return;
-    // Only reopen when something is actually selectable: a hidden
-    // option still matches [role="option"], so without the filter a
-    // refocus with every row filtered out opens an empty listbox.
-    if (lb.querySelector('[role="option"]:not([hidden])')) openListbox(input, lb);
+    if (lb.querySelector('[role="option"]')) openListbox(input, lb);
   });
 
   // Outside-click closes any open combobox.

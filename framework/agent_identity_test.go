@@ -38,6 +38,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+
+	// Registers the "sqlite3" driver this file opens. Explicit rather
+	// than relying on a transitive import from a sibling test file.
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // ──────────────────────────────────────────────────────────────────────
@@ -188,9 +192,13 @@ type identityEnv struct {
 func newIdentityEnv(t *testing.T) *identityEnv {
 	t.Helper()
 
+	// Fatal, never Skip: a skipped identity-contract test is
+	// indistinguishable from a passing one in CI, and this is the test
+	// standing between an agent and another user's rows. The blank import
+	// above registers the driver so this cannot silently vanish.
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Skip("sqlite3 driver not available")
+		t.Fatalf("open sqlite3: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
