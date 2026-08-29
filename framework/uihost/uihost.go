@@ -3011,6 +3011,28 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	return md, true
 }
 
+// PageHandler returns an http.HandlerFunc that renders the registered
+// screen at path with full chrome (assets, runtime, session minting) —
+// the same serving path NotFound-dispatched screens take. Hosts need it
+// when a framework-router route must own the path explicitly: an app
+// wildcard ({rest...}) claims the bare path and the mux redirects it to
+// a trailing-slash form the screen dispatch would never resolve. The
+// request's auth/policy context flows through unchanged.
+func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p := r.URL.Path; p != path && path != "" {
+			// Keep query intact; only the dispatch path is forced.
+			u := *r.URL
+			u.Path = path
+			r2 := r.Clone(r.Context())
+			r2.URL = &u
+			ds.handlePage(w, r2)
+			return
+		}
+		ds.handlePage(w, r)
+	}
+}
+
 // PolicyBlockedError reports a static render refused by the screen's
 // policy: a redirect or a block, never a render failure. The static
 // builder skips such routes (with a warning) instead of aborting the
