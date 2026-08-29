@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -365,12 +366,24 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 		// stops at resolve nothing else pins it — GC then reports
 		// "Promise was collected" (-32000) and the diagnostic is
 		// lost instead of delivered.
-		chromedp.Evaluate(`window.__toastFallbackPoll = new Promise((resolve) => {
+		// The budget is computed when the poll starts, clamped 5s
+		// under the tab context's deadline: if navigation itself ate
+		// the headroom, the diagnostic still resolves before the
+		// context error would swallow it — the snapshot matters most
+		// under exactly that starvation.
+		chromedp.ActionFunc(func(cctx context.Context) error {
+			budgetMS := int64(30000)
+			if dl, ok := cctx.Deadline(); ok {
+				if rem := time.Until(dl) - 5*time.Second; rem.Milliseconds() < budgetMS {
+					budgetMS = rem.Milliseconds()
+				}
+			}
+			poll := fmt.Sprintf(`window.__toastFallbackPoll = new Promise((resolve) => {
             const t0 = performance.now();
             const tick = () => {
                 const fallback = document.querySelector('[data-fui-toast-fallback]');
                 if (fallback && fallback.textContent.includes('Saved')) { resolve('ok'); return; }
-                if (performance.now() - t0 > 30000) {
+                if (performance.now() - t0 > %d) {
                     resolve(JSON.stringify({
                         fallbackPresent: !!fallback,
                         fallbackText: fallback ? fallback.textContent : null,
@@ -382,8 +395,10 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
                 setTimeout(tick, 100);
             };
             tick();
-		})`, &fallbackResult, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
-			return p.WithAwaitPromise(true)
+		})`, budgetMS)
+			return chromedp.Evaluate(poll, &fallbackResult, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
+				return p.WithAwaitPromise(true)
+			}).Do(cctx)
 		}),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
