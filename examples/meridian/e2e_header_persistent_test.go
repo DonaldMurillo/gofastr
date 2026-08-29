@@ -34,13 +34,20 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 		})()`
 	}
 
-	var signIn, toggle rect
+	var signIn, toggle, drawerToggle, drawerSignIn rect
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(390, 844),
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Evaluate(measure(`.ui-site-header__persistent-actions a[href="/login"]`), &signIn),
 		chromedp.Evaluate(measure(`.ui-site-header__bar-actions [data-fui-comp="ui-theme-toggle"]`), &toggle),
+		// Open the drawer: "collapsed into the drawer" must mean the
+		// toggle actually lives there, not that it vanished — and the
+		// persistent Sign in must not have a drawer duplicate.
+		chromedp.Click(`.ui-site-header__mobile-toggle`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.ui-site-header__mobile-links`, chromedp.ByQuery),
+		chromedp.Evaluate(measure(`.ui-site-header__mobile-actions [data-fui-comp="ui-theme-toggle"]`), &drawerToggle),
+		chromedp.Evaluate(measure(`.ui-site-header__mobile-links a[href="/login"]`), &drawerSignIn),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -52,5 +59,11 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 	}
 	if toggle.Present && toggle.Visible {
 		t.Errorf("regular Actions must collapse into the drawer at 390px: %+v", toggle)
+	}
+	if !drawerToggle.Present || !drawerToggle.Visible {
+		t.Errorf("theme toggle must be reachable in the open drawer: %+v", drawerToggle)
+	}
+	if drawerSignIn.Present {
+		t.Errorf("persistent Sign in must have no drawer duplicate: %+v", drawerSignIn)
 	}
 }
