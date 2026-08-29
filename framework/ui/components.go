@@ -514,6 +514,12 @@ const (
 // ButtonConfig configures a button.
 type ButtonConfig struct {
 	Label string // required visible text + aria-label
+	// AriaLabel overrides the accessible name when it must differ from
+	// the visible Label: a row of buttons all reading "Revoke" that
+	// each need a distinct accessible name ("Revoke admin from Alice").
+	// Empty ⇒ the accessible name is Label. This is the supported way
+	// to set it — an aria-label in ExtraAttrs is dropped (owned key).
+	AriaLabel string
 	// Variant defaults to ButtonPrimary.
 	Variant ButtonVariant
 	// Size defaults to ButtonSizeDefault.
@@ -526,7 +532,8 @@ type ButtonConfig struct {
 	// data-fui-* keys pass through — attach interactive wiring with
 	// interactive.Action.Attrs() (see interactive-patterns). Keys the
 	// component owns are dropped: class and id (use Class / ID), type
-	// (use Type), and aria-label (use Label).
+	// (use Type), and aria-label (use Label, or AriaLabel to override
+	// the accessible name).
 	ExtraAttrs html.Attrs
 	ID         string
 	Class      string
@@ -564,6 +571,7 @@ func Button(cfg ButtonConfig) render.HTML {
 	// variant marker / sheet.
 	return buttonStyle.WrapHTML(html.Button(html.ButtonConfig{
 		Label:      cfg.Label,
+		AriaLabel:  cfg.AriaLabel,
 		Type:       cfg.Type,
 		Class:      cls,
 		ID:         cfg.ID,

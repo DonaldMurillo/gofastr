@@ -63,3 +63,68 @@ func TestBrokerJS_PostsWithWildcardTargetOrigin(t *testing.T) {
 		t.Error("postTo must use targetOrigin \"*\" for the opaque frame (source check is the gate)")
 	}
 }
+
+// (4) The fallback lifecycle (#253): the broker finds the server-rendered
+// [data-fui-plugin-fallback] node, hides the frame behind it while
+// loading, swaps to the frame on ready, and — the load-bearing half —
+// swaps BACK on bootError so a dead frame degrades to the static node
+// instead of an empty box. Behavior lives in the DOM (no browser here),
+// so pin the wiring at the source, in code not comments.
+func TestBrokerJS_FallbackLifecycle(t *testing.T) {
+	code := nonCommentJS(string(brokerJSBytes))
+	if !strings.Contains(code, `querySelector("[data-fui-plugin-fallback]")`) {
+		t.Error("broker must locate the fallback node in the marker")
+	}
+	bootIdx := strings.Index(code, `case "bootError":`)
+	readyIdx := strings.Index(code, `case "ready":`)
+	if bootIdx < 0 || readyIdx < 0 {
+		t.Fatal("ready/bootError cases not found in broker code")
+	}
+	bootBody := code[bootIdx:]
+	if end := strings.Index(bootBody, "break;"); end >= 0 {
+		bootBody = bootBody[:end]
+	}
+	if !strings.Contains(bootBody, "showFallback(st)") {
+		t.Error("bootError must showFallback (degrade to the static node)")
+	}
+	readyBody := code[readyIdx:]
+	if end := strings.Index(readyBody, "break;"); end >= 0 {
+		readyBody = readyBody[:end]
+	}
+	if !strings.Contains(readyBody, "showFrame(st)") {
+		t.Error("ready must showFrame (live view takes over)")
+	}
+	// The other two transitions are just as load-bearing: without the
+	// loading-state hide, the user sees the fallback AND an empty frame
+	// stacked; without the teardown restore, an SPA-nav gap. Pin both
+	// bodies (function slices), not just ready/bootError.
+	if body := funcBody(code, "function mountMarker("); !strings.Contains(body, "showFallback(st)") {
+		t.Error("mountMarker must showFallback (loading: frame hidden behind the static node)")
+	}
+	if body := funcBody(code, "function cleanup("); !strings.Contains(body, "showFallback(st)") {
+		t.Error("cleanup must showFallback (restore the static node before removing the frame)")
+	}
+}
+
+// funcBody returns the source of the function starting at marker, from
+// its opening brace to the matching close, so a pin can assert against
+// one function's body rather than the whole file.
+func funcBody(code, marker string) string {
+	start := strings.Index(code, marker)
+	if start < 0 {
+		return ""
+	}
+	depth := 0
+	for i := start; i < len(code); i++ {
+		switch code[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return code[start : i+1]
+			}
+		}
+	}
+	return code[start:]
+}

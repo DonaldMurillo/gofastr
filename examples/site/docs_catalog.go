@@ -122,6 +122,7 @@ var docIntents = []docIntent{
 			{"pwa", "PWA", "uihost.WithPWA: installable manifest, versioned offline shell, and a safe service worker."},
 			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},
 			{"accessibility", "Accessibility", "Built-in ARIA guarantees, the guided audit command, and the build gate."},
+			{"porting", "Porting an existing frontend", "The escape hatch for a foreign DOM contract: html/template screens + static.Mount, deliberately unsupported."},
 			{"strict-mode", "Strict mode", "WithStrict: missing SEO and missing per-screen axe tests fail boot instead of shipping."},
 			{"reactivity", "Reactivity model", "The four-rung ladder of client signals, RPC, polling, and SSE push, plus the stateless-interactive-layer contract."},
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions, polling."},
