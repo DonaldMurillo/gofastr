@@ -34,6 +34,10 @@ func activelinkSkipPage() string {
       <a id="spy2" href="#s2">Section two</a>
     </nav>
   </div>
+  <nav aria-label="pagination">
+    <a id="page1" href="?page=1" aria-current="page">1</a>
+    <a id="page2" href="?page=2">2</a>
+  </nav>
   <main>home screen <span id="ready">ready</span></main>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`
@@ -73,6 +77,30 @@ func activelinkSkipServer(t *testing.T) *httptest.Server {
 // links inside a [data-fui-scrollspy] wrap keep their
 // aria-current="true", and the ordinary exact-match contract still
 // holds (aria-current="page" + .active move to the new path's link).
+// TestActiveLinkKeepsUnmanagedAriaCurrent: a server-rendered
+// aria-current="page" on a NON-matching nav link (a pagination link for
+// the current page, whose href is a query-only "?page=1") is host
+// content the module never stamped — no .active class — so the sweep
+// must leave it alone instead of stripping the attribute.
+func TestActiveLinkKeepsUnmanagedAriaCurrent(t *testing.T) {
+	srv := activelinkSkipServer(t)
+	ctx := newSeedBrowserCtx(t)
+
+	var cur string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		// Give the idle-loaded module time for its initial pass.
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`document.getElementById('page1').getAttribute('aria-current')`, &cur),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if cur != "page" {
+		t.Fatalf("host-rendered pagination aria-current = %q, want %q (unmanaged links must not be stripped)", cur, "page")
+	}
+}
+
 func TestActiveLinkSkipKeepsAuthorState(t *testing.T) {
 	srv := activelinkSkipServer(t)
 	ctx := newSeedBrowserCtx(t)
