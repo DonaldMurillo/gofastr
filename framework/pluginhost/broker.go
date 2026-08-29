@@ -33,7 +33,7 @@ func RegisterBrokerRoute(rt *router.Router) {
 		// The broker is a host-page script (full privileges), NOT a framed
 		// asset, no CORP/CSP relaxation. It is same-origin and CSP-clean
 		// (external <script src>, no inline JS).
-		writeAsset(w, r, brokerJSBytes, "text/javascript; charset=utf-8", false)
+		writeAsset(w, r, brokerJSBytes, "text/javascript; charset=utf-8", false, nil)
 	}))
 }
 

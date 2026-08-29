@@ -264,18 +264,20 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 	ctx := siteBrowserCtx(t)
 
 	// The Acknowledge button is uniquely identified by its
-	// data-fui-signal-inc target. (ui.Button forces aria-label to the
-	// visible Label, so the aria-label="Acknowledge one incident" in
-	// the button's ExtraAttrs is overwritten by Label="Acknowledge"
-	// at render time, selecting by aria-label would silently match
-	// nothing.)
+	// data-fui-signal-inc target. Its distinct accessible name now
+	// rides ButtonConfig.AriaLabel (#281), so aria-label carries
+	// "Acknowledge one incident" instead of being clobbered by the
+	// visible Label; the ackAria assertion below proves that.
 	const ackBtnSel = `button[data-fui-signal-inc="dash.incidentsAckd:1"]`
 	const ackCountSel = `[data-fui-signal="dash.incidentsAckd"]`
 
-	var before, after string
+	var before, after, ackAria string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
 		chromedp.WaitReady("body", chromedp.ByQuery),
+		// #281: the distinct AriaLabel reaches the rendered button
+		// instead of the visible "Acknowledge".
+		chromedp.AttributeValue(ackBtnSel, "aria-label", &ackAria, nil, chromedp.ByQuery),
 		// The data-fui-signal-inc click delegator lives in core
 		// runtime.js (not a separate module). Wait for the runtime
 		// to be reachable before relying on it.
@@ -301,6 +303,9 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 		t.Fatalf("live-dashboard ack click run: %v", err)
 	}
 
+	if ackAria != "Acknowledge one incident" {
+		t.Errorf("ack button aria-label = %q, want %q (#281 AriaLabel must reach the rendered button)", ackAria, "Acknowledge one incident")
+	}
 	if before != "0" {
 		t.Fatalf("acknowledged count before click = %q, want \"0\" — the bind did not stamp the SSR default", before)
 	}

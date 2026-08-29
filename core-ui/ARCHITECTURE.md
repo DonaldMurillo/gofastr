@@ -124,7 +124,7 @@ server side and the runtime does the work.
 | `data-fui-compute` | Loads the `compute` demand module, which exposes `window.__gofastr.compute`. It is a trigger marker only; worker name, function, and payload stay in the imperative `compute.task(...)` call. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
 | `data-fui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-fui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. |
-| `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
+| `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` gate, honored on every form submit the runtime sees — native POST, `data-fui-spa`, and `data-fui-rpc` forms alike — and on non-form `data-fui-rpc` clicks. On a form, an attribute on the submit button takes precedence over one on the form element. Cancel aborts: the submit is prevented (a native form never navigates), the RPC never fires. Use for destructive actions (delete, revoke). |
 | `data-fui-rpc-trigger="input"` | On a `<form data-fui-rpc=…>`, dispatch the RPC on every `input` event from any control inside, after a debounce window. |
 | `data-fui-rpc-debounce-ms="<ms>"` | Debounce window for `data-fui-rpc-trigger="input"`. Default 250. |
 | `data-fui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot, idempotent on re-click via `data-fui-rpc-after-done`. |
@@ -274,6 +274,7 @@ server side and the runtime does the work.
 | `data-fui-plugin-minheight="<css>"` | On the plugin mount marker: initial iframe height before the plugin's first `resize` event. |
 | `data-fui-plugin-capabilities="<a,b>"` | On the plugin mount marker: comma-separated capability grant set advertised to the plugin in `init` (same `resource:verb` grammar as battery/auth token scopes). |
 | `data-fui-plugin-for="<json,md>"` | Plugin-defined extension attribute (wysiwyg): names the hidden form fields the host adapter mirrors `docChanged` content into. Plugins may add namespaced `data-fui-plugin-*` extras via `MountConfig.Attributes`; document them in the owning plugin. |
+| `data-fui-plugin-fallback` | Wraps the server-rendered pre-hydration node inside the plugin mount marker (`MountConfig.Fallback`). The broker shows it while the frame loads, hides it — never removes it — on the frame's `ready`, and swaps back to it on `bootError` (a dead frame degrades to the static node, not an empty box). |
 | `data-fui-drag-handle="true"` | On the visible drag-handle bar rendered at the top of a drag-dismiss-enabled widget. Marks the affordance for cursor styling; the actual pointer logic is delegated from the widget root. |
 | `data-fui-zoomed` | Written by the runtime onto a `.ui-lightbox__full` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back and on lightbox close. |
 | `data-behavior="/__gofastr/widget/<id>.js"` | On a `[data-widget]` / `[data-component]` root: the behaviour script the runtime appends as `<script src>` on first hydration. **The runtime's most privileged attribute**: it is a script-loading sink, so the value is matched against exactly the shape `core-ui/component` emits and anything else is refused with a console warning. Never hand-write it. |
@@ -1377,7 +1378,7 @@ your need:
 
 | You want | Use | Notes |
 | --- | --- | --- |
-| Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmAction` | Or skip the modal entirely and put `data-fui-confirm="…"` on the button. |
+| Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmAction` | Or skip the modal entirely and put `data-fui-confirm="…"` on the submit button (or its form — the button wins). Gates any submit, native or RPC. |
 | Edit/show entity detail | `preset.Modal` with `DeepLink("modal", "<name>").DeepLinkParam("id")` | URL stays consistent across refresh/share/back. Buttons opening it carry `data-fui-deeplink="id=<row-id>"`. |
 | Confirm + act in one shot | `framework/ui.ConfirmAction` | Returns a trigger button + hidden `preset.Modal` alertdialog. Eliminates per-button confirm boilerplate. |
 | Secondary nav / filters | `preset.Drawer` | Edge-anchored, backdrop'd. Same deep-link wiring as modals. |

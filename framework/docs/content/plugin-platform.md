@@ -47,6 +47,57 @@ Framed assets get a scoped relaxation (framing headers + a CSP keyed to
 the explicit request origin; inside an opaque frame, `'self'` resolves
 to `null` and spec-correct browsers like Safari refuse subresources).
 
+## The wasm opt-in tier
+
+WebAssembly cannot compile inside a plugin frame by default: the framed
+policy's `script-src` has no `'wasm-unsafe-eval'`, so
+`WebAssembly.instantiate` throws a CSP error. That is deliberate — a
+plugin that needs no wasm engine should not carry the capability. A
+plugin that does (a SQL notebook on DuckDB-wasm, a barcode scanner on
+zxing, an ONNX classifier) opts in per-manifest:
+
+```json
+{ "csp": ["'wasm-unsafe-eval'"] }
+```
+
+```go
+mod, err := pluginhost.NewClientModule("sql", pluginhost.Manifest{
+	Entry: "/__gofastr/plugin/sql/frame.html",
+	CSP:   []string{"'wasm-unsafe-eval'"},
+	// …
+}, assetsFS)
+srv := pluginhost.NewAssetServer(mod.Assets, "/__gofastr/plugin/sql", specs).
+	WithCSP(mod.Manifest.CSP)
+```
+
+The keyword is appended to `script-src` only. Everything else in the
+framed policy is unchanged, and these stay regardless of the tier:
+
+- the opaque origin (`sandbox allow-scripts`, never
+  `allow-same-origin`),
+- `connect-src 'none'` — the frame still cannot fetch, XHR, or open a
+  WebSocket; data arrives over the postMessage bridge and leaves the same
+  way,
+- no `eval` of strings (`'unsafe-eval'` is not granted; wasm
+  compilation is not string eval),
+- no host cookies, storage, or DOM access.
+
+The allowlist behind `Manifest.CSP` is closed and has exactly one member.
+`Manifest.Validate` rejects anything else at registration — `'unsafe-eval'`,
+`'unsafe-inline'`, host sources, `data:`, `*`, and any token carrying a
+`;`, whitespace, or mismatched quotes (these values land in a response
+header, where `;` could splice an arbitrary directive, e.g. a re-enabled
+`connect-src`). Matching is byte-for-byte, so a case variant or an
+unquoted `wasm-unsafe-eval` is rejected too. The header assembler
+re-filters against the same allowlist at serve time, mirroring how
+`SandboxString` sanitises sandbox tokens regardless of validation.
+
+**Limit: single-threaded wasm builds only.** Multi-threaded builds
+(DuckDB's default wasm build, for instance) want Web Workers plus
+`SharedArrayBuffer`, which require COOP/COEP cross-origin isolation —
+and cross-origin isolation is incompatible with the opaque-origin frame
+design. Build the engine single-threaded for the plugin frame.
+
 ## The protocol
 
 One versioned envelope in both directions:
@@ -131,6 +182,83 @@ The client half is advisory UX (the editor hides upload UI without
 403s without the scope). Never trust the frame's own claim of its
 grants.
 
+## Host-page requirements
+
+A manifest describes what the FRAME gets. Some plugins also need something
+from the page around them: a barcode scanner built the way [issue #273](https://github.com/DonaldMurillo/gofastr/issues/273)
+recommends — host page captures, sandboxed frame decodes — needs the HOST
+page's `getUserMedia` to work. GoFastr's default security headers send
+`Permissions-Policy: geolocation=(), microphone=(), camera=()`, which denies
+those features to the page itself, so the scanner dies with a console error
+a user only sees after clicking the control that starts the camera:
+
+```
+Permissions policy violation: camera is not allowed in this document.
+```
+
+The default denial is deliberate: no page should silently turn on a camera
+or microphone, and `SecurityHeadersConfig.PermissionsPolicy` is the
+one-line opt-out. What was missing is a way for a plugin to SAY it needs
+that opt-out. `Manifest.HostRequirements` is it:
+
+```go
+m, err := pluginhost.NewClientModule("scanner", pluginhost.Manifest{
+	Entry: "/__gofastr/plugin/scanner/scan.html",
+	HostRequirements: []string{
+		"permissions-policy:camera",
+	},
+}, assets)
+```
+
+Tokens are `permissions-policy:<feature>` against a closed registry of the
+Permissions-Policy spec's policy-controlled features (`camera`,
+`microphone`, `geolocation`, `clipboard-write`, `fullscreen`, ...).
+`Manifest.Validate` rejects anything else at registration — unknown
+prefix, typo'd feature, embedded header syntax — so a bad declaration is
+a build error, not a silently unsatisfiable requirement. The frame itself
+is opaque-origin and can never hold these permissions; the declaration is
+about the host page, and the working shape is always host-page capture +
+frame processing.
+
+### The boot check
+
+There is no central registry of client modules to hook, so the check is a
+helper the app calls once at startup, next to where it wires its security
+headers:
+
+```go
+secCfg := middleware.SecurityHeadersConfig{} // or your own policy
+pluginhost.CheckHostRequirements(slog.Default(), secCfg.PermissionsPolicy, scanner)
+```
+
+It logs and never fails — a plugin cannot take an app down by declaring
+something. An empty `PermissionsPolicy` (the untouched default) is treated
+as the framework's default header, so the exact case above is caught. The
+warning names the plugin, the token, and the fix:
+
+```
+WARN plugin requires a host-page permission the Permissions-Policy denies
+     plugin=scanner requirement=permissions-policy:camera
+     policy=geolocation=(), microphone=(), camera=()
+     fix="allow it on the host page, e.g. camera=(self), or unset the empty allowlist camera=()"
+```
+
+The fix for the scanner is then one config line:
+
+```go
+secCfg.PermissionsPolicy = "geolocation=(), microphone=(), camera=(self)"
+```
+
+The check warns only when it is confident: it fires when every directive
+naming the required feature carries the empty allowlist `()`, the one
+Permissions-Policy shape that unambiguously denies the feature to the page
+itself. `camera=(self)`, `camera=*`, an unnamed feature, or an origin list
+stay silent — origin lists cannot be decided at boot at all, and a warning
+that fired on grants would train developers to ignore the check.
+
+See [security headers](security.md) for the full default header set and
+what each field controls.
+
 ## Mounting
 
 `pluginhost.MountMarker` emits the mount marker the broker scans for:
@@ -141,6 +269,28 @@ core-ui/ARCHITECTURE.md attribute table and the
 adapter script (registered via `window.__gofastrPluginHost.register`)
 that supplies its `Manifest` and handles its plugin-specific events;
 the generic broker owns everything protocol-level.
+
+### Progressive enhancement: MountConfig.Fallback
+
+A plugin with a Go-side renderer sets `MountConfig.Fallback` to a
+`render.HTML` node — the chart plugin's pure-Go SVG, say. The broker
+wraps it inside the marker and drives one lifecycle:
+
+- **loading** → the fallback is visible, the frame hidden;
+- **ready** → the frame's live view takes over, the fallback is hidden
+  (not removed — recovery stays possible);
+- **bootError** → the fallback shows again. This is the load-bearing
+  half: a frame that dies degrades to the static server-rendered node,
+  not an empty box, and the page still works with JavaScript off.
+
+The fallback is host-trusted HTML in the page's own trust domain, built
+server-side by the plugin's `Mount()`; it never comes from the frame.
+It renders in the **host page** (full privileges), not the sandbox, so
+escape any user-derived data you interpolate into it
+(`render.Escape` / `render.Text`) — an unescaped label here is stored
+XSS in the host page, the very thing the frame sandbox exists to
+prevent. Plugins without a fallback keep the frame visible while
+loading, exactly as before.
 
 ## Opting out: the trusted mount
 
@@ -184,6 +334,18 @@ or capability set.
 - **Inventing plugin-only permission names.** Use the `resource:verb`
   scope grammar so token scoping, wildcards, and admin tooling keep
   working; a parallel vocabulary drifts immediately.
+- **Widening the framed CSP by hand instead of the manifest allowlist.**
+  The only sanctioned extension is `Manifest.CSP` with
+  `'wasm-unsafe-eval'` (see "The wasm opt-in tier"); editing `framedCSP`
+  directly or adding `'unsafe-eval'` re-opens string eval inside the
+  sandbox, and a hand-added host source in `script-src` would let the
+  frame load third-party script the app never vouched for.
 - **Letting a plugin choose its own trust tier.** `isolation` in the
   manifest describes the sandboxed default; the trusted in-page mount
   is granted only by host-side code the app owner writes.
+- **Expecting the sandboxed frame to hold the permission itself.** The
+  opaque-origin frame can never be granted `camera`, `microphone` or any
+  other policy-controlled feature. Declare what the HOST page needs via
+  `Manifest.HostRequirements` and use the host-captures / frame-decodes
+  shape; `CheckHostRequirements` says at boot when the app's
+  `Permissions-Policy` denies it.

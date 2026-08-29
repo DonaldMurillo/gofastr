@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 )
 
-// toolsListResult is the result shape for tools/list per MCP spec.
+// toolsListResult is the result shape for tools/list per MCP spec. The
+// nextCursor key is absent on the final page, and on every page when the
+// whole listing fits (the pre-pagination wire shape).
 type toolsListResult struct {
-	Tools []Tool `json:"tools"`
+	Tools      []Tool `json:"tools"`
+	NextCursor string `json:"nextCursor,omitempty"`
 }
 
 // toolsCallParams represents the parameters for a tools/call request,
@@ -24,10 +27,18 @@ type toolsCallResult struct {
 	IsError           bool      `json:"isError,omitempty"`
 }
 
-// handleToolsList returns all registered tools.
+// handleToolsList returns one page of the tools visible to the caller,
+// in name order. Pagination slices the POST-GATE listing built by
+// listTools (call gate + per-tool caller gates already applied), so a
+// gated tool is invisible to the paging arithmetic itself: no short
+// pages, no cursor offsets that count it.
 func (s *Server) handleToolsList(ctx context.Context, req Request) Response {
-	tools := s.listTools(ctx)
-	return newSuccessResponse(req.ID, toolsListResult{Tools: tools})
+	offset, err := s.listOffset(req, "tools/list")
+	if err != nil {
+		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
+	}
+	page, next := pageList(s, "tools/list", s.listTools(ctx), offset)
+	return newSuccessResponse(req.ID, toolsListResult{Tools: page, NextCursor: next})
 }
 
 // handleToolsCall executes a tool by name with the provided parameters.

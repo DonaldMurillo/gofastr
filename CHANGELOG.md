@@ -7,26 +7,38 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-### Added
-
-- **Pluginhost bidirectional request channel** (#252, first of the
-  three framed-runtime PRs): frame → host requests are now
-  platform-owned, mirroring the host's existing `request()`. GoFastr
-  ships the frame-side client for the first time —
-  `frame/frameclient.js` (`window.__gofastrPluginFrame` with
-  `ready`/`sendEvent`/`sendRequest`/`onEvent`/`onRequest`), served via
-  `pluginhost.RegisterFrameClientRoute` with the framed CORP
-  relaxation, or bundled via `pluginhost.FrameClientJS()`. Host
-  adapters answer with `api.onRequest(method, handler)` or a static
-  `registration.onRequest` fallback. One contract in both directions:
-  every request is answered (`E_NO_HANDLER` / `E_HANDLER`, never
-  silence), the in-flight map is bounded at 64 (`E_SATURATED`),
-  invalid timeouts fall back to 5s, and teardown rejects outstanding
-  requests with `E_TEARDOWN` instead of leaking hung promises — the
-  host broker previously cleared its timers without rejecting, and
-  plugins (richtext, datagrid) each hand-rolled their own correlation.
-
 ### Changed
+
+- **BREAKING — `mcp.AppConfig.CSP` is a struct, not a string**: the MCP
+  Apps spec defines `_meta.ui.csp` as an object
+  (`connectDomains`/`resourceDomains`/`frameDomains`/`baseUriDomains`), and
+  GoFastr emitted a bare string there, so a spec-compliant host could not
+  parse the policy at all. `CSP` is now `mcp.AppCSP` with those four fields.
+  Breaking loudly rather than behind a shim, because the old field produced
+  JSON no conformant host could consume — there is no working caller to
+  preserve. An app that sets no CSP emits the same `_meta` as before.
+
+- **BREAKING — `kiln acp` speaks the real ACP session surface** (#287):
+  `tools/list`, `tools/call`, `prompt` and `shutdown` are gone and
+  `initialize` changed shape. None of those were methods in the published
+  protocol; what kiln spoke was a bespoke subset. Move to `session/new`,
+  `session/prompt` and `session/cancel`, with tool invocations arriving as
+  agent-driven `session/update` `tool_call` frames. `kiln/agent/acp` is
+  deleted with no deprecation shim — kiln is not a production surface, so
+  a shim would carry cost for nobody. `kiln acp` attaches no model
+  provider yet: prompts are journaled and refused with a pointer at
+  `kiln mcp` and the panel, and `kiln/acp.WithProvider` is the embedder
+  seam.
+
+- **Worktree isolation honors an explicit `PORT` under
+  `GOFASTR_ISOLATION_REWRITE=0`** (#268): the app's own listen address
+  (`App.Start`) now respects that knob the way child-env rewriting
+  already did, so an operator can keep DB/worktree isolation while
+  serving on the port they assigned. Isolation still remaps by default
+  (the collision-avoidance whole point); `App.Start` already warns when
+  it remaps an explicitly-set address, and the worktree auto-activation
+  + remap is now documented prominently in isolation.md instead of only
+  in the source.
 
 - **The last 23 legacy `framework/ui` files (24 components) join the
   ExtraAttrs sanitization contract** (#262, completing the migration
@@ -60,12 +72,168 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **MCP server-initiated notifications** (#287):
+  `notifications/tools/list_changed`,
+  `notifications/resources/list_changed`,
+  `notifications/prompts/list_changed` and `notifications/resources/updated`,
+  plus `resources/subscribe` / `resources/unsubscribe`. `initialize` now
+  advertises `listChanged` and `subscribe` truthfully; both were hardcoded
+  `false`. The SSE GET stream previously wrote one static `endpoint` event and
+  returned, so there was no subscriber machinery at all — it now holds the
+  connection and streams.
+
+  Notifications are filtered **per subscriber, at delivery time**. A gated
+  resource's `updated` notification carries its URI, so it reaches only
+  streams whose caller passes the resource's own `WithResourceGate` — the
+  same gate that refuses the read. That does not hide the resource from
+  `resources/list`, whose metadata stays listed by design (the gate guards
+  contents); it keeps update notices from callers who cannot read the
+  result. Tools, prompts and resource templates are the other shape: those
+  gates hide the item from its list method and page the post-gate set, and
+  the `list_changed` a gated tool or resource template registration fires
+  is withheld from callers the gate refuses. Payload-free `list_changed`
+  still requires passing the server-wide gate, because a caller refused
+  wholesale should not learn that something changed. Delivery-time
+  evaluation means a session revoked mid-stream stops receiving
+  immediately, and app gate code never runs on the publisher's goroutine.
+
+  A subscriber that falls behind is dropped and its stream closed rather than
+  blocking the publisher: `list_changed` is idempotent, so a reconnecting
+  client re-lists and is correct again, whereas a blocked publisher would stall
+  every other subscriber and the code that raised the notification.
+
+  Two limits documented rather than solved: subscriptions are refcounted per
+  URI rather than per stream, because this transport has no session id linking
+  a POST to a GET stream (the per-subscriber gates remain the boundary), and a
+  notification raised on one replica does not reach clients connected to
+  another — the same class of limit as the per-process cursor signing key.
+
+- **MCP prompts, pagination and resource templates** (#287): `core/mcp`
+  spoke tools and resources only. It now serves `prompts/list` and
+  `prompts/get` (registered with `RegisterPrompt` and the same option
+  shape resources use, including `WithPromptGate`) and
+  `resources/templates/list`, and every list method accepts an optional
+  `cursor` and emits `nextCursor` until the walk is done. Capabilities are
+  advertised only once something is registered.
+
+  Pagination pages the **post-gate** listing. Paging the unfiltered set
+  and filtering afterwards would leak the existence of gated items twice
+  over, through short middle pages and through cursor arithmetic; the
+  test walks interleaved public and gated items at page size 2 and
+  asserts every non-final page is exactly full. Cursors are HMAC-SHA256
+  over a method-bound payload keyed by a per-server random secret, so a
+  client cannot mint an offset it was never handed, move a cursor between
+  list methods, or alter one it holds, and the payload carries the resume
+  offset and nothing else — no total, no page size — so it cannot be read
+  as an oracle for how many items exist. A tampered cursor is a clean
+  invalid-params refusal, never a silent reset to page 1. A set smaller
+  than one page serves the byte-identical old wire shape, so existing
+  clients are unaffected. All six new methods join the server-wide gate.
+
+  Known limit: the cursor key is per process, so a load-balanced `/mcp`
+  rejects a cursor minted by another replica.
+
+- **`core/acp`** (#287): the Agent Client Protocol as a package beside
+  `core/mcp`, so something other than kiln can speak it —
+  `initialize` negotiation, `authenticate`, `session/new`, `session/load`,
+  `session/prompt`, `session/cancel`, `session/update` streaming (message
+  chunks, `tool_call`, `tool_call_update`, `plan`) and
+  `session/request_permission`. Absences are declared rather than
+  silently dropped: `promptCapabilities` emits explicit `false` for image,
+  audio and embedded context, `mcpCapabilities` explicit `false` for http
+  and sse, and a request using one anyway is refused with `-32602` naming
+  the type. Client filesystem and terminal methods stay unimplemented
+  because they are client-side and this agent never calls them.
+
+- **`pluginhost.Manifest.HostRequirements`** (#294): a plugin can declare
+  that it needs a host-page permission, as `permissions-policy:<feature>`
+  tokens against a closed allowlist, and `CheckHostRequirements` turns
+  what used to be a runtime console error into a boot-time warning. The
+  default headers deny camera, microphone and geolocation, so a plugin
+  built on the host-mediated shape — host captures, sandboxed frame
+  decodes — failed in the *host page* at the moment a user clicked the
+  control, and nothing in the manifest could say why. The check warns only
+  when every directive naming the feature carries the empty allowlist
+  `()`, the one unambiguous deny-everywhere shape; `(self)`, `*`, origin
+  lists and contradictory duplicates stay silent, because a check that
+  fires spuriously is one nobody reads. It never fails a boot.
+
+- **`pluginhost.Manifest.CSP` — an opt-in wasm tier for the framed
+  sandbox** (#255, last of the three framed-runtime PRs): the framed
+  Content-Security-Policy had no `'wasm-unsafe-eval'` and no extension
+  point, so WebAssembly could not instantiate in a plugin frame at all.
+  The pdf plugin runs pdf.js worker-free on the main thread to dodge
+  that, and a plugin built on a wasm engine had to become a trusted
+  host-page plugin, giving up the isolation the frame exists for. A
+  manifest may now opt in against a closed allowlist with exactly one
+  member, `'wasm-unsafe-eval'`, which widens `script-src` and nothing
+  else: the opaque origin, `sandbox allow-scripts` without
+  `allow-same-origin`, and `connect-src 'none'` all stay, so a wasm
+  engine still cannot fetch, reach host cookies or DOM, or exfiltrate.
+  Matching is exact, byte-for-byte — unlike the HTML sandbox attribute
+  the CSP header does not normalise source expressions, so one
+  comparison rejects every smuggle shape, including a token carrying
+  `;` that could otherwise splice a directive into the response header.
+  Thread it with `NewAssetServer(...).WithCSP(mod.Manifest.CSP)`; a
+  manifest without the tier produces a byte-identical header. Only
+  single-threaded wasm builds work here — multi-threaded builds want
+  `SharedArrayBuffer` and COOP/COEP cross-origin isolation, which fight
+  the opaque origin.
+
+- **`ui.Button.AriaLabel` / `html.Button.AriaLabel`** (#281): an
+  accessible-name override for buttons that share a visible `Label` but
+  must be announced distinctly — a table of "Revoke" buttons, a
+  dashboard's repeated actions. Button owns `aria-label` (an
+  `ExtraAttrs` one is dropped), so before this there was no supported
+  way to set it and repeated buttons announced identically; the admin
+  RBAC revoke buttons and the live-dashboard demo now use it.
+
+- **`pluginhost.MountConfig.Fallback`** (#253, second of the three
+  framed-runtime PRs): a `render.HTML` slot for server-rendered
+  pre-hydration content inside the plugin mount marker. The broker
+  shows it while the frame loads, hides it — never removes it — when
+  the frame reports `ready`, and swaps back to it on `bootError`, so a
+  plugin with a Go-side renderer (the chart plugin's SSR SVG) degrades
+  to its static output instead of an empty box, and works with
+  JavaScript off. The fallback is host-trusted HTML built by the
+  plugin's `Mount()`; plugins without one keep the frame visible while
+  loading, unchanged.
+
+- **Pluginhost bidirectional request channel** (#252, first of the
+  three framed-runtime PRs): frame → host requests are now
+  platform-owned, mirroring the host's existing `request()`. GoFastr
+  ships the frame-side client for the first time —
+  `frame/frameclient.js` (`window.__gofastrPluginFrame` with
+  `ready`/`sendEvent`/`sendRequest`/`onEvent`/`onRequest`), served via
+  `pluginhost.RegisterFrameClientRoute` with the framed CORP
+  relaxation, or bundled via `pluginhost.FrameClientJS()`. Host
+  adapters answer with `api.onRequest(method, handler)` or a static
+  `registration.onRequest` fallback. One contract in both directions:
+  every request is answered (`E_NO_HANDLER` / `E_HANDLER`, never
+  silence), the in-flight map is bounded at 64 (`E_SATURATED`),
+  invalid timeouts fall back to 5s, and teardown rejects outstanding
+  requests with `E_TEARDOWN` instead of leaking hung promises. A
+  non-cloneable payload (`DataCloneError`) on the request path cleans
+  up its pending entry and rejects `E_SEND` on both sides instead of
+  leaking toward the bound, and a non-cloneable handler *result* answers
+  a cloneable `E_HANDLER` rather than hanging the caller. Plugins
+  (richtext, datagrid) each hand-rolled their own correlation before
+  this.
+
 - **`ui.SiteHeaderConfig.PersistentActions`** (#256): a slot for the
   one journey-critical control (sign-in link, primary CTA) that stays
   in the bar at every viewport width instead of collapsing into the
   mobile drawer with the rest of `Actions`. It is never copied into
   the drawer, so no duplicate control exists at any width. Meridian's
   guest marketing header now keeps Sign in visible at 390px.
+
+- **Porting guide** (#245 item 1, decided: escape hatch, not a
+  supported use case): a new docs page, `porting.md`, shows how to move
+  an app with a foreign DOM contract onto GoFastr — html/template
+  screens rendered as `render.HTML`, the compiled design system served
+  via `static.Mount` — and states plainly that markup and stylesheets
+  brought this way are outside the one-styling-surface contract: the
+  app owns the drift.
 
 - **`ui.MenuItem.Confirm`**: pre-flight confirmation for RPC menu
   items, emitted as `data-fui-confirm` alongside the item's
@@ -74,6 +242,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   sanitized.
 
 ### Fixed
+
+- **`data-fui-confirm` fires on plain form submits** (#279): the
+  attribute was only read in `_dispatchRPC`, which needs `data-fui-rpc`
+  on the node, and a plain POST form leaves the submit bridge at the
+  enctype check. So the gate never ran: the admin process-modules screen
+  revoked a capability and disabled a module on the first click, and so
+  did any app that put the attribute on a plain form. The gate now runs
+  before every branch of the submit bridge, covering native,
+  `data-fui-spa`, and `data-fui-rpc` forms alike, and the widget-scoped
+  listener gets the same treatment. A submit button's message takes
+  precedence over the form's, since one form can carry several submit
+  buttons of different destructive weight. The core gzip budget moves
+  14700 → 14784: the gate cannot be carved into a demand module, because
+  a native submit navigates away before one could load.
 
 - **Generated API docs describe routes that exist** (#266, sibling of
   the v0.73.0 banner fix): `/openapi.json` and `/api/llm.md` documented

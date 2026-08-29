@@ -44,8 +44,14 @@ empty-state host and use the floating panel. Important endpoints are:
 | `POST/GET /mcp/app` | Rebuilt app's entity MCP tools. |
 | `GET /.kiln/events` | Journal/build SSE stream. |
 
-`kiln mcp` and `kiln acp` expose the same tools over stdio. Pass
-`--no-http` when a parent process owns the UI.
+`kiln mcp` exposes the same tools over stdio MCP. `kiln acp` speaks the
+published Agent Client Protocol v1 instead (see
+[ACP](/docs/acp)): `initialize` → `session/new` → `session/prompt`, with
+tool invocations streamed as `session/update` `tool_call` frames and
+`approve_plan` gated on `session/request_permission`. The CLI attaches no
+model to ACP turns, so prompts are journaled and refused with a pointer at
+`kiln mcp` / the panel; embedders attach one with `kiln/acp.WithProvider`.
+Pass `--no-http` when a parent process owns the UI.
 
 ## Agent adapters
 

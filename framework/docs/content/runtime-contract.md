@@ -106,7 +106,7 @@ server side and the runtime does the work.
 | `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
 | `data-fui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-fui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. |
-| `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
+| `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` gate, honored on every form submit the runtime sees — native POST, `data-fui-spa`, and `data-fui-rpc` forms alike — and on non-form `data-fui-rpc` clicks. On a form, an attribute on the submit button takes precedence over one on the form element. Cancel aborts: the submit is prevented (a native form never navigates), the RPC never fires. Use for destructive actions (delete, revoke). |
 | `data-fui-rpc-trigger="input"` | On a `<form data-fui-rpc=…>`, dispatch the RPC on every `input` event from any control inside, after a debounce window. |
 | `data-fui-rpc-debounce-ms="<ms>"` | Debounce window for `data-fui-rpc-trigger="input"`. Default 250. |
 | `data-fui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot; idempotent on re-click via `data-fui-rpc-after-done`. |
@@ -407,11 +407,14 @@ Pages that mount a sandboxed heavy-JS plugin (see
 `framework/pluginhost.MountMarker`: `data-fui-plugin="<name>"` with
 `data-fui-plugin-docid`, `data-fui-plugin-doc` (server-rendered initial
 JSON), `data-fui-plugin-minheight`, and `data-fui-plugin-capabilities`
-(the grant set, `resource:verb` grammar). These are scanned by the plugin
-host broker: a separate script served at its own route, NOT part of
-`runtime.js` or its budgets. Plugins may add namespaced extras (the
-wysiwyg editor adds `data-fui-plugin-for` naming its hidden form fields);
-those are documented by the owning plugin.
+(the grant set, `resource:verb` grammar). An optional
+`data-fui-plugin-fallback` wrapper (from `MountConfig.Fallback`) holds a
+server-rendered node the broker shows while the frame loads and swaps
+back to on `bootError`, so a dead frame degrades to static output. These
+are scanned by the plugin host broker: a separate script served at its
+own route, NOT part of `runtime.js` or its budgets. Plugins may add
+namespaced extras (the wysiwyg editor adds `data-fui-plugin-for` naming
+its hidden form fields); those are documented by the owning plugin.
 
 ---
 
