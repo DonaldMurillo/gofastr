@@ -491,3 +491,106 @@ func TestWorkerRole_ShutdownClosesQueue(t *testing.T) {
 		t.Fatalf("worker shutdown: queue Close called %d times, want 1", f.closes.Load())
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Agent role: MCP mount + health only
+// ──────────────────────────────────────────────────────────────────────
+
+// post is the mutating counterpart of the get helper above.
+func post(t *testing.T, addr, path, contentType, body string) *http.Response {
+	t.Helper()
+	resp, err := http.Post("http://"+addr+path, contentType, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	return resp
+}
+
+// In RoleAgent, the /mcp mount is served: the MCP initialize handshake
+// (deliberately credential-free) completes over HTTP, and health probes
+// answer like every other role.
+func TestAgentRole_ServesMCPMountAndHealth(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	db := sqliteDB(t)
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithRole(RoleAgent), WithMCP())
+	app.Entity("posts", postsEntity())
+	addr, _ := startOnRandomPort(t, app)
+
+	resp := post(t, addr, "/mcp", "application/json",
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"role-test","version":"0"}}}`)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/mcp initialize on agent role: got %d body %s", resp.StatusCode, body)
+	}
+	if strings.Contains(string(body), `"error"`) {
+		t.Fatalf("/mcp initialize returned a JSON-RPC error: %s", body)
+	}
+	if !strings.Contains(string(body), "serverInfo") {
+		t.Fatalf("/mcp initialize response missing serverInfo: %s", body)
+	}
+
+	// The spec-reserved subpath forwards to the same router (404 from the
+	// ROUTER would still prove forwarding; a served card proves the mount).
+	r := get(t, addr, "/mcp/server-card")
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("/mcp/server-card on agent role: got %d want 200", r.StatusCode)
+	}
+
+	h := get(t, addr, "/healthz")
+	defer h.Body.Close()
+	if h.StatusCode != http.StatusOK {
+		t.Fatalf("/healthz on agent role: got %d want 200", h.StatusCode)
+	}
+}
+
+// In RoleAgent, an entity CRUD route is NOT served, nor OpenAPI or the
+// well-known discovery endpoints: the mux forwards only /mcp paths, the
+// browser/API surface stays unreachable from an agent-role listener.
+func TestAgentRole_EntityRouteNotServed(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	db := sqliteDB(t)
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithRole(RoleAgent), WithMCP())
+	app.Entity("posts", postsEntity())
+	addr, _ := startOnRandomPort(t, app)
+
+	resp := get(t, addr, "/posts")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("/posts on agent role: got %d want 404 (entity routes must not be served)", resp.StatusCode)
+	}
+	for _, p := range []string{"/openapi.json", "/.well-known/agent-skills/index.json"} {
+		r := get(t, addr, p)
+		r.Body.Close()
+		if r.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s on agent role: got %d want 404", p, r.StatusCode)
+		}
+	}
+}
+
+// In RoleAgent, worker-scoped consumers do not start (same gate as
+// RoleServe): a queued job's Start is never called.
+func TestAgentRole_QueueDoesNotStart(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	app := NewApp(WithoutDefaultMiddleware(), WithRole(RoleAgent))
+	f := &fakeStartStop{}
+	app.AddQueue(f)
+
+	_, stop := startOnRandomPort(t, app)
+	stop()
+
+	if f.starts.Load() != 0 {
+		t.Fatalf("agent role: queue Start called %d times, want 0", f.starts.Load())
+	}
+}
+
+// GOFASTR_ROLE=agent resolves to RoleAgent (deploy-time selection parity
+// with serve/worker).
+func TestRole_EnvSetsAgentRole(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "agent")
+	app := NewApp(WithoutDefaultMiddleware())
+	if app.Role() != RoleAgent {
+		t.Fatalf("env role: got %q want %q", app.Role(), RoleAgent)
+	}
+}
