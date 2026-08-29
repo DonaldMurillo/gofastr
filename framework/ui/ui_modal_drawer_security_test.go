@@ -159,7 +159,7 @@ func TestDrawer_TitleXSS(t *testing.T) {
 	h := string(sidebarBody(SidebarConfig{
 		Title: `<script>alert("xss")</script>`,
 		Items: []SidebarItem{{Label: "Home", Href: "/"}},
-	}))
+	}, "t"))
 	mustNotContainRaw(t, h, "<script>", "drawer-title-xss")
 	if !strings.Contains(h, "&lt;script&gt;") {
 		t.Errorf("SECURITY: [drawer-title-xss] expected &lt;script&gt;, got: %s", h)
@@ -174,7 +174,7 @@ func TestDrawer_BodyXSS(t *testing.T) {
 		Items: []SidebarItem{
 			{Label: `<img src=x onerror="alert(1)">`, Href: "/safe"},
 		},
-	}))
+	}, "t"))
 	// < is escaped → no <img> element can be parsed
 	mustNotContainRaw(t, h, "<img", "drawer-body-xss")
 	if !strings.Contains(h, "&lt;img") {
@@ -207,7 +207,7 @@ func TestDrawer_ClassInjection(t *testing.T) {
 		Items: []SidebarItem{
 			{Label: `" onclick="alert(1)" data-x="`, Href: "/safe"},
 		},
-	}))
+	}, "t"))
 	// The label is text-escaped via render.Escape (5-char: <>&"').
 	// " and ' become &quot;/&#39; in the text node, inert there, and
 	// the payload cannot leave the <span class="ui-sidebar__label">.

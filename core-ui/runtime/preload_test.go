@@ -45,6 +45,13 @@ func TestNeededModules_SidebarCollapse(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
 	}
+	// Button-dialect groups load the same module even when the sidebar
+	// has no collapse button (e.g. a persistent variant).
+	html = `<button data-fui-sidebar-group-toggle aria-expanded="false">Group</button>`
+	got = NeededModules(html)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
+	}
 }
 
 func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
