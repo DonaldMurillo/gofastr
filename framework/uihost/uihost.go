@@ -111,6 +111,7 @@ type UIHost struct {
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
 	headTags            []string                             // typed head tags built from convenience options
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
+	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
 	notFoundScreen      component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
 	organization        *OrganizationConfig                  // when set, Organization JSON-LD is embedded in every full page head (see organization.go)
@@ -406,6 +407,16 @@ func WithNotFoundScreen(c component.Component) Option {
 // auto-serves 204 No Content at the configured URL when no static file
 // matches, so a host that ships no favicon doesn't 404 on every page
 // load. Place a real file at the path in staticDir / staticFS to override.
+// WithNoLiveChannel omits the <meta name="gofastr-sse"> tag, so the
+// runtime never opens the island EventSource. For hosts that use no
+// live islands and must keep pages network-idle-able: a long-lived
+// EventSource counts as an in-flight request forever, which blocks
+// waitForLoadState('networkidle') / waitUntil:'networkidle' — a common
+// e2e pattern (60 spec files in the metacollector port alone).
+func WithNoLiveChannel() Option {
+	return func(ds *UIHost) { ds.noLiveChannel = true }
+}
+
 func WithFavicon(href string) Option {
 	return func(ds *UIHost) {
 		ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="icon" href="%s">`, stdhtml.EscapeString(href)))
@@ -1541,7 +1552,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	bodyClose := borrowBuilder()
 	defer returnBuilder(bodyClose)
 
-	if sessionID != "" {
+	if sessionID != "" && !ds.noLiveChannel {
 		// The SSE connection URL. presenceTopic (from the page's ?presence=
 		// query param) is appended so the SSE handler joins the connection
 		// onto the named topic. This is what binds a live roster island to

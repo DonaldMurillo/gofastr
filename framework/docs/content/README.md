@@ -93,6 +93,10 @@ results, the harness contract) are exempt. The exemption list lives in
   tools to in-browser agents via the page's `modelContext` (the Chrome
   origin-trial WebMCP API); execute() proxies to same-origin endpoints
   with the visitor's session.
+- [Generative UI](generative-ui.md): the position: models compose the
+  design system, never emit markup or CSS; where that rule applies
+  (agent-built apps, Kiln, MCP App widgets) and why runtime per-user
+  generation is plugin territory, not a framework feature.
 
 ## Building UI
 

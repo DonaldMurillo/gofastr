@@ -320,6 +320,9 @@ func sectionCSS(_ style.Theme) string {
 func formFieldCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-form-field"] {
   display: grid;
+  /* 1fr (not auto): an auto track sizes to the input's intrinsic ~20ch,
+     so percentage-width controls never fill the field. */
+  grid-template-columns: 1fr;
   gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__label-row {
@@ -359,6 +362,11 @@ func formFieldCSS(_ style.Theme) string {
 [data-fui-comp="ui-form-field"] input,
 [data-fui-comp="ui-form-field"] textarea,
 [data-fui-comp="ui-form-field"] select {
+  /* Fill the field track: the field root is display:grid with an
+     auto-sized column, so an unsized <input> otherwise keeps its
+     intrinsic ~20ch width instead of the panel/container width. */
+  width: 100%;
+  box-sizing: border-box;
   /* Token-scaled touch target (see ui-button). */
   min-height: var(--spacing-touch-target);
   padding: 10px var(--spacing-md, 8px);
@@ -610,12 +618,20 @@ func avatarCSS(_ style.Theme) string {
 }
 
 func formCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-form"] { display: grid; gap: var(--spacing-lg, 16px); }
-[data-fui-comp="ui-form"] .ui-form__fields { display: grid; gap: var(--spacing-md, 8px); }
+	return `[data-fui-comp="ui-form"] { display: grid; gap: var(--spacing-lg, 16px); grid-template-columns: 1fr; }
+[data-fui-comp="ui-form"] .ui-form__fields { display: grid; gap: var(--spacing-md, 8px); grid-template-columns: 1fr; }
 [data-fui-comp="ui-form"] .ui-form__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm, 4px);
+}
+[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions .ui-button {
+  width: 100%;
+  box-sizing: border-box;
 }`
 }
 

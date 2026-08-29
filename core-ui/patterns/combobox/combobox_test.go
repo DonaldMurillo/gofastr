@@ -32,7 +32,7 @@ func TestRenderShape(t *testing.T) {
 		`aria-activedescendant=""`,
 		`autocomplete="off"`,
 		`placeholder="Type a city"`,
-		`<form`,
+		`<div class="combobox__form"`,
 		`data-fui-rpc="/cities/search"`,
 		`data-fui-rpc-method="POST"`,
 		`data-fui-rpc-trigger="input"`,
@@ -181,21 +181,24 @@ func TestRenderStaticOptionsNoRPCPath(t *testing.T) {
 	}
 }
 
-func TestStaticSSRStateIsExpanded(t *testing.T) {
+func TestStaticSSRStateIsCollapsed(t *testing.T) {
 	h := string(Render(Config{
 		ID: "c1", Name: "q", Label: "Search",
 		Options: []Option{{Label: "Go"}, {Label: "Rust"}},
 	}))
-	// Static options render visible at SSR, so the combobox input must
-	// ship aria-expanded="true", otherwise the runtime's Escape /
-	// outside-click dismissal (both keyed on aria-expanded="true")
-	// can't close the visibly-open listbox until a keystroke re-syncs
-	// the state.
-	if !strings.Contains(h, `aria-expanded="true"`) {
-		t.Errorf("static combobox must SSR aria-expanded=true:\n%s", h)
+	// Static options ship CLOSED: an SSR-open listbox (absolute,
+	// z-index 50) overlays whatever follows the combobox in the host
+	// form — the submit button becomes unclickable. The runtime module
+	// opens on focus/ArrowDown/click and filters static options on
+	// input, so closed-until-interact is a complete contract.
+	if !strings.Contains(h, `aria-expanded="false"`) {
+		t.Errorf("static combobox must SSR aria-expanded=false:\n%s", h)
 	}
-	if strings.Contains(h, `aria-expanded="false"`) {
-		t.Errorf("static combobox must not claim collapsed state:\n%s", h)
+	if !strings.Contains(h, `data-fui-static-options`) {
+		t.Errorf("static combobox must mark its listbox:\n%s", h)
+	}
+	if !strings.Contains(h, `hidden`) {
+		t.Errorf("static combobox listbox must ship hidden:\n%s", h)
 	}
 }
 

@@ -92,15 +92,17 @@ func TestE2E_ComboboxFilterAndSelect(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var ssrExpanded, pickedValue, expandedAfterPick string
 	var visibleOpts int
-	var listboxHidden bool
+	var listboxHidden, ssrHidden bool
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/combobox"),
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.combobox)`),
-		// SSR state: static options render visible, so the input must
-		// claim expanded from first paint.
+		// SSR state: static listboxes ship CLOSED (an SSR-open listbox
+		// overlays the controls after it in a host form). Focus/typing
+		// opens it.
 		chromedp.Evaluate(`document.getElementById('demo-combobox').getAttribute('aria-expanded')`, &ssrExpanded),
-		// Filter down to Accordion.
+		chromedp.Evaluate(`document.getElementById('demo-combobox-listbox').hasAttribute('hidden')`, &ssrHidden),
+		// Focus opens the listbox; typing filters down to Accordion.
 		chromedp.SendKeys(`#demo-combobox`, "acc", chromedp.ByID),
 		settle(),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('#demo-combobox-listbox [role="option"]')).filter(o => !o.hidden).length`, &visibleOpts),
@@ -114,8 +116,8 @@ func TestE2E_ComboboxFilterAndSelect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if ssrExpanded != "true" {
-		t.Errorf("static combobox must SSR aria-expanded=true, got %q", ssrExpanded)
+	if ssrExpanded != "false" || !ssrHidden {
+		t.Errorf("static combobox must SSR closed (expanded=%q hidden=%v)", ssrExpanded, ssrHidden)
 	}
 	if visibleOpts != 1 {
 		t.Errorf("typing 'acc' should leave 1 visible option, got %d", visibleOpts)
@@ -131,15 +133,17 @@ func TestE2E_ComboboxFilterAndSelect(t *testing.T) {
 func TestE2E_ComboboxEscapeDismisses(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
-	var expanded string
+	var expanded, openedExpanded string
 	var hidden bool
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/combobox"),
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.combobox)`),
-		// The listbox is visibly open at SSR; Escape must dismiss it
-		// WITHOUT requiring a prior keystroke to sync state.
+		// Click opens the closed-by-default listbox; Escape dismisses
+		// it again.
 		chromedp.Click(`#demo-combobox`, chromedp.ByID),
+		settle(),
+		chromedp.Evaluate(`document.getElementById('demo-combobox').getAttribute('aria-expanded')`, &openedExpanded),
 		chromedp.SendKeys(`#demo-combobox`, kb.Escape, chromedp.ByID),
 		settle(),
 		chromedp.Evaluate(`document.getElementById('demo-combobox').getAttribute('aria-expanded')`, &expanded),
@@ -147,6 +151,9 @@ func TestE2E_ComboboxEscapeDismisses(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
+	}
+	if openedExpanded != "true" {
+		t.Errorf("click must open the listbox, got expanded=%q", openedExpanded)
 	}
 	if expanded != "false" || !hidden {
 		t.Errorf("Escape must dismiss the open listbox (expanded=%q hidden=%v)", expanded, hidden)

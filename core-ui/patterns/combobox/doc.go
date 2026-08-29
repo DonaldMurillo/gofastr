@@ -15,8 +15,9 @@
 //
 // Server contract for the search RPC handler:
 //
-//   - Request body: form-encoded with `query=<text>` (whatever the
-//     input's `name` attribute is, default "q").
+//   - Request body: JSON `{"<name>": "<text>"}` (whatever the
+//     input's `name` attribute is, default "q"), Content-Type
+//     application/json.
 //   - Response: `<li role="option" id="...">label</li>` fragments,
 //     swapped into the listbox via data-fui-rpc-signal. Each option
 //     SHOULD carry a `data-value` attribute that becomes the input's

@@ -60,17 +60,16 @@ func Render(cfg Config) render.HTML {
 
 	// Input carries the ARIA + binding affordances; the FORM carries
 	// the RPC trigger because the runtime listens for input events at
-	// document level on form[data-fui-rpc][data-fui-rpc-trigger="input"].
+	// document level on [data-fui-rpc][data-fui-rpc-trigger="input"].
 	//
-	// SSR expanded state must match the listbox: static options render
-	// visible, so the input ships aria-expanded="true", the runtime's
-	// Escape / outside-click dismissal is keyed on aria-expanded="true"
-	// and would otherwise be unable to close the visibly-open listbox
-	// until a keystroke re-synced the state.
+	// Static options ship CLOSED (aria-expanded="false" + hidden
+	// listbox): a combobox embedded in a host form that renders open
+	// overlays the controls below it (an absolutely-positioned listbox
+	// with 100 options sits on the submit button, so the form cannot be
+	// submitted). The runtime module opens the listbox on focus/click
+	// and filters options on input. Apps that want an always-open list
+	// should render a plain list, not a combobox.
 	expanded := "false"
-	if hasStatic {
-		expanded = "true"
-	}
 	inputAttrs := map[string]string{
 		"type":                  "text",
 		"id":                    cfg.ID,
@@ -96,7 +95,13 @@ func Render(cfg Config) render.HTML {
 		formAttrs["data-fui-rpc-debounce-ms"] = strconv.Itoa(debounce)
 		formAttrs["data-fui-rpc-signal"] = cfg.SignalName
 	}
-	form := render.Tag("form", formAttrs, render.Tag("input", inputAttrs))
+	// A div, not a form: the HTML parser drops a nested <form> open tag
+	// but honors its </form>, which closes any HOST form the combobox is
+	// embedded in — every control after the first combobox (including the
+	// submit button) falls outside the host form and never submits. The
+	// RPC trigger attributes work on any carrier; the runtime matches
+	// [data-fui-rpc][data-fui-rpc-trigger="input"] regardless of tag.
+	form := render.Tag("div", formAttrs, render.Tag("input", inputAttrs))
 
 	listboxAttrs := map[string]string{
 		"id":         listboxID,
@@ -111,6 +116,7 @@ func Render(cfg Config) render.HTML {
 	var listboxBody render.HTML
 	if hasStatic {
 		listboxAttrs["data-fui-static-options"] = ""
+		listboxAttrs["hidden"] = ""
 		listboxBody = render.Join(staticOptionRows(listboxID, cfg.Options)...)
 	} else {
 		if cfg.EmptyHTML == "" {
