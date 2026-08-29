@@ -244,3 +244,160 @@ func TestAssetServerWithCSPThreadsToHeader(t *testing.T) {
 		t.Errorf("host-page script must carry no CSP, got %q", got)
 	}
 }
+
+// A spec that omits ContentType still gets a usable header. An empty
+// Content-Type plus the nosniff on the next line makes the browser refuse to
+// parse a 200 response whose bytes are correct, with nothing logged
+// server-side and nothing raised in the console (#303).
+func TestSpecWithoutContentTypeGetsOne(t *testing.T) {
+	fsys := fstest.MapFS{
+		"frame.html":  &fstest.MapFile{Data: []byte("<!doctype html><p>frame")},
+		"probe.js":    &fstest.MapFile{Data: []byte("var x=1;")},
+		"sqlite.wasm": &fstest.MapFile{Data: []byte("\x00asm")},
+		"opaque.bin":  &fstest.MapFile{Data: []byte("\x00\x01")},
+	}
+	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
+		{Name: "frame.html", Framed: true},
+		{Name: "probe.js", Framed: true},
+		{Name: "sqlite.wasm", Framed: true},
+		{Name: "opaque.bin", Framed: true},
+	})
+	srv.AddBytes("/__p/host.js", "", false, []byte("var x=1;"))
+	rt := router.New()
+	srv.Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	want := map[string]string{
+		"/__p/frame.html":  "text/html; charset=utf-8",
+		"/__p/probe.js":    "text/javascript; charset=utf-8",
+		"/__p/sqlite.wasm": "application/wasm",
+		"/__p/opaque.bin":  "application/octet-stream",
+		"/__p/host.js":     "text/javascript; charset=utf-8",
+	}
+	for path, ct := range want {
+		resp, err := http.Get(hs.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if got := resp.Header.Get("Content-Type"); got != ct {
+			t.Errorf("%s: Content-Type=%q want %q", path, got, ct)
+		}
+	}
+}
+
+// An explicit ContentType always wins over the extension default: the spec
+// field stays authoritative for the plugin that sets it.
+func TestExplicitContentTypeWins(t *testing.T) {
+	fsys := fstest.MapFS{"data.js": &fstest.MapFile{Data: []byte("{}")}}
+	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
+		{Name: "data.js", ContentType: "application/json", Framed: true},
+	})
+	rt := router.New()
+	srv.Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/data.js")
+	if err != nil {
+		t.Fatalf("GET data.js: %v", err)
+	}
+	resp.Body.Close()
+	if got := resp.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type=%q want the spec's explicit application/json", got)
+	}
+}
+
+// ClientModule.AssetServer threads Manifest.CSP to the frame without the host
+// repeating the wiring. A manifest that declares the wasm tier and a server
+// built from the module cannot disagree (#300).
+func TestModuleAssetServerThreadsCSP(t *testing.T) {
+	fsys := fstest.MapFS{"frame.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")}}
+	mod, err := NewClientModule("probe", Manifest{
+		Entry: "/__p/frame.html",
+		CSP:   []string{"'wasm-unsafe-eval'"},
+	}, fsys)
+	if err != nil {
+		t.Fatalf("NewClientModule: %v", err)
+	}
+	rt := router.New()
+	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/frame.html")
+	if err != nil {
+		t.Fatalf("GET frame.html: %v", err)
+	}
+	resp.Body.Close()
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "'wasm-unsafe-eval'") {
+		t.Errorf("module-built server must carry the manifest tier: %q", csp)
+	}
+}
+
+// A module whose manifest declares no tier gets the byte-identical default
+// policy: the convenience constructor grants nothing on its own.
+func TestModuleAssetServerNoTierNoGrant(t *testing.T) {
+	fsys := fstest.MapFS{"frame.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")}}
+	mod, err := NewClientModule("probe", Manifest{Entry: "/__p/frame.html"}, fsys)
+	if err != nil {
+		t.Fatalf("NewClientModule: %v", err)
+	}
+	rt := router.New()
+	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/frame.html")
+	if err != nil {
+		t.Fatalf("GET frame.html: %v", err)
+	}
+	resp.Body.Close()
+	if csp := resp.Header.Get("Content-Security-Policy"); strings.Contains(csp, "wasm") {
+		t.Errorf("no manifest tier must mean no wasm keyword: %q", csp)
+	}
+}
+
+// A module that declares specs but ships no asset FS is a wiring mistake, and
+// it fails at registration rather than 404ing every request for the frame.
+func TestNilAssetFSPanicsAtRegister(t *testing.T) {
+	mod, err := NewClientModule("probe", Manifest{Entry: "/__p/frame.html"}, nil)
+	if err != nil {
+		t.Fatalf("NewClientModule: %v", err)
+	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Register must panic on specs with no filesystem to read them from")
+		}
+		if msg, _ := r.(string); !strings.Contains(msg, "nil fs.FS") {
+			t.Errorf("panic must name the cause, got %v", r)
+		}
+	}()
+	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(router.New())
+}
+
+// A nil FS carrying NO specs is the legitimate byte-backed server: a host
+// script served from AddBytes with no embedded frame assets. It must still
+// register and serve.
+func TestNilAssetFSWithoutSpecsServes(t *testing.T) {
+	srv := NewAssetServer(nil, "/__p", nil)
+	srv.AddBytes("/__p/host.js", "", false, []byte("var x=1;"))
+	rt := router.New()
+	srv.Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/host.js")
+	if err != nil {
+		t.Fatalf("GET host.js: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status=%d want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/javascript; charset=utf-8" {
+		t.Errorf("Content-Type=%q", got)
+	}
+}

@@ -106,6 +106,46 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   previously hardcoded `aria-expanded="true"`, which was wrong the
   moment the rail collapsed.
 
+- **`ClientModule.AssetServer(prefix, specs)`** (#300): builds a plugin's
+  `AssetServer` from the module, reading `ClientModule.Assets` and
+  threading `Manifest.CSP` through `WithCSP`. `Manifest.CSP` was the one
+  manifest field a host could set correctly and have the frame ignore,
+  because it is applied as a response header rather than carried on the
+  manifest object to the mount: a plugin could declare the wasm tier, pass
+  `Validate`, and still get a frame that refused to compile WebAssembly,
+  reported only as a `CompileError` inside an opaque origin with
+  `connect-src 'none'` and no way out. Building the server from the module
+  makes the manifest the single source of truth, and passes less than the
+  old call did (`fsys` comes from the module). `NewAssetServer` stays for
+  assets that belong to no module.
+
+### Fixed
+
+- **An `AssetSpec` without a `ContentType` now serves one derived from the
+  filename** (#303) instead of an empty `Content-Type`. `writeAsset` set
+  the header unconditionally from the spec and set `nosniff` on the next
+  line, so an omitted type served 200 with the right bytes and a document
+  the browser was forbidden to parse or to recover by sniffing — silent in
+  the server log, the console, and as a page error alike, leaving an empty
+  frame that reads as broken plugin JS. Detection goes through
+  `core/static.DetectFromName`, the repo's canonical detector: its table
+  wins over `mime.TypeByExtension` so `.html`, `.js`, `.css` and `.wasm`
+  resolve the same on every host, the stdlib covers only the long tail,
+  and `application/octet-stream` is the floor. An explicit `ContentType`
+  still wins, `nosniff` is unchanged, and `AddBytes` gets the same
+  default.
+
+- **`AssetServer.Register` rejects specs with no filesystem to read them
+  from** instead of panicking the request goroutine later. `fs.ReadFile` on
+  a nil `fs.FS` dereferences the nil interface, so a module that declared
+  specs and shipped no assets took down whichever request first asked for
+  the frame. `ClientModule.Assets` is optional — a plugin may serve its own
+  assets — but such a plugin passes no specs to an `AssetServer` either, so
+  a nil FS carrying specs is a wiring mistake, not a runtime condition, and
+  it now fails at boot with a message naming the fix. A nil FS with no
+  specs stays valid: that is the byte-backed server built from `AddBytes`
+  alone.
+
 ## [0.74.0] - 2026-08-29
 
 ### Changed
