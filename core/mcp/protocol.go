@@ -58,7 +58,8 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 	ctx = enrichContext(ctx)
 
 	switch req.Method {
-	case "tools/list", "tools/call", "resources/list", "resources/read":
+	case "tools/list", "tools/call", "resources/list", "resources/read",
+		"resources/templates/list", "prompts/list", "prompts/get":
 		// Server-wide gate over the DATA surface. initialize and ping fall
 		// through uncovered on purpose. See Server.serverGate.
 		if err := s.checkServerGate(ctx); err != nil {
@@ -75,11 +76,18 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 		return s.handleResourcesList(ctx, req)
 	case "resources/read":
 		return s.handleResourcesRead(ctx, req)
+	case "resources/templates/list":
+		return s.handleResourcesTemplatesList(ctx, req)
+	case "prompts/list":
+		return s.handlePromptsList(ctx, req)
+	case "prompts/get":
+		return s.handlePromptsGet(ctx, req)
 	case "initialize":
 		// MCP handshake: advertise protocol version + capabilities +
 		// serverInfo so a spec-compliant client (Claude, Cursor, …)
 		// completes the handshake before tools/list. Capabilities
-		// advertise tools always, and resources when any is registered.
+		// advertise tools always, and resources/prompts when any is
+		// registered.
 		return s.handleInitialize(req)
 	case "ping":
 		// MCP liveness check: empty result object.
@@ -127,8 +135,13 @@ func (s *Server) handleInitialize(req Request) Response {
 	capabilities := map[string]any{
 		"tools": map[string]any{"listChanged": false},
 	}
-	if s.hasResources() {
+	if s.hasResources() || s.hasTemplates() {
+		// The spec has one `resources` capability for both resources and
+		// resource templates; a templates-only server still advertises it.
 		capabilities["resources"] = map[string]any{"listChanged": false, "subscribe": false}
+	}
+	if s.hasPrompts() {
+		capabilities["prompts"] = map[string]any{"listChanged": false}
 	}
 	return newSuccessResponse(req.ID, map[string]any{
 		"protocolVersion": "2025-06-18",

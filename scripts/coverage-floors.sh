@@ -126,6 +126,7 @@ FLOORS="
 ./core/handler/ 85.9
 ./core/i18n/ 86.3
 ./core/markdown/ 90.8
+./core/acp/ 85.0
 ./core/mcp/ 82.1
 ./core/middleware/ 80.7
 ./core/migrate/ 98.0
@@ -209,7 +210,7 @@ FLOORS="
 ./framework/uihost/internal/sessiontoken/ 93.7
 ./framework/uihost/uinoderender/ 87.7
 ./internal/fileperm/ 98.5
-./kiln/agent/acp/ 78.1
+./kiln/acp/ 79.0
 ./kiln/agent/mcp/ 73.5
 ./kiln/effect/ 75.1
 ./kiln/expr/ 71.7

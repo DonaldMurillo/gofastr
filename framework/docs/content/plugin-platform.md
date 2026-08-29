@@ -182,6 +182,83 @@ The client half is advisory UX (the editor hides upload UI without
 403s without the scope). Never trust the frame's own claim of its
 grants.
 
+## Host-page requirements
+
+A manifest describes what the FRAME gets. Some plugins also need something
+from the page around them: a barcode scanner built the way [issue #273](https://github.com/DonaldMurillo/gofastr/issues/273)
+recommends — host page captures, sandboxed frame decodes — needs the HOST
+page's `getUserMedia` to work. GoFastr's default security headers send
+`Permissions-Policy: geolocation=(), microphone=(), camera=()`, which denies
+those features to the page itself, so the scanner dies with a console error
+a user only sees after clicking the control that starts the camera:
+
+```
+Permissions policy violation: camera is not allowed in this document.
+```
+
+The default denial is deliberate: no page should silently turn on a camera
+or microphone, and `SecurityHeadersConfig.PermissionsPolicy` is the
+one-line opt-out. What was missing is a way for a plugin to SAY it needs
+that opt-out. `Manifest.HostRequirements` is it:
+
+```go
+m, err := pluginhost.NewClientModule("scanner", pluginhost.Manifest{
+	Entry: "/__gofastr/plugin/scanner/scan.html",
+	HostRequirements: []string{
+		"permissions-policy:camera",
+	},
+}, assets)
+```
+
+Tokens are `permissions-policy:<feature>` against a closed registry of the
+Permissions-Policy spec's policy-controlled features (`camera`,
+`microphone`, `geolocation`, `clipboard-write`, `fullscreen`, ...).
+`Manifest.Validate` rejects anything else at registration — unknown
+prefix, typo'd feature, embedded header syntax — so a bad declaration is
+a build error, not a silently unsatisfiable requirement. The frame itself
+is opaque-origin and can never hold these permissions; the declaration is
+about the host page, and the working shape is always host-page capture +
+frame processing.
+
+### The boot check
+
+There is no central registry of client modules to hook, so the check is a
+helper the app calls once at startup, next to where it wires its security
+headers:
+
+```go
+secCfg := middleware.SecurityHeadersConfig{} // or your own policy
+pluginhost.CheckHostRequirements(slog.Default(), secCfg.PermissionsPolicy, scanner)
+```
+
+It logs and never fails — a plugin cannot take an app down by declaring
+something. An empty `PermissionsPolicy` (the untouched default) is treated
+as the framework's default header, so the exact case above is caught. The
+warning names the plugin, the token, and the fix:
+
+```
+WARN plugin requires a host-page permission the Permissions-Policy denies
+     plugin=scanner requirement=permissions-policy:camera
+     policy=geolocation=(), microphone=(), camera=()
+     fix="allow it on the host page, e.g. camera=(self), or unset the empty allowlist camera=()"
+```
+
+The fix for the scanner is then one config line:
+
+```go
+secCfg.PermissionsPolicy = "geolocation=(), microphone=(), camera=(self)"
+```
+
+The check warns only when it is confident: it fires when every directive
+naming the required feature carries the empty allowlist `()`, the one
+Permissions-Policy shape that unambiguously denies the feature to the page
+itself. `camera=(self)`, `camera=*`, an unnamed feature, or an origin list
+stay silent — origin lists cannot be decided at boot at all, and a warning
+that fired on grants would train developers to ignore the check.
+
+See [security headers](security.md) for the full default header set and
+what each field controls.
+
 ## Mounting
 
 `pluginhost.MountMarker` emits the mount marker the broker scans for:
@@ -266,3 +343,9 @@ or capability set.
 - **Letting a plugin choose its own trust tier.** `isolation` in the
   manifest describes the sandboxed default; the trusted in-page mount
   is granted only by host-side code the app owner writes.
+- **Expecting the sandboxed frame to hold the permission itself.** The
+  opaque-origin frame can never be granted `camera`, `microphone` or any
+  other policy-controlled feature. Declare what the HOST page needs via
+  `Manifest.HostRequirements` and use the host-captures / frame-decodes
+  shape; `CheckHostRequirements` says at boot when the app's
+  `Permissions-Policy` denies it.

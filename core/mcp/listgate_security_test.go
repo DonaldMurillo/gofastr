@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -117,6 +118,169 @@ func TestInitializeAndPingStayOpenUnderServerGate(t *testing.T) {
 	blob, _ := json.Marshal(resp.Result)
 	if strings.Contains(string(blob), "inputSchema") {
 		t.Error("SECURITY: [disclosure] initialize leaked tool schemas")
+	}
+}
+
+// Same property, prompts surface: a gated prompt does not leak through
+// prompts/list, and a gated tool's companion prompt (the pairing MCP Apps
+// and slash-command surfaces produce: tool + prompt sharing a gate) does
+// not leak either. The description and argument list are the disclosure,
+// the same way a tool's inputSchema is.
+func TestGatedPromptHiddenFromList(t *testing.T) {
+	s := NewServer()
+	mustRegisterGated(t, s, "secret_tool", requireUser)
+	mustRegisterPrompt(t, s, "secret_prompt",
+		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil },
+		WithPromptDescription("Companion to secret_tool"),
+		WithPromptGate(requireUser))
+	mustRegisterPrompt(t, s, "public_prompt",
+		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil })
+
+	names := listPromptNames(t, s, context.Background())
+	if contains(names, "secret_prompt") {
+		t.Errorf("SECURITY: [disclosure] unauthenticated prompts/list exposed a gated prompt; got %v", names)
+	}
+	if !contains(names, "public_prompt") {
+		t.Errorf("ungated prompt vanished from the listing; got %v", names)
+	}
+
+	// The caller who passes the gate must still see it.
+	names = listPromptNames(t, s, authed(context.Background()))
+	if !contains(names, "secret_prompt") {
+		t.Errorf("authenticated prompts/list hid a gettable prompt; got %v", names)
+	}
+}
+
+// The server-wide gate covers the prompt data surface too: prompts/list and
+// prompts/get sit in the gate switch alongside the tool and resource
+// methods, so a private /mcp cannot be read through the newest surface.
+func TestServerGateClosesPromptsSurface(t *testing.T) {
+	s := NewServer()
+	mustRegisterPrompt(t, s, "public_prompt",
+		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil })
+	s.SetGate(requireUser)
+
+	rl := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "prompts/list"})
+	if rl.Error == nil {
+		t.Error("SECURITY: [disclosure] server gate did not cover prompts/list")
+	}
+	rg := s.HandleRequest(context.Background(), Request{
+		JSONRPC: "2.0", ID: 2, Method: "prompts/get",
+		Params: json.RawMessage(`{"name":"public_prompt"}`),
+	})
+	if rg.Error == nil {
+		t.Error("SECURITY: [authz] server gate did not cover prompts/get")
+	}
+
+	if names := listPromptNames(t, s, authed(context.Background())); !contains(names, "public_prompt") {
+		t.Errorf("server gate refused an authenticated caller; got %v", names)
+	}
+}
+
+// The server-wide gate covers the resource-template surface too:
+// resources/templates/list sits in the gate switch alongside the tool,
+// resource and prompt methods, so a private /mcp cannot be enumerated
+// through the newest data surface.
+func TestServerGateClosesTemplatesSurface(t *testing.T) {
+	s := NewServer()
+	mustRegisterTemplate(t, s, "ui://pub/{id}", "pub")
+	s.SetGate(requireUser)
+
+	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/templates/list"})
+	if resp.Error == nil {
+		t.Error("SECURITY: [disclosure] server gate did not cover resources/templates/list")
+	}
+	if uris := listTemplateURIs(t, s, authed(context.Background())); !contains(uris, "ui://pub/{id}") {
+		t.Errorf("server gate refused an authenticated caller; got %v", uris)
+	}
+}
+
+// A gated template (WithResourceTemplateGate) does not leak through
+// resources/templates/list. The uriTemplate and description are the
+// disclosure — a template names internal URI shapes the way a tool's
+// inputSchema names internal entities.
+func TestGatedTemplateHiddenFromList(t *testing.T) {
+	s := NewServer()
+	mustRegisterTemplate(t, s, "ui://secret/{id}", "secret", WithResourceTemplateGate(requireUser))
+	mustRegisterTemplate(t, s, "ui://pub/{id}", "pub")
+
+	uris := listTemplateURIs(t, s, context.Background())
+	if contains(uris, "ui://secret/{id}") {
+		t.Errorf("SECURITY: [disclosure] unauthenticated resources/templates/list exposed a gated template; got %v", uris)
+	}
+	if !contains(uris, "ui://pub/{id}") {
+		t.Errorf("ungated template vanished from the listing; got %v", uris)
+	}
+
+	// The caller who passes the gate must still see it.
+	uris = listTemplateURIs(t, s, authed(context.Background()))
+	if !contains(uris, "ui://secret/{id}") {
+		t.Errorf("authenticated resources/templates/list hid a visible template; got %v", uris)
+	}
+}
+
+// Pagination must page the POST-GATE set, never the raw registry. Paging
+// the unfiltered set and dropping gated items from each page leaks their
+// existence twice: a short middle page tells the client an item was
+// withheld, and the page count times the page size discloses how many.
+// Here public and gated names interleave and every public page is
+// exactly full, so any pre-filter paging shows up as a short middle page
+// (or a gated name on a page).
+func TestPagingNeverRevealsGatedItems(t *testing.T) {
+	s := NewServer()
+	s.listPageSize = 2
+	var publicTools, publicPrompts, publicTemplates []string
+	var hiddenTools, hiddenPrompts, hiddenTemplates []string
+	for i := range 7 { // p0 p2 p4 p6 public; p1 p3 p5 gated
+		name := fmt.Sprintf("p%d", i)
+		if i%2 == 1 {
+			mustRegisterGated(t, s, name, requireUser)
+			mustRegisterPrompt(t, s, name, noopPrompt, WithPromptGate(requireUser))
+			mustRegisterTemplate(t, s, "ui://"+name+"/{id}", name, WithResourceTemplateGate(requireUser))
+			hiddenTools = append(hiddenTools, name)
+			hiddenPrompts = append(hiddenPrompts, name)
+			hiddenTemplates = append(hiddenTemplates, "ui://"+name+"/{id}")
+		} else {
+			mustRegisterOpen(t, s, name)
+			mustRegisterPrompt(t, s, name, noopPrompt)
+			mustRegisterTemplate(t, s, "ui://"+name+"/{id}", name)
+			publicTools = append(publicTools, name)
+			publicPrompts = append(publicPrompts, name)
+			publicTemplates = append(publicTemplates, "ui://"+name+"/{id}")
+		}
+	}
+	assertPagedVisibility(t, s, "tools/list", "tools", "name", publicTools, hiddenTools)
+	assertPagedVisibility(t, s, "prompts/list", "prompts", "name", publicPrompts, hiddenPrompts)
+	assertPagedVisibility(t, s, "resources/templates/list", "resourceTemplates", "uriTemplate", publicTemplates, hiddenTemplates)
+}
+
+// assertPagedVisibility walks a paginated list as the unauthenticated
+// caller and checks the post-gate paging contract: no hidden item on any
+// page, every non-final page exactly the page size, and the walked set
+// equal to the public set (all of it, nothing else).
+func assertPagedVisibility(t *testing.T, s *Server, method, key, field string, public, hidden []string) {
+	t.Helper()
+	pages := walkList(t, s, context.Background(), method)
+	var got []string
+	for i, p := range pages {
+		names := pageFieldNames(p, key, field)
+		got = append(got, names...)
+		for _, h := range hidden {
+			if contains(names, h) {
+				t.Errorf("SECURITY: [disclosure] %s page %d/%d exposed gated item %q", method, i+1, len(pages), h)
+			}
+		}
+		if i < len(pages)-1 && len(names) != s.pageListSize() {
+			t.Errorf("%s page %d/%d held %d items (page size %d): a short middle page discloses a withheld item",
+				method, i+1, len(pages), len(names), s.pageListSize())
+		}
+	}
+	if wantPages := (len(public) + s.pageListSize() - 1) / s.pageListSize(); len(pages) != wantPages {
+		t.Errorf("%s: got %d pages, want %d", method, len(pages), wantPages)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, public) {
+		t.Errorf("%s: walked set = %v, want the public set %v", method, got, public)
 	}
 }
 

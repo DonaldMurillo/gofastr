@@ -27,7 +27,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/kiln/agent/acp"
+	kilnacp "github.com/DonaldMurillo/gofastr/kiln/acp"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
 	"github.com/DonaldMurillo/gofastr/kiln/chat"
 	"github.com/DonaldMurillo/gofastr/kiln/db"
@@ -283,7 +283,9 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 			return 1
 		}
 	case acpStdio:
-		acpSrv := acp.New(tools)
+		// ACP v1 over stdio: initialize/session negotiation with
+		// streamed session updates; see framework/docs/content/acp.md.
+		acpSrv := kilnacp.NewServer(tools)
 		if err := acpSrv.Serve(ctx, os.Stdin, os.Stdout); err != nil {
 			logger.Printf("acp stdio: %v", err)
 			return 1

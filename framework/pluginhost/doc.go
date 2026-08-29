@@ -17,6 +17,9 @@
 //   - [Allow]: the capability gate reusing battery/auth's resource:verb scopes.
 //   - [MountMarker]: the generic mount-marker + hidden-field HTML the generic
 //     broker scans for.
+//   - [CheckHostRequirements]: boot-time warning when a plugin's declared
+//     host-page permission needs (Manifest.HostRequirements) are denied by
+//     the app's Permissions-Policy. Logs, never fails.
 //   - [BrokerScriptURL] / [RegisterBrokerRoute] / [UIHostOption]: serving and
 //     injection of the generic host broker (host/pluginhost.js).
 //

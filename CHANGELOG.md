@@ -9,6 +9,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
+- **BREAKING — `kiln acp` speaks the real ACP session surface** (#287):
+  `tools/list`, `tools/call`, `prompt` and `shutdown` are gone and
+  `initialize` changed shape. None of those were methods in the published
+  protocol; what kiln spoke was a bespoke subset. Move to `session/new`,
+  `session/prompt` and `session/cancel`, with tool invocations arriving as
+  agent-driven `session/update` `tool_call` frames. `kiln/agent/acp` is
+  deleted with no deprecation shim — kiln is not a production surface, so
+  a shim would carry cost for nobody. `kiln acp` attaches no model
+  provider yet: prompts are journaled and refused with a pointer at
+  `kiln mcp` and the panel, and `kiln/acp.WithProvider` is the embedder
+  seam.
+
 - **Worktree isolation honors an explicit `PORT` under
   `GOFASTR_ISOLATION_REWRITE=0`** (#268): the app's own listen address
   (`App.Start`) now respects that knob the way child-env rewriting
@@ -50,6 +62,56 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   href-fallback + `data-fui-rpc` ActionRef links depend on it.
 
 ### Added
+
+- **MCP prompts, pagination and resource templates** (#287): `core/mcp`
+  spoke tools and resources only. It now serves `prompts/list` and
+  `prompts/get` (registered with `RegisterPrompt` and the same option
+  shape resources use, including `WithPromptGate`) and
+  `resources/templates/list`, and every list method accepts an optional
+  `cursor` and emits `nextCursor` until the walk is done. Capabilities are
+  advertised only once something is registered.
+
+  Pagination pages the **post-gate** listing. Paging the unfiltered set
+  and filtering afterwards would leak the existence of gated items twice
+  over, through short middle pages and through cursor arithmetic; the
+  test walks interleaved public and gated items at page size 2 and
+  asserts every non-final page is exactly full. Cursors are HMAC-SHA256
+  over a method-bound payload keyed by a per-server random secret, so a
+  client cannot mint an offset it was never handed, move a cursor between
+  list methods, or alter one it holds, and the payload carries the resume
+  offset and nothing else — no total, no page size — so it cannot be read
+  as an oracle for how many items exist. A tampered cursor is a clean
+  invalid-params refusal, never a silent reset to page 1. A set smaller
+  than one page serves the byte-identical old wire shape, so existing
+  clients are unaffected. All six new methods join the server-wide gate.
+
+  Known limit: the cursor key is per process, so a load-balanced `/mcp`
+  rejects a cursor minted by another replica.
+
+- **`core/acp`** (#287): the Agent Client Protocol as a package beside
+  `core/mcp`, so something other than kiln can speak it —
+  `initialize` negotiation, `authenticate`, `session/new`, `session/load`,
+  `session/prompt`, `session/cancel`, `session/update` streaming (message
+  chunks, `tool_call`, `tool_call_update`, `plan`) and
+  `session/request_permission`. Absences are declared rather than
+  silently dropped: `promptCapabilities` emits explicit `false` for image,
+  audio and embedded context, `mcpCapabilities` explicit `false` for http
+  and sse, and a request using one anyway is refused with `-32602` naming
+  the type. Client filesystem and terminal methods stay unimplemented
+  because they are client-side and this agent never calls them.
+
+- **`pluginhost.Manifest.HostRequirements`** (#294): a plugin can declare
+  that it needs a host-page permission, as `permissions-policy:<feature>`
+  tokens against a closed allowlist, and `CheckHostRequirements` turns
+  what used to be a runtime console error into a boot-time warning. The
+  default headers deny camera, microphone and geolocation, so a plugin
+  built on the host-mediated shape — host captures, sandboxed frame
+  decodes — failed in the *host page* at the moment a user clicked the
+  control, and nothing in the manifest could say why. The check warns only
+  when every directive naming the feature carries the empty allowlist
+  `()`, the one unambiguous deny-everywhere shape; `(self)`, `*`, origin
+  lists and contradictory duplicates stay silent, because a check that
+  fires spuriously is one nobody reads. It never fails a boot.
 
 - **`pluginhost.Manifest.CSP` — an opt-in wasm tier for the framed
   sandbox** (#255, last of the three framed-runtime PRs): the framed

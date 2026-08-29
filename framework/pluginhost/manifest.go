@@ -73,6 +73,16 @@ type Manifest struct {
 	// client in init.capabilities when the mount marker does not override it.
 	Capabilities []string `json:"capabilities,omitempty"`
 
+	// HostRequirements names browser features the HOST PAGE around the plugin
+	// must be allowed to use, as "permissions-policy:<feature>" tokens (e.g.
+	// "permissions-policy:camera" for a scanner whose host page captures and
+	// whose sandboxed frame decodes). The frame itself is opaque-origin and
+	// can never hold these permissions; this declares what the page embedding
+	// it needs, so [CheckHostRequirements] can turn an unsatisfied token into
+	// a boot-time warning instead of the runtime console error a user would
+	// otherwise hit first. Validated against a closed feature registry.
+	HostRequirements []string `json:"hostRequirements,omitempty"`
+
 	// MinHeight is the initial iframe height before the first resize event.
 	// Defaults to "240px" when empty.
 	MinHeight string `json:"minHeight,omitempty"`
@@ -133,6 +143,14 @@ func (m Manifest) Validate() error {
 	for _, kw := range m.CSP {
 		if !allowedCSPKeywords[kw] {
 			return fmt.Errorf("pluginhost: manifest csp token %q is not in the allowlist (only 'wasm-unsafe-eval' is permitted)", kw)
+		}
+	}
+	// Host-page requirements: a closed grammar, rejected loudly at
+	// registration so a typo'd or invented feature never becomes a silently
+	// unsatisfiable requirement (see allowedPolicyFeatures).
+	for _, token := range m.HostRequirements {
+		if err := validateHostRequirement(token); err != nil {
+			return err
 		}
 	}
 	return nil

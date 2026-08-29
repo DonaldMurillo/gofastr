@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -96,6 +98,26 @@ type Server struct {
 	name    string
 	version string
 
+	// prompts is the prompt registry (prompts/list + prompts/get). Nil
+	// until the first RegisterPrompt. A non-empty registry makes
+	// initialize advertise the `prompts` capability.
+	prompts map[string]Prompt
+
+	// templates is the resource-template registry
+	// (resources/templates/list). Nil until the first
+	// RegisterResourceTemplate. A non-empty templates registry also
+	// makes initialize advertise the `resources` capability.
+	templates map[string]ResourceTemplate
+
+	// listPageSize overrides the page size for every paginated list
+	// method; 0 = defaultListPageSize. Tests shrink it to force
+	// multi-page walks.
+	listPageSize int
+
+	// cursorSecret keys the HMAC that makes list cursors unforgeable.
+	// Random per process; see cursor.go for the encoding contract.
+	cursorSecret []byte
+
 	// registerHook, when set, is called for every RegisterTool call.
 	// Framework code uses it to attribute tools to the module whose Init
 	// registered them. Nil = no-op.
@@ -108,8 +130,9 @@ type Server struct {
 	callGate func(toolName string) error
 
 	// serverGate, when set, is a per-caller precondition covering the whole
-	// JSON-RPC DATA surface: tools/list, tools/call, resources/list and
-	// resources/read. It is the switch for a host whose /mcp is private
+	// JSON-RPC DATA surface: tools/list, tools/call, resources/list,
+	// resources/read, resources/templates/list, prompts/list and
+	// prompts/get. It is the switch for a host whose /mcp is private
 	// wholesale, as opposed to per-tool WithToolGate.
 	//
 	// initialize and ping are deliberately NOT covered. They carry only the
@@ -134,9 +157,10 @@ type Server struct {
 // NewServer creates a new MCP server with an empty tool registry.
 func NewServer() *Server {
 	return &Server{
-		tools:   make(map[string]Tool),
-		name:    "GoFastr MCP",
-		version: "1.0.0",
+		tools:        make(map[string]Tool),
+		name:         "GoFastr MCP",
+		version:      "1.0.0",
+		listPageSize: defaultListPageSize,
 	}
 }
 
@@ -267,11 +291,11 @@ func (s *Server) ListToolsFor(ctx context.Context) ([]Tool, error) {
 
 // listTools returns all registered tools (without handlers), excluding
 // any whose call gate refuses them (e.g. tools owned by a disabled
-// module).
+// module), sorted by name. The sort is what makes pagination sound: pages
+// are cut from this listing across separate requests, so map iteration
+// order would reshuffle items between pages and duplicate or drop them.
 func (s *Server) listTools(ctx context.Context) []Tool {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	gate := s.callGate
 	tools := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
@@ -285,6 +309,8 @@ func (s *Server) listTools(ctx context.Context) []Tool {
 		}
 		tools = append(tools, t)
 	}
+	s.mu.RUnlock()
+	slices.SortFunc(tools, func(a, b Tool) int { return strings.Compare(a.Name, b.Name) })
 	return tools
 }
 
@@ -306,7 +332,8 @@ func (s *Server) listToolsUnfiltered() []Tool {
 }
 
 // SetGate installs a server-wide precondition over the JSON-RPC data surface
-// (tools/list, tools/call, resources/list, resources/read). Pass nil to clear
+// (tools/list, tools/call, resources/list, resources/read,
+// resources/templates/list, prompts/list, prompts/get). Pass nil to clear
 // it. See the serverGate field for why initialize and ping stay open.
 //
 // Use it when the whole /mcp endpoint is private. For a mixed surface,

@@ -162,8 +162,10 @@ var docIntents = []docIntent{
 		Path: []string{"Agent-readiness", "Contracts", "Kiln overview", "Semantic search", "Agent notes"},
 		Docs: []docEntry{
 			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
+			{"mcp", "MCP server", "The core/mcp reference: JSON-RPC methods, registering tools, resources, templates, and prompts, per-caller gates, and cursor pagination."},
 			{"contracts", "Contracts", "gofastr verify: one pipeline of rules with IDs, reasons, and fixes, plus semantic coverage and machine-readable diagnostics."},
 			{"kiln", "Kiln overview", "Experimental: the agent-driven build-mode binary."},
+			{"acp", "ACP server", "core/acp speaks the Agent Client Protocol v1: sessions, streamed updates, permissioned tool calls."},
 			{"webmcp", "WebMCP bridge", "Experimental: expose server-declared tools to in-browser agents via the page's modelContext."},
 			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine. No API key."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},

@@ -153,6 +153,9 @@ SQLite and Postgres, dialect-aware.
 
 - **[Agent-readiness](/docs/agent-ready)**: per-entity MCP tools, auto
   `llm.md`, and the discovery endpoints your app serves.
+- **[MCP server](/docs/mcp)**: the `core/mcp` reference: wire methods,
+  registering tools, resources, templates, and prompts, gates, cursor
+  pagination.
 - **[Embed](/docs/embed)**: hand a screen to a site you don't control: one
   `<script>` tag, an origin allowlist, a themed iframe.
   **[Semantic search](/docs/semantic-search)**: local vector retrieval, no API
@@ -160,6 +163,8 @@ SQLite and Postgres, dialect-aware.
   import.
 - **[Kiln](/docs/kiln)**: experimental build-mode binary: an agent edits an
   in-memory model over HTTP.
+- **[ACP](/docs/acp)**: the Agent Client Protocol server package behind
+  `kiln acp`: sessions, streamed updates, permissioned tool calls.
 
 ## Operations
 
