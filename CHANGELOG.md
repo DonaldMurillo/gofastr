@@ -7,6 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Worktree isolation honors an explicit `PORT` under
+  `GOFASTR_ISOLATION_REWRITE=0`** (#268): the app's own listen address
+  (`App.Start`) now respects that knob the way child-env rewriting
+  already did, so an operator can keep DB/worktree isolation while
+  serving on the port they assigned. Isolation still remaps by default
+  (the collision-avoidance whole point); `App.Start` already warns when
+  it remaps an explicitly-set address, and the worktree auto-activation
+  + remap is now documented prominently in isolation.md instead of only
+  in the source.
+
 ### Added
 
 - **`ui.Button.AriaLabel` / `html.Button.AriaLabel`** (#281): an

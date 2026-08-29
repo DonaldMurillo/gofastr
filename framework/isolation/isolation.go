@@ -36,6 +36,11 @@ type Runtime struct {
 	cfg        Config
 	active     bool
 	id         string
+	// rewriteExplicit governs whether an explicitly-assigned listen
+	// address is remapped. GOFASTR_ISOLATION_REWRITE=0 turns it off so
+	// isolation keeps its DB/worktree separation but honors the port
+	// the operator set (#268); default true.
+	rewriteExplicit bool
 
 	portsMu sync.Mutex
 	ports   map[int]int // base port → mapped port, in-process only
@@ -107,14 +112,17 @@ func Resolve(projectDir string) (*Runtime, error) {
 			return nil, fmt.Errorf("isolation.mode %q is not supported", cfg.Mode)
 		}
 	}
+	rewriteExplicit := os.Getenv(envRewriteExplicit) != "0" &&
+		!strings.EqualFold(os.Getenv(envRewriteExplicit), "false")
 	return &Runtime{
-		projectDir: start,
-		gitRoot:    gitRoot,
-		configPath: configPath,
-		cfg:        cfg,
-		active:     active,
-		id:         id,
-		ports:      map[int]int{},
+		projectDir:      start,
+		gitRoot:         gitRoot,
+		configPath:      configPath,
+		cfg:             cfg,
+		active:          active,
+		id:              id,
+		rewriteExplicit: rewriteExplicit,
+		ports:           map[int]int{},
 	}, nil
 }
 
@@ -148,6 +156,12 @@ func (r *Runtime) ID() string {
 func (r *Runtime) Addr(addr string) (string, error) {
 	addr = normalizeBarePort(addr)
 	if !r.Active() || addr == "" {
+		return addr, nil
+	}
+	// GOFASTR_ISOLATION_REWRITE=0: honor the assigned listen port
+	// (isolation still separates DB/worktree resources). The operator
+	// then owns port collisions between worktrees (#268).
+	if !r.rewriteExplicit {
 		return addr, nil
 	}
 	host, port, shape, err := splitAddr(addr)

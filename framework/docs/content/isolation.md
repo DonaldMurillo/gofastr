@@ -25,6 +25,18 @@ With `mode: worktree`, the main checkout keeps normal resources and linked
 worktrees get deterministic replacements. `GOFASTR_ISOLATION=off` disables
 isolation for a process.
 
+**Worktree isolation auto-activates with no opt-in.** On any linked git
+worktree checkout, `mode: worktree` turns on by default and deterministically
+remaps the listen port — so `PORT=8080 ./app` run from a worktree serves on a
+*different* port, and anything polling `8080` (a test, a reverse proxy, you)
+hangs to its deadline. Two things make this visible: `App.Start` logs a
+`slog.Warn` ("isolation remapped the listen address") naming both ports and the
+kill switches whenever it remaps an explicitly-assigned address, and you can
+turn the remap off with `GOFASTR_ISOLATION=off` (all isolation) or
+`GOFASTR_ISOLATION_REWRITE=0` (keep DB/worktree isolation, honor explicit
+`PORT`/`DATABASE_URL`). This is the checkout style agents use most, so a boot
+that "hangs" from a worktree is almost always this.
+
 ## What is isolated
 
 - `framework.App.Start(addr)` remaps the requested listen port in linked
