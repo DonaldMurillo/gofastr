@@ -15,13 +15,15 @@ type SelectOption struct {
 }
 
 // ButtonConfig configures a <button> element.
-// Required: Label (used as both visible text and aria-label).
+// A button needs an accessible name: Label, AriaLabel, or an aria-label in
+// ExtraAttrs. Button panics when all three are empty.
 type ButtonConfig struct {
-	Label string // required → text content AND aria-label
+	Label string // visible text; also the accessible name unless AriaLabel is set
 	// AriaLabel overrides the accessible name when it must differ from
 	// the visible Label — several buttons sharing a visible label
 	// ("Revoke") that need distinct accessible names. Empty ⇒ the
-	// accessible name is Label.
+	// accessible name is Label, or an ExtraAttrs aria-label when Label
+	// is also empty (the icon-only case).
 	AriaLabel  string
 	Type       string // defaults to "button"
 	Class      string

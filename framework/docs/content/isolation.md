@@ -28,8 +28,8 @@ isolation for a process.
 **Worktree isolation auto-activates with no opt-in.** On any linked git
 worktree checkout, `mode: worktree` turns on by default and deterministically
 remaps the listen port — so `PORT=8080 ./app` run from a worktree serves on a
-*different* port, and anything polling `8080` (a test, a reverse proxy, you)
-hangs to its deadline. Two things make this visible: `App.Start` logs a
+*different* port, and anything pointed at `8080` (a test, a reverse proxy, you)
+never reaches the application. Two things make this visible: `App.Start` logs a
 `slog.Warn` ("isolation remapped the listen address") naming both ports and the
 kill switches whenever it remaps an explicitly-assigned address, and you can
 turn the remap off with `GOFASTR_ISOLATION=off` (all isolation) or
