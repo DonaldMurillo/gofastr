@@ -455,10 +455,20 @@ framework.WithMCPApp(mcp.AppConfig{
     InputSchema: schema,
     Handler:     studioTool,
     ResourceURI: "ui://myapp/studio.html",
-    HTML:        studioHTML,            // self-contained, inline JS/CSS
-    CSP:         "default-src 'self'",  // rides on the resource's _meta.ui
+    HTML:        studioHTML,  // self-contained, inline JS/CSS
+    CSP: mcp.AppCSP{  // rides on the resource's _meta.ui
+        ConnectDomains:  []string{"https://api.openweathermap.org"},
+        ResourceDomains: []string{"https://cdn.jsdelivr.net"},
+    },
 })
 ```
+
+`CSP` is the spec's structured object, not a policy string: the host turns
+each allowlist into the matching iframe directive (`connectDomains` →
+`connect-src`; `resourceDomains` → `img-src`/`script-src`/`style-src`/
+`font-src`/`media-src`; `frameDomains` → `frame-src`; `baseUriDomains` →
+`base-uri`). An empty or omitted field allows no external origins, and a
+zero `AppCSP` emits no `csp` key at all.
 
 The widget HTML is the app author's job (a single vanilla-JS file needs no
 build step). `WithMCPApp` is an explicit opt-in registered during

@@ -12,6 +12,36 @@ import (
 // iframe inside the conversation.
 const AppResourceMimeType = "text/html;profile=mcp-app"
 
+// AppCSP is the structured `_meta.ui.csp` object from the MCP Apps spec
+// (2026-01-26). The host, not the app, assembles the iframe's actual
+// Content-Security-Policy from these origin allowlists; each field maps to
+// one CSP directive:
+//
+//   - ConnectDomains: fetch/XHR/WebSocket endpoints → connect-src
+//   - ResourceDomains: images, scripts, styles, fonts, media → img-src,
+//     script-src, style-src, font-src, media-src
+//   - FrameDomains: nested iframes → frame-src
+//   - BaseURIDomains: <base href> origins → base-uri
+//
+// A field that is empty or omitted allows no external origins: the secure
+// default. The JSON tags are the spec's wire names (note baseUriDomains,
+// not baseURIDomains — a mismatched tag is silently the wrong field name
+// on the wire).
+type AppCSP struct {
+	ConnectDomains  []string `json:"connectDomains,omitempty"`
+	ResourceDomains []string `json:"resourceDomains,omitempty"`
+	FrameDomains    []string `json:"frameDomains,omitempty"`
+	BaseURIDomains  []string `json:"baseUriDomains,omitempty"`
+}
+
+// isZero reports whether c marshals to an empty object, i.e. every field
+// is empty (omitempty drops each one). RegisterApp uses it to omit the
+// `csp` key entirely for an app that sets no origins.
+func (c AppCSP) isZero() bool {
+	return len(c.ConnectDomains) == 0 && len(c.ResourceDomains) == 0 &&
+		len(c.FrameDomains) == 0 && len(c.BaseURIDomains) == 0
+}
+
 // AppConfig describes an MCP App: an interactive HTML widget plus the tool
 // that launches it. RegisterApp wires both halves: a `ui://` resource
 // carrying the HTML and a tool whose `_meta` links to it, so the model can
@@ -30,7 +60,12 @@ type AppConfig struct {
 
 	// Optional resource `_meta.ui` fields the host honors when sandboxing
 	// the iframe.
-	CSP         string         // Content-Security-Policy for the widget
+	//
+	// BREAKING: CSP was a raw policy string in earlier versions. The
+	// change to the spec's structured AppCSP is deliberate and ships
+	// without a shim: the string form emitted JSON no conformant host
+	// could consume, so no working caller exists to break.
+	CSP         AppCSP         // _meta.ui.csp origin allowlists
 	Permissions map[string]any // iframe permissions descriptor
 
 	// ToolMeta merges extra keys into the tool's `_meta` (alongside the
@@ -79,11 +114,12 @@ func (s *Server) RegisterApp(cfg AppConfig) error {
 		mime = AppResourceMimeType
 	}
 
-	// Resource `_meta.ui` (csp / permissions) when provided.
+	// Resource `_meta.ui` (csp / permissions) when provided. A zero AppCSP
+	// omits the csp key (no empty object on the wire).
 	var resOpts []ResourceOption
-	if cfg.CSP != "" || cfg.Permissions != nil {
+	if !cfg.CSP.isZero() || cfg.Permissions != nil {
 		ui := map[string]any{}
-		if cfg.CSP != "" {
+		if !cfg.CSP.isZero() {
 			ui["csp"] = cfg.CSP
 		}
 		if cfg.Permissions != nil {

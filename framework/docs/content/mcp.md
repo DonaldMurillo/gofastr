@@ -555,6 +555,22 @@ widget plus the tool that launches it, as a `ui://` resource and a linking
 tool in one call. The canonical example is in
 [agent-readiness](agent-ready.md).
 
+`AppConfig.CSP` is the spec's structured `_meta.ui.csp` object (an
+`mcp.AppCSP`), not a policy string. The host assembles the iframe's actual
+Content-Security-Policy from its origin allowlists:
+
+```go
+CSP: mcp.AppCSP{
+	ConnectDomains:  []string{"https://api.openweathermap.org"}, // connect-src
+	ResourceDomains: []string{"https://cdn.jsdelivr.net"},        // img/script/style/font/media-src
+},
+```
+
+The remaining fields are `FrameDomains` (frame-src) and `BaseURIDomains`
+(base-uri; the wire name is `baseUriDomains`, the spec's spelling). An empty
+or omitted field allows no external origins, and a zero `AppCSP` emits no
+`csp` key at all.
+
 ## Common mistakes
 
 - **Wrapping a handler in `mcp.Gated` and expecting the tool to disappear from

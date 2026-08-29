@@ -302,7 +302,7 @@ func sampleApp() AppConfig {
 		Handler:     func(context.Context, map[string]any) (any, error) { return "ok", nil },
 		ResourceURI: "ui://app/studio.html",
 		HTML:        "<h1>studio</h1>",
-		CSP:         "default-src 'self'",
+		CSP:         AppCSP{ConnectDomains: []string{"https://api.example.com"}},
 	}
 }
 
@@ -330,8 +330,11 @@ func TestRegisterApp_WiresToolAndResource(t *testing.T) {
 		t.Errorf("resource fields wrong: %v", res)
 	}
 	ui := res["_meta"].(map[string]any)["ui"].(map[string]any)
-	if ui["csp"] != "default-src 'self'" {
-		t.Errorf("resource csp not carried: %v", ui)
+	csp, ok := ui["csp"].(map[string]any)
+	if !ok {
+		t.Errorf("resource csp not an object: %v", ui)
+	} else if _, ok := csp["connectDomains"]; !ok {
+		t.Errorf("resource csp missing connectDomains: %v", csp)
 	}
 
 	// The resource reads back the HTML.
@@ -339,6 +342,126 @@ func TestRegisterApp_WiresToolAndResource(t *testing.T) {
 	read := wireResult(t, s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 3, Method: "resources/read", Params: p}))
 	if read["contents"].([]any)[0].(map[string]any)["text"] != "<h1>studio</h1>" {
 		t.Errorf("resource HTML mismatch: %v", read)
+	}
+}
+
+// listResources drives resources/list and returns the wire-shaped result.
+func listResources(t *testing.T, s *Server) []any {
+	t.Helper()
+	rm := wireResult(t, s.HandleRequest(context.Background(), Request{
+		JSONRPC: "2.0", ID: 1, Method: "resources/list",
+	}))
+	res, ok := rm["resources"].([]any)
+	if !ok || len(res) == 0 {
+		t.Fatalf("no resources listed: %v", rm)
+	}
+	return res
+}
+
+// listAppUI registers app and returns its resource `_meta.ui` off the wire.
+func listAppUI(t *testing.T, app AppConfig) map[string]any {
+	t.Helper()
+	s := NewServer()
+	if err := s.RegisterApp(app); err != nil {
+		t.Fatal(err)
+	}
+	res := listResources(t, s)[0].(map[string]any)
+	ui, ok := res["_meta"].(map[string]any)["ui"].(map[string]any)
+	if !ok {
+		t.Fatalf("resource _meta.ui missing: %#v", res["_meta"])
+	}
+	return ui
+}
+
+// The wire contract: `_meta.ui.csp` is an object with the spec's key
+// names, not a policy string. This is the test the original bug (a raw
+// string under csp) would have failed.
+func TestRegisterApp_CSPObjectOnWire(t *testing.T) {
+	app := sampleApp()
+	app.CSP = AppCSP{
+		ConnectDomains:  []string{"https://api.openweathermap.org"},
+		ResourceDomains: []string{"https://cdn.jsdelivr.net"},
+	}
+	csp, ok := listAppUI(t, app)["csp"].(map[string]any)
+	if !ok {
+		t.Fatalf("_meta.ui.csp is not an object: %v", listAppUI(t, app))
+	}
+
+	// Byte-exact on the marshalled JSON: the wire shape is the contract,
+	// and encoding/json sorts map keys, so this is deterministic.
+	b, err := json.Marshal(csp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"connectDomains":["https://api.openweathermap.org"],"resourceDomains":["https://cdn.jsdelivr.net"]}`
+	if string(b) != want {
+		t.Errorf("csp wire shape:\n got %s\nwant %s", b, want)
+	}
+
+	// Round-trip: the tags must also read the spec's names back into
+	// the right Go fields (a wrong tag drops or misplaces data).
+	var back AppCSP
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.ConnectDomains[0] != "https://api.openweathermap.org" ||
+		back.ResourceDomains[0] != "https://cdn.jsdelivr.net" ||
+		len(back.FrameDomains) != 0 || len(back.BaseURIDomains) != 0 {
+		t.Errorf("csp round-trip lost fields: %+v", back)
+	}
+}
+
+// A zero AppCSP emits no csp key (no empty object either), and an app
+// with neither CSP nor permissions emits no _meta at all, as before.
+func TestRegisterApp_ZeroCSPOmitsKey(t *testing.T) {
+	// Empty-but-non-nil slice still counts as zero: omitempty would
+	// marshal it away, so the csp key must not appear.
+	app := sampleApp()
+	app.CSP = AppCSP{ConnectDomains: []string{}}
+	app.Permissions = map[string]any{"fullscreen": true}
+	if ui := listAppUI(t, app); ui["csp"] != nil {
+		t.Errorf("zero AppCSP emitted a csp key: %v", ui)
+	}
+
+	// Neither csp nor permissions: the resource carries no _meta.
+	app = sampleApp()
+	app.CSP = AppCSP{}
+	app.Permissions = nil
+	s := NewServer()
+	if err := s.RegisterApp(app); err != nil {
+		t.Fatal(err)
+	}
+	res := listResources(t, s)[0].(map[string]any)
+	if _, ok := res["_meta"]; ok {
+		t.Errorf("app without csp/permissions emitted _meta: %v", res["_meta"])
+	}
+}
+
+// Each allowlist appears under its exact spec wire name; baseUriDomains
+// is the one Go convention would spell differently.
+func TestRegisterApp_CSPEachFieldSpecName(t *testing.T) {
+	app := sampleApp()
+	app.CSP = AppCSP{
+		ConnectDomains:  []string{"https://api.example.com"},
+		ResourceDomains: []string{"https://cdn.example.com"},
+		FrameDomains:    []string{"https://embed.example.com"},
+		BaseURIDomains:  []string{"https://base.example.com"},
+	}
+	csp := listAppUI(t, app)["csp"].(map[string]any)
+	want := map[string]string{
+		"connectDomains":  "https://api.example.com",
+		"resourceDomains": "https://cdn.example.com",
+		"frameDomains":    "https://embed.example.com",
+		"baseUriDomains":  "https://base.example.com",
+	}
+	for key, origin := range want {
+		got, ok := csp[key].([]any)
+		if !ok || len(got) != 1 || got[0] != origin {
+			t.Errorf("csp.%s = %#v, want [%s]", key, csp[key], origin)
+		}
+	}
+	if n := len(csp); n != len(want) {
+		t.Errorf("csp has %d keys, want exactly the 4 spec fields: %v", n, csp)
 	}
 }
 
