@@ -417,8 +417,9 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 
 	// Build <body> with skip link.
 	skipLink := render.Tag("a", map[string]string{
-		"href":  "#main-content",
-		"class": "skip-link",
+		"href":           "#main-content",
+		"class":          "skip-link",
+		"data-skip-link": "",
 	}, render.Text("Skip to main content"))
 
 	// Polite live region for SPA route changes. document.title mutations
