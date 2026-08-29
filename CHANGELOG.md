@@ -86,6 +86,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the drawer, so no duplicate control exists at any width. Meridian's
   guest marketing header now keeps Sign in visible at 390px.
 
+- **Porting guide** (#245 item 1, decided: escape hatch, not a
+  supported use case): a new docs page, `porting.md`, shows how to move
+  an app with a foreign DOM contract onto GoFastr — html/template
+  screens rendered as `render.HTML`, the compiled design system served
+  via `static.Mount` — and states plainly that markup and stylesheets
+  brought this way are outside the one-styling-surface contract: the
+  app owns the drift.
+
 - **`ui.MenuItem.Confirm`**: pre-flight confirmation for RPC menu
   items, emitted as `data-fui-confirm` alongside the item's
   `data-fui-rpc` wiring. Previously the Danger field's doc pointed at
