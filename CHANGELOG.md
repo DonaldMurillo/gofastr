@@ -51,6 +51,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`pluginhost.Manifest.CSP` — an opt-in wasm tier for the framed
+  sandbox** (#255, last of the three framed-runtime PRs): the framed
+  Content-Security-Policy had no `'wasm-unsafe-eval'` and no extension
+  point, so WebAssembly could not instantiate in a plugin frame at all.
+  The pdf plugin runs pdf.js worker-free on the main thread to dodge
+  that, and a plugin built on a wasm engine had to become a trusted
+  host-page plugin, giving up the isolation the frame exists for. A
+  manifest may now opt in against a closed allowlist with exactly one
+  member, `'wasm-unsafe-eval'`, which widens `script-src` and nothing
+  else: the opaque origin, `sandbox allow-scripts` without
+  `allow-same-origin`, and `connect-src 'none'` all stay, so a wasm
+  engine still cannot fetch, reach host cookies or DOM, or exfiltrate.
+  Matching is exact, byte-for-byte — unlike the HTML sandbox attribute
+  the CSP header does not normalise source expressions, so one
+  comparison rejects every smuggle shape, including a token carrying
+  `;` that could otherwise splice a directive into the response header.
+  Thread it with `NewAssetServer(...).WithCSP(mod.Manifest.CSP)`; a
+  manifest without the tier produces a byte-identical header. Only
+  single-threaded wasm builds work here — multi-threaded builds want
+  `SharedArrayBuffer` and COOP/COEP cross-origin isolation, which fight
+  the opaque origin.
+
 - **`ui.Button.AriaLabel` / `html.Button.AriaLabel`** (#281): an
   accessible-name override for buttons that share a visible `Label` but
   must be announced distinctly — a table of "Revoke" buttons, a
@@ -113,6 +135,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   sanitized.
 
 ### Fixed
+
+- **`data-fui-confirm` fires on plain form submits** (#279): the
+  attribute was only read in `_dispatchRPC`, which needs `data-fui-rpc`
+  on the node, and a plain POST form leaves the submit bridge at the
+  enctype check. So the gate never ran: the admin process-modules screen
+  revoked a capability and disabled a module on the first click, and so
+  did any app that put the attribute on a plain form. The gate now runs
+  before every branch of the submit bridge, covering native,
+  `data-fui-spa`, and `data-fui-rpc` forms alike, and the widget-scoped
+  listener gets the same treatment. A submit button's message takes
+  precedence over the form's, since one form can carry several submit
+  buttons of different destructive weight. The core gzip budget moves
+  14700 → 14784: the gate cannot be carved into a demand module, because
+  a native submit navigates away before one could load.
 
 - **Generated API docs describe routes that exist** (#266, sibling of
   the v0.73.0 banner fix): `/openapi.json` and `/api/llm.md` documented

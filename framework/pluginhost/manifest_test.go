@@ -182,6 +182,67 @@ func TestManifestValidate_CaseAndWhitespaceSameOrigin(t *testing.T) {
 	}
 }
 
+// The CSP allowlist is closed with exactly one member. Every other shape is
+// rejected at registration: the general eval escape, inline scripts, a host
+// source, a scheme, a wildcard, the keyword without its quotes, a case
+// variant, a semicolon (which could splice a whole new directive into the
+// response header, e.g. re-enabled connect-src), embedded or surrounding
+// whitespace, mismatched quotes, and the empty token. Matching is EXACT
+// (byte-for-byte), so all of these fail the one comparison.
+func TestManifestValidateRejectsBadCSP(t *testing.T) {
+	for _, kw := range []string{
+		"'unsafe-eval'",
+		"'unsafe-inline'",
+		"https://evil.example",
+		"data:",
+		"*",
+		"wasm-unsafe-eval",                   // the keyword without its quotes
+		"'WASM-UNSAFE-EVAL'",                 // case variant: inert in a CSP, but not ours to grant
+		"'wasm-unsafe-eval'; connect-src *",  // semicolon splice into the header
+		"'wasm-unsafe-eval' 'unsafe-inline'", // two keywords riding one token
+		"'wasm-unsafe-eval",                  // missing closing quote
+		"wasm-unsafe-eval'",                  // missing opening quote
+		" 'wasm-unsafe-eval' ",               // surrounding whitespace
+		"",                                   // empty token
+	} {
+		m := Manifest{Entry: "/e.html", Sandbox: []string{"allow-scripts"}, CSP: []string{kw}}
+		if err := m.Validate(); err == nil {
+			t.Errorf("Validate must reject CSP token %q", kw)
+		} else if !strings.Contains(err.Error(), "csp") {
+			t.Errorf("rejection for %q should name the csp field, got %v", kw, err)
+		}
+	}
+}
+
+// 'wasm-unsafe-eval' is the one permitted keyword. Listing it twice is
+// accepted: a duplicate source expression grants nothing, and header
+// assembly dedupes (TestFramedCSPWasmTierScriptSrcOnly pins that), the same
+// posture as the sandbox filter dropping repeat tokens.
+func TestManifestValidateAcceptsWasmKeyword(t *testing.T) {
+	for _, csp := range [][]string{
+		{"'wasm-unsafe-eval'"},
+		{"'wasm-unsafe-eval'", "'wasm-unsafe-eval'"},
+	} {
+		m := Manifest{Entry: "/e.html", Sandbox: []string{"allow-scripts"}, CSP: csp}
+		if err := m.Validate(); err != nil {
+			t.Errorf("Validate(%v) should accept the wasm keyword, got %v", csp, err)
+		}
+	}
+}
+
+// NewClientModule runs Manifest.Validate, so a bad CSP token fails at
+// construction rather than surfacing as a poisoned header at first serve.
+func TestNewClientModuleRejectsBadCSP(t *testing.T) {
+	_, err := NewClientModule("p", Manifest{
+		Entry:   "/e.html",
+		Sandbox: []string{"allow-scripts"},
+		CSP:     []string{"'unsafe-eval'"},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "csp") {
+		t.Fatalf("NewClientModule must reject a manifest with a bad CSP token, got %v", err)
+	}
+}
+
 // TestSandboxDropsEscapeTokens pins that the sandbox filter is an
 // allow-list.
 //

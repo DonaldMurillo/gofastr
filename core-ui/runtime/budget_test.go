@@ -38,11 +38,14 @@ const (
 	//
 	// The band is tighter than it looks. The bundle measured 14602 when this
 	// line was first re-baselined against a 41812-byte artifact; v0.69.0's
-	// click-path work took it to 41968 raw and 14660 compressed, so 14700 now
-	// clears the real bundle by 40 bytes, not 98. At that margin the next
-	// feature almost certainly needs a carve rather than another raise, which
-	// is the situation the policy describes rather than an exception to it.
-	coreCongestionWindowGZ = 14*1024 + 364 // 14700: 40 over the real bundle (14660), 124 under the cliff fixture
+	// click-path work took it to 41968 raw and 14660 compressed, and the
+	// native-submit confirm gate (#279: data-fui-confirm honored on plain POST
+	// forms, which until then submitted unconfirmed) took it to 42215 raw and
+	// 14745 compressed. The gate cannot be carved into a demand module: a
+	// native submit navigates away before a module could load, the same class
+	// of fatal-for-the-path as the click bridge. So the line moved to 14784,
+	// clearing the real bundle by 39.
+	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 39 over the real bundle (14745), under the 14800 cliff-fixture guard
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

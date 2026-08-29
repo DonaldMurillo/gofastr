@@ -164,3 +164,83 @@ func TestAssetServerHostScriptHasNoRelaxation(t *testing.T) {
 		t.Errorf("host-page broker must NOT be CORP cross-origin (it is same-origin)")
 	}
 }
+
+// The wasm tier appends the opt-in keyword to script-src ONLY. Every other
+// directive stays byte-for-byte the no-tier policy, a duplicate keyword is
+// deduped, and a token that skipped Validate ('unsafe-eval' here) is dropped
+// at assembly: framedCSP re-filters through the allowlist, so it is the
+// authoritative sink the way SandboxString is for sandbox tokens.
+func TestFramedCSPWasmTierScriptSrcOnly(t *testing.T) {
+	got := framedCSP("http://h", []string{"'wasm-unsafe-eval'", "'wasm-unsafe-eval'", "'unsafe-eval'"})
+	want := "sandbox allow-scripts" +
+		"; default-src http://h" +
+		"; script-src http://h 'wasm-unsafe-eval'" +
+		"; style-src http://h 'unsafe-inline'" +
+		"; img-src http://h data:" +
+		"; font-src http://h data:" +
+		"; connect-src 'none'" +
+		"; frame-ancestors http://h" +
+		"; base-uri http://h"
+	if got != want {
+		t.Errorf("tier CSP:\n got %q\nwant %q", got, want)
+	}
+}
+
+// A manifest with no CSP tokens must produce byte-for-byte the header the
+// platform served before the tier existed; the default path cannot drift,
+// not even by a trailing space.
+func TestFramedCSPDefaultByteIdentical(t *testing.T) {
+	want := "sandbox allow-scripts" +
+		"; default-src http://h" +
+		"; script-src http://h" +
+		"; style-src http://h 'unsafe-inline'" +
+		"; img-src http://h data:" +
+		"; font-src http://h data:" +
+		"; connect-src 'none'" +
+		"; frame-ancestors http://h" +
+		"; base-uri http://h"
+	for _, csp := range [][]string{nil, {}} {
+		if got := framedCSP("http://h", csp); got != want {
+			t.Errorf("framedCSP(_, %v) default must be byte-identical:\n got %q\nwant %q", csp, got, want)
+		}
+	}
+}
+
+// WithCSP threads the manifest keywords onto every FRAMED response the
+// server emits, and only those: the host-page script keeps no CSP at all.
+func TestAssetServerWithCSPThreadsToHeader(t *testing.T) {
+	fsys := fstest.MapFS{
+		"editor.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")},
+	}
+	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
+		{Name: "editor.html", ContentType: "text/html; charset=utf-8", Framed: true},
+	}).WithCSP([]string{"'wasm-unsafe-eval'"})
+	srv.AddBytes("/__p/host.js", "text/javascript; charset=utf-8", false, []byte("var x=1;"))
+	rt := router.New()
+	srv.Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/editor.html")
+	if err != nil {
+		t.Fatalf("GET editor.html: %v", err)
+	}
+	resp.Body.Close()
+	csp := resp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "script-src http://127.0.0.1") ||
+		!strings.Contains(csp, "'wasm-unsafe-eval'") {
+		t.Errorf("framed response must carry origin + wasm keyword in script-src: %q", csp)
+	}
+	if !strings.Contains(csp, "connect-src 'none'") {
+		t.Errorf("tier must not touch connect-src: %q", csp)
+	}
+
+	resp, err = http.Get(hs.URL + "/__p/host.js")
+	if err != nil {
+		t.Fatalf("GET host.js: %v", err)
+	}
+	resp.Body.Close()
+	if got := resp.Header.Get("Content-Security-Policy"); got != "" {
+		t.Errorf("host-page script must carry no CSP, got %q", got)
+	}
+}

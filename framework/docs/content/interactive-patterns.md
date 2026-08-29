@@ -223,9 +223,14 @@ interactive.OnClick(deleteBtn,
 
 Attribute injected: `data-fui-confirm="message"`.
 
+The runtime honors the attribute on any form submit (native POST, SPA, or
+RPC) and on RPC triggers; on a form, a submit button's message takes
+precedence over the form's.
+
 Menu items have the same gate as a config field: `ui.MenuItem.Confirm`
-emits `data-fui-confirm` alongside the item's `RPC` wiring (ignored on
-non-RPC items — the runtime reads the attribute only on rpc dispatch).
+emits `data-fui-confirm` alongside the item's RPC wiring (ignored on
+non-RPC items — the gate covers form submits and RPC triggers, and a
+plain menu link is neither).
 
 `window.confirm` is native, unthemed, and **blocks browser automation**
 (headless tests can't dismiss it without a dialog handler). For a

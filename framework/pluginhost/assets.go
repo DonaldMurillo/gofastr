@@ -26,16 +26,39 @@ import (
 // token <style>). connect-src 'none': the editor has no network need, every host
 // interaction is a postMessage, so we forbid fetch/XHR/WebSocket outright, which
 // is the real exfiltration guard the sandbox + this line provide together.
-func framedCSP(origin string) string {
+//
+// csp carries the per-plugin opt-in keywords from [Manifest.CSP] (threaded via
+// [AssetServer.WithCSP]). They widen script-src ONLY: the sole allowlisted
+// member, 'wasm-unsafe-eval', permits WebAssembly compilation inside the frame
+// without enabling string eval ('unsafe-eval' is still forbidden) and without
+// touching network or storage — the frame keeps its opaque origin, the
+// sandbox allow-scripts directive, and connect-src 'none', so a wasm engine
+// still cannot fetch, cannot reach host cookies or DOM, and cannot exfiltrate;
+// data arrives over the postMessage bridge and leaves the same way. The tokens
+// are re-filtered through [allowedCSPKeywords] here (Validate already checked
+// them at registration; this is the authoritative assembly point, mirroring
+// how SandboxString sanitises regardless of Validate), so a slice that skipped
+// validation cannot smuggle a keyword. nil/empty produces the byte-identical
+// policy a plugin without the tier gets.
+func framedCSP(origin string, csp []string) string {
 	// sandbox allow-scripts: forces the document into an opaque-origin sandbox
 	// EVEN ON A TOP-LEVEL LOAD. The iframe `sandbox` attribute only sandboxes
 	// the framed case; without this directive an attacker could navigate a
 	// victim directly to editor.html (served text/html) and run the untrusted
 	// plugin code as a first-class same-origin document. This makes the
 	// sandbox intrinsic to the asset, not just the embedding.
+	scriptSrc := origin
+	seen := map[string]bool{}
+	for _, kw := range csp {
+		if !allowedCSPKeywords[kw] || seen[kw] {
+			continue
+		}
+		seen[kw] = true
+		scriptSrc += " " + kw
+	}
 	return "sandbox allow-scripts" +
 		"; default-src " + origin +
-		"; script-src " + origin +
+		"; script-src " + scriptSrc +
 		"; style-src " + origin + " 'unsafe-inline'" +
 		"; img-src " + origin + " data:" +
 		"; font-src " + origin + " data:" +
@@ -122,6 +145,7 @@ type AssetServer struct {
 	specs  []AssetSpec
 	fsys   fs.FS
 	extra  []loadedAsset // byte-backed assets added via AddBytes (e.g. host scripts)
+	csp    []string      // per-plugin script-src keywords from [Manifest.CSP], set via [AssetServer.WithCSP]
 }
 
 // loadedAsset is a byte-backed asset (host-page script served outside the FS).
@@ -139,6 +163,20 @@ type loadedAsset struct {
 // a different embed root, then [AssetServer.Register].
 func NewAssetServer(fsys fs.FS, prefix string, specs []AssetSpec) *AssetServer {
 	return &AssetServer{prefix: prefix, specs: specs, fsys: fsys}
+}
+
+// WithCSP sets the per-plugin CSP keyword extensions (from [Manifest.CSP])
+// appended to framed assets' script-src, returning s for chaining:
+//
+//	srv := pluginhost.NewAssetServer(fsys, prefix, specs).WithCSP(mod.Manifest.CSP)
+//
+// Tokens are re-filtered through [allowedCSPKeywords] when the header is
+// assembled, so a slice that skipped [Manifest.Validate] cannot smuggle a
+// keyword. nil (the default, i.e. no call) produces the same header as a
+// plugin without the tier.
+func (s *AssetServer) WithCSP(tokens []string) *AssetServer {
+	s.csp = tokens
+	return s
 }
 
 // AddBytes registers an asset from pre-loaded bytes at an explicit full route
@@ -162,7 +200,7 @@ func (s *AssetServer) Register(rt *router.Router) {
 		rt.Get(path, s.serveFS(spec))
 	}
 	for _, a := range s.extra {
-		rt.Get(a.path, serveBytes(a))
+		rt.Get(a.path, s.serveBytes(a))
 	}
 }
 
@@ -184,13 +222,13 @@ func (s *AssetServer) serveFS(spec AssetSpec) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		writeAsset(w, r, b, spec.ContentType, spec.Framed)
+		writeAsset(w, r, b, spec.ContentType, spec.Framed, s.csp)
 	}
 }
 
-func serveBytes(a loadedAsset) http.HandlerFunc {
+func (s *AssetServer) serveBytes(a loadedAsset) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeAsset(w, r, a.bytes, a.contentType, a.framed)
+		writeAsset(w, r, a.bytes, a.contentType, a.framed, s.csp)
 	}
 }
 
@@ -214,7 +252,7 @@ func serveBytes(a loadedAsset) http.HandlerFunc {
 //     the load-bearing framing permission.
 //   - Cross-Origin-Resource-Policy: cross-origin, so the opaque ("null") frame
 //     may fetch these public, secret-free static assets.
-func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType string, framed bool) {
+func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType string, framed bool, csp []string) {
 	h := w.Header()
 	// A framed asset's CSP is keyed to a request-controlled origin; a bad
 	// origin means we cannot build a safe policy, so refuse rather than serve
@@ -238,7 +276,7 @@ func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType st
 	h.Set("Cache-Control", "no-store, max-age=0")
 	if framed {
 		h.Del("X-Frame-Options")
-		h.Set("Content-Security-Policy", framedCSP(origin))
+		h.Set("Content-Security-Policy", framedCSP(origin, csp))
 		h.Set("Cross-Origin-Resource-Policy", "cross-origin")
 	}
 	w.WriteHeader(http.StatusOK)
