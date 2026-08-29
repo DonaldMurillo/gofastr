@@ -292,9 +292,16 @@
       adapter: adapter,
       capabilities: parseCaps(marker, adapter.manifest),
       docId: marker.getAttribute("data-fui-plugin-docid") || "demo",
-      pending: {},            // id -> {resolve, reject, timer}
+      // id -> {resolve, reject, timer}. NULL-PROTO, not {}: the frame
+      // controls msg.id on the response path, and a {} lookup of
+      // "__proto__"/"constructor" returns an Object.prototype member —
+      // truthy, so the not-pending guard passes and p.resolve throws an
+      // uncaught TypeError in the host page, on demand, from a hostile
+      // frame. Object.create(null) makes unknown ids uniformly undefined.
+      pending: Object.create(null),
       requestHandlers: Object.create(null), // method -> frame→host handler
       ready: false,
+      tearingDown: false,
       focused: false,
       lastMetric: null,
       theme: null,
@@ -543,10 +550,15 @@
         st.pending[id].reject({ code: "E_TEARDOWN", message: "instance torn down" });
       }
     }
-    st.pending = {};
+    st.pending = Object.create(null);
   }
 
   function teardownInstance(st) {
+    // Idempotent: a second gofastr:navigate inside the teardown-ack
+    // window would otherwise send a second teardown request and run the
+    // plugin's teardown handler twice.
+    if (st.tearingDown) return;
+    st.tearingDown = true;
     if (!st.ready) { cleanup(st); return; }
     request(st, "teardown", {}, TEARDOWN_TIMEOUT_MS).then(function () {
       cleanup(st);

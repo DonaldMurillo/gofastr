@@ -89,7 +89,22 @@
     var env = envelope("response", null, null, id);
     if (err) env.error = err;
     else env.result = result;
-    postToHost(env);
+    try {
+      postToHost(env);
+    } catch (e) {
+      // A non-structured-cloneable result (function, DOM node) throws
+      // DataCloneError here; without this guard the host waits out its
+      // full timeout instead of learning the handler misbehaved. Error
+      // envelopes are plain strings, so the fallback always clones.
+      var fallback = envelope("response", null, null, id);
+      fallback.error = {
+        code: "E_HANDLER",
+        message: "response not cloneable: " + String(e && e.message || e)
+      };
+      try {
+        postToHost(fallback);
+      } catch (ignored) { /* parent gone — nothing left to deliver to */ }
+    }
   }
 
   function handleRequest(msg) {

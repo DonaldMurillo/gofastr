@@ -30,7 +30,7 @@ const FrameClientRouteMethod = "GET"
 // security middleware's Cross-Origin-Resource-Policy: same-origin would
 // refuse the "null"-origin frame's <script src>, so it is served with
 // framed=true to apply exactly that CORP relaxation. The framedCSP header
-// writeAsset also emits is inert on a script response (CSP governs
+// that writeAsset also emits is inert on a script response (CSP governs
 // documents, not script bytes) — harmless there; the CORP relaxation is the
 // point.
 func RegisterFrameClientRoute(rt *router.Router) {

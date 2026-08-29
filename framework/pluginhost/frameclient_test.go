@@ -74,14 +74,19 @@ func TestFrameClientJS_PostsWithWildcardTargetOrigin(t *testing.T) {
 // home would defeat the point of the isolation. Scan non-comment lines
 // (same comment-stripping approach as TestBrokerJS_NeverEmitsAllowSameOrigin).
 func TestFrameClientJS_NoExternalURLs(t *testing.T) {
+	// Deliberately NO trailing-comment strip here: a URL's own "//"
+	// would be read as a comment start and the scheme destroyed before
+	// the check, leaving the pin unable to fire on the exact thing it
+	// exists for (found by mutation: an injected fetch("https://…")
+	// stayed green). Whole comment lines are skipped; a URL in a
+	// trailing comment flags as a false positive, which is the safe
+	// direction — keep URLs out of trailing comments in this file.
 	js := string(frameClientJSBytes)
 	for line := range strings.SplitSeq(js, "\n") {
 		code := strings.TrimSpace(line)
-		if strings.HasPrefix(code, "//") {
+		if strings.HasPrefix(code, "//") || strings.HasPrefix(code, "*") ||
+			strings.HasPrefix(code, "/*") {
 			continue // whole-line comment
-		}
-		if idx := strings.Index(code, "//"); idx >= 0 {
-			code = strings.TrimSpace(code[:idx]) // strip trailing comment
 		}
 		if strings.Contains(code, "http://") || strings.Contains(code, "https://") {
 			t.Errorf("external URL in executable code: %q", strings.TrimSpace(line))
@@ -128,8 +133,25 @@ func TestChannelContractPins(t *testing.T) {
 			t.Errorf("frame client missing channel contract literal %s", s)
 		}
 	}
-	if !strings.Contains(broker, "onRequest") {
-		t.Error("broker must expose onRequest handler registration")
+	// Pin the CODE shapes, not the word: "onRequest" appears in the
+	// broker's header comment, so a bare Contains would survive deleting
+	// the registration API entirely.
+	if !strings.Contains(broker, "st.requestHandlers[msg.method]") {
+		t.Error("broker must dispatch inbound requests via st.requestHandlers")
+	}
+	if !strings.Contains(broker, "onRequest: function (method, handler)") {
+		t.Error("broker api must expose onRequest handler registration")
+	}
+
+	// The frame controls msg.id on the broker's response path: the
+	// pending maps must be null-proto so "__proto__"/"constructor"
+	// lookups are undefined instead of truthy Object.prototype members
+	// (which pass the not-pending guard and throw in the host page).
+	if !strings.Contains(broker, "pending: Object.create(null)") {
+		t.Error("broker per-instance pending map must be Object.create(null)")
+	}
+	if !strings.Contains(broker, "st.pending = Object.create(null)") {
+		t.Error("broker cleanup must reset pending to Object.create(null), not {}")
 	}
 
 	// The bound must be ENFORCED, not just declared: pin the saturation

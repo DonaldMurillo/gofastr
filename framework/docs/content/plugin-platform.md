@@ -54,11 +54,13 @@ One versioned envelope in both directions:
 
 - Handshake: the frame speaks first (`ready`), the host answers `init`
   with the document, theme tokens, and the capability grant set.
-- host→plugin: `init`, `themeChanged`, `requestSave`, `uploadResult`,
-  `teardown`, `hostPointerdown` (interaction-outside relay so in-frame
-  overlays can dismiss).
-- plugin→host: `ready`, `docChanged`, `save`, `requestUpload`, `resize`,
-  `focusChanged`, `metric`, `themeApplied`, `bootError`.
+- host→plugin: `init`, `themeChanged`, `teardown`, `hostPointerdown`
+  (interaction-outside relay so in-frame overlays can dismiss).
+- plugin→host: `ready`, `docChanged`, `save`, `resize`, `focusChanged`,
+  `metric`, `themeApplied`, `bootError`.
+- Legacy correlated-event pairs (`requestSave`/`uploadResult`,
+  `requestUpload`) predate the request channel below; new plugins use
+  `sendRequest`/`onRequest` instead of inventing paired events.
 - **Source validation:** `event.source === iframe.contentWindow`, never
   `event.origin`; an opaque frame's origin is the literal string
   `"null"`, so origin-string checks are a trap.
@@ -98,6 +100,9 @@ One contract, both directions:
   `{code: "E_HANDLER"}`. Silence is not a protocol state.
 - The in-flight map is bounded (64); a saturated sender gets an
   immediate `{code: "E_SATURATED"}` rejection and nothing is posted.
+  The bound is sender-side: inbound dispatch is uncapped, the same
+  trust posture as the event path, so host-side request handlers must
+  stay cheap or debounce, exactly like `onEvent` handlers.
 - Invalid timeouts fall back to the 5s default; a timed-out request
   rejects `{code: "E_TIMEOUT"}` and its late response is dropped by id.
 - Teardown rejects every outstanding request with
