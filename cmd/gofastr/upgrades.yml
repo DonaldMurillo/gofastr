@@ -858,9 +858,11 @@ releases:
       - change: kiln acp speaks the published session surface; tools/list, tools/call, prompt and shutdown are gone and initialize changed shape
         breaking: true
         guidance: "Move to session/new, session/prompt and session/cancel; tool invocations now arrive as agent-driven session/update tool_call frames. kiln/agent/acp is deleted with no shim - kiln is not a production surface. Nothing changes for apps that do not drive `kiln acp`."
+        detect: 'kiln/agent/acp|kiln\s+acp'
       - change: mcp.AppConfig.CSP is mcp.AppCSP (connectDomains/resourceDomains/frameDomains/baseUriDomains) instead of a string
         breaking: true
         guidance: "The old string emitted JSON no spec-compliant MCP Apps host could parse, so there is no working caller to preserve. Set the four fields instead; an app that sets no CSP is unaffected."
+        detect: 'CSP:\s*"'
       - change: data-fui-confirm is honored on every form submit, not only data-fui-rpc dispatch
         breaking: false
         guidance: "Fix. A plain POST form carrying the attribute previously submitted with no prompt. If you relied on that no-op, remove the attribute."
