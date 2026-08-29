@@ -101,6 +101,48 @@ func TestConfirmNativeFormAcceptSubmits(t *testing.T) {
 	}
 }
 
+// TestConfirmFormLevelMsgGates: the attribute on the FORM, with a bare
+// submit button, gates too. Every other fixture here puts it on the button,
+// and the bridge passing opts.confirmed means dispatchRPC no longer reads the
+// form as a fallback — so without this case, narrowing the gate to the
+// submitter alone would pass the suite and silently restore #279 for
+// form-level placement.
+func TestConfirmFormLevelMsgGates(t *testing.T) {
+	var hits atomic.Int32
+	base := startPollServer(t, `<!doctype html><html><head></head><body>
+<form id="f" method="post" action="/act" data-fui-confirm="form-msg">
+<button id="b" type="submit">Go</button>
+</form>
+<script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
+		"/act": func(w http.ResponseWriter, _ *http.Request) {
+			hits.Add(1)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, `<span id="done">hit</span>`)
+		},
+	})
+
+	ctx := newPollBrowserCtx(t)
+	var confirmCalls int
+	var confirmMsgs []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#b`, chromedp.ByID),
+		chromedp.Evaluate(confirmStubJS(false), nil),
+		chromedp.Click(`#b`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`window.__confirmCalls`, &confirmCalls),
+		chromedp.Evaluate(`window.__confirmMsgs`, &confirmMsgs),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != "form-msg" {
+		t.Errorf("confirm prompted with %v (%d call(s)), want exactly [form-msg] — a form-level message must gate a bare submit button", confirmMsgs, confirmCalls)
+	}
+	if h := hits.Load(); h != 0 {
+		t.Errorf("POST /act hit %d time(s) after a declined confirm, want 0", h)
+	}
+}
+
 // TestConfirmSubmitterBeatsFormMsg: when both the form and the submit button
 // carry data-fui-confirm, the button's message is the one prompted with. A
 // form can carry several submit buttons of different destructive weight.

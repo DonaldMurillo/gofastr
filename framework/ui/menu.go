@@ -40,8 +40,9 @@ type MenuItem struct {
 	RPC, RPCMethod string
 
 	// Confirm asks the user to confirm before the RPC fires. Maps to
-	// data-fui-confirm; only meaningful with RPC (the runtime reads it
-	// on rpc dispatch), ignored otherwise.
+	// data-fui-confirm, which the runtime honors on RPC dispatch and on
+	// any form submit. A menu item is neither unless it carries RPC, so
+	// on a plain link item the attribute is inert.
 	Confirm string
 
 	// Icon is rendered to the left of Label. Inline HTML; caller
