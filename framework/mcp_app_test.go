@@ -160,7 +160,15 @@ func TestWidgetClientHeaders_SurviveMount(t *testing.T) {
 // of panicking with a route conflict, and the bytes are the same.
 func TestWidgetClientRoute_HandMountWins(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware(), WithMCPApp(widgetClientAppCfg()))
-	app.Router().Get(mcp.WidgetClientScriptURL, mcp.WidgetClientHandler())
+	// A SENTINEL body, not mcp.WidgetClientHandler(): mounting the real
+	// handler here would make "the hand mount survived" and "the automatic
+	// mount replaced it" byte-identical, so the test could not tell them
+	// apart and would pass either way.
+	const sentinel = "// hand-mounted sentinel"
+	app.Router().Get(mcp.WidgetClientScriptURL, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write([]byte(sentinel))
+	}))
 
 	addr, _ := startOnRandomPort(t, app) // Start must not hit the route conflict
 
@@ -168,5 +176,12 @@ func TestWidgetClientRoute_HandMountWins(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("hand-mounted widget client script: got %d want 200", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != sentinel {
+		t.Errorf("hand-mounted route was replaced by the automatic mount: served %d bytes, want the sentinel", len(body))
 	}
 }
