@@ -9,6 +9,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **The agent surface's middleware posture is pinned** (#291): a cookieless
+  bearer request to `/mcp` traverses the whole default chain untouched — CSRF
+  skips it by design, nothing demands a cookie, Origin or `Sec-Fetch-Site`,
+  and nothing rewrites `Authorization` — while a request carrying neither
+  credential is refused. That was already true and guarded by nothing: every
+  prior wiring test built its app with `WithoutDefaultMiddleware()`, so the
+  real chain had never met a bearer `/mcp` request. Now covered on both the
+  serve and agent roles, against live listeners.
+
 - **The widget client mounts itself** (#291): an app that registers an MCP App
   with `WithMCPApp` now serves the widget client at
   `mcp.WidgetClientScriptURL` automatically, rather than every author wiring
