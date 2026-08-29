@@ -41,7 +41,8 @@ func WithMCPControl() AppOption {
 }
 
 // WithMCPGate installs a server-wide precondition over the /mcp data surface:
-// tools/list, tools/call, resources/list and resources/read all run it first.
+// tools/list, tools/call, resources/list, resources/read,
+// resources/templates/list, prompts/list and prompts/get all run it first.
 // Use it when the endpoint is private wholesale.
 //
 // Without it, /mcp discloses every registered tool's inputSchema to anyone who

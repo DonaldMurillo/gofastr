@@ -332,8 +332,9 @@ framework.NewApp(
 )
 ```
 
-`WithMCPGate` covers `tools/list`, `tools/call`, `resources/list` and
-`resources/read`. The `initialize` handshake and `ping` stay open by
+`WithMCPGate` covers the whole data surface: `tools/list`, `tools/call`,
+`resources/list`, `resources/read`, `resources/templates/list`,
+`prompts/list` and `prompts/get`. The `initialize` handshake and `ping` stay open by
 design: they carry only the protocol version, capability booleans and the
 server name, and a client that cannot handshake cannot present credentials.
 

@@ -59,7 +59,7 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 
 	switch req.Method {
 	case "tools/list", "tools/call", "resources/list", "resources/read",
-		"prompts/list", "prompts/get":
+		"resources/templates/list", "prompts/list", "prompts/get":
 		// Server-wide gate over the DATA surface. initialize and ping fall
 		// through uncovered on purpose. See Server.serverGate.
 		if err := s.checkServerGate(ctx); err != nil {
@@ -76,6 +76,8 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 		return s.handleResourcesList(ctx, req)
 	case "resources/read":
 		return s.handleResourcesRead(ctx, req)
+	case "resources/templates/list":
+		return s.handleResourcesTemplatesList(ctx, req)
 	case "prompts/list":
 		return s.handlePromptsList(ctx, req)
 	case "prompts/get":
@@ -133,7 +135,9 @@ func (s *Server) handleInitialize(req Request) Response {
 	capabilities := map[string]any{
 		"tools": map[string]any{"listChanged": false},
 	}
-	if s.hasResources() {
+	if s.hasResources() || s.hasTemplates() {
+		// The spec has one `resources` capability for both resources and
+		// resource templates; a templates-only server still advertises it.
 		capabilities["resources"] = map[string]any{"listChanged": false, "subscribe": false}
 	}
 	if s.hasPrompts() {

@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // ResourceContents is the payload a resource yields on resources/read. Set
@@ -112,9 +114,12 @@ func (s *Server) hasResources() bool {
 	return len(s.resources) > 0
 }
 
-// resourcesListResult is the result shape for resources/list.
+// resourcesListResult is the result shape for resources/list. The
+// nextCursor key is absent on the final page, and on every page when the
+// whole listing fits (the pre-pagination wire shape).
 type resourcesListResult struct {
-	Resources []Resource `json:"resources"`
+	Resources  []Resource `json:"resources"`
+	NextCursor string     `json:"nextCursor,omitempty"`
 }
 
 // resourcesReadParams are the params for a resources/read request.
@@ -134,16 +139,25 @@ type resourceContentItem struct {
 	Blob     string `json:"blob,omitempty"` // base64
 }
 
-// handleResourcesList returns all registered resources (without their
-// contents funcs: those run only on read).
+// handleResourcesList returns one page of registered resources in URI
+// order (without their contents funcs: those run only on read). The URI
+// sort keeps pages stable across requests; the resource registry has no
+// per-caller listing filter (WithResourceGate protects contents, not
+// metadata), so pagination pages the whole registry.
 func (s *Server) handleResourcesList(_ context.Context, req Request) Response {
+	offset, err := s.listOffset(req, "resources/list")
+	if err != nil {
+		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
+	}
 	s.mu.RLock()
 	list := make([]Resource, 0, len(s.resources))
 	for _, r := range s.resources {
 		list = append(list, r)
 	}
 	s.mu.RUnlock()
-	return newSuccessResponse(req.ID, resourcesListResult{Resources: list})
+	slices.SortFunc(list, func(a, b Resource) int { return strings.Compare(a.URI, b.URI) })
+	page, next := pageList(s, "resources/list", list, offset)
+	return newSuccessResponse(req.ID, resourcesListResult{Resources: page, NextCursor: next})
 }
 
 // handleResourcesRead resolves a resource by uri and returns its contents.

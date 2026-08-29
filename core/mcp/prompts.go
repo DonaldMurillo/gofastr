@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // PromptMessage is one message of a prompts/get result: the speaker role
@@ -118,9 +120,12 @@ func (s *Server) hasPrompts() bool {
 	return len(s.prompts) > 0
 }
 
-// promptsListResult is the result shape for prompts/list.
+// promptsListResult is the result shape for prompts/list. The nextCursor
+// key is absent on the final page, and on every page when the whole
+// listing fits (the pre-pagination wire shape).
 type promptsListResult struct {
-	Prompts []Prompt `json:"prompts"`
+	Prompts    []Prompt `json:"prompts"`
+	NextCursor string   `json:"nextCursor,omitempty"`
 }
 
 // promptsGetParams are the params for a prompts/get request, per the MCP
@@ -137,10 +142,18 @@ type promptsGetResult struct {
 	Messages    []PromptMessage `json:"messages"`
 }
 
-// handlePromptsList returns the prompts visible to the caller: a gated
-// prompt (WithPromptGate) is omitted rather than listed-and-refused, the
-// same contract tools/list applies to WithToolGate.
+// handlePromptsList returns one page of the prompts visible to the
+// caller, in name order: a gated prompt (WithPromptGate) is omitted
+// rather than listed-and-refused, the same contract tools/list applies
+// to WithToolGate. The gate runs BEFORE the page is cut, so pagination
+// walks the post-filter set: a gated prompt never surfaces on a page and
+// never bends the page sizes or cursor arithmetic that would otherwise
+// count it. The name sort keeps pages stable across requests.
 func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
+	offset, err := s.listOffset(req, "prompts/list")
+	if err != nil {
+		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
+	}
 	s.mu.RLock()
 	list := make([]Prompt, 0, len(s.prompts))
 	for _, p := range s.prompts {
@@ -153,7 +166,9 @@ func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
 		list = append(list, p)
 	}
 	s.mu.RUnlock()
-	return newSuccessResponse(req.ID, promptsListResult{Prompts: list})
+	slices.SortFunc(list, func(a, b Prompt) int { return strings.Compare(a.Name, b.Name) })
+	page, next := pageList(s, "prompts/list", list, offset)
+	return newSuccessResponse(req.ID, promptsListResult{Prompts: page, NextCursor: next})
 }
 
 // handlePromptsGet resolves a prompt by name, validates required arguments,
