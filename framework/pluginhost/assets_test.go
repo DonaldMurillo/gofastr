@@ -308,3 +308,53 @@ func TestExplicitContentTypeWins(t *testing.T) {
 		t.Errorf("Content-Type=%q want the spec's explicit application/json", got)
 	}
 }
+
+// ClientModule.AssetServer threads Manifest.CSP to the frame without the host
+// repeating the wiring. A manifest that declares the wasm tier and a server
+// built from the module cannot disagree (#300).
+func TestModuleAssetServerThreadsCSP(t *testing.T) {
+	fsys := fstest.MapFS{"frame.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")}}
+	mod, err := NewClientModule("probe", Manifest{
+		Entry: "/__p/frame.html",
+		CSP:   []string{"'wasm-unsafe-eval'"},
+	}, fsys)
+	if err != nil {
+		t.Fatalf("NewClientModule: %v", err)
+	}
+	rt := router.New()
+	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/frame.html")
+	if err != nil {
+		t.Fatalf("GET frame.html: %v", err)
+	}
+	resp.Body.Close()
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "'wasm-unsafe-eval'") {
+		t.Errorf("module-built server must carry the manifest tier: %q", csp)
+	}
+}
+
+// A module whose manifest declares no tier gets the byte-identical default
+// policy: the convenience constructor grants nothing on its own.
+func TestModuleAssetServerNoTierNoGrant(t *testing.T) {
+	fsys := fstest.MapFS{"frame.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")}}
+	mod, err := NewClientModule("probe", Manifest{Entry: "/__p/frame.html"}, fsys)
+	if err != nil {
+		t.Fatalf("NewClientModule: %v", err)
+	}
+	rt := router.New()
+	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/frame.html")
+	if err != nil {
+		t.Fatalf("GET frame.html: %v", err)
+	}
+	resp.Body.Close()
+	if csp := resp.Header.Get("Content-Security-Policy"); strings.Contains(csp, "wasm") {
+		t.Errorf("no manifest tier must mean no wasm keyword: %q", csp)
+	}
+}

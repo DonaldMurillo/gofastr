@@ -7,6 +7,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **`ClientModule.AssetServer(prefix, specs)`** (#300): builds a plugin's
+  `AssetServer` from the module, reading `ClientModule.Assets` and
+  threading `Manifest.CSP` through `WithCSP`. `Manifest.CSP` was the one
+  manifest field a host could set correctly and have the frame ignore,
+  because it is applied as a response header rather than carried on the
+  manifest object to the mount: a plugin could declare the wasm tier, pass
+  `Validate`, and still get a frame that refused to compile WebAssembly,
+  reported only as a `CompileError` inside an opaque origin with
+  `connect-src 'none'` and no way out. Building the server from the module
+  makes the manifest the single source of truth, and passes less than the
+  old call did (`fsys` comes from the module). `NewAssetServer` stays for
+  assets that belong to no module.
+
 ### Fixed
 
 - **An `AssetSpec` without a `ContentType` now serves one derived from the
