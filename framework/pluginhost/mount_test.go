@@ -16,12 +16,9 @@ func TestMountMarker_FallbackInsideMarker(t *testing.T) {
 		Plugin:   "chart",
 		Fallback: render.HTML(`<svg class="chart"><rect/></svg>`),
 	}))
-	wrapOpen := strings.Index(html, `<div data-fui-plugin-fallback>`)
-	if wrapOpen < 0 {
+	if !strings.Contains(html, `<div data-fui-plugin-fallback>`) {
 		t.Fatalf("fallback wrapper missing:\n%s", html)
 	}
-	markerClose := strings.Index(html, `></div>`) // end of the marker's open tag has no attrs after fallback; check nesting instead
-	_ = markerClose
 	// The fallback wrapper must sit INSIDE the marker div, before its
 	// closing tag, and the SVG must be emitted verbatim (trusted HTML).
 	if !strings.Contains(html, `<div data-fui-plugin-fallback><svg class="chart"><rect/></svg></div></div>`) {

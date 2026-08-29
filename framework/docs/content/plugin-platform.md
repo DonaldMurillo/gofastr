@@ -157,8 +157,12 @@ wraps it inside the marker and drives one lifecycle:
 
 The fallback is host-trusted HTML in the page's own trust domain, built
 server-side by the plugin's `Mount()`; it never comes from the frame.
-Plugins without a fallback keep the frame visible while loading, exactly
-as before.
+It renders in the **host page** (full privileges), not the sandbox, so
+escape any user-derived data you interpolate into it
+(`render.Escape` / `render.Text`) — an unescaped label here is stored
+XSS in the host page, the very thing the frame sandbox exists to
+prevent. Plugins without a fallback keep the frame visible while
+loading, exactly as before.
 
 ## Opting out: the trusted mount
 

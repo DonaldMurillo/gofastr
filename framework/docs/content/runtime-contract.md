@@ -412,9 +412,9 @@ JSON), `data-fui-plugin-minheight`, and `data-fui-plugin-capabilities`
 server-rendered node the broker shows while the frame loads and swaps
 back to on `bootError`, so a dead frame degrades to static output. These
 are scanned by the plugin host broker: a separate script served at its
-own route, NOT part of `runtime.js` or its budgets. Plugins may add namespaced extras (the
-wysiwyg editor adds `data-fui-plugin-for` naming its hidden form fields);
-those are documented by the owning plugin.
+own route, NOT part of `runtime.js` or its budgets. Plugins may add
+namespaced extras (the wysiwyg editor adds `data-fui-plugin-for` naming
+its hidden form fields); those are documented by the owning plugin.
 
 ---
 

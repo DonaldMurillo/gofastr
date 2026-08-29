@@ -94,4 +94,37 @@ func TestBrokerJS_FallbackLifecycle(t *testing.T) {
 	if !strings.Contains(readyBody, "showFrame(st)") {
 		t.Error("ready must showFrame (live view takes over)")
 	}
+	// The other two transitions are just as load-bearing: without the
+	// loading-state hide, the user sees the fallback AND an empty frame
+	// stacked; without the teardown restore, an SPA-nav gap. Pin both
+	// bodies (function slices), not just ready/bootError.
+	if body := funcBody(code, "function mountMarker("); !strings.Contains(body, "showFallback(st)") {
+		t.Error("mountMarker must showFallback (loading: frame hidden behind the static node)")
+	}
+	if body := funcBody(code, "function cleanup("); !strings.Contains(body, "showFallback(st)") {
+		t.Error("cleanup must showFallback (restore the static node before removing the frame)")
+	}
+}
+
+// funcBody returns the source of the function starting at marker, from
+// its opening brace to the matching close, so a pin can assert against
+// one function's body rather than the whole file.
+func funcBody(code, marker string) string {
+	start := strings.Index(code, marker)
+	if start < 0 {
+		return ""
+	}
+	depth := 0
+	for i := start; i < len(code); i++ {
+		switch code[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return code[start : i+1]
+			}
+		}
+	}
+	return code[start:]
 }
