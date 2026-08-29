@@ -244,3 +244,67 @@ func TestAssetServerWithCSPThreadsToHeader(t *testing.T) {
 		t.Errorf("host-page script must carry no CSP, got %q", got)
 	}
 }
+
+// A spec that omits ContentType still gets a usable header. An empty
+// Content-Type plus the nosniff on the next line makes the browser refuse to
+// parse a 200 response whose bytes are correct, with nothing logged
+// server-side and nothing raised in the console (#303).
+func TestSpecWithoutContentTypeGetsOne(t *testing.T) {
+	fsys := fstest.MapFS{
+		"frame.html":  &fstest.MapFile{Data: []byte("<!doctype html><p>frame")},
+		"probe.js":    &fstest.MapFile{Data: []byte("var x=1;")},
+		"sqlite.wasm": &fstest.MapFile{Data: []byte("\x00asm")},
+		"opaque.bin":  &fstest.MapFile{Data: []byte("\x00\x01")},
+	}
+	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
+		{Name: "frame.html", Framed: true},
+		{Name: "probe.js", Framed: true},
+		{Name: "sqlite.wasm", Framed: true},
+		{Name: "opaque.bin", Framed: true},
+	})
+	srv.AddBytes("/__p/host.js", "", false, []byte("var x=1;"))
+	rt := router.New()
+	srv.Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	want := map[string]string{
+		"/__p/frame.html":  "text/html; charset=utf-8",
+		"/__p/probe.js":    "text/javascript; charset=utf-8",
+		"/__p/sqlite.wasm": "application/wasm",
+		"/__p/opaque.bin":  "application/octet-stream",
+		"/__p/host.js":     "text/javascript; charset=utf-8",
+	}
+	for path, ct := range want {
+		resp, err := http.Get(hs.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if got := resp.Header.Get("Content-Type"); got != ct {
+			t.Errorf("%s: Content-Type=%q want %q", path, got, ct)
+		}
+	}
+}
+
+// An explicit ContentType always wins over the extension default: the spec
+// field stays authoritative for the plugin that sets it.
+func TestExplicitContentTypeWins(t *testing.T) {
+	fsys := fstest.MapFS{"data.js": &fstest.MapFile{Data: []byte("{}")}}
+	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
+		{Name: "data.js", ContentType: "application/json", Framed: true},
+	})
+	rt := router.New()
+	srv.Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/data.js")
+	if err != nil {
+		t.Fatalf("GET data.js: %v", err)
+	}
+	resp.Body.Close()
+	if got := resp.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type=%q want the spec's explicit application/json", got)
+	}
+}

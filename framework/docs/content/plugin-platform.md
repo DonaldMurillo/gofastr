@@ -47,6 +47,14 @@ Framed assets get a scoped relaxation (framing headers + a CSP keyed to
 the explicit request origin; inside an opaque frame, `'self'` resolves
 to `null` and spec-correct browsers like Safari refuse subresources).
 
+An `AssetSpec` names a file and marks whether it is framed; its
+`ContentType` is optional and, when omitted, comes from
+`core/static.DetectFromName` — the same canonical table the rest of the
+framework serves static files with, so `.html`, `.js`, `.css` and
+`.wasm` resolve identically on every host. Set `ContentType` only to
+override that. Every asset is served `nosniff`, so a type the server
+could not name would leave the browser no way to recover.
+
 ## The wasm opt-in tier
 
 WebAssembly cannot compile inside a plugin frame by default: the framed

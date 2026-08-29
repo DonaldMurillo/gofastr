@@ -5,6 +5,24 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Fixed
+
+- **An `AssetSpec` without a `ContentType` now serves one derived from the
+  filename** (#303) instead of an empty `Content-Type`. `writeAsset` set
+  the header unconditionally from the spec and set `nosniff` on the next
+  line, so an omitted type served 200 with the right bytes and a document
+  the browser was forbidden to parse or to recover by sniffing — silent in
+  the server log, the console, and as a page error alike, leaving an empty
+  frame that reads as broken plugin JS. Detection goes through
+  `core/static.DetectFromName`, the repo's canonical detector: its table
+  wins over `mime.TypeByExtension` so `.html`, `.js`, `.css` and `.wasm`
+  resolve the same on every host, the stdlib covers only the long tail,
+  and `application/octet-stream` is the floor. An explicit `ContentType`
+  still wins, `nosniff` is unchanged, and `AddBytes` gets the same
+  default.
+
 ## [0.74.0] - 2026-08-29
 
 ### Changed
