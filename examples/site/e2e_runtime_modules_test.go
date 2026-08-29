@@ -305,7 +305,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	base := srv.URL
 	ctx := newE2EBrowserCtx(t)
 
-	var fallbackVisible bool
+	var fallbackResult string
 	// Navigate to a page that doesn't pre-load the toast module so
 	// toasts.js isn't already cached, then manually trigger the
 	// toast push path to exercise the fallback when the module 500s.
@@ -355,24 +355,42 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 		// delays the toasts.js onerror → fallback render past the
 		// sample point. The fallback is delayed, never lost, so wait
 		// on the real signal with a generous budget.
-		chromedp.Evaluate(`new Promise((resolve) => {
+		// Issue #278: a starved CI runner once let that in-order
+		// chain outlive 10s, so the budget is now 30s (the per-test
+		// tab context is 45s) and the timeout path resolves a
+		// diagnostic snapshot (fallback node state, runtime script
+		// srcs, loaded modules) instead of a bare false.
+		// Pin the poll promise on window: CDP holds only a weak
+		// reference to an awaited promise, and once the tick chain
+		// stops at resolve nothing else pins it — GC then reports
+		// "Promise was collected" (-32000) and the diagnostic is
+		// lost instead of delivered.
+		chromedp.Evaluate(`window.__toastFallbackPoll = new Promise((resolve) => {
             const t0 = performance.now();
             const tick = () => {
                 const fallback = document.querySelector('[data-fui-toast-fallback]');
-                if (fallback && fallback.textContent.includes('Saved')) { resolve(true); return; }
-                if (performance.now() - t0 > 10000) { resolve(false); return; }
+                if (fallback && fallback.textContent.includes('Saved')) { resolve('ok'); return; }
+                if (performance.now() - t0 > 30000) {
+                    resolve(JSON.stringify({
+                        fallbackPresent: !!fallback,
+                        fallbackText: fallback ? fallback.textContent : null,
+                        runtimeScripts: Array.from(document.querySelectorAll('script[src*="/__gofastr/runtime/"]')).map(s => s.src),
+                        loadedModules: Object.keys((window.__gofastr && window.__gofastr.loadedModules) || {}),
+                    }));
+                    return;
+                }
                 setTimeout(tick, 100);
             };
             tick();
-        })`, &fallbackVisible, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
+		})`, &fallbackResult, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
 			return p.WithAwaitPromise(true)
 		}),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if !fallbackVisible {
-		t.Errorf("X-Gofastr-Toast header fired with toasts.js returning 500 should render a fallback " +
-			"notice carrying the server-sent title; nothing visible was found.")
+	if fallbackResult != "ok" {
+		t.Errorf("X-Gofastr-Toast header fired with toasts.js returning 500 should render a fallback "+
+			"notice carrying the server-sent title; nothing visible was found. Diagnostic: %s", fallbackResult)
 	}
 }
 
