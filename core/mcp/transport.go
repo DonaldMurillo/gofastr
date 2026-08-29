@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
@@ -19,6 +21,14 @@ import (
 // this cap a single unauthenticated POST could read an arbitrary
 // payload into memory.
 const maxMCPBodyBytes = 1 << 20
+
+// sseWriteTimeout bounds each individual write on the held-open SSE
+// notification stream. Servers that serve that stream run
+// http.Server.WriteTimeout zero (a global deadline would kill
+// long-lived streams), so without a per-write deadline a client that
+// stops reading pins the handler goroutine forever: closing sub.ch
+// cannot interrupt an in-flight write. Each write arms a fresh one.
+const sseWriteTimeout = 10 * time.Second
 
 // isMCPJSONContentType allows only "application/json" (with optional
 // parameters) and the +json structured-suffix family. The literal
@@ -332,7 +342,18 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// sseGetHandler sets up an SSE connection for streaming.
+// sseGetHandler sets up an SSE connection for streaming and then HOLDS
+// it: the connection stays open for the life of the client, carrying
+// the server-initiated MCP notifications (notifications/*) fanned out
+// to the per-subscriber registry in notifications.go.
+//
+// Hard rule 3 note: SSE here is the MCP transport's own mandated
+// server-push stream (the GET half of the protocol's HTTP transport),
+// not an app surface and not the app's /__gofastr/sse bus. Rule 3
+// ("SSE is push-only, never for responses to user actions") governs
+// app surfaces; this stream carries only protocol notifications the
+// MCP spec requires the server to be able to push. It is not a
+// precedent for app-surface SSE.
 func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Same gate as ssePostHandler. This handler used to discard the
 	// request entirely, so the origin/Host check simply did not run on
@@ -348,10 +369,97 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
+	// rc carries per-write deadlines down to the connection; ew
+	// surfaces the first write error, which StreamSSE's io.Writer API
+	// cannot return. writeSSEEvent arms a fresh deadline, writes one
+	// event, flushes, and reports whether the stream is still alive.
+	// On failure the handler returns and the deferred
+	// removeSSESubscriber unregisters this stream, so fan-out stops
+	// targeting it.
+	rc := http.NewResponseController(w)
+	ew := &errWriter{w: w}
+	writeSSEEvent := func(event, data string) bool {
+		if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil {
+			// http.ErrNotSupported means the ResponseWriter chain has
+			// no deadline support (a wrapped writer with no connection
+			// underneath — middleware, tests): that is "no deadline
+			// available", not a dead stream, so the write is still
+			// attempted. Any other error means arming the deadline
+			// itself failed; fail the stream rather than risk an
+			// unbounded write.
+			if !errors.Is(err, http.ErrNotSupported) {
+				return false
+			}
+		}
+		StreamSSE(ew, event, data)
+		if ew.err != nil {
+			return false
+		}
+		if err := rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			// Flush has the same wrapped-writer escape as the
+			// deadline: a chain without a Flusher was always skipped,
+			// never fatal.
+			return false
+		}
+		return true
+	}
+
 	// Send initial connection event
-	StreamSSE(w, "endpoint", "/sse")
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
+	if !writeSSEEvent("endpoint", "/sse") {
+		return
+	}
+
+	// Register a subscriber carrying this caller's identity (the
+	// request context, enriched like the POST path enriches it, with
+	// the inbound request stashed via WithRequest) so per-subscriber
+	// gates can be evaluated against it at delivery time — a
+	// long-lived stream must reflect gate decisions that change
+	// mid-connection, not a snapshot taken now.
+	ctx := context.WithValue(r.Context(), contextKey{}, r)
+	ctx = enrichContext(ctx)
+	sub := s.addSSESubscriber(ctx)
+	defer s.removeSSESubscriber(sub)
+
+	// Hold the connection until the client goes away. Each notification
+	// is filtered per subscriber (server-wide gate + the item's gate,
+	// both evaluated HERE at send time — see subscriberMayReceive) and
+	// flushed as one SSE event.
+	for {
+		select {
+		case <-r.Context().Done():
+			// Client disconnected. The deferred removeSSESubscriber
+			// unregisters; nothing else is needed.
+			return
+		case n, ok := <-sub.ch:
+			if !ok {
+				// The publisher dropped this subscriber for
+				// backpressure (buffer full: a stalled stream loop).
+				// Returning closes the stream — the client's recovery
+				// is to reconnect and re-list. See notifySubscribers.
+				return
+			}
+			if !s.subscriberMayReceive(sub, n) {
+				continue
+			}
+			data, err := json.Marshal(jsonrpcNotification{
+				JSONRPC: "2.0",
+				Method:  n.method,
+				Params:  n.params,
+			})
+			if err != nil {
+				// params are server-built strings; unreachable, but a
+				// marshalling failure must never kill the stream.
+				continue
+			}
+			if !writeSSEEvent("message", string(data)) {
+				// The write failed — deadline exceeded on a client
+				// that stopped reading, or the connection is gone.
+				// Return: the deferred removeSSESubscriber unregisters
+				// the stream. Closing the connection is the client's
+				// signal to reconnect and re-list, which restores it.
+				return
+			}
+		}
 	}
 }
 
@@ -380,6 +488,26 @@ func WithRequest(ctx context.Context, r *http.Request) context.Context {
 func RequestFromContext(ctx context.Context) (*http.Request, bool) {
 	r, ok := ctx.Value(contextKey{}).(*http.Request)
 	return r, ok
+}
+
+// errWriter records the first write error, so the SSE stream loop can
+// detect a failed write through StreamSSE — an io.Writer API that
+// cannot return one itself. Once a write fails, every later write
+// short-circuits to the same error without touching w.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (ew *errWriter) Write(p []byte) (int, error) {
+	if ew.err != nil {
+		return 0, ew.err
+	}
+	n, err := ew.w.Write(p)
+	if err != nil {
+		ew.err = err
+	}
+	return n, err
 }
 
 // StreamSSE writes a single SSE event to the writer. It is the hardened

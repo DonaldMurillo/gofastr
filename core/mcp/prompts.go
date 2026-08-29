@@ -101,14 +101,19 @@ func (s *Server) RegisterPrompt(name string, handler PromptHandler, opts ...Prom
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.prompts == nil {
 		s.prompts = make(map[string]Prompt)
 	}
 	if _, exists := s.prompts[name]; exists {
+		s.mu.Unlock()
 		return fmt.Errorf("mcp: prompt %q already registered", name)
 	}
 	s.prompts[name] = p
+	s.mu.Unlock()
+
+	// Connected clients re-list. Before serving has begun this fans out
+	// to zero subscribers, so boot-time registration notifies nobody.
+	s.NotifyPromptsListChanged()
 	return nil
 }
 

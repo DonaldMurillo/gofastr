@@ -63,6 +63,42 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **MCP server-initiated notifications** (#287):
+  `notifications/tools/list_changed`,
+  `notifications/resources/list_changed`,
+  `notifications/prompts/list_changed` and `notifications/resources/updated`,
+  plus `resources/subscribe` / `resources/unsubscribe`. `initialize` now
+  advertises `listChanged` and `subscribe` truthfully; both were hardcoded
+  `false`. The SSE GET stream previously wrote one static `endpoint` event and
+  returned, so there was no subscriber machinery at all — it now holds the
+  connection and streams.
+
+  Notifications are filtered **per subscriber, at delivery time**. A gated
+  resource's `updated` notification carries its URI, so it reaches only
+  streams whose caller passes the resource's own `WithResourceGate` — the
+  same gate that refuses the read. That does not hide the resource from
+  `resources/list`, whose metadata stays listed by design (the gate guards
+  contents); it keeps update notices from callers who cannot read the
+  result. Tools, prompts and resource templates are the other shape: those
+  gates hide the item from its list method and page the post-gate set, and
+  the `list_changed` a gated tool or resource template registration fires
+  is withheld from callers the gate refuses. Payload-free `list_changed`
+  still requires passing the server-wide gate, because a caller refused
+  wholesale should not learn that something changed. Delivery-time
+  evaluation means a session revoked mid-stream stops receiving
+  immediately, and app gate code never runs on the publisher's goroutine.
+
+  A subscriber that falls behind is dropped and its stream closed rather than
+  blocking the publisher: `list_changed` is idempotent, so a reconnecting
+  client re-lists and is correct again, whereas a blocked publisher would stall
+  every other subscriber and the code that raised the notification.
+
+  Two limits documented rather than solved: subscriptions are refcounted per
+  URI rather than per stream, because this transport has no session id linking
+  a POST to a GET stream (the per-subscriber gates remain the boundary), and a
+  notification raised on one replica does not reach clients connected to
+  another — the same class of limit as the per-process cursor signing key.
+
 - **MCP prompts, pagination and resource templates** (#287): `core/mcp`
   spoke tools and resources only. It now serves `prompts/list` and
   `prompts/get` (registered with `RegisterPrompt` and the same option

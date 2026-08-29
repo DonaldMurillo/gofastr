@@ -152,6 +152,24 @@ type Server struct {
 	// auto-enables the mutating control tools; it is the port-agnostic
 	// form of the allowedHosts pin.
 	requireLoopbackHost bool
+
+	// sseMu guards the server-initiated notification machinery: the
+	// SSE subscriber registry and the resources/subscribe counts. It is
+	// deliberately NOT s.mu — notification fan-out happens on every
+	// registration and update, and must never contend with (or nest
+	// inside) the registry lock. The lock order is one-way: registry
+	// methods take s.mu, release it, then notify with sseMu; nothing
+	// takes sseMu while holding s.mu.
+	sseMu sync.Mutex
+	// sseSubs holds the live GET-stream subscribers
+	// (notifications.go). Initialized in NewServer; addSSESubscriber
+	// also grows it lazily for a zero-value Server.
+	sseSubs map[*sseSubscriber]struct{}
+	// resourceSubs counts active resources/subscribe requests per uri;
+	// NotifyResourceUpdated only fans out while a uri's count is
+	// positive. Connection-agnostic by transport necessity: there is no
+	// session id linking a POST to a GET stream.
+	resourceSubs map[string]int
 }
 
 // NewServer creates a new MCP server with an empty tool registry.
@@ -161,6 +179,8 @@ func NewServer() *Server {
 		name:         "GoFastr MCP",
 		version:      "1.0.0",
 		listPageSize: defaultListPageSize,
+		sseSubs:      make(map[*sseSubscriber]struct{}),
+		resourceSubs: make(map[string]int),
 	}
 }
 
@@ -243,6 +263,16 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	if hook != nil {
 		hook(name)
 	}
+	// Registration after serving has begun tells connected clients to
+	// re-list. "After serving has begun" needs no flag: before any
+	// subscriber exists the fan-out is a no-op, and a subscriber can
+	// only exist once serving has begun. The notification carries the
+	// tool's own gate: a caller the gate refuses cannot see the tool in
+	// tools/list, and must not be told it appeared either.
+	s.notifySubscribers(sseNotification{
+		method:   "notifications/tools/list_changed",
+		itemGate: tool.Gate,
+	})
 	return nil
 }
 
@@ -333,8 +363,11 @@ func (s *Server) listToolsUnfiltered() []Tool {
 
 // SetGate installs a server-wide precondition over the JSON-RPC data surface
 // (tools/list, tools/call, resources/list, resources/read,
-// resources/templates/list, prompts/list, prompts/get). Pass nil to clear
-// it. See the serverGate field for why initialize and ping stay open.
+// resources/templates/list, resources/subscribe, resources/unsubscribe,
+// prompts/list, prompts/get). Pass nil to clear it. See the serverGate field
+// for why initialize and ping stay open. The gate also filters
+// server-initiated notifications per subscriber: a caller it refuses
+// receives nothing on the SSE stream, not even a list_changed.
 //
 // Use it when the whole /mcp endpoint is private. For a mixed surface,
 // public read tools and gated mutating ones, attach per-tool gates with
