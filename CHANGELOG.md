@@ -19,6 +19,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   + remap is now documented prominently in isolation.md instead of only
   in the source.
 
+- **The last 23 legacy `framework/ui` files (24 components) join the
+  ExtraAttrs sanitization contract** (#262, completing the migration
+  PR #261 started): AnimatedCounter, Banner, Button, Carousel, Container,
+  FilterToolbar, Gallery, Link, LinkButton, Markdown, Menu items,
+  NotificationBell, NumberInput, PasswordInput, ProgressSteps,
+  RangeSlider, SearchInput, Select, Slider, TextArea, Timeline,
+  TableOfContents, Toolbar, and Workbench now route caller extras
+  through `html.SafeExtraAttrs` (Button and Link through the carrier
+  variant below). A caller-supplied ExtraAttrs key can
+  no longer override the attributes a component derives from its
+  config (a Slider's `min`/`max`/`step`/`value`, a FilterToolbar's
+  sanitized form `action`, a TextArea's `maxlength`, a Workbench's
+  CSP-safe `style`, …) or spoof `class`/`id`/`data-fui-*` — including
+  case-variant keys (`"Type"`), which slipped past PasswordInput's
+  lowercase-only re-assert, and the owned keys (placeholder, method,
+  role, aria-label) that SearchInput's and FilterToolbar's hand-rolled
+  guards never covered at all.
+  Set owned values through the config fields instead. `ui.Form` stays
+  raw by documented contract. `extraAttrsRawLegacy` in the contract
+  test shrinks to that one entry.
+
+- **`ui.Button` and `ui.Link` are documented wiring carriers**: they
+  keep forwarding `data-fui-*` (via the new `html.SafeCarrierAttrs`,
+  which still drops `class`/`id`/the component's owned keys/the
+  `data-fui-comp` style marker) so the
+  `interactive.Action.Attrs()`-into-ExtraAttrs pattern from
+  interactive-patterns.md keeps working — the resource UI's
+  delete/transition buttons, the admin battery, and uinoderender's
+  href-fallback + `data-fui-rpc` ActionRef links depend on it.
+
 ### Added
 
 - **`ui.Button.AriaLabel` / `html.Button.AriaLabel`** (#281): an
@@ -56,40 +86,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   requests with `E_TEARDOWN` instead of leaking hung promises — the
   host broker previously cleared its timers without rejecting, and
   plugins (richtext, datagrid) each hand-rolled their own correlation.
-
-### Changed
-
-- **The last 23 legacy `framework/ui` files (24 components) join the
-  ExtraAttrs sanitization contract** (#262, completing the migration
-  PR #261 started): AnimatedCounter, Banner, Button, Carousel, Container,
-  FilterToolbar, Gallery, Link, LinkButton, Markdown, Menu items,
-  NotificationBell, NumberInput, PasswordInput, ProgressSteps,
-  RangeSlider, SearchInput, Select, Slider, TextArea, Timeline,
-  TableOfContents, Toolbar, and Workbench now route caller extras
-  through `html.SafeExtraAttrs` (Button and Link through the carrier
-  variant below). A caller-supplied ExtraAttrs key can
-  no longer override the attributes a component derives from its
-  config (a Slider's `min`/`max`/`step`/`value`, a FilterToolbar's
-  sanitized form `action`, a TextArea's `maxlength`, a Workbench's
-  CSP-safe `style`, …) or spoof `class`/`id`/`data-fui-*` — including
-  case-variant keys (`"Type"`), which slipped past PasswordInput's
-  lowercase-only re-assert, and the owned keys (placeholder, method,
-  role, aria-label) that SearchInput's and FilterToolbar's hand-rolled
-  guards never covered at all.
-  Set owned values through the config fields instead. `ui.Form` stays
-  raw by documented contract. `extraAttrsRawLegacy` in the contract
-  test shrinks to that one entry.
-
-- **`ui.Button` and `ui.Link` are documented wiring carriers**: they
-  keep forwarding `data-fui-*` (via the new `html.SafeCarrierAttrs`,
-  which still drops `class`/`id`/the component's owned keys/the
-  `data-fui-comp` style marker) so the
-  `interactive.Action.Attrs()`-into-ExtraAttrs pattern from
-  interactive-patterns.md keeps working — the resource UI's
-  delete/transition buttons, the admin battery, and uinoderender's
-  href-fallback + `data-fui-rpc` ActionRef links depend on it.
-
-### Added
 
 - **`ui.SiteHeaderConfig.PersistentActions`** (#256): a slot for the
   one journey-critical control (sign-in link, primary CTA) that stays
