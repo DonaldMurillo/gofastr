@@ -223,6 +223,13 @@ func joinPath(prefix, name string) string {
 func (s *AssetServer) serveFS(spec AssetSpec) http.HandlerFunc {
 	contentType := resolveContentType(spec.Name, spec.ContentType)
 	return func(w http.ResponseWriter, r *http.Request) {
+		// A nil fs.FS is a module that declared specs but ships no assets
+		// (ClientModule.Assets is documented as optional). Serving 404 keeps
+		// that a missing file rather than a panic inside the handler.
+		if s.fsys == nil {
+			http.NotFound(w, r)
+			return
+		}
 		b, err := fs.ReadFile(s.fsys, spec.Name)
 		if err != nil {
 			http.NotFound(w, r)

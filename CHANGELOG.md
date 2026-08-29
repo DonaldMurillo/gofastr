@@ -36,6 +36,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `application/octet-stream`, and an explicit `ContentType` still wins.
   `nosniff` is unchanged. `AddBytes` gets the same default.
 
+- **An `AssetServer` over a nil `fs.FS` serves 404 rather than panicking**
+  in the handler. `ClientModule.Assets` is documented as optional (a plugin
+  may serve its own assets), so a module that declares specs and ships no
+  FS took down the request goroutine on `fs.ReadFile`. A missing file is a
+  404 whether the FS is empty or absent.
+
 ## [0.74.0] - 2026-08-29
 
 ### Changed

@@ -358,3 +358,24 @@ func TestModuleAssetServerNoTierNoGrant(t *testing.T) {
 		t.Errorf("no manifest tier must mean no wasm keyword: %q", csp)
 	}
 }
+
+// A module with no Assets FS 404s instead of panicking inside the handler.
+func TestModuleWithoutAssetsServes404(t *testing.T) {
+	mod, err := NewClientModule("probe", Manifest{Entry: "/__p/frame.html"}, nil)
+	if err != nil {
+		t.Fatalf("NewClientModule: %v", err)
+	}
+	rt := router.New()
+	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/frame.html")
+	if err != nil {
+		t.Fatalf("GET frame.html: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status=%d want 404 for a module with no assets", resp.StatusCode)
+	}
+}
