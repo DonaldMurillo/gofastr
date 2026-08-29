@@ -9,6 +9,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
+- **BREAKING — `mcp.AppConfig.CSP` is a struct, not a string**: the MCP
+  Apps spec defines `_meta.ui.csp` as an object
+  (`connectDomains`/`resourceDomains`/`frameDomains`/`baseUriDomains`), and
+  GoFastr emitted a bare string there, so a spec-compliant host could not
+  parse the policy at all. `CSP` is now `mcp.AppCSP` with those four fields.
+  Breaking loudly rather than behind a shim, because the old field produced
+  JSON no conformant host could consume — there is no working caller to
+  preserve. An app that sets no CSP emits the same `_meta` as before.
+
 - **BREAKING — `kiln acp` speaks the real ACP session surface** (#287):
   `tools/list`, `tools/call`, `prompt` and `shutdown` are gone and
   `initialize` changed shape. None of those were methods in the published
