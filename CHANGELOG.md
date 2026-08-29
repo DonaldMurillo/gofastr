@@ -9,6 +9,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`RoleAgent` — an agent-only HTTP surface** (#291): `GOFASTR_ROLE=agent`
+  (or `WithRole(RoleAgent)`) serves `/mcp` and health only, forwarding MCP to
+  the app router so auth and owner scoping are identical to the serve role.
+  Entity CRUD, OpenAPI, docs, admin and well-known discovery are not served,
+  and workers do not start.
+
+  The slice that mattered was not the role constant but the identity contract
+  underneath it, which had no coverage at all: bearer tokens and session
+  cookies both resolve a user today, and nothing guaranteed the same person
+  arriving by token versus by cookie resolved to the same owner-scope
+  principal. On an agent surface that is live — an agent would either miss its
+  own user's rows or see another user's. The contract **holds**, and is now
+  pinned on REST and `/mcp`: same user, same `GetID()`, same owner-stamped
+  rows, with a second user's rows staying invisible. Injecting a divergent
+  principal on the bearer path fails those tests, so they are guards rather
+  than tautologies.
+
+- **Combobox keyboard navigation skips filtered-out options** (#302):
+  after typing a query, ArrowDown/ArrowUp/Home/End cycled through rows the
+  static filter had hidden, so the `aria-activedescendant` highlight landed on
+  an invisible option and Enter selected one the user had filtered away. The
+  navigable-option selector now excludes `[hidden]`.
+
 - **`ui.Sidebar` can express a server-owned collapse contract** (#298):
   `SidebarConfig.Collapse` is a tri-state mirroring how `CurrentPath` already
   works — the zero value keeps today's localStorage behaviour byte-identical,
