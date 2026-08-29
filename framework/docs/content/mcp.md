@@ -594,19 +594,19 @@ var rt *router.Router
 var widgetHTML string
 -->
 ```go
-// Hot-link: register the route (idempotent) and reference the URL from a
-// <script src> in the app's HTML. The route serves the script with
-// Cross-Origin-Resource-Policy: cross-origin so the opaque-origin iframe
+// Hot-link: mount the handler at WidgetClientScriptURL and reference the
+// URL from a <script src> in the app's HTML. The handler serves the script
+// with Cross-Origin-Resource-Policy: cross-origin so the opaque-origin iframe
 // can fetch it; whether the HOST's iframe CSP allows the fetch is governed
 // by the app's declared AppCSP.ResourceDomains, like any cross-origin script.
-mcp.RegisterWidgetClientRoute(rt)
+rt.Get(mcp.WidgetClientScriptURL, mcp.WidgetClientHandler())
 
 // Or fold the bytes into the HTML you hand to RegisterApp, and the widget
 // carries its own client with no route and no CSP dependency.
 widgetHTML = "<script>" + string(mcp.WidgetClientJS()) + "</script>"
 ```
 
-The route is `/__gofastr/mcp/app/widgetclient.js`
+The script URL is `/__gofastr/mcp/app/widgetclient.js`
 ([WidgetClientScriptURL]). Inside the widget document the client exposes
 itself as `window.__gofastrMcpApp`:
 

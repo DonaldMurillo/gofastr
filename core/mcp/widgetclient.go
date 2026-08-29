@@ -3,11 +3,9 @@ package mcp
 import (
 	_ "embed"
 	"net/http"
-
-	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// WidgetClientScriptURL is the route serving the MCP Apps widget client
+// WidgetClientScriptURL is the path serving the MCP Apps widget client
 // (widgetclient.js). Widget documents hot-link it to get the ext-apps
 // handshake, JSON-RPC envelope, source check, and request/response
 // semantics without hand-rolling a postMessage RPC per app.
@@ -16,37 +14,22 @@ const WidgetClientScriptURL = "/__gofastr/mcp/app/widgetclient.js"
 //go:embed widgetclient.js
 var widgetClientJSBytes []byte
 
-// WidgetClientRouteMethod is the router method the widget client route is
-// registered under.
-const WidgetClientRouteMethod = "GET"
-
-// RegisterWidgetClientRoute serves the widget client at
-// [WidgetClientScriptURL] on the given router. It is IDEMPOTENT: register it
-// from wherever the router is assembled; only the first registration lands.
+// WidgetClientHandler returns the handler serving the widget client at
+// [WidgetClientScriptURL]. Mount it wherever the HTTP surface is assembled:
+//
+//	rt.Get(mcp.WidgetClientScriptURL, mcp.WidgetClientHandler())
+//
+// It hands back a handler rather than taking a router for the same reason
+// [Server.ServeSSE] does: the protocol package stays decoupled from any
+// particular router.
 //
 // Like pluginhost's frame client, this script is fetched BY opaque-origin
 // frame documents (the host renders the widget in a sandboxed iframe), so it
 // carries the Cross-Origin-Resource-Policy relaxation: the same-origin
 // default would refuse the "null"-origin frame's <script src>. See
 // writeWidgetClientAsset for why that is the only framing header it sets.
-func RegisterWidgetClientRoute(rt *router.Router) {
-	if widgetClientRouteRegistered(rt) {
-		return
-	}
-	rt.Get(WidgetClientScriptURL, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeWidgetClientAsset(w)
-	}))
-}
-
-// widgetClientRouteRegistered reports whether the widget client route is
-// already on the router, keeping RegisterWidgetClientRoute idempotent.
-func widgetClientRouteRegistered(rt *router.Router) bool {
-	for _, rr := range rt.Routes() {
-		if rr.Method == WidgetClientRouteMethod && rr.Pattern == WidgetClientScriptURL {
-			return true
-		}
-	}
-	return false
+func WidgetClientHandler() http.Handler {
+	return http.HandlerFunc(writeWidgetClientAsset)
 }
 
 // writeWidgetClientAsset emits the client with the framing headers a script
@@ -55,7 +38,7 @@ func widgetClientRouteRegistered(rt *router.Router) bool {
 // deliberately not touched here; Cross-Origin-Resource-Policy is the one
 // that gates the frame's cross-origin <script src>, and it must be
 // "cross-origin" or the sandboxed widget can never load its client.
-func writeWidgetClientAsset(w http.ResponseWriter) {
+func writeWidgetClientAsset(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Content-Type", "text/javascript; charset=utf-8")
 	// Never let a browser MIME-sniff this into a more dangerous type.

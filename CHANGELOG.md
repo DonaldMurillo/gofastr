@@ -12,7 +12,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **MCP Apps widget client** (#291): `core/mcp` served the app side already
   (`RegisterApp`, `_meta.ui`), but the JS that runs inside the host's iframe
   and talks to the chat host did not exist, so every plugin author hand-rolled
-  it. `WidgetClientJS()` / `RegisterWidgetClientRoute` ship it the way
+  it. `WidgetClientJS()` / `WidgetClientHandler()` ship it the way
   pluginhost ships its frame client: the `ui/initialize` handshake followed by
   `ui/notifications/initialized`, the six widget-to-host requests
   (`tools/call`, `resources/read`, `ui/open-link`, `ui/request-display-mode`,

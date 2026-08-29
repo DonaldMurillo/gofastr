@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // The MCP Apps widget client lives in widgetclient.js and speaks ext-apps
@@ -255,35 +253,15 @@ func TestWidgetClientJS_ChannelContract(t *testing.T) {
 	}
 }
 
-// RegisterWidgetClientRoute is idempotent: a duplicate router pattern
-// panics, so a second registration must be a no-op. Mirror of pluginhost's
-// TestRegisterFrameClientRoute_Idempotent.
-func TestRegisterWidgetClientRoute_Idempotent(t *testing.T) {
-	rt := router.New()
-	RegisterWidgetClientRoute(rt)
-	RegisterWidgetClientRoute(rt) // must NOT panic
-	RegisterWidgetClientRoute(rt)
-
-	n := 0
-	for _, rr := range rt.Routes() {
-		if rr.Method == WidgetClientRouteMethod && rr.Pattern == WidgetClientScriptURL {
-			n++
-		}
-	}
-	if n != 1 {
-		t.Fatalf("widget client route registered %d times, want exactly 1", n)
-	}
-}
-
-// The route serves the script with the headers an opaque-origin widget
+// The handler serves the script with the headers an opaque-origin widget
 // iframe needs: the CORP cross-origin relaxation (a same-origin default
 // would block the "null"-origin frame's script fetch), nosniff, and the
 // no-store dev cache. The body is exactly the embedded client.
-func TestWidgetClientRouteServedHeaders(t *testing.T) {
-	rt := router.New()
-	RegisterWidgetClientRoute(rt)
+func TestWidgetClientHandlerServedHeaders(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle(WidgetClientScriptURL, WidgetClientHandler())
 
-	srv := httptest.NewServer(rt)
+	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + WidgetClientScriptURL)
 	if err != nil {
