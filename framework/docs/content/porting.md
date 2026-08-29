@@ -35,11 +35,24 @@ if err := page.Execute(&buf, struct{ Title string }{"March"}); err != nil {
 // buf.String() is the screen's markup, verbatim.
 ```
 
-Embed `.tmpl` files with `//go:embed templates/*.tmpl` and
-`template.ParseFS` instead of inline strings — the markup stays reviewable
-as markup, and designers can edit it without touching Go. The executed
-HTML renders inside the App layout like any other screen, so navigation,
-sessions, and auth all still work.
+Embed `.tmpl` files instead of inline strings — the markup stays
+reviewable as markup, and designers can edit it without touching Go:
+
+```go
+import (
+	"embed"
+	"html/template"
+)
+
+//go:embed templates/*.tmpl
+var templatesFS embed.FS
+
+var pages = template.Must(template.ParseFS(templatesFS, "templates/*.tmpl"))
+// pages.ExecuteTemplate(&buf, "invoice.tmpl", data) as above.
+```
+
+The executed HTML renders inside the App layout like any other screen,
+so navigation, sessions, and auth all still work.
 
 `html/template` escapes interpolated data contextually; that part of the
 safety story survives the port. What does not survive: none of the
