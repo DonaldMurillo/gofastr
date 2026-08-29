@@ -164,6 +164,7 @@ var docIntents = []docIntent{
 			{"contracts", "Contracts", "gofastr verify: one pipeline of rules with IDs, reasons, and fixes, plus semantic coverage and machine-readable diagnostics."},
 			{"kiln", "Kiln overview", "Experimental: the agent-driven build-mode binary."},
 			{"webmcp", "WebMCP bridge", "Experimental: expose server-declared tools to in-browser agents via the page's modelContext."},
+			{"generative-ui", "Generative UI", "The position: models compose the design system, never emit markup or CSS; what that means per surface."},
 			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine. No API key."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},
 			{"blueprints", "Blueprints", "Reusable bundles of entities + screens an agent can apply."},
