@@ -48,7 +48,10 @@ type Manifest struct {
 	Sandbox []string `json:"sandbox"`
 
 	// CSP lists opt-in Content-Security-Policy keywords appended to the framed
-	// policy's script-src (threaded via [AssetServer.WithCSP]). The allowlist
+	// policy's script-src. Declaring it alone changes nothing: the host that
+	// builds the plugin's [AssetServer] must pass it through
+	// [AssetServer.WithCSP], or the manifest validates, the frame still
+	// refuses WebAssembly, and nothing reports why. The allowlist
 	// is closed and has exactly one member: 'wasm-unsafe-eval', which lets a
 	// plugin compile WebAssembly inside the sandboxed frame without granting
 	// string eval ('unsafe-eval' stays forbidden) and without touching any
