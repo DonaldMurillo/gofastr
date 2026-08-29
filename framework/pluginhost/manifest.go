@@ -48,10 +48,13 @@ type Manifest struct {
 	Sandbox []string `json:"sandbox"`
 
 	// CSP lists opt-in Content-Security-Policy keywords appended to the framed
-	// policy's script-src. Declaring it alone changes nothing: the host that
-	// builds the plugin's [AssetServer] must pass it through
-	// [AssetServer.WithCSP], or the manifest validates, the frame still
-	// refuses WebAssembly, and nothing reports why. The allowlist
+	// policy's script-src. It reaches the frame when the asset server is built
+	// from the module — [ClientModule.AssetServer] threads it — because CSP is
+	// the one manifest field applied as a response header rather than carried
+	// on the manifest object to the mount. A host that instead calls
+	// [NewAssetServer] directly must pass it through [AssetServer.WithCSP], or
+	// the manifest validates, the frame still refuses WebAssembly, and nothing
+	// reports why. The allowlist
 	// is closed and has exactly one member: 'wasm-unsafe-eval', which lets a
 	// plugin compile WebAssembly inside the sandboxed frame without granting
 	// string eval ('unsafe-eval' stays forbidden) and without touching any
@@ -292,6 +295,25 @@ type ClientModule struct {
 	// (editor.html / editor.js / editor.css). May be nil if the plugin serves
 	// its assets itself.
 	Assets fs.FS
+}
+
+// AssetServer builds the [AssetServer] for this module's framed assets: it
+// reads from [ClientModule.Assets] and threads [Manifest.CSP] through
+// [AssetServer.WithCSP], so a manifest that declares the wasm tier and the
+// server that answers for the frame cannot disagree.
+//
+// Prefer it over calling [NewAssetServer] directly. CSP is the one manifest
+// field applied as a response header rather than carried on the manifest
+// object to the mount, so a host that builds its asset server separately can
+// declare the tier, pass Validate, and still serve a frame that refuses to
+// compile WebAssembly, with the failure surfacing as a CompileError inside an
+// opaque frame that has no way to report it:
+//
+//	srv := mod.AssetServer("/__gofastr/plugin/sql", specs)
+//
+// [NewAssetServer] remains for hosts serving assets that belong to no module.
+func (m ClientModule) AssetServer(prefix string, specs []AssetSpec) *AssetServer {
+	return NewAssetServer(m.Assets, prefix, specs).WithCSP(m.Manifest.CSP)
 }
 
 // NewClientModule is the validating constructor for a [ClientModule]: it runs

@@ -42,7 +42,7 @@ Consequences the browser enforces (not our code, not review):
   plugin, but nobody audits megabytes of dependency tree per upgrade.
 
 Assets are served **same-origin** from the plugin's route prefix via
-`pluginhost.NewAssetServer`, so the app's strict CSP needs zero edits.
+`ClientModule.AssetServer`, so the app's strict CSP needs zero edits.
 Framed assets get a scoped relaxation (framing headers + a CSP keyed to
 the explicit request origin; inside an opaque frame, `'self'` resolves
 to `null` and spec-correct browsers like Safari refuse subresources).
@@ -72,9 +72,18 @@ mod, err := pluginhost.NewClientModule("sql", pluginhost.Manifest{
 	CSP:   []string{"'wasm-unsafe-eval'"},
 	// …
 }, assetsFS)
-srv := pluginhost.NewAssetServer(mod.Assets, "/__gofastr/plugin/sql", specs).
-	WithCSP(mod.Manifest.CSP)
+srv := mod.AssetServer("/__gofastr/plugin/sql", specs)
 ```
+
+`ClientModule.AssetServer` reads the module's asset FS and threads
+`Manifest.CSP` for you, so the declaration and the header cannot
+disagree. CSP is the one manifest field applied as a response header
+instead of travelling on the manifest to the mount, so a server built
+by hand (`pluginhost.NewAssetServer(...).WithCSP(mod.Manifest.CSP)`,
+still available for assets that belong to no module) has to be told
+about the tier separately — skip it and the frame throws a CSP
+`CompileError` inside an opaque origin with `connect-src 'none'`, which
+has no way to report itself.
 
 The keyword is appended to `script-src` only. Everything else in the
 framed policy is unchanged, and these stay regardless of the tier:
