@@ -147,14 +147,36 @@
     // An explicit data-fui-rpc-body (read above) still wins; a control with
     // no enclosing form and no explicit body keeps the legacy empty body.
     const formSource = node.tagName === 'FORM' ? node : (node.form || null);
+    // A non-form carrier can still own form controls: the combobox
+    // renders a <div> carrier so an embedding host <form> survives HTML
+    // parsing. Serialize its named, enabled controls exactly like a
+    // form so the handler sees name=value; a carrier with no named
+    // controls (a plain RPC button) keeps the legacy empty body.
+    let fd = null;
     if (!body && formSource) {
-      const fd = new FormData(formSource);
+      fd = new FormData(formSource);
+    } else if (!body && !formSource) {
+      const controls = node.querySelectorAll('input[name]:not([type=file]),select[name],textarea[name]');
+      if (controls.length) {
+        fd = new FormData();
+        for (const c of controls) {
+          if (c.disabled) continue;
+          if ((c.type === 'checkbox' || c.type === 'radio') && !c.checked) continue;
+          if (c.tagName === 'SELECT' && c.multiple) {
+            for (const o of c.selectedOptions) fd.append(c.name, o.value);
+            continue;
+          }
+          fd.append(c.name, c.value);
+        }
+      }
+    }
+    if (fd) {
       if (method === 'GET') {
         const params = new URLSearchParams();
         fd.forEach((v, k) => { if (v != null) params.append(k, String(v)); });
         const qs = params.toString();
         if (qs) resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
-      } else if (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]')) {
+      } else if (formSource && (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]'))) {
         body = fd;
         bodyIsFormData = true;
       } else {
