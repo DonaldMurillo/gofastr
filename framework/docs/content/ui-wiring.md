@@ -137,6 +137,10 @@ Useful options:
   rules) to `app.css`; combine with
   `uihost.ReadCustomCSSFile("static/app.css")` for a file you edit
   without recompiling.
+- `uihost.WithNoLiveChannel()`: omit the live-channel meta from every
+  page, so the runtime never opens the shared SSE bus. For hosts (or
+  test rigs waiting on network-idle) that want zero held connections;
+  polling (`data-fui-poll`) and islands still work.
 - `uihost.WithNotFoundScreen(c)`, `WithFavicon`, `WithDescription`,
   `WithOpenGraph`, `WithCanonicalURL`: 404 page and head metadata.
   Custom 404s go through `WithNotFoundScreen`, never

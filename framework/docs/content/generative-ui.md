@@ -16,9 +16,10 @@ An agent writing a GoFastr app composes `framework/ui` and
 hand-roll structural markup. The framework backs that constraint with
 tooling rather than advice:
 
-- **A catalog it can enumerate.** `framework/gallery` ships every
-  component as a self-contained demo renderable against any theme, with
-  code snippets per entry. Agents (and the theme tools) iterate it
+- **A catalog it can enumerate.** `framework/gallery` ships the
+  component catalog as self-contained demos renderable against any
+  theme, with code snippets per entry (a handful of entries needing
+  backend wiring are note-only — `gallery.IsNoteOnly`). Agents (and the theme tools) iterate it
   programmatically.
 - **Recipes instead of blank pages.**
   [UI composition recipes](ui-composition-recipes.md) map product jobs

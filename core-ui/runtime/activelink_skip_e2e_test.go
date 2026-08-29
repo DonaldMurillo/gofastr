@@ -72,16 +72,11 @@ func activelinkSkipServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// TestActiveLinkSkipKeepsAuthorState: across a SPA navigation,
-// data-fui-activelink-skip keeps a hand-set aria-current untouched,
-// links inside a [data-fui-scrollspy] wrap keep their
-// aria-current="true", and the ordinary exact-match contract still
-// holds (aria-current="page" + .active move to the new path's link).
-// TestActiveLinkKeepsUnmanagedAriaCurrent: a server-rendered
-// aria-current="page" on a NON-matching nav link (a pagination link for
-// the current page, whose href is a query-only "?page=1") is host
-// content the module never stamped — no .active class — so the sweep
-// must leave it alone instead of stripping the attribute.
+// A server-rendered aria-current="page" on a NON-matching nav link (a
+// pagination link for the current page, whose href is a query-only
+// "?page=1") is host content the module never stamped — no .active
+// class — so the sweep must leave it alone instead of stripping the
+// attribute.
 func TestActiveLinkKeepsUnmanagedAriaCurrent(t *testing.T) {
 	srv := activelinkSkipServer(t)
 	ctx := newSeedBrowserCtx(t)
@@ -101,6 +96,11 @@ func TestActiveLinkKeepsUnmanagedAriaCurrent(t *testing.T) {
 	}
 }
 
+// Across a SPA navigation, data-fui-activelink-skip keeps a hand-set
+// aria-current untouched, links inside a [data-fui-scrollspy] wrap keep
+// their aria-current="true", and the ordinary exact-match contract
+// still holds (aria-current="page" + .active move to the new path's
+// link).
 func TestActiveLinkSkipKeepsAuthorState(t *testing.T) {
 	srv := activelinkSkipServer(t)
 	ctx := newSeedBrowserCtx(t)
