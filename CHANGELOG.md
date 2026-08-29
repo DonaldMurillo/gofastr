@@ -5,6 +5,28 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Added
+
+- **`ui.Sidebar` can express a server-owned collapse contract** (#298):
+  `SidebarConfig.Collapse` is a tri-state mirroring how `CurrentPath` already
+  works — the zero value keeps today's localStorage behaviour byte-identical,
+  and `SidebarCollapseCollapsed`/`SidebarCollapseExpanded` mean the server
+  decides. When the server owns the state the runtime neither reads nor writes
+  localStorage, so a per-user setting restored from the database survives first
+  paint on a device whose local value disagrees; SSR could not ship a collapsed
+  sidebar at all before this.
+
+  Also: `GroupMarkup` renders groups as `button[aria-expanded][aria-controls]`
+  plus a `hidden` container for hosts pinned to that shape (the default stays
+  `<details>`; the button dialect does not persist open state across navigation
+  and needs JavaScript, both documented), `CollapseLabel`/`ExpandLabel` are
+  configurable, and a `SidebarAutoHide` variant adds a class hook with no
+  JavaScript. The collapse button now carries the expand label and
+  `aria-expanded="false"` while collapsed — it previously hardcoded
+  `aria-expanded="true"`, which was wrong the moment the rail collapsed.
+
 ## [0.74.0] - 2026-08-29
 
 ### Changed
