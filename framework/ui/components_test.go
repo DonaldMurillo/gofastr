@@ -702,6 +702,28 @@ func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 }
 
+func TestButtonAriaLabelOverridesVisibleLabel(t *testing.T) {
+	// #281: several buttons sharing a visible Label need distinct
+	// accessible names. AriaLabel is the supported override; an
+	// aria-label in ExtraAttrs stays dropped (owned key).
+	h := string(Button(ButtonConfig{
+		Label:      "Revoke",
+		AriaLabel:  "Revoke admin from Alice",
+		ExtraAttrs: map[string]string{"aria-label": "ignored"},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	if !strings.Contains(root, `aria-label="Revoke admin from Alice"`) {
+		t.Errorf("AriaLabel must win as the accessible name:\n%s", root)
+	}
+	if strings.Contains(root, "ignored") {
+		t.Errorf("ExtraAttrs aria-label must stay dropped:\n%s", root)
+	}
+	// Visible text is still Label, not AriaLabel.
+	if !strings.Contains(h, `>Revoke</button>`) {
+		t.Errorf("visible text must remain Label:\n%s", h)
+	}
+}
+
 func TestButtonExtraAttrsCarriesWiring(t *testing.T) {
 	// Button is the documented carrier for interactive wiring
 	// (interactive-patterns.md attaches Action.Attrs() via ExtraAttrs):

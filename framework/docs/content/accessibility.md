@@ -46,7 +46,12 @@ so it can gate CI directly.
 
 The lint understands the ARIA escape hatch: an `ExtraAttrs` literal
 carrying `aria-label` / `aria-labelledby` / `role` satisfies the
-matching typed field (icon-only buttons are the canonical case). Two
+matching typed field (icon-only buttons are the canonical case). Note
+that `ui.Button` and `html.Button` **own** `aria-label`: an
+`ExtraAttrs["aria-label"]` is dropped, and the accessible name comes
+from `Label`. When several buttons share a visible `Label` ("Revoke")
+but need distinct accessible names, set `ButtonConfig.AriaLabel` — it
+overrides the Label-derived name without changing the visible text. Two
 deliberate scope limits: a config built in a variable
 (`cfg := html.ImageConfig{…}; html.Image(cfg)`) and a non-literal
 `ExtraAttrs` value can't be inspected statically, so they pass the lint.

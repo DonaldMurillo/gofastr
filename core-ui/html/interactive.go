@@ -17,7 +17,12 @@ type SelectOption struct {
 // ButtonConfig configures a <button> element.
 // Required: Label (used as both visible text and aria-label).
 type ButtonConfig struct {
-	Label      string // required → text content AND aria-label
+	Label string // required → text content AND aria-label
+	// AriaLabel overrides the accessible name when it must differ from
+	// the visible Label — several buttons sharing a visible label
+	// ("Revoke") that need distinct accessible names. Empty ⇒ the
+	// accessible name is Label.
+	AriaLabel  string
 	Type       string // defaults to "button"
 	Class      string
 	ID         string
@@ -132,7 +137,12 @@ func Button(cfg ButtonConfig) render.HTML {
 		btnType = "button"
 	}
 	setAttr(attrs, "type", btnType)
-	if cfg.Label != "" {
+	// AriaLabel wins over the Label-derived accessible name; otherwise
+	// Label is the accessible name. Both override any ExtraAttrs
+	// aria-label, which is why the framework offers these fields.
+	if cfg.AriaLabel != "" {
+		setAttr(attrs, "aria-label", cfg.AriaLabel)
+	} else if cfg.Label != "" {
 		setAttr(attrs, "aria-label", cfg.Label)
 	}
 	return render.Tag("button", attrs, render.Text(cfg.Label))

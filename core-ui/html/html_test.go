@@ -493,6 +493,15 @@ func TestButton(t *testing.T) {
 		b := Button(ButtonConfig{Label: "Go", Type: "submit"})
 		assertContains(t, b, `type="submit"`)
 	})
+
+	t.Run("AriaLabel overrides the Label-derived accessible name", func(t *testing.T) {
+		b := string(Button(ButtonConfig{Label: "Revoke", AriaLabel: "Revoke admin from Alice"}))
+		assertContains(t, render.HTML(b), `aria-label="Revoke admin from Alice"`)
+		if strings.Contains(b, `aria-label="Revoke"`) {
+			t.Errorf("Label-derived aria-label should have been overridden:\n%s", b)
+		}
+		assertContains(t, render.HTML(b), ">Revoke</button>") // visible text stays Label
+	})
 }
 
 func TestLink(t *testing.T) {

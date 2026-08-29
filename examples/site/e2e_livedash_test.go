@@ -264,11 +264,10 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 	ctx := siteBrowserCtx(t)
 
 	// The Acknowledge button is uniquely identified by its
-	// data-fui-signal-inc target. (ui.Button forces aria-label to the
-	// visible Label, so the aria-label="Acknowledge one incident" in
-	// the button's ExtraAttrs is overwritten by Label="Acknowledge"
-	// at render time, selecting by aria-label would silently match
-	// nothing.)
+	// data-fui-signal-inc target. Its distinct accessible name now
+	// rides ButtonConfig.AriaLabel (#281), so aria-label carries
+	// "Acknowledge one incident" instead of being clobbered by the
+	// visible Label; the assertion below checks both are present.
 	const ackBtnSel = `button[data-fui-signal-inc="dash.incidentsAckd:1"]`
 	const ackCountSel = `[data-fui-signal="dash.incidentsAckd"]`
 

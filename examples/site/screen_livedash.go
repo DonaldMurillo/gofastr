@@ -466,26 +466,26 @@ func renderDashConsole(ctx context.Context) render.HTML {
 	// change and re-derives the label. Negative deltas decrement.
 	controls := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 		ui.Button(ui.ButtonConfig{
-			Label: "Open incident",
+			Label:     "Open incident",
+			AriaLabel: "Open a new incident",
 			ExtraAttrs: html.Attrs{
 				"data-fui-signal-inc": dashIncidentsOpen.Name() + ":1",
-				"aria-label":          "Open a new incident",
 			},
 		}),
 		ui.Button(ui.ButtonConfig{
-			Label:   "Resolve incident",
-			Variant: ui.ButtonSecondary,
+			Label:     "Resolve incident",
+			AriaLabel: "Resolve one open incident",
+			Variant:   ui.ButtonSecondary,
 			ExtraAttrs: html.Attrs{
 				"data-fui-signal-inc": dashIncidentsOpen.Name() + ":-1",
-				"aria-label":          "Resolve one open incident",
 			},
 		}),
 		ui.Button(ui.ButtonConfig{
-			Label:   "Acknowledge",
-			Variant: ui.ButtonSecondary,
+			Label:     "Acknowledge",
+			AriaLabel: "Acknowledge one incident",
+			Variant:   ui.ButtonSecondary,
 			ExtraAttrs: html.Attrs{
 				"data-fui-signal-inc": dashIncidentsAckd.Name() + ":1",
-				"aria-label":          "Acknowledge one incident",
 			},
 		}),
 	)

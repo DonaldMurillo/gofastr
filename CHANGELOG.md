@@ -9,6 +9,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`ui.Button.AriaLabel` / `html.Button.AriaLabel`** (#281): an
+  accessible-name override for buttons that share a visible `Label` but
+  must be announced distinctly — a table of "Revoke" buttons, a
+  dashboard's repeated actions. Button owns `aria-label` (an
+  `ExtraAttrs` one is dropped), so before this there was no supported
+  way to set it and repeated buttons announced identically; the admin
+  RBAC revoke buttons and the live-dashboard demo now use it.
+
 - **`pluginhost.MountConfig.Fallback`** (#253, second of the three
   framed-runtime PRs): a `render.HTML` slot for server-rendered
   pre-hydration content inside the plugin mount marker. The broker
