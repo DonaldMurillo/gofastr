@@ -78,6 +78,11 @@ func UIHostOption() uihost.Option {
 //	    // api = { request, sendEvent, iframe, marker, form }
 //	    // handle plugin-specific events: docChanged, save, requestUpload, …
 //	    // and mirror the generic hooks if the e2e depends on plugin-named ones.
+//	  },
+//	  onRequest: function (method, params, api) {
+//	    // static fallback for frame → host requests with no explicit
+//	    // api.onRequest handler; return a value or a Promise (a throw
+//	    // becomes an E_HANDLER response). Neither exists → E_NO_HANDLER.
 //	  }
 //	});
 //
@@ -87,7 +92,9 @@ func UIHostOption() uihost.Option {
 // (iframe.__pluginReady / __pluginProbes / __pluginTheme / __pluginLastMetric).
 // It calls registration.onEvent for EVERY inbound event after its own handling,
 // so an adapter can both handle its own methods and mirror the generic hooks
-// under plugin-specific names the tests read.
+// under plugin-specific names the tests read. Inbound frame → host requests
+// dispatch to a per-method api.onRequest handler first, with
+// registration.onRequest as the fallback, and are ALWAYS answered.
 type BrokerRegistration struct {
 	Manifest Manifest                                 `json:"manifest"`
 	Config   any                                      `json:"config,omitempty"`
