@@ -324,6 +324,28 @@ func TestBearerPosture_RoleServe_NoCredentialRefusedByCSRF(t *testing.T) {
 	}
 }
 
+// The same refusal on the agent role. Without this the credential-free
+// path was pinned only on RoleServe, while the sole unauthenticated
+// RoleAgent case ran with CSRF unmounted - so if agent routing stopped
+// running CSRF but kept token auth, every guard here stayed green and the
+// "both roles" claim was unverifiable.
+func TestBearerPosture_RoleAgent_NoCredentialRefusedByCSRF(t *testing.T) {
+	e := newBearerPostureEnv(t, framework.RoleAgent, true)
+
+	code, body := e.postMCP(t, "", postureInitialize)
+	if code != http.StatusForbidden {
+		t.Fatalf("credential-free initialize on the agent role: got %d body %s, want 403 from CSRF", code, body)
+	}
+	if !strings.Contains(body, "csrf") {
+		t.Fatalf("refusal on the agent role must come from the CSRF layer, got: %s", body)
+	}
+
+	code, body = e.postMCP(t, "", postureWhoami)
+	if code != http.StatusForbidden {
+		t.Fatalf("credential-free tools/call on the agent role: got %d body %s, want 403 from CSRF", code, body)
+	}
+}
+
 // Without CSRF (the generated-app posture for JSON/MCP-first apps), a
 // credential-free request passes the middleware and is refused by the
 // tool gate instead: the handler never runs, the JSON-RPC error names the
