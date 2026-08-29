@@ -443,6 +443,10 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 		// the port is handed back.
 		chromedp.Sleep(500*time.Millisecond),
 	); err != nil {
+		// Drop the SSE client first: a live EventSource blocks Close()
+		// until the 5-minute stream bound, turning a poll failure into a
+		// suite-length hang.
+		prime.CloseClientConnections()
 		prime.Close()
 		t.Fatalf("prime: %v", err)
 	}

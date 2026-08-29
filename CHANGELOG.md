@@ -5,19 +5,6 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-### Fixed
-
-- **Cross-test browser-cache contamination in the site e2e suite** (#278): the
-  suite runs on one Chrome profile, so tabs are fresh but the HTTP cache is
-  shared, and split runtime modules are served `immutable` with a year-long
-  max-age. Because `httptest` ports are released and rehanded out by the
-  kernel, a later test could inherit a port for which the profile already held
-  a cached 200 of `toasts.js?v=<hash>` — same port plus same content hash is
-  the same cache key. The failure-injection server then never saw a request,
-  the module loaded from cache, and the test that expects a fallback correctly
-  found none. Each tab now clears the browser cache, restoring the per-test
-  isolation the unique-port assumption already claimed.
-
 ## [Unreleased]
 
 ### Added
@@ -120,6 +107,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   assets that belong to no module.
 
 ### Fixed
+
+- **Cross-test browser-cache contamination in the site e2e suite** (#278): the
+  suite runs on one Chrome profile, so tabs are fresh but the HTTP cache is
+  shared, and split runtime modules are served `immutable` with a year-long
+  max-age. Because `httptest` ports are released and rehanded out by the
+  kernel, a later test could inherit a port for which the profile already held
+  a cached 200 of `toasts.js?v=<hash>` — same port plus same content hash is
+  the same cache key. The failure-injection server then never saw a request,
+  the module loaded from cache, and the test that expects a fallback correctly
+  found none. Each tab now clears the browser cache, restoring the per-test
+  isolation the unique-port assumption already claimed.
 
 - **An `AssetSpec` without a `ContentType` now serves one derived from the
   filename** (#303) instead of an empty `Content-Type`. `writeAsset` set
