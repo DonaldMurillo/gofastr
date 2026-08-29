@@ -43,8 +43,9 @@
   // requests. Null-proto so a "__proto__"/"constructor" id looks up as
   // undefined instead of a truthy Object.prototype member.
   var pending = Object.create(null);
-  // method -> handler, for inbound host → widget notifications.
-  var notificationHandlers = Object.create(null);
+  // method -> handler, for inbound host → widget traffic: the
+  // notifications, plus the ui/resource-teardown request handler.
+  var inboundHandlers = Object.create(null);
   var reqCounter = 0;
 
   function message(method, params, id) {
@@ -117,13 +118,22 @@
   }
 
   function register(method, handler) {
-    notificationHandlers[method] = handler;
+    inboundHandlers[method] = handler;
   }
 
   // --- Inbound dispatch (host → widget) --------------------------------------
 
-  function runHandler(method, params) {
-    var h = notificationHandlers[method];
+  // A JSON-RPC response to a host request. Results here are always {}
+  // or a plain error object, so the post cannot throw DataCloneError.
+  function reply(id, result, err) {
+    var msg = { jsonrpc: JSON_RPC_VERSION, id: id };
+    if (err) msg.error = err;
+    else msg.result = result;
+    postToHost(msg);
+  }
+
+  function handleNotification(method, params) {
+    var h = inboundHandlers[method];
     if (typeof h !== "function") return; // unknown method → ignored, not thrown
     try { h(params || {}); } catch (e) {
       if (typeof console !== "undefined" && console.error) {
@@ -132,15 +142,27 @@
     }
   }
 
-  function handleNotification(method, params) {
-    runHandler(method, params);
-    // ui/resource-teardown is the host saying this widget is going away.
-    // The app's registered handler runs first (it may still post a final
-    // notification); after it, every request still in flight can never be
-    // answered — fail them instead of leaking until each timer fires.
-    if (method === "ui/resource-teardown") {
-      rejectOutstanding({ code: "E_TEARDOWN", message: "widget torn down" });
-    }
+  // Host teardown (spec 2026-01-26: a REQUEST, not a notification — the
+  // host SHOULD wait for the response before tearing the resource down,
+  // to prevent data loss). The app's registered handler runs first,
+  // awaited if it returns a promise; the response is posted, and only
+  // then — with the response on the wire — is every outstanding request
+  // failed. Same ordering as pluginhost's frame client teardown.
+  function handleTeardown(msg) {
+    var handler = inboundHandlers["ui/resource-teardown"];
+    var run = (typeof handler === "function")
+      ? function () { return handler(msg.params || {}); }
+      : function () { return undefined; }; // no hook — still respond
+    Promise.resolve().then(run).then(
+      function () {
+        reply(msg.id, {}, null);
+        rejectOutstanding({ code: "E_TEARDOWN", message: "widget torn down" });
+      },
+      function (err) {
+        reply(msg.id, null, { code: "E_HANDLER", message: String(err && err.message || err) });
+        rejectOutstanding({ code: "E_TEARDOWN", message: "widget torn down" });
+      }
+    );
   }
 
   function onWindowMessage(event) {
@@ -154,8 +176,15 @@
     if (msg.jsonrpc !== JSON_RPC_VERSION) return;
 
     if (msg.method !== undefined) {
-      // Host → widget REQUESTS (method + id) are not part of this
-      // client's surface; dropping them is the ignore-don't-throw rule.
+      // ui/resource-teardown is the ONE host → widget request on this
+      // client's surface (the host waits for the response before
+      // removing the resource), so it is answered, never dropped. Any
+      // other request is not part of the surface; dropping it is the
+      // ignore-don't-throw rule.
+      if (msg.method === "ui/resource-teardown" && msg.id !== undefined) {
+        handleTeardown(msg);
+        return;
+      }
       if (msg.id !== undefined) return;
       handleNotification(msg.method, msg.params);
       return;
@@ -205,9 +234,9 @@
     updateModelContext: function (params, timeoutMs) { return request("ui/update-model-context", params, timeoutMs); },
     // The widget resized itself; params carries the new size.
     sizeChanged: function (params) { notify("ui/notifications/size-changed", params); },
-    // Host → widget notification handler (method → handler);
-    // re-registering a method overwrites. Notifications with no
-    // registered handler are ignored, never thrown.
+    // Host → widget inbound handler (method → handler);
+    // re-registering a method overwrites. Inbound notifications with
+    // no registered handler are ignored, never thrown.
     on: register,
     // Named registrars for the host → widget notifications.
     onToolInput: function (handler) { register("ui/notifications/tool-input", handler); },
@@ -215,8 +244,14 @@
     onToolResult: function (handler) { register("ui/notifications/tool-result", handler); },
     onToolCancelled: function (handler) { register("ui/notifications/tool-cancelled", handler); },
     onHostContextChanged: function (handler) { register("ui/notifications/host-context-changed", handler); },
-    onResourceTeardown: function (handler) { register("ui/resource-teardown", handler); },
-    onMessage: function (handler) { register("notifications/message", handler); }
+    onMessage: function (handler) { register("notifications/message", handler); },
+    // The one host → widget REQUEST: ui/resource-teardown (spec
+    // 2026-01-26 — the host waits for the response before tearing the
+    // resource down). The handler may return a promise; the client
+    // answers after it settles — result {} on success, a JSON-RPC
+    // error if it throws — then fails every outstanding request with
+    // E_TEARDOWN.
+    onResourceTeardown: function (handler) { register("ui/resource-teardown", handler); }
   };
 
   window.addEventListener("message", onWindowMessage);

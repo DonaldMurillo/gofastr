@@ -663,14 +663,23 @@ Host → widget notifications, each with a named registrar plus the generic
 | `onToolResult(handler)` | `ui/notifications/tool-result` |
 | `onToolCancelled(handler)` | `ui/notifications/tool-cancelled` |
 | `onHostContextChanged(handler)` | `ui/notifications/host-context-changed` |
-| `onResourceTeardown(handler)` | `ui/resource-teardown` |
 | `onMessage(handler)` | `notifications/message` |
 
 A notification with no registered handler is ignored, never thrown; a
 handler that throws is logged to `console.error` and does not break the
-dispatch loop. `onResourceTeardown` runs your handler and then fails every
-request still in flight, because the host that is removing the widget will
-never answer them.
+dispatch loop.
+
+### Host teardown
+
+`ui/resource-teardown` is the one host → widget **request** (ext-apps
+2026-01-26): the host sends it with a request id and SHOULD wait for the
+response before tearing the resource down, to prevent data loss. Register
+a request handler with `onResourceTeardown(handler)`; `params.reason`
+says why the widget is going away. The handler may return a promise —
+the client answers the request only after it settles, with `result: {}`
+on success or a JSON-RPC error if the handler throws — and then fails
+every request still in flight with `E_TEARDOWN`, because the host that
+is removing the widget will never answer them.
 
 ### Failures
 

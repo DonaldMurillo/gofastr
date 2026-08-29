@@ -117,12 +117,21 @@ func TestWidgetClientJS_HandshakeNotifiesAfterInitializeResult(t *testing.T) {
 // messages are accepted ONLY from the parent window, never gated on
 // event.origin (the sandboxed widget reports origin "null"; an origin-string
 // check is the wrong tool in both directions), the JSON-RPC version is
-// checked, and host→widget REQUESTS are dropped rather than dispatched.
+// checked, and host→widget requests are dropped rather than dispatched —
+// except ui/resource-teardown, the one inbound request, which is answered
+// (pinned by the channel-contract test).
 func TestWidgetClientJS_ValidatesMessageSource(t *testing.T) {
 	code := nonCommentJS(string(widgetClientJSBytes))
 	if !strings.Contains(code, "event.source === window.parent") &&
 		!strings.Contains(code, "window.parent === event.source") {
 		t.Error("onWindowMessage must accept only messages whose source is the parent window (in code, not prose)")
+	}
+	// The check above pins the comparison (===, not !==); this pins the
+	// BRANCH polarity — negation and return together. The bare predicate
+	// stays green when the branch is inverted to `if (fromParent)
+	// return;`, which would accept messages from any window.
+	if !strings.Contains(code, "if (!fromParent) return;") {
+		t.Error("onWindowMessage must return when the message is NOT from the parent window — the negated branch is the gate, not the bare predicate")
 	}
 	if strings.Contains(code, "event.origin") {
 		t.Error("onWindowMessage must not gate on event.origin — the widget frame is opaque-origin; source identity is the gate")
@@ -189,8 +198,8 @@ func TestWidgetClientJS_EnvelopeVersion(t *testing.T) {
 
 // The channel contract, mirroring pluginhost's frame client: a bounded
 // in-flight map that rejects (not hangs, not posts) when full, a timeout
-// that rejects and frees the entry, send-throw cleanup, teardown that fails
-// everything outstanding, and notification handlers that ignore unknown
+// that rejects and frees the entry, send-throw cleanup, a teardown REQUEST
+// that is answered before it fails everything outstanding, and notification
 // methods instead of throwing.
 func TestWidgetClientJS_ChannelContract(t *testing.T) {
 	code := nonCommentJS(string(widgetClientJSBytes))
@@ -240,13 +249,49 @@ func TestWidgetClientJS_ChannelContract(t *testing.T) {
 	if !strings.Contains(code, `if (typeof h !== "function") return;`) {
 		t.Error("notification dispatch must return early when no handler is registered (ignore, don't throw)")
 	}
-	// Host teardown runs the app's handler, THEN fails every outstanding
-	tn := jsBody(code, "function handleNotification(", "\n}")
+	// Host teardown (spec 2026-01-26: a REQUEST, not a notification — the
+	// host SHOULD wait for the response before tearing the resource
+	// down): the app's handler runs awaited, the response is posted, and
+	// only THEN are outstanding requests failed — the response must be
+	// on the wire before the host removes the frame.
+	tn := jsBody(code, "function handleTeardown(", "function onWindowMessage(")
 	if tn == "" {
-		t.Fatal("handleNotification() not found")
+		t.Fatal("handleTeardown() not found")
 	}
-	if !strings.Contains(tn, `"ui/resource-teardown"`) || !strings.Contains(tn, "rejectOutstanding") {
-		t.Error("ui/resource-teardown must fail every outstanding request with rejectOutstanding")
+	if !strings.Contains(tn, `"ui/resource-teardown"`) {
+		t.Error("handleTeardown must run the registered ui/resource-teardown handler")
+	}
+	if !strings.Contains(tn, "Promise.resolve().then") {
+		t.Error("handleTeardown must await the handler — a promise return must delay the response")
+	}
+	if !strings.Contains(tn, "reply(msg.id, {}, null);") {
+		t.Error("handleTeardown must answer the request with result {} on success")
+	}
+	if !strings.Contains(tn, `reply(msg.id, null, { code: "E_HANDLER"`) {
+		t.Error("handleTeardown must answer with a JSON-RPC error when the handler throws — the host is waiting on the response")
+	}
+	// Every rejectOutstanding sits immediately after a reply: the
+	// response is posted FIRST, on both the success and error paths.
+	tnLines := strings.Split(tn, "\n")
+	for i, line := range tnLines {
+		if strings.Contains(line, "rejectOutstanding(") &&
+			(i == 0 || !strings.Contains(tnLines[i-1], "reply(msg.id")) {
+			t.Error("handleTeardown must post the response BEFORE rejectOutstanding fails outstanding requests")
+		}
+	}
+	// And the routing: teardown is dispatched on the REQUEST path, ahead
+	// of the unknown-request drop.
+	om := jsBody(code, "function onWindowMessage(", "var p = pending[msg.id];")
+	if om == "" {
+		t.Fatal("onWindowMessage() dispatch not found")
+	}
+	ti := strings.Index(om, `if (msg.method === "ui/resource-teardown" && msg.id !== undefined) {`)
+	di := strings.Index(om, "if (msg.id !== undefined) return;")
+	if ti < 0 || di < 0 || di < ti {
+		t.Error("onWindowMessage must route the ui/resource-teardown request to handleTeardown before dropping unknown requests")
+	}
+	if ti >= 0 && !strings.Contains(om[ti:], "handleTeardown(msg);") {
+		t.Error("the teardown route must call handleTeardown")
 	}
 	if !strings.Contains(code, `"pagehide"`) {
 		t.Error("pagehide must fail outstanding requests instead of leaking until timeout")
