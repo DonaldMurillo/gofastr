@@ -47,6 +47,57 @@ Framed assets get a scoped relaxation (framing headers + a CSP keyed to
 the explicit request origin; inside an opaque frame, `'self'` resolves
 to `null` and spec-correct browsers like Safari refuse subresources).
 
+## The wasm opt-in tier
+
+WebAssembly cannot compile inside a plugin frame by default: the framed
+policy's `script-src` has no `'wasm-unsafe-eval'`, so
+`WebAssembly.instantiate` throws a CSP error. That is deliberate — a
+plugin that needs no wasm engine should not carry the capability. A
+plugin that does (a SQL notebook on DuckDB-wasm, a barcode scanner on
+zxing, an ONNX classifier) opts in per-manifest:
+
+```json
+{ "csp": ["'wasm-unsafe-eval'"] }
+```
+
+```go
+mod, err := pluginhost.NewClientModule("sql", pluginhost.Manifest{
+	Entry: "/__gofastr/plugin/sql/frame.html",
+	CSP:   []string{"'wasm-unsafe-eval'"},
+	// …
+}, assetsFS)
+srv := pluginhost.NewAssetServer(mod.Assets, "/__gofastr/plugin/sql", specs).
+	WithCSP(mod.Manifest.CSP)
+```
+
+The keyword is appended to `script-src` only. Everything else in the
+framed policy is unchanged, and these stay regardless of the tier:
+
+- the opaque origin (`sandbox allow-scripts`, never
+  `allow-same-origin`),
+- `connect-src 'none'` — the frame still cannot fetch, XHR, or open a
+  WebSocket; data arrives over the postMessage bridge and leaves the same
+  way,
+- no `eval` of strings (`'unsafe-eval'` is not granted; wasm
+  compilation is not string eval),
+- no host cookies, storage, or DOM access.
+
+The allowlist behind `Manifest.CSP` is closed and has exactly one member.
+`Manifest.Validate` rejects anything else at registration — `'unsafe-eval'`,
+`'unsafe-inline'`, host sources, `data:`, `*`, and any token carrying a
+`;`, whitespace, or mismatched quotes (these values land in a response
+header, where `;` could splice an arbitrary directive, e.g. a re-enabled
+`connect-src`). Matching is byte-for-byte, so a case variant or an
+unquoted `wasm-unsafe-eval` is rejected too. The header assembler
+re-filters against the same allowlist at serve time, mirroring how
+`SandboxString` sanitises sandbox tokens regardless of validation.
+
+**Limit: single-threaded wasm builds only.** Multi-threaded builds
+(DuckDB's default wasm build, for instance) want Web Workers plus
+`SharedArrayBuffer`, which require COOP/COEP cross-origin isolation —
+and cross-origin isolation is incompatible with the opaque-origin frame
+design. Build the engine single-threaded for the plugin frame.
+
 ## The protocol
 
 One versioned envelope in both directions:
@@ -283,6 +334,12 @@ or capability set.
 - **Inventing plugin-only permission names.** Use the `resource:verb`
   scope grammar so token scoping, wildcards, and admin tooling keep
   working; a parallel vocabulary drifts immediately.
+- **Widening the framed CSP by hand instead of the manifest allowlist.**
+  The only sanctioned extension is `Manifest.CSP` with
+  `'wasm-unsafe-eval'` (see "The wasm opt-in tier"); editing `framedCSP`
+  directly or adding `'unsafe-eval'` re-opens string eval inside the
+  sandbox, and a hand-added host source in `script-src` would let the
+  frame load third-party script the app never vouched for.
 - **Letting a plugin choose its own trust tier.** `isolation` in the
   manifest describes the sandboxed default; the trusted in-page mount
   is granted only by host-side code the app owner writes.

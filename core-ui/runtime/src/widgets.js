@@ -326,14 +326,23 @@
       }
     });
     w.addEventListener('submit', async (e) => {
-      const form = e.target.closest('form[data-fui-rpc]');
-      if (form && w.contains(form)) {
+      // Same confirm gate as the document bridge (which skips widget-scoped
+      // forms): submitter first, then the form, and it covers a plain
+      // native form too, not just form[data-fui-rpc].
+      const form = e.target.closest('form');
+      if (!form || !w.contains(form)) return;
+      const sub = e.submitter;
+      const msg = (sub && sub.getAttribute('data-fui-confirm')) || form.getAttribute('data-fui-confirm');
+      if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
         e.preventDefault();
-        try {
-          await NS.loadModule('rpc');
-          await NS.dispatchRPC(form);
-        } catch (_) { NS._rpcFormFallback?.(form); }
+        return;
       }
+      if (!form.hasAttribute('data-fui-rpc')) return;
+      e.preventDefault();
+      try {
+        await NS.loadModule('rpc');
+        await NS.dispatchRPC(form, null, { confirmed: true });
+      } catch (_) { NS._rpcFormFallback?.(form); }
     });
 
     if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss);

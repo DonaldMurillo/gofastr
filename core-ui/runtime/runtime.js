@@ -2045,11 +2045,22 @@
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
       if (!form || form.closest('[data-fui-widget]')) return;
+      // Confirm gate runs BEFORE every branch below, so a plain native
+      // POST form (which leaves at the enctype check) is gated too. The
+      // submitter wins over the form: one form can carry several submit
+      // buttons of different destructive weight. Callers that already
+      // gated pass {confirmed:true} so rpc.js does not prompt twice.
+      const sub = e.submitter;
+      const msg = (sub && sub.getAttribute('data-fui-confirm')) || form.getAttribute('data-fui-confirm');
+      if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
+        e.preventDefault();
+        return;
+      }
       if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) {
         e.preventDefault();
         try {
           await loadModule('rpc');
-          await window.__gofastr.dispatchRPC(form);
+          await window.__gofastr.dispatchRPC(form, null, { confirmed: true });
         } catch (_) { _rpcFormFallback(form); }
         return;
       }
@@ -2061,7 +2072,7 @@
       e.preventDefault();
       try {
         await loadModule('rpc');
-        await window.__gofastr.dispatchRPC(form);
+        await window.__gofastr.dispatchRPC(form, null, { confirmed: true });
       } catch (_) { _rpcFormFallback(form); }
     });
 
