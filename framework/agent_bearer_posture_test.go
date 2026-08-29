@@ -175,9 +175,11 @@ func startPostureServer(t *testing.T, app *framework.App) string {
 	return addr
 }
 
-// postMCP sends one JSON-RPC POST to /mcp shaped exactly like an agent
-// client: Authorization set only when bearer != "", and NEVER a Cookie,
-// Origin, Sec-Fetch-*, or X-CSRF-Token header.
+// postMCP sends one JSON-RPC POST to /mcp with an agent client's CREDENTIAL
+// shape: Authorization set only when bearer != "", and NEVER a Cookie,
+// Origin, Sec-Fetch-*, or X-CSRF-Token header. It sends no Accept header, so
+// the response takes the plain-JSON path rather than the streamable-http SSE
+// one - every gate pinned here sits upstream of that negotiation.
 func (e *bearerPostureEnv) postMCP(t *testing.T, bearer, payload string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, "http://"+e.addr+"/mcp", strings.NewReader(payload))
@@ -245,6 +247,29 @@ func TestBearerPosture_RoleServe_CookielessBearerSucceeds(t *testing.T) {
 	if !strings.Contains(body, "u-alice") {
 		t.Fatalf("gated tool must see the bearer principal, got: %s", body)
 	}
+
+	// The whole point of this file is that the REAL default chain is in the
+	// path - every earlier wiring test used WithoutDefaultMiddleware(), so a
+	// bearer /mcp request had never met it. Everything asserted above comes
+	// from the Use()-added auth middlewares, so observe the default chain
+	// directly: RequestID is installed by DefaultMiddleware and by nothing
+	// else here. Without this, all four guards would still pass if NewApp
+	// stopped committing defaults for apps that call Use.
+	req, err := http.NewRequest(http.MethodPost, "http://"+e.addr+"/mcp", strings.NewReader(postureInitialize))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+e.bearer)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /mcp: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if rid := resp.Header.Get("X-Request-Id"); rid == "" {
+		t.Error("no X-Request-Id on the response: the default middleware chain is not in the path, so this file is not testing what it claims")
+	}
 }
 
 // Same pin on RoleAgent: the agent mux forwards /mcp into the same router,
@@ -274,8 +299,14 @@ func TestBearerPosture_RoleAgent_CookielessBearerSucceeds(t *testing.T) {
 
 // A request with NEITHER credential is refused under the browser posture:
 // CSRF has nothing to skip on (no Authorization) and no cookie to double-
-// submit, so the unsafe POST dies at CSRF's missing-cookie branch before
-// the MCP transport ever sees it.
+// submit, so the unsafe POST is refused by the CSRF layer before the MCP
+// transport ever sees it.
+//
+// The assertion deliberately pins the LAYER, not the branch. A credential-free
+// POST can be refused by the missing-cookie branch or the token-mismatch one
+// and either satisfies the posture contract, so asserting a branch would
+// freeze an incidental detail; only removing CSRF enforcement entirely turns
+// this red.
 func TestBearerPosture_RoleServe_NoCredentialRefusedByCSRF(t *testing.T) {
 	e := newBearerPostureEnv(t, framework.RoleServe, true)
 
