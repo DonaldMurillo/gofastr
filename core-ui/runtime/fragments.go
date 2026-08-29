@@ -375,6 +375,9 @@ var moduleAttrs = map[string][]string{
 	},
 	"sidebar": {
 		"data-fui-sidebar-collapse",
+		"data-fui-sidebar-collapse-label",
+		"data-fui-sidebar-expand-label",
+		"data-fui-sidebar-group-toggle",
 		"data-fui-sidebar",
 		"data-fui-sidebar-storage",
 	},
