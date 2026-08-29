@@ -3,7 +3,39 @@ package pluginhost
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Fallback is trusted host render.HTML placed INSIDE the marker, wrapped
+// so the broker can find and toggle it — emitted verbatim (not escaped
+// like the plugin-controlled string fields), since it is the host's own
+// server-rendered node.
+func TestMountMarker_FallbackInsideMarker(t *testing.T) {
+	html := string(MountMarker(MountConfig{
+		Plugin:   "chart",
+		Fallback: render.HTML(`<svg class="chart"><rect/></svg>`),
+	}))
+	if !strings.Contains(html, `<div data-fui-plugin-fallback>`) {
+		t.Fatalf("fallback wrapper missing:\n%s", html)
+	}
+	// The fallback wrapper must sit INSIDE the marker div, before its
+	// closing tag, and the SVG must be emitted verbatim (trusted HTML).
+	if !strings.Contains(html, `<div data-fui-plugin-fallback><svg class="chart"><rect/></svg></div></div>`) {
+		t.Fatalf("fallback not nested verbatim inside the marker:\n%s", html)
+	}
+	if strings.Contains(html, "&lt;svg") {
+		t.Fatalf("fallback HTML was escaped; it is trusted host content:\n%s", html)
+	}
+}
+
+// No Fallback ⇒ no wrapper, so plugins without one keep the plain marker.
+func TestMountMarker_NoFallbackNoWrapper(t *testing.T) {
+	html := string(MountMarker(MountConfig{Plugin: "chart"}))
+	if strings.Contains(html, "data-fui-plugin-fallback") {
+		t.Fatalf("empty Fallback must emit no wrapper:\n%s", html)
+	}
+}
 
 // Every plugin-controlled VALUE must be HTML-escaped so it can't break out of
 // its attribute and inject markup/handlers.

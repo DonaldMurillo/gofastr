@@ -285,11 +285,31 @@
     return frame;
   }
 
+  // Fallback lifecycle (MountConfig.Fallback): show the server-rendered
+  // node while the frame is not the live view, show the frame otherwise.
+  // No-ops when the marker carries no fallback, so plugins without one
+  // keep today's always-visible-frame behavior.
+  function showFallback(st) {
+    if (!st.fallback) return;
+    st.fallback.style.display = "";
+    st.frame.style.display = "none";
+  }
+  function showFrame(st) {
+    if (!st.fallback) return;
+    st.fallback.style.display = "none";
+    st.frame.style.display = "block";
+  }
+
   function createState(marker, frame, adapter) {
     return {
       marker: marker,
       frame: frame,
       adapter: adapter,
+      // Server-rendered pre-hydration state (MountConfig.Fallback).
+      // Lifecycle: visible while loading, hidden — never removed — on
+      // ready, shown again on bootError and teardown, so a dead frame
+      // degrades to the static output instead of an empty box.
+      fallback: marker.querySelector("[data-fui-plugin-fallback]"),
       capabilities: parseCaps(marker, adapter.manifest),
       docId: marker.getAttribute("data-fui-plugin-docid") || "demo",
       // id -> {resolve, reject, timer}. NULL-PROTO, not {}: the frame
@@ -339,7 +359,16 @@
         }
       }, timeoutMs);
       st.pending[id] = { resolve: resolve, reject: reject, timer: timer };
-      postTo(st.frame, envelope("request", method, params || {}, id));
+      try {
+        postTo(st.frame, envelope("request", method, params || {}, id));
+      } catch (e) {
+        // postMessage threw (non-structured-cloneable params →
+        // DataCloneError). Without cleanup the entry lingers until
+        // timeout, counting toward MAX_INFLIGHT (spurious E_SATURATED).
+        clearTimeout(timer);
+        delete st.pending[id];
+        reject({ code: "E_SEND", message: "request " + method + " not sendable: " + String(e && e.message || e) });
+      }
     });
   }
 
@@ -392,6 +421,9 @@
       case "ready":
         st.frame.__pluginProbes = params.probes || null; // §8a
         sendInit(st);
+        // The frame booted and is about to hydrate from init: the live
+        // view takes over from the server-rendered fallback.
+        showFrame(st);
         break;
       case "themeApplied":
         st.theme = params;                       // {scheme, sample:{--name:value}}
@@ -418,6 +450,9 @@
         if (typeof console !== "undefined" && console.error) {
           console.error("[pluginhost] bootError from", st.adapter && st.adapter.name, params);
         }
+        // The load-bearing half of the fallback contract: a dead frame
+        // degrades to the static server-rendered node, not an empty box.
+        showFallback(st);
         break;
       default:
         // Unknown-to-platform event — leave to the adapter (forward-compat).
@@ -452,8 +487,17 @@
     try {
       postTo(st.frame, env);
     } catch (e) {
-      // Detached between the liveness check and the post — nothing left to
-      // deliver to.
+      // The frame is alive (checked above) but the result would not
+      // structured-clone (DataCloneError from a non-cloneable handler
+      // return). Send a cloneable error instead of leaving the frame's
+      // pending entry to time out — the "always answered" contract. A
+      // second throw here means the frame detached in the meantime;
+      // then there is genuinely nothing to deliver to.
+      var fb = envelope("response", null, null, id);
+      fb.error = { code: "E_HANDLER", message: "response not cloneable: " + String(e && e.message || e) };
+      try {
+        postTo(st.frame, fb);
+      } catch (ignored) { /* frame gone */ }
     }
   }
 
@@ -537,6 +581,10 @@
 
   function cleanup(st) {
     if (st.observer) st.observer.disconnect();
+    // Restore the fallback before removing the frame: if the marker
+    // lingers (teardown ahead of a replacement), the static node shows
+    // instead of a gap where the frame was.
+    showFallback(st);
     var parent = st.frame.parentNode;
     if (parent) parent.removeChild(st.frame);
     var i = live.indexOf(st);
@@ -587,6 +635,10 @@
     var frame = createIframe(marker, adapter.manifest);
     var st = createState(marker, frame, adapter);
     st.api = buildApi(st);
+    // Loading state: hide the freshly-created frame behind the
+    // server-rendered fallback until the frame reports ready. No-op
+    // without a fallback, so the frame stays visible-while-loading.
+    showFallback(st);
     states.set(frame, st);
     live.push(st);
     observeTheme(st);

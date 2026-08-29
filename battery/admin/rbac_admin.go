@@ -142,11 +142,11 @@ func permissionChips(role string, perms []string, capabilitySet map[access.Permi
 				html.Input(html.InputConfig{Type: "hidden", Name: "role", Value: role}),
 				html.Input(html.InputConfig{Type: "hidden", Name: "permission", Value: p}),
 				ui.Button(ui.ButtonConfig{
-					Label:      "Revoke",
-					Type:       "submit",
-					Variant:    ui.ButtonGhost,
-					Size:       ui.ButtonSizeSmall,
-					ExtraAttrs: html.Attrs{"aria-label": "Revoke " + p + " from " + role},
+					Label:     "Revoke",
+					AriaLabel: "Revoke " + p + " from " + role,
+					Type:      "submit",
+					Variant:   ui.ButtonGhost,
+					Size:      ui.ButtonSizeSmall,
 				}),
 			)))
 		}

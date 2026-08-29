@@ -133,6 +133,10 @@ re-render.
   **[Runtime modules](/docs/runtime-minification)**: split per feature, so a
   page ships only the JS it uses.
 - Browse every component live in the **[gallery](/components/)**.
+- **[Porting an app with an existing frontend](/docs/porting)**: the escape
+  hatch for a foreign DOM contract — html/template screens plus
+  `static.Mount` for a compiled design system. Possible, deliberately
+  unsupported; the page says exactly where the line is.
 
 ## Persisting & migrating
 

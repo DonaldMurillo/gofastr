@@ -142,6 +142,28 @@ adapter script (registered via `window.__gofastrPluginHost.register`)
 that supplies its `Manifest` and handles its plugin-specific events;
 the generic broker owns everything protocol-level.
 
+### Progressive enhancement: MountConfig.Fallback
+
+A plugin with a Go-side renderer sets `MountConfig.Fallback` to a
+`render.HTML` node — the chart plugin's pure-Go SVG, say. The broker
+wraps it inside the marker and drives one lifecycle:
+
+- **loading** → the fallback is visible, the frame hidden;
+- **ready** → the frame's live view takes over, the fallback is hidden
+  (not removed — recovery stays possible);
+- **bootError** → the fallback shows again. This is the load-bearing
+  half: a frame that dies degrades to the static server-rendered node,
+  not an empty box, and the page still works with JavaScript off.
+
+The fallback is host-trusted HTML in the page's own trust domain, built
+server-side by the plugin's `Mount()`; it never comes from the frame.
+It renders in the **host page** (full privileges), not the sandbox, so
+escape any user-derived data you interpolate into it
+(`render.Escape` / `render.Text`) — an unescaped label here is stored
+XSS in the host page, the very thing the frame sandbox exists to
+prevent. Plugins without a fallback keep the frame visible while
+loading, exactly as before.
+
 ## Opting out: the trusted mount
 
 Isolation is the default; a **loud, host-side opt-out** exists for

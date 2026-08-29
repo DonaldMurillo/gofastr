@@ -7,26 +7,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-### Added
-
-- **Pluginhost bidirectional request channel** (#252, first of the
-  three framed-runtime PRs): frame → host requests are now
-  platform-owned, mirroring the host's existing `request()`. GoFastr
-  ships the frame-side client for the first time —
-  `frame/frameclient.js` (`window.__gofastrPluginFrame` with
-  `ready`/`sendEvent`/`sendRequest`/`onEvent`/`onRequest`), served via
-  `pluginhost.RegisterFrameClientRoute` with the framed CORP
-  relaxation, or bundled via `pluginhost.FrameClientJS()`. Host
-  adapters answer with `api.onRequest(method, handler)` or a static
-  `registration.onRequest` fallback. One contract in both directions:
-  every request is answered (`E_NO_HANDLER` / `E_HANDLER`, never
-  silence), the in-flight map is bounded at 64 (`E_SATURATED`),
-  invalid timeouts fall back to 5s, and teardown rejects outstanding
-  requests with `E_TEARDOWN` instead of leaking hung promises — the
-  host broker previously cleared its timers without rejecting, and
-  plugins (richtext, datagrid) each hand-rolled their own correlation.
-
 ### Changed
+
+- **Worktree isolation honors an explicit `PORT` under
+  `GOFASTR_ISOLATION_REWRITE=0`** (#268): the app's own listen address
+  (`App.Start`) now respects that knob the way child-env rewriting
+  already did, so an operator can keep DB/worktree isolation while
+  serving on the port they assigned. Isolation still remaps by default
+  (the collision-avoidance whole point); `App.Start` already warns when
+  it remaps an explicitly-set address, and the worktree auto-activation
+  + remap is now documented prominently in isolation.md instead of only
+  in the source.
 
 - **The last 23 legacy `framework/ui` files (24 components) join the
   ExtraAttrs sanitization contract** (#262, completing the migration
@@ -60,12 +51,60 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`ui.Button.AriaLabel` / `html.Button.AriaLabel`** (#281): an
+  accessible-name override for buttons that share a visible `Label` but
+  must be announced distinctly — a table of "Revoke" buttons, a
+  dashboard's repeated actions. Button owns `aria-label` (an
+  `ExtraAttrs` one is dropped), so before this there was no supported
+  way to set it and repeated buttons announced identically; the admin
+  RBAC revoke buttons and the live-dashboard demo now use it.
+
+- **`pluginhost.MountConfig.Fallback`** (#253, second of the three
+  framed-runtime PRs): a `render.HTML` slot for server-rendered
+  pre-hydration content inside the plugin mount marker. The broker
+  shows it while the frame loads, hides it — never removes it — when
+  the frame reports `ready`, and swaps back to it on `bootError`, so a
+  plugin with a Go-side renderer (the chart plugin's SSR SVG) degrades
+  to its static output instead of an empty box, and works with
+  JavaScript off. The fallback is host-trusted HTML built by the
+  plugin's `Mount()`; plugins without one keep the frame visible while
+  loading, unchanged.
+
+- **Pluginhost bidirectional request channel** (#252, first of the
+  three framed-runtime PRs): frame → host requests are now
+  platform-owned, mirroring the host's existing `request()`. GoFastr
+  ships the frame-side client for the first time —
+  `frame/frameclient.js` (`window.__gofastrPluginFrame` with
+  `ready`/`sendEvent`/`sendRequest`/`onEvent`/`onRequest`), served via
+  `pluginhost.RegisterFrameClientRoute` with the framed CORP
+  relaxation, or bundled via `pluginhost.FrameClientJS()`. Host
+  adapters answer with `api.onRequest(method, handler)` or a static
+  `registration.onRequest` fallback. One contract in both directions:
+  every request is answered (`E_NO_HANDLER` / `E_HANDLER`, never
+  silence), the in-flight map is bounded at 64 (`E_SATURATED`),
+  invalid timeouts fall back to 5s, and teardown rejects outstanding
+  requests with `E_TEARDOWN` instead of leaking hung promises. A
+  non-cloneable payload (`DataCloneError`) on the request path cleans
+  up its pending entry and rejects `E_SEND` on both sides instead of
+  leaking toward the bound, and a non-cloneable handler *result* answers
+  a cloneable `E_HANDLER` rather than hanging the caller. Plugins
+  (richtext, datagrid) each hand-rolled their own correlation before
+  this.
+
 - **`ui.SiteHeaderConfig.PersistentActions`** (#256): a slot for the
   one journey-critical control (sign-in link, primary CTA) that stays
   in the bar at every viewport width instead of collapsing into the
   mobile drawer with the rest of `Actions`. It is never copied into
   the drawer, so no duplicate control exists at any width. Meridian's
   guest marketing header now keeps Sign in visible at 390px.
+
+- **Porting guide** (#245 item 1, decided: escape hatch, not a
+  supported use case): a new docs page, `porting.md`, shows how to move
+  an app with a foreign DOM contract onto GoFastr — html/template
+  screens rendered as `render.HTML`, the compiled design system served
+  via `static.Mount` — and states plainly that markup and stylesheets
+  brought this way are outside the one-styling-surface contract: the
+  app owns the drift.
 
 - **`ui.MenuItem.Confirm`**: pre-flight confirmation for RPC menu
   items, emitted as `data-fui-confirm` alongside the item's

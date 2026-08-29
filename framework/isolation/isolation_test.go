@@ -60,6 +60,50 @@ func TestResolveHonorsConfigAndEnvOff(t *testing.T) {
 	}
 }
 
+// #268: GOFASTR_ISOLATION_REWRITE=0 honors the assigned listen port
+// even in an active worktree — isolation still separates DB/worktree
+// resources, but the operator's explicit PORT is left alone. Default
+// (unset) still remaps.
+func TestAddrHonorsExplicitPortWhenRewriteDisabled(t *testing.T) {
+	clearIsolationEnv(t)
+	dir := linkedWorktree(t)
+	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
+
+	// Both spellings of the off switch, including the mixed case the
+	// EqualFold arm exists for.
+	for _, off := range []string{"0", "false", "False"} {
+		t.Setenv(envRewriteExplicit, off)
+		rt, err := Resolve(dir)
+		if err != nil {
+			t.Fatalf("Resolve %s: %v", off, err)
+		}
+		if !rt.Active() {
+			t.Fatalf("isolation should still be active with REWRITE=%s", off)
+		}
+		addr, err := rt.Addr(":8080")
+		if err != nil {
+			t.Fatalf("Addr %s: %v", off, err)
+		}
+		if addr != ":8080" {
+			t.Fatalf("REWRITE=%s must honor the explicit port: got %q, want :8080", off, addr)
+		}
+	}
+
+	// Sanity: with the default (rewrite on), the same runtime remaps.
+	t.Setenv(envRewriteExplicit, "")
+	rt2, err := Resolve(dir)
+	if err != nil {
+		t.Fatalf("Resolve default: %v", err)
+	}
+	addr2, err := rt2.Addr(":8080")
+	if err != nil {
+		t.Fatalf("Addr default: %v", err)
+	}
+	if addr2 != ":9080" {
+		t.Fatalf("default must remap: got %q, want :9080", addr2)
+	}
+}
+
 func TestAddrIsStableAndDoesNotDoubleOffsetAppliedPort(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
