@@ -624,6 +624,14 @@ func formCSS(_ style.Theme) string {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm, 4px);
+}
+[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions .ui-button {
+  width: 100%;
+  box-sizing: border-box;
 }`
 }
 
