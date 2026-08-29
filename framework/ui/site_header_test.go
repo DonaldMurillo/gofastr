@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -211,6 +212,40 @@ func TestSiteHeaderActionsCollapseIntoDrawer(t *testing.T) {
 	idx := strings.Index(h, `data-fui-disclosure`)
 	if idx == -1 || !strings.Contains(h[idx:], "ui-site-header__mobile-actions") {
 		t.Error("mobile-actions must live inside the mobile drawer")
+	}
+}
+
+func TestSiteHeaderPersistentActionsStayInBar(t *testing.T) {
+	// PersistentActions render once, in the bar, and are never copied
+	// into the drawer — unlike Actions, whose bar copy CSS-hides ≤720px
+	// while the drawer copy takes over.
+	h := string(SiteHeader(SiteHeaderConfig{
+		Brand:             render.Raw(`<a>x</a>`),
+		NavItems:          []SiteHeaderLink{{Label: "Pricing", Href: "/pricing"}},
+		Actions:           render.Raw(`<button id="act">Theme</button>`),
+		PersistentActions: render.Raw(`<a id="cta">Sign in</a>`),
+	}))
+	if !strings.Contains(h, "ui-site-header__persistent-actions") {
+		t.Fatal("missing persistent-actions wrapper")
+	}
+	if n := strings.Count(h, `id="cta"`); n != 1 {
+		t.Errorf("persistent action must render exactly once, got %d:\n%s", n, h)
+	}
+	idx := strings.Index(h, `data-fui-disclosure`)
+	if idx == -1 || strings.Contains(h[idx:], `id="cta"`) {
+		t.Error("persistent action must not be copied into the mobile drawer")
+	}
+	// The stylesheet must never hide the persistent wrapper: the only
+	// rule that may mention it is the layout-transparency one. Scan
+	// whole declaration blocks, not lines, so a multi-line rule can't
+	// slip past; visibility:hidden is as much a hide as display:none.
+	css := siteHeaderCSS(style.Theme{})
+	hideRe := regexp.MustCompile(`persistent-actions[^{]*\{[^}]*(display:\s*none|visibility:\s*hidden)`)
+	if m := hideRe.FindString(css); m != "" {
+		t.Errorf("persistent-actions must stay visible at every width, found: %s", m)
+	}
+	if !strings.Contains(css, ".ui-site-header__persistent-actions { display: contents; }") {
+		t.Error("persistent-actions should be layout-transparent like bar-actions")
 	}
 }
 

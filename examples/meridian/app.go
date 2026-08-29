@@ -81,18 +81,22 @@ func guestPolicy(appHome string) app.Policy {
 // marketingHeader / Footer wrap the public marketing layout.
 func marketingHeader(ctx context.Context) render.HTML {
 	nav := []ui.SiteHeaderLink{{Label: "Pricing", Href: "/pricing"}, {Label: "About", Href: "/about"}}
-	var actions render.HTML
+	var actions, persistent render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
 		nav = append(nav, ui.SiteHeaderLink{Label: "Dashboard", Href: "/app"})
 		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.SignOut(ui.SignOutConfig{Next: "/"}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
 	} else {
-		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.LinkButton(ui.LinkButtonConfig{Label: "Sign in", Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
+		// Sign in is the journey-critical CTA: it stays in the bar on
+		// phones instead of collapsing into the drawer.
+		persistent = ui.LinkButton(ui.LinkButtonConfig{Label: "Sign in", Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})
+		actions = ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})
 	}
 	return ui.SiteHeader(ui.SiteHeaderConfig{
-		Brand:    ui.Link(ui.LinkConfig{Href: "/", Text: appName}),
-		NavItems: nav,
-		Drawer:   ui.SiteHeaderDrawerSheet,
-		Actions:  actions,
+		Brand:             ui.Link(ui.LinkConfig{Href: "/", Text: appName}),
+		NavItems:          nav,
+		Drawer:            ui.SiteHeaderDrawerSheet,
+		Actions:           actions,
+		PersistentActions: persistent,
 	})
 }
 

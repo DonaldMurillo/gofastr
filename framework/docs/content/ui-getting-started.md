@@ -484,7 +484,10 @@ Choose the navigation primitive that matches the product shell:
 
 - `ui.SiteHeader` provides brand, desktop navigation, actions, and its mobile
   drawer as one component. Set `MobileBrand` when the desktop identity is too
-  long for the phone row.
+  long for the phone row. `Actions` collapse into the drawer on phones; put
+  the one journey-critical control (a sign-in link, a primary CTA) in
+  `PersistentActions` and it stays in the bar at every width, with no drawer
+  copy.
 - `ui.Sidebar` provides the desktop rail; pair the same `SidebarConfig` with
   `ui.MountSidebar` for the framework-owned mobile drawer.
 - `ui.Responsive` is for cases where mobile needs a genuinely different

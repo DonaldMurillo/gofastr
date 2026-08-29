@@ -41,6 +41,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`ui.SiteHeaderConfig.PersistentActions`** (#256): a slot for the
+  one journey-critical control (sign-in link, primary CTA) that stays
+  in the bar at every viewport width instead of collapsing into the
+  mobile drawer with the rest of `Actions`. It is never copied into
+  the drawer, so no duplicate control exists at any width. Meridian's
+  guest marketing header now keeps Sign in visible at 390px.
+
 - **`ui.MenuItem.Confirm`**: pre-flight confirmation for RPC menu
   items, emitted as `data-fui-confirm` alongside the item's
   `data-fui-rpc` wiring. Previously the Danger field's doc pointed at
