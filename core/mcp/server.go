@@ -96,6 +96,11 @@ type Server struct {
 	name    string
 	version string
 
+	// prompts is the prompt registry (prompts/list + prompts/get). Nil
+	// until the first RegisterPrompt. A non-empty registry makes
+	// initialize advertise the `prompts` capability.
+	prompts map[string]Prompt
+
 	// registerHook, when set, is called for every RegisterTool call.
 	// Framework code uses it to attribute tools to the module whose Init
 	// registered them. Nil = no-op.
@@ -108,9 +113,10 @@ type Server struct {
 	callGate func(toolName string) error
 
 	// serverGate, when set, is a per-caller precondition covering the whole
-	// JSON-RPC DATA surface: tools/list, tools/call, resources/list and
-	// resources/read. It is the switch for a host whose /mcp is private
-	// wholesale, as opposed to per-tool WithToolGate.
+	// JSON-RPC DATA surface: tools/list, tools/call, resources/list,
+	// resources/read, prompts/list and prompts/get. It is the switch for a
+	// host whose /mcp is private wholesale, as opposed to per-tool
+	// WithToolGate.
 	//
 	// initialize and ping are deliberately NOT covered. They carry only the
 	// protocol version, capability booleans and the server name, and a client
@@ -306,8 +312,9 @@ func (s *Server) listToolsUnfiltered() []Tool {
 }
 
 // SetGate installs a server-wide precondition over the JSON-RPC data surface
-// (tools/list, tools/call, resources/list, resources/read). Pass nil to clear
-// it. See the serverGate field for why initialize and ping stay open.
+// (tools/list, tools/call, resources/list, resources/read, prompts/list,
+// prompts/get). Pass nil to clear it. See the serverGate field for why
+// initialize and ping stay open.
 //
 // Use it when the whole /mcp endpoint is private. For a mixed surface,
 // public read tools and gated mutating ones, attach per-tool gates with

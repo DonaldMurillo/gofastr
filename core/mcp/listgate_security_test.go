@@ -120,6 +120,62 @@ func TestInitializeAndPingStayOpenUnderServerGate(t *testing.T) {
 	}
 }
 
+// Same property, prompts surface: a gated prompt does not leak through
+// prompts/list, and a gated tool's companion prompt (the pairing MCP Apps
+// and slash-command surfaces produce: tool + prompt sharing a gate) does
+// not leak either. The description and argument list are the disclosure,
+// the same way a tool's inputSchema is.
+func TestGatedPromptHiddenFromList(t *testing.T) {
+	s := NewServer()
+	mustRegisterGated(t, s, "secret_tool", requireUser)
+	mustRegisterPrompt(t, s, "secret_prompt",
+		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil },
+		WithPromptDescription("Companion to secret_tool"),
+		WithPromptGate(requireUser))
+	mustRegisterPrompt(t, s, "public_prompt",
+		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil })
+
+	names := listPromptNames(t, s, context.Background())
+	if contains(names, "secret_prompt") {
+		t.Errorf("SECURITY: [disclosure] unauthenticated prompts/list exposed a gated prompt; got %v", names)
+	}
+	if !contains(names, "public_prompt") {
+		t.Errorf("ungated prompt vanished from the listing; got %v", names)
+	}
+
+	// The caller who passes the gate must still see it.
+	names = listPromptNames(t, s, authed(context.Background()))
+	if !contains(names, "secret_prompt") {
+		t.Errorf("authenticated prompts/list hid a gettable prompt; got %v", names)
+	}
+}
+
+// The server-wide gate covers the prompt data surface too: prompts/list and
+// prompts/get sit in the gate switch alongside the tool and resource
+// methods, so a private /mcp cannot be read through the newest surface.
+func TestServerGateClosesPromptsSurface(t *testing.T) {
+	s := NewServer()
+	mustRegisterPrompt(t, s, "public_prompt",
+		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil })
+	s.SetGate(requireUser)
+
+	rl := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "prompts/list"})
+	if rl.Error == nil {
+		t.Error("SECURITY: [disclosure] server gate did not cover prompts/list")
+	}
+	rg := s.HandleRequest(context.Background(), Request{
+		JSONRPC: "2.0", ID: 2, Method: "prompts/get",
+		Params: json.RawMessage(`{"name":"public_prompt"}`),
+	})
+	if rg.Error == nil {
+		t.Error("SECURITY: [authz] server gate did not cover prompts/get")
+	}
+
+	if names := listPromptNames(t, s, authed(context.Background())); !contains(names, "public_prompt") {
+		t.Errorf("server gate refused an authenticated caller; got %v", names)
+	}
+}
+
 func mustRegisterGated(t *testing.T, s *Server, name string, gate func(context.Context) error) {
 	t.Helper()
 	err := s.RegisterTool(name, "d", map[string]any{"type": "object"},
