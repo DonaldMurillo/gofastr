@@ -2991,6 +2991,26 @@ func (a *App) Start(addr string) error {
 	if len(a.mcpApps) > 0 && !a.mcpAutoMount && !a.routerHasMCPRoute() {
 		a.Logger().Warn("WithMCPApp registered but /mcp is not mounted: the widget and its tool will be unreachable; add framework.WithMCP()")
 	}
+	// The MCP Apps widget client script (mcp.WidgetClientScriptURL): the
+	// script every registered widget document hot-links. Mounted as soon
+	// as at least one MCP App is registered, the same rule the server's
+	// capabilities follow (resources/prompts advertise only when
+	// something is registered), so an app with no widgets carries no
+	// public script route. Independent of mcpAutoMount: a host that
+	// hand-wired /mcp still registered a widget whose HTML references
+	// this URL, and the iframe fetching it hits this router either way.
+	// A router already serving the URL (a host that followed the manual
+	// mount docs, or assembles its router by hand) keeps its route: the
+	// auto-mount yields with a warning instead of a route-conflict
+	// panic, and the bytes are identical either way.
+	if len(a.mcpApps) > 0 {
+		if a.routerHasWidgetClientRoute() {
+			a.Logger().Warn("widget client auto-mount skipped: " +
+				mcp.WidgetClientScriptURL + " is already mounted by the host")
+		} else {
+			a.router.Get(mcp.WidgetClientScriptURL, mcp.WidgetClientHandler())
+		}
+	}
 	// Entity MCP tools (Exposure.MCP: true) have the same prod-only 404
 	// failure mode: dev auto-mounts /mcp so the tools work locally, a
 	// production binary without WithMCP() registers them onto a dispatcher

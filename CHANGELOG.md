@@ -9,6 +9,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **The widget client mounts itself** (#291): an app that registers an MCP App
+  with `WithMCPApp` now serves the widget client at
+  `mcp.WidgetClientScriptURL` automatically, rather than every author wiring
+  the same route by hand. It mounts only when at least one app is registered,
+  mirroring how `initialize` advertises `resources`/`prompts` only when
+  something is registered, and it yields with a warning to a route the host
+  already mounted rather than panicking on the conflict. `RoleAgent` forwards
+  the path to the app router, because in a role-split deployment the agent
+  listener is the origin a widget fetches its script from — not forwarding it
+  would 404 every widget exactly when the agent process is the MCP endpoint.
+
 - **MCP Apps widget client** (#291): `core/mcp` served the app side already
   (`RegisterApp`, `_meta.ui`), but the JS that runs inside the host's iframe
   and talks to the chat host did not exist, so every plugin author hand-rolled

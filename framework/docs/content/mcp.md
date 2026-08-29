@@ -582,6 +582,20 @@ no extra framing. GoFastr serves the widget side of MCP Apps and is not a
 host: nothing here renders another server's widget, and nothing in the
 framework speaks the host half of this protocol.
 
+A framework app serves the script by itself: as soon as one MCP App is
+registered with `WithMCPApp`, `Start` mounts `mcp.WidgetClientHandler()`
+at `mcp.WidgetClientScriptURL` on the app router. The condition follows
+the server's capability rule (`resources` and `prompts` are advertised
+only when something is registered): no widget, no public script route.
+The mount does not require `WithMCP()`; a host that wired `/mcp` by hand
+still gets it, because the widget's HTML references this URL on the app's
+public router either way. A router already serving the URL (you mounted
+the handler yourself) keeps that route: the automatic mount steps aside
+with a warning, and the bytes are the same. In a role-split deployment
+the agent role (`framework.WithRole(framework.RoleAgent)`) forwards the
+script URL to the app router along with `/mcp`, so widgets keep loading
+when the agent process is the origin the MCP host resolved.
+
 Two ways to get the script into your widget's HTML:
 
 <!-- gofastr:compile
@@ -594,11 +608,14 @@ var rt *router.Router
 var widgetHTML string
 -->
 ```go
-// Hot-link: mount the handler at WidgetClientScriptURL and reference the
-// URL from a <script src> in the app's HTML. The handler serves the script
-// with Cross-Origin-Resource-Policy: cross-origin so the opaque-origin iframe
-// can fetch it; whether the HOST's iframe CSP allows the fetch is governed
-// by the app's declared AppCSP.ResourceDomains, like any cross-origin script.
+// Hot-link: reference the script URL from a <script src> in the app's
+// HTML. A framework app that uses WithMCPApp serves it automatically
+// (see above); mounting the handler yourself is for a router assembled
+// by hand (core/mcp standalone, or RegisterApp without WithMCPApp). The
+// handler serves the script with Cross-Origin-Resource-Policy:
+// cross-origin so the opaque-origin iframe can fetch it; whether the
+// HOST's iframe CSP allows the fetch is governed by the app's declared
+// AppCSP.ResourceDomains, like any cross-origin script.
 rt.Get(mcp.WidgetClientScriptURL, mcp.WidgetClientHandler())
 
 // Or fold the bytes into the HTML you hand to RegisterApp, and the widget
@@ -720,6 +737,10 @@ messages are accepted only from `window.parent` (`event.source`, not
 - **Serving `ListTools()` output to a remote caller.** It applies no
   per-caller gates. The JSON-RPC path serves `ListToolsFor(ctx)`; reach for
   that (or let the transport do it) whenever the listing leaves the process.
+- **Calling `app.MCP.RegisterApp` directly and expecting the script
+  route.** The automatic widget client mount keys on `WithMCPApp`
+  registrations. Registering through the primitives, or running
+  `core/mcp` standalone, means mounting `WidgetClientHandler()` yourself.
 - **Forgetting that required prompt arguments are checked before the
   handler runs.** A `prompts/get` missing one is refused with invalid-params;
   the handler never sees the call. Handlers can assume required arguments are

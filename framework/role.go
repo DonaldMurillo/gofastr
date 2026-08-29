@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 )
 
 // Role selects which responsibilities a single binary assumes at boot.
@@ -153,6 +155,13 @@ func (a *App) workerHealthMux() http.Handler {
 // though the router still holds them. A host that never mounted /mcp
 // (no WithMCP, no hand-wired route) gets the router's 404 here, which is
 // the honest answer for that misconfiguration.
+//
+// The MCP Apps widget client script (mcp.WidgetClientScriptURL) is
+// forwarded too: a widget document fetches it from the same public
+// origin that serves /mcp, and in a role-split deployment that origin is
+// this listener. Refusing it here would 404 every widget exactly when
+// the agent role is the MCP endpoint. Same honesty rule: an app that
+// mounted nothing there (no WithMCPApp) gets the router's 404.
 func (a *App) agentMux() http.Handler {
 	liveness, readiness := a.healthHandlers()
 	mux := http.NewServeMux()
@@ -160,5 +169,6 @@ func (a *App) agentMux() http.Handler {
 	mux.HandleFunc("/readyz", readiness)
 	mux.Handle("/mcp", a.router)
 	mux.Handle("/mcp/", a.router)
+	mux.Handle(mcp.WidgetClientScriptURL, a.router)
 	return mux
 }
