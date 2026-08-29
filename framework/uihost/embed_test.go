@@ -406,12 +406,27 @@ func TestEmbedExchangeIsIdempotent(t *testing.T) {
 	}
 }
 
-// flipChar returns a base64url character guaranteed to differ from c.
-func flipChar(c byte) string {
-	if c == 'A' {
-		return "B"
+// tamperSignature flips one byte of a token's decoded HMAC so the result
+// is guaranteed to fail verification. Flipping a base64 CHARACTER is not
+// safe: the signature is 32 bytes → 43 base64url chars, so the final char
+// carries only 4 significant bits with 2 slack bits, and two chars that
+// differ only in a slack bit (e.g. 'A' 000000 vs 'B' 000001) decode to the
+// SAME bytes — a ~1-in-32 flake that presented as "tampered token
+// accepted" whenever the real signature's last char landed there. Decode,
+// flip a byte, re-encode: the byte space has no slack.
+func tamperSignature(t *testing.T, token string) string {
+	t.Helper()
+	dot := strings.LastIndex(token, ".")
+	if dot < 0 {
+		t.Fatalf("token has no signature separator: %q", token)
 	}
-	return "A"
+	b64 := base64.RawURLEncoding
+	sig, err := b64.DecodeString(token[dot+1:])
+	if err != nil || len(sig) == 0 {
+		t.Fatalf("decode signature %q: %v", token[dot+1:], err)
+	}
+	sig[0] ^= 0x01
+	return token[:dot+1] + b64.EncodeToString(sig)
 }
 
 // Which check failed is an oracle: it tells a caller probing with a captured
@@ -436,12 +451,10 @@ func TestEmbedExchangeFailuresAreIndistinguishable(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 
-	// Tamper by SUBSTITUTING the final signature character with a
-	// different one, not by appending a fixed suffix: replacing the
-	// tail with a constant ("xy") made the tampered token equal the
-	// real one whenever the HMAC happened to end in that constant — a
-	// 1-in-4096 CI flake that presented as "tampered token accepted".
-	tampered := good[:len(good)-1] + flipChar(good[len(good)-1])
+	// Tamper by flipping a byte of the DECODED signature (see
+	// tamperSignature): a base64-character flip has slack-bit collisions
+	// that let the tampered token still verify.
+	tampered := tamperSignature(t, good)
 	cases := map[string]string{
 		"garbage":             "not-a-token",
 		"wrong prefix":        "emg_" + strings.TrimPrefix(good, "emb_"),
