@@ -52,6 +52,21 @@ type MountConfig struct {
 	// (data-fui-plugin-doc) for reload round-trip.
 	Doc string
 
+	// Fallback is server-rendered HTML placed inside the marker as the
+	// pre-hydration state (wrapped in a div carrying
+	// data-fui-plugin-fallback). The broker hides the iframe until the
+	// frame reports ready, then hides the fallback — hidden, never
+	// removed — and shows the frame; on bootError it swaps back, so a
+	// plugin with a Go-side renderer (the chart plugin's SSR SVG)
+	// degrades to its static output instead of an empty box, and works
+	// with JavaScript off. Teardown restores it until SPA nav replaces
+	// the marker.
+	//
+	// TRUST: this is render.HTML in the host page's own trust domain,
+	// emitted verbatim like every render.HTML — the plugin's Go-side
+	// Mount() builds it server-side; it never comes from the frame.
+	Fallback render.HTML
+
 	// Attributes are extra attributes appended to the marker (plugin-specific).
 	Attributes []Attribute
 
@@ -106,7 +121,13 @@ func MountMarker(cfg MountConfig) render.HTML {
 		b.WriteString(render.Escape(attr.Value))
 		b.WriteByte('"')
 	}
-	b.WriteString(`></div>`)
+	b.WriteByte('>')
+	if cfg.Fallback != "" {
+		b.WriteString(`<div data-fui-plugin-fallback>`)
+		b.WriteString(string(cfg.Fallback))
+		b.WriteString(`</div>`)
+	}
+	b.WriteString(`</div>`)
 	for _, f := range cfg.Fields {
 		b.WriteString(`<input type="hidden" name="`)
 		b.WriteString(render.Escape(f.Name))

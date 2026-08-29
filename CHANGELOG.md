@@ -9,6 +9,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`pluginhost.MountConfig.Fallback`** (#253, second of the three
+  framed-runtime PRs): a `render.HTML` slot for server-rendered
+  pre-hydration content inside the plugin mount marker. The broker
+  shows it while the frame loads, hides it — never removes it — when
+  the frame reports `ready`, and swaps back to it on `bootError`, so a
+  plugin with a Go-side renderer (the chart plugin's SSR SVG) degrades
+  to its static output instead of an empty box, and works with
+  JavaScript off. The fallback is host-trusted HTML built by the
+  plugin's `Mount()`; plugins without one keep the frame visible while
+  loading, unchanged.
+
 - **Pluginhost bidirectional request channel** (#252, first of the
   three framed-runtime PRs): frame → host requests are now
   platform-owned, mirroring the host's existing `request()`. GoFastr

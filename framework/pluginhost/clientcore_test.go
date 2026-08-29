@@ -63,3 +63,35 @@ func TestBrokerJS_PostsWithWildcardTargetOrigin(t *testing.T) {
 		t.Error("postTo must use targetOrigin \"*\" for the opaque frame (source check is the gate)")
 	}
 }
+
+// (4) The fallback lifecycle (#253): the broker finds the server-rendered
+// [data-fui-plugin-fallback] node, hides the frame behind it while
+// loading, swaps to the frame on ready, and — the load-bearing half —
+// swaps BACK on bootError so a dead frame degrades to the static node
+// instead of an empty box. Behavior lives in the DOM (no browser here),
+// so pin the wiring at the source, in code not comments.
+func TestBrokerJS_FallbackLifecycle(t *testing.T) {
+	code := nonCommentJS(string(brokerJSBytes))
+	if !strings.Contains(code, `querySelector("[data-fui-plugin-fallback]")`) {
+		t.Error("broker must locate the fallback node in the marker")
+	}
+	bootIdx := strings.Index(code, `case "bootError":`)
+	readyIdx := strings.Index(code, `case "ready":`)
+	if bootIdx < 0 || readyIdx < 0 {
+		t.Fatal("ready/bootError cases not found in broker code")
+	}
+	bootBody := code[bootIdx:]
+	if end := strings.Index(bootBody, "break;"); end >= 0 {
+		bootBody = bootBody[:end]
+	}
+	if !strings.Contains(bootBody, "showFallback(st)") {
+		t.Error("bootError must showFallback (degrade to the static node)")
+	}
+	readyBody := code[readyIdx:]
+	if end := strings.Index(readyBody, "break;"); end >= 0 {
+		readyBody = readyBody[:end]
+	}
+	if !strings.Contains(readyBody, "showFrame(st)") {
+		t.Error("ready must showFrame (live view takes over)")
+	}
+}
