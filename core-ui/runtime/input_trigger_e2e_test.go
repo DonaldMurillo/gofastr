@@ -116,3 +116,93 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
 		t.Fatalf("expected {\"category\":\"parts\"}, got %v", *got)
 	}
 }
+
+// The combobox renders its RPC carrier as a <div>, not a <form>, so an
+// embedding host <form> survives HTML parsing (a nested form open tag is
+// dropped and its close tag would close the host form). The runtime must
+// still serialize the carrier's named controls — a typed query has to
+// reach the handler as name=value exactly as it did when the carrier was
+// a real form. Regression test for the empty-body class the SegmentedControl
+// #194 fix documented.
+func TestInputTrigger_DivCarrierSendsControls(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var last atomic.Pointer[map[string]string]
+	var hits atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(js))
+	})
+	handleRuntimeModules(t, mux)
+	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		body := map[string]string{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		last.Store(&body)
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><head><title>div-carrier</title></head><body>
+  <div data-fui-rpc="/search" data-fui-rpc-method="POST"
+       data-fui-rpc-trigger="input" data-fui-rpc-debounce-ms="1">
+    <input id="q" name="q" type="text" autocomplete="off">
+  </div>
+  <script src="/__gofastr/runtime.js"></script>
+</body></html>`)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.WSURLReadTimeout(90*time.Second),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	t.Cleanup(allocCancel)
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	t.Cleanup(browserCancel)
+
+	started := make(chan error, 1)
+	go func() { started <- chromedp.Run(browserCtx) }()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("chrome did not start: %v", err)
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("chrome did not start within 90s")
+	}
+
+	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
+	t.Cleanup(cancel)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#q`, chromedp.ByID),
+		chromedp.SendKeys(`#q`, "acc", chromedp.ByID),
+		chromedp.Sleep(400*time.Millisecond),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	if hits.Load() == 0 {
+		t.Fatal("typing in a div-carrier input did not fire the RPC")
+	}
+	got := last.Load()
+	if got == nil {
+		t.Fatal("RPC fired but no body recorded")
+	}
+	if (*got)["q"] != "acc" {
+		t.Fatalf("expected {\"q\":\"acc\"} from the div carrier's control, got %v", *got)
+	}
+}

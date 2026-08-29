@@ -49,7 +49,11 @@
       if (active) {
         link.setAttribute('aria-current', 'page');
         link.classList.add('active');
-      } else {
+      } else if (link.classList.contains('active')) {
+        // Only clear what this module stamped (class is our marker).
+        // Host-rendered navs (pagination's aria-current="page" on the
+        // current page link, server-side breadcrumbs) own their
+        // attributes; a runtime sweep must not strip them.
         link.removeAttribute('aria-current');
         link.classList.remove('active');
       }

@@ -2089,7 +2089,7 @@
           lb.removeAttribute('hidden');
         }
       }
-      const form = e.target.closest('form[data-fui-rpc][data-fui-rpc-trigger="input"]');
+      const form = e.target.closest('[data-fui-rpc][data-fui-rpc-trigger="input"]');
       if (!form) return;
       loadModule('rpc')
         .then(() => window.__gofastr.dispatchRPC(form, 'input'))

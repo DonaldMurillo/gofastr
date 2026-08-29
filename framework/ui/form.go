@@ -56,6 +56,12 @@ type FormConfig struct {
 	// Use when the caller renders its own submit button.
 	HideSubmit bool
 
+	// SubmitFullWidth stacks the actions row into a single full-width
+	// column and stretches the submit button to the form's width. Use
+	// for mobile-first auth and wizard forms where the primary action
+	// should be a thumb target spanning the card.
+	SubmitFullWidth bool
+
 	// Ctx, when non-nil, lets Form auto-stamp the hidden CSRF input
 	// (the framework's "_csrf" field) on unsafe-method submits. It
 	// reads middleware.TokenFromContext(Ctx), i.e. the token the CSRF
@@ -97,6 +103,9 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	}
 
 	cls := "ui-form"
+	if cfg.SubmitFullWidth {
+		cls += " ui-form--block-actions"
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}

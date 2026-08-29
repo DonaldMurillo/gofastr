@@ -14,8 +14,9 @@ type Config struct {
 	Label string
 
 	// RPCPath is the search endpoint. Required unless Options is set
-	// (static, client-side-filtered list). POST with form-encoded body
-	// whose first field is `<Name>=<query>`.
+	// (static, client-side-filtered list). POSTed as a JSON body
+	// `{"<Name>": "<query>"}` (the runtime serializes the carrier's
+	// named controls; Content-Type: application/json).
 	RPCPath string
 	// SignalName is the data-fui-rpc-signal value used to swap the
 	// listbox HTML on every search response. Required when RPCPath is set.
