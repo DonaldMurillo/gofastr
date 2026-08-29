@@ -3020,8 +3020,11 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 // request's auth/policy context flows through unchanged.
 func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if p := r.URL.Path; p != path && path != "" {
-			// Keep query intact; only the dispatch path is forced.
+		if p := r.URL.Path; p != path && path != "" && !strings.Contains(path, "{") {
+			// Keep query intact; only the dispatch path is forced. Dynamic
+			// screen paths ({id}) are NEVER forced: rewriting would feed the
+			// literal pattern to param capture (id="{id}"); the real request
+			// path already matches the registered dynamic screen.
 			u := *r.URL
 			u.Path = path
 			r2 := r.Clone(r.Context())
