@@ -94,8 +94,15 @@
     if (!lbId) return;
     const lb = document.getElementById(lbId);
     if (!lb) return;
+    // Navigable options: skip aria-disabled rows AND rows the static
+    // filter hid. Without :not([hidden]) ArrowDown/ArrowUp/Home/End
+    // cycle through filtered-out rows — the aria-activedescendant
+    // highlight lands on an invisible option and Enter picks one the
+    // user filtered away (#302).
     const options = Array.from(
-      lb.querySelectorAll('[role="option"]:not([aria-disabled="true"])')
+      lb.querySelectorAll(
+        '[role="option"]:not([aria-disabled="true"]):not([hidden])'
+      )
     );
     const activeId = input.getAttribute('aria-activedescendant');
     const activeIdx = options.findIndex((o) => o.id === activeId);
@@ -180,7 +187,10 @@
     const lbId = input.getAttribute('aria-controls');
     const lb = lbId ? document.getElementById(lbId) : null;
     if (!lb) return;
-    if (lb.querySelector('[role="option"]')) openListbox(input, lb);
+    // Only reopen when something is actually selectable: a hidden
+    // option still matches [role="option"], so without the filter a
+    // refocus with every row filtered out opens an empty listbox.
+    if (lb.querySelector('[role="option"]:not([hidden])')) openListbox(input, lb);
   });
 
   // Outside-click closes any open combobox.

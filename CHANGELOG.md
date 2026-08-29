@@ -9,6 +9,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **Combobox keyboard navigation skips filtered-out options** (#302):
+  after typing a query, ArrowDown/ArrowUp/Home/End cycled through rows the
+  static filter had hidden, so the `aria-activedescendant` highlight landed on
+  an invisible option and Enter selected one the user had filtered away. The
+  navigable-option selector now excludes `[hidden]`. Refocusing an input whose
+  every option is filtered out no longer opens an empty listbox either.
+
 - **`ui.Sidebar` can express a server-owned collapse contract** (#298):
   `SidebarConfig.Collapse` is a tri-state mirroring how `CurrentPath` already
   works — the zero value keeps today's localStorage behaviour byte-identical,
