@@ -124,7 +124,7 @@ server side and the runtime does the work.
 | `data-fui-compute` | Loads the `compute` demand module, which exposes `window.__gofastr.compute`. It is a trigger marker only; worker name, function, and payload stay in the imperative `compute.task(...)` call. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
 | `data-fui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-fui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. |
-| `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
+| `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` gate, honored on every form submit the runtime sees — native POST, `data-fui-spa`, and `data-fui-rpc` forms alike — and on non-form `data-fui-rpc` clicks. On a form, an attribute on the submit button takes precedence over one on the form element. Cancel aborts: the submit is prevented (a native form never navigates), the RPC never fires. Use for destructive actions (delete, revoke). |
 | `data-fui-rpc-trigger="input"` | On a `<form data-fui-rpc=…>`, dispatch the RPC on every `input` event from any control inside, after a debounce window. |
 | `data-fui-rpc-debounce-ms="<ms>"` | Debounce window for `data-fui-rpc-trigger="input"`. Default 250. |
 | `data-fui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot, idempotent on re-click via `data-fui-rpc-after-done`. |
@@ -1377,7 +1377,7 @@ your need:
 
 | You want | Use | Notes |
 | --- | --- | --- |
-| Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmAction` | Or skip the modal entirely and put `data-fui-confirm="…"` on the button. |
+| Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmAction` | Or skip the modal entirely and put `data-fui-confirm="…"` on the submit button (or its form — the button wins). Gates any submit, native or RPC. |
 | Edit/show entity detail | `preset.Modal` with `DeepLink("modal", "<name>").DeepLinkParam("id")` | URL stays consistent across refresh/share/back. Buttons opening it carry `data-fui-deeplink="id=<row-id>"`. |
 | Confirm + act in one shot | `framework/ui.ConfirmAction` | Returns a trigger button + hidden `preset.Modal` alertdialog. Eliminates per-button confirm boilerplate. |
 | Secondary nav / filters | `preset.Drawer` | Edge-anchored, backdrop'd. Same deep-link wiring as modals. |

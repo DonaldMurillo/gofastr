@@ -66,10 +66,12 @@ boot	6	form
 boot	6	form
 boot	6	id
 boot	6	mode
+boot	6	msg
 boot	6	names
 boot	6	node
 boot	6	s
 boot	6	script
+boot	6	sub
 boot	6	target
 boot	6	url
 boot	6	v

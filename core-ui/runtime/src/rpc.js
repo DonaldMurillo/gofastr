@@ -115,7 +115,7 @@
     }
   }
 
-  async function _dispatchRPC(node) {
+  async function _dispatchRPC(node, opts) {
     const path = node.getAttribute('data-fui-rpc');
     const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
     const responseSignal = node.getAttribute('data-fui-rpc-signal');
@@ -124,8 +124,10 @@
 
     // Confirm before touching abort state. Canceling must not abort an older
     // request or leave an unused controller in the per-signal map.
+    // opts.confirmed === true means the caller (a submit bridge) already ran
+    // the gate on this submit; skip so the user is not prompted twice.
     const confirmMsg = node.getAttribute('data-fui-confirm');
-    if (confirmMsg && typeof window.confirm === 'function') {
+    if (confirmMsg && !(opts && opts.confirmed === true) && typeof window.confirm === 'function') {
       if (!window.confirm(confirmMsg)) return;
     }
 
@@ -277,7 +279,7 @@
     }
   }
 
-  async function dispatchRPC(node, source) {
+  async function dispatchRPC(node, source, opts) {
     if (!node) return;
     if (source === 'input') {
       const ms = parseInt(node.getAttribute('data-fui-rpc-debounce-ms') || '250', 10) || 250;
@@ -291,7 +293,7 @@
     }
     if (node.hasAttribute('data-kiln-tool')) return _dispatchKiln(node);
     if (!node.hasAttribute('data-fui-rpc')) return _dispatchPlainForm(node);
-    return _dispatchRPC(node);
+    return _dispatchRPC(node, opts);
   }
 
   Object.assign(NS, {
