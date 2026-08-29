@@ -16,15 +16,18 @@ import (
 // mounted frame's contentWindow, and event.origin is deliberately NOT trusted
 // (opaque frames report origin "null").
 func TestBrokerJS_ValidatesMessageSource(t *testing.T) {
-	js := string(brokerJSBytes)
-	if !strings.Contains(js, "contentWindow === event.source") {
+	// Code lines only (nonCommentJS): the header comment states the same
+	// invariants in prose, and a whole-file Contains could go vacuous the
+	// day the comment happens to use the code's operand order.
+	code := nonCommentJS(string(brokerJSBytes))
+	if !strings.Contains(code, "contentWindow === event.source") {
 		t.Error("onMessage must accept only messages whose source is a mounted frame's contentWindow")
 	}
 	// It must reject wrong envelope version and non-plugin source markers.
-	if !strings.Contains(js, "msg.v !== ENVELOPE_VERSION") {
+	if !strings.Contains(code, "msg.v !== ENVELOPE_VERSION") {
 		t.Error("onMessage must reject a wrong envelope version")
 	}
-	if !strings.Contains(js, `msg.src !== "plugin"`) {
+	if !strings.Contains(code, `msg.src !== "plugin"`) {
 		t.Error("onMessage must reject messages not marked src:plugin")
 	}
 }

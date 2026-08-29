@@ -20,12 +20,25 @@
  * and the ready→init handshake are EXACTLY as the wysiwyg broker shipped them
  * in Phase 0.
  *
+ * Frame → host requests (envelope type "request" from the frame) share that
+ * one contract, both directions: the broker dispatches them to a per-method
+ * handler registered via api.onRequest, with the adapter's static
+ * registration.onRequest as fallback, and ALWAYS replies — result,
+ * E_NO_HANDLER, or E_HANDLER. The pending map is bounded (MAX_INFLIGHT) and
+ * teardown rejects stragglers with E_TEARDOWN. The frame-side counterpart is
+ * frame/frameclient.js (window.__gofastrPluginFrame).
+ *
  * Adapter contract (see pluginhost.BrokerRegistration in Go):
  *
  *   window.__gofastrPluginHost.register(name, {
  *     manifest: { entry, isolation, sandbox, capabilities, minHeight, schema, title },
  *     config:   { …plugin blob… },
- *     onEvent:  function (method, params, api) { … }
+ *     onEvent:  function (method, params, api) { … },
+ *     onRequest: function (method, params, api) {
+ *       // static fallback for frame → host requests with no explicit
+ *       // api.onRequest handler; return a value or a Promise (a throw
+ *       // becomes E_HANDLER). Neither handler exists → E_NO_HANDLER.
+ *     }
  *   });
  *
  * The generic broker handles the protocol-level events itself (ready, resize,
@@ -40,6 +53,7 @@
   var ENVELOPE_VERSION = 1;
   var RESPONSE_TIMEOUT_MS = 5000;  // request → response (§3)
   var TEARDOWN_TIMEOUT_MS = 200;   // SPA teardown ack budget (§6.9)
+  var MAX_INFLIGHT = 64;           // pending-request bound, both directions
 
   var DEFAULT_CAPS = ["document:read", "document:write", "upload:images", "theme:read"];
   var DEFAULT_MIN_HEIGHT = "240px";
@@ -279,6 +293,7 @@
       capabilities: parseCaps(marker, adapter.manifest),
       docId: marker.getAttribute("data-fui-plugin-docid") || "demo",
       pending: {},            // id -> {resolve, reject, timer}
+      requestHandlers: Object.create(null), // method -> frame→host handler
       ready: false,
       focused: false,
       lastMetric: null,
@@ -288,8 +303,26 @@
     };
   }
 
+  // A non-positive / NaN / infinite timeoutMs is not a timeout — fall back
+  // to the protocol default instead of handing garbage to setTimeout (a
+  // negative value fires "immediately", NaN never fires at all).
+  function validTimeout(timeoutMs) {
+    return (typeof timeoutMs === "number" && isFinite(timeoutMs) && timeoutMs > 0)
+      ? timeoutMs
+      : RESPONSE_TIMEOUT_MS;
+  }
+
   // Host → frame request expecting a response (resolves on matched id).
+  // The pending map is BOUNDED: a wedged frame that never responds would
+  // otherwise grow it without limit (one timer + closure per request).
   function request(st, method, params, timeoutMs) {
+    if (Object.keys(st.pending).length >= MAX_INFLIGHT) {
+      return Promise.reject({
+        code: "E_SATURATED",
+        message: "request map saturated at " + MAX_INFLIGHT + " in flight: " + method
+      });
+    }
+    timeoutMs = validTimeout(timeoutMs);
     return new Promise(function (resolve, reject) {
       var id = "h-" + (++reqCounter);
       var timer = setTimeout(function () {
@@ -297,7 +330,7 @@
           delete st.pending[id];
           reject({ code: "E_TIMEOUT", message: "request " + method + " timed out" });
         }
-      }, timeoutMs || RESPONSE_TIMEOUT_MS);
+      }, timeoutMs);
       st.pending[id] = { resolve: resolve, reject: reject, timer: timer };
       postTo(st.frame, envelope("request", method, params || {}, id));
     });
@@ -314,9 +347,15 @@
       sendEvent: function (method, params) {
         postTo(st.frame, envelope("event", method, params || {}));
       },
-      // Host → frame request → Promise (5s timeout).
+      // Host → frame request → Promise (5s timeout, bounded in flight).
       request: function (method, params, timeoutMs) {
         return request(st, method, params, timeoutMs);
+      },
+      // Frame → host request handler registration (method → handler);
+      // re-registering a method overwrites. The handler receives
+      // (params, api) and may return a value or a Promise.
+      onRequest: function (method, handler) {
+        st.requestHandlers[method] = handler;
       }
     };
   }
@@ -389,6 +428,55 @@
     }
   }
 
+  // Frame → host request dispatch. An explicit handler (api.onRequest) wins;
+  // the adapter's static registration.onRequest(method, params, api) is the
+  // fallback for methods with no explicit handler. NEITHER exists → error
+  // response, never silence: the frame holds a pending entry per request id
+  // and a dropped reply would hang it until its own timeout.
+  function reply(st, id, result, err) {
+    // The frame may have been torn down while a handler's Promise was in
+    // flight — send the response anyway so its pending map can settle. A
+    // DETACHED frame has a null contentWindow: nobody can receive the reply,
+    // so drop silently in exactly that case.
+    if (!st.frame.contentWindow) return;
+    var env = envelope("response", null, null, id);
+    if (err) env.error = err;
+    else env.result = result;
+    try {
+      postTo(st.frame, env);
+    } catch (e) {
+      // Detached between the liveness check and the post — nothing left to
+      // deliver to.
+    }
+  }
+
+  function handleRequest(st, msg) {
+    var handler = st.requestHandlers[msg.method];
+    var run;
+    if (typeof handler === "function") {
+      run = function () { return handler(msg.params || {}, st.api); };
+    } else if (st.adapter && typeof st.adapter.onRequest === "function") {
+      run = function () { return st.adapter.onRequest(msg.method, msg.params || {}, st.api); };
+    } else {
+      reply(st, msg.id, null, {
+        code: "E_NO_HANDLER",
+        message: "no handler for " + msg.method
+      });
+      return;
+    }
+    // Promise.resolve().then(run): a synchronous throw in the handler
+    // becomes a rejection instead of escaping the message dispatch.
+    Promise.resolve().then(run).then(
+      function (result) { reply(st, msg.id, result, null); },
+      function (err) {
+        reply(st, msg.id, null, {
+          code: "E_HANDLER",
+          message: String(err && err.message || err)
+        });
+      }
+    );
+  }
+
   function onMessage(event) {
     // Find the instance this message came from. We accept ONLY messages whose
     // source is one of our iframe contentWindows — NOT event.origin (§3).
@@ -409,6 +497,10 @@
       delete st.pending[msg.id];
       if (msg.error) p.reject(msg.error);
       else p.resolve(msg.result);
+      return;
+    }
+    if (msg.type === "request") {
+      handleRequest(st, msg);
       return;
     }
     if (msg.type === "event") {
@@ -443,10 +535,12 @@
     var i = live.indexOf(st);
     if (i !== -1) live.splice(i, 1);
     states["delete"](st.frame);
-    // Clear any pending requests so nothing leaks.
+    // Reject any pending requests so no promise leaks unresolved forever,
+    // then clear the map — callers get E_TEARDOWN, not a hang.
     for (var id in st.pending) {
       if (Object.prototype.hasOwnProperty.call(st.pending, id)) {
         clearTimeout(st.pending[id].timer);
+        st.pending[id].reject({ code: "E_TEARDOWN", message: "instance torn down" });
       }
     }
     st.pending = {};

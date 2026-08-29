@@ -69,6 +69,41 @@ its own route (`pluginhost.RegisterBrokerRoute`, idempotent across
 plugins). It is **not** part of `runtime.js`; pages without plugins
 ship zero extra bytes and the core payload budgets are untouched.
 
+### Requests, both directions
+
+`request`/`response` correlation is platform-owned in both directions —
+plugins never hand-roll a request id, a pending map, or a timeout.
+
+The frame side is `framework/pluginhost/frame/frameclient.js`
+(`pluginhost.RegisterFrameClientRoute`, served with the framed CORP
+relaxation so opaque-origin frame documents can load it; or bundle
+`pluginhost.FrameClientJS()`). Inside the frame:
+
+```js
+var client = window.__gofastrPluginFrame;
+client.onEvent("init", function (params) { /* theme, doc, caps */ });
+client.onRequest("getState", function (params) { return state; });
+client.ready({ domReady: true }).then(function (init) { /* … */ });
+client.sendRequest("rows", { page: 2 }, 5000).then(render, showError);
+```
+
+On the host, an adapter answers frame requests with per-instance
+handlers (`api.onRequest(method, handler)`) or a static
+`registration.onRequest(method, params, api)` fallback.
+
+One contract, both directions:
+
+- A request is **always answered**: no handler → an
+  `{code: "E_NO_HANDLER"}` error response; a handler throw/rejection →
+  `{code: "E_HANDLER"}`. Silence is not a protocol state.
+- The in-flight map is bounded (64); a saturated sender gets an
+  immediate `{code: "E_SATURATED"}` rejection and nothing is posted.
+- Invalid timeouts fall back to the 5s default; a timed-out request
+  rejects `{code: "E_TIMEOUT"}` and its late response is dropped by id.
+- Teardown rejects every outstanding request with
+  `{code: "E_TEARDOWN"}` on both sides (the frame also fails
+  outstanding requests on `pagehide`), so no promise ever hangs.
+
 ## Capabilities: reuse the scope registry, don't invent one
 
 Grants use the **same `resource:verb` grammar as battery/auth token

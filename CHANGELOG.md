@@ -7,6 +7,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Pluginhost bidirectional request channel** (#252, first of the
+  three framed-runtime PRs): frame → host requests are now
+  platform-owned, mirroring the host's existing `request()`. GoFastr
+  ships the frame-side client for the first time —
+  `frame/frameclient.js` (`window.__gofastrPluginFrame` with
+  `ready`/`sendEvent`/`sendRequest`/`onEvent`/`onRequest`), served via
+  `pluginhost.RegisterFrameClientRoute` with the framed CORP
+  relaxation, or bundled via `pluginhost.FrameClientJS()`. Host
+  adapters answer with `api.onRequest(method, handler)` or a static
+  `registration.onRequest` fallback. One contract in both directions:
+  every request is answered (`E_NO_HANDLER` / `E_HANDLER`, never
+  silence), the in-flight map is bounded at 64 (`E_SATURATED`),
+  invalid timeouts fall back to 5s, and teardown rejects outstanding
+  requests with `E_TEARDOWN` instead of leaking hung promises — the
+  host broker previously cleared its timers without rejecting, and
+  plugins (richtext, datagrid) each hand-rolled their own correlation.
+
 ### Changed
 
 - **The last 23 legacy `framework/ui` files (24 components) join the
