@@ -47,6 +47,25 @@ type Manifest struct {
 	// Defaults to ["allow-scripts"] when empty.
 	Sandbox []string `json:"sandbox"`
 
+	// CSP lists opt-in Content-Security-Policy keywords appended to the framed
+	// policy's script-src (threaded via [AssetServer.WithCSP]). The allowlist
+	// is closed and has exactly one member: 'wasm-unsafe-eval', which lets a
+	// plugin compile WebAssembly inside the sandboxed frame without granting
+	// string eval ('unsafe-eval' stays forbidden) and without touching any
+	// other directive — the frame keeps its opaque origin, sandbox
+	// allow-scripts, and connect-src 'none', so a wasm engine still exchanges
+	// data only over the postMessage bridge. Anything outside the allowlist
+	// (a host source, 'unsafe-inline', 'unsafe-eval', '*', or a token
+	// carrying ';', whitespace, or mismatched quotes — these values are
+	// interpolated into a response header, where ';' could splice an
+	// arbitrary directive such as re-enabled connect-src) is rejected by
+	// [Manifest.Validate] and dropped at header assembly. Matching is EXACT,
+	// byte-for-byte: unlike the HTML sandbox attribute the CSP header neither
+	// case-folds nor whitespace-tokenises source expressions, so a variant
+	// like 'WASM-UNSAFE-EVAL' grants nothing — and exact match rejects every
+	// smuggle shape with the one comparison.
+	CSP []string `json:"csp,omitempty"`
+
 	// Capabilities is the default resource:verb grant set advertised to the
 	// client in init.capabilities when the mount marker does not override it.
 	Capabilities []string `json:"capabilities,omitempty"`
@@ -98,6 +117,20 @@ func (m Manifest) Validate() error {
 	// never boot its JS.
 	if len(norm) > 0 && !slices.Contains(norm, "allow-scripts") {
 		return errors.New("pluginhost: sandbox must include \"allow-scripts\"")
+	}
+	// CSP keywords are matched EXACTLY (byte-for-byte) against a closed
+	// allowlist. The sandbox check above normalises case and whitespace
+	// because the HTML sandbox attribute — its sink — tokenises that way, so
+	// a variant there is a live grant. The CSP header does not normalise
+	// source expressions: a case/whitespace variant is an unrecognised,
+	// inert source, not an evasion. Exact match is also what rejects ';'
+	// (directive splicing into the response header), embedded whitespace,
+	// and quote mismatches outright: none of those shapes equals the
+	// allowlisted keyword.
+	for _, kw := range m.CSP {
+		if !allowedCSPKeywords[kw] {
+			return fmt.Errorf("pluginhost: manifest csp token %q is not in the allowlist (only 'wasm-unsafe-eval' is permitted)", kw)
+		}
 	}
 	return nil
 }
@@ -198,6 +231,29 @@ func sanitizeSandboxTokens(tokens []string) string {
 		out = append([]string{"allow-scripts"}, out...)
 	}
 	return strings.Join(out, " ")
+}
+
+// allowedCSPKeywords is the closed set of Content-Security-Policy source
+// keywords a manifest may append to the framed policy's script-src.
+//
+// Exactly one member. 'wasm-unsafe-eval' permits WebAssembly compilation
+// within script-src and nothing else: not string eval ('unsafe-eval'), not
+// inline markup ('unsafe-inline'), not host sources, not wildcards. A plugin
+// built on a wasm engine (a SQL notebook, a barcode scanner, an ONNX
+// classifier) needs exactly this and no more — data still arrives over the
+// postMessage bridge and leaves the same way, because connect-src stays
+// 'none' and the frame keeps its opaque origin.
+//
+// Like [allowedSandboxTokens] this is an allow-list because the manifest
+// ships with the third-party plugin and is attacker-influenced by
+// construction. The tokens are interpolated into a response header, so
+// anything carrying ';', whitespace, or mismatched quotes could splice a new
+// directive (re-enabling connect-src, the exfiltration guard); exact
+// matching against this set rejects all of those shapes. Adding a member is
+// a deliberate act with a security review behind it; drifting into it is not
+// possible.
+var allowedCSPKeywords = map[string]bool{
+	"'wasm-unsafe-eval'": true,
 }
 
 // ClientModule bundles a plugin name with its [Manifest] and the embedded

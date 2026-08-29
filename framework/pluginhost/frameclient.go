@@ -32,13 +32,14 @@ const FrameClientRouteMethod = "GET"
 // framed=true to apply exactly that CORP relaxation. The framedCSP header
 // that writeAsset also emits is inert on a script response (CSP governs
 // documents, not script bytes) — harmless there; the CORP relaxation is the
-// point.
+// point. The platform's own route serves no per-plugin manifest, so it
+// passes no CSP extensions: the default framed policy.
 func RegisterFrameClientRoute(rt *router.Router) {
 	if routeRegistered(rt, FrameClientRouteMethod, FrameClientScriptURL) {
 		return
 	}
 	rt.Get(FrameClientScriptURL, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeAsset(w, r, frameClientJSBytes, "text/javascript; charset=utf-8", true)
+		writeAsset(w, r, frameClientJSBytes, "text/javascript; charset=utf-8", true, nil)
 	}))
 }
 
