@@ -90,7 +90,13 @@ func (s *Server) RegisterResourceTemplate(uriTemplate, name, mimeType string, op
 	// The spec folds templates under the one `resources` capability and
 	// has no separate template list_changed, so a template registration
 	// fires the resources one: connected clients re-list both surfaces.
-	s.NotifyResourcesListChanged()
+	// The notification carries the template's own gate: a caller the
+	// gate refuses never sees the template in resources/templates/list,
+	// and must not be told it appeared either.
+	s.notifySubscribers(sseNotification{
+		method:   "notifications/resources/list_changed",
+		itemGate: tpl.gate,
+	})
 	return nil
 }
 

@@ -266,8 +266,13 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	// Registration after serving has begun tells connected clients to
 	// re-list. "After serving has begun" needs no flag: before any
 	// subscriber exists the fan-out is a no-op, and a subscriber can
-	// only exist once serving has begun.
-	s.NotifyToolsListChanged()
+	// only exist once serving has begun. The notification carries the
+	// tool's own gate: a caller the gate refuses cannot see the tool in
+	// tools/list, and must not be told it appeared either.
+	s.notifySubscribers(sseNotification{
+		method:   "notifications/tools/list_changed",
+		itemGate: tool.Gate,
+	})
 	return nil
 }
 

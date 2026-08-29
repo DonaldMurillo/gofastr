@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -510,4 +512,227 @@ func TestInitializeAdvertisesNotifications(t *testing.T) {
 	if strings.Contains(string(blob), "false") {
 		t.Errorf("capabilities still advertise a false capability: %s", blob)
 	}
+}
+
+// resourceSubsSnapshot copies the per-uri subscription counts for
+// assertions.
+func resourceSubsSnapshot(s *Server) map[string]int {
+	s.sseMu.Lock()
+	defer s.sseMu.Unlock()
+	out := make(map[string]int, len(s.resourceSubs))
+	for uri, n := range s.resourceSubs {
+		out[uri] = n
+	}
+	return out
+}
+
+// resources/subscribe pins caller-controlled strings in server state.
+// The uri cap keeps that bounded; oversize is invalid params, never a
+// truncation (the uri is a map key — truncating it would arm updates
+// for the wrong uri).
+func TestSubscribeRejectsOversizedURI(t *testing.T) {
+	s := NewServer()
+	oversize := "x://" + strings.Repeat("a", maxResourceURIBytes)
+	resp := s.HandleRequest(context.Background(), Request{
+		JSONRPC: "2.0", ID: 1, Method: "resources/subscribe",
+		Params: json.RawMessage(`{"uri":"` + oversize + `"}`),
+	})
+	if resp.Error == nil {
+		t.Error("SECURITY: [resource-exhaustion] oversize uri accepted; want invalid params")
+	}
+	if got := resourceSubsSnapshot(s); len(got) != 0 {
+		t.Errorf("oversize uri pinned state: %v", got)
+	}
+	// The boundary is inclusive: a uri of exactly maxResourceURIBytes
+	// bytes passes.
+	atCap := "x://" + strings.Repeat("b", maxResourceURIBytes-4)
+	resp = s.HandleRequest(context.Background(), Request{
+		JSONRPC: "2.0", ID: 2, Method: "resources/subscribe",
+		Params: json.RawMessage(`{"uri":"` + atCap + `"}`),
+	})
+	if resp.Error != nil {
+		t.Errorf("uri at the cap refused: %v", resp.Error)
+	}
+}
+
+// The distinct-uri cap bounds the retained subscription map. Refcounts
+// do not count toward it: re-subscribing an existing uri must keep
+// working at the cap, a refused subscribe pins nothing, and
+// unsubscribing a uri to zero frees a slot.
+func TestSubscribeCapsDistinctURIs(t *testing.T) {
+	s := NewServer()
+	for i := range maxResourceSubscriptions {
+		resp := s.HandleRequest(context.Background(), Request{
+			JSONRPC: "2.0", ID: i, Method: "resources/subscribe",
+			Params: json.RawMessage(fmt.Sprintf(`{"uri":"x://%d"}`, i)),
+		})
+		if resp.Error != nil {
+			t.Fatalf("subscribe %d under the cap failed: %v", i, resp.Error)
+		}
+	}
+	subscribe := func(uri string, id int) Response {
+		return s.HandleRequest(context.Background(), Request{
+			JSONRPC: "2.0", ID: id, Method: "resources/subscribe",
+			Params: json.RawMessage(`{"uri":"` + uri + `"}`),
+		})
+	}
+	if resp := subscribe("x://0", maxResourceSubscriptions+1); resp.Error != nil {
+		t.Errorf("re-subscribe to an existing uri refused at the cap: %v", resp.Error)
+	}
+	if resp := subscribe("x://extra", maxResourceSubscriptions+2); resp.Error == nil {
+		t.Error("SECURITY: [resource-exhaustion] distinct-uri cap not enforced")
+	}
+	if _, ok := resourceSubsSnapshot(s)["x://extra"]; ok {
+		t.Error("refused subscribe pinned state anyway")
+	}
+	// x://0 holds two counts (initial + re-subscribe): release both to
+	// free the entry.
+	for id := range 2 {
+		if resp := s.HandleRequest(context.Background(), Request{
+			JSONRPC: "2.0", ID: maxResourceSubscriptions + 10 + id, Method: "resources/unsubscribe",
+			Params: json.RawMessage(`{"uri":"x://0"}`),
+		}); resp.Error != nil {
+			t.Fatalf("unsubscribe errored: %v", resp.Error)
+		}
+	}
+	if resp := subscribe("x://freed", maxResourceSubscriptions+20); resp.Error != nil {
+		t.Errorf("subscribe after unsubscribe refused (slot not freed): %v", resp.Error)
+	}
+}
+
+// The last stream's disconnect drops the retained resource
+// subscriptions: with no stream there is nobody to deliver to, and the
+// per-uri refcount cannot be attributed to the departing connection
+// (this transport has no session correlation), so the whole map goes.
+func TestLastDisconnectClearsResourceSubscriptions(t *testing.T) {
+	s := NewServer()
+	ts := newNotificationServer(t, s)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForSubscribers(t, s, 1)
+
+	for _, uri := range []string{"docs://a", "docs://b"} {
+		if r := postMCP(t, ts, false, `{"jsonrpc":"2.0","id":1,"method":"resources/subscribe","params":{"uri":"`+uri+`"}}`); r.Error != nil {
+			t.Fatalf("resources/subscribe %s errored: %v", uri, r.Error)
+		}
+	}
+	if got := resourceSubsSnapshot(s); len(got) != 2 {
+		t.Fatalf("subscriptions not armed: %v", got)
+	}
+
+	resp.Body.Close() // the last (only) stream goes away
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if sseRegistryCount(s) == 0 {
+			if got := resourceSubsSnapshot(s); len(got) != 0 {
+				t.Errorf("subscriptions survived the last disconnect: %v (unbounded retained state)", got)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("subscriber registry never emptied after disconnect")
+}
+
+// blockingWriter simulates a client that stopped reading: the writes
+// of a message event block until the handler has armed a write
+// deadline, then fail as if the deadline had expired. Handshake writes
+// flow so the subscriber registers first, which is what makes the
+// unregistration assertion meaningful. If the handler never arms a
+// deadline, the blocked write never returns and the test's watchdog
+// fires — that hang is the regression the deadline fixes.
+type blockingWriter struct {
+	unblock chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingWriter) Header() http.Header { return http.Header{} }
+func (b *blockingWriter) WriteHeader(int)     {}
+
+func (b *blockingWriter) Write(p []byte) (int, error) {
+	if !strings.Contains(string(p), "event: message") {
+		return len(p), nil // handshake and framing writes flow
+	}
+	<-b.unblock
+	return 0, fmt.Errorf("write: i/o timeout")
+}
+
+func (b *blockingWriter) Flush() {}
+
+func (b *blockingWriter) SetWriteDeadline(deadline time.Time) error {
+	// Not the real 10s: the test proves the mechanism (deadline armed →
+	// blocked write released → write fails → handler returns and
+	// unregisters), not the duration. Release shortly after the arm.
+	b.once.Do(func() {
+		time.AfterFunc(50*time.Millisecond, func() { close(b.unblock) })
+	})
+	return nil
+}
+
+// A client that stops reading pins nothing: each write on the SSE
+// notification stream carries a fresh deadline, so the handler returns
+// instead of hanging on the blocked write, and its exit path
+// unregisters the subscriber.
+func TestBlockedWriteDeadlineReturnsAndUnregisters(t *testing.T) {
+	s := NewServer()
+	w := &blockingWriter{unblock: make(chan struct{})}
+	r := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	r.Header.Set("Accept", "text/event-stream")
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.sseGetHandler(w, r)
+	}()
+
+	waitForSubscribers(t, s, 1)
+	s.NotifyToolsListChanged() // a message event: its write blocks
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("SECURITY: [liveness] handler hung on a write the client never reads")
+	}
+	if sseRegistryCount(s) != 0 {
+		t.Errorf("subscriber still registered after the failed write: %d live", sseRegistryCount(s))
+	}
+}
+
+// The list_changed a gated registration fires carries the item's own
+// gate: a caller the gate refuses cannot see the item in its list
+// method and must not be told it appeared. Concrete resources are the
+// documented exception — their metadata stays listed; their gate
+// guards the read, so RegisterResource is not covered here.
+func TestGatedRegistrationWithholdsListChanged(t *testing.T) {
+	s := NewServer()
+	ts := newNotificationServer(t, s)
+	authedEvents := openStream(t, ts, true)
+	anonEvents := openStream(t, ts, false)
+	waitForSubscribers(t, s, 2)
+
+	mustRegisterGated(t, s, "hidden_tool", requireUser)
+	method, uri := decodeNotification(t, awaitSSE(t, authedEvents, "tools list_changed on the allowed stream"))
+	if method != "notifications/tools/list_changed" || uri != "" {
+		t.Errorf("allowed stream got %q (uri %q), want payload-free tools list_changed", method, uri)
+	}
+	expectNoSSE(t, anonEvents, "tools list_changed for a caller the tool gate refuses")
+
+	if err := s.RegisterResourceTemplate("hidden://tpl/{id}", "Hidden", "text/plain",
+		WithResourceTemplateGate(requireUser)); err != nil {
+		t.Fatal(err)
+	}
+	method, uri = decodeNotification(t, awaitSSE(t, authedEvents, "resources list_changed on the allowed stream"))
+	if method != "notifications/resources/list_changed" || uri != "" {
+		t.Errorf("allowed stream got %q (uri %q), want payload-free resources list_changed", method, uri)
+	}
+	expectNoSSE(t, anonEvents, "resources list_changed for a caller the template gate refuses")
 }

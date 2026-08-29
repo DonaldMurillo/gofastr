@@ -63,8 +63,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
-- **MCP server-initiated notifications** (#287): `notifications/tools/
-  list_changed`, `notifications/resources/list_changed`,
+- **MCP server-initiated notifications** (#287):
+  `notifications/tools/list_changed`,
+  `notifications/resources/list_changed`,
   `notifications/prompts/list_changed` and `notifications/resources/updated`,
   plus `resources/subscribe` / `resources/unsubscribe`. `initialize` now
   advertises `listChanged` and `subscribe` truthfully; both were hardcoded
@@ -72,15 +73,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   returned, so there was no subscriber machinery at all — it now holds the
   connection and streams.
 
-  Notifications are filtered **per subscriber, at delivery time**, through the
-  same gates the list methods use. A gated resource's `updated` notification
-  carries its URI, so broadcasting it would disclose the existence and URI of a
-  resource the caller cannot read — undoing the property that hides gated items
-  from list methods and pages the post-gate set. Payload-free `list_changed`
+  Notifications are filtered **per subscriber, at delivery time**. A gated
+  resource's `updated` notification carries its URI, so it reaches only
+  streams whose caller passes the resource's own `WithResourceGate` — the
+  same gate that refuses the read. That does not hide the resource from
+  `resources/list`, whose metadata stays listed by design (the gate guards
+  contents); it keeps update notices from callers who cannot read the
+  result. Tools, prompts and resource templates are the other shape: those
+  gates hide the item from its list method and page the post-gate set, and
+  the `list_changed` a gated tool or resource template registration fires
+  is withheld from callers the gate refuses. Payload-free `list_changed`
   still requires passing the server-wide gate, because a caller refused
-  wholesale should not learn that something changed. Delivery-time evaluation
-  means a session revoked mid-stream stops receiving immediately, and app gate
-  code never runs on the publisher's goroutine.
+  wholesale should not learn that something changed. Delivery-time
+  evaluation means a session revoked mid-stream stops receiving
+  immediately, and app gate code never runs on the publisher's goroutine.
 
   A subscriber that falls behind is dropped and its stream closed rather than
   blocking the publisher: `list_changed` is idempotent, so a reconnecting

@@ -382,8 +382,14 @@ A client subscribes by GETting the SSE endpoint and keeping it open; a
 `list_changed` tells it to re-issue the corresponding list method. For
 resource updates it must also send `resources/subscribe` with the `uri` —
 `NotifyResourceUpdated` is a no-op until at least one subscription is
-active, and `resources/unsubscribe` ends delivery. Raising one from
-server code:
+active. Subscriptions are refcounted per `uri`: every
+`resources/subscribe` adds one, every `resources/unsubscribe` releases
+one, and delivery stops only when the count for that `uri` reaches
+zero. A `uri` longer than 2048 bytes is refused, the server retains at
+most 1024 distinct subscribed uris (a `resources/subscribe` past that
+fails), and when the last stream disconnects the retained
+subscriptions are dropped — with no stream there is nobody to deliver
+to. Raising one from server code:
 
 <!-- gofastr:compile
 import (
@@ -397,16 +403,23 @@ var srv *mcp.Server
 srv.NotifyResourceUpdated("docs://api/quickstart")
 ```
 
-Notifications are filtered per subscriber through the same gates as the
-list methods, so a stream can never be the leak the listings closed:
+Notifications are filtered per subscriber, so a stream cannot tell a
+caller anything the matching methods would not:
 
 - Every notification passes the server-wide gate (`SetGate`). A caller
   refused wholesale receives nothing at all — not even a payload-free
   `list_changed`, which is otherwise safe to broadcast.
 - `notifications/resources/updated` additionally passes the resource's
-  own `WithResourceGate`. The notification carries the `uri`, so it
-  reaches only streams whose caller may read that resource; pushing it
-  further would disclose the existence and uri of a gated resource.
+  own `WithResourceGate`, so it reaches only streams whose caller may
+  read that resource's contents. This does not hide the resource from
+  `resources/list` — resource metadata stays listed by design, and the
+  gate refuses the read, not the listing; it keeps the update notice
+  from callers who could never read the result. Tools, prompts and
+  resource templates are the other shape: their gates hide the item
+  from its list method, and the `list_changed` a gated tool or
+  resource template registration fires is likewise withheld from
+  callers its gate refuses, who cannot see the item in that listing
+  either.
 - Both gates are evaluated at delivery time against the identity the
   stream's GET request presented, not once when the stream opened. A
   session revoked mid-stream stops receiving immediately.

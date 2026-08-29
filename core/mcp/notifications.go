@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 // sseSubBufferSize is the bounded per-subscriber notification buffer. A
@@ -10,6 +11,23 @@ import (
 // notifications is dropped (see notifySubscribers): the publisher is
 // never blocked and the buffer is never grown.
 const sseSubBufferSize = 16
+
+// maxResourceURIBytes caps the uri one resources/subscribe may pin in
+// the subscription map. The map holds caller-controlled strings, and a
+// POST subscribe is not tied to any GET stream (see
+// handleResourcesSubscribe), so without the cap a caller could pin
+// arbitrarily long uris for the process lifetime. A longer uri is an
+// invalid-params error, never a silent truncation: the uri is a map
+// key, and truncating it would arm updates for a different, wrong uri.
+const maxResourceURIBytes = 2048
+
+// maxResourceSubscriptions caps how many distinct uris the
+// subscription map retains. Refcounts do not count toward it — only
+// distinct entries do — so a second subscriber to an already-subscribed
+// uri always works. Over the cap, resources/subscribe fails rather
+// than growing the map; unsubscribing or the idle expiry
+// (expireResourceSubsIfIdleLocked) frees room.
+const maxResourceSubscriptions = 1024
 
 // sseNotification is one server-initiated MCP notification queued for
 // delivery to the SSE subscriber streams.
@@ -21,12 +39,15 @@ type sseNotification struct {
 	// notifications, which carry no payload.
 	params any
 	// itemGate, when non-nil, is the per-item gate a subscriber's
-	// caller must pass to receive this notification — for
+	// caller must pass to receive this notification. It carries: for
 	// notifications/resources/updated, the resource's own
-	// WithResourceGate. It is evaluated per subscriber, at delivery
-	// time, against the identity the subscriber's GET request
-	// presented. See subscriberMayReceive for why delivery time and
-	// not subscribe time.
+	// WithResourceGate; for the list_changed that RegisterTool and
+	// RegisterResourceTemplate fire, the registered item's gate — a
+	// caller the gate refuses cannot see the item in its list method
+	// and must not be told it appeared. It is evaluated per
+	// subscriber, at delivery time, against the identity the
+	// subscriber's GET request presented. See subscriberMayReceive for
+	// why delivery time and not subscribe time.
 	itemGate func(ctx context.Context) error
 }
 
@@ -59,14 +80,33 @@ func (s *Server) addSSESubscriber(ctx context.Context) *sseSubscriber {
 }
 
 // removeSSESubscriber unregisters a stream. Called from sseGetHandler's
-// exit path (client disconnect or dropped-for-backpressure). It does not
-// close sub.ch: only notifySubscribers closes channels, and only under
-// sseMu, so a fan-out holding the registry can never race a send onto a
-// closed channel. An unregistered, unclosed channel is simply garbage.
+// exit path (client disconnect, blocked write, or dropped-for-
+// backpressure). It does not close sub.ch: only notifySubscribers
+// closes channels, and only under sseMu, so a fan-out holding the
+// registry can never race a send onto a closed channel. An
+// unregistered, unclosed channel is simply garbage. If this was the
+// last stream, the idle expiry drops the retained resource
+// subscriptions (see expireResourceSubsIfIdleLocked).
 func (s *Server) removeSSESubscriber(sub *sseSubscriber) {
 	s.sseMu.Lock()
 	delete(s.sseSubs, sub)
+	s.expireResourceSubsIfIdleLocked()
 	s.sseMu.Unlock()
+}
+
+// expireResourceSubsIfIdleLocked clears the per-uri subscription counts
+// when the subscriber registry has just become empty; the caller holds
+// sseMu. With no stream left there is nobody to deliver an update to,
+// so the retained counts are abandoned state — and because the counts
+// are refcounted per uri across connections (this transport has no
+// session id linking a POST subscribe to a GET stream, so a departing
+// stream cannot attribute its own counts), the only sound lifetime
+// bound is the whole map. A client that reconnects re-subscribes, which
+// is the spec's own recovery after a dropped connection anyway.
+func (s *Server) expireResourceSubsIfIdleLocked() {
+	if len(s.sseSubs) == 0 {
+		clear(s.resourceSubs)
+	}
 }
 
 // notifySubscribers fans a notification out to every live subscriber.
@@ -90,9 +130,12 @@ func (s *Server) notifySubscribers(n sseNotification) {
 			// drop the subscriber and close its stream. list_changed is
 			// idempotent and resources/updated sends the client back to
 			// resources/read for current state, so a client that
-			// reconnects is correct again after re-listing.
+			// reconnects is correct again after re-listing. A dropped
+			// stream is also a departure: if it was the last one, the
+			// idle expiry applies here too.
 			delete(s.sseSubs, sub)
 			close(sub.ch)
+			s.expireResourceSubsIfIdleLocked()
 		}
 	}
 }
@@ -109,12 +152,18 @@ func (s *Server) notifySubscribers(n sseNotification) {
 //   - the server-wide gate (SetGate): a caller refused wholesale learns
 //     nothing, not even that something changed. list_changed carries no
 //     payload, so it is safe to broadcast — but only past this gate.
-//   - the notification's item gate (a resource's WithResourceGate):
-//     notifications/resources/updated carries a URI, so it must reach
-//     only subscribers whose gate would let them read that resource.
-//     Pushing it past a refusing gate would disclose the existence and
-//     URI of a gated resource — the same disclosure the list methods
-//     prevent by hiding gated items and paging the post-gate set.
+//   - the notification's item gate: notifications/resources/updated
+//     carries the resource's own WithResourceGate, and the list_changed
+//     that a gated RegisterTool or RegisterResourceTemplate fires
+//     carries the item's own gate. list_changed is payload-free, so it
+//     names no item — but firing it past a refusing gate would still
+//     tell that caller that something they cannot see just appeared.
+//     An updated notification past a refusing gate would tell a caller
+//     who can never read the contents that they just changed.
+//     (Concrete resources are the deliberate asymmetry: their
+//     metadata stays listed — the gate guards the read and the update
+//     notice, not the listing — while tools, prompts and resource
+//     templates ARE hidden from their list methods.)
 func (s *Server) subscriberMayReceive(sub *sseSubscriber, n sseNotification) bool {
 	if !gateAllows(s.checkServerGate, sub.ctx) {
 		return false
@@ -156,17 +205,22 @@ type resourceUpdatedParams struct {
 // every eligible subscriber stream: any connected client whose
 // server-wide gate allows it should re-issue tools/list.
 //
-// RegisterTool fires this automatically, so app code needs it only
-// after mutating tool visibility some other way.
+// RegisterTool fires the gated internal form automatically — its
+// notification carries the registered tool's own gate, so a caller the
+// gate refuses is not told something appeared. App code needs this
+// exported, gate-less form only after mutating tool visibility some
+// other way, where no item gate can be known.
 func (s *Server) NotifyToolsListChanged() {
 	s.notifySubscribers(sseNotification{method: "notifications/tools/list_changed"})
 }
 
 // NotifyResourcesListChanged raises notifications/resources/list_changed
-// on every eligible subscriber stream. RegisterResource and
-// RegisterResourceTemplate fire it automatically (the spec folds
-// templates under the one `resources` capability, and has no separate
-// template list_changed).
+// on every eligible subscriber stream. RegisterResource fires it
+// directly — a concrete resource's metadata stays listed by design, so
+// there is no item gate to carry — and RegisterResourceTemplate fires
+// the gated internal form, carrying the template's own gate (the spec
+// folds templates under the one `resources` capability, and has no
+// separate template list_changed).
 func (s *Server) NotifyResourcesListChanged() {
 	s.notifySubscribers(sseNotification{method: "notifications/resources/list_changed"})
 }
@@ -216,11 +270,17 @@ func (s *Server) NotifyResourceUpdated(uri string) {
 // Transport limit, on purpose: this HTTP transport has no session id
 // linking a POST to a particular GET stream, so the subscription is
 // connection-agnostic — a per-uri count, not a per-stream set. A uri
-// any client subscribed to gets updates on every eligible stream. The
-// per-subscriber gates remain the security boundary; this is the same
-// class of limit the multi-replica deployment already has (see the
-// notifications section of framework/docs/content/mcp.md). The server
-// may subscribe to a uri before it is registered, per spec.
+// any client subscribed to gets updates on every eligible stream. DO
+// NOT "fix" this into per-stream bookkeeping: the POST that subscribes
+// and the GET stream that receives are separate connections, so tying
+// the count to either would break delivery to the other. The
+// per-subscriber gates remain the security boundary; the retained
+// state is bounded (maxResourceURIBytes, maxResourceSubscriptions) and
+// expired when the last stream disconnects
+// (expireResourceSubsIfIdleLocked). This is the same class of limit
+// the multi-replica deployment already has (see the notifications
+// section of framework/docs/content/mcp.md). The server may subscribe
+// to a uri before it is registered, per spec.
 func (s *Server) handleResourcesSubscribe(_ context.Context, req Request) Response {
 	if req.Params == nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing params")
@@ -232,9 +292,21 @@ func (s *Server) handleResourcesSubscribe(_ context.Context, req Request) Respon
 	if params.URI == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing resource uri")
 	}
+	if len(params.URI) > maxResourceURIBytes {
+		return newErrorResponse(req.ID, ErrInvalidParams,
+			fmt.Sprintf("resource uri exceeds %d bytes", maxResourceURIBytes))
+	}
 	s.sseMu.Lock()
 	if s.resourceSubs == nil {
 		s.resourceSubs = make(map[string]int)
+	}
+	// The cap counts distinct uris, not refcounts: a further subscriber
+	// to an already-subscribed uri must keep working at the cap — only
+	// growth of the map is bounded.
+	if _, exists := s.resourceSubs[params.URI]; !exists && len(s.resourceSubs) >= maxResourceSubscriptions {
+		s.sseMu.Unlock()
+		return newErrorResponse(req.ID, ErrInvalidParams,
+			fmt.Sprintf("too many distinct subscribed resource uris (max %d)", maxResourceSubscriptions))
 	}
 	s.resourceSubs[params.URI]++
 	s.sseMu.Unlock()
