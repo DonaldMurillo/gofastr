@@ -60,7 +60,7 @@ func Render(cfg Config) render.HTML {
 
 	// Input carries the ARIA + binding affordances; the FORM carries
 	// the RPC trigger because the runtime listens for input events at
-	// document level on form[data-fui-rpc][data-fui-rpc-trigger="input"].
+	// document level on [data-fui-rpc][data-fui-rpc-trigger="input"].
 	//
 	// Static options ship CLOSED (aria-expanded="false" + hidden
 	// listbox): a combobox embedded in a host form that renders open
