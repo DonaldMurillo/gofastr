@@ -160,6 +160,8 @@ SQLite and Postgres, dialect-aware.
   import.
 - **[Kiln](/docs/kiln)**: experimental build-mode binary: an agent edits an
   in-memory model over HTTP.
+- **[ACP](/docs/acp)**: the Agent Client Protocol server package behind
+  `kiln acp`: sessions, streamed updates, permissioned tool calls.
 
 ## Operations
 

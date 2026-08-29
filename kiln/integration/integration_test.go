@@ -6,7 +6,6 @@ package integration_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -20,7 +19,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/agent"
-	"github.com/DonaldMurillo/gofastr/kiln/agent/acp"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
 	"github.com/DonaldMurillo/gofastr/kiln/chat"
 	"github.com/DonaldMurillo/gofastr/kiln/db"
@@ -317,10 +315,6 @@ func TestFreezeRoundTripWithRichWorld(t *testing.T) {
 // --- (7) transport parity (native dispatch, MCP, ACP) ----------------
 
 func TestTransportParityNativeMCPAndACP(t *testing.T) {
-	makeRequest := func(name string, args map[string]any) (protocol.Result, error) {
-		return protocol.Result{}, nil
-	}
-	_ = makeRequest
 
 	tcase := func(t *testing.T, viaMCP, viaACP bool) {
 		t.Helper()
@@ -353,22 +347,31 @@ func TestTransportParityNativeMCPAndACP(t *testing.T) {
 				t.Fatalf("MCP status=%d body=%s", rec.Code, rec.Body.String())
 			}
 		case viaACP:
-			acpSrv := acp.New(h.tools)
-			in := &bytes.Buffer{}
-			out := &bytes.Buffer{}
-			body := map[string]any{
-				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-				"params": map[string]any{"name": "add_entity", "arguments": entityArgs},
+			// ACP is session-based: drive one prompt turn whose
+			// scripted provider calls add_entity, then confirm the
+			// world changed exactly as the native dispatch leaves it.
+			// startACPStdio owns the reader goroutine, which must be
+			// running before the first request: io.Pipe is unbuffered,
+			// so the server's first response write blocks until read.
+			prov := &scriptedProvider{turns: []agent.Turn{{
+				ToolCalls:  []agent.ToolCall{{CallID: "c1", Name: "add_entity", Args: entityArgs}},
+				StopReason: "tool_use",
+			}}}
+			c := startACPStdio(t, h, prov)
+			c.request(1, "initialize", map[string]any{"protocolVersion": 1})
+			c.request(2, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+			newResp, _ := c.untilResponse(2)
+			if newResp["error"] != nil {
+				t.Fatalf("ACP session/new errored: %v", newResp["error"])
 			}
-			buf, _ := json.Marshal(body)
-			in.Write(buf)
-			in.WriteByte('\n')
-			if err := acpSrv.Serve(context.Background(), in, out); err != nil {
-				t.Fatal(err)
-			}
-			var resp map[string]any
-			if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &resp); err != nil {
-				t.Fatalf("ACP decode: %v body=%s", err, out.String())
+			sid := newResp["result"].(map[string]any)["sessionId"].(string)
+			c.request(3, "session/prompt", map[string]any{
+				"sessionId": sid,
+				"prompt":    []any{map[string]any{"type": "text", "text": "add posts"}},
+			})
+			promptResp, _ := c.untilResponse(3)
+			if promptResp["error"] != nil {
+				t.Fatalf("ACP session/prompt errored: %v", promptResp["error"])
 			}
 		default:
 			r := agent.Dispatch(t.Context(), h.tools, agent.ToolCall{Name: "add_entity", Args: entityArgs})
