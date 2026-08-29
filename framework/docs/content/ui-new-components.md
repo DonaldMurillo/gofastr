@@ -278,9 +278,10 @@ Three more knobs round out the contract surface:
   and the dialect needs JavaScript — without the runtime module a
   closed group's links are unreachable, while `<details>` opens
   natively with JS off.
-- `Variant: ui.SidebarAutoHide` adds the `ui-sidebar--auto-hide` class
-  and nothing else — no framework JS, no reveal CSS. Write the
-  hover/focus reveal against that class in your own stylesheet.
+- `Variant: ui.SidebarAutoHide` renders the persistent column as a
+  64px icon rail at >= md viewports and reveals the full column on
+  hover or keyboard focus (`:focus-within`), straight from the
+  component's stylesheet — no JavaScript, no host CSS.
 
 ---
 

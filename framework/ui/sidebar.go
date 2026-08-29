@@ -23,9 +23,10 @@ import (
 //	  rail; expanded/collapsed state persists in localStorage.
 //	SidebarOffCanvas: hidden by default. Opens via the hamburger
 //	  trigger on every viewport (no inline column).
-//	SidebarAutoHide: like persistent, but the variant class is a pure
-//	  CSS hook for host-written hover/focus reveal styling. The
-//	  framework ships no reveal CSS and no JS for it.
+//	SidebarAutoHide: like persistent, but at >= md the column rests
+//	  as a 64px icon rail and reveals the full column on :hover or
+//	  :focus-within (keyboard). Pure CSS from the component's own
+//	  stylesheet; no JavaScript.
 //
 // On `< md` every variant collapses to a hamburger + drawer.
 type SidebarVariant string
@@ -824,10 +825,58 @@ func sidebarCSS(_ style.Theme) string {
 @media (max-width: 47.99rem) {
   [data-fui-comp="ui-sidebar"] .ui-sidebar__inline { display: none; }
 }
-/* Auto-hide variant hook: the framework ships no hover-reveal CSS and
-   no JS for it. Host CSS keys off
-   [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide (e.g. a narrow
-   rail that expands on hover/focus-within). */
+/* Auto-hide variant: icon rail at rest, full column on :hover OR
+   :focus-within. The focus-within half is load-bearing, not a
+   nicety: hover-only would hide every link from keyboard users
+   tabbing through the page. Rest-state widths, spacing, and the
+   visually-hidden label clip mirror the collapsible collapsed rail;
+   the reveal restores the persistent column's sizing. The framework
+   ships this styling (one styling surface — hosts write no CSS). */
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide .ui-sidebar__inline {
+  min-width: 64px;
+  width: 64px;
+  padding-inline: var(--spacing-sm, 8px);
+  transition: width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    min-width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    padding-inline var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:hover .ui-sidebar__inline,
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:focus-within .ui-sidebar__inline,
+  min-width: 220px;
+  width: 220px;
+  padding-inline: var(--spacing-lg, 16px);
+}
+/* Rest-state chrome rules apply only while NOT revealed: on hover
+   or focus-within they stop matching and the base (expanded) styles
+   take over, so the reveal needs no mirrored overrides. */
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__title,
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__footer,
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__sublist {
+  display: none;
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__label {
+  /* Same visually-hidden clip as the collapsed rail: the links stay
+     focusable, so their accessible name must survive (WCAG 4.1.2). */
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__link {
+  justify-content: center;
+  padding-inline: var(--spacing-sm, 8px);
+}
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__icon--fallback {
+  display: inline-flex;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide .ui-sidebar__inline { transition: none; }
+}
 @media (min-width: 48rem) {
   [data-fui-comp="ui-sidebar"].ui-sidebar--persistent .ui-sidebar__hamburger,
   [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible .ui-sidebar__hamburger,

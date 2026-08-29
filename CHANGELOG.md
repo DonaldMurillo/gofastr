@@ -22,10 +22,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   plus a `hidden` container for hosts pinned to that shape (the default stays
   `<details>`; the button dialect does not persist open state across navigation
   and needs JavaScript, both documented), `CollapseLabel`/`ExpandLabel` are
-  configurable, and a `SidebarAutoHide` variant adds a class hook with no
-  JavaScript. The collapse button now carries the expand label and
-  `aria-expanded="false"` while collapsed — it previously hardcoded
-  `aria-expanded="true"`, which was wrong the moment the rail collapsed.
+  configurable, and a `SidebarAutoHide` variant ships a 64px icon rail
+  at >= md that reveals the full column on hover and `:focus-within`
+  (keyboard), with no JavaScript. The collapse button now carries the
+  expand label and `aria-expanded="false"` while collapsed — it
+  previously hardcoded `aria-expanded="true"`, which was wrong the
+  moment the rail collapsed.
 
 ## [0.74.0] - 2026-08-29
 

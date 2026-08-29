@@ -80,6 +80,18 @@ const serverCollapsedSidebar = `
   </div>
 </div>`
 
+// sidebarModuleLoaded resolves once the sidebar runtime module has
+// demand-loaded AND executed — its delegated click listener and its
+// setup pass exist only after that. #ready proves the markup parsed,
+// nothing more, so every interaction on these pages gates on this
+// flag first. Fixed sleeps here raced the module load (the same
+// wait-under-load class as #278); polling removed the flake window.
+func sidebarModuleLoaded() chromedp.Action {
+	return chromedp.Poll(
+		`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sidebar)`,
+		nil, chromedp.WithPollingTimeout(8*time.Second), chromedp.WithPollingInterval(50*time.Millisecond))
+}
+
 // TestSidebarServerOwnedCollapseIgnoresLocalStorage pins the whole point
 // of SidebarCollapseCollapsed/Expanded (#298): a per-user collapse state
 // restored from the database must survive first paint on a device whose
@@ -104,9 +116,7 @@ func TestSidebarServerOwnedCollapseIgnoresLocalStorage(t *testing.T) {
 
 		chromedp.Navigate(srv.URL+"/page"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		// The module is demand-loaded by the marker scan; give it a
-		// moment to arrive and run its setup pass.
-		chromedp.Sleep(500*time.Millisecond),
+		sidebarModuleLoaded(),
 		chromedp.Evaluate(`String(document.getElementById('srv').getAttribute('data-collapsed'))`, &collapsed),
 		chromedp.Evaluate(`String(document.querySelector('#srv [data-fui-sidebar-collapse]').getAttribute('aria-expanded'))`, &expandedAttr),
 		chromedp.Evaluate(`String(document.querySelector('#srv [data-fui-sidebar-collapse]').getAttribute('aria-label'))`, &label),
@@ -114,7 +124,10 @@ func TestSidebarServerOwnedCollapseIgnoresLocalStorage(t *testing.T) {
 		// An in-session toggle still works (the user can expand), but
 		// nothing may reach localStorage.
 		chromedp.Click(`[data-fui-sidebar-collapse]`),
-		chromedp.Sleep(150*time.Millisecond),
+		// The delegated handler flips the rail synchronously; poll the
+		// observable state instead of sleeping past it.
+		chromedp.Poll(`document.getElementById('srv').getAttribute('data-collapsed') === 'false'`, nil,
+			chromedp.WithPollingTimeout(5*time.Second), chromedp.WithPollingInterval(25*time.Millisecond)),
 		chromedp.Evaluate(`String(document.getElementById('srv').getAttribute('data-collapsed'))`, &afterCollapsed),
 		chromedp.Evaluate(`String(document.querySelector('#srv [data-fui-sidebar-collapse]').getAttribute('aria-expanded'))`, &afterExpanded),
 		chromedp.Evaluate(`String(document.querySelector('#srv [data-fui-sidebar-collapse]').getAttribute('aria-label'))`, &afterLabel),
@@ -200,13 +213,18 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 		// the button name flips to the CUSTOM expand label.
 		chromedp.Navigate(srv.URL+"/auto"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Sleep(500*time.Millisecond),
+		// Auto mode: SSR ships NO data-collapsed; setup() writes it
+		// from localStorage. Poll the observable restore, not a clock.
+		chromedp.Poll(`document.getElementById('auto').getAttribute('data-collapsed') === 'true'`, nil,
+			chromedp.WithPollingTimeout(8*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
 		chromedp.Evaluate(`String(document.getElementById('auto').getAttribute('data-collapsed'))`, &autoCollapsed),
 		chromedp.Evaluate(`String(document.querySelector('#auto [data-fui-sidebar-collapse]').getAttribute('aria-label'))`, &autoLabel),
 
 		// Auto mode still persists: toggling the rail writes the key.
 		chromedp.Click(`#auto [data-fui-sidebar-collapse]`),
-		chromedp.Sleep(150*time.Millisecond),
+		// The toggle persists synchronously; poll the key flip.
+		chromedp.Poll(`localStorage.getItem('test.sidebar.key') === 'false'`, nil,
+			chromedp.WithPollingTimeout(5*time.Second), chromedp.WithPollingInterval(25*time.Millisecond)),
 		chromedp.Evaluate(`String(localStorage.getItem('test.sidebar.key'))`, &storageAfterToggle),
 
 		// A fresh document whose ONLY sidebar marker is the group
@@ -214,7 +232,7 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 		// the delegated click.
 		chromedp.Navigate(srv.URL+"/groups"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Sleep(500*time.Millisecond),
+		sidebarModuleLoaded(),
 		chromedp.Evaluate(`String(!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sidebar))`, &moduleLoaded),
 
 		// Before the click: the closed group must actually be laying
@@ -225,7 +243,8 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 		chromedp.Evaluate(`getComputedStyle(document.getElementById('groups-inline-g1')).display`, &grpClosedDisplay),
 
 		chromedp.Click(`#grp`, chromedp.ByID),
-		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Poll(`document.getElementById('grp').getAttribute('aria-expanded') === 'true'`, nil,
+			chromedp.WithPollingTimeout(5*time.Second), chromedp.WithPollingInterval(25*time.Millisecond)),
 		chromedp.Evaluate(`String(document.getElementById('grp').getAttribute('aria-expanded'))`, &grpExpanded),
 		chromedp.Evaluate(`String(document.getElementById('groups-inline-g1').hasAttribute('hidden'))`, &grpHidden),
 		chromedp.Evaluate(`getComputedStyle(document.getElementById('groups-inline-g1')).display`, &grpLinkShown),

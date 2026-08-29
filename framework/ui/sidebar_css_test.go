@@ -47,15 +47,19 @@ func TestGroupSublistHiddenAttributeWins(t *testing.T) {
 	}
 }
 
-func TestAutoHideVariantCSSHook(t *testing.T) {
+func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 	css := sidebarCSS(style.Theme{})
-	// Class hook only: at >= md the hamburger hides like the other
-	// inline variants; the reveal styling itself is host CSS keyed on
-	// the variant class, deliberately absent here.
 	if !strings.Contains(css, `.ui-sidebar--auto-hide .ui-sidebar__hamburger`) {
 		t.Fatal("auto-hide variant must hide the hamburger at >= md like persistent/collapsible")
 	}
-	if strings.Contains(css, "ui-sidebar--auto-hide:hover") {
-		t.Fatal("auto-hide must ship no hover-reveal CSS; the hover behaviour is host CSS against the hook")
+	// The reveal ships in the component stylesheet (one styling
+	// surface: hosts write zero CSS), and it must key on BOTH :hover
+	// and :focus-within. A hover-only reveal is an accessibility
+	// defect: every link in the rail is unreachable by keyboard.
+	if !strings.Contains(css, `.ui-sidebar--auto-hide:hover .ui-sidebar__inline`) {
+		t.Fatal("auto-hide must ship a :hover reveal rule in the component stylesheet")
+	}
+	if !strings.Contains(css, `.ui-sidebar--auto-hide:focus-within .ui-sidebar__inline`) {
+		t.Fatal("auto-hide must ship a :focus-within reveal rule — hover-only hides every link from keyboard users")
 	}
 }
