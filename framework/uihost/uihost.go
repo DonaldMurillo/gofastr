@@ -900,6 +900,13 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 		return ""
 	}
 	infos := make([]routeInfoJSON, len(routes))
+	kept := routes[:0]
+	for _, r := range routes {
+		if !r.NoSPA {
+			kept = append(kept, r)
+		}
+	}
+	routes = kept
 	for i, r := range routes {
 		infos[i] = routeInfoJSON{
 			Path:        r.Path,

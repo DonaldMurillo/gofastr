@@ -48,10 +48,17 @@ the explicit request origin; inside an opaque frame, `'self'` resolves
 to `null` and spec-correct browsers like Safari refuse subresources).
 
 An `AssetSpec` names a file and marks whether it is framed; its
-`ContentType` is optional and derived from the extension (`.html`,
-`.js`, `.css`, `.wasm`, images, fonts) when omitted. Set it only to
+`ContentType` is optional and, when omitted, comes from
+`core/static.DetectFromName` — the same canonical table the rest of the
+framework serves static files with, so `.html`, `.js`, `.css` and
+`.wasm` resolve identically on every host. Set `ContentType` only to
 override that. Every asset is served `nosniff`, so a type the server
 could not name would leave the browser no way to recover.
+
+Registering specs without a filesystem to read them from is a wiring
+mistake and panics at boot rather than 404ing the frame document on
+every request. A server with no specs at all is the legitimate
+byte-backed case (`AddBytes` only) and is left alone.
 
 ## The wasm opt-in tier
 

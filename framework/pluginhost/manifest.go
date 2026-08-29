@@ -54,9 +54,9 @@ type Manifest struct {
 	// on the manifest object to the mount. A host that instead calls
 	// [NewAssetServer] directly must pass it through [AssetServer.WithCSP], or
 	// the manifest validates, the frame still refuses WebAssembly, and nothing
-	// reports why. The allowlist
-	// is closed and has exactly one member: 'wasm-unsafe-eval', which lets a
-	// plugin compile WebAssembly inside the sandboxed frame without granting
+	// reports why. The allowlist is closed and has exactly one member:
+	// 'wasm-unsafe-eval', which lets a plugin compile WebAssembly inside the
+	// sandboxed frame without granting
 	// string eval ('unsafe-eval' stays forbidden) and without touching any
 	// other directive — the frame keeps its opaque origin, sandbox
 	// allow-scripts, and connect-src 'none', so a wasm engine still exchanges

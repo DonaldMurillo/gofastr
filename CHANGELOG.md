@@ -30,17 +30,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   line, so an omitted type served 200 with the right bytes and a document
   the browser was forbidden to parse or to recover by sniffing — silent in
   the server log, the console, and as a page error alike, leaving an empty
-  frame that reads as broken plugin JS. `.html`, `.js`, `.css`, `.wasm`,
-  images and fonts come from a fixed table (not `mime.TypeByExtension`,
-  which varies with the host's `/etc/mime.types`), anything else is
-  `application/octet-stream`, and an explicit `ContentType` still wins.
-  `nosniff` is unchanged. `AddBytes` gets the same default.
+  frame that reads as broken plugin JS. Detection goes through
+  `core/static.DetectFromName`, the repo's canonical detector: its table
+  wins over `mime.TypeByExtension` so `.html`, `.js`, `.css` and `.wasm`
+  resolve the same on every host, the stdlib covers only the long tail,
+  and `application/octet-stream` is the floor. An explicit `ContentType`
+  still wins, `nosniff` is unchanged, and `AddBytes` gets the same
+  default.
 
-- **An `AssetServer` over a nil `fs.FS` serves 404 rather than panicking**
-  in the handler. `ClientModule.Assets` is documented as optional (a plugin
-  may serve its own assets), so a module that declares specs and ships no
-  FS took down the request goroutine on `fs.ReadFile`. A missing file is a
-  404 whether the FS is empty or absent.
+- **`AssetServer.Register` rejects specs with no filesystem to read them
+  from** instead of panicking the request goroutine later. `fs.ReadFile` on
+  a nil `fs.FS` dereferences the nil interface, so a module that declared
+  specs and shipped no assets took down whichever request first asked for
+  the frame. `ClientModule.Assets` is optional — a plugin may serve its own
+  assets — but such a plugin passes no specs to an `AssetServer` either, so
+  a nil FS carrying specs is a wiring mistake, not a runtime condition, and
+  it now fails at boot with a message naming the fix. A nil FS with no
+  specs stays valid: that is the byte-backed server built from `AddBytes`
+  alone.
 
 ## [0.74.0] - 2026-08-29
 

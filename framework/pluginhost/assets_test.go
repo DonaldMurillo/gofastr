@@ -359,23 +359,45 @@ func TestModuleAssetServerNoTierNoGrant(t *testing.T) {
 	}
 }
 
-// A module with no Assets FS 404s instead of panicking inside the handler.
-func TestModuleWithoutAssetsServes404(t *testing.T) {
+// A module that declares specs but ships no asset FS is a wiring mistake, and
+// it fails at registration rather than 404ing every request for the frame.
+func TestNilAssetFSPanicsAtRegister(t *testing.T) {
 	mod, err := NewClientModule("probe", Manifest{Entry: "/__p/frame.html"}, nil)
 	if err != nil {
 		t.Fatalf("NewClientModule: %v", err)
 	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Register must panic on specs with no filesystem to read them from")
+		}
+		if msg, _ := r.(string); !strings.Contains(msg, "nil fs.FS") {
+			t.Errorf("panic must name the cause, got %v", r)
+		}
+	}()
+	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(router.New())
+}
+
+// A nil FS carrying NO specs is the legitimate byte-backed server: a host
+// script served from AddBytes with no embedded frame assets. It must still
+// register and serve.
+func TestNilAssetFSWithoutSpecsServes(t *testing.T) {
+	srv := NewAssetServer(nil, "/__p", nil)
+	srv.AddBytes("/__p/host.js", "", false, []byte("var x=1;"))
 	rt := router.New()
-	mod.AssetServer("/__p", []AssetSpec{{Name: "frame.html", Framed: true}}).Register(rt)
+	srv.Register(rt)
 	hs := httptest.NewServer(rt)
 	defer hs.Close()
 
-	resp, err := http.Get(hs.URL + "/__p/frame.html")
+	resp, err := http.Get(hs.URL + "/__p/host.js")
 	if err != nil {
-		t.Fatalf("GET frame.html: %v", err)
+		t.Fatalf("GET host.js: %v", err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("status=%d want 404 for a module with no assets", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status=%d want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/javascript; charset=utf-8" {
+		t.Errorf("Content-Type=%q", got)
 	}
 }
