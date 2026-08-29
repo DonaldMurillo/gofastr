@@ -238,7 +238,16 @@
           }
         }, timeoutMs);
         pending[id] = { resolve: resolve, reject: reject, timer: timer };
-        postToHost(envelope("request", method, params || {}, id));
+        try {
+          postToHost(envelope("request", method, params || {}, id));
+        } catch (e) {
+          // Mirror the broker: a non-cloneable params postMessage throw
+          // must clean up the pending entry + timer, or it lingers to
+          // timeout and counts toward MAX_INFLIGHT.
+          clearTimeout(timer);
+          delete pending[id];
+          reject({ code: "E_SEND", message: "request " + method + " not sendable: " + String(e && e.message || e) });
+        }
       });
     },
     // Host → frame event handler (method → handler); re-registering a

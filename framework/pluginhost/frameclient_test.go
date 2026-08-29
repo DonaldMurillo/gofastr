@@ -125,6 +125,10 @@ func TestChannelContractPins(t *testing.T) {
 		`"E_TEARDOWN"`,
 		`"E_NO_HANDLER"`,
 		`"E_HANDLER"`,
+		// A non-cloneable-params postMessage throw on the request path
+		// must clean up the pending entry instead of leaking it to
+		// timeout / spurious saturation (Copilot on #284, both sides).
+		`"E_SEND"`,
 	} {
 		if !strings.Contains(broker, s) {
 			t.Errorf("broker missing channel contract literal %s", s)
@@ -133,6 +137,10 @@ func TestChannelContractPins(t *testing.T) {
 			t.Errorf("frame client missing channel contract literal %s", s)
 		}
 	}
+	// E_SEND is emitted ONLY from the send-throw catch on each request
+	// path, so requiring it on both sides pins that the cleanup exists
+	// (a plain "delete pending" pin would be vacuous — the timeout
+	// handler deletes too).
 	// Pin the CODE shapes, not the word: "onRequest" appears in the
 	// broker's header comment, so a bare Contains would survive deleting
 	// the registration API entirely.

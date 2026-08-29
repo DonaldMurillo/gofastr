@@ -359,7 +359,16 @@
         }
       }, timeoutMs);
       st.pending[id] = { resolve: resolve, reject: reject, timer: timer };
-      postTo(st.frame, envelope("request", method, params || {}, id));
+      try {
+        postTo(st.frame, envelope("request", method, params || {}, id));
+      } catch (e) {
+        // postMessage threw (non-structured-cloneable params →
+        // DataCloneError). Without cleanup the entry lingers until
+        // timeout, counting toward MAX_INFLIGHT (spurious E_SATURATED).
+        clearTimeout(timer);
+        delete st.pending[id];
+        reject({ code: "E_SEND", message: "request " + method + " not sendable: " + String(e && e.message || e) });
+      }
     });
   }
 
@@ -478,8 +487,17 @@
     try {
       postTo(st.frame, env);
     } catch (e) {
-      // Detached between the liveness check and the post — nothing left to
-      // deliver to.
+      // The frame is alive (checked above) but the result would not
+      // structured-clone (DataCloneError from a non-cloneable handler
+      // return). Send a cloneable error instead of leaving the frame's
+      // pending entry to time out — the "always answered" contract. A
+      // second throw here means the frame detached in the meantime;
+      // then there is genuinely nothing to deliver to.
+      var fb = envelope("response", null, null, id);
+      fb.error = { code: "E_HANDLER", message: "response not cloneable: " + String(e && e.message || e) };
+      try {
+        postTo(st.frame, fb);
+      } catch (ignored) { /* frame gone */ }
     }
   }
 

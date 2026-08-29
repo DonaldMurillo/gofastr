@@ -83,9 +83,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   every request is answered (`E_NO_HANDLER` / `E_HANDLER`, never
   silence), the in-flight map is bounded at 64 (`E_SATURATED`),
   invalid timeouts fall back to 5s, and teardown rejects outstanding
-  requests with `E_TEARDOWN` instead of leaking hung promises — the
-  host broker previously cleared its timers without rejecting, and
-  plugins (richtext, datagrid) each hand-rolled their own correlation.
+  requests with `E_TEARDOWN` instead of leaking hung promises. A
+  non-cloneable payload (`DataCloneError`) on the request path cleans
+  up its pending entry and rejects `E_SEND` on both sides instead of
+  leaking toward the bound, and a non-cloneable handler *result* answers
+  a cloneable `E_HANDLER` rather than hanging the caller. Plugins
+  (richtext, datagrid) each hand-rolled their own correlation before
+  this.
 
 - **`ui.SiteHeaderConfig.PersistentActions`** (#256): a slot for the
   one journey-critical control (sign-in link, primary CTA) that stays
