@@ -2214,7 +2214,7 @@
     ] },
     { name: 'carousel',        selector: '[data-fui-carousel]' },
     { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
-    { name: 'sidebar', selector: '[data-fui-sidebar-collapse]' },
+    { name: 'sidebar', selector: '[data-fui-sidebar-collapse],[data-fui-sidebar-group-toggle]' },
     // BackToTop: scroll-past-threshold reveal + smooth scroll.
     { name: 'backtotop',       selector: '[data-fui-back-to-top]' },
     // ConditionalField: show/hide content based on another field's value.

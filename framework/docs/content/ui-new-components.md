@@ -116,7 +116,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel)
 - **breadcrumbs**: `core-ui/patterns/breadcrumbs`, `<nav aria-label=Breadcrumb>` trail
 - **pagination**: `core-ui/patterns/pagination`, numeric page navigation
-- **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), and off-canvas variants; set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
+- **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), off-canvas, and auto-hide variants; `Collapse` moves the collapsed state to the server, `GroupMarkup` swaps `<details>` groups for `button[aria-expanded][aria-controls]` + `hidden` container, `CollapseLabel`/`ExpandLabel` rename the toggle (see [Sidebar: server-owned collapse state](#sidebar-server-owned-collapse-state)); set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
 - **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`
 - **tabs**: `core-ui/patterns/tabs`, `<details>`-based tab strip, zero JS
 - **tree**: `core-ui/patterns/tree`, recursive tree with roving tabindex + lazy-load
@@ -219,6 +219,61 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **herosplit**: `framework/ui.HeroSplit`, two-column hero (copy + media) with equal / copy-wide / media-wide ratios
 - **pricingcard**: `framework/ui.PricingCard`, plan tile (price + period + feature list + CTA), optional featured highlight
 - **authcard**: `framework/ui.AuthCard`, centered card shell for login / register / reset forms (title + alert + body + footer)
+
+
+## Sidebar: server-owned collapse state
+
+`SidebarConfig.CurrentPath` already splits who decides the active item:
+set it and the server renders the highlight, leave it empty and the
+runtime stamps it after hydration. `Collapse` does the same for the
+collapsible rail.
+
+The zero value (`SidebarCollapseAuto`) keeps the localStorage behaviour:
+the runtime restores the collapsed state after hydration and persists
+every toggle. `SidebarCollapseCollapsed` and `SidebarCollapseExpanded`
+make the server own the state: the collapsed rail (or expanded column)
+ships in the SSR bytes as `data-collapsed` on the root, the toggle
+button renders `aria-expanded="false"` plus the expand label when
+collapsed, and the runtime neither reads nor writes localStorage for
+that sidebar.
+
+Use it when the collapse preference is per-user server data — a setting
+restored from the database that must survive first paint on a device
+whose localStorage says otherwise:
+
+```go
+// pref is the signed-in user's stored sidebar preference.
+collapse := ui.SidebarCollapseAuto
+switch pref.Sidebar {
+case "collapsed":
+    collapse = ui.SidebarCollapseCollapsed
+case "expanded":
+    collapse = ui.SidebarCollapseExpanded
+sbCfg := ui.SidebarConfig{
+    Title:         "myapp",
+    Variant:       ui.SidebarCollapsible,
+    Collapse:      collapse,
+    CollapseLabel: "Collapse sidebar",
+    ExpandLabel:   "Expand sidebar",
+    Items:         items,
+}
+```
+
+Three more knobs round out the contract surface:
+
+- `CollapseLabel` / `ExpandLabel` rename the toggle button. The button
+  carries the expand label and `aria-expanded="false"` while collapsed,
+  the collapse label and `aria-expanded="true"` while expanded; both
+  names ride along as data attributes so client-side toggles keep the
+  custom wording. Defaults: "Collapse navigation" / "Expand navigation".
+- `GroupMarkup: ui.SidebarGroupButton` renders groups (items with
+  `Children`) as `button[aria-expanded][aria-controls]` plus a container
+  that carries `hidden` when closed, instead of the default
+  `<details><summary>`. The sidebar runtime module toggles both on
+  click. For hosts whose specs pin that markup shape.
+- `Variant: ui.SidebarAutoHide` adds the `ui-sidebar--auto-hide` class
+  and nothing else — no framework JS, no reveal CSS. Write the
+  hover/focus reveal against that class in your own stylesheet.
 
 ---
 

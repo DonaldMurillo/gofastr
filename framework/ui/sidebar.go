@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -22,6 +23,9 @@ import (
 //	  rail; expanded/collapsed state persists in localStorage.
 //	SidebarOffCanvas: hidden by default. Opens via the hamburger
 //	  trigger on every viewport (no inline column).
+//	SidebarAutoHide: like persistent, but the variant class is a pure
+//	  CSS hook for host-written hover/focus reveal styling. The
+//	  framework ships no reveal CSS and no JS for it.
 //
 // On `< md` every variant collapses to a hamburger + drawer.
 type SidebarVariant string
@@ -30,6 +34,7 @@ const (
 	SidebarPersistent  SidebarVariant = "persistent"
 	SidebarCollapsible SidebarVariant = "collapsible"
 	SidebarOffCanvas   SidebarVariant = "off-canvas"
+	SidebarAutoHide    SidebarVariant = "auto-hide"
 )
 
 // checkSidebarVariant panics on a variant outside the built-in set.
@@ -39,11 +44,80 @@ const (
 // normalizes it to SidebarPersistent).
 func checkSidebarVariant(v SidebarVariant) {
 	switch v {
-	case "", SidebarPersistent, SidebarCollapsible, SidebarOffCanvas:
+	case "", SidebarPersistent, SidebarCollapsible, SidebarOffCanvas, SidebarAutoHide:
 		return
 	}
 	panic("ui: Sidebar unknown Variant " + string(v) +
-		`. Pick one of: "" (persistent), "collapsible", "off-canvas"`)
+		`. Pick one of: "" (persistent), "collapsible", "off-canvas", "auto-hide"`)
+}
+
+// SidebarCollapse selects who owns the collapsed state of the
+// collapsible variant: the server (per-request, e.g. restored from the
+// signed-in user's stored preference) or the runtime (localStorage).
+//
+//	SidebarCollapseAuto: zero value. The runtime owns the state and
+//	  restores it from localStorage after hydration — the default
+//	  behaviour since the component exists.
+//	SidebarCollapseCollapsed: the server renders the collapsed rail
+//	  (data-collapsed="true" on the root). The runtime neither reads
+//	  nor writes localStorage: a stale local value cannot overwrite
+//	  the server's state on first paint or after a toggle.
+//	SidebarCollapseExpanded: the server renders the expanded column
+//	  (data-collapsed="false"). Same localStorage suppression.
+//
+// This mirrors CurrentPath's split: when set, the server decides and
+// the state ships in the SSR bytes; when empty, the runtime decides
+// after hydration. Only meaningful with Variant: SidebarCollapsible.
+type SidebarCollapse string
+
+const (
+	SidebarCollapseAuto      SidebarCollapse = ""
+	SidebarCollapseCollapsed SidebarCollapse = "collapsed"
+	SidebarCollapseExpanded  SidebarCollapse = "expanded"
+)
+
+// checkSidebarCollapse panics on a collapse owner outside the built-in
+// set, for the same reason as checkSidebarVariant: a typo'd
+// "collpased" would silently fall back to Auto and the user's stored
+// preference would never render.
+func checkSidebarCollapse(c SidebarCollapse) {
+	switch c {
+	case SidebarCollapseAuto, SidebarCollapseCollapsed, SidebarCollapseExpanded:
+		return
+	}
+	panic("ui: Sidebar unknown Collapse " + string(c) +
+		`. Pick one of: "" (auto), "collapsed", "expanded"`)
+}
+
+// SidebarGroupMarkup selects the markup dialect used for groups
+// (items with Children).
+//
+//	SidebarGroupDetails: zero value. <details data-fui-disclosure
+//	  data-fui-disclosure-persist><summary>, the default since the
+//	  component exists.
+//	SidebarGroupButton: a <button type="button" aria-expanded
+//	  aria-controls data-fui-sidebar-group-toggle> header plus the
+//	  child links in a container that carries the hidden attribute
+//	  when closed. For hosts whose contract pins that shape for
+//	  keyboard/AT parity with the rest of their app; the sidebar
+//	  runtime module toggles aria-expanded and hidden on click.
+type SidebarGroupMarkup string
+
+const (
+	SidebarGroupDetails SidebarGroupMarkup = ""
+	SidebarGroupButton  SidebarGroupMarkup = "button"
+)
+
+// checkSidebarGroupMarkup panics on a dialect outside the built-in
+// set. Called from sidebarBody so every render path (inline sidebar,
+// drawer body, SidebarBody) validates.
+func checkSidebarGroupMarkup(m SidebarGroupMarkup) {
+	switch m {
+	case SidebarGroupDetails, SidebarGroupButton:
+		return
+	}
+	panic("ui: Sidebar unknown GroupMarkup " + string(m) +
+		`. Pick one of: "" (details), "button"`)
 }
 
 // SidebarItem is one navigation entry. Children nest one level deep.
@@ -92,6 +166,21 @@ type SidebarConfig struct {
 	// Variant defaults to SidebarPersistent.
 	Variant SidebarVariant
 
+	// Collapse decides who owns the collapsed state when Variant is
+	// SidebarCollapsible. Zero (SidebarCollapseAuto) keeps the
+	// localStorage-driven behaviour. Collapsed/Expanded make the server
+	// own the state: the collapsed rail (or expanded column) ships in
+	// the SSR bytes and the runtime never reads or writes the
+	// localStorage key. Use it for per-user preferences restored from
+	// the database that must survive first paint on any device.
+	Collapse SidebarCollapse
+
+	// GroupMarkup selects the dialect used for items with Children.
+	// Zero (SidebarGroupDetails) renders <details><summary>.
+	// SidebarGroupButton renders button[aria-expanded][aria-controls]
+	// plus a hidden-when-closed container of the child links.
+	GroupMarkup SidebarGroupMarkup
+
 	// Footer is optional content rendered at the bottom (signed-in
 	// user pill, settings link, etc.).
 	Footer render.HTML
@@ -103,7 +192,20 @@ type SidebarConfig struct {
 
 	// CollapseStorageKey overrides the localStorage key used by the
 	// collapsible variant. Defaults to "gofastr.sidebar.<DrawerName>.collapsed".
+	// Ignored when Collapse is Collapsed/Expanded: server-owned state
+	// never touches localStorage.
 	CollapseStorageKey string
+
+	// CollapseLabel is the collapse button's aria-label when the
+	// sidebar is expanded. Defaults to "Collapse navigation".
+	CollapseLabel string
+
+	// ExpandLabel is the collapse button's aria-label when the sidebar
+	// is collapsed (the same button expands the rail). Defaults to
+	// "Expand navigation". Both labels are also emitted as
+	// data-fui-sidebar-collapse-label / data-fui-sidebar-expand-label
+	// so the runtime keeps using them after a client-side toggle.
+	ExpandLabel string
 
 	// SuppressDrawerTrigger hides the hamburger button rendered by
 	// Sidebar (some apps put their hamburger in the page header
@@ -206,6 +308,7 @@ func (s sidebarComponent) render() render.HTML {
 	// an unstyled ui-sidebar--<anything> class silently. Empty is the
 	// documented default (Sidebar() normalizes it to persistent).
 	checkSidebarVariant(s.cfg.Variant)
+	checkSidebarCollapse(s.cfg.Collapse)
 	cfg := s.cfg
 	var b strings.Builder
 	// A <div>, not <aside>: when slotted into a layout the layout wraps
@@ -216,11 +319,26 @@ func (s sidebarComponent) render() render.HTML {
 	// is the styled shell (display:contents, so it adds no box).
 	b.WriteString(`<div class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar`)
 	if cfg.Variant == SidebarCollapsible {
-		key := cfg.CollapseStorageKey
-		if key == "" {
-			key = "gofastr.sidebar." + cfg.DrawerName + ".collapsed"
+		if cfg.Collapse == SidebarCollapseAuto {
+			// Auto: the runtime owns the state and restores it from
+			// localStorage after hydration.
+			key := cfg.CollapseStorageKey
+			if key == "" {
+				key = "gofastr.sidebar." + cfg.DrawerName + ".collapsed"
+			}
+			b.WriteString(` data-fui-sidebar-storage="` + render.Escape(key) + `"`)
+		} else {
+			// Server-owned state ships in the SSR bytes. No storage
+			// attribute: the runtime module only restores (and only
+			// persists) state for roots carrying it, so a stale local
+			// value can neither overwrite the server's state nor be
+			// resurrected by a later write.
+			if cfg.Collapse == SidebarCollapseCollapsed {
+				b.WriteString(` data-collapsed="true"`)
+			} else {
+				b.WriteString(` data-collapsed="false"`)
+			}
 		}
-		b.WriteString(` data-fui-sidebar-storage="` + render.Escape(key) + `"`)
 	}
 	// Caller extras land after the owned attributes. render.Attr
 	// validates the key and escapes the value, matching render.Tag.
@@ -236,11 +354,40 @@ func (s sidebarComponent) render() render.HTML {
 	inlineID := cfg.DrawerName + "-inline"
 	b.WriteString(`<div class="ui-sidebar__inline" id="` + render.Escape(inlineID) + `">`)
 	if cfg.Variant == SidebarCollapsible {
+		// The button's state and accessible name must match the
+		// rendered state. Server-collapsed ships aria-expanded="false"
+		// plus the expand label: hardcoding "true"/"Collapse navigation"
+		// (the old behaviour) named the wrong action whenever the rail
+		// rendered collapsed.
+		collapsed := cfg.Collapse == SidebarCollapseCollapsed
+		collapseLabel := cfg.CollapseLabel
+		if collapseLabel == "" {
+			collapseLabel = "Collapse navigation"
+		}
+		expandLabel := cfg.ExpandLabel
+		if expandLabel == "" {
+			expandLabel = "Expand navigation"
+		}
+		label := collapseLabel
+		expandedAttr := "true"
+		if collapsed {
+			label = expandLabel
+			expandedAttr = "false"
+		}
 		b.WriteString(`<button type="button" class="ui-sidebar__collapse" data-fui-sidebar-collapse ` +
-			`aria-controls="` + render.Escape(inlineID) + `" aria-expanded="true" aria-label="Collapse navigation">` +
-			`<span aria-hidden="true">‹</span></button>`)
+			`aria-controls="` + render.Escape(inlineID) + `" aria-expanded="` + expandedAttr +
+			`" aria-label="` + render.Escape(label) + `"`)
+		// Custom labels ride along as data attributes so the runtime's
+		// client-side toggles keep using them instead of its defaults.
+		if cfg.CollapseLabel != "" {
+			b.WriteString(` data-fui-sidebar-collapse-label="` + render.Escape(cfg.CollapseLabel) + `"`)
+		}
+		if cfg.ExpandLabel != "" {
+			b.WriteString(` data-fui-sidebar-expand-label="` + render.Escape(cfg.ExpandLabel) + `"`)
+		}
+		b.WriteString(`><span aria-hidden="true">‹</span></button>`)
 	}
-	b.WriteString(string(sidebarBody(cfg)))
+	b.WriteString(string(sidebarBody(cfg, inlineID)))
 	b.WriteString(`</div></div>`)
 	return sidebarStyle.WrapHTML(render.HTML(b.String()))
 }
@@ -252,10 +399,14 @@ func SidebarBody(cfg SidebarConfig) render.HTML {
 	if cfg.Variant == "" {
 		cfg.Variant = SidebarPersistent
 	}
-	return sidebarBody(cfg)
+	// Distinct id prefix from the inline sidebar so button-dialect
+	// group containers (aria-controls targets) never collide when both
+	// views are on the same page.
+	return sidebarBody(cfg, cfg.DrawerName+"-body")
 }
 
-func sidebarBody(cfg SidebarConfig) render.HTML {
+func sidebarBody(cfg SidebarConfig, idPrefix string) render.HTML {
+	checkSidebarGroupMarkup(cfg.GroupMarkup)
 	var b strings.Builder
 	if cfg.Title != "" {
 		b.WriteString(`<h2 class="ui-sidebar__title">` + render.Escape(cfg.Title) + `</h2>`)
@@ -266,8 +417,13 @@ func sidebarBody(cfg SidebarConfig) render.HTML {
 	}
 	b.WriteString(`<nav class="ui-sidebar__nav" aria-label="` + render.Escape(label) + `">`)
 	b.WriteString(`<ul class="ui-sidebar__list">`)
+	st := &sidebarNavState{
+		currentPath:  cfg.CurrentPath,
+		groupButtons: cfg.GroupMarkup == SidebarGroupButton,
+		idPrefix:     idPrefix,
+	}
 	for _, it := range cfg.Items {
-		writeSidebarItem(&b, it, cfg.CurrentPath, 0)
+		writeSidebarItem(&b, it, st, 0)
 	}
 	b.WriteString(`</ul></nav>`)
 	if cfg.Footer != "" {
@@ -276,13 +432,23 @@ func sidebarBody(cfg SidebarConfig) render.HTML {
 	return render.HTML(b.String())
 }
 
-func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, depth int) {
+// sidebarNavState threads per-render context through writeSidebarItem:
+// the active-path rules plus the group-markup dialect and its id
+// allocator (button dialect only; details dialect needs no ids).
+type sidebarNavState struct {
+	currentPath  string
+	groupButtons bool
+	idPrefix     string
+	groupSeq     int
+}
+
+func writeSidebarItem(b *strings.Builder, it SidebarItem, st *sidebarNavState, depth int) {
 	active := it.Active
-	if !active && currentPath != "" {
+	if !active && st.currentPath != "" {
 		if it.MatchPath != "" {
-			active = strings.HasPrefix(currentPath, it.MatchPath)
+			active = strings.HasPrefix(st.currentPath, it.MatchPath)
 		} else if it.Href != "" {
-			active = currentPath == it.Href
+			active = st.currentPath == it.Href
 		}
 	}
 	hasChildren := len(it.Children) > 0
@@ -292,29 +458,61 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 	}
 	b.WriteString(`<li class="` + cls + `">`)
 	if hasChildren {
-		// Group with a persistent disclosure for child items; <details>
-		// reuses the framework's data-fui-disclosure machinery while
-		// retaining the user's expanded section across in-shell navigation.
-		// Open the disclosure when the group itself is active OR any
-		// descendant matches CurrentPath, so navigating to a nested
-		// route lands on a section that's already expanded.
-		openAttr := ""
-		if active || hasActiveDescendant(it, currentPath) {
-			openAttr = " open"
-		}
-		b.WriteString(`<details class="ui-sidebar__group" data-fui-disclosure data-fui-disclosure-persist` + openAttr + `>`)
-		b.WriteString(`<summary class="ui-sidebar__link">`)
-		if it.Icon != "" {
-			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+		// Open the group when the group itself is active OR any
+		// descendant matches the current path, so navigating to a
+		// nested route lands on a section that's already expanded.
+		open := active || hasActiveDescendant(it, st.currentPath)
+		if st.groupButtons {
+			// Button dialect: button[aria-expanded][aria-controls] +
+			// a container that carries `hidden` when closed, for hosts
+			// whose contract pins that shape. The sidebar runtime
+			// module toggles both on click.
+			st.groupSeq++
+			id := st.idPrefix + "-g" + strconv.Itoa(st.groupSeq)
+			expandedAttr := "false"
+			if open {
+				expandedAttr = "true"
+			}
+			b.WriteString(`<button type="button" class="ui-sidebar__link ui-sidebar__group-toggle" data-fui-sidebar-group-toggle aria-expanded="` +
+				expandedAttr + `" aria-controls="` + render.Escape(id) + `">`)
+			if it.Icon != "" {
+				b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+			} else {
+				b.WriteString(sidebarFallbackIcon(it.Label))
+			}
+			b.WriteString(`<span class="ui-sidebar__label">` + render.Escape(it.Label) + `</span></button>`)
+			b.WriteString(`<ul class="ui-sidebar__sublist" id="` + render.Escape(id) + `"`)
+			if !open {
+				b.WriteString(` hidden`)
+			}
+			b.WriteString(`>`)
+			for _, child := range it.Children {
+				writeSidebarItem(b, child, st, depth+1)
+			}
+			b.WriteString(`</ul>`)
 		} else {
-			b.WriteString(sidebarFallbackIcon(it.Label))
+			// Details dialect (default): a persistent disclosure for
+			// child items; <details> reuses the framework's
+			// data-fui-disclosure machinery while retaining the user's
+			// expanded section across in-shell navigation.
+			openAttr := ""
+			if open {
+				openAttr = " open"
+			}
+			b.WriteString(`<details class="ui-sidebar__group" data-fui-disclosure data-fui-disclosure-persist` + openAttr + `>`)
+			b.WriteString(`<summary class="ui-sidebar__link">`)
+			if it.Icon != "" {
+				b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+			} else {
+				b.WriteString(sidebarFallbackIcon(it.Label))
+			}
+			b.WriteString(`<span class="ui-sidebar__label">` + render.Escape(it.Label) + `</span></summary>`)
+			b.WriteString(`<ul class="ui-sidebar__sublist">`)
+			for _, child := range it.Children {
+				writeSidebarItem(b, child, st, depth+1)
+			}
+			b.WriteString(`</ul></details>`)
 		}
-		b.WriteString(`<span class="ui-sidebar__label">` + render.Escape(it.Label) + `</span></summary>`)
-		b.WriteString(`<ul class="ui-sidebar__sublist">`)
-		for _, child := range it.Children {
-			writeSidebarItem(b, child, currentPath, depth+1)
-		}
-		b.WriteString(`</ul></details>`)
 	} else {
 		linkAttrs := ` class="ui-sidebar__link"`
 		if active {
@@ -366,9 +564,11 @@ func (s sidebarDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func (s sidebarDrawerSlot) Render() render.HTML {
+	// "-drawer" prefix keeps button-dialect group ids distinct from
+	// the inline sidebar's when both are in the DOM.
 	return sidebarStyle.WrapHTML(render.HTML(
 		`<div class="ui-sidebar ui-sidebar--drawer-body">` +
-			string(sidebarBody(s.cfg)) +
+			string(sidebarBody(s.cfg, s.cfg.DrawerName+"-drawer")) +
 			`</div>`,
 	))
 }
@@ -506,6 +706,24 @@ func sidebarCSS(_ style.Theme) string {
 [data-fui-comp="ui-sidebar"] .ui-sidebar__sublist {
   margin-inline-start: var(--spacing-lg, 16px);
 }
+/* Button-dialect group containers carry the hidden attribute when
+   closed. The grid display above would override the UA's
+   [hidden] { display: none } (same specificity class, later author
+   rule), so the attribute must win explicitly or a closed group's
+   links stay visible. */
+/* Button-dialect group headers: strip the UA button chrome so the
+   toggle renders like the <summary> it replaces (the shared
+   .ui-sidebar__link rule supplies layout, color, hover, focus). */
+[data-fui-comp="ui-sidebar"] .ui-sidebar__group-toggle {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+[data-fui-comp="ui-sidebar"] .ui-sidebar__sublist[hidden] {
+  display: none;
+}
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link {
   display: flex;
   align-items: center;
@@ -594,9 +812,14 @@ func sidebarCSS(_ style.Theme) string {
 @media (max-width: 47.99rem) {
   [data-fui-comp="ui-sidebar"] .ui-sidebar__inline { display: none; }
 }
+/* Auto-hide variant hook: the framework ships no hover-reveal CSS and
+   no JS for it. Host CSS keys off
+   [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide (e.g. a narrow
+   rail that expands on hover/focus-within). */
 @media (min-width: 48rem) {
   [data-fui-comp="ui-sidebar"].ui-sidebar--persistent .ui-sidebar__hamburger,
-  [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible .ui-sidebar__hamburger {
+  [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible .ui-sidebar__hamburger,
+  [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide .ui-sidebar__hamburger {
     display: none;
   }
 }`

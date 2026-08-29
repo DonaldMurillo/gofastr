@@ -1,18 +1,33 @@
 // Sidebar collapsible-rail runtime.
 //
 // Applies the persisted compact state before interaction, keeps the collapse
-// button's accessible name/state synchronized, and rescans after SPA swaps.
+// button's accessible name/state synchronized, toggles button-dialect groups,
+// and rescans after SPA swaps.
+//
+// Server-owned collapse state: a root WITHOUT data-fui-sidebar-storage
+// carries a server-rendered data-collapsed value. setup() only runs for
+// storage-carrying roots, so hydration never overwrites the server's state
+// from localStorage, and setCollapsed() skips its write when no key exists,
+// so a stale local value can never be written back either.
 (() => {
   'use strict';
   const G = window.__gofastr;
   const wired = new WeakSet();
+
+  const labelFor = (button, collapsed) => {
+    const custom = button.getAttribute(collapsed
+      ? 'data-fui-sidebar-expand-label'
+      : 'data-fui-sidebar-collapse-label');
+    if (custom) return custom;
+    return collapsed ? 'Expand navigation' : 'Collapse navigation';
+  };
 
   const setCollapsed = (root, collapsed, persist) => {
     root.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
     const button = root.querySelector('[data-fui-sidebar-collapse]');
     if (button) {
       button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      button.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+      button.setAttribute('aria-label', labelFor(button, collapsed));
     }
     if (!persist) return;
     const key = root.getAttribute('data-fui-sidebar-storage');
@@ -31,6 +46,18 @@
     setCollapsed(root, collapsed, false);
   };
 
+  // Button-dialect groups (SidebarGroupMarkup: button): the toggle button
+  // owns aria-expanded; the element it names via aria-controls owns hidden.
+  const toggleGroup = (button) => {
+    const expanded = button.getAttribute('aria-expanded') !== 'true';
+    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    const panelId = button.getAttribute('aria-controls');
+    const panel = panelId ? document.getElementById(panelId) : null;
+    if (!panel) return;
+    if (expanded) panel.removeAttribute('hidden');
+    else panel.setAttribute('hidden', '');
+  };
+
   const scan = (scope) => {
     const root = scope?.querySelectorAll ? scope : document;
     if (root.matches?.('[data-fui-sidebar][data-fui-sidebar-storage]')) setup(root);
@@ -38,6 +65,12 @@
   };
 
   document.addEventListener('click', (event) => {
+    const groupButton = event.target.closest?.('[data-fui-sidebar-group-toggle]');
+    if (groupButton) {
+      event.preventDefault();
+      toggleGroup(groupButton);
+      return;
+    }
     const button = event.target.closest?.('[data-fui-sidebar-collapse]');
     if (!button) return;
     const root = button.closest('[data-fui-sidebar]');
