@@ -123,6 +123,9 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	}()
 
 	body.Email = CanonicalEmail(body.Email) // #270: lookups and token payloads use canonical identity
+	if !emailWithinLimit(w, body.Email) {
+		return
+	}
 	if body.Email == "" {
 		return
 	}

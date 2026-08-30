@@ -382,6 +382,7 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	otpauthURL := buildOTPAuthURL(p.config.Issuer, email, secret)
 
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"secret": secret,
@@ -463,6 +464,7 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		Remote: remoteHost(r),
 	})
 
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"enabled":      true,
@@ -670,6 +672,7 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 		Remote: remoteHost(r),
 	})
 
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"backup_codes": plainCodes,

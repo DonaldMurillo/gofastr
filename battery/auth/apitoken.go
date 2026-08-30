@@ -117,26 +117,38 @@ var scopePattern = regexp.MustCompile(`^[a-z0-9_*-]+:[a-z0-9_*-]+$`)
 // validateTokenSpec enforces the IssueToken preconditions. It never sees
 // the plaintext token (generated later), so no secret can leak through an
 // error string here.
+// ErrInvalidTokenSpec marks a rejection that names something wrong with the
+// CALLER's request, so a handler can answer those with 4xx and everything
+// else — which came from the store — with 5xx and no detail.
+var ErrInvalidTokenSpec = errors.New("auth: invalid token spec")
+
 func validateTokenSpec(spec TokenSpec) error {
 	if strings.TrimSpace(spec.Name) == "" {
-		return errors.New("auth: token name is required")
+		return fmt.Errorf("%w: token name is required", ErrInvalidTokenSpec)
 	}
 	if spec.OwnerKind != OwnerKindUser && spec.OwnerKind != OwnerKindService {
-		return fmt.Errorf("auth: invalid owner_kind %q (want %q or %q)", spec.OwnerKind, OwnerKindUser, OwnerKindService)
+		return fmt.Errorf("%w: invalid owner_kind %q (want %q or %q)", ErrInvalidTokenSpec, spec.OwnerKind, OwnerKindUser, OwnerKindService)
 	}
 	if strings.TrimSpace(spec.OwnerID) == "" {
-		return errors.New("auth: owner_id is required")
+		return fmt.Errorf("%w: owner_id is required", ErrInvalidTokenSpec)
 	}
 	if len(spec.Scopes) > maxTokenScopes {
-		return fmt.Errorf("auth: too many scopes (%d > %d)", len(spec.Scopes), maxTokenScopes)
+		return fmt.Errorf("%w: too many scopes (%d > %d)", ErrInvalidTokenSpec, len(spec.Scopes), maxTokenScopes)
 	}
 	for _, sc := range spec.Scopes {
 		if !scopePattern.MatchString(sc) {
-			return fmt.Errorf("auth: invalid scope %q (want resource:verb)", sc)
+			return fmt.Errorf("%w: invalid scope %q (want resource:verb)", ErrInvalidTokenSpec, sc)
 		}
 	}
+	// TTL <= 0 means "no expiry" by construction, so a caller asking for
+	// -1 seconds — a clock skew, a unit mix-up, a hostile body — is handed
+	// the strongest token the endpoint can mint instead of the weakest.
+	// Absent (zero) still means permanent; a stated negative does not.
+	if spec.TTL < 0 {
+		return fmt.Errorf("%w: token ttl must be positive (got %s); omit it for a token that does not expire", ErrInvalidTokenSpec, spec.TTL)
+	}
 	if spec.Prefix != "" && !tokenPrefixPattern.MatchString(spec.Prefix) {
-		return fmt.Errorf("auth: invalid token prefix %q (want lowercase alnum starting with a letter, 2-16 chars, trailing underscore, e.g. %q)", spec.Prefix, TokenPrefix)
+		return fmt.Errorf("%w: invalid token prefix %q (want lowercase alnum starting with a letter, 2-16 chars, trailing underscore, e.g. %q)", ErrInvalidTokenSpec, spec.Prefix, TokenPrefix)
 	}
 	return nil
 }

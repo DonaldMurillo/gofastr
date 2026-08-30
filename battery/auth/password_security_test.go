@@ -196,10 +196,11 @@ func TestLoginDummyHashTracksDefaultHasher(t *testing.T) {
 	if !strings.HasPrefix(configured, "$argon2id$") {
 		t.Fatalf("probe hash is not argon2id: %q", configured)
 	}
-	// dummyBcryptHash is exactly what loginHandler's not-found branch
-	// passes to CheckPassword (core.go:209).
-	if !strings.HasPrefix(dummyBcryptHash, "$argon2id$") {
-		t.Errorf("SECURITY: [dummy-hash-algo] with DefaultHasher=Argon2Hasher the unknown-user login path burns a %q dummy while real rows hash as %q — the algorithm mismatch makes the not-found branch do bcrypt work while real users do argon2id work, re-opening the user-existence timing oracle the dummy exists to close (CWE-208). Derive the dummy from DefaultHasher", phcAlgoPrefix(dummyBcryptHash), phcAlgoPrefix(configured))
+	// dummyHashFor(DefaultHasher) is exactly what loginHandler's
+	// not-found branch passes to CheckPassword (core.go:209).
+	burned := dummyHashFor(DefaultHasher)
+	if !strings.HasPrefix(burned, "$argon2id$") {
+		t.Errorf("SECURITY: [dummy-hash-algo] with DefaultHasher=Argon2Hasher the unknown-user login path burns a %q dummy while real rows hash as %q — the algorithm mismatch makes the not-found branch do bcrypt work while real users do argon2id work, re-opening the user-existence timing oracle the dummy exists to close (CWE-208). Derive the dummy from DefaultHasher", phcAlgoPrefix(burned), phcAlgoPrefix(configured))
 	}
 }
 

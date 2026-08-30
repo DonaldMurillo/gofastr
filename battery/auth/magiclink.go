@@ -274,6 +274,13 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusBadRequest, "email is required")
 		return
 	}
+	// The address rides inside the token and is handed to the sender, so
+	// an oversized one is carried all the way into delivery unless it is
+	// refused here. Length is independent of whether the account exists,
+	// so this opens no enumeration oracle.
+	if !emailWithinLimit(w, body.Email) {
+		return
+	}
 
 	token, err := createPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, body.Email, p.config.TokenTTL)
 	if err != nil {

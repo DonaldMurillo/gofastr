@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
@@ -276,12 +277,38 @@ func parseArgon2PHC(hash string) (argon2PHC, bool) {
 // can enumerate registered emails by measuring response time
 // (bcrypt at default cost is ~50ms vs ~10µs for "no user").
 //
-// NOTE: this dummy is bcrypt-shaped. If you switch DefaultHasher to
-// Argon2Hasher, real-user logins run argon2 (~tens of ms) while the
-// unknown-user path still runs bcrypt against this dummy, re-aligning the
-// dummy to the configured hasher's cost is a follow-up to preserve exact
-// anti-enumeration timing under a full algorithm switch.
+// The dummy must be shaped by DefaultHasher, not pinned to bcrypt. Under
+// DefaultHasher = Argon2Hasher a real login spends argon2 time while the
+// not-found branch spent bcrypt time, and the gap between the two
+// algorithms is itself the oracle the dummy exists to close (CWE-208).
+// [dummyHashFor] derives one per configured hasher instead.
 var dummyBcryptHash string
+
+// dummyHashes caches one dummy per hasher, keyed by the algorithm prefix a
+// hash carries ("$2a$", "$argon2id$"). Deriving it costs a full KDF run, so
+// doing it per failed login would hand an attacker a cheap way to make the
+// server work harder than a real login does.
+var dummyHashes sync.Map
+
+// dummyHashFor returns a dummy hash produced by the CONFIGURED hasher, so
+// the not-found branch spends the same algorithm and cost a real row does.
+// A hasher that cannot produce one falls back to the bcrypt dummy: wrong
+// timing beats no timing defence at all.
+func dummyHashFor(h PasswordHasher) string {
+	if h == nil {
+		return dummyBcryptHash
+	}
+	key := fmt.Sprintf("%T", h)
+	if v, ok := dummyHashes.Load(key); ok {
+		return v.(string)
+	}
+	hash, err := h.Hash("dummy-password-for-timing")
+	if err != nil {
+		return dummyBcryptHash
+	}
+	dummyHashes.Store(key, hash)
+	return hash
+}
 
 // passwordPlaceholderHash is stored as the password_hash for users created
 // via OAuth or magic-link (they never log in via password). It's a real

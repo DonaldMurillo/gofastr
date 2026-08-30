@@ -203,10 +203,12 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 
 		user, hash, err := store.FindByEmail(r.Context(), email)
 		if err != nil {
-			// Run a dummy bcrypt against the package-level dummy hash so
-			// the response time matches the existing-user path. Skipping
-			// bcrypt here leaks user existence via timing.
-			_ = CheckPassword(password, dummyBcryptHash)
+			// Verify against a dummy produced by the CONFIGURED hasher so
+			// the not-found branch spends the same algorithm and cost a
+			// real row does. Skipping the work leaks user existence by
+			// timing; doing the WRONG algorithm's work leaks it just as
+			// well, only more subtly.
+			_ = CheckPassword(password, dummyHashFor(DefaultHasher))
 			// Unknown user OR a transport error, record a failed login.
 			// UserID stays empty (anti-enumeration: the event never
 			// distinguishes "no such user" from "wrong password").
@@ -320,6 +322,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			resp["two_factor_required"] = true
 		}
 
+		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
@@ -424,6 +427,7 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 			}
 		}
 
+		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
@@ -533,6 +537,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			return
 		}
 
+		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{
@@ -551,6 +556,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 // SDKs and sdkdocs document. battery/auth keeps a local copy because
 // batteries may not import framework/crud.
 func writeAuthError(w http.ResponseWriter, status int, msg string) {
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]any{
