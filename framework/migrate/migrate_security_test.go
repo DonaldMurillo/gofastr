@@ -2,10 +2,14 @@ package migrate
 
 import (
 	"context"
+	"database/sql"
+	"os"
 	"strings"
 	"testing"
 
+	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // Property: every value spliced into generated DDL is escaped for the
@@ -114,4 +118,146 @@ func TestReadLiveColumnsRejectsBadTable(t *testing.T) {
 			t.Errorf("[migrate] unexpected rejection reason for %q: %v", bad, err)
 		}
 	}
+}
+
+// ============================================================================
+// Property: SQL text embedded verbatim into the `-- +migrate` directive
+// format must not be able to synthesize a directive line. The runner's
+// parser (core/migrate parseMigration behind RegisterFromReader) is bufio
+// line-based and quote-blind: any line whose trimmed text starts with
+// `-- +migrate` flips the section, even a line inside an open string
+// literal. The generator (RenderMigrationFile) embeds entity SQL verbatim,
+// and quoteSQLLiteral doubles quotes but preserves newlines.
+//
+// Surfaces: SQLDefault case-string -> ColumnDefaultClause -> columnDefs ->
+// GeneratePlan -> RenderMigrationFile -> GenerateMigrationFile -> the
+// runner's parseMigration. Reachability: kiln add_entity accepts field
+// defaults over HTTP (only the entity Name is validated, see
+// TestReadLiveColumnsRejectsBadTable above), so a multi-line string default
+// reaches the generator verbatim.
+//
+// RED (2026-08-30 pass): a default containing "\n-- +migrate Down\nDROP
+// TABLE victims;-- " is committed into the .sql file across three lines.
+// The parsed Up section ends mid-literal (apply fails loudly, and the
+// snapshot already advanced past a migration that never applied), and the
+// parsed Down section carries the attacker's bytes, which would execute
+// verbatim on rollback of that version. Either the generator must
+// refuse/neutralize directive-synthesizing SQL or the runner must scan
+// directives quote-aware.
+// ============================================================================
+
+// TestSQLDefaultCannotSynthesizeDirective pins both halves of the property:
+// a benign multi-line DEFAULT is legitimate SQL and must keep applying (the
+// fix cannot be "reject every newline"), and a directive-looking line
+// inside a DEFAULT must never flip the runner's Up/Down sections.
+func TestSQLDefaultCannotSynthesizeDirective(t *testing.T) {
+	t.Run("benign multiline default applies", func(t *testing.T) {
+		content := generateFileWithDefault(t, "first\nsecond")
+		db := openMigrateSQLite(t)
+		m := coremig.New(db, coremig.WithDialect(coremig.DialectSQLite))
+		if err := m.RegisterFromReader(strings.NewReader(content)); err != nil {
+			t.Fatalf("parse generated file: %v\nfile:\n%s", err, content)
+		}
+		if err := m.Up(context.Background()); err != nil {
+			t.Fatalf("Up failed on a benign multi-line DEFAULT (legitimate SQL must keep applying): %v\nfile:\n%s", err, content)
+		}
+	})
+
+	t.Run("directive line in default cannot flip sections", func(t *testing.T) {
+		const poison = "x\n-- +migrate Down\nDROP TABLE victims;-- "
+
+		path, genErr := GenerateMigrationFile(
+			Plan{Registry: defaultTestReg(t, poison)}, "poison_default",
+			MigrationFileOptions{MigrationsDir: t.TempDir(), Dialect: DialectSQLite})
+		if genErr != nil {
+			// Acceptable fix shape: the generator refuses to embed
+			// directive-synthesizing SQL. Nothing was committed, so there is
+			// nothing to round-trip.
+			return
+		}
+		if path == "" {
+			t.Fatal("expected a migration to be generated for a new table")
+		}
+		content := readGeneratedFile(t, path)
+
+		db := openMigrateSQLite(t)
+		if _, err := db.Exec(`CREATE TABLE victims (id TEXT PRIMARY KEY)`); err != nil {
+			t.Fatalf("seed victims: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO victims (id) VALUES ('v1')`); err != nil {
+			t.Fatalf("seed victims row: %v", err)
+		}
+		m := coremig.New(db, coremig.WithDialect(coremig.DialectSQLite))
+		if err := m.RegisterFromReader(strings.NewReader(content)); err != nil {
+			t.Fatalf("parse generated file: %v\nfile:\n%s", err, content)
+		}
+		// Desired: the committed file applies cleanly. The multi-line
+		// DEFAULT is one literal and no line inside it may be read as a
+		// directive by the runner.
+		if err := m.Up(context.Background()); err != nil {
+			t.Fatalf("SECURITY: [migrate] the committed migration does not apply: a line inside the string DEFAULT synthesized a %q directive, so the runner truncated the Up section mid-literal and parked the attacker's bytes in Down: %v\ncommitted file:\n%s",
+				"-- +migrate Down", err, content)
+		}
+		// Desired: rollback runs only the generator's own Down. The
+		// attacker's DROP TABLE victims must never execute.
+		if err := m.Down(context.Background(), 1); err != nil {
+			t.Fatalf("Down: %v\ncommitted file:\n%s", err, content)
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM victims`).Scan(&n); err != nil {
+			t.Fatalf("count victims: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("SECURITY: [migrate] rollback destroyed the victims row: attacker SQL from the field default executed as Down\ncommitted file:\n%s", content)
+		}
+	})
+}
+
+// defaultTestReg builds a one-entity registry whose "note" field carries def
+// as its DEFAULT - the kiln add_entity shape (schema.Field.Default is `any`,
+// decoded straight from an HTTP JSON payload).
+func defaultTestReg(t *testing.T, def string) testReg {
+	t.Helper()
+	return testReg{"notes": rawEnt("notes", "notes", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "note", Type: schema.String, Default: def},
+	}, nil, "id")}
+}
+
+// generateFileWithDefault runs the real offline generator for an entity whose
+// note field carries def, and returns the committed file's content.
+func generateFileWithDefault(t *testing.T, def string) string {
+	t.Helper()
+	path, err := GenerateMigrationFile(
+		Plan{Registry: defaultTestReg(t, def)}, "multiline_default",
+		MigrationFileOptions{MigrationsDir: t.TempDir(), Dialect: DialectSQLite})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if path == "" {
+		t.Fatal("expected a migration to be generated for a new table")
+	}
+	return readGeneratedFile(t, path)
+}
+
+func readGeneratedFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read generated file: %v", err)
+	}
+	return string(b)
+}
+
+// openMigrateSQLite opens a fresh single-connection in-memory SQLite database,
+// the shape every SQLite-touching test in this package uses.
+func openMigrateSQLite(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+	return db
 }
