@@ -566,7 +566,7 @@ rewrites the host.
 | `framework.WithMCPApp(cfg)` | Register an MCP App: a `ui://` HTML widget resource + its linking tool. |
 | `framework.WithOAuthProtectedResource(cfg)` | RFC 9728 metadata doc. |
 | `framework.WithAuthMD(cfg)` | `/auth.md` + `agent_auth` block. |
-| `framework.WithWebBotAuth(cfg)` | `/.well-known/http-message-signatures-directory` JWKS. |
+| `framework.WithWebBotAuth(cfg)` | `/.well-known/http-message-signatures-directory` JWKS; with `cfg.Verify` set, inbound verification middleware (experimental). |
 | `framework.WithAgentSkills(skills)` | `/.well-known/agent-skills/index.json`. |
 | `framework.WithOAuthAuthorizationServer(cfg)` | RFC 8414 AS metadata. |
 | `framework.WithUCP(cfg)` / `framework.WithACP(cfg)` | `/.well-known/ucp` / `/.well-known/acp.json`. |
@@ -607,10 +607,12 @@ rewrites the host.
   and calls tools; it is not a multi-turn A2A task agent.
 - **No DNS-AID.** DNS TXT records for AI discovery are infra/DNS, not
   framework code. Add them at your registrar/host.
-- **No inbound Web Bot Auth verification.** `WithWebBotAuth` publishes the
-  site's signing JWKS (so it can sign its own outbound requests); verifying
-  RFC 9421 signatures on *inbound* requests is host middleware, not a served
-  artifact.
+- **Inbound Web Bot Auth verification is opt-in and experimental.**
+  `WithWebBotAuth` publishes the site's signing JWKS by default; set
+  its `Verify` field to also verify RFC 9421 signatures on inbound
+  requests (`framework.VerifiedAgent`), tracking
+  draft-meunier-webbotauth-httpsig-protocol-02. See
+  `web-bot-auth.md`.
 - **No x402 / MPP payment.** These need real payment middleware (HTTP 402 +
   payment requirements) or a payment backend; the framework serves discovery
   docs (UCP/ACP) but not payment execution.

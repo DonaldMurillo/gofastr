@@ -37,6 +37,7 @@ import (
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/core/webbotauth"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -403,10 +404,12 @@ type App struct {
 	authMD *AuthMDConfig
 	// webBotAuth/ucp/acp: opt-in commerce + bot-signing discovery docs
 	// (isitagentready.com production checks). Set via WithWebBotAuth /
-	// WithUCP / WithACP.
-	webBotAuth *WebBotAuthConfig
-	ucp        *UCPConfig
-	acp        *ACPConfig
+	// WithUCP / WithACP. webBotAuth.Verify additionally installs the
+	// inbound Web Bot Auth verification middleware (experimental).
+	webBotAuth         *WebBotAuthConfig
+	webBotAuthVerifier *webbotauth.Verifier
+	ucp                *UCPConfig
+	acp                *ACPConfig
 
 	// startupOutput receives the human-readable readiness banner. It defaults
 	// to os.Stdout and stays unexported so tests can verify startup ordering
@@ -1645,6 +1648,16 @@ func NewApp(opts ...AppOption) *App {
 	// registered earlier (e.g. by Mount).
 	if !a.noDefaults {
 		a.router.Use(DefaultMiddleware(a)...)
+	}
+
+	// Inbound Web Bot Auth verification (experimental, draft-tracked):
+	// installed whenever the option's Verify field is set, independent
+	// of the default chain. The middleware runs after the defaults but
+	// the router resolves the chain per request, so ordering here does
+	// not weaken coverage.
+	if a.webBotAuth != nil && a.webBotAuth.Verify != nil {
+		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger())
+		a.router.Use(a.webBotAuthVerifier.Middleware)
 	}
 
 	// Propagate DB to registry and its entities
