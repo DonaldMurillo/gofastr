@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.75.0
+through: v0.76.0
 
 releases:
   - version: v0.3.0
@@ -878,3 +878,12 @@ releases:
       - change: an AssetSpec with no ContentType serves a type derived from its filename, and AssetServer.Register rejects specs with no filesystem behind them
         breaking: false
         guidance: "Fix. A spec that omitted ContentType previously served an empty Content-Type with nosniff, which browsers refuse to parse. A nil fs.FS carrying specs now fails at boot instead of panicking the first request goroutine; set an explicit ContentType to keep overriding detection."
+  - version: v0.76.0
+    title: signed A2A agent cards, MCP App widget authoring, inbound Web Bot Auth
+    notes:
+      - change: new opt-in surfaces - AgentCardConfig.SigningKeys (signed agent cards + a JWKS endpoint), mcp.WidgetDocument, host-theme consumption in the widget client, and WithWebBotAuth's Verify field
+        breaking: false
+        guidance: "All additive and opt-in. An app that sets none of them serves exactly what it served before; the Web Bot Auth publishing side is unchanged and pinned byte-for-byte by a test when Verify is unset."
+      - change: enabling agent-card signing now requires an explicitly pinned BaseURL, and the host refuses to mount without one
+        breaking: false
+        guidance: "New requirement on a new feature, so no existing caller can hit it. A signed card whose URLs derive from the request Host header would hand an attacker a validly-signed card pointing at their own endpoint, so the mount fails loudly rather than serving one. Set WithAgentReady{BaseURL} or WithSitemap{BaseURL}."
