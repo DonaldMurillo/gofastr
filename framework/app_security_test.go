@@ -3,12 +3,20 @@ package framework
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -159,6 +167,159 @@ func TestGuardDevMCPBindWithdrawsOnlyDevImplied(t *testing.T) {
 	explicit.guardDevMCPBind("0.0.0.0:8080")
 	if !explicit.mcpControl {
 		t.Error("an explicit WithMCPControl was withdrawn by the dev bind check")
+	}
+}
+
+// TestDevMCPRefusesExposedStartLive pins the same property as the
+// classifier and guard tests above, but end-to-end over a real listener:
+// an exposed (non-loopback) dev Start must not serve the dev-implied
+// control tools to a client that forges the loopback Host header. The
+// transport's Host pin is a browser control, not a network control
+// (core/mcp/transport.go documents exactly this gap), so the BIND is the
+// only real boundary — and it has to hold on the live path, not just at
+// bindIsLoopback and the a.mcpControl flag.
+//
+// The second case drives the documented pre-Start InitPlugins shape
+// (its doc comment blesses the manual call, and TestHarness uses it):
+// registerControlTools runs there gated only by a.mcpControl, and
+// mcp.Server has no unregister API, so guardDevMCPBind's later flag
+// flip cannot withdraw tools that already registered.
+func TestDevMCPRefusesExposedStartLive(t *testing.T) {
+	run := func(t *testing.T, earlyInitPlugins bool) {
+		t.Helper()
+		t.Setenv("GOFASTR_DOTENV", "off")
+		t.Setenv("GOFASTR_DEV", "1")
+		t.Setenv("GOFASTR_ENV", "")
+		t.Setenv("GOFASTR_DEV_MCP", "")
+		t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "")
+
+		app := NewApp()
+		ready := make(chan string, 1)
+		app.OnReady(func(addr string) { ready <- addr })
+		if earlyInitPlugins {
+			if err := app.InitPlugins(); err != nil {
+				t.Fatalf("pre-Start InitPlugins: %v", err)
+			}
+		}
+		started := make(chan error, 1)
+		go func() { started <- app.Start("0.0.0.0:0") }()
+
+		var base string
+		select {
+		case addr := <-ready:
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				t.Fatalf("ready addr %q: %v", addr, err)
+			}
+			base = "http://127.0.0.1:" + port
+		case err := <-started:
+			t.Fatalf("Start returned before ready: %v", err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("Start never became ready")
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := app.Shutdown(ctx); err != nil {
+				t.Errorf("shutdown: %v", err)
+			}
+			select {
+			case err := <-started:
+				if err != nil {
+					t.Errorf("Start: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("Start did not return after Shutdown")
+			}
+		}()
+
+		call := func(id int, method, params string) mcp.Response {
+			t.Helper()
+			body := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":%q,"params":%s}`, id, method, params)
+			req, err := http.NewRequest(http.MethodPost, base+"/mcp", strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			// The forged pin-pass: SetRequireLoopbackHost checks the
+			// Host header, and a direct TCP client sets it freely.
+			req.Host = "localhost"
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("POST /mcp: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("POST /mcp: status %d", resp.StatusCode)
+			}
+			var out mcp.Response
+			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			return out
+		}
+
+		// Disclosure surface: an anonymous tools/list must not name the
+		// mutating control tools.
+		list := call(1, "tools/list", `{}`)
+		var listed struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		}
+		blob, err := json.Marshal(list.Result)
+		if err != nil {
+			t.Fatalf("marshal tools/list result: %v", err)
+		}
+		if err := json.Unmarshal(blob, &listed); err != nil {
+			t.Fatalf("unmarshal tools/list: %v", err)
+		}
+		for _, tl := range listed.Tools {
+			if strings.HasPrefix(tl.Name, "app_module_") {
+				t.Errorf("SECURITY: [exposure] anonymous tools/list on an exposed dev bind disclosed %q", tl.Name)
+			}
+		}
+
+		// Reach surface: tools/call must not reach the module store. The
+		// module store's unknown-module error ("not registered",
+		// TestMCPControlUnknownModuleErrors) is the signature that the
+		// handler ran; both legitimate refusals read differently
+		// (tool-not-found when the guard withheld registration,
+		// auth-required if a gate refuses the call).
+		res := call(2, "tools/call", `{"name":"app_module_disable","arguments":{"name":"no-such-module"}}`)
+		msg := ""
+		if res.Error != nil {
+			msg = res.Error.Message
+		}
+		if strings.Contains(msg, "not registered") {
+			t.Errorf("SECURITY: [exposure] app_module_disable reached its handler on an exposed dev bind via a forged loopback Host: %s", msg)
+		}
+	}
+
+	t.Run("standard start order", func(t *testing.T) { run(t, false) })
+	t.Run("InitPlugins before Start", func(t *testing.T) { run(t, true) })
+}
+
+// TestMCPRequireUserRefusesEmbedGrant pins requireMCPUser's second
+// refusal. An embed grant resolves to the same context user a session
+// does, so an identity check alone would let a credential that lives in
+// a third party's page — readable by anyone with devtools — drive every
+// gated tool, the control tools included. The refusal is implemented
+// (mcp_control.go) but had no pin.
+func TestMCPRequireUserRefusesEmbedGrant(t *testing.T) {
+	plain := handler.SetUser(context.Background(), struct{ ID string }{ID: "page-user"})
+	embedded := fembed.WithGrant(plain, fembed.Grant{})
+
+	err := MCPRequireUser()(embedded)
+	if !errors.Is(err, errEmbedNotAllowed) {
+		t.Fatalf("SECURITY: [authz] resolved user on an embed grant must get the embed refusal, got %v", err)
+	}
+
+	// Specificity: the same user WITHOUT a grant passes, so the refusal
+	// is about the credential class, not a blanket deny that would read
+	// as protection while locking out the dev loop.
+	if err := MCPRequireUser()(plain); err != nil {
+		t.Fatalf("first-party authenticated caller refused: %v", err)
 	}
 }
 
