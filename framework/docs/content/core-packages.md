@@ -74,6 +74,18 @@ spec from your routes and entities. Reach for it directly to add custom
 operations or mount the docs endpoint. Start at `core/openapi/spec.go`:
 `Spec`.
 
+### jcs
+
+RFC 8785 JSON Canonicalization Scheme (JCS), stdlib-only: the invariant
+byte form of JSON for signing and hashing. `CanonicalizeJSON` parses raw
+bytes strictly (duplicate keys, unpaired surrogate escapes, invalid
+UTF-8, and Infinity-overflowing literals are errors) and `Canonicalize`
+handles in-memory Go values. Keys sort by UTF-16 code unit and numbers
+serialize exactly as ECMAScript `Number::toString`. Indirect: the
+framework signs A2A agent cards with it. Direct when you need to hash or
+sign JSON in your own code — read the package doc for the I-JSON number
+caveats first. Start at `core/jcs/jcs.go`: `CanonicalizeJSON`.
+
 ## Content and rendering
 
 ### render
