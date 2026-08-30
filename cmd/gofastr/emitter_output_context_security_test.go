@@ -264,7 +264,7 @@ func TestAuthFormHrefRejectsBadScheme(t *testing.T) {
 		// Controls: the guarded siblings. ui.LinkButton refuses the scheme, so the
 		// blueprint may legitimately emit the value and the check lands downstream.
 		{"link_button.href", func(v string) string {
-			expr, _ := renderBlueprintCatalogBlock(BlueprintScreen{Name: "home"}, BlueprintBlock{
+			expr, _ := renderBlueprintCatalogBlock(Blueprint{}, BlueprintScreen{Name: "home"}, BlueprintBlock{
 				Kind: "link_button", Props: map[string]any{"label": "Go", "href": v},
 			}, nil, nil, "")
 			return expr
