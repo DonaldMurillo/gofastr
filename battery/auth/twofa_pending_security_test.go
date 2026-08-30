@@ -31,7 +31,7 @@ func TestPendingTwoFA_MutationEndpointsRejected(t *testing.T) {
 		{"disable", http.MethodPost, "/auth/2fa/disable", ""},
 		{"enroll", http.MethodPost, "/auth/2fa/enroll", ""},
 		{"verify", http.MethodPost, "/auth/2fa/verify", `{"code":"000000"}`},
-		{"backup-codes", http.MethodGet, "/auth/2fa/backup-codes", ""},
+		{"backup-codes", http.MethodPost, "/auth/2fa/backup-codes", ""},
 	}
 
 	for _, tc := range cases {

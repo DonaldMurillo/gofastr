@@ -231,7 +231,7 @@ func TestTwoFARegenerateDoesNotResurrect(t *testing.T) {
 
 	// Arm the race: the disable lands between the handler's Get and Set.
 	wrapped.fire = true
-	req = httptest.NewRequest("GET", "/auth/2fa/backup-codes", nil)
+	req = httptest.NewRequest("POST", "/auth/2fa/backup-codes", nil)
 	req.AddCookie(&http.Cookie{Name: "session_id", Value: cookie})
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)

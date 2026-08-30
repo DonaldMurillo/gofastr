@@ -22,7 +22,7 @@ import (
 // Surfaces (one property, every surface):
 //   - POST /auth/2fa/enroll        (TOTP secret + otpauth URL)
 //   - POST /auth/2fa/verify        (plaintext backup codes)
-//   - GET  /auth/2fa/backup-codes  (plaintext backup codes)
+//   - POST /auth/2fa/backup-codes (plaintext backup codes)
 //   - POST /auth/tokens            (gfsk_ plaintext, "shown exactly ONCE;
 //     never retrievable again")
 //   - POST /auth/login             (live JWT in the 200 JSON body)
@@ -89,14 +89,14 @@ func TestCredentialResponsesSetNoStore(t *testing.T) {
 	check("POST /auth/2fa/verify", w)
 
 	// Surface: backup-codes (plaintext backup codes on a GET).
-	req = httptest.NewRequest("GET", "/auth/2fa/backup-codes", nil)
+	req = httptest.NewRequest("POST", "/auth/2fa/backup-codes", nil)
 	req.AddCookie(&http.Cookie{Name: "session_id", Value: cookie})
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("backup-codes: %d %s", w.Code, w.Body.String())
 	}
-	check("GET /auth/2fa/backup-codes", w)
+	check("POST /auth/2fa/backup-codes", w)
 
 	// Surface: token create (gfsk_ plaintext). Driven handler-direct like
 	// TestAPIToken_CreateIgnoresBodyOwner: the route only needs the session

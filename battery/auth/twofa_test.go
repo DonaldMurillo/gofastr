@@ -608,7 +608,7 @@ func TestTwoFA_BackupCodesRefresh(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	// Generate new backup codes
-	req = httptest.NewRequest("GET", "/auth/2fa/backup-codes", nil)
+	req = httptest.NewRequest("POST", "/auth/2fa/backup-codes", nil)
 	req.AddCookie(&http.Cookie{Name: "session_id", Value: cookie})
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
