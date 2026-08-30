@@ -59,6 +59,12 @@
     if (!opt) return;
     const val = opt.getAttribute('data-value') || (opt.textContent || '').trim();
     input.value = val;
+    // Stash the picked option's visible text next to the value so
+    // button-shaped (selection-display) comboboxes can mirror BOTH:
+    // the hidden form field wants the value key, the visible label
+    // wants the human text. data-value and textContent diverge for
+    // id/name option pairs.
+    input.dataset.fuiPickedText = (opt.textContent || '').trim();
     input.dispatchEvent(new Event('change', { bubbles: true }));
     closeListbox(input, lb);
     // Honor data-fui-push-state on the option, selecting a result
