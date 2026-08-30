@@ -109,6 +109,9 @@ func resolveSigningKey(k AgentCardSigningKey) (resolvedSigningKey, error) {
 	var jwk map[string]any
 	switch pub := k.Signer.Public().(type) {
 	case *ecdsa.PublicKey:
+		if pub.X == nil || pub.Y == nil {
+			return resolvedSigningKey{}, fmt.Errorf("EC key %q has no public coordinates", k.KeyID)
+		}
 		xb := make([]byte, size)
 		yb := make([]byte, size)
 		pub.X.FillBytes(xb)
@@ -149,6 +152,8 @@ func algorithmFor(pub any) (alg, crv string, coordSize int, err error) {
 			return "ES384", "P-384", 48, nil
 		case elliptic.P521():
 			return "ES512", "P-521", 66, nil
+		case nil:
+			return "", "", 0, fmt.Errorf("EC key has no curve (want P-256, P-384, or P-521)")
 		default:
 			return "", "", 0, fmt.Errorf("unsupported EC curve %s (want P-256, P-384, or P-521)", k.Curve.Params().Name)
 		}

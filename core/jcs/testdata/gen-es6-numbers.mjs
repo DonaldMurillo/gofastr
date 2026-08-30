@@ -17,11 +17,12 @@
 // This is the deterministic ES6 number-vector generator from the RFC 8785
 // reference implementation repository (cyberphone/json-canonicalization,
 // testdata/numgen.js). It generated the published es6testfile100m.txt;
-// this copy changes ONLY the line count (1e8 → 50,000) and the output
+// this copy changes ONLY the line count (1e8 → 5,000) and the output
 // path (es6-numbers.txt in this directory) so a slice of the exact
 // published sequence can be committed as Go testdata. The sequence is
-// deterministic: lines 1–138 are the static edge cases, 139–2138 are
-// consecutive subnormals from 0x0010000000000000, then SHA-256-driven
+// deterministic: lines 1–168 are the static edge cases, 169–2168 are
+// consecutive doubles from 0x0010000000000000 (the minimum normal),
+// then SHA-256-driven
 // random doubles.
 //
 // Run:  node gen-es6-numbers.mjs
