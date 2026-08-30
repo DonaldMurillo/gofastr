@@ -252,8 +252,19 @@ func TestTimeoutHijackBeforeDeadlineKeepsTheConnection(t *testing.T) {
 		close(leaked)
 	}()
 
+	// The budget is generous on purpose. Timeout starts its timer before
+	// it runs the handler in a new goroutine, so the handler must reach
+	// Hijack() before the deadline for this test to exercise the winning
+	// path at all. A 20ms budget needed only 20ms of spawn-to-run
+	// starvation to turn this into a spurious failure on a loaded box;
+	// 300ms needs fifteen times that, which would break much of the
+	// suite anyway. Restructuring the test cannot remove this: the timer
+	// starts inside the middleware, so no ordering the test controls
+	// changes when it fires relative to the handler. Widening the margin
+	// is the only lever, and a losing race fails clean and descriptive
+	// rather than hanging.
 	handlerDone := make(chan struct{})
-	h := Timeout(20 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Timeout(300 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer close(handlerDone)
 		conn, _, err := w.(http.Hijacker).Hijack() // wins: before the deadline
 		if err != nil {
@@ -262,7 +273,7 @@ func TestTimeoutHijackBeforeDeadlineKeepsTheConnection(t *testing.T) {
 		}
 		// Hold past the budget: the timeout path must stay off this
 		// connection now that the handler owns it.
-		time.Sleep(60 * time.Millisecond)
+		time.Sleep(600 * time.Millisecond)
 		_, _ = conn.Write([]byte("UPGRADED-PROTOCOL-FRAME"))
 	}))
 
@@ -278,7 +289,7 @@ func TestTimeoutHijackBeforeDeadlineKeepsTheConnection(t *testing.T) {
 		if strings.Contains(string(b), "Gateway Timeout") {
 			t.Fatalf("SECURITY: the 504 was written onto the hijacked connection: %q", b)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 		t.Fatal("nothing reached the hijacked connection; the handler never wrote its frame")
 	}
 }
