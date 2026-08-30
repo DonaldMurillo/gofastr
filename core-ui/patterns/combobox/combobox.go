@@ -145,9 +145,6 @@ func staticOptionRows(listboxID string, opts []Option) []render.HTML {
 			"role":       "option",
 			"id":         listboxID + "-opt-" + strconv.Itoa(i),
 			"data-value": val,
-			// Legacy test-hook alias: suites written against cmdk-style
-			// palettes address options via [cmdk-item].
-			"cmdk-item": "",
 		}
 		// The runtime hands data-fui-push-state to the SPA navigator
 		// (falling back to location.href), so an unsanitized

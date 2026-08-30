@@ -29,9 +29,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   whose record is gone renders the not-found body through the layout while
   signaling 404 to clients and crawlers. Zero or 200 keeps the default.
 
-- **`data-skip-link` on the skip link and `cmdk-item` on static combobox
-  options**, as addressable hooks for host test suites migrating from
-  cmdk-style palettes. Inert for everyone else.
+- **`data-skip-link` on the skip link**, so a test suite can address it
+  without pinning the `.skip-link` CSS class. The skip link is synthesized
+  by the framework rather than configured by the app, so `ExtraAttrs` — the
+  supported way to attach attributes to a component — cannot reach it.
+  Inert for everyone else.
 
 ## [0.75.0] - 2026-08-29
 
