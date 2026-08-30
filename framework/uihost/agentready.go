@@ -162,6 +162,16 @@ type AgentCardConfig struct {
 	// agent accepts/emits. Default ["text/plain"].
 	DefaultInputModes  []string
 	DefaultOutputModes []string
+
+	// SigningKeys, when non-empty, signs the card per A2A v1.0 §8.4: a
+	// `signatures` array of JWS signatures (ES256/ES384/ES512 or
+	// EdDSA) over the JCS-canonicalized card, with the verification
+	// keys published at /.well-known/jwks.json. Signing requires an
+	// explicit BaseURL (WithAgentReady BaseURL or WithSitemap BaseURL):
+	// a signed card whose URLs derive from the request Host header
+	// would let an attacker launder their endpoint as validly signed.
+	// Hosts without a pinned base fail at mount.
+	SigningKeys []AgentCardSigningKey
 }
 
 // AgentSkill is one A2A AgentSkill.
@@ -367,9 +377,10 @@ type agentReadyConfig struct {
 	allowAIBots    *bool
 	linkHeaders    bool
 	contentNeg     bool
-	openAPI        string // OpenAPI spec path → Link: rel="service-desc"
-	contentSignals string // Content-Signal: robots directive value
-	fullTxt        string // /llms-full.txt content (full-corpus tier)
+	openAPI        string            // OpenAPI spec path → Link: rel="service-desc"
+	contentSignals string            // Content-Signal: robots directive value
+	fullTxt        string            // /llms-full.txt content (full-corpus tier)
+	signing        *agentCardSigning // non-nil when the card is signed
 }
 
 type llmsCfg struct {
@@ -395,6 +406,28 @@ func (ds *UIHost) mountAgentReady(r *router.Router) {
 		r.Get("/llms-full.txt", http.HandlerFunc(ds.handleLLMsFullTxt))
 	}
 	if ds.agentReady.card != nil {
+		// Resolve signing before the routes exist: an invalid key set
+		// or a missing pinned BaseURL must fail the boot, not surface
+		// as a 500 on the first card request.
+		if len(ds.agentReady.card.SigningKeys) > 0 {
+			keys, err := resolveSigningKeys(ds.agentReady.card.SigningKeys)
+			if err != nil {
+				panic(err)
+			}
+			base := ds.pinnedBaseURL()
+			if base == "" {
+				panic("uihost: agent card signing requires an explicit BaseURL " +
+					"(WithAgentReady{BaseURL: ...} or WithSitemap{BaseURL: ...}): a signed " +
+					"card whose URLs derive from the request Host header would hand an " +
+					"attacker a validly-signed card pointing at their own host. Pin the " +
+					"origin, or drop SigningKeys to serve an unsigned card.")
+			}
+			ds.agentReady.signing = &agentCardSigning{
+				keys:    keys,
+				jwksURL: base + jwksPath,
+			}
+			r.Get(jwksPath, http.HandlerFunc(ds.handleJWKS))
+		}
 		// A2A v1.0 canonical path + the older agent.json alias so both
 		// current and legacy clients resolve the card.
 		r.Get("/.well-known/agent-card.json", http.HandlerFunc(ds.handleAgentCard))
@@ -528,6 +561,19 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 	}
 	base := ds.resolveBaseURL(req)
 	doc := buildAgentCard(cfg, base)
+	if ds.agentReady.signing != nil {
+		// Sign the card exactly as served: A2A v1.0 §8.4 — JWS over
+		// the JCS canonical form of the card WITHOUT `signatures`,
+		// appended after. Resolution (key validation, pinned base)
+		// already happened at mount; failure here is a 500, never a
+		// silently-unsigned card.
+		sigs, err := signAgentCard(doc, ds.agentReady.signing)
+		if err != nil {
+			http.Error(w, "agent card signing failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		doc["signatures"] = sigs
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)

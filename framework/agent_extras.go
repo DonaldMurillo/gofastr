@@ -16,22 +16,53 @@ package framework
 // no public probe).
 
 import (
+	"context"
 	"net/http"
+
+	"github.com/DonaldMurillo/gofastr/core/webbotauth"
 )
 
 // ── Web Bot Auth (publish a JWKS for outbound request signing) ─────
 
-// WebBotAuthConfig configures /.well-known/http-message-signatures-directory.
-// The site publishes its signing keys (a JWK Set) so receivers can verify
-// the requests it sends as a bot/agent. (This is the publishing side, not
-// RFC 9421 inbound verification.)
+// WebBotAuthConfig configures Web Bot Auth in both directions.
+//
+// Publishing (Keys, unchanged since the option existed): the site
+// serves its signing keys as a JWK Set at
+// /.well-known/http-message-signatures-directory so receivers can
+// verify the requests it sends as a bot/agent.
+//
+// Verification (Verify, experimental): inbound RFC 9421 signature
+// verification under the profile of
+// draft-meunier-webbotauth-httpsig-protocol-02 (18 August 2026). The
+// draft is moving and this half of the option tracks it; the publishing
+// half is stable. Leaving Verify nil keeps the publishing behaviour
+// byte-identical and adds no middleware.
 type WebBotAuthConfig struct {
 	// Keys is the JWK Set "keys" array, the site's public signing keys.
 	Keys []map[string]any
+
+	// Verify turns on inbound verification of Web Bot Auth signatures.
+	// Nil (the default) verifies nothing: requests pass through
+	// untouched and only /.well-known/http-message-signatures-directory
+	// is served. See WebBotAuthVerifyConfig for the modes.
+	Verify *WebBotAuthVerifyConfig
+}
+
+// WebBotAuthVerifyConfig selects the inbound verification posture.
+type WebBotAuthVerifyConfig struct {
+	// Require blocks traffic that is not verified (403 with an
+	// Accept-Signature response). The default, false, is observe mode:
+	// verified requests carry the agent identity in their context
+	// (see VerifiedAgent) and verification failures are logged, but
+	// nothing is ever blocked. Observe is the default on purpose: a
+	// bug in draft-tracking verification middleware must not be able
+	// to take an app's traffic down.
+	Require bool
 }
 
 // WithWebBotAuth serves /.well-known/http-message-signatures-directory with
-// the site's signing JWKS.
+// the site's signing JWKS, and (when cfg.Verify is set) verifies inbound
+// Web Bot Auth signatures.
 func WithWebBotAuth(cfg WebBotAuthConfig) AppOption {
 	return func(a *App) { a.webBotAuth = &cfg }
 }
@@ -46,6 +77,17 @@ func (a *App) handleWebBotAuthDirectory(w http.ResponseWriter, _ *http.Request) 
 		keys = []map[string]any{}
 	}
 	writeWellKnownJSON(w, map[string]any{"keys": keys})
+}
+
+// VerifiedAgent returns the identity established by a verified Web Bot
+// Auth signature on the current request: the agent's resolved key
+// directory URL (the protocol's identifier) and the key thumbprint
+// that verified it. It returns nil for unverified traffic, which is
+// the common case: browsers send no signature. Use it for annotation,
+// differentiated rate limits, and policy, and treat nil as "learned
+// nothing about the sender", never as evidence of hostility.
+func VerifiedAgent(ctx context.Context) *webbotauth.Agent {
+	return webbotauth.AgentFromContext(ctx)
 }
 
 // ── Universal Commerce Protocol (/.well-known/ucp) ─────────────────

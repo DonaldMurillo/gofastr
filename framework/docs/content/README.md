@@ -97,6 +97,9 @@ results, the harness contract) are exempt. The exemption list lives in
   design system, never emit markup or CSS; where that rule applies
   (agent-built apps, Kiln, MCP App widgets) and why runtime per-user
   generation is plugin territory, not a framework feature.
+- [Agent host](agent-host.md): the contract for the chat-host surface:
+  `RoleAgent`, authoring MCP App widgets with the document builder, and
+  consuming the host's theme signals instead of shipping a palette.
 
 ## Building UI
 

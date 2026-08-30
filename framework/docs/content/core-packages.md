@@ -74,6 +74,18 @@ spec from your routes and entities. Reach for it directly to add custom
 operations or mount the docs endpoint. Start at `core/openapi/spec.go`:
 `Spec`.
 
+### jcs
+
+RFC 8785 JSON Canonicalization Scheme (JCS), stdlib-only: the invariant
+byte form of JSON for signing and hashing. `CanonicalizeJSON` parses raw
+bytes strictly (duplicate keys, unpaired surrogate escapes, invalid
+UTF-8, and Infinity-overflowing literals are errors) and `Canonicalize`
+handles in-memory Go values. Keys sort by UTF-16 code unit and numbers
+serialize exactly as ECMAScript `Number::toString`. Indirect: the
+framework signs A2A agent cards with it. Direct when you need to hash or
+sign JSON in your own code — read the package doc for the I-JSON number
+caveats first. Start at `core/jcs/jcs.go`: `CanonicalizeJSON`.
+
 ## Content and rendering
 
 ### render
@@ -121,6 +133,17 @@ with a `Reason` helper. Tiny: two exported funcs. Indirect:
 outbound-fetch surfaces (webhooks, the harness) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
 `IsInternal`.
+
+### webbotauth
+
+Inbound Web Bot Auth verification: RFC 9421 signature-base assembly,
+Ed25519 verification under the Web Bot Auth draft profile, and the
+SSRF-hardened agent key-directory fetcher. Experimental and
+draft-tracked (see `web-bot-auth.md`). Indirect: hosts turn it on with
+`framework.WithWebBotAuth{Verify: …}` and read
+`framework.VerifiedAgent`; reach for the package directly only to
+verify outside a GoFastr app. Start at `core/webbotauth/webbotauth.go`:
+`Verifier`.
 
 ### fuzzy
 
