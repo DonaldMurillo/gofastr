@@ -170,3 +170,86 @@ func TestSessionStores_ImplementUserPurge(t *testing.T) {
 		t.Fatalf("*EntitySessionStore must implement SessionUserPurger")
 	}
 }
+
+// Property: a completed password reset invalidates every outstanding
+// recovery credential for the user. forgot-password mints a fresh token
+// per request with no per-user sweep, resetHandler redeems exactly one
+// token, and the token store has no DeleteByUser — so a token leaked
+// BEFORE the reset stays redeemable for its full TTL after the victim
+// finishes resetting, re-opening the takeover the reset was meant to
+// close (the user must race the attacker inside the residual window).
+func TestPasswordReset_KillsSiblingTokens(t *testing.T) {
+	store := newUserStoreWithPassword()
+	mgr := New(AuthConfig{
+		SessionTTL:    time.Hour,
+		SessionCookie: "session_id",
+		UserStore:     store,
+		DevMode:       true,
+	})
+	mgr.Use(NewCorePlugin())
+	sender := &stubEmailSender{}
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		EmailSender: sender,
+	}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	oldHash, _ := HashPassword("oldpw123")
+	user := &BasicUser{ID: "u-sib", Email: "s@example.com", Roles: []string{"user"}}
+	store.users["s@example.com"] = &storeEntry{user: user, hash: oldHash}
+	store.byID[user.ID] = store.users["s@example.com"]
+
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	forgot := func() string {
+		body, _ := json.Marshal(map[string]string{"email": "s@example.com"})
+		req := httptest.NewRequest(http.MethodPost, "/auth/forgot-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("forgot-password: %d", w.Code)
+		}
+		_, emailBody := sender.snapshot()
+		tok := extractTokenFromBody(emailBody)
+		if tok == "" {
+			t.Fatalf("no token in reset email body: %q", emailBody)
+		}
+		return tok
+	}
+	reset := func(tok, password string) int {
+		body, _ := json.Marshal(map[string]string{"token": tok, "password": password})
+		req := httptest.NewRequest(http.MethodPost, "/auth/reset-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// Two outstanding tokens: one leaked earlier, one the victim uses now.
+	leaked := forgot()
+	fresh := forgot()
+	if leaked == fresh {
+		t.Fatal("precondition: two forgot-password requests minted the same token")
+	}
+
+	if code := reset(fresh, "firstnewpw1"); code != http.StatusOK {
+		t.Fatalf("victim's reset failed: %d", code)
+	}
+	_, hashAfterReset, err := store.FindByEmail(context.Background(), "s@example.com")
+	if err != nil {
+		t.Fatalf("FindByEmail after reset: %v", err)
+	}
+
+	// The earlier-leaked token must be dead once the reset completed.
+	if code := reset(leaked, "secondnewpw2"); code != http.StatusUnauthorized {
+		t.Errorf("SECURITY: [reset-sibling-tokens] pre-reset token still redeems after a completed reset: got %d, want 401", code)
+	}
+	if _, hashNow, _ := store.FindByEmail(context.Background(), "s@example.com"); hashNow != hashAfterReset {
+		t.Error("SECURITY: [reset-sibling-tokens] the stale token changed the password after the reset completed")
+	}
+}

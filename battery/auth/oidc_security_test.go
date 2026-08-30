@@ -340,6 +340,30 @@ func TestOIDCSec_UserinfoSubMismatch(t *testing.T) {
 	}
 }
 
+// TestOIDCSec_UserinfoMissingSub: a userinfo response that omits its
+// subject entirely must not merge into the id_token identity. The
+// mismatch check above only fires when BOTH subs are non-empty, so a
+// sub-less userinfo response currently merges its email into the signed
+// identity unanchored. OIDC Core 5.3.2 requires the UserInfo response
+// to carry sub; "absent" cannot match the id_token subject.
+func TestOIDCSec_UserinfoMissingSub(t *testing.T) {
+	f := newFakeIdP(t)
+	c := baseClaims(f)
+	delete(c, "email") // force the userinfo merge path
+	f.claims = c
+	f.userinfo = map[string]any{"email": "unanchored@example.com"}
+	// f.userinfoSub deliberately left empty: the response carries no sub.
+	p := newTestProvider(t, f)
+
+	tok, err := p.ExchangeCode(ctxBg(), "any-code")
+	if err != nil {
+		t.Fatalf("ExchangeCode should succeed (id_token valid): %v", err)
+	}
+	if _, err := p.FetchUserInfo(ctxBg(), tok.AccessToken); err == nil {
+		t.Fatal("SECURITY: [oidc-userinfo-sub] userinfo response with no subject merged into the id_token identity")
+	}
+}
+
 // ── information-disclosure guard ─────────────────────────────────────────────
 
 // TestOIDCSec_NoSecretsInErrors: error strings must never contain the raw
