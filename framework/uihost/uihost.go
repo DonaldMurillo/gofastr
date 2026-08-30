@@ -293,6 +293,15 @@ type ScreenSchema interface {
 	ScreenSchema() []seo.Thing
 }
 
+// ScreenStatusCode is an optional screen interface that overrides the
+// HTTP status of an otherwise successfully rendered page. A screen whose
+// route resolved but whose entity is missing (e.g. /things/{id} with a
+// dead id) can render the not-found body through the layout while still
+// signaling 404 to clients and crawlers. Zero or 200 keeps the default.
+type ScreenStatusCode interface {
+	ScreenStatusCode() int
+}
+
 // SEO bundles every per-page SEO declaration in one struct. Use it as
 // the return type of ScreenSEO when you'd rather declare everything
 // from one method than implement the per-concern interfaces
@@ -1223,6 +1232,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 
 	ds.writeAgentLinkHeaders(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if sc, ok := res.Component.(ScreenStatusCode); ok {
+		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
+			w.WriteHeader(code)
+		}
+	}
 	fmt.Fprint(w, page)
 }
 
