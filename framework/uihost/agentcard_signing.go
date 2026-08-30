@@ -112,6 +112,12 @@ func resolveSigningKey(k AgentCardSigningKey) (resolvedSigningKey, error) {
 		if pub.X == nil || pub.Y == nil {
 			return resolvedSigningKey{}, fmt.Errorf("EC key %q has no public coordinates", k.KeyID)
 		}
+		// An off-curve point serializes happily and verifies nowhere, so
+		// publishing it means a JWKS that looks right and is unusable.
+		// ECDH() is the supported validity check; IsOnCurve is deprecated.
+		if _, err := pub.ECDH(); err != nil {
+			return resolvedSigningKey{}, fmt.Errorf("EC key %q is not a valid point on %s: %w", k.KeyID, crv, err)
+		}
 		xb := make([]byte, size)
 		yb := make([]byte, size)
 		pub.X.FillBytes(xb)

@@ -76,6 +76,7 @@ const (
 	defaultCacheEntries      = 256             // per map
 	dnsLookupTimeout         = 2 * time.Second // attacker-chosen hostname
 	maxConcurrentFetches     = 8               // across all identifiers
+	maxConcurrentLookups     = 8               // across all hostnames
 	acceptDirectory          = "application/http-message-signatures-directory+json, application/json;q=0.9"
 )
 
@@ -140,6 +141,13 @@ func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRe
 	}
 }
 
+// dnsSem bounds concurrent resolver calls for attacker-named hostnames.
+// It is package-level rather than per-resolver because the resource it
+// protects -- the process's resolver, and the sockets under it -- is
+// process-wide. The literal-IP path below never reaches it: that check
+// costs no network at all and must stay unconditional.
+var dnsSem = make(chan struct{}, maxConcurrentLookups)
+
 // checkHostPublic rejects hostnames that target internal
 // infrastructure before any network activity: the obvious internal
 // names, literal internal IPs, and hostnames whose DNS answers include
@@ -164,6 +172,15 @@ func checkHostPublic(ctx context.Context, host string) error {
 	// negative-cached, so the bound has to live here.
 	lookupCtx, cancel := context.WithTimeout(ctx, dnsLookupTimeout)
 	defer cancel()
+	select {
+	case dnsSem <- struct{}{}:
+		defer func() { <-dnsSem }()
+	case <-lookupCtx.Done():
+		// Waiting for a lookup slot is itself refusal-worthy: it means
+		// the process is already resolving as many attacker-named hosts
+		// as it is willing to.
+		return fmt.Errorf("webbotauth: host %q lookup not attempted: resolver busy", host)
+	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
 	if err != nil {
 		// Unresolvable now: not a policy refusal. The fetch (and its
