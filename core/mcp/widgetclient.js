@@ -27,6 +27,11 @@
  *   app.callTool({ name: "search", arguments: { q: "hi" } }).then(...);
  *   app.onToolResult(function (params) { ... });
  *   app.sizeChanged({ width: 320, height: 240 });
+ *
+ * Theme: the client applies the host's theme signals (hostContext.theme,
+ * hostContext.styles) to the document root on connect and on every
+ * host-context-changed, so author CSS can use var(--color-…) and
+ * :root[data-theme="dark"]. A widget invents no palette of its own.
  */
 (function () {
   'use strict';
@@ -121,6 +126,97 @@
     inboundHandlers[method] = handler;
   }
 
+  // --- Host context / theme -----------------------------------------------
+
+  // The widget-side theming convention (spec 2026-01-26, HostContext; the
+  // position doc is framework/docs/content/agent-host.md): a widget
+  // consumes the host's theme signals and invents no palette of its own.
+  // The spec's theme signals are:
+  //
+  //   theme                "light" | "dark"
+  //   styles.variables     CSS custom properties with standardized names
+  //                        (--color-*, --font-*, …), whose values hosts
+  //                        SHOULD write with light-dark()
+  //   styles.css.fonts     @font-face / @import CSS the view injects
+  //
+  // The client merges the ui/initialize result's hostContext and every
+  // ui/notifications/host-context-changed partial update (the spec says
+  // merge, field by field) into the running state below, then applies it
+  // to the document root:
+  //
+  //   theme           → <html data-theme="…"> + color-scheme, which is
+  //                     what makes the host's light-dark() variable
+  //                     values resolve on the correct side
+  //   styles.variables→ inline custom properties on the root, inherited
+  //                     by all author markup
+  //   styles.css.fonts→ one <style data-mcpapp-fonts> element, replaced
+  //                     (never stacked) when the host sends new font CSS
+  //
+  // Widgets have no styling of their own to undo here: a widget that
+  // ignores theming simply does not reference the variables or the
+  // data-theme selector, and the applied state is inert markup.
+  var hostContextState = Object.create(null);
+
+  function mergeHostContext(partial) {
+    if (!partial || typeof partial !== "object") return;
+    for (var k in partial) {
+      if (Object.prototype.hasOwnProperty.call(partial, k)) {
+        hostContextState[k] = partial[k];
+      }
+    }
+  }
+
+  function applyHostTheme() {
+    if (typeof document === "undefined") return;
+    var root = document.documentElement;
+    var theme = hostContextState.theme;
+    if (theme === "light" || theme === "dark") {
+      root.setAttribute("data-theme", theme);
+      root.style.colorScheme = theme;
+    }
+    var styles = hostContextState.styles;
+    if (!styles || typeof styles !== "object") return;
+    var vars = styles.variables;
+    if (vars && typeof vars === "object") {
+      for (var name in vars) {
+        if (!Object.prototype.hasOwnProperty.call(vars, name)) continue;
+        var value = vars[name];
+        // Standardized variable names all start with "--"; anything else
+        // (or a non-string value) is not a theme signal, skip it.
+        if (typeof name === "string" && name.indexOf("--") === 0 && typeof value === "string") {
+          root.style.setProperty(name, value);
+        }
+      }
+    }
+    var css = styles.css;
+    var fonts = (css && typeof css === "object" && typeof css.fonts === "string") ? css.fonts : "";
+    if (fonts) {
+      var el = document.querySelector("style[data-mcpapp-fonts]");
+      if (!el) {
+        el = document.createElement("style");
+        el.setAttribute("data-mcpapp-fonts", "");
+        (document.head || root).appendChild(el);
+      }
+      el.textContent = fonts;
+    }
+  }
+
+  // applyHostContext merges a full or partial HostContext into the
+  // running state and applies its theme signals to the document. Called
+  // by connect(), by the host-context-changed dispatch, and by author
+  // code that wants to re-apply (or seed, in local dev) the state.
+  // Theme application must never break message dispatch, so it is
+  // guarded like a handler: log, don't throw.
+  function applyHostContext(partial) {
+    mergeHostContext(partial);
+    try {
+      applyHostTheme();
+    } catch (e) {
+      if (typeof console !== "undefined" && console.error) {
+        console.error("[mcpapp] applying host theme threw", e);
+      }
+    }
+  }
   // --- Inbound dispatch (host → widget) --------------------------------------
 
   // A JSON-RPC response to a host request. Results here are always {}
@@ -133,6 +229,14 @@
   }
 
   function handleNotification(method, params) {
+    // The theming convention rides the dispatch, not a registered
+    // handler: the client applies host-context-changed BEFORE the app's
+    // own handler runs (and even when none is registered), so the
+    // document root can never miss a theme signal because author code
+    // forgot a handler. Every other notification is the app's alone.
+    if (method === "ui/notifications/host-context-changed") {
+      applyHostContext(params);
+    }
     var h = inboundHandlers[method];
     if (typeof h !== "function") return; // unknown method → ignored, not thrown
     try { h(params || {}); } catch (e) {
@@ -206,11 +310,15 @@
   window.__gofastrMcpApp = {
     // Handshake (call once). Sends ui/initialize carrying the app's
     // appCapabilities, resolves with the host's result — protocolVersion,
-    // hostCapabilities, hostInfo, hostContext — and only then sends the
-    // ui/notifications/initialized notification.
+    // hostCapabilities, hostInfo, hostContext — applies the result's
+    // hostContext theme signals (see applyHostContext), and only then
+    // sends the ui/notifications/initialized notification, so the host
+    // considers the app ready after the document already reflects its
+    // theme.
     connect: function (appCapabilities, timeoutMs) {
       return request("ui/initialize", { appCapabilities: appCapabilities || {} }, timeoutMs)
         .then(function (result) {
+          if (result) applyHostContext(result.hostContext);
           notify("ui/notifications/initialized");
           return result;
         });
@@ -251,7 +359,22 @@
     // answers after it settles — result {} on success, a JSON-RPC
     // error if it throws — then fails every outstanding request with
     // E_TEARDOWN.
-    onResourceTeardown: function (handler) { register("ui/resource-teardown", handler); }
+    onResourceTeardown: function (handler) { register("ui/resource-teardown", handler); },
+    // A copy of the merged HostContext state (initialize result plus
+    // every host-context-changed update). Read-only by convention: the
+    // client keeps the authoritative state for the next apply.
+    hostContext: function () {
+      var copy = {};
+      for (var k in hostContextState) {
+        if (Object.prototype.hasOwnProperty.call(hostContextState, k)) {
+          copy[k] = hostContextState[k];
+        }
+      }
+      return copy;
+    },
+    // Merge + apply a full or partial HostContext by hand (local dev, or
+    // re-applying after author code touched the root's style).
+    applyHostContext: applyHostContext
   };
 
   window.addEventListener("message", onWindowMessage);

@@ -9,6 +9,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **Widget authoring, host-theme consumption, and the agent-host contract**
+  (#291): `AppConfig.HTML` was a raw string, so a widget author hand-wrote
+  the whole document — and a one-character typo in the widget client's
+  script URL produced a widget that rendered and silently never received
+  anything. `mcp.WidgetDocument` assembles the document (doctype, head,
+  root element, the client `<script src>`, the author's script) with the
+  script URL taken from the same constant the server mounts the route at,
+  so it cannot drift; `html/template` escapes the data fields
+  (`Title`/`Lang`/`RootID`) for their contexts while `Body`/`Script` stay
+  verbatim author content, and a `Script` carrying `</script` or `<!--`
+  is rejected at build time instead of shipping a document the HTML
+  parser silently truncates. A round-trip test reads the `ui://` resource
+  back over `resources/read` and asserts the document's one script src is
+  exactly `mcp.WidgetClientScriptURL`, then calls the linking tool.
+
+  The widget client now consumes the host's theme signals (spec 2026-01-26
+  `HostContext`): on `connect()` and on every
+  `ui/notifications/host-context-changed` (partials merged, as the spec
+  requires) it applies `theme` to the document root as
+  `<html data-theme>` + `color-scheme` — the pair that makes the host's
+  `light-dark()` variable values resolve — writes `styles.variables` to
+  the root as inline custom properties, and injects `styles.css.fonts` as
+  one replaced-never-stacked `<style>` element, before any registered
+  handler runs. Widgets consume host theme and invent no palette; the
+  builder emits zero CSS. `framework/docs/content/agent-host.md` is the
+  contract doc (three settled decisions, `RoleAgent`, authoring
+  end-to-end, the theme convention, and what GoFastr deliberately does
+  not do), cross-referenced from agent-ready, scaling, mcp, and
+  generative-ui.
+
 - **The agent surface's middleware posture is pinned** (#291): a cookieless
   bearer request to `/mcp` traverses the whole default chain untouched — CSRF
   skips it by design, nothing demands a cookie, Origin or `Sec-Fetch-Site`,

@@ -85,7 +85,9 @@ requests forward to the app router, so session/bearer auth and owner
 scoping behave exactly as on a serve process (see
 [MCP](mcp.md) and [Auth](auth.md)). Use it when agent traffic arrives
 through a dedicated tunnel or allow-listed listener and you don't want
-that listener to reach the rest of the app.
+that listener to reach the rest of the app. The full contract for what
+the agent surface serves — including the MCP Apps widget traffic that
+rides it — is in [agent host](agent-host.md).
 
 `framework.WithRole(framework.RoleServe)` overrides the env var; an
 invalid value in either fails at construction. The worker's health

@@ -518,7 +518,10 @@ each allowlist into the matching iframe directive (`connectDomains` →
 zero `AppCSP` emits no `csp` key at all.
 
 The widget HTML is the app author's job (a single vanilla-JS file needs no
-build step). `WithMCPApp` is an explicit opt-in registered during
+build step); `mcp.WidgetDocument` assembles it so the widget client's
+script URL cannot drift — see the [agent-host contract](agent-host.md)
+for the full authoring walk-through and the host-theme convention.
+`WithMCPApp` is an explicit opt-in registered during
 `InitPlugins`, so a duplicate tool name or resource uri is a hard build
 error. Requires the `/mcp` server to be mounted (`WithMCP`, or the dev
 auto-mount).
