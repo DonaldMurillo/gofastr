@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
 func setupOwnerCreateInProcHandler(t *testing.T) *CrudHandler {
@@ -193,5 +196,117 @@ func TestParseScopedFilters_CapsInListSize(t *testing.T) {
 	}
 	if _, err := parseScopedFilters("id_in="+values, nil, "comments"); err == nil {
 		t.Fatalf("parseScopedFilters accepted IN list of %d entries (cap %d)", maxScopedINEntries+1, maxScopedINEntries)
+	}
+}
+
+// TestAmbientTxRollbackWithholdsEvents pins that no lifecycle event is
+// published for a write whose ambient transaction rolled back. The HTTP
+// response lane of this property is pinned by the scrubRolledBackData
+// tests (batch_error_leak_security_test.go); the durable outbox lane rolls
+// back with the tx by construction (StageEvent writes in-tx). This test
+// covers the remaining lane: the live bus feeding SSE EventStream and
+// On/Subscribe handlers.
+//
+// Composition follows the documented pattern (docs/content/
+// hooks-and-transactions.md): CRUD operations inside one ambient tx whose
+// owner (the caller) commits or rolls back. inTx's ambient branch
+// (tx.go) joins the outer tx and returns pre-commit, so EmitEvent must
+// not fire until that outer tx has actually committed.
+func TestAmbientTxRollbackWithholdsEvents(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	got := make(chan event.Event, 8)
+	cancel := bus.Subscribe(event.EntityCreated, func(_ context.Context, ev event.Event) error {
+		got <- ev
+		return nil
+	})
+	defer cancel()
+
+	tx, err := dbc.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := db.WithTx(context.Background(), tx)
+
+	// First write succeeds inside the ambient tx.
+	if _, err := ch.CreateOne(ctx, map[string]any{"title": "phantom"}); err != nil {
+		t.Fatalf("first CreateOne: %v", err)
+	}
+	// Second write fails validation (required title missing) → the caller
+	// rolls the whole ambient tx back.
+	if _, err := ch.CreateOne(ctx, map[string]any{"body": "no title"}); err == nil {
+		t.Fatal("expected second CreateOne to fail on missing required title")
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+
+	var n int
+	if err := dbc.QueryRow("SELECT COUNT(*) FROM notes").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("rollback failed: %d rows persisted", n)
+	}
+
+	select {
+	case ev := <-got:
+		t.Fatalf("SECURITY: [event-integrity] EntityCreated delivered on the live bus for a write the ambient transaction rolled back: %v. Property: no lifecycle event is published for a write that did not commit. Attack impact: SSE subscribers and On/Subscribe handlers observe a phantom row (full record payload) that never existed. Fix: commit-gate EmitEvent — when db.TxFromContext finds an uncommitted ambient tx, enqueue the emission on a post-commit callback queue drained by the tx owner instead of firing immediately.", ev.Data)
+	case <-time.After(time.Second):
+		// Fixed behaviour: nothing published for an uncommitted write.
+	}
+}
+
+// TestAmbientTxCommitEmitsEvents is the happy-path pin for the same
+// property: a write whose ambient transaction COMMITS publishes its
+// lifecycle event exactly once, and the row is durable.
+func TestAmbientTxCommitEmitsEvents(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	got := make(chan event.Event, 8)
+	cancel := bus.Subscribe(event.EntityCreated, func(_ context.Context, ev event.Event) error {
+		got <- ev
+		return nil
+	})
+	defer cancel()
+
+	tx, err := dbc.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := db.WithTx(context.Background(), tx)
+	if _, err := ch.CreateOne(ctx, map[string]any{"title": "durable"}); err != nil {
+		t.Fatalf("CreateOne: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	var n int
+	if err := dbc.QueryRow("SELECT COUNT(*) FROM notes").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("committed rows = %d, want 1", n)
+	}
+
+	select {
+	case ev := <-got:
+		data, ok := ev.Data.(map[string]any)
+		if !ok || data[eventKeyEntity] != "notes" {
+			t.Errorf("EntityCreated payload malformed: %v", ev.Data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("EntityCreated not delivered after ambient tx commit")
+	}
+	select {
+	case ev := <-got:
+		t.Errorf("duplicate EntityCreated delivered: %v", ev.Data)
+	case <-time.After(200 * time.Millisecond):
+		// Exactly once, as documented.
 	}
 }

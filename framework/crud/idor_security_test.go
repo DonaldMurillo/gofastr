@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 func TestServeStreamingList_AnonymousOwnerScopedRequestReturnsNoRows(t *testing.T) {
@@ -95,5 +96,46 @@ func TestNestedFilter_ManyToManyRejectsUnsafeFieldName(t *testing.T) {
 	})
 	if strings.Contains(sqlStr, "OR 1=1") {
 		t.Fatalf("SECURITY: [nested-filter] many-to-many query embeds attacker field name verbatim: %s", sqlStr)
+	}
+}
+
+// TestStreamDirectWithHooksRefuses pins the hook half of the direct-call
+// contract on ServeStreamingList: when the entity registers AfterList
+// hooks, the streaming path must refuse (400) rather than emit
+// un-redacted rows. The scoping half for direct callers is pinned by
+// TestServeStreamingList_AnonymousOwnerScopedRequestReturnsNoRows above;
+// the List() route's own refusal is pinned by
+// TestStreamWithAfterListRejected (stream_include_hook_test.go). The
+// guard currently lives only in List() (crud.go), while the exported
+// method re-enforces scoping for direct callers but not the hook
+// precondition, so a direct call streams stored values past a
+// registered redactor.
+func TestStreamDirectWithHooksRefuses(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, db := setupOwnerScopedHandler(t)
+	// One pooled connection: sqlite :memory: gives each pool connection
+	// its own private database, and the seeded row must be visible to the
+	// streaming query for the leak assertion to be meaningful.
+	db.SetMaxOpenConns(1)
+	seedRow(t, db, "log-a1", "alice", "alice secret")
+
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.AfterList, func(ctx context.Context, data any) error {
+		p, _ := data.(*hook.ListPayload)
+		for i := range p.Results {
+			delete(p.Results[i], "notes")
+		}
+		return nil
+	})
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/logs?stream=true", nil), "alice")
+	rec := httptest.NewRecorder()
+	ch.ServeStreamingList(req.Context(), rec, req, []string{"id", "user_id", "notes"}, nil, nil, nil, 1, 10, nil)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("SECURITY: [stream-hook] direct ServeStreamingList with AfterList hooks returned %d, want 400 (List() refuses the same request; the exported method must not bypass the redaction chain it cannot run). Body: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "alice secret") {
+		t.Fatalf("SECURITY: [stream-hook] AfterList redaction bypassed by direct streaming: stored value %q reached the wire", "alice secret")
 	}
 }
