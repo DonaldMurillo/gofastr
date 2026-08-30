@@ -25,6 +25,8 @@ import (
 //   - GET  /auth/2fa/backup-codes  (plaintext backup codes)
 //   - POST /auth/tokens            (gfsk_ plaintext, "shown exactly ONCE;
 //     never retrievable again")
+//   - POST /auth/login             (live JWT in the 200 JSON body)
+//   - GET  /auth/me                (session-scoped account data)
 func TestCredentialResponsesSetNoStore(t *testing.T) {
 	mgr, _, _, cookie := newTwoFATestEnv(t)
 	r := mountRoutes(mgr)
@@ -35,6 +37,30 @@ func TestCredentialResponsesSetNoStore(t *testing.T) {
 			t.Errorf("SECURITY: [cred-no-store] %s returned a live credential with Cache-Control %q: an intermediary or back/forward cache can retain a body the API treats as shown-once", surface, cc)
 		}
 	}
+
+	// Surface: login (JWT). Runs BEFORE any 2FA enrolment below: a
+	// pending-2FA login deliberately withholds the JWT (core.go), and
+	// this surface pins the credential-bearing shape of the plain
+	// path — a cached login response is a cached bearer credential.
+	lreq := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"email":"alice@test.com","password":"testpass"}`))
+	lreq.Header.Set("Content-Type", "application/json")
+	lw := httptest.NewRecorder()
+	r.ServeHTTP(lw, lreq)
+	if lw.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", lw.Code, lw.Body.String())
+	}
+	check("POST /auth/login", lw)
+
+	// Surface: /auth/me (session-scoped account data: who is signed in
+	// under this cookie — replayable from a shared machine's cache).
+	mreq := httptest.NewRequest("GET", "/auth/me", nil)
+	mreq.AddCookie(&http.Cookie{Name: "session_id", Value: cookie})
+	mw := httptest.NewRecorder()
+	r.ServeHTTP(mw, mreq)
+	if mw.Code != http.StatusOK {
+		t.Fatalf("me: %d %s", mw.Code, mw.Body.String())
+	}
+	check("GET /auth/me", mw)
 
 	// Surface: enroll (TOTP secret).
 	req := httptest.NewRequest("POST", "/auth/2fa/enroll", nil)

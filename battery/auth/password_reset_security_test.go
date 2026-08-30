@@ -253,3 +253,99 @@ func TestPasswordReset_KillsSiblingTokens(t *testing.T) {
 		t.Error("SECURITY: [reset-sibling-tokens] the stale token changed the password after the reset completed")
 	}
 }
+
+// countingResetTokenStore / countingResetSender count the synchronous
+// side effects forgot-password can perform per request.
+type countingResetTokenStore struct {
+	inner     MagicLinkTokenStore
+	creations int
+}
+
+func (s *countingResetTokenStore) CreateToken(ctx context.Context, email string, ttl time.Duration) (string, error) {
+	s.creations++
+	return s.inner.CreateToken(ctx, email, ttl)
+}
+func (s *countingResetTokenStore) RedeemToken(ctx context.Context, token string) (string, error) {
+	return s.inner.RedeemToken(ctx, token)
+}
+func (s *countingResetTokenStore) Cleanup(ctx context.Context) (int, error) {
+	return s.inner.Cleanup(ctx)
+}
+
+type countingResetSender struct{ sends int }
+
+func (s *countingResetSender) Send(context.Context, string, string) error {
+	s.sends++
+	return nil
+}
+
+// Property: an anti-enumeration endpoint must perform the SAME
+// synchronous work on the known-account and unknown-account branches.
+// forgot-password always returns 200 {"sent":true} (the deferred encode
+// in password_reset.go:120-123), but only the known-email branch creates
+// a reset token and synchronously invokes the sender
+// (password_reset.go:158-171) while the unknown-email branch returns
+// after the audit event (password_reset.go:133-147) — sender latency
+// rides the response, so the uniform body is undone by a
+// branch-dependent response time: an account-existence oracle (CWE-208).
+//
+// Pinned as work parity (counted side effects), the deterministic proxy
+// for the latency claim: unequal branch work implies unequal branch
+// time. A wall-clock assertion was rejected as flaky; equal counts hold
+// for any branch-independent fix (equal inline work, or delivery moved
+// off the request path for BOTH branches).
+//
+// Surface: POST /auth/forgot-password.
+func TestForgotPasswordBranchWorkParity(t *testing.T) {
+	store := newUserStoreWithPassword()
+	mgr := New(AuthConfig{
+		SessionTTL:    time.Hour,
+		SessionCookie: "session_id",
+		UserStore:     store,
+		DevMode:       true,
+	})
+	mgr.Use(NewCorePlugin())
+	tokens := &countingResetTokenStore{inner: NewMemoryMagicLinkTokenStore()}
+	sender := &countingResetSender{}
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		EmailSender: sender,
+		TokenStore:  tokens,
+	}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	oldHash, err := HashPassword("oldpw123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := &BasicUser{ID: "u-parity", Email: "known@example.com", Roles: []string{"user"}}
+	store.users["known@example.com"] = &storeEntry{user: user, hash: oldHash}
+	store.byID[user.ID] = store.users["known@example.com"]
+
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	post := func(email string) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"email": email})
+		req := httptest.NewRequest(http.MethodPost, "/auth/forgot-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("forgot-password %s: %d %s", email, w.Code, w.Body.String())
+		}
+	}
+
+	post("known@example.com")
+	knownWork := tokens.creations + sender.sends
+	post("nobody@example.com")
+	unknownWork := tokens.creations + sender.sends - knownWork
+
+	if unknownWork != knownWork {
+		t.Errorf("SECURITY: [forgot-branch-parity] POST /auth/forgot-password performed %d synchronous side-effect calls (token create + email send) for a KNOWN email but %d for an UNKNOWN email — the branch-dependent work is the latency oracle behind the endpoint's uniform 200 {\"sent\":true} (CWE-208): account existence is readable by timing responses. Both branches must do the same synchronous work", knownWork, unknownWork)
+	}
+}

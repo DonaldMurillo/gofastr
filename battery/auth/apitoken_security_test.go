@@ -447,3 +447,61 @@ func TestTokenCreateRejectsNegativeTTL(t *testing.T) {
 		t.Fatalf("SECURITY: [api-token-ttl] negative-ttl mint left %d rows; want none", len(rows))
 	}
 }
+
+// failingTokenStore is an APITokenStore whose Create fails with a
+// driver-shaped error carrying an unmistakable sentinel, standing in for
+// any persistence-layer failure (unreachable DB, constraint violation,
+// pooler reset). The other methods are unreachable on the create path.
+type failingTokenStore struct{ err error }
+
+func (s failingTokenStore) Create(context.Context, APIToken, string) error {
+	return s.err
+}
+func (s failingTokenStore) FindByHash(context.Context, string) (*APIToken, error) {
+	return nil, nil
+}
+func (s failingTokenStore) List(context.Context, string, string) ([]APIToken, error) {
+	return nil, nil
+}
+func (s failingTokenStore) Revoke(context.Context, string, string, string) error {
+	return nil
+}
+func (s failingTokenStore) TouchLastUsed(context.Context, string, time.Time) error {
+	return nil
+}
+
+// Property: an error from the persistence layer must never reach the
+// HTTP response verbatim. IssueToken wraps arbitrary store failures into
+// its returned error (apitoken.go:179-181), and createTokenHandler
+// forwards err.Error() straight into the response
+// (apitoken_routes.go:133-135) — the battery's only raw err.Error()
+// passthrough; every sibling handler maps store failures to fixed
+// strings ("revoke failed", "list tokens failed", "session create
+// failed"). Driver text (hostnames, DSNs, constraint names) is operator
+// infrastructure detail, not client output.
+//
+// Surface: POST /auth/tokens (driven handler-direct like the sibling
+// pins; the route needs only the session user in ctx).
+func TestTokenCreate_StoreErrNotLeaked(t *testing.T) {
+	const sentinel = "pq: connect ECONNREFUSED internal-host.db:5432 SENTINEL-7f3a2b"
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true})
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	plugin := NewTokensPlugin(failingTokenStore{err: fmt.Errorf("%s", sentinel)})
+	if err := plugin.Init(mgr); err != nil {
+		t.Fatalf("plugin Init: %v", err)
+	}
+
+	req := bearerRequestWithJSON("POST", "/auth/tokens", `{"name":"n"}`)
+	req = req.WithContext(handler.SetUser(req.Context(), &BasicUser{ID: "alice"}))
+	w := httptest.NewRecorder()
+	plugin.createTokenHandler().ServeHTTP(w, req)
+
+	if strings.Contains(w.Body.String(), "SENTINEL-7f3a2b") {
+		t.Errorf("SECURITY: [api-token-err-leak] POST /auth/tokens echoed the token store's raw error to the client (%d): %s — IssueToken wraps arbitrary persistence failures (apitoken.go:179-181) and the handler forwards err.Error() verbatim (apitoken_routes.go:134); map store faults to a fixed message like every sibling handler", w.Code, w.Body.String())
+	}
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("SECURITY: [api-token-err-leak] POST /auth/tokens answered a store failure with %d, want 5xx — a persistence-layer fault is not a client-input problem (400)", w.Code)
+	}
+}
