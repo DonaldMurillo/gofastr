@@ -19,7 +19,9 @@ import (
 // http.ErrHandlerTimeout rather than racing the 504 onto the wire.
 func TestTimeoutAbandonsPartialResponse(t *testing.T) {
 	writeErr := make(chan error, 1)
+	handlerDone := make(chan struct{})
 	h := Timeout(30 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(handlerDone)
 		w.Header().Set("X-Partial-Secret", "handler-state-leak")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -32,6 +34,10 @@ func TestTimeoutAbandonsPartialResponse(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/slow", nil))
+	// ServeHTTP returns as soon as the 504 is written; the abandoned
+	// handler is still running. Reading rec now would let a broken
+	// late-write guard corrupt it after the assertions had passed.
+	awaitHandler(t, handlerDone)
 
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Fatalf("status = %d, want 504", rec.Code)
@@ -121,7 +127,9 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 		var streamedN, gwN int
 		for i := range 32 {
 			delay := delays[i%len(delays)] * time.Millisecond
+			iterDone := make(chan struct{})
 			h := Timeout(15 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(iterDone)
 				time.Sleep(delay)
 				w.(http.Flusher).Flush()
 				for range 4 {
@@ -131,6 +139,7 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 			}))
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/race", nil))
+			awaitHandler(t, iterDone)
 			body := rec.Body.String()
 			streamed := strings.Contains(body, frame)
 			gw := strings.Contains(body, "Gateway Timeout")
@@ -155,4 +164,16 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 		}
 		t.Logf("boundary straddled: %d streamed, %d timed out", streamedN, gwN)
 	})
+}
+
+// awaitHandler blocks until the abandoned handler goroutine has
+// finished, so assertions read a recorder nothing can still write to.
+// Bounded, because a handler that never returns is itself the bug.
+func awaitHandler(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler never returned after the deadline")
+	}
 }
