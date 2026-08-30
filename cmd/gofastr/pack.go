@@ -568,8 +568,16 @@ func yamlKeyRejectReason(key string) string {
 		return "line breaks re-parse as new YAML structure — the key-injection vector"
 	case strings.Contains(key, ":"):
 		return "core/yaml cuts keys at the first ':' and never unquotes, so the key would re-parse truncated"
+	case strings.ContainsAny(key, "\"'"):
+		return "a quote anywhere in a key desyncs core/yaml's comment scanner from the " +
+			"quoted value, and a leading quote sends the whole entry down the " +
+			"quoted-scalar path — either way the file cannot be read back"
 	case strings.Contains(key, "#"):
-		return "'#' starts a comment on re-parse"
+		// Conservative rather than parser-exact: '#' only opens a comment at
+		// position 0 or after a space, so an interior a#b would in fact
+		// survive. Refused anyway — one simple predicate beats a
+		// position-dependent one, and no real key carries a '#'.
+		return "'#' may open a comment on re-parse, depending on position"
 	case strings.ContainsAny(key, "[]{}"):
 		return "core/yaml rejects flow indicators in keys, so the file could not be read back"
 	case strings.HasPrefix(key, "- "):

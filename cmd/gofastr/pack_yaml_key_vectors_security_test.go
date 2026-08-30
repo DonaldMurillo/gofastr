@@ -20,6 +20,8 @@ func TestYAMLKeyRejectReason_EachVectorIndependently(t *testing.T) {
 		{"newline only", "a\nb", "line breaks"},
 		{"carriage return only", "a\rb", "line breaks"},
 		{"colon only", "a:b", "first ':'"},
+		{"double quote leading", "\"status", "quote"},
+		{"apostrophe interior", "it's", "quote"},
 		{"hash only", "a#b", "comment"},
 		{"flow indicator only", "a[b", "flow indicators"},
 		{"list prefix only", "- a", "list item"},
