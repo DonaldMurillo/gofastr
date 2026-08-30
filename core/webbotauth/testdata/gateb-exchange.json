@@ -1,0 +1,6 @@
+{
+  "base": "\"@method\": POST\n\"@authority\": api.example.com\n\"@path\": /search\n\"@query\": ?q=web+bot\u0026lang=en\n\"@query-param\";name=\"q\": web%20bot\n\"date\": Tue, 20 Apr 2021 02:07:55 GMT\n\"x-ows-header\": value with outer spaces\n\"signature-agent\";key=\"sig1\": \"https://agent.example\"\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"@query\" \"@query-param\";name=\"q\" \"date\" \"x-ows-header\" \"signature-agent\";key=\"sig1\");created=1735689600;keyid=\"gate-b-key\";tag=\"web-bot-auth\"",
+  "pub_x_b64url": "Pf_a18r9CNXmWVW6WVixlKuXxaMjbxVwVBkRUqHXZTY",
+  "sig_b64": "p81Yx3JUqasDJYpMehhDcjq3iMrizU3us7XnYmp2z2jzQpnP8mU96x+jofoHm38CpJMyx062GolOuF7SlCrZBA==",
+  "signature_input": "sig1=(\"@method\" \"@authority\" \"@path\" \"@query\" \"@query-param\";name=\"q\" \"date\" \"x-ows-header\" \"signature-agent\";key=\"sig1\");created=1735689600;keyid=\"gate-b-key\";tag=\"web-bot-auth\""
+}

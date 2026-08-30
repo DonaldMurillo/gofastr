@@ -134,6 +134,17 @@ outbound-fetch surfaces (webhooks, the harness) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
 `IsInternal`.
 
+### webbotauth
+
+Inbound Web Bot Auth verification: RFC 9421 signature-base assembly,
+Ed25519 verification under the Web Bot Auth draft profile, and the
+SSRF-hardened agent key-directory fetcher. Experimental and
+draft-tracked (see `web-bot-auth.md`). Indirect: hosts turn it on with
+`framework.WithWebBotAuth{Verify: …}` and read
+`framework.VerifiedAgent`; reach for the package directly only to
+verify outside a GoFastr app. Start at `core/webbotauth/webbotauth.go`:
+`Verifier`.
+
 ### fuzzy
 
 Shared string-similarity helpers, currently `Levenshtein` edit distance

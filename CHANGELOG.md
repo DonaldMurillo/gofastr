@@ -55,6 +55,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   card whose URLs derive from the request `Host` header would hand an
   attacker a validly-signed card pointing at their own endpoint.
 
+- **Inbound Web Bot Auth verification (experimental)** (#290):
+  `WithWebBotAuth` grew a `Verify` field — the option now owns both
+  directions of the protocol. Publishing (the JWKS at
+  `/.well-known/http-message-signatures-directory`) is unchanged and
+  pinned byte-for-byte by a test when the new fields are unset.
+  `Verify` installs RFC 9421 verification under the profile of
+  `draft-meunier-webbotauth-httpsig-protocol-02` (18 August 2026 —
+  pinned; the draft is moving and this half tracks it deliberately).
+  Ed25519 only. Handlers read `framework.VerifiedAgent(ctx)` for the
+  verified identity (resolved directory URL + key thumbprint), nil for
+  the unverified majority. Default is observe mode — annotate and log,
+  never block — so a verification bug cannot take an app's traffic
+  down; `Require` opts an endpoint into 403s. The agent key-directory
+  fetcher treats its URL as an SSRF primitive: `core/netguard` at
+  parse, resolve, and dial time (the TOCTOU-closing hook), https only,
+  redirects never followed, 256 KiB body cap, 5 s timeout, 32-key cap,
+  separate bounded positive/negative caches with coalescing, and
+  refresh-on-TTL rotation where a successful refetch replaces the key
+  set and a failed one never evicts. Conformance: RFC 9421's Ed25519
+  vector (B.2.6), the draft's E.2.1–E.2.3 vectors, a Node WebCrypto
+  cross-check, and mutation proofs for every guard, all committed as
+  testdata. The generated SDKs, app CLI, and webhook battery
+  deliberately do not sign: baking draft churn into generated code
+  would make every draft revision a breaking change downstream.
+
 ## [0.75.0] - 2026-08-29
 
 ### Added

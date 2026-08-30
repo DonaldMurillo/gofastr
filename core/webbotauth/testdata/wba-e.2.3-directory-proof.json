@@ -1,0 +1,17 @@
+{
+  "source": "draft-meunier-webbotauth-httpsig-protocol-02 Appendix E.2.3 (EdDSA Using Curve edwards25519, Signed directory response), 18 August 2026. https://www.ietf.org/archive/id/draft-meunier-webbotauth-httpsig-protocol-02.txt",
+  "note": "A directory possession proof (draft Appendix B): a response-side signature over @authority;req from the fetching request and the response Content-Digest, tag http-message-signatures-directory. draft-02 makes the proof optional for directly resolved directories; this vector gates the response-side signature base builder, it is not required on fetches.",
+  "fetch_request": {
+    "method": "GET",
+    "target": "/.well-known/http-message-signatures-directory",
+    "host": "signature-agent.test"
+  },
+  "response_headers": {
+    "Content-Digest": "sha-256=:CADMT2aBdV/rqQr/NIru64ERQkCobVvllA4V0fLFDu0=:"
+  },
+  "directory_body": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\",\"x\":\"JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs\",\"use\":\"sig\"}]}",
+  "signature_input": "binding=(\"@authority\";req \"content-digest\");created=1735689600;expires=4889289600;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";tag=\"http-message-signatures-directory\"",
+  "signature_label": "binding",
+  "signature": "l6P8R67tm3kujAxbHWio7ll01qrEZ0dKD/WWlGhNYEmTnFZM8Wt0VQ9zqGfvo7T/UMkBxsigzChM1Gpz7gOVBg==",
+  "expected_base": "\"@authority\";req: signature-agent.test\n\"content-digest\": sha-256=:CADMT2aBdV/rqQr/NIru64ERQkCobVvllA4V0fLFDu0=:\n\"@signature-params\": (\"@authority\";req \"content-digest\");created=1735689600;expires=4889289600;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";tag=\"http-message-signatures-directory\""
+}

@@ -1,0 +1,22 @@
+{
+  "source": "draft-meunier-webbotauth-httpsig-protocol-02 Appendix E.2.2 (EdDSA Using Curve edwards25519, Legacy Signature-Agent sf-string), 18 August 2026. https://www.ietf.org/archive/id/draft-meunier-webbotauth-httpsig-protocol-02.txt",
+  "note": "Legacy bare-string Signature-Agent: accepted per draft section 5.2.1 and treated as a single directory member keyed to the covering signature's label. expires=1735693200 is one hour after creation, so the pinned verification time sits inside the window.",
+  "verification_time": "2025-01-01T00:00:30Z",
+  "request": {
+    "method": "GET",
+    "target": "/path/to/resource",
+    "host": "example.com",
+    "headers": {
+      "Signature-Agent": "\"https://signature-agent.test\""
+    }
+  },
+  "signature_agent_url": "https://signature-agent.test",
+  "signature_agent_type": "legacy-string",
+  "signature_input": "sig2=(\"@authority\" \"signature-agent\");created=1735689600;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";expires=1735693200;nonce=\"e8N7S2MFd/qrd6T2R3tdfAuuANngKI7LFtKYI/vowzk4lAZYadIX6wW25MwG7DCT9RUKAJ0qVkU0mEeLElW1qg==\";tag=\"web-bot-auth\"",
+  "signature_label": "sig2",
+  "signature": "jdq0SqOwHdyHr9+r5jw3iYZH6aNGKijYp/EstF4RQTQdi5N5YYKrD+mCT1HA1nZDsi6nJKuHxUi/5Syp3rLWBA==",
+  "directory_body": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\",\"x\":\"JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs\",\"use\":\"sig\"}]}",
+  "directory_host": "signature-agent.test",
+  "expected_agent_url": "https://signature-agent.test/.well-known/http-message-signatures-directory",
+  "expected_base": "\"@authority\": example.com\n\"signature-agent\": \"https://signature-agent.test\"\n\"@signature-params\": (\"@authority\" \"signature-agent\");created=1735689600;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";expires=1735693200;nonce=\"e8N7S2MFd/qrd6T2R3tdfAuuANngKI7LFtKYI/vowzk4lAZYadIX6wW25MwG7DCT9RUKAJ0qVkU0mEeLElW1qg==\";tag=\"web-bot-auth\""
+}

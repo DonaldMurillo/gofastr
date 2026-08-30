@@ -168,6 +168,7 @@ var docIntents = []docIntent{
 			{"acp", "ACP server", "core/acp speaks the Agent Client Protocol v1: sessions, streamed updates, permissioned tool calls."},
 			{"webmcp", "WebMCP bridge", "Experimental: expose server-declared tools to in-browser agents via the page's modelContext."},
 			{"agent-host", "Agent host", "The chat-host surface contract: RoleAgent, widget authoring with the document builder, and consuming host theme signals instead of shipping a palette."},
+			{"web-bot-auth", "Web Bot Auth", "Publish your signing JWKS, and (experimental) verify RFC 9421 signatures on inbound agent traffic against draft-meunier-webbotauth-httpsig-protocol-02."},
 			{"generative-ui", "Generative UI", "The position: models compose the design system, never emit markup or CSS; what that means per surface."},
 			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine. No API key."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},
