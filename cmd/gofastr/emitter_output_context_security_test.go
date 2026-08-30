@@ -492,7 +492,11 @@ func TestPackYAMLListItemStaysOneItem(t *testing.T) {
 				},
 			}},
 		}
-		yml := encodeBlueprintYAML(bp)
+		yml, err := encodeBlueprintYAML(bp)
+		if err != nil {
+			t.Errorf("SECURITY: [yaml-injection] %q: pack refused a value-only hostile blueprint: %v", payload, err)
+			continue
+		}
 		back, err := decodeBlueprintString(yml)
 		if err != nil {
 			t.Errorf("SECURITY: [yaml-injection] %q: pack emitted YAML that no longer parses: %v\n%s", payload, err, yml)

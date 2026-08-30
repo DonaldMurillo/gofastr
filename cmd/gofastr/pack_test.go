@@ -131,7 +131,10 @@ func TestPack_SerializerRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse meridian.yml: %v", err)
 	}
-	yml := encodeBlueprintYAML(a)
+	yml, err := encodeBlueprintYAML(a)
+	if err != nil {
+		t.Fatalf("serialize meridian blueprint: %v", err)
+	}
 	b, err := decodeBlueprintString(yml)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)

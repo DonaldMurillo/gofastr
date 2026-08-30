@@ -277,7 +277,10 @@ func TestPack_ReadScopeSerializerRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	yml := encodeBlueprintYAML(a)
+	yml, err := encodeBlueprintYAML(a)
+	if err != nil {
+		t.Fatalf("serialize blueprint: %v", err)
+	}
 	b, err := decodeBlueprintString(yml)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
