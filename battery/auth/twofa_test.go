@@ -995,3 +995,108 @@ func TestTwoFA_RequireMiddleware_NoEnrollmentBypass(t *testing.T) {
 
 // Compile guard
 var _ = fmt.Sprintf
+
+// failingMarkSessionStore delegates everything to the inner store but fails
+// MarkTwoFactorVerified once armed. Armed AFTER enrollment so the enrollment
+// path (whose mark verifyHandler checks) still succeeds.
+type failingMarkSessionStore struct {
+	SessionStore
+	marker  SessionTwoFAMarker
+	pending SessionPendingMarker
+	failNow bool
+}
+
+// MarkPendingTwoFactor forwards to the inner store: embedding the
+// SessionStore interface hides MemorySessionStore's optional extensions,
+// and login fails closed ("two-factor enforcement unavailable") for an
+// enrolled user when the pending marker is not reachable.
+func (f *failingMarkSessionStore) MarkPendingTwoFactor(ctx context.Context, token string) error {
+	return f.pending.MarkPendingTwoFactor(ctx, token)
+}
+
+func (f *failingMarkSessionStore) MarkTwoFactorVerified(ctx context.Context, token string) error {
+	if f.failNow {
+		return errors.New("session store: mark failed")
+	}
+	return f.marker.MarkTwoFactorVerified(ctx, token)
+}
+
+// Property: a step-up success response must reflect that the session was
+// actually marked verified. challengeHandler discards markSessionTwoFA's
+// error (twofa.go:571 `_ = marker.MarkTwoFactorVerified(...)`) and answers
+// 200 verified:true regardless, while verifyHandler treats the same failure
+// as a 500. Divergent handling of one invariant: the client is told step-up
+// succeeded while every RequireTwoFA-gated request then 403s, and the
+// failure reaches no log. Fails closed security-wise (unmarked session),
+// so this is consistency/observability: mirror verifyHandler's 500.
+func TestChallengeFailsWhenMarkFails(t *testing.T) {
+	sess := NewMemorySessionStore()
+	wrapped := &failingMarkSessionStore{SessionStore: sess, marker: sess, pending: sess}
+	twoFAStore := NewMemoryTwoFAStore()
+	userStore := newMemoryUserStore()
+	mgr := New(AuthConfig{
+		JWTSecret:           "test-secret",
+		AllowInMemoryStores: true,
+		SessionCookie:       "session_id",
+		SessionTTL:          time.Hour,
+		UserStore:           userStore,
+		SessionStore:        wrapped,
+	})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twoFAStore}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	seedUser(t, userStore, "alice@test.com", "testpass")
+	r := mountRoutes(mgr)
+
+	login := func() string {
+		req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"email":"alice@test.com","password":"testpass"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("login: %d %s", w.Code, w.Body.String())
+		}
+		for _, c := range w.Result().Cookies() {
+			if c.Name == "session_id" {
+				return c.Value
+			}
+		}
+		t.Fatal("no session cookie after login")
+		return ""
+	}
+	cookie := login()
+
+	// Enroll + verify (mark not armed yet, so enrollment succeeds).
+	req := httptest.NewRequest("POST", "/auth/2fa/enroll", nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: cookie})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var enrollResp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&enrollResp); err != nil {
+		t.Fatal(err)
+	}
+	code := GenerateTOTP(enrollResp["secret"].(string), uint64(time.Now().Unix())/30)
+	req = httptest.NewRequest("POST", "/auth/2fa/verify", strings.NewReader(fmt.Sprintf(`{"code":"%s"}`, code)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: cookie})
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("verify: %d %s", w.Code, w.Body.String())
+	}
+
+	// A fresh pending session, then the session store starts failing marks.
+	pending := login()
+	wrapped.failNow = true
+
+	req = httptest.NewRequest("POST", "/auth/2fa/challenge", strings.NewReader(fmt.Sprintf(`{"code":"%s"}`, GenerateTOTP(enrollResp["secret"].(string), uint64(time.Now().Unix())/30))))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: pending})
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK && strings.Contains(w.Body.String(), `"verified":true`) {
+		t.Fatalf("SECURITY: [twofa-mark-swallowed] /2fa/challenge answered 200 verified:true while MarkTwoFactorVerified failed: the session was never stepped up, so every gated route 403s and the failure is logged nowhere (verifyHandler 500s on the same error). got %d: %s", w.Code, w.Body.String())
+	}
+}

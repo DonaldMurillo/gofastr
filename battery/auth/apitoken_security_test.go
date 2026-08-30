@@ -413,3 +413,37 @@ func TestAPIToken_MalformedGfskTokenAnonymous(t *testing.T) {
 		}
 	}
 }
+
+// ─── 10. negative ttl_seconds must not mint a permanent token ───────────
+
+// Property: client-supplied credential lifetime inputs must be validated,
+// not silently coerced to the strongest setting. The route passes
+// time.Duration(body.TTLSeconds)*time.Second into TokenSpec.TTL and
+// IssueToken only arms ExpiresAt when TTL > 0, so ttl_seconds:-1 lands in
+// the no-expiry arm: the caller asked for a bounded token and silently
+// receives a permanent one, the credential class the route exists to let
+// users bound. Self-affecting, so informational severity, but the coercion
+// must be a 400, not the strongest credential.
+func TestTokenCreateRejectsNegativeTTL(t *testing.T) {
+	_, ts, _ := newTokenTestDB(t)
+	ctx := context.Background()
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true})
+	mgr.Init(nil)
+	plugin := NewTokensPlugin(ts)
+	plugin.Init(mgr)
+
+	req := bearerRequestWithJSON("POST", "/auth/tokens", `{"name":"oops","ttl_seconds":-1}`)
+	req = req.WithContext(handler.SetUser(req.Context(), &BasicUser{ID: "alice"}))
+	rec := httptest.NewRecorder()
+	plugin.createTokenHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("SECURITY: [api-token-ttl] ttl_seconds:-1 accepted (%d): caller requested an expiring token, got a permanent one. body=%s", rec.Code, rec.Body.String())
+	}
+	rows, err := ts.List(ctx, "user", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("SECURITY: [api-token-ttl] negative-ttl mint left %d rows; want none", len(rows))
+	}
+}

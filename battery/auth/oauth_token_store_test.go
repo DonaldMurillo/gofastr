@@ -339,3 +339,82 @@ func TestOAuthStore_RequiresKey(t *testing.T) {
 		t.Fatalf("non-empty key should succeed: %v", err)
 	}
 }
+
+// Property: read-modify-write on persisted auth state must not blind-write
+// over a concurrent mutation (lost update). RefreshOAuthToken does
+// Get → provider exchange → Save of the FULL row while SQLOAuthTokenStore.Save
+// is an unconditional upsert with no version column, so a newer grant Saved
+// during the exchange (the OAuth callback's Save of a brand-new
+// authorization after the user re-authenticates) is overwritten with the
+// stale row. When the provider omits a refresh token on the refresh grant
+// (Google's typical behavior) the OLD refresh token is written back over
+// the newer one; under provider rotation the provider has already killed
+// the old grant when it issued the new one, so the stored linkage bricks
+// until the user re-logs-in.
+//
+// The interleaving is injected at the exact seam: the token endpoint
+// applies the newer Save WHILE the refresh exchange is in flight (after
+// RefreshOAuthToken's Get, before its Save).
+func TestRefreshDoesNotClobberNewerToken(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver unavailable")
+	}
+	t.Cleanup(func() { db.Close() })
+	db.SetMaxOpenConns(1) // :memory: is per-connection; one conn shares the DB
+	store, err := NewSQLOAuthTokenStore(db, SQLOAuthTokenStoreConfig{
+		EncryptionKey: []byte("test-oauth-token-store-key-0123456789"),
+	})
+	if err != nil {
+		t.Fatalf("NewSQLOAuthTokenStore: %v", err)
+	}
+	ctx := context.Background()
+
+	// The stale grant the refresh path reads first.
+	if err := store.Save(ctx, OAuthTokenRecord{
+		UserID:       "u1",
+		Provider:     "google",
+		AccessToken:  "stale-access", // not-a-secret: refresh-race fixture
+		RefreshToken: "rt-old",       // not-a-secret: refresh-race fixture
+		Expiry:       time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// While the exchange is in flight, the login callback Saves a brand-new
+	// grant carrying a rotated refresh token. The endpoint's response omits
+	// refresh_token (Google behavior), so the refresh path keeps the OLD
+	// one and writes it back.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := store.Save(ctx, OAuthTokenRecord{
+			UserID:       "u1",
+			Provider:     "google",
+			AccessToken:  "newer-access", // not-a-secret: refresh-race fixture
+			RefreshToken: "rt-newer",     // not-a-secret: refresh-race fixture
+			Expiry:       time.Now().Add(time.Hour),
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "refreshed-access", "expires_in": 3600})
+	}))
+	defer srv.Close()
+	prov := NewGoogleProvider("cid", "csec", "http://localhost/cb")
+	prov.tokenEndpoint = srv.URL
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	prov.httpClient = &http.Client{Timeout: 60 * time.Second, Transport: tr}
+
+	if _, err := RefreshOAuthToken(ctx, store, prov, "u1"); err != nil {
+		t.Fatalf("RefreshOAuthToken: %v", err)
+	}
+
+	got, err := store.Get(ctx, "u1", "google")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RefreshToken != "rt-newer" {
+		t.Fatalf("SECURITY: [oauth-refresh-lost-update] stale refresh token clobbered the newer grant: stored %q, want \"rt-newer\". RefreshOAuthToken's unconditional Save lost the login callback's rotated token; under provider rotation the linkage bricks until re-login", got.RefreshToken)
+	}
+}
