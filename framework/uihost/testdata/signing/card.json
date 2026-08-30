@@ -1,0 +1,43 @@
+{
+  "capabilities": {
+    "pushNotifications": false,
+    "streaming": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "description": "signed-card fixture",
+  "name": "Fixture Agent",
+  "signatures": [
+    {
+      "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vY2FyZC1zaWduaW5nLmZpeHR1cmUudGVzdC8ud2VsbC1rbm93bi9qd2tzLmpzb24iLCJraWQiOiJmaXh0dXJlLWVkLTEiLCJ0eXAiOiJKT1NFIn0",
+      "signature": "06rYPX4jLxKRJLQJ24Tf0WA7w3tWpIZcPisugkXnU6fO_T1_69IFr3h9Y9-HMNb9UISjF9UW9M1VIzvVBgubBA"
+    },
+    {
+      "protected": "eyJhbGciOiJFUzI1NiIsImprdSI6Imh0dHBzOi8vY2FyZC1zaWduaW5nLmZpeHR1cmUudGVzdC8ud2VsbC1rbm93bi9qd2tzLmpzb24iLCJraWQiOiJmaXh0dXJlLWVjLTEiLCJ0eXAiOiJKT1NFIn0",
+      "signature": "DXxVHU6hgcoyfLCy0VUILNQ7LplK8tIYevzLisAWn_7HPpe5cOjxpvqaTX4W8rbUjtpJAWVrfo6rbC_7D18w2g"
+    }
+  ],
+  "skills": [
+    {
+      "description": "Call the server's MCP tools over JSON-RPC at /mcp",
+      "id": "mcp",
+      "name": "Model Context Protocol tools",
+      "tags": [
+        "mcp",
+        "tools"
+      ]
+    }
+  ],
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0",
+      "url": "https://card-signing.fixture.test/mcp"
+    }
+  ],
+  "version": "9.9.9"
+}
