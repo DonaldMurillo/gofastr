@@ -154,6 +154,11 @@ type RouteEntry struct {
 	// carries it to the client so SPA navigation rewrites without a
 	// round-trip.
 	RedirectTo string
+	// NoSPA excludes the route from the client manifest: links to it
+	// resolve as full document loads instead of soft navigations. For
+	// hosts whose pages bind behavior at script load (legacy page-runtimes)
+	// a soft swap never re-runs them.
+	NoSPA bool
 	// Intercept is set when the screen presents as an overlay for soft
 	// navigations from a declared origin (see InterceptFrom). The route
 	// manifest carries it so the runtime knows, without asking, which
@@ -192,6 +197,7 @@ func (a *App) Routes() []RouteEntry {
 			Layouts:     layouts,
 			Preload:     screen.Preload,
 			Intercept:   screen.Intercept,
+			NoSPA:       screen.NoSPA,
 		})
 	}
 	// Map iteration is randomized, sort exact redirects so Routes()
@@ -411,8 +417,9 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 
 	// Build <body> with skip link.
 	skipLink := render.Tag("a", map[string]string{
-		"href":  "#main-content",
-		"class": "skip-link",
+		"href":           "#main-content",
+		"class":          "skip-link",
+		"data-skip-link": "",
 	}, render.Text("Skip to main content"))
 
 	// Polite live region for SPA route changes. document.title mutations

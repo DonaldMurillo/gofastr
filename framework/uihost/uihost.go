@@ -293,6 +293,15 @@ type ScreenSchema interface {
 	ScreenSchema() []seo.Thing
 }
 
+// ScreenStatusCode is an optional screen interface that overrides the
+// HTTP status of an otherwise successfully rendered page. A screen whose
+// route resolved but whose entity is missing (e.g. /things/{id} with a
+// dead id) can render the not-found body through the layout while still
+// signaling 404 to clients and crawlers. Zero or 200 keeps the default.
+type ScreenStatusCode interface {
+	ScreenStatusCode() int
+}
+
 // SEO bundles every per-page SEO declaration in one struct. Use it as
 // the return type of ScreenSEO when you'd rather declare everything
 // from one method than implement the per-concern interfaces
@@ -899,6 +908,19 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 	if len(routes) == 0 {
 		return ""
 	}
+	// Filter before sizing infos, not after: sized from the pre-filter
+	// count, every NoSPA route left a trailing zero-value entry that
+	// marshalled as {"path":""} and reached the client as a real route.
+	kept := routes[:0]
+	for _, r := range routes {
+		if !r.NoSPA {
+			kept = append(kept, r)
+		}
+	}
+	routes = kept
+	if len(routes) == 0 {
+		return ""
+	}
 	infos := make([]routeInfoJSON, len(routes))
 	for i, r := range routes {
 		infos[i] = routeInfoJSON{
@@ -1216,6 +1238,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 
 	ds.writeAgentLinkHeaders(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if sc, ok := res.Component.(ScreenStatusCode); ok {
+		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
+			w.WriteHeader(code)
+		}
+	}
 	fmt.Fprint(w, page)
 }
 
@@ -3002,6 +3029,31 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 		}
 	}
 	return md, true
+}
+
+// PageHandler returns an http.HandlerFunc that renders the registered
+// screen at path with full chrome (assets, runtime, session minting) —
+// the same serving path NotFound-dispatched screens take. Hosts need it
+// when a framework-router route must own the path explicitly: an app
+// wildcard ({rest...}) claims the bare path and the mux redirects it to
+// a trailing-slash form the screen dispatch would never resolve. The
+// request's auth/policy context flows through unchanged.
+func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p := r.URL.Path; p != path && path != "" && !strings.Contains(path, "{") {
+			// Keep query intact; only the dispatch path is forced. Dynamic
+			// screen paths ({id}) are NEVER forced: rewriting would feed the
+			// literal pattern to param capture (id="{id}"); the real request
+			// path already matches the registered dynamic screen.
+			u := *r.URL
+			u.Path = path
+			r2 := r.Clone(r.Context())
+			r2.URL = &u
+			ds.handlePage(w, r2)
+			return
+		}
+		ds.handlePage(w, r)
+	}
 }
 
 // PolicyBlockedError reports a static render refused by the screen's

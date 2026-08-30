@@ -415,7 +415,21 @@ func SidebarBody(cfg SidebarConfig) render.HTML {
 	// Distinct id prefix from the inline sidebar so button-dialect
 	// group containers (aria-controls targets) never collide when both
 	// views are on the same page.
-	return sidebarBody(cfg, cfg.DrawerName+"-body")
+	//
+	// The body ships as a single neutral root div carrying the style
+	// marker: hosts slot SidebarBody into custom shells (drawers,
+	// pinned-contract sidebars) whose pages would otherwise never pull
+	// the component CSS into the comp-bundle, and a bare nav+footer pair
+	// would leave the footer outside the marker injectMarker stamps on
+	// the first element. The root deliberately does NOT carry
+	// data-fui-sidebar — the runtime treats those as sidebar roots
+	// (collapse storage, drawer wiring) and a nested root inside the
+	// full Sidebar shell would double-bind them. display:contents via
+	// the .ui-sidebar base rule keeps the wrapper box-free.
+	return sidebarStyle.WrapHTML(render.HTML(
+		`<div class="ui-sidebar ui-sidebar__body">` +
+			string(sidebarBody(cfg, cfg.DrawerName+"-body")) +
+			`</div>`))
 }
 
 func sidebarBody(cfg SidebarConfig, idPrefix string) render.HTML {
