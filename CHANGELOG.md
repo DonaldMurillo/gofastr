@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.76.0] - 2026-08-30
 
 ### Added
 
@@ -65,20 +65,38 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   pinned; the draft is moving and this half tracks it deliberately).
   Ed25519 only. Handlers read `framework.VerifiedAgent(ctx)` for the
   verified identity (resolved directory URL + key thumbprint), nil for
-  the unverified majority. Default is observe mode — annotate and log,
-  never block — so a verification bug cannot take an app's traffic
-  down; `Require` opts an endpoint into 403s. The agent key-directory
-  fetcher treats its URL as an SSRF primitive: `core/netguard` at
-  parse, resolve, and dial time (the TOCTOU-closing hook), https only,
+  the unverified majority.
+
+  Default is observe mode — annotate and log, never block — so a
+  verification bug cannot take an app's traffic down. `Require` refuses
+  unverified traffic with 403, with two deliberate exceptions: the
+  site's own key directory stays reachable unsigned, because a remote
+  verifier fetches it to check the signatures on requests we send, and
+  a request the verifier declined to examine (see the lookup budget
+  below) gets 503 with `Retry-After` rather than 403 — a busy resolver
+  is our backpressure, not a verdict on the sender's signature.
+
+  At most four signatures per request are processed: each one can cost
+  a DNS check and a directory fetch, and coalescing bounds nothing for
+  a sender naming distinct hosts. The agent key-directory fetcher
+  treats its URL as an SSRF primitive: `core/netguard` at parse,
+  resolve, and dial time (the TOCTOU-closing hook), environment
+  proxies disabled (a proxy would resolve and connect to the fetched
+  host while the dial-time hook saw only the proxy), https only,
   redirects never followed, 256 KiB body cap, 5 s timeout, 32-key cap,
+  bounded budgets on concurrent fetches and concurrent DNS lookups,
   separate bounded positive/negative caches with coalescing, and
   refresh-on-TTL rotation where a successful refetch replaces the key
-  set and a failed one never evicts. Conformance: RFC 9421's Ed25519
-  vector (B.2.6), the draft's E.2.1–E.2.3 vectors, a Node WebCrypto
-  cross-check, and mutation proofs for every guard, all committed as
-  testdata. The generated SDKs, app CLI, and webhook battery
-  deliberately do not sign: baking draft churn into generated code
-  would make every draft revision a breaking change downstream.
+  set and a failed one never evicts. A caller's own cancellation is
+  never negative-cached, so a client that aborts cannot keep a
+  legitimate agent refused for the TTL by repeating it.
+
+  Conformance: RFC 9421's Ed25519 vector (B.2.6), the draft's
+  E.2.1–E.2.3 vectors, a Node WebCrypto cross-check, and mutation
+  proofs for every guard, all committed as testdata. The generated
+  SDKs, app CLI, and webhook battery deliberately do not sign: baking
+  draft churn into generated code would make every draft revision a
+  breaking change downstream.
 
 ## [0.75.0] - 2026-08-29
 
