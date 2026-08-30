@@ -409,7 +409,7 @@ func fieldValue(header http.Header, name string, p sfParams) (string, error) {
 		combined := combineFieldValues(values)
 		dict, err := parseSFDictionary(combined)
 		if err != nil {
-			return "", fmt.Errorf("field %q is not a parseable dictionary: %v", name, err)
+			return "", fmt.Errorf("field %q is not a parseable dictionary: %w", name, err)
 		}
 		m := dict.get(k.str)
 		if m == nil {
@@ -417,7 +417,7 @@ func fieldValue(header http.Header, name string, p sfParams) (string, error) {
 		}
 		s, err := serializeMemberValue(m)
 		if err != nil {
-			return "", fmt.Errorf("dictionary member %q of %q: %v", k.str, name, err)
+			return "", fmt.Errorf("dictionary member %q of %q: %w", k.str, name, err)
 		}
 		return s, nil
 	}

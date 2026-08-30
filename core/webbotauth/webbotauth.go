@@ -410,7 +410,9 @@ func agentRefFor(ctx context.Context, header, label string) (*agentRef, bool, er
 		}
 		ref, err := parseAgentRef(ctx, it.str, discoveryDirectory)
 		if err != nil {
-			return nil, false, fmt.Errorf("legacy Signature-Agent: %v", err)
+			// %w, not %v: stringifying here breaks the chain, and a
+			// saturated resolver would read as an invalid signature.
+			return nil, false, fmt.Errorf("legacy Signature-Agent: %w", err)
 		}
 		return ref, true, nil
 	}
