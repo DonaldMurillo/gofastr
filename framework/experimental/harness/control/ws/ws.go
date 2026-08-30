@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"slices"
@@ -114,7 +115,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, rw, err := hj.Hijack()
 	if err != nil {
-		http.Error(w, "hijack failed: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("ws: hijack failed: %v", err)
+		http.Error(w, "hijack failed", http.StatusInternalServerError)
 		return
 	}
 	if err := completeHandshake(rw, r); err != nil {

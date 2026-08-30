@@ -248,7 +248,8 @@ func customerSite(embeds *fembed.Host) http.Handler {
 		}
 		nonce, err := embeds.MintNonce(r.Context(), "reports", "avery@acme.example", customerOrigin, nil)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("embed-demo: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		// The customer's brand colour. Not a secret, it is a colour, so it

@@ -29,6 +29,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -42,6 +43,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/session"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/builtins"
 )
+
+// maxRESTBody caps an inbound body: one command payload. Past this, the
+// request is refused rather than buffered.
+const maxRESTBody = 4 << 20
 
 // Server is the REST transport.
 type Server struct {
@@ -184,7 +189,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("past") == "true" && s.SessionStore != nil {
 		past, err := s.SessionStore.ListPastSessions(r.Context(), 50)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "StoreError", err.Error())
+			log.Printf("rest: store: %v", err)
+			writeError(w, http.StatusInternalServerError, "StoreError", "store operation failed")
 			return
 		}
 		writeJSON(w, http.StatusOK, past)
@@ -258,6 +264,7 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		writeError(w, http.StatusForbidden, "Forbidden", "token not permitted for command "+cmdSeed.CommandKind())
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRESTBody)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 

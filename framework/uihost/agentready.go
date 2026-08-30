@@ -19,6 +19,7 @@ package uihost
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -569,7 +570,9 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 		// silently-unsigned card.
 		sigs, err := signAgentCard(doc, ds.agentReady.signing)
 		if err != nil {
-			http.Error(w, "agent card signing failed: "+err.Error(), http.StatusInternalServerError)
+			// Signing errors name key material and paths. Never the client's.
+			log.Printf("uihost: agent card signing failed: %v", err)
+			http.Error(w, "agent card signing failed", http.StatusInternalServerError)
 			return
 		}
 		doc["signatures"] = sigs

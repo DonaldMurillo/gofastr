@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"maps"
 	"net/http"
 	"slices"
@@ -236,7 +237,10 @@ func serveRuntime(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Expires", "0")
 	rt, err := runtime.RuntimeJS()
 	if err != nil {
-		http.Error(w, "runtime unavailable: "+err.Error(), http.StatusInternalServerError)
+		// The error names embed paths; the client gets the fact, the
+		// operator gets the cause.
+		log.Printf("widget: runtime unavailable: %v", err)
+		http.Error(w, "runtime unavailable", http.StatusInternalServerError)
 		return
 	}
 	fmt.Fprint(w, rt)

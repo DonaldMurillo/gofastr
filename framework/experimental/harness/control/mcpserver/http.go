@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"strings"
@@ -189,7 +190,8 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 	if err := s.Serve(r.Context()); err != nil && !errors.Is(err, context.Canceled) {
 		// Serve returns nil on EOF; only log unexpected errors.
 		if err != io.EOF {
-			http.Error(w, "mcp serve: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("mcpserver: serve: %v", err)
+			http.Error(w, "mcp serve failed", http.StatusInternalServerError)
 			return
 		}
 	}
