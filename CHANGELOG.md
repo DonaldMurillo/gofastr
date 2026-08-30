@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [0.75.0] - 2026-08-29
+## [Unreleased]
 
 ### Added
 
@@ -38,6 +38,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   end-to-end, the theme convention, and what GoFastr deliberately does
   not do), cross-referenced from agent-ready, scaling, mcp, and
   generative-ui.
+
+- **Signed A2A agent cards** (#289): `AgentCardConfig.SigningKeys` signs
+  `/.well-known/agent-card.json` per A2A v1.0 §8.4 — one JWS per key
+  over the RFC 8785 canonical form of the card (with `signatures`
+  excluded), `EdDSA` for Ed25519 and `ES256`/`ES384`/`ES512` for EC
+  P-256/P-384/P-521, unsupported key types refused at mount — plus a
+  public-keys-only JWK Set at `/.well-known/jwks.json` and an RFC 7638
+  thumbprint `kid` default. The canonicalizer is a new stdlib-only
+  `core/jcs` package, verified three ways: the RFC 8785 reference test
+  suite, 5,000 vectors from the reference implementation's
+  deterministic number generator, and a 227-value corpus diffed
+  byte-for-byte against Node's own serialization; the served signatures
+  verify under Node WebCrypto with zero shared code. Signing requires an
+  explicit `BaseURL` and the host panics at mount without one: a signed
+  card whose URLs derive from the request `Host` header would hand an
+  attacker a validly-signed card pointing at their own endpoint.
+
+## [0.75.0] - 2026-08-29
+
+### Added
+
 
 - **The agent surface's middleware posture is pinned** (#291): a cookieless
   bearer request to `/mcp` traverses the whole default chain untouched — CSRF
@@ -136,21 +157,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   old call did (`fsys` comes from the module). `NewAssetServer` stays for
   assets that belong to no module.
 
-- **Signed A2A agent cards** (#289): `AgentCardConfig.SigningKeys` signs
-  `/.well-known/agent-card.json` per A2A v1.0 §8.4 — one JWS per key
-  over the RFC 8785 canonical form of the card (with `signatures`
-  excluded), `EdDSA` for Ed25519 and `ES256`/`ES384`/`ES512` for EC
-  P-256/P-384/P-521, unsupported key types refused at mount — plus a
-  public-keys-only JWK Set at `/.well-known/jwks.json` and an RFC 7638
-  thumbprint `kid` default. The canonicalizer is a new stdlib-only
-  `core/jcs` package, verified three ways: the RFC 8785 reference test
-  suite, 50,000 vectors from the reference implementation's
-  deterministic number generator, and a 227-value corpus diffed
-  byte-for-byte against Node's own serialization; the served signatures
-  verify under Node WebCrypto with zero shared code. Signing requires an
-  explicit `BaseURL` and the host panics at mount without one: a signed
-  card whose URLs derive from the request `Host` header would hand an
-  attacker a validly-signed card pointing at their own endpoint.
 
 ### Fixed
 

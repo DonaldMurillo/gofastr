@@ -156,7 +156,7 @@ work), and a derived `mcp` skill points agents at it.
 | `DefaultInputModes`, `DefaultOutputModes` | MIME types; default `["text/plain"]`. |
 | `SigningKeys` | Sign the card (A2A §8.4) + serve `/.well-known/jwks.json`; requires a pinned `BaseURL` — see [Signed agent cards](#signed-agent-cards-a2a-v10-84). |
 
-### Signed agent cards  (A2A v1.0 §8.4)
+### Signed agent cards (A2A v1.0 §8.4)
 
 Set `AgentCardConfig.SigningKeys` and the card gains a `signatures`
 array: one JWS (RFC 7515) per key, each computed over the RFC 8785
