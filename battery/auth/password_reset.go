@@ -155,7 +155,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		Meta:   map[string]string{"known": "true"},
 	})
 
-	tok, err := p.store.CreateToken(r.Context(), user.GetID(), p.cfg.TokenTTL)
+	tok, err := createPurposeToken(r.Context(), p.store, purposeReset, user.GetID(), p.cfg.TokenTTL)
 	if err != nil {
 		return
 	}
@@ -240,7 +240,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, err := p.store.RedeemToken(r.Context(), body.Token)
+	userID, err := redeemPurposeToken(r.Context(), p.store, purposeReset, body.Token)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
 		return

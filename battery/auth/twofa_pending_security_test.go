@@ -147,7 +147,7 @@ func TestTwoFA_EveryLoginPathMintsPending(t *testing.T) {
 			return loginP17(t, r)
 		}},
 		{"magic-link", func(t *testing.T, magic *MagicLinkPlugin, r *router.Router) string {
-			token, err := magic.tokenStore.CreateToken(context.Background(), "alice@example.com", time.Hour)
+			token, err := createPurposeToken(context.Background(), magic.tokenStore, purposeMagicLink, "alice@example.com", time.Hour)
 			if err != nil {
 				t.Fatalf("CreateToken: %v", err)
 			}
@@ -263,7 +263,7 @@ func TestSendVerificationNeedsStepUp(t *testing.T) {
 // token. Cross-device still works; a silent sign-in does not.
 func TestMagicLinkVerifyNeedsConfirmation(t *testing.T) {
 	_, _, magic, r := setupP17WithMagicLink(t)
-	token, err := magic.tokenStore.CreateToken(context.Background(), "victim@example.com", time.Hour)
+	token, err := createPurposeToken(context.Background(), magic.tokenStore, purposeMagicLink, "victim@example.com", time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestMagicLinkVerifyNeedsConfirmation(t *testing.T) {
 // their own page with the token they already hold.
 func TestMagicLinkConfirmRejectsCrossSite(t *testing.T) {
 	_, _, magic, r := setupP17WithMagicLink(t)
-	token, err := magic.tokenStore.CreateToken(context.Background(), "victim@example.com", time.Hour)
+	token, err := createPurposeToken(context.Background(), magic.tokenStore, purposeMagicLink, "victim@example.com", time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}

@@ -70,7 +70,7 @@ func TestConcurrent_VerifyEmailTokenIsSingleUse(t *testing.T) {
 	store, r, sess, userID := concurrentSetup(t, plug)
 
 	// Mint a verification token directly via the plugin's store.
-	tok, err := plug.store.CreateToken(context.Background(), userID, time.Hour)
+	tok, err := createPurposeToken(context.Background(), plug.store, purposeVerify, userID, time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestConcurrent_ResetPasswordTokenIsSingleUse(t *testing.T) {
 	})
 	_, r, _, userID := concurrentSetup(t, plug)
 
-	tok, err := plug.store.CreateToken(context.Background(), userID, time.Hour)
+	tok, err := createPurposeToken(context.Background(), plug.store, purposeReset, userID, time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}

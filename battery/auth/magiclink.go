@@ -275,7 +275,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := p.tokenStore.CreateToken(r.Context(), body.Email, p.config.TokenTTL)
+	token, err := createPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, body.Email, p.config.TokenTTL)
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "failed to create token")
 		return
@@ -388,7 +388,15 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
-		email = got
+		// A token from another flow reads as unknown here rather than
+		// naming an account: the confirmation page would otherwise
+		// display a reset token's userID as the address to sign in as.
+		addr, ok := peekPurposePayload(got, purposeMagicLink)
+		if !ok {
+			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+		email = addr
 	}
 
 	// Read the token from the context first: this GET may be the very
@@ -472,7 +480,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	email, err := p.tokenStore.RedeemToken(r.Context(), token)
+	email, err := redeemPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, token)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
 		return

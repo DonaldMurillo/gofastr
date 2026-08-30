@@ -131,7 +131,7 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	tok, err := p.store.CreateToken(r.Context(), user.GetID(), p.cfg.TokenTTL)
+	tok, err := createPurposeToken(r.Context(), p.store, purposeVerify, user.GetID(), p.cfg.TokenTTL)
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "token create failed")
 		return
@@ -175,7 +175,7 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 		writeAuthError(w, http.StatusBadRequest, "token required")
 		return
 	}
-	userID, err := p.store.RedeemToken(r.Context(), tok)
+	userID, err := redeemPurposeToken(r.Context(), p.store, purposeVerify, tok)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
 		return

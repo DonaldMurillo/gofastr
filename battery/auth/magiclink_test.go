@@ -59,7 +59,7 @@ func TestMemoryMagicLinkTokenStore_DoubleRedeemFails(t *testing.T) {
 	store := NewMemoryMagicLinkTokenStore()
 	ctx := context.Background()
 
-	token, _ := store.CreateToken(ctx, "alice@example.com", 15*time.Minute)
+	token, _ := createPurposeToken(ctx, store, purposeMagicLink, "alice@example.com", 15*time.Minute)
 
 	// First redeem succeeds
 	_, err := store.RedeemToken(ctx, token)
@@ -81,7 +81,7 @@ func TestMemoryMagicLinkTokenStore_ExpiredTokenFails(t *testing.T) {
 	store := NewMemoryMagicLinkTokenStore()
 	ctx := context.Background()
 
-	token, _ := store.CreateToken(ctx, "alice@example.com", -1*time.Second)
+	token, _ := createPurposeToken(ctx, store, purposeMagicLink, "alice@example.com", -1*time.Second)
 
 	_, err := store.RedeemToken(ctx, token)
 	if err == nil {
@@ -107,8 +107,8 @@ func TestMemoryMagicLinkTokenStore_Cleanup(t *testing.T) {
 	ctx := context.Background()
 
 	// Create one expired and one fresh token
-	_, _ = store.CreateToken(ctx, "expired@example.com", -1*time.Second)
-	_, _ = store.CreateToken(ctx, "fresh@example.com", 15*time.Minute)
+	_, _ = createPurposeToken(ctx, store, purposeMagicLink, "expired@example.com", -1*time.Second)
+	_, _ = createPurposeToken(ctx, store, purposeMagicLink, "fresh@example.com", 15*time.Minute)
 
 	n, err := store.Cleanup(ctx)
 	if err != nil {
@@ -292,7 +292,7 @@ func TestMagicLink_Verify_ValidToken_SetsCookieAndRedirects(t *testing.T) {
 	r := mountMagicLinkRoutes(mgr)
 
 	// Create a token via the plugin's token store
-	token, err := plugin.tokenStore.CreateToken(context.Background(), "alice@example.com", 15*time.Minute)
+	token, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "alice@example.com", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestMagicLink_Verify_ExpiredToken_Returns401(t *testing.T) {
 	mgr, _, plugin := newMagicLinkManager(t, sender)
 	r := mountMagicLinkRoutes(mgr)
 
-	token, _ := plugin.tokenStore.CreateToken(context.Background(), "alice@example.com", -1*time.Second)
+	token, _ := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "alice@example.com", -1*time.Second)
 
 	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
@@ -387,7 +387,7 @@ func TestMagicLink_Verify_CreatesUserIfNotExists(t *testing.T) {
 		t.Fatal("user should not exist yet")
 	}
 
-	token, _ := plugin.tokenStore.CreateToken(context.Background(), email, 15*time.Minute)
+	token, _ := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, email, 15*time.Minute)
 
 	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
@@ -416,7 +416,7 @@ func TestMagicLink_Verify_FindsExistingUser(t *testing.T) {
 	existingUser := seedUser(t, userStore, email, "irrelevant")
 	existingID := existingUser.GetID()
 
-	token, _ := plugin.tokenStore.CreateToken(context.Background(), email, 15*time.Minute)
+	token, _ := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, email, 15*time.Minute)
 
 	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
@@ -458,7 +458,7 @@ func TestMagicLink_Verify_TokenConsumedAfterUse(t *testing.T) {
 	mgr, _, plugin := newMagicLinkManager(t, sender)
 	r := mountMagicLinkRoutes(mgr)
 
-	token, _ := plugin.tokenStore.CreateToken(context.Background(), "alice@example.com", 15*time.Minute)
+	token, _ := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "alice@example.com", 15*time.Minute)
 
 	// First verify succeeds
 	req := magicConfirmReq(token)
@@ -583,14 +583,14 @@ func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
 	mgr.RegisterRoutes(r)
 
 	// Warm-up so init costs don't bias.
-	tok0, _ := plugin.tokenStore.CreateToken(context.Background(), "warm@example.com", time.Hour)
+	tok0, _ := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "warm@example.com", time.Hour)
 	r.ServeHTTP(httptest.NewRecorder(), magicConfirmReq(tok0))
 
 	const samples = 5
 	var total time.Duration
 	for i := range samples {
 		email := "fresh" + string(rune('a'+i)) + "@example.com"
-		tok, err := plugin.tokenStore.CreateToken(context.Background(), email, time.Hour)
+		tok, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, email, time.Hour)
 		if err != nil {
 			t.Fatalf("CreateToken: %v", err)
 		}
@@ -710,7 +710,7 @@ func TestMagicLinkUsesConfiguredRoles(t *testing.T) {
 	r := mountMagicLinkRoutes(mgr)
 
 	email := "newuser@example.com"
-	token, _ := plugin.tokenStore.CreateToken(context.Background(), email, 15*time.Minute)
+	token, _ := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, email, 15*time.Minute)
 	req := magicConfirmReq(token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
