@@ -430,6 +430,11 @@ var moduleAttrs = map[string][]string{
 		"data-fui-toggle-committed",
 		"data-fui-toggle-group",
 	},
+	"tabs": {
+		"data-fui-tabs-state",
+		"data-fui-tabs-vacate",
+		"data-fui-tabs-stash",
+	},
 	"tree": {
 		"data-fui-tree-toggle",
 	},

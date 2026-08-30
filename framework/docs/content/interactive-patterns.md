@@ -52,6 +52,25 @@ non-unit increments.
 sets the signal to the tab's index; CSS attribute selectors show/hide
 the matching panel. No JavaScript beyond the runtime's click delegation.
 
+Three opt-in config knobs add the contracts a port from a component
+library usually needs (every zero value keeps the default output
+byte-identical):
+
+- `StateAttrs bool` — adds `data-state="active"/"inactive"` to every
+  tab button. The demand-loaded `tabs` runtime module keeps it in step
+  with the selection after client-side switches, alongside the
+  `aria-selected` mirroring core already does.
+- `ID string` — wires tab↔panel semantics: button
+  `id="<ID>-tab-<i>"` + `aria-controls="<ID>-panel-<i>"`, panel
+  `id="<ID>-panel-<i>"`. You own cross-page uniqueness of `ID`.
+- `VacateHidden bool` — hidden panels ship empty with their content in
+  an adjacent JSON stash, so page-scoped test locators cannot match
+  text inside hidden panels. The `tabs` module restores content on
+  first show and moves the live nodes out/in on every later switch, so
+  island content the runtime swapped in survives re-show. While a
+  panel is vacated, document-scoped updates targeting it (SSE pushes,
+  in-flight RPC responses) are dropped until re-show.
+
 ### Toggle switch
 
 `framework/ui.SignalToggle` renders a `role=switch` with
