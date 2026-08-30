@@ -32,6 +32,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
+// maxWebSendBody caps an inbound body: one message of user text. Past this, the
+// request is refused rather than buffered.
+const maxWebSendBody = 1 << 20
+
 // Server is the bundled web client.
 type Server struct {
 	Client  *inproc.Client
@@ -138,6 +142,7 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxWebSendBody)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad JSON", http.StatusBadRequest)
 		return

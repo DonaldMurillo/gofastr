@@ -8,6 +8,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
+// maxAgentBody caps an inbound body: an agent name and an optional command line. Past this, the
+// request is refused rather than buffered.
+const maxAgentBody = 64 << 10
+
 // mountAgentRoutes registers the runtime agent-control endpoints on r.
 //
 //	GET  /kiln/agent          → current adapter + available list
@@ -30,6 +34,7 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 			Name   string `json:"name"`             // "omp" | "claude-code" | "pi" | "codex" | "auto" | "none" | "custom"
 			Custom string `json:"custom,omitempty"` // freeform command if name == "custom"
 		}
+		req.Body = http.MaxBytesReader(w, req.Body, maxAgentBody)
 		if err := json.NewDecoder(req.Body).Decode(&args); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return

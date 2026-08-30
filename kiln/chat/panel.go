@@ -20,6 +20,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
+// maxPanelBody caps an inbound body: panel RPC bodies are a text box and two ids. Past this, the
+// request is refused rather than buffered.
+const maxPanelBody = 1 << 20
+
 // AgentStateFn returns the JSON-shaped agent state consumed by the
 // gear modal. Shape: { current: {name, display}, available: [{name,
 // display, installed}, ...], in_flight: bool }. Concretely supplied
@@ -1025,6 +1029,7 @@ func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if strings.TrimSpace(body.Text) == "" {
 		// Don't 4xx on empty, that would surface as an RPC failure
@@ -1045,6 +1050,7 @@ func (pe *panelEnv) serveApprove(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		PlanID string `json:"plan_id"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	pe.tools.ApprovePlan(r.Context(), protocol.ApprovePlanArgs{PlanID: body.PlanID})
 	ack(w)
@@ -1055,6 +1061,7 @@ func (pe *panelEnv) serveReject(w http.ResponseWriter, r *http.Request) {
 		PlanID string `json:"plan_id"`
 		Reason string `json:"reason"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	pe.tools.RejectPlan(r.Context(), protocol.RejectPlanArgs{PlanID: body.PlanID, Reason: body.Reason})
 	ack(w)
