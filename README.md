@@ -338,6 +338,7 @@ Start with:
 - [Contracts](framework/docs/content/contracts.md): the `gofastr verify` rule catalog and semantic coverage
 - [Deployment](framework/docs/content/deploy.md) and [horizontal scaling](framework/docs/content/scaling.md)
 - [Agent-ready](framework/docs/content/agent-ready.md): llms.txt, the agent card, and MCP discovery
+- [Agent host](framework/docs/content/agent-host.md): the chat-host surface: RoleAgent, MCP App widgets, host theme
 - [WebMCP bridge (experimental)](framework/docs/content/webmcp.md): expose server-declared tools to in-browser agents via the page's `modelContext`
 
 ## Project status
