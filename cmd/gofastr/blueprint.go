@@ -1063,11 +1063,25 @@ func blueprintHasEntityAccess(bp Blueprint) bool {
 // defaulting to "/login". Used to point the auth battery's form-error redirect
 // at the login page (so a failed login lands back on the form, not raw JSON).
 func blueprintLoginRoute(bp Blueprint) string {
-	for _, s := range bp.Screens {
-		for _, b := range s.Body {
+	// Sections render nested children, and a login form can sit anywhere in
+	// that tree; a flat scan misses it and falls back to "/login" — an
+	// unregistered route when the blueprint's sign-in screen lives elsewhere.
+	// Same recursive walk blueprintNeedsResource uses.
+	var hasLogin func([]BlueprintBlock) bool
+	hasLogin = func(blocks []BlueprintBlock) bool {
+		for _, b := range blocks {
 			if isLoginFormBlock(b) {
-				return s.Route
+				return true
 			}
+			if hasLogin(b.Children) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, s := range bp.Screens {
+		if hasLogin(s.Body) {
+			return s.Route
 		}
 	}
 	return "/login"
@@ -1130,12 +1144,18 @@ func blueprintRegisteredMarketingLinks(bp Blueprint) []blueprintMarketingLink {
 // the generator gates it with a guest policy (signed-in users are redirected
 // to the app instead of seeing a sign-in form they don't need).
 func screenHasAuthForm(s BlueprintScreen) bool {
-	for _, b := range s.Body {
-		if isLoginFormBlock(b) || isSignupFormBlock(b) {
-			return true
+	// Same tree as blueprintLoginRoute walks: a form nested in a section's
+	// children still makes the screen guest-gated.
+	var any func([]BlueprintBlock) bool
+	any = func(blocks []BlueprintBlock) bool {
+		for _, b := range blocks {
+			if isLoginFormBlock(b) || isSignupFormBlock(b) || any(b.Children) {
+				return true
+			}
 		}
+		return false
 	}
-	return false
+	return any(s.Body)
 }
 
 // blueprintHasAuthFormScreen reports whether any screen hosts an auth form.

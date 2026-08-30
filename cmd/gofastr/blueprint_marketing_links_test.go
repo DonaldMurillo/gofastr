@@ -131,8 +131,9 @@ func TestMarketingChromeLinksMatchRegisteredScreens(t *testing.T) {
 				t.Fatal("generation produced no app.go")
 			}
 
-			// Every href the marketing chrome emits...
+			// Every href the marketing chrome emits, per surface...
 			hrefRe := regexp.MustCompile(`Href: "([^"]+)"`)
+			bodies := map[string]string{}
 			var hrefs []string
 			for _, fn := range []string{"marketingHeader", "marketingFooter"} {
 				body := generatedFuncBody(appGo, fn)
@@ -143,6 +144,7 @@ func TestMarketingChromeLinksMatchRegisteredScreens(t *testing.T) {
 				if len(found) == 0 {
 					t.Fatalf("%s emits no Href at all; the chrome assertions below would pass vacuously", fn)
 				}
+				bodies[fn] = body
 				for _, m := range found {
 					hrefs = append(hrefs, m[1])
 				}
@@ -160,6 +162,20 @@ func TestMarketingChromeLinksMatchRegisteredScreens(t *testing.T) {
 				if slices.Contains(hrefs, absent) {
 					t.Errorf("chrome still links %q though no screen registers it", absent)
 				}
+			}
+
+			// The converse, asserted PER SURFACE: /pricing is registered, so
+			// the header must carry its nav link and the footer its Product
+			// column. Against the pooled hrefs this guard is blind — a
+			// mutation that empties the header nav survives because the
+			// footer still supplies /pricing, and one that drops the whole
+			// link table passes the subset checks vacuously.
+			if !strings.Contains(bodies["marketingHeader"], `Href: "/pricing"`) {
+				t.Errorf("marketingHeader omits the registered /pricing nav link:\n%s", bodies["marketingHeader"])
+			}
+			if !strings.Contains(bodies["marketingFooter"], `Title: "Product"`) ||
+				!strings.Contains(bodies["marketingFooter"], `{Label: "Pricing", Href: "/pricing"}`) {
+				t.Errorf("marketingFooter omits the registered /pricing link's Product column:\n%s", bodies["marketingFooter"])
 			}
 		})
 	}
