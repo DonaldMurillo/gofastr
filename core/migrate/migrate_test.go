@@ -542,6 +542,9 @@ func TestSQLiteIntegration(t *testing.T) {
 		}
 		columns = append(columns, colName)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 
 	expectedCols := map[string]bool{"id": true, "name": true, "email": true}
 	for _, col := range columns {

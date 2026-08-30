@@ -40,6 +40,9 @@ func pgPKColumns(t *testing.T, db *sql.DB, tableName string) []string {
 		}
 		cols = append(cols, c)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	return cols
 }
 

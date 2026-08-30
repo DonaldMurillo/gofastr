@@ -171,6 +171,9 @@ func setupUIE2EApp(t *testing.T) *uiE2EApp {
 			rows.Scan(&n)
 			items = append(items, n)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("iterate rows: %v", err)
+		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `<!doctype html><html><body>
   <h1 id="dashboard">Welcome %s</h1>

@@ -102,6 +102,9 @@ func TestEntityOAuthLinks_TableProvisioned(t *testing.T) {
 		}
 		got = append(got, colInfo{cn, pkOrd})
 	}
+	if err := cols.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	if len(got) != 7 {
 		t.Fatalf("expected 7 columns in users_oauth_links, got %d", len(got))
 	}

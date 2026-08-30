@@ -466,5 +466,8 @@ func scheduleTableColumns(t *testing.T, db *sql.DB, q *DBQueue) map[string]struc
 		}
 		out[name] = struct{}{}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	return out
 }

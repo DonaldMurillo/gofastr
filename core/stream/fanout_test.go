@@ -25,6 +25,8 @@ func connectSSE(t *testing.T, srv *httptest.Server) *http.Response {
 }
 
 // firstSSEData scans body for the first "data: " line and sends it on ch.
+// It closes ch when the stream ends without one, so a reader blocked on it
+// sees the stream die rather than waiting out its own timeout.
 func firstSSEData(resp *http.Response, ch chan<- string) {
 	sc := bufio.NewScanner(resp.Body)
 	for sc.Scan() {
@@ -34,6 +36,8 @@ func firstSSEData(resp *http.Response, ch chan<- string) {
 			return
 		}
 	}
+	_ = sc.Err() // the close below is the signal; the reason is the body's
+	close(ch)
 }
 
 // TestSSEBrokerFanoutCrossDelivery: a client subscribed to broker B receives

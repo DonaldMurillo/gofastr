@@ -66,6 +66,9 @@ func TestBatchRace_ConcurrentCreatePreservesOwner(t *testing.T) {
 				t.Errorf("SECURITY: [batch_race] unexpected user_id=%q in row (content=%q). Attack: race condition in concurrent create mixed up owner context.", uid, content)
 			}
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("iterate rows: %v", err)
+		}
 	}
 }
 

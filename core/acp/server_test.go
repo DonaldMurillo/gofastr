@@ -103,6 +103,9 @@ func startDialog(t *testing.T, agent acp.Agent, opts *acp.Options) *dialog {
 			}
 			d.frames <- f
 		}
+		if err := sc.Err(); err != nil {
+			t.Errorf("client frame reader: %v", err) // else: silent timeout
+		}
 		clientR.Close()
 	}()
 	t.Cleanup(func() {
