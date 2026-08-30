@@ -31,6 +31,7 @@ package webbotauth
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -80,9 +81,15 @@ func (o Outcome) String() string {
 // Result is one request's verification outcome.
 type Result struct {
 	Outcome Outcome
-	Agent   *Agent // non-nil only for OutcomeVerified
-	Label   string // signature label that produced the outcome
-	Reason  string // human-readable, for logs
+	// Retryable marks an outcome the caller reached for its own
+	// reasons rather than the request's -- currently only
+	// ErrResolverBusy. Require mode answers 503 rather than 403 for
+	// these, because 403 tells a correctly-signed agent to go fix
+	// credentials that are fine.
+	Retryable bool
+	Agent     *Agent // non-nil only for OutcomeVerified
+	Label     string // signature label that produced the outcome
+	Reason    string // human-readable, for logs
 }
 
 // Verifier verifies inbound signed requests. Construct with New and
@@ -133,6 +140,15 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 			v.log.Debug("webbotauth: unverified request", "reason", res.Reason)
 		}
 		if v.require && res.Outcome != OutcomeVerified && !isPublicDiscoveryPath(r.URL.Path) {
+			if res.Retryable {
+				// Our backpressure, not their signature. 403 would tell a
+				// correctly-signed agent to fix credentials that are fine.
+				w.Header().Set("Retry-After", "1")
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				fmt.Fprintf(w, `{"title":"Web Bot Auth verification unavailable","status":503,"detail":%q}`+"\n", res.Reason)
+				return
+			}
 			w.Header().Set("Accept-Signature", `wba=("@authority" "signature-agent");created;expires;keyid;tag="web-bot-auth";alg="ed25519"`)
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusForbidden)
@@ -185,6 +201,7 @@ func (v *Verifier) VerifyRequest(r *http.Request) Result {
 	}
 	var firstInvalid *Result
 	var lastReason string
+	var retryable bool
 	for _, m := range inputs.members {
 		res := v.verifyOne(r, inputs, sigs, m, now)
 		if res.Outcome == OutcomeVerified {
@@ -192,6 +209,12 @@ func (v *Verifier) VerifyRequest(r *http.Request) Result {
 		}
 		if res.Reason != "" {
 			lastReason = res.Reason
+		}
+		// The aggregate below builds a fresh Result from the reason
+		// string alone, so anything else the member carried has to be
+		// carried explicitly or it is silently dropped.
+		if res.Retryable {
+			retryable = true
 		}
 		if res.Outcome == OutcomeInvalid && firstInvalid == nil {
 			cp := res
@@ -204,7 +227,7 @@ func (v *Verifier) VerifyRequest(r *http.Request) Result {
 	if lastReason == "" {
 		lastReason = "no verifiable web-bot-auth signature"
 	}
-	return Result{Outcome: OutcomeUnverified, Reason: lastReason}
+	return Result{Outcome: OutcomeUnverified, Reason: lastReason, Retryable: retryable}
 }
 
 // verifyOne validates the Signature-Input member under label against
@@ -311,6 +334,13 @@ func (v *Verifier) verifyOne(r *http.Request, inputs, sigs *sfDictionary, m sfMe
 	agentHeader := combineFieldValues(r.Header.Values("Signature-Agent"))
 	ref, _, err := agentRefFor(r.Context(), agentHeader, memberKey)
 	if err != nil {
+		if errors.Is(err, ErrResolverBusy) {
+			// Not a verdict on the signature: we declined to look. The
+			// package's own contract calls this unverified -- not enough
+			// information to decide -- and the caller should retry.
+			return Result{Outcome: OutcomeUnverified, Label: label,
+				Reason: err.Error(), Retryable: true}
+		}
 		return Result{Outcome: OutcomeInvalid, Label: label, Reason: err.Error()}
 	}
 

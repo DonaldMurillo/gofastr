@@ -148,6 +148,12 @@ func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRe
 // costs no network at all and must stay unconditional.
 var dnsSem = make(chan struct{}, maxConcurrentLookups)
 
+// ErrResolverBusy reports that discovery was not attempted because the
+// process was already resolving as many attacker-named hostnames as it
+// is willing to. It says nothing about the signature: the request may
+// be perfectly valid and simply arrived during a burst.
+var ErrResolverBusy = errors.New("webbotauth: resolver busy")
+
 // checkHostPublic rejects hostnames that target internal
 // infrastructure before any network activity: the obvious internal
 // names, literal internal IPs, and hostnames whose DNS answers include
@@ -179,7 +185,7 @@ func checkHostPublic(ctx context.Context, host string) error {
 		// Waiting for a lookup slot is itself refusal-worthy: it means
 		// the process is already resolving as many attacker-named hosts
 		// as it is willing to.
-		return fmt.Errorf("webbotauth: host %q lookup not attempted: resolver busy", host)
+		return fmt.Errorf("host %q lookup not attempted: %w", host, ErrResolverBusy)
 	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
 	if err != nil {
