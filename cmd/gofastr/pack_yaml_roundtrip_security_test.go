@@ -37,12 +37,20 @@ var (
 		// that relaxation must not be allowed to accept these.
 		"#a", "a #b",
 		"{a", "[a",
+		// Quote family: the value is quoted correctly and the key's quote
+		// still desyncs the comment scanner against it.
+		`a"b`, "a'b",
+		// Colon family: parseMap cuts at the first colon regardless of
+		// context, so the key comes back truncated.
+		":", ":a", "a:", "a: b",
+		// Comment family, mirroring the #a/a #b pair already listed.
+		"#", "a #", " #a",
 	}
 	// Refused conservatively: these would in fact survive raw emission
 	// today, but the guard rejects them anyway because the predicate is
 	// simpler than the parser's real rule. Listed separately so the
 	// comment above stays true of the list above it.
-	mustRefuseConservatively = []string{"a\rb", "a#b", `a"b`}
+	mustRefuseConservatively = []string{"a\rb", "a#b"}
 
 	// Must survive untouched. Refusing any of these breaks real packs,
 	// which is the failure mode that matters more than the injection.
@@ -133,4 +141,108 @@ func encodeKeyValue(key, val string) (string, error) {
 			Rows:   []map[string]any{{key: val}},
 		}},
 	})
+}
+
+// The two refused lists differ only in WHY, and until now that why was a
+// comment. It was wrong once: a"b sat under "would survive raw emission"
+// while in fact breaking in every context, so this file blessed a claim
+// about the parser that the guard's own comment contradicted.
+//
+// This checks the classification instead of asserting it in prose: a
+// breaking key must actually break raw emission for at least one value, and
+// a conservative key must actually survive for all of them. Bypasses the
+// guard by building the row line the writer would emit.
+func TestRefusedKeyClassificationIsAccurate(t *testing.T) {
+	t.Run("breaking keys really break", func(t *testing.T) {
+		for _, key := range mustRefuseBreaking {
+			if key == "" {
+				continue // the empty key has no raw line to build
+			}
+			broke := false
+			for _, val := range hostileValues {
+				if rawRowRoundTrips(key, val) != nil {
+					broke = true
+					break
+				}
+			}
+			if !broke {
+				t.Errorf("key %q is listed as breaking, but raw emission round-trips "+
+					"for every hostile value — it belongs in mustRefuseConservatively", key)
+			}
+		}
+	})
+
+	t.Run("conservative keys really survive", func(t *testing.T) {
+		for _, key := range mustRefuseConservatively {
+			for _, val := range hostileValues {
+				if err := rawRowRoundTrips(key, val); err != nil {
+					t.Errorf("key %q is listed as refused-conservatively, but raw emission "+
+						"breaks with value %q (%v) — it belongs in mustRefuseBreaking",
+						key, val, err)
+				}
+			}
+		}
+	})
+}
+
+// rawRowRoundTrips reports whether the raw (guard-bypassed) emission of
+// key/val survives a re-parse in EITHER reachable context. A key is
+// "breaking" if it fails in at least one: single-context classification
+// under-reports, because [ ] { } and a leading "- " survive as a seed-row
+// list item while parseMap screens them as a nested map key.
+func rawRowRoundTrips(key, val string) error {
+	if err := rawSeedRowRoundTrips(key, val); err != nil {
+		return fmt.Errorf("seed row: %w", err)
+	}
+	if err := rawPropertiesRoundTrips(key, val); err != nil {
+		return fmt.Errorf("entity properties: %w", err)
+	}
+	return nil
+}
+
+// Seed rows are a map inside a list item: "      - key: value".
+func rawSeedRowRoundTrips(key, val string) error {
+	doc := "seed:\n  - entity: notes\n    rows:\n      - " + key + ": " + quoteYAMLString(val) + "\n"
+	node, err := coreyaml.Parse(doc)
+	if err != nil {
+		return err
+	}
+	seed := node.Map["seed"]
+	if seed == nil || len(seed.List) == 0 {
+		return fmt.Errorf("seed entry vanished on re-parse")
+	}
+	rows := seed.List[0].Map["rows"]
+	if rows == nil || len(rows.List) == 0 {
+		return fmt.Errorf("rows vanished on re-parse")
+	}
+	return cellMatches(rows.List[0].Map, key, val)
+}
+
+// Entity properties are a plain nested map: "      key: value".
+func rawPropertiesRoundTrips(key, val string) error {
+	doc := "entities:\n  - name: notes\n    properties:\n      " + key + ": " + quoteYAMLString(val) + "\n"
+	node, err := coreyaml.Parse(doc)
+	if err != nil {
+		return err
+	}
+	ents := node.Map["entities"]
+	if ents == nil || len(ents.List) == 0 {
+		return fmt.Errorf("entity vanished on re-parse")
+	}
+	props := ents.List[0].Map["properties"]
+	if props == nil {
+		return fmt.Errorf("properties vanished on re-parse")
+	}
+	return cellMatches(props.Map, key, val)
+}
+
+func cellMatches(m map[string]*coreyaml.Node, key, val string) error {
+	cell := m[key]
+	if cell == nil {
+		return fmt.Errorf("key absent on re-parse (present: %v)", rowKeyNames(m))
+	}
+	if got, _ := cell.Value.(string); got != val {
+		return fmt.Errorf("value came back %q, want %q", got, val)
+	}
+	return nil
 }
