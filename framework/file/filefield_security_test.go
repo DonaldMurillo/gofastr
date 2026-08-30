@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
@@ -248,5 +249,117 @@ func TestProcessFileFieldStripsCtrlInName(t *testing.T) {
 	}
 	if verr := ff.Validate(); verr != nil {
 		t.Fatalf("SECURITY: [filefield] ProcessFileField produced a FileField its own Validate rejects (%v) for filename %q. Attack: CRLF in the echoed filename splits Content-Disposition.", verr, ff.Filename)
+	}
+}
+
+// TestProcessFileFieldMeetsOwnContract pins the documented constructor
+// invariant ("The constructors in this package (ProcessFileField)
+// already produce valid FileFields", filefield.go): whatever the client
+// filename, ProcessFileField must either fail or return a FileField
+// that passes its own Validate. The constructor sets Filename via
+// filepath.Base(stripControlBytes(...)), which removes control bytes
+// but keeps interior dot-pairs, while Validate's hasTraversal is a
+// substring match, so a plain "v2..final.png" upload yields stored
+// metadata that Validate rejects. The storage key is unaffected
+// (UniqueFilename collapses ".." to "_"); the exposed value is the
+// persisted Filename, which reaches Content-Disposition and any host
+// that joins it onto a path.
+func TestProcessFileFieldMeetsOwnContract(t *testing.T) {
+	t.Parallel()
+	png := []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 'I', 'H', 'D', 'R'}
+	for _, name := range []string{"v2..final.png", "a...b.txt", "report..2.pdf"} {
+		ff, err := file.ProcessFileField(context.Background(), &captureStorage{}, bytes.NewReader(png), name, "posts", "cover")
+		if err != nil {
+			t.Fatalf("legitimate PNG upload rejected for filename %q: %v", name, err)
+		}
+		if verr := ff.Validate(); verr != nil {
+			t.Errorf("SECURITY: [filefield] ProcessFileField accepted client filename %q but produced a FileField its own Validate rejects (Filename=%q, err=%v). Attack: the traversal-bearing Filename is persisted and reaches Content-Disposition and host path joins.", name, ff.Filename, verr)
+		}
+	}
+
+	// Same invariant through the only other FileField-producing surface
+	// in this package: the constructor with a deriver attached.
+	ff, err := file.ProcessFileField(context.Background(), &captureStorage{},
+		bytes.NewReader(png), "v2..final.png", "posts", "cover",
+		file.WithImageDeriver(stubDeriver{}))
+	if err != nil {
+		t.Fatalf("legitimate PNG upload rejected: %v", err)
+	}
+	if verr := ff.Validate(); verr != nil {
+		t.Errorf("SECURITY: [filefield] ProcessFileField+deriver produced a FileField its own Validate rejects (Filename=%q, err=%v)", ff.Filename, verr)
+	}
+}
+
+// stubDeriver is the minimal ImageDeriver: one clean variant derived
+// from the primary storage key.
+type stubDeriver struct{}
+
+func (stubDeriver) DeriveImage(ctx context.Context, store upload.Storage, data []byte, primaryRef string) (*file.ImageDerivatives, error) {
+	return &file.ImageDerivatives{
+		Variants: []file.DerivedVariant{{
+			StorageRef: primaryRef + "_480.webp",
+			MIME:       "image/webp",
+			Width:      480,
+			Height:     320,
+		}},
+	}, nil
+}
+
+// TestProcessFileFieldStripsUnicodeBreaks extends the control-strip
+// family to the Unicode line terminators: U+2028/U+2029/U+0085 are all
+// bytes >=0x80, so framework/file's byte-wise stripControlBytes keeps
+// them, while core/upload's rune-aware SanitizeFilename (which builds
+// the storage key) strips them. The stored Filename must not carry a
+// codepoint that JS/JSON/log tooling treats as a line break. Asserted
+// at the constructor surface: Validate's own doc scopes it to C0/DEL
+// and its scan is byte-wise, so it is not the gate for these.
+func TestProcessFileFieldStripsUnicodeBreaks(t *testing.T) {
+	t.Parallel()
+	png := []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 'I', 'H', 'D', 'R'}
+	cases := map[string]rune{
+		"line-separator": '\u2028',
+		"paragraph-sep":  '\u2029',
+		"nel":            '\u0085',
+	}
+	for cname, sep := range cases {
+		ff, err := file.ProcessFileField(context.Background(), &captureStorage{},
+			bytes.NewReader(png), "pic"+string(sep)+".png", "posts", "cover")
+		if err != nil {
+			t.Fatalf("legitimate PNG upload rejected for %s filename: %v", cname, err)
+		}
+		if strings.ContainsRune(ff.Filename, sep) {
+			t.Errorf("SECURITY: [filefield] ProcessFileField kept %s (U+%04X) in stored Filename %q. Attack: a Unicode line terminator in the persisted filename injects a line break into JS/JSON/log consumers, the same hazard CR/LF stripping exists to close.", cname, sep, ff.Filename)
+		}
+	}
+}
+
+// TestVariantRefRejectsControlBytes extends the no-C0/DEL property
+// (TestFileFieldRejectsControlBytes, primary surfaces) to the derived
+// variant surface. ImageDerivatives.Validate's doc promises "the same
+// invariants" as the primary file and variant refs reach the same
+// sinks (an <img src>, a storage delete), but the variant loop checks
+// oversize/scheme/traversal/MIME/dimensions and never runs the
+// control-byte scan the primary loop applies.
+func TestVariantRefRejectsControlBytes(t *testing.T) {
+	t.Parallel()
+	payloads := map[string]string{
+		"cr":  "uploads/posts/cover/a\rb.webp",
+		"lf":  "uploads/posts/cover/a\nb.webp",
+		"nul": "uploads/posts/cover/a\x00b.webp",
+		"del": "uploads/posts/cover/a\x7fb.webp",
+	}
+	for pname, ref := range payloads {
+		dv := &file.ImageDerivatives{Variants: []file.DerivedVariant{{
+			StorageRef: ref, MIME: "image/webp", Width: 480, Height: 320,
+		}}}
+		if err := dv.Validate(); !errors.Is(err, file.ErrFileFieldControlBytes) {
+			t.Errorf("SECURITY: [filefield] ImageDerivatives.Validate accepted %s control byte in variant storage_ref %q (err=%v). Attack: the ref is persisted in the <field>_variants column and reaches the same <img src>/storage-delete sinks as the primary storage_ref.", pname, ref, err)
+		}
+		// Same answer when the variants ride in on a FileField, the
+		// shape a host round-trips from the persisted column.
+		ff := &file.FileField{StorageRef: "uploads/posts/cover/a.webp", MimeType: "image/webp", Size: 1, Image: dv}
+		if err := ff.Validate(); !errors.Is(err, file.ErrFileFieldControlBytes) {
+			t.Errorf("SECURITY: [filefield] FileField.Validate accepted variant storage_ref carrying %s control byte %q (err=%v)", pname, ref, err)
+		}
 	}
 }
