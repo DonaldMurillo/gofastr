@@ -359,6 +359,11 @@ func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
 	for {
 		fmt.Fprint(os.Stderr, "> ")
 		if !scanner.Scan() {
+			// Scan reports EOF and a read failure the same way; only Err
+			// separates "user pressed ctrl-D" from "input was lost".
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(os.Stderr, "\nread input: %v\n", err)
+			}
 			return
 		}
 		line := strings.TrimSpace(scanner.Text())

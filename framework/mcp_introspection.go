@@ -431,6 +431,13 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 				ledger[name] = checksum
 			}
 		}
+		// The documented contract is "on error, every entry reads
+		// unknown". A failure part-way through Next would otherwise leave
+		// the rows already scanned in the map, so some routines report a
+		// confident ledger_state derived from a read that did not finish.
+		if rows.Err() != nil {
+			clear(ledger)
+		}
 		_ = rows.Close()
 	}
 

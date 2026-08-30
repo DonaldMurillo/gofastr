@@ -320,6 +320,14 @@ func (s *PgVectorStore) ChunkIDsForDoc(docID string) []string {
 		}
 		ids = append(ids, id)
 	}
+	// A failure part-way through Next stops the loop with no error of its
+	// own. Returning the short list would hand the caller a partial doc
+	// that reads as complete, and this list drives RemoveDoc's keyword
+	// purge: the orphaned entries would point at a doc that is gone. Fail
+	// the same way a scan error already does.
+	if err := rows.Err(); err != nil {
+		return nil
+	}
 	return ids
 }
 

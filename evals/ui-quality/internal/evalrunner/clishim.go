@@ -68,6 +68,10 @@ type cliDocumentationStats struct {
 	Searches          []string
 	Topics            []string
 	UsedCapabilityMap bool
+
+	// ReadErr is set when the shim log could not be read to the end. Every
+	// count above is then a floor, not a total.
+	ReadErr error
 }
 
 // cliDocsInvocationStats extracts documentation-discovery evidence from the
@@ -85,6 +89,14 @@ func cliDocsInvocationStats(logPath string) cliDocumentationStats {
 	searches := map[string]bool{}
 	topics := map[string]bool{}
 	scanner := bufio.NewScanner(f)
+	defer func() {
+		// A short read here silently lowers every count derived below,
+		// which reads as "the agent did less work" rather than "the log
+		// was not fully read".
+		if err := scanner.Err(); err != nil {
+			stats.ReadErr = err
+		}
+	}()
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		fields := strings.Fields(line)

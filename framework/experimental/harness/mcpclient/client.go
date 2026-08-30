@@ -305,6 +305,14 @@ func (c *Client) write(line []byte) error {
 func (c *Client) readLoop() {
 	scanner := bufio.NewScanner(c.stdout)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	defer func() {
+		// Without this the loop just ends: the reader is gone, nothing
+		// resolves the pending map, and every in-flight call waits for a
+		// response that can no longer arrive.
+		if err := scanner.Err(); err != nil {
+			c.failPending(err)
+		}
+	}()
 	for scanner.Scan() {
 		var r response
 		if err := json.Unmarshal(scanner.Bytes(), &r); err != nil {
@@ -319,6 +327,21 @@ func (c *Client) readLoop() {
 		c.mu.Unlock()
 		if ch != nil {
 			ch <- r
+		}
+	}
+}
+
+// failPending answers every in-flight call with err. The read loop is the
+// only thing that resolves the pending map, so when it stops on an error
+// each waiter would otherwise sit until its context expires, reporting a
+// timeout for what was really a dead transport.
+func (c *Client) failPending(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, ch := range c.pending {
+		select {
+		case ch <- response{ID: id, Error: &rpcError{Message: "read: " + err.Error()}}:
+		default:
 		}
 	}
 }

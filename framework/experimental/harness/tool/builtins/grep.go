@@ -81,6 +81,14 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 		scanner := bufio.NewScanner(f)
 		scanner.Buffer(make([]byte, 1024*64), 1024*1024)
 		lineNo := 0
+		defer func() {
+			// Scan stops on a line past the buffer cap and reports it
+			// only through Err. Silently returning the matches found so
+			// far tells the caller this file held nothing more.
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(&out, "%s: results truncated: %v\n", path, err)
+			}
+		}()
 		for scanner.Scan() {
 			lineNo++
 			if re.MatchString(scanner.Text()) {
