@@ -69,7 +69,20 @@ byte-identical):
   first show and moves the live nodes out/in on every later switch, so
   island content the runtime swapped in survives re-show. While a
   panel is vacated, document-scoped updates targeting it (SSE pushes,
-  in-flight RPC responses) are dropped until re-show.
+  in-flight RPC responses) are dropped permanently: nothing is queued
+  for replay, re-show resurrects the panel's pre-vacate nodes, and only
+  updates that arrive after re-show land.
+
+  Timing caveat for `VacateHidden`: the `tabs` module loads on the
+  strip's first hover/focus, so any signal write that lands before
+  that — an SSE, poll, or RPC-driven update, or a hydration-time
+  signal value differing from what SSR rendered — moves `data-active`
+  on a strip nobody has touched, and the newly-active panel shows
+  empty until the first interaction heals it. SSR itself is unaffected
+  (the initially-active panel always ships with its content), so
+  server-rendered deep links, anchors, restored scroll, and autofocus
+  are fine. If your app moves tabs without a user touching them, leave
+  `VacateHidden` off.
 
 ### Toggle switch
 

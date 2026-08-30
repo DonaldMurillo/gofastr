@@ -35,6 +35,34 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   supported way to attach attributes to a component — cannot reach it.
   Inert for everyone else.
 
+- **`ui.Tabs` porting knobs — `TabsConfig.StateAttrs`, `.ID`,
+  `.VacateHidden`** — the contracts a tab strip ported from a component
+  library needs. `StateAttrs` mirrors `data-state="active"/"inactive"`
+  onto every tab button after client-side switches, the locator contract
+  Radix-style ports pin their tests to (core already mirrors
+  `aria-selected` on the same write); `ID` wires tab↔panel
+  `id`/`aria-controls` semantics; `VacateHidden` ships hidden panels
+  empty with their content parked in an adjacent `data-fui-tabs-stash`
+  JSON script, so page-scoped test locators cannot match text inside
+  hidden panels — DOM parity with a source component that unmounts
+  inactive panels. A demand-loaded `tabs` runtime module (armed by
+  `data-fui-prefetch="tabs"`, no core scanner entry) restores a panel's
+  content on first show and moves the live nodes out/in on every later
+  switch, so island-swapped content and form state survive re-show. All
+  three knobs are opt-in; every zero value keeps the default output
+  byte-identical. See [interactive patterns](interactive-patterns.md).
+
+### Fixed
+
+- **A failed `data-fui-prefetch` fetch no longer strands the module for
+  the page lifetime.** The bridge marked an element attempted on first
+  hover even when the fetch failed, and a module without a scanner
+  marker (`tabs`, deliberately) had no second loader — one transient
+  failure left vacate panels empty for good, silently. An element is
+  now marked attempted only once its fetch succeeds, so the next
+  hover/focus retries; in-flight re-hovers cost nothing (the loader
+  dedups). Cost: 5 gzipped bytes of core runtime.
+
 ## [0.76.0] - 2026-08-30
 
 ### Added

@@ -241,3 +241,151 @@ func TestTabsStateAttrMirrorsAfterClick(t *testing.T) {
 		t.Errorf("after clicking tab 1: data-state = [%q, %q], want [inactive, active]", s0, s1)
 	}
 }
+
+// vacateStrip builds one two-tab strip in the component's exact SSR
+// shape (VacateHidden + StateAttrs, panel 1 parked in the stash through
+// the same marshal + </ → <\/ pipeline), with caller-chosen ids, signal
+// name, and panel-0 content. Shared by the nested-strip and
+// programmatic-switch probes below.
+func vacateStrip(t *testing.T, id, sig, panel0, panel1 string) string {
+	t.Helper()
+	buf, err := json.Marshal(map[string]string{"1": panel1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stashJSON := strings.ReplaceAll(string(buf), `</`, `<\/`)
+	return `<div id="` + id + `" class="fui-tabs" data-active="0" data-fui-signal="` + sig + `"
+       data-fui-signal-mode="attr" data-fui-signal-attr="data-active"
+       data-fui-tabs-state="true" data-fui-tabs-vacate="true" data-fui-prefetch="tabs">
+  <nav role="tablist">
+    <button id="` + id + `-t0" role="tab" aria-selected="true" data-state="active" data-fui-tab-index="0" data-fui-signal-set="` + sig + `:0">A</button>
+    <button id="` + id + `-t1" role="tab" aria-selected="false" data-state="inactive" data-fui-tab-index="1" data-fui-signal-set="` + sig + `:1">B</button>
+  </nav>
+  <div class="fui-tabs-content">
+    <div role="tabpanel" data-fui-tab-index="0"><p id="` + id + `-p0">` + panel0 + `</p></div>
+    <div role="tabpanel" data-fui-tab-index="1"></div>
+    <script type="application/json" data-fui-tabs-stash="true">` + stashJSON + `</script>
+  </div>
+</div>`
+}
+
+// TestTabsNestedStripWiredAfterRestore pins the scanner's root-matching
+// contract. Core's DOM-insertion observer hands each module scanner the
+// ADDED NODE, not a container: when an outer vacate panel's first-show
+// restore writes its innerHTML, the inner strip IS that node. A scanner
+// that only queries descendants never wires it — the inner tabs then
+// flip data-active and CSS-show an EMPTY panel forever, content inert
+// in the stash. Same failure shape as an island/RPC/html-signal region
+// swap whose response root is a strip.
+func TestTabsNestedStripWiredAfterRestore(t *testing.T) {
+	inner := vacateStrip(t, "iwrap", "isig", "inner-alpha", `<p id="ip1">inner-beta</p>`)
+	outer := vacateStrip(t, "owrap", "osig", "outer-alpha", inner)
+	srv := startTabsContractServer(t, outer)
+	ctx, _ := runTabsContractBrowser(t)
+
+	var ok bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#owrap-t1`, chromedp.ByID),
+		// Load the module through the real trigger (prefetch bridge).
+		chromedp.Evaluate(`document.getElementById('owrap').dispatchEvent(
+			new PointerEvent('pointerover', {bubbles: true}))`, nil),
+		chromedp.Poll(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.tabs)`,
+			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
+		// Outer switch: first-show restore writes the inner strip into
+		// the panel via innerHTML. The MutationObserver hands the INNER
+		// STRIP (the added node) to the tabs scanner.
+		chromedp.Click(`#owrap-t1`, chromedp.ByID),
+		chromedp.Poll(`document.getElementById('iwrap') !== null &&
+			document.getElementById('iwrap-t1') !== null`,
+			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
+		// Inner switch: the inner strip must have been wired as the
+		// scope ROOT, or panel 1 stays empty for the page lifetime.
+		chromedp.Click(`#iwrap-t1`, chromedp.ByID),
+		chromedp.Poll(`(() => { const p = document.getElementById('ip1');
+			return p !== null && p.innerText === 'inner-beta'; })()`,
+			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
+	); err != nil || !ok {
+		t.Fatalf("inner strip nested in a restored vacate panel must be wired and restore its own stash (ok=%v, err=%v)", ok, err)
+	}
+}
+
+// TestTabsRestoreLoadsComponentCSS pins the scanAndLoadCSS half of the
+// restore pipeline: panel HTML can carry data-fui-comp components, and
+// their stylesheets must load when the content is restored — the same
+// insertion pipeline html-mode signal regions use.
+func TestTabsRestoreLoadsComponentCSS(t *testing.T) {
+	page := `<script>window.__gofastr_catalog = {"probe-card":{stylePath:"/__gofastr/comp/probe-card.css",version:"1"}};</script>` +
+		vacateStripPage(t, `<div data-fui-comp="probe-card" id="pc">card-body</div>`)
+	srv := startTabsContractServer(t, page)
+	ctx, _ := runTabsContractBrowser(t)
+
+	var ok bool
+	var href string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#t1`, chromedp.ByID),
+		// Nothing may load at boot: the component marker only exists
+		// as text inside the stash script, which no selector matches.
+		chromedp.Evaluate(`document.querySelector('link[data-fui-style="probe-card"]') === null`, &ok),
+	); err != nil || !ok {
+		t.Fatalf("probe-card CSS must not load before the panel is restored (ok=%v, err=%v)", ok, err)
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('wrap').dispatchEvent(
+			new PointerEvent('pointerover', {bubbles: true}))`, nil),
+		chromedp.Poll(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.tabs)`,
+			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
+		chromedp.Click(`#t1`, chromedp.ByID),
+		chromedp.Poll(`(() => { const l = document.querySelector('link[data-fui-style="probe-card"]');
+			return l !== null && document.getElementById('pc') !== null; })()`,
+			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
+		chromedp.Evaluate(`document.querySelector('link[data-fui-style="probe-card"]').getAttribute('href')`, &href),
+	); err != nil || !ok {
+		t.Fatalf("restoring a panel with a data-fui-comp element must load its stylesheet (ok=%v, err=%v)", ok, err)
+	}
+	if want := "/__gofastr/comp/probe-card.css?v=1"; href != want {
+		t.Errorf("probe-card link href = %q, want %q", href, want)
+	}
+}
+
+// TestTabsProgrammaticSwitchBeforeModuleLoad pins the initial apply() at
+// wire time. The module loads on first pointerover/focusin, but a signal
+// write can move data-active BEFORE that (an SSE/poll/RPC-driven update,
+// or a hydration-time value differing from SSR). The write flips
+// data-active while nobody observes it; when the module finally loads,
+// its wiring pass must reconcile against the CURRENT data-active, or the
+// newly-active panel stays empty until the next manual switch.
+func TestTabsProgrammaticSwitchBeforeModuleLoad(t *testing.T) {
+	srv := startTabsContractServer(t, vacateStripPage(t, `<p id="p1txt">beta-body</p>`))
+	ctx, _ := runTabsContractBrowser(t)
+
+	var ok, moduleLoaded bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#t1`, chromedp.ByID),
+		// A synthetic .click() carries no pointerover, so the prefetch
+		// bridge stays asleep: the signal write happens while the tabs
+		// module is NOT loaded. Core still mirrors aria-selected.
+		chromedp.Evaluate(`document.getElementById('t1').click()`, nil),
+		chromedp.Poll(`document.getElementById('wrap').getAttribute('data-active') === '1' &&
+			document.getElementById('t1').getAttribute('aria-selected') === 'true'`,
+			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
+		chromedp.Evaluate(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.tabs)`, &moduleLoaded),
+		chromedp.Evaluate(`document.getElementById('p1txt') === null`, &ok),
+	); err != nil || !ok || moduleLoaded {
+		t.Fatalf("setup: switch must land before module load (active ok=%v, panel empty ok=%v, moduleLoaded=%v, err=%v)", ok, ok, moduleLoaded, err)
+	}
+
+	// First interaction loads the module; wiring must immediately
+	// reconcile against data-active=1 and restore panel 1.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('wrap').dispatchEvent(
+			new PointerEvent('pointerover', {bubbles: true}))`, nil),
+		chromedp.Poll(`(() => { const p = document.getElementById('p1txt');
+			return p !== null && p.innerText === 'beta-body'; })()`,
+			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
+	); err != nil || !ok {
+		t.Fatalf("module load must reconcile the pre-interaction switch and restore panel 1 (ok=%v, err=%v)", ok, err)
+	}
+}

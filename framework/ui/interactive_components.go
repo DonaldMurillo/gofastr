@@ -55,17 +55,22 @@ type TabsConfig struct {
 	// panel (island updates, form state) survives re-show intact.
 	// Trade-offs: while a panel is vacated its content is detached, so
 	// document-scoped updates targeting it (SSE island pushes, RPC
-	// responses for controls it owns) are dropped until it is shown
-	// again, and focus inside a vacated panel escapes to <body>.
+	// responses for controls it owns) are dropped permanently — nothing
+	// is queued for replay; re-show resurrects the panel's pre-vacate
+	// nodes, and only updates that arrive after re-show land. Focus
+	// inside a vacated panel escapes to <body>.
 	//
 	// One timing caveat worth knowing before you switch this on: the
 	// module that restores content loads on first hover/focus of the
-	// strip, so a PROGRAMMATIC switch (an SSE or poll-driven signal
-	// write) on a strip nobody has touched yet shows an empty panel
+	// strip, so a PROGRAMMATIC switch — any signal write that reaches
+	// the strip before the module loads: an SSE, poll, or RPC-driven
+	// update, or a hydration-time signal value differing from what SSR
+	// rendered — on a strip nobody has touched yet shows an empty panel
 	// until the first interaction heals it. SSR is unaffected — the
-	// initially-active panel always ships with its content — so this
-	// only reaches apps that move tabs without the user touching them.
-	// If that is your shape, leave VacateHidden off.
+	// initially-active panel always ships with its content, so server-
+	// rendered deep links, anchors, restored scroll, and autofocus are
+	// fine — this only reaches apps that move tabs without the user
+	// touching them. If that is your shape, leave VacateHidden off.
 	//
 	// Zero value: all panels ship in the DOM as today, output
 	// byte-identical to a config without the knob.

@@ -4,7 +4,8 @@
 // arms with data-fui-prefetch="tabs" whenever StateAttrs or VacateHidden
 // is on. Both are interaction-time behaviors, so a pointerover/focusin
 // load has the module in place by the first click without costing the
-// core bundle a scanner entry (core gzip headroom is ~20 bytes; see
+// core bundle a scanner entry (core gzip headroom is ~13 bytes at its
+// binding level-1 budget line; see
 // core-ui/runtime/budget_test.go).
 //
 // Owns two markers, both on the strip's wrapper div:
@@ -25,8 +26,10 @@
 //
 // Trade-offs by design: while a panel is vacated its nodes are detached,
 // so document-scoped updates targeting them (SSE island pushes, RPC
-// responses for their controls) are dropped until re-show, and focus
-// inside a vacated panel escapes to <body>. Panel visibility itself is
+// responses for their controls) are dropped permanently — nothing is
+// queued for replay; re-show resurrects the panel's pre-vacate nodes,
+// and only updates that arrive after re-show land. Focus inside a
+// vacated panel escapes to <body>. Panel visibility itself is
 // unchanged: CSS still keys off data-active, this module only owns the
 // content.
 (() => {
@@ -79,17 +82,26 @@
     });
   };
 
+  const wire = (w) => {
+    if (wired.has(w)) return;
+    wired.add(w);
+    // Late module load (slow fetch, or a signal write before any
+    // pointer interaction): reconcile against data-active right away.
+    apply(w);
+    new MutationObserver(() => apply(w))
+      .observe(w, { attributes: true, attributeFilter: ['data-active'] });
+  };
+
   const scan = (scope) => {
     const root = scope?.querySelectorAll ? scope : document;
-    root.querySelectorAll('[data-fui-tabs-state],[data-fui-tabs-vacate]').forEach((w) => {
-      if (wired.has(w)) return;
-      wired.add(w);
-      // Late module load (slow fetch, or a signal write before any
-      // pointer interaction): reconcile against data-active right away.
-      apply(w);
-      new MutationObserver(() => apply(w))
-        .observe(w, { attributes: true, attributeFilter: ['data-active'] });
-    });
+    // Match the scope node ITSELF, not just its descendants: core's
+    // DOM-insertion observer hands scanners the added node, and the
+    // added node can be a strip — one nested inside a restored vacate
+    // panel, or the root of an island/RPC/html-signal region swap
+    // response. Same contract _scanForModules already follows
+    // (module_root_marker_e2e_test.go).
+    if (root.matches && root.matches('[data-fui-tabs-state],[data-fui-tabs-vacate]')) wire(root);
+    root.querySelectorAll('[data-fui-tabs-state],[data-fui-tabs-vacate]').forEach(wire);
   };
 
   scan(document);

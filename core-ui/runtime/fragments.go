@@ -176,8 +176,11 @@ var fragmentAttrs = map[string][]string{
 // Every entry is markerClass: the kernel's _scanForModules demand-loads the
 // module when it sees the module's primary marker (the scanner table near
 // the bottom of runtime.js is the authoritative marker→module map), and
-// companion attributes ride along. A module not listed here still loads,
-// this is the attribute-ownership map, not the module registry.
+// companion attributes ride along. The one exception is `tabs`, which has
+// no marker entry by design: it loads only via the data-fui-prefetch
+// bridge its component arms, so _scanForModules never demand-loads it.
+// A module not listed here still loads, this is the attribute-ownership
+// map, not the module registry.
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
