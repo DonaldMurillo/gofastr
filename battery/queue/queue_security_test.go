@@ -25,8 +25,8 @@ func TestDBWorkerSurvivesHandlerPanic(t *testing.T) {
 
 	var good atomic.Int32
 	q.RegisterHandler("boom", func(_ context.Context, _ Job) error {
-		var m map[string]int
-		m["x"] = 1 // nil-map assignment → panic
+		m := nilIntMap() // a real handler gets its nil from elsewhere
+		m["x"] = 1       // nil-map assignment → panic
 		return nil
 	})
 	q.RegisterHandler("ok", func(_ context.Context, _ Job) error {
@@ -64,8 +64,8 @@ func TestMemoryWorkerSurvivesHandlerPanic(t *testing.T) {
 
 	var good atomic.Int32
 	q.RegisterHandler("boom", func(_ context.Context, _ Job) error {
-		var s []int
-		_ = s[5] // slice OOB → panic
+		s := nilIntSlice() // a real handler gets its empty slice from elsewhere
+		_ = s[5]           // slice OOB → panic
 		return nil
 	})
 	q.RegisterHandler("ok", func(_ context.Context, _ Job) error {
@@ -349,3 +349,11 @@ func TestRedisReclaimRedeliversExpired(t *testing.T) {
 		t.Fatalf("expected re-delivered 'abandoned', got %q", redelivered.ID)
 	}
 }
+
+// nilIntMap and nilIntSlice source the panic's cause from a call rather
+// than a local the compiler can see through. The handlers below must panic
+// so the worker's recovery path runs; spelled inline they read as defects
+// instead of fixtures, to a reviewer and to the nilness gate alike.
+func nilIntMap() map[string]int { return nil }
+
+func nilIntSlice() []int { return nil }

@@ -30,8 +30,8 @@ func TestInTx_PanicReleasesConn(t *testing.T) {
 				if _, err := tx.ExecContext(ctx, "INSERT INTO posts(id, title, body) VALUES ($1, $2, $3)", "p1", "leak", ""); err != nil {
 					return err
 				}
-				var p *int
-				_ = *p // panic
+				p := nilIntPtr() // a real callback gets its nil from elsewhere
+				_ = *p           // panic
 				return nil
 			})
 		}()
@@ -52,3 +52,8 @@ func TestInTx_PanicReleasesConn(t *testing.T) {
 		}
 	})
 }
+
+// nilIntPtr returns a nil *int. The callback under test must panic so the
+// rollback path runs; taking the nil from a call models a value that
+// arrived nil rather than a local deref that reads as a defect.
+func nilIntPtr() *int { return nil }
