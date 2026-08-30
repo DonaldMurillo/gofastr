@@ -109,8 +109,12 @@ document content and pass through verbatim, exactly as a hand-written
 HTML string would. One guard `HTML()` enforces: `Script` must not
 contain `</script` (case-insensitive) or `<!--` — either can make the
 HTML parser close (or stop closing) the script element early. The builder
-rejects the document with an error naming the sequence; write
-`"<\/script>"` inside string literals to avoid it.
+rejects the document with an error naming the sequence. Inside the
+JavaScript string literals in `Script`, write `"<\/script>"`: `\/` is a
+valid JavaScript escape for `/`. Keep `Script` in a Go raw string
+literal (backticks) so the backslash reaches JavaScript as written. In
+an interpreted string literal, double it (`"<\\/script>"`); a lone `\/`
+is not a legal Go escape, so the code will not compile.
 
 `framework.WithMCPApp` registers the resource and the linking tool in
 one call and serves the widget client script at
@@ -138,9 +142,10 @@ root:
   pair that makes the host's `light-dark()` variable values resolve on
   the correct side;
 - `styles.variables` → inline custom properties on the root, inherited
-  by all author markup;
+  by all author markup; a property the update no longer lists is
+  removed;
 - `styles.css.fonts` → one `<style data-mcpapp-fonts>` element, replaced
-  when the host sends new font CSS.
+  when the host sends new font CSS, removed when an update sends none.
 
 Application happens before your registered `onHostContextChanged` handler
 runs (and even when you register none), so the root is never stale when
