@@ -1,0 +1,21 @@
+{
+  "source": "draft-meunier-webbotauth-httpsig-protocol-02 Appendix E.2.1 (EdDSA Using Curve edwards25519, Signature-Agent included present on the request), 18 August 2026. https://www.ietf.org/archive/id/draft-meunier-webbotauth-httpsig-protocol-02.txt",
+  "note": "expires=4889289600 (year 2124): the draft says these vectors are written so they do not age.",
+  "request": {
+    "method": "GET",
+    "target": "/path/to/resource",
+    "host": "example.com",
+    "headers": {
+      "Signature-Agent": "agent2=\"https://signature-agent.test\""
+    }
+  },
+  "signature_agent_url": "https://signature-agent.test",
+  "signature_agent_type": "directory",
+  "signature_input": "sig2=(\"@authority\" \"signature-agent\";key=\"agent2\");created=1735689600;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";expires=4889289600;nonce=\"n9p433xm+NJ3ph3upfBIGmsuwHw387YV7Q/F+6BSpGCVjYCqQw6rznNA8PVVLySrAWsv0hQtFioQb6E1YsauiA==\";tag=\"web-bot-auth\"",
+  "signature_label": "sig2",
+  "signature": "RdNFx5Bj6au3YgAMQL/RzmUlZE8QZLIaXGRpw985hWnwPfMxT228NMk6ehRS1PSl4e8PhbNZACSanGdhEwYCCg==",
+  "directory_body": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\",\"x\":\"JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs\",\"use\":\"sig\"}]}",
+  "directory_host": "signature-agent.test",
+  "expected_agent_url": "https://signature-agent.test/.well-known/http-message-signatures-directory",
+  "expected_base": "\"@authority\": example.com\n\"signature-agent\";key=\"agent2\": \"https://signature-agent.test\"\n\"@signature-params\": (\"@authority\" \"signature-agent\";key=\"agent2\");created=1735689600;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";expires=4889289600;nonce=\"n9p433xm+NJ3ph3upfBIGmsuwHw387YV7Q/F+6BSpGCVjYCqQw6rznNA8PVVLySrAWsv0hQtFioQb6E1YsauiA==\";tag=\"web-bot-auth\""
+}
