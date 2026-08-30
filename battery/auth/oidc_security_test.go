@@ -400,3 +400,60 @@ func TestOIDCSec_NoSecretsInErrors(t *testing.T) {
 		})
 	}
 }
+
+// ── issuer scheme / loopback gate ────────────────────────────────────────────
+
+// TestOIDCHttpIssuerOnlyLiteralLoopback pins that a plain-http Issuer is
+// accepted ONLY for literal loopback hostnames. isLocalhostHost is a
+// literal string switch, so hosts that merely RESOLVE to loopback
+// (localtest.me → 127.0.0.1), other loopback /8 addresses, DNS names
+// suffixed with localhost, and IPv4-mapped IPv6 must all be rejected —
+// otherwise any DNS rebinding of "resolves-to-loopback" name downgrades
+// the issuer to cleartext transport.
+func TestOIDCHttpIssuerOnlyLiteralLoopback(t *testing.T) {
+	reject := []string{
+		"http://localtest.me",       // public DNS name resolving to 127.0.0.1
+		"http://127.0.0.2",          // different loopback /8 address
+		"http://localhost.evil.com", // attacker domain ending in localhost
+		"http://[::ffff:127.0.0.1]", // IPv4-mapped IPv6 loopback
+	}
+	for _, iss := range reject {
+		cfg := OIDCConfig{Issuer: iss, ClientID: "c", ClientSecret: "s", RedirectURL: "r"}
+		if _, err := NewOIDCProvider(cfg); err == nil {
+			t.Errorf("SECURITY: [oidc-loopback] http issuer %q accepted: only literal loopback hosts may use http", iss)
+		}
+	}
+	accept := []string{
+		"http://localhost",
+		"http://localhost:8080",
+		"http://127.0.0.1:8080",
+		"http://[::1]:9999",
+	}
+	for _, iss := range accept {
+		cfg := OIDCConfig{Issuer: iss, ClientID: "c", ClientSecret: "s", RedirectURL: "r"}
+		if _, err := NewOIDCProvider(cfg); err != nil {
+			t.Errorf("literal loopback issuer %q must be accepted, got %v", iss, err)
+		}
+	}
+}
+
+// TestOIDCNoKidAmbiguousKeyset pins the kid-less lookup's ambiguity rule: a
+// header without kid may only be verified against a JWKS advertising
+// exactly ONE usable key. With two keys in the set, verification must fail
+// closed even if one of them signed the token — picking either key would
+// let the other issuer's key vouch for tokens it never signed.
+func TestOIDCNoKidAmbiguousKeyset(t *testing.T) {
+	f := newFakeIdP(t)
+	f.header = map[string]any{"alg": "RS256", "kid": "", "typ": "JWT"} // kid absent
+	f.jwksFn = func(int) []map[string]any {
+		return []map[string]any{
+			rsaJWKMap("rsa-1", &f.rsaKey.PublicKey),
+			ecJWKMap("ec-1", &f.ecKey.PublicKey),
+		}
+	}
+	p := newTestProvider(t, f)
+	if _, err := p.ExchangeCode(ctxBg(), "any-code"); err == nil {
+		t.Fatal("SECURITY: [oidc-kid] a kid-less id_token verified against a TWO-key JWKS; " +
+			"lookup must fail closed unless the set is unambiguous")
+	}
+}

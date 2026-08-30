@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
@@ -461,4 +462,114 @@ func idOrEmpty(u User) string {
 		return ""
 	}
 	return u.GetID()
+}
+
+// TestOAuthLinksKeyedToRegistryName pins the link-namespace keying: durable
+// (provider, provider_id) links are keyed by the ROUTE/HMAC-state-validated
+// registry key, never by the provider-returned Name(). Two registered
+// providers can share a Name() (e.g. two OIDC issuers both defaulting to
+// "oidc"); a login through registry key B returning the same subject as
+// key A's linked identity must NOT resolve to A's user — otherwise the
+// second issuer silently takes over every account linked via the first.
+func TestOAuthLinksKeyedToRegistryName(t *testing.T) {
+	store := newLinkingUserStore()
+	mgr := New(AuthConfig{
+		JWTSecret:           "test-secret",
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           store,
+		AllowInMemoryStores: true,
+	})
+	plugin := NewOAuth2Plugin(OAuth2Config{
+		Providers: map[string]OAuth2Provider{
+			// Both providers report Name() "oidc".
+			"oidc-a": &stubOAuthProvider{name: "oidc", userInfo: &OAuth2UserInfo{
+				ID: "sub-123", Email: "alice@a.example", EmailVerified: true,
+			}},
+			"oidc-b": &stubOAuthProvider{name: "oidc", userInfo: &OAuth2UserInfo{
+				ID: "sub-123", Email: "bob@b.example", EmailVerified: true,
+			}},
+		},
+		StateSecret: "test-secret",
+	})
+	mgr.Use(plugin)
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	// alice is durably linked under registry key oidc-a.
+	alice := store.preExistingUser("alice@a.example")
+	if err := store.LinkOAuth(context.Background(), alice.GetID(), "oidc-a", "sub-123"); err != nil {
+		t.Fatalf("seed link: %v", err)
+	}
+
+	registryCallback := func(key string) *httptest.ResponseRecorder {
+		state, err := plugin.generateState(key, "")
+		if err != nil {
+			t.Fatalf("generateState(%s): %v", key, err)
+		}
+		req := oauthCallbackReq("/auth/oauth/"+key+"/callback?state="+state+"&code=fakecode", state)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+
+	// Login through registry key B with the SAME subject: it must not
+	// resolve to alice's link.
+	w := registryCallback("oidc-b")
+	if w.Code != http.StatusFound {
+		t.Fatalf("callback via oidc-b: %d (body=%s)", w.Code, w.Body.String())
+	}
+	if owner, err := store.FindByOAuth(context.Background(), "oidc-b", "sub-123"); err == nil && owner.GetID() == alice.GetID() {
+		t.Fatalf("SECURITY: [oauth-registry-key] login via registry key oidc-b resolved subject sub-123 to "+
+			"oidc-a's linked user %s — links must be keyed by the state-validated registry name, not the "+
+			"provider-returned Name()", alice.GetID())
+	}
+	// alice's binding under the other key is untouched.
+	if owner, err := store.FindByOAuth(context.Background(), "oidc-a", "sub-123"); err != nil || owner.GetID() != alice.GetID() {
+		t.Fatalf("oidc-a binding disturbed: owner=%v err=%v", owner, err)
+	}
+	// The session minted by key B's callback belongs to the NEW user.
+	var sessTok string
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessTok = c.Value
+		}
+	}
+	if sessTok == "" {
+		t.Fatal("callback via oidc-b minted no session")
+	}
+	sess, err := mgr.SessionStore().Get(context.Background(), sessTok)
+	if err != nil {
+		t.Fatalf("session get: %v", err)
+	}
+	if sess.UserID == alice.GetID() {
+		t.Fatalf("SECURITY: [oauth-registry-key] session via registry key oidc-b is for oidc-a's user %s",
+			alice.GetID())
+	}
+
+	// Happy inverse: login through registry key A with the same subject
+	// DOES resolve to alice (the link's own key).
+	w2 := registryCallback("oidc-a")
+	if w2.Code != http.StatusFound {
+		t.Fatalf("callback via oidc-a: %d (body=%s)", w2.Code, w2.Body.String())
+	}
+	sessTok = ""
+	for _, c := range w2.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessTok = c.Value
+		}
+	}
+	if sessTok == "" {
+		t.Fatal("callback via oidc-a minted no session")
+	}
+	sess2, err := mgr.SessionStore().Get(context.Background(), sessTok)
+	if err != nil {
+		t.Fatalf("session get: %v", err)
+	}
+	if sess2.UserID != alice.GetID() {
+		t.Fatalf("login via the link's own registry key must resolve to %s, got %s", alice.GetID(), sess2.UserID)
+	}
 }

@@ -147,3 +147,71 @@ func TestOAuth_AuthenticatedLinkRequiresSession(t *testing.T) {
 		t.Fatalf("must not link without a session; got %d", store.linkCalls)
 	}
 }
+
+// TestOAuthLinkRefusesBoundIdentity pins the link-theft guard on the
+// AUTHENTICATED /link callback: a logged-in user completing a link flow
+// for a provider identity that is already bound to a DIFFERENT local user
+// gets 409, the binding is not reassigned, and the refusal is audited
+// (oauth.refused / provider_already_linked). The DB layer's immutability
+// is pinned in entity_oauth_links_test.go; this is the HTTP branch.
+func TestOAuthLinkRefusesBoundIdentity(t *testing.T) {
+	store := newLinkingUserStore()
+	rec := &recordingSink{}
+	mgr := New(AuthConfig{
+		JWTSecret:           "test-secret",
+		SessionTTL:          time.Hour,
+		SessionCookie:       "session_id",
+		UserStore:           store,
+		AllowInMemoryStores: true,
+		AuditSink:           rec,
+	})
+	plugin := NewOAuth2Plugin(OAuth2Config{
+		Providers: map[string]OAuth2Provider{"stub": &stubOAuthProvider{
+			name:     "stub",
+			userInfo: &OAuth2UserInfo{ID: "prov-taken", Email: "mallory@example.com", EmailVerified: true},
+		}},
+		StateSecret: "test-secret",
+	})
+	mgr.Use(plugin)
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	// The provider identity is already durably bound to the victim.
+	victim := store.preExistingUser("victim@example.com")
+	if err := store.LinkOAuth(context.Background(), victim.GetID(), "stub", "prov-taken"); err != nil {
+		t.Fatalf("seed link: %v", err)
+	}
+	linksBefore := store.linkCalls
+
+	// Mallory has her own valid session and completes a link flow whose
+	// OAuth round-trip returns the victim's provider identity.
+	mallory := store.preExistingUser("mallory@example.com")
+	sess, err := mgr.SessionStore().Create(context.Background(), mallory.GetID(), time.Hour)
+	if err != nil {
+		t.Fatalf("session create: %v", err)
+	}
+	w := linkCallbackReq(t, plugin, r, mallory.GetID(), sess.Token)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("SECURITY: [oauth-link-theft] completing /link for an identity bound to another user returned "+
+			"%d (body=%s), want 409", w.Code, w.Body.String())
+	}
+	if store.linkCalls != linksBefore {
+		t.Fatalf("SECURITY: [oauth-link-theft] the callback re-bound the identity; LinkOAuth calls went %d → %d",
+			linksBefore, store.linkCalls)
+	}
+	owner, err := store.FindByOAuth(context.Background(), "stub", "prov-taken")
+	if err != nil || owner.GetID() != victim.GetID() {
+		t.Fatalf("SECURITY: [oauth-link-theft] victim's binding disturbed: owner=%v err=%v", owner, err)
+	}
+	ev := rec.findByKind("oauth.refused")
+	if ev == nil {
+		t.Fatalf("SECURITY: [oauth-link-theft] refusal not audited; kinds seen: %v", rec.kinds())
+	}
+	if ev.Meta["reason"] != "provider_already_linked" {
+		t.Fatalf("audit reason = %q, want provider_already_linked", ev.Meta["reason"])
+	}
+}
