@@ -45,7 +45,7 @@ const (
 	// native submit navigates away before a module could load, the same class
 	// of fatal-for-the-path as the click bridge. So the line moved to 14784,
 	// clearing the real bundle by 39.
-	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 39 over the real bundle (14745), under the 14800 cliff-fixture guard
+	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 33 over the real bundle (14751), under the 14800 cliff-fixture guard
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {
@@ -69,13 +69,28 @@ func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
 	}
 
 	grown := core
+	// Fill the level-6 headroom as finely as it takes. A fixed 64-byte
+	// step loses the last chunk once the real core sits close enough
+	// to the goal (the sidebar scanner widening in #298 consumed
+	// exactly that margin): the fixture then stops short of the window
+	// and this self-test fails for no budget reason. Halving the step
+	// keeps the fixture sitting ON the goal; if even 4-byte chunks
+	// cannot push it past the window, the core has genuinely outgrown
+	// the line and the bracket comment on coreCongestionWindowGZ is
+	// the thing to revisit.
 	const step = 64
-	for i := 0; i+step <= len(filler); i += step {
-		candidate := grown + filler[i:i+step]
+	chunk := step
+	for i := 0; i+chunk <= len(filler); {
+		candidate := grown + filler[i:i+chunk]
 		if gzipSize(t, candidate) > coreGoalGZ {
-			break
+			if chunk <= 4 {
+				break
+			}
+			chunk /= 2
+			continue
 		}
 		grown = candidate
+		i += chunk
 	}
 	defaultSize := gzipSize(t, grown)
 	bestSpeedSize := gzipSizeAt(t, grown, gzip.BestSpeed)

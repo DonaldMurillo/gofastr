@@ -379,6 +379,9 @@ func TestRuntimeModule_Sidebar(t *testing.T) {
 	for _, want := range []string{
 		"data-fui-sidebar-collapse",
 		"data-fui-sidebar-storage",
+		"data-fui-sidebar-group-toggle",
+		"data-fui-sidebar-collapse-label",
+		"data-fui-sidebar-expand-label",
 		"localStorage.setItem",
 		"aria-expanded",
 		"gofastr:navigate",

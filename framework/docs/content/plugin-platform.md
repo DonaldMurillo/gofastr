@@ -56,9 +56,12 @@ override that. Every asset is served `nosniff`, so a type the server
 could not name would leave the browser no way to recover.
 
 Registering specs without a filesystem to read them from is a wiring
-mistake and panics at boot rather than 404ing the frame document on
-every request. A server with no specs at all is the legitimate
-byte-backed case (`AddBytes` only) and is left alone.
+mistake, and it fails at boot. Before that check such a server
+registered normally and then panicked on the first request for one of
+those assets, since reading from a nil `fs.FS` dereferences a nil
+interface; failing at boot beats both that and the quieter repair of
+404ing the frame document forever. A server with no specs at all is the
+legitimate byte-backed case (`AddBytes` only) and is left alone.
 
 ## The wasm opt-in tier
 

@@ -200,16 +200,20 @@ func (s *AssetServer) AddBytes(route, contentType string, framed bool, b []byte)
 // AssetServers on the same router as long as their paths do not collide (the
 // router panics on duplicate patterns otherwise).
 //
-// Specs with no filesystem to read them from panic here, at boot, rather than
-// 404ing every request for the frame document. [ClientModule.Assets] is
+// Specs with no filesystem to read them from are rejected here, at boot.
+// Without this they registered fine and took down whichever request first
+// asked for one, because fs.ReadFile on a nil fs.FS dereferences the nil
+// interface. Boot is also the right place rather than the quieter repair of
+// serving 404 per request. [ClientModule.Assets] is
 // documented as optional — a plugin may serve its own assets — but then it
 // does not pass specs to an AssetServer either, so a nil FS carrying specs is
 // always a wiring mistake and never a runtime condition: the specs are right
-// there in the same call. Left quiet it would be one more construction that
-// validates, registers, serves, and yields a frame that cannot work, which is
-// the failure class [AssetSpec.ContentType] and [Manifest.CSP] already cost a
-// debugging cycle each. A nil FS with no specs is the legitimate byte-backed
-// server ([AssetServer.AddBytes] only) and is left alone.
+// there in the same call, and a 404 on the frame document would make it one
+// more construction that validates, registers, serves, and yields a frame that
+// cannot work — the failure class [AssetSpec.ContentType] and [Manifest.CSP]
+// already cost a debugging cycle each. A nil FS with no specs is the
+// legitimate byte-backed server ([AssetServer.AddBytes] only) and is left
+// alone.
 func (s *AssetServer) Register(rt *router.Router) {
 	if s.fsys == nil && len(s.specs) > 0 {
 		panic("pluginhost: AssetServer has " + strconv.Itoa(len(s.specs)) +

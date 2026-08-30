@@ -5,9 +5,93 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.75.0] - 2026-08-29
 
 ### Added
+
+- **The agent surface's middleware posture is pinned** (#291): a cookieless
+  bearer request to `/mcp` traverses the whole default chain untouched — CSRF
+  skips it by design, nothing demands a cookie, Origin or `Sec-Fetch-Site`,
+  and nothing rewrites `Authorization` — while a request carrying neither
+  credential is refused. That was already true and guarded by nothing: every
+  prior wiring test built its app with `WithoutDefaultMiddleware()`, so the
+  real chain had never met a bearer `/mcp` request. Now covered on both the
+  serve and agent roles, against live listeners.
+
+- **The widget client mounts itself** (#291): an app that registers an MCP App
+  with `WithMCPApp` now serves the widget client at
+  `mcp.WidgetClientScriptURL` automatically, rather than every author wiring
+  the same route by hand. It mounts only when at least one app is registered,
+  mirroring how `initialize` advertises `resources`/`prompts` only when
+  something is registered, and it yields with a warning to a route the host
+  already mounted rather than panicking on the conflict. `RoleAgent` forwards
+  the path to the app router, because in a role-split deployment the agent
+  listener is the origin a widget fetches its script from — not forwarding it
+  would 404 every widget exactly when the agent process is the MCP endpoint.
+
+- **MCP Apps widget client** (#291): `core/mcp` served the app side already
+  (`RegisterApp`, `_meta.ui`), but the JS that runs inside the host's iframe
+  and talks to the chat host did not exist, so every plugin author hand-rolled
+  it. `WidgetClientJS()` / `WidgetClientHandler()` ship it the way
+  pluginhost ships its frame client: the `ui/initialize` handshake followed by
+  `ui/notifications/initialized`, the six widget-to-host requests
+  (`tools/call`, `resources/read`, `ui/open-link`, `ui/request-display-mode`,
+  `ui/message`, `ui/update-model-context`) and handler registration for the
+  host-to-widget notifications.
+
+  Every method-name string is pinned against non-comment JS, so a one-character
+  typo — a widget that silently never fires — fails a test instead of shipping.
+  Requests are correlated by id through a null-prototype map bounded at 64 in
+  flight, rejecting `E_SATURATED` without posting rather than growing, with
+  timeout, send-failure and teardown all rejecting rather than hanging.
+  Messages are accepted only from the host window by `event.source`: the widget
+  frame is opaque-origin, so an origin-string check is the wrong tool.
+
+  GoFastr serves the widget side; it is not a chat host, and the host half is
+  deliberately absent.
+
+- **`RoleAgent` — an agent-only HTTP surface** (#291): `GOFASTR_ROLE=agent`
+  (or `WithRole(RoleAgent)`) serves `/mcp` and health only, forwarding MCP to
+  the app router so auth and owner scoping are identical to the serve role.
+  Entity CRUD, OpenAPI, docs, admin and well-known discovery are not served,
+  and workers do not start.
+
+  The slice that mattered was not the role constant but the identity contract
+  underneath it, which had no coverage at all: bearer tokens and session
+  cookies both resolve a user today, and nothing guaranteed the same person
+  arriving by token versus by cookie resolved to the same owner-scope
+  principal. On an agent surface that is live — an agent would either miss its
+  own user's rows or see another user's. The contract **holds**, and is now
+  pinned on REST and `/mcp`: same user, same `GetID()`, same owner-stamped
+  rows, with a second user's rows staying invisible. Injecting a divergent
+  principal on the bearer path fails those tests, so they are guards rather
+  than tautologies.
+
+- **Combobox keyboard navigation skips filtered-out options** (#302):
+  after typing a query, ArrowDown/ArrowUp/Home/End cycled through rows the
+  static filter had hidden, so the `aria-activedescendant` highlight landed on
+  an invisible option and Enter selected one the user had filtered away. The
+  navigable-option selector now excludes `[hidden]`.
+
+- **`ui.Sidebar` can express a server-owned collapse contract** (#298):
+  `SidebarConfig.Collapse` is a tri-state mirroring how `CurrentPath` already
+  works — the zero value keeps today's localStorage behaviour byte-identical,
+  and `SidebarCollapseCollapsed`/`SidebarCollapseExpanded` mean the server
+  decides. When the server owns the state the runtime neither reads nor writes
+  localStorage, so a per-user setting restored from the database survives first
+  paint on a device whose local value disagrees; SSR could not ship a collapsed
+  sidebar at all before this.
+
+  Also: `GroupMarkup` renders groups as `button[aria-expanded][aria-controls]`
+  plus a `hidden` container for hosts pinned to that shape (the default stays
+  `<details>`; the button dialect does not persist open state across navigation
+  and needs JavaScript, both documented), `CollapseLabel`/`ExpandLabel` are
+  configurable, and a `SidebarAutoHide` variant ships a 64px icon rail
+  at >= md that reveals the full column on hover and `:focus-within`
+  (keyboard), with no JavaScript. The collapse button now carries the
+  expand label and `aria-expanded="false"` while collapsed — it
+  previously hardcoded `aria-expanded="true"`, which was wrong the
+  moment the rail collapsed.
 
 - **`ClientModule.AssetServer(prefix, specs)`** (#300): builds a plugin's
   `AssetServer` from the module, reading `ClientModule.Assets` and
@@ -23,6 +107,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   assets that belong to no module.
 
 ### Fixed
+
+- **Cross-test browser-cache contamination in the site e2e suite** (#278): the
+  suite runs on one Chrome profile, so tabs are fresh but the HTTP cache is
+  shared, and split runtime modules are served `immutable` with a year-long
+  max-age. Because `httptest` ports are released and rehanded out by the
+  kernel, a later test could inherit a port for which the profile already held
+  a cached 200 of `toasts.js?v=<hash>` — same port plus same content hash is
+  the same cache key. The failure-injection server then never saw a request,
+  the module loaded from cache, and the test that expects a fallback correctly
+  found none. Each tab now clears the browser cache, restoring the per-test
+  isolation the unique-port assumption already claimed.
 
 - **An `AssetSpec` without a `ContentType` now serves one derived from the
   filename** (#303) instead of an empty `Content-Type`. `writeAsset` set

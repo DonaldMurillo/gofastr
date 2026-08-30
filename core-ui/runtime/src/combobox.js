@@ -94,8 +94,15 @@
     if (!lbId) return;
     const lb = document.getElementById(lbId);
     if (!lb) return;
+    // Navigable options: skip aria-disabled rows AND rows the static
+    // filter hid. Without :not([hidden]) ArrowDown/ArrowUp/Home/End
+    // cycle through filtered-out rows — the aria-activedescendant
+    // highlight lands on an invisible option and Enter picks one the
+    // user filtered away (#302).
     const options = Array.from(
-      lb.querySelectorAll('[role="option"]:not([aria-disabled="true"])')
+      lb.querySelectorAll(
+        '[role="option"]:not([aria-disabled="true"]):not([hidden])'
+      )
     );
     const activeId = input.getAttribute('aria-activedescendant');
     const activeIdx = options.findIndex((o) => o.id === activeId);

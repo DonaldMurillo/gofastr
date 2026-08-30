@@ -68,14 +68,24 @@ import "github.com/DonaldMurillo/gofastr/framework"
 var app = framework.NewApp()
 -->
 ```go
-app.Start(":8080") // role from GOFASTR_ROLE: all | serve | worker
+app.Start(":8080") // role from GOFASTR_ROLE: all | serve | worker | agent
 ```
 
 ```sh
 GOFASTR_ROLE=serve  ./myapp   # full router; no cron/queue/outbox-relay
 GOFASTR_ROLE=worker ./myapp   # cron/queue/outbox-relay; /healthz + /readyz only
+GOFASTR_ROLE=agent  ./myapp   # /mcp + /healthz + /readyz only; no entity routes
 ./myapp                       # combined (default); today's behavior
 ```
+
+`GOFASTR_ROLE=agent` (or `framework.WithRole(framework.RoleAgent)`) is the
+agent surface split: it serves the `/mcp` mount and health endpoints and
+nothing else — no entity CRUD, no OpenAPI, no browser pages. `/mcp`
+requests forward to the app router, so session/bearer auth and owner
+scoping behave exactly as on a serve process (see
+[MCP](mcp.md) and [Auth](auth.md)). Use it when agent traffic arrives
+through a dedicated tunnel or allow-listed listener and you don't want
+that listener to reach the rest of the app.
 
 `framework.WithRole(framework.RoleServe)` overrides the env var; an
 invalid value in either fails at construction. The worker's health
