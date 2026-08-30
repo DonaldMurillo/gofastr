@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -633,4 +634,50 @@ func TestLayout_ClassInjection(t *testing.T) {
 		t.Errorf("SECURITY: [layout-class-injection] class with script tag not escaped:\n  %s", truncate(s, 300))
 	}
 	t.Logf("NOTE: [layout-class-injection] class goes through render.Tag attribute escaping")
+}
+
+// TestSortHrefCarryPatternFmtSafe pins that a query-string carry built by
+// URL-encoding request-derived values (the patternWith / resource.Table
+// construction: url.Values.Encode() + "&" + "sort=%s&dir=%s") can never
+// inject fmt directives into Config.SortHrefPattern. url.Values.Encode()
+// emits %XX triples for every reserved character, and fmt.Sprintf parses
+// those bytes as flag/width/verb, so a carried search like "a&b"
+// (q=a%26b) makes the first verb swallow the column key and the last verb
+// report %!s(MISSING). The sink is fmt.Sprintf(pattern, ...) in
+// framework/ui/datatable.go renderHeader.
+func TestSortHrefCarryPatternFmtSafe(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, search string }{
+		{"amp", "a&b"},
+		{"percent", "50% off"},
+		{"utf8", "café"},
+		{"quote", `say "hi"`},
+		{"plus", "a+b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Build the carry pattern exactly as production does:
+			// battery/admin patternWith and framework/ui/resource Table.
+			enc := url.Values{"q": {tc.search}}.Encode()
+			pattern := "?" + enc + "&sort=%s&dir=%s"
+			h := ui.DataTable(ui.DataTableConfig{
+				Columns:         []ui.Column{{Key: "title", Header: "Title", Sortable: true}},
+				Rows:            []ui.Row{{Cells: map[string]render.HTML{"title": render.Text("x")}}},
+				SortHrefPattern: pattern,
+			})
+			s := string(h)
+			if strings.Contains(s, "%!") {
+				t.Errorf("SECURITY: [fmt-carry] search %q (encoded carry %q) injected fmt directives into sort pattern %q; fmt consumed/misaligned the verbs: %s", tc.search, enc, pattern, truncate(s, 300))
+			}
+			if !strings.Contains(s, "sort=title") {
+				t.Errorf("SECURITY: [fmt-carry] search %q: column key must land in its own sort= param, got misaligned href: %s", tc.search, truncate(s, 300))
+			}
+			if !strings.Contains(s, "dir=asc") {
+				t.Errorf("SECURITY: [fmt-carry] search %q: direction must land in its own dir= param, got: %s", tc.search, truncate(s, 300))
+			}
+			if !strings.Contains(s, "q="+enc) {
+				t.Errorf("SECURITY: [fmt-carry] search %q: carried value %q must round-trip untouched in the href, got: %s", tc.search, enc, truncate(s, 300))
+			}
+		})
+	}
 }
