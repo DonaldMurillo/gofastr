@@ -27,6 +27,10 @@ type gadgetServer struct {
 	// response the runtime will put in the DOM.
 	EvilFetch atomic.Int32
 	EvilAny   atomic.Int32
+	// OtherJS counts requests to /__gofastr/other.js, the browser-
+	// normalized target of a ../-prefixed module name that climbs
+	// out of /__gofastr/runtime/ but stays under /__gofastr/.
+	OtherJS atomic.Int32
 }
 
 // startGadgetServer serves body inside a page that loads the runtime.
@@ -66,6 +70,11 @@ func startGadgetServer(t *testing.T, widgets, body string) *gadgetServer {
 		g.EvilJS.Add(1)
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(`window.__pwned = true;`))
+	})
+	mux.HandleFunc("/__gofastr/other.js", func(w http.ResponseWriter, r *http.Request) {
+		g.OtherJS.Add(1)
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(`window.__other = true;`))
 	})
 	mux.HandleFunc("/chrome/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -277,5 +286,77 @@ func TestDeepLinkParamNeverReachesInnerHTML(t *testing.T) {
 	// entirely would be a different bug.
 	if !strings.Contains(sink, "onerror") {
 		t.Errorf("deep-link value did not reach the node at all: %q", sink)
+	}
+}
+
+// TestPrefetchAttrRejectsForeignModule pins that `data-fui-prefetch`
+// only ever loads a module name of the shape the framework emits.
+//
+// Attack: _prefetch reads the attribute off any element (including
+// markup injected after boot — the reachability
+// TestBehaviorAttrRejectsForeignSrc establishes for data-behavior),
+// splits it on whitespace and hands each token to loadModule, which
+// interpolates it raw: '/__gofastr/runtime/' + name + '.js'. A token
+// like ../../../evil needs no whitespace or quotes; the browser
+// normalizes the script src to /evil.js, bypassing the runtime-module
+// route (whose TrimPrefix map-misses) and executing whatever
+// same-origin JS route the host serves — under default-src 'self',
+// exactly the class CSP does not stop. Same property as the
+// data-behavior gate, sibling surface.
+//
+// The legitimate shape is the loader's own emitter: [A-Za-z0-9_-]+
+// (runtime.ModuleNames, served at /__gofastr/runtime/<name>.js).
+// Source-level pin: TestModuleSrcValidatesNameShape
+// (runtime_security_test.go).
+func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
+	cases := []struct {
+		label string
+		attr  string
+	}{
+		{"traversal", `../../../evil`},  // normalizes to /evil.js
+		{"relative-escape", `../other`}, // normalizes to /__gofastr/other.js
+		{"happy-path", `menu`},          // real module; the loader must still work
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			g := startGadgetServer(t, `[]`, `<div id="host"></div>`)
+
+			ctx := newSeedBrowserCtx(t)
+			var pwned, other, menuLoaded bool
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(g.Srv.URL+"/"),
+				chromedp.WaitVisible(`#ready`, chromedp.ByID),
+				// Insert AFTER boot, the reachable shape: markup arriving
+				// from an island swap, an RPC innerHTML replacement, or an
+				// SPA page merge.
+				chromedp.Evaluate(fmt.Sprintf(
+					`document.getElementById('host').innerHTML = '<div id="pf" data-fui-prefetch="%s" tabindex="0">pf</div>'; true`, tc.attr), nil),
+				chromedp.Sleep(150*time.Millisecond),
+				chromedp.Evaluate(`document.getElementById('pf').dispatchEvent(new Event('pointerover', {bubbles: true})); true`, nil),
+				chromedp.Sleep(500*time.Millisecond),
+				chromedp.Evaluate(`window.__pwned === true`, &pwned),
+				chromedp.Evaluate(`window.__other === true`, &other),
+				chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.menu)`, &menuLoaded),
+			); err != nil {
+				t.Fatal(err)
+			}
+			switch tc.label {
+			case "traversal":
+				if pwned || g.EvilJS.Load() > 0 {
+					t.Errorf("SECURITY: [module-src] data-fui-prefetch=%q loaded a foreign script (requests=%d, executed=%v). Attack: attribute traversal normalizes the module URL onto an arbitrary same-origin JS route",
+						tc.attr, g.EvilJS.Load(), pwned)
+				}
+			case "relative-escape":
+				if other || g.OtherJS.Load() > 0 {
+					t.Errorf("SECURITY: [module-src] data-fui-prefetch=%q escaped the runtime-module path (requests=%d, executed=%v)",
+						tc.attr, g.OtherJS.Load(), other)
+				}
+			case "happy-path":
+				if !menuLoaded {
+					t.Errorf("data-fui-prefetch=%q no longer loads the real module 'menu' — a name guard must not reject the emitted shape",
+						tc.attr)
+				}
+			}
+		})
 	}
 }

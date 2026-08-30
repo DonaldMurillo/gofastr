@@ -542,3 +542,66 @@ func ifStmtStartBefore(s string, elseOpen int) int {
 	}
 	return open
 }
+
+// moduleSrcValidatesNameShape asserts the split-module loader validates
+// its name against the shape the framework emits before building a
+// script src from it. loadModule's name arrives from the DOM: the
+// data-fui-prefetch hover/focus path (_prefetch) splits the attribute
+// on whitespace and passes each token straight through, so a token like
+// ../../../evil interpolates into '/__gofastr/runtime/' + name + '.js'
+// and the browser normalizes the request to /evil.js — past the
+// runtime-module serve route (TrimPrefix map-miss) and onto whatever
+// same-origin JS route the host serves, the exact threat the
+// data-behavior gate's comment documents and the reason
+// TestBehaviorAttrRejectsForeignSrc pins that sibling. Every emitted
+// name (runtime.ModuleNames, and every internal loadModule call site:
+// rpc, widgets, toasts, popover, fileupload) is [A-Za-z0-9_-]+, so an
+// anchored allow-list rejects nothing legitimate.
+//
+// Surfaces: loadModule in the composed runtime.js AND its fragment
+// source frag/boot.js (the composition gate keeps them byte-identical;
+// both are asserted so the pin holds at whichever a fix lands on
+// first). Dominance is approximated lexically: the guard counts when
+// it appears between function entry and the URL build, the same
+// approximation the combobox scheme-gate pin uses.
+//
+// Behavioural proof: TestPrefetchAttrRejectsForeignModule
+// (gadget_e2e_test.go).
+func TestModuleSrcValidatesNameShape(t *testing.T) {
+	for _, rel := range []string{"runtime.js", "frag/boot.js"} {
+		src := readSrc(t, rel)
+
+		fnIdx := strings.Index(src, "function loadModule(name)")
+		if fnIdx < 0 {
+			t.Errorf("%s: could not locate function loadModule(name)", rel)
+			continue
+		}
+		urlIdx := strings.Index(src[fnIdx:], "'/__gofastr/runtime/' + name")
+		if urlIdx < 0 {
+			t.Errorf("%s: could not locate the module URL construction in loadModule", rel)
+			continue
+		}
+		body := src[fnIdx : fnIdx+urlIdx]
+
+		// A guard counts as an anchored allow-list char class tested
+		// against name, with an optional {m,n} or + quantifier and
+		// optional regex flags: /^[A-Za-z0-9_-]+$/.test(name).
+		guardRe := regexp.MustCompile(`/\^\[([^\]/]+)\](?:\+|\{\d+(?:,\d+)?\})\$[a-z]*/\.test\(name\)`)
+		m := guardRe.FindStringSubmatch(body)
+		if m == nil {
+			t.Errorf("SECURITY: [module-src] %s: loadModule builds '/__gofastr/runtime/'+name+'.js' with no name-shape guard — data-fui-prefetch is DOM input, a ../../../evil token normalizes past the runtime serve route onto an arbitrary same-origin JS path (sibling data-behavior gate: boot.js hydrate)", rel)
+			continue
+		}
+		cls := m[1]
+		letters := strings.Contains(cls, "A-Za-z") || strings.Contains(cls, "a-zA-Z") || strings.Contains(cls, "a-z") || strings.Contains(cls, `\w`)
+		digits := strings.Contains(cls, "0-9") || strings.Contains(cls, `\w`)
+		if !letters || !digits {
+			t.Errorf("SECURITY: [module-src] %s: loadModule name guard class [%s] no longer covers the emitted module-name alphabet (letters+digits)", rel, cls)
+		}
+		for _, bad := range []string{".", ":", "%", " ", `\s`} {
+			if strings.Contains(cls, bad) {
+				t.Errorf("SECURITY: [module-src] %s: loadModule name guard class [%s] admits %q — traversal or scheme characters must not be allow-listed", rel, cls, bad)
+			}
+		}
+	}
+}
