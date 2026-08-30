@@ -94,20 +94,38 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 
 	// B2: timer fires while the handler is still buffered; the handler's
 	// late Flush must be a no-op and the response must be exactly the 504.
+	//
+	// The handler buffers BEFORE the deadline on purpose. A post-timeout
+	// Write is rejected and buffers nothing, so a version of this that
+	// only wrote after the deadline had an empty buffer at flush time:
+	// deleting the timedOut guard in Flush would have leaked nothing and
+	// the test would have passed. The pre-deadline write is what gives
+	// the late Flush something to commit, which is the whole property.
 	t.Run("timer-wins", func(t *testing.T) {
+		const buffered = "ABANDONED-PARTIAL"
+		handlerDone := make(chan struct{})
 		h := Timeout(20 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			time.Sleep(60 * time.Millisecond) // budget lapses first
-			_, _ = w.Write([]byte(frame))
-			w.(http.Flusher).Flush()
-			_, _ = w.Write([]byte(frame))
+			defer close(handlerDone)
+			_, _ = w.Write([]byte(buffered))  // buffered, not yet committed
+			time.Sleep(60 * time.Millisecond) // budget lapses
+			w.(http.Flusher).Flush()          // late flush: must not commit
+			_, _ = w.Write([]byte(frame))     // late write: must be rejected
 		}))
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/late", nil))
+		// The handler is still sleeping when ServeHTTP returns; without
+		// this wait the assertions would run before the late Flush and
+		// Write they exist to check.
+		awaitHandler(t, handlerDone)
 		if rec.Code != http.StatusGatewayTimeout {
 			t.Fatalf("status = %d, want 504", rec.Code)
 		}
-		if strings.Contains(rec.Body.String(), frame) {
-			t.Fatalf("SECURITY: handler bytes reached the wire after the 504:\n%s", rec.Body.String())
+		body := rec.Body.String()
+		if strings.Contains(body, buffered) {
+			t.Fatalf("SECURITY: the abandoned buffer was committed by a late Flush:\n%s", body)
+		}
+		if strings.Contains(body, frame) {
+			t.Fatalf("SECURITY: handler bytes reached the wire after the 504:\n%s", body)
 		}
 	})
 
