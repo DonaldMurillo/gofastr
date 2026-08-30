@@ -108,6 +108,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Cross-test browser-cache contamination in the site e2e suite** (#278): the
+  suite runs on one Chrome profile, so tabs are fresh but the HTTP cache is
+  shared, and split runtime modules are served `immutable` with a year-long
+  max-age. Because `httptest` ports are released and rehanded out by the
+  kernel, a later test could inherit a port for which the profile already held
+  a cached 200 of `toasts.js?v=<hash>` — same port plus same content hash is
+  the same cache key. The failure-injection server then never saw a request,
+  the module loaded from cache, and the test that expects a fallback correctly
+  found none. Each tab now clears the browser cache, restoring the per-test
+  isolation the unique-port assumption already claimed.
+
 - **An `AssetSpec` without a `ContentType` now serves one derived from the
   filename** (#303) instead of an empty `Content-Type`. `writeAsset` set
   the header unconditionally from the spec and set `nosniff` on the next

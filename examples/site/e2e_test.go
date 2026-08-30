@@ -90,6 +90,23 @@ func siteBrowserCtx(t *testing.T) context.Context {
 	if err := chromedp.Run(ctx, page.BringToFront()); err != nil {
 		t.Fatalf("bring tab to front: %v", err)
 	}
+	// #278: the shared browser's HTTP cache belongs to the PROFILE, not
+	// the tab, and split runtime modules are served
+	// `Cache-Control: public, max-age=31536000, immutable`. httptest
+	// ports are ephemeral and the kernel does reuse recently closed
+	// ones, so when a later test's server lands on a port an earlier
+	// test used, its module URLs — same origin, same content hash —
+	// resolve to the earlier run's cached 200s without touching the
+	// network. A test injecting a 500 (the toast-fallback e2e) then
+	// watches its module "load" from cache and the injection never
+	// fires. The unique-port isolation claim only holds if no cache
+	// state survives across tests, so hand every tab a cold cache.
+	if err := chromedp.Run(ctx,
+		network.Enable(),
+		network.ClearBrowserCache(),
+	); err != nil {
+		t.Fatalf("clear browser cache: %v", err)
+	}
 	return ctx
 }
 

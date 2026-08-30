@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -391,6 +393,185 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	if fallbackResult != "ok" {
 		t.Errorf("X-Gofastr-Toast header fired with toasts.js returning 500 should render a fallback "+
 			"notice carrying the server-sent title; nothing visible was found. Diagnostic: %s", fallbackResult)
+	}
+}
+
+// TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache is the #278
+// regression guard. It forces deterministically the two conditions CI
+// hit by accident:
+//
+//  1. An earlier server on port P serves the home page; the site-wide
+//     toast stack makes the boot scan fetch toasts.js, which the server
+//     sends with `Cache-Control: public, max-age=31536000, immutable`.
+//     The SHARED browser profile (one Chrome for the whole suite, one
+//     cache per profile, not per tab) now holds a 200 for
+//     http://127.0.0.1:P/__gofastr/runtime/toasts.js?v=<hash>.
+//  2. A server that 500s toasts.js then binds the SAME port P. In CI
+//     this happens by chance — httptest ports are ephemeral and the
+//     kernel reuses recently closed ones — which is why #278 is
+//     intermittent and order-dependent, not load-dependent.
+//
+// Without per-tab cache isolation the boot scan resolves toasts.js from
+// the stale immutable entry without a network request: the 500 never
+// fires, loadModule('toasts') resolves, the REAL toast renders, and the
+// fallback correctly never appears — exactly the CI diagnostic (toasts
+// in loadedModules, its script in runtimeScripts, fallbackPresent:
+// false). siteBrowserCtx prevents that by clearing the browser cache
+// when it hands out a tab.
+func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	app := newTestApp(t)
+
+	// Phase 1 — prime the shared profile's cache for toasts.js on
+	// port P (200 + immutable).
+	prime := httptest.NewUnstartedServer(app.Router())
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	prime.Listener = ln
+	prime.Start()
+	primeURL := prime.URL
+
+	ctxPrime := newE2EBrowserCtx(t)
+	if err := chromedp.Run(ctxPrime,
+		chromedp.Navigate(primeURL+"/"),
+		chromedp.Poll(`window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.toasts === true`, nil, chromedp.WithPollingInterval(100*1e6)),
+		// Let the network service commit the immutable entry before
+		// the port is handed back.
+		chromedp.Sleep(500*time.Millisecond),
+	); err != nil {
+		// Drop the SSE client first: a live EventSource blocks Close()
+		// until the 5-minute stream bound, turning a poll failure into a
+		// suite-length hang.
+		prime.CloseClientConnections()
+		prime.Close()
+		t.Fatalf("prime: %v", err)
+	}
+
+	// Free port P, then rebind the SAME address for the 500 server.
+	addr := ln.Addr().String()
+	// Chrome's SSE EventSource holds an active connection to the
+	// prime server; plain Close() would block on it forever.
+	prime.CloseClientConnections()
+	prime.Close()
+
+	var toastsHits atomic.Int64
+	srv500 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__gofastr/runtime/toasts.js" {
+			toastsHits.Add(1)
+			http.Error(w, "broken", http.StatusInternalServerError)
+			return
+		}
+		app.Router().ServeHTTP(w, r)
+	})
+	broken := httptest.NewUnstartedServer(srv500)
+	var ln500 net.Listener
+	for attempt := 0; ; attempt++ {
+		ln500, err = net.Listen("tcp", addr)
+		if err == nil {
+			break
+		}
+		if attempt >= 4 {
+			t.Fatalf("rebind %s: %v", addr, err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	broken.Listener = ln500
+	broken.Start()
+	// Same SSE-hang guard as the prime server: the phase-2 tab holds an
+	// EventSource to this server when the test ends.
+	t.Cleanup(func() { broken.CloseClientConnections(); broken.Close() })
+	if broken.URL != primeURL {
+		t.Fatalf("rebind produced a different origin: primed %s, rebound %s", primeURL, broken.URL)
+	}
+
+	// Phase 2 — same-origin 500 server, fresh tab. The fallback MUST
+	// appear; a stale cached 200 would mask the 500 instead.
+	ctx := newE2EBrowserCtx(t)
+	urls, _ := collectRuntimeModuleURLs(ctx)
+
+	var fallbackResult string
+	if err := chromedp.Run(ctx,
+		network.Enable(),
+		chromedp.Navigate(broken.URL+"/"),
+		pageReady(),
+		// Same header-dispatch mimic as the parent test: kick
+		// loadModule('toasts') and let the .catch render the
+		// fallback when the 500 lands.
+		chromedp.Evaluate(`(async () => {
+            const r = await fetch('/__site/toast/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            const header = r.headers.get('X-Gofastr-Toast');
+            window.__gofastr.loadModule('toasts').then(() => {
+                try {
+                    const parsed = JSON.parse(header);
+                    const arr = Array.isArray(parsed) ? parsed : [parsed];
+                    for (const cfg of arr) window.__gofastr.toast(cfg);
+                } catch (_) {}
+            }).catch((err) => {
+                if (window.__gofastr._fallbackToast) {
+                    try {
+                        const parsed = JSON.parse(header);
+                        const arr = Array.isArray(parsed) ? parsed : [parsed];
+                        for (const cfg of arr) window.__gofastr._fallbackToast(cfg);
+                    } catch (_) {}
+                }
+            });
+        })()`, nil),
+		// Same poll-and-diagnose shape as the parent test (promise
+		// pinned on window so CDP keeps a strong reference).
+		chromedp.Evaluate(`window.__toastFallbackPoll = new Promise((resolve) => {
+            const t0 = performance.now();
+            const tick = () => {
+                const fallback = document.querySelector('[data-fui-toast-fallback]');
+                if (fallback && fallback.textContent.includes('Saved')) { resolve('ok'); return; }
+                if (performance.now() - t0 > 30000) {
+                    resolve(JSON.stringify({
+                        fallbackPresent: !!fallback,
+                        fallbackText: fallback ? fallback.textContent : null,
+                        runtimeScripts: Array.from(document.querySelectorAll('script[src*="/__gofastr/runtime/"]')).map(s => s.src),
+                        loadedModules: Object.keys((window.__gofastr && window.__gofastr.loadedModules) || {}),
+                    }));
+                    return;
+                }
+                setTimeout(tick, 100);
+            };
+            tick();
+        })`, &fallbackResult, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		}),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	var observed []string
+	toastsRequested := false
+	urls.Range(func(k, _ any) bool {
+		u := k.(string)
+		observed = append(observed, u)
+		if strings.Contains(u, "/runtime/toasts.js") {
+			toastsRequested = true
+		}
+		return true
+	})
+	if fallbackResult != "ok" {
+		t.Errorf("toasts.js 500 on a port whose cached 200 the browser still holds should NOT mask the fallback; "+
+			"the module must fail and the fallback must render. Diagnostic: %s; toasts.js requests observed: %v; "+
+			"500-server toasts.js hits: %d; all runtime URLs: %v",
+			fallbackResult, toastsRequested, toastsHits.Load(), observed)
+		return
+	}
+	if !toastsRequested {
+		t.Errorf("the toasts.js request should have hit the 500 server (observed runtime URLs: %v)", observed)
+	}
+	if n := toastsHits.Load(); n == 0 {
+		t.Errorf("the 500 server never saw a toasts.js request (hits=0); the module loaded without touching the injection server")
 	}
 }
 
