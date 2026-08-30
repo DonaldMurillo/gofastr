@@ -123,3 +123,36 @@ func TestOnlyRenderBuiltCrossPackageBlocks(t *testing.T) {
 		}
 	}
 }
+
+// The helper-indirection spelling of the render-built shape: Render() calls a
+// same-package helper declared to return component.Component (or
+// []component.Component) whose body BUILDS a cross-package child. The child
+// still executes into existence only inside Render, so the boot walk cannot
+// see it — TestBootWalkCannotSeeRenderBuiltChild pins that mechanism in
+// framework/uihost — while the analyzer types the call as the interface and
+// returns silently at the carve-out, and the helper's body, the one place the
+// child exists statically, is read by nothing. Both gates green, action ships.
+//
+// The boot-walk side is not assertable from this package: it reads live
+// values off a booted UIHost, and its blindness to render-built children —
+// of which this is a spelling — is already pinned there. This test pins the
+// analyzer side: helper indirection must not turn a Blocking shape silent.
+func TestNotesHelperIndirectBuiltChild(t *testing.T) {
+	for _, fixture := range []string{"helperbuiltxpkg", "helperbuiltslice"} {
+		findings, notes := loadAll(t, fixture)
+		t.Logf("%s: findings=%d notes=%d", fixture, len(findings), len(notes))
+		for _, f := range findings {
+			t.Logf("%s: finding: %+v", fixture, f)
+		}
+		for _, n := range notes {
+			t.Logf("%s: note: %+v", fixture, n)
+		}
+		if len(findings) == 0 && len(notes) == 0 {
+			t.Errorf("%s: analyzer reported neither a finding nor an unresolved note for an "+
+				"embeddable root whose Render() builds a cross-package child through a "+
+				"component-returning helper; the boot walk is blind to the same shape "+
+				"(TestBootWalkCannotSeeRenderBuiltChild), so nothing warns and the action "+
+				"ships to the frame", fixture)
+		}
+	}
+}
