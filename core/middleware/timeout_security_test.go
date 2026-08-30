@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -223,6 +225,73 @@ func TestTimeoutRefusesHijackAfterDeadline(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("handler never attempted the hijack")
 	}
+}
+
+// Property: a hijack that WINS the race against the deadline takes the
+// response with it. Hijack sets streaming, which is what stops expire()
+// from later writing a 504 — onto a connection the handler now owns, in
+// the middle of whatever protocol it upgraded to.
+//
+// Dropping that one assignment was invisible to the whole package: the
+// refusal test above only covers the losing race, and nothing exercised
+// a hijack that succeeds. The shared hijackableRecorder cannot help
+// here, since it never returns a usable connection.
+func TestTimeoutHijackBeforeDeadlineKeepsTheConnection(t *testing.T) {
+	srv, cli := net.Pipe()
+	t.Cleanup(func() { srv.Close(); cli.Close() })
+
+	// Drain whatever reaches the client end. A 504 written after the
+	// hijack would land here, corrupting the handler's protocol.
+	leaked := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 512)
+		n, _ := cli.Read(buf)
+		if n > 0 {
+			leaked <- buf[:n]
+		}
+		close(leaked)
+	}()
+
+	handlerDone := make(chan struct{})
+	h := Timeout(20 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(handlerDone)
+		conn, _, err := w.(http.Hijacker).Hijack() // wins: before the deadline
+		if err != nil {
+			t.Errorf("hijack before the deadline was refused: %v", err)
+			return
+		}
+		// Hold past the budget: the timeout path must stay off this
+		// connection now that the handler owns it.
+		time.Sleep(60 * time.Millisecond)
+		_, _ = conn.Write([]byte("UPGRADED-PROTOCOL-FRAME"))
+	}))
+
+	rec := &pipeHijackRecorder{ResponseRecorder: httptest.NewRecorder(), conn: srv}
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ws", nil))
+	awaitHandler(t, handlerDone)
+
+	if rec.Code == http.StatusGatewayTimeout {
+		t.Fatal("SECURITY: 504 written after the connection was hijacked")
+	}
+	select {
+	case b := <-leaked:
+		if strings.Contains(string(b), "Gateway Timeout") {
+			t.Fatalf("SECURITY: the 504 was written onto the hijacked connection: %q", b)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("nothing reached the hijacked connection; the handler never wrote its frame")
+	}
+}
+
+// pipeHijackRecorder hands out a real connection, so a hijack can
+// actually succeed and anything written afterwards is observable.
+type pipeHijackRecorder struct {
+	*httptest.ResponseRecorder
+	conn net.Conn
+}
+
+func (p *pipeHijackRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return p.conn, bufio.NewReadWriter(bufio.NewReader(p.conn), bufio.NewWriter(p.conn)), nil
 }
 
 // awaitHandler blocks until the abandoned handler goroutine has
