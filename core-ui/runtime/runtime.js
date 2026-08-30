@@ -1461,6 +1461,10 @@
     if (!isKnownRoute(href)) return;
     // data-fui-rpc anchors are RPC triggers, not navigation.
     if (anchor.hasAttribute('data-fui-rpc')) return;
+    // data-fui-nav="off" opts a link out of SPA navigation entirely:
+    // hosts whose destination page depends on full-load scripts (legacy
+    // page-runtime initializers) need a real document load.
+    if (anchor.getAttribute('data-fui-nav') === 'off') return;
 
     const fullPath = resolvePath(href);
     if (fullPath === currentPath) {
