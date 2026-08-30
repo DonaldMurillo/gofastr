@@ -209,3 +209,40 @@ func TestAdminFormIgnoresNonEditableKeys(t *testing.T) {
 		t.Fatalf("SECURITY: [admin-form-whitelist] posted ReadOnly field value reached the row: revision=%d", revision.Int64)
 	}
 }
+
+// ─── the admin nav drawer must not escape the admin gate ──────────────
+
+// Property: every admin-owned surface is default-deny. The package
+// contract (admin.go): "Every surface, SSR screens and RPC/form routes
+// alike, is behind the admin default-deny gate (b.gate) ... There is no
+// unauthenticated or self-service path."
+//
+// Surface: registerEntityAdmin mounts the mobile nav drawer via
+// widget.MountBuilder(b.router, interactive.SectionMenuDrawer(...)) —
+// outside b.gate. preset.Drawer never sets Definition.RequireSession,
+// and widget.Mount gates the /chrome and /state endpoints only when it
+// is set, so the drawer's chrome endpoint serves anyone and discloses
+// the back-office entity map (one nav item per exposed entity: label +
+// /admin/e/<table> href) — the inventory admin.md's "don't expose
+// /admin to the public" warning is about.
+func TestAdminNavDrawerChromeRequiresAuth(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	h := mountAdminBattery(t, app, Config{AllEntities: true})
+
+	req := httptest.NewRequest(http.MethodGet, "/core-ui/widget/admin-nav/chrome", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized && rr.Code != http.StatusForbidden {
+		body := rr.Body.String()
+		// Direct evidence of the disclosure: the drawer body names the
+		// exposed entities and links their /admin/e/<table> screens.
+		disclosesEntity := strings.Contains(body, "/admin/e/posts")
+		if len(body) > 120 {
+			body = body[:120]
+		}
+		t.Fatalf("SECURITY: [admin] anonymous GET /core-ui/widget/admin-nav/chrome returned %d, want 401/403 — the admin nav drawer is mounted without the admin gate and its chrome discloses the back-office entity map (body links /admin/e/posts: %t), violating the package contract \"There is no unauthenticated or self-service path\". Body starts: %q",
+			rr.Code, disclosesEntity, body)
+	}
+}

@@ -1,9 +1,12 @@
 package cache
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -447,4 +450,188 @@ func TestCacheMiddleware_DoesNotCacheEmbedGrantResponses(t *testing.T) {
 	if got := second.Header().Get("X-Cache"); got == "HIT" {
 		t.Errorf("X-Cache = HIT for a grant-authenticated request")
 	}
+}
+
+// stubRedisClient is a map-backed RedisClient standing in for one Redis
+// server shared by several RedisCache instances, so no server is needed.
+// A non-nil getErr makes every read fail while writes still succeed,
+// simulating a read outage.
+type stubRedisClient struct {
+	kv     map[string]string
+	getErr error
+}
+
+func (s *stubRedisClient) Get(_ context.Context, k string) (string, error) {
+	if s.getErr != nil {
+		return "", s.getErr
+	}
+	v, ok := s.kv[k]
+	if !ok {
+		// The interface's documented miss signal ("a redis nil error").
+		return "", errors.New("redis: nil")
+	}
+	return v, nil
+}
+
+func (s *stubRedisClient) Set(_ context.Context, k, v string, _ time.Duration) error {
+	if s.kv == nil {
+		s.kv = map[string]string{}
+	}
+	s.kv[k] = v
+	return nil
+}
+
+func (s *stubRedisClient) Del(_ context.Context, keys ...string) error {
+	for _, k := range keys {
+		delete(s.kv, k)
+	}
+	return nil
+}
+
+func (s *stubRedisClient) Exists(_ context.Context, k string) (bool, error) {
+	_, ok := s.kv[k]
+	return ok, nil
+}
+
+func (s *stubRedisClient) FlushDB(context.Context) error {
+	s.kv = map[string]string{}
+	return nil
+}
+
+// CACHE-R1: the Cache interface documents ErrCacheMiss strictly as the
+// not-found sentinel ("Returns ErrCacheMiss if the key does not exist or
+// has expired", cache.go), but RedisCache.Get wraps EVERY client error
+// with %w on ErrCacheMiss (redis.go), so a Redis outage — connection
+// refused, timeout, auth failure — is indistinguishable from an absent
+// key. Callers that fail closed on miss (negative caching, revocation
+// lists) fail open for the whole outage. A backend failure must not
+// satisfy errors.Is(err, ErrCacheMiss).
+func TestRedisCache_BackendErrorNotMiss(t *testing.T) {
+	outages := []struct {
+		name string
+		err  error
+	}{
+		{"connection refused", errors.New("dial tcp 127.0.0.1:6379: connect: connection refused")},
+		{"timeout", context.DeadlineExceeded},
+		{"auth rejected", errors.New("WRONGPASS invalid username-password pair")},
+	}
+	for _, o := range outages {
+		t.Run(o.name, func(t *testing.T) {
+			rc := NewRedisCache(&stubRedisClient{getErr: o.err})
+			var got string
+			err := rc.Get(context.Background(), "revocation:token-7", &got)
+			if err == nil {
+				t.Fatal("backend outage did not surface as an error")
+			}
+			if errors.Is(err, ErrCacheMiss) {
+				t.Fatalf("SECURITY: [cache] a dead Redis is reported as ErrCacheMiss (%v). "+
+					"ErrCacheMiss is the documented not-found sentinel; miss-means-absent "+
+					"callers (negative caching, revocation data) treat the outage as "+
+					"\"key not present\" and fail open.", err)
+			}
+		})
+	}
+}
+
+// CACHE-R1 through the read-through path: GetOrSet's contract is that the
+// loader runs "on a miss" (cache.go). During a read outage every Get
+// fails, so with the sentinel conflated the loader result is stored and
+// the final read-back still returns an error satisfying ErrCacheMiss —
+// the caller is told "miss" for a key that was just loaded, and each new
+// request re-runs the loader (origin stampede during the outage).
+func TestGetOrSet_BackendOutageNotMiss(t *testing.T) {
+	stub := &stubRedisClient{getErr: errors.New("connection refused")}
+	var loads int
+	var got string
+	err := GetOrSet(context.Background(), NewRedisCache(stub), "hot-key", time.Minute, &got,
+		func(context.Context) (any, error) { loads++; return "loaded", nil })
+	if err == nil {
+		t.Fatal("expected the outage to surface as an error")
+	}
+	if errors.Is(err, ErrCacheMiss) {
+		t.Fatalf("SECURITY: [cache] GetOrSet reported a backend outage as ErrCacheMiss "+
+			"(%v) even though the loader ran %d time(s); miss-means-absent callers fail "+
+			"open during the outage.", err, loads)
+	}
+}
+
+// CACHE-R3: prefixedKey concatenates prefix + ":" + key with no escaping,
+// so distinct (prefix, key) pairs alias the same effective Redis key:
+// ("u:alice", "admin:x") and ("u:alice:admin", "x") both address
+// "u:alice:admin:x". With per-tenant prefixes over one shared Redis —
+// the "prefix namespacing" the battery documents — a namespace whose
+// prefix or key contains ':' can read (or poison, or Delete) another
+// namespace's entries. Distinct namespaces must not alias.
+func TestRedisCache_PrefixNoKeyCollision(t *testing.T) {
+	srv := &stubRedisClient{}
+	tenantA := NewRedisCache(srv, WithPrefix("u:alice"))
+	tenantB := NewRedisCache(srv, WithPrefix("u:alice:admin"))
+
+	const secret = "tenant-A-secret"
+	if err := tenantA.Set(context.Background(), "admin:x", secret, time.Minute); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	var got string
+	err := tenantB.Get(context.Background(), "x", &got)
+	if err == nil || got == secret {
+		t.Fatalf("SECURITY: [cache] namespaces WithPrefix(%q) and WithPrefix(%q) alias: "+
+			"Get(%q) through the second returned the first's value %q (err=%v). "+
+			"':'-delimited concatenation is not injective, so one tenant can read, "+
+			"overwrite, or Delete another tenant's entries.", "u:alice", "u:alice:admin",
+			"x", got, err)
+	}
+}
+
+// CACHE-R4: the middleware documents that a Vary'd response is "stored
+// under a key that includes the values of every listed request header
+// so different variants do not collide" (middleware.go), but
+// captureVariant and variantMatches use r.Header.Get, which sees only
+// the FIRST value of a repeated header. A variant primed with
+// X-Team: [alpha, omega] is then served as a HIT to a request carrying
+// only X-Team: alpha — the victim receives a body computed under a
+// header value it never sent (RFC 9111 §4.1 defines the selecting data
+// as the complete field value).
+func TestCacheMiddleware_VaryAllHeaderValues(t *testing.T) {
+	mk := func() http.Handler {
+		store := NewMemoryCache()
+		return CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Vary", "X-Team")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(strings.Join(r.Header.Values("X-Team"), ",")))
+		}))
+	}
+	get := func(h http.Handler, vals ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+		for _, v := range vals {
+			req.Header.Add("X-Team", v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("single-value request must not receive multi-value variant", func(t *testing.T) {
+		h := mk()
+		get(h, "alpha", "omega") // primes the cached variant
+		rec := get(h, "alpha")
+		if rec.Body.String() != "alpha" {
+			t.Fatalf("SECURITY: [cache] request with X-Team=[alpha] got body %q "+
+				"(X-Cache=%s): the variant computed under [alpha omega] was served to a "+
+				"request that never sent omega; Vary selection must use the complete "+
+				"field value.", rec.Body.String(), rec.Header().Get("X-Cache"))
+		}
+	})
+
+	t.Run("multi-value request must not receive single-value variant", func(t *testing.T) {
+		h := mk()
+		get(h, "alpha") // primes the cached variant
+		rec := get(h, "alpha", "omega")
+		if rec.Body.String() != "alpha,omega" {
+			t.Fatalf("SECURITY: [cache] request with X-Team=[alpha omega] got body %q "+
+				"(X-Cache=%s): the variant computed under [alpha] was served to a request "+
+				"that also sent omega; Vary selection must use the complete field value.",
+				rec.Body.String(), rec.Header().Get("X-Cache"))
+		}
+	})
 }
