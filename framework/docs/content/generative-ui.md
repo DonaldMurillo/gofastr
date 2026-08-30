@@ -66,6 +66,10 @@ worth reading twice:
   auth, owner scoping, and rate limits apply unchanged. A widget gets
   no side-channel API and holds no server-side state of its own.
 
+The full contract for this surface — role machinery, the widget
+document builder, and the host-theme convention — is in
+[agent host](agent-host.md).
+
 ## 4. Runtime generative UI for end users — deliberately not a feature
 
 The framework does not call a model during a request to produce a

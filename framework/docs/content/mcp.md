@@ -596,6 +596,13 @@ the agent role (`framework.WithRole(framework.RoleAgent)`) forwards the
 script URL to the app router along with `/mcp`, so widgets keep loading
 when the agent process is the origin the MCP host resolved.
 
+Assembling that HTML is what `mcp.WidgetDocument` is for: it emits the
+document around your markup and script with the client's `<script src>`
+taken from [WidgetClientScriptURL] by construction — the one-line typo
+that kills a widget silently cannot happen. Escaping rules, the script
+guards, and the end-to-end walkthrough live in
+[agent host](agent-host.md).
+
 Two ways to get the script into your widget's HTML:
 
 <!-- gofastr:compile
@@ -717,6 +724,21 @@ messages are accepted only from `window.parent` (`event.source`, not
 `event.origin` — the sandboxed widget's origin is opaque and reports as
 `"null"`), and only when the envelope says `jsonrpc: "2.0"`.
 
+### Host theme
+
+The client consumes the host's theme signals so the widget does not
+invent a palette: on `connect()` and on every
+`ui/notifications/host-context-changed` (partial updates merged into the
+running state), it applies `hostContext.theme` to the document root as
+`<html data-theme="light|dark">` plus `color-scheme` (which makes the
+host's `light-dark()` variable values resolve), writes
+`hostContext.styles.variables` to the root as inline custom properties,
+and injects `hostContext.styles.css.fonts` as one replaced-never-stacked
+`<style>` element. Application runs before any registered
+`onHostContextChanged` handler, and `app.hostContext()` returns a copy of
+the merged state. The convention and its boundaries:
+[agent host](agent-host.md).
+
 ## Common mistakes
 
 - **Wrapping a handler in `mcp.Gated` and expecting the tool to disappear from
@@ -741,6 +763,11 @@ messages are accepted only from `window.parent` (`event.source`, not
   route.** The automatic widget client mount keys on `WithMCPApp`
   registrations. Registering through the primitives, or running
   `core/mcp` standalone, means mounting `WidgetClientHandler()` yourself.
+- **Hand-writing the widget client `<script src>`.** The URL must be
+  exactly `mcp.WidgetClientScriptURL`; a one-character typo is a widget
+  that renders and silently never receives anything. Build the document
+  with `mcp.WidgetDocument`, which bakes in the constant
+  ([agent host](agent-host.md)).
 - **Forgetting that required prompt arguments are checked before the
   handler runs.** A `prompts/get` missing one is refused with invalid-params;
   the handler never sees the call. Handlers can assume required arguments are
