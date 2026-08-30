@@ -184,6 +184,47 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 	})
 }
 
+// Property: a handler that crosses its deadline and then tries to
+// hijack must be refused. Unlike the other post-timeout guards in this
+// file, this one is reachable with observable consequences: a WebSocket
+// upgrade that loses the race with its budget would otherwise be handed
+// the raw connection while the timeout path believes it still owns the
+// response, and both would write to the same socket.
+//
+// Found by asking which guards in timeout.go no test kills, rather than
+// by a failure — deleting the check left the whole suite green.
+func TestTimeoutRefusesHijackAfterDeadline(t *testing.T) {
+	hijackErr := make(chan error, 1)
+	handlerDone := make(chan struct{})
+	h := Timeout(20 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(handlerDone)
+		<-r.Context().Done() // let the budget lapse
+		_, _, err := w.(http.Hijacker).Hijack()
+		hijackErr <- err
+	}))
+
+	rec := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ws", nil))
+	awaitHandler(t, handlerDone)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want 504", rec.Code)
+	}
+	select {
+	case err := <-hijackErr:
+		if err == nil {
+			t.Fatal("SECURITY: Hijack succeeded after the deadline; the handler and the timeout path both own the connection")
+		}
+		// The underlying recorder's own hijack error would also be
+		// non-nil, so pin the middleware's refusal specifically.
+		if !strings.Contains(err.Error(), "already timed out") {
+			t.Fatalf("Hijack err = %v, want the middleware's post-timeout refusal", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never attempted the hijack")
+	}
+}
+
 // awaitHandler blocks until the abandoned handler goroutine has
 // finished, so assertions read a recorder nothing can still write to.
 // Bounded, because a handler that never returns is itself the bug.

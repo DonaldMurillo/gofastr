@@ -237,6 +237,14 @@ func TestURLPropsQuoteIsEscapedNotRejected(t *testing.T) {
 	if !strings.Contains(out, "&#34;") && !strings.Contains(out, "&quot;") {
 		t.Fatalf("quote neither escaped nor rejected — the payload vanished, so this proves nothing:\n%s", out)
 	}
+	// The two assertions above are blind to NON-uniform escaping: an
+	// escaper that escaped one occurrence and not the other would satisfy
+	// both. Today the registry's well-formedness gate rejects the broken
+	// markup that results, but that is a different layer's guarantee.
+	// Pinning the exact attribute keeps this test self-sufficient.
+	if want := `href="/x&quot;onerror=&quot;y"`; !strings.Contains(out, want) {
+		t.Fatalf("href not escaped exactly as expected:\n got: %s\nwant substring: %s", out, want)
+	}
 }
 
 // escapeJSONString encodes s as a JSON string body (quotes + backslashes
