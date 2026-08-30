@@ -180,11 +180,15 @@ func TestModuleStringsEscapeAtEveryProp(t *testing.T) {
 // entry: link.to and image.src are the two props that land in URL-bearing
 // attributes (href, src). The wire validator must reject every scheme /
 // off-origin / parser-confusion shape before Render is ever reached; the
-// shapes that DO pass (host-relative paths) cannot carry quotes or control
-// bytes by charset. Downstream of the validator, ui.Link additionally
-// routes href through urlsafe.CleanAnchor and html.Image through
-// urlsafe.ImageSource (pinned in their own packages); this test pins the
-// first gate.
+// shapes that DO pass (host-relative paths) exclude whitespace and control
+// bytes — but NOT double quotes: `/x"onerror="y` validates. The quote is
+// neutralised downstream by attribute escaping, not by the URL charset,
+// and TestURLPropsQuoteIsEscapedNotRejected below pins that rather than
+// leaving it assumed. The entry in badURLs carrying a quote is rejected
+// for its space, so it must not be read as evidence about quotes.
+// Downstream of the validator, ui.Link additionally routes href through
+// urlsafe.CleanAnchor and html.Image through urlsafe.ImageSource (pinned
+// in their own packages); this test pins the first gate.
 func TestURLPropsRejectSchemePayloads(t *testing.T) {
 	badURLs := []string{
 		"javascript:alert(1)",
@@ -192,7 +196,7 @@ func TestURLPropsRejectSchemePayloads(t *testing.T) {
 		"data:text/html,<script>alert(1)</script>",
 		"//evil.example/x",  // scheme-relative
 		"/\\evil.example/x", // backslash smuggling
-		"/x\" onerror=\"y",  // quote breakout in an attribute
+		"/x\" onerror=\"y",  // rejected for the SPACE, not the quote
 		"/x\tonerror=y",     // control byte
 		"https://evil.example",
 	}
@@ -210,6 +214,28 @@ func TestURLPropsRejectSchemePayloads(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A quote-bearing host-relative path passes the validator, so the guard
+// that actually stops an attribute breakout is the escaping in the render
+// layer. Pinning it here means the two exemptions that lean on "the URL
+// props are guarded" name a defence that exists: without escaping, this
+// href would close its attribute and open an event handler.
+func TestURLPropsQuoteIsEscapedNotRejected(t *testing.T) {
+	const hostile = `/x"onerror="y`
+	tree := `{"component":"link","props":{"text":"t","to":"` + escapeJSONString(hostile) + `"}}`
+
+	if _, err := uinodev1.Validate([]byte(tree), uinodev1.DefaultLimits()); err != nil {
+		t.Fatalf("premise changed: the validator now rejects %q (%v). "+
+			"If the charset excludes quotes, simplify this test and the comment above.", hostile, err)
+	}
+	out := renderJSON(t, tree)
+	if strings.Contains(out, `"onerror="`) {
+		t.Fatalf("SECURITY: the quote reached the attribute raw, closing it:\n%s", out)
+	}
+	if !strings.Contains(out, "&#34;") && !strings.Contains(out, "&quot;") {
+		t.Fatalf("quote neither escaped nor rejected — the payload vanished, so this proves nothing:\n%s", out)
 	}
 }
 
