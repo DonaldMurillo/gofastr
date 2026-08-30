@@ -143,6 +143,13 @@ type Screen struct {
 	// metadata (byline, date, cover image) also implement ScreenArticle.
 	Article bool
 
+	// NoSPA excludes the screen from the client route manifest: links to
+	// it resolve as full document loads instead of soft navigations. For
+	// hosts whose pages bind behavior at script load (legacy page-runtimes)
+	// a soft swap never re-runs them, so every handler on the destination
+	// dies. Screen-level granular alternative to per-link data-fui-nav=off.
+	NoSPA bool
+
 	// Intercept, when set, makes this screen present as an overlay for
 	// a soft navigation that started on the declared origin route. Nil
 	// (the default) means the screen always renders as itself. See

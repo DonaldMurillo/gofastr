@@ -90,6 +90,67 @@ If a port later migrates surfaces onto `framework/ui`, each migrated
 screen rejoins the supported world one at a time — the two styles can
 coexist during the transition because both are just `render.HTML`.
 
+## Keeping a page's own scripts alive
+
+A ported page whose behavior is built at script load breaks under soft
+navigation: the runtime swaps the content without re-running the
+destination's scripts, so every handler the old page bound is gone. Two
+opt-outs, at different grains.
+
+`Screen.NoSPA` excludes a route from the client route manifest, so the
+runtime treats it as unknown and *every* link to it is a full document
+load:
+
+```go
+legacy := app.NewScreen("/reports", &ReportsScreen{})
+legacy.NoSPA = true
+site.RegisterScreen(legacy, appLayout)
+```
+
+`data-fui-nav="off"` does the same for one link, when the destination is
+otherwise a normal SPA route:
+
+```go
+ui.Link(ui.LinkConfig{Href: "/reports", Text: "Reports",
+    ExtraAttrs: html.Attrs{"data-fui-nav": "off"}})
+```
+
+Reach for the screen-level form when the page can never be soft-loaded;
+the per-link form when one entry point is special.
+
+## Rendering a screen from a route you own
+
+`UIHost.PageHandler(path)` returns an `http.HandlerFunc` that renders a
+registered screen as a full page, chrome included, from a route mounted
+on the framework router:
+
+```go
+r.Get("/legacy/{path...}", site.PageHandler("/legacy"))
+```
+
+Use it when a wildcard subtree claims a path the normal screen dispatch
+never resolves — the mux redirects the bare path to a trailing-slash
+form, and the NotFound screen answers instead of the screen you
+registered. A dynamic pattern (`/thing/{id}`) is passed through rather
+than forced, so param capture still reads the real request path.
+
+## Answering with a status other than 200
+
+A screen whose route resolved but whose record is gone should render a
+body *and* say 404. Implement `ScreenStatusCode`:
+
+```go
+func (s *ThingScreen) ScreenStatusCode() int {
+    if s.thing == nil {
+        return http.StatusNotFound
+    }
+    return 0 // 0 or 200 keeps the default
+}
+```
+
+The body still renders through the layout, so the user gets the real
+not-found page while crawlers and clients get the real status.
+
 ## Common mistakes
 
 - **Inline `template.Must` strings scattered through Go files.** Embed

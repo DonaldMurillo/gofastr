@@ -142,6 +142,10 @@ var fragmentAttrs = map[string][]string{
 	},
 	"nav": {
 		"data-fui-spa",
+		// data-fui-nav="off" is read on the anchor at click time: nav
+		// declines the soft navigation and lets the browser do a full
+		// document load.
+		"data-fui-nav",
 		// data-fui-layout is emit-only since the chain rewrite (CSS/debug
 		// contract); nav's swap decisions read the -key/-slot pair.
 		"data-fui-layout",
