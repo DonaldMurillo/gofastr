@@ -837,6 +837,10 @@ func defaultAsWireValue(f schema.Field) any {
 		if t, ok := f.Default.(time.Time); ok {
 			return t.Format(time.DateOnly)
 		}
+	default:
+		// Every other type's default goes to the driver as declared. A
+		// new type whose Go spelling differs from its wire form needs a
+		// case here; reaching this default means it has none.
 	}
 	return f.Default
 }

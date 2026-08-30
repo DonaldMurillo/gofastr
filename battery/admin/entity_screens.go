@@ -568,6 +568,11 @@ func formatValue(col string, ft schema.FieldType, raw any, relLabels map[string]
 		if !detail {
 			return render.Tag("span", map[string]string{"class": "admin-truncate", "title": val}, render.Text(val))
 		}
+	default:
+		// Every other type renders as escaped text below. A type whose
+		// stored value is a URL or a path needs a case above: this
+		// default has no scheme guard, and render.Text is the only thing
+		// standing between the column and the page.
 	}
 	return render.Text(val)
 }

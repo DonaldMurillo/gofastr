@@ -173,6 +173,8 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, erro
 		switch f.Type {
 		case schema.Image, schema.File:
 			fileFieldNames[f.Name] = f.Type
+		default:
+			// Not a file-bearing field: nothing to collect.
 		}
 	}
 
@@ -321,6 +323,10 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 			case "false", "0", "no", "off", "":
 				return false
 			}
+		default:
+			// Everything else stays the raw form string. A new type that
+			// needs coercion belongs above; landing here silently means
+			// the value reaches the driver as text.
 		}
 		return raw
 	}
