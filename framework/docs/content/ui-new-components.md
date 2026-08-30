@@ -117,7 +117,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **breadcrumbs**: `core-ui/patterns/breadcrumbs`, `<nav aria-label=Breadcrumb>` trail
 - **pagination**: `core-ui/patterns/pagination`, numeric page navigation
 - **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), off-canvas, and auto-hide variants; `Collapse` moves the collapsed state to the server, `GroupMarkup` swaps `<details>` groups for `button[aria-expanded][aria-controls]` + `hidden` container, `CollapseLabel`/`ExpandLabel` rename the toggle (see [Sidebar: server-owned collapse state](#sidebar-server-owned-collapse-state)); set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
-- **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`
+- **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`; `MenuItem.ID` gives a row an addressable `id` (caller-owned uniqueness, ignored on separators; `ExtraAttrs` still cannot set `id`)
 - **tabs**: `core-ui/patterns/tabs`, `<details>`-based tab strip, zero JS
 - **tree**: `core-ui/patterns/tree`, recursive tree with roving tabindex + lazy-load
 - **toc**: `framework/ui.TableOfContents`, auto-built sticky nav from `<h2>` / `<h3>`
