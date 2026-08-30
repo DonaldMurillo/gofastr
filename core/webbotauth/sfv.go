@@ -166,6 +166,12 @@ func (p *sfParser) parseMember() (*sfMember, error) {
 		return m, nil
 	}
 	p.pos++
+	// "x=" ends the input right here. The line above already guards eof
+	// before reading '='; this peek needs the same guard, or a truncated
+	// member indexes one past the end and panics the request.
+	if p.eof() {
+		return nil, errSF
+	}
 	if p.peek() == '(' {
 		il, err := p.parseInnerList()
 		if err != nil {

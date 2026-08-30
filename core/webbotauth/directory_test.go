@@ -34,19 +34,19 @@ func TestParseAgentRef_SchemeAndShapeRules(t *testing.T) {
 		{"https://agent.example", "cimd", "unsupported signature-agent discovery type"},
 	}
 	for _, tc := range cases {
-		_, err := parseAgentRef(tc.raw, tc.typ)
+		_, err := parseAgentRef(t.Context(), tc.raw, tc.typ)
 		if tc.want == "" {
 			if err != nil {
-				t.Errorf("parseAgentRef(%q, %q): unexpected error %v", tc.raw, tc.typ, err)
+				t.Errorf("parseAgentRef(t.Context(), %q, %q): unexpected error %v", tc.raw, tc.typ, err)
 			}
 			continue
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("parseAgentRef(%q, %q): got %v, want error containing %q", tc.raw, tc.typ, err, tc.want)
+			t.Errorf("parseAgentRef(t.Context(), %q, %q): got %v, want error containing %q", tc.raw, tc.typ, err, tc.want)
 		}
 	}
 	// The directory identifier is the well-known URI at the origin.
-	ref, err := parseAgentRef("https://Agent.Example", discoveryDirectory)
+	ref, err := parseAgentRef(t.Context(), "https://Agent.Example", discoveryDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,13 +76,13 @@ func TestCheckHostPublic_RefusesInternal(t *testing.T) {
 		"2002:7f00:1::",            // 6to4 of 127.0.0.1
 	}
 	for _, h := range hosts {
-		if err := checkHostPublic(h); err == nil {
-			t.Errorf("checkHostPublic(%q) = nil, want refusal", h)
+		if err := checkHostPublic(t.Context(), h); err == nil {
+			t.Errorf("checkHostPublic(t.Context(), %q) = nil, want refusal", h)
 		}
 	}
 	// A public literal passes without network access.
-	if err := checkHostPublic("8.8.8.8"); err != nil {
-		t.Errorf("checkHostPublic(8.8.8.8) = %v, want nil", err)
+	if err := checkHostPublic(t.Context(), "8.8.8.8"); err != nil {
+		t.Errorf("checkHostPublic(t.Context(), 8.8.8.8) = %v, want nil", err)
 	}
 }
 

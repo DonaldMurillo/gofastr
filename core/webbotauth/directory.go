@@ -73,6 +73,8 @@ const (
 	maxPositiveTTL           = 24 * time.Hour
 	defaultNegativeTTL       = 5 * time.Minute // draft C.5 ceiling
 	defaultCacheEntries      = 256             // per map
+	dnsLookupTimeout         = 2 * time.Second // attacker-chosen hostname
+	maxConcurrentFetches     = 8               // across all identifiers
 	acceptDirectory          = "application/http-message-signatures-directory+json, application/json;q=0.9"
 )
 
@@ -93,7 +95,7 @@ type agentRef struct {
 
 // parseAgentRef validates a Signature-Agent member value and derives
 // the fetch URL plus identifier (draft section 5.5).
-func parseAgentRef(raw string, typ discoveryType) (*agentRef, error) {
+func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRef, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("signature-agent URL: %w", err)
@@ -107,7 +109,7 @@ func parseAgentRef(raw string, typ discoveryType) (*agentRef, error) {
 	if u.User != nil {
 		return nil, fmt.Errorf("signature-agent URL with embedded userinfo not allowed")
 	}
-	if err := checkHostPublic(u.Hostname()); err != nil {
+	if err := checkHostPublic(ctx, u.Hostname()); err != nil {
 		return nil, err
 	}
 	if typ == "" {
@@ -142,7 +144,7 @@ func parseAgentRef(raw string, typ discoveryType) (*agentRef, error) {
 // names, literal internal IPs, and hostnames whose DNS answers include
 // an internal address. The dial-time Control hook re-checks the
 // address actually dialed.
-func checkHostPublic(host string) error {
+func checkHostPublic(ctx context.Context, host string) error {
 	lower := strings.ToLower(host)
 	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") ||
 		strings.HasSuffix(lower, ".internal") || lower == "metadata.google.internal" {
@@ -154,13 +156,21 @@ func checkHostPublic(host string) error {
 		}
 		return nil
 	}
-	addrs, err := net.LookupIP(host)
+	// Bounded, and tied to the request: an attacker picks this hostname,
+	// so an un-deadlined lookup lets a slow authoritative server hold the
+	// goroutine for the resolver's full retry budget. This runs ahead of
+	// the fetch's own timeout and repeats even when the identifier is
+	// negative-cached, so the bound has to live here.
+	lookupCtx, cancel := context.WithTimeout(ctx, dnsLookupTimeout)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
 	if err != nil {
 		// Unresolvable now: not a policy refusal. The fetch (and its
 		// dial-time guard) will fail and negative-cache the outcome.
 		return nil
 	}
-	for _, ip := range addrs {
+	for _, a := range addrs {
+		ip := a.IP
 		if reason := netguard.Reason(ip); reason != "" {
 			return fmt.Errorf("webbotauth: %s %s not allowed (via %q)", reason, ip, host)
 		}
@@ -291,6 +301,12 @@ type directoryResolver struct {
 	mu       sync.Mutex
 	inflight map[string]*fetchCall
 	now      func() time.Time
+
+	// sem caps outbound fetches across every identifier. The inflight
+	// map already collapses duplicate fetches for one identifier, but
+	// an attacker naming many distinct resolvable hosts is not
+	// duplicating anything, so that map bounds nothing for them.
+	sem chan struct{}
 }
 
 type fetchCall struct {
@@ -319,6 +335,7 @@ func newDirectoryResolver(log *slog.Logger) *directoryResolver {
 		neg:         newLRUShard(defaultCacheEntries),
 		inflight:    make(map[string]*fetchCall),
 		now:         time.Now,
+		sem:         make(chan struct{}, maxConcurrentFetches),
 	}
 }
 
@@ -357,6 +374,33 @@ func (d *directoryResolver) resolve(ctx context.Context, ref *agentRef) (*jwkSet
 	return set, nil
 }
 
+// fetchBounded acquires the global fetch slot, then runs the fetch
+// detached from the calling request's cancellation under its own
+// deadline. Detaching matters because other verifiers join this call:
+// if it inherited the leader's context, one client disconnecting would
+// fail every request waiting on the same directory.
+func (d *directoryResolver) fetchBounded(ctx context.Context, ref *agentRef) (*jwkSet, error) {
+	select {
+	case d.sem <- struct{}{}:
+		defer func() { <-d.sem }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	// Detach from cancellation, but never from a caller deadline that is
+	// tighter than our own: dropping it would silently lengthen a bound
+	// the caller asked for. WithoutCancel removes the disconnect
+	// propagation; the deadline below keeps the time bound.
+	timeout := defaultFetchTimeout
+	if dl, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(dl); remaining < timeout {
+			timeout = remaining
+		}
+	}
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	return d.fetch(fetchCtx, ref)
+}
+
 // fetchCoalesced runs (or joins) one in-flight fetch for the
 // identifier, then updates the cache per the evidence rules.
 func (d *directoryResolver) fetchCoalesced(ctx context.Context, ref *agentRef) (*jwkSet, error) {
@@ -374,7 +418,7 @@ func (d *directoryResolver) fetchCoalesced(ctx context.Context, ref *agentRef) (
 	d.inflight[ref.identifier] = call
 	d.mu.Unlock()
 
-	set, err := d.fetch(ctx, ref)
+	set, err := d.fetchBounded(ctx, ref)
 	call.set, call.err = set, err
 	close(call.done)
 

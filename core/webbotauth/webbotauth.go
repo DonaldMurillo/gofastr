@@ -285,7 +285,7 @@ func (v *Verifier) verifyOne(r *http.Request, inputs, sigs *sfDictionary, m sfMe
 			Reason: "signature covers both bare and keyed Signature-Agent components"}
 	}
 	agentHeader := combineFieldValues(r.Header.Values("Signature-Agent"))
-	ref, _, err := agentRefFor(agentHeader, memberKey)
+	ref, _, err := agentRefFor(r.Context(), agentHeader, memberKey)
 	if err != nil {
 		return Result{Outcome: OutcomeInvalid, Label: label, Reason: err.Error()}
 	}
@@ -342,7 +342,7 @@ func intParam(p sfParams, key string) (int64, bool) {
 // agentRefFor resolves the Signature-Agent header to this signature
 // label's discovery reference. legacy is true when the header is the
 // deprecated bare-string form.
-func agentRefFor(header, label string) (*agentRef, bool, error) {
+func agentRefFor(ctx context.Context, header, label string) (*agentRef, bool, error) {
 	if strings.TrimSpace(header) == "" {
 		return nil, false, fmt.Errorf("signed request carries no Signature-Agent header")
 	}
@@ -354,7 +354,7 @@ func agentRefFor(header, label string) (*agentRef, bool, error) {
 		if err != nil || it.typ != sfString {
 			return nil, false, fmt.Errorf("malformed legacy Signature-Agent header")
 		}
-		ref, err := parseAgentRef(it.str, discoveryDirectory)
+		ref, err := parseAgentRef(ctx, it.str, discoveryDirectory)
 		if err != nil {
 			return nil, false, fmt.Errorf("legacy Signature-Agent: %v", err)
 		}
@@ -385,7 +385,7 @@ func agentRefFor(header, label string) (*agentRef, bool, error) {
 			return nil, false, fmt.Errorf("Signature-Agent member %q uses unsupported discovery type %q", label, t.str)
 		}
 	}
-	ref, err := parseAgentRef(m.item.str, typ)
+	ref, err := parseAgentRef(ctx, m.item.str, typ)
 	if err != nil {
 		return nil, false, err
 	}
