@@ -363,3 +363,78 @@ func TestVariantRefRejectsControlBytes(t *testing.T) {
 		}
 	}
 }
+
+// TestDeleteFileField_RemovesVariants pins CHAIN8-R3 (deletion lifecycle,
+// contract conflict, MEDIUM). framework/file/imagederive.go:48-51 justifies
+// holding derived references to the primary file's invariants because:
+//
+//	// Validate enforces the same invariants on derived references that
+//	// FileField.Validate enforces on the primary file, they reach the same
+//	// sinks (an <img src>, a storage delete) and arrive from the same
+//	// untrusted places once persisted and read back.
+//
+// and every rendition is a distinct storage object written through store.Save
+// (framework/imagefield/imagefield.go:160-168). But DeleteFileField
+// (filefield.go:560-567), the framework's only storage-delete primitive —
+// the "a storage delete" sink that contract names — reads ff.StorageRef only
+// and never consults ff.Image:
+//
+//	func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) error {
+//		if store == nil {
+//			return fmt.Errorf("filefield: storage backend is required")
+//		}
+//		if ff == nil || ff.StorageRef == "" {
+//			return nil
+//		}
+//		return store.Delete(ctx, ff.StorageRef)
+//	}
+//
+// A host that dutifully calls DeleteFileField on entity delete/update (the
+// wiring CHAIN8-R2 asks for) still leaves every _sm/_md rendition stored and
+// downloadable at the documented /uploads/{key...} route. Observable through
+// the real backend: after DeleteFileField succeeds, the rendition object
+// recorded in ff.Image.Variants must no longer be readable from storage.
+// The conflicting sides are quoted above for triage; only the variant-removal
+// behavior is asserted.
+func TestDeleteFileField_RemovesVariants(t *testing.T) {
+	t.Parallel()
+	store := upload.NewLocalStorage(t.TempDir())
+	ctx := context.Background()
+
+	primary := "uploads/profiles/avatar/avatar_1_ab.png"
+	variant := "uploads/profiles/avatar/avatar_1_ab_sm.webp"
+	if err := store.Save(ctx, primary, strings.NewReader("primary-bytes")); err != nil {
+		t.Fatalf("save primary: %v", err)
+	}
+	if err := store.Save(ctx, variant, strings.NewReader("variant-bytes")); err != nil {
+		t.Fatalf("save variant: %v", err)
+	}
+
+	ff := &file.FileField{
+		URL:        primary,
+		StorageRef: primary,
+		Image: &file.ImageDerivatives{
+			Variants: []file.DerivedVariant{
+				{StorageRef: variant, MIME: "image/webp", Width: 320, Height: 240},
+			},
+		},
+	}
+	if err := file.DeleteFileField(ctx, store, ff); err != nil {
+		t.Fatalf("DeleteFileField: %v", err)
+	}
+
+	// The primary is gone: proves the delete reached the backend (this leg
+	// is green today and must stay green after any fix).
+	if _, err := store.Get(ctx, primary); err == nil {
+		t.Errorf("primary object %q survived DeleteFileField", primary)
+	}
+
+	// The rendition must be gone too. Today Get returns a reader with the
+	// stored bytes: the orphan survives even correct cleanup wiring.
+	if _, err := store.Get(ctx, variant); err == nil {
+		t.Errorf("SECURITY: [CHAIN8-R3] DeleteFileField removed the primary object but the stored rendition %q is still readable from storage. imagederive.go:48-51 promises derived references reach \"a storage delete\" sink; filefield.go:560-567 never reads ff.Image.Variants, so every rendition outlives the row's cleanup and keeps serving at the documented /uploads/{key...} route.", variant)
+	}
+	if ok, err := store.Exists(ctx, variant); err == nil && ok {
+		t.Errorf("SECURITY: [CHAIN8-R3] rendition %q still exists in storage after DeleteFileField", variant)
+	}
+}
