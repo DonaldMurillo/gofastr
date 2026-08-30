@@ -79,8 +79,12 @@
     // in a search/palette pattern is almost always meant to navigate.
     // The server side hands the option a path via this attribute;
     // we route it through the SPA navigator (or fall back to a hard
-    // load if the navigator hasn't booted yet).
-    const dest = opt.getAttribute('data-fui-push-state');
+    // load if the navigator hasn't booted yet). A plain anchor option
+    // (href, no push-state) navigates too — hosts render server-built
+    // link options (filters, sorters) and the preventDefault above
+    // would otherwise swallow them.
+    const dest = opt.getAttribute('data-fui-push-state') ||
+      (opt.tagName === 'A' ? opt.getAttribute('href') : null);
     // data-fui-push-state is DOM input, so this destination is caller
     // input. The SPA navigator applies _originOK itself, but the
     // pre-boot fallback below assigns location.href directly, and a
@@ -98,7 +102,9 @@
       if (widget && window.__gofastr && window.__gofastr.closeWidget) {
         try { window.__gofastr.closeWidget(widget.getAttribute('data-fui-widget')); } catch (_) {}
       }
-      if (window.__gofastr && window.__gofastr.navigate) {
+      if (!opt.getAttribute('data-fui-push-state')) {
+        location.href = dest;
+      } else if (window.__gofastr && window.__gofastr.navigate) {
         window.__gofastr.navigate(dest);
       } else {
         location.href = dest;
