@@ -29,6 +29,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   whose record is gone renders the not-found body through the layout while
   signaling 404 to clients and crawlers. Zero or 200 keeps the default.
 
+- **`sdkdocs.Config.CRUDMounted` and `App.EntityCRUDMounted`** keep the SDK
+  docs site to routes that exist. `Exposure.CRUD` alone cannot answer "were
+  this entity's routes mounted": an app with no DB registers no CRUD while
+  every entity still reads `nil` ("auto"), so the site published a reference
+  page — and an SDK download — for paths that answer 404. The predicate that
+  route registration, the startup banner, `openapi.json` and `/api/llm.md`
+  already agree on is now exported, so a host-mounted surface can reach it
+  too. Pass `CRUDMounted: fwApp.EntityCRUDMounted`; nil keeps the older
+  `Exposure`-only behaviour.
+
 - **`data-skip-link` on the skip link**, so a test suite can address it
   without pinning the `.skip-link` CSS class. The skip link is synthesized
   by the framework rather than configured by the app, so `ExtraAttrs` — the

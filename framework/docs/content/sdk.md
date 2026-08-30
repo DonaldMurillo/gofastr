@@ -122,12 +122,21 @@ site := app.NewApp("My App")
 // … uihost.New / fwApp.Mount …
 err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
     Registry:     fwApp.Registry,
+    CRUDMounted:  fwApp.EntityCRUDMounted,
     Artifacts:    os.DirFS("gen/sdk/dist"), // or an embed.FS for single-binary deploys
     BaseURL:      "https://your-app.example.com",
     APIPrefix:    "api",
     HasAPITokens: true,
 })
 ```
+
+Pass `CRUDMounted: fwApp.EntityCRUDMounted`. The site documents an entity
+only when its CRUD routes were actually registered, and `Exposure.CRUD`
+alone cannot answer that: an app with no DB mounts no CRUD at all while
+every entity still reads `nil` ("auto"). Without the predicate the site
+publishes a reference page, and an SDK download, for paths that answer
+404. Leaving it nil keeps the older `Exposure`-only behaviour for callers
+that document a registry without an App.
 
 It is deliberately not a `uihost` option: the screens compose
 `framework/ui`, which uihost must never import (its always-on styles
