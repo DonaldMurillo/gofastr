@@ -105,12 +105,22 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 		}
 	})
 
-	// B3: race the boundary. Flush and expire() contend with jittered
-	// delays; every interleaving must satisfy the invariant. Run with
-	// -race this also pins the mutex coverage of the streaming flip.
+	// B3: race the boundary. The delays must STRADDLE the deadline, or
+	// this only repeats the flush-wins path under another name: an
+	// earlier version jittered 0-5ms against a 15ms budget, so every
+	// iteration flushed a clear 10ms before expire() and nothing ever
+	// contended. The sweep below brackets 15ms from both sides, and the
+	// tally afterwards fails if the run landed entirely on one side --
+	// which is what a future timing change would do silently.
 	t.Run("boundary-race", func(t *testing.T) {
-		for i := range 30 {
-			delay := time.Duration(i%6) * time.Millisecond
+		// 0 and 30 are the anchors: whatever the machine's load, the
+		// first flushes long before the deadline and the last long
+		// after, so both outcomes are reachable. The values around 15
+		// are where the two actually contend.
+		delays := []time.Duration{0, 5, 12, 14, 15, 16, 18, 30}
+		var streamedN, gwN int
+		for i := range 32 {
+			delay := delays[i%len(delays)] * time.Millisecond
 			h := Timeout(15 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(delay)
 				w.(http.Flusher).Flush()
@@ -130,6 +140,19 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 			if !streamed && rec.Code != http.StatusGatewayTimeout {
 				t.Fatalf("iter %d (delay=%s): neither stream nor 504 (code=%d):\n%s", i, delay, rec.Code, body)
 			}
+			if streamed {
+				streamedN++
+			}
+			if gw {
+				gwN++
+			}
 		}
+		// Anti-vacuity: a sweep that never crossed the deadline would
+		// satisfy every assertion above while testing one path.
+		if streamedN == 0 || gwN == 0 {
+			t.Fatalf("sweep never straddled the deadline: %d streamed, %d timed out over %d iterations",
+				streamedN, gwN, 32)
+		}
+		t.Logf("boundary straddled: %d streamed, %d timed out", streamedN, gwN)
 	})
 }
