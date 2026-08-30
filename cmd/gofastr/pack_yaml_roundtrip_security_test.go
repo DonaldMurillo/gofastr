@@ -1,14 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
 
 // The invariant, stated end-to-end rather than as a predicate: pack either
-// REFUSES a key or emits a file core/yaml can read back — and it refuses
-// only what it must.
+// REFUSES a map key or emits YAML that reads back with the key and value
+// intact — and it refuses only what it must.
 //
 // yamlKeyRejectReason's table checks that each branch fires for the right
 // reason. This checks the property that motivates having branches at all,
@@ -17,19 +18,32 @@ import (
 // key's apostrophe desynced the comment scanner from the correctly-quoted
 // value. No predicate-level assertion covers an interaction like that.
 //
-// The two lists below are the oracle, deliberately NOT derived from
+// The lists below are the oracle, deliberately NOT derived from
 // yamlKeyRejectReason. Asking the code under test what it should do makes
 // the test agree with any mutation of it: a first version of this called
-// yamlKeyRejectReason for the expectation and a guard that refused EVERY
+// yamlKeyRejectReason for the expectation, and a guard that refused EVERY
 // key passed. The expectation has to be stated independently or it is not
 // an expectation.
 var (
-	// Must be refused: each breaks the decode→encode→decode round trip.
-	mustRefuseKeys = []string{
-		"", "a\nb", "a\rb", "a:b", "a#b", "a[b", "a]b", "a{b", "a}b",
-		"- a", "a\tb", " a", "a ", `"status`, "'status", "it's", `a"b`,
-		`"quoted"`, "'quoted'",
+	// Refused because raw emission genuinely breaks the round trip, in at
+	// least one of the two reachable contexts (a seed row, which is a map
+	// inside a list item, and entity properties, which is a nested map).
+	mustRefuseBreaking = []string{
+		"", "a\nb", "a:b", "a[b", "a]b", "a{b", "a}b", "- a", "a\tb",
+		" a", "a ", `"status`, "'status", "it's", `"quoted"`, "'quoted'",
+		// Leading '#' is the load-bearing one: the comment eats the line
+		// and the entry is SILENTLY DROPPED — the row re-parses as {}.
+		// pack.go contemplates relaxing '#' to a position-exact check;
+		// that relaxation must not be allowed to accept these.
+		"#a", "a #b",
+		"{a", "[a",
 	}
+	// Refused conservatively: these would in fact survive raw emission
+	// today, but the guard rejects them anyway because the predicate is
+	// simpler than the parser's real rule. Listed separately so the
+	// comment above stays true of the list above it.
+	mustRefuseConservatively = []string{"a\rb", "a#b", `a"b`}
+
 	// Must survive untouched. Refusing any of these breaks real packs,
 	// which is the failure mode that matters more than the injection.
 	mustRoundTripKeys = []string{
@@ -45,10 +59,10 @@ var (
 
 func TestPackNeverEmitsAnUnreadableFile(t *testing.T) {
 	t.Run("refused", func(t *testing.T) {
-		for _, key := range mustRefuseKeys {
+		for _, key := range append(append([]string{}, mustRefuseBreaking...), mustRefuseConservatively...) {
 			for _, val := range hostileValues {
 				if _, err := encodeKeyValue(key, val); err == nil {
-					t.Errorf("key %q (value %q) was accepted; it breaks the round trip", key, val)
+					t.Errorf("key %q (value %q) was accepted; it must be refused", key, val)
 				}
 			}
 		}
@@ -62,13 +76,53 @@ func TestPackNeverEmitsAnUnreadableFile(t *testing.T) {
 					t.Errorf("legitimate key %q (value %q) was refused: %v", key, val, err)
 					continue
 				}
-				if _, err := coreyaml.Parse(out); err != nil {
-					t.Errorf("key %q with value %q emitted a file core/yaml cannot read (%v):\n%s",
-						key, val, err, out)
+				// Readable is not enough: a writer that mangled or dropped
+				// keys would still parse. Parse("") even returns an empty
+				// map with a nil error, so "it parsed" passes vacuously for
+				// an emit-nothing regression. Check the value came back.
+				got, err := seedRowValue(out, key)
+				if err != nil {
+					t.Errorf("key %q with value %q: %v\n%s", key, val, err, out)
+					continue
+				}
+				if got != val {
+					t.Errorf("key %q round-tripped to %q, want %q\n%s", key, got, val, out)
 				}
 			}
 		}
 	})
+}
+
+// seedRowValue re-parses pack output and returns seed[0].rows[0][key],
+// so the test observes what the writer actually preserved.
+func seedRowValue(out, key string) (string, error) {
+	node, err := coreyaml.Parse(out)
+	if err != nil {
+		return "", fmt.Errorf("core/yaml cannot read the emitted file: %v", err)
+	}
+	seed := node.Map["seed"]
+	if seed == nil || len(seed.List) == 0 {
+		return "", fmt.Errorf("emitted file has no seed entry")
+	}
+	rows := seed.List[0].Map["rows"]
+	if rows == nil || len(rows.List) == 0 {
+		return "", fmt.Errorf("emitted file has no seed rows")
+	}
+	row := rows.List[0]
+	cell := row.Map[key]
+	if cell == nil {
+		return "", fmt.Errorf("key %q is absent from the re-parsed row (present keys: %v)", key, rowKeyNames(row.Map))
+	}
+	s, _ := cell.Value.(string)
+	return s, nil
+}
+
+func rowKeyNames(m map[string]*coreyaml.Node) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func encodeKeyValue(key, val string) (string, error) {
