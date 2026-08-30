@@ -414,3 +414,20 @@ func TestSidebarShellStillSingleRoot(t *testing.T) {
 		t.Fatal("full Sidebar must not nest a SidebarBody root")
 	}
 }
+
+func TestSidebarGroupOpenByDefault(t *testing.T) {
+	out := string(ui.SidebarBody(ui.SidebarConfig{
+		GroupMarkup: ui.SidebarGroupButton,
+		Items: []ui.SidebarItem{
+			{Label: "Pinned", Open: true, Children: []ui.SidebarItem{{Label: "Child", Href: "/c"}}},
+			{Label: "Shut", Children: []ui.SidebarItem{{Label: "Other", Href: "/o"}}},
+		},
+	}))
+	if !strings.Contains(out, `aria-expanded="true"`) {
+		t.Fatal("Open:true group must render expanded")
+	}
+	// The second group stays closed: exactly one expanded toggle.
+	if got := strings.Count(out, `aria-expanded="true"`); got != 1 {
+		t.Fatalf("want exactly one expanded group, got %d", got)
+	}
+}
