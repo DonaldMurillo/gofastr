@@ -1,0 +1,6 @@
+{
+  "note": "Signature produced by Node v22.21.1 WebCrypto Ed25519 over the signature base assembled by core/webbotauth (Go). See gates_test.go.",
+  "base": "\"@method\": POST\n\"@authority\": api.example.com\n\"@path\": /search\n\"@query\": ?q=web+bot&lang=en\n\"@query-param\";name=\"q\": web%20bot\n\"date\": Tue, 20 Apr 2021 02:07:55 GMT\n\"x-ows-header\": value with outer spaces\n\"signature-agent\";key=\"sig1\": \"https://agent.example\"\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"@query\" \"@query-param\";name=\"q\" \"date\" \"x-ows-header\" \"signature-agent\";key=\"sig1\");created=1735689600;keyid=\"gate-b-key\";tag=\"web-bot-auth\"",
+  "pub_x_b64url": "1FNSH5wZvwrrt7ieQo_Z2UxbU3XUgKJgXdLhPHYVwtg",
+  "sig_b64": "jPpVVEcuaXh88sVbCVILcYn+R23FPIbNICiV25uFdalxa9LzBowzALYI1zCH0PbQZ8Jvc0w1JYxua1/fkII0CQ=="
+}

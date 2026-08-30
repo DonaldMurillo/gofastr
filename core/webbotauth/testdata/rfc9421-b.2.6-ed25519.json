@@ -1,0 +1,26 @@
+{
+  "source": "RFC 9421 Appendix B.2.6 (Signing a Request Using ed25519), test-request and test-key-ed25519 from Appendix B.1.4. https://www.rfc-editor.org/rfc/rfc9421",
+  "note": "Not a Web Bot Auth profile signature (no tag, no Signature-Agent): this vector gates the RFC 9421 layer only - signature base assembly and Ed25519 verification. The draft vectors gate the profile layer.",
+  "request": {
+    "method": "POST",
+    "target": "/foo?param=Value&Pet=dog",
+    "host": "example.com",
+    "headers": {
+      "Date": "Tue, 20 Apr 2021 02:07:55 GMT",
+      "Content-Type": "application/json",
+      "Content-Digest": "sha-512=:WZDPaVn/7XgHaAy8pmojAkGWoRx2UFChF41A2svX+TaPm+AbwAgBWnrIiYllu7BNNyealdVLvRwEmTHWXvJwew==:",
+      "Content-Length": "18"
+    }
+  },
+  "signature_input": "sig-b26=(\"date\" \"@method\" \"@path\" \"@authority\" \"content-type\" \"content-length\");created=1618884473;keyid=\"test-key-ed25519\"",
+  "signature_label": "sig-b26",
+  "signature": "wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==",
+  "key_jwk": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "kid": "test-key-ed25519",
+    "d": "n4Ni-HpISpVObnQMW0wOhCKROaIKqKtW_2ZYb2p9KcU",
+    "x": "JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs"
+  },
+  "expected_base": "\"date\": Tue, 20 Apr 2021 02:07:55 GMT\n\"@method\": POST\n\"@path\": /foo\n\"@authority\": example.com\n\"content-type\": application/json\n\"content-length\": 18\n\"@signature-params\": (\"date\" \"@method\" \"@path\" \"@authority\" \"content-type\" \"content-length\");created=1618884473;keyid=\"test-key-ed25519\""
+}

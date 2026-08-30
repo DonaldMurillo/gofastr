@@ -154,6 +154,53 @@ work), and a derived `mcp` skill points agents at it.
 | `Streaming`, `PushNotifications` | Capability flags (default false). |
 | `SecuritySchemes` | OpenAPI-style schemes under `securitySchemes`; omitted when nil. |
 | `DefaultInputModes`, `DefaultOutputModes` | MIME types; default `["text/plain"]`. |
+| `SigningKeys` | Sign the card (A2A §8.4) + serve `/.well-known/jwks.json`; requires a pinned `BaseURL` — see [Signed agent cards](#signed-agent-cards-a2a-v10-84). |
+
+### Signed agent cards (A2A v1.0 §8.4)
+
+Set `AgentCardConfig.SigningKeys` and the card gains a `signatures`
+array: one JWS (RFC 7515) per key, each computed over the RFC 8785
+canonical form of the card with `signatures` excluded — exactly the
+construction A2A v1.0 §8.4 specifies, so off-the-shelf A2A clients can
+verify it. The verification keys are published as a JWK Set at
+`/.well-known/jwks.json`, and each signature's protected header
+(`alg`, `typ:"JOSE"`, `kid`, `jku`) points at that endpoint.
+
+```go
+edKey := /* ed25519.PrivateKey or *ecdsa.PrivateKey (P-256/P-384/P-521) */
+uihost.WithAgentReady(uihost.AgentReadyConfig{
+    BaseURL: "https://agents.example.com",
+    AgentCard: &uihost.AgentCardConfig{
+        Name: "My Agent", MCPEndpoint: "/mcp",
+        SigningKeys: []uihost.AgentCardSigningKey{{KeyID: "2026-08", Signer: edKey}},
+    },
+})
+```
+
+| `AgentCardSigningKey` field | Purpose |
+|---|---|
+| `KeyID` | JWS `kid` + JWKS `kid`. Empty defaults to the key's RFC 7638 SHA-256 thumbprint, so one key always maps to one kid. |
+| `Signer` | `ed25519.PrivateKey` (`EdDSA`) or `*ecdsa.PrivateKey` on P-256/P-384/P-521 (`ES256`/`ES384`/`ES512`). Anything else fails the boot — the framework will not guess an algorithm for an unmodeled key type. |
+
+Rotation: list several keys. Each adds one `signatures` entry and one
+JWK, so a client that trusts any listed key keeps verifying across a
+key change; remove the old entry once clients have rotated.
+
+**Signing pins the base URL.** A signed card whose URLs derive from the
+request's `Host` header would hand an attacker a *validly signed* card
+pointing at their own host. When `SigningKeys` is set, an explicit
+`WithAgentReady{BaseURL}` (or `WithSitemap{BaseURL}`) is required;
+without one the host panics at mount instead of ever serving a
+request-derived signed card.
+
+How a client verifies: fetch the card, note each
+`signatures[].protected` header (`kid`, `jku`, `alg`), fetch the JWKS
+at `jku` over HTTPS, select the key by `kid`, delete the `signatures`
+member, canonicalize the rest with JCS (RFC 8785), and verify the
+signature over `BASE64URL(protected) "." BASE64URL(canonicalCard)` with
+the header's algorithm. A worked verifier (Node WebCrypto, sharing no
+code with the framework) lives at
+`framework/uihost/testdata/signing/verify-card.mjs`.
 
 ### AI-bot-aware robots
 
@@ -471,7 +518,10 @@ each allowlist into the matching iframe directive (`connectDomains` →
 zero `AppCSP` emits no `csp` key at all.
 
 The widget HTML is the app author's job (a single vanilla-JS file needs no
-build step). `WithMCPApp` is an explicit opt-in registered during
+build step); `mcp.WidgetDocument` assembles it so the widget client's
+script URL cannot drift — see the [agent-host contract](agent-host.md)
+for the full authoring walk-through and the host-theme convention.
+`WithMCPApp` is an explicit opt-in registered during
 `InitPlugins`, so a duplicate tool name or resource uri is a hard build
 error. Requires the `/mcp` server to be mounted (`WithMCP`, or the dev
 auto-mount).
@@ -551,6 +601,10 @@ deliberately **not**: it is client-settable and reflecting it into the
 addressed `Host` is used instead. Set `BaseURL` explicitly when your proxy
 rewrites the host.
 
+Signed cards are the exception to the per-request fallback: with
+`SigningKeys` set, an explicit `BaseURL` is **required** and the host
+refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v10-84)).
+
 ## Granular options
 
 | Option | Serves |
@@ -559,6 +613,7 @@ rewrites the host.
 | `uihost.WithLLMsTxt(title, summary, sections)` | `/llms.txt` only. |
 | `uihost.WithLLMsFullTxt(content)` | `/llms-full.txt` only (full-corpus tier, served verbatim). |
 | `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json` + `agent.json` alias. |
+| *(card signing)* | With `AgentCardConfig.SigningKeys`: `/.well-known/jwks.json` (the card's verification keys). |
 | `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML only. |
 | `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |
 | `uihost.WithOrganization(cfg)` | Organization JSON-LD (`contactPoint` + `PostalAddress`) in every full page head. |
@@ -566,7 +621,7 @@ rewrites the host.
 | `framework.WithMCPApp(cfg)` | Register an MCP App: a `ui://` HTML widget resource + its linking tool. |
 | `framework.WithOAuthProtectedResource(cfg)` | RFC 9728 metadata doc. |
 | `framework.WithAuthMD(cfg)` | `/auth.md` + `agent_auth` block. |
-| `framework.WithWebBotAuth(cfg)` | `/.well-known/http-message-signatures-directory` JWKS. |
+| `framework.WithWebBotAuth(cfg)` | `/.well-known/http-message-signatures-directory` JWKS; with `cfg.Verify` set, inbound verification middleware (experimental). |
 | `framework.WithAgentSkills(skills)` | `/.well-known/agent-skills/index.json`. |
 | `framework.WithOAuthAuthorizationServer(cfg)` | RFC 8414 AS metadata. |
 | `framework.WithUCP(cfg)` / `framework.WithACP(cfg)` | `/.well-known/ucp` / `/.well-known/acp.json`. |
@@ -596,6 +651,11 @@ rewrites the host.
   So `WithMarkdownNegotiation()` before `WithAgentReady{Title: …}` keeps content
   negotiation on; you can equally enable it via the bundle's `ContentNegotiation`
   field. (Both still require `WithPublicLLMMD`, per the note above.)
+- **Signing the card without pinning `BaseURL`.** Boot fails on purpose.
+  A signature over a request-derived URL would make an attacker-supplied
+  `Host` header produce a validly-signed card pointing at the attacker's
+  endpoint. Set `WithAgentReady{BaseURL: ...}` (or the sitemap's) and
+  the panic disappears.
 
 ## What this deliberately does not do
 
@@ -607,10 +667,12 @@ rewrites the host.
   and calls tools; it is not a multi-turn A2A task agent.
 - **No DNS-AID.** DNS TXT records for AI discovery are infra/DNS, not
   framework code. Add them at your registrar/host.
-- **No inbound Web Bot Auth verification.** `WithWebBotAuth` publishes the
-  site's signing JWKS (so it can sign its own outbound requests); verifying
-  RFC 9421 signatures on *inbound* requests is host middleware, not a served
-  artifact.
+- **Inbound Web Bot Auth verification is opt-in and experimental.**
+  `WithWebBotAuth` publishes the site's signing JWKS by default; set
+  its `Verify` field to also verify RFC 9421 signatures on inbound
+  requests (`framework.VerifiedAgent`), tracking
+  draft-meunier-webbotauth-httpsig-protocol-02. See
+  `web-bot-auth.md`.
 - **No x402 / MPP payment.** These need real payment middleware (HTTP 402 +
   payment requirements) or a payment backend; the framework serves discovery
   docs (UCP/ACP) but not payment execution.

@@ -347,3 +347,123 @@ func TestWidgetClientJS_ReturnsACopy(t *testing.T) {
 		t.Error("WidgetClientJS() must return a copy, not the embedded slice")
 	}
 }
+
+// ── Host context / theme consumption ──────────────────────────────────
+
+// The widget-side theming convention: the client consumes the host's
+// theme signals (HostContext.theme, HostContext.styles) and applies them
+// to the document root; a widget invents no palette of its own. The
+// application itself is pinned here — the spec's light-dark() variable
+// values only resolve when color-scheme is set, so the data-theme +
+// colorScheme pair, the setProperty loop for styles.variables, and the
+// replaced-never-stacked fonts <style> are all load-bearing, and a
+// deleted line here is a widget that renders the host's dark mode as
+// light with no error anywhere.
+func TestWidgetClientJS_AppliesHostThemeToDocumentRoot(t *testing.T) {
+	code := nonCommentJS(string(widgetClientJSBytes))
+	body := jsBody(code, "function applyHostTheme", "function applyHostContext")
+	if body == "" {
+		t.Fatal("applyHostTheme() not found in widget client")
+	}
+	for _, pin := range []struct{ what, want string }{
+		{"theme attribute", `setAttribute("data-theme", theme)`},
+		{"color-scheme (makes light-dark() resolve)", `root.style.colorScheme = theme`},
+		{"host CSS variables on the root", `root.style.setProperty(name, value)`},
+		{"variables must be --prefixed strings", `name.indexOf("--") === 0`},
+		{"font CSS element marker", `"style[data-mcpapp-fonts]"`},
+		{"font CSS applied by textContent, not stacking", `el.textContent = fonts`},
+	} {
+		if !strings.Contains(body, pin.want) {
+			t.Errorf("applyHostTheme must contain %s: %q", pin.what, pin.want)
+		}
+	}
+	// Theme is only the spec's two values; anything else is not applied.
+	if !strings.Contains(body, `theme === "light" || theme === "dark"`) {
+		t.Error(`applyHostTheme must gate on theme === "light" || theme === "dark" (the spec's only values)`)
+	}
+}
+
+// Theme application must be replaceable, not only additive: when the
+// host first sends a populated context and then a clearing update —
+// styles.css.fonts set to "" and a styles.variables no longer listing
+// earlier names — the fonts <style> element leaves the document and the
+// dropped custom properties leave the root. Without the diff, a restyled
+// host leaves the widget rendering the old theme forever, with no error
+// anywhere.
+func TestWidgetClientJS_HostThemeStateIsReplacedNotPiled(t *testing.T) {
+	code := nonCommentJS(string(widgetClientJSBytes))
+	body := jsBody(code, "function applyHostTheme", "function applyHostContext")
+	if body == "" {
+		t.Fatal("applyHostTheme() not found in widget client")
+	}
+	for _, pin := range []struct{ what, want string }{
+		{"applied variables tracked for the next diff", `appliedThemeVars = seen`},
+		{"variables absent from the update removed", `root.style.removeProperty(prev)`},
+		{"fonts element removed when fonts is empty", `el.remove()`},
+	} {
+		if !strings.Contains(body, pin.want) {
+			t.Errorf("applyHostTheme must contain %s: %q", pin.what, pin.want)
+		}
+	}
+}
+
+// connect() applies the host's theme from the ui/initialize result BEFORE
+// sending ui/notifications/initialized: the host treats initialized as
+// "the app is ready", and a ready widget must already reflect the host's
+// theme, not catch up a frame later.
+func TestWidgetClientJS_ConnectAppliesThemeBeforeInitialized(t *testing.T) {
+	code := nonCommentJS(string(widgetClientJSBytes))
+	body := jsBody(code, "connect: function", "request: request")
+	if body == "" {
+		t.Fatal("connect() body not found in widget client")
+	}
+	ai := strings.Index(body, "applyHostContext(result.hostContext)")
+	ni := strings.Index(body, `"ui/notifications/initialized"`)
+	if ai < 0 || ni < 0 {
+		t.Fatal("connect() must reference applyHostContext(result.hostContext) and the initialized notification")
+	}
+	if ni < ai {
+		t.Error("theme must be applied from the initialize result BEFORE ui/notifications/initialized is sent")
+	}
+}
+
+// host-context-changed is applied by the dispatch itself, BEFORE any
+// registered app handler runs and even when none is registered: theming
+// is the client's convention, not something author code can forget to
+// wire. The order inside handleNotification is load-bearing — applying
+// after the handler would run author code against a stale root.
+func TestWidgetClientJS_HostContextChangedAppliedInDispatch(t *testing.T) {
+	code := nonCommentJS(string(widgetClientJSBytes))
+	body := jsBody(code, "function handleNotification", "function handleTeardown")
+	if body == "" {
+		t.Fatal("handleNotification() not found in widget client")
+	}
+	ai := strings.Index(body, "applyHostContext(params)")
+	hi := strings.Index(body, "inboundHandlers[method]")
+	if ai < 0 || hi < 0 {
+		t.Fatal("handleNotification must apply the context and then look up the registered handler")
+	}
+	if hi < ai {
+		t.Error("applyHostContext must run BEFORE the registered handler (author code sees the fresh root)")
+	}
+	if !strings.Contains(body, `"ui/notifications/host-context-changed"`) {
+		t.Error("handleNotification must special-case the spec's host-context-changed method string")
+	}
+}
+
+// hostContext() hands out a copy, not the running state: an author
+// scribbling on the returned object must not corrupt the merge state the
+// next applyHostContext reads.
+func TestWidgetClientJS_HostContextReturnsACopy(t *testing.T) {
+	code := nonCommentJS(string(widgetClientJSBytes))
+	body := jsBody(code, "hostContext: function", "applyHostContext: applyHostContext")
+	if body == "" {
+		t.Fatal("hostContext() not found in widget client")
+	}
+	if !strings.Contains(body, "var copy = {}") {
+		t.Error("hostContext() must build a copy; returning hostContextState aliases the merge state")
+	}
+	if strings.Contains(body, "return hostContextState") {
+		t.Error("hostContext() must not return the live state object")
+	}
+}
