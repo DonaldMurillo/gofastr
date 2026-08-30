@@ -908,7 +908,9 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 	if len(routes) == 0 {
 		return ""
 	}
-	infos := make([]routeInfoJSON, len(routes))
+	// Filter before sizing infos, not after: sized from the pre-filter
+	// count, every NoSPA route left a trailing zero-value entry that
+	// marshalled as {"path":""} and reached the client as a real route.
 	kept := routes[:0]
 	for _, r := range routes {
 		if !r.NoSPA {
@@ -916,6 +918,10 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 		}
 	}
 	routes = kept
+	if len(routes) == 0 {
+		return ""
+	}
+	infos := make([]routeInfoJSON, len(routes))
 	for i, r := range routes {
 		infos[i] = routeInfoJSON{
 			Path:        r.Path,
