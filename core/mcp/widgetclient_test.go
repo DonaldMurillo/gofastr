@@ -383,6 +383,30 @@ func TestWidgetClientJS_AppliesHostThemeToDocumentRoot(t *testing.T) {
 	}
 }
 
+// Theme application must be replaceable, not only additive: when the
+// host first sends a populated context and then a clearing update —
+// styles.css.fonts set to "" and a styles.variables no longer listing
+// earlier names — the fonts <style> element leaves the document and the
+// dropped custom properties leave the root. Without the diff, a restyled
+// host leaves the widget rendering the old theme forever, with no error
+// anywhere.
+func TestWidgetClientJS_HostThemeStateIsReplacedNotPiled(t *testing.T) {
+	code := nonCommentJS(string(widgetClientJSBytes))
+	body := jsBody(code, "function applyHostTheme", "function applyHostContext")
+	if body == "" {
+		t.Fatal("applyHostTheme() not found in widget client")
+	}
+	for _, pin := range []struct{ what, want string }{
+		{"applied variables tracked for the next diff", `appliedThemeVars = seen`},
+		{"variables absent from the update removed", `root.style.removeProperty(prev)`},
+		{"fonts element removed when fonts is empty", `el.remove()`},
+	} {
+		if !strings.Contains(body, pin.want) {
+			t.Errorf("applyHostTheme must contain %s: %q", pin.what, pin.want)
+		}
+	}
+}
+
 // connect() applies the host's theme from the ui/initialize result BEFORE
 // sending ui/notifications/initialized: the host treats initialized as
 // "the app is ready", and a ready widget must already reflect the host's

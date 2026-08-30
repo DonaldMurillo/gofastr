@@ -567,15 +567,24 @@ func abs(v int) int {
 // characters: U+10000+ encode as surrogate pairs (0xD800–0xDBFF) and
 // sort before U+E000–U+FFFF, while their UTF-8 bytes sort after.
 //
-// Used by tests and kept here as the reference comparator.
+// Used by tests and kept here as the reference comparator. Each key
+// travels with its own code units: sorting a parallel slice desyncs
+// the comparator as soon as the sort starts swapping.
 func sortKeysByUTF16(keys []string) {
-	u16s := make([][]uint16, len(keys))
-	for i, k := range keys {
-		u16s[i] = utf16.Encode([]rune(k))
+	type keyAndUnits struct {
+		key string
+		u16 []uint16
 	}
-	sort.SliceStable(keys, func(i, j int) bool {
-		return utf16Less(u16s[i], u16s[j])
+	pairs := make([]keyAndUnits, len(keys))
+	for i, k := range keys {
+		pairs[i] = keyAndUnits{key: k, u16: utf16.Encode([]rune(k))}
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		return utf16Less(pairs[i].u16, pairs[j].u16)
 	})
+	for i := range pairs {
+		keys[i] = pairs[i].key
+	}
 }
 
 func utf16Less(a, b []uint16) bool {

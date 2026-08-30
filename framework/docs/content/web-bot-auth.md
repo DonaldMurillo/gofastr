@@ -68,6 +68,7 @@ app.Router().Get("/api/agent-feed", http.HandlerFunc(func(w http.ResponseWriter,
         // agent.URL: the resolved key directory, the protocol's identifier
         // agent.KeyID: the thumbprint that verified the request
     }
+}))
 ```
 
 `Keys` and `Verify` are independent: a site can publish without

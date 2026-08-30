@@ -148,14 +148,19 @@
   //                     what makes the host's light-dark() variable
   //                     values resolve on the correct side
   //   styles.variables→ inline custom properties on the root, inherited
-  //                     by all author markup
+  //                     by all author markup; names a later update no
+  //                     longer lists are removed
   //   styles.css.fonts→ one <style data-mcpapp-fonts> element, replaced
-  //                     (never stacked) when the host sends new font CSS
+  //                     (never stacked) when the host sends new font CSS,
+  //                     removed when an update ships none
   //
   // Widgets have no styling of their own to undo here: a widget that
   // ignores theming simply does not reference the variables or the
   // data-theme selector, and the applied state is inert markup.
   var hostContextState = Object.create(null);
+  // Custom properties the last applyHostTheme set on the root: the
+  // diff base for removing ones a later update no longer lists.
+  var appliedThemeVars = Object.create(null);
 
   function mergeHostContext(partial) {
     if (!partial || typeof partial !== "object") return;
@@ -177,27 +182,38 @@
     var styles = hostContextState.styles;
     if (!styles || typeof styles !== "object") return;
     var vars = styles.variables;
+    var seen = Object.create(null);
     if (vars && typeof vars === "object") {
       for (var name in vars) {
         if (!Object.prototype.hasOwnProperty.call(vars, name)) continue;
         var value = vars[name];
         // Standardized variable names all start with "--"; anything else
         // (or a non-string value) is not a theme signal, skip it.
-        if (typeof name === "string" && name.indexOf("--") === 0 && typeof value === "string") {
+        if (name.indexOf("--") === 0 && typeof value === "string") {
           root.style.setProperty(name, value);
+          seen[name] = true;
         }
       }
     }
+    // Theme application is state, not a pile: what the previous context
+    // set and this one no longer lists comes off the root.
+    for (var prev in appliedThemeVars) {
+      if (!seen[prev]) root.style.removeProperty(prev);
+    }
+    appliedThemeVars = seen;
+
     var css = styles.css;
     var fonts = (css && typeof css === "object" && typeof css.fonts === "string") ? css.fonts : "";
+    var el = document.querySelector("style[data-mcpapp-fonts]");
     if (fonts) {
-      var el = document.querySelector("style[data-mcpapp-fonts]");
       if (!el) {
         el = document.createElement("style");
         el.setAttribute("data-mcpapp-fonts", "");
         (document.head || root).appendChild(el);
       }
       el.textContent = fonts;
+    } else if (el) {
+      el.remove();
     }
   }
 

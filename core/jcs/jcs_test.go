@@ -117,11 +117,15 @@ func runNumberVectors(t *testing.T, path string) {
 }
 
 // TestRFC8785SortExample pins the property-sorting example from
-// RFC 8785 §3.2.3: the expected order of the sample keys.
+// RFC 8785 §3.2.3: the expected order of the sample keys. The input
+// arrives scrambled (a derangement of want), so the comparator must
+// actually reorder; an already-sorted input would pass unchanged even
+// with a comparator that never moves anything. \u0080 is written as an
+// escape because the raw control character is invisible in source.
 func TestRFC8785SortExample(t *testing.T) {
-	keys := []string{"\r", "1", "", "ö", "€", "\U0001F600", "דּ"}
+	keys := []string{"€", "דּ", "1", "\U0001F600", "\r", "ö", "\u0080"}
 	sortKeysByUTF16(keys)
-	want := []string{"\r", "1", "", "ö", "€", "\U0001F600", "דּ"}
+	want := []string{"\r", "1", "\u0080", "ö", "€", "\U0001F600", "דּ"}
 	for i := range keys {
 		if keys[i] != want[i] {
 			t.Fatalf("position %d: got %q want %q", i, keys[i], want[i])
