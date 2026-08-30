@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.74.0
+through: v0.75.0
 
 releases:
   - version: v0.3.0
@@ -869,3 +869,12 @@ releases:
       - change: new opt-in surfaces — core/acp, MCP prompts/resource templates/pagination/notifications, pluginhost Manifest.HostRequirements and the wasm CSP tier, pluginhost MountConfig.Fallback, ui.Button.AriaLabel
         breaking: false
         guidance: "All additive and opt-in; nothing renders or runs unless you configure it."
+  - version: v0.75.0
+    title: agent role, MCP Apps widget client, server-owned sidebar collapse
+    notes:
+      - change: new opt-in surfaces - GOFASTR_ROLE=agent (RoleAgent), the MCP Apps widget client (mcp.WidgetClientJS/WidgetClientHandler, auto-mounted by WithMCPApp), ui.SidebarConfig.Collapse and the SidebarAutoHide variant, pluginhost ClientModule.AssetServer
+        breaking: false
+        guidance: "All additive and opt-in. The sidebar's zero value keeps the existing localStorage behaviour byte-identical; the widget client mounts only when an MCP App is registered, and yields to a route the host already mounted."
+      - change: an AssetSpec with no ContentType serves a type derived from its filename, and AssetServer.Register rejects specs with no filesystem behind them
+        breaking: false
+        guidance: "Fix. A spec that omitted ContentType previously served an empty Content-Type with nosniff, which browsers refuse to parse. A nil fs.FS carrying specs now fails at boot instead of panicking the first request goroutine; set an explicit ContentType to keep overriding detection."
