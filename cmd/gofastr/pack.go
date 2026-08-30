@@ -38,12 +38,18 @@ func decodeBlueprintString(yml string) (Blueprint, error) {
 // decoder and this serializer must learn it or the round-trip test fails.
 // =============================================================================
 
-// encodeBlueprintYAML serializes a Blueprint to gofastr.yml text.
-func encodeBlueprintYAML(bp Blueprint) string {
+// encodeBlueprintYAML serializes a Blueprint to gofastr.yml text. It returns
+// an error — naming the key and the map it came from — for any map key that
+// cannot survive the decodeBlueprint round trip: core/yaml never unquotes
+// keys, so quoting would mangle them just as surely as emitting them raw
+// would forge structure. Refusing is the honest inverse.
+func encodeBlueprintYAML(bp Blueprint) (string, error) {
 	root := blueprintToMap(bp)
 	var sb strings.Builder
-	writeYAMLMap(&sb, root, 0, topLevelOrder)
-	return sb.String()
+	if err := writeYAMLMap(&sb, root, 0, topLevelOrder, ""); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
 }
 
 // ----- Blueprint -> nested map[string]any (mirrors the decoders) -------------
@@ -458,56 +464,122 @@ func putStrs(m map[string]any, k string, v []string) {
 
 // ----- generic YAML writer ---------------------------------------------------
 
-func writeYAMLMap(sb *strings.Builder, m map[string]any, indent int, order []string) {
+func writeYAMLMap(sb *strings.Builder, m map[string]any, indent int, order []string, path string) error {
 	for _, k := range orderedKeys(m, order) {
-		writeYAMLEntry(sb, k, m[k], indent)
+		if err := writeYAMLEntry(sb, k, m[k], indent, path); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int) {
+func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path string) error {
+	if reason := yamlKeyRejectReason(key); reason != "" {
+		where := "the top-level map"
+		if path != "" {
+			where = strconv.Quote(path)
+		}
+		return fmt.Errorf("cannot emit %q as a map key under %s: %s", key, where, reason)
+	}
+	child := joinYAMLPath(path, key)
 	pad := strings.Repeat(" ", indent)
 	switch v := val.(type) {
 	case map[string]any:
 		if len(v) == 0 {
 			sb.WriteString(pad + key + ": {}\n")
-			return
+			return nil
 		}
 		sb.WriteString(pad + key + ":\n")
-		writeYAMLMap(sb, v, indent+2, orderFor(key))
+		return writeYAMLMap(sb, v, indent+2, orderFor(key), child)
 	case []any:
 		if len(v) == 0 {
 			sb.WriteString(pad + key + ": []\n")
-			return
+			return nil
 		}
 		if allScalars(v) {
 			sb.WriteString(pad + key + ": ")
 			writeFlowList(sb, v)
 			sb.WriteString("\n")
-			return
+			return nil
 		}
 		sb.WriteString(pad + key + ":\n")
 		for _, item := range v {
-			writeYAMLListItem(sb, item, indent+2, orderFor(key))
+			if err := writeYAMLListItem(sb, item, indent+2, orderFor(key), child); err != nil {
+				return err
+			}
 		}
+		return nil
 	default:
 		sb.WriteString(pad + key + ": ")
 		writeScalarInline(sb, val)
 		sb.WriteString("\n")
+		return nil
 	}
 }
 
-func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string) {
+func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string, path string) error {
 	if m, ok := item.(map[string]any); ok && len(m) > 0 {
 		var tmp strings.Builder
-		writeYAMLMap(&tmp, m, indent+2, order)
+		if err := writeYAMLMap(&tmp, m, indent+2, order, path); err != nil {
+			return err
+		}
 		s := tmp.String()
 		// Replace the first line's leading (indent+2) spaces with "<indent>- ".
 		sb.WriteString(strings.Repeat(" ", indent) + "- " + s[indent+2:])
-		return
+		return nil
 	}
 	sb.WriteString(strings.Repeat(" ", indent) + "- ")
 	writeScalarInline(sb, item)
 	sb.WriteString("\n")
+	return nil
+}
+
+// joinYAMLPath builds the dotted key path used to name the map an entry came
+// from in refusal errors (e.g. "seed.rows", "entities.properties").
+func joinYAMLPath(parent, key string) string {
+	if parent == "" {
+		return key
+	}
+	return parent + "." + key
+}
+
+// yamlKeyRejectReason returns why key cannot round-trip through core/yaml as
+// a map key, or "" if it can. Every case below is verified against the
+// parser, never assumed:
+//
+//   - core/yaml cuts a line at the FIRST ':' and never unquotes keys
+//     (yaml.go parseMap), so quoting is not an escape hatch — a quoted key
+//     re-parses mangled, and a raw key containing ':' re-parses truncated;
+//   - lexLines strips ' #'-comments, trims edge whitespace, normalizes CRLF,
+//     and rejects tabs anywhere in a line;
+//   - parseMap rejects flow indicators in keys outright;
+//   - parseBlock dispatches a "- " prefix to the list grammar, so such a key
+//     re-parses as a list item instead of a map entry.
+//
+// A key failing any of these would re-parse as a different key or as
+// structure the source never declared — the seed-row/entity-property forgery
+// this guard exists to stop — so pack refuses rather than emit a file that
+// lies about the app it snapshots.
+func yamlKeyRejectReason(key string) string {
+	switch {
+	case key == "":
+		return "empty key: the parser drops the entry on re-parse"
+	case strings.ContainsAny(key, "\n\r"):
+		return "line breaks re-parse as new YAML structure — the key-injection vector"
+	case strings.Contains(key, ":"):
+		return "core/yaml cuts keys at the first ':' and never unquotes, so the key would re-parse truncated"
+	case strings.Contains(key, "#"):
+		return "'#' starts a comment on re-parse"
+	case strings.ContainsAny(key, "[]{}"):
+		return "core/yaml rejects flow indicators in keys, so the file could not be read back"
+	case strings.HasPrefix(key, "- "):
+		return "a '- ' prefix re-parses the entry as a list item"
+	case strings.Contains(key, "\t"):
+		return "core/yaml rejects tabs anywhere in a line, so the file could not be read back"
+	case key != strings.TrimSpace(key):
+		return "edge whitespace is trimmed on re-parse, so the key would change"
+	}
+	return ""
 }
 
 func writeFlowList(sb *strings.Builder, list []any) {
@@ -2778,7 +2850,12 @@ func runPack(args []string) {
 		osExit(1)
 		return
 	}
-	yml := encodeBlueprintYAML(bp)
+	yml, err := encodeBlueprintYAML(bp)
+	if err != nil {
+		fail("pack: %v", err)
+		osExit(1)
+		return
+	}
 	// packReadDotEnv rehydrates JWT_SECRET / ADMIN_SEED_PASSWORD /
 	// DATABASE_URL from the app's .env so the packed blueprint round-trips
 	// (see the comment on packReadDotEnv). That reverses the generator's
