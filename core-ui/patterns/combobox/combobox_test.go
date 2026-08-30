@@ -154,6 +154,7 @@ func TestRenderStaticOptions(t *testing.T) {
 		`data-fui-static-options`,
 		`id="pal-listbox-opt-0"`,
 		`data-value="Docs"`,
+		`cmdk-item=""`, // addressable alias for cmdk-style palette suites
 		`data-fui-push-state="/docs/"`,
 		`combobox__opt-label`,
 		`combobox__opt-meta">/docs/<`, // meta text renders the path

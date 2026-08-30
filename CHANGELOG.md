@@ -5,6 +5,34 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Added
+
+- **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
+  navigation, at two grains: `NoSPA` drops a route from the client route
+  manifest so the runtime treats it as unknown and every link to it does a full
+  document load; `data-fui-nav="off"` on an anchor declines the soft navigation
+  for that one link. Both exist for ported pages that bind their behavior at
+  script load — a soft swap never re-runs those initializers, so every handler
+  on the destination dies. See [porting](porting.md).
+
+- **`UIHost.PageHandler(path)`** renders a registered screen as a full page,
+  chrome included, from a route mounted on the framework router. Needed when an
+  app wildcard subtree (`{path...}`) claims a bare path: the mux redirects it to
+  a trailing-slash form the NotFound dispatch never resolves, so the wrong
+  screen answers. A dynamic pattern is passed through rather than forced, since
+  rewriting it would hand the literal `{id}` to param capture.
+
+- **`ScreenStatusCode`**, an optional screen interface, overrides the HTTP
+  status of a page that rendered successfully. A screen whose route resolved but
+  whose record is gone renders the not-found body through the layout while
+  signaling 404 to clients and crawlers. Zero or 200 keeps the default.
+
+- **`data-skip-link` on the skip link and `cmdk-item` on static combobox
+  options**, as addressable hooks for host test suites migrating from
+  cmdk-style palettes. Inert for everyone else.
+
 ## [0.75.0] - 2026-08-29
 
 ### Added
