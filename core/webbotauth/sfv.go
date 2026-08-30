@@ -517,6 +517,21 @@ func writeParams(b *strings.Builder, p sfParams) {
 	}
 }
 
+// serializeList serializes a top-level Structured Fields List: items
+// joined with ", ". Distinct from serializeInnerList, which parenthesises
+// and space-separates. Emitting one where the other belongs changes the
+// signature base and fails verification against every conformant signer.
+func serializeList(items []sfItem) string {
+	var b strings.Builder
+	for i, it := range items {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		writeItem(&b, it)
+	}
+	return b.String()
+}
+
 func serializeInnerList(il sfInnerList) string {
 	var b strings.Builder
 	b.WriteByte('(')

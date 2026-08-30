@@ -112,6 +112,12 @@ func New(require bool, log *slog.Logger) *Verifier {
 // The default is observe on purpose: a verification bug in
 // draft-tracking middleware must not be able to take an app's traffic
 // down.
+// maxSignaturesPerRequest caps how many Signature-Input members one
+// request may present. Real senders sign once, occasionally twice during
+// a key rotation; the cap exists so a sender cannot buy N outbound
+// discovery round-trips with one cheap request.
+const maxSignaturesPerRequest = 4
+
 func (v *Verifier) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		res := v.VerifyRequest(r)
@@ -126,7 +132,7 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 		default:
 			v.log.Debug("webbotauth: unverified request", "reason", res.Reason)
 		}
-		if v.require && res.Outcome != OutcomeVerified {
+		if v.require && res.Outcome != OutcomeVerified && !isPublicDiscoveryPath(r.URL.Path) {
 			w.Header().Set("Accept-Signature", `wba=("@authority" "signature-agent");created;expires;keyid;tag="web-bot-auth";alg="ed25519"`)
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusForbidden)
@@ -135,6 +141,15 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isPublicDiscoveryPath reports whether a path must stay reachable
+// without a verified signature. The site's own key directory is the
+// only such path: a remote verifier fetches it to check the signature
+// on requests we send, and refusing it in require mode means nobody can
+// ever reach the state require mode demands.
+func isPublicDiscoveryPath(path string) bool {
+	return path == directoryWellKnown
 }
 
 // VerifyRequest runs the full verification pass over r. Multiple
@@ -158,6 +173,15 @@ func (v *Verifier) VerifyRequest(r *http.Request) Result {
 	sigs, err := parseSFDictionary(sigRaw)
 	if err != nil {
 		return Result{Outcome: OutcomeInvalid, Reason: "malformed Signature"}
+	}
+	// One request can name as many Signature-Input members as it likes,
+	// and each can cost a DNS check plus a directory fetch. The resolver
+	// coalesces identical identifiers, which bounds nothing for a sender
+	// naming distinct hosts on purpose, so the count is capped here.
+	if len(inputs.members) > maxSignaturesPerRequest {
+		return Result{Outcome: OutcomeInvalid,
+			Reason: fmt.Sprintf("Signature-Input carries %d members, over the %d limit",
+				len(inputs.members), maxSignaturesPerRequest)}
 	}
 	var firstInvalid *Result
 	var lastReason string

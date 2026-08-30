@@ -22,6 +22,7 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -315,9 +316,14 @@ func TestSignedCard_HostileHostHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { resp.Body.Close() })
-	buf := make([]byte, 1<<20)
-	n, _ := resp.Body.Read(buf)
-	body := string(buf[:n])
+	// io.ReadAll, not a single Read: one Read may return a partial body,
+	// and a body truncated before "evil.example" would make this guard
+	// pass for a reason that has nothing to do with the card.
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read card: %v", err)
+	}
+	body := string(raw)
 	if strings.Contains(body, "evil.example") {
 		t.Fatalf("signed card contains hostile host:\n%s", body)
 	}

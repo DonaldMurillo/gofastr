@@ -48,6 +48,7 @@ package webbotauth
 import (
 	"container/list"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -208,6 +209,15 @@ func guardedTransport(allowPrivate bool) *http.Transport {
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.DialContext = dialer.DialContext
+	if !allowPrivate {
+		// Clone() carries ProxyFromEnvironment with it. With HTTPS_PROXY
+		// set, the dial-time Control hook only ever sees the proxy's
+		// address, while the proxy resolves and connects to the host we
+		// were told to fetch — so the whole netguard chain inspects the
+		// wrong endpoint and an internal target goes through. There is
+		// no proxy configuration that makes this checkable from here.
+		tr.Proxy = nil
+	}
 	tr.TLSHandshakeTimeout = 3 * time.Second
 	tr.ResponseHeaderTimeout = 4 * time.Second
 	return tr
@@ -434,6 +444,13 @@ func (d *directoryResolver) fetchCoalesced(ctx context.Context, ref *agentRef) (
 			e := v.(*cacheEntry)
 			e.stale = true
 			d.pos.put(ref.identifier, e)
+			return nil, err
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// The caller went away (or ran out of budget). That is not
+			// evidence about the directory, and caching it would let a
+			// client that aborts repeatedly keep a real agent refused
+			// for the whole negative TTL.
 			return nil, err
 		}
 		d.neg.put(ref.identifier, &negativeEntry{reason: err.Error(), expiresAt: d.now().Add(d.negativeTTL)})

@@ -427,7 +427,9 @@ func fieldValue(header http.Header, name string, p sfParams) (string, error) {
 			trimmed := strings.Trim(v, " \t")
 			items = append(items, sfItem{typ: sfBytes, bs: []byte(trimmed)})
 		}
-		return serializeInnerList(sfInnerList{items: items}), nil
+		// RFC 9421 2.1.3: multiple field lines become a List of Byte
+		// Sequences, not an Inner List.
+		return serializeList(items), nil
 	}
 	if p.has("sf") {
 		combined := combineFieldValues(values)
@@ -482,7 +484,8 @@ func strictSerializeField(s string) (string, error) {
 			return "", fmt.Errorf("trailing comma in structured field")
 		}
 	}
-	return serializeInnerList(sfInnerList{items: items}), nil
+	// RFC 9421 2.1.1: a List field re-serializes comma-separated.
+	return serializeList(items), nil
 }
 
 // serializeDictionaryString parses then canonically re-serializes a
