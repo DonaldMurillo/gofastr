@@ -355,6 +355,13 @@ func (v *Verifier) verifyOne(r *http.Request, inputs, sigs *sfDictionary, m sfMe
 	// Key resolution: (identifier URL, keyid) lookup.
 	set, err := v.resolver.resolve(r.Context(), ref)
 	if err != nil {
+		// Deliberately no Retryable here: nothing in the fetch path
+		// produces a busy sentinel today, so a check would be dead code.
+		// If one is ever added — the fetch semaphore in directory.go is
+		// the obvious place — this site must match it the way the
+		// Signature-Agent path above matches ErrResolverBusy, or a
+		// saturated fetch budget will silently answer 403 in require
+		// mode.
 		return Result{Outcome: OutcomeUnverified, Label: label, Reason: err.Error()}
 	}
 	key := set.selectKey(keyid, now)
