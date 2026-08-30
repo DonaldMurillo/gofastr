@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -374,5 +376,41 @@ func TestSidebarExtraAttrsDataCollapsedDropped(t *testing.T) {
 	root := out[:strings.Index(out, ">")+1]
 	if strings.Count(root, "data-collapsed") != 1 || !strings.Contains(root, `data-collapsed="true"`) {
 		t.Errorf("caller data-collapsed must be dropped in favour of the component's own value:\n%s", root)
+	}
+}
+
+// SidebarBody must ship as one scoped root (style marker + nav + footer
+// inside it) without a nested data-fui-sidebar root, and the full
+// Sidebar shell must still own exactly one.
+func TestSidebarBodySingleScopedRoot(t *testing.T) {
+	out := string(ui.SidebarBody(ui.SidebarConfig{
+		NavLabel: "Dashboard",
+		Footer:   render.HTML(`<a href="/x">x</a>`),
+		Items:    []ui.SidebarItem{{Label: "Home", Href: "/"}},
+	}))
+	if !strings.HasPrefix(out, `<div class="ui-sidebar ui-sidebar__body" data-fui-comp="ui-sidebar">`) {
+		t.Fatalf("SidebarBody root missing scope: %.120s", out)
+	}
+	if strings.Count(out, "data-fui-sidebar\"") != 0 || strings.Count(out, "data-fui-sidebar ") != 0 {
+		// no data-fui-sidebar attribute anywhere in the body root
+		if strings.Contains(out, `data-fui-sidebar`) {
+			t.Fatal("SidebarBody must not emit data-fui-sidebar (runtime would treat it as a sidebar root)")
+		}
+	}
+	for _, want := range []string{`aria-label="Dashboard"`, `ui-sidebar__footer`, `>x</a>`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("SidebarBody missing %q", want)
+		}
+	}
+}
+
+func TestSidebarShellStillSingleRoot(t *testing.T) {
+	c := ui.Sidebar(ui.SidebarConfig{Items: []ui.SidebarItem{{Label: "Home", Href: "/"}}})
+	out := string(component.RenderComponent(c))
+	if got := strings.Count(out, `data-fui-sidebar`); got != 1 {
+		t.Fatalf("full Sidebar must emit exactly one data-fui-sidebar root, got %d", got)
+	}
+	if strings.Contains(out, `ui-sidebar__body`) {
+		t.Fatal("full Sidebar must not nest a SidebarBody root")
 	}
 }
