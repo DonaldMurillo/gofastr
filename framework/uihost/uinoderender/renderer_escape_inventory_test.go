@@ -391,10 +391,18 @@ func schemaStringFields(t *testing.T, sc uiSchema) []stringField {
 
 // nonStringScalars are field types the walk ignores deliberately: they
 // cannot carry markup.
+//
+// "any" is deliberately absent. It is an alias for interface{}, which the
+// walker treats as a hard failure below, but it parses as an *ast.Ident
+// rather than an *ast.InterfaceType — so listing it here would classify
+// an open-ended field as a bounded scalar and let a prop that can hold a
+// string need neither coverage nor an exemption. Same type, opposite
+// treatment, and the hole would be invisible: verified by adding an
+// any-typed prop, which passed silently before this line was removed.
 var nonStringScalars = map[string]bool{
 	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
 	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
-	"float32": true, "float64": true, "bool": true, "any": true,
+	"float32": true, "float64": true, "bool": true,
 }
 
 // walkSchemaStruct appends the string fields of st to out. Identity is the
