@@ -307,3 +307,238 @@ func TestComputedReducerOwnPropOnly(t *testing.T) {
 		t.Error("SECURITY: [computed-reducer] recompute resolves the reducer without an own-property guard — `_reducers[\"constructor\"]` resolves to the inherited Object (typeof 'function') and gets invoked, bypassing the missing-reducer no-op contract. Gate on Object.prototype.hasOwnProperty.call(_reducers, reducerName).")
 	}
 }
+
+// comboboxFallbackChecksScheme pins the defense-in-depth contract for
+// pickOption's hard-load fallback: when window.__gofastr.navigate has
+// not booted, the raw `location.href = dest` assignment must still be
+// dominated by the same scheme/origin gate the SPA navigator uses
+// (_originOK subsumes _isUnsafeSignalUrl's javascript:/vbscript:/
+// non-image data: checks — see TestRuntimeNavigateRejectsUnsafeSchemes
+// in runtime_test.go). dest is a server-rendered data-fui-push-state
+// attribute on RPC-injected option markup; a server that reflects
+// request input into it must not gain a scheme bypass just because the
+// runtime booted late.
+//
+// The sibling TestComboboxPickOptionHonorsPushState only requires
+// "navigate" to appear anywhere in the module, so weakening the
+// fallback would not fail it — this test is the pin that would.
+//
+// Dominance is approximated lexically, per enclosing block: a gate
+// counts when it appears in an enclosing block's own if/else-if
+// condition or in the statements preceding the assignment inside its
+// own block. An if-statement a bare `else` attaches to does not
+// dominate the else branch, so its condition is excluded.
+//
+// Surface: the fallback branch of pickOption in src/combobox.js.
+func TestComboboxFallbackChecksScheme(t *testing.T) {
+	src := readSrc(t, filepath.Join("src", "combobox.js"))
+
+	idx := strings.Index(src, "pickOption")
+	if idx < 0 {
+		t.Fatal("could not locate pickOption in src/combobox.js")
+	}
+	open := idx + strings.Index(src[idx:], "{")
+	if open < idx {
+		t.Fatal("could not locate pickOption body opener")
+	}
+	end := -1
+	for depth, i := 0, open; i < len(src); i++ {
+		switch src[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				end = i
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
+	if end < 0 {
+		t.Fatal("could not locate pickOption body end")
+	}
+	body := src[open+1 : end]
+
+	foundAssignment := false
+	for start := 0; ; {
+		rel := strings.Index(body[start:], "location.href")
+		if rel < 0 {
+			break
+		}
+		pos := start + rel
+		start = pos + len("location.href")
+
+		// Only assignments (`location.href = …`), not reads or
+		// strict-equality comparisons.
+		tail := strings.TrimLeft(body[start:], " \t\r\n")
+		if !strings.HasPrefix(tail, "=") || strings.HasPrefix(tail, "==") {
+			continue
+		}
+		foundAssignment = true
+
+		// Walk the chain of blocks enclosing the assignment,
+		// innermost first. A gate satisfies the property when it
+		// appears in a block's own condition or in the statements of
+		// that block preceding the nested statement the chain
+		// descends into.
+		gated := false
+		reportStart := pos
+		childStmt := pos
+		for p := pos; ; {
+			opener := innermostOpenerBefore(body, p)
+			if opener < 0 {
+				break
+			}
+			cond, nodeStart := "", opener
+			if j := skipSpaceBack(body, opener-1); j >= 0 && body[j] == ')' {
+				if k := matchParenBack(body, j); k >= 0 {
+					cond = body[k : j+1]
+					nodeStart = k
+				}
+			}
+			// Cut the node's statement window at the start of the
+			// statement the chain descends into. A bare `else` block
+			// is part of the preceding if-statement, whose condition
+			// does NOT dominate the else branch.
+			cut := childStmt
+			if cut != pos {
+				j := skipSpaceBack(body, cut-1)
+				if (j >= 0 && body[j] == '}') || isBareElseOpen(body, cut) {
+					cut = ifStmtStartBefore(body, cut)
+				}
+			}
+			if opener+1 <= cut && cut <= len(body) {
+				window := cond + body[opener+1:cut]
+				if strings.Contains(window, "_isUnsafeSignalUrl") || strings.Contains(window, "_originOK") {
+					gated = true
+				}
+			}
+			if nodeStart < reportStart {
+				reportStart = nodeStart
+			}
+			if nodeStart == 0 {
+				break
+			}
+			p = nodeStart
+			childStmt = nodeStart
+		}
+		if !gated {
+			t.Errorf("SECURITY: [combobox-nav] pickOption assigns location.href without a dominating _isUnsafeSignalUrl/_originOK gate; guard window:\n%s", body[reportStart:pos+len("location.href")])
+		}
+	}
+	if !foundAssignment {
+		t.Error("pickOption no longer contains a location.href fallback — update this pin to the new navigation form")
+	}
+}
+
+// innermostOpenerBefore returns the index of the innermost unmatched `{`
+// at or before pos-1 in s, or -1. Scanning backwards, a `}` raises the
+// depth and the `{` that pairs with it is skipped.
+func innermostOpenerBefore(s string, pos int) int {
+	depth := 0
+	for i := pos - 1; i >= 0; i-- {
+		switch s[i] {
+		case '}':
+			depth++
+		case '{':
+			if depth == 0 {
+				return i
+			}
+			depth--
+		}
+	}
+	return -1
+}
+
+// matchParenBack returns the index of the `(` that pairs with the `)` at
+// index i in s, or -1.
+func matchParenBack(s string, i int) int {
+	depth := 0
+	for ; i >= 0; i-- {
+		switch s[i] {
+		case ')':
+			depth++
+		case '(':
+			if depth <= 1 {
+				return i
+			}
+			depth--
+		}
+	}
+	return -1
+}
+
+// skipSpaceBack returns the index of the last non-space char at or
+// before pos in s, or -1.
+func skipSpaceBack(s string, pos int) int {
+	for i := pos; i >= 0; i-- {
+		switch s[i] {
+		case ' ', '\t', '\r', '\n':
+		default:
+			return i
+		}
+	}
+	return -1
+}
+
+// isBareElseOpen reports whether the block opener at index i in s is a
+// bare `else {` (no condition of its own), i.e. the preceding token is
+// the else keyword.
+func isBareElseOpen(s string, i int) bool {
+	j := skipSpaceBack(s, i-1)
+	if j < 3 || j-3 > len(s)-1 {
+		return false
+	}
+	if s[j-3:j+1] != "else" {
+		return false
+	}
+	// Reject identifiers merely ending in "else" (e.g. `xelse`).
+	if k := j - 4; k >= 0 {
+		c := s[k]
+		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// ifStmtStartBefore returns the start of the if-statement the bare
+// `else` block at index elseOpen belongs to: its condition's `(` when
+// the associated if-block is headed by one, else that block's `{`.
+func ifStmtStartBefore(s string, elseOpen int) int {
+	j := skipSpaceBack(s, elseOpen-1)
+	if j >= 3 && s[j-3:j+1] == "else" {
+		// Bare `else {` — hop over the keyword to the if-block's `}`.
+		j = skipSpaceBack(s, j-4)
+	}
+	if j < 0 || s[j] != '}' {
+		return elseOpen
+	}
+	depth := 0
+	open := -1
+	for i := j; i >= 0; i-- {
+		switch s[i] {
+		case '}':
+			depth++
+		case '{':
+			depth--
+			if depth == 0 {
+				open = i
+			}
+		}
+		if open >= 0 {
+			break
+		}
+	}
+	if open < 0 {
+		return elseOpen
+	}
+	if k := skipSpaceBack(s, open-1); k >= 0 && s[k] == ')' {
+		if m := matchParenBack(s, k); m >= 0 {
+			return m
+		}
+	}
+	return open
+}
