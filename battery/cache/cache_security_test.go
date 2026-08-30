@@ -635,3 +635,60 @@ func TestCacheMiddleware_VaryAllHeaderValues(t *testing.T) {
 		}
 	})
 }
+
+// CLEAR-BLAST-RADIUS: the Cache interface scopes Clear to "removes all
+// entries from the cache" (cache.go) — the entries THIS cache instance owns.
+// MemoryCache.Clear wipes exactly its own map (memory.go), but RedisCache.Clear
+// ignores cfg.prefix entirely and issues FlushDB (redis.go: "Clear removes all
+// keys from the current Redis database"), every key in the selected Redis
+// database, not just this cache's namespace. Every other RedisCache op routes
+// through prefixedKey(); Clear is the one operation whose blast radius differs
+// between the twins. With per-tenant prefixes over one shared Redis — the
+// "prefix namespacing" the battery documents — one tenant's Clear destroys
+// every other tenant's entries (cross-tenant data destruction) and any foreign
+// keys sharing the database. Clear's wipe must stay scoped to the keys
+// prefixedKey() can produce.
+func TestRedisCache_ClearScopedToPrefix(t *testing.T) {
+	srv := &stubRedisClient{}
+	tenantA := NewRedisCache(srv, WithPrefix("appA"))
+	tenantB := NewRedisCache(srv, WithPrefix("appB"))
+	ctx := context.Background()
+
+	// Plant one entry per namespace plus a foreign key owned by neither
+	// cache (another service sharing the same Redis database).
+	if err := tenantA.Set(ctx, "session", "a-secret", time.Minute); err != nil {
+		t.Fatalf("tenantA.Set: %v", err)
+	}
+	if err := tenantB.Set(ctx, "cart", `{"sku":"X"}`, time.Minute); err != nil {
+		t.Fatalf("tenantB.Set: %v", err)
+	}
+	srv.kv["other-service:lock"] = "held"
+
+	if err := tenantA.Clear(ctx); err != nil {
+		t.Fatalf("tenantA.Clear: %v", err)
+	}
+
+	// Clear's contract does remove the instance's own entries.
+	var a string
+	if err := tenantA.Get(ctx, "session", &a); !errors.Is(err, ErrCacheMiss) {
+		t.Fatalf("Clear left the cache's own entry in place (err=%v)", err)
+	}
+
+	// Another namespace's entry must SURVIVE this cache's Clear: it is not
+	// an entry of this cache.
+	var b string
+	if err := tenantB.Get(ctx, "cart", &b); err != nil {
+		t.Fatalf("SECURITY: [cache] Clear on WithPrefix(%q) destroyed another "+
+			"namespace's entry: tenantB Get(%q) = %v. The contract is \"removes all "+
+			"entries from the cache\", but the Redis backend FlushDBs the whole "+
+			"database, so one tenant's Clear is every tenant's data-loss event.",
+			"appA", "cart", err)
+	}
+	// A foreign key owned by neither cache must survive too.
+	if v, ok := srv.kv["other-service:lock"]; !ok || v != "held" {
+		t.Fatalf("SECURITY: [cache] Clear on a prefixed cache destroyed the foreign "+
+			"key other-service:lock owned by neither cache (present=%v). The wipe "+
+			"must be scoped to the keys prefixedKey() can produce, not the whole "+
+			"database.", ok)
+	}
+}

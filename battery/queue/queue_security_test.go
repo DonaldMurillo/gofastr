@@ -574,6 +574,126 @@ func TestSQLiteDequeueConcurrentNoBusy(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Property: a completion (Nack) presented by a claim that is no longer
+// current must not mutate the current claimant's state.
+// Surface: DBQueue.Nack claim fencing (redis twin pinned by
+// TestRedisStaleNackCannotTouchReclaimant).
+//
+// DB-NACK-UNFENCED: the DB backend's lease-expiry clause (eligibleWhere:
+// "status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $cutoff AND
+// attempts < max_attempts") re-claims a row whose worker is still running,
+// so a stale claimant is a designed state on this backend — exactly the
+// condition queue.go's Nack contract describes ("Backends with lease fencing
+// (RedisQueue) verify Job.ClaimToken and treat a stale claim's Nack as a
+// no-op"). RedisQueue.Nack enforces it via ownsClaim/Job.ClaimToken
+// (redis.go); DBQueue.Nack does not: both arms UPDATE by bare job ID
+// (db.go: no-backoff "SET status = CASE WHEN attempts >= max_attempts THEN
+// 'failed' ELSE 'pending' END WHERE id = $1"; backoff "SET status='pending',
+// scheduled_at=$1 WHERE id = $2") — no claim identity, and not even the
+// status='claimed' guard its own Ack carries. A stale W1 Nack therefore
+// flips W2's LIVE row to 'pending' (a third worker claims it and the handler
+// runs concurrently with W2 — duplicate emails/webhooks/charges) or to
+// 'failed' (dead-letters a job a live worker is executing).
+//
+// Note: db.go's Ack doc acknowledges "DBQueue has no per-claim fencing (no
+// ClaimToken column), so a stale Ack ... still deletes that claim, within
+// the at-least-once contract". That rationale covers Ack's delete direction
+// (lossy completion); the Nack arms go the opposite way — they manufacture a
+// duplicate in-flight delivery — and no doc blesses that.
+// ============================================================================
+
+// TestDBStaleNackCannotTouchReclaimant is the DB twin of
+// TestRedisStaleNackCannotTouchReclaimant: W1 claims, stalls past the lease,
+// W2 re-claims the row; W1's late Nack must NOT settle or alter W2's claim.
+// Covers all three Nack surfaces: the no-backoff requeue arm, the
+// final-attempt dead-letter arm, and the backoff requeue arm.
+func TestDBStaleNackCannotTouchReclaimant(t *testing.T) {
+	cases := []struct {
+		name        string
+		maxAttempts int
+		backoff     bool
+	}{
+		{"no-backoff requeue arm", 3, false},
+		{"final-attempt dead-letter arm", 2, false},
+		{"backoff requeue arm", 5, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var opts []DBQueueOption
+			if tc.backoff {
+				opts = append(opts, WithBackoff(time.Second, time.Minute))
+			}
+			db, q := openDBQueueOpts(t, append([]DBQueueOption{WithWorkers(0)}, opts...)...)
+			q.SetLeaseTimeout(time.Minute)
+			// Fake clock: no workers are running, so the single test goroutine
+			// is the only reader of q.now; lease expiry is driven by advancing
+			// the clock, not by sleeping (see TestDBReclaimsStaleClaimedJob).
+			now := time.Now()
+			q.now = func() time.Time { return now }
+			ctx := context.Background()
+
+			if err := q.Enqueue(ctx, Job{ID: "pay", Type: "x", MaxAttempts: tc.maxAttempts}); err != nil {
+				t.Fatalf("enqueue: %v", err)
+			}
+			w1, err := q.Dequeue(ctx)
+			if err != nil {
+				t.Fatalf("W1 dequeue: %v", err)
+			}
+			// W1 stalls past the lease; the row becomes re-eligible and W2
+			// re-claims it (the designed crash-recovery path).
+			now = now.Add(2 * time.Minute)
+			w2, err := q.Dequeue(ctx)
+			if err != nil {
+				t.Fatalf("W2 dequeue: %v", err)
+			}
+			if w2.ID != w1.ID {
+				t.Fatalf("W2 claimed %q, want the same job %q (lease reclaim)", w2.ID, w1.ID)
+			}
+
+			// W1's handler fails late and Nacks the claim it no longer holds.
+			if err := q.Nack(ctx, w1); err != nil {
+				t.Fatalf("stale nack must be a no-op, not an error: %v", err)
+			}
+
+			// W2's claim must be untouched: the row stays 'claimed' by W2.
+			var status string
+			if err := db.QueryRow("SELECT status FROM queue_jobs WHERE id = ?", w1.ID).Scan(&status); err != nil {
+				t.Fatalf("row vanished under stale nack: %v", err)
+			}
+			if status != "claimed" {
+				t.Fatalf("SECURITY: [queue] stale claimant's Nack mutated the live "+
+					"claim: row status = %q, want \"claimed\" (W2 in flight, attempts=%d/%d). "+
+					"The DB Nack arms UPDATE by bare job ID with no claim fence, so a "+
+					"stale worker re-enqueues or dead-letters the re-claimant's job and "+
+					"the handler runs concurrently twice. The redis twin fences this via "+
+					"Job.ClaimToken (TestRedisStaleNackCannotTouchReclaimant).",
+					status, w2.Attempts, tc.maxAttempts)
+			}
+
+			// The stale nack must not have made the row re-claimable while W2
+			// holds it: the clock is frozen just after W2's claim, inside its
+			// fresh lease, so nothing may be eligible.
+			if _, err := q.Dequeue(ctx); !errors.Is(err, ErrNoJob) {
+				t.Fatalf("SECURITY: [queue] stale Nack made the re-claimant's in-flight "+
+					"job claimable by a third worker (dequeue err=%v): concurrent "+
+					"double execution.", err)
+			}
+
+			// Positive control: the CURRENT claimant (W2) still completes
+			// normally; fencing must not break the happy path.
+			if err := q.Ack(ctx, w2); err != nil {
+				t.Fatalf("current claimant's ack: %v", err)
+			}
+			var rows int
+			db.QueryRow("SELECT COUNT(*) FROM queue_jobs WHERE id = ?", w1.ID).Scan(&rows)
+			if rows != 0 {
+				t.Fatalf("current claimant's ack did not remove the row (rows=%d)", rows)
+			}
+		})
+	}
+}
+
 // nilIntMap and nilIntSlice source the panic's cause from a call rather
 // than a local the compiler can see through. The handlers below must panic
 // so the worker's recovery path runs; spelled inline they read as defects
