@@ -155,7 +155,11 @@
     if (!panel) return;
     const group = r.getAttribute('data-fui-menu-radio');
     for (const sib of panel.querySelectorAll('[role="menuitemradio"]')) {
-      if (group === null || sib.getAttribute('data-fui-menu-radio') === group) {
+      // group === null (a hand-authored radio with no group key, never
+      // emitted by framework/ui) is an implicit group of ONE: only the
+      // activated row, never every radio in the panel.
+      const same = group === null ? sib === r : sib.getAttribute('data-fui-menu-radio') === group;
+      if (same) {
         sib.setAttribute('aria-checked', sib === r ? 'true' : 'false');
       }
     }

@@ -286,7 +286,11 @@ func writeMenuItem(b *strings.Builder, it MenuItem, parentPanelID string, idx in
 	}
 	disabledAttr := ""
 	if it.Disabled {
-		disabledAttr = `aria-disabled="true"`
+		// Leading space: this is the only optional fragment in the
+		// row's attribute chain whose neighbours (tabindex above,
+		// data-fui-menu-radio on radio rows) do NOT carry one, so
+		// omitting it glues two attributes together.
+		disabledAttr = ` aria-disabled="true"`
 		if tag == "button" {
 			disabledAttr += ` disabled`
 		}

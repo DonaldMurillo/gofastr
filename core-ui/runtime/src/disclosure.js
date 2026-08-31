@@ -112,16 +112,30 @@
       if (!d || d.tagName !== 'DETAILS' || !d.hasAttribute('data-fui-disclosure')) return;
       mirror(d);
       // Menu disclosure: on open, focus the first menuitem row of the
-      // panel (radio rows included — a submenu whose every row is a
-      // menuitemradio must still land focus, not find nothing).
+      // disclosure's OWN panel (radio rows included — a submenu whose
+      // every row is a menuitemradio must still land focus, not find
+      // nothing).
+      //
+      // The search is scoped to the panel (':scope > [role="menu"]',
+      // then rows whose closest('[role=menu]') IS that panel — the same
+      // scoping menu.js rows() uses). A plain descendant search runs in
+      // document order and, when the panel's first row is itself a
+      // submenu parent, matches a row INSIDE the still-closed nested
+      // <details> first: hidden, so .focus() is a silent no-op and the
+      // menu opens keyboard-dead. A same-panel submenu-parent summary is
+      // a legitimate first row, so there is no :not(summary); the
+      // parent row of a nested disclosure lives outside that
+      // disclosure's panel and cannot yank focus back.
       if (d.open && d.hasAttribute('data-fui-menu')) {
-        // :not(summary) — a nested submenu's parent row IS a
-        // <summary role=menuitem> and a plain descendant search would
-        // match it first, yanking focus back to the row the user just
-        // left. The row lives outside the panel; the first PANEL row
-        // is what open should focus.
-        const first = d.querySelector('[role="menuitem"]:not(summary):not([aria-disabled="true"]),[role="menuitemradio"]:not(summary):not([aria-disabled="true"])');
-        if (first) first.focus();
+        const panel = d.querySelector(':scope > [role="menu"]');
+        if (panel) {
+          const first = Array.from(
+            panel.querySelectorAll('[role="menuitem"],[role="menuitemradio"]')
+          ).find(
+            (n) => n.closest('[role="menu"]') === panel && n.getAttribute('aria-disabled') !== 'true'
+          );
+          if (first) first.focus();
+        }
       }
       if (d.hasAttribute('data-fui-disclosure-trap')) applyTrap(d, d.open);
     }, true);

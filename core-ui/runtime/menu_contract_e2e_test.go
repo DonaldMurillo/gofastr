@@ -10,12 +10,14 @@ import (
 
 // menuContractFixture is the exact SSR of a framework/ui.Menu carrying
 // every shape this contract covers: plain rows, a Palette submenu of
-// menuitemradio rows (theme group, Dark checked), a separator, a second
-// radio group in its own submenu (density), and a Disabled submenu
-// parent whose children must stay unreachable. Captured from the
-// component renderer so the fixture cannot drift from production
-// markup (same discipline as the tabs contract fixture).
-const menuContractFixture = `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="um" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="um-panel">Account<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="um-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="ui-menu__label">Profile</span></a><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="um-panel-sub-1"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="um-panel-sub-1-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Palette</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="um-panel-sub-1-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Light</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Auto</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"><span class="ui-menu__label">Dark</span></button></div></details><hr class="ui-menu__sep" role="separator"><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="um-panel-sub-3"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="um-panel-sub-3-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Density</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="um-panel-sub-3-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="density"><span class="ui-menu__label">Cozy</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="density"><span class="ui-menu__label">Compact</span></button></div></details><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="um-panel-sub-4"><summary class="ui-menu__item ui-menu__item--hassub ui-menu__item--disabled" aria-haspopup="menu" aria-controls="um-panel-sub-4-panel" role="menuitem" tabindex="-1" aria-disabled="true"><span class="ui-menu__label">Locked</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="um-panel-sub-4-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Hidden1</span></button><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Hidden2</span></button></div></details></div></details>`
+// menuitemradio rows (theme group, Dark checked, Dark carrying an icon
+// so type-ahead has to skip real icon TEXT and not just pseudo-element
+// content), a separator, a second radio group in its own submenu
+// (density), and a Disabled submenu parent whose children must stay
+// unreachable. Captured from the component renderer so the fixture
+// cannot drift from production markup (same discipline as the tabs
+// contract fixture).
+const menuContractFixture = `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="um" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="um-panel">Account<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="um-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="ui-menu__label">Profile</span></a><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="um-panel-sub-1"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="um-panel-sub-1-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Palette</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="um-panel-sub-1-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Light</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Auto</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"><span class="ui-menu__icon" aria-hidden="true">◐</span><span class="ui-menu__label">Dark</span></button></div></details><hr class="ui-menu__sep" role="separator"><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="um-panel-sub-3"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="um-panel-sub-3-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Density</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="um-panel-sub-3-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="density"><span class="ui-menu__label">Cozy</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="density"><span class="ui-menu__label">Compact</span></button></div></details><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="um-panel-sub-4"><summary class="ui-menu__item ui-menu__item--hassub ui-menu__item--disabled" aria-haspopup="menu" aria-controls="um-panel-sub-4-panel" role="menuitem" tabindex="-1" aria-disabled="true"><span class="ui-menu__label">Locked</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="um-panel-sub-4-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Hidden1</span></button><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Hidden2</span></button></div></details></div></details>`
 
 // menuKey dispatches a keydown on the focused element, the same way the
 // site's menu e2e does: the menu module's listeners are document-level
@@ -293,14 +295,19 @@ func TestMenuRadioArbitration(t *testing.T) {
 	}
 }
 
-// TestMenuTypeAheadMatchesLabelsOnly: the radio check and the submenu
-// caret are CSS pseudo-elements, so type-ahead sees the label alone —
-// typing "d" from Light jumps to Dark.
+// TestMenuTypeAheadMatchesLabelsOnly: type-ahead matches the
+// .ui-menu__label span alone. The radio check and the submenu caret are
+// CSS pseudo-elements (never in textContent), but Dark ALSO carries a
+// real icon span whose text ("◐") IS in the row's textContent — a
+// matcher that reads the whole row sees "◐dark", which neither starts
+// with "d" nor should start with "◐". Both directions are pinned:
+// typing "d" reaches Dark, and typing the icon glyph itself reaches
+// nothing.
 func TestMenuTypeAheadMatchesLabelsOnly(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuContractFixture)
 	ctx := newSeedBrowserCtx(t)
 
-	var atLight, afterD string
+	var atLight, afterD, afterIcon string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -312,6 +319,13 @@ func TestMenuTypeAheadMatchesLabelsOnly(t *testing.T) {
 		menuActiveLabel(&atLight),
 		menuKey("d"),
 		menuActiveLabel(&afterD),
+		// Park focus back on Light, let the 800ms type-ahead buffer
+		// expire (otherwise the prefix becomes "d◐"), then type the
+		// icon glyph: it must match NO row.
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('#um-panel-sub-1-panel [role="menuitemradio"]')).find(r => r.textContent.includes('Light')).focus()`, nil),
+		chromedp.Sleep(900*time.Millisecond),
+		menuKey("◐"),
+		menuActiveLabel(&afterIcon),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +333,10 @@ func TestMenuTypeAheadMatchesLabelsOnly(t *testing.T) {
 		t.Fatalf("focus after opening Palette = %q, want Light", atLight)
 	}
 	if afterD != "Dark" {
-		t.Fatalf("type-ahead 'd' = %q, want Dark (pseudo-element content must not pollute the label)", afterD)
+		t.Fatalf("type-ahead 'd' = %q, want Dark (icon text must not hide the label: '◐dark' does not start with 'd')", afterD)
+	}
+	if afterIcon != "Light" {
+		t.Fatalf("type-ahead '◐' = %q, want focus unchanged on Light (the icon glyph is not part of any label)", afterIcon)
 	}
 }
 
@@ -355,5 +372,191 @@ func TestMenuDisabledParentUnreachable(t *testing.T) {
 	}
 	if lockedOpen != "false" {
 		t.Fatalf("ArrowRight on the disabled parent opened its submenu (%s), want false", lockedOpen)
+	}
+}
+
+// menuSubFirstFixture carries the two shapes the focus-on-open selector
+// regressed on, both captured from the component renderer like
+// menuContractFixture:
+//
+//   - "sf": the panel's FIRST row is itself a submenu parent (SubFirst),
+//     then a plain row. A descendant search for the first plain
+//     [role=menuitem] matches A1 first, hidden inside the still-closed
+//     nested <details>, and .focus() on a hidden row is a silent no-op:
+//     the menu opens with focus on the trigger summary, which carries no
+//     role, so ArrowDown / Home / End / type-ahead are all dead.
+//   - "nest": a parent whose panel's first row is another parent
+//     (Outer -> Inner -> Leaf). Keyboard entry masks this one (menu.js
+//     focuses the first row synchronously before the async toggle
+//     refocus), so both menus here are opened by CLICK.
+const menuSubFirstFixture = `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="sf" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="sf-panel">Menu<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="sf-panel" role="menu" data-fui-menu-panel><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="sf-panel-sub-0"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="sf-panel-sub-0-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">SubFirst</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="sf-panel-sub-0-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">A1</span></button><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">A2</span></button></div></details><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Plain</span></button></div></details><details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="nest" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="nest-panel">Deep<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="nest-panel" role="menu" data-fui-menu-panel><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="nest-panel-sub-0"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="nest-panel-sub-0-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Outer</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="nest-panel-sub-0-panel" role="menu" data-fui-menu-panel><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="nest-panel-sub-0-panel-sub-0"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="nest-panel-sub-0-panel-sub-0-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Inner</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="nest-panel-sub-0-panel-sub-0-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Leaf</span></button></div></details><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Tail</span></button></div></details></div></details>`
+
+// TestMenuFocusOnOpenFirstRowIsSubmenu pins the focus-on-open contract
+// for panels whose first row is itself a submenu parent: opening must
+// focus THAT row (a <summary role=menuitem> in the panel's own scope),
+// never a row hidden inside the still-closed nested <details>. When the
+// search is not scoped to the panel, the hidden row wins document order,
+// .focus() no-ops, and the menu opens keyboard-dead.
+func TestMenuFocusOnOpenFirstRowIsSubmenu(t *testing.T) {
+	g := startGadgetServer(t, `[]`, menuSubFirstFixture)
+	ctx := newSeedBrowserCtx(t)
+
+	var afterOpen, afterDown, nestedAfterOpen, afterSubOpen string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+
+		// Click-open the top menu: focus must land on SubFirst, the
+		// panel's own first row, which is a submenu parent summary.
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="sf"] > summary.ui-menu__trigger').click()`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		menuActiveLabel(&afterOpen),
+		// The open menu must be keyboard-live immediately: ArrowDown
+		// from SubFirst goes to Plain, not into the closed submenu.
+		menuKey("ArrowDown"),
+		menuActiveLabel(&afterDown),
+
+		// The nested shape: opening the nest root lands on Outer (the
+		// root panel's first row is a parent, the sf shape one level
+		// down), and CLICK-opening Outer's submenu must then focus
+		// Inner — Outer's panel has another parent as ITS first row.
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="nest"] > summary.ui-menu__trigger').click()`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		menuActiveLabel(&nestedAfterOpen),
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="nest-panel-sub-0"] > summary').click()`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		menuActiveLabel(&afterSubOpen),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if afterOpen != "SubFirst" {
+		t.Fatalf("focus after open = %q, want SubFirst (the panel's own first row; a hidden row inside the closed submenu means focus landed nowhere)", afterOpen)
+	}
+	if afterDown != "Plain" {
+		t.Fatalf("ArrowDown after open = %q, want Plain (the menu must answer the keyboard the moment it opens)", afterDown)
+	}
+	if nestedAfterOpen != "Outer" {
+		t.Fatalf("focus after opening nest = %q, want Outer (the root panel's own first row)", nestedAfterOpen)
+	}
+	if afterSubOpen != "Inner" {
+		t.Fatalf("focus after click-opening Outer = %q, want Inner (a parent whose panel's first row is another parent)", afterSubOpen)
+	}
+}
+
+// TestMenuSubmenuArrowKeysSwapInRTL: in RTL the open/close arrows swap
+// — ArrowLeft opens a submenu and moves focus in, ArrowRight closes it
+// and returns focus to the parent row — because menu.js reads the
+// row's computed direction per keypress. dir="rtl" is set on the menu
+// root after load, no reload needed.
+func TestMenuSubmenuArrowKeysSwapInRTL(t *testing.T) {
+	g := startGadgetServer(t, `[]`, menuContractFixture)
+	ctx := newSeedBrowserCtx(t)
+
+	var atPalette, subAfterLeft, labelAfterLeft, subAfterRight, labelAfterRight string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="um"]').setAttribute('dir','rtl')`, nil),
+		chromedp.Evaluate(menuOpenTop, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		menuKey("ArrowDown"), // Profile -> Palette
+		menuActiveLabel(&atPalette),
+		// ArrowLeft is the OPEN key in RTL.
+		menuKey("ArrowLeft"),
+		chromedp.Sleep(120*time.Millisecond),
+		menuSubOpen(&subAfterLeft),
+		menuActiveLabel(&labelAfterLeft),
+		// ArrowRight is the CLOSE key in RTL.
+		menuKey("ArrowRight"),
+		chromedp.Sleep(120*time.Millisecond),
+		menuSubOpen(&subAfterRight),
+		menuActiveLabel(&labelAfterRight),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if atPalette != "Palette" {
+		t.Fatalf("ArrowDown after open = %q, want Palette", atPalette)
+	}
+	if subAfterLeft != "true" || labelAfterLeft != "Light" {
+		t.Fatalf("ArrowLeft in RTL: sub=%s focus=%q, want open and Light (ArrowLeft is the open key in RTL)", subAfterLeft, labelAfterLeft)
+	}
+	if subAfterRight != "false" || labelAfterRight != "Palette" {
+		t.Fatalf("ArrowRight in RTL: sub=%s focus=%q, want closed and Palette (ArrowRight is the close key in RTL)", subAfterRight, labelAfterRight)
+	}
+}
+
+// TestMenuHomeJumpsToFirstRow: Home lands on the first enabled row of
+// the own panel. End is pinned by TestMenuDisabledParentUnreachable;
+// Home had no coverage at all.
+func TestMenuHomeJumpsToFirstRow(t *testing.T) {
+	g := startGadgetServer(t, `[]`, menuContractFixture)
+	ctx := newSeedBrowserCtx(t)
+
+	var atEnd, afterHome string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(menuOpenTop, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		menuKey("End"),
+		menuActiveLabel(&atEnd),
+		menuKey("Home"),
+		menuActiveLabel(&afterHome),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if atEnd != "Density" {
+		t.Fatalf("End = %q, want Density", atEnd)
+	}
+	if afterHome != "Profile" {
+		t.Fatalf("Home = %q, want Profile (first enabled row of the panel)", afterHome)
+	}
+}
+
+// menuUngroupedRadioFixture is HAND-WRITTEN, unlike the renderer-captured
+// fixtures above: framework/ui cannot emit a menuitemradio without
+// data-fui-menu-radio (an empty Radio renders the plain menuitem), but
+// the runtime contract covers hand-authored markup too, and menu.js
+// promises that rows without a group key "form an implicit group of one
+// (the row still self-checks)". One panel, two shapes: a g1 pair (A
+// checked) and an ungrouped row U.
+const menuUngroupedRadioFixture = `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ug"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ug-panel">Pick<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ug-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="g1"><span class="ui-menu__label">A</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="g1"><span class="ui-menu__label">B</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false"><span class="ui-menu__label">U</span></button></div></details>`
+
+// TestMenuUngroupedRadioSelfChecks: an ungrouped menuitemradio is an
+// implicit group of one — activating it checks it and touches nobody
+// else, and activating a grouped row never unchecks it. The natural
+// buggy reading of the arbitration loop (group === null matches EVERY
+// radio in the panel) wipes the checked state of real groups.
+func TestMenuUngroupedRadioSelfChecks(t *testing.T) {
+	g := startGadgetServer(t, `[]`, menuUngroupedRadioFixture)
+	ctx := newSeedBrowserCtx(t)
+
+	var afterU, afterB string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="ug"] > summary.ui-menu__trigger').click()`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		// Activate U (no data-fui-menu-radio): U self-checks, the g1
+		// pair keeps its own checked row.
+		menuClickRadio("#ug-panel", "U"),
+		chromedp.Sleep(100*time.Millisecond),
+		menuCheckedMap(&afterU, "#ug-panel"),
+		// Activate B: B takes the g1 check, U keeps its own.
+		menuClickRadio("#ug-panel", "B"),
+		chromedp.Sleep(100*time.Millisecond),
+		menuCheckedMap(&afterB, "#ug-panel"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if afterU != `["A:true","B:false","U:true"]` {
+		t.Fatalf("after activating ungrouped U = %s, want U checked and the g1 pair untouched (implicit group of one)", afterU)
+	}
+	if afterB != `["A:false","B:true","U:true"]` {
+		t.Fatalf("after activating grouped B = %s, want B checked and U keeping its own check", afterB)
 	}
 }

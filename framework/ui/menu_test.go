@@ -207,6 +207,12 @@ func TestMenuItemExtraAttrsCannotOverrideOwned(t *testing.T) {
 // no id attribute, no attribute reordering, no escaping drift.
 // Substring asserts cannot see any of that; only full-output
 // equality can.
+//
+// 2026-08, submenus branch: the two disabled-row goldens were
+// re-captured when aria-disabled gained its leading space (the
+// writeMenuItem attribute-gluing fix — tabindex="-1"aria-disabled
+// parsed only by HTML5 error recovery). Every other entry's bytes are
+// unchanged from the main capture.
 func TestMenuItemZeroValueByteIdentical(t *testing.T) {
 	for _, g := range goldenMenus {
 		t.Run(g.name, func(t *testing.T) {
@@ -243,12 +249,12 @@ var goldenMenus = []struct {
 			Label: "Delete", Danger: true, Disabled: true, Class: "extra-cls",
 			Icon: render.HTML(`<svg width="12"></svg>`),
 		}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-020cb409" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-020cb409-panel">Actions<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-020cb409-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled extra-cls" type="button" role="menuitem" tabindex="-1"aria-disabled="true" disabled><span class="ui-menu__icon" aria-hidden="true"><svg width="12"></svg></span><span class="ui-menu__label">Delete</span></button></div></details>`,
+		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-020cb409" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-020cb409-panel">Actions<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-020cb409-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled extra-cls" type="button" role="menuitem" tabindex="-1" aria-disabled="true" disabled><span class="ui-menu__icon" aria-hidden="true"><svg width="12"></svg></span><span class="ui-menu__label">Delete</span></button></div></details>`,
 	},
 	{
 		name: "disabled-anchor",
 		cfg:  ui.MenuConfig{Label: "Go", Items: []ui.MenuItem{{Label: "Locked", Href: "/x", Disabled: true}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-a636a70b" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-a636a70b-panel">Go<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-a636a70b-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item ui-menu__item--disabled" href="/x" role="menuitem" tabindex="-1"aria-disabled="true"><span class="ui-menu__label">Locked</span></a></div></details>`,
+		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-a636a70b" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-a636a70b-panel">Go<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-a636a70b-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item ui-menu__item--disabled" href="/x" role="menuitem" tabindex="-1" aria-disabled="true"><span class="ui-menu__label">Locked</span></a></div></details>`,
 	},
 	{
 		name: "rpc-confirm-method",
@@ -320,6 +326,18 @@ var goldenMenus = []struct {
 		}},
 		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="view-menu" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="view-menu-panel">View<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="view-menu-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="density"><span class="ui-menu__label">Compact</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="density" data-fui-rpc="/api/density" data-fui-rpc-method="POST"><span class="ui-menu__label">Cozy</span></button></div></details>`,
 	},
+	{
+		// Captured from the current renderer, not main (the shape is
+		// new): a disabled radio row is where the gluing fix's pair
+		// actually changed bytes — data-fui-menu-radio and
+		// aria-disabled must be separated, exactly like tabindex and
+		// aria-disabled on plain rows.
+		name: "disabled-radio",
+		cfg: ui.MenuConfig{ID: "view-menu", Label: "View", Items: []ui.MenuItem{
+			{Label: "Compact", Radio: "density", Disabled: true},
+		}},
+		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="view-menu" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="view-menu-panel">View<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="view-menu-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--disabled" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="density" aria-disabled="true" disabled><span class="ui-menu__label">Compact</span></button></div></details>`,
+	},
 }
 
 // TestMenuItemIDEmittedOnRows: a set ID lands on the rendered row's
@@ -335,11 +353,10 @@ func TestMenuItemIDEmittedOnRows(t *testing.T) {
 	for _, want := range []string{
 		`<button class="ui-menu__item" id="help-toggle" type="button" role="menuitem" tabindex="-1">`,
 		`<a class="ui-menu__item" id="profile-link" href="/me" role="menuitem" tabindex="-1">`,
-		// NOTE: no space before aria-disabled — pre-existing on main
-		// (disabledAttr lacks a leading space; browsers parse-error
-		// and recover). Pinned as-is; fixing it changes zero-value
-		// bytes and is a separate change from MenuItem.ID.
-		`<button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled" id="del" type="button" role="menuitem" tabindex="-1"aria-disabled="true" disabled data-fui-rpc="/api/del" data-fui-rpc-method="DELETE">`,
+		// aria-disabled carries its own leading space; before the
+		// gluing fix it was glued to tabindex (pinned as-is back
+		// then, a defect, not a contract).
+		`<button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled" id="del" type="button" role="menuitem" tabindex="-1" aria-disabled="true" disabled data-fui-rpc="/api/del" data-fui-rpc-method="DELETE">`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("row with ID missing exact open tag %q:\n%s", want, out)
@@ -502,23 +519,25 @@ func TestMenuRadioRows(t *testing.T) {
 	out := string(ui.Menu(ui.MenuConfig{Label: "Theme", Items: []ui.MenuItem{
 		{Label: "Light", Radio: "theme"},
 		{Label: "Dark", Radio: "theme", Checked: true, Icon: render.HTML("◐")},
-		{Label: "Plain"}, // mixed panel: radio rows + plain row coexist
+		{Label: "Plain"},                // mixed panel: radio rows + plain row coexist
+		{Label: "Ghost", Checked: true}, // Checked without Radio: inert
 	}}))
 	for _, want := range []string{
 		`role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"`,
 		`role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"`,
 		`<span class="ui-menu__label">Dark</span>`,
+		// The ghost row is a plain menuitem: no radio role, no group
+		// attr, no aria-checked, nothing between tabindex and label.
+		`role="menuitem" tabindex="-1"><span class="ui-menu__label">Ghost</span>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("radio row missing %q:\n%s", want, out)
 		}
 	}
-	// Checked without Radio is inert, like Confirm without RPC.
-	if strings.Contains(strings.Replace(out, `aria-haspopup="menu"`, "", 1), "aria-checked") == false {
-		// (sanity: exactly two aria-checked attrs, both on radio rows)
-		if n := strings.Count(out, `aria-checked`); n != 2 {
-			t.Errorf("got %d aria-checked attrs, want 2:\n%s", n, out)
-		}
+	// Exactly two aria-checked attrs ship (the two radio rows), so
+	// Checked without Radio really is inert, like Confirm without RPC.
+	if n := strings.Count(out, `aria-checked`); n != 2 {
+		t.Errorf("got %d aria-checked attrs, want exactly 2 (Checked without Radio must not emit one):\n%s", n, out)
 	}
 }
 
@@ -539,6 +558,25 @@ func TestMenuRadioExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 	if strings.Contains(out, "evil") {
 		t.Errorf("smuggled group name survived:\n%s", out)
+	}
+}
+
+// TestMenuPlainRowExtraAttrsCannotSmuggleAriaChecked: aria-checked is
+// owned on PLAIN menuitems too, not just radio rows. Main passed a
+// smuggled aria-checked through (it was not in the owned-key list);
+// joining the radio contract tightened ownership, deliberately: a
+// plain menuitem carrying aria-checked is an ARIA conformance bug the
+// component refuses to emit, whatever the caller wires.
+func TestMenuPlainRowExtraAttrsCannotSmuggleAriaChecked(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{Label: "Actions", Items: []ui.MenuItem{{
+		Label: "Edit", Checked: true, // inert without Radio, like Confirm without RPC
+		ExtraAttrs: map[string]string{"aria-checked": "true", "data-test": "ok"},
+	}}}))
+	if strings.Contains(out, "aria-checked") {
+		t.Errorf("plain menuitem emitted a smuggled or inert aria-checked:\n%s", out)
+	}
+	if !strings.Contains(out, `data-test="ok"`) {
+		t.Errorf("legitimate ExtraAttrs key dropped:\n%s", out)
 	}
 }
 
