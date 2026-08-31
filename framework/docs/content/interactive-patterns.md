@@ -683,7 +683,7 @@ own runtime modules for client-side behavior.
 | File Dropzone | `dropzone.js` | Drag-and-drop file handling with previews |
 | Gallery + Lightbox | `lightbox.js` | Image zoom overlay, prev/next, keyboard |
 | Infinite Scroll | `infinitescroll.js` | IntersectionObserver-driven lazy loading |
-| Menu | `menu.js` | Keyboard navigation (arrows, Home/End, type-ahead) |
+| Menu | `menu.js` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
 | Multi-select | `multiselect.js` | Checkbox group with chip display |
 | Notification Bell | (uses Popover) | Bell + unread badge + dropdown |
 | Popover | `popover.js` | Anchored positioning, auto-flip, arrow drawing |

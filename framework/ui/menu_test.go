@@ -296,6 +296,30 @@ var goldenMenus = []struct {
 		cfg:  ui.MenuConfig{Label: "P", Items: []ui.MenuItem{{Label: "a"}}, Position: ui.MenuBottomEnd},
 		want: `<details class="ui-menu ui-menu--bottom-end" data-fui-disclosure data-fui-menu="ui-menu-c65b0be2" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-c65b0be2-panel">P<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-c65b0be2-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">a</span></button></div></details>`,
 	},
+	{
+		// Submenu + radio rows, captured from the renderer after both
+		// landed: the parent row is a <summary role=menuitem
+		// aria-haspopup=menu> inside a nested <details
+		// data-fui-disclosure data-fui-menu>, and the nested panel's
+		// id chains off the parent panel (…-panel-sub-1-panel).
+		name: "submenu-with-radio-children",
+		cfg: ui.MenuConfig{Label: "Account", Items: []ui.MenuItem{
+			{Label: "Profile", Href: "/me"},
+			{Label: "Palette", Children: []ui.MenuItem{
+				{Label: "Light", Radio: "theme"},
+				{Label: "Dark", Radio: "theme", Checked: true},
+			}},
+		}},
+		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-cc40fdbe" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-cc40fdbe-panel">Account<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-cc40fdbe-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="ui-menu__label">Profile</span></a><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="ui-menu-cc40fdbe-panel-sub-1"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="ui-menu-cc40fdbe-panel-sub-1-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Palette</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="ui-menu-cc40fdbe-panel-sub-1-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Light</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"><span class="ui-menu__label">Dark</span></button></div></details></div></details>`,
+	},
+	{
+		name: "radio-group",
+		cfg: ui.MenuConfig{ID: "view-menu", Label: "View", Items: []ui.MenuItem{
+			{Label: "Compact", Radio: "density", Checked: true},
+			{Label: "Cozy", Radio: "density", RPC: "/api/density", RPCMethod: "POST"},
+		}},
+		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="view-menu" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="view-menu-panel">View<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="view-menu-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="density"><span class="ui-menu__label">Compact</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="density" data-fui-rpc="/api/density" data-fui-rpc-method="POST"><span class="ui-menu__label">Cozy</span></button></div></details>`,
+	},
 }
 
 // TestMenuItemIDEmittedOnRows: a set ID lands on the rendered row's
@@ -357,6 +381,164 @@ func TestMenuItemExtraAttrsIDStillDropped(t *testing.T) {
 	}
 	if n := strings.Count(out, `id="`); n != 2 { // the row + the panel div
 		t.Errorf("got %d id attributes, want 2 (row + panel):\n%s", n, out)
+	}
+}
+
+// TestMenuSubmenuMarkup: the parent row is a disclosure-only menuitem —
+// <summary role=menuitem aria-haspopup=menu> inside a nested <details
+// data-fui-disclosure data-fui-menu> whose panel is a role=menu with
+// data-fui-menu-panel — and aria-controls names a panel id that exists
+// at every depth.
+func TestMenuSubmenuMarkup(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{ID: "acct", Label: "Account", Items: []ui.MenuItem{
+		{Label: "Profile"},
+		{Label: "Palette", ID: "palette-row", Children: []ui.MenuItem{
+			{Label: "Light"},
+			{Separator: true},
+			{Label: "Dark", ID: "dark-row"},
+		}},
+	}}))
+	for _, want := range []string{
+		`<details class="ui-menu__sub" data-fui-disclosure data-fui-menu="acct-panel-sub-1">`,
+		`<summary class="ui-menu__item ui-menu__item--hassub" id="palette-row" aria-haspopup="menu" aria-controls="acct-panel-sub-1-panel" role="menuitem" tabindex="-1">`,
+		`<div class="ui-menu__panel ui-menu__panel--sub" id="acct-panel-sub-1-panel" role="menu" data-fui-menu-panel>`,
+		// ID on a nested row lands exactly like a top-level row.
+		`<button class="ui-menu__item" id="dark-row" type="button" role="menuitem" tabindex="-1">`,
+		// Separators render inside a submenu the same as at top level.
+		`<hr class="ui-menu__sep" role="separator">`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("submenu markup missing %q:\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, `role="menu"`); n != 2 {
+		t.Errorf("got %d role=menu panels, want 2 (top + sub):\n%s", n, out)
+	}
+}
+
+// TestMenuSubmenuExtraAttrsDropsIDAtDepth: SafeExtraAttrs ownership
+// holds on the submenu summary dialect too — an id smuggled through
+// ExtraAttrs is dropped at every depth, the ID field is the only way.
+func TestMenuSubmenuExtraAttrsDropsIDAtDepth(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{Label: "A", Items: []ui.MenuItem{
+		{Label: "Sub", ID: "real-sub", Children: []ui.MenuItem{
+			{Label: "Inner", ID: "real-inner", ExtraAttrs: map[string]string{"id": "smuggled"}},
+		}, ExtraAttrs: map[string]string{"id": "smuggled-outer"}},
+	}}))
+	if !strings.Contains(out, `<summary class="ui-menu__item ui-menu__item--hassub" id="real-sub"`) {
+		t.Errorf("field-set ID missing from submenu summary:\n%s", out)
+	}
+	if !strings.Contains(out, `id="real-inner"`) {
+		t.Errorf("field-set ID missing from nested row:\n%s", out)
+	}
+	if strings.Contains(out, "smuggled") {
+		t.Errorf("ExtraAttrs id survived at some depth:\n%s", out)
+	}
+}
+
+// TestMenuDisabledParentRendersInertChildrenPresent: Disabled on a
+// parent with children keeps the disclosure markup — the row drops out
+// of keyboard rotation (aria-disabled) and pointer interaction (CSS),
+// and the children still render so re-enabling is a data flip, not a
+// rebuild. A <summary> has no native disabled attribute to emit.
+func TestMenuDisabledParentRendersInertChildrenPresent(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{Label: "A", Items: []ui.MenuItem{
+		{Label: "Locked", Disabled: true, Children: []ui.MenuItem{{Label: "Inner"}}},
+	}}))
+	for _, want := range []string{
+		`ui-menu__item--disabled`,
+		` aria-disabled="true">`,
+		`<span class="ui-menu__label">Inner</span>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("disabled parent submenu missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `<summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="`) {
+		t.Errorf("disabled parent summary gained an id attribute? unexpected shape:\n%s", out)
+	}
+}
+
+// TestMenuItemRadioWithChildrenPanics: a radio row is a leaf command,
+// a submenu parent is a disclosure; both set is incoherent (what does
+// ArrowRight do?) and is refused loudly at render time like every
+// other MenuItem config error.
+func TestMenuItemRadioWithChildrenPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic on Radio + Children")
+		}
+	}()
+	_ = ui.Menu(ui.MenuConfig{Label: "x", Items: []ui.MenuItem{
+		{Label: "Bad", Radio: "theme", Children: []ui.MenuItem{{Label: "Inner"}}},
+	}})
+}
+
+// TestMenuItemChildrenWithActionPanics: the parent row is purely a
+// disclosure. An Href or RPC on it makes Enter ambiguous (navigate or
+// open?), so both combos panic.
+func TestMenuItemChildrenWithActionPanics(t *testing.T) {
+	for name, it := range map[string]ui.MenuItem{
+		"href": {Label: "Bad", Href: "/x", Children: []ui.MenuItem{{Label: "Inner"}}},
+		"rpc":  {Label: "Bad", RPC: "/api/x", Children: []ui.MenuItem{{Label: "Inner"}}},
+	} {
+		caught := func() (r any) {
+			defer func() { r = recover() }()
+			_ = ui.Menu(ui.MenuConfig{Label: "x", Items: []ui.MenuItem{it}})
+			return nil
+		}()
+		if caught == nil {
+			t.Errorf("%s: expected panic on Children + action", name)
+		}
+	}
+}
+
+// TestMenuRadioRows: role, aria-checked from Checked, the group name
+// attribute, and the accessible-name source (the label span is the
+// row's entire text content — getByRole('menuitemradio', {name}) keys
+// on it, and the ✓ indicator is a CSS pseudo-element so it never
+// pollutes the name).
+func TestMenuRadioRows(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{Label: "Theme", Items: []ui.MenuItem{
+		{Label: "Light", Radio: "theme"},
+		{Label: "Dark", Radio: "theme", Checked: true, Icon: render.HTML("◐")},
+		{Label: "Plain"}, // mixed panel: radio rows + plain row coexist
+	}}))
+	for _, want := range []string{
+		`role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"`,
+		`role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"`,
+		`<span class="ui-menu__label">Dark</span>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("radio row missing %q:\n%s", want, out)
+		}
+	}
+	// Checked without Radio is inert, like Confirm without RPC.
+	if strings.Contains(strings.Replace(out, `aria-haspopup="menu"`, "", 1), "aria-checked") == false {
+		// (sanity: exactly two aria-checked attrs, both on radio rows)
+		if n := strings.Count(out, `aria-checked`); n != 2 {
+			t.Errorf("got %d aria-checked attrs, want 2:\n%s", n, out)
+		}
+	}
+}
+
+// TestMenuRadioExtraAttrsCannotOverrideOwned: aria-checked and the
+// data-fui-menu-radio group key are component-owned; smuggled
+// case-variants of either are dropped.
+func TestMenuRadioExtraAttrsCannotOverrideOwned(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{Label: "Theme", Items: []ui.MenuItem{
+		{Label: "Light", Radio: "theme", ExtraAttrs: map[string]string{
+			"aria-checked": "true", "data-fui-menu-radio": "evil", "data-test": "ok",
+		}},
+	}}))
+	if !strings.Contains(out, `aria-checked="false" data-fui-menu-radio="theme"`) {
+		t.Errorf("owned radio attrs were overridden:\n%s", out)
+	}
+	if !strings.Contains(out, `data-test="ok"`) {
+		t.Errorf("legitimate ExtraAttrs key dropped:\n%s", out)
+	}
+	if strings.Contains(out, "evil") {
+		t.Errorf("smuggled group name survived:\n%s", out)
 	}
 }
 

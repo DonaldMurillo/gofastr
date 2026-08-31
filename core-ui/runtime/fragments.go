@@ -302,6 +302,7 @@ var moduleAttrs = map[string][]string{
 	},
 	"menu": {
 		"data-fui-menu",
+		"data-fui-menu-radio",
 	},
 	"multiselect": {
 		"data-fui-multiselect",

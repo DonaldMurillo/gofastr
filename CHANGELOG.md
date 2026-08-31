@@ -9,6 +9,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`ui.Menu` submenus and `menuitemradio` rows** (#319): `MenuItem` gained
+  `Children`, `Radio`, and `Checked`. An item with `Children` renders a
+  submenu — a `<summary role="menuitem" aria-haspopup="menu">` disclosing a
+  nested `role="menu"` through the same `data-fui-disclosure` machinery as the
+  top level — and the full keyboard contract ships with it: ArrowRight opens a
+  submenu and moves focus in, ArrowLeft closes it and returns focus to the
+  parent row (swapped in RTL), roving focus and type-ahead stay scoped to the
+  item's own panel, Escape closes one level at a time, and Tab closes the whole
+  chain. A submenu parent is purely a disclosure: `Children` alongside `Href`,
+  `RPC`, or `Radio` panics at render time. An item with `Radio` renders
+  `role="menuitemradio"` with `aria-checked` from `Checked`; activating a row
+  checks it and unchecks its same-group siblings client-side, while RPC and
+  href rows still fire and the server re-render stays authoritative. The check
+  indicator and submenu caret are CSS pseudo-elements, so accessible names and
+  type-ahead see the label alone. Zero-value output stays byte-identical,
+  golden-pinned, including nested items and `ExtraAttrs` id-dropping at depth.
+  Core runtime bytes are unchanged; the menu module grew 460 gzipped bytes and
+  disclosure 51, both inside their budgets.
+
 - **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
   navigation, at two grains: `NoSPA` drops a route from the client route
   manifest so the runtime treats it as unknown and every link to it does a full
