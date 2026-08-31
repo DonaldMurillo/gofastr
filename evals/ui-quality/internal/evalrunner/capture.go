@@ -392,10 +392,12 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			// and a CPU-saturated one is 7.5s, so the gap is far larger
 			// than contention explains and nobody has measured where it
 			// goes. Report the split rather than guess again: budgetUsed is
-			// how much of the 45s was gone by the time the guard returned.
-			// A failure that says "44.8s of 45s" is a launch problem; one
-			// that says "0.9s of 45s" is not, and the two want opposite
-			// fixes.
+			// how much of the budget was gone by the time the guard
+			// returned. A failure near the full budget is a launch problem;
+			// one far below it is not, and the two want opposite fixes.
+			// (Stated without the number on purpose — see the constant
+			// above. Writing it here is the drift that comment forbids,
+			// and this comment had it.)
 			guardStart := time.Now()
 			networkGuard, guardErr := newCandidateNetworkGuard(baseURL)
 			if guardErr == nil {
