@@ -123,6 +123,7 @@ type UIHost struct {
 	pwaSW               string                               // deployment-constant service worker, computed on first request
 	pwaSWErr            error                                // paired with pwaSW
 	strict              bool                                 // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
+	coreRouter          *router.Router                       // the framework router Mount received; strict mode reads its route table for the internal-links check
 	strictConfig        StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
 	siteDescription     bool                                 // set by WithDescription; read by the strict site-surface check
 	embedHost           *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
@@ -2498,6 +2499,14 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 // routes (entity CRUD, custom endpoints) so the page handler only takes
 // requests that nothing else claimed.
 func (ds *UIHost) Mount(r *router.Router) {
+	// Stash the framework router first: Mount's strict checks (and, at
+	// boot, the internal-link check in ValidateBoot) resolve against it.
+	// The link check deliberately does NOT run here — the table is still
+	// partial at Mount (batteries, plugins, and App.Start itself all
+	// register routes afterwards). App.Start calls ValidateBoot once the
+	// table is complete; a host mounted outside a framework.App never
+	// reaches that point and never gets the link check.
+	ds.coreRouter = r
 	ds.enforceStrict()
 	ds.AutoCompileActions()
 	// Refuse a server action on an embeddable surface at boot, before any

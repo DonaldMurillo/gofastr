@@ -1203,6 +1203,22 @@ type EmbedReserving interface {
 	ReservedEmbedPrefixes() []string
 }
 
+// BootValidator is a Mountable whose validation can only complete once
+// the app's route table is complete: plugins, batteries (during
+// InitPlugins), and Start itself all register routes after Mount, so a
+// check that needs "everything this app will serve" cannot run there.
+//
+// App.Start calls ValidateBoot after the last route registration and
+// before the listener binds — the latest point that can still refuse to
+// serve. A panic inside ValidateBoot aborts the boot, the same contract
+// as every other configuration panic.
+type BootValidator interface {
+	// ValidateBoot runs the mountable's deferred checks against the
+	// complete route table. It may be called more than once across
+	// restarts; it must not mutate the route table.
+	ValidateBoot()
+}
+
 // reserveEmbedPrefixes registers every mounted battery's actual privileged
 // prefix with the embed host and re-validates the declared surfaces.
 //
@@ -3091,8 +3107,18 @@ func (a *App) Start(addr string) error {
 	}
 	a.registerHealthEndpoints()
 
-	// Mountables already registered their routes when App.Mount was called;
-	// nothing to do at Start time.
+	// Deferred mountable validation (framework.BootValidator): checks
+	// that need the COMPLETE route table — the UI host's strict
+	// internal-link check resolves chrome hrefs against everything the
+	// app will serve, and batteries, plugins, and Start itself all
+	// register routes after Mount. This is the last stop before the
+	// listener binds: the latest point at which a finding can still
+	// refuse to serve. Same panic contract as a Mount-time check.
+	for _, m := range a.mountables {
+		if bv, ok := m.(BootValidator); ok {
+			bv.ValidateBoot()
+		}
+	}
 
 	name := a.Config.Name
 	if name == "" {

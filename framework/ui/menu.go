@@ -217,7 +217,10 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	tabindex := "-1" // managed by runtime via roving focus
 	disabledAttr := ""
 	if it.Disabled {
-		disabledAttr = `aria-disabled="true"`
+		// Leading space, like rpcAttr and extra below: this string is
+		// concatenated directly after tabindex="-1" with no separator of
+		// its own.
+		disabledAttr = ` aria-disabled="true"`
 		if tag == "button" {
 			disabledAttr += ` disabled`
 		}
