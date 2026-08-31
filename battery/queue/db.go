@@ -505,13 +505,42 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 }
 
 func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string) (Job, error) {
-	// SQLite serialises writers at the file level, so a plain BEGIN+SELECT+
-	// UPDATE+COMMIT is race-free even without SKIP LOCKED support.
-	tx, err := q.db.BeginTx(ctx, nil)
+	// BEGIN IMMEDIATE, not the driver's default.
+	//
+	// database/sql's BeginTx issues a plain BEGIN, which SQLite reads as
+	// DEFERRED: the write lock is taken at the first WRITE, not at BEGIN.
+	// Two claimants therefore both run the SELECT, both pick the same row,
+	// and the second one's UPDATE meets a held lock and returns
+	// SQLITE_BUSY. The type doc has claimed "BEGIN IMMEDIATE serialises
+	// writers naturally" since this was written; nothing issued it.
+	//
+	// Taking the write lock up front makes the claim genuinely serialised:
+	// contenders queue on BEGIN instead of racing to the UPDATE, which is
+	// the behaviour the surrounding code was designed against.
+	conn, err := q.db.Conn(ctx)
 	if err != nil {
 		return Job{}, err
 	}
-	defer tx.Rollback()
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return Job{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			// Nowhere to return this: the claim already failed and its
+			// error is the one the caller needs. A rollback that also
+			// fails means the connection is unusable, which the pool
+			// discovers on its own — but silence here would hide a
+			// leaked write lock, so it is logged.
+			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
+				if q.logger != nil {
+					q.logger.Warn("queue: rolling back an abandoned claim", "err", err)
+				}
+			}
+		}
+	}()
+	tx := sqliteConnTx{conn: conn}
 
 	where, args := q.eligibleWhere(types, 1, lane)
 	pickSQL := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at
@@ -527,11 +556,31 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	); err != nil {
 		return Job{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return Job{}, err
 	}
+	committed = true
 	job.Attempts++
 	return job, nil
+}
+
+// sqliteConnTx runs statements on the single connection holding an
+// explicitly-issued BEGIN IMMEDIATE. database/sql has no way to ask BeginTx
+// for an immediate transaction, and the lock has to be taken before the
+// SELECT for the claim to be serialised at all.
+type sqliteConnTx struct{ conn *sql.Conn }
+
+func (t sqliteConnTx) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	return t.conn.QueryRowContext(ctx, q, args...)
+}
+
+func (t sqliteConnTx) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return t.conn.ExecContext(ctx, q, args...)
+}
+
+func (t sqliteConnTx) Commit(ctx context.Context) error {
+	_, err := t.conn.ExecContext(ctx, "COMMIT")
+	return err
 }
 
 // eligibleWhere builds the WHERE fragment for "ready to run", optionally
