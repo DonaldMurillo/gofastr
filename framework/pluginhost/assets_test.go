@@ -240,6 +240,7 @@ func TestFramedCSPWasmTierScriptSrcOnly(t *testing.T) {
 		"; img-src http://h data:" +
 		"; font-src http://h data:" +
 		"; connect-src 'none'" +
+		"; form-action 'none'" +
 		"; frame-ancestors http://h" +
 		"; base-uri http://h"
 	if got != want {
@@ -249,7 +250,10 @@ func TestFramedCSPWasmTierScriptSrcOnly(t *testing.T) {
 
 // A manifest with no CSP tokens must produce byte-for-byte the header the
 // platform served before the tier existed; the default path cannot drift,
-// not even by a trailing space.
+// not even by a trailing space. (form-action 'none' joined the baseline
+// when TestFramedCSPSealsFormAction landed: a frame granted allow-forms
+// POSTs by navigating, which connect-src cannot see. It is part of the
+// default now, so the tier still must not change it.)
 func TestFramedCSPDefaultByteIdentical(t *testing.T) {
 	want := "sandbox allow-scripts" +
 		"; default-src http://h" +
@@ -258,6 +262,7 @@ func TestFramedCSPDefaultByteIdentical(t *testing.T) {
 		"; img-src http://h data:" +
 		"; font-src http://h data:" +
 		"; connect-src 'none'" +
+		"; form-action 'none'" +
 		"; frame-ancestors http://h" +
 		"; base-uri http://h"
 	for _, csp := range [][]string{nil, {}} {

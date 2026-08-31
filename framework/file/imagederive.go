@@ -65,6 +65,20 @@ func (d *ImageDerivatives) Validate() error {
 		if hasTraversal(v.StorageRef) {
 			return fmt.Errorf("%w: variant %d storage_ref %q", ErrFileFieldTraversal, i, v.StorageRef)
 		}
+		// A variant ref reaches the same sinks the primary storage_ref
+		// does -- an <img src>, a storage delete, a Content-Disposition
+		// -- and is persisted in the <field>_variants column. The
+		// primary was checked for control bytes and the variants were
+		// not, so a CR, LF, or NUL rode through on the one path nobody
+		// looked at.
+		if idx := indexControlByte(v.StorageRef); idx >= 0 {
+			return fmt.Errorf("%w: variant %d storage_ref contains %#x at offset %d",
+				ErrFileFieldControlBytes, i, v.StorageRef[idx], idx)
+		}
+		if idx := indexControlByte(v.MIME); idx >= 0 {
+			return fmt.Errorf("%w: variant %d mime contains %#x at offset %d",
+				ErrFileFieldControlBytes, i, v.MIME[idx], idx)
+		}
 		if v.MIME != "" && !isSafeMIMEString(v.MIME) {
 			return fmt.Errorf("%w: variant %d mime %q", ErrFileFieldMimeUnsafe, i, v.MIME)
 		}

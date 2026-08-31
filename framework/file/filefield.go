@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
@@ -290,8 +293,14 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 	}
 
 	ff := &FileField{
-		URL:        path,
-		Filename:   filepath.Base(stripControlBytes(filename)),
+		URL: path,
+		// The SAME sanitizer that produced the storage key. This used to
+		// be filepath.Base(stripControlBytes(...)), which leaves ".."
+		// intact, so ProcessFileField returned a FileField its own
+		// Validate rejects: "v2..final.png" was persisted and went on to
+		// Content-Disposition and host path joins. A constructor must
+		// not produce a value its validator refuses.
+		Filename:   upload.SanitizeFilename(filename),
 		MimeType:   mimeType,
 		Size:       size,
 		StorageRef: path,
@@ -300,16 +309,95 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 	// Renditions are derived after the original is safely stored, so a
 	// derive failure never leaves the primary upload half-written.
 	if cfg.deriver != nil {
-		derived, err := cfg.deriver.DeriveImage(ctx, store, data, path)
+		// Hand the deriver a recording view of the store. A deriver
+		// writes renditions incrementally, so one that fails on variant
+		// k has already saved 1..k-1 -- and it returns only an error, so
+		// nothing here could name those keys to clean them up. Watching
+		// the writes works for every deriver, including third-party
+		// ones, without asking the interface to report partial work.
+		rec := &recordingStore{Storage: store}
+		derived, err := cfg.deriver.DeriveImage(ctx, rec, data, path)
 		if err != nil {
+			// The primary is already in storage and this upload is being
+			// rejected, so nothing will ever reference those bytes. They
+			// used to just stay: repeated inert posts against an Image
+			// field failed AND stored a full object every time, growing
+			// storage in a way no row-driven cleanup can see. Roll the
+			// save back, plus any renditions the deriver managed to
+			// write before it failed.
+			cleanupOrphans(ctx, store, path, derived, rec.written())
 			return nil, fmt.Errorf("filefield: deriving image renditions: %w", err)
 		}
 		if err := derived.Validate(); err != nil {
+			cleanupOrphans(ctx, store, path, derived, rec.written())
 			return nil, fmt.Errorf("filefield: derived image metadata: %w", err)
 		}
 		ff.Image = derived
 	}
 	return ff, nil
+}
+
+// cleanupOrphans removes objects written for an upload that is being
+// rejected. Best-effort by design: the caller is already returning the
+// real error, and a failed cleanup must not replace it with a less
+// useful one. derived may be non-nil even on a deriver error, since a
+// deriver that fails midway can report what it had already saved.
+func cleanupOrphans(ctx context.Context, store upload.Storage, primary string, derived *ImageDerivatives, written []string) {
+	seen := map[string]bool{}
+	del := func(key string) {
+		if key == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		_ = store.Delete(ctx, key)
+	}
+	if derived != nil {
+		for _, v := range derived.Variants {
+			del(v.StorageRef)
+		}
+	}
+	for _, key := range written {
+		del(key)
+	}
+	del(primary)
+}
+
+// recordingStore is an upload.Storage that remembers every key Saved
+// through it, so a caller can undo a failed multi-write operation whose
+// keys it never chose.
+//
+// Deletes unrecord: a deriver that cleans up after itself must not have
+// its own cleanup counted as an outstanding write.
+type recordingStore struct {
+	upload.Storage
+	mu   sync.Mutex
+	keys []string
+}
+
+func (r *recordingStore) Save(ctx context.Context, key string, src io.Reader) error {
+	if err := r.Storage.Save(ctx, key, src); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.keys = append(r.keys, key)
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *recordingStore) Delete(ctx context.Context, key string) error {
+	err := r.Storage.Delete(ctx, key)
+	r.mu.Lock()
+	r.keys = slices.DeleteFunc(r.keys, func(k string) bool { return k == key })
+	r.mu.Unlock()
+	return err
+}
+
+// written returns the keys saved through this view and not since
+// deleted.
+func (r *recordingStore) written() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.keys)
 }
 
 // readerOf adapts the narrow Read-only interface accepted by
@@ -561,10 +649,40 @@ func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) e
 	if store == nil {
 		return fmt.Errorf("filefield: storage backend is required")
 	}
-	if ff == nil || ff.StorageRef == "" {
+	if ff == nil {
 		return nil
 	}
-	return store.Delete(ctx, ff.StorageRef)
+	// Renditions first, then the primary. Only the primary used to be
+	// deleted, so every derived object outlived the row's cleanup and
+	// kept serving at the documented /uploads/{key...} route --
+	// ImageDerivatives' own doc names "a storage delete" as one of the
+	// sinks a variant ref reaches, and nothing here read Variants.
+	//
+	// A rendition that is already gone is not an error: erasure is
+	// idempotent and a half-finished earlier delete is the normal way to
+	// arrive here. Every failure is collected so one bad key does not
+	// leave the rest behind, and the primary is attempted regardless.
+	var failed []string
+	if ff.Image != nil {
+		for _, v := range ff.Image.Variants {
+			if v.StorageRef == "" || v.StorageRef == ff.StorageRef {
+				continue
+			}
+			if err := store.Delete(ctx, v.StorageRef); err != nil && !errors.Is(err, os.ErrNotExist) {
+				failed = append(failed, fmt.Sprintf("%s (%v)", v.StorageRef, err))
+			}
+		}
+	}
+	if ff.StorageRef != "" {
+		if err := store.Delete(ctx, ff.StorageRef); err != nil && !errors.Is(err, os.ErrNotExist) {
+			failed = append(failed, fmt.Sprintf("%s (%v)", ff.StorageRef, err))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("filefield: %d object(s) survive deletion and remain reachable: %s",
+			len(failed), strings.Join(failed, "; "))
+	}
+	return nil
 }
 
 // GenerateFilePath produces a safe, unique file path for storage.
