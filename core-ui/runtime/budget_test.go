@@ -45,9 +45,14 @@ const (
 	// native submit navigates away before a module could load, the same class
 	// of fatal-for-the-path as the click bridge. So the line moved to 14784.
 	// The prefetch-failure retry (mark-on-success, 2026-08-30) took 5 more
-	// gzipped bytes: the real bundle is 14771, cleared by 13, and the cliff
-	// fixture still crosses (14786 > 14784).
-	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 13 over the real bundle (14771), under the 14800 cliff-fixture guard
+	// gzipped bytes, and forwarding the widget trigger's ctx through the
+	// core boot took 4 more: the real bundle is 14776, cleared by 8, and
+	// the cliff fixture still crosses (14786 > 14784).
+	//
+	// Two changes measured this independently against the main each
+	// branched from and both reported more headroom than exists, because
+	// neither could see the other. Re-measure after a rebase, not before.
+	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 8 over the real bundle (14776), under the 14800 cliff-fixture guard
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

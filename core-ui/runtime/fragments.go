@@ -457,6 +457,11 @@ var moduleAttrs = map[string][]string{
 		"data-fui-action",
 		"data-fui-backdrop",
 		"data-fui-rpc-refresh",
+		// data-fui-ctx (#321): read by openWidget off the trigger the
+		// eager delegator passed along, and used to key the chrome fetch
+		// + client cache. widgets-boot cross-references it by passing btn;
+		// the behavior lives here, so ownership stays with this module.
+		"data-fui-ctx",
 	},
 }
 

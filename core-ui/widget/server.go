@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
@@ -317,16 +318,87 @@ func chromePathFor(d *Definition) string {
 	return "/core-ui/widget/" + d.Name + "/chrome"
 }
 
+// MaxChromeContext bounds the trigger-carried chrome context (#321): the
+// string a `data-fui-ctx` open trigger forwards to the chrome endpoint as
+// ?ctx=…. It is an attacker-chosen value in a URL, so it needs a hard byte
+// cap before it reaches render, logs, or error text. 256 comfortably covers
+// every real entity key (ids, slugs, UUIDs, small compound keys) while
+// staying trivially inside URL and header limits.
+const MaxChromeContext = 256
+
+// chromeCtxKey is the private context key for the trigger-carried chrome
+// context. Private so the only way to set it is WithChromeContext, which is
+// the only path that has validated the value.
+type chromeCtxKey struct{}
+
+// WithChromeContext returns ctx carrying v as the trigger context for a
+// chrome render. Hosts thread it (or let serveChrome do it) so context-aware
+// slots can read it via [ChromeContext]. The value is opaque to the
+// framework: it is forwarded and keyed on, never parsed.
+func WithChromeContext(ctx context.Context, v string) context.Context {
+	return context.WithValue(ctx, chromeCtxKey{}, v)
+}
+
+// ChromeContext returns the trigger-carried context string for this chrome
+// render, "" when the open carried none. Read it inside a slot's
+// RenderCtx(ctx); it is the per-entity key the opening trigger named
+// (e.g. "inv-42"). See the authorisation note in framework/docs/content/
+// widgets.md § Chrome context: the runtime forwards whatever the page said,
+// so a ctx naming an entity the CURRENT user may not see is an
+// authorisation question and must be answered HERE, against the request
+// context, never trusted from the string.
+func ChromeContext(ctx context.Context) string {
+	v, _ := ctx.Value(chromeCtxKey{}).(string)
+	return v
+}
+
+// validChromeContext reports whether v is safe to accept as ?ctx=. It
+// rejects anything over MaxChromeContext bytes, anything that is not
+// valid UTF-8, and any control rune: C0 (incl. NUL, CR, LF), DEL, and
+// the C1 range are log-poisoning and header-smuggling surfaces once a
+// URL-decoded value flows into access logs and rendered markup.
+// Everything else is allowed — the framework treats ctx as opaque and
+// assigns no meaning to its characters.
+func validChromeContext(v string) bool {
+	if len(v) > MaxChromeContext {
+		return false
+	}
+	// UTF-8 validity is a gate, not something the rune loop below can
+	// check for itself: ranging over a string decodes every invalid
+	// byte to U+FFFD, which is not a control rune, so raw C1 bytes
+	// arriving un-decoded (%9D, the %9B%9C pair) would sail through it
+	// and reach logs and markup as raw bytes.
+	if !utf8.ValidString(v) {
+		return false
+	}
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return false
+		}
+	}
+	return true
+}
+
 // serveChrome returns the rendered chrome HTML for a single widget.
 // Cache-Control: no-store because the chrome may depend on per-widget
 // signal defaults that change between deploys; let the client refetch
 // rather than serve stale HTML from a CDN.
 func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
+	// #321: the open trigger may carry context (?ctx=…, forwarded from
+	// data-fui-ctx). Validate before it reaches anything: it is a
+	// page-supplied string in a URL. Reject, don't truncate — truncated
+	// context would silently render chrome for the wrong entity.
+	triggerCtx := r.URL.Query().Get("ctx")
+	if !validChromeContext(triggerCtx) {
+		http.Error(w, "invalid chrome context", http.StatusBadRequest)
+		return
+	}
 	// Render with the request context so context-aware slots (e.g. a
 	// role-aware nav drawer) see the signed-in user the session middleware
 	// placed on r, a hidden drawer is fetched here, not SSR-inlined, so this
-	// is the only point where it can be personalised.
-	chrome := s.renderSkeletonCtx(r.Context())
+	// is the only point where it can be personalised. The trigger context
+	// rides the same context so a slot can vary per entity (#321).
+	chrome := s.renderSkeletonCtx(WithChromeContext(r.Context(), triggerCtx))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(chrome))
