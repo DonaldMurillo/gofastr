@@ -350,7 +350,8 @@ func TestPackSerializerCoversEveryAppField(t *testing.T) {
 // leave-one-out — and the keys emitted must match the construct's order
 // list where one exists. Before the extension, deleting any single
 // emission line inside scope, pagination, auth, or pwa left this guard
-// green: the constructs' parent keys moved the output, the fields inside
+// green (pwa is only PARTLY closed even now — see KNOWN FRONTIER below):
+// the constructs' parent keys moved the output, the fields inside
 // them were never probed, and only a committed example using the field
 // (SerializerRoundTrip) stood in the way — coverage by accident.
 func TestPackSerializerCoversEveryConstructField(t *testing.T) {
@@ -450,6 +451,14 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 // deleting each emission line in pack.go and running the pack surface:
 // 22 of the 137 distinct emission lines can be removed with everything
 // green.
+//
+// Why pwa.enabled specifically survives: pwa's container gate is
+// `if a.PWA.Enabled` — the SAME field — so zeroing it makes the whole
+// container vanish and the probe passes on the container's absence, never
+// observing that the `enabled` key went missing. pwa also has no order
+// list (orderFor("pwa") returning nil is a pinned contract), so there is
+// no key-set check to catch it either. To close it: for leaveOneOut specs,
+// also assert each non-exempt field's key appears in at(base).
 //
 // The class is what matters, not the names. An enumerated list rots, and
 // this one already did: it first shipped naming ten fields, which was a
