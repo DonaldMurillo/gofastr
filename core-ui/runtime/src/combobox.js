@@ -55,6 +55,14 @@
     input.setAttribute('aria-expanded', 'true');
     lb.removeAttribute('hidden');
   };
+  // sameOriginDest mirrors __gofastr._sameOrigin for the pre-boot path,
+  // where the runtime object does not exist yet. A javascript: or data:
+  // URL resolves to the opaque "null" origin and is refused.
+  const sameOriginDest = (u) => {
+    try { return new URL(String(u ?? ''), location.href).origin === location.origin; }
+    catch (_) { return false; }
+  };
+
   const pickOption = (input, lb, opt) => {
     if (!opt) return;
     const val = opt.getAttribute('data-value') || (opt.textContent || '').trim();
@@ -73,7 +81,17 @@
     // we route it through the SPA navigator (or fall back to a hard
     // load if the navigator hasn't booted yet).
     const dest = opt.getAttribute('data-fui-push-state');
-    if (dest) {
+    // data-fui-push-state is DOM input, so this destination is caller
+    // input. The SPA navigator applies _originOK itself, but the
+    // pre-boot fallback below assigns location.href directly, and a
+    // "javascript:" or cross-origin value there executes or navigates
+    // with the page's full privileges. Gate BOTH branches: use the
+    // runtime's own _originOK when the runtime is present, and the same
+    // same-origin test inline when it is not (which is exactly when the
+    // unguarded fallback runs).
+    if (dest && (window.__gofastr && window.__gofastr._originOK
+      ? window.__gofastr._originOK(dest)
+      : sameOriginDest(dest))) {
       // Close any enclosing widget (e.g. a command palette modal) so
       // the nav doesn't happen behind a backdrop.
       const widget = opt.closest('[data-fui-widget]');

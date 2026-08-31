@@ -45,7 +45,20 @@ const (
 	// native submit navigates away before a module could load, the same class
 	// of fatal-for-the-path as the click bridge. So the line moved to 14784,
 	// clearing the real bundle by 39.
-	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 33 over the real bundle (14751), under the 14800 cliff-fixture guard
+	// 14782: 4 over the real bundle (14778), and the fixture that fills
+	// the level-6 headroom now lands at 14783, so the level-1 check stays
+	// reachable. The line came down 2 bytes to keep it that way. What
+	// bought those bytes: loadModule's module-name shape check, without
+	// which a "../../../evil" value in data-fui-prefetch normalizes out
+	// of the runtime serve route and loads an arbitrary same-origin
+	// script. It is written as cheaply as it can be -- the rejection
+	// reuses the loader's own failure message and fires from inside the
+	// existing promise -- and three other spellings measured larger.
+	//
+	// Four bytes is not a margin anyone can work behind. The next core
+	// addition has to carve a feature into a demand module first; there
+	// is no headroom left to spend.
+	coreCongestionWindowGZ = 14*1024 + 446
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {
@@ -83,7 +96,7 @@ func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
 	for i := 0; i+chunk <= len(filler); {
 		candidate := grown + filler[i:i+chunk]
 		if gzipSize(t, candidate) > coreGoalGZ {
-			if chunk <= 4 {
+			if chunk <= 1 {
 				break
 			}
 			chunk /= 2
