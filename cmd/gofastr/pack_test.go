@@ -441,25 +441,26 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 	}
 }
 
-// KNOWN FRONTIER — what this guard still cannot see, measured, not guessed.
+// KNOWN FRONTIER — what this guard still cannot see.
 //
-// The extension above reaches slice elements and one level of nested struct.
-// It does NOT reach structs nested inside a block's props. Deleting any of
-// these single emission lines from pack.go leaves the whole pack + kiln +
-// generator surface green today:
+// The extension above reaches slice elements and ONE level of nested struct.
+// It does not reach structs nested inside a block's props. Every field of
+// three of those is invisible: the props map itself (p.*), a props source
+// (src.*), and a pricing plan (plan.*) — plus pwa.enabled. Measured by
+// deleting each emission line in pack.go and running the pack surface:
+// 22 of the 137 distinct emission lines can be removed with everything
+// green.
 //
-//	pwa.enabled
-//	p.eyebrow, p.title, p.subtitle          (block props)
-//	src.entity, src.agg, src.field          (props source)
-//	plan.name, plan.price, plan.period      (props pricing plan)
+// The class is what matters, not the names. An enumerated list rots, and
+// this one already did: it first shipped naming ten fields, which was a
+// SAMPLE of three per container mistaken for the set. Re-derive rather than
+// trust — delete emission lines one at a time and run
+// `go test ./cmd/gofastr/ -run 'TestPackSerializerCoversEvery|TestPack_SerializerRoundTrip'`.
 //
-// None is a live bug: every one of those keys is emitted correctly right now.
-// What is missing is anything that would notice if it stopped — the #318
-// shape, two levels further down than #330 reached.
+// None of the 22 is a live bug: every key is emitted correctly today. What
+// is missing is anything that would notice if one stopped — the #318 shape,
+// two levels below where #330 reached and one below where this pass reaches.
 //
-// This list exists because the previous extension was declared to close the
-// class and did not. If you extend the guard again, re-derive this list by
-// deleting emission lines rather than trusting it, and shrink it here.
 
 // constructOmissions names construct fields that deliberately do NOT reach
 // the serializer output, with the reason. An omission listed here is part
