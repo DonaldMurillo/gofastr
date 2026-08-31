@@ -61,15 +61,25 @@ type MenuItem struct {
 	// Label and other fields are ignored when true.
 	Separator bool
 
+	// ID becomes the rendered row's id attribute, so page JS, test
+	// suites, or aria wiring elsewhere on the page can address this
+	// exact item (a Help Mode toggle a script binds to, an Imports
+	// row a shortcut targets). Uniqueness is caller-owned, like any
+	// HTML id: duplicates are the caller's bug, not enforced here.
+	// Ignored on separators, like every other field. Empty emits no
+	// id, leaving the output identical to a menu that never set it.
+	ID string
+
 	// Class appends to the rendered item's class list (rare; mainly
 	// for testing or one-off hooks).
 	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) onto the rendered item
-	// element. Keys the item owns are dropped: class (use Class), id,
-	// data-fui-* (the disclosure / rpc wiring), and the menuitem
-	// contract (type, href, tabindex, role, aria-disabled, disabled).
+	// element. Keys the item owns are dropped: class (use Class),
+	// id (use ID), data-fui-* (the disclosure / rpc wiring), and the
+	// menuitem contract (type, href, tabindex, role, aria-disabled,
+	// disabled).
 	ExtraAttrs map[string]string
 }
 
@@ -223,13 +233,19 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 			rpcAttr += ` data-fui-confirm="` + render.Escape(it.Confirm) + `"`
 		}
 	}
+	// ID lands right after class, mirroring the panel div (class,
+	// id, role). Empty stays empty so zero-value output is unchanged.
+	idAttr := ""
+	if it.ID != "" {
+		idAttr = ` id="` + render.Escape(it.ID) + `"`
+	}
 	// ExtraAttrs join the SafeExtraAttrs contract: the item owns
 	// type/href/tabindex/role/aria-disabled/disabled plus the rpc
 	// data-fui-* wiring. serializeExtraAttrs sorts the survivors and
 	// validates each key via render.Attr (unsafe keys drop).
 	extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
 		"type", "href", "tabindex", "role", "aria-disabled", "disabled"))
-	b.WriteString(`<` + tag + ` class="` + render.Escape(cls) + `" ` + openExtra +
+	b.WriteString(`<` + tag + ` class="` + render.Escape(cls) + `"` + idAttr + ` ` + openExtra +
 		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra + `>`)
 	if it.Icon != "" {
 		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)

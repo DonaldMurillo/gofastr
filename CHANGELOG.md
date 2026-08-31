@@ -52,6 +52,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   three knobs are opt-in; every zero value keeps the default output
   byte-identical. See [interactive patterns](interactive-patterns.md).
 
+- **`ui.MenuItem.ID`** sets the rendered menu row's `id` attribute, so page JS,
+  test suites, and aria wiring elsewhere on the page can address one exact row
+  (a Help Mode toggle a script binds to, an Imports row a shortcut targets).
+  Uniqueness is caller-owned like any HTML id, an empty value emits no `id`
+  (output unchanged), separators ignore it, and `MenuItem.ExtraAttrs` still
+  drops `id` — the field is the single owner.
+
 ### Fixed
 
 - **A failed `data-fui-prefetch` fetch no longer strands the module for
