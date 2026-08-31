@@ -52,6 +52,38 @@ non-unit increments.
 sets the signal to the tab's index; CSS attribute selectors show/hide
 the matching panel. No JavaScript beyond the runtime's click delegation.
 
+Three opt-in config knobs add the contracts a port from a component
+library usually needs (every zero value keeps the default output
+byte-identical):
+
+- `StateAttrs bool` — adds `data-state="active"/"inactive"` to every
+  tab button. The demand-loaded `tabs` runtime module keeps it in step
+  with the selection after client-side switches, alongside the
+  `aria-selected` mirroring core already does.
+- `ID string` — wires tab↔panel semantics: button
+  `id="<ID>-tab-<i>"` + `aria-controls="<ID>-panel-<i>"`, panel
+  `id="<ID>-panel-<i>"`. You own cross-page uniqueness of `ID`.
+- `VacateHidden bool` — hidden panels ship empty with their content in
+  an adjacent JSON stash, so page-scoped test locators cannot match
+  text inside hidden panels. The `tabs` module restores content on
+  first show and moves the live nodes out/in on every later switch, so
+  island content the runtime swapped in survives re-show. While a
+  panel is vacated, document-scoped updates targeting it (SSE pushes,
+  in-flight RPC responses) are dropped permanently: nothing is queued
+  for replay, re-show resurrects the panel's pre-vacate nodes, and only
+  updates that arrive after re-show land.
+
+  Timing caveat for `VacateHidden`: the `tabs` module loads on the
+  strip's first hover/focus, so any signal write that lands before
+  that — an SSE, poll, or RPC-driven update, or a hydration-time
+  signal value differing from what SSR rendered — moves `data-active`
+  on a strip nobody has touched, and the newly-active panel shows
+  empty until the first interaction heals it. SSR itself is unaffected
+  (the initially-active panel always ships with its content), so
+  server-rendered deep links, anchors, restored scroll, and autofocus
+  are fine. If your app moves tabs without a user touching them, leave
+  `VacateHidden` off.
+
 ### Toggle switch
 
 `framework/ui.SignalToggle` renders a `role=switch` with
@@ -651,7 +683,7 @@ own runtime modules for client-side behavior.
 | File Dropzone | `dropzone.js` | Drag-and-drop file handling with previews |
 | Gallery + Lightbox | `lightbox.js` | Image zoom overlay, prev/next, keyboard |
 | Infinite Scroll | `infinitescroll.js` | IntersectionObserver-driven lazy loading |
-| Menu | `menu.js` | Keyboard navigation (arrows, Home/End, type-ahead) |
+| Menu | `menu.js` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
 | Multi-select | `multiselect.js` | Checkbox group with chip display |
 | Notification Bell | (uses Popover) | Bell + unread badge + dropdown |
 | Popover | `popover.js` | Anchored positioning, auto-flip, arrow drawing |

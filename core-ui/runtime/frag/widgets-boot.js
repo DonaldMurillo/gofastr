@@ -62,11 +62,11 @@
           // widget root.
           window.__gofastr._mountByName(item.cfg.name);
         }
-        // Open any widget whose deep link matches the current URL. Pure
-        // post-hydration, there's a single-frame window where the page
-        // paints without the modal. SSR pre-rendering is a future
-        // optimization; correctness (refresh / share / back-button) is
-        // already covered by this open-on-boot pass.
+        // Open any widget whose deep link matches the current URL. On
+        // a full page load the host has usually SSR-inlined that
+        // chrome (framework/uihost injectWidgetSSR) and _mountByName
+        // hydrates it here; this pass is what covers SPA navigations
+        // and popstate, where no fresh HTML arrives.
         window.__gofastr._syncDeepLinks();
 
         // Eager click delegator (installed at boot, see below) is
@@ -131,7 +131,10 @@
         // clicked faster than /__gofastr/widgets returned.
         await window.__gofastr.loadModule('widgets').catch(() => {});
         await _wready;
-        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
+        // btn rides along so openWidget can read data-fui-ctx (#321):
+        // the trigger's context keys the chrome fetch + cache. Read in
+        // the module, not here: core bytes are the scarce ones.
+        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true, btn });
         if (anchorPref !== null) {
           await window.__gofastr.loadModule('popover');
           window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');

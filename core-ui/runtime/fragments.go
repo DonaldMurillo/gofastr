@@ -176,8 +176,11 @@ var fragmentAttrs = map[string][]string{
 // Every entry is markerClass: the kernel's _scanForModules demand-loads the
 // module when it sees the module's primary marker (the scanner table near
 // the bottom of runtime.js is the authoritative marker→module map), and
-// companion attributes ride along. A module not listed here still loads,
-// this is the attribute-ownership map, not the module registry.
+// companion attributes ride along. The one exception is `tabs`, which has
+// no marker entry by design: it loads only via the data-fui-prefetch
+// bridge its component arms, so _scanForModules never demand-loads it.
+// A module not listed here still loads, this is the attribute-ownership
+// map, not the module registry.
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
@@ -299,6 +302,7 @@ var moduleAttrs = map[string][]string{
 	},
 	"menu": {
 		"data-fui-menu",
+		"data-fui-menu-radio",
 	},
 	"multiselect": {
 		"data-fui-multiselect",
@@ -430,6 +434,11 @@ var moduleAttrs = map[string][]string{
 		"data-fui-toggle-committed",
 		"data-fui-toggle-group",
 	},
+	"tabs": {
+		"data-fui-tabs-state",
+		"data-fui-tabs-vacate",
+		"data-fui-tabs-stash",
+	},
 	"tree": {
 		"data-fui-tree-toggle",
 	},
@@ -448,6 +457,11 @@ var moduleAttrs = map[string][]string{
 		"data-fui-action",
 		"data-fui-backdrop",
 		"data-fui-rpc-refresh",
+		// data-fui-ctx (#321): read by openWidget off the trigger the
+		// eager delegator passed along, and used to key the chrome fetch
+		// + client cache. widgets-boot cross-references it by passing btn;
+		// the behavior lives here, so ownership stays with this module.
+		"data-fui-ctx",
 	},
 }
 

@@ -61,15 +61,64 @@ type MenuItem struct {
 	// Label and other fields are ignored when true.
 	Separator bool
 
+	// ID becomes the rendered row's id attribute, so page JS, test
+	// suites, or aria wiring elsewhere on the page can address this
+	// exact item (a Help Mode toggle a script binds to, an Imports
+	// row a shortcut targets). Uniqueness is caller-owned, like any
+	// HTML id: duplicates are the caller's bug, not enforced here.
+	// Ignored on separators, like every other field. Empty emits no
+	// id, leaving the output identical to a menu that never set it.
+	ID string
+
+	// Radio, when non-empty, renders the row as a radio option:
+	// role="menuitemradio" plus aria-checked (see Checked) and
+	// data-fui-menu-radio="<Radio>". Every item sharing the same Radio
+	// value within one Menu forms a radio group — across submenus too:
+	// a picker whose rarer options sit behind a "More" submenu is one
+	// group, not two. Exactly one of them should carry Checked (like
+	// ID, uniqueness is caller-owned, not enforced here). The runtime's
+	// menu module arbitrates the group client-side on activation
+	// (click / Enter / Space): the activated row is checked, its
+	// same-group siblings — anywhere in the same menu — unchecked, so
+	// pure-client menus feel like radios without a round trip; a row
+	// carrying RPC or Href still fires it and the server re-render
+	// stays authoritative. Mutually exclusive with Children (a radio
+	// row is a leaf command, a submenu parent is a disclosure) — both
+	// set panics at render time. Empty renders the plain menuitem, so
+	// zero-value output is unchanged.
+	Radio string
+
+	// Checked sets aria-checked on a Radio row. Inert without Radio
+	// (like Confirm without RPC): there is no checked state to render
+	// on a plain menuitem.
+	Checked bool
+
+	// Children nests a submenu behind this row: the row renders as a
+	// <summary role="menuitem" aria-haspopup="menu"> whose activation
+	// reveals a nested role="menu" panel, reusing the same
+	// data-fui-disclosure machinery the top level uses (Escape, SPA-nav
+	// close, aria-expanded mirroring, focus-on-open). Keyboard: the
+	// menu module opens it on ArrowRight (ArrowLeft in RTL) and enters,
+	// closes it on ArrowLeft (ArrowRight in RTL) and ArrowUp-style
+	// roving focus applies inside it; Escape closes one level at a
+	// time. The parent row is purely a disclosure: setting Href, RPC,
+	// or Radio on it panics at render time. Disabled greys the row out
+	// and removes it from keyboard navigation like any other item; the
+	// children still render (closed, unreachable) so a server-side
+	// state change only needs to flip Disabled.
+	Children []MenuItem
+
 	// Class appends to the rendered item's class list (rare; mainly
 	// for testing or one-off hooks).
 	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) onto the rendered item
-	// element. Keys the item owns are dropped: class (use Class), id,
-	// data-fui-* (the disclosure / rpc wiring), and the menuitem
-	// contract (type, href, tabindex, role, aria-disabled, disabled).
+	// element. Keys the item owns are dropped: class (use Class),
+	// id (use ID), data-fui-* (the disclosure / rpc wiring), and the
+	// menuitem contract (type, href, tabindex, role, aria-disabled,
+	// disabled, aria-checked, and on submenu rows aria-haspopup /
+	// aria-controls).
 	ExtraAttrs map[string]string
 }
 
@@ -112,11 +161,13 @@ type MenuConfig struct {
 var menuStyle = registry.RegisterStyle("ui-menu", menuCSS)
 
 // Menu renders a dropdown. The trigger toggles the panel; the panel
-// is a `role=menu` list with `role=menuitem` rows. Built on the
-// runtime's `data-fui-disclosure` machinery (Esc closes, SPA nav
-// closes, aria-expanded mirroring), augmented with arrow / type-ahead
-// keyboard navigation that the runtime applies to any `[role=menu]`
-// inside an open disclosure.
+// is a `role=menu` list with `role=menuitem` rows — `menuitemradio`
+// rows for items with Radio set, and nested `role=menu` submenus for
+// items with Children. Built on the runtime's `data-fui-disclosure`
+// machinery (Esc closes one level at a time, SPA nav closes,
+// aria-expanded mirroring), augmented with arrow / type-ahead keyboard
+// navigation that the runtime applies to any `[role=menu]` inside an
+// open disclosure.
 func Menu(cfg MenuConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		panic("ui: Menu requires at least one Item")
@@ -165,21 +216,39 @@ func Menu(cfg MenuConfig) render.HTML {
 	b.WriteString(`</summary>`)
 
 	b.WriteString(`<div class="ui-menu__panel" id="` + render.Escape(panelID) + `" role="menu" data-fui-menu-panel>`)
-	for _, it := range cfg.Items {
-		writeMenuItem(&b, it)
-	}
+	writeMenuItems(&b, cfg.Items, panelID)
 	b.WriteString(`</div></details>`)
 
 	return menuStyle.WrapHTML(render.HTML(b.String()))
 }
 
-func writeMenuItem(b *strings.Builder, it MenuItem) {
+// writeMenuItems renders one panel's rows. parentPanelID seeds the
+// deterministic id chain for nested submenu panels (parentPanelID +
+// "-sub-<index>"), so ids stay unique within a menu without caller
+// input.
+func writeMenuItems(b *strings.Builder, items []MenuItem, parentPanelID string) {
+	for i, it := range items {
+		writeMenuItem(b, it, parentPanelID, i)
+	}
+}
+
+func writeMenuItem(b *strings.Builder, it MenuItem, parentPanelID string, idx int) {
 	if it.Separator {
 		b.WriteString(`<hr class="ui-menu__sep" role="separator">`)
 		return
 	}
 	if it.Label == "" {
 		panic("ui: MenuItem requires Label (or Separator: true)")
+	}
+	if len(it.Children) > 0 {
+		if it.Radio != "" {
+			panic("ui: MenuItem with Radio cannot have Children (a radio row is a leaf command, a submenu parent is a disclosure)")
+		}
+		if it.Href != "" || it.RPC != "" {
+			panic("ui: MenuItem with Children cannot also set Href or RPC (a submenu parent is purely a disclosure)")
+		}
+		writeSubMenu(b, it, parentPanelID, idx)
+		return
 	}
 	cls := "ui-menu__item"
 	if it.Danger {
@@ -205,9 +274,25 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 		openExtra = `href="` + render.Escape(href) + `"`
 	}
 	tabindex := "-1" // managed by runtime via roving focus
+	// Radio rows swap the role and carry their group + checked state;
+	// the group attr names the runtime's client-side arbitration set.
+	radioAttr := ""
+	role := "menuitem"
+	if it.Radio != "" {
+		role = "menuitemradio"
+		checked := "false"
+		if it.Checked {
+			checked = "true"
+		}
+		radioAttr = ` aria-checked="` + checked + `" data-fui-menu-radio="` + render.Escape(it.Radio) + `"`
+	}
 	disabledAttr := ""
 	if it.Disabled {
-		disabledAttr = `aria-disabled="true"`
+		// Leading space: this is the only optional fragment in the
+		// row's attribute chain whose neighbours (tabindex above,
+		// data-fui-menu-radio on radio rows) do NOT carry one, so
+		// omitting it glues two attributes together.
+		disabledAttr = ` aria-disabled="true"`
 		if tag == "button" {
 			disabledAttr += ` disabled`
 		}
@@ -223,18 +308,82 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 			rpcAttr += ` data-fui-confirm="` + render.Escape(it.Confirm) + `"`
 		}
 	}
+	// ID lands right after class, mirroring the panel div (class,
+	// id, role). Empty stays empty so zero-value output is unchanged.
+	idAttr := ""
+	if it.ID != "" {
+		idAttr = ` id="` + render.Escape(it.ID) + `"`
+	}
 	// ExtraAttrs join the SafeExtraAttrs contract: the item owns
-	// type/href/tabindex/role/aria-disabled/disabled plus the rpc
-	// data-fui-* wiring. serializeExtraAttrs sorts the survivors and
-	// validates each key via render.Attr (unsafe keys drop).
+	// type/href/tabindex/role/aria-disabled/disabled/aria-checked plus
+	// the rpc data-fui-* wiring (data-fui-menu-radio included — every
+	// data-fui-* key is reserved). serializeExtraAttrs sorts the
+	// survivors and validates each key via render.Attr (unsafe keys
+	// drop).
 	extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
-		"type", "href", "tabindex", "role", "aria-disabled", "disabled"))
-	b.WriteString(`<` + tag + ` class="` + render.Escape(cls) + `" ` + openExtra +
-		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra + `>`)
+		"type", "href", "tabindex", "role", "aria-disabled", "disabled", "aria-checked"))
+	b.WriteString(`<` + tag + ` class="` + render.Escape(cls) + `"` + idAttr + ` ` + openExtra +
+		` role="` + role + `" tabindex="` + tabindex + `"` + radioAttr + disabledAttr + rpcAttr + extra + `>`)
 	if it.Icon != "" {
 		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 	}
 	b.WriteString(`<span class="ui-menu__label">` + render.Escape(it.Label) + `</span></` + tag + `>`)
+}
+
+// writeSubMenu renders a parent row plus its nested role="menu"
+// panel. The wrapper is a <details data-fui-disclosure data-fui-menu>,
+// i.e. the exact machinery the top level uses, so Escape, SPA-nav
+// close, aria-expanded mirroring, focus-on-open, and the menu
+// module's keyboard handling all apply at depth without a second
+// mechanism. The summary IS the parent menuitem (role=menuitem,
+// aria-haspopup="menu", tabindex=-1 roving like every row); the
+// caller-incoherent combos (Radio, Href, RPC) were refused in
+// writeMenuItem before we got here.
+//
+// A Disabled parent renders the same markup with aria-disabled and
+// the disabled class: the row drops out of keyboard rotation and
+// pointer-events, while the children stay in the DOM (closed,
+// unreachable), so re-enabling is a data change, not a rebuild.
+func writeSubMenu(b *strings.Builder, it MenuItem, parentPanelID string, idx int) {
+	subID := parentPanelID + "-sub-" + itoaSmall(idx)
+	subPanelID := subID + "-panel"
+	cls := "ui-menu__item ui-menu__item--hassub"
+	if it.Danger {
+		cls += " ui-menu__item--danger"
+	}
+	if it.Disabled {
+		cls += " ui-menu__item--disabled"
+	}
+	if it.Class != "" {
+		cls += " " + it.Class
+	}
+	disabledAttr := ""
+	if it.Disabled {
+		// <summary> has no native disabled attribute; aria + CSS
+		// pointer-events carry the state.
+		disabledAttr = ` aria-disabled="true"`
+	}
+	idAttr := ""
+	if it.ID != "" {
+		idAttr = ` id="` + render.Escape(it.ID) + `"`
+	}
+	extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
+		"type", "href", "tabindex", "role", "aria-disabled", "disabled",
+		"aria-haspopup", "aria-controls", "aria-checked"))
+	b.WriteString(`<details class="ui-menu__sub" data-fui-disclosure data-fui-menu="` + render.Escape(subID) + `">`)
+	b.WriteString(`<summary class="` + render.Escape(cls) + `"` + idAttr +
+		` aria-haspopup="menu" aria-controls="` + render.Escape(subPanelID) +
+		`" role="menuitem" tabindex="-1"` + disabledAttr + extra + `>`)
+	if it.Icon != "" {
+		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+	}
+	// The disclosure caret is a CSS ::after (not a span like the
+	// trigger's) so it never pollutes the row's textContent —
+	// type-ahead matches the label alone.
+	b.WriteString(`<span class="ui-menu__label">` + render.Escape(it.Label) + `</span></summary>`)
+	b.WriteString(`<div class="ui-menu__panel ui-menu__panel--sub" id="` + render.Escape(subPanelID) + `" role="menu" data-fui-menu-panel>`)
+	writeMenuItems(b, it.Children, subPanelID)
+	b.WriteString(`</div></details>`)
 }
 
 // shortHash is a tiny FNV-style stable hash used only to derive a
@@ -257,11 +406,18 @@ func shortHash(s string) string {
 	return string(out)
 }
 
+// positionsForHash folds every item label (recursing into submenus,
+// which contribute their rows to the auto-id identity) into the
+// shortHash input. Zero-value menus (no Children anywhere) produce
+// the exact bytes they did before submenus existed.
 func positionsForHash(items []MenuItem) string {
 	var b strings.Builder
 	for _, it := range items {
 		b.WriteString(it.Label)
 		b.WriteString("|")
+		if len(it.Children) > 0 {
+			b.WriteString(positionsForHash(it.Children))
+		}
 	}
 	return b.String()
 }
@@ -354,6 +510,43 @@ func menuCSS(_ style.Theme) string {
   border-top: 1px solid var(--color-border, #E4E4E7);
   margin: var(--spacing-xs, 4px) 0;
 }
+/* Submenus: the nested <details> is one grid child of the parent
+   panel; it positions the nested panel, which reuses every panel
+   chrome rule above. The position-variant inset rules on the outer
+   details would also match the nested panel, so this rule carries a
+   higher specificity (element + two classes vs attr + class + class)
+   and always wins, at any depth. */
+[data-fui-comp="ui-menu"] details.ui-menu__sub { position: relative; display: block; }
+[data-fui-comp="ui-menu"] details.ui-menu__sub > summary.ui-menu__item {
+  list-style: none;
+}
+[data-fui-comp="ui-menu"] details.ui-menu__sub > summary.ui-menu__item::-webkit-details-marker { display: none; }
+[data-fui-comp="ui-menu"] details.ui-menu__sub > .ui-menu__panel {
+  inset-inline-start: 100%;
+  top: calc(-1 * var(--spacing-xs, 4px));
+}
+/* The submenu caret is a pseudo-element so it stays out of the row's
+   textContent (type-ahead) and accessible name, unlike the trigger's
+   <span> caret. :dir() flips it in RTL; unsupported engines show the
+   LTR glyph, a cosmetic-only degradation. */
+[data-fui-comp="ui-menu"] .ui-menu__item--hassub::after {
+  content: "▸";
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+:dir(rtl) [data-fui-comp="ui-menu"] .ui-menu__item--hassub::after { content: "◂"; }
+/* Radio rows: the check indicator is likewise a pseudo-element —
+   space is reserved in both states so labels align whether checked
+   or not. */
+[data-fui-comp="ui-menu"] [role="menuitemradio"]::before {
+  content: "✓";
+  display: inline-flex;
+  width: 1em;
+  flex: none;
+  justify-content: center;
+  visibility: hidden;
+}
+[data-fui-comp="ui-menu"] [role="menuitemradio"][aria-checked="true"]::before { visibility: visible; }
 @media (prefers-reduced-motion: reduce) {
   [data-fui-comp="ui-menu"] .ui-menu__panel { animation: none; }
 }`

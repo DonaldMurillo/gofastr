@@ -1713,11 +1713,11 @@
           // widget root.
           window.__gofastr._mountByName(item.cfg.name);
         }
-        // Open any widget whose deep link matches the current URL. Pure
-        // post-hydration, there's a single-frame window where the page
-        // paints without the modal. SSR pre-rendering is a future
-        // optimization; correctness (refresh / share / back-button) is
-        // already covered by this open-on-boot pass.
+        // Open any widget whose deep link matches the current URL. On
+        // a full page load the host has usually SSR-inlined that
+        // chrome (framework/uihost injectWidgetSSR) and _mountByName
+        // hydrates it here; this pass is what covers SPA navigations
+        // and popstate, where no fresh HTML arrives.
         window.__gofastr._syncDeepLinks();
 
         // Eager click delegator (installed at boot, see below) is
@@ -1782,7 +1782,10 @@
         // clicked faster than /__gofastr/widgets returned.
         await window.__gofastr.loadModule('widgets').catch(() => {});
         await _wready;
-        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
+        // btn rides along so openWidget can read data-fui-ctx (#321):
+        // the trigger's context keys the chrome fetch + cache. Read in
+        // the module, not here: core bytes are the scarce ones.
+        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true, btn });
         if (anchorPref !== null) {
           await window.__gofastr.loadModule('popover');
           window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');
@@ -2113,15 +2116,23 @@
   // Hover/focus prefetch: any element with data-fui-prefetch="<name>"
   // kicks off the module fetch as soon as the user hovers or
   // keyboard-focuses it. By the time they click, the module is
-  // resolved. Capture-phase + once-per-element so we don't churn on
-  // every mouse move.
+  // resolved. Capture phase; an element is marked attempted only once
+  // its fetch SUCCEEDS, so there is no churn on every mouse move but a
+  // failed fetch is retried on the next hover/focus.
   const _prefetchAttempted = new WeakSet();
   function _prefetch(e) {
     const node = e.target && e.target.closest && e.target.closest('[data-fui-prefetch]');
     if (!node || _prefetchAttempted.has(node)) return;
-    _prefetchAttempted.add(node);
-    const names = (node.getAttribute('data-fui-prefetch') || '').split(/\s+/).filter(Boolean);
-    for (const n of names) { loadModule(n).catch(() => {}); }
+    // Mark attempted only on success: a failed fetch (network blip,
+    // a host not serving the module) must not pin the element, or the
+    // bridge never retries — and `tabs` deliberately has no
+    // _moduleMarkers entry, so no scanner picks it up either; vacate
+    // panels would then stay empty for the page lifetime. Re-hovers
+    // while a fetch is in flight cost nothing: loadModule dedups.
+    const names = node.getAttribute('data-fui-prefetch').split(/\s+/).filter(Boolean);
+    for (const n of names) {
+      loadModule(n).then(() => { _prefetchAttempted.add(node); }, () => {});
+    }
   }
   document.addEventListener('pointerover', _prefetch, { capture: true, passive: true });
   document.addEventListener('focusin', _prefetch, { capture: true });

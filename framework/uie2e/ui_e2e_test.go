@@ -49,10 +49,21 @@ func (a *uiE2EApp) URL() string { return a.srv.URL }
 
 func setupUIE2EApp(t *testing.T) *uiE2EApp {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:?cache=shared")
+	// file: form, not bare ":memory:?cache=shared". The bare spelling is not
+	// parsed as a URI, so cache=shared is silently dropped and EVERY pooled
+	// connection gets its own private database: the DDL below lands on one
+	// connection and a request served by another reports "no such table:
+	// sessions". That is the flake this test produced under load, and a
+	// two-connection probe reproduces it from the DSN alone.
+	//
+	// SetMaxOpenConns(1) stays as well, matching every other in-memory sqlite
+	// test here: with cache=shared the database lives only while a connection
+	// to it is open, so a pool that drains to zero takes the schema with it.
+	db, err := sql.Open("sqlite3", "file:uie2e?mode=memory&cache=shared")
 	if err != nil {
 		t.Skipf("sqlite3 driver: %v", err)
 	}
+	db.SetMaxOpenConns(1)
 
 	for _, ddl := range []string{
 		`CREATE TABLE users (

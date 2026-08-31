@@ -8,43 +8,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
-
-- **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
-  navigation, at two grains: `NoSPA` drops a route from the client route
-  manifest so the runtime treats it as unknown and every link to it does a full
-  document load; `data-fui-nav="off"` on an anchor declines the soft navigation
-  for that one link. Both exist for ported pages that bind their behavior at
-  script load — a soft swap never re-runs those initializers, so every handler
-  on the destination dies. See [porting](porting.md).
-
-- **`UIHost.PageHandler(path)`** renders a registered screen as a full page,
-  chrome included, from a route mounted on the framework router. Needed when an
-  app wildcard subtree (`{path...}`) claims a bare path: the mux redirects it to
-  a trailing-slash form the NotFound dispatch never resolves, so the wrong
-  screen answers. A dynamic pattern is passed through rather than forced, since
-  rewriting it would hand the literal `{id}` to param capture.
-
-- **`ScreenStatusCode`**, an optional screen interface, overrides the HTTP
-  status of a page that rendered successfully. A screen whose route resolved but
-  whose record is gone renders the not-found body through the layout while
-  signaling 404 to clients and crawlers. Zero or 200 keeps the default.
-
-- **`sdkdocs.Config.CRUDMounted` and `App.EntityCRUDMounted`** keep the SDK
-  docs site to routes that exist. `Exposure.CRUD` alone cannot answer "were
-  this entity's routes mounted": an app with no DB registers no CRUD while
-  every entity still reads `nil` ("auto"), so the site published a reference
-  page — and an SDK download — for paths that answer 404. The predicate that
-  route registration, the startup banner, `openapi.json` and `/api/llm.md`
-  already agree on is now exported, so a host-mounted surface can reach it
-  too. Pass `CRUDMounted: fwApp.EntityCRUDMounted`; nil keeps the older
-  `Exposure`-only behaviour.
-
-- **`data-skip-link` on the skip link**, so a test suite can address it
-  without pinning the `.skip-link` CSS class. The skip link is synthesized
-  by the framework rather than configured by the app, so `ExtraAttrs` — the
-  supported way to attach attributes to a component — cannot reach it.
-  Inert for everyone else.
-
 - **`queue.Job.UserID`**, persisted as `queue_jobs.user_id`, names the person
   a job's payload is about. It is what makes the row reachable by
   `App.EraseUserData`: `queue_jobs` lives outside the entity registry, so the
@@ -468,6 +431,275 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   already passed an allowlisted environment. Their credential denylists were
   hand-copied and had drifted; neither recognised a bare `*_TOKEN`.
 
+## [0.77.0] - 2026-08-31
+
+### Added
+
+- **`ui.Menu` submenus and `menuitemradio` rows** (#319): `MenuItem` gained
+  `Children`, `Radio`, and `Checked`. An item with `Children` renders a
+  submenu — a `<summary role="menuitem" aria-haspopup="menu">` disclosing a
+  nested `role="menu"` through the same `data-fui-disclosure` machinery as the
+  top level — and the full keyboard contract ships with it: ArrowRight opens a
+  submenu and moves focus in, ArrowLeft closes it and returns focus to the
+  parent row (swapped in RTL), roving focus and type-ahead stay scoped to the
+  item's own panel, Escape closes one level at a time, and Tab closes the whole
+  chain. A submenu parent is purely a disclosure: `Children` alongside `Href`,
+  `RPC`, or `Radio` panics at render time. An item with `Radio` renders
+  `role="menuitemradio"` with `aria-checked` from `Checked`; activating a row
+  checks it and unchecks its same-group siblings client-side, while RPC and
+  href rows still fire and the server re-render stays authoritative. The check
+  indicator and submenu caret are CSS pseudo-elements, so accessible names and
+  type-ahead see the label alone. Zero-value output stays byte-identical,
+  golden-pinned, including nested items and `ExtraAttrs` id-dropping at depth.
+  The menu module is 1130 gzipped bytes and disclosure 1061, both well inside
+  their 3072 budget; #319 itself added no core runtime bytes.
+
+- **`registry.IsolateForTest(t)`** swaps the process-global style registry for
+  a fresh one and restores it when the test finishes. Test-only seam for
+  asserting registry-shaped behaviour — the SSR host's single-direct-link vs
+  bundle `<link>` decision, exact bundle name sets — without assuming a clean
+  process: any package linked into a test binary that registers styles at init
+  (`framework/ui` registers `ui-button`, `ui-page-header`, and `ui-sidebar` as
+  `LoadAlways`) otherwise changes the eager set every test in that binary sees
+  (#331). Styles registered during isolation are dropped on restore, so they
+  cannot leak into later tests. No runtime behaviour change.
+
+
+
+- **`uihost.WithStrict` internal-link check** fails boot when the site chrome
+  (each layout's header, sidebar, footer) links to a path nothing serves. The
+  check renders the chrome and resolves every internal `href` against the
+  app's full served surface — but only once that surface exists: it runs at
+  boot, not at Mount. Batteries and plugins register their routes during
+  `App.Start`'s InitPlugins phase and `App.Start` itself registers more after
+  them, so a Mount-time table is partial and would flag working links (a
+  sidebar "Back office" → `/admin` panic-boots an app that serves it).
+  `App.Start` now calls a mounted host's `ValidateBoot` (the new
+  `framework.BootValidator` seam) after the last route registration and
+  before the listener binds — the latest point at which a finding can still
+  refuse to serve. Resolving against the complete table also covers
+  UIHost's own conditional endpoints (`/llm-pages.md`, `/llms-full.txt`,
+  the agent card, `/.well-known/jwks.json`) and every config-gated
+  artifact (`/sitemap.xml` without `WithSitemap` is still a dead link).
+  Percent-encoded hrefs are decoded before matching, the same way
+  `net/http` decodes before routing, so `/docs/caf%C3%A9` resolves against
+  a screen at `/docs/café`; a malformed escape (`/bad%zz`) can never be
+  served and is reported as a finding. One documented gap: a catch-all GET
+  route (`/{path...}`) satisfies the check for every path it claims, so
+  links under one are accepted, not verified — the handler may serve them,
+  and probing it would mean executing the app at boot. A host mounted
+  outside a `framework.App` never reaches the boot hook and never gets the
+  link check. External URLs, anchors, query-only references, template
+  placeholders, and relative references are out of scope; `ExemptScreens`
+  entries also exempt links whose target falls under them. Tuned, like
+  every strict check, through `StrictConfig.InternalLinks`
+  (`enforce`/`warn`/`off`).
+
+- **`ui.Menu` disabled rows no longer emit a malformed attribute** (#327):
+  `aria-disabled` was concatenated straight onto `tabindex="-1"` with no
+  separating space, so a disabled row rendered
+  `tabindex="-1"aria-disabled="true"`. Browsers recover from it; strict
+  parsers and DOM-diffing tools need not.
+
+
+
+- **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
+  navigation, at two grains: `NoSPA` drops a route from the client route
+  manifest so the runtime treats it as unknown and every link to it does a full
+  document load; `data-fui-nav="off"` on an anchor declines the soft navigation
+  for that one link. Both exist for ported pages that bind their behavior at
+  script load — a soft swap never re-runs those initializers, so every handler
+  on the destination dies. See [porting](porting.md).
+
+- **`UIHost.PageHandler(path)`** renders a registered screen as a full page,
+  chrome included, from a route mounted on the framework router. Needed when an
+  app wildcard subtree (`{path...}`) claims a bare path: the mux redirects it to
+  a trailing-slash form the NotFound dispatch never resolves, so the wrong
+  screen answers. A dynamic pattern is passed through rather than forced, since
+  rewriting it would hand the literal `{id}` to param capture.
+
+- **`ScreenStatusCode`**, an optional screen interface, overrides the HTTP
+  status of a page that rendered successfully. A screen whose route resolved but
+  whose record is gone renders the not-found body through the layout while
+  signaling 404 to clients and crawlers. Zero or 200 keeps the default.
+
+- **`sdkdocs.Config.CRUDMounted` and `App.EntityCRUDMounted`** keep the SDK
+  docs site to routes that exist. `Exposure.CRUD` alone cannot answer "were
+  this entity's routes mounted": an app with no DB registers no CRUD while
+  every entity still reads `nil` ("auto"), so the site published a reference
+  page — and an SDK download — for paths that answer 404. The predicate that
+  route registration, the startup banner, `openapi.json` and `/api/llm.md`
+  already agree on is now exported, so a host-mounted surface can reach it
+  too. Pass `CRUDMounted: fwApp.EntityCRUDMounted`; nil keeps the older
+  `Exposure`-only behaviour.
+
+- **`data-skip-link` on the skip link**, so a test suite can address it
+  without pinning the `.skip-link` CSS class. The skip link is synthesized
+  by the framework rather than configured by the app, so `ExtraAttrs` — the
+  supported way to attach attributes to a component — cannot reach it.
+  Inert for everyone else.
+
+- **`ui.Tabs` porting knobs — `TabsConfig.StateAttrs`, `.ID`,
+  `.VacateHidden`** — the contracts a tab strip ported from a component
+  library needs. `StateAttrs` mirrors `data-state="active"/"inactive"`
+  onto every tab button after client-side switches, the locator contract
+  Radix-style ports pin their tests to (core already mirrors
+  `aria-selected` on the same write); `ID` wires tab↔panel
+  `id`/`aria-controls` semantics; `VacateHidden` ships hidden panels
+  empty with their content parked in an adjacent `data-fui-tabs-stash`
+  JSON script, so page-scoped test locators cannot match text inside
+  hidden panels — DOM parity with a source component that unmounts
+  inactive panels. A demand-loaded `tabs` runtime module (armed by
+  `data-fui-prefetch="tabs"`, no core scanner entry) restores a panel's
+  content on first show and moves the live nodes out/in on every later
+  switch, so island-swapped content and form state survive re-show. All
+  three knobs are opt-in; every zero value keeps the default output
+  byte-identical. See [interactive patterns](interactive-patterns.md).
+
+- **`ui.MenuItem.ID`** sets the rendered menu row's `id` attribute, so page JS,
+  test suites, and aria wiring elsewhere on the page can address one exact row
+  (a Help Mode toggle a script binds to, an Imports row a shortcut targets).
+  Uniqueness is caller-owned like any HTML id, an empty value emits no `id`
+  (output unchanged), separators ignore it, and `MenuItem.ExtraAttrs` still
+  drops `id` — the field is the single owner.
+
+- **`data-fui-ctx` trigger-carried chrome context** (#321): an open trigger
+  (`data-fui-open="layout-remove" data-fui-ctx="inv-42"`) forwards its
+  context on the chrome fetch as `?ctx=`, the chrome render reads it via
+  `widget.ChromeContext(ctx)` in a slot's `RenderCtx`, and the runtime keys
+  its chrome cache by `(name, ctx)` — two triggers with different contexts
+  get two distinct chromes, a repeat of the same context is a cache hit.
+  One widget definition now serves every per-entity dialog. The endpoint
+  bounds `ctx` at 256 bytes and rejects control runes with a 400 rather
+  than truncating (a truncated id would render chrome for the wrong row);
+  the string stays opaque to the framework and authorising the entity it
+  names belongs in the slot, against the request context. The context
+  cache is capped at 32 entries per document (LRU, evicted entries
+  refetch) so a row-per-dialog page cannot grow it without bound.
+
+- **Combobox static filtering now hides non-matching options** (#337): the
+  combobox stylesheet's `[role="option"] { display: block }` (re-set to
+  `display: flex` under `@media (pointer: coarse)`) is author-origin, which
+  beats the user agent's `[hidden] { display: none }` regardless of
+  specificity — so the runtime set `opt.hidden` correctly, the attribute had no
+  visual effect, and typing in a command palette left every row painted. An
+  explicit `[role="option"][hidden] { display: none }` guard restores filtering
+  on fine and coarse pointers. The chromium palette harness also named the
+  combobox sheet at `/__gofastr/combobox.css`, which 404s, so every palette
+  test had been running with no combobox CSS at all; the catalog now points at
+  `/__gofastr/comp/combobox.css` and the test refuses to run if that sheet
+  stops loading. The regression test counts painted rows via client rects,
+  never `hidden` attributes — an attribute-level assertion passes against the
+  broken behaviour, which is how this survived.
+
+- **`ui.CommandPalette` gained a visible close control and a bounded mobile
+  dialog** (#325): the palette rendered no dismiss control a touch user could
+  reach — the `Esc` hint chip is an instruction a phone cannot follow, and the
+  full-screen mobile sheet covers every backdrop pixel — and at
+  `max-width: 540px` the `100dvh` sheet grew past the viewport on long command
+  lists, clipping the input off the top. The footer now carries an icon-only
+  close button at every breakpoint (`data-fui-action="close"`, the same
+  declarative dismiss hook the section-menu drawer uses, with a 44px tap
+  floor), and the dialog is bounded to the viewport at every size with the
+  suggestion list scrolling inside the remaining space. Escape, backdrop
+  dismissal, the focus trap, and reopen behaviour are unchanged, now pinned by
+  chromedp tests at 390x844, 1280x800, and a 1280x240 short-viewport guard.
+
+### Fixed
+
+
+- **BEHAVIOUR: Escape now closes only the innermost open disclosure**, not every
+  open one on the page. Previously an Escape anywhere closed them all; now, with
+  focus inside an open `data-fui-disclosure`, only the deepest one containing
+  focus closes, and focus outside any of them still closes all. The change came
+  from nested menus needing one level per press, but `data-fui-disclosure` is
+  shared, so it reaches every consumer: `disclosure.Render`,
+  `html.Details{Disclosure: true}`, `ui.Collapsible`, `ui.Sidebar` groups,
+  `ui.SiteHeader`'s hamburger drawer, `SectionMenu` groups, and the admin-sort
+  panel. Concretely: a mobile drawer containing an expanded nav group now takes
+  two Escapes to dismiss where it took one. One of two changes in this release that
+  alter behaviour for an app upgrading from v0.76.0 without touching its own
+  code; the other is `WithStrict`'s internal-link check, which can newly fail
+  boot for an app already running strict mode.
+
+- **Generated marketing chrome links and auth-gate redirects follow the
+  blueprint's registered screens** (#312) (`gofastr generate`). The marketing
+  header nav and footer shipped four literal hrefs (`/pricing`, `/about`,
+  `/terms`, `/privacy`), so a marketing blueprint without those screens got a
+  footer full of 404s; a chrome link is now emitted only when a screen
+  registers its route. The auth gate's redirect — the screen mount, the
+  entity-list island policy, the header's Sign in button, and the failed-login
+  bounce — derives from the screen hosting the login form (nested in a section
+  counts) instead of the hardcoded `/login`, which 404'd every gated page on a
+  blueprint whose sign-in lives elsewhere.
+
+- **A failed `data-fui-prefetch` fetch no longer strands the module for
+  the page lifetime.** The bridge marked an element attempted on first
+  hover even when the fetch failed, and a module without a scanner
+  marker (`tabs`, deliberately) had no second loader — one transient
+  failure left vacate panels empty for good, silently. An element is
+  now marked attempted only once its fetch succeeds, so the next
+  hover/focus retries; in-flight re-hovers cost nothing (the loader
+  dedups). Cost: 5 gzipped bytes of core runtime.
+
+- **Widget chrome cache no longer outlives a principal change** (#329):
+  `NS._chromeCache` was keyed by widget name alone and never invalidated,
+  while `serveChrome` renders with the request context — per-principal by
+  construction. Cross-page navigation is client-side and keeps the
+  document, so a sign-in/sign-out performed without a full page load
+  (intercepted form, RPC + navigate) left the previous principal's chrome
+  cached: the signed-out visitor reopening the widget was served the
+  earlier principal's personalised chrome. No client-visible principal
+  exists to key on (session cookies are HttpOnly), so the cache is cleared
+  on every SPA navigation — the cost is one refetch of a previously-opened
+  widget's chrome per navigation, the same no-store GET its first open
+  made. The cache lives in one document's `window`; it cannot reach
+  another session, this was staleness with a privacy edge, not a cross-user
+  leak.
+
+- **`gofastr pack` no longer drops `middleware`, `plugins`, and `helpers`
+  declarations** (#318): the serializer's key list named all three while the
+  serializer itself never emitted them, so a blueprint carrying any of them
+  packed without them. The same class also took `app.description`,
+  `app.base_url`, and `app.public_openapi`: decoded, then silently omitted.
+  The serializer round-trip test now runs against every committed example
+  blueprint instead of only Meridian — the one example that declares none of
+  the affected constructs — and a reflection-driven guard keeps the key list
+  and the serializer honest about every field `Blueprint` and `BlueprintApp`
+  carry, so the next construct added to either side fails a test the day it
+  diverges.
+
+- **A quote character in an enum value no longer merges flow-list entries**
+  (#323): the quoting predicate treated quotes as a first-character-only
+  indicator, so `values: [60', 90']` was emitted with both apostrophes bare
+  and re-parsed as a single member `"60', 90'"` — two enum values silently
+  became one, and a lone `values: [60']` failed to parse at all. Values
+  containing `'` or `"` are now double-quoted: `"` and backslash are escaped,
+  invalid UTF-8 bytes and non-printable runes as `\xNN`/`\uNNNN` (so a quoted
+  value re-parses byte-for-byte instead of gaining U+FFFD), and the apostrophe
+  passes through verbatim — `\'` is not an escape `strconv.Unquote` knows, and
+  inside double quotes it needs none. This mirrors the key-side rule from
+  #317, which refuses instead because core/yaml never unquotes keys.
+
+- **`gofastr pack` no longer drops `seed.count`, `seed.weights`, and entity
+  `renames`** (#330): the same decoded-but-never-serialized class as #318,
+  one level down — inside slice elements, where neither the example
+  round-trip (no committed example uses them) nor the top-level coverage
+  guards (a set `Seed` field already moves the output by emitting the `seed`
+  key) could see the omission. The guard now probes every construct field
+  (entities, fields, relations, indices, screens, body/children blocks,
+  actions, transitions, nav, seed, endpoints, stubs); the same run caught
+  stale key orders — `entityOrder` still listed the pre-grouping flat keys
+  (`crud`, `mcp`, `soft_delete`, …) while missing
+  `scope`/`pagination`/`exposure`/`search_fields`/`renames`, `fieldOrder`
+  missed `no_query`, and `blockOrder` missed `filters`. Two fields are
+  exempted with reasons in the test: entity-level `endpoints` (the
+  authoring form lives in the top-level `endpoints` stubs; emitting the
+  derived form would duplicate them) and index `expression` (not in the
+  blueprint grammar).
+
+
+
 ## [0.76.0] - 2026-08-30
 
 ### Added
@@ -665,6 +897,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 
 ### Fixed
+
+- **`data-fui-ctx` now reaches SSR-inlined chrome.** A widget declared
+  `Hidden().DeepLink(...)` *is* inlined when the request URL matches its deep
+  link, and the runtime hydrated that node without ever reading the trigger's
+  `ctx` — so a per-entity dialog opened from a ctx-carrying trigger rendered
+  chrome for the wrong entity, or a form posting to a placeholder action. That
+  is the shape `core-ui/ARCHITECTURE.md` prescribes for "edit/show entity
+  detail" and the one the framework's own gallery ships, so it was the
+  documented path that was broken, not an edge case. The runtime now drops a
+  ctx-less inlined node when a trigger carries `ctx` and falls through to the
+  `(name, ctx)`-keyed fetch; a ctx-free open still hydrates in place. Two
+  comments in `framework/uihost/uihost.go` and a paragraph in `widgets.md`
+  described the old, wrong behaviour and are corrected.
 
 - **Cross-test browser-cache contamination in the site e2e suite** (#278): the
   suite runs on one Chrome profile, so tabs are fresh but the HTTP cache is

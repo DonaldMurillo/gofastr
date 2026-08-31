@@ -4,10 +4,14 @@
 //
 //   - aria-expanded mirroring on the <summary> (native <summary> reports
 //     as "button" with no expanded state)
-//   - Escape closes any open disclosure from anywhere on the page (native
-//     <details> only handles Escape while the summary itself has focus)
-//   - menu disclosures (data-fui-menu) move focus to the first menuitem
-//     on open, so keyboard users land inside the panel without a Tab
+//   - Escape closes any open disclosure from anywhere on the page
+//     (native <details> only handles Escape while the summary itself
+//     has focus); when focus is INSIDE an open disclosure, only the
+//     deepest containing one closes, so nested menu submenus dismiss
+//     one level at a time
+//   - menu disclosures (data-fui-menu) move focus to the first
+//     menuitem (menuitemradio rows included) on open, so keyboard
+//     users land inside the panel without a Tab
 //   - an opt-in focus trap (data-fui-disclosure-trap) for mobile drawers
 //     and full-sheet popovers, released when the drawer closes, when it
 //     is detached from the DOM, or on SPA navigation
@@ -107,30 +111,59 @@
       const d = e.target;
       if (!d || d.tagName !== 'DETAILS' || !d.hasAttribute('data-fui-disclosure')) return;
       mirror(d);
-      // Menu disclosure: on open, focus the first menuitem. The native
-      // <summary> keeps visible focus until the user moves it with
-      // ArrowDown.
+      // Menu disclosure: on open, focus the first menuitem row of the
+      // disclosure's OWN panel (radio rows included — a submenu whose
+      // every row is a menuitemradio must still land focus, not find
+      // nothing).
+      //
+      // The search is scoped to the panel (':scope > [role="menu"]',
+      // then rows whose closest('[role=menu]') IS that panel — the same
+      // scoping menu.js rows() uses). A plain descendant search runs in
+      // document order and, when the panel's first row is itself a
+      // submenu parent, matches a row INSIDE the still-closed nested
+      // <details> first: hidden, so .focus() is a silent no-op and the
+      // menu opens keyboard-dead. A same-panel submenu-parent summary is
+      // a legitimate first row, so there is no :not(summary); the
+      // parent row of a nested disclosure lives outside that
+      // disclosure's panel and cannot yank focus back.
       if (d.open && d.hasAttribute('data-fui-menu')) {
-        const first = d.querySelector('[role="menuitem"]:not([aria-disabled="true"])');
-        if (first) first.focus();
+        const panel = d.querySelector(':scope > [role="menu"]');
+        if (panel) {
+          const first = Array.from(
+            panel.querySelectorAll('[role="menuitem"],[role="menuitemradio"]')
+          ).find(
+            (n) => n.closest('[role="menu"]') === panel && n.getAttribute('aria-disabled') !== 'true'
+          );
+          if (first) first.focus();
+        }
       }
       if (d.hasAttribute('data-fui-disclosure-trap')) applyTrap(d, d.open);
     }, true);
 
-    // Escape closes any open disclosure. An open modal widget takes
+    // Escape closes open disclosures. An open modal widget takes
     // precedence, its own CloseOnEscape handler runs, and we defer so a
     // single Escape doesn't close both.
+    //
+    // When focus sits inside an open disclosure (a menu, or a submenu
+    // nested in one), close only the DEEPEST one containing focus:
+    // Escape walks back one level at a time instead of collapsing the
+    // whole chain, and focus returns to that disclosure's summary —
+    // for a submenu that summary IS the parent menuitem row. With
+    // focus elsewhere, the original close-all behaviour stands.
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (NS._modalStack && NS._modalStack.length > 0) return;
-      for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
-        // Only refocus the summary when focus is already inside this
-        // disclosure, otherwise we would yank focus away from whatever
-        // the user was actually doing in the main content.
-        const wasInside = d.contains(document.activeElement);
-        d.removeAttribute('open');
-        if (wasInside) d.querySelector('summary')?.focus();
+      const open = document.querySelectorAll('details[data-fui-disclosure][open]');
+      let deepest = null;
+      for (const d of open) {
+        if (d.contains(document.activeElement) && (!deepest || deepest.contains(d))) deepest = d;
       }
+      if (deepest) {
+        deepest.removeAttribute('open');
+        deepest.querySelector('summary')?.focus();
+        return;
+      }
+      for (const d of open) d.removeAttribute('open');
     });
   }
 

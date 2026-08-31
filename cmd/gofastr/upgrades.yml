@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.76.0
+through: v0.77.0
 
 releases:
   - version: v0.3.0
@@ -887,3 +887,18 @@ releases:
       - change: enabling agent-card signing now requires an explicitly pinned BaseURL, and the host refuses to mount without one
         breaking: false
         guidance: "New requirement on a new feature, so no existing caller can hit it. A signed card whose URLs derive from the request Host header would hand an attacker a validly-signed card pointing at their own endpoint, so the mount fails loudly rather than serving one. Set WithAgentReady{BaseURL} or WithSitemap{BaseURL}."
+  - version: v0.77.0
+    title: menu submenus and radio rows, per-entity widget chrome, boot-time internal-link check
+    notes:
+      - change: new opt-in surfaces - ui.MenuItem.Children/Radio/Checked/ID (submenus and menuitemradio rows), TabsConfig.StateAttrs/ID/VacateHidden, data-fui-ctx per-entity widget chrome read via widget.ChromeContext, UIHost.PageHandler, the ScreenStatusCode interface, Screen.NoSPA and data-fui-nav="off", data-skip-link
+        breaking: false
+        guidance: "All additive and opt-in; every zero value keeps the prior output byte-identical. A submenu parent is a disclosure only - Children alongside Href, RPC, or Radio panics at render time, and MenuItem.ExtraAttrs still drops id (the ID field owns it)."
+      - change: BEHAVIOUR - Escape now closes only the innermost open disclosure instead of every open one on the page, so nested chrome (a mobile drawer around an expanded nav group) takes one Escape per level
+        breaking: false
+        guidance: "Intended per-level contract, reached through the shared data-fui-disclosure machinery; no config to restore the old close-all behaviour. Focus outside any open disclosure still closes all of them."
+      - change: uihost.WithStrict now fails boot when the site chrome links to a path nothing serves, and StrictConfig.InternalLinks defaults to enforce
+        breaking: false
+        guidance: "Runs after the last route registration, so a working link is never flagged; a catch-all GET route satisfies it unverified. A failing boot names each dead href - register its screen, fix the link, add the path to ExemptScreens, or set InternalLinks to warn/off."
+      - change: gofastr pack and gofastr generate output changes - the pack serializer no longer drops middleware/plugins/helpers/app.description/app.base_url/app.public_openapi/seed.count/seed.weights/entity renames (and emits corrected key orders), and generated marketing chrome links and auth-gate redirects derive from the blueprint's registered screens instead of literal defaults
+        breaking: false
+        guidance: "Fixes for silent data loss and 404 chrome. Regenerating or re-packing an existing blueprint now emits keys that were previously dropped - expect and review the diff rather than treating the new keys as drift."

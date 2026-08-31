@@ -87,7 +87,7 @@
 //	Link:                 typed-variant anchor with unsafe-href sanitizing
 //	LinkButton:            anchor styled as Button, for CTAs that navigate
 //	Markdown:             themed wrapper over core/markdown
-//	Menu:                 <details>-driven dropdown menu (keyboard + ARIA)
+//	Menu:                 <details>-driven dropdown menu (keyboard + ARIA; submenus, radio rows)
 //	MetricBand:           compact semantic band of one to six related signals
 //	Muted:                subdued inline <span> for secondary text
 //	NetworkRetryBanner:   RPC-failure banner with health-probe retry

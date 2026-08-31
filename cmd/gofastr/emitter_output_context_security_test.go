@@ -264,7 +264,7 @@ func TestAuthFormHrefRejectsBadScheme(t *testing.T) {
 		// Controls: the guarded siblings. ui.LinkButton refuses the scheme, so the
 		// blueprint may legitimately emit the value and the check lands downstream.
 		{"link_button.href", func(v string) string {
-			expr, _ := renderBlueprintCatalogBlock(BlueprintScreen{Name: "home"}, BlueprintBlock{
+			expr, _ := renderBlueprintCatalogBlock(Blueprint{}, BlueprintScreen{Name: "home"}, BlueprintBlock{
 				Kind: "link_button", Props: map[string]any{"label": "Go", "href": v},
 			}, nil, nil, "")
 			return expr
@@ -492,7 +492,11 @@ func TestPackYAMLListItemStaysOneItem(t *testing.T) {
 				},
 			}},
 		}
-		yml := encodeBlueprintYAML(bp)
+		yml, err := encodeBlueprintYAML(bp)
+		if err != nil {
+			t.Errorf("SECURITY: [yaml-injection] %q: pack refused a value-only hostile blueprint: %v", payload, err)
+			continue
+		}
 		back, err := decodeBlueprintString(yml)
 		if err != nil {
 			t.Errorf("SECURITY: [yaml-injection] %q: pack emitted YAML that no longer parses: %v\n%s", payload, err, yml)

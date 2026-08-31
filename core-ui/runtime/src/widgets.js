@@ -44,8 +44,13 @@
     }
     const o = opts || {};
     const params = o.params || {};
+    // #321: the open trigger may carry context (data-fui-ctx). It is
+    // opaque to the runtime: forwarded on the chrome fetch and keyed in
+    // the client cache, never parsed. The chrome render authorises it
+    // server-side.
+    const ctx = (o.btn && o.btn.getAttribute('data-fui-ctx')) || '';
     const cfg = entry.cfg;
-    await NS._mountByName(name);
+    await NS._mountByName(name, ctx);
     const declared = cfg.deepLinkParams || [];
     if (declared.length) {
       const url = new URL(window.location.href);
@@ -66,32 +71,70 @@
     }
   };
 
-  NS._mountByName = async function (name) {
+  NS._mountByName = async function (name, ctx) {
     const entry = NS._widgetCatalog && NS._widgetCatalog[name];
     if (!entry) return;
     if (NS._widgets[name]) return; // already mounted
     const cfg = entry.cfg;
     const existing = document.querySelector('[data-fui-widget="' + CSS.escape(name) + '"]');
     if (existing) {
-      NS.mountWidget(cfg, null, existing);
-      return;
+      // #321: SSR-inlined chrome is ctx-less by construction — the
+      // server inlines on a deep-link URL match, where no trigger
+      // exists to carry data-fui-ctx. Hydrating it for a ctx-carrying
+      // trigger would show chrome for the wrong entity. Drop the node
+      // and fall through to the (name, ctx)-keyed fetch below.
+      //
+      // Removing it cannot flash, but NOT because a visible widget
+      // "returned above" — nothing orders those. A deep-link arrival is
+      // mounted by the synchronous tryMount block before any pointer
+      // event can run, and this path is reached only from a trigger
+      // click on a catalog-gated widget. So whatever is still in the DOM
+      // here is un-mounted chrome nobody is looking at.
+      if (ctx) existing.remove();
+      else { NS.mountWidget(cfg, null, existing); return; }
     }
     const path = cfg.chromePath || ('/core-ui/widget/' + name + '/chrome');
-    if (!NS._chromeCache[name]) {
-      NS._chromeCache[name] = (async () => {
+    // #321: key by (name, ctx) so triggers carrying different contexts
+    // fetch distinct chromes while a repeat of the same ctx hits the
+    // cache. '\0' cannot survive HTML attribute parsing, so name+ctx
+    // pairs cannot collide.
+    const key = name + '\0' + (ctx || '');
+    const cached = NS._chromeCache[key];
+    if (cached) {
+      // LRU refresh: delete + re-insert moves the key to the recency
+      // tail (plain-object key order is insertion order).
+      delete NS._chromeCache[key];
+      NS._chromeCache[key] = cached;
+    } else {
+      // Capture the cache object this fetch starts against: a
+      // gofastr:navigate mid-flight swaps NS._chromeCache for a fresh
+      // object, and the failure path below must not delete from the
+      // new one — that would evict the new page's entry for the same
+      // key and cost it a refetch on its next open.
+      const cache = NS._chromeCache;
+      cache[key] = (async () => {
         try {
-          if (!NS._originOK?.(path)) throw new Error('cross-origin chrome');
-          const r = await fetch(path);
+          const url = ctx
+            ? path + (path.includes('?') ? '&' : '?') + 'ctx=' + encodeURIComponent(ctx)
+            : path;
+          if (!NS._originOK?.(url)) throw new Error('cross-origin chrome');
+          const r = await fetch(url);
           if (!r.ok) throw new Error('chrome fetch ' + r.status);
           return await r.text();
         } catch (err) {
-          delete NS._chromeCache[name];
+          delete cache[key];
           throw err;
         }
       })();
+      // Cap distinct contexts per document: a 200-row page with a
+      // delete dialog per row would otherwise cache 200 chromes. Evict
+      // the least recently used; an evicted entry refetches on its next
+      // open, which is the same request its first open made.
+      const ks = Object.keys(NS._chromeCache);
+      if (ks.length > 32) delete NS._chromeCache[ks[0]];
     }
     let html = '';
-    try { html = await NS._chromeCache[name]; } catch (_) {}
+    try { html = await NS._chromeCache[key]; } catch (_) {}
     if (html) NS.mountWidget(cfg, html);
   };
 
@@ -365,6 +408,21 @@
     }
 
   };
+
+  // #329: chrome renders per-principal (serveChrome renders with the
+  // request context), but this cache lives on window and SPA navigation
+  // keeps the document. A sign-in / sign-out that happens without a full
+  // page load (intercepted form, RPC + navigate) leaves the previous
+  // principal's chrome cached under the same key otherwise. There is no
+  // client-visible principal to key on (session cookies are HttpOnly),
+  // so clear on every gofastr:navigate: the destination render always
+  // happens under the current session. Cost: the first open of a
+  // previously-opened widget per navigation refetches its chrome once, a
+  // no-store GET identical to its first open. A navigation-free (RPC
+  // only) principal flip is outside this guarantee — nothing fires
+  // gofastr:navigate, so chrome cached before the flip survives it; see
+  // framework/docs/content/widgets.md § Chrome context.
+  window.addEventListener('gofastr:navigate', () => { NS._chromeCache = {}; });
 
   (NS.loadedModules ||= {}).widgets = true;
 })();
