@@ -28,6 +28,18 @@ var stripInboundHeaders = []string{
 	http.CanonicalHeaderKey("Proxy-Authorization"),
 	http.CanonicalHeaderKey("X-CSRF-Token"),
 	http.CanonicalHeaderKey("X-API-Key"),
+	// Client-claimed forwarding identity. X-Forwarded-* is handled by the
+	// prefix sweep in stripInbound, but these carry the same claim under
+	// names that do not share it, and an upstream that trusts any of them
+	// (they are the common CDN spellings) reads whatever the caller put
+	// one curl -H away. The relay derives the client IP from the
+	// connection and writes X-Forwarded-For itself.
+	http.CanonicalHeaderKey("X-Real-IP"),
+	http.CanonicalHeaderKey("X-Client-IP"),
+	http.CanonicalHeaderKey("True-Client-IP"),
+	http.CanonicalHeaderKey("CF-Connecting-IP"),
+	http.CanonicalHeaderKey("Fastly-Client-IP"),
+	http.CanonicalHeaderKey("Forwarded"),
 }
 
 // stripOutboundHeaders never reach the client. Set-Cookie and the
@@ -213,6 +225,37 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 	if !rt.cacheOK {
 		resp.Header.Set("Cache-Control", "no-store")
 	}
+
+	// Bound the response direction with the same brake the request
+	// direction carries. MaxBodyBytes capped req.Body only, and
+	// ReverseProxy streams the upstream's body straight through, so a
+	// vendor endpoint that never ends its response held a goroutine, a
+	// socket pair, and bandwidth for the full request deadline -- per
+	// open client request, at no cost to the vendor. "Egress is your cost
+	// now" is the relay's own warning about this direction, and nothing
+	// enforced it.
+	resp.Body = &cappedBody{ReadCloser: resp.Body, remaining: rt.maxBody}
+}
+
+// cappedBody stops a response body at a byte budget. It reports io.EOF
+// rather than an error: the client has already received a 200 and its
+// headers by the time this runs, so the truncation cannot be signalled as
+// a status. Truncated-but-terminated beats streaming forever.
+type cappedBody struct {
+	io.ReadCloser
+	remaining int64
+}
+
+func (c *cappedBody) Read(p []byte) (int, error) {
+	if c.remaining <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > c.remaining {
+		p = p[:c.remaining]
+	}
+	n, err := c.ReadCloser.Read(p)
+	c.remaining -= int64(n)
+	return n, err
 }
 
 // loggerBeforeInit is the pre-Init fallback so a Relay constructed but
