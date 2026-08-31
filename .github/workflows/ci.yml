@@ -451,10 +451,6 @@ jobs:
             # TestCardFooterPinsToBottomInGrid on a PR that touched neither
             # package.
             run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/
-          - suite: ui-quality-evals
-            # Its capture tests drive a real headless Chrome; kept out of
-            # the deterministic -p 2 run for the same contention reason.
-            run: go test -count=1 -timeout=10m ./evals/ui-quality/...
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -491,6 +487,66 @@ jobs:
 
       - name: Run suite
         run: ${{ matrix.run }}
+
+
+  ui-quality-evals:
+    # ADVISORY, not blocking (2026-08-31). This is the harness behind the
+    # UI-quality eval: process isolation, credential dropping, agent-backend
+    # plumbing, and the screenshot capture that produces an eval's evidence.
+    # TestMobileCaptureUsesTouchPortraitDPRAndFullDocument drives real Chrome
+    # and asserts the capture is genuinely mobile (1170x2532 at DPR 3, touch
+    # points, portrait, a Mobile UA, a full-page shot taller than the
+    # viewport) — worth having, because a silently degraded capture would
+    # score every future eval against fake evidence.
+    #
+    # Demoted because it failed on main three times in one night, on three
+    # unrelated commits, always the same test on "install network guard:
+    # context deadline exceeded" at ~45s, while passing in 15s locally — and
+    # it is a REQUIRED check, so each failure held a release tag hostage
+    # (v0.77.0 lost an hour to it). It is also non-deterministic locally:
+    # identical code passed and failed on consecutive runs, so no fix could
+    # be validated. See #342.
+    #
+    # What it measures is a second opinion, not the only one: the UI quality
+    # it scores is covered in part by browser e2e · site-axe, the uihost
+    # strict checks, and the zero-app-CSS contract (CLAUDE.md hard rules
+    # 7-9). Promote back to "(blocking)" — adding the suffix to `name` and
+    # the check to scripts/release-required-checks.txt in the same commit,
+    # as upgrade-fixtures did — once #342 makes it deterministic.
+    name: "ui quality evals (advisory)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Go module + build cache (restore only)
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        with:
+          install-dependencies: true
+
+      - name: Install the gofastr binary
+        run: go install ./cmd/gofastr
+
+      - name: Run suite
+        run: go test -count=1 -timeout=10m ./evals/ui-quality/...
 
 
   upgrade-fixtures:
