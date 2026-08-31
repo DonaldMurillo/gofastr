@@ -9,6 +9,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`ui.Menu` submenus and `menuitemradio` rows** (#319): `MenuItem` gained
+  `Children`, `Radio`, and `Checked`. An item with `Children` renders a
+  submenu — a `<summary role="menuitem" aria-haspopup="menu">` disclosing a
+  nested `role="menu"` through the same `data-fui-disclosure` machinery as the
+  top level — and the full keyboard contract ships with it: ArrowRight opens a
+  submenu and moves focus in, ArrowLeft closes it and returns focus to the
+  parent row (swapped in RTL), roving focus and type-ahead stay scoped to the
+  item's own panel, Escape closes one level at a time, and Tab closes the whole
+  chain. A submenu parent is purely a disclosure: `Children` alongside `Href`,
+  `RPC`, or `Radio` panics at render time. An item with `Radio` renders
+  `role="menuitemradio"` with `aria-checked` from `Checked`; activating a row
+  checks it and unchecks its same-group siblings client-side, while RPC and
+  href rows still fire and the server re-render stays authoritative. The check
+  indicator and submenu caret are CSS pseudo-elements, so accessible names and
+  type-ahead see the label alone. Zero-value output stays byte-identical,
+  golden-pinned, including nested items and `ExtraAttrs` id-dropping at depth.
+  Core runtime bytes are unchanged; the menu module grew 516 gzipped bytes and
+  disclosure 51, both inside their budgets.
+
 - **`registry.IsolateForTest(t)`** swaps the process-global style registry for
   a fresh one and restores it when the test finishes. Test-only seam for
   asserting registry-shaped behaviour — the SSR host's single-direct-link vs
@@ -18,6 +37,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `LoadAlways`) otherwise changes the eager set every test in that binary sees
   (#331). Styles registered during isolation are dropped on restore, so they
   cannot leak into later tests. No runtime behaviour change.
+
+
 
 - **`uihost.WithStrict` internal-link check** fails boot when the site chrome
   (each layout's header, sidebar, footer) links to a path nothing serves. The
@@ -150,6 +171,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+
+- **BEHAVIOUR: Escape now closes only the innermost open disclosure**, not every
+  open one on the page. Previously an Escape anywhere closed them all; now, with
+  focus inside an open `data-fui-disclosure`, only the deepest one containing
+  focus closes, and focus outside any of them still closes all. The change came
+  from nested menus needing one level per press, but `data-fui-disclosure` is
+  shared, so it reaches every consumer: `disclosure.Render`,
+  `html.Details{Disclosure: true}`, `ui.Collapsible`, `ui.Sidebar` groups,
+  `ui.SiteHeader`'s hamburger drawer, `SectionMenu` groups, and the admin-sort
+  panel. Concretely: a mobile drawer containing an expanded nav group now takes
+  two Escapes to dismiss where it took one. This is the only change in the
+  release that alters behaviour for an app upgrading from v0.76.0 without
+  touching its own code.
 
 - **Generated marketing chrome links and auth-gate redirects follow the
   blueprint's registered screens** (#312) (`gofastr generate`). The marketing
