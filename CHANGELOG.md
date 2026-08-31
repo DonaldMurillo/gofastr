@@ -28,6 +28,43 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Core runtime bytes are unchanged; the menu module grew 460 gzipped bytes and
   disclosure 51, both inside their budgets.
 
+- **`uihost.WithStrict` internal-link check** fails boot when the site chrome
+  (each layout's header, sidebar, footer) links to a path nothing serves. The
+  check renders the chrome and resolves every internal `href` against the
+  app's full served surface — but only once that surface exists: it runs at
+  boot, not at Mount. Batteries and plugins register their routes during
+  `App.Start`'s InitPlugins phase and `App.Start` itself registers more after
+  them, so a Mount-time table is partial and would flag working links (a
+  sidebar "Back office" → `/admin` panic-boots an app that serves it).
+  `App.Start` now calls a mounted host's `ValidateBoot` (the new
+  `framework.BootValidator` seam) after the last route registration and
+  before the listener binds — the latest point at which a finding can still
+  refuse to serve. Resolving against the complete table also covers
+  UIHost's own conditional endpoints (`/llm-pages.md`, `/llms-full.txt`,
+  the agent card, `/.well-known/jwks.json`) and every config-gated
+  artifact (`/sitemap.xml` without `WithSitemap` is still a dead link).
+  Percent-encoded hrefs are decoded before matching, the same way
+  `net/http` decodes before routing, so `/docs/caf%C3%A9` resolves against
+  a screen at `/docs/café`; a malformed escape (`/bad%zz`) can never be
+  served and is reported as a finding. One documented gap: a catch-all GET
+  route (`/{path...}`) satisfies the check for every path it claims, so
+  links under one are accepted, not verified — the handler may serve them,
+  and probing it would mean executing the app at boot. A host mounted
+  outside a `framework.App` never reaches the boot hook and never gets the
+  link check. External URLs, anchors, query-only references, template
+  placeholders, and relative references are out of scope; `ExemptScreens`
+  entries also exempt links whose target falls under them. Tuned, like
+  every strict check, through `StrictConfig.InternalLinks`
+  (`enforce`/`warn`/`off`).
+
+- **`ui.Menu` disabled rows no longer emit a malformed attribute** (#327):
+  `aria-disabled` was concatenated straight onto `tabindex="-1"` with no
+  separating space, so a disabled row rendered
+  `tabindex="-1"aria-disabled="true"`. Browsers recover from it; strict
+  parsers and DOM-diffing tools need not.
+
+
+
 - **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
   navigation, at two grains: `NoSPA` drops a route from the client route
   manifest so the runtime treats it as unknown and every link to it does a full
@@ -99,6 +136,47 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   now marked attempted only once its fetch succeeds, so the next
   hover/focus retries; in-flight re-hovers cost nothing (the loader
   dedups). Cost: 5 gzipped bytes of core runtime.
+
+- **`gofastr pack` no longer drops `middleware`, `plugins`, and `helpers`
+  declarations** (#318): the serializer's key list named all three while the
+  serializer itself never emitted them, so a blueprint carrying any of them
+  packed without them. The same class also took `app.description`,
+  `app.base_url`, and `app.public_openapi`: decoded, then silently omitted.
+  The serializer round-trip test now runs against every committed example
+  blueprint instead of only Meridian — the one example that declares none of
+  the affected constructs — and a reflection-driven guard keeps the key list
+  and the serializer honest about every field `Blueprint` and `BlueprintApp`
+  carry, so the next construct added to either side fails a test the day it
+  diverges.
+
+- **A quote character in an enum value no longer merges flow-list entries**
+  (#323): the quoting predicate treated quotes as a first-character-only
+  indicator, so `values: [60', 90']` was emitted with both apostrophes bare
+  and re-parsed as a single member `"60', 90'"` — two enum values silently
+  became one, and a lone `values: [60']` failed to parse at all. Values
+  containing `'` or `"` are now double-quoted: `"` and backslash are escaped,
+  invalid UTF-8 bytes and non-printable runes as `\xNN`/`\uNNNN` (so a quoted
+  value re-parses byte-for-byte instead of gaining U+FFFD), and the apostrophe
+  passes through verbatim — `\'` is not an escape `strconv.Unquote` knows, and
+  inside double quotes it needs none. This mirrors the key-side rule from
+  #317, which refuses instead because core/yaml never unquotes keys.
+
+- **`gofastr pack` no longer drops `seed.count`, `seed.weights`, and entity
+  `renames`** (#330): the same decoded-but-never-serialized class as #318,
+  one level down — inside slice elements, where neither the example
+  round-trip (no committed example uses them) nor the top-level coverage
+  guards (a set `Seed` field already moves the output by emitting the `seed`
+  key) could see the omission. The guard now probes every construct field
+  (entities, fields, relations, indices, screens, body/children blocks,
+  actions, transitions, nav, seed, endpoints, stubs); the same run caught
+  stale key orders — `entityOrder` still listed the pre-grouping flat keys
+  (`crud`, `mcp`, `soft_delete`, …) while missing
+  `scope`/`pagination`/`exposure`/`search_fields`/`renames`, `fieldOrder`
+  missed `no_query`, and `blockOrder` missed `filters`. Two fields are
+  exempted with reasons in the test: entity-level `endpoints` (the
+  authoring form lives in the top-level `endpoints` stubs; emitting the
+  derived form would duplicate them) and index `expression` (not in the
+  blueprint grammar).
 
 ## [0.76.0] - 2026-08-30
 

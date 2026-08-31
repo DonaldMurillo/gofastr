@@ -3,10 +3,12 @@
 `uihost.WithStrict()` makes the host refuse to serve an app whose
 declared surface is missing the things a public site should never ship
 without: page titles and descriptions, a site description, an icon, a
-sitemap, robots directives, and, in dev, an accessibility test for
-every screen. All findings are reported at once, each with its remedy,
-as a boot panic at Mount time: a strict app either passes every check
-or never takes traffic.
+sitemap, robots directives, working internal links, and, in dev, an
+accessibility test for every screen. All findings are reported at once,
+each with its remedy, as a boot panic: a strict app either passes every
+check or never takes traffic. Most checks fire at Mount; the
+internal-link check fires later, at boot, because it needs the route
+table only `App.Start` finishes building.
 
 Strict mode is opt-in. Apps scaffolded by `gofastr generate` ship with
 it on (and with a surface that passes every check); existing apps add
@@ -32,13 +34,90 @@ host := uihost.New(ui,
 | Site icon | the host | `WithAppIcon` (preferred: one source image derives the whole icon surface) or `WithFavicon` |
 | Sitemap | the host | `WithSitemap` with a valid `BaseURL`: a bare http/https origin (host, no userinfo/query/fragment/path; deployment path prefixes belong in the static Builder's `BasePath`) |
 | Robots | the host | `WithRobots` |
+| Internal links | the site chrome (every layout's header, sidebar, footer), **at boot** | every internal `href` resolves to something the app serves: a registered screen (dynamic routes included), a static file, or any GET route on the framework router once the route table is complete. A catch-all GET route (`/{path...}`) satisfies the check for every path it claims, so links under one are accepted, not verified |
 | Axe coverage | every page screen, **dev only** | the axe-coverage manifest records at least one scan that resolves to the route |
 
 Drawers, sheets, and dialogs are exempt from the screen checks: they
 render inside a page and own no `<head>`. Screens a battery registers
-(the admin back-office, for example) are also outside the checks:
-batteries Init at `App.Start`, after Mount, so strict mode covers
-exactly the surface the app itself declared.
+(the admin back-office, for example) are also outside those checks:
+batteries Init at `App.Start`, after Mount, so the screen checks cover
+exactly the surface the app itself declared. Links are different: a
+battery's *routes* are part of what the app serves, so the link check
+runs after batteries have initialized.
+
+## The internal-link check
+
+The chrome is where broken links are born: a footer's Legal column, a
+header's nav, a sidebar's entries are all declared as data at wiring
+time, and nothing stops them naming a path no screen registers — a
+generated app shipped exactly that (footer links to `/terms` and
+`/privacy`, neither registered) until the check existed. Strict mode
+renders every layout's chrome — the default layout plus each screen's
+own — with a background context, the same computation `Layout.Wrap`
+performs on every request, and resolves each internal `href` against
+the app's full served surface.
+
+**The check runs at boot, not at Mount.** The route table is not
+complete at Mount: batteries and plugins register their routes during
+`App.Start`'s InitPlugins phase, `App.Start` itself registers more
+after them (OpenAPI, `/mcp`, health endpoints, the well-knowns), and a
+sidebar "Back office" → `/admin` pointing at the admin battery would
+panic a boot that serves fine. `App.Start` therefore calls the host's
+`ValidateBoot` (the `framework.BootValidator` seam) after the last
+route registration and before the listener binds — the latest point at
+which a finding can still refuse to serve. A host mounted outside a
+`framework.App` never reaches that moment and never gets the link
+check.
+
+Resolution happens against the complete table, the same way a request
+would dispatch:
+
+- registered screens, through the router itself, so a concrete link
+  like `/docs/install` is covered by the `/docs/:slug` pattern and a
+  trailing-slash variant resolves to its canonical screen;
+- static files (`WithStaticDir` / embedded FS) and the favicon path;
+- any GET route on the framework router — entity CRUD and custom
+  endpoints registered before Mount, battery and plugin routes
+  registered during InitPlugins, and the framework's own endpoints
+  (`/sitemap.xml`, `/robots.txt`, `/llms.txt`, the agent card,
+  `/healthz`, …) each gated by the config that mounts it. A link to
+  `/sitemap.xml` without `WithSitemap` is a dead link and stays a
+  finding;
+- percent-encoded paths are decoded before matching, exactly as
+  `net/http` decodes them before routing: a link to
+  `/docs/caf%C3%A9` resolves against the screen registered at
+  `/docs/café`. A malformed escape (`/bad%zz`) can never be served —
+  the server answers 400 to the browser's verbatim request — so it is
+  reported as a finding rather than crashing the check.
+
+Deliberately out of scope: external URLs and every scheme reference
+(`mailto:`, `tel:`), protocol-relative and relative references,
+fragments, query-only references, and template placeholders
+(`/docs/{slug}`, `/users/:id`) — none of them names a route the app
+must register. Form actions and RPC attributes target handlers, not
+pages, and are not link-checked.
+
+Three honest limits:
+
+- A chrome component that needs a request to render (a header that
+  branches on the signed-in user) is rendered logged-out: the links
+  only that branch emits are not checked — a warning names any chrome
+  that fails to render at boot.
+- The outer shells of nested screen groups whose parent and child
+  declare *different* layouts are not enumerated; the exportable
+  router surface reaches the default layout and each screen's
+  innermost layout.
+- **A catch-all GET route (`/{path...}`) satisfies the check for every
+  path it claims.** The route answers for the path as far as routing
+  can tell; whether its handler really serves it cannot be known
+  without executing the app at boot. Links under a catch-all are
+  accepted, not verified — if that matters, keep the catch-all out of
+  the checked subtree or exempt the chrome deliberately.
+
+`ExemptScreens` applies one level up from usual: an entry exempts
+links *pointing under it*, the same vocabulary that exempts routes.
+`ExemptScreens: []string{"/machine/*"}` silences findings for chrome
+links into `/machine/…` while leaving every other link checked.
 
 ## The axe-coverage check
 
@@ -116,6 +195,7 @@ uihost.WithStrict(uihost.StrictConfig{
 | `SiteIcon` | `WithAppIcon`/`WithFavicon` present | enforce |
 | `Sitemap` | `WithSitemap` present | enforce |
 | `Robots` | `WithRobots` present | enforce |
+| `InternalLinks` | chrome `href`s resolve to a served path | enforce |
 | `AxeCoverage` | per-screen axe scan recorded (dev only) | enforce |
 | `AxeManifestMissing` | posture when no manifest exists at all | **warn** (`StrictAbsenceWarn`) |
 | `ExemptScreens` | routes the per-screen checks skip: exact pattern or `/prefix/*` | none |
