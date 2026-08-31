@@ -54,6 +54,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Combobox static filtering now hides non-matching options** (#337): the
+  combobox stylesheet's `[role="option"] { display: block }` (re-set to
+  `display: flex` under `@media (pointer: coarse)`) is author-origin, which
+  beats the user agent's `[hidden] { display: none }` regardless of
+  specificity — so the runtime set `opt.hidden` correctly, the attribute had no
+  visual effect, and typing in a command palette left every row painted. An
+  explicit `[role="option"][hidden] { display: none }` guard restores filtering
+  on fine and coarse pointers. The chromium palette harness also named the
+  combobox sheet at `/__gofastr/combobox.css`, which 404s, so every palette
+  test had been running with no combobox CSS at all; the catalog now points at
+  `/__gofastr/comp/combobox.css` and the test refuses to run if that sheet
+  stops loading. The regression test counts painted rows via client rects,
+  never `hidden` attributes — an attribute-level assertion passes against the
+  broken behaviour, which is how this survived.
+
 - **`ui.CommandPalette` gained a visible close control and a bounded mobile
   dialog** (#325): the palette rendered no dismiss control a touch user could
   reach — the `Esc` hint chip is an instruction a phone cannot follow, and the

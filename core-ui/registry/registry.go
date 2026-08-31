@@ -251,8 +251,15 @@ type testCleanup interface{ Cleanup(func()) }
 // wins. Nested isolations compose, each restore returning to the
 // enclosing state.
 //
-// Sequential tests only: a test that isolates must not run in parallel
-// with tests that still read the shared registry.
+// Sequential tests only — read this as a hazard, not a style note.
+// Nothing here detects concurrent misuse, and the corruption is silent:
+// a test that registers while another test holds isolation writes into
+// the throwaway map (a forced-interleaving probe watched exactly that),
+// the isolated test's restore then swaps the original map back and
+// silently destroys the sibling's registrations, and NEITHER test
+// fails — later tests simply see a registry that is missing entries.
+// Nothing structural can prevent this without importing testing, so
+// the sequencing discipline is the only guard.
 func IsolateForTest(t testCleanup) {
 	mu.Lock()
 	saved := entries

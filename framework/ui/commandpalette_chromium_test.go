@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chromedp/chromedp"
-	"github.com/chromedp/chromedp/kb"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // Hard rule 9: dialog bounding is layout — a DOM dump cannot see that a
@@ -75,7 +75,7 @@ body{margin:0}
 </style>
 <script type="application/json" id="gofastr-catalog">
 {"ui-cmd-palette":{"stylePath":"/__gofastr/comp/ui-cmd-palette.css","version":"test","loadMode":"auto"},
- "combobox":{"stylePath":"/__gofastr/combobox.css","version":"test","loadMode":"auto"}}
+ "combobox":{"stylePath":"/__gofastr/comp/combobox.css","version":"test","loadMode":"auto"}}
 </script>
 <button id="open" type="button" data-fui-open="command-palette">Open palette</button>
 `+widget.RuntimeTag())
@@ -218,6 +218,40 @@ func TestCommandPaletteBoundedDialogChromium(t *testing.T) {
 				t.Errorf("listbox collapsed to %dpx — the flex column starved the scrolling region", m.ListboxClientH)
 			}
 
+			// Scroll-reachability: bounds alone don't make the tail of an
+			// 80-command list usable — the listbox must be the scrolling
+			// region. Jump to the bottom and require the LAST painted
+			// option to land inside the listbox's visible box. If
+			// overflow-y is lost (content pushing the dialog instead),
+			// scrollTop stays 0 and the last row sits far below the fold.
+			var sr struct {
+				ScrollTop  float64 `json:"scrollTop"`
+				LastTop    float64 `json:"lastTop"`
+				LastBottom float64 `json:"lastBottom"`
+				ListTop    float64 `json:"listTop"`
+				ListBottom float64 `json:"listBottom"`
+				LastLabel  string  `json:"lastLabel"`
+			}
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+				const list = document.getElementById('command-palette-input-listbox');
+				list.scrollTop = list.scrollHeight;
+				const lb = list.getBoundingClientRect();
+				const opts = [...list.querySelectorAll('[role="option"]')].filter(o => o.getClientRects().length > 0);
+				const last = opts[opts.length - 1];
+				const r = last.getBoundingClientRect();
+				return {scrollTop: list.scrollTop, lastTop: r.top, lastBottom: r.bottom,
+					listTop: lb.top, listBottom: lb.bottom, lastLabel: last.textContent.trim()};
+			})()`, &sr)); err != nil {
+				t.Fatal(err)
+			}
+			if sr.ScrollTop <= 0 {
+				t.Errorf("listbox did not scroll (scrollTop=%.1f after jump-to-bottom) — the 80-command tail is unreachable", sr.ScrollTop)
+			}
+			if sr.LastBottom > sr.ListBottom+0.5 || sr.LastTop < sr.ListTop-0.5 {
+				t.Errorf("last command %q not scroll-reachable: option box [%.1f,%.1f] outside listbox [%.1f,%.1f]",
+					sr.LastLabel, sr.LastTop, sr.LastBottom, sr.ListTop, sr.ListBottom)
+			}
+
 			if vp.wantShot {
 				var shot []byte
 				if err := chromedp.Run(ctx, chromedp.FullScreenshot(&shot, 100)); err != nil {
@@ -349,5 +383,122 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 	}
 	if !escClosed {
 		t.Error("Escape no longer dismisses the palette")
+	}
+}
+
+// TestCommandPaletteStaticFilteringPaintsOnlyMatchesChromium guards the
+// palette's primary interaction: typing filters the static command list.
+// The assertion counts PAINTED rows (client rects), never `hidden`
+// attributes. combobox.js sets opt.hidden correctly, but the combobox
+// stylesheet's `[role="option"] { display: block }` is author-origin and
+// beats the UA `[hidden] { display: none }` regardless of specificity —
+// an attribute-level assertion passes while every row stays painted
+// (#337). The same sheet re-sets display:flex on options under
+// @media (pointer: coarse), so the test re-measures under emulated
+// coarse pointer: the [hidden] guard must hold in both environments.
+func TestCommandPaletteStaticFilteringPaintsOnlyMatchesChromium(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 390, 844)
+	openPalette(t, ctx, srv.URL, 390, 844)
+
+	// Harness guard: the combobox stylesheet named by the catalog must
+	// actually load. It 404'd for this harness's whole life while the
+	// catalog named /__gofastr/combobox.css (only /__gofastr/comp/<n>.css
+	// is served), and every palette test ran with zero combobox CSS —
+	// invisible to every existing assertion.
+	var sheetRules int64
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const link = document.querySelector('link[data-fui-style="combobox"]');
+		return (link && link.sheet) ? link.sheet.cssRules.length : -1;
+	})()`, &sheetRules)); err != nil {
+		t.Fatal(err)
+	}
+	if sheetRules <= 0 {
+		t.Fatalf("combobox stylesheet not applied (cssRules=%d) — the harness catalog points at an unserved URL; combobox-style assertions are meaningless without it", sheetRules)
+	}
+
+	// "command 05" matches Command 050–059: 10 of 80 options.
+	if err := chromedp.Run(ctx,
+		chromedp.SendKeys(`#command-palette-input`, "command 05", chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	measure := `(() => {
+		const list = document.getElementById('command-palette-input-listbox');
+		const opts = [...list.querySelectorAll('[role="option"]')];
+		let hiddenAttr = 0, painted = 0, firstPainted = '', lastPainted = '';
+		for (const o of opts) {
+			if (o.hidden) hiddenAttr++;
+			if (o.getClientRects().length > 0) {
+				painted++;
+				if (!firstPainted) firstPainted = o.textContent.trim();
+				lastPainted = o.textContent.trim();
+			}
+		}
+		return {total: opts.length, hiddenAttr, painted, firstPainted, lastPainted};
+	})()`
+	var m struct {
+		Total        int64  `json:"total"`
+		HiddenAttr   int64  `json:"hiddenAttr"`
+		Painted      int64  `json:"painted"`
+		FirstPainted string `json:"firstPainted"`
+		LastPainted  string `json:"lastPainted"`
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(measure, &m)); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("filter \"command 05\": total=%d hiddenAttr=%d painted=%d first=%q last=%q",
+		m.Total, m.HiddenAttr, m.Painted, m.FirstPainted, m.LastPainted)
+
+	shot := func(name string) {
+		var png []byte
+		if err := chromedp.Run(ctx, chromedp.FullScreenshot(&png, 100)); err != nil {
+			t.Fatal(err)
+		}
+		out := "/tmp/gofastr-palette-filter-" + name + ".png"
+		if err := os.WriteFile(out, png, 0o644); err != nil {
+			t.Fatalf("save screenshot: %v", err)
+		}
+		t.Logf("screenshot: %s", out)
+	}
+	shot("fine") // saved before assertions so a red run still records the render
+
+	if m.Total != 80 {
+		t.Fatalf("fixture changed: %d options, want 80", m.Total)
+	}
+	if m.HiddenAttr != 70 {
+		t.Errorf("expected 70 options flagged hidden by the runtime, got %d", m.HiddenAttr)
+	}
+	if m.Painted != 10 {
+		t.Errorf("typing \"command 05\" must leave 10 painted rows, got %d — the [hidden] attribute is set but an author display rule is beating the UA default (#337)", m.Painted)
+	}
+	if m.Painted == 10 {
+		if !strings.HasPrefix(m.FirstPainted, "Command 050") || !strings.HasPrefix(m.LastPainted, "Command 059") {
+			t.Errorf("painted set is wrong: first=%q last=%q, want Command 050…Command 059", m.FirstPainted, m.LastPainted)
+		}
+	}
+
+	// Coarse pointer re-check: the combobox sheet sets display:flex on
+	// options inside @media (pointer: coarse). If the [hidden] guard
+	// doesn't out-specify THAT rule too, phones filter nothing while
+	// desktop works.
+	if err := chromedp.Run(ctx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return emulation.SetEmulatedMedia().
+				WithFeatures([]*emulation.MediaFeature{{Name: "pointer", Value: "coarse"}}).
+				Do(ctx)
+		}),
+		chromedp.Sleep(150*time.Millisecond),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(measure, &m)); err != nil {
+		t.Fatal(err)
+	}
+	shot("coarse")
+	if m.Painted != 10 {
+		t.Errorf("coarse pointer (touch) must also leave 10 painted rows, got %d — the @media (pointer: coarse) display:flex rule beats the [hidden] guard", m.Painted)
 	}
 }
