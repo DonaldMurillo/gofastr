@@ -223,8 +223,8 @@ func Tabs(cfg TabsConfig) render.HTML {
 		// kernel's prefetch bridge demand-loads it on the first
 		// pointerover/focusin of the strip, so it is in place by the
 		// first click without costing the core bundle a scanner entry
-		// (core gzip headroom is ~20 bytes; see
-		// core-ui/runtime/budget_test.go).
+		// (core gzip headroom is ~13 bytes at its binding level-1 budget
+		// line; see core-ui/runtime/budget_test.go).
 		wrapperAttrs["data-fui-prefetch"] = "tabs"
 	}
 	wrapper := render.Tag("div", wrapperAttrs, nav, content)
