@@ -338,43 +338,105 @@ func TestPackSerializerCoversEveryAppField(t *testing.T) {
 }
 
 // TestPackSerializerCoversEveryConstructField extends the two guards above
-// one level down: into the structs inside each slice-of-struct construct.
-// The top-level guards prove a construct KEY appears when the Blueprint
-// field is set; they cannot see fields dropped inside the element, because
-// the key's mere presence already differs from the zero output. That is the
-// seed.Count/Weights shape exactly (#330): decoded into BlueprintSeedEntity,
-// dropped by blueprintToMap, invisible to every guard above and to every
-// committed example. Each construct field, probed alone inside a one-element
-// construct, must move the serializer output, and the keys emitted across
-// those probes must equal the construct's order list.
+// one level down: into the structs inside each slice-of-struct construct,
+// and (since the pointer/nested-struct extension) into the structs nested
+// inside those. The top-level guards prove a construct KEY appears when the
+// Blueprint field is set; they cannot see fields dropped inside the element,
+// because the key's mere presence already differs from the zero output. That
+// is the seed.Count/Weights shape exactly (#330): decoded into
+// BlueprintSeedEntity, dropped by blueprintToMap, invisible to every guard
+// above and to every committed example. Each construct field must move the
+// serializer output — slice elements probed alone, nested structs probed
+// leave-one-out — and the keys emitted must match the construct's order
+// list where one exists. Before the extension, deleting any single
+// emission line inside scope, pagination, auth, or pwa left this guard
+// green: the constructs' parent keys moved the output, the fields inside
+// them were never probed, and only a committed example using the field
+// (SerializerRoundTrip) stood in the way — coverage by accident.
 func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 	for _, spec := range constructSpecs() {
 		t.Run(spec.name, func(t *testing.T) {
 			zbp, zeroElem := spec.build()
-			zero := blueprintToMap(*zbp)
+			// base is what every field probe is compared against. Slice
+			// constructs probe one field alone and compare against the
+			// zero element's output — the empty construct container is
+			// already present on both sides, so only the probed field's
+			// emission can differ. Nested structs cannot work that way:
+			// their container only emits when a gate sibling is set (pwa
+			// needs Enabled, screen access needs Auth or Role, auth needs
+			// any of four fields), so probing jwt_secret alone never opens
+			// the container and the guard would fail a healthy serializer.
+			// Nested specs invert the probe: every leaf set — container
+			// guaranteed open — then exactly one field zeroed per probe.
+			// The zeroed field's absence must be visible in the output; a
+			// dropped emission line makes the probe identical to base,
+			// which is the red.
+			base := blueprintToMap(*zbp)
+			if spec.leaveOneOut {
+				probeLeafValue(t, zeroElem)
+				base = blueprintToMap(*zbp)
+			}
 			emitted := map[string]bool{}
 			rt := zeroElem.Type()
 			for i := range rt.NumField() {
 				bp, elem := spec.build()
-				probeLeafValue(t, elem.Field(i))
+				if spec.leaveOneOut {
+					probeLeafValue(t, elem)
+					elem.Field(i).Set(reflect.Zero(rt.Field(i).Type))
+				} else {
+					probeLeafValue(t, elem.Field(i))
+				}
 				out := blueprintToMap(*bp)
 				field := spec.name + "." + rt.Field(i).Name
 				if reason, ok := constructOmissions[field]; ok {
 					// The exemption must be total: the probed field may not
 					// leak into the output either.
-					if !reflect.DeepEqual(zero, out) {
+					if !reflect.DeepEqual(base, out) {
 						t.Errorf("%s is exempted (%s) but probing it changes the output: an exempted field must be dropped completely", field, reason)
 					}
 					continue
 				}
-				assertFieldMovesOutput(t, field, zero, out, "blueprintToMap")
-				if m := spec.at(out); m != nil {
+				assertFieldMovesOutput(t, field, base, out, "blueprintToMap")
+				if !spec.leaveOneOut {
+					if m := spec.at(out); m != nil {
+						for k := range m {
+							emitted[k] = true
+						}
+					}
+				}
+			}
+			if spec.leaveOneOut {
+				if m := spec.at(base); m != nil {
 					for k := range m {
 						emitted[k] = true
 					}
 				}
 			}
-			assertOrderMatchesEmitted(t, emitted, spec.order, spec.orderName)
+			switch {
+			case spec.order == nil:
+				if got := orderFor(spec.key); got != nil {
+					t.Errorf("orderFor(%q) = %v but the %s spec carries no order list; pass it so emitted keys are checked against it", spec.key, got, spec.name)
+				}
+			case spec.orderSubset:
+				// accessOrder spans two constructs (screen access emits
+				// auth/role, entity access emits read/create/update/delete),
+				// so set equality cannot hold per construct. The inverse
+				// direction — every listed key emitted by SOME construct —
+				// is pinned by the per-field probes above: each list key
+				// maps to a struct field, and a field that stops emitting
+				// fails its own leave-one-out probe.
+				ordered := map[string]bool{}
+				for _, k := range spec.order {
+					ordered[k] = true
+				}
+				for k := range emitted {
+					if !ordered[k] {
+						t.Errorf("%s does not order %q, which the serializer emits; keys outside the order ship unsorted", spec.orderName, k)
+					}
+				}
+			default:
+				assertOrderMatchesEmitted(t, emitted, spec.order, spec.orderName)
+			}
 		})
 	}
 }
@@ -395,8 +457,23 @@ type constructSpec struct {
 	name      string
 	order     []string
 	orderName string
-	build     func() (*Blueprint, reflect.Value)
-	at        func(map[string]any) map[string]any
+	// key is the construct's emitted YAML container key. Consumed only when
+	// order is nil, to pin that the writer really has no order list for it
+	// (orderedKeys then sorts it alphabetically): a nil order is a checked
+	// contract, not a forgotten field. If orderFor learns the key, the spec
+	// must grow the list.
+	key string
+	// leaveOneOut marks a spec whose element is a nested struct reached
+	// through a parent (App.Auth, Screen.Access, Entity.Scope, …) rather
+	// than a slice element. These probe leave-one-out instead of
+	// probe-alone; see the test body for why probe-alone false-reds here.
+	leaveOneOut bool
+	// orderSubset marks an order list shared by several constructs
+	// (accessOrder spans screen access and entity access): assert only that
+	// every emitted key is ordered, not set equality.
+	orderSubset bool
+	build       func() (*Blueprint, reflect.Value)
+	at          func(map[string]any) map[string]any
 }
 
 func constructSpecs() []constructSpec {
@@ -519,6 +596,106 @@ func constructSpecs() []constructSpec {
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "middleware", 0) },
 		},
+		// ----- nested structs, probed leave-one-out (see constructSpec) -----
+		{
+			name: "auth", order: authOrder, orderName: "authOrder", key: "auth", leaveOneOut: true,
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{App: BlueprintApp{Auth: BlueprintAuth{}}}
+				return bp, reflect.ValueOf(&bp.App.Auth).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "auth") },
+		},
+		{
+			name: "admin", order: adminOrder, orderName: "adminOrder", key: "admin", leaveOneOut: true,
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{App: BlueprintApp{Admin: BlueprintAdmin{}}}
+				return bp, reflect.ValueOf(&bp.App.Admin).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "admin") },
+		},
+		{
+			// No order list exists for pwa: orderFor("pwa") is nil and the
+			// writer sorts its keys alphabetically.
+			name: "pwa", key: "pwa", leaveOneOut: true,
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{App: BlueprintApp{PWA: BlueprintPWA{}}}
+				return bp, reflect.ValueOf(&bp.App.PWA).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "pwa") },
+		},
+		{
+			// accessOrder is shared with exposure.access below: subset check.
+			name: "access", order: accessOrder, orderName: "accessOrder", key: "access",
+			leaveOneOut: true, orderSubset: true,
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Screens: []BlueprintScreen{{Access: BlueprintAccess{}}}}
+				return bp, reflect.ValueOf(&bp.Screens[0].Access).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0, "access") },
+		},
+		{
+			name: "scope", key: "scope", leaveOneOut: true, // orderFor("scope") is nil: sorted
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}}}}
+				return bp, reflect.ValueOf(bp.Entities[0].Scope).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "scope") },
+		},
+		{
+			name: "pagination", key: "pagination", leaveOneOut: true, // orderFor("pagination") is nil: sorted
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Pagination: &framework.PaginationDeclaration{}}}}
+				return bp, reflect.ValueOf(bp.Entities[0].Pagination).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "pagination") },
+		},
+		{
+			name: "exposure", key: "exposure", leaveOneOut: true, // orderFor("exposure") is nil: sorted
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Exposure: &framework.ExposureDeclaration{}}}}
+				return bp, reflect.ValueOf(bp.Entities[0].Exposure).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "exposure") },
+		},
+		{
+			name: "exposure.access", order: accessOrder, orderName: "accessOrder", key: "access",
+			leaveOneOut: true, orderSubset: true,
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{
+					Exposure: &framework.ExposureDeclaration{Access: &framework.AccessDeclaration{}},
+				}}}
+				return bp, reflect.ValueOf(bp.Entities[0].Exposure.Access).Elem()
+			},
+			at: func(out map[string]any) map[string]any {
+				return digEmitted(out, "entities", 0, "exposure", "access")
+			},
+		},
+		{
+			name: "read_scope", order: readScopeOrder, orderName: "readScopeOrder", key: "read_scope", leaveOneOut: true,
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{
+					Exposure: &framework.ExposureDeclaration{ReadScope: &framework.ReadScopeDeclaration{}},
+				}}}
+				return bp, reflect.ValueOf(bp.Entities[0].Exposure.ReadScope).Elem()
+			},
+			at: func(out map[string]any) map[string]any {
+				return digEmitted(out, "entities", 0, "exposure", "read_scope")
+			},
+		},
+		{
+			name: "filter", order: predicateOrder, orderName: "predicateOrder", key: "filter", leaveOneOut: true,
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{
+					Exposure: &framework.ExposureDeclaration{
+						ReadScope: &framework.ReadScopeDeclaration{Filter: []framework.RowPredicateDeclaration{{}}},
+					},
+				}}}
+				return bp, reflect.ValueOf(&bp.Entities[0].Exposure.ReadScope.Filter[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any {
+				return digEmitted(out, "entities", 0, "exposure", "read_scope", "filter", 0)
+			},
+		},
 	}
 }
 
@@ -615,7 +792,12 @@ func probeLeaf(t *testing.T, v reflect.Value, depth int) {
 		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
 		probeLeaf(t, v.Index(0), depth+1)
 	case reflect.Ptr:
+		// Recurse into the pointee, don't stop at allocating it: a zero
+		// pointee only proves the nil-gated container opens, never that the
+		// serializer sees the fields inside it. Pointees left zero are how
+		// Scope/Exposure/Pagination fields stayed invisible to this walk.
 		v.Set(reflect.New(v.Type().Elem()))
+		probeLeaf(t, v.Elem(), depth+1)
 	case reflect.Interface:
 		// Only the empty interface accepts an arbitrary probe string. Named
 		// interfaces (entity.Endpoint's http.Handler, mcp.ToolHandler) are
