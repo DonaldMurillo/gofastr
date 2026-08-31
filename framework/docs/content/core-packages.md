@@ -25,7 +25,10 @@ this. Start at `core/handler/handler.go`: `HandlerAdapter`.
 A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 /pattern` registration with `{id}` path capture, concurrency-safe
 middleware chaining after registration, route groups, and sanitized path
-params (`Param` strips CR/LF/NUL and smuggled `..`). The framework owns
+params (`Param` strips CR/LF/NUL, a decoded `/`, and smuggled `..`;
+`handler.Bind` applies the same rule to `path:"..."` tags, and any other
+reader of `r.PathValue` should go through `Param` or the exported
+`SanitizePathParam`). The framework owns
 the root `*Router` and hands it to batteries and authors to mount
 routes. Direct. Start at `core/router/router.go`: `Router`.
 

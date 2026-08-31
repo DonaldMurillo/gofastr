@@ -77,7 +77,14 @@ func (b *Battery) registerEntityAdmin() error {
 	// SectionMenu shows a trigger button that opens this slide-in sheet
 	// (backdrop, click-outside / Esc close, focus trap, scroll lock, all from
 	// preset.Drawer, none re-implemented). On ≥ 900px it's a sticky rail.
-	widget.MountBuilder(b.router, interactive.SectionMenuDrawer(b.navConfig(ents)))
+	// Mounted behind the SAME authorizer as every other admin surface.
+	// widget.MountBuilder registers its own routes, so mounting on the bare
+	// router left the drawer's /chrome endpoint unauthenticated -- and that
+	// chrome IS the back-office entity map, one anonymous GET away. The
+	// package contract is "There is no unauthenticated or self-service
+	// path"; a nav drawer is not an exception to it.
+	widget.MountBuilder(b.router.Group("", b.gateMiddleware()),
+		interactive.SectionMenuDrawer(b.navConfig(ents)))
 	return nil
 }
 

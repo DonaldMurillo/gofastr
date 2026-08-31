@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
+	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
 // LocalOption configures a LocalStorage instance.
@@ -65,19 +67,19 @@ func (ls *LocalStorage) validateKey(key string) error {
 	}
 	// Check for path traversal sequences
 	if strings.Contains(key, "..") {
-		return fmt.Errorf("storage: key %q contains path traversal sequence", key)
+		return fmt.Errorf("%w: key %q contains a path traversal sequence", upload.ErrInvalidKey, key)
 	}
 	// Reject absolute paths and volume-qualified paths on every platform.
 	// filepath.IsAbs handles Unix roots and Windows roots such as /tmp and
 	// C:\\tmp; VolumeName also catches Windows drive and UNC prefixes.
 	if filepath.IsAbs(key) || filepath.VolumeName(key) != "" ||
 		strings.HasPrefix(key, "/") || strings.HasPrefix(key, "\\") {
-		return fmt.Errorf("storage: key %q escapes base directory", key)
+		return fmt.Errorf("%w: key %q escapes the base directory", upload.ErrInvalidKey, key)
 	}
 	// Clean and verify the resolved path stays within baseDir
 	cleaned := filepath.Clean(key)
 	if strings.HasPrefix(cleaned, "..") {
-		return fmt.Errorf("storage: key %q escapes base directory", key)
+		return fmt.Errorf("%w: key %q escapes the base directory", upload.ErrInvalidKey, key)
 	}
 	return nil
 }
@@ -250,7 +252,7 @@ func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) 
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("storage: key %q not found", key)
+			return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
 		}
 		return nil, fmt.Errorf("storage: open %q: %w", key, err)
 	}

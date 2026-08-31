@@ -84,7 +84,10 @@ func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (s
 	filename := fmt.Sprintf("%04d_%s.sql", version, slug)
 	path := filepath.Join(opts.MigrationsDir, filename)
 
-	content := RenderMigrationFile(version, slug, up, down)
+	content, err := RenderMigrationFileChecked(version, slug, up, down)
+	if err != nil {
+		return "", err
+	}
 	if opts.Group != "" {
 		// Stamp the -- +migrate Group directive just before the Up section so
 		// the runner scopes this migration into the named group. Fail loudly

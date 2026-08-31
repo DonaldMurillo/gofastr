@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
 // S3Client is a minimal interface for S3-compatible operations.
@@ -78,7 +80,7 @@ func validateKey(key string) error {
 		return fmt.Errorf("storage: empty key")
 	}
 	if strings.Contains(key, "..") {
-		return fmt.Errorf("storage: key contains path traversal: %s", key)
+		return fmt.Errorf("%w: key contains a path traversal sequence: %s", upload.ErrInvalidKey, key)
 	}
 	return nil
 }

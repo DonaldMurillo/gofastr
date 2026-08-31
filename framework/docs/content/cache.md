@@ -83,6 +83,49 @@ methods: `Get`, `Set`, `Del`, `Exists`, `FlushDB`). Any go-redis,
 redigo, or mock client that implements those five methods works without
 importing a specific library.
 
+**`Get` must report a missing key with the driver's nil signal** (the
+message go-redis spells `redis: nil`), or by wrapping
+`cache.ErrCacheMiss`. Any other error is treated as a backend failure and
+returned as itself, so a caller that fails closed on a miss — negative
+caching, a revocation list — does not fail open during an outage.
+
+### Optional: `KeyScanner`
+
+An adapter may also implement:
+
+```go
+type KeyScanner interface {
+    Keys(ctx context.Context, pattern string) ([]string, error)
+}
+```
+
+`Clear` needs it **when the cache carries a prefix**. Clear removes the
+entries this cache owns; without a way to enumerate them it can only
+`FlushDB`, which on a shared database destroys every other namespace's
+keys and any foreign keys too. A prefixed `Clear` therefore refuses when
+the client cannot scan, rather than guessing. An unprefixed cache owns
+the database by definition and still uses `FlushDB`.
+
+```go
+func (c adapter) Keys(ctx context.Context, pattern string) ([]string, error) {
+    var out []string
+    iter := c.rdb.Scan(ctx, 0, pattern, 500).Iterator()
+    for iter.Next(ctx) {
+        out = append(out, iter.Val())
+    }
+    return out, iter.Err()
+}
+```
+
+### Prefixes and key shape
+
+`WithPrefix("p")` stores under `p:<key>`. A `:` **inside** the prefix is
+doubled first, so `WithPrefix("u:alice")` stores under `u::alice:<key>`.
+Without that, `WithPrefix("u:alice")` with key `admin:x` and
+`WithPrefix("u:alice:admin")` with key `x` both produced
+`u:alice:admin:x`, and one namespace could read, overwrite, or delete
+another's entries. A prefix containing no `:` is unaffected.
+
 `RedisCache` has no background goroutine and no `Close`. Expiry is
 handled by the Redis server's own `maxmemory` policy.
 

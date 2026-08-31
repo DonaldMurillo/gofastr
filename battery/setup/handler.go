@@ -31,10 +31,15 @@ func (r *Runner) Handler(swap func(), healthz, readyz http.HandlerFunc) http.Han
 			r.cookieSecret = ""
 		} else {
 			r.token = tok
-			// cookieSecret backs the cookie; it survives the
-			// token's single-use invalidation so the already-
-			// issued cookie stays valid for the session.
-			r.cookieSecret = tok
+			// cookieSecret stays EMPTY until an exchange mints one.
+			// It used to be the URL token itself, which made the
+			// single-use promise hollow: the token was invalidated in
+			// its URL form and then handed straight back as the cookie
+			// value, so anyone who had only ever seen the URL — a proxy
+			// or access log — replayed it as Cookie: gofastr_setup=<tok>
+			// from a second client and got the wizard for the life of
+			// the process.
+			r.cookieSecret = ""
 		}
 	}
 	r.mu.Unlock()
@@ -83,7 +88,8 @@ func (r *Runner) serve(w http.ResponseWriter, req *http.Request, healthz, readyz
 // handleTokenExchange validates the one-time token, sets the cookie, and
 // redirects to /setup. The token is single-use: on the first successful
 // exchange it is atomically invalidated so a token leaked to access/proxy
-// logs can't be replayed. The cookie (backed by cookieSecret) survives.
+// logs can't be replayed -- including as a cookie, which is why the
+// cookie carries a freshly minted secret rather than the token itself.
 func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, tok string) {
 	r.mu.Lock()
 	if !r.tokenEnabled || r.token == "" {
@@ -96,9 +102,18 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 		http.Error(w, "forbidden: invalid or expired setup token. Check the server startup log for the setup URL.", http.StatusForbidden)
 		return
 	}
-	// First successful exchange: invalidate the token (single-use).
+	// First successful exchange: invalidate the token (single-use) and
+	// mint an INDEPENDENT cookie secret. The exchanging browser is the
+	// only holder of that value, so a leaked URL cannot become a
+	// session.
+	cookieVal, gerr := generateToken()
+	if gerr != nil {
+		r.mu.Unlock()
+		http.Error(w, "setup: could not mint a session token", http.StatusInternalServerError)
+		return
+	}
 	r.token = ""
-	cookieVal := r.cookieSecret
+	r.cookieSecret = cookieVal
 	r.mu.Unlock()
 
 	setSetupCookie(w, req, cookieVal)

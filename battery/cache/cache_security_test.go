@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -496,6 +497,22 @@ func (s *stubRedisClient) Exists(_ context.Context, k string) (bool, error) {
 func (s *stubRedisClient) FlushDB(context.Context) error {
 	s.kv = map[string]string{}
 	return nil
+}
+
+// Keys implements the optional KeyScanner capability, which is what lets
+// RedisCache.Clear scope its wipe to one namespace instead of flushing
+// the shared database. Only the trailing "*" form RedisCache emits is
+// supported; that is all it asks for.
+func (s *stubRedisClient) Keys(_ context.Context, pattern string) ([]string, error) {
+	prefix := strings.TrimSuffix(pattern, "*")
+	var out []string
+	for k := range s.kv {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out) // deterministic order for a map-backed stub
+	return out, nil
 }
 
 // CACHE-R1: the Cache interface documents ErrCacheMiss strictly as the

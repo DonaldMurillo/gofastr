@@ -49,10 +49,24 @@ func TestSetLevelHiddenFromUnauthenticatedList(t *testing.T) {
 	if strings.Contains(string(blob), "log_set_level") {
 		t.Error("SECURITY: [disclosure] log_set_level listed to an anonymous caller")
 	}
-	// The read-only tools stay listed: gating discovery must not blank the
-	// whole surface.
-	if !strings.Contains(string(blob), "log_recent") {
-		t.Error("read-only log tools vanished from the listing")
+	// The read-only tools are gated too, so they are equally absent. This
+	// assertion once required the opposite; TestLogReadToolsRefuseAnonCaller
+	// below is why it flipped, and its own comment named this as the
+	// collateral change to make in the same commit. A gated tool vanishes
+	// from tools/list by design: the inputSchema is disclosure as much as
+	// the call is.
+	if strings.Contains(string(blob), "log_recent") {
+		t.Error("SECURITY: [disclosure] log_recent listed to an anonymous caller")
+	}
+
+	// The surface is not blanked for everyone: an authenticated caller
+	// still sees the read tools.
+	authed := app.MCP.HandleRequest(handler.SetUser(context.Background(), "operator"), mcp.Request{
+		JSONRPC: "2.0", ID: 2, Method: "tools/list",
+	})
+	authedBlob, _ := json.Marshal(authed.Result)
+	if !strings.Contains(string(authedBlob), "log_recent") {
+		t.Error("read-only log tools vanished for an authenticated caller too; the gate over-locks")
 	}
 }
 

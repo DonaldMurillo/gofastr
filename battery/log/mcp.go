@@ -38,6 +38,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 				},
 			},
 			handler: p.toolRecent,
+			gate:    p.readGate(),
 		},
 		{
 			name:        "log_filter",
@@ -56,12 +57,14 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 				},
 			},
 			handler: p.toolFilter,
+			gate:    p.readGate(),
 		},
 		{
 			name:        "log_metrics",
 			description: "Return a snapshot of the log plugin's counters: PostStopDrops, SinkWriteFailures, WebhookDropped, WebhookGaveUp. Use to gauge whether the logging system itself is healthy.",
 			schema:      map[string]any{"type": "object"},
 			handler:     p.toolMetrics,
+			gate:        p.readGate(),
 		},
 	}
 	if p.cfg.AllowMCPMutation {
@@ -365,6 +368,19 @@ func levelAtLeast(entry map[string]any, min slog.Level) bool {
 // Under `gofastr dev` there is no auth to satisfy, so a gate would only lock
 // the developer's own agent out, the same call framework's control tools
 // make. Dev exposure is bounded by the loopback bind instead.
+// readGate guards the log READ tools. They hand out every caller's
+// request paths, remote IPs, and request IDs, straight off /mcp with no
+// route middleware in the way, so an unauthenticated MCP client was
+// reading the app's whole access log. The inputSchema is disclosure too:
+// a gated tool also vanishes from tools/list, so an anonymous caller
+// does not even learn the surface exists.
+//
+// It follows the same dev-mode escape the mutating tool uses, so a local
+// `gofastr dev` loop is unchanged.
+func (p *Plugin) readGate() func(ctx context.Context) error {
+	return p.setLevelGate()
+}
+
 func (p *Plugin) setLevelGate() func(ctx context.Context) error {
 	if p.mutationDevImplied {
 		return nil
