@@ -29,42 +29,58 @@ import (
 // ============================================================================
 
 // interleaveHDel wraps mockRedis and fires a scripted callback just before
-// its FIRST HDel — the deterministic seam standing in for "another
-// goroutine/server event landed between the completion's HGet and HDel".
-// The hook disarms itself before running, so operations the script issues
-// (Reclaim's own HDel, a re-Dequeue's HSet) pass through untouched.
+// its FIRST delete — the deterministic seam standing in for "another
+// goroutine/server event landed between the completion's HGet and its
+// delete". The hook disarms itself before running, so operations the script
+// issues (Reclaim's own HDel, a re-Dequeue's HSet) pass through untouched.
+//
+// Both delete entry points are hooked: HDel for a client with no atomic
+// capability, and HDelIfEqual for one that implements [CompareAndDeleter].
+// The seam has to sit on whichever call actually performs the deletion,
+// otherwise the interleave lands somewhere the completion never observes and
+// the test proves nothing.
 type interleaveHDel struct {
 	*mockRedis
 	before func()
 }
 
-func (f *interleaveHDel) HDel(ctx context.Context, key string, fields ...string) error {
+func (f *interleaveHDel) fire() {
 	if f.before != nil {
 		hook := f.before
 		f.before = nil
 		hook()
 	}
+}
+
+func (f *interleaveHDel) HDel(ctx context.Context, key string, fields ...string) error {
+	f.fire()
 	return f.mockRedis.HDel(ctx, key, fields...)
 }
 
-// raceClaimInterleave arms the HDel seam so that between the presenter's
-// token check and its HDel: the lease expires, Reclaim re-enqueues the
-// entry, and W2 re-claims with a fresh token. The returned job is W2's
-// (populated when the hook fires inside the completion under test).
-func raceClaimInterleave(t *testing.T, q *RedisQueue, gate *interleaveHDel, now *time.Time) Job {
+func (f *interleaveHDel) HDelIfEqual(ctx context.Context, key, field, expect string) (bool, error) {
+	f.fire()
+	return f.mockRedis.HDelIfEqual(ctx, key, field, expect)
+}
+
+// raceClaimInterleave arms the delete seam so that between the presenter's
+// token check and its delete: the lease expires, Reclaim re-enqueues the
+// entry, and W2 re-claims with a fresh token. The returned pointer is filled
+// in when the hook fires inside the completion under test — it has to be a
+// pointer, since the hook runs long after this function has returned.
+func raceClaimInterleave(t *testing.T, q *RedisQueue, gate *interleaveHDel, now *time.Time) *Job {
 	t.Helper()
 	ctx := context.Background()
-	var w2 Job
+	w2 := &Job{}
 	gate.before = func() {
 		*now = now.Add(2 * time.Minute) // the 1m lease expires under the stale completion
 		if _, err := q.Reclaim(ctx); err != nil {
 			t.Fatalf("interleave reclaim: %v", err)
 		}
-		var err error
-		w2, err = q.Dequeue(ctx)
+		claimed, err := q.Dequeue(ctx)
 		if err != nil {
 			t.Fatalf("interleave re-dequeue: %v", err)
 		}
+		*w2 = claimed
 		if w2.ClaimToken == "" {
 			t.Fatalf("interleave re-claim minted no token")
 		}
@@ -74,8 +90,11 @@ func raceClaimInterleave(t *testing.T, q *RedisQueue, gate *interleaveHDel, now 
 
 // assertNewerClaimSurvives reads the processing entry for jobID and fails
 // unless it is present and carries exactly the newer claim's token.
-func assertNewerClaimSurvives(t *testing.T, r *mockRedis, jobID string, newer Job) {
+func assertNewerClaimSurvives(t *testing.T, r *mockRedis, jobID string, newer *Job) {
 	t.Helper()
+	if newer.ClaimToken == "" {
+		t.Fatalf("the interleave never ran: no re-claim happened, so this asserts nothing")
+	}
 	raw, err := r.HGet(context.Background(), "jobs:processing", jobID)
 	if errors.Is(err, ErrRedisEmpty) {
 		t.Fatalf("completion's trailing HDel deleted the NEWER claim's processing entry for %q: the new claimant is in-flight with no record — a crash leaves the job on no list and invisible to Reclaim, while the completion returned nil (silent loss)", jobID)

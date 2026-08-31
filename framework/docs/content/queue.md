@@ -534,6 +534,38 @@ type RedisClient interface {
 Wrap your preferred driver (go-redis, redigo, etc.) with a thin adapter
 that maps to this interface.
 
+### Optional: `CompareAndDeleter`
+
+An adapter may additionally implement:
+
+```go
+type CompareAndDeleter interface {
+    HDelIfEqual(ctx, key, field, expect string) (deleted bool, err error)
+}
+```
+
+`Ack`/`Nack` read the processing entry, compare its claim token, then
+delete it. Nothing binds that delete to the entry whose token was
+compared: one round trip of skew (a GC pause, a failover) is enough for
+the lease to expire, `Reclaim` to run, and another worker to re-claim —
+and the delete then removes the *new* claimant's entry, leaving the job
+on no list and invisible to `Reclaim`.
+
+Implementing `HDelIfEqual` makes that delete atomic. With go-redis, a
+one-line Lua script:
+
+```lua
+if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] then
+  return redis.call('HDEL', KEYS[1], ARGV[1]) end
+return 0
+```
+
+Return `false` when the value had changed; the queue treats that as a
+fenced no-op and counts it in `StaleClaimCount()`. An adapter that does
+not implement it still works — `RedisQueue` falls back to re-reading
+immediately before the delete, which narrows the window but cannot
+close it.
+
 **`RPop` must report an empty list as `queue.ErrRedisEmpty`.** Drivers
 signal "nothing there" with their own sentinel (go-redis returns
 `redis.Nil`); translate it. An adapter that passes its driver's sentinel
@@ -558,6 +590,11 @@ queue.ErrRedisEmpty  // RedisClient.RPop: the list is empty (adapters MUST
   in-flight handlers to finish; call it after all producers are done.
 - **Replaying a job that is still pending.** `Replay` only touches
   terminal (`failed`) entries; replaying a pending job is a no-op.
+- **Acking or Nacking a hand-built `Job`.** Both backends fence
+  completions on the claim identity `Dequeue` minted (`Job.ClaimToken`
+  on Redis, the `claim_token` column on the DB). Pass back the job
+  `Dequeue` returned, not a fresh struct carrying only the ID, or the
+  completion matches nothing and silently no-ops.
 - **Running the in-memory Scheduler on every replica.** Multiple replicas can
   fire the same tick. Pin that mode to one process, or use `DurableScheduler`
   with `DBQueue` for fenced, transactionally deduplicated occurrences.

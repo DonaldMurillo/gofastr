@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/db"
@@ -415,10 +416,19 @@ func scanOutboxRow(row interface {
 func truncateError(err error) string {
 	const max = 2000
 	s := err.Error()
-	if len(s) > max {
-		return s[:max]
+	if len(s) <= max {
+		return s
 	}
-	return s
+	// Cut on a rune boundary. A bare s[:max] can split a multi-byte
+	// rune, and the invalid UTF-8 that leaves is rejected by Postgres
+	// on the settle UPDATE — the delivery then never settles and its
+	// handler re-runs at backoff cadence forever, which is precisely
+	// what MaxAttempts exists to bound.
+	cut := max
+	for cut > 0 && !utf8.ValidString(s[:cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // newID returns a fresh 32-char hex identifier. Panics on entropy

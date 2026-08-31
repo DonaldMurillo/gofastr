@@ -45,6 +45,32 @@ type RedisClient interface {
 	LRem(ctx context.Context, key string, count int64, value any) (int64, error)
 }
 
+// CompareAndDeleter is the optional capability a RedisClient implements when
+// it can delete a hash field atomically, and only while that field still
+// holds an expected value. RedisQueue uses it to retire a processing entry:
+// Ack/Nack read the entry, compare its ClaimToken in process, and then
+// delete — and nothing binds the delete to the entry whose token was
+// compared. One round trip of skew (a GC pause, a Redis failover) is enough
+// for the lease to expire, Reclaim to run, and another worker to re-claim,
+// at which point the unconditional delete removes the NEW claimant's entry:
+// the job is then on no list, invisible to Reclaim, and silently lost.
+//
+// Implement it with a Lua script (or WATCH/MULTI) — go-redis:
+//
+//	if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] then
+//	  return redis.call('HDEL', KEYS[1], ARGV[1]) end
+//	return 0
+//
+// It returns whether the field was deleted; false means the value had
+// changed, which the queue treats as a fenced no-op.
+//
+// A client that does not implement it still works: RedisQueue falls back to
+// re-reading immediately before the delete, which narrows the window but
+// cannot close it.
+type CompareAndDeleter interface {
+	HDelIfEqual(ctx context.Context, key, field, expect string) (bool, error)
+}
+
 // ErrRedisEmpty is the sentinel a RedisClient implementation returns (or
 // wraps) when a read finds nothing: RPop on an empty list, HGet on a missing
 // hash or field. It is how RedisQueue distinguishes a genuinely missing
@@ -300,23 +326,57 @@ type processingEntry struct {
 
 // currentClaim reads the processing entry for jobID and returns the job of
 // the CURRENT claim. found is false when nothing is claimed under that ID.
-func (q *RedisQueue) currentClaim(ctx context.Context, jobID string) (current Job, found bool, err error) {
+func (q *RedisQueue) currentClaim(ctx context.Context, jobID string) (current Job, raw string, found bool, err error) {
 	data, err := q.client.HGet(ctx, q.processingQueue, jobID)
 	if err != nil {
 		if errors.Is(err, ErrRedisEmpty) {
-			return Job{}, false, nil
+			return Job{}, "", false, nil
 		}
-		return Job{}, false, fmt.Errorf("read processing entry: %w", err)
+		return Job{}, "", false, fmt.Errorf("read processing entry: %w", err)
 	}
 	var entry processingEntry
 	if err := json.Unmarshal([]byte(data), &entry); err != nil {
-		return Job{}, false, fmt.Errorf("unmarshal processing entry: %w", err)
+		return Job{}, "", false, fmt.Errorf("unmarshal processing entry: %w", err)
 	}
 	var job Job
 	if err := json.Unmarshal([]byte(entry.Job), &job); err != nil {
-		return Job{}, false, fmt.Errorf("unmarshal job: %w", err)
+		return Job{}, "", false, fmt.Errorf("unmarshal job: %w", err)
 	}
-	return job, true, nil
+	return job, data, true, nil
+}
+
+// releaseClaim removes the processing entry for jobID, but only while it
+// still holds exactly the bytes the caller checked. See [CompareAndDeleter]
+// for why an unconditional HDel here loses jobs: the claim can change
+// between the completion's token check and its delete.
+func (q *RedisQueue) releaseClaim(ctx context.Context, jobID, expect string) error {
+	if cas, ok := q.client.(CompareAndDeleter); ok {
+		deleted, err := cas.HDelIfEqual(ctx, q.processingQueue, jobID, expect)
+		if err != nil {
+			return err
+		}
+		if !deleted {
+			// The entry changed under us: another worker re-claimed the
+			// job. Leave its record alone and count the stale completion.
+			q.staleClaims.Add(1)
+		}
+		return nil
+	}
+	// No atomic capability: re-read as late as possible and skip the delete
+	// if the claim already moved on. This narrows the window to the final
+	// round trip; it does not close it.
+	cur, err := q.client.HGet(ctx, q.processingQueue, jobID)
+	if err != nil {
+		if errors.Is(err, ErrRedisEmpty) {
+			return nil
+		}
+		return err
+	}
+	if cur != expect {
+		q.staleClaims.Add(1)
+		return nil
+	}
+	return q.client.HDel(ctx, q.processingQueue, jobID)
 }
 
 // ownsClaim reports whether the completion being presented (job) matches the
@@ -344,14 +404,17 @@ func (q *RedisQueue) ownsClaim(job, current Job, found bool) bool {
 // if that claimant then crashed. Acking an ID nothing is claimed
 // under (already acked) is an idempotent no-op.
 func (q *RedisQueue) Ack(ctx context.Context, job Job) error {
-	current, found, err := q.currentClaim(ctx, job.ID)
+	current, raw, found, err := q.currentClaim(ctx, job.ID)
 	if err != nil {
 		return fmt.Errorf("ack: %w", err)
 	}
 	if !q.ownsClaim(job, current, found) {
 		return nil // stale claim (counted) or nothing claimed, no-op
 	}
-	return q.client.HDel(ctx, q.processingQueue, job.ID)
+	if err := q.releaseClaim(ctx, job.ID, raw); err != nil {
+		return fmt.Errorf("ack: %w", err)
+	}
+	return nil
 }
 
 // Nack handles a failed job. If retries remain, it re-enqueues the job;
@@ -361,7 +424,7 @@ func (q *RedisQueue) Ack(ctx context.Context, job Job) error {
 // (unreclaimable loss). Nacking an ID nothing is claimed under is an
 // idempotent no-op.
 func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
-	job, found, err := q.currentClaim(ctx, claimed.ID)
+	job, raw, found, err := q.currentClaim(ctx, claimed.ID)
 	if err != nil {
 		return fmt.Errorf("nack: %w", err)
 	}
@@ -392,7 +455,10 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 		return fmt.Errorf("nack: push to %s: %w", dest, err)
 	}
 
-	return q.client.HDel(ctx, q.processingQueue, claimed.ID)
+	if err := q.releaseClaim(ctx, claimed.ID, raw); err != nil {
+		return fmt.Errorf("nack: %w", err)
+	}
+	return nil
 }
 
 // Reclaim scans the processing set for in-flight jobs whose visibility

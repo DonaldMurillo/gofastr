@@ -227,7 +227,8 @@ func (q *DBQueue) ensureTable() error {
 		created_at    %s NOT NULL,
 		scheduled_at  %s NOT NULL,
 		status        TEXT NOT NULL DEFAULT 'pending',
-		claimed_at    %s
+		claimed_at    %s,
+		claim_token   TEXT NOT NULL DEFAULT ''
 	)`, q.qt(), tsType, tsType, tsType)
 	if _, err := q.db.Exec(stmt); err != nil {
 		return err
@@ -244,6 +245,9 @@ func (q *DBQueue) ensureTable() error {
 		return err
 	}
 	if err := q.migrateOccurrenceIDColumn(); err != nil {
+		return err
+	}
+	if err := q.migrateClaimTokenColumn(); err != nil {
 		return err
 	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together. The
@@ -280,6 +284,23 @@ func (q *DBQueue) migrateLaneColumn() error {
 	// the duplicate-column error.
 	_, err := q.db.Exec(fmt.Sprintf(
 		"ALTER TABLE %s ADD COLUMN lane TEXT NOT NULL DEFAULT ''", q.qt()))
+	if err != nil && isDuplicateColumnErr(err) {
+		return nil
+	}
+	return err
+}
+
+// migrateClaimTokenColumn adds the per-claim fence column to a pre-existing
+// table. Rows claimed before the column existed carry ” and stay completable
+// by a caller presenting no token, so the upgrade is not a flag day.
+func (q *DBQueue) migrateClaimTokenColumn() error {
+	if q.dialect == dialectPostgres {
+		_, err := q.db.Exec(fmt.Sprintf(
+			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS claim_token TEXT NOT NULL DEFAULT ''", q.qt()))
+		return err
+	}
+	_, err := q.db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN claim_token TEXT NOT NULL DEFAULT ''", q.qt()))
 	if err != nil && isDuplicateColumnErr(err) {
 		return nil
 	}
@@ -483,14 +504,16 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 }
 
 func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []string) (Job, error) {
-	where, args := q.eligibleWhere(types, 2, lane)
-	// $1 is the claim timestamp (claimed_at = now); eligibleWhere starts its
-	// own placeholders at $2.
-	claimArgs := append([]any{q.now().UTC()}, args...)
+	where, args := q.eligibleWhere(types, 3, lane)
+	// $1 is the claim timestamp (claimed_at = now) and $2 the fresh claim
+	// token that fences this claim's later Ack/Nack; eligibleWhere starts
+	// its own placeholders at $3.
+	token := redisRandomID()
+	claimArgs := append([]any{q.now().UTC(), token}, args...)
 	// FOR UPDATE SKIP LOCKED is the canonical Postgres pattern: holds a
 	// row lock for the surrounding UPDATE, lets concurrent workers skip
 	// it instead of blocking.
-	sqlStr := fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, attempts = attempts + 1
+	sqlStr := fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, claim_token=$2, attempts = attempts + 1
 		WHERE id = (
 			SELECT id FROM %s
 			WHERE %s
@@ -501,7 +524,12 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 		RETURNING id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at`,
 		q.qt(), q.qt(), where)
 	row := q.db.QueryRowContext(ctx, sqlStr, claimArgs...)
-	return scanJob(row)
+	job, err := scanJob(row)
+	if err != nil {
+		return Job{}, err
+	}
+	job.ClaimToken = token
+	return job, nil
 }
 
 func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string) (Job, error) {
@@ -550,9 +578,10 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	if err != nil {
 		return Job{}, err
 	}
+	token := redisRandomID()
 	if _, err := tx.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, attempts = attempts + 1 WHERE id = $2`, q.qt()),
-		q.now().UTC(), job.ID,
+		fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, claim_token=$2, attempts = attempts + 1 WHERE id = $3`, q.qt()),
+		q.now().UTC(), token, job.ID,
 	); err != nil {
 		return Job{}, err
 	}
@@ -561,6 +590,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	}
 	committed = true
 	job.Attempts++
+	job.ClaimToken = token
 	return job, nil
 }
 
@@ -643,12 +673,15 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (stri
 // again so a live claim's Ack deletes it through this same path. This
 // mirrors RedisQueue, where a stale claim's Ack is a fenced no-op.
 //
-// DBQueue has no per-claim fencing (no ClaimToken column), so a stale Ack
-// that lands while a re-claimant holds the row still deletes that claim,
-// within the at-least-once contract, as before.
+// The DELETE is additionally fenced on claim_token, the identifier Dequeue
+// mints per claim: a worker that overran its lease and had the row re-claimed
+// under it matches no row, so its late Ack cannot retire the re-claimant's
+// live work. Rows claimed before the column existed carry ”, which a caller
+// presenting no token still matches.
 func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 	_, err := q.db.ExecContext(ctx,
-		fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND status='claimed'`, q.qt()), job.ID)
+		fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND status='claimed' AND claim_token = $2`, q.qt()),
+		job.ID, job.ClaimToken)
 	return err
 }
 
@@ -659,14 +692,23 @@ func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 // When backoff is enabled (see WithBackoff), a requeued job's scheduled_at
 // is pushed into the future so a flapping handler can't burn through every
 // attempt in a tight loop.
+// Every arm is fenced on claim_token. The lease-expiry clause in
+// eligibleWhere deliberately re-claims a row whose worker is still running,
+// so a stale claimant is a designed state on this backend, and an unfenced
+// UPDATE by bare job ID let that stale worker flip the RE-CLAIMANT's live row
+// to 'pending' (a third worker then runs the handler concurrently) or to
+// 'failed' (dead-lettering a job someone is executing). Matching on the token
+// Dequeue minted makes a stale Nack touch no row, mirroring RedisQueue's
+// ownsClaim check. Rows predating the column carry ” and stay completable by
+// a caller presenting no token.
 func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 	if q.backoffBase <= 0 {
 		// No backoff: one round-trip. A CASE expression decides between
 		// requeue and dead-letter based on attempts vs max_attempts.
 		stmt := fmt.Sprintf(`UPDATE %s
 			SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END
-			WHERE id = $1`, q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, job.ID)
+			WHERE id = $1 AND claim_token = $2`, q.qt())
+		_, err := q.db.ExecContext(ctx, stmt, job.ID, job.ClaimToken)
 		return err
 	}
 
@@ -674,7 +716,8 @@ func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 	// dead-letter and to compute the next scheduled_at.
 	var attempts, maxAttempts int
 	row := q.db.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT attempts, max_attempts FROM %s WHERE id = $1", q.qt()), job.ID)
+		fmt.Sprintf("SELECT attempts, max_attempts FROM %s WHERE id = $1 AND claim_token = $2", q.qt()),
+		job.ID, job.ClaimToken)
 	if err := row.Scan(&attempts, &maxAttempts); err != nil {
 		if err == sql.ErrNoRows {
 			return nil // already acked/removed; nothing to do
@@ -682,13 +725,13 @@ func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 		return err
 	}
 	if attempts >= maxAttempts {
-		stmt := fmt.Sprintf("UPDATE %s SET status='failed' WHERE id = $1", q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, job.ID)
+		stmt := fmt.Sprintf("UPDATE %s SET status='failed' WHERE id = $1 AND claim_token = $2", q.qt())
+		_, err := q.db.ExecContext(ctx, stmt, job.ID, job.ClaimToken)
 		return err
 	}
 	next := q.now().UTC().Add(backoff.Exponential(q.backoffBase, q.backoffMax, attempts))
-	stmt := fmt.Sprintf("UPDATE %s SET status='pending', scheduled_at=$1 WHERE id = $2", q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, next, job.ID)
+	stmt := fmt.Sprintf("UPDATE %s SET status='pending', scheduled_at=$1 WHERE id = $2 AND claim_token = $3", q.qt())
+	_, err := q.db.ExecContext(ctx, stmt, next, job.ID, job.ClaimToken)
 	return err
 }
 
