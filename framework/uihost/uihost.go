@@ -1229,12 +1229,12 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	page := ds.injectChromeFor(string(html), path, sessionID, boundedPresenceParam(r), res.Component)
 	page = injectSignalSeed(ctx, page)
 
-	// SSR-inline registered widgets: open ones whose deep-link
-	// matches the request URL go in unhidden; hidden ones are
-	// preloaded so the runtime can hydrate without a chrome fetch
-	// when the user clicks. The widget chrome lives just inside
-	// </body>; the runtime's _mountByName checks for an existing
-	// root before fetching cfg.chromePath.
+	// SSR-inline registered widgets: non-hidden auto-mount widgets
+	// always go in, and a Hidden deep-link widget goes in when the
+	// request URL matches its deep link (open at first paint). The
+	// widget chrome lives just inside </body>; the runtime's
+	// _mountByName checks for an existing root before fetching
+	// cfg.chromePath.
 	page = injectWidgetSSR(page, r)
 
 	ds.writeAgentLinkHeaders(w, r)
@@ -1247,14 +1247,23 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, page)
 }
 
-// injectWidgetSSR inlines ONLY the widgets the page actually wants
-// open at first paint: deep-link matches or non-hidden auto-mount.
-// Hidden click-to-open widgets are NOT inlined. The runtime
-// fetches their chrome lazily from cfg.chromePath the first time
-// the user clicks data-fui-open. That keeps page responses minimal
-// (no payload for surfaces the user may never trigger) while
-// preserving the SSR contract for surfaces that are visible on
-// arrival (deep-linked modals, persistent panels, sidebars).
+// injectWidgetSSR inlines the widgets the page wants open at first
+// paint: every non-hidden auto-mount widget (toast stack, banner,
+// panel), plus any widget — Hidden included — whose deep link matches
+// the request URL, so a shared/refreshed deep-link URL paints the
+// dialog without a chrome round-trip. A Hidden widget with NO deep
+// link, or one whose deep link does not match, is NOT inlined: the
+// runtime lazy-fetches its chrome from cfg.chromePath on the first
+// data-fui-open, keeping page responses minimal.
+//
+// Inlined chrome is rendered with NO trigger ctx (arrival by URL has
+// no trigger to carry data-fui-ctx, #321). That is safe only because
+// the runtime's _mountByName drops the inlined node when a
+// ctx-carrying trigger opens the widget and takes the (name, ctx)
+// keyed chrome fetch instead — per-entity dialogs (Hidden + DeepLink,
+// the documented shape) depend on that pairing. Pinned by
+// TestInjectWidgetSSR_HiddenDeepLinkInlinedOnMatch here and
+// TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx in core-ui/runtime.
 func injectWidgetSSR(page string, r *http.Request) string {
 	b := borrowBuilder()
 	defer returnBuilder(b)

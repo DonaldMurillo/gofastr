@@ -420,9 +420,13 @@ Notes:
 - `data-fui-ctx` rides on `data-fui-open` triggers; emit it from Go with
   any attribute-injection surface (e.g. `html` element `ExtraAttrs`).
   `interactive.OpenOnClick` covers the plain no-ctx case.
-- SSR-inlined chrome (non-`Hidden` widgets) renders with no ctx — `""`.
-  Per-entity dialogs are `Hidden()` widgets, fetched lazily per open, so
-  this is the normal shape for them anyway.
+- SSR-inlined chrome always renders with no ctx — `""`. Non-`Hidden`
+  widgets inline on every page; a `Hidden().DeepLink(...)` widget —
+  the per-entity dialog shape — inlines when the URL matches its deep
+  link, and arrival by URL has no trigger to carry `data-fui-ctx`. The
+  runtime accounts for that: a ctx-carrying open drops the inlined
+  node and fetches the per-ctx chrome rather than hydrating it, so
+  only the deep-link arrival paint itself is ctx-less.
 - A static export dumps one query-free chrome per widget, so `ctx` has no
   effect there — the dump is unpersonalised by construction.
 
