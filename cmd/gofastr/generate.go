@@ -916,6 +916,10 @@ func absOrDot(dir string) string {
 type generatedFile struct {
 	name    string
 	content string
+	// mode, when non-zero, is the permission the file is written with.
+	// Used for secret-bearing artifacts (.env); see
+	// codegen.GeneratedFile.Mode.
+	mode os.FileMode
 }
 
 // removeRetiredBlueprintFiles drops files that older blueprint versions
@@ -1020,7 +1024,7 @@ func fileSetFromGeneratedFiles(files []generatedFile, owner string) (*codegen.Fi
 	fileSet := codegen.NewFileSet()
 	for _, file := range files {
 		content := formatGenerated(file.name, file.content)
-		if err := fileSet.Add(codegen.GeneratedFile{Path: file.name, Content: content, Owner: owner}); err != nil {
+		if err := fileSet.Add(codegen.GeneratedFile{Path: file.name, Content: content, Owner: owner, Mode: file.mode}); err != nil {
 			return nil, err
 		}
 	}

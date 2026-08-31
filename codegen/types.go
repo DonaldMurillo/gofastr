@@ -1,6 +1,9 @@
 package codegen
 
-import "context"
+import (
+	"context"
+	"os"
+)
 
 // ProtocolVersion is the current external extension protocol version.
 const ProtocolVersion = 1
@@ -54,6 +57,16 @@ type GeneratedFile struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
 	Owner   string `json:"owner,omitempty"`
+	// Mode is the file permission to write. Zero means the default
+	// 0644.
+	//
+	// Set it for anything that carries a secret. A generated .env holds
+	// the app's signing key and database URL, and 0644 publishes both to
+	// every local account on a shared host or CI runner. WriteFiles also
+	// TIGHTENS a pre-existing file to this mode before any content
+	// lands, so re-running a generator over a world-readable .env does
+	// not write fresh secrets into it while it is still world-readable.
+	Mode os.FileMode `json:"mode,omitempty"`
 }
 
 // JSONDocument is one JSON file loaded by a json_dir source.

@@ -127,6 +127,33 @@ type WriteOptions struct {
 	OnConflict func(relPath string)
 }
 
+// writeGeneratedFile writes one file at its declared mode.
+//
+// For a default-mode file this is os.WriteFile. For an explicit mode it
+// is open, chmod the HANDLE, then write -- the order matters for a
+// secret-bearing file like .env: os.WriteFile would truncate a
+// pre-existing 0644 file, write the secrets into it while it is still
+// world-readable, and leave it that way. Chmod on the handle rather than
+// the path also cannot be redirected by a symlink swapped in between.
+func writeGeneratedFile(path string, file GeneratedFile) error {
+	if file.Mode == 0 {
+		return os.WriteFile(path, []byte(file.Content), 0o644)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode)
+	if err != nil {
+		return err
+	}
+	if err := f.Chmod(file.Mode); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(file.Content); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // WriteFiles writes generated files and records a manifest for future cleans.
 func WriteFiles(files *FileSet, opts WriteOptions) error {
 	// The module root (".") is a legal target only when we are NOT cleaning
@@ -180,7 +207,7 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 				continue
 			}
 		}
-		if err := os.WriteFile(path, []byte(file.Content), 0o644); err != nil {
+		if err := writeGeneratedFile(path, file); err != nil {
 			return err
 		}
 	}
