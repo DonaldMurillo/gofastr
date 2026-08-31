@@ -8,6 +8,34 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Six repo analyzers**, mined from this repo's own bug history and run by
+  `make analyze`, the pre-commit hook, and CI's vet step. `unboundedbody`
+  flags an inbound `*http.Request` body read or decoded with no size cap;
+  `errleak` flags internal error text on a 5xx; `fieldtypeswitch` reads the
+  `schema.FieldType` constant set at analysis time, so a new field type
+  breaks every switch that ignores it; `reqparamlimit` flags a
+  request-sourced integer reaching a limit-shaped parameter unclamped;
+  `discardmutator` flags a security-state mutation whose error is discarded
+  where the handler acknowledges success; `hygiene` holds empty error
+  branches and timeout-less client calls at zero. Type information is what
+  earns these the vet lane rather than the contracts pattern lane:
+  `unboundedbody` tells `*http.Request` from `*http.Response`, which grep
+  cannot — 28 candidates, 19 of them outbound.
+
+  `fmtformat` (URL-encoder output becoming a `fmt` format) and `testgap`
+  (validator enumeration arms no fixture exercises) ship written and
+  fixture-tested but deliberately unregistered, with the measurements that
+  justify holding them back recorded in `cmd/vettool/main.go`.
+  `TestEveryAnalyzerIsWiredOrExplained` fails on an analyzer that is
+  neither: the four analyzers added here sat unwired and unexplained until
+  it existed, passing their own fixtures while never running over the repo.
+
+- **`cmd/repolint` gained `crud-exposure-rederived`**, which flags code
+  reading `Exposure.CRUD` to decide whether an entity's routes exist. That
+  flag alone misses the no-DB case, where `App` mounts no CRUD while every
+  entity still reads `auto`; the mounted predicate is
+  `framework.App.EntityCRUDMounted`.
+
 - **`queue.Job.UserID`**, persisted as `queue_jobs.user_id`, names the person
   a job's payload is about. It is what makes the row reachable by
   `App.EraseUserData`: `queue_jobs` lives outside the entity registry, so the
