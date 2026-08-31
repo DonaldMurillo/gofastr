@@ -177,7 +177,7 @@ screens:
 	// The guest policy is the screenHasAuthForm half: without it the nested
 	// form is shown to signed-in users. Its absence would also make this
 	// assertion's guard vacuous.
-	if !strings.Contains(out, "guestPolicy(") {
+	if !strings.Contains(out, ".WithPolicy(guestPolicy(") {
 		t.Fatalf("nested form screen got no guest policy; the screenHasAuthForm half of the guard would be untested:\n%s", gateLines(out))
 	}
 	if strings.Contains(out, `authPolicy("/login"`) {
