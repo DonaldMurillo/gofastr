@@ -122,12 +122,33 @@ type Job struct {
     MaxAttempts int             // auto-defaults to 3; 0 means 3
     CreatedAt   time.Time       // auto-filled if zero
     ScheduledAt time.Time       // auto-filled to now; set to delay execution
+    ClaimToken  string          // minted by Dequeue; fences this claim's Ack/Nack
+    UserID      string          // who the payload is about; makes the row erasable
 }
 ```
 
 Scheduled jobs (future `ScheduledAt`) are invisible to `Dequeue` until
 the moment passes. This lets you implement delayed processing without a
 separate scheduler.
+
+### `UserID` and the right to be forgotten
+
+`queue_jobs` lives outside the entity registry, so `App.EraseUserData`
+can only reach a row through a declared column — and that column is
+`user_id`, populated from `Job.UserID`. **Set it whenever the payload is
+personal data.** A job that renders someone's address, points at their
+document, or carries their email keeps that data in the row, and
+`App.ExportData` dumps the `payload` column verbatim.
+
+Terminal rows make this sharp: the only job-row `DELETE` is
+`Ack`-of-claimed, and `failed` rows are retained on purpose so
+`Stats`/`ListJobs`/`Replay` can see them. A dead-lettered job with no
+`UserID` therefore holds that payload indefinitely and re-discloses it in
+every later export.
+
+Leave it empty for infrastructure work — cache warms, sweeps, index
+rebuilds — where there is no subject to erase. Only `DBQueue` persists
+it; the in-memory and Redis backends own no erasable table.
 ## Lanes
 
 A **lane** is a capacity-reservation tag on a job (`Job.Lane`; empty string
@@ -590,6 +611,8 @@ queue.ErrRedisEmpty  // RedisClient.RPop: the list is empty (adapters MUST
   in-flight handlers to finish; call it after all producers are done.
 - **Replaying a job that is still pending.** `Replay` only touches
   terminal (`failed`) entries; replaying a pending job is a no-op.
+- **Enqueuing personal data with no `UserID`.** The payload column is
+  exported verbatim and, without `Job.UserID`, no erasure can reach it.
 - **Acking or Nacking a hand-built `Job`.** Both backends fence
   completions on the claim identity `Dequeue` minted (`Job.ClaimToken`
   on Redis, the `claim_token` column on the DB). Pass back the job

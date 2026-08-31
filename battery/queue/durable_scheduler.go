@@ -709,10 +709,10 @@ func (q *DBQueue) enqueueWith(ctx context.Context, exec contextExecer, job Job) 
 	_, err := exec.ExecContext(ctx,
 		fmt.Sprintf(`INSERT INTO %s
 			(id, occurrence_id, type, payload, priority, lane, attempts,
-			 max_attempts, created_at, scheduled_at, status)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')`, q.qt()),
+			 max_attempts, created_at, scheduled_at, status, user_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11)`, q.qt()),
 		job.ID, job.OccurrenceID, job.Type, payload, job.Priority, job.Lane,
-		job.Attempts, job.MaxAttempts, job.CreatedAt, job.ScheduledAt,
+		job.Attempts, job.MaxAttempts, job.CreatedAt, job.ScheduledAt, job.UserID,
 	)
 	return err
 }

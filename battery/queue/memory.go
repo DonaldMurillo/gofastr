@@ -297,7 +297,16 @@ func (q *MemoryQueue) processJob(job Job) {
 	q.mu.RUnlock()
 
 	if !ok {
-		// No handler registered, nothing to do.
+		// No handler registered. Dropping the job here destroyed it with
+		// no trace: a producer-first deploy (the queue is fed a type the
+		// running binary does not yet know) silently lost every such job,
+		// and ListJobs/Stats showed nothing to reconcile from. Retain it
+		// as terminally failed instead, where Browsable can see it and
+		// Replay can re-run it once the handler ships.
+		q.logger.Error("queue: no handler registered; job dead-lettered",
+			"job_id", job.ID,
+			"job_type", job.Type)
+		q.retainDead(job)
 		return
 	}
 
@@ -582,11 +591,32 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 		return nil // unknown / non-failed id, no-op
 	}
 	job := q.dead[idx]
-	q.dead = append(q.dead[:idx], q.dead[idx+1:]...)
 	q.deadMu.Unlock()
 
+	// Re-enqueue BEFORE dropping the terminal record. Removing it first
+	// and then failing the Enqueue (cancelled context, closed queue)
+	// destroyed the job outright: the caller sees an error and retries,
+	// but the retry now matches no dead entry and takes the documented
+	// idempotent no-op path, so the loss is permanent and silent.
 	job.Attempts = 0
-	return q.Enqueue(ctx, job)
+	if err := q.Enqueue(ctx, job); err != nil {
+		return err
+	}
+
+	// The job is queued; retire the terminal record. Re-find it rather
+	// than trusting idx: the dead list may have shifted while the lock
+	// was released. A concurrent Replay that already removed it leaves
+	// nothing to do here, and the duplicate enqueue is inside this
+	// queue's at-least-once contract.
+	q.deadMu.Lock()
+	for i, d := range q.dead {
+		if d.ID == jobID {
+			q.dead = append(q.dead[:i], q.dead[i+1:]...)
+			break
+		}
+	}
+	q.deadMu.Unlock()
+	return nil
 }
 
 // Compile-time interface assertions for MemoryQueue.

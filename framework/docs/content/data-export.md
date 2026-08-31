@@ -225,6 +225,11 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    registers `auth_sessions` (delete by `user_id`), `auth_users` (delete by
    `id`), and `magic_link_tokens` (delete by `email` via the `IdentityEmail`
    resolver, see [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
+   `battery/queue` registers `queue_jobs` (delete by `user_id`), which reaches
+   a job only when the producer set `Job.UserID` — see
+   [the queue reference](queue.md). A job whose payload is personal data but
+   which names no user is not erasable, and its payload column is exported
+   verbatim.
 3. **Audit plane (built-in).** The audit table is retained, since it is the
    compliance record of who did what, but the user's `actor_id` is
    anonymized: every row where `actor_id = userID` is set to `[erased]`. See

@@ -228,7 +228,8 @@ func (q *DBQueue) ensureTable() error {
 		scheduled_at  %s NOT NULL,
 		status        TEXT NOT NULL DEFAULT 'pending',
 		claimed_at    %s,
-		claim_token   TEXT NOT NULL DEFAULT ''
+		claim_token   TEXT NOT NULL DEFAULT '',
+		user_id       TEXT NOT NULL DEFAULT ''
 	)`, q.qt(), tsType, tsType, tsType)
 	if _, err := q.db.Exec(stmt); err != nil {
 		return err
@@ -248,6 +249,9 @@ func (q *DBQueue) ensureTable() error {
 		return err
 	}
 	if err := q.migrateClaimTokenColumn(); err != nil {
+		return err
+	}
+	if err := q.migrateUserIDColumn(); err != nil {
 		return err
 	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together. The
@@ -301,6 +305,23 @@ func (q *DBQueue) migrateClaimTokenColumn() error {
 	}
 	_, err := q.db.Exec(fmt.Sprintf(
 		"ALTER TABLE %s ADD COLUMN claim_token TEXT NOT NULL DEFAULT ''", q.qt()))
+	if err != nil && isDuplicateColumnErr(err) {
+		return nil
+	}
+	return err
+}
+
+// migrateUserIDColumn adds the erasure-reach column to a pre-existing table.
+// Rows enqueued before it existed carry ” and are not user-attributed, which
+// is the same answer as a job whose payload was never personal data.
+func (q *DBQueue) migrateUserIDColumn() error {
+	if q.dialect == dialectPostgres {
+		_, err := q.db.Exec(fmt.Sprintf(
+			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''", q.qt()))
+		return err
+	}
+	_, err := q.db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN user_id TEXT NOT NULL DEFAULT ''", q.qt()))
 	if err != nil && isDuplicateColumnErr(err) {
 		return nil
 	}
@@ -521,7 +542,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at`,
+		RETURNING id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id`,
 		q.qt(), q.qt(), where)
 	row := q.db.QueryRowContext(ctx, sqlStr, claimArgs...)
 	job, err := scanJob(row)
@@ -571,7 +592,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	tx := sqliteConnTx{conn: conn}
 
 	where, args := q.eligibleWhere(types, 1, lane)
-	pickSQL := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at
+	pickSQL := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id
 		FROM %s WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.qt(), where)
 	row := tx.QueryRowContext(ctx, pickSQL, args...)
 	job, err := scanJob(row)
@@ -1080,11 +1101,12 @@ func scanJob(row interface {
 	var job Job
 	var payload sql.NullString
 	var lane sql.NullString
+	var userID sql.NullString
 	var createdAt, scheduledAt any
 	if err := row.Scan(
 		&job.ID, &job.OccurrenceID, &job.Type, &payload,
 		&job.Priority, &lane, &job.Attempts, &job.MaxAttempts,
-		&createdAt, &scheduledAt,
+		&createdAt, &scheduledAt, &userID,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return Job{}, ErrNoJob
@@ -1105,6 +1127,9 @@ func scanJob(row interface {
 	}
 	if lane.Valid {
 		job.Lane = lane.String
+	}
+	if userID.Valid {
+		job.UserID = userID.String
 	}
 	return job, nil
 }

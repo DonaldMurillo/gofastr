@@ -55,7 +55,10 @@ func TestQueueJobsEraseParity(t *testing.T) {
 
 // TestDeadJobsReachableByErasure asserts the row-plane half: a job that
 // dead-lettered while carrying the erased user's data in its payload must not
-// survive App.EraseUserData. DBQueue's only job-row DELETE is Ack-of-claimed;
+// survive App.EraseUserData. The job declares Job.UserID — queue_jobs sits
+// outside the entity registry, so a declared column is the only handle the
+// erase plane has, and a job whose payload is personal data but which names
+// no user is indistinguishable from infrastructure work. DBQueue's only job-row DELETE is Ack-of-claimed;
 // 'failed' rows are retained by design (visible to Stats/ListJobs/Replay),
 // so the erasure plane is the only path that can expunge them.
 func TestDeadJobsReachableByErasure(t *testing.T) {
@@ -64,6 +67,7 @@ func TestDeadJobsReachableByErasure(t *testing.T) {
 
 	if err := q.Enqueue(ctx, Job{
 		Type:        "email.send",
+		UserID:      "u1",
 		Payload:     json.RawMessage(`{"email":"u1@example.com"}`),
 		MaxAttempts: 1,
 	}); err != nil {
