@@ -184,6 +184,95 @@ func TestEagerNamesOnlyLoadAlways(t *testing.T) {
 	}
 }
 
+func TestIsolateForTest_HidesExistingEntriesAndRestores(t *testing.T) {
+	reset()
+	RegisterStyle("pollute-auto", func(t style.Theme) string { return "" })
+	RegisterStyle("pollute-eager", func(t style.Theme) string { return "" }, WithLoad(LoadAlways))
+
+	t.Run("isolated", func(t *testing.T) {
+		IsolateForTest(t)
+		if got := All(); len(got) != 0 {
+			t.Fatalf("isolated registry must be empty, got %v", names(got))
+		}
+		if got := EagerNames(); len(got) != 0 {
+			t.Fatalf("isolated EagerNames must be empty, got %v", got)
+		}
+	})
+
+	// The subtest has returned: its Cleanup must have restored the
+	// pre-isolation registry exactly, eager set included.
+	if _, ok := Lookup("pollute-auto"); !ok {
+		t.Fatal("IsolateForTest must restore pre-existing entries on cleanup")
+	}
+	got := EagerNames()
+	if len(got) != 1 || got[0] != "pollute-eager" {
+		t.Fatalf("restored EagerNames = %v, want [pollute-eager]", got)
+	}
+}
+
+// TestIsolateForTest_PremiseUnderPollution is the #331 shape: the
+// process already carries LoadAlways registrations from some linked
+// package's init (simulated here with framework/ui's exact names). An
+// isolated test that registers a single component must see an eager
+// set of exactly its own — the premise the SSR host's
+// single-direct-link and eager-link emission branches stand on.
+func TestIsolateForTest_PremiseUnderPollution(t *testing.T) {
+	reset()
+	for _, n := range []string{"ui-button", "ui-page-header", "ui-sidebar"} {
+		RegisterStyle(n, func(t style.Theme) string { return "" }, WithLoad(LoadAlways))
+	}
+	// Precondition: the pollution this test exists to run under is
+	// really in the registry. Without this, a broken setup passes the
+	// isolated assertions vacuously on an empty registry.
+	if got := EagerNames(); len(got) != 3 {
+		t.Fatalf("precondition: eager pollution = %v, want the three simulated ui-* LoadAlways entries", got)
+	}
+
+	t.Run("single component under pollution", func(t *testing.T) {
+		IsolateForTest(t)
+		RegisterStyle("single", func(t style.Theme) string { return "" })
+		if got := EagerNames(); len(got) != 0 {
+			t.Fatalf("eager set under isolation = %v, want empty (LoadAuto style only)", got)
+		}
+	})
+
+	t.Run("one eager component under pollution", func(t *testing.T) {
+		IsolateForTest(t)
+		RegisterStyle("always", func(t style.Theme) string { return "" }, WithLoad(LoadAlways))
+		got := EagerNames()
+		if len(got) != 1 || got[0] != "always" {
+			t.Fatalf("eager set under isolation = %v, want [always]", got)
+		}
+	})
+}
+
+func TestIsolateForTest_RegistrationsDoNotLeak(t *testing.T) {
+	reset()
+	RegisterStyle("survivor", func(t style.Theme) string { return "" })
+	t.Run("isolated", func(t *testing.T) {
+		IsolateForTest(t)
+		RegisterStyle("test-local", func(t style.Theme) string { return "" }, WithLoad(LoadAlways))
+		if _, ok := Lookup("test-local"); !ok {
+			t.Fatal("style registered during isolation must be visible to the test")
+		}
+	})
+	if _, ok := Lookup("test-local"); ok {
+		t.Fatal("styles registered during isolation must be dropped on restore, not leak into the process registry")
+	}
+	if _, ok := Lookup("survivor"); !ok {
+		t.Fatal("restore must return to the pre-isolation registry, not an empty one")
+	}
+}
+
+// names flattens entries for failure messages.
+func names(es []*Entry) []string {
+	out := make([]string, len(es))
+	for i, e := range es {
+		out[i] = e.Name
+	}
+	return out
+}
+
 func TestCSSAndVersionCacheStable(t *testing.T) {
 	reset()
 	calls := 0

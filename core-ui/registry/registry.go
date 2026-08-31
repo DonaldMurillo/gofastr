@@ -225,6 +225,46 @@ func reset() {
 	entries = map[string]*Entry{}
 }
 
+// testCleanup is the subset of *testing.T that IsolateForTest needs.
+// Declared structurally (like dev.SetHeartbeatIntervalForTest) so this
+// production package never imports testing.
+type testCleanup interface{ Cleanup(func()) }
+
+// IsolateForTest swaps the process-global registry for a fresh, empty
+// one and restores the original when the test finishes (t.Cleanup).
+//
+// Why it exists: the registry is process-global and a Go test binary
+// is one process per package, so any package linked into the binary
+// that registers styles at init time (framework/ui registers
+// ui-button, ui-page-header and ui-sidebar as LoadAlways) changes what
+// All, Lookup and EagerNames report for EVERY test in that binary.
+// Tests that assert on registry-shaped behaviour — the SSR host's
+// single-direct-link vs bundle decision, exact bundle name sets — must
+// state that premise by isolating rather than assume a clean process.
+//
+// While isolated, existing entries (including init-time ones) are
+// invisible, and styles the test registers are dropped again on
+// restore: they cannot leak into later tests or trip the duplicate-
+// name panic afterwards. A name registered before isolation may be
+// registered again inside it without panicking (the duplicate check
+// only sees the isolated registry); after restore the original entry
+// wins. Nested isolations compose, each restore returning to the
+// enclosing state.
+//
+// Sequential tests only: a test that isolates must not run in parallel
+// with tests that still read the shared registry.
+func IsolateForTest(t testCleanup) {
+	mu.Lock()
+	saved := entries
+	entries = map[string]*Entry{}
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		entries = saved
+		mu.Unlock()
+	})
+}
+
 func sameEntry(a, b *Entry) bool {
 	return a.Name == b.Name &&
 		a.Load == b.Load &&

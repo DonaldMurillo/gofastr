@@ -87,6 +87,12 @@ func TestCSSLoadOrder_AppCSSWinsOverComponentCSS(t *testing.T) {
 }
 
 func TestComponentCSS_SingleComponentEmitsDirectLink(t *testing.T) {
+	// Any package linked into this test binary that registers styles at
+	// init changes the eager set this assertion sees. framework/ui does
+	// exactly that, so importing it anywhere in the package used to turn
+	// these red (#331). Assert against a known registry instead of the
+	// process-wide one.
+	registry.IsolateForTest(t)
 	st := registerTestStyle(t, "single")
 	ds := newTestUIHostFor(st)
 	body := pageBody(t, ds, "/")
@@ -100,6 +106,11 @@ func TestComponentCSS_SingleComponentEmitsDirectLink(t *testing.T) {
 }
 
 func TestComponentCSS_MultipleComponentsBundleLink(t *testing.T) {
+	// Isolated for the same reason, and it strengthens this one: the
+	// exact-names assertion survives pollution today only by sort luck,
+	// since bundle-* happens to sort before ui-*. Any eager style sorting
+	// earlier would break it.
+	registry.IsolateForTest(t)
 	a := registerTestStyle(t, "bundle-a")
 	b := registerTestStyle(t, "bundle-b")
 	ds := newTestUIHostForMany(a, b)
@@ -119,6 +130,7 @@ func TestComponentCSS_MultipleComponentsBundleLink(t *testing.T) {
 }
 
 func TestComponentCSS_EagerLinkEvenWithoutRender(t *testing.T) {
+	registry.IsolateForTest(t)
 	// Register an entry the page does NOT render, but mark LoadAlways.
 	// The SSR host must still emit its <link>.
 	st := registerTestStyle(t, "always", registry.WithLoad(registry.LoadAlways))

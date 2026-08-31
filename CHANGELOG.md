@@ -9,6 +9,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`registry.IsolateForTest(t)`** swaps the process-global style registry for
+  a fresh one and restores it when the test finishes. Test-only seam for
+  asserting registry-shaped behaviour — the SSR host's single-direct-link vs
+  bundle `<link>` decision, exact bundle name sets — without assuming a clean
+  process: any package linked into a test binary that registers styles at init
+  (`framework/ui` registers `ui-button`, `ui-page-header`, and `ui-sidebar` as
+  `LoadAlways`) otherwise changes the eager set every test in that binary sees
+  (#331). Styles registered during isolation are dropped on restore, so they
+  cannot leak into later tests. No runtime behaviour change.
+
 - **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
   navigation, at two grains: `NoSPA` drops a route from the client route
   manifest so the runtime treats it as unknown and every link to it does a full
