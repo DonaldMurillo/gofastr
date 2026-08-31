@@ -44,6 +44,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`ui.CommandPalette` gained a visible close control and a bounded mobile
+  dialog** (#325): the palette rendered no dismiss control a touch user could
+  reach — the `Esc` hint chip is an instruction a phone cannot follow, and the
+  full-screen mobile sheet covers every backdrop pixel — and at
+  `max-width: 540px` the `100dvh` sheet grew past the viewport on long command
+  lists, clipping the input off the top. The footer now carries an icon-only
+  close button at every breakpoint (`data-fui-action="close"`, the same
+  declarative dismiss hook the section-menu drawer uses, with a 44px tap
+  floor), and the dialog is bounded to the viewport at every size with the
+  suggestion list scrolling inside the remaining space. Escape, backdrop
+  dismissal, the focus trap, and reopen behaviour are unchanged, now pinned by
+  chromedp tests at 390x844, 1280x800, and a 1280x240 short-viewport guard.
+
 - **Generated marketing chrome links and auth-gate redirects follow the
   blueprint's registered screens** (#312) (`gofastr generate`). The marketing
   header nav and footer shipped four literal hrefs (`/pricing`, `/about`,
