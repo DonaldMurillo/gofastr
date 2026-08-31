@@ -45,6 +45,429 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   supported way to attach attributes to a component — cannot reach it.
   Inert for everyone else.
 
+- **`queue.Job.UserID`**, persisted as `queue_jobs.user_id`, names the person
+  a job's payload is about. It is what makes the row reachable by
+  `App.EraseUserData`: `queue_jobs` lives outside the entity registry, so the
+  erase plane can only find a row through a declared column. Set it whenever
+  the payload is personal data; leave it empty for infrastructure work.
+  Rows enqueued before the column existed carry `''`, which is the same answer
+  as a job whose payload was never personal. Only `DBQueue` persists it.
+
+- **`queue.CompareAndDeleter`**, an optional `RedisClient` capability
+  (`HDelIfEqual`), lets `Ack`/`Nack` retire a processing entry atomically.
+  A one-line Lua script on go-redis; a client without it falls back to a late
+  re-read, which narrows the window rather than closing it. See
+  [queue](queue.md).
+
+- **`cache.KeyScanner`**, an optional `RedisClient` capability (`Keys`), lets
+  `Clear` scope its wipe to one prefix instead of flushing the database. A
+  prefixed `Clear` refuses without it rather than deleting a neighbour's keys;
+  an unprefixed cache owns the database and still flushes.
+
+- **`mcp.Server.UnregisterTool(name)`** removes a tool and reports whether it
+  was there. For an opt-in that can only be withdrawn after registration: the
+  dev MCP registers its control tools during `InitPlugins`, but whether they
+  may be served depends on the listen address, which is not known until
+  `Start`. Prefer deciding before `RegisterTool` where the information exists.
+
+- **`router.SanitizePathParam`** exports the truncation `Param` applies, for
+  readers that hold a name and a catch-all flag without a `*http.Request`.
+  Prefer `Param`, which derives the flag from the route pattern.
+
+- **`component.ComponentContext` is now a `context.Context`**, carrying the
+  request context the action arrived on, plus `NewComponentContextFor` to
+  build one. A server-action handler receives this value and nothing else, so
+  anything it needs from the request — the caller above all — has to be
+  reachable through it. A nil `Ctx` reads as `context.Background()`.
+
+- **`codegen.GeneratedFile.Mode`** sets the permission a generated file is
+  written with, and tightens a pre-existing file to it before any content
+  lands. Zero keeps the 0644 default. Set it for anything carrying a secret.
+
+- **A `hooks:` blueprint key** declares entity lifecycle hooks
+  (`id`/`entity`/`when`/`handler`/`description`) alongside `endpoints`. Like
+  endpoints it is a declaration rather than generated behaviour: the blueprint
+  records which hook runs where and you write the handler. `kiln freeze` emits
+  it from the world's hooks. See [blueprints](blueprints.md).
+
+- **`migrate.RenderMigrationFileChecked`** refuses SQL containing a line that
+  would parse as a `-- +migrate` directive, returning `ErrDirectiveInSQL`.
+  `GenerateMigrationFile` uses it; `RenderMigrationFile` is deprecated in
+  favour of it.
+
+### Fixed
+
+- **Queue completions are fenced on the claim they were issued for.**
+  `DBQueue` had no claim identity at all, and its `Nack` updated by bare job
+  ID: a worker whose lease expired flipped the RE-CLAIMANT's live row to
+  `pending` — a third worker then ran the handler alongside it — or to
+  `failed`, dead-lettering a job someone was executing. Neither arm carried
+  even the `status='claimed'` guard `Ack` had. `Dequeue` now mints a
+  `claim_token` and every completion arm matches on it. `RedisQueue` fenced on
+  `Job.ClaimToken` already, but its check and its delete were separate round
+  trips, so a lease expiry plus `Reclaim` plus a re-`Dequeue` landing between
+  them made the delete remove the NEW claimant's entry: the job sat on no
+  list, invisible to `Reclaim`, while `Ack` returned nil.
+
+- **`dequeueSQLite` and the outbox relay's claim take the write lock before
+  the read.** Both documented themselves as serialised — "BEGIN IMMEDIATE
+  serialises writers naturally" — and neither issued it: `database/sql` sends
+  a plain `BEGIN`, which SQLite reads as DEFERRED, so the lock landed after
+  the SELECT. Two claimants both picked the same row and the second met
+  `SQLITE_BUSY`. 390 busy errors in the queue, 9 in the outbox, from a
+  component documented as race-free.
+
+- **`MemoryQueue.Replay` re-enqueues before it drops the terminal record.**
+  Removing it first and then failing the enqueue (cancelled context, closed
+  queue) destroyed the job: the caller saw an error and retried, and the retry
+  matched no dead entry, so `Replay`'s documented idempotent no-op turned a
+  visible failure into permanent silent loss.
+
+- **A job whose type has no registered handler is dead-lettered, not
+  dropped.** That is the producer-first deploy shape — the queue is fed a type
+  the running binary does not know yet — and every such job was destroyed with
+  `ListJobs("failed")` and `Stats` showing nothing to reconcile from. The DB
+  backend already behaved this way.
+
+- **`queue_jobs` is reachable by `App.EraseUserData`.** The battery registered
+  it as a `DataExporter`, payload column included, and no `DataEraser`
+  anywhere. Terminal rows make it acute: the only job-row DELETE is
+  Ack-of-claimed and `failed` rows are retained on purpose, so a dead-lettered
+  job holding the erased user's data survived erasure and was re-disclosed by
+  every later `ExportData` dump. See `Job.UserID` above.
+
+- **`truncateError` cuts on a rune boundary.** Slicing at byte 2000 split a
+  multi-byte rune, and Postgres rejects the invalid UTF-8 on the settle
+  UPDATE: the delivery never settled and its handler re-ran at backoff cadence
+  forever, which is what `MaxAttempts` exists to bound.
+
+- **`App.EraseUserData` deletes stored files, not just rows.** It was SQL-only,
+  so it deleted the row holding an avatar's storage key and left the object:
+  after a report saying `TotalErased=1`, the erased user's file was still
+  downloadable at the `/uploads` route the docs tell you to mount — while the
+  function's own contract claims parity with `ExportData`, which dumps those
+  same columns. Keys are read before the rows go, objects deleted after the
+  commit, and image renditions come too. A storage delete that fails is
+  returned with the surviving keys named.
+
+- **Batch envelopes reject duplicate, case-folded, and unknown top-level
+  keys.** `encoding/json` accepts all three: a duplicated `items` is
+  last-one-wins, so a proxy inspecting the FIRST array sees a different
+  payload than the handler executes; field matching is case-insensitive, so
+  `Items` binds and slips past any check keyed on the exact name.
+
+- **`ServeStreamingList` refuses `AfterList` hooks like `List()` does.** It is
+  exported and reachable directly, and enforced the owner/tenant gate for that
+  reason — but not this refusal. Streaming never materialises the slice
+  `AfterList` runs over, so a hook registered as a redactor was silently
+  bypassed and a direct call put the stored values on the wire.
+
+- **Lifecycle events wait for the ambient transaction to commit.** `inTx`'s
+  ambient branch deliberately does not commit — the outer owner does — so
+  emitting on the live bus at that point announced a row a rollback could
+  erase, leaving SSE subscribers and `On`/`Subscribe` handlers holding the
+  full record payload of a write that never existed. The outcome is now read
+  from the database once the transaction is done, per event kind: a
+  rolled-back update leaves the row exactly as present as a committed one, so
+  an update is matched on the values the event announced.
+
+- **`LocalStorage.Save` scrubs the absolute path out of its errors.** They are
+  `os.PathError` values naming the full storage path, and the CRUD handlers
+  echo an upload failure into the 400 body, so an ENAMETOOLONG or EACCES
+  disclosed the storage layout. `Get` already scrubbed; the write side is the
+  one an unauthenticated multipart POST reaches.
+
+- **`upload.ext` lowercases, and the stored-XSS guard covers XML/XSLT.**
+  `ext` promised "the lowercase file extension" and returned `filepath.Ext`
+  verbatim, so `payload.SVG` skipped the guard's extension leg — which exists
+  precisely because sniffing is unreliable. Separately, an XML document may
+  carry an `xml-stylesheet` processing instruction naming an XSLT sheet whose
+  transform emits arbitrary HTML, so two uploads compose into the stored XSS
+  the HTML case forbids with neither leg looking scriptable alone.
+
+- **`core/yaml` bounds inline-list recursion.** `parseScalar` and
+  `parseInlineList` are mutually recursive on `[` and consulted nothing:
+  `maxNestingDepth` guards indentation only, and nested inline lists are
+  rejected AFTER the full descent, so an attacker picked the frame count and
+  the goroutine stack went first. `gofastr generate cli --from <URL>` hands
+  remote YAML straight to `Parse`.
+
+- **`core/dotenv` bounds `${VAR}` expansion.** References resolve against keys
+  defined earlier in the same file, so each line multiplies the one before it:
+  twelve lines of three references is half a megabyte from a ~200-byte file
+  where every line sits far under the scanner cap. Every app boot parses
+  `.env` from the working directory, so this is startup time. Capped at 10x
+  the bytes read; a legitimate chain stays under 3x.
+
+- **`config.parseDuration` refuses an overflowing seconds value** instead of
+  wrapping. A TTL of `math.MaxInt64` bound as `-1s`, and which way that fails
+  depends on which side of zero the consumer tests.
+
+- **`handler.Bind` sanitizes `path:"…"` tags** the way `router.Param` does.
+  `GET /users/42%0Aadmin` bound `"42\nadmin"` straight into handler input, and
+  from there into log lines, response headers, SSE frames, and file or
+  database lookups.
+
+- **A revoked grant no longer splits the replicas.** `access`'s `Revoke`
+  narrowed the local code baseline on top of writing a shared tombstone. The
+  tombstone alone already keeps a code-seeded grant revoked everywhere, so the
+  narrowing was redundant — and being per-replica it was the one piece of
+  revoke state peers could not see. Interleave a Grant on A with a Revoke on B
+  and the shared tables end with no grant row and no tombstone: A kept its
+  code seed and answered true while B answered false, permanently.
+
+- **The inline-script linter no longer misses four evasions.** It scanned the
+  SOURCE TEXT of a literal, so `"\x3cscript\x3e…"` contained no `<` anywhere
+  and every pattern missed it; attribute names were anchored on `\b`, and a
+  word boundary sits between the `-` and the `s` of `data-src`, so
+  `<script data-src="/a.js">alert(1)</script>` read as external; the patterns
+  were case-sensitive while HTML tag names are not; and only the FIRST
+  `<script>` in a literal was classified, so an allowed leading tag masked
+  everything after it. That last one was hiding a real violation in
+  `core/mcp`'s widget document, which now carries the directive on purpose.
+
+- **Pagination and DataTable substitute their placeholder literally instead of
+  through `fmt`.** Both are documented as Sprintf patterns and their callers
+  build them by concatenating a carry onto the placeholder, so
+  `url.Values.Encode`'s own `%XX` triples read as flag/width/verb sequences: a
+  search for "café" produced `?q=caf%!C(int=1)3%!A(MISSING)9&p=%!d(MISSING)`.
+  Nothing failed loudly, because the literal `%d` the constructor checks for
+  was still there.
+
+- **`ui.SignOut` scheme-checks its `Action`.** It hand-rolls its `<form>` with
+  `render.Escape`, which is HTML escaping and scheme-blind, so
+  `action="javascript:alert(1)"` survived intact. Every sibling form sink runs
+  its action through `urlsafe.CleanAnchor`; a rejected action now degrades to
+  the `/auth/logout` default.
+
+- **`loadModule` shape-checks the module name**, which arrives as a DOM
+  attribute: a `../../../evil` token normalized out of the runtime serve route
+  onto an arbitrary same-origin script. **The combobox's pre-boot navigation
+  fallback is origin-gated** too — the SPA navigator applied its own check and
+  the bare `location.href` assignment did not.
+
+- **`framework_docs_search` enforces the hard cap it advertises.**
+  `docs.SearchWithLimit` honours any positive value, so `limit=1e12` returned
+  10,349 hits for a term as ordinary as "the" — against a tool whose purpose
+  is answering agents with narrow contexts. Clamped at 200.
+
+- **`Hidden` fields no longer reach a published tool schema.** The CRUD
+  generators filter through `VisibleFields` first, but a custom
+  `entity.Endpoint` hands its `InputSchema` straight in — which its docs
+  invite. The hidden column's name reached every caller allowed to see the
+  tool, listed as required.
+
+- **The dev MCP's control tools are unregistered, not just un-flagged, on an
+  exposed bind.** Clearing the intent flag works only when `Start` reaches the
+  guard before `InitPlugins` registers them; a host calling `InitPlugins`
+  itself pre-Start registers first and learns second, so an anonymous
+  `tools/list` named `app_module_enable`/`_disable` and `tools/call` reached
+  their handlers through a forged loopback `Host`.
+
+- **Server-action handlers can see the caller.** The endpoint's contract says
+  "a handler that mutates anything must check authorization itself", and with
+  `r.Context()` dropped at the call site `handler.GetUser` had nothing to
+  read, so that check was unimplementable through the API demanding it.
+
+- **An action-id collision refuses at boot instead of cross-wiring.**
+  `pathToActionID` turns `/` into `-`, so `/admin/users` and `/admin-users`
+  derive the same id and `CompileActions` caches first-wins: the second
+  screen's Go handlers were unreachable and a `data-action` click on that page
+  resolved into the OTHER screen's registry.
+
+- **A widget's `RequireSession` covers its RPCs.** It gated `/state` and the
+  chrome and registered the RPCs bare, so the caller that got a 403 from
+  `/state` got a 200 from the widget's own mutation routes in the same
+  process.
+
+- **The relay strips every client-claimed forwarding header and bounds the
+  response direction.** `X-Forwarded-*` was stripped but not `X-Real-IP`,
+  `X-Client-IP`, `True-Client-IP`, `CF-Connecting-IP`, `Fastly-Client-IP`, or
+  `Forwarded` — the common CDN spellings an upstream may trust. And
+  `MaxBodyBytes` braked requests only, so a vendor endpoint that never ended
+  its response held a goroutine, a socket pair, and bandwidth for the full
+  request deadline per open client request, at no cost to the vendor.
+
+- **kiln's `POST` routes reject cross-site requests.** The loopback bind
+  cannot see this caller: a page the operator visits POSTs to
+  `/kiln/tool/approve_plan` from their own machine and the TCP peer is
+  loopback either way. The plan gate's entire security leg is a human looking
+  at a card. Non-browser callers send no `Origin` and are untouched.
+
+- **kiln journal replay accepts exactly what the live API accepts.** Every
+  rule existed on one path only, so a hand-authored `.kiln.session.jsonl`
+  installed world state the API refuses and the server booted a world
+  `kiln freeze` then rejects: the styling-prop ban on page trees, scaffold
+  shape, `api_prefix` normalization, the route method enum, and a page/entity
+  mount collision check. The shared rules now live in `kiln/world`, below both
+  callers.
+
+- **A poison world edit no longer wedges the runtime.** `net/http`'s pattern
+  parser and `App.Mount` PANIC on input they cannot register, and that panic
+  escaped `Live.Apply` entirely, so its rollback never ran: the poison stayed
+  in the in-memory world and every later `Apply` re-panicked until restart —
+  and `New()` had the same hole on a journal already containing one.
+
+- **`kiln freeze` carries hooks into the graduation blueprint.** The live
+  preview registers every world hook on the framework `HookRegistry`, so the
+  operator watched a `before_create` validation reject bad rows and then
+  shipped an app that silently had none. Only `world.json` kept it, and the
+  generated app never reads `world.json`.
+
+- **kiln's `sqlDefault` delegates to the framework renderer.** Its copy still
+  carried the arm the framework deleted after a verified payload:
+  `fmt.Sprintf("'%v'", v)` splices the rendering raw between unescaped quotes,
+  and one quote closes the literal and appends arbitrary DDL to
+  `ALTER TABLE … ADD COLUMN` — reached from kiln's own `add_entity` op.
+
+- **`JSONL.Append` refuses a line its readers cannot scan.** Every reader caps
+  its scanner at 16 MiB, so one oversized entry bricked the journal durably:
+  the next `OpenJSONL` died in `countLines`, `Replay` failed in `Read`, and
+  `Undo`/`ResetSession` failed inside `TruncateAfter`. Recovery meant
+  hand-editing the file.
+
+- **kiln's SSE writer scrubs the event kind.** It is journal-derived, so a CR
+  or LF closed the `event:` line and let the rest write its own fields — up to
+  a whole synthetic event the client dispatches as if the server sent it.
+
+- **Generated `.env` and `pack -o` output are owner-only.** `os.WriteFile`'s
+  mode applies only at creation, so a second `pack -o` over an earlier run's
+  file kept 0644, and `.env` inherited whatever was there — while both carry
+  the signing secret, the bootstrap admin password, and a credentialed DSN.
+
+- **A `${JWT_SECRET}` reference no longer boots as the key itself.**
+  `kiln freeze` emits it so the real secret stays out of the committed file;
+  the generator then wrote `JWT_SECRET=${JWT_SECRET}` into `.env`, a
+  self-reference dotenv returns verbatim, so the app signed session JWTs with
+  the literal string printed in the committed `gofastr.yml`. Nothing failed
+  closed: auth rejects only an EMPTY secret.
+
+- **`pack`'s secret warning covers every DSN class the generator hides.** It
+  tested for `@` while the generator used `dsnHasSecret`, so a keyword/value
+  DSN (`host=db user=app password=hunter2`) was redacted with no
+  do-NOT-commit warning printed.
+
+- **Blueprint seed validation matches the boot validator on constraints.**
+  Types are deliberately coercion-tolerant, but nothing re-encodes `"abc"`
+  into `^[A-Z]{3}$`, so a row violating a pattern or a min length generated
+  cleanly, compiled, and then aborted the shipped app's startup on a fresh
+  database.
+
+- **A provider stream that just stops is a failure, not a finished turn.** The
+  channel closed after the last text delta and `CollectStream` returned the
+  partial text with a nil error and an empty finish reason — exactly what a
+  complete turn looks like — so a truncated answer was recorded as the
+  assistant's turn. Both the openai adapter and the collector now require a
+  terminal event. `ErrStreamClosed` already existed and nothing returned it.
+
+- **A tool call cut off mid-arguments no longer bricks the session.**
+  `flushTool` promised to "validate the accumulated JSON; if invalid, keep the
+  raw bytes" and did neither, storing `{"path":"/et` as the Input: every later
+  marshal failed, so the next provider request errored out and the persistence
+  layer dropped the tool-intent row.
+
+- **The harness TUI strips terminal escapes from agent-derived text.** Model
+  output, tool results, and upstream error strings reached scrollback
+  verbatim, where OSC 52 writes the user's clipboard, OSC 0 rewrites the
+  window title, CSI ?1049h flips to the alternate screen, and a bare CR plus
+  BEL overwrites the row just drawn.
+
+- **The harness MCP and WebSocket transports enforce the token's scope.** The
+  MCP HTTP handler verified the bearer and discarded the claims, so a token
+  minted for session A drove session B by naming B in the `tools/call`
+  arguments; the WebSocket checked `AllowsSession` at the upgrade and then
+  dispatched whatever verb arrived. `rest.go` enforced both already.
+
+- **A failed credential-store load stays a failure.** `loaded` was set on
+  entry, so after a wrong-key decrypt the store held zero data and believed it
+  was current: `Get` answered "not found" instead of repeating the error, and
+  `Put` then re-encrypted that empty map under the wrong key and wrote it over
+  the file, destroying every credential the real key protected.
+
+- **The harness secrets loader refuses key-derivation vars from the walked
+  file.** It walks UP from the working directory, so on a cloned repo the file
+  is attacker-authored: delivering provider API keys is the contract, deciding
+  how the credential store is ENCRYPTED is not.
+
+- **The harness web sidecar pins the Host and checks the Origin.** `/input`
+  decodes JSON regardless of Content-Type, so a `text/plain` fetch with no
+  preflight injected a prompt into the live session at model authority from
+  any page the operator visited.
+
+- **`RedisCache` distinguishes a backend outage from a miss.** It wrapped
+  EVERY client error in `ErrCacheMiss`, which the `Cache` interface documents
+  strictly as not-found, so a caller that fails closed on a miss — negative
+  caching, a revocation list — failed OPEN for the whole outage.
+
+- **Cache prefixes are injective and `Clear` is scoped.**
+  `WithPrefix("u:alice")` with key `admin:x` and `WithPrefix("u:alice:admin")`
+  with key `x` both produced `u:alice:admin:x`, so one namespace could read,
+  overwrite, or delete another's entries. And `Clear` ignored the prefix and
+  issued `FlushDB`, so with the per-tenant prefixes this battery documents,
+  one tenant's `Clear` was every other tenant's data-loss event. A `:` inside
+  a prefix is doubled now; see `KeyScanner` above.
+
+- **The cache middleware's `Vary` key uses the complete field value.**
+  `Header.Get` returns the FIRST value of a repeatable field, so
+  `X-Team: alpha` and `X-Team: alpha, omega` were one variant and whichever
+  arrived first decided what both received.
+
+- **The admin nav drawer mounts behind the admin authorizer.** Its widget
+  routes went on the bare router, so the `/chrome` endpoint — which is the
+  back-office entity map — answered any anonymous GET, against the package's
+  own "There is no unauthenticated or self-service path".
+
+- **`battery/log`'s read tools require an authenticated caller.** They hand
+  out every caller's request paths, remote IPs, and request IDs, straight off
+  `/mcp` with no route middleware in the way.
+
+- **`battery/storage` returns typed errors**, so `ServeHandler`'s documented
+  404/400 classification holds. Untyped errors fell to the 500 arm, making
+  gone and broken indistinguishable to clients and caches.
+
+- **`setup`'s headless `RunSteps` refuses on a completed install**, the
+  re-run guard the interactive skin has enforced since `runStepSerialized` was
+  written. `GOFASTR_SETUP=force` reaches it, where the bootstrap step INSERTs
+  an admin-role user, so a redeploy with force still set silently minted a
+  second admin.
+
+- **The setup cookie carries a freshly minted secret, not the URL token.**
+  The token was invalidated in its URL form and handed straight back as the
+  cookie value, so anyone who saw only the URL — a proxy or access log —
+  replayed it from a second client and held the wizard for the life of the
+  process, which is the replay `first-run.md` rules out.
+
+- **`GenerateMigrationFile` refuses SQL that would synthesize a directive.**
+  A column DEFAULT spanning a line reading `-- +migrate Down` truncated the Up
+  section mid-literal: the committed migration no longer parsed and the
+  author's remaining bytes sat in Down awaiting a rollback.
+
+- **A rejected upload no longer leaves its bytes in storage.**
+  `ProcessFileField` saves the primary before deriving renditions, so a derive
+  failure rejected the upload and kept the full-size object — repeat inert
+  posts against an `Image` field and every request fails while storing
+  another, invisible to row-driven cleanup. The deriver now receives a
+  recording view of the store, so partial renditions are rolled back too.
+
+- **`DeleteFileField` removes the renditions.** Only the primary was deleted,
+  so every derived object outlived the row's cleanup and kept serving at the
+  documented `/uploads/{key...}` route — while `ImageDerivatives`' own doc
+  names "a storage delete" as a sink a variant ref reaches.
+
+- **Variant storage refs are checked for control bytes**, which the primary
+  always was, and **`ProcessFileField` sanitizes the `Filename` it stores** so
+  it can no longer return a `FileField` its own `Validate` rejects.
+
+- **The framed plugin CSP sets `form-action 'none'`.** A frame granted
+  `allow-forms` submits by NAVIGATING, which `connect-src 'none'` does not
+  cover, so it could POST whatever it had read to any origin.
+
+- **The eval runners share one environment policy.** backend-adoption started
+  its agent-built candidate server with `os.Environ()` whole — the operator's
+  cloud keys, SCM tokens, and `DATABASE_URL` — while the ui-quality twin
+  already passed an allowlisted environment. Their credential denylists were
+  hand-copied and had drifted; neither recognised a bare `*_TOKEN`.
+
 ## [0.76.0] - 2026-08-30
 
 ### Added
