@@ -243,12 +243,12 @@ var goldenMenus = []struct {
 			Label: "Delete", Danger: true, Disabled: true, Class: "extra-cls",
 			Icon: render.HTML(`<svg width="12"></svg>`),
 		}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-020cb409" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-020cb409-panel">Actions<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-020cb409-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled extra-cls" type="button" role="menuitem" tabindex="-1"aria-disabled="true" disabled><span class="ui-menu__icon" aria-hidden="true"><svg width="12"></svg></span><span class="ui-menu__label">Delete</span></button></div></details>`,
+		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-020cb409" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-020cb409-panel">Actions<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-020cb409-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled extra-cls" type="button" role="menuitem" tabindex="-1" aria-disabled="true" disabled><span class="ui-menu__icon" aria-hidden="true"><svg width="12"></svg></span><span class="ui-menu__label">Delete</span></button></div></details>`,
 	},
 	{
 		name: "disabled-anchor",
 		cfg:  ui.MenuConfig{Label: "Go", Items: []ui.MenuItem{{Label: "Locked", Href: "/x", Disabled: true}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-a636a70b" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-a636a70b-panel">Go<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-a636a70b-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item ui-menu__item--disabled" href="/x" role="menuitem" tabindex="-1"aria-disabled="true"><span class="ui-menu__label">Locked</span></a></div></details>`,
+		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-a636a70b" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-a636a70b-panel">Go<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-a636a70b-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item ui-menu__item--disabled" href="/x" role="menuitem" tabindex="-1" aria-disabled="true"><span class="ui-menu__label">Locked</span></a></div></details>`,
 	},
 	{
 		name: "rpc-confirm-method",
@@ -311,11 +311,12 @@ func TestMenuItemIDEmittedOnRows(t *testing.T) {
 	for _, want := range []string{
 		`<button class="ui-menu__item" id="help-toggle" type="button" role="menuitem" tabindex="-1">`,
 		`<a class="ui-menu__item" id="profile-link" href="/me" role="menuitem" tabindex="-1">`,
-		// NOTE: no space before aria-disabled — pre-existing on main
+		// The space before aria-disabled is the #327 fix; this golden was
+		// the tripwire that pinned the malformed form until it landed.
 		// (disabledAttr lacks a leading space; browsers parse-error
 		// and recover). Pinned as-is; fixing it changes zero-value
 		// bytes and is a separate change from MenuItem.ID.
-		`<button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled" id="del" type="button" role="menuitem" tabindex="-1"aria-disabled="true" disabled data-fui-rpc="/api/del" data-fui-rpc-method="DELETE">`,
+		`<button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled" id="del" type="button" role="menuitem" tabindex="-1" aria-disabled="true" disabled data-fui-rpc="/api/del" data-fui-rpc-method="DELETE">`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("row with ID missing exact open tag %q:\n%s", want, out)
