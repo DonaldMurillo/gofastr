@@ -391,7 +391,17 @@ func TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache(t *testing.T) {
 	// only the entry in the cache it started against.
 	c.releaseSlow()
 	step("settle", chromedp.Sleep(400*time.Millisecond))
+	// #339 + #345 review: that failure belongs to a click the user walked
+	// away from, so it must NOT toast here. The panel they are looking at
+	// opened successfully two steps ago — an unguarded catch would tell
+	// them "Could not open that panel." about a panel that is open.
+	var staleToasts int
+	step("no-stale-toast",
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-toast-id]').length`, &staleToasts))
 	step("close-after", closeWidget())
+	if staleToasts != 0 {
+		t.Errorf("a pre-navigation fetch failure raised %d toast(s) on the page the user moved to; the panel it names is open", staleToasts)
+	}
 	// Re-open on the new page: served from the new cache (2 fetches
 	// total), not refetched because the failed old fetch deleted the
 	// new cache's entry (3).

@@ -99,6 +99,10 @@
     // cache. '\0' cannot survive HTML attribute parsing, so name+ctx
     // pairs cannot collide.
     const key = name + '\0' + (ctx || '');
+    // Cache identity for THIS open. gofastr:navigate swaps NS._chromeCache
+    // for a fresh object, so an inequality later means the user left the
+    // page this click belonged to.
+    const openedAgainst = NS._chromeCache;
     const cached = NS._chromeCache[key];
     if (cached) {
       // LRU refresh: delete + re-insert moves the key to the recency
@@ -145,7 +149,16 @@
       // on demand and degrades to the unstyled fallback, so the message
       // appears even on a page with no toast stack.
       console.error('[gofastr] widget chrome fetch failed', err);
-      NS._toastOrFallback?.({ variant: 'error', title: 'Could not open that panel.', ttl: 6000 });
+      // Only tell the user if they are still on the page they clicked on.
+      // An SPA navigation swaps _chromeCache, so a mismatch means this
+      // failure belongs to a click they walked away from: the toast would
+      // land on a page they never clicked, and in the worst case say
+      // "Could not open that panel." while that panel is open, because
+      // they re-opened it successfully after navigating. Same signal the
+      // delete-path above already keys on.
+      if (openedAgainst === NS._chromeCache) {
+        NS._toastOrFallback?.({ variant: 'error', title: 'Could not open that panel.', ttl: 6000 });
+      }
     }
     if (html) NS.mountWidget(cfg, html);
   };
