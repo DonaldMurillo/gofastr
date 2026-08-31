@@ -61,6 +61,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Generated marketing chrome links and auth-gate redirects follow the
+  blueprint's registered screens** (#312) (`gofastr generate`). The marketing
+  header nav and footer shipped four literal hrefs (`/pricing`, `/about`,
+  `/terms`, `/privacy`), so a marketing blueprint without those screens got a
+  footer full of 404s; a chrome link is now emitted only when a screen
+  registers its route. The auth gate's redirect — the screen mount, the
+  entity-list island policy, the header's Sign in button, and the failed-login
+  bounce — derives from the screen hosting the login form (nested in a section
+  counts) instead of the hardcoded `/login`, which 404'd every gated page on a
+  blueprint whose sign-in lives elsewhere.
+
 - **A failed `data-fui-prefetch` fetch no longer strands the module for
   the page lifetime.** The bridge marked an element attempted on first
   hover even when the fetch failed, and a module without a scanner
