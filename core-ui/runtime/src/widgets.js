@@ -99,6 +99,10 @@
     // cache. '\0' cannot survive HTML attribute parsing, so name+ctx
     // pairs cannot collide.
     const key = name + '\0' + (ctx || '');
+    // Cache identity for THIS open. gofastr:navigate swaps NS._chromeCache
+    // for a fresh object, so an inequality later means the user left the
+    // page this click belonged to.
+    const openedAgainst = NS._chromeCache;
     const cached = NS._chromeCache[key];
     if (cached) {
       // LRU refresh: delete + re-insert moves the key to the recency
@@ -134,7 +138,28 @@
       if (ks.length > 32) delete NS._chromeCache[ks[0]];
     }
     let html = '';
-    try { html = await NS._chromeCache[key]; } catch (_) {}
+    try { html = await NS._chromeCache[key]; } catch (err) {
+      // #339: by the time the fetch fails, the click's visible work is
+      // done — a ctx-carrying trigger dropped the SSR-inlined node above,
+      // and the node is NOT put back: its render is ctx-less, so
+      // restoring it would show chrome for an entity the trigger did not
+      // name (the #321 bug). Swallowing the error turned the click into a
+      // silent no-op. Tell the user, the way a dead form RPC does
+      // (src/rpc.js): _toastOrFallback (kernel) loads the toasts module
+      // on demand and degrades to the unstyled fallback, so the message
+      // appears even on a page with no toast stack.
+      console.error('[gofastr] widget chrome fetch failed', err);
+      // Only tell the user if they are still on the page they clicked on.
+      // An SPA navigation swaps _chromeCache, so a mismatch means this
+      // failure belongs to a click they walked away from: the toast would
+      // land on a page they never clicked, and in the worst case say
+      // "Could not open that panel." while that panel is open, because
+      // they re-opened it successfully after navigating. Same signal the
+      // delete-path above already keys on.
+      if (openedAgainst === NS._chromeCache) {
+        NS._toastOrFallback?.({ variant: 'error', title: 'Could not open that panel.', ttl: 6000 });
+      }
+    }
     if (html) NS.mountWidget(cfg, html);
   };
 

@@ -391,7 +391,17 @@ func TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache(t *testing.T) {
 	// only the entry in the cache it started against.
 	c.releaseSlow()
 	step("settle", chromedp.Sleep(400*time.Millisecond))
+	// #339 + #345 review: that failure belongs to a click the user walked
+	// away from, so it must NOT toast here. The panel they are looking at
+	// opened successfully two steps ago — an unguarded catch would tell
+	// them "Could not open that panel." about a panel that is open.
+	var staleToasts int
+	step("no-stale-toast",
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-toast-id]').length`, &staleToasts))
 	step("close-after", closeWidget())
+	if staleToasts != 0 {
+		t.Errorf("a pre-navigation fetch failure raised %d toast(s) on the page the user moved to; the panel it names is open", staleToasts)
+	}
 	// Re-open on the new page: served from the new cache (2 fetches
 	// total), not refetched because the failed old fetch deleted the
 	// new cache's entry (3).
@@ -463,5 +473,74 @@ func TestWidgetChromeCtx_LRURecency(t *testing.T) {
 	}
 	if total != 34 {
 		t.Errorf("total chrome fetches = %d, want 34 (32 fills + c32 insert + c1 evicted re-open; both c0 re-opens hit cache)", total)
+	}
+}
+
+// TestWidgetChromeCtx_FailedFetchSurfacesToast pins #339: when a
+// ctx-carrying trigger drops SSR-inlined chrome (its render is ctx-less,
+// #321) and the replacement fetch then fails, the click must not end in
+// silence. Before the fix the dropped node was already gone, the error was
+// swallowed, and the click did nothing at all — no dialog, no message. The
+// failure must be observable the way a dead form RPC's is: a toast appears
+// (rendered by the toasts module, which _toastOrFallback loads on demand).
+// Two neighbours are pinned in the same run: the dropped SSR node is NOT
+// re-inserted (that would re-show ctx-less chrome, the #321 bug), and a
+// SUCCESSFUL ctx open must not toast.
+func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
+	body := `
+<div data-fui-widget="dlg" hidden><span>ssr chrome</span></div>
+<button id="open-ok" data-fui-open="dlg" data-fui-ctx="okctx">OK</button>
+<button id="open-slow" data-fui-open="dlg" data-fui-ctx="slowfail">Slow</button>`
+	c := startChromeCtxServer(t, body)
+	ctx := chromeCtxBrowser(t)
+
+	var okMark, toastTitle string
+	var happyToasts, dlgNodes int
+	step := func(name string, acts ...chromedp.Action) {
+		t.Helper()
+		if err := chromedp.Run(ctx, acts...); err != nil {
+			t.Fatalf("step %s: %v", name, err)
+		}
+		t.Logf("step %s ok", name)
+	}
+
+	step("nav", chromedp.Navigate(c.Srv.URL+"/"), chromedp.WaitVisible(`#ready`, chromedp.ByID), chromedp.Sleep(200*time.Millisecond))
+	// Success first, while no toast could exist yet: a healthy ctx open
+	// drops the SSR node, fetches fresh chrome, mounts — and stays quiet.
+	step("open-ok", chromedp.Click(`#open-ok`, chromedp.ByID),
+		chromedp.WaitVisible(`#ctxmark`, chromedp.ByQuery),
+		chromedp.Text(`#ctxmark`, &okMark, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-toast-id]').length`, &happyToasts))
+	step("close-ok", closeWidget())
+	// Failure: the SSR node is gone (open-ok dropped it), so this open is
+	// a pure chrome fetch — the gated one, released into a 500.
+	step("open-slow", chromedp.Click(`#open-slow`, chromedp.ByID))
+	c.waitSlowArrived(t)
+	c.releaseSlow()
+	step("toast-visible", chromedp.WaitVisible(`[data-fui-toast-id]`, chromedp.ByQuery),
+		chromedp.Text(`.ui-notification__title`, &toastTitle, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-widget="dlg"]').length`, &dlgNodes))
+
+	if okMark != "ctx=okctx|user=alice" {
+		t.Errorf("healthy open mark = %q, want ctx=okctx|user=alice", okMark)
+	}
+	if happyToasts != 0 {
+		t.Errorf("successful ctx open produced %d toast(s) — the happy path must stay quiet", happyToasts)
+	}
+	if dlgNodes != 0 {
+		t.Errorf("%d [data-fui-widget] node(s) after the failed open — the dropped SSR chrome must not be re-inserted (#321)", dlgNodes)
+	}
+	if toastTitle != "Could not open that panel." {
+		t.Errorf("toast title = %q, want the failed-open message", toastTitle)
+	}
+	_, perCtx, total := c.snapshot()
+	if got := perCtx["slowfail"]; got != 1 {
+		t.Errorf("chrome fetches for slowfail = %d, want 1", got)
+	}
+	if got := perCtx["okctx"]; got != 1 {
+		t.Errorf("chrome fetches for okctx = %d, want 1", got)
+	}
+	if total != 2 {
+		t.Errorf("total chrome fetches = %d, want 2", total)
 	}
 }
