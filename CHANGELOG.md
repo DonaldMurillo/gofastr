@@ -25,7 +25,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   indicator and submenu caret are CSS pseudo-elements, so accessible names and
   type-ahead see the label alone. Zero-value output stays byte-identical,
   golden-pinned, including nested items and `ExtraAttrs` id-dropping at depth.
-  Core runtime bytes are unchanged; the menu module grew 460 gzipped bytes and
+  Core runtime bytes are unchanged; the menu module grew 516 gzipped bytes and
   disclosure 51, both inside their budgets.
 
 - **`uihost.WithStrict` internal-link check** fails boot when the site chrome

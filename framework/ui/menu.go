@@ -73,11 +73,13 @@ type MenuItem struct {
 	// Radio, when non-empty, renders the row as a radio option:
 	// role="menuitemradio" plus aria-checked (see Checked) and
 	// data-fui-menu-radio="<Radio>". Every item sharing the same Radio
-	// value inside one menu panel forms a radio group; exactly one of
-	// them should carry Checked (like ID, uniqueness is caller-owned,
-	// not enforced here). The runtime's menu module arbitrates the
-	// group client-side on activation (click / Enter / Space): the
-	// activated row is checked, its same-group siblings unchecked, so
+	// value within one Menu forms a radio group — across submenus too:
+	// a picker whose rarer options sit behind a "More" submenu is one
+	// group, not two. Exactly one of them should carry Checked (like
+	// ID, uniqueness is caller-owned, not enforced here). The runtime's
+	// menu module arbitrates the group client-side on activation
+	// (click / Enter / Space): the activated row is checked, its
+	// same-group siblings — anywhere in the same menu — unchecked, so
 	// pure-client menus feel like radios without a round trip; a row
 	// carrying RPC or Href still fires it and the server re-render
 	// stays authoritative. Mutually exclusive with Children (a radio

@@ -23,10 +23,11 @@
 //                           elements never pollute the match)
 //
 // Click handler: activating a [role="menuitemradio"] row checks it and
-// unchecks its group siblings ([data-fui-menu-radio] within the same
-// panel) client-side — the same mutex ToggleAction groups use. The
-// server stays the source of truth for a row carrying RPC/Href; this
-// only keeps pure-client menus from reading stale until a re-render.
+// unchecks its group siblings client-side — every [data-fui-menu-radio]
+// row of the same group within the same MENU, submenus included (the
+// same mutex ToggleAction groups use). The server stays the source of
+// truth for a row carrying RPC/Href; this only keeps pure-client menus
+// from reading stale until a re-render.
 //
 // Loads on demand:
 //   - core's marker scanner watches for [data-fui-menu] and idle-loads
@@ -145,19 +146,30 @@
   });
 
   // Radio arbitration, delegated so island-swapped rows are covered.
-  // Scope: same [role=menu] panel + same data-fui-menu-radio group
-  // value. Rows without a group key form an implicit group of one (the
-  // row still self-checks).
+  // Scope: same data-fui-menu-radio group value anywhere in the same
+  // MENU — a group may span the top panel and submenus, so a theme
+  // picker split across a "More" submenu keeps exactly one checked
+  // row. The scope root is the OUTERMOST [data-fui-menu] (every
+  // nested submenu carries its own wrapper, so a bare closest() would
+  // stop one level short and split the group again); a hand-authored
+  // radio with no menu wrapper anywhere falls back to its [role=menu]
+  // panel. Rows without a group key form an implicit group of one
+  // (the row still self-checks).
   document.addEventListener('click', (e) => {
     const r = e.target && e.target.closest && e.target.closest('[role="menuitemradio"]');
     if (!r || r.getAttribute('aria-disabled') === 'true') return;
-    const panel = r.closest('[role="menu"]');
-    if (!panel) return;
+    let scope = r.closest('[data-fui-menu]'), up;
+    if (scope) {
+      while (scope.parentElement && (up = scope.parentElement.closest('[data-fui-menu]'))) scope = up;
+    } else {
+      scope = r.closest('[role="menu"]');
+    }
+    if (!scope) return;
     const group = r.getAttribute('data-fui-menu-radio');
-    for (const sib of panel.querySelectorAll('[role="menuitemradio"]')) {
+    for (const sib of scope.querySelectorAll('[role="menuitemradio"]')) {
       // group === null (a hand-authored radio with no group key, never
       // emitted by framework/ui) is an implicit group of ONE: only the
-      // activated row, never every radio in the panel.
+      // activated row, never every radio in the scope.
       const same = group === null ? sib === r : sib.getAttribute('data-fui-menu-radio') === group;
       if (same) {
         sib.setAttribute('aria-checked', sib === r ? 'true' : 'false');

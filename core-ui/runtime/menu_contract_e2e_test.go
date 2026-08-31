@@ -295,6 +295,115 @@ func TestMenuRadioArbitration(t *testing.T) {
 	}
 }
 
+// menuSplitGroupFixture is renderer-captured like menuContractFixture,
+// and exists because menuContractFixture structurally cannot express
+// the scoping failure: it puts every radio inside a submenu. Here the
+// theme group is SPLIT across the boundary — "Light" at the top level,
+// Dark / Midnight behind the "More" submenu — plus a contrast group
+// confined to the submenu, and a SECOND menu reusing the theme group
+// name, which pins that the arbitration scope is one menu, not the
+// page.
+const menuSplitGroupFixture = `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="split" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="split-panel">Theme<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="split-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Light</span></button><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="split-panel-sub-1"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="split-panel-sub-1-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">More</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="split-panel-sub-1-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"><span class="ui-menu__label">Dark</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Midnight</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="contrast"><span class="ui-menu__label">High</span></button></div></details></div></details><details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="alt" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="alt-panel">Also<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="alt-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"><span class="ui-menu__label">Slate</span></button></div></details>`
+
+// menuGroupCheckedCount counts aria-checked="true" rows of ONE group
+// inside a menu root: the number a screen reader experiences as "how
+// many options are selected here". A per-row assertion can miss a
+// double-check; the count cannot.
+func menuGroupCheckedCount(dst *string, menuSel, group string) chromedp.Action {
+	return chromedp.Evaluate(fmt.Sprintf(`String(Array.from(
+		document.querySelectorAll('%s [data-fui-menu-radio=%q]')
+	).filter(r => r.getAttribute('aria-checked') === 'true').length)`, menuSel, group), dst)
+}
+
+// TestMenuRadioGroupSpansSubmenus pins the arbitration SCOPE: one
+// data-fui-menu-radio group is one group anywhere inside its menu, so
+// a group split across the top panel and a submenu keeps exactly one
+// checked row in BOTH directions — top-level activation reaches into
+// the submenu, and submenu activation reaches back up. The pre-fix
+// loop iterated panel.querySelectorAll('[role="menuitemradio"]'), and
+// a submenu's panel is a DOM descendant of the parent panel: the
+// top-level direction reached into submenus while the submenu
+// direction could not reach up, leaving two aria-checked="true" rows
+// in one group. The "alt" menu reusing the group name stays untouched:
+// the scope is the menu, not the page.
+func TestMenuRadioGroupSpansSubmenus(t *testing.T) {
+	g := startGadgetServer(t, `[]`, menuSplitGroupFixture)
+	ctx := newSeedBrowserCtx(t)
+
+	var count, top, sub, alt string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+
+		// Open the menu, then the More submenu by clicking its
+		// summary: both panels visible, the only realistic shape.
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="split"] > summary.ui-menu__trigger').click()`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="split-panel-sub-1"] > summary').click()`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		menuGroupCheckedCount(&count, `details[data-fui-menu="split"]`, "theme"),
+		menuCheckedMap(&top, "#split-panel"),
+		menuCheckedMap(&sub, "#split-panel-sub-1-panel"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if count != "1" {
+		t.Fatalf("initial checked theme rows = %s, want 1 (Dark)", count)
+	}
+	// menuCheckedMap is a DESCENDANT query, so the top map covers both
+	// levels: Light at the top, Dark/Midnight/High in the submenu.
+	if top != `["Light:false","Dark:true","Midnight:false","High:true"]` {
+		t.Fatalf("initial state = %s, want Dark checked, Light/Midnight unchecked, contrast High checked", top)
+	}
+
+	// Top-level activation reaching DOWN into the submenu.
+	if err := chromedp.Run(ctx,
+		menuClickRadio("#split-panel", "Light"),
+		chromedp.Sleep(100*time.Millisecond),
+		menuCheckedMap(&top, "#split-panel"),
+		menuCheckedMap(&sub, "#split-panel-sub-1-panel"),
+		menuGroupCheckedCount(&count, `details[data-fui-menu="split"]`, "theme"),
+		menuCheckedMap(&alt, "#alt-panel"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if top != `["Light:true","Dark:false","Midnight:false","High:true"]` {
+		t.Fatalf("after activating Light = %s, want Light checked, Dark/Midnight unchecked (top-level reach into the submenu), contrast untouched", top)
+	}
+	if sub != `["Dark:false","Midnight:false","High:true"]` {
+		t.Fatalf("after activating Light, submenu = %s, want Dark/Midnight unchecked, contrast group untouched", sub)
+	}
+	if count != "1" {
+		t.Fatalf("after activating Light, checked theme rows = %s, want exactly 1", count)
+	}
+
+	// Submenu activation reaching back UP — the direction the
+	// descendant-scope bug could not see, leaving Light checked.
+	if err := chromedp.Run(ctx,
+		menuClickRadio("#split-panel-sub-1-panel", "Midnight"),
+		chromedp.Sleep(100*time.Millisecond),
+		menuCheckedMap(&top, "#split-panel"),
+		menuCheckedMap(&sub, "#split-panel-sub-1-panel"),
+		menuGroupCheckedCount(&count, `details[data-fui-menu="split"]`, "theme"),
+		menuCheckedMap(&alt, "#alt-panel"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if top != `["Light:false","Dark:false","Midnight:true","High:true"]` {
+		t.Fatalf("after activating Midnight = %s, want Midnight checked and Light UNchecked (the submenu-to-top direction the descendant-scope bug could not reach)", top)
+	}
+	if sub != `["Dark:false","Midnight:true","High:true"]` {
+		t.Fatalf("after activating Midnight, submenu = %s, want Midnight checked, contrast untouched", sub)
+	}
+	if count != "1" {
+		t.Fatalf("after activating Midnight, checked theme rows = %s, want exactly 1 (this is the screen-reader double-check)", count)
+	}
+	if alt != `["Slate:true"]` {
+		t.Fatalf("after activating Midnight, foreign menu = %s, want untouched", alt)
+	}
+}
+
 // TestMenuTypeAheadMatchesLabelsOnly: type-ahead matches the
 // .ui-menu__label span alone. The radio check and the submenu caret are
 // CSS pseudo-elements (never in textContent), but Dark ALSO carries a
