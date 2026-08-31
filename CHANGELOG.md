@@ -94,8 +94,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (output unchanged), separators ignore it, and `MenuItem.ExtraAttrs` still
   drops `id` — the field is the single owner.
 
-### Fixed
+- **`data-fui-ctx` trigger-carried chrome context** (#321): an open trigger
+  (`data-fui-open="layout-remove" data-fui-ctx="inv-42"`) forwards its
+  context on the chrome fetch as `?ctx=`, the chrome render reads it via
+  `widget.ChromeContext(ctx)` in a slot's `RenderCtx`, and the runtime keys
+  its chrome cache by `(name, ctx)` — two triggers with different contexts
+  get two distinct chromes, a repeat of the same context is a cache hit.
+  One widget definition now serves every per-entity dialog. The endpoint
+  bounds `ctx` at 256 bytes and rejects control runes with a 400 rather
+  than truncating (a truncated id would render chrome for the wrong row);
+  the string stays opaque to the framework and authorising the entity it
+  names belongs in the slot, against the request context. The context
+  cache is capped at 32 entries per document (LRU, evicted entries
+  refetch) so a row-per-dialog page cannot grow it without bound.
 
+### Fixed
 - **Generated marketing chrome links and auth-gate redirects follow the
   blueprint's registered screens** (#312) (`gofastr generate`). The marketing
   header nav and footer shipped four literal hrefs (`/pricing`, `/about`,
@@ -115,6 +128,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   now marked attempted only once its fetch succeeds, so the next
   hover/focus retries; in-flight re-hovers cost nothing (the loader
   dedups). Cost: 5 gzipped bytes of core runtime.
+
+- **Widget chrome cache no longer outlives a principal change** (#329):
+  `NS._chromeCache` was keyed by widget name alone and never invalidated,
+  while `serveChrome` renders with the request context — per-principal by
+  construction. Cross-page navigation is client-side and keeps the
+  document, so a sign-in/sign-out performed without a full page load
+  (intercepted form, RPC + navigate) left the previous principal's chrome
+  cached: the signed-out visitor reopening the widget was served the
+  earlier principal's personalised chrome. No client-visible principal
+  exists to key on (session cookies are HttpOnly), so the cache is cleared
+  on every SPA navigation — the cost is one refetch of a previously-opened
+  widget's chrome per navigation, the same no-store GET its first open
+  made. The cache lives in one document's `window`; it cannot reach
+  another session, this was staleness with a privacy edge, not a cross-user
+  leak.
 
 - **`gofastr pack` no longer drops `middleware`, `plugins`, and `helpers`
   declarations** (#318): the serializer's key list named all three while the
@@ -156,6 +184,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   authoring form lives in the top-level `endpoints` stubs; emitting the
   derived form would duplicate them) and index `expression` (not in the
   blueprint grammar).
+
+
 
 ## [0.76.0] - 2026-08-30
 
