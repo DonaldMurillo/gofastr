@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
@@ -352,13 +353,22 @@ func ChromeContext(ctx context.Context) string {
 }
 
 // validChromeContext reports whether v is safe to accept as ?ctx=. It
-// rejects anything over MaxChromeContext bytes and any control rune: C0
-// (incl. NUL, CR, LF), DEL, and the C1 range are log-poisoning and
-// header-smuggling surfaces once a URL-decoded value flows into access logs
-// and rendered markup. Everything else is allowed — the framework treats ctx
-// as opaque and assigns no meaning to its characters.
+// rejects anything over MaxChromeContext bytes, anything that is not
+// valid UTF-8, and any control rune: C0 (incl. NUL, CR, LF), DEL, and
+// the C1 range are log-poisoning and header-smuggling surfaces once a
+// URL-decoded value flows into access logs and rendered markup.
+// Everything else is allowed — the framework treats ctx as opaque and
+// assigns no meaning to its characters.
 func validChromeContext(v string) bool {
 	if len(v) > MaxChromeContext {
+		return false
+	}
+	// UTF-8 validity is a gate, not something the rune loop below can
+	// check for itself: ranging over a string decodes every invalid
+	// byte to U+FFFD, which is not a control rune, so raw C1 bytes
+	// arriving un-decoded (%9D, the %9B%9C pair) would sail through it
+	// and reach logs and markup as raw bytes.
+	if !utf8.ValidString(v) {
 		return false
 	}
 	for _, r := range v {

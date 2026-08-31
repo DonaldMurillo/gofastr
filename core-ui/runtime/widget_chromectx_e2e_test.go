@@ -26,6 +26,12 @@ type chromeCtxServer struct {
 	principal  string
 	perCtx     map[string]int
 	totalFetch int
+	// slowfail gate: the FIRST request for ctx "slowfail" blocks on
+	// release and then fails 500; later ones serve normally. Lets a test
+	// hold a chrome fetch in flight across an SPA navigation and choose
+	// when it fails.
+	slowSeen bool
+	release  chan struct{}
 }
 
 // chromeBody is the widget chrome: a mark span showing what the server
@@ -53,13 +59,42 @@ func (c *chromeCtxServer) setPrincipal(p string) {
 	c.principal = p
 }
 
+// waitSlowArrived blocks until the gated slowfail fetch has reached the
+// server — proof it is in flight and its cache entry exists — or fails
+// the test at the deadline.
+func (c *chromeCtxServer) waitSlowArrived(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.mu.Lock()
+		seen := c.slowSeen
+		c.mu.Unlock()
+		if seen {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("gated slowfail chrome fetch never reached the server")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// releaseSlow lets the gated fetch proceed to its 500. Idempotent.
+func (c *chromeCtxServer) releaseSlow() {
+	select {
+	case <-c.release: // already closed
+	default:
+		close(c.release)
+	}
+}
+
 func startChromeCtxServer(t *testing.T, body string) *chromeCtxServer {
 	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &chromeCtxServer{principal: "alice", perCtx: map[string]int{}}
+	c := &chromeCtxServer{principal: "alice", perCtx: map[string]int{}, release: make(chan struct{})}
 	catalog := `[{"hidden":true,"cfg":{"name":"dlg","position":"center","backdrop":false,` +
 		`"closeOnEscape":false,"closeOnClick":false,` +
 		`"stylePath":"/core-ui/widget/dlg/style.css","chromePath":"/chrome/dlg"}}]`
@@ -91,8 +126,19 @@ func startChromeCtxServer(t *testing.T, body string) *chromeCtxServer {
 		c.mu.Lock()
 		c.perCtx[ctxVal]++
 		c.totalFetch++
+		first := ctxVal == "slowfail" && !c.slowSeen
+		if first {
+			c.slowSeen = true
+		}
 		p := c.principal
 		c.mu.Unlock()
+		if first {
+			// Hold this fetch in flight until the test releases it,
+			// then fail it. Everything later for slowfail serves 200.
+			<-c.release
+			http.Error(w, "chrome exploded", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, chromeBody("ctx="+ctxVal+"|user="+p))
 	})
@@ -105,7 +151,7 @@ func startChromeCtxServer(t *testing.T, body string) *chromeCtxServer {
 			c.setPrincipal("anon")
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", "After")
-			fmt.Fprint(w, `<h2 id="after-mark">after</h2><button id="open2" data-fui-open="dlg">Open</button>`)
+			fmt.Fprint(w, `<h2 id="after-mark">after</h2><button id="open2" data-fui-open="dlg">Open</button><button id="open-ctx" data-fui-open="dlg" data-fui-ctx="slowfail">Open ctx</button>`)
 			return
 		}
 		fmt.Fprintf(w, `<!doctype html><html><head><title>chromectx</title>
@@ -303,5 +349,119 @@ func TestWidgetChromeCtx_CacheCapped(t *testing.T) {
 	}
 	if total != 35 {
 		t.Errorf("total chrome fetches = %d, want 35 (34 first opens + 1 evicted re-open)", total)
+	}
+}
+
+// TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache pins the error
+// path of the chrome cache: a fetch that fails AFTER a gofastr:navigate
+// swapped in a fresh cache object must delete its entry from the cache
+// it started against, not from the current one. Deleting from the new
+// cache evicts the new page's entry, so the next open refetches — one
+// extra request per failure (measured as 3 fetches where 2 suffice).
+func TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache(t *testing.T) {
+	body := `
+<button id="open-slow" data-fui-open="dlg" data-fui-ctx="slowfail">Slow</button>
+<a id="nav-out" href="/after">Go</a>`
+	c := startChromeCtxServer(t, body)
+	ctx := chromeCtxBrowser(t)
+
+	var mark string
+	step := func(name string, acts ...chromedp.Action) {
+		t.Helper()
+		if err := chromedp.Run(ctx, acts...); err != nil {
+			t.Fatalf("step %s: %v", name, err)
+		}
+		t.Logf("step %s ok", name)
+	}
+
+	step("nav0", chromedp.Navigate(c.Srv.URL+"/"), chromedp.WaitVisible(`#ready`, chromedp.ByID), chromedp.Sleep(200*time.Millisecond))
+	// Open with the gated ctx: the chrome fetch blocks server-side, so
+	// it is provably in flight (and cached) before the navigation runs.
+	step("open-slow", chromedp.Click(`#open-slow`, chromedp.ByID))
+	c.waitSlowArrived(t)
+	// SPA-navigate: gofastr:navigate replaces the cache object.
+	step("nav-after", chromedp.Click(`#nav-out`, chromedp.ByID),
+		chromedp.WaitVisible(`#after-mark`, chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond))
+	// Open the same ctx on the new page: fresh cache, new fetch, mounts.
+	step("open-after", chromedp.Click(`#open-ctx`, chromedp.ByID),
+		chromedp.WaitVisible(`#ctxmark`, chromedp.ByQuery),
+		chromedp.Text(`#ctxmark`, &mark, chromedp.ByQuery))
+	// Now let the PRE-navigation fetch fail. Its error path must evict
+	// only the entry in the cache it started against.
+	c.releaseSlow()
+	step("settle", chromedp.Sleep(400*time.Millisecond))
+	step("close-after", closeWidget())
+	// Re-open on the new page: served from the new cache (2 fetches
+	// total), not refetched because the failed old fetch deleted the
+	// new cache's entry (3).
+	step("reopen-after", chromedp.Click(`#open-ctx`, chromedp.ByID),
+		chromedp.WaitVisible(`#ctxmark`, chromedp.ByQuery))
+
+	if mark != "ctx=slowfail|user=anon" {
+		t.Errorf("post-nav chrome mark = %q, want ctx=slowfail|user=anon", mark)
+	}
+	_, perCtx, total := c.snapshot()
+	if got := perCtx["slowfail"]; got != 2 {
+		t.Errorf("chrome fetches for slowfail = %d, want 2 (pre-nav failure + post-nav success; the re-open must hit the new cache, not refetch because the failed pre-nav fetch deleted from it)", got)
+	}
+	if total != 2 {
+		t.Errorf("total chrome fetches = %d, want 2", total)
+	}
+}
+
+// TestWidgetChromeCtx_LRURecency pins the RECENCY half of the LRU, which
+// the cap test above does not: a cache HIT must move its entry to
+// most-recently-used, so a later overflow evicts a colder entry instead.
+// Without the hit-refresh the cache is plain FIFO and this test fails.
+func TestWidgetChromeCtx_LRURecency(t *testing.T) {
+	var body strings.Builder
+	// c0..c32: 33 distinct ctx buttons. The script fills the cache with
+	// c0..c31 (32 entries, no eviction), refreshes c0 by re-opening it,
+	// then inserts c32 (33 > 32 → evicts the least-recently-used key).
+	// With the refresh, the LRU is c1; without it, c0.
+	for i := range 33 {
+		fmt.Fprintf(&body, `<button id="open-%d" data-fui-open="dlg" data-fui-ctx="c%d">%d</button>`+"\n", i, i, i)
+	}
+	c := startChromeCtxServer(t, body.String())
+	ctx := chromeCtxBrowser(t)
+
+	click := func(id string) chromedp.Action {
+		return chromedp.Tasks{
+			chromedp.Click(id, chromedp.ByID),
+			chromedp.WaitVisible(`#ctxmark`, chromedp.ByQuery),
+			closeWidget(),
+		}
+	}
+	acts := []chromedp.Action{
+		chromedp.Navigate(c.Srv.URL + "/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(200 * time.Millisecond),
+	}
+	for i := range 32 { // fill: c0..c31, exactly the cap, no eviction
+		acts = append(acts, click(fmt.Sprintf(`#open-%d`, i)))
+	}
+	acts = append(acts,
+		click(`#open-0`),  // HIT: refreshes c0 to most-recent
+		click(`#open-32`), // overflow insert: must evict c1 (LRU), not c0
+		click(`#open-0`),  // c0 survived the eviction → served from cache
+		click(`#open-1`),  // c1 was the eviction victim → refetches
+	)
+	if err := chromedp.Run(ctx, acts...); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	_, perCtx, total := c.snapshot()
+	if got := perCtx["c0"]; got != 1 {
+		t.Errorf("chrome fetches for c0 = %d, want 1 (a cache hit must refresh recency: c0 re-opened BEFORE the overflow insert must survive it)", got)
+	}
+	if got := perCtx["c1"]; got != 2 {
+		t.Errorf("chrome fetches for c1 = %d, want 2 (c1, not the refreshed c0, is the least-recently-used entry the overflow must evict)", got)
+	}
+	if got := perCtx["c32"]; got != 1 {
+		t.Errorf("chrome fetches for c32 = %d, want 1 (the newest entry stays cached)", got)
+	}
+	if total != 34 {
+		t.Errorf("total chrome fetches = %d, want 34 (32 fills + c32 insert + c1 evicted re-open; both c0 re-opens hit cache)", total)
 	}
 }

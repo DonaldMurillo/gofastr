@@ -99,6 +99,34 @@ func TestServeChromeRejectsControlCharsInCtx(t *testing.T) {
 	}
 }
 
+// TestServeChromeRejectsInvalidUTF8Ctx: ranging over a Go string decodes
+// every invalid byte to U+FFFD, which is NOT a control rune — so raw C1
+// bytes that arrive un-decoded (a lone %9D, the %9B%9C pair, a truncated
+// %C2 lead) passed the rune loop and reached render, logs, and error
+// text as raw bytes. The sequences below are the actual invalid-UTF-8
+// bytes, not a literal U+FFFD: feeding the replacement character itself
+// does not reproduce the bug, because a literal � is valid UTF-8 and
+// outside every reject range.
+func TestServeChromeRejectsInvalidUTF8Ctx(t *testing.T) {
+	for _, q := range []string{
+		"ctx=inv%9D42",    // lone C1 continuation byte
+		"ctx=inv%9B%9C42", // two raw C1 bytes (the reviewer's pair)
+		"ctx=inv%C242",    // truncated 2-byte sequence (lead, then 'B')
+		"ctx=inv%FF42",    // never-valid byte
+	} {
+		rec := serveChromeFor(t, ctxEchoDef(), q)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400 (invalid UTF-8 must be refused, not decoded to U+FFFD)", q, rec.Code)
+		}
+	}
+	// Valid multibyte ctx is NOT collateral damage: the gate is UTF-8
+	// validity, not non-ASCII rejection. A slug like "café-42" passes.
+	rec := serveChromeFor(t, ctxEchoDef(), "ctx=caf%C3%A9-42")
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid multibyte ctx: status %d, want 200", rec.Code)
+	}
+}
+
 // TestChromeContextRoundTrip pins the context helper pair: WithChromeContext
 // followed by ChromeContext returns the value; an un-wrapped context returns
 // the empty string (never panics, never leaks a stale value).

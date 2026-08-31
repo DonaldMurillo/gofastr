@@ -375,9 +375,16 @@ The runtime forwards it as `?ctx=` on the chrome fetch
 chrome cache by `(name, ctx)`: the two triggers above get two distinct
 chromes, re-opening the same one is served from cache. The cache holds at
 most 32 contexts per document (least-recently-used eviction; an evicted
-entry simply refetches) and is cleared on SPA navigation, so chrome that
-renders per-principal can never be served across a sign-in/sign-out that
-happened without a page reload (#329).
+entry simply refetches) and is cleared on every SPA navigation (#329).
+That covers each framework-blessed session flow — sign-in/sign-out forms
+are intercepted and the sign-out redirect is an SPA nav, so the first
+open after the flip refetches under the new principal. It does **not**
+cover a principal change with no navigation at all (a bare RPC that
+swaps the session cookie and updates the page in place): nothing fires
+`gofastr:navigate`, so a chrome cached before the flip is served after
+it. The runtime has no client-visible principal to key on (session
+cookies are HttpOnly), so a flow like that must clear the cache itself
+(`window.__gofastr._chromeCache = {}`) or navigate.
 
 Read it in a context-aware slot:
 
@@ -392,9 +399,10 @@ func (removeForm) RenderCtx(ctx context.Context) render.HTML {
 ```
 
 `serveChrome` validates `?ctx=` before rendering: at most 256 bytes
-(`widget.MaxChromeContext`) and no control runes (NUL, CR/LF, DEL, C1).
-Over-bound or control-carrying values get a 400, not a truncation — a
-truncated entity id would silently render chrome for the wrong row.
+(`widget.MaxChromeContext`), valid UTF-8, and no control runes (NUL,
+CR/LF, DEL, C1). Over-bound, non-UTF-8, or control-carrying values get
+a 400, not a truncation — a truncated entity id would silently render
+chrome for the wrong row.
 
 **Authorisation boundary.** `ctx` is opaque to the framework: it is
 forwarded and keyed on, never parsed or validated for meaning. That means

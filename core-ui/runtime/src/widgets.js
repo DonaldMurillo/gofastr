@@ -94,7 +94,13 @@
       delete NS._chromeCache[key];
       NS._chromeCache[key] = cached;
     } else {
-      NS._chromeCache[key] = (async () => {
+      // Capture the cache object this fetch starts against: a
+      // gofastr:navigate mid-flight swaps NS._chromeCache for a fresh
+      // object, and the failure path below must not delete from the
+      // new one — that would evict the new page's entry for the same
+      // key and cost it a refetch on its next open.
+      const cache = NS._chromeCache;
+      cache[key] = (async () => {
         try {
           const url = ctx
             ? path + (path.includes('?') ? '&' : '?') + 'ctx=' + encodeURIComponent(ctx)
@@ -104,7 +110,7 @@
           if (!r.ok) throw new Error('chrome fetch ' + r.status);
           return await r.text();
         } catch (err) {
-          delete NS._chromeCache[key];
+          delete cache[key];
           throw err;
         }
       })();
@@ -400,7 +406,10 @@
   // so clear on every gofastr:navigate: the destination render always
   // happens under the current session. Cost: the first open of a
   // previously-opened widget per navigation refetches its chrome once, a
-  // no-store GET identical to its first open.
+  // no-store GET identical to its first open. A navigation-free (RPC
+  // only) principal flip is outside this guarantee — nothing fires
+  // gofastr:navigate, so chrome cached before the flip survives it; see
+  // framework/docs/content/widgets.md § Chrome context.
   window.addEventListener('gofastr:navigate', () => { NS._chromeCache = {}; });
 
   (NS.loadedModules ||= {}).widgets = true;
