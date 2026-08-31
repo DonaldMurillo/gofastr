@@ -354,6 +354,70 @@ them after `Mount` returns. Mounting is idempotent on `def.Name`. The
 process-wide runtime routes (`/__gofastr/runtime.js`, `/__gofastr/widgets`)
 come from `widget.MountRuntime(r)`, once per host, not per widget.
 
+## Chrome context (`data-fui-ctx`)
+
+One widget definition is one chrome. Before #321 a per-entity dialog — a
+confirm modal whose body is
+`<form method="POST" action="/dashboard/inventories/{id}/layout-remove">` —
+could not express `{id}`: the chrome endpoint had no knowledge of the
+originating row, so every host either filled the action with client JS or
+registered N widgets, one per entity.
+
+The open trigger now carries the context:
+
+```html
+<button data-fui-open="layout-remove" data-fui-ctx="inv-42">Remove…</button>
+<button data-fui-open="layout-remove" data-fui-ctx="inv-99">Remove…</button>
+```
+
+The runtime forwards it as `?ctx=` on the chrome fetch
+(`/core-ui/widget/layout-remove/chrome?ctx=inv-42`) and keys the client-side
+chrome cache by `(name, ctx)`: the two triggers above get two distinct
+chromes, re-opening the same one is served from cache. The cache holds at
+most 32 contexts per document (least-recently-used eviction; an evicted
+entry simply refetches) and is cleared on SPA navigation, so chrome that
+renders per-principal can never be served across a sign-in/sign-out that
+happened without a page reload (#329).
+
+Read it in a context-aware slot:
+
+```go
+type removeForm struct{ component.ContextOnly }
+
+func (removeForm) RenderCtx(ctx context.Context) render.HTML {
+    id := widget.ChromeContext(ctx) // "inv-42", or "" when no ctx was carried
+    return render.HTML(`<form method="post" action="/dashboard/inventories/` +
+        render.Escape(id) + `/layout-remove">…</form>`)
+}
+```
+
+`serveChrome` validates `?ctx=` before rendering: at most 256 bytes
+(`widget.MaxChromeContext`) and no control runes (NUL, CR/LF, DEL, C1).
+Over-bound or control-carrying values get a 400, not a truncation — a
+truncated entity id would silently render chrome for the wrong row.
+
+**Authorisation boundary.** `ctx` is opaque to the framework: it is
+forwarded and keyed on, never parsed or validated for meaning. That means
+the runtime will cheerfully send `?ctx=inv-42` for a user who cannot see
+inventory 42. Whether that user may see the named entity is an
+authorisation question, and it is answered in the slot's `RenderCtx`,
+against the request context — exactly where `serveChrome` already resolves
+the signed-in user. Resolve the entity from the id and check access before
+rendering; if the check fails, render the refusal (or nothing). Never
+reflect `ctx` into markup unescaped, and never treat it as trusted input
+because "the page put it there" — the page runs in the visitor's browser.
+
+Notes:
+
+- `data-fui-ctx` rides on `data-fui-open` triggers; emit it from Go with
+  any attribute-injection surface (e.g. `html` element `ExtraAttrs`).
+  `interactive.OpenOnClick` covers the plain no-ctx case.
+- SSR-inlined chrome (non-`Hidden` widgets) renders with no ctx — `""`.
+  Per-entity dialogs are `Hidden()` widgets, fetched lazily per open, so
+  this is the normal shape for them anyway.
+- A static export dumps one query-free chrome per widget, so `ctx` has no
+  effect there — the dump is unpersonalised by construction.
+
 ## Theming
 
 Widgets resolve through `core-ui/style` and use the framework default

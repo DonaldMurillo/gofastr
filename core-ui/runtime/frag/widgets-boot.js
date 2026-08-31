@@ -131,7 +131,10 @@
         // clicked faster than /__gofastr/widgets returned.
         await window.__gofastr.loadModule('widgets').catch(() => {});
         await _wready;
-        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
+        // btn rides along so openWidget can read data-fui-ctx (#321):
+        // the trigger's context keys the chrome fetch + cache. Read in
+        // the module, not here: core bytes are the scarce ones.
+        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true, btn });
         if (anchorPref !== null) {
           await window.__gofastr.loadModule('popover');
           window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');
