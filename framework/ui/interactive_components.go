@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,6 +25,56 @@ type TabsConfig struct {
 	Slice      *store.Slice[int] // optional; supplies the signal name + initial active index, takes precedence
 	Tabs       []TabItem         // required, at least 1
 	Class      string            // optional extra CSS class
+
+	// StateAttrs adds data-state="active"/"inactive" to every tab
+	// button and data-fui-tabs-state to the wrapper, the attribute
+	// contract Radix-style ports pin their test locators to. The
+	// demand-loaded tabs runtime module (pulled in by the wrapper's
+	// data-fui-prefetch marker) keeps data-state in step with
+	// data-active after client-side switches, mirroring what core does
+	// for aria-selected. Zero value: no data-state anywhere, output
+	// byte-identical to a config without the knob.
+	StateAttrs bool
+
+	// ID wires tab↔panel semantics: each button gets id
+	// "<ID>-tab-<i>" plus aria-controls "<ID>-panel-<i>", each panel
+	// gets id "<ID>-panel-<i>". Empty (zero value): no ids, no
+	// aria-controls, output byte-identical to a config without the
+	// knob. The caller owns cross-page uniqueness of ID, same as any
+	// other HTML id.
+	ID string
+
+	// VacateHidden ships hidden panels EMPTY, their server-rendered
+	// content parked in an adjacent <script type="application/json"
+	// data-fui-tabs-stash> (tab index → HTML), so page-scoped test
+	// locators cannot match text inside hidden panels — the DOM parity
+	// of a port whose source component unmounts inactive panels. The
+	// tabs runtime module restores a panel's content on first show
+	// (from the stash) and from then on moves the live nodes out and
+	// back on every switch, so anything the runtime swapped into the
+	// panel (island updates, form state) survives re-show intact.
+	// Trade-offs: while a panel is vacated its content is detached, so
+	// document-scoped updates targeting it (SSE island pushes, RPC
+	// responses for controls it owns) are dropped permanently — nothing
+	// is queued for replay; re-show resurrects the panel's pre-vacate
+	// nodes, and only updates that arrive after re-show land. Focus
+	// inside a vacated panel escapes to <body>.
+	//
+	// One timing caveat worth knowing before you switch this on: the
+	// module that restores content loads on first hover/focus of the
+	// strip, so a PROGRAMMATIC switch — any signal write that reaches
+	// the strip before the module loads: an SSE, poll, or RPC-driven
+	// update, or a hydration-time signal value differing from what SSR
+	// rendered — on a strip nobody has touched yet shows an empty panel
+	// until the first interaction heals it. SSR is unaffected — the
+	// initially-active panel always ships with its content, so server-
+	// rendered deep links, anchors, restored scroll, and autofocus are
+	// fine — this only reaches apps that move tabs without the user
+	// touching them. If that is your shape, leave VacateHidden off.
+	//
+	// Zero value: all panels ship in the DOM as today, output
+	// byte-identical to a config without the knob.
+	VacateHidden bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the tab strip's root
@@ -69,24 +120,71 @@ func Tabs(cfg TabsConfig) render.HTML {
 		active = 0
 	}
 
+	// Contract knobs. Every one is opt-in and additive; with all three
+	// at their zero value the attribute maps below are exactly what
+	// they were before these knobs existed (pinned by
+	// TestTabsZeroValueOutputPinned).
+	wireIDs := cfg.ID != ""
+
 	var buttons []render.HTML
 	for i, tab := range cfg.Tabs {
-		buttons = append(buttons, render.Tag("button", map[string]string{
+		btnAttrs := map[string]string{
 			"class":               "fui-tab",
 			"data-fui-signal-set": name + ":" + strconv.Itoa(i),
 			"role":                "tab",
 			"aria-selected":       strconv.FormatBool(i == active),
 			"data-fui-tab-index":  strconv.Itoa(i),
-		}, render.Text(tab.Label)))
+		}
+		if cfg.StateAttrs {
+			if i == active {
+				btnAttrs["data-state"] = "active"
+			} else {
+				btnAttrs["data-state"] = "inactive"
+			}
+		}
+		if wireIDs {
+			btnAttrs["id"] = cfg.ID + "-tab-" + strconv.Itoa(i)
+			btnAttrs["aria-controls"] = cfg.ID + "-panel-" + strconv.Itoa(i)
+		}
+		buttons = append(buttons, render.Tag("button", btnAttrs, render.Text(tab.Label)))
 	}
 
+	// VacateHidden parks every inactive panel's content in the stash
+	// script below and ships the panel itself empty; the tabs module
+	// restores it on first show. The active panel ships in the DOM
+	// exactly as a non-vacate strip would.
+	stash := map[string]string{}
 	var panels []render.HTML
 	for i, tab := range cfg.Tabs {
-		panels = append(panels, render.Tag("div", map[string]string{
+		panelAttrs := map[string]string{
 			"class":              "fui-tab-panel",
 			"role":               "tabpanel",
 			"data-fui-tab-index": strconv.Itoa(i),
-		}, tab.Content))
+		}
+		if wireIDs {
+			panelAttrs["id"] = cfg.ID + "-panel-" + strconv.Itoa(i)
+		}
+		if cfg.VacateHidden && i != active {
+			stash[strconv.Itoa(i)] = string(tab.Content)
+			panels = append(panels, render.Tag("div", panelAttrs))
+			continue
+		}
+		panels = append(panels, render.Tag("div", panelAttrs, tab.Content))
+	}
+
+	contentChildren := panels
+	if len(stash) > 0 {
+		// Same stash idiom as Carousel's deferred-slide manifest:
+		// json.Marshal escapes <, >, & (so no entity surprises) and the
+		// </ → <\/ rewrite stops an embedded "</script>" in panel
+		// content from terminating this inline script early.
+		if buf, err := json.Marshal(stash); err == nil {
+			s := strings.ReplaceAll(string(buf), `</`, `<\/`)
+			contentChildren = append(contentChildren, render.Tag("script", map[string]string{
+				"type":                "application/json",
+				"data-fui-tabs-stash": "true",
+			}, render.HTML(s)))
+		}
 	}
 
 	nav := render.Tag("nav", map[string]string{
@@ -96,7 +194,7 @@ func Tabs(cfg TabsConfig) render.HTML {
 
 	content := render.Tag("div", map[string]string{
 		"class": "fui-tabs-content",
-	}, panels...)
+	}, contentChildren...)
 
 	cls := "fui-tabs"
 	if cfg.Class != "" {
@@ -113,6 +211,22 @@ func Tabs(cfg TabsConfig) render.HTML {
 	wrapperAttrs["data-fui-signal-mode"] = "attr"
 	wrapperAttrs["data-fui-signal-attr"] = "data-active"
 	wrapperAttrs["data-active"] = strconv.Itoa(active)
+	if cfg.StateAttrs {
+		wrapperAttrs["data-fui-tabs-state"] = "true"
+	}
+	if cfg.VacateHidden {
+		wrapperAttrs["data-fui-tabs-vacate"] = "true"
+	}
+	if cfg.StateAttrs || cfg.VacateHidden {
+		// The tabs module is interaction-time behavior (mirroring
+		// data-state after a switch, restoring vacated content). The
+		// kernel's prefetch bridge demand-loads it on the first
+		// pointerover/focusin of the strip, so it is in place by the
+		// first click without costing the core bundle a scanner entry
+		// (core gzip headroom is ~13 bytes at its binding level-1 budget
+		// line; see core-ui/runtime/budget_test.go).
+		wrapperAttrs["data-fui-prefetch"] = "tabs"
+	}
 	wrapper := render.Tag("div", wrapperAttrs, nav, content)
 
 	return tabsStyle.WrapHTML(wrapper)
