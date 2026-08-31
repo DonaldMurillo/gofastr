@@ -32,6 +32,7 @@ host := uihost.New(ui,
 | Site icon | the host | `WithAppIcon` (preferred: one source image derives the whole icon surface) or `WithFavicon` |
 | Sitemap | the host | `WithSitemap` with a valid `BaseURL`: a bare http/https origin (host, no userinfo/query/fragment/path; deployment path prefixes belong in the static Builder's `BasePath`) |
 | Robots | the host | `WithRobots` |
+| Internal links | the site chrome (every layout's header, sidebar, footer) | every internal `href` resolves to something the app serves: a registered screen (dynamic routes included), a static file, a configured artifact endpoint, or a GET route on the framework router |
 | Axe coverage | every page screen, **dev only** | the axe-coverage manifest records at least one scan that resolves to the route |
 
 Drawers, sheets, and dialogs are exempt from the screen checks: they
@@ -39,6 +40,53 @@ render inside a page and own no `<head>`. Screens a battery registers
 (the admin back-office, for example) are also outside the checks:
 batteries Init at `App.Start`, after Mount, so strict mode covers
 exactly the surface the app itself declared.
+
+## The internal-link check
+
+The chrome is where broken links are born: a footer's Legal column, a
+header's nav, a sidebar's entries are all declared as data at wiring
+time, and nothing stops them naming a path no screen registers — a
+generated app shipped exactly that (footer links to `/terms` and
+`/privacy`, neither registered) until the check existed. At Mount,
+strict mode renders every layout's chrome — the default layout plus
+each screen's own — with a background context, the same computation
+`Layout.Wrap` performs on every request, and resolves each internal
+`href` against the app's full served surface:
+
+- registered screens, through the router itself, so a concrete link
+  like `/docs/install` is covered by the `/docs/:slug` pattern and a
+  trailing-slash variant resolves to its canonical screen;
+- static files (`WithStaticDir` / embedded FS) and the favicon path;
+- artifact endpoints Mount registers from config, gated the same way
+  Mount gates them: `/sitemap.xml` with `WithSitemap`, `/robots.txt`
+  with `WithRobots`, `/manifest.webmanifest` and `/service-worker.js`
+  with `WithPWA`, `/llms.txt` with the agent-ready surface — a link to
+  `/sitemap.xml` without `WithSitemap` is a dead link and stays a
+  finding;
+- any GET route the framework router registered before Mount (entity
+  CRUD, custom endpoints), so a sidebar's "Export CSV" pointing at an
+  endpoint is not a finding. UIHost's own `/__gofastr/` namespace is
+  exempt by prefix.
+
+Deliberately out of scope: external URLs and every scheme reference
+(`mailto:`, `tel:`), protocol-relative and relative references,
+fragments, query-only references, and template placeholders
+(`/docs/{slug}`, `/users/:id`) — none of them names a route the app
+must register. Form actions and RPC attributes target handlers, not
+pages, and are not link-checked.
+
+Two honest limits. A chrome component that needs a request to render
+(a header that branches on the signed-in user) is rendered logged-out:
+the links only that branch emits are not checked — a warning names any
+chrome that fails to render at boot. And the outer shells of nested
+screen groups whose parent and child declare *different* layouts are
+not enumerated; the exportable router surface reaches the default
+layout and each screen's innermost layout.
+
+`ExemptScreens` applies one level up from usual: an entry exempts
+links *pointing under it*, the same vocabulary that exempts routes.
+`ExemptScreens: []string{"/machine/*"}` silences findings for chrome
+links into `/machine/…` while leaving every other link checked.
 
 ## The axe-coverage check
 
@@ -116,6 +164,7 @@ uihost.WithStrict(uihost.StrictConfig{
 | `SiteIcon` | `WithAppIcon`/`WithFavicon` present | enforce |
 | `Sitemap` | `WithSitemap` present | enforce |
 | `Robots` | `WithRobots` present | enforce |
+| `InternalLinks` | chrome `href`s resolve to a served path | enforce |
 | `AxeCoverage` | per-screen axe scan recorded (dev only) | enforce |
 | `AxeManifestMissing` | posture when no manifest exists at all | **warn** (`StrictAbsenceWarn`) |
 | `ExemptScreens` | routes the per-screen checks skip: exact pattern or `/prefix/*` | none |

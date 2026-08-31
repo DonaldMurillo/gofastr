@@ -4,13 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"io/fs"
 	"log/slog"
+	"maps"
+	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/axecov"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
@@ -61,6 +68,15 @@ type StrictConfig struct {
 	Sitemap StrictLevel
 	// Robots: [WithRobots] configured.
 	Robots StrictLevel
+	// InternalLinks: every internal link in the site chrome (each
+	// layout's header, sidebar, footer) points at a path the app
+	// actually serves: a registered screen (dynamic routes included),
+	// a static file, a configured artifact endpoint (/sitemap.xml,
+	// /robots.txt, the PWA manifest, /llms.txt), or any GET route on
+	// the framework router. External URLs, anchors, query-only refs,
+	// and template placeholders are out of scope. ExemptScreens
+	// entries also exempt links whose target falls under them.
+	InternalLinks StrictLevel
 	// AxeCoverage: every page route has a recorded axe scan in the
 	// .gofastr/axe-coverage.json manifest. Only evaluated under
 	// `gofastr dev` regardless of level: the manifest is a local test
@@ -91,6 +107,7 @@ const (
 	strictCheckSiteIcon           = "site-icon"
 	strictCheckSitemap            = "sitemap"
 	strictCheckRobots             = "robots"
+	strictCheckInternalLinks      = "internal-links"
 	strictCheckAxeCoverage        = "axe-coverage"
 	strictCheckAxeManifest        = "axe-manifest"
 )
@@ -110,6 +127,8 @@ func (c StrictConfig) level(check string) StrictLevel {
 		return c.Sitemap
 	case strictCheckRobots:
 		return c.Robots
+	case strictCheckInternalLinks:
+		return c.InternalLinks
 	case strictCheckAxeCoverage:
 		return c.AxeCoverage
 	case strictCheckAxeManifest:
@@ -153,6 +172,10 @@ func (c StrictConfig) exempt(route string) bool {
 //   - the site declares a description ([WithDescription]), an icon
 //     ([WithFavicon] or [WithAppIcon]), a sitemap ([WithSitemap]), and
 //     robots directives ([WithRobots]);
+//   - every internal link in the site chrome (each layout's header,
+//     sidebar, footer) points at a path the app serves: a registered
+//     screen (dynamic routes included), a static file, a configured
+//     artifact endpoint, or a GET route on the framework router;
 //   - under `gofastr dev` only: every page route is covered by the
 //     axe-coverage manifest (.gofastr/axe-coverage.json) that
 //     framework/testkit/axetest scans record, i.e. every screen has an
@@ -203,6 +226,7 @@ func (ds *UIHost) enforceStrict() {
 	cfg := ds.strictConfig
 	findings := ds.strictScreenFindings(cfg)
 	findings = append(findings, ds.strictSiteFindings()...)
+	findings = append(findings, ds.strictChromeLinkFindings(cfg)...)
 	if dev.Enabled() {
 		findings = append(findings, ds.strictAxeCoverageFindings(cfg)...)
 	}
@@ -275,6 +299,236 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 		out = append(out, strictFinding{strictCheckRobots, "site: no robots directives: add uihost.WithRobots"})
 	}
 	return out
+}
+
+// strictChromeLinkFindings renders the site chrome — every layout's
+// header, sidebar, and footer — and reports internal links that point
+// at a path nothing serves. The chrome is where a route reference is
+// still declarative at boot (nav, footer, and sidebar config), and it
+// needs no request: layouts render their components with a background
+// is the same computation the first request performs.
+//
+// Scope, deliberately narrow on the input side so the output side can
+// be strict:
+//
+//   - <a href> only. Form actions and data-fui-rpc attributes target
+//     handlers, not pages; flagging them would misfire on every CRUD
+//     form and API post in the chrome.
+//   - A chrome component whose render fails is skipped with a warning,
+//     not flagged: a context-aware header that needs a signed-in user
+//     is legitimate, and strict must not demand a request at boot.
+//     Coverage, not enforcement, is the honest limit there.
+//   - Only layouts reachable through the exported router surface are
+//     checked (the default layout plus each screen's own). The OUTER
+//     shells of nested ScreenGroups with distinct layouts at two
+//     levels are resolved through unexported state and are not
+//     enumerated; the generator emits no such shape.
+func (ds *UIHost) strictChromeLinkFindings(cfg StrictConfig) []strictFinding {
+	probe := newGETProbe(ds.coreRouter)
+	// href → "layout %q %s" origin of the first chrome that carried it.
+	// One finding per href, however many layouts repeat it: the fix is
+	// one registration (or one edit) either way.
+	broken := map[string]string{}
+	for _, l := range ds.strictLayouts() {
+		for _, slot := range []struct {
+			name string
+			comp component.Component
+		}{
+			{"header", l.Header},
+			{"sidebar", l.Sidebar},
+			{"footer", l.Footer},
+		} {
+			if slot.comp == nil {
+				continue
+			}
+			html, err := component.SafeRenderCtx(context.Background(), slot.comp)
+			if err != nil {
+				slog.Warn("uihost strict: chrome render failed; its links are unchecked",
+					"layout", l.Name, "slot", slot.name, "err", err)
+				continue
+			}
+			for _, href := range extractChromeHrefs(string(html)) {
+				path, internal := internalRoutePath(href)
+				if !internal || cfg.exempt(path) {
+					continue
+				}
+				if ds.chromeLinkResolves(path, probe) {
+					continue
+				}
+				if _, seen := broken[href]; !seen {
+					broken[href] = fmt.Sprintf("layout %q %s", l.Name, slot.name)
+				}
+			}
+		}
+	}
+	if len(broken) == 0 {
+		return nil
+	}
+	out := make([]strictFinding, 0, len(broken))
+	for _, href := range slices.Sorted(maps.Keys(broken)) {
+		out = append(out, strictFinding{strictCheckInternalLinks, fmt.Sprintf(
+			"internal link %q (%s) points at a path nothing serves: register a screen for it, fix the link, or add its path to ExemptScreens", href, broken[href])})
+	}
+	return out
+}
+
+// strictLayouts enumerates the layouts the exported router surface can
+// reach: the router's default layout plus the layout of every page
+// screen, deduplicated and ordered by name for deterministic findings.
+// ScreenByPattern (not Resolve) because Paths() yields patterns and a
+// constrained pattern's own text fails its constraint at resolve time.
+func (ds *UIHost) strictLayouts() []*app.Layout {
+	var layouts []*app.Layout
+	seen := map[*app.Layout]bool{}
+	add := func(l *app.Layout) {
+		if l != nil && !seen[l] {
+			seen[l] = true
+			layouts = append(layouts, l)
+		}
+	}
+	add(ds.App.Router.GetDefaultLayout())
+	for _, path := range ds.App.Router.Paths() {
+		screen, ok := ds.App.Router.ScreenByPattern(path)
+		if !ok || screen.Type != app.ScreenPage {
+			continue
+		}
+		add(screen.Layout)
+	}
+	sort.Slice(layouts, func(i, j int) bool { return layouts[i].Name < layouts[j].Name })
+	return layouts
+}
+
+// chromeHrefRe finds href attribute values in chrome markup. The
+// leading [\s<] excludes namespaced and data- attributes (xlink:href,
+// data-href): only a plain href on an element counts as a navigation
+// reference. Both quote styles are accepted; design-system output is
+// double-quoted, hand-rolled chrome may not be.
+var chromeHrefRe = regexp.MustCompile(`[\s<]href\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+
+// extractChromeHrefs returns every href value in a chrome fragment,
+// HTML-unescaped and deduplicated, in first-appearance order.
+func extractChromeHrefs(html string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range chromeHrefRe.FindAllStringSubmatch(html, -1) {
+		v := m[1]
+		if v == "" {
+			v = m[2]
+		}
+		v = stdhtml.UnescapeString(v)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// internalRoutePath reduces a chrome href to the internal path it
+// references, reporting false for everything the check must not judge:
+//
+//   - fragments and query-only references ("" or "?…" or "#…"): they
+//     target the current page;
+//   - anything not starting with "/": absolute URLs (https://…),
+//     scheme references (mailto:, tel:), and relative references
+//     (about, ./x), which resolve against a page the check has no
+//     knowledge of at boot;
+//   - protocol-relative references (//host/…) and any backslash
+//     (urlsafe rejects both; sanitized chrome never carries them, and
+//     unsanitized chrome is a security finding, not a link-integrity
+//     one);
+//   - template placeholders: a segment starting with ":" (":id",
+//     ":path*") or any "{" / "<" — patterns to be filled in, not
+//     concrete references.
+func internalRoutePath(href string) (string, bool) {
+	h := href
+	if i := strings.IndexByte(h, '#'); i >= 0 {
+		h = h[:i]
+	}
+	if i := strings.IndexByte(h, '?'); i >= 0 {
+		h = h[:i]
+	}
+	if h == "" || !strings.HasPrefix(h, "/") || strings.HasPrefix(h, "//") || strings.Contains(h, `\`) {
+		return "", false
+	}
+	for seg := range strings.SplitSeq(h, "/") {
+		if strings.HasPrefix(seg, ":") || strings.Contains(seg, "{") || strings.Contains(seg, "<") {
+			return "", false
+		}
+	}
+	return h, true
+}
+
+// chromeLinkResolves reports whether anything answers for path: a
+// registered screen (dynamic routes and trailing-slash canonicals
+// included, via the host's own resolution predicate), a static file,
+// the favicon shortcut, an artifact endpoint Mount will register from
+// host config, or any GET route the framework router had before Mount
+// (entity CRUD, custom endpoints). A link a user can click that 404s
+// is a finding; a link to a served JSON endpoint is not this check's
+// business.
+func (ds *UIHost) chromeLinkResolves(path string, probe *getProbe) bool {
+	if strings.HasPrefix(path, "/__gofastr/") {
+		// UIHost's own namespace, registered on the core router AFTER
+		// enforceStrict runs, so no table can be consulted for it.
+		return true
+	}
+	if ds.servesConfiguredArtifact(path) {
+		return true
+	}
+	if ds.resolvesStaticOrScreen(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: path}}) {
+		return true
+	}
+	return probe.serves(path)
+}
+
+// servesConfiguredArtifact reports whether path is one of the
+// framework-artifact endpoints Mount registers from host config —
+// after enforceStrict runs, so the route tables cannot be consulted
+// for them. Gated on the same config fields Mount gates on: a chrome
+// link to /sitemap.xml without WithSitemap is a genuinely dead link
+// and stays a finding.
+func (ds *UIHost) servesConfiguredArtifact(path string) bool {
+	switch path {
+	case "/sitemap.xml":
+		return ds.sitemapConfig != nil
+	case "/robots.txt":
+		return ds.robotsConfig != nil
+	case "/manifest.webmanifest", "/service-worker.js":
+		return ds.pwaConfig != nil
+	case "/llms.txt":
+		return ds.agentReady != nil && ds.agentReady.llms != nil
+	}
+	return ds.agentReady != nil && ds.agentReady.openAPI != "" && path == ds.agentReady.openAPI
+}
+
+// getProbe answers "does any registered route serve GET path" for the
+// framework router, the same way core/router's own 404/405 detection
+// does: a throwaway ServeMux loaded with the registered patterns.
+// Built from Routes() because the live mux dispatches handlers; asking
+// it would mean executing the app at boot.
+type getProbe struct{ mux *http.ServeMux }
+
+func newGETProbe(r *router.Router) *getProbe {
+	p := &getProbe{mux: http.NewServeMux()}
+	if r == nil {
+		return p
+	}
+	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for _, rt := range r.Routes() {
+		// A pattern that conflicts with an earlier one panics on Handle;
+		// skip it rather than abort the checks, mirroring router.probe.
+		func() {
+			defer func() { _ = recover() }()
+			p.mux.Handle(rt.Pattern, noop)
+		}()
+	}
+	return p
+}
+
+func (p *getProbe) serves(path string) bool {
+	_, pattern := p.mux.Handler(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: path}})
+	return pattern != ""
 }
 
 // invalidSitemapBaseURL reports why base cannot serve as the sitemap's

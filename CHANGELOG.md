@@ -9,6 +9,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`uihost.WithStrict` internal-link check** fails boot when the site chrome
+  (each layout's header, sidebar, footer) links to a path nothing serves. The
+  check renders the chrome at Mount and resolves every internal `href` against
+  the app's full served surface: registered screens (dynamic routes included),
+  static files, configured artifact endpoints (`/sitemap.xml`, `/robots.txt`,
+  the PWA manifest, `/llms.txt`), and any GET route on the framework router.
+  External URLs, anchors, query-only references, template placeholders, and
+  relative references are out of scope; `ExemptScreens` entries also exempt
+  links whose target falls under them. Tuned, like every strict check, through
+  `StrictConfig.InternalLinks` (`enforce`/`warn`/`off`).
+
 - **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
   navigation, at two grains: `NoSPA` drops a route from the client route
   manifest so the runtime treats it as unknown and every link to it does a full
