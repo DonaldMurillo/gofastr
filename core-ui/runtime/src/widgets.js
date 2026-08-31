@@ -82,9 +82,14 @@
       // server inlines on a deep-link URL match, where no trigger
       // exists to carry data-fui-ctx. Hydrating it for a ctx-carrying
       // trigger would show chrome for the wrong entity. Drop the node
-      // and fall through to the (name, ctx)-keyed fetch below. It is
-      // hidden here (a visible one is mounted, which returned above),
-      // so removing it cannot flash.
+      // and fall through to the (name, ctx)-keyed fetch below.
+      //
+      // Removing it cannot flash, but NOT because a visible widget
+      // "returned above" — nothing orders those. A deep-link arrival is
+      // mounted by the synchronous tryMount block before any pointer
+      // event can run, and this path is reached only from a trigger
+      // click on a catalog-gated widget. So whatever is still in the DOM
+      // here is un-mounted chrome nobody is looking at.
       if (ctx) existing.remove();
       else { NS.mountWidget(cfg, null, existing); return; }
     }
