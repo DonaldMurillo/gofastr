@@ -100,6 +100,19 @@ func blueprintToMap(bp Blueprint) map[string]any {
 		}
 		m["endpoints"] = eps
 	}
+	if len(bp.Hooks) > 0 {
+		hooks := make([]any, len(bp.Hooks))
+		for i, h := range bp.Hooks {
+			hm := map[string]any{}
+			putStr(hm, "id", h.ID)
+			putStr(hm, "entity", h.Entity)
+			putStr(hm, "when", h.When)
+			putStr(hm, "handler", h.Handler)
+			putStr(hm, "description", h.Description)
+			hooks[i] = hm
+		}
+		m["hooks"] = hooks
+	}
 	return m
 }
 

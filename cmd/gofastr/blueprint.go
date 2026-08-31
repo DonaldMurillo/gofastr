@@ -37,6 +37,7 @@ type Blueprint struct {
 	Nav        []BlueprintNavItem
 	Seed       []BlueprintSeedEntity
 	Endpoints  []BlueprintEndpoint
+	Hooks      []BlueprintHook
 	Middleware []BlueprintNamedStub
 	Plugins    []BlueprintNamedStub
 	Helpers    []BlueprintNamedStub
@@ -195,6 +196,32 @@ type BlueprintEndpoint struct {
 	MCP         bool
 }
 
+// BlueprintHook is one entity lifecycle hook carried through
+// graduation. Like BlueprintEndpoint it declares a surface the generated
+// app must implement in owned Go: the blueprint records WHICH hook runs
+// WHERE, and Handler names the func to write.
+//
+// It exists because kiln's freeze dropped hooks entirely. A world's hooks
+// are enforced in the live preview (kiln/render registers them on the
+// framework HookRegistry), so an operator watches a before_create
+// validation reject bad rows and then ships an app that silently has no
+// such validation. kiln.md promises the opposite: "freeze emits an
+// owned-Go handler stub with a description naming the declarative
+// action".
+type BlueprintHook struct {
+	// ID is the hook's stable identifier from the kiln world; it doubles
+	// as the blueprint's name for the hook.
+	ID string
+	// Entity is the entity whose lifecycle the hook runs on.
+	Entity string
+	// When is the lifecycle point: before_create, after_update, ...
+	When string
+	// Handler is the owned-Go func name to implement.
+	Handler string
+	// Description names the declarative action the hook came from.
+	Description string
+}
+
 type BlueprintNamedStub struct {
 	Name        string
 	Description string
@@ -321,7 +348,7 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 	if err != nil {
 		return Blueprint{}, err
 	}
-	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "nav": true, "seed": true, "endpoints": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
+	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "nav": true, "seed": true, "endpoints": true, "hooks": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
 	if err := rejectUnknownKeys(m, allowed, "blueprint"); err != nil {
 		return Blueprint{}, err
 	}
@@ -368,6 +395,13 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 			return Blueprint{}, err
 		}
 		bp.Endpoints = append(bp.Endpoints, endpoints...)
+	}
+	if child := m["hooks"]; child != nil {
+		hooks, err := decodeBlueprintHooks(child)
+		if err != nil {
+			return Blueprint{}, err
+		}
+		bp.Hooks = append(bp.Hooks, hooks...)
 	}
 	if child := m["middleware"]; child != nil {
 		stubs, err := decodeNamedStubs(child, "middleware")
@@ -1938,6 +1972,32 @@ func decodeBlueprintEndpoints(node *coreyaml.Node) ([]BlueprintEndpoint, error) 
 			Handler:     stringValue(m["handler"]),
 			Description: stringValue(m["description"]),
 			MCP:         boolValue(m["mcp"]),
+		})
+	}
+	return out, nil
+}
+
+func decodeBlueprintHooks(node *coreyaml.Node) ([]BlueprintHook, error) {
+	list, err := expectList(node, "hooks")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BlueprintHook, 0, len(list))
+	for i, item := range list {
+		m, err := expectMap(item, fmt.Sprintf("hooks[%d]", i))
+		if err != nil {
+			return nil, err
+		}
+		allowed := map[string]bool{"id": true, "entity": true, "when": true, "handler": true, "description": true}
+		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("hooks[%d]", i)); err != nil {
+			return nil, err
+		}
+		out = append(out, BlueprintHook{
+			ID:          stringValue(m["id"]),
+			Entity:      stringValue(m["entity"]),
+			When:        stringValue(m["when"]),
+			Handler:     stringValue(m["handler"]),
+			Description: stringValue(m["description"]),
 		})
 	}
 	return out, nil

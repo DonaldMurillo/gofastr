@@ -47,7 +47,7 @@ entity shape and field types documented in
 [Entity Declarations](entity-declarations.md).
 
 The blueprint root keys are `app`, `entities`, `screens`, `nav`, `seed`,
-`endpoints`, `middleware`, `plugins`, `helpers`, and `isolation`.
+`endpoints`, `hooks`, `middleware`, `plugins`, `helpers`, and `isolation`.
 
 Blueprints are separate from general codegen config. `gofastr generate
 --from=gofastr.yml` means "treat this file as a blueprint." Plain
@@ -259,6 +259,13 @@ endpoints:
     path: /health
     handler: healthCheck
 
+hooks:
+  - id: posts_before_create_validate
+    entity: posts
+    when: before_create
+    handler: postsBeforeCreateValidate
+    description: reject posts with an empty title
+
 middleware:
   - request_logger
 
@@ -268,6 +275,27 @@ plugins:
 helpers:
   - name: normalize_slug
 ```
+
+### Lifecycle hooks (`hooks`)
+
+Each entry declares one entity lifecycle hook and the owned-Go func that
+implements it:
+
+| Key | Meaning |
+|---|---|
+| `id` | Stable identifier; also the blueprint's name for the hook |
+| `entity` | The entity whose lifecycle the hook runs on |
+| `when` | `before_create`, `after_create`, `before_update`, `after_update`, `before_delete`, `after_delete`, `before_list`, `after_list` |
+| `handler` | The Go func to write, registered via `framework/hook` |
+| `description` | What the hook is for |
+
+Like `endpoints`, this is a declaration, not generated behavior: the
+blueprint records which hook runs where, and you write the handler. See
+[Lifecycle hooks](hooks-and-transactions.md) for the registration API.
+
+`kiln freeze` emits this section from the world's hooks, so a validation
+or audit hook the operator watched run in the live preview arrives in the
+graduation blueprint instead of disappearing.
 
 ## Generated output
 

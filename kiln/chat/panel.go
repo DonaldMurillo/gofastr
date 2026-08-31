@@ -85,11 +85,11 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		// is just an ack. Binding chat_html to the response was a
 		// footgun: on error (or even on success) the JSON ack got
 		// stringified into the log innerHTML.
-		RPC("POST", "/kiln/panel/send", http.HandlerFunc(pe.serveSend)).
-		RPC("POST", "/kiln/panel/reset", http.HandlerFunc(pe.serveReset)).
-		RPC("POST", "/kiln/panel/approve_plan", http.HandlerFunc(pe.serveApprove)).
-		RPC("POST", "/kiln/panel/reject_plan", http.HandlerFunc(pe.serveReject)).
-		RPC("POST", "/kiln/panel/undo", http.HandlerFunc(pe.serveUndo)).
+		RPC("POST", "/kiln/panel/send", sameOriginOnly(http.HandlerFunc(pe.serveSend))).
+		RPC("POST", "/kiln/panel/reset", sameOriginOnly(http.HandlerFunc(pe.serveReset))).
+		RPC("POST", "/kiln/panel/approve_plan", sameOriginOnly(http.HandlerFunc(pe.serveApprove))).
+		RPC("POST", "/kiln/panel/reject_plan", sameOriginOnly(http.HandlerFunc(pe.serveReject))).
+		RPC("POST", "/kiln/panel/undo", sameOriginOnly(http.HandlerFunc(pe.serveUndo))).
 		Build()
 
 	def.ExtraCSS = widgetCSS // appends panel content CSS after framework chrome

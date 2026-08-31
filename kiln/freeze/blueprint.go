@@ -93,6 +93,9 @@ func blueprintMap(w *world.World) map[string]any {
 	if endpoints := endpointMaps(w); len(endpoints) > 0 {
 		doc["endpoints"] = endpoints
 	}
+	if hooks := hookMaps(w); len(hooks) > 0 {
+		doc["hooks"] = hooks
+	}
 	if middleware := middlewareMaps(w); len(middleware) > 0 {
 		doc["middleware"] = middleware
 	}
@@ -322,6 +325,40 @@ func seedMaps(seeds []*world.Seed) []any {
 		}
 		m := compact(map[string]any{"entity": seed.Entity, "rows": seed.Rows, "count": seed.Count, "weights": seed.Weights})
 		out = append(out, m)
+	}
+	return out
+}
+
+// hookMaps carries the world's entity lifecycle hooks into the
+// graduation blueprint, the same way endpointMaps carries routes: as a
+// declaration naming an owned-Go handler to implement.
+//
+// They used to be dropped. The live preview registers every world hook on
+// the framework HookRegistry, so an operator watches a before_create
+// validation reject bad rows and then ships an app with no such
+// validation -- no error, no stub, no TODO. Only world.json kept them,
+// and the generated app never reads world.json.
+func hookMaps(w *world.World) []any {
+	out := make([]any, 0, len(w.Hooks))
+	for i, h := range w.Hooks {
+		if h == nil {
+			continue
+		}
+		id := h.ID
+		if id == "" {
+			id = fmt.Sprintf("%s_%s_%d", identifier(h.Entity), identifier(h.When), i)
+		}
+		desc := "Kiln declarative action " + h.Action.Kind + "; implement the owned-Go handler after generation"
+		if h.Condition != "" {
+			desc += " (condition: " + h.Condition + ")"
+		}
+		out = append(out, compact(map[string]any{
+			"id":          id,
+			"entity":      h.Entity,
+			"when":        h.When,
+			"handler":     identifier(id),
+			"description": desc,
+		}))
 	}
 	return out
 }
