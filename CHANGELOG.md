@@ -406,6 +406,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **BEHAVIOUR: Escape now closes only the innermost open disclosure**, not every
+  open one on the page. Previously an Escape anywhere closed them all; now, with
+  focus inside an open `data-fui-disclosure`, only the deepest one containing
+  focus closes, and focus outside any of them still closes all. The change came
+  from nested menus needing one level per press, but `data-fui-disclosure` is
+  shared, so it reaches every consumer: `disclosure.Render`,
+  `html.Details{Disclosure: true}`, `ui.Collapsible`, `ui.Sidebar` groups,
+  `ui.SiteHeader`'s hamburger drawer, `SectionMenu` groups, and the admin-sort
+  panel. Concretely: a mobile drawer containing an expanded nav group now takes
+  two Escapes to dismiss where it took one. This is the only change in the
+  release that alters behaviour for an app upgrading from v0.76.0 without
+  touching its own code.
+
 - **Cross-test browser-cache contamination in the site e2e suite** (#278): the
   suite runs on one Chrome profile, so tabs are fresh but the HTTP cache is
   shared, and split runtime modules are served `immutable` with a year-long
