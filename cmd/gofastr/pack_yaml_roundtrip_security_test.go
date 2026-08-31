@@ -290,8 +290,19 @@ func TestPackEnumValuesRoundTripThroughFlowList(t *testing.T) {
 	// only the flow-list emission provides. If the writer ever moves enum
 	// values to one-item-per-line, this guard — and the hazard it pins —
 	// moves with it.
-	if !strings.Contains(yml, "values: [") {
-		t.Errorf("enum values are not emitted as a flow list; the merge hazard this test pins lives only there:\n%s", yml)
+	//
+	// Checking for "values: [" alone does NOT establish that: a flow list
+	// broken across lines contains it too, and the hazard needs a shared
+	// line to exist at all. So find the line and require it to close.
+	flowLine := ""
+	for _, line := range strings.Split(yml, "\n") {
+		if strings.Contains(line, "values: [") {
+			flowLine = line
+			break
+		}
+	}
+	if flowLine == "" || !strings.Contains(flowLine, "]") {
+		t.Errorf("enum values are not emitted as a single-line flow list; the merge hazard this test pins lives only there:\n%s", yml)
 	}
 	b, err := decodeBlueprintString(yml)
 	if err != nil {

@@ -2104,15 +2104,23 @@
   // Hover/focus prefetch: any element with data-fui-prefetch="<name>"
   // kicks off the module fetch as soon as the user hovers or
   // keyboard-focuses it. By the time they click, the module is
-  // resolved. Capture-phase + once-per-element so we don't churn on
-  // every mouse move.
+  // resolved. Capture phase; an element is marked attempted only once
+  // its fetch SUCCEEDS, so there is no churn on every mouse move but a
+  // failed fetch is retried on the next hover/focus.
   const _prefetchAttempted = new WeakSet();
   function _prefetch(e) {
     const node = e.target && e.target.closest && e.target.closest('[data-fui-prefetch]');
     if (!node || _prefetchAttempted.has(node)) return;
-    _prefetchAttempted.add(node);
-    const names = (node.getAttribute('data-fui-prefetch') || '').split(/\s+/).filter(Boolean);
-    for (const n of names) { loadModule(n).catch(() => {}); }
+    // Mark attempted only on success: a failed fetch (network blip,
+    // a host not serving the module) must not pin the element, or the
+    // bridge never retries — and `tabs` deliberately has no
+    // _moduleMarkers entry, so no scanner picks it up either; vacate
+    // panels would then stay empty for the page lifetime. Re-hovers
+    // while a fetch is in flight cost nothing: loadModule dedups.
+    const names = node.getAttribute('data-fui-prefetch').split(/\s+/).filter(Boolean);
+    for (const n of names) {
+      loadModule(n).then(() => { _prefetchAttempted.add(node); }, () => {});
+    }
   }
   document.addEventListener('pointerover', _prefetch, { capture: true, passive: true });
   document.addEventListener('focusin', _prefetch, { capture: true });

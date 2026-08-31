@@ -35,7 +35,51 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   supported way to attach attributes to a component — cannot reach it.
   Inert for everyone else.
 
+- **`ui.Tabs` porting knobs — `TabsConfig.StateAttrs`, `.ID`,
+  `.VacateHidden`** — the contracts a tab strip ported from a component
+  library needs. `StateAttrs` mirrors `data-state="active"/"inactive"`
+  onto every tab button after client-side switches, the locator contract
+  Radix-style ports pin their tests to (core already mirrors
+  `aria-selected` on the same write); `ID` wires tab↔panel
+  `id`/`aria-controls` semantics; `VacateHidden` ships hidden panels
+  empty with their content parked in an adjacent `data-fui-tabs-stash`
+  JSON script, so page-scoped test locators cannot match text inside
+  hidden panels — DOM parity with a source component that unmounts
+  inactive panels. A demand-loaded `tabs` runtime module (armed by
+  `data-fui-prefetch="tabs"`, no core scanner entry) restores a panel's
+  content on first show and moves the live nodes out/in on every later
+  switch, so island-swapped content and form state survive re-show. All
+  three knobs are opt-in; every zero value keeps the default output
+  byte-identical. See [interactive patterns](interactive-patterns.md).
+
+- **`ui.MenuItem.ID`** sets the rendered menu row's `id` attribute, so page JS,
+  test suites, and aria wiring elsewhere on the page can address one exact row
+  (a Help Mode toggle a script binds to, an Imports row a shortcut targets).
+  Uniqueness is caller-owned like any HTML id, an empty value emits no `id`
+  (output unchanged), separators ignore it, and `MenuItem.ExtraAttrs` still
+  drops `id` — the field is the single owner.
+
 ### Fixed
+
+- **Generated marketing chrome links and auth-gate redirects follow the
+  blueprint's registered screens** (#312) (`gofastr generate`). The marketing
+  header nav and footer shipped four literal hrefs (`/pricing`, `/about`,
+  `/terms`, `/privacy`), so a marketing blueprint without those screens got a
+  footer full of 404s; a chrome link is now emitted only when a screen
+  registers its route. The auth gate's redirect — the screen mount, the
+  entity-list island policy, the header's Sign in button, and the failed-login
+  bounce — derives from the screen hosting the login form (nested in a section
+  counts) instead of the hardcoded `/login`, which 404'd every gated page on a
+  blueprint whose sign-in lives elsewhere.
+
+- **A failed `data-fui-prefetch` fetch no longer strands the module for
+  the page lifetime.** The bridge marked an element attempted on first
+  hover even when the fetch failed, and a module without a scanner
+  marker (`tabs`, deliberately) had no second loader — one transient
+  failure left vacate panels empty for good, silently. An element is
+  now marked attempted only once its fetch succeeds, so the next
+  hover/focus retries; in-flight re-hovers cost nothing (the loader
+  dedups). Cost: 5 gzipped bytes of core runtime.
 
 - **`gofastr pack` no longer drops `middleware`, `plugins`, and `helpers`
   declarations** (#318): the serializer's key list named all three while the

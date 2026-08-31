@@ -1063,11 +1063,25 @@ func blueprintHasEntityAccess(bp Blueprint) bool {
 // defaulting to "/login". Used to point the auth battery's form-error redirect
 // at the login page (so a failed login lands back on the form, not raw JSON).
 func blueprintLoginRoute(bp Blueprint) string {
-	for _, s := range bp.Screens {
-		for _, b := range s.Body {
+	// Sections render nested children, and a login form can sit anywhere in
+	// that tree; a flat scan misses it and falls back to "/login" — an
+	// unregistered route when the blueprint's sign-in screen lives elsewhere.
+	// Same recursive walk blueprintNeedsResource uses.
+	var hasLogin func([]BlueprintBlock) bool
+	hasLogin = func(blocks []BlueprintBlock) bool {
+		for _, b := range blocks {
 			if isLoginFormBlock(b) {
-				return s.Route
+				return true
 			}
+			if hasLogin(b.Children) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, s := range bp.Screens {
+		if hasLogin(s.Body) {
+			return s.Route
 		}
 	}
 	return "/login"
@@ -1085,16 +1099,63 @@ func blueprintAppHome(bp Blueprint) string {
 	return "/"
 }
 
+// blueprintMarketingLink is one entry of the marketing chrome's canonical
+// link table. The header nav and the footer columns both project out of it,
+// so the two surfaces cannot drift apart again.
+type blueprintMarketingLink struct {
+	Label  string
+	Route  string
+	Nav    bool   // included in the header nav when its route is registered
+	Column string // footer column title when registered; "" = not in the footer
+}
+
+// blueprintMarketingLinkTable is the single source of truth for the marketing
+// chrome's links. A link is emitted only when a screen registers its route —
+// the rule blueprintLoginRoute established for "/login". Before that, the
+// chrome shipped four literal hrefs, so a one-screen marketing blueprint
+// generated a footer full of 404s (#312).
+var blueprintMarketingLinkTable = []blueprintMarketingLink{
+	{Label: "Pricing", Route: "/pricing", Nav: true, Column: "Product"},
+	{Label: "About", Route: "/about", Nav: true, Column: "Company"},
+	{Label: "Terms", Route: "/terms", Column: "Legal"},
+	{Label: "Privacy", Route: "/privacy", Column: "Legal"},
+}
+
+// blueprintRegisteredMarketingLinks returns the canonical marketing links
+// whose routes bp.Screens actually registers, in table order (which is also
+// the footer's column order). Screens with path params mount at the
+// colon-style route, so the same normalization blueprintScreenMountStmt uses
+// applies here.
+func blueprintRegisteredMarketingLinks(bp Blueprint) []blueprintMarketingLink {
+	registered := make(map[string]bool, len(bp.Screens))
+	for _, s := range bp.Screens {
+		registered[blueprintScreenRoutePath(s.Route)] = true
+	}
+	var out []blueprintMarketingLink
+	for _, l := range blueprintMarketingLinkTable {
+		if registered[l.Route] {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 // screenHasAuthForm reports whether a screen hosts a login or signup form, so
 // the generator gates it with a guest policy (signed-in users are redirected
 // to the app instead of seeing a sign-in form they don't need).
 func screenHasAuthForm(s BlueprintScreen) bool {
-	for _, b := range s.Body {
-		if isLoginFormBlock(b) || isSignupFormBlock(b) {
-			return true
+	// Same tree as blueprintLoginRoute walks: a form nested in a section's
+	// children still makes the screen guest-gated.
+	var any func([]BlueprintBlock) bool
+	any = func(blocks []BlueprintBlock) bool {
+		for _, b := range blocks {
+			if isLoginFormBlock(b) || isSignupFormBlock(b) || any(b.Children) {
+				return true
+			}
 		}
+		return false
 	}
-	return false
+	return any(s.Body)
 }
 
 // blueprintHasAuthFormScreen reports whether any screen hosts an auth form.
@@ -4601,7 +4662,7 @@ func renderBlueprintScreens(bp Blueprint) string {
 		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNode(c.node) }\n\n")
 	}
 	for _, screen := range bp.Screens {
-		sb.WriteString(blueprintScreenBody(screen, entityMap, apiBase))
+		sb.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
 	}
 	return sb.String()
 }
@@ -4674,7 +4735,7 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 // blueprintScreenBody emits one screen's type declaration, Screen* methods,
 // and Render/RenderCtx: the screen content that is identical whether it
 // lands in its own file or in a per-entity crud file.
-func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+func blueprintScreenBody(bp Blueprint, screen BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	var sb strings.Builder
 	typeName := toCamelCase(screen.Name) + "Screen"
 	ctxScreen := screenNeedsCtx(screen)
@@ -4738,7 +4799,7 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 			var expr string
 			switch {
 			case ctxScreen && isEntityListBlock(block):
-				expr = blueprintEntityListResourceExpr(screen, block, entityMap, apiBase)
+				expr = blueprintEntityListResourceExpr(bp, screen, block, entityMap, apiBase)
 			case ctxScreen && isEntityDetailBlock(block):
 				expr = blueprintDetailExpr(block)
 			case ctxScreen && isEntityCreateBlock(block):
@@ -4746,7 +4807,7 @@ func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.
 			case ctxScreen && isEntityEditBlock(block):
 				expr = fmt.Sprintf("appResources[%q].Form(ctx, s.id)", strings.Trim(block.Entity, "/"))
 			default:
-				expr = renderBlueprintBlockForScreen(screen, block, []int{i}, entityMap, apiBase)
+				expr = renderBlueprintBlockForScreen(bp, screen, block, []int{i}, entityMap, apiBase)
 			}
 			sb.WriteString("\t\t" + expr + ",\n")
 		}
@@ -4932,7 +4993,7 @@ func blueprintScreenMountStmt(screen BlueprintScreen, bp Blueprint) string {
 	}
 	switch {
 	case screen.Access.Auth:
-		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q)%s.WithPolicy(authPolicy(%q, %q)), %s)", route, typeName, screen.TitleOrName(), withDescription, "/login", screen.Access.Role, layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q)%s.WithPolicy(authPolicy(%q, %q)), %s)", route, typeName, screen.TitleOrName(), withDescription, blueprintLoginRoute(bp), screen.Access.Role, layoutExpr)
 	case guestRedirect && screenHasAuthForm(screen):
 		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q)%s.WithPolicy(guestPolicy(%q)), %s)", route, typeName, screen.TitleOrName(), withDescription, blueprintAppHome(bp), layoutExpr)
 	default:
@@ -5004,9 +5065,9 @@ func blueprintScreenFiles(bp Blueprint, screenOrderOffset int) []generatedFile {
 func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, apiBase string, order int) generatedFile {
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	needs := blueprintScreensImportNeeds([]BlueprintScreen{screen}, entityMap, apiBase)
+	needs := blueprintScreensImportNeeds(bp, []BlueprintScreen{screen}, entityMap, apiBase)
 	writeScreenImportBlock(&sb, needs, screenNeedsCtx(screen), true, true)
-	sb.WriteString(blueprintScreenBody(screen, entityMap, apiBase))
+	sb.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
 	mountName := "mount" + toCamelCase(screen.Name) + "Screen"
 	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, blueprintScreenMountStmt(screen, bp)))
 	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
@@ -5022,13 +5083,13 @@ func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, e
 func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool, apiBase string, screenOrder map[string]int) generatedFile {
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	needs := blueprintScreensImportNeeds(screens, entityMap, apiBase)
+	needs := blueprintScreensImportNeeds(bp, screens, entityMap, apiBase)
 	needs.resource = true // every CRUD file emits a resource.Config assignment
 	// Island endpoints are mounted with an http.HandlerFunc closure.
 	needs.nethttp = len(entityListPlacements(bp, entity)) > 0
 	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
 	for _, s := range screens {
-		sb.WriteString(blueprintScreenBody(s, entityMap, apiBase))
+		sb.WriteString(blueprintScreenBody(bp, s, entityMap, apiBase))
 	}
 	resourceStmt := blueprintResourceRegistryOne(bp, entity, entityMap, base, editable)
 	// Mount funcs in authored (declaration) order; the resource wiring lands
@@ -5173,7 +5234,7 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 			continue // same screen, same entity: one endpoint serves it
 		}
 		seen[path] = true
-		cfg := blueprintEntityListConfigExpr(p.screen, p.block, entityMap, apiBase)
+		cfg := blueprintEntityListConfigExpr(bp, p.screen, p.block, entityMap, apiBase)
 		sb.WriteString(fmt.Sprintf("\tfwApp.Router().HandleFunc(\"GET\", %q, func(w http.ResponseWriter, r *http.Request) {\n", path))
 		sb.WriteString(fmt.Sprintf("\t\t%s.TableHandler()(w, r)\n", cfg))
 		sb.WriteString("\t})\n")
@@ -5236,9 +5297,9 @@ func blueprintIslandPath(apiBase string, screen BlueprintScreen, entity string) 
 // An ungated screen gets an explicit public policy rather than none: with no
 // policy TableHandler falls back to requiring sign-in, which would 401 an
 // anonymous visitor's first sort click on a public list.
-func blueprintIslandPolicyExpr(screen BlueprintScreen) string {
+func blueprintIslandPolicyExpr(bp Blueprint, screen BlueprintScreen) string {
 	if screen.Access.Auth {
-		return fmt.Sprintf("authPolicy(%q, %q)", "/login", screen.Access.Role)
+		return fmt.Sprintf("authPolicy(%q, %q)", blueprintLoginRoute(bp), screen.Access.Role)
 	}
 	return "resource.PublicIsland()"
 }
@@ -5596,8 +5657,8 @@ func blueprintDetailExpr(block BlueprintBlock) string {
 
 // blueprintEntityListResourceExpr emits the server-side list render call for a
 // top-level entity_list block: appResources["x"].WithColumns(...).List(ctx).
-func blueprintEntityListResourceExpr(screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
-	return blueprintEntityListConfigExpr(screen, block, entityMap, apiBase) + ".List(ctx)"
+func blueprintEntityListResourceExpr(bp Blueprint, screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	return blueprintEntityListConfigExpr(bp, screen, block, entityMap, apiBase) + ".List(ctx)"
 }
 
 // blueprintEntityListConfigExpr emits the refined resource.Config for one
@@ -5608,7 +5669,7 @@ func blueprintEntityListResourceExpr(screen BlueprintScreen, block BlueprintBloc
 // facets and page size live here, and an island endpoint mounted on the bare
 // registry entry would answer unfiltered, differently-columned rows to a
 // sort click on a filtered page.
-func blueprintEntityListConfigExpr(screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+func blueprintEntityListConfigExpr(bp Blueprint, screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	entity := strings.Trim(block.Entity, "/")
 	expr := fmt.Sprintf("appResources[%q]", entity)
 	if len(block.Fields) > 0 {
@@ -5640,7 +5701,7 @@ func blueprintEntityListConfigExpr(screen BlueprintScreen, block BlueprintBlock,
 	// endpoint carries the screen's own policy, because it serves the same
 	// rows over a route the screen's gate never sees.
 	expr += fmt.Sprintf(".WithIsland(%q)", blueprintIslandPath(apiBase, screen, entity))
-	if p := blueprintIslandPolicyExpr(screen); p != "" {
+	if p := blueprintIslandPolicyExpr(bp, screen); p != "" {
 		expr += ".WithIslandPolicy(" + p + ")"
 	}
 	return expr
@@ -5742,13 +5803,13 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 	for _, decl := range bp.Entities {
 		entityMap[decl.Name] = decl
 	}
-	return blueprintScreensImportNeeds(bp.Screens, entityMap, blueprintAPIBase(bp.App.APIPrefix))
+	return blueprintScreensImportNeeds(bp, bp.Screens, entityMap, blueprintAPIBase(bp.App.APIPrefix))
 }
 
 // blueprintScreensImportNeeds computes the import set for an arbitrary
 // subset of screens (one standalone file, one crud file's screens, or the
 // whole project). It is the per-file analogue of blueprintScreenImports.
-func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) screenImportNeeds {
+func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) screenImportNeeds {
 	var needs screenImportNeeds
 	// Every screen root is an html.Div now, so the package is always
 	// needed when there is a screen to render at all.
@@ -5804,7 +5865,7 @@ func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string
 					// condition: the two answers drifting apart is precisely
 					// what shipped screen files calling resource.PublicIsland()
 					// without importing resource.
-					if isEntityListBlock(block) && strings.Contains(blueprintIslandPolicyExpr(screen), "resource.") {
+					if isEntityListBlock(block) && strings.Contains(blueprintIslandPolicyExpr(bp, screen), "resource.") {
 						needs.resource = true
 					}
 					continue
@@ -6026,13 +6087,13 @@ func blueprintSectionChildrenAreCards(children []BlueprintBlock) bool {
 // renderBlueprintCatalogBlock emits a framework/ui component for a catalog block
 // kind (page_header, hero, section, card, stat_card, charts, …). Returns
 // (expr, true) when handled; ("", false) to fall through to other paths.
-func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) (string, bool) {
+func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) (string, bool) {
 	kind := strings.ToLower(strings.TrimSpace(block.Kind))
 	childExprs := func() string {
 		parts := make([]string, 0, len(block.Children))
 		for i, ch := range block.Children {
 			cp := append(append([]int(nil), path...), i)
-			parts = append(parts, renderBlueprintBlockForScreen(screen, ch, cp, entityMap, apiBase))
+			parts = append(parts, renderBlueprintBlockForScreen(bp, screen, ch, cp, entityMap, apiBase))
 		}
 		return strings.Join(parts, ", ")
 	}
@@ -6194,7 +6255,7 @@ func blueprintPricingCardExpr(p map[string]any) string {
 		s("name"), s("price"), s("period"), s("description"), feats, s("cta_text"), s("cta_href"), featured)
 }
 
-func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+func renderBlueprintBlockForScreen(bp Blueprint, screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	kind := block.Kind
 	if kind == "" {
 		kind = block.Type
@@ -6213,9 +6274,9 @@ func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock,
 	}
 	if isEntityListBlock(block) {
 		// Server-rendered via the resource engine (ui.DataTable).
-		return blueprintEntityListResourceExpr(screen, block, entityMap, apiBase)
+		return blueprintEntityListResourceExpr(bp, screen, block, entityMap, apiBase)
 	}
-	if expr, ok := renderBlueprintCatalogBlock(screen, block, path, entityMap, apiBase); ok {
+	if expr, ok := renderBlueprintCatalogBlock(bp, screen, block, path, entityMap, apiBase); ok {
 		return expr
 	}
 	if blueprintBlockUsesNodeRenderer(block) {
@@ -7003,6 +7064,16 @@ func renderBlueprintApp(bp Blueprint) string {
 	}
 	if hasMarketing {
 		sb.WriteString("// marketingHeader / Footer wrap the public marketing layout.\n")
+		// Chrome links come from the registered screen set, never literals: a
+		// chrome href to a route no screen mounts is a shipped 404. The same
+		// rule blueprintLoginRoute established for the Sign in link (#312).
+		chrome := blueprintRegisteredMarketingLinks(bp)
+		var navLinks []string
+		for _, l := range chrome {
+			if l.Nav {
+				navLinks = append(navLinks, fmt.Sprintf("{Label: %q, Href: %q}", l.Label, l.Route))
+			}
+		}
 		toggleArg := ""
 		if len(bp.App.ThemeDark) > 0 {
 			// The app declares a dark scheme. Surface the toggle as a real
@@ -7016,7 +7087,9 @@ func renderBlueprintApp(bp Blueprint) string {
 			// one button, sized to match. No "Sign in" loop for users already past it.
 			appHome := blueprintAppHome(bp)
 			sb.WriteString("func marketingHeader(ctx context.Context) render.HTML {\n")
-			sb.WriteString("\tnav := []ui.SiteHeaderLink{{Label: \"Pricing\", Href: \"/pricing\"}, {Label: \"About\", Href: \"/about\"}}\n")
+			// nav holds only registered chrome links; with none it starts
+			// empty (valid Go for the Dashboard append below).
+			sb.WriteString(fmt.Sprintf("\tnav := []ui.SiteHeaderLink{%s}\n", strings.Join(navLinks, ", ")))
 			sb.WriteString("\tvar actions render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
 			sb.WriteString(fmt.Sprintf("\t\tnav = append(nav, ui.SiteHeaderLink{Label: \"Dashboard\", Href: %q})\n", appHome))
@@ -7040,7 +7113,11 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("func marketingHeader() render.HTML {\n")
 			sb.WriteString("\treturn ui.SiteHeader(ui.SiteHeaderConfig{\n")
 			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: appName}),\n")
-			sb.WriteString("\t\tNavItems: []ui.SiteHeaderLink{{Label: \"Pricing\", Href: \"/pricing\"}, {Label: \"About\", Href: \"/about\"}},\n")
+			// No NavItems line when no chrome link survives: an omitted field
+			// renders the brand + actions bar; an empty slice would add noise.
+			if len(navLinks) > 0 {
+				sb.WriteString(fmt.Sprintf("\t\tNavItems: []ui.SiteHeaderLink{%s},\n", strings.Join(navLinks, ", ")))
+			}
 			sb.WriteString("\t\tDrawer: ui.SiteHeaderDrawerSheet,\n")
 			if toggleArg != "" {
 				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n")
@@ -7050,11 +7127,35 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("func marketingFooter() render.HTML {\n")
 		sb.WriteString("\treturn ui.SiteFooter(ui.SiteFooterConfig{\n")
 		sb.WriteString("\t\tLead: ui.Link(ui.LinkConfig{Href: \"/\", Text: appName}),\n")
-		sb.WriteString("\t\tColumns: []ui.SiteFooterColumn{\n")
-		sb.WriteString("\t\t\t{Title: \"Product\", Links: []ui.SiteFooterLink{{Label: \"Pricing\", Href: \"/pricing\"}}},\n")
-		sb.WriteString("\t\t\t{Title: \"Company\", Links: []ui.SiteFooterLink{{Label: \"About\", Href: \"/about\"}}},\n")
-		sb.WriteString("\t\t\t{Title: \"Legal\", Links: []ui.SiteFooterLink{{Label: \"Terms\", Href: \"/terms\"}, {Label: \"Privacy\", Href: \"/privacy\"}}},\n")
-		sb.WriteString("\t\t},\n")
+		// A footer column is emitted only when at least one of its links
+		// survives: ui.SiteFooter renders a titled empty list for any column
+		// present, which is a heading over nothing. Column order follows the
+		// link table's declaration order.
+		type footerColumn struct {
+			title string
+			links []string
+		}
+		var columns []footerColumn
+		columnIndex := map[string]int{}
+		for _, l := range chrome {
+			if l.Column == "" {
+				continue
+			}
+			expr := fmt.Sprintf("{Label: %q, Href: %q}", l.Label, l.Route)
+			if i, ok := columnIndex[l.Column]; ok {
+				columns[i].links = append(columns[i].links, expr)
+				continue
+			}
+			columns = append(columns, footerColumn{title: l.Column, links: []string{expr}})
+			columnIndex[l.Column] = len(columns) - 1
+		}
+		if len(columns) > 0 {
+			sb.WriteString("\t\tColumns: []ui.SiteFooterColumn{\n")
+			for _, col := range columns {
+				sb.WriteString(fmt.Sprintf("\t\t\t{Title: %q, Links: []ui.SiteFooterLink{%s}},\n", col.title, strings.Join(col.links, ", ")))
+			}
+			sb.WriteString("\t\t},\n")
+		}
 		sb.WriteString("\t})\n}\n\n")
 	}
 	if len(bp.App.Theme) > 0 {
