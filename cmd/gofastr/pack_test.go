@@ -120,27 +120,190 @@ func diffValue(a, b reflect.Value, path string) string {
 }
 
 // TestPack_SerializerRoundTrip is the core invariant: serializing a parsed
-// blueprint and re-parsing it yields an identical Blueprint. It runs against the
-// real Meridian flagship, so it exercises the full breadth of constructs (app +
-// auth/admin/theme/dark, 5 entities with access/indices/relations, the marketing
-// + app + auth screens with hero/section/card/stat_card+source/charts/entity
-// blocks, nav, seed). When a new blueprint feature is added, the decoder AND
-// encodeBlueprintYAML must both learn it or this fails.
+// blueprint and re-parsing it yields an identical Blueprint. It runs against
+// EVERY committed example blueprint, not a hand-picked one: the test used to
+// run Meridian alone, and Meridian happens to be the one example that
+// declares no middleware/plugins/helpers — the fixture guarding the inverse
+// claim was the fixture least able to observe it failing (#318).
 func TestPack_SerializerRoundTrip(t *testing.T) {
-	a, err := decodeBlueprintFile("../../examples/meridian/gofastr.yml")
+	matches, err := filepath.Glob("../../examples/*/gofastr.yml")
 	if err != nil {
-		t.Fatalf("parse meridian.yml: %v", err)
+		t.Fatalf("glob examples: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("no example blueprints found")
+	}
+	for _, path := range matches {
+		path := path
+		t.Run(filepath.Base(filepath.Dir(path)), func(t *testing.T) {
+			a, err := decodeBlueprintFile(path)
+			if err != nil {
+				t.Fatalf("parse %s: %v", path, err)
+			}
+			yml, err := encodeBlueprintYAML(a)
+			if err != nil {
+				t.Fatalf("serialize: %v", err)
+			}
+			b, err := decodeBlueprintString(yml)
+			if err != nil {
+				t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
+			}
+			if !reflect.DeepEqual(a, b) {
+				t.Errorf("round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), yml)
+			}
+		})
+	}
+}
+
+// TestPack_StubDescriptionRoundTrips exercises stubsToAny's map form: a stub
+// with a description serializes as {name, description} and must decode back
+// equal. No committed example sets a stub description, so the example-driven
+// round-trip above cannot see this path.
+func TestPack_StubDescriptionRoundTrips(t *testing.T) {
+	a := Blueprint{
+		App:        BlueprintApp{Name: "probe"},
+		Middleware: []BlueprintNamedStub{{Name: "logger", Description: "logs each request"}},
+		Plugins:    []BlueprintNamedStub{{Name: "metrics", Description: "counts things"}},
+		Helpers:    []BlueprintNamedStub{{Name: "slugify", Description: "makes slugs"}},
 	}
 	yml, err := encodeBlueprintYAML(a)
 	if err != nil {
-		t.Fatalf("serialize meridian blueprint: %v", err)
+		t.Fatalf("serialize: %v", err)
 	}
 	b, err := decodeBlueprintString(yml)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), yml)
+		t.Errorf("stub description round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), yml)
+	}
+}
+
+// TestPackSerializerCoversEveryBlueprintField is the durable half of the
+// #318 fix. topLevelOrder listed middleware/plugins/helpers all along while
+// blueprintToMap silently dropped them; nothing compared the two lists. This
+// derives the comparison from the struct itself, so it needs no hand-kept
+// fixture: every field Blueprint can carry must make the serializer emit its
+// top-level key, and the emitted key set must equal set(topLevelOrder)
+// exactly. A key ordered but never emitted is the #318 regression; a key
+// emitted but not ordered silently ships unsorted.
+//
+// Boundary, stated honestly: this guards struct→serializer→order agreement.
+// It cannot see decodeBlueprint. A construct added to the decoder and the
+// struct but not the serializer stays invisible here; that side is guarded
+// by TestPack_SerializerRoundTrip, for every construct a committed example
+// actually uses.
+func TestPackSerializerCoversEveryBlueprintField(t *testing.T) {
+	rt := reflect.TypeOf(Blueprint{})
+	emitted := map[string]bool{}
+	zero := blueprintToMap(Blueprint{})
+	for i := range rt.NumField() {
+		bpv := reflect.New(rt).Elem()
+		probeLeafValue(t, bpv.Field(i))
+		keys := blueprintToMap(bpv.Interface().(Blueprint))
+		assertFieldMovesOutput(t, rt.Field(i).Name, zero, keys, "blueprintToMap")
+		for k := range keys {
+			emitted[k] = true
+		}
+	}
+	assertOrderMatchesEmitted(t, emitted, topLevelOrder, "topLevelOrder")
+}
+
+// The app section has the same failure mode one level down: decodeApp read
+// description/base_url/public_openapi that appToMap never emitted. No
+// committed example sets them, so the example round-trip cannot see this
+// class either.
+func TestPackSerializerCoversEveryAppField(t *testing.T) {
+	rt := reflect.TypeOf(BlueprintApp{})
+	emitted := map[string]bool{}
+	zero := appToMap(BlueprintApp{})
+	for i := range rt.NumField() {
+		appv := reflect.New(rt).Elem()
+		probeLeafValue(t, appv.Field(i))
+		keys := appToMap(appv.Interface().(BlueprintApp))
+		assertFieldMovesOutput(t, rt.Field(i).Name, zero, keys, "appToMap")
+		for k := range keys {
+			emitted[k] = true
+		}
+	}
+	assertOrderMatchesEmitted(t, emitted, appOrder, "appOrder")
+}
+
+// assertFieldMovesOutput closes the hole the two set-agreement checks above
+// leave open. They compare the serializer against the key order, so a construct
+// BOTH are ignorant of cancels out and passes silently — which is the #318
+// shape exactly: Middleware was decoded into the struct, never emitted, and no
+// committed example carried it, so neither the order check nor the example
+// round-trip could see it. The struct field is the ground truth, so populating
+// any one field must change what the serializer writes.
+//
+// Comparing against the zero-value output rather than checking for a non-empty
+// map is load-bearing: a zero BlueprintApp already emits api_prefix (the
+// condition is != "api", which "" satisfies), so "emitted something" is true
+// for every field and proves nothing. Watched both forms against a Widgets
+// field that neither the serializer nor topLevelOrder knows about: the
+// non-empty form passes, this one fails.
+func assertFieldMovesOutput(t *testing.T, field string, zero, probed map[string]any, fn string) {
+	t.Helper()
+	if reflect.DeepEqual(zero, probed) {
+		t.Errorf("%s writes the same output whether %s is set or not: the field decodes into the struct and serializes to nothing, and no key-order check can see that", fn, field)
+	}
+}
+
+// probeLeafValue sets v to a non-zero value the serializers treat as
+// "present". The exact value is irrelevant; emission is keyed on
+// non-emptiness. Structs get every leaf set so Enabled-only emission
+// conditions (auth, admin, pwa) fire regardless of field order.
+func probeLeafValue(t *testing.T, v reflect.Value) {
+	t.Helper()
+	if !v.CanSet() {
+		t.Fatalf("probe: field %s of %s cannot be set", v.String(), v.Type())
+	}
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString("probe")
+	case reflect.Bool:
+		v.SetBool(true)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(1)
+	case reflect.Float32, reflect.Float64:
+		v.SetFloat(1)
+	case reflect.Map:
+		m := reflect.MakeMap(v.Type())
+		k := reflect.New(v.Type().Key()).Elem()
+		ev := reflect.New(v.Type().Elem()).Elem()
+		probeLeafValue(t, k)
+		probeLeafValue(t, ev)
+		m.SetMapIndex(k, ev)
+		v.Set(m)
+	case reflect.Slice:
+		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+	case reflect.Ptr:
+		v.Set(reflect.New(v.Type().Elem()))
+	case reflect.Interface:
+		v.Set(reflect.ValueOf("probe"))
+	case reflect.Struct:
+		for i := range v.NumField() {
+			probeLeafValue(t, v.Field(i))
+		}
+	}
+}
+
+func assertOrderMatchesEmitted(t *testing.T, emitted map[string]bool, order []string, name string) {
+	t.Helper()
+	ordered := map[string]bool{}
+	for _, k := range order {
+		ordered[k] = true
+	}
+	for k := range emitted {
+		if !ordered[k] {
+			t.Errorf("%s does not order %q, which the serializer emits; keys outside the order ship unsorted", name, k)
+		}
+	}
+	for k := range ordered {
+		if !emitted[k] {
+			t.Errorf("%s lists %q but the serializer never emits it — the #318 regression (ordered, decoded, dropped)", name, k)
+		}
 	}
 }
 

@@ -467,9 +467,20 @@ Synthesized `/new` + `/{id}/edit` form screens are dropped (they weren't
 authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for a blueprint of those
-constructs (modulo comments + formatting); the Meridian example round-trips
-exactly, gated by a test. When you add a new construct to that set, teach
-**both** the generator and pack, or that test fails.
+constructs (modulo comments + formatting). When you add a new construct to
+that set, teach **both** the generator and pack, or the round-trip test
+fails.
+
+The serializer half of that invariant is stronger: `parse(yml)` ≡
+`parse(encode(parse(yml)))` holds for every top-level construct, including
+`endpoints`, `middleware`, `plugins`, and `helpers` — when a packed blueprint
+carries them, the emitted YAML carries them too, quoted so every value
+survives re-parsing (an enum value like `60'` is emitted double-quoted; bare,
+its apostrophe would merge two flow-list members into one). Every committed
+example blueprint gates this, not just Meridian, and a reflection-driven
+guard fails the day a `Blueprint` field exists that the serializer's key
+lists don't cover — the drift that let `middleware`/`plugins`/`helpers` ship
+dropped for as long as they did.
 
 Note what that invariant does and does not say. It is about the
 **declarations**: pack reads `examples/meridian`'s Go and recovers the same

@@ -35,6 +35,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   supported way to attach attributes to a component — cannot reach it.
   Inert for everyone else.
 
+### Fixed
+
+- **`gofastr pack` no longer drops `middleware`, `plugins`, and `helpers`
+  declarations** (#318): the serializer's key list named all three while the
+  serializer itself never emitted them, so a blueprint carrying any of them
+  packed without them. The same class also took `app.description`,
+  `app.base_url`, and `app.public_openapi`: decoded, then silently omitted.
+  The serializer round-trip test now runs against every committed example
+  blueprint instead of only Meridian — the one example that declares none of
+  the affected constructs — and a reflection-driven guard keeps the key list
+  and the serializer honest about every field `Blueprint` and `BlueprintApp`
+  carry, so the next construct added to either side fails a test the day it
+  diverges.
+
+- **A quote character in an enum value no longer merges flow-list entries**
+  (#323): the quoting predicate treated quotes as a first-character-only
+  indicator, so `values: [60', 90']` was emitted with both apostrophes bare
+  and re-parsed as a single member `"60', 90'"` — two enum values silently
+  became one, and a lone `values: [60']` failed to parse at all. Values
+  containing `'` or `"` are now double-quoted (with both characters escaped),
+  the mirror of the key-side rule from #317, which refuses instead because
+  core/yaml never unquotes keys.
+
 ## [0.76.0] - 2026-08-30
 
 ### Added

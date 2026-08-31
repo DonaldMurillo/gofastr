@@ -106,12 +106,40 @@ func blueprintToMap(bp Blueprint) map[string]any {
 		}
 		m["endpoints"] = eps
 	}
+	if len(bp.Middleware) > 0 {
+		m["middleware"] = stubsToAny(bp.Middleware)
+	}
+	if len(bp.Plugins) > 0 {
+		m["plugins"] = stubsToAny(bp.Plugins)
+	}
+	if len(bp.Helpers) > 0 {
+		m["helpers"] = stubsToAny(bp.Helpers)
+	}
 	return m
+}
+
+// stubsToAny mirrors decodeNamedStubs: a stub with no description is a bare
+// scalar (the form hand-authored blueprints use), one with a description is
+// a name/description map. Both decode back to the same BlueprintNamedStub.
+func stubsToAny(stubs []BlueprintNamedStub) []any {
+	out := make([]any, len(stubs))
+	for i, s := range stubs {
+		if s.Description == "" {
+			out[i] = s.Name
+			continue
+		}
+		sm := map[string]any{"name": s.Name}
+		putStr(sm, "description", s.Description)
+		out[i] = sm
+	}
+	return out
 }
 
 func appToMap(a BlueprintApp) map[string]any {
 	m := map[string]any{}
 	putStr(m, "name", a.Name)
+	putStr(m, "description", a.Description)
+	putStr(m, "base_url", a.BaseURL)
 	putStr(m, "module", a.Module)
 	if a.DBDriver != "" || a.DBURL != "" {
 		db := map[string]any{}
@@ -126,6 +154,7 @@ func appToMap(a BlueprintApp) map[string]any {
 	if a.APIPrefix != "api" {
 		m["api_prefix"] = a.APIPrefix
 	}
+	putBool(m, "public_openapi", a.PublicOpenAPI)
 	if len(a.Theme) > 0 || len(a.ThemeDark) > 0 {
 		theme := map[string]any{}
 		for k, v := range a.Theme {
@@ -704,6 +733,17 @@ func needsQuote(s string) bool {
 	if strings.ContainsAny(s, ",[]{}") {
 		return true
 	}
+	// A quote character ANYWHERE, not only leading. In a flow list the
+	// apostrophe in a bare `60'` OPENS a quoted region (splitInline tracks
+	// quote state across the whole list): [60', 90'] re-parses as ONE member
+	// "60', 90'" — two enum values silently become one — and a lone [60']
+	// fails to parse at all. Values can be quoted, so quote them rather than
+	// refuse; quoteYAMLString escapes both characters. Mirror image of the
+	// KEY-side rule in yamlKeyRejectReason, which refuses because core/yaml
+	// never unquotes keys (#323 vs #317).
+	if strings.ContainsAny(s, "'\"") {
+		return true
+	}
 	if strings.Contains(s, ": ") || strings.Contains(s, " #") {
 		return true
 	}
@@ -736,10 +776,9 @@ func orderedKeys(m map[string]any, order []string) []string {
 }
 
 // ----- key orders (readability; semantics are order-independent) -------------
-
 var (
 	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
-	appOrder        = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin"}
+	appOrder        = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
 	entityOrder     = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
 	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
 	screenOrder     = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
@@ -756,6 +795,7 @@ var (
 	endpointOrder   = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
 	actionOrder     = []string{"name", "event", "client_js"}
 	transitionOrder = []string{"label", "status", "variant", "stamp"}
+	stubOrder       = []string{"name", "description"}
 	seedOrder       = []string{"entity", "rows"}
 )
 
@@ -797,6 +837,8 @@ func orderFor(key string) []string {
 		return transitionOrder
 	case "seed":
 		return seedOrder
+	case "middleware", "plugins", "helpers":
+		return stubOrder
 	default:
 		return nil
 	}
