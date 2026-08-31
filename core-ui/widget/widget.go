@@ -600,18 +600,24 @@ func Mount(r *router.Router, def *Definition) {
 	r.Get(chromePathFor(def), gateSession(def.RequireSession, http.HandlerFunc(srv.serveChrome)))
 
 	for _, rpc := range def.RPCs {
-		method := rpc.Method
-		switch method {
+		// Same gate the widget's own /state and chrome endpoints carry.
+		// These were registered bare, so a widget declaring
+		// RequireSession refused a caller on /state and served that same
+		// caller its RPCs in the same process -- and the RPCs are the
+		// mutating half. A gate that covers the read and not the write is
+		// not a gate.
+		h := gateSession(def.RequireSession, rpc.Handler)
+		switch rpc.Method {
 		case "GET":
-			r.Get(rpc.Path, rpc.Handler)
+			r.Get(rpc.Path, h)
 		case "POST":
-			r.Post(rpc.Path, rpc.Handler)
+			r.Post(rpc.Path, h)
 		case "PUT":
-			r.Put(rpc.Path, rpc.Handler)
+			r.Put(rpc.Path, h)
 		case "DELETE":
-			r.Delete(rpc.Path, rpc.Handler)
+			r.Delete(rpc.Path, h)
 		default:
-			r.Post(rpc.Path, rpc.Handler)
+			r.Post(rpc.Path, h)
 		}
 	}
 
