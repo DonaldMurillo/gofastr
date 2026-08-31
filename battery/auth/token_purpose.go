@@ -90,3 +90,32 @@ func redeemPurposeToken(ctx context.Context, store MagicLinkTokenStore, p tokenP
 func peekPurposePayload(raw string, p tokenPurpose) (string, bool) {
 	return strings.CutPrefix(raw, string(p)+":")
 }
+
+// MagicLinkTokenPurger is the optional MagicLinkTokenStore extension that
+// drops every outstanding token carrying a given payload.
+//
+// Password reset needs it. Completing a reset already revokes the user's
+// sessions, on the reasoning that an attacker who set the password must not
+// keep a live cookie — but every OTHER reset link stayed spendable, so a
+// link phished or read from a mailbox an hour earlier still set the password
+// again afterwards, and the account went straight back to the attacker.
+//
+// A store that does not implement this keeps the old behaviour and says so
+// in the log, the same way SessionUserPurger's absence is reported.
+type MagicLinkTokenPurger interface {
+	// DeleteTokensForPayload removes every unredeemed token whose payload
+	// equals payload, returning how many were dropped.
+	DeleteTokensForPayload(ctx context.Context, payload string) (int, error)
+}
+
+// purgePurposeTokens drops the caller's other outstanding tokens for one
+// flow. It reports whether the store could do it, so the caller can log the
+// gap rather than assume the purge happened.
+func purgePurposeTokens(ctx context.Context, store MagicLinkTokenStore, p tokenPurpose, payload string) (int, bool, error) {
+	purger, ok := store.(MagicLinkTokenPurger)
+	if !ok {
+		return 0, false, nil
+	}
+	n, err := purger.DeleteTokensForPayload(ctx, string(p)+":"+payload)
+	return n, true, err
+}

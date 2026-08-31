@@ -189,6 +189,21 @@ func (m *MemoryMagicLinkTokenStore) PeekToken(_ context.Context, token string) (
 	return entry.email, nil
 }
 
+// DeleteTokensForPayload removes every unredeemed token carrying payload.
+// Implements [MagicLinkTokenPurger].
+func (m *MemoryMagicLinkTokenStore) DeleteTokensForPayload(_ context.Context, payload string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for tok, entry := range m.tokens {
+		if entry.email == payload {
+			delete(m.tokens, tok)
+			n++
+		}
+	}
+	return n, nil
+}
+
 // Cleanup removes all expired tokens and returns the count purged.
 func (m *MemoryMagicLinkTokenStore) Cleanup(_ context.Context) (int, error) {
 	now := time.Now()

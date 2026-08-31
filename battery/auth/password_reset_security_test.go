@@ -341,11 +341,27 @@ func TestForgotPasswordBranchWorkParity(t *testing.T) {
 	}
 
 	post("known@example.com")
-	knownWork := tokens.creations + sender.sends
+	knownMints, knownSends := tokens.creations, sender.sends
 	post("nobody@example.com")
-	unknownWork := tokens.creations + sender.sends - knownWork
+	unknownMints := tokens.creations - knownMints
+	unknownSends := sender.sends - knownSends
 
-	if unknownWork != knownWork {
-		t.Errorf("SECURITY: [forgot-branch-parity] POST /auth/forgot-password performed %d synchronous side-effect calls (token create + email send) for a KNOWN email but %d for an UNKNOWN email — the branch-dependent work is the latency oracle behind the endpoint's uniform 200 {\"sent\":true} (CWE-208): account existence is readable by timing responses. Both branches must do the same synchronous work", knownWork, unknownWork)
+	// The store round-trip is the branch-dependent work that CAN be
+	// equalized, and it is the expensive half. The unknown branch mints an
+	// inert decoy so both branches pay for it.
+	if unknownMints != knownMints {
+		t.Errorf("SECURITY: [forgot-branch-parity] POST /auth/forgot-password performed %d token-store operations for a KNOWN email but %d for an UNKNOWN one — branch-dependent work is the latency oracle behind the endpoint's uniform 200 {\"sent\":true} (CWE-208): account existence becomes readable by timing responses", knownMints, unknownMints)
+	}
+
+	// Delivery is deliberately NOT equalized: an address with no account
+	// here must not receive mail from us, which rules out the usual
+	// "notify anyway" answer. The send is kept off the timed path instead
+	// — the 200 is written before delivery runs — so the asymmetry that
+	// remains is not one a client can clock.
+	if unknownSends != 0 {
+		t.Errorf("SECURITY: [forgot-branch-parity] POST /auth/forgot-password sent %d email(s) to an address with no account", unknownSends)
+	}
+	if knownSends == 0 {
+		t.Error("known email received no reset mail; the parity fix must not have disabled delivery")
 	}
 }

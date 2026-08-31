@@ -89,6 +89,20 @@ type TwoFAState struct {
 }
 
 // TwoFAStore is the interface for persisting 2FA state per user.
+// TwoFACompareAndSetter is the optional TwoFAStore extension that writes
+// only while 2FA is still enabled for the user.
+//
+// Regenerating backup codes is a read-modify-write, and a /2fa/disable
+// landing between the read and the write is enough for the write to
+// resurrect the row the disable just removed. Checking before writing does
+// not help — the condition has to be part of the write. A store that
+// cannot offer that keeps the blind Set.
+type TwoFACompareAndSetter interface {
+	// CompareAndSetTwoFA stores next only if the user still has an
+	// enabled 2FA row, reporting whether the write happened.
+	CompareAndSetTwoFA(ctx context.Context, userID string, next *TwoFAState) (bool, error)
+}
+
 type TwoFAStore interface {
 	// GetTwoFA retrieves the 2FA state for a user. Returns nil if not enrolled.
 	GetTwoFA(ctx context.Context, userID string) (*TwoFAState, error)
@@ -146,6 +160,20 @@ func cloneTwoFAState(st *TwoFAState) *TwoFAState {
 		cp.BackupCodes = append([]string(nil), st.BackupCodes...)
 	}
 	return &cp
+}
+
+// CompareAndSetTwoFA writes next only while the row is still present and
+// still Enabled. Implements [TwoFACompareAndSetter].
+func (m *MemoryTwoFAStore) CompareAndSetTwoFA(_ context.Context, userID string, next *TwoFAState) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.states[userID]
+	if !ok || cur == nil || !cur.Enabled {
+		return false, nil
+	}
+	cp := *next
+	m.states[userID] = &cp
+	return true, nil
 }
 
 func (m *MemoryTwoFAStore) DeleteTwoFA(_ context.Context, userID string) error {
@@ -534,7 +562,12 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 			writeAuthError(w, http.StatusInternalServerError, "could not record the code")
 			return
 		}
-		p.markSessionTwoFA(r)
+		if err := p.markSessionTwoFA(r); err != nil {
+			// The session is still pending: answering 200 here
+			// would report a step-up that did not happen.
+			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
+			return
+		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "2fa.challenge_succeeded",
 			UserID: userID,
@@ -553,7 +586,12 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if consumed {
-		p.markSessionTwoFA(r)
+		if err := p.markSessionTwoFA(r); err != nil {
+			// The session is still pending: answering 200 here
+			// would report a step-up that did not happen.
+			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
+			return
+		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "2fa.challenge_succeeded",
 			UserID: userID,
@@ -590,15 +628,24 @@ func (p *TwoFAPlugin) HasTwoFactorEnabled(ctx context.Context, userID string) (b
 // markSessionTwoFA flips the TwoFactorVerified flag on the caller's
 // session, if the session store supports SessionTwoFAMarker. No-op
 // otherwise (RequireTwoFA fails closed in that case).
-func (p *TwoFAPlugin) markSessionTwoFA(r *http.Request) {
+// markSessionTwoFA records that this session cleared its second factor.
+//
+// The error is returned, not swallowed. RequireTwoFA gates on the marker,
+// so a failed write means the session is still pending — answering the
+// challenge with 200 verified:true would tell the caller they are through
+// a door that is still shut, and every later request would bounce with no
+// explanation. A store without SessionTwoFAMarker keeps its old behaviour:
+// there is no marker to fail to write.
+func (p *TwoFAPlugin) markSessionTwoFA(r *http.Request) error {
 	cfg := p.mgr.Config()
 	cookie, err := r.Cookie(cfg.SessionCookie)
 	if err != nil {
-		return
+		return nil
 	}
 	if marker, ok := p.mgr.SessionStore().(SessionTwoFAMarker); ok {
-		_ = marker.MarkTwoFactorVerified(r.Context(), cookie.Value)
+		return marker.MarkTwoFactorVerified(r.Context(), cookie.Value)
 	}
+	return nil
 }
 
 // RequireTwoFA returns middleware that:
@@ -687,8 +734,27 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Generating codes takes real time, and a /2fa/disable landing in that
+	// gap deletes the row — after which a blind Set writes an Enabled
+	// state straight back, so 2FA silently re-enables itself moments after
+	// the user turned it off, holding codes only the earlier request saw.
+	//
+	// A re-read before the write does not fix this: the delete can still
+	// land between the check and the write. The condition has to travel
+	// WITH the write, which is what TwoFACompareAndSetter is for. A store
+	// without it keeps the blind write and the window it comes with.
 	state.BackupCodes = hashedCodes
-	if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
+	if cas, ok := p.store.(TwoFACompareAndSetter); ok {
+		wrote, err := cas.CompareAndSetTwoFA(r.Context(), userID, state)
+		if err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "failed to save backup codes")
+			return
+		}
+		if !wrote {
+			writeAuthError(w, http.StatusConflict, "2FA is no longer enabled")
+			return
+		}
+	} else if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "failed to save backup codes")
 		return
 	}

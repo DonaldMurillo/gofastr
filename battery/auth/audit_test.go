@@ -368,6 +368,10 @@ func TestAudit_PasswordResetFlow(t *testing.T) {
 	// Known email.
 	jar.do(f.router, http.MethodPost, "/auth/forgot-password",
 		map[string]string{"email": "reset@example.com"}, "")
+	// Capture the reset mail before the unknown request below: both
+	// branches now send (that parity is what closes the timing oracle),
+	// so snapshot() would otherwise return the no-account notice.
+	_, knownBody := f.pwSender.snapshot()
 	// Unknown email.
 	jar.do(f.router, http.MethodPost, "/auth/forgot-password",
 		map[string]string{"email": "ghost@example.com"}, "")
@@ -392,10 +396,9 @@ func TestAudit_PasswordResetFlow(t *testing.T) {
 	}
 
 	// Complete the reset for the known user.
-	_, body := f.pwSender.snapshot()
-	tok := extractTokenFromBody(body)
+	tok := extractTokenFromBody(knownBody)
 	if tok == "" {
-		t.Fatalf("no reset token in email body: %q", body)
+		t.Fatalf("no reset token in email body: %q", knownBody)
 	}
 	rec := jar.do(f.router, http.MethodPost, "/auth/reset-password",
 		map[string]string{"token": tok, "password": "brandnewpw1"}, "")

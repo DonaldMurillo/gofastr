@@ -161,6 +161,22 @@ type racingDisableTwoFAStore struct {
 	fire bool
 }
 
+// CompareAndSetTwoFA fires the same interleaving against the CAS path, so a
+// fix that routes around SetTwoFA still meets the disable landing mid-write.
+func (s *racingDisableTwoFAStore) CompareAndSetTwoFA(ctx context.Context, userID string, next *TwoFAState) (bool, error) {
+	if s.fire {
+		s.fire = false
+		if err := s.TwoFAStore.DeleteTwoFA(ctx, userID); err != nil {
+			return false, err
+		}
+	}
+	cas, ok := s.TwoFAStore.(TwoFACompareAndSetter)
+	if !ok {
+		return false, nil
+	}
+	return cas.CompareAndSetTwoFA(ctx, userID, next)
+}
+
 func (s *racingDisableTwoFAStore) SetTwoFA(ctx context.Context, userID string, state *TwoFAState) error {
 	if s.fire {
 		s.fire = false

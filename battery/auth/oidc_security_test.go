@@ -352,7 +352,7 @@ func TestOIDCSec_UserinfoMissingSub(t *testing.T) {
 	delete(c, "email") // force the userinfo merge path
 	f.claims = c
 	f.userinfo = map[string]any{"email": "unanchored@example.com"}
-	// f.userinfoSub deliberately left empty: the response carries no sub.
+	f.omitUserinfoSub = true // the response carries no sub at all
 	p := newTestProvider(t, f)
 
 	tok, err := p.ExchangeCode(ctxBg(), "any-code")

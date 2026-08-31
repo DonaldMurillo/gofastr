@@ -284,6 +284,7 @@ func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAut
 		return OAuthTokenRecord{}, fmt.Errorf("auth: no refresh token stored for user %q provider %q", userID, provider.Name())
 	}
 
+	refreshedFrom := rec.RefreshToken
 	tok, err := refresher.RefreshToken(ctx, rec.RefreshToken)
 	if err != nil {
 		return OAuthTokenRecord{}, fmt.Errorf("auth: refresh failed: %w", err)
@@ -295,6 +296,23 @@ func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAut
 	// the stored one so the next refresh still works.
 	if tok.RefreshToken != "" {
 		rec.RefreshToken = tok.RefreshToken
+	}
+
+	// Re-read before writing. A login callback running concurrently — the
+	// user reconnecting the provider in another tab — stores a freshly
+	// rotated grant between the Get above and this Save, and an
+	// unconditional write puts the token we started from back on top of
+	// it. Under a provider that rotates refresh tokens the overwritten
+	// one is already dead, so the linkage is bricked until the user
+	// re-authorizes, and nothing reports it.
+	//
+	// The comparison is on the refresh token we refreshed FROM: if the
+	// stored one is no longer that, someone else has moved the record on
+	// and their version is newer than ours by construction.
+	if current, err := store.Get(ctx, userID, provider.Name()); err == nil {
+		if current.RefreshToken != "" && current.RefreshToken != refreshedFrom {
+			return current, nil
+		}
 	}
 
 	if err := store.Save(ctx, rec); err != nil {

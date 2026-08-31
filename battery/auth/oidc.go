@@ -400,10 +400,14 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 			if ui, err := p.fetchUserinfo(ctx, token, d.UserinfoEndpoint); err == nil {
 				tokenSub := claimString(claims, "sub")
 				uiSub := claimString(ui, "sub")
-				// OIDC §5.3.2: the userinfo subject MUST equal the id_token
-				// subject, else the response is about a different user.
-				if tokenSub != "" && uiSub != "" && tokenSub != uiSub {
-					return nil, errors.New("oidc: userinfo subject does not match id_token subject")
+				// OIDC §5.3.2: the userinfo subject MUST equal the
+				// id_token subject, else the response is about a
+				// different user. An ABSENT uiSub is not a match — it is
+				// a response that declines to say who it describes, and
+				// skipping the check for it merged unattributed claims
+				// into a verified identity.
+				if tokenSub != "" && tokenSub != uiSub {
+					return nil, errors.New("oidc: userinfo subject missing or does not match id_token subject")
 				}
 				if email == "" {
 					email = claimString(ui, p.cfg.Claims.EmailClaim)

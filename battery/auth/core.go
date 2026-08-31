@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -342,11 +343,27 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 		// Revoke EVERY session-name cookie the client sent, not only the
 		// first. A jar can hold duplicates at different scopes, and logout
 		// must not leave a shadowed-but-valid session alive.
+		// A failed Delete leaves a LIVE session while the response says
+		// the user is signed out — the one outcome logout must never
+		// produce, and worst on the shared machine the user is logging
+		// out of. Clearing the cookie only hides the still-valid token
+		// from this browser; anyone holding it keeps the session.
+		//
+		// The audit row is emitted only after the delete it describes
+		// succeeds. Recording session.revoked for a session still in the
+		// store makes the ledger say a revocation happened that did not.
+		revokeFailed := false
 		for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
 			// Capture the principal before deleting so the audit row
 			// names who logged out. A Get failure (expired/invalid
 			// cookie) yields no event, nothing to revoke of record.
-			if sess, gerr := c.mgr.SessionStore().Get(r.Context(), token); gerr == nil {
+			sess, gerr := c.mgr.SessionStore().Get(r.Context(), token)
+			if err := c.mgr.SessionStore().Delete(r.Context(), token); err != nil {
+				log.Printf("auth: logout: revoke session: %v", err)
+				revokeFailed = true
+				continue
+			}
+			if gerr == nil {
 				c.mgr.emitSecurity(r.Context(), SecurityEvent{
 					Kind:   "session.revoked",
 					UserID: sess.UserID,
@@ -354,7 +371,10 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 					Meta:   map[string]string{"reason": "logout"},
 				})
 			}
-			_ = c.mgr.SessionStore().Delete(r.Context(), token)
+		}
+		if revokeFailed {
+			writeAuthError(w, http.StatusInternalServerError, "could not sign out; the session is still active")
+			return
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     cfg.SessionCookie,
