@@ -54,9 +54,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   indicator, so `values: [60', 90']` was emitted with both apostrophes bare
   and re-parsed as a single member `"60', 90'"` — two enum values silently
   became one, and a lone `values: [60']` failed to parse at all. Values
-  containing `'` or `"` are now double-quoted (with both characters escaped),
-  the mirror of the key-side rule from #317, which refuses instead because
-  core/yaml never unquotes keys.
+  containing `'` or `"` are now double-quoted: `"` and backslash are escaped,
+  invalid UTF-8 bytes and non-printable runes as `\xNN`/`\uNNNN` (so a quoted
+  value re-parses byte-for-byte instead of gaining U+FFFD), and the apostrophe
+  passes through verbatim — `\'` is not an escape `strconv.Unquote` knows, and
+  inside double quotes it needs none. This mirrors the key-side rule from
+  #317, which refuses instead because core/yaml never unquotes keys.
+
+- **`gofastr pack` no longer drops `seed.count`, `seed.weights`, and entity
+  `renames`** (#330): the same decoded-but-never-serialized class as #318,
+  one level down — inside slice elements, where neither the example
+  round-trip (no committed example uses them) nor the top-level coverage
+  guards (a set `Seed` field already moves the output by emitting the `seed`
+  key) could see the omission. The guard now probes every construct field
+  (entities, fields, relations, indices, screens, body/children blocks,
+  actions, transitions, nav, seed, endpoints, stubs); the same run caught
+  stale key orders — `entityOrder` still listed the pre-grouping flat keys
+  (`crud`, `mcp`, `soft_delete`, …) while missing
+  `scope`/`pagination`/`exposure`/`search_fields`/`renames`, `fieldOrder`
+  missed `no_query`, and `blockOrder` missed `filters`. Two fields are
+  exempted with reasons in the test: entity-level `endpoints` (the
+  authoring form lives in the top-level `endpoints` stubs; emitting the
+  derived form would duplicate them) and index `expression` (not in the
+  blueprint grammar).
 
 ## [0.76.0] - 2026-08-30
 

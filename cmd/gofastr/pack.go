@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
@@ -80,6 +82,21 @@ func blueprintToMap(bp Blueprint) map[string]any {
 		seed := make([]any, len(bp.Seed))
 		for i, s := range bp.Seed {
 			sm := map[string]any{"entity": s.Entity}
+			putInt(sm, "count", s.Count)
+			if len(s.Weights) > 0 {
+				// Values are int here and int after decodeSeedWeights
+				// re-parses them, unlike rows, whose native parser types
+				// (int64) pass through anyMap unchanged.
+				w := make(map[string]any, len(s.Weights))
+				for col, vals := range s.Weights {
+					vw := make(map[string]any, len(vals))
+					for val, weight := range vals {
+						vw[val] = weight
+					}
+					w[col] = vw
+				}
+				sm["weights"] = w
+			}
 			if len(s.Rows) > 0 {
 				rows := make([]any, len(s.Rows))
 				for j, r := range s.Rows {
@@ -269,6 +286,13 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 	}
 	if len(e.Properties) > 0 {
 		m["properties"] = anyMap(e.Properties)
+	}
+	if len(e.Renames) > 0 {
+		rn := make(map[string]any, len(e.Renames))
+		for k, v := range e.Renames {
+			rn[k] = v
+		}
+		m["renames"] = rn
 	}
 	if len(e.Indices) > 0 {
 		idx := make([]any, len(e.Indices))
@@ -673,22 +697,43 @@ func allScalars(list []any) bool {
 	return true
 }
 
+// quoteYAMLString double-quotes s for core/yaml's parseQuoted, which runs
+// strconv.Unquote on the quoted region. Unquote replaces invalid UTF-8 bytes
+// with U+FFFD, so before this escaped them, a value like "a\xffb'" came back
+// as "a\ufffdb'" — corruption this serializer introduced, not parser noise.
+// Invalid bytes and non-printable runes are therefore emitted as the Go
+// escape forms Unquote decodes back to the exact bytes (\xNN, \uNNNN,
+// \UNNNNNN); printable multi-byte runes (café, 日本語) pass through
+// literally, and an apostrophe needs no escape inside double quotes.
 func quoteYAMLString(s string) string {
 	if !needsQuote(s) {
 		return s
 	}
 	var b strings.Builder
 	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '\\':
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+		switch {
+		case r == '\\':
 			b.WriteString(`\\`)
-		case '"':
+		case r == '"':
 			b.WriteString(`\"`)
-		case '\n':
+		case r == '\n':
 			b.WriteString(`\n`)
-		case '\t':
+		case r == '\t':
 			b.WriteString(`\t`)
+		case r == utf8.RuneError && size == 1:
+			b.WriteString(fmt.Sprintf(`\x%02x`, s[i-1]))
+		case !unicode.IsPrint(r):
+			switch {
+			case r < 0x80:
+				b.WriteString(fmt.Sprintf(`\x%02x`, r))
+			case r < 0x10000:
+				b.WriteString(fmt.Sprintf(`\u%04x`, r))
+			default:
+				b.WriteString(fmt.Sprintf(`\U%08x`, r))
+			}
 		default:
 			b.WriteRune(r)
 		}
@@ -738,9 +783,11 @@ func needsQuote(s string) bool {
 	// quote state across the whole list): [60', 90'] re-parses as ONE member
 	// "60', 90'" — two enum values silently become one — and a lone [60']
 	// fails to parse at all. Values can be quoted, so quote them rather than
-	// refuse; quoteYAMLString escapes both characters. Mirror image of the
-	// KEY-side rule in yamlKeyRejectReason, which refuses because core/yaml
-	// never unquotes keys (#323 vs #317).
+	// refuse; quoteYAMLString double-quotes the value, escaping `"` (plus
+	// backslash and the control/no-UTF-8 cases) — the apostrophe itself needs
+	// no escape inside double quotes and passes through verbatim. Mirror
+	// image of the KEY-side rule in yamlKeyRejectReason, which refuses
+	// because core/yaml never unquotes keys (#323 vs #317).
 	if strings.ContainsAny(s, "'\"") {
 		return true
 	}
@@ -779,10 +826,10 @@ func orderedKeys(m map[string]any, order []string) []string {
 var (
 	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
 	appOrder        = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
-	entityOrder     = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
-	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
+	entityOrder     = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations"}
+	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder     = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
-	blockOrder      = []string{"kind", "type", "text", "level", "entity", "fields", "search", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
+	blockOrder      = []string{"kind", "type", "text", "level", "entity", "fields", "search", "filters", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
 	relationOrder   = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target"}
 	indexOrder      = []string{"name", "columns", "unique"}
 	navOrder        = []string{"label", "href", "icon", "role", "items"}
@@ -796,7 +843,7 @@ var (
 	actionOrder     = []string{"name", "event", "client_js"}
 	transitionOrder = []string{"label", "status", "variant", "stamp"}
 	stubOrder       = []string{"name", "description"}
-	seedOrder       = []string{"entity", "rows"}
+	seedOrder       = []string{"entity", "count", "weights", "rows"}
 )
 
 func orderFor(key string) []string {

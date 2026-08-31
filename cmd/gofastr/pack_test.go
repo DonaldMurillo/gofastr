@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,6 +180,113 @@ func TestPack_StubDescriptionRoundTrips(t *testing.T) {
 	}
 }
 
+// TestPack_SeedCountWeightsRoundTrips guards the #330 fix: seed count and
+// weights are decoded into BlueprintSeedEntity (blueprint.go decodeBlueprintSeed)
+// and were then dropped by the serializer — the same decoded-but-never-emitted
+// shape as #318. No committed example uses count/weights, which is exactly how
+// the omission stayed invisible to the example round-trip.
+func TestPack_SeedCountWeightsRoundTrips(t *testing.T) {
+	yml := `seed:
+  - entity: ticket
+    count: 7
+    weights:
+      status:
+        open: 5
+        closed: 1
+    rows:
+      - title: first
+`
+	a, err := decodeBlueprintString(yml)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(a.Seed) != 1 || a.Seed[0].Count != 7 || a.Seed[0].Weights["status"]["open"] != 5 {
+		t.Fatalf("fixture does not exercise the fix: %+v", a.Seed)
+	}
+	out, err := encodeBlueprintYAML(a)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	b, err := decodeBlueprintString(out)
+	if err != nil {
+		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, out)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Errorf("seed count/weights round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), out)
+	}
+}
+
+// TestPack_EntityRenamesRoundTrip guards the other omission the construct
+// guard caught: entities.<name>.renames is decoded into
+// EntityDeclaration.Renames and was never emitted back.
+func TestPack_EntityRenamesRoundTrip(t *testing.T) {
+	yml := `entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
+    renames:
+      title: heading
+`
+	a, err := decodeBlueprintString(yml)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(a.Entities) != 1 || a.Entities[0].Renames["title"] != "heading" {
+		t.Fatalf("fixture does not exercise the fix: %+v", a.Entities)
+	}
+	out, err := encodeBlueprintYAML(a)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	b, err := decodeBlueprintString(out)
+	if err != nil {
+		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, out)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Errorf("entity renames round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), out)
+	}
+}
+
+// TestPack_QuotedValuesRoundTripExactBytes guards the #330 quoting fix: a
+// quoted value goes through core/yaml's parseQuoted → strconv.Unquote, which
+// replaces invalid UTF-8 bytes with U+FFFD. Before quoteYAMLString escaped
+// them, "a\xffb'" re-parsed as "a\ufffdb'" — corruption the quoting itself
+// introduced (pre-#323 the value was emitted bare and survived). Non-printable
+// runes get the same treatment; printable multi-byte runes must NOT be
+// escaped — mangling café to \u00e9 would round-trip but ship unreadable YAML.
+func TestPack_QuotedValuesRoundTripExactBytes(t *testing.T) {
+	values := []string{
+		"a\xffb'",             // invalid UTF-8 byte (the reported corruption)
+		"x\x01y'",             // non-printable control rune
+		"d\x7fe'",             // DEL
+		"n\u00a0m'",           // NBSP: non-printable per unicode.IsPrint, needs \uNNNN
+		"caf\u00e9'",          // printable multi-byte: must pass through literally
+		"\u65e5\u672c\u8a9e'", // CJK: same
+	}
+	rows := make([]map[string]any, len(values))
+	for i, v := range values {
+		rows[i] = map[string]any{"note": v}
+	}
+	a := Blueprint{Seed: []BlueprintSeedEntity{{Entity: "notes", Rows: rows}}}
+	yml, err := encodeBlueprintYAML(a)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	for _, lit := range []string{"café", "日本語"} {
+		if !strings.Contains(yml, lit) {
+			t.Errorf("serialized yaml escaped the printable multi-byte rune %q instead of emitting it literally:\n%s", lit, yml)
+		}
+	}
+	b, err := decodeBlueprintString(yml)
+	if err != nil {
+		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Errorf("quoted-value round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), yml)
+	}
+}
+
 // TestPackSerializerCoversEveryBlueprintField is the durable half of the
 // #318 fix. topLevelOrder listed middleware/plugins/helpers all along while
 // blueprintToMap silently dropped them; nothing compared the two lists. This
@@ -229,6 +337,218 @@ func TestPackSerializerCoversEveryAppField(t *testing.T) {
 	assertOrderMatchesEmitted(t, emitted, appOrder, "appOrder")
 }
 
+// TestPackSerializerCoversEveryConstructField extends the two guards above
+// one level down: into the structs inside each slice-of-struct construct.
+// The top-level guards prove a construct KEY appears when the Blueprint
+// field is set; they cannot see fields dropped inside the element, because
+// the key's mere presence already differs from the zero output. That is the
+// seed.Count/Weights shape exactly (#330): decoded into BlueprintSeedEntity,
+// dropped by blueprintToMap, invisible to every guard above and to every
+// committed example. Each construct field, probed alone inside a one-element
+// construct, must move the serializer output, and the keys emitted across
+// those probes must equal the construct's order list.
+func TestPackSerializerCoversEveryConstructField(t *testing.T) {
+	for _, spec := range constructSpecs() {
+		t.Run(spec.name, func(t *testing.T) {
+			zbp, zeroElem := spec.build()
+			zero := blueprintToMap(*zbp)
+			emitted := map[string]bool{}
+			rt := zeroElem.Type()
+			for i := range rt.NumField() {
+				bp, elem := spec.build()
+				probeLeafValue(t, elem.Field(i))
+				out := blueprintToMap(*bp)
+				field := spec.name + "." + rt.Field(i).Name
+				if reason, ok := constructOmissions[field]; ok {
+					// The exemption must be total: the probed field may not
+					// leak into the output either.
+					if !reflect.DeepEqual(zero, out) {
+						t.Errorf("%s is exempted (%s) but probing it changes the output: an exempted field must be dropped completely", field, reason)
+					}
+					continue
+				}
+				assertFieldMovesOutput(t, field, zero, out, "blueprintToMap")
+				if m := spec.at(out); m != nil {
+					for k := range m {
+						emitted[k] = true
+					}
+				}
+			}
+			assertOrderMatchesEmitted(t, emitted, spec.order, spec.orderName)
+		})
+	}
+}
+
+// constructOmissions names construct fields that deliberately do NOT reach
+// the serializer output, with the reason. An omission listed here is part
+// of the contract; an omission not listed here fails the guard above.
+var constructOmissions = map[string]string{
+	"entities.Endpoints": "derived runtime wiring, not an authoring key: the decoder splits entity-level endpoints into decl.Endpoints (Method/Path/Name/Description, MCP hard-false, handler dropped) and a top-level Blueprint.Endpoints stub carrying the full authoring form (entity, handler, mcp). Emitting decl.Endpoints back under the entity would duplicate every endpoint on re-parse.",
+	"indices.Expression": "framework.Index is shared with hand-written Go configs, which support expression indexes; the blueprint grammar's indices allow-list is name/columns/unique only (decodeIndices), so Expression can never be authored in YAML and emitting it would fail rejectUnknownKeys on re-parse.",
+}
+
+// constructSpec: how to build a Blueprint holding one zero element of a
+// construct, and where that element's emitted map lands in blueprintToMap's
+// output. at returns nil when the element emits a non-map (a bare stub
+// scalar), so key collection skips it.
+type constructSpec struct {
+	name      string
+	order     []string
+	orderName string
+	build     func() (*Blueprint, reflect.Value)
+	at        func(map[string]any) map[string]any
+}
+
+func constructSpecs() []constructSpec {
+	return []constructSpec{
+		{
+			name: "entities", order: entityOrder, orderName: "entityOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{}}}
+				return bp, reflect.ValueOf(&bp.Entities[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0) },
+		},
+		{
+			name: "fields", order: fieldOrder, orderName: "fieldOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Fields: []framework.FieldDeclaration{{}}}}}
+				return bp, reflect.ValueOf(&bp.Entities[0].Fields[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "fields", 0) },
+		},
+		{
+			name: "relations", order: relationOrder, orderName: "relationOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Relations: []framework.Relation{{}}}}}
+				return bp, reflect.ValueOf(&bp.Entities[0].Relations[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "relations", 0) },
+		},
+		{
+			name: "indices", order: indexOrder, orderName: "indexOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Indices: []framework.Index{{}}}}}
+				return bp, reflect.ValueOf(&bp.Entities[0].Indices[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "indices", 0) },
+		},
+		{
+			name: "screens", order: screenOrder, orderName: "screenOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Screens: []BlueprintScreen{{}}}
+				return bp, reflect.ValueOf(&bp.Screens[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0) },
+		},
+		{
+			name: "body", order: blockOrder, orderName: "blockOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{}}}}}
+				return bp, reflect.ValueOf(&bp.Screens[0].Body[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0, "body", 0) },
+		},
+		{
+			name: "children", order: blockOrder, orderName: "blockOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{Children: []BlueprintBlock{{}}}}}}}
+				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Children[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any {
+				return digEmitted(out, "screens", 0, "body", 0, "children", 0)
+			},
+		},
+		{
+			name: "actions", order: actionOrder, orderName: "actionOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{Actions: []BlueprintAction{{}}}}}}}
+				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Actions[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any {
+				return digEmitted(out, "screens", 0, "body", 0, "actions", 0)
+			},
+		},
+		{
+			name: "transitions", order: transitionOrder, orderName: "transitionOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{Transitions: []BlueprintTransition{{}}}}}}}
+				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Transitions[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any {
+				return digEmitted(out, "screens", 0, "body", 0, "transitions", 0)
+			},
+		},
+		{
+			name: "nav", order: navOrder, orderName: "navOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Nav: []BlueprintNavItem{{}}}
+				return bp, reflect.ValueOf(&bp.Nav[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "nav", 0) },
+		},
+		{
+			name: "items", order: navOrder, orderName: "navOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Nav: []BlueprintNavItem{{Items: []BlueprintNavItem{{}}}}}
+				return bp, reflect.ValueOf(&bp.Nav[0].Items[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "nav", 0, "items", 0) },
+		},
+		{
+			name: "seed", order: seedOrder, orderName: "seedOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Seed: []BlueprintSeedEntity{{}}}
+				return bp, reflect.ValueOf(&bp.Seed[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "seed", 0) },
+		},
+		{
+			name: "endpoints", order: endpointOrder, orderName: "endpointOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Endpoints: []BlueprintEndpoint{{}}}
+				return bp, reflect.ValueOf(&bp.Endpoints[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "endpoints", 0) },
+		},
+		{
+			name: "stubs", order: stubOrder, orderName: "stubOrder",
+			build: func() (*Blueprint, reflect.Value) {
+				bp := &Blueprint{Middleware: []BlueprintNamedStub{{}}}
+				return bp, reflect.ValueOf(&bp.Middleware[0]).Elem()
+			},
+			at: func(out map[string]any) map[string]any { return digEmitted(out, "middleware", 0) },
+		},
+	}
+}
+
+// digEmitted follows a path of map keys (string) and list indices (int)
+// into a blueprintToMap result and returns the map at the end, or nil when
+// the path is absent or ends at a non-map (a bare stub scalar).
+func digEmitted(v any, path ...any) map[string]any {
+	for _, p := range path {
+		switch p := p.(type) {
+		case string:
+			m, ok := v.(map[string]any)
+			if !ok {
+				return nil
+			}
+			v, ok = m[p]
+			if !ok {
+				return nil
+			}
+		case int:
+			l, ok := v.([]any)
+			if !ok || p >= len(l) {
+				return nil
+			}
+			v = l[p]
+		}
+	}
+	m, _ := v.(map[string]any)
+	return m
+}
+
 // assertFieldMovesOutput closes the hole the two set-agreement checks above
 // leave open. They compare the serializer against the key order, so a construct
 // BOTH are ignorant of cancels out and passes silently — which is the #318
@@ -256,8 +576,23 @@ func assertFieldMovesOutput(t *testing.T, field string, zero, probed map[string]
 // conditions (auth, admin, pwa) fire regardless of field order.
 func probeLeafValue(t *testing.T, v reflect.Value) {
 	t.Helper()
+	probeLeaf(t, v, 0)
+}
+
+// probeLeafDepthBound caps probeLeaf's recursion. Slice ELEMENTS are probed
+// as well — a one-element slice holding a zero-valued element is exactly how
+// seed.Count/Weights stayed invisible to the coverage guards — but
+// BlueprintBlock.Children and BlueprintNavItem.Items contain themselves, so
+// the walk needs a depth bound or it does not terminate.
+const probeLeafDepthBound = 8
+
+func probeLeaf(t *testing.T, v reflect.Value, depth int) {
+	t.Helper()
 	if !v.CanSet() {
 		t.Fatalf("probe: field %s of %s cannot be set", v.String(), v.Type())
+	}
+	if depth > probeLeafDepthBound {
+		return
 	}
 	switch v.Kind() {
 	case reflect.String:
@@ -272,19 +607,25 @@ func probeLeafValue(t *testing.T, v reflect.Value) {
 		m := reflect.MakeMap(v.Type())
 		k := reflect.New(v.Type().Key()).Elem()
 		ev := reflect.New(v.Type().Elem()).Elem()
-		probeLeafValue(t, k)
-		probeLeafValue(t, ev)
+		probeLeaf(t, k, depth+1)
+		probeLeaf(t, ev, depth+1)
 		m.SetMapIndex(k, ev)
 		v.Set(m)
 	case reflect.Slice:
 		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+		probeLeaf(t, v.Index(0), depth+1)
 	case reflect.Ptr:
 		v.Set(reflect.New(v.Type().Elem()))
 	case reflect.Interface:
-		v.Set(reflect.ValueOf("probe"))
+		// Only the empty interface accepts an arbitrary probe string. Named
+		// interfaces (entity.Endpoint's http.Handler, mcp.ToolHandler) are
+		// runtime wiring, never YAML; leave them nil rather than panic.
+		if v.Type().NumMethod() == 0 {
+			v.Set(reflect.ValueOf("probe"))
+		}
 	case reflect.Struct:
 		for i := range v.NumField() {
-			probeLeafValue(t, v.Field(i))
+			probeLeaf(t, v.Field(i), depth+1)
 		}
 	}
 }
