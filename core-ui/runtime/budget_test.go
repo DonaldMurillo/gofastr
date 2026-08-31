@@ -43,9 +43,11 @@ const (
 	// forms, which until then submitted unconfirmed) took it to 42215 raw and
 	// 14745 compressed. The gate cannot be carved into a demand module: a
 	// native submit navigates away before a module could load, the same class
-	// of fatal-for-the-path as the click bridge. So the line moved to 14784,
-	// clearing the real bundle by 39.
-	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 33 over the real bundle (14751), under the 14800 cliff-fixture guard
+	// of fatal-for-the-path as the click bridge. So the line moved to 14784.
+	// The prefetch-failure retry (mark-on-success, 2026-08-30) took 5 more
+	// gzipped bytes: the real bundle is 14771, cleared by 13, and the cliff
+	// fixture still crosses (14786 > 14784).
+	coreCongestionWindowGZ = 14*1024 + 448 // 14784: 13 over the real bundle (14771), under the 14800 cliff-fixture guard
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {
