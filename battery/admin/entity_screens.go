@@ -337,9 +337,14 @@ func SortDirOf(v string) string {
 	return "asc"
 }
 
-// patternWith builds a query-string fmt pattern that preserves the carry
-// params (URL-escaped, so no stray % breaks the fmt verb) and appends tail
-// (which holds the fmt verbs the DataTable/pagination fills in).
+// patternWith builds a query-string pattern that preserves the carry params
+// and appends tail (which holds the %s/%d markers DataTable and pagination
+// fill in). Encoding does not make the result fmt-safe -- it is the reason
+// it is not: Encode emits %XX, and fmt would read those escapes as verbs.
+// The pattern is safe because both consumers substitute their markers with
+// strings.Replace and never fmt (see [ui.DataTableConfig.SortHrefPattern]
+// and [pagination.Config.HrefPattern]). A consumer that reaches for
+// Sprintf reintroduces the bug this comment used to invite.
 func patternWith(carry url.Values, tail string) string {
 	enc := carry.Encode()
 	if enc == "" {
