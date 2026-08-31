@@ -467,9 +467,32 @@ Synthesized `/new` + `/{id}/edit` form screens are dropped (they weren't
 authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for a blueprint of those
-constructs (modulo comments + formatting); the Meridian example round-trips
-exactly, gated by a test. When you add a new construct to that set, teach
-**both** the generator and pack, or that test fails.
+constructs (modulo comments + formatting). When you add a new construct to
+that set, teach **both** the generator and pack, or the round-trip test
+fails.
+
+The serializer half of that invariant is stronger: `parse(yml)` ≡
+`parse(encode(parse(yml)))` holds for every construct the grammar can
+declare — including `endpoints`, `middleware`, `plugins`, and `helpers` —
+with one deliberate, tested exception: entity-level `endpoints` re-serialize
+through the top-level `endpoints` stubs that carry their authoring form
+(entity, handler, `mcp`); the derived per-entity runtime copy does not
+re-materialize on re-parse, and emitting it back under the entity would
+duplicate every endpoint. For the list constructs (entities, screens,
+blocks, nav, seed, endpoints, stubs, and their nested lists), the guards
+also cover every field *inside* each element — the omission class this
+catches (`seed.count`, `seed.weights`, entity `renames`) hides one level
+down, where a set construct key already differs from the zero output and
+the top-level checks pass anyway. A value that would re-parse as anything
+but itself is quoted: `"` and backslash are escaped, invalid UTF-8 bytes
+and non-printable runes as `\xNN`/`\uNNNN`, so a quoted value comes back
+byte-for-byte (an apostrophe passes through verbatim inside the double
+quotes; bare, `60'` would merge two flow-list members into one). Every
+committed example blueprint gates this, not just Meridian, and
+reflection-driven guards fail the day a `Blueprint` or construct field
+exists that the serializer's key lists don't cover — the drift that let
+`middleware`/`plugins`/`helpers` ship dropped, and `seed.count`,
+`seed.weights`, and `renames` after them.
 
 Note what that invariant does and does not say. It is about the
 **declarations**: pack reads `examples/meridian`'s Go and recovers the same
