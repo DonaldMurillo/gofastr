@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.77.0] - 2026-08-31
 
 ### Added
 
@@ -25,8 +25,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   indicator and submenu caret are CSS pseudo-elements, so accessible names and
   type-ahead see the label alone. Zero-value output stays byte-identical,
   golden-pinned, including nested items and `ExtraAttrs` id-dropping at depth.
-  Core runtime bytes are unchanged; the menu module grew 516 gzipped bytes and
-  disclosure 51, both inside their budgets.
+  The menu module is 1130 gzipped bytes and disclosure 1061, both well inside
+  their 3072 budget; #319 itself added no core runtime bytes.
 
 - **`registry.IsolateForTest(t)`** swaps the process-global style registry for
   a fresh one and restores it when the test finishes. Test-only seam for
@@ -181,9 +181,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `html.Details{Disclosure: true}`, `ui.Collapsible`, `ui.Sidebar` groups,
   `ui.SiteHeader`'s hamburger drawer, `SectionMenu` groups, and the admin-sort
   panel. Concretely: a mobile drawer containing an expanded nav group now takes
-  two Escapes to dismiss where it took one. This is the only change in the
-  release that alters behaviour for an app upgrading from v0.76.0 without
-  touching its own code.
+  two Escapes to dismiss where it took one. One of two changes in this release that
+  alter behaviour for an app upgrading from v0.76.0 without touching its own
+  code; the other is `WithStrict`'s internal-link check, which can newly fail
+  boot for an app already running strict mode.
 
 - **Generated marketing chrome links and auth-gate redirects follow the
   blueprint's registered screens** (#312) (`gofastr generate`). The marketing
