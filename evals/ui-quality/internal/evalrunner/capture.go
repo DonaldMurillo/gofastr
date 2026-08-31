@@ -377,15 +377,36 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			// after cancel closes the shared tab and makes every later shot fail
 			// with context canceled. Give each screenshot its own tab instead.
 			tab, closeTab := chromedp.NewContext(browser)
-			captureCtx, cancel := context.WithTimeout(tab, 45*time.Second)
+			// Named so the diagnostic below cannot drift from it. Writing
+			// "45s" into the message and the duration separately is how a
+			// number goes stale the first time someone tunes the budget.
+			const captureBudget = 45 * time.Second
+			captureCtx, cancel := context.WithTimeout(tab, captureBudget)
+			// #342: this budget starts BEFORE the browser exists. chromedp
+			// launches Chrome lazily on the first action, and the first
+			// action here is the guard's fetch.Enable — so a slow launch is
+			// billed to a budget meant for the capture, and the deadline
+			// surfaces pointing at the guard rather than at startup.
+			//
+			// On CI this fails at ~45.04s while a quiet local run is 3.3s
+			// and a CPU-saturated one is 7.5s, so the gap is far larger
+			// than contention explains and nobody has measured where it
+			// goes. Report the split rather than guess again: budgetUsed is
+			// how much of the 45s was gone by the time the guard returned.
+			// A failure that says "44.8s of 45s" is a launch problem; one
+			// that says "0.9s of 45s" is not, and the two want opposite
+			// fixes.
+			guardStart := time.Now()
 			networkGuard, guardErr := newCandidateNetworkGuard(baseURL)
 			if guardErr == nil {
 				guardErr = installCandidateNetworkGuard(captureCtx, networkGuard)
 			}
+			budgetUsed := time.Since(guardStart)
 			if guardErr != nil {
 				cancel()
 				closeTab()
-				issues = append(issues, fmt.Sprintf("%s %s: install network guard: %v", page.Name, vp.ID, guardErr))
+				issues = append(issues, fmt.Sprintf("%s %s: install network guard after %s of the %s budget (first chromedp call on a cold tab, so this includes the browser launch): %v",
+					page.Name, vp.ID, budgetUsed.Round(time.Millisecond), captureBudget, guardErr))
 				continue
 			}
 			emulationActions := []chromedp.Action{chromedp.EmulateReset()}
