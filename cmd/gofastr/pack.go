@@ -837,7 +837,11 @@ func orderedKeys(m map[string]any, order []string) []string {
 
 // ----- key orders (readability; semantics are order-independent) -------------
 var (
-	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
+	// Ordered to match blueprintToMap's emission order, which is also the
+	// order the blueprint docs present these keys in. A key the serializer
+	// emits but this list omits ships unsorted, which
+	// TestPackSerializerCoversEveryBlueprintField catches.
+	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
 	appOrder        = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
 	entityOrder     = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations"}
 	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
