@@ -495,7 +495,7 @@ func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 	ctx := chromeCtxBrowser(t)
 
 	var okMark, toastTitle string
-	var happyToasts, dlgNodes int
+	var happyToasts, failToasts, dlgNodes int
 	step := func(name string, acts ...chromedp.Action) {
 		t.Helper()
 		if err := chromedp.Run(ctx, acts...); err != nil {
@@ -516,13 +516,23 @@ func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 	// a pure chrome fetch — the gated one, released into a 500.
 	step("open-slow", chromedp.Click(`#open-slow`, chromedp.ByID))
 	c.waitSlowArrived(t)
+	// #347: click again while the first fetch is still in flight. Both
+	// clicks await the SAME cached promise, so the request dedups — and
+	// the REPORTING has to dedup with it. Reporting from each awaiter's
+	// catch gave two toasts for one failed request.
+	step("open-slow-again", chromedp.Click(`#open-slow`, chromedp.ByID))
 	c.releaseSlow()
 	step("toast-visible", chromedp.WaitVisible(`[data-fui-toast-id]`, chromedp.ByQuery),
+		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Text(`.ui-notification__title`, &toastTitle, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-toast-id]').length`, &failToasts),
 		chromedp.Evaluate(`document.querySelectorAll('[data-fui-widget="dlg"]').length`, &dlgNodes))
 
 	if okMark != "ctx=okctx|user=alice" {
 		t.Errorf("healthy open mark = %q, want ctx=okctx|user=alice", okMark)
+	}
+	if failToasts != 1 {
+		t.Errorf("two clicks on one failing fetch produced %d toast(s), want exactly 1: the request dedups on the cached promise, so the reporting must too", failToasts)
 	}
 	if happyToasts != 0 {
 		t.Errorf("successful ctx open produced %d toast(s) — the happy path must stay quiet", happyToasts)
