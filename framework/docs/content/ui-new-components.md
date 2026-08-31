@@ -113,7 +113,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **sitefooter**: `framework/ui.SiteFooter`, multi-column footer grid + bottom strip
 - **anchoredrail**: `framework/ui.AnchoredRail`, sticky in-page nav rail with scrollspy-tracked active state
 - **doclayout**: `framework/ui.DocLayout` / `DocPrevNext`, documentation page skeleton (nav rail + article + prev/next pager)
-- **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel)
+- **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel); `StateAttrs` adds `data-state=active/inactive` to the buttons, `ID` wires `aria-controls`/`id` pairs, `VacateHidden` ships hidden panels empty with their content in a JSON stash (restored on show by the demand-loaded `tabs` module) so page-scoped test locators cannot match hidden text — the contract knobs a port needs, each off by default
 - **breadcrumbs**: `core-ui/patterns/breadcrumbs`, `<nav aria-label=Breadcrumb>` trail
 - **pagination**: `core-ui/patterns/pagination`, numeric page navigation
 - **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), off-canvas, and auto-hide variants; `Collapse` moves the collapsed state to the server, `GroupMarkup` swaps `<details>` groups for `button[aria-expanded][aria-controls]` + `hidden` container, `CollapseLabel`/`ExpandLabel` rename the toggle (see [Sidebar: server-owned collapse state](#sidebar-server-owned-collapse-state)); set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
