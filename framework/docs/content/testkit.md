@@ -136,6 +136,46 @@ Returns an error for libpq key-value DSNs, non-postgres schemes, or
 unparseable inputs: by design, to prevent the carved connection from
 accidentally pointing at the admin database on parse failure.
 
+## `registry.IsolateForTest`
+
+The component style registry (`core-ui/registry`) is **process-global**. A test
+that asserts on what it contains — which stylesheets a page links, the exact
+names in a bundle — is asserting about every package linked into that test
+binary, not just the component under test.
+
+That bites in a specific way: `framework/ui`'s package `init` registers
+`ui-button`, `ui-page-header`, and `ui-sidebar` as `LoadAlways`. So merely
+importing `framework/ui` anywhere in a package changes the eager set every test
+in it sees, and a registry assertion two files away turns red with nothing in
+its own file changed.
+
+`IsolateForTest` swaps the registry for a fresh one and restores the previous
+contents when the test finishes:
+
+```go
+func TestComponentEmitsItsOwnLink(t *testing.T) {
+    registry.IsolateForTest(t)
+
+    st := registry.RegisterStyle("my-component", myCSS)
+    // ... assert on what the host emits for st, with nothing else registered
+}
+```
+
+Two properties worth knowing:
+
+- **Registrations made during isolation are dropped on restore.** They cannot
+  leak into a later test. Without isolation they accumulate for the whole
+  package run.
+- **Restore runs through `t.Cleanup`**, so it also runs on `t.Fatal` and on a
+  panic.
+
+**Sequential tests only, and misuse is silent.** With `t.Parallel()`, a sibling
+test's registrations land in the isolated test's throwaway map, and the restore
+destroys them — neither test fails, the sibling just quietly loses its styles.
+Nothing structural can prevent that without `core-ui/registry` importing
+`testing`, so this is a constraint you have to keep, not one the compiler keeps
+for you.
+
 ## Common mistakes
 
 - **Using the libpq key-value form for `adminDSN`.**

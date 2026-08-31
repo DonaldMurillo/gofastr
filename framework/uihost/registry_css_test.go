@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -87,6 +88,12 @@ func TestCSSLoadOrder_AppCSSWinsOverComponentCSS(t *testing.T) {
 }
 
 func TestComponentCSS_SingleComponentEmitsDirectLink(t *testing.T) {
+	// Any package linked into this test binary that registers styles at
+	// init changes the eager set this assertion sees. framework/ui does
+	// exactly that, so importing it anywhere in the package used to turn
+	// these red (#331). Assert against a known registry instead of the
+	// process-wide one.
+	registry.IsolateForTest(t)
 	st := registerTestStyle(t, "single")
 	ds := newTestUIHostFor(st)
 	body := pageBody(t, ds, "/")
@@ -100,6 +107,11 @@ func TestComponentCSS_SingleComponentEmitsDirectLink(t *testing.T) {
 }
 
 func TestComponentCSS_MultipleComponentsBundleLink(t *testing.T) {
+	// Isolated for the same reason, and it strengthens this one: the
+	// exact-names assertion survives pollution today only by sort luck,
+	// since bundle-* happens to sort before ui-*. Any eager style sorting
+	// earlier would break it.
+	registry.IsolateForTest(t)
 	a := registerTestStyle(t, "bundle-a")
 	b := registerTestStyle(t, "bundle-b")
 	ds := newTestUIHostForMany(a, b)
@@ -118,7 +130,51 @@ func TestComponentCSS_MultipleComponentsBundleLink(t *testing.T) {
 	}
 }
 
+// TestComponentCSS_MixedRenderedAutoAndEagerUnion covers the union the
+// other family tests never mix: a page that RENDERS a LoadAuto style
+// while LoadAlways entries exist — one of them also rendered, the exact
+// shape of every real framework/ui host (they render ui-button, which
+// is LoadAlways). componentCSSTags must union Scan(page) with
+// EagerNames() and dedupe the overlap: one bundle link naming all
+// three, each exactly once. This is the only test that can see both
+// failure modes: dropping eager when something rendered (LoadAlways
+// sheets silently vanish from every component page) and skipping the
+// dedup (a rendered+eager name ships twice in ?names=).
+func TestComponentCSS_MixedRenderedAutoAndEagerUnion(t *testing.T) {
+	registry.IsolateForTest(t)
+	auto := registerTestStyle(t, "mix-auto")                                                  // LoadAuto (default), rendered
+	eagerOnly := registerTestStyle(t, "mix-always", registry.WithLoad(registry.LoadAlways))   // never rendered
+	eagerRendered := registerTestStyle(t, "mix-both", registry.WithLoad(registry.LoadAlways)) // rendered + eager: the overlap
+	ds := newTestUIHostForMany(auto, eagerRendered)
+	body := pageBody(t, ds, "/")
+
+	links := regexp.MustCompile(`comp-bundle\.css\?names=([^&"]+)`).FindAllStringSubmatch(body, -1)
+	if len(links) != 1 {
+		t.Fatalf("want exactly 1 bundle link, got %d:\n%s", len(links), truncate(body, 800))
+	}
+	names := strings.Split(links[0][1], ",")
+	counts := make(map[string]int, len(names))
+	for _, n := range names {
+		counts[n]++
+	}
+	for _, n := range []string{auto.Name(), eagerOnly.Name(), eagerRendered.Name()} {
+		if counts[n] != 1 {
+			t.Errorf("bundle must list %q exactly once, got %d (names=%v)", n, counts[n], names)
+		}
+	}
+	if len(names) != 3 {
+		t.Errorf("bundle must name exactly 3 components, got %d: %v", len(names), names)
+	}
+	// The union must not fall back to per-component links on a multi-name page.
+	for _, n := range []string{auto.Name(), eagerOnly.Name(), eagerRendered.Name()} {
+		if strings.Contains(body, `href="/__gofastr/comp/`+n+`.css`) {
+			t.Errorf("multi-component page must bundle, but %q also has a direct link:\n%s", n, truncate(body, 800))
+		}
+	}
+}
+
 func TestComponentCSS_EagerLinkEvenWithoutRender(t *testing.T) {
+	registry.IsolateForTest(t)
 	// Register an entry the page does NOT render, but mark LoadAlways.
 	// The SSR host must still emit its <link>.
 	st := registerTestStyle(t, "always", registry.WithLoad(registry.LoadAlways))

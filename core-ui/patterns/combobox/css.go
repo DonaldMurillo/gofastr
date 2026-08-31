@@ -55,6 +55,15 @@ func styleFn(_ style.Theme) string {
   z-index: 50;
 }
 [data-fui-comp="combobox"] .combobox__listbox[hidden] { display: none; }
+[data-fui-comp="combobox"] .combobox__listbox [role="option"][hidden] {
+  /* Author origin beats the UA's [hidden]{display:none} regardless of
+     specificity, so the option rules below (display:block, and
+     display:flex under pointer:coarse) would override the attribute and
+     static-option filtering would paint every row (#337). This guard
+     must out-specify BOTH option rules: this selector carries an extra
+     [hidden] attribute (0,4,0) over their (0,3,0). */
+  display: none;
+}
 [data-fui-comp="combobox"] .combobox__listbox [role="option"] {
   display: block;
   padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);

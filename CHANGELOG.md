@@ -28,6 +28,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Core runtime bytes are unchanged; the menu module grew 516 gzipped bytes and
   disclosure 51, both inside their budgets.
 
+- **`registry.IsolateForTest(t)`** swaps the process-global style registry for
+  a fresh one and restores it when the test finishes. Test-only seam for
+  asserting registry-shaped behaviour — the SSR host's single-direct-link vs
+  bundle `<link>` decision, exact bundle name sets — without assuming a clean
+  process: any package linked into a test binary that registers styles at init
+  (`framework/ui` registers `ui-button`, `ui-page-header`, and `ui-sidebar` as
+  `LoadAlways`) otherwise changes the eager set every test in that binary sees
+  (#331). Styles registered during isolation are dropped on restore, so they
+  cannot leak into later tests. No runtime behaviour change.
+
+
+
 - **`uihost.WithStrict` internal-link check** fails boot when the site chrome
   (each layout's header, sidebar, footer) links to a path nothing serves. The
   check renders the chrome and resolves every internal `href` against the
@@ -129,7 +141,37 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   cache is capped at 32 entries per document (LRU, evicted entries
   refetch) so a row-per-dialog page cannot grow it without bound.
 
+- **Combobox static filtering now hides non-matching options** (#337): the
+  combobox stylesheet's `[role="option"] { display: block }` (re-set to
+  `display: flex` under `@media (pointer: coarse)`) is author-origin, which
+  beats the user agent's `[hidden] { display: none }` regardless of
+  specificity — so the runtime set `opt.hidden` correctly, the attribute had no
+  visual effect, and typing in a command palette left every row painted. An
+  explicit `[role="option"][hidden] { display: none }` guard restores filtering
+  on fine and coarse pointers. The chromium palette harness also named the
+  combobox sheet at `/__gofastr/combobox.css`, which 404s, so every palette
+  test had been running with no combobox CSS at all; the catalog now points at
+  `/__gofastr/comp/combobox.css` and the test refuses to run if that sheet
+  stops loading. The regression test counts painted rows via client rects,
+  never `hidden` attributes — an attribute-level assertion passes against the
+  broken behaviour, which is how this survived.
+
+- **`ui.CommandPalette` gained a visible close control and a bounded mobile
+  dialog** (#325): the palette rendered no dismiss control a touch user could
+  reach — the `Esc` hint chip is an instruction a phone cannot follow, and the
+  full-screen mobile sheet covers every backdrop pixel — and at
+  `max-width: 540px` the `100dvh` sheet grew past the viewport on long command
+  lists, clipping the input off the top. The footer now carries an icon-only
+  close button at every breakpoint (`data-fui-action="close"`, the same
+  declarative dismiss hook the section-menu drawer uses, with a 44px tap
+  floor), and the dialog is bounded to the viewport at every size with the
+  suggestion list scrolling inside the remaining space. Escape, backdrop
+  dismissal, the focus trap, and reopen behaviour are unchanged, now pinned by
+  chromedp tests at 390x844, 1280x800, and a 1280x240 short-viewport guard.
+
 ### Fixed
+
+
 - **Generated marketing chrome links and auth-gate redirects follow the
   blueprint's registered screens** (#312) (`gofastr generate`). The marketing
   header nav and footer shipped four literal hrefs (`/pricing`, `/about`,

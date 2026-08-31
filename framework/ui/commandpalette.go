@@ -191,6 +191,12 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	if title == "" {
 		title = i18nui.T(context.Background(), i18nui.KeyCommandPaletteTitle)
 	}
+	// closeLabel is resolved alongside title at CommandPalette() call
+	// time; same direct-construction fallback for slots built in tests.
+	closeLabel := s.closeLabel
+	if closeLabel == "" {
+		closeLabel = i18nui.T(context.Background(), i18nui.KeyCommandPaletteClose)
+	}
 
 	srTitle := html.Heading(html.HeadingConfig{
 		Level: 2, ID: titleID, Class: "ui-visually-hidden",
@@ -210,13 +216,37 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		Options:     s.options,
 	})
 
-	// Footer hints (visible row of useful shortcuts).
-	hints := html.Div(html.DivConfig{Class: "ui-cmd-palette__hints"},
+	// Visible close control (#325). data-fui-action="close" is the
+	// framework's declarative widget-dismiss hook (same wiring as the
+	// section-menu drawer): the widget runtime's own click handler
+	// dismisses the palette and restores focus to the trigger, so the
+	// button needs no bespoke JS. Rendered at every breakpoint, not
+	// just mobile: a control that appears only under a breakpoint is a
+	// discoverability inconsistency, and the Esc hint chip cannot be
+	// followed on a touch device. Icon-only: named via aria-label,
+	// the icon itself is decorative (aria-hidden) — the same
+	// convention as Banner dismiss and the section-menu drawer close.
+	closeBtn := render.Tag("button", map[string]string{
+		"class":           "ui-cmd-palette__close",
+		"type":            "button",
+		"data-fui-action": "close",
+		"aria-label":      closeLabel,
+	}, Icon("close", IconConfig{Class: "ui-cmd-palette__close-icon"}))
+
+	// Footer hints (visible row of useful shortcuts). aria-hidden moved
+	// from the footer onto the hints row: the hints stay decorative,
+	// but the footer now hosts the close button, which must remain in
+	// the accessibility tree and the focus order.
+	hints := html.Div(html.DivConfig{
+		Class:      "ui-cmd-palette__hints",
+		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+	},
 		hintChip("↑↓", s.navigateLabel),
 		hintChip("↵", s.selectLabel),
-		hintChip("Esc", s.closeLabel),
+		hintChip("Esc", closeLabel),
 	)
-	footer := html.Div(html.DivConfig{Class: "ui-cmd-palette__footer", ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
+	footer := html.Div(html.DivConfig{Class: "ui-cmd-palette__footer"},
+		closeBtn,
 		hints,
 	)
 
@@ -239,8 +269,16 @@ var commandPaletteStyle = registry.RegisterStyle("ui-cmd-palette", commandPalett
 
 func commandPaletteCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-cmd-palette"] {
-  display: block;
+  display: flex;
+  flex-direction: column;
   inline-size: min(36rem, 92vw);
+  /* Bound the dialog to the viewport (#325). The modal chrome centers
+     the panel in a fixed wrapper padded by --spacing-lg on all sides,
+     so the cap is the viewport minus both paddings. Without it a list
+     longer than the screen grows the centered panel past the top edge,
+     where clipped content is unreachable (no page scroll under a modal
+     scroll lock). */
+  max-block-size: calc(100dvh - 2 * var(--spacing-lg, 16px));
   background: var(--color-surface, #fff);
   border-radius: var(--radii-md, 6px);
   box-shadow: 0 16px 48px rgba(0,0,0,0.18);
@@ -248,8 +286,14 @@ func commandPaletteCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox {
   max-inline-size: none;
+  /* Flex child of the palette column AND flex container for the form +
+     listbox. min-block-size: 0 lets it shrink below its content so the
+     listbox (not the whole dialog) absorbs long command lists. */
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
 }
-[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__form { padding: var(--spacing-md, 12px); border-bottom: 1px solid var(--color-border, #d0d0d8); }
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__form { padding: var(--spacing-md, 12px); border-bottom: 1px solid var(--color-border, #d0d0d8); flex: 0 0 auto; }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__input {
   font-size: var(--text-base, 1.05rem);
   border: none;
@@ -268,13 +312,49 @@ func commandPaletteCSS(_ style.Theme) string {
   border-radius: 0;
   box-shadow: none;
   max-block-size: min(50vh, 24rem);
+  /* The only scrolling region: takes whatever space the bounded dialog
+     has left. overflow-y: auto does double duty — it scrolls AND, per
+     flexbox §4.5, zeroes the item's automatic minimum size, so the
+     list shrinks into the remaining space instead of pushing the form
+     or footer out of the dialog. (The combobox wrapper above needs its
+     explicit min-block-size: 0 because its overflow is visible.) */
+  flex: 1 1 auto;
+  overflow-y: auto;
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__footer {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md, 12px);
   padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
   border-top: 1px solid var(--color-border, #d0d0d8);
   background: var(--color-muted, #f7f7f8);
+  flex: 0 0 auto;
+}
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* WCAG 2.5.5 — the dismiss X needs the 44px tap floor; negative
+     block margins cancel the footer's --spacing-sm padding so the
+     visual footer stays one row tall (same trick as Banner dismiss). */
+  min-block-size: var(--spacing-touch-target, 44px);
+  min-inline-size: var(--spacing-touch-target, 44px);
+  margin-block: calc(-1 * var(--spacing-sm, 8px));
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  border-radius: var(--radii-sm, 4px);
+}
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__close:hover {
+  background: var(--color-surface-soft, #f4f4f5);
+  color: var(--color-text, #18181b);
+}
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__close:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__hints {
   display: inline-flex;
@@ -297,7 +377,12 @@ func commandPaletteCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.7rem);
 }
 @media (max-width: 540px) {
-  [data-fui-comp="ui-cmd-palette"] { inline-size: 100vw; min-block-size: 100dvh; border-radius: 0; }
+  /* Full-screen sheet, bounded to exactly the dynamic viewport: the
+     wrapper's --spacing-lg padding is cancelled by centering overflow
+     (the 100vw/100dvh panel spans the padding box edge to edge), and
+     the listbox cap is dropped because the palette cap now governs —
+     the list takes every remaining pixel and scrolls inside. */
+  [data-fui-comp="ui-cmd-palette"] { inline-size: 100vw; block-size: 100dvh; min-block-size: 100dvh; max-block-size: 100dvh; border-radius: 0; }
   [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__listbox { max-block-size: none; }
 }
 `
