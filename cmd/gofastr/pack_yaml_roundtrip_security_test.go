@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // The invariant, stated end-to-end rather than as a predicate: pack either
@@ -245,4 +247,78 @@ func cellMatches(m map[string]*coreyaml.Node, key, val string) error {
 		return fmt.Errorf("value came back %q, want %q", got, val)
 	}
 	return nil
+}
+
+// The value-side mirror of the key-side story above, in the one context where
+// a quote-bearing value fails SILENTLY: the flow list. needsQuote used to
+// treat a quote character as a first-character-only indicator, so an enum
+// value like 60' was emitted bare inside `values: [...]`. splitInline
+// (core/yaml) tracks quote state across the whole list, so the apostrophe
+// OPENED a quoted region that swallowed the separator: [60', 90'] re-parsed
+// as ONE member "60', 90'", and a lone [60'] failed to parse at all (#323).
+//
+// Values, unlike keys, CAN be quoted, so the fix quotes rather than refuses.
+// The oracle is the input list itself — stated here, not derived from
+// needsQuote, for the same reason as the key lists above.
+var mustRoundTripEnumValues = []string{
+	"60'",          // the lone foot mark: unterminated quote when bare
+	`90'`,          // a second quote-bearing member: the silent-merge pair
+	`8"`,           // inch mark
+	`5'11"`,        // both quote kinds in one value
+	"open,closed",  // bare comma is an item separator
+	`six'in," out`, // comma AND quotes together
+	"plain",        // boring neighbor keeps the list multi-member on one line
+}
+
+func TestPackEnumValuesRoundTripThroughFlowList(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{Name: "probe"},
+		Entities: []framework.EntityDeclaration{{
+			Name: "windows",
+			Fields: []framework.FieldDeclaration{{
+				Name:   "width",
+				Type:   "enum",
+				Values: mustRoundTripEnumValues,
+			}},
+		}},
+	}
+	yml, err := encodeBlueprintYAML(bp)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	// Pin the context: the silent merge needs two members on ONE line, which
+	// only the flow-list emission provides. If the writer ever moves enum
+	// values to one-item-per-line, this guard — and the hazard it pins —
+	// moves with it.
+	//
+	// Checking for "values: [" alone does NOT establish that: a flow list
+	// broken across lines contains it too, and the hazard needs a shared
+	// line to exist at all. So find the line and require it to close.
+	flowLine := ""
+	for _, line := range strings.Split(yml, "\n") {
+		if strings.Contains(line, "values: [") {
+			flowLine = line
+			break
+		}
+	}
+	if flowLine == "" || !strings.Contains(flowLine, "]") {
+		t.Errorf("enum values are not emitted as a single-line flow list; the merge hazard this test pins lives only there:\n%s", yml)
+	}
+	b, err := decodeBlueprintString(yml)
+	if err != nil {
+		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
+	}
+	if len(b.Entities) == 0 || len(b.Entities[0].Fields) == 0 {
+		t.Fatalf("entity or field vanished on re-parse.\n--- yaml ---\n%s", yml)
+	}
+	got := b.Entities[0].Fields[0].Values
+	if len(got) != len(mustRoundTripEnumValues) {
+		t.Fatalf("enum values came back as %d members, want %d — a quote swallowed the separator:\n%v\n--- yaml ---\n%s",
+			len(got), len(mustRoundTripEnumValues), got, yml)
+	}
+	for i, want := range mustRoundTripEnumValues {
+		if got[i] != want {
+			t.Errorf("enum value[%d] came back %q, want %q\n--- yaml ---\n%s", i, got[i], want, yml)
+		}
+	}
 }
