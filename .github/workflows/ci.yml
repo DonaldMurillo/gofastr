@@ -442,7 +442,15 @@ jobs:
             # files out and passes. Verified locally green before
             # landing: `go test -tags chromium ./framework/ui/
             # ./framework/pluginhost/` (~12s).
-            run: go test -count=1 -timeout=10m -tags chromium ./framework/ui/ ./framework/pluginhost/
+            # -p 1: both packages drive their own headless Chrome, and go
+            # test runs packages CONCURRENTLY by default. Launching two
+            # Chromes on one runner is the documented "chrome failed to
+            # start" contention this workflow already serializes elsewhere
+            # (see the header note on TestBlueprintCLIGeneratesEntireWorkingAppE2E).
+            # It bit here as "websocket url timeout reached" in
+            # TestCardFooterPinsToBottomInGrid on a PR that touched neither
+            # package.
+            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/
           - suite: ui-quality-evals
             # Its capture tests drive a real headless Chrome; kept out of
             # the deterministic -p 2 run for the same contention reason.
