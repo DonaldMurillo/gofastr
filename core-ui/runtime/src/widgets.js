@@ -134,7 +134,19 @@
       if (ks.length > 32) delete NS._chromeCache[ks[0]];
     }
     let html = '';
-    try { html = await NS._chromeCache[key]; } catch (_) {}
+    try { html = await NS._chromeCache[key]; } catch (err) {
+      // #339: by the time the fetch fails, the click's visible work is
+      // done — a ctx-carrying trigger dropped the SSR-inlined node above,
+      // and the node is NOT put back: its render is ctx-less, so
+      // restoring it would show chrome for an entity the trigger did not
+      // name (the #321 bug). Swallowing the error turned the click into a
+      // silent no-op. Tell the user, the way a dead form RPC does
+      // (src/rpc.js): _toastOrFallback (kernel) loads the toasts module
+      // on demand and degrades to the unstyled fallback, so the message
+      // appears even on a page with no toast stack.
+      console.error('[gofastr] widget chrome fetch failed', err);
+      NS._toastOrFallback?.({ variant: 'error', title: 'Could not open that panel.', ttl: 6000 });
+    }
     if (html) NS.mountWidget(cfg, html);
   };
 
