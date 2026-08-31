@@ -35,6 +35,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   supported way to attach attributes to a component — cannot reach it.
   Inert for everyone else.
 
+- **`ui.MenuItem.ID`** sets the rendered menu row's `id` attribute, so page JS,
+  test suites, and aria wiring elsewhere on the page can address one exact row
+  (a Help Mode toggle a script binds to, an Imports row a shortcut targets).
+  Uniqueness is caller-owned like any HTML id, an empty value emits no `id`
+  (output unchanged), separators ignore it, and `MenuItem.ExtraAttrs` still
+  drops `id` — the field is the single owner.
+
 ### Fixed
 
 - **Generated marketing chrome links and auth-gate redirects follow the
