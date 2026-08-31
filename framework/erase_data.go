@@ -3,6 +3,8 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -10,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -121,6 +124,16 @@ type eraseEntitySource struct {
 	name  string
 	table string
 	owner string
+	// fileCols are the table's schema.Image / schema.File columns, whose
+	// values are storage keys. The erase plane reads them before it
+	// deletes the rows so the objects can be removed too; see
+	// eraseStoredObjects.
+	fileCols []string
+	// variantCols are the sibling "<field>_variants" JSON columns the
+	// image pipeline writes renditions into (crud's applyDerivedColumns).
+	// Each holds an array of {storage_ref}, and every rendition is as much
+	// the user's file as the original.
+	variantCols []string
 }
 
 // EraseUserData is the right-to-be-forgotten primitive: it expunges every row
@@ -278,6 +291,8 @@ func (a *App) collectEraseEntitySources() []eraseEntitySource {
 	// (matching collectSources' lex-first naming).
 	tableOwner := map[string]string{}
 	tableName := map[string]string{}
+	tableFiles := map[string][]string{}
+	tableVariants := map[string][]string{}
 	for _, n := range names {
 		ent := merged[n]
 		if ent == nil || ent.Config.Scope == nil || ent.Config.Scope.OwnerField == "" {
@@ -287,6 +302,19 @@ func (a *App) collectEraseEntitySources() []eraseEntitySource {
 		if _, first := tableOwner[table]; !first {
 			tableOwner[table] = ent.Config.Scope.OwnerField
 			tableName[table] = n
+			declared := map[string]bool{}
+			for _, f := range ent.GetFields() {
+				declared[f.Name] = true
+			}
+			for _, f := range ent.GetFields() {
+				if f.Type != schema.Image && f.Type != schema.File {
+					continue
+				}
+				tableFiles[table] = append(tableFiles[table], f.Name)
+				if v := f.Name + "_variants"; declared[v] {
+					tableVariants[table] = append(tableVariants[table], v)
+				}
+			}
 		}
 	}
 	tables := make([]string, 0, len(tableOwner))
@@ -296,7 +324,10 @@ func (a *App) collectEraseEntitySources() []eraseEntitySource {
 	sort.Strings(tables)
 	tables = orderChildrenFirst(tables, merged, names)
 	for _, t := range tables {
-		out = append(out, eraseEntitySource{name: tableName[t], table: t, owner: tableOwner[t]})
+		out = append(out, eraseEntitySource{
+			name: tableName[t], table: t, owner: tableOwner[t],
+			fileCols: tableFiles[t], variantCols: tableVariants[t],
+		})
 	}
 	return out
 }
@@ -409,6 +440,17 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 		}
 	}
 
+	// Read the storage keys the doomed rows point at BEFORE deleting them:
+	// once the rows are gone there is nothing left that names the objects,
+	// and the erasure would report success while the user's avatar stayed
+	// downloadable at the documented /uploads route. Reading here also
+	// keeps it out of the transaction, which a single-connection pool
+	// (SQLite, or MaxOpenConns(1)) would deadlock on.
+	storedKeys, err := a.collectStoredObjectKeys(ctx, userID, ents)
+	if err != nil {
+		return report, err
+	}
+
 	tx, err := a.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return report, fmt.Errorf("framework: erase: begin tx: %w", err)
@@ -474,7 +516,124 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 		return report, fmt.Errorf("framework: erase: commit: %w", err)
 	}
 	committed = true
+
+	// Objects last: the rows are gone, so nothing points at these bytes any
+	// more. Doing it before the commit would delete a user's files and then
+	// leave the rows behind if the transaction rolled back, which is the
+	// worse of the two failures.
+	if err := a.eraseStoredObjects(ctx, storedKeys); err != nil {
+		return report, err
+	}
 	return report, nil
+}
+
+// collectStoredObjectKeys reads every storage key referenced by the rows
+// about to be erased: the schema.Image / schema.File columns themselves,
+// plus the storage_ref of each rendition in the sibling "<field>_variants"
+// JSON column. Returns nil when the app has no Storage configured, since
+// there is then nothing to delete and nothing to complain about.
+func (a *App) collectStoredObjectKeys(ctx context.Context, userID string, ents []eraseEntitySource) ([]string, error) {
+	if a.Storage == nil {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var keys []string
+	add := func(k string) {
+		k = strings.TrimSpace(k)
+		if k == "" || seen[k] {
+			return
+		}
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	for _, src := range ents {
+		cols := append(append([]string{}, src.fileCols...), src.variantCols...)
+		if len(cols) == 0 {
+			continue
+		}
+		safeTable, err := query.SafeIdent(src.table)
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase %q: %w", src.name, err)
+		}
+		safeOwner, err := query.SafeIdent(src.owner)
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase %q: %w", src.name, err)
+		}
+		quoted := make([]string, len(cols))
+		for i, c := range cols {
+			safeCol, err := query.SafeIdent(c)
+			if err != nil {
+				return nil, fmt.Errorf("framework: erase %q: %w", src.name, err)
+			}
+			quoted[i] = query.QuoteIdent(safeCol)
+		}
+		stmt := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
+			strings.Join(quoted, ", "), query.QuoteIdent(safeTable),
+			query.QuoteIdent(safeOwner))
+		rows, err := a.DB.QueryContext(ctx, stmt, userID)
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase %q: read file columns: %w", src.name, err)
+		}
+		vals := make([]sql.NullString, len(cols))
+		dest := make([]any, len(cols))
+		for i := range vals {
+			dest[i] = &vals[i]
+		}
+		for rows.Next() {
+			if err := rows.Scan(dest...); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("framework: erase %q: scan file columns: %w", src.name, err)
+			}
+			for i, col := range cols {
+				if !vals[i].Valid {
+					continue
+				}
+				if slices.Contains(src.variantCols, col) {
+					var variants []struct {
+						StorageRef string `json:"storage_ref"`
+					}
+					// A column that does not parse is not a rendition
+					// list; leaving it alone is better than guessing.
+					if json.Unmarshal([]byte(vals[i].String), &variants) == nil {
+						for _, v := range variants {
+							add(v.StorageRef)
+						}
+					}
+					continue
+				}
+				add(vals[i].String)
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase %q: read file columns: %w", src.name, err)
+		}
+	}
+	return keys, nil
+}
+
+// eraseStoredObjects deletes the collected objects from App.Storage. A key
+// that is already gone is not an error (erasure is idempotent, and a
+// half-finished earlier run is the normal way to get here). Anything else is
+// reported: the rows are committed at this point, so a silent failure would
+// leave the user's files reachable behind a report that says otherwise, and
+// the operator needs the key names to finish the job.
+func (a *App) eraseStoredObjects(ctx context.Context, keys []string) error {
+	if a.Storage == nil || len(keys) == 0 {
+		return nil
+	}
+	var failed []string
+	for _, k := range keys {
+		if err := a.Storage.Delete(ctx, k); err != nil && !errors.Is(err, os.ErrNotExist) {
+			failed = append(failed, fmt.Sprintf("%s (%v)", k, err))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("framework: erase: rows deleted but %d stored object(s) survive and remain reachable: %s",
+			len(failed), strings.Join(failed, "; "))
+	}
+	return nil
 }
 
 // eraseDryRun counts every row that WOULD be affected without writing. No

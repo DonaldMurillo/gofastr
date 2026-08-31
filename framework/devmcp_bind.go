@@ -88,5 +88,16 @@ func (a *App) guardDevMCPBind(addr string) {
 		return
 	}
 	a.mcpControl = false
+	// Clearing the flag is only half the withdrawal. InitPlugins is where
+	// the control tools actually register, and a host may call it ITSELF
+	// before Start (the documented pre-Start hook order) — at which point
+	// they are already in the MCP registry, already named by tools/list,
+	// and already reachable by tools/call. The flag then guards a
+	// registration that has been and gone. Remove the tools too.
+	if a.MCP != nil {
+		for _, name := range a.controlToolNames() {
+			a.MCP.UnregisterTool(name)
+		}
+	}
 	a.Logger().Warn(devMCPExposureWarning(addr), "addr", addr)
 }

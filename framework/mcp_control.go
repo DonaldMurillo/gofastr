@@ -68,13 +68,20 @@ func WithMCPGate(gate func(ctx context.Context) error) AppOption {
 	}
 }
 
-func (a *App) registerControlTools() error {
-	tools := []struct {
-		name        string
-		description string
-		schema      map[string]any
-		handler     func(ctx context.Context, params map[string]any) (any, error)
-	}{
+// controlToolSpec is one mutating control tool. The set is built in a
+// single place so guardDevMCPBind can withdraw exactly what
+// registerControlTools installed: two hand-maintained lists would drift,
+// and the failure mode of that drift is an exposed dev bind still serving
+// a tool nobody remembered to remove.
+type controlToolSpec struct {
+	name        string
+	description string
+	schema      map[string]any
+	handler     func(ctx context.Context, params map[string]any) (any, error)
+}
+
+func (a *App) controlToolSpecs() []controlToolSpec {
+	return []controlToolSpec{
 		{
 			name:        "app_module_enable",
 			description: "Enable a registered module on the running app. Persists through the module store and re-serves the module's routes/tools. Fails if a declared dependency is disabled. Use app_modules to list modules and their current state.",
@@ -100,6 +107,21 @@ func (a *App) registerControlTools() error {
 			handler: a.toolModuleDisable,
 		},
 	}
+}
+
+// controlToolNames returns the names registerControlTools installs, for
+// the bind guard to withdraw.
+func (a *App) controlToolNames() []string {
+	specs := a.controlToolSpecs()
+	out := make([]string, len(specs))
+	for i, t := range specs {
+		out[i] = t.name
+	}
+	return out
+}
+
+func (a *App) registerControlTools() error {
+	tools := a.controlToolSpecs()
 	gate := controlToolGate(a.mcpControlDevImplied)
 	for _, t := range tools {
 		var opts []mcp.ToolOption
