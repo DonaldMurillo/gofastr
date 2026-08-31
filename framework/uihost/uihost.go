@@ -2499,11 +2499,13 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 // routes (entity CRUD, custom endpoints) so the page handler only takes
 // requests that nothing else claimed.
 func (ds *UIHost) Mount(r *router.Router) {
-	// Stash the framework router BEFORE the strict checks: enforceStrict's
-	// internal-links check resolves chrome hrefs against every route the app
-	// registered ahead of Mount (entity CRUD, custom endpoints), the same
-	// table r.Routes() exposes. UIHost's own endpoints register below, after
-	// the checks, and are covered by the /__gofastr/ prefix exemption.
+	// Stash the framework router first: Mount's strict checks (and, at
+	// boot, the internal-link check in ValidateBoot) resolve against it.
+	// The link check deliberately does NOT run here — the table is still
+	// partial at Mount (batteries, plugins, and App.Start itself all
+	// register routes afterwards). App.Start calls ValidateBoot once the
+	// table is complete; a host mounted outside a framework.App never
+	// reaches that point and never gets the link check.
 	ds.coreRouter = r
 	ds.enforceStrict()
 	ds.AutoCompileActions()

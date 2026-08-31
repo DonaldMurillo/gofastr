@@ -67,6 +67,27 @@ func linkHost(t *testing.T, mkOpts func() []Option, chrome ...component.Componen
 	return New(a, opts...)
 }
 
+// bootCheckPanic mounts the host and then runs the boot-time link check
+// exactly as App.Start does (Mount first, ValidateBoot after the route
+// table is complete), recovering any panic message. The afterMount hook
+// registers routes between the two, the way batteries register during
+// App.Start's InitPlugins phase.
+func bootCheckPanic(t *testing.T, ds *UIHost, afterMount func(r *router.Router)) (msg string) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			msg = r.(string)
+		}
+	}()
+	r := router.New()
+	ds.Mount(r)
+	if afterMount != nil {
+		afterMount(r)
+	}
+	ds.ValidateBoot()
+	return ""
+}
+
 // The vacuity test: the check must fire on the real generator shape —
 // a ui.SiteFooter whose Legal column links /terms and /privacy while
 // no route, file, or endpoint serves either.
@@ -75,7 +96,7 @@ func TestStrictFlagsChromeLinkToUnregisteredPath(t *testing.T) {
 		footerLink{Label: "Terms", Href: "/terms"},
 		footerLink{Label: "Privacy", Href: "/privacy"},
 	))
-	msg := mountPanic(t, ds)
+	msg := bootCheckPanic(t, ds, nil)
 	if msg == "" {
 		t.Fatal("footer links to unregistered /terms and /privacy did not fail strict boot")
 	}
@@ -94,7 +115,7 @@ func TestStrictChromeLinkToRegisteredPathPasses(t *testing.T) {
 		footerLink{Label: "Terms", Href: "/terms"},
 	)))
 	ds := New(a, strictSiteOptions()...)
-	if msg := mountPanic(t, ds); msg != "" {
+	if msg := bootCheckPanic(t, ds, nil); msg != "" {
 		t.Fatalf("link to registered /terms flagged:\n%s", msg)
 	}
 }
@@ -112,7 +133,7 @@ func TestStrictChromeLinkExclusions(t *testing.T) {
 		{"protocol-relative", "//cdn.example.com/terms"},
 		{"pure fragment", "#top"},
 		{"query-only", "?tab=legal"},
-		{"host infra endpoint", "/__gofastr/pwa/offline"},
+		{"host infra endpoint", "/__gofastr/app.css"},
 		{"brace placeholder", "/docs/{slug}"},
 		{"colon placeholder", "/users/:id"},
 		{"wildcard placeholder", "/files/:path*"},
@@ -124,7 +145,7 @@ func TestStrictChromeLinkExclusions(t *testing.T) {
 			ds := linkHost(t, strictSiteOptions, chromeFooter(
 				footerLink{Label: "X", Href: tc.href},
 			))
-			if msg := mountPanic(t, ds); msg != "" {
+			if msg := bootCheckPanic(t, ds, nil); msg != "" {
 				t.Fatalf("excluded href %q flagged:\n%s", tc.href, msg)
 			}
 		})
@@ -144,7 +165,7 @@ func TestStrictChromeLinkStripsFragmentAndQueryBeforeResolving(t *testing.T) {
 		footerLink{Label: "Terms", Href: "/terms#privacy-policy"},
 		footerLink{Label: "Terms", Href: "/terms?lang=de"},
 	)))
-	if msg := mountPanic(t, New(a, strictSiteOptions()...)); msg != "" {
+	if msg := bootCheckPanic(t, New(a, strictSiteOptions()...), nil); msg != "" {
 		t.Fatalf("fragment/query-stripped path not resolved:\n%s", msg)
 	}
 }
@@ -158,7 +179,7 @@ func TestStrictChromeLinkResolvesDynamicRoute(t *testing.T) {
 	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
 		footerLink{Label: "Docs", Href: "/docs/install"},
 	)))
-	if msg := mountPanic(t, New(a, strictSiteOptions()...)); msg != "" {
+	if msg := bootCheckPanic(t, New(a, strictSiteOptions()...), nil); msg != "" {
 		t.Fatalf("concrete href into /docs/:slug flagged:\n%s", msg)
 	}
 }
@@ -172,7 +193,7 @@ func TestStrictChromeLinkToStaticFilePasses(t *testing.T) {
 		return append(strictSiteOptions(), WithStaticDir(dir))
 	}
 	ds := linkHost(t, opts, chromeFooter())
-	if msg := mountPanic(t, ds); msg != "" {
+	if msg := bootCheckPanic(t, ds, nil); msg != "" {
 		t.Fatalf("link to existing static file flagged:\n%s", msg)
 	}
 }
@@ -184,21 +205,37 @@ func TestStrictChromeLinkToCoreRouterGETRoutePasses(t *testing.T) {
 	ds := linkHost(t, strictSiteOptions, chromeFooter(
 		footerLink{Label: "Export", Href: "/export.csv"},
 	))
-	r := router.New()
-	r.GetFunc("/export.csv", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	var msg string
-	func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				msg = rec.(string)
-			}
-		}()
-		ds.Mount(r)
-	}()
-	if msg != "" {
+	if msg := bootCheckPanic(t, ds, func(r *router.Router) {
+		r.GetFunc("/export.csv", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+	}); msg != "" {
 		t.Fatalf("link to core-router GET route flagged:\n%s", msg)
+	}
+}
+
+func TestStrictChromeLinkToRouteRegisteredAfterMountPasses(t *testing.T) {
+	// A battery registers its routes during App.Start's InitPlugins,
+	// after the host's Mount; the check runs at boot, on the complete
+	// table, so the "Back office" sidebar entry is fine. The uihost-level
+	// pin of the order the framework-level test in framework/ drives
+	// through a real App.Start.
+	ds := linkHost(t, strictSiteOptions, chromeFooter(
+		footerLink{Label: "Back office", Href: "/admin"},
+	))
+	if msg := bootCheckPanic(t, ds, func(r *router.Router) {
+		r.GetFunc("/admin", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+	}); msg != "" {
+		t.Fatalf("link to battery-registered /admin flagged:\n%s", msg)
+	}
+	// The control: with nothing registered, the same link is a finding.
+	ds = linkHost(t, strictSiteOptions, chromeFooter(
+		footerLink{Label: "Back office", Href: "/admin"},
+	))
+	if msg := bootCheckPanic(t, ds, nil); !strings.Contains(msg, "/admin") {
+		t.Fatalf("unregistered /admin not flagged:\n%s", msg)
 	}
 }
 
@@ -215,14 +252,14 @@ func TestStrictChromeLinkToConfiguredArtifactsPass(t *testing.T) {
 		footerLink{Label: "Install", Href: "/manifest.webmanifest"},
 		footerLink{Label: "LLM index", Href: "/llms.txt"},
 	))
-	if msg := mountPanic(t, ds); msg != "" {
+	if msg := bootCheckPanic(t, ds, nil); msg != "" {
 		t.Fatalf("links to configured artifact endpoints flagged:\n%s", msg)
 	}
 }
 
 func TestStrictChromeLinkToUnconfiguredArtifactIsFlagged(t *testing.T) {
-	// The artifact exemption is config-gated: /sitemap.xml without
-	// WithSitemap is a genuinely dead link, not an exemption.
+	// Artifact endpoints are config-gated: /sitemap.xml without
+	// WithSitemap registers no route, so the link is genuinely dead.
 	ds := linkHost(t, func() []Option {
 		return []Option{
 			WithStrict(),
@@ -235,7 +272,7 @@ func TestStrictChromeLinkToUnconfiguredArtifactIsFlagged(t *testing.T) {
 	}, chromeFooter(
 		footerLink{Label: "Site map", Href: "/sitemap.xml"},
 	))
-	msg := mountPanic(t, ds)
+	msg := bootCheckPanic(t, ds, nil)
 	if !strings.Contains(msg, "/sitemap.xml") {
 		t.Fatalf("link to unconfigured /sitemap.xml not flagged:\n%s", msg)
 	}
@@ -256,7 +293,7 @@ func TestStrictInternalLinksRespectsLevel(t *testing.T) {
 
 	t.Run("warn logs and serves", func(t *testing.T) {
 		buf := captureLog(t)
-		if msg := mountPanic(t, newHost(StrictWarn)); msg != "" {
+		if msg := bootCheckPanic(t, newHost(StrictWarn), nil); msg != "" {
 			t.Fatalf("warn-level link check must serve, not panic:\n%s", msg)
 		}
 		if !strings.Contains(buf.String(), "/terms") || !strings.Contains(buf.String(), "check=internal-links") {
@@ -266,7 +303,7 @@ func TestStrictInternalLinksRespectsLevel(t *testing.T) {
 
 	t.Run("off is silent", func(t *testing.T) {
 		buf := captureLog(t)
-		if msg := mountPanic(t, newHost(StrictOff)); msg != "" {
+		if msg := bootCheckPanic(t, newHost(StrictOff), nil); msg != "" {
 			t.Fatalf("off-level link check must not panic:\n%s", msg)
 		}
 		if strings.Contains(buf.String(), "internal") {
@@ -287,13 +324,13 @@ func TestStrictInternalLinksRespectsExemptScreens(t *testing.T) {
 	with := linkHost(t, mkOpts([]string{"/machine/*"}), chromeFooter(
 		footerLink{Label: "Feed", Href: "/machine/feed"},
 	))
-	if msg := mountPanic(t, with); msg != "" {
+	if msg := bootCheckPanic(t, with, nil); msg != "" {
 		t.Fatalf("exempt target still flagged:\n%s", msg)
 	}
 	without := linkHost(t, mkOpts(nil), chromeFooter(
 		footerLink{Label: "Feed", Href: "/machine/feed"},
 	))
-	if msg := mountPanic(t, without); !strings.Contains(msg, "/machine/feed") {
+	if msg := bootCheckPanic(t, without, nil); !strings.Contains(msg, "/machine/feed") {
 		t.Fatalf("non-exempt broken link not flagged:\n%s", msg)
 	}
 }
@@ -312,7 +349,7 @@ func TestStrictChromeRenderFailureSkipsSlotAndWarns(t *testing.T) {
 		WithHeader(&panickingChrome{}).
 		WithFooter(chromeFooter(footerLink{Label: "Terms", Href: "/terms"})))
 	ds := New(a, strictSiteOptions()...)
-	msg := mountPanic(t, ds)
+	msg := bootCheckPanic(t, ds, nil)
 	// The panicking header is skipped with a warning, not a boot
 	// failure; the footer's finding still fails the boot.
 	if !strings.Contains(msg, "/terms") {
@@ -337,7 +374,7 @@ func TestStrictChecksContextAwareChrome(t *testing.T) {
 	a.Register("/", &describedScreen{}, nil)
 	a.SetDefaultLayout(app.NewLayout("marketing").WithHeader(ctxHeader()))
 	ds := New(a, strictSiteOptions()...)
-	msg := mountPanic(t, ds)
+	msg := bootCheckPanic(t, ds, nil)
 	if !strings.Contains(msg, "/dashboard") {
 		t.Fatalf("context-aware header link not checked:\n%s", msg)
 	}
@@ -351,7 +388,7 @@ func TestStrictChecksPerScreenLayoutChrome(t *testing.T) {
 	a.Register("/app", &describedScreen{}, app.NewLayout("app").
 		WithSidebar(app.NewStaticComponent(render.HTML(`<nav><a href="/admin/console">Console</a></nav>`))))
 	ds := New(a, strictSiteOptions()...)
-	msg := mountPanic(t, ds)
+	msg := bootCheckPanic(t, ds, nil)
 	if !strings.Contains(msg, "/admin/console") {
 		t.Fatalf("per-screen layout chrome not checked:\n%s", msg)
 	}
@@ -381,11 +418,190 @@ func TestInternalRoutePathClassification(t *testing.T) {
 		{href: "/report/<year>", ok: false},
 		{href: `/bad\path`, ok: false},
 		{href: "/time/10:30", want: "/time/10:30", ok: true}, // colon mid-segment is not a placeholder
+		// net/http routes on the decoded path; so must the check.
+		{href: "/docs/caf%C3%A9", want: "/docs/café", ok: true},
+		{href: "/a%2Fb", want: "/a/b", ok: true},       // decoded separator is a real path byte to the router
+		{href: "%2Fdocs", ok: false},                   // decoding does not make a relative reference absolute
+		{href: "/q%3Fmark", want: "/q?mark", ok: true}, // %3F is path data, not a query separator
+		{href: "/bad%zz", want: "/bad%zz", ok: true},   // malformed escape stays raw, judged downstream
+		{href: "/trailing%", want: "/trailing%", ok: true},
+		{href: `/enc%5Cslash`, ok: false}, // decoded backslash is still a backslash
 	} {
 		got, ok := internalRoutePath(tc.href)
 		if ok != tc.ok || got != tc.want {
 			t.Errorf("internalRoutePath(%q) = (%q, %v), want (%q, %v)", tc.href, got, ok, tc.want, tc.ok)
 		}
+	}
+}
+
+// The extractor must HTML-unescape attribute values: chrome markup
+// serializes "&" as "&amp;", and an href read verbatim would name a
+// path nobody serves. Pinned by mutation: dropping stdhtml.UnescapeString
+// fails this test.
+func TestExtractChromeHrefsUnescapesEntities(t *testing.T) {
+	html := `<footer><a href="/docs?a=1&amp;b=2">Query</a><a href="/legal&amp;terms">Path</a></footer>`
+	got := extractChromeHrefs(html)
+	want := []string{"/docs?a=1&b=2", "/legal&terms"}
+	if len(got) != len(want) {
+		t.Fatalf("extractChromeHrefs = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("extractChromeHrefs = %v, want %v (entity escaping must not survive extraction)", got, want)
+		}
+	}
+}
+
+// TestStrictChromeLinkEntityEscapedHrefResolves: a chrome href whose
+// "&" is entity-escaped ("/legal&amp;terms") must resolve against the
+// screen registered at "/legal&terms". Without the unescape in
+// extractChromeHrefs the raw href names an unserved path and the check
+// false-positives.
+func TestStrictChromeLinkEntityEscapedHrefResolves(t *testing.T) {
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	a.Register("/legal&terms", &describedScreen{}, nil)
+	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+		footerLink{Label: "Legal", Href: "/legal&amp;terms"},
+	)))
+	if msg := bootCheckPanic(t, New(a, strictSiteOptions()...), nil); msg != "" {
+		t.Fatalf("entity-escaped href to /legal&terms flagged:\n%s", msg)
+	}
+	// Control: with the screen gone the same href is a finding, so the
+	// pass above is the unescape working, not an exemption swallowing it.
+	a2 := app.NewApp("demo")
+	a2.Register("/", &describedScreen{}, nil)
+	a2.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+		footerLink{Label: "Legal", Href: "/legal&amp;terms"},
+	)))
+	if msg := bootCheckPanic(t, New(a2, strictSiteOptions()...), nil); !strings.Contains(msg, "/legal&terms") {
+		t.Fatalf("entity-escaped href with no screen behind it not flagged (findings report the unescaped href):\n%s", msg)
+	}
+}
+
+// TestStrictChromeLinkPercentEncodedNonASCIIResolves: net/http decodes
+// percent-escapes before routing, so GET /docs/caf%C3%A9 serves the
+// screen at /docs/café. The check must resolve the same way or it
+// flags every encoded non-ASCII screen.
+func TestStrictChromeLinkPercentEncodedNonASCIIResolves(t *testing.T) {
+	a := app.NewApp("demo")
+	a.Register("/", &describedScreen{}, nil)
+	a.Register("/docs/café", &describedScreen{}, nil)
+	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+		footerLink{Label: "Café docs", Href: "/docs/caf%C3%A9"},
+	)))
+	if msg := bootCheckPanic(t, New(a, strictSiteOptions()...), nil); msg != "" {
+		t.Fatalf("percent-encoded link to /docs/café flagged:\n%s", msg)
+	}
+}
+
+// TestStrictChromeLinkMalformedEscapeIsFlaggedNotCrash: a malformed
+// escape can never be served (the server 400s the browser's verbatim
+// request), so it is a finding — and must not panic the check itself.
+func TestStrictChromeLinkMalformedEscapeIsFlaggedNotCrash(t *testing.T) {
+	for _, href := range []string{"/bad%zz", "/trailing%"} {
+		ds := linkHost(t, strictSiteOptions, chromeFooter(
+			footerLink{Label: "Broken", Href: href},
+		))
+		msg := bootCheckPanic(t, ds, nil)
+		if !strings.Contains(msg, href) {
+			t.Fatalf("malformed escape %q not reported as a finding:\n%s", href, msg)
+		}
+	}
+}
+
+// TestStrictChromeLinkToUIHostEndpointsPass pins the five UIHost-owned
+// endpoints that register at the TAIL of Mount — after every strictly
+// documented surface — plus /llms.txt. Each row is one config shape;
+// enabled, its link must pass; disabled, the same link must be flagged
+// (config-gated, like /sitemap.xml without WithSitemap).
+func TestStrictChromeLinkToUIHostEndpointsPass(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		href    string
+		enabled func(t *testing.T) []Option
+	}{
+		{
+			name: "llm-pages index",
+			href: "/llm-pages.md",
+			enabled: func(t *testing.T) []Option {
+				return append(strictSiteOptions(), WithPublicLLMMD())
+			},
+		},
+		{
+			name: "llms-full corpus",
+			href: "/llms-full.txt",
+			enabled: func(t *testing.T) []Option {
+				return append(strictSiteOptions(),
+					WithAgentReady(AgentReadyConfig{Title: "Demo", Summary: "A demo app.", FullText: "# Full\n"}))
+			},
+		},
+		{
+			name: "agent card",
+			href: "/.well-known/agent-card.json",
+			enabled: func(t *testing.T) []Option {
+				return append(strictSiteOptions(), WithAgentCard(AgentCardConfig{Name: "Demo", Description: "d"}))
+			},
+		},
+		{
+			name: "legacy agent.json alias",
+			href: "/.well-known/agent.json",
+			enabled: func(t *testing.T) []Option {
+				return append(strictSiteOptions(), WithAgentCard(AgentCardConfig{Name: "Demo", Description: "d"}))
+			},
+		},
+		{
+			name: "jwks",
+			href: "/.well-known/jwks.json",
+			enabled: func(t *testing.T) []Option {
+				return append(strictSiteOptions(),
+					WithAgentReady(AgentReadyConfig{
+						BaseURL: "https://demo.example",
+						AgentCard: &AgentCardConfig{
+							Name: "Demo", Description: "d",
+							SigningKeys: []AgentCardSigningKey{{KeyID: "k1", Signer: fixedEd25519(t)}},
+						},
+					}))
+			},
+		},
+	} {
+		t.Run(tc.name+" enabled", func(t *testing.T) {
+			opts := tc.enabled(t)
+			ds := linkHost(t, func() []Option { return opts }, chromeFooter(
+				footerLink{Label: tc.name, Href: tc.href},
+			))
+			if msg := bootCheckPanic(t, ds, nil); msg != "" {
+				t.Fatalf("link to enabled %s flagged:\n%s", tc.href, msg)
+			}
+		})
+		t.Run(tc.name+" disabled", func(t *testing.T) {
+			// Same href, no enabling option: the route does not exist,
+			// so the link is dead and must be a finding. This is the
+			// control that keeps the enabled-pass honest.
+			ds := linkHost(t, strictSiteOptions, chromeFooter(
+				footerLink{Label: tc.name, Href: tc.href},
+			))
+			if msg := bootCheckPanic(t, ds, nil); !strings.Contains(msg, tc.href) {
+				t.Fatalf("link to unconfigured %s not flagged:\n%s", tc.href, msg)
+			}
+		})
+	}
+}
+
+// TestStrictChromeLinkUnderCatchAllRoutePassesUnverified pins the
+// documented gap, not a guarantee: a catch-all GET route claims every
+// path, so the check is satisfied without knowing whether the handler
+// really serves the href. Accepted, not verified — see strict-mode.md.
+func TestStrictChromeLinkUnderCatchAllRoutePassesUnverified(t *testing.T) {
+	ds := linkHost(t, strictSiteOptions, chromeFooter(
+		footerLink{Label: "Nowhere", Href: "/definitely/missing"},
+	))
+	if msg := bootCheckPanic(t, ds, func(r *router.Router) {
+		r.GetFunc("/{path...}", func(w http.ResponseWriter, _ *http.Request) {
+			http.NotFound(w, nil)
+		})
+	}); msg != "" {
+		t.Fatalf("link under catch-all flagged; the documented contract says it passes unverified:\n%s", msg)
 	}
 }
 

@@ -71,11 +71,13 @@ type StrictConfig struct {
 	// InternalLinks: every internal link in the site chrome (each
 	// layout's header, sidebar, footer) points at a path the app
 	// actually serves: a registered screen (dynamic routes included),
-	// a static file, a configured artifact endpoint (/sitemap.xml,
-	// /robots.txt, the PWA manifest, /llms.txt), or any GET route on
-	// the framework router. External URLs, anchors, query-only refs,
-	// and template placeholders are out of scope. ExemptScreens
-	// entries also exempt links whose target falls under them.
+	// a static file, or any GET route on the framework router, once
+	// the route table is complete at boot (App.Start → ValidateBoot).
+	// A catch-all GET route (/{path...}) satisfies the check for every
+	// path it claims, so links under one are accepted, not verified.
+	// External URLs, anchors, query-only refs, and template
+	// placeholders are out of scope. ExemptScreens entries also exempt
+	// links whose target falls under them.
 	InternalLinks StrictLevel
 	// AxeCoverage: every page route has a recorded axe scan in the
 	// .gofastr/axe-coverage.json manifest. Only evaluated under
@@ -161,10 +163,13 @@ func (c StrictConfig) exempt(route string) bool {
 	return false
 }
 
-// WithStrict turns missing launch hygiene into boot failures. At Mount
-// time the host validates the app's declared surface and panics with
-// every enforced finding at once (each with a fix hint) instead of
-// serving. The checks:
+// WithStrict turns missing launch hygiene into boot failures. The host
+// validates the app's declared surface and panics with every enforced
+// finding at once (each with a fix hint) instead of serving. Most
+// checks run at Mount; the internal-link check runs later, at boot
+// (see [UIHost.ValidateBoot]), because it needs the complete route
+// table, which batteries, plugins, and App.Start itself finish
+// registering only after Mount. The checks:
 //
 //   - every page screen declares a title, and a description unless it
 //     implements [ScreenSEO] (the documented zero-value opt-out: a
@@ -174,8 +179,10 @@ func (c StrictConfig) exempt(route string) bool {
 //     robots directives ([WithRobots]);
 //   - every internal link in the site chrome (each layout's header,
 //     sidebar, footer) points at a path the app serves: a registered
-//     screen (dynamic routes included), a static file, a configured
-//     artifact endpoint, or a GET route on the framework router;
+//     screen (dynamic routes included), a static file, or any GET
+//     route on the framework router once the table is complete. A
+//     catch-all GET route (/{path...}) satisfies the check for every
+//     path it claims, so links under one are accepted, not verified;
 //   - under `gofastr dev` only: every page route is covered by the
 //     axe-coverage manifest (.gofastr/axe-coverage.json) that
 //     framework/testkit/axetest scans record, i.e. every screen has an
@@ -213,24 +220,61 @@ type strictFinding struct {
 	msg   string
 }
 
-// enforceStrict runs the strict checks, warns the warn-level findings,
-// and panics with the enforced ones. Called from Mount, boot time,
-// before any traffic, so a strict app can never serve a surface that
-// fails its enforced checks. Panic (not error) is the framework's
+// enforceStrict runs the Mount-time strict checks — everything that
+// judges only the host's own configuration and the screens registered
+// before Mount — and panics with every enforced finding at once. Boot
+// time, before any traffic, so a strict app can never serve a surface
+// that fails its enforced checks. Panic (not error) is the framework's
 // contract for configuration it cannot honor, same as route conflicts
 // and fanout-without-secret.
+//
+// The internal-link check is NOT here: it resolves chrome hrefs against
+// the route table, which is still partial at Mount (batteries and
+// plugins register during App.Start, and Start itself registers more
+// after them). It runs in ValidateBoot instead, on the complete table.
 func (ds *UIHost) enforceStrict() {
 	if !ds.strict {
 		return
 	}
 	cfg := ds.strictConfig
-	findings := ds.strictScreenFindings(cfg)
+	var findings []strictFinding
+	findings = append(findings, ds.strictScreenFindings(cfg)...)
 	findings = append(findings, ds.strictSiteFindings()...)
-	findings = append(findings, ds.strictChromeLinkFindings(cfg)...)
 	if dev.Enabled() {
 		findings = append(findings, ds.strictAxeCoverageFindings(cfg)...)
 	}
+	ds.enforceFindings(findings)
+}
 
+// ValidateBoot runs the strict checks that need the app's COMPLETE route
+// table: the internal-link check, which resolves every chrome href
+// against everything the app will serve. At Mount that table is partial
+// — batteries and plugins register routes during App.Start's InitPlugins
+// phase, App.Start registers more after them (OpenAPI, /mcp, health,
+// well-knowns), and UIHost's own conditional endpoints register at the
+// tail of Mount — so a link check there flags working links (a sidebar
+// "Back office" → /admin panic-boots an app that serves it).
+//
+// App.Start calls this through framework.BootValidator after the last
+// route registration and before the listener binds: the latest point at
+// which a finding can still refuse to serve. A host mounted outside a
+// framework.App never reaches this point and never gets the link check;
+// nothing owns the "route table is complete" moment for such a host.
+// Panic contract matches every other strict check.
+func (ds *UIHost) ValidateBoot() {
+	if !ds.strict || ds.strictConfig.level(strictCheckInternalLinks) == StrictOff {
+		return
+	}
+	ds.enforceFindings(ds.strictChromeLinkFindings(ds.strictConfig))
+}
+
+// enforceFindings routes findings through their configured levels:
+// off-level findings are dropped, warn-level findings are logged, and
+// the enforced remainder panics together, each with its remedy. Shared
+// by the Mount-time checks and ValidateBoot so both have identical
+// warn/enforce semantics.
+func (ds *UIHost) enforceFindings(findings []strictFinding) {
+	cfg := ds.strictConfig
 	var enforced []string
 	for _, f := range findings {
 		switch cfg.level(f.check) {
@@ -429,10 +473,12 @@ func extractChromeHrefs(html string) []string {
 //
 //   - fragments and query-only references ("" or "?…" or "#…"): they
 //     target the current page;
-//   - anything not starting with "/": absolute URLs (https://…),
-//     scheme references (mailto:, tel:), and relative references
-//     (about, ./x), which resolve against a page the check has no
-//     knowledge of at boot;
+//   - anything not starting with "/" as written: absolute URLs
+//     (https://…), scheme references (mailto:, tel:), and relative
+//     references (about, ./x), which resolve against a page the check
+//     has no knowledge of at boot. Percent-decoding does not make
+//     "%2Fdocs" absolute — the browser resolves it as a relative
+//     reference — so the "/" prefix is judged on the raw text;
 //   - protocol-relative references (//host/…) and any backslash
 //     (urlsafe rejects both; sanitized chrome never carries them, and
 //     unsanitized chrome is a security finding, not a link-integrity
@@ -440,15 +486,31 @@ func extractChromeHrefs(html string) []string {
 //   - template placeholders: a segment starting with ":" (":id",
 //     ":path*") or any "{" / "<" — patterns to be filled in, not
 //     concrete references.
+//
+// Percent-escapes are decoded before matching: net/http routes on the
+// decoded path, so a href to "/docs/caf%C3%A9" must resolve against the
+// screen registered at "/docs/café" exactly as the request would. A
+// malformed escape ("%zz", a trailing "%") is left raw: no route can
+// serve it (the server answers 400 to the browser's verbatim request),
+// so it fails resolution and surfaces as a finding instead of crashing
+// the check.
 func internalRoutePath(href string) (string, bool) {
 	h := href
+	// Fragment and query split on the RAW text: those are the bytes the
+	// browser splits on, and "%3F" is path data, not a query separator.
 	if i := strings.IndexByte(h, '#'); i >= 0 {
 		h = h[:i]
 	}
 	if i := strings.IndexByte(h, '?'); i >= 0 {
 		h = h[:i]
 	}
-	if h == "" || !strings.HasPrefix(h, "/") || strings.HasPrefix(h, "//") || strings.Contains(h, `\`) {
+	if h == "" || !strings.HasPrefix(h, "/") {
+		return "", false
+	}
+	if d, err := url.PathUnescape(h); err == nil {
+		h = d
+	}
+	if strings.HasPrefix(h, "//") || strings.Contains(h, `\`) {
 		return "", false
 	}
 	for seg := range strings.SplitSeq(h, "/") {
@@ -462,44 +524,21 @@ func internalRoutePath(href string) (string, bool) {
 // chromeLinkResolves reports whether anything answers for path: a
 // registered screen (dynamic routes and trailing-slash canonicals
 // included, via the host's own resolution predicate), a static file,
-// the favicon shortcut, an artifact endpoint Mount will register from
-// host config, or any GET route the framework router had before Mount
-// (entity CRUD, custom endpoints). A link a user can click that 404s
-// is a finding; a link to a served JSON endpoint is not this check's
-// business.
+// the favicon shortcut, or any GET route on the framework router —
+// including UIHost's own endpoints and the battery/plugin/Start-time
+// routes, because ValidateBoot runs on the complete table. A link to a
+// served JSON or infra endpoint is not this check's business.
+//
+// One honest gap: a catch-all GET route (/{path...}) answers for every
+// path under it, so the check is vacuously satisfied there — a link it
+// covers is accepted without being verified. A catch-all MAY serve the
+// path, and probing the handler to find out would mean executing the
+// app at boot; guessing is worse than the gap.
 func (ds *UIHost) chromeLinkResolves(path string, probe *getProbe) bool {
-	if strings.HasPrefix(path, "/__gofastr/") {
-		// UIHost's own namespace, registered on the core router AFTER
-		// enforceStrict runs, so no table can be consulted for it.
-		return true
-	}
-	if ds.servesConfiguredArtifact(path) {
-		return true
-	}
 	if ds.resolvesStaticOrScreen(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: path}}) {
 		return true
 	}
 	return probe.serves(path)
-}
-
-// servesConfiguredArtifact reports whether path is one of the
-// framework-artifact endpoints Mount registers from host config —
-// after enforceStrict runs, so the route tables cannot be consulted
-// for them. Gated on the same config fields Mount gates on: a chrome
-// link to /sitemap.xml without WithSitemap is a genuinely dead link
-// and stays a finding.
-func (ds *UIHost) servesConfiguredArtifact(path string) bool {
-	switch path {
-	case "/sitemap.xml":
-		return ds.sitemapConfig != nil
-	case "/robots.txt":
-		return ds.robotsConfig != nil
-	case "/manifest.webmanifest", "/service-worker.js":
-		return ds.pwaConfig != nil
-	case "/llms.txt":
-		return ds.agentReady != nil && ds.agentReady.llms != nil
-	}
-	return ds.agentReady != nil && ds.agentReady.openAPI != "" && path == ds.agentReady.openAPI
 }
 
 // getProbe answers "does any registered route serve GET path" for the
