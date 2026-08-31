@@ -20,6 +20,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   links whose target falls under them. Tuned, like every strict check, through
   `StrictConfig.InternalLinks` (`enforce`/`warn`/`off`).
 
+- **`ui.Menu` disabled rows no longer emit a malformed attribute** (#327):
+  `aria-disabled` was concatenated straight onto `tabindex="-1"` with no
+  separating space, so a disabled row rendered
+  `tabindex="-1"aria-disabled="true"`. Browsers recover from it; strict
+  parsers and DOM-diffing tools need not.
+
 - **`Screen.NoSPA` and `data-fui-nav="off"`** exclude a destination from soft
   navigation, at two grains: `NoSPA` drops a route from the client route
   manifest so the runtime treats it as unknown and every link to it does a full
