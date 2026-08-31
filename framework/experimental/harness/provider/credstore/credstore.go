@@ -162,14 +162,23 @@ func (s *EncryptedFileStore) List() ([]Entry, error) {
 	return out, nil
 }
 
+// loadLocked reads and decrypts the store on first use.
+//
+// The loaded flag is set only on SUCCESS. It used to be set on entry,
+// which latched a failed load as a completed one: after a wrong-key
+// decrypt, the store held zero-valued data and believed it was current,
+// so Get answered "not found" instead of repeating the decrypt error --
+// and Put then re-encrypted that empty map under the wrong key and wrote
+// it over the file, destroying every credential the real key protected.
+// The failure has to stay a failure on every call.
 func (s *EncryptedFileStore) loadLocked() error {
 	if s.loaded {
 		return nil
 	}
-	s.loaded = true
 	raw, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		s.data = storeData{Entries: make(map[string]string)}
+		s.loaded = true
 		return nil
 	}
 	if err != nil {
@@ -181,14 +190,18 @@ func (s *EncryptedFileStore) loadLocked() error {
 	}
 	if len(plain) == 0 {
 		s.data = storeData{Entries: make(map[string]string)}
+		s.loaded = true
 		return nil
 	}
-	if err := json.Unmarshal(plain, &s.data); err != nil {
+	var data storeData
+	if err := json.Unmarshal(plain, &data); err != nil {
 		return fmt.Errorf("credstore: parse: %w", err)
 	}
-	if s.data.Entries == nil {
-		s.data.Entries = make(map[string]string)
+	if data.Entries == nil {
+		data.Entries = make(map[string]string)
 	}
+	s.data = data
+	s.loaded = true
 	return nil
 }
 

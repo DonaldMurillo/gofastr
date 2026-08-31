@@ -44,14 +44,43 @@ func CollectStream(
 		textBuf     strings.Builder
 		curTool     *control.ToolUse
 		curToolJSON strings.Builder
+		// sawTerminal records that the provider actually ended the turn
+		// (a KindStop; KindError returns from inside the loop). Without
+		// it, a channel that simply closed -- a dropped connection, a
+		// killed subprocess, a truncated SSE body -- returned the partial
+		// text with FinishReason "" and a nil error, which is exactly
+		// what a complete turn with no finish reason looks like. The
+		// caller then recorded a truncated assistant turn as finished.
+		sawTerminal bool
 	)
 	flushTool := func() {
 		if curTool != nil {
-			// Try to validate the accumulated JSON; if invalid,
-			// keep the raw bytes so the model can be told.
+			// Validate the accumulated JSON, and when it is not valid
+			// keep the raw bytes somewhere they can still be marshalled.
+			//
+			// The raw fragment cannot be stored as the Input directly.
+			// A truncated `{"path":"/et` is not JSON, so the moment it
+			// lands in History or a ToolCallStarted event, every later
+			// marshal of that value fails: the next provider request
+			// errors out and the session is stuck until history is
+			// trimmed by hand, and the persistence layer drops the
+			// tool-intent row instead of writing it. Wrapping the
+			// fragment in a valid object keeps the whole pipeline
+			// working AND keeps the bytes, which is what lets the model
+			// be told its call was cut off.
 			s := strings.TrimSpace(curToolJSON.String())
 			if s == "" {
 				s = "{}"
+			}
+			if !json.Valid([]byte(s)) {
+				wrapped, err := json.Marshal(map[string]string{truncatedInputKey: s})
+				if err != nil {
+					// A string always marshals; this cannot fail. Fall
+					// back to an empty object rather than storing bytes
+					// that break every downstream marshal.
+					wrapped = []byte("{}")
+				}
+				s = string(wrapped)
 			}
 			curTool.Input = json.RawMessage(s)
 			summary.ToolUses = append(summary.ToolUses, *curTool)
@@ -68,6 +97,9 @@ func CollectStream(
 			if !ok {
 				flushTool()
 				summary.Text = textBuf.String()
+				if !sawTerminal {
+					return summary, ErrStreamClosed
+				}
 				return summary, nil
 			}
 			switch ev.Kind {
@@ -103,6 +135,7 @@ func CollectStream(
 				}
 			case provider.KindStop:
 				summary.FinishReason = ev.FinishReason
+				sawTerminal = true
 			case provider.KindError:
 				_, _ = bus.Publish(control.Error{
 					Reason:  control.ReasonInvalidCommand,
@@ -122,6 +155,12 @@ func errOrEmpty(err error) string {
 	}
 	return err.Error()
 }
+
+// truncatedInputKey is the field a cut-off tool-call argument fragment is
+// preserved under. It is deliberately conspicuous: a tool receiving it
+// should refuse the call, and a model shown it can see its own arguments
+// were truncated rather than guessing from a silent empty object.
+const truncatedInputKey = "__gofastr_truncated_input"
 
 // ErrStreamClosed is returned by CollectStream when the provider
 // stream closed unexpectedly.

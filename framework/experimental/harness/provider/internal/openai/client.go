@@ -278,6 +278,13 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 	// argument deltas accumulate to the right call.
 	activeToolCalls := map[int]*control.ToolUse{}
 	emittedStarts := map[int]bool{}
+	// sawTerminal records that the stream actually ended: a [DONE]
+	// sentinel, a chunk carrying finish_reason, or a parse error. Without
+	// it a body that simply stopped -- a dropped connection, a proxy
+	// timeout, a truncated response -- closed the channel with nothing
+	// after the last text delta, and a truncated answer was
+	// indistinguishable from a finished one to every consumer.
+	sawTerminal := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -343,6 +350,7 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 					}
 				}
 				ch <- provider.StreamEvent{Kind: provider.KindStop, FinishReason: *c.FinishReason}
+				sawTerminal = true
 			}
 		}
 		if chunk.Usage != nil {
@@ -365,8 +373,17 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 	}
 	if err := scanner.Err(); err != nil {
 		ch <- provider.StreamEvent{Kind: provider.KindError, Err: err}
+		return
+	}
+	if !sawTerminal {
+		ch <- provider.StreamEvent{Kind: provider.KindError, Err: ErrStreamTruncated}
 	}
 }
+
+// ErrStreamTruncated is emitted when the SSE body ends without a [DONE]
+// sentinel or a finish_reason. The response is incomplete and must not be
+// recorded as a finished turn.
+var ErrStreamTruncated = errors.New("openai: stream ended without a terminal event")
 
 // ErrNoBody is returned when an HTTP response had no body to parse.
 var ErrNoBody = errors.New("openai: empty response body")
