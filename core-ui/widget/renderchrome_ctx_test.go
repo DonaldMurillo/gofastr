@@ -9,8 +9,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// chromeCtxKey is a test-only context key for a slot that reads the request.
-type chromeCtxKey struct{}
+// reqUserKey is a test-only context key standing in for the session
+// middleware's user value (distinct from the production chromeCtxKey).
+type reqUserKey struct{}
 
 // ctxAwareChromeSlot implements ContextComponent so RenderComponentCtx routes to
 // RenderCtx, the path a role-aware nav drawer or tenant-scoped chrome takes.
@@ -19,7 +20,7 @@ type ctxAwareChromeSlot struct {
 }
 
 func (ctxAwareChromeSlot) RenderCtx(ctx context.Context) render.HTML {
-	if v, ok := ctx.Value(chromeCtxKey{}).(string); ok {
+	if v, ok := ctx.Value(reqUserKey{}).(string); ok {
 		return render.HTML("ctxuser:" + v)
 	}
 	return render.HTML("ctxuser:anonymous")
@@ -35,7 +36,7 @@ func TestRenderChromeCtxThreadsRequestContext(t *testing.T) {
 		Slot("body", ctxAwareChromeSlot{}).
 		Build()
 
-	ctx := context.WithValue(context.Background(), chromeCtxKey{}, "alice")
+	ctx := context.WithValue(context.Background(), reqUserKey{}, "alice")
 	chrome := RenderChromeCtx(ctx, &def)
 	if !strings.Contains(chrome, "ctxuser:alice") {
 		t.Fatalf("SSR-inlined chrome must render the slot with the request context; got:\n%s", chrome)
