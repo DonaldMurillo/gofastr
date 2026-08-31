@@ -153,6 +153,18 @@ func TestTabsVacateHiddenShipsStashOnly(t *testing.T) {
 	if !strings.Contains(out, `data-fui-tabs-vacate="true"`) {
 		t.Errorf("wrapper must carry the vacate marker:\n%s", out)
 	}
+	// VacateHidden ALONE must arm the module loader. Without it the panels
+	// ship empty and nothing ever restores them: the stash is inert data and
+	// the tabs module is the only thing that reads it.
+	//
+	// Nothing covered this arm. TestTabsStateAttrsOnAndOff asserts the
+	// attribute only under StateAttrs, TestTabsContractKnobsCompose sets all
+	// three knobs at once, and the runtime e2e fixtures hand-write
+	// data-fui-prefetch="tabs" into their HTML — so none of them can observe
+	// the component failing to emit it.
+	if !strings.Contains(out, `data-fui-prefetch="tabs"`) {
+		t.Errorf("VacateHidden alone must arm data-fui-prefetch=\"tabs\"; without the module the vacated panels never come back:\n%s", out)
+	}
 	if !strings.Contains(out, `data-fui-tab-index="0" role="tabpanel">alpha-body<`) {
 		t.Errorf("active panel content must ship in the DOM:\n%s", out)
 	}
