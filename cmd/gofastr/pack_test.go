@@ -441,6 +441,26 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 	}
 }
 
+// KNOWN FRONTIER — what this guard still cannot see, measured, not guessed.
+//
+// The extension above reaches slice elements and one level of nested struct.
+// It does NOT reach structs nested inside a block's props. Deleting any of
+// these single emission lines from pack.go leaves the whole pack + kiln +
+// generator surface green today:
+//
+//	pwa.enabled
+//	p.eyebrow, p.title, p.subtitle          (block props)
+//	src.entity, src.agg, src.field          (props source)
+//	plan.name, plan.price, plan.period      (props pricing plan)
+//
+// None is a live bug: every one of those keys is emitted correctly right now.
+// What is missing is anything that would notice if it stopped — the #318
+// shape, two levels further down than #330 reached.
+//
+// This list exists because the previous extension was declared to close the
+// class and did not. If you extend the guard again, re-derive this list by
+// deleting emission lines rather than trusting it, and shrink it here.
+
 // constructOmissions names construct fields that deliberately do NOT reach
 // the serializer output, with the reason. An omission listed here is part
 // of the contract; an omission not listed here fails the guard above.
