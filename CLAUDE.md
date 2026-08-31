@@ -135,14 +135,21 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 - **Build canonical binaries**: `make build` (→ `dist/gofastr`, `dist/kiln`) or `make build-all` (also builds every example into `dist/examples/`). The `dist/` directory is the **only** sanctioned build output location and is gitignored.
 - **Test all packages**: `go test ./...`.
 - **Repo analyzers (type-aware invariants as vet checks)**: `make
-  analyze` builds `cmd/vettool` and runs it over the tree. Currently:
-  `mapwriter` — never range a map while writing output (iterate
-  `slices.Sorted(maps.Keys(m))`), so SSR/email/prompt bytes are
-  deterministic. Runs in the pre-commit hook and CI's vet step. New
-  invariants go in `internal/analyzers/` ONLY when they need type
-  information; pattern-shaped rules belong in the contracts pipeline
+  analyze` builds `cmd/vettool` and runs it over the tree; it also runs
+  in the pre-commit hook and CI's vet step. Registered: `mapwriter`
+  (never range a map while writing output — iterate
+  `slices.Sorted(maps.Keys(m))`, so SSR/email/prompt bytes are
+  deterministic), `unboundedbody`, `errleak`, `fieldtypeswitch`,
+  `reqparamlimit`, `discardmutator`, and the two `hygiene` passes. Each
+  analyzer's own doc comment carries the bug that produced it and the
+  postures it deliberately stays silent on. New invariants go in
+  `internal/analyzers/` ONLY when they need type information;
+  pattern-shaped rules belong in the contracts pipeline
   (`framework/contracts`, `gofastr verify`), which already owns bespoke
   CSS, hard navigation, bespoke EventSource, and inline style/script.
+  An analyzer package that is written but not registered must say why
+  in `cmd/vettool/main.go` — `TestEveryAnalyzerIsWiredOrExplained`
+  fails on one that is neither registered nor explained.
 - **Run the FULL repo suite (build + vet + test, no cache, generous timeout)**: `./scripts/test-all.sh`. Use this before/after large refactors: it covers the slow chromedp suite (`examples/site`) and `kiln/integration`. `RACE=1`, `SHORT=1`, and a trailing package path are all supported.
 - **Test the site end-to-end (chromedp)**: `go test ./examples/site/ -run TestE2E`.
 - **Clean build artifacts**: `make clean` (wipes `dist/`, `bin/`, `gen/`, `.gofastr/`).

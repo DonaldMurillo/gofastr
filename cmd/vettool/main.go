@@ -30,10 +30,12 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/go/analysis/passes/waitgroup"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardmutator"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/errleak"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fieldtypeswitch"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedbody"
 )
 
@@ -50,6 +52,31 @@ func main() {
 		// something regressed, not that the rule is noisy.
 		hygiene.EmptyErrBranchAnalyzer,
 		hygiene.ClientTimeoutAnalyzer,
+		reqparamlimit.Analyzer,
+		discardmutator.Analyzer,
+
+		// Written, fixture-tested, and deliberately NOT enabled here.
+		// Measured over ./... on 2026-08-31; the counts are the reason,
+		// and they are recorded so nobody re-derives them:
+		//
+		//   fmtformat — 4 findings, all false positives. The repo fixed
+		//   the encoded-pattern class at the CONSUMER (ui.DataTable and
+		//   core-ui/patterns/pagination substitute their %s/%d markers
+		//   with strings.Replace, never fmt, each with a comment saying
+		//   so), and the analyzer only recognizes producer-side postures
+		//   (%%-doubling at the join). Until it can see a literal-
+		//   substitution consumer, enabling it would mean four
+		//   suppressions on day one.
+		//
+		//   testgap — 40 findings, and two of them are on the analyzer
+		//   sources in this very directory: an enumeration whose arm
+		//   names appear only in prose scores as untested. It is a
+		//   test-quality heuristic, not an invariant, so it does not
+		//   belong on a blocking gate at that count.
+		//
+		// Both keep their fixture tests, which is what makes them worth
+		// keeping: the day either backlog is cleared, the analyzer is
+		// ready to register rather than rewrite.
 
 		// Stock x/tools passes outside the default `go vet` set. x/tools
 		// is already a direct dependency, so these cost no new module.
