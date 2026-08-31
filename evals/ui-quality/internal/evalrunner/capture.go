@@ -382,11 +382,13 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			// number goes stale the first time someone tunes the budget.
 			const captureBudget = 45 * time.Second
 			captureCtx, cancel := context.WithTimeout(tab, captureBudget)
-			// #342: this budget starts BEFORE the browser exists. chromedp
-			// launches Chrome lazily on the first action, and the first
-			// action here is the guard's fetch.Enable — so a slow launch is
-			// billed to a budget meant for the capture, and the deadline
-			// surfaces pointing at the guard rather than at startup.
+			// #342: on the FIRST shot this budget starts before the browser
+			// exists. chromedp launches Chrome lazily on the first action,
+			// and the first action here is the guard's fetch.Enable — so a
+			// slow launch is billed to a budget meant for the capture, and
+			// the deadline surfaces pointing at the guard rather than at
+			// startup. Later shots reuse that browser: a new tab inherits
+			// the running process, so their number is guard time only.
 			//
 			// On CI this fails at ~45.04s while a quiet local run is 3.3s
 			// and a CPU-saturated one is 7.5s, so the gap is far larger
@@ -407,8 +409,17 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			if guardErr != nil {
 				cancel()
 				closeTab()
-				issues = append(issues, fmt.Sprintf("%s %s: install network guard after %s of the %s budget (first chromedp call on a cold tab, so this includes the browser launch): %v",
-					page.Name, vp.ID, budgetUsed.Round(time.Millisecond), captureBudget, guardErr))
+				// Attribute honestly: only the first shot pays for the
+				// browser launch. Saying "includes the browser launch" on
+				// shot 5 would point the reader at a startup that happened
+				// four shots ago — the exact misattribution this diagnostic
+				// exists to remove.
+				launchNote := "browser already running, so this is guard time only"
+				if shotIndex == 1 {
+					launchNote = "first shot, so this includes the browser launch"
+				}
+				issues = append(issues, fmt.Sprintf("%s %s: install network guard after %s of the %s budget (%s): %v",
+					page.Name, vp.ID, budgetUsed.Round(time.Millisecond), captureBudget, launchNote, guardErr))
 				continue
 			}
 			emulationActions := []chromedp.Action{chromedp.EmulateReset()}
