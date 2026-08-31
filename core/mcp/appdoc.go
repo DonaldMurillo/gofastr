@@ -1,3 +1,14 @@
+// check-csp:ignore-file
+//
+// This file emits ONE inline <script>, in widgetDocumentTmpl, and it was
+// only ever passing the inline-script lint by accident: the checker
+// classified the first <script> tag in a literal and stopped, so the
+// preceding <script src="…"> masked it. See widgetDocumentTmpl's own
+// comment for why the rule's premise does not describe this surface --
+// an MCP App resource is a single self-contained HTML document delivered
+// over resources/read and rendered by the chat host in its own sandboxed
+// iframe, under a CSP the host assembles from AppConfig.CSP. There is no
+// second URL on our origin for the host to fetch author code from.
 package mcp
 
 import (
