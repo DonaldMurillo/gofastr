@@ -430,6 +430,19 @@ jobs:
             # two-core runner: bounded 30s attempts × up to 6 retries per
             # surface need a budget well past the local ~2m runtime.
             run: go test -count=1 -timeout=25m ./examples/meridian/
+          - suite: chromium-ui
+            # framework/ui + framework/pluginhost ship render guards
+            # behind `-tags chromium` (card footer pinning, image
+            # placeholder paint, srcset data-URI parsing, WASM tier
+            # instantiation). No other root-module step passes that
+            # tag — the nested chromepdf comment below is about a
+            # separate Go module and its tagged tests stay out of
+            # scope here — so before this shard those guards never ran
+            # in CI: a `go test` without the tag silently compiles the
+            # files out and passes. Verified locally green before
+            # landing: `go test -tags chromium ./framework/ui/
+            # ./framework/pluginhost/` (~12s).
+            run: go test -count=1 -timeout=10m -tags chromium ./framework/ui/ ./framework/pluginhost/
           - suite: ui-quality-evals
             # Its capture tests drive a real headless Chrome; kept out of
             # the deterministic -p 2 run for the same contention reason.

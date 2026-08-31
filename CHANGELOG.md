@@ -385,6 +385,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`data-fui-ctx` now reaches SSR-inlined chrome.** A widget declared
+  `Hidden().DeepLink(...)` *is* inlined when the request URL matches its deep
+  link, and the runtime hydrated that node without ever reading the trigger's
+  `ctx` — so a per-entity dialog opened from a ctx-carrying trigger rendered
+  chrome for the wrong entity, or a form posting to a placeholder action. That
+  is the shape `core-ui/ARCHITECTURE.md` prescribes for "edit/show entity
+  detail" and the one the framework's own gallery ships, so it was the
+  documented path that was broken, not an edge case. The runtime now drops a
+  ctx-less inlined node when a trigger carries `ctx` and falls through to the
+  `(name, ctx)`-keyed fetch; a ctx-free open still hydrates in place. Two
+  comments in `framework/uihost/uihost.go` and a paragraph in `widgets.md`
+  described the old, wrong behaviour and are corrected.
+
 - **Cross-test browser-cache contamination in the site e2e suite** (#278): the
   suite runs on one Chrome profile, so tabs are fresh but the HTTP cache is
   shared, and split runtime modules are served `immutable` with a year-long

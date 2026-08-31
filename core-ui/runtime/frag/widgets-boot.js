@@ -62,11 +62,11 @@
           // widget root.
           window.__gofastr._mountByName(item.cfg.name);
         }
-        // Open any widget whose deep link matches the current URL. Pure
-        // post-hydration, there's a single-frame window where the page
-        // paints without the modal. SSR pre-rendering is a future
-        // optimization; correctness (refresh / share / back-button) is
-        // already covered by this open-on-boot pass.
+        // Open any widget whose deep link matches the current URL. On
+        // a full page load the host has usually SSR-inlined that
+        // chrome (framework/uihost injectWidgetSSR) and _mountByName
+        // hydrates it here; this pass is what covers SPA navigations
+        // and popstate, where no fresh HTML arrives.
         window.__gofastr._syncDeepLinks();
 
         // Eager click delegator (installed at boot, see below) is

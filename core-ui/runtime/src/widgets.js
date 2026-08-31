@@ -78,8 +78,15 @@
     const cfg = entry.cfg;
     const existing = document.querySelector('[data-fui-widget="' + CSS.escape(name) + '"]');
     if (existing) {
-      NS.mountWidget(cfg, null, existing);
-      return;
+      // #321: SSR-inlined chrome is ctx-less by construction — the
+      // server inlines on a deep-link URL match, where no trigger
+      // exists to carry data-fui-ctx. Hydrating it for a ctx-carrying
+      // trigger would show chrome for the wrong entity. Drop the node
+      // and fall through to the (name, ctx)-keyed fetch below. It is
+      // hidden here (a visible one is mounted, which returned above),
+      // so removing it cannot flash.
+      if (ctx) existing.remove();
+      else { NS.mountWidget(cfg, null, existing); return; }
     }
     const path = cfg.chromePath || ('/core-ui/widget/' + name + '/chrome');
     // #321: key by (name, ctx) so triggers carrying different contexts

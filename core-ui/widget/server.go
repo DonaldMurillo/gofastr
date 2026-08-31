@@ -394,10 +394,13 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Render with the request context so context-aware slots (e.g. a
-	// role-aware nav drawer) see the signed-in user the session middleware
-	// placed on r, a hidden drawer is fetched here, not SSR-inlined, so this
-	// is the only point where it can be personalised. The trigger context
-	// rides the same context so a slot can vary per entity (#321).
+	// role-aware nav drawer) see the signed-in user the session
+	// middleware placed on r. A hidden drawer reaches this endpoint on
+	// every open except a deep-link arrival (where the host SSR-inlines
+	// a ctx-less chrome), so this is where it gets personalised; the
+	// runtime replaces the inlined node with this fetch whenever the
+	// trigger carries data-fui-ctx (#321). The trigger context rides
+	// the same context so a slot can vary per entity.
 	chrome := s.renderSkeletonCtx(WithChromeContext(r.Context(), triggerCtx))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
