@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strings"
 
@@ -102,9 +101,17 @@ type DataTableConfig struct {
 	// SortDir is the active sort direction (asc/desc).
 	SortDir SortDir
 
-	// SortHrefPattern is a Sprintf pattern with two %s placeholders
-	// for column key and direction, e.g. "?sort=%s&dir=%s". Required
-	// if any column is Sortable.
+	// SortHrefPattern is the sort href with two literal "%s" markers
+	// standing in for the column key and the direction, e.g.
+	// "?sort=%s&dir=%s". Required if any column is Sortable.
+	//
+	// The markers are substituted literally, NOT passed through fmt: the
+	// pattern routinely carries a query-string built from request values
+	// (url.Values.Encode() + "&sort=%s&dir=%s"), and Encode's own %XX
+	// triples read as fmt flag/width/verb sequences. A search for "a+b"
+	// encodes to "q=a%2Bb", and "?q=a%2Bb&sort=%s&dir=%s" through Sprintf
+	// yields "?q=a%!B(string=title)b&sort=…" — the column key consumed by
+	// the carry's own escape, both real verbs left unfilled.
 	SortHrefPattern string
 
 	// Pagination is an optional pagination.Config. When set, the
@@ -329,7 +336,9 @@ func renderHeader(ctx context.Context, col Column, activeKey string, activeDir S
 	}
 	thCfg.ExtraAttrs = thAttrs
 
-	href := fmt.Sprintf(pattern, url.QueryEscape(col.Key), url.QueryEscape(string(nextDir)))
+	// Literal substitution, never fmt: see [Config.SortHrefPattern].
+	href := strings.Replace(pattern, "%s", url.QueryEscape(col.Key), 1)
+	href = strings.Replace(href, "%s", url.QueryEscape(string(nextDir)), 1)
 	indicatorSpan := html.Span(html.TextConfig{
 		Class:      "ui-data-table__sort-indicator",
 		ExtraAttrs: html.Attrs{"aria-hidden": "true"},

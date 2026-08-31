@@ -675,7 +675,9 @@ func TestSortHrefCarryPatternFmtSafe(t *testing.T) {
 			if !strings.Contains(s, "dir=asc") {
 				t.Errorf("SECURITY: [fmt-carry] search %q: direction must land in its own dir= param, got: %s", tc.search, truncate(s, 300))
 			}
-			if !strings.Contains(s, "q="+enc) {
+			// enc is already "q=<value>"; prefixing another "q=" looked
+			// for "q=q=…", which no correct href can contain.
+			if !strings.Contains(s, enc) {
 				t.Errorf("SECURITY: [fmt-carry] search %q: carried value %q must round-trip untouched in the href, got: %s", tc.search, enc, truncate(s, 300))
 			}
 		})

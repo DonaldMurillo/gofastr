@@ -30,7 +30,9 @@ func TestCarryHrefPatternKeepsPageVerb(t *testing.T) {
 			if !strings.Contains(h, "p=2") {
 				t.Errorf("SECURITY: [fmt-carry] search %q: page-2 link must keep its p= param, got: %s", tc.search, h[:min(len(h), 400)])
 			}
-			if !strings.Contains(h, "q="+enc) {
+			// enc is already "q=<value>"; prefixing another "q=" looked for
+			// "q=q=…", which no correct href can contain.
+			if !strings.Contains(h, enc) {
 				t.Errorf("SECURITY: [fmt-carry] search %q: carried value %q must round-trip untouched in page hrefs, got: %s", tc.search, enc, h[:min(len(h), 400)])
 			}
 		})

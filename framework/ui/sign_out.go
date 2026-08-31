@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -37,7 +38,13 @@ type SignOutConfig struct {
 // logout is trivially triggerable by a stray <img> or prefetch. The button is
 // a real ui.Button, so it inherits the design system's styling.
 func SignOut(cfg SignOutConfig) render.HTML {
-	action := cfg.Action
+	// Scheme allow-list, same one ui.Form and ui.FilterToolbar apply to
+	// their actions. This tag is hand-rolled with render.Escape, which is
+	// HTML escaping and scheme-blind: "javascript:alert(1)" survived it
+	// intact and became the form's action. A rejected action degrades to
+	// the default endpoint rather than "#", which would submit the form
+	// back to the page it is on.
+	action := urlsafe.CleanAnchor(cfg.Action)
 	if action == "" {
 		action = "/auth/logout"
 	}

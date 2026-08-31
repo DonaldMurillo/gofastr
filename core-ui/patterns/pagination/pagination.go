@@ -11,6 +11,7 @@ package pagination
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -33,8 +34,17 @@ type Config struct {
 	// Current is the active page (1-indexed).
 	Current int
 
-	// HrefPattern is a Sprintf pattern with one %d placeholder for the
+	// HrefPattern is the page href with a literal "%d" standing in for the
 	// page number. Required.
+	//
+	// The "%d" is substituted literally, NOT passed through fmt: the
+	// pattern routinely carries a query-string built from request values
+	// (url.Values.Encode() + "&p=%d"), and Encode's own %XX triples read
+	// as fmt flag/width/verb sequences. "?q=caf%C3%A9&p=%d" run through
+	// Sprintf yields "?q=caf%!C(int=1)3%!A(MISSING)9&p=%!d(MISSING)" —
+	// every link corrupted, the page number consumed by the wrong verb,
+	// and nothing failing loudly because the literal "%d" the guard below
+	// looks for is still present.
 	HrefPattern string
 
 	// Window is the number of pages to show on each side of Current.
@@ -163,13 +173,13 @@ func pageItem(pattern string, page int, current bool) render.HTML {
 	if current {
 		return render.Tag("li", nil,
 			render.Tag("a", map[string]string{
-				"href":         fmt.Sprintf(pattern, page),
+				"href":         pageHref(pattern, page),
 				"aria-current": "page",
 			}, render.Text(fmt.Sprintf("%d", page))),
 		)
 	}
 	return render.Tag("li", nil,
-		render.Tag("a", map[string]string{"href": fmt.Sprintf(pattern, page)},
+		render.Tag("a", map[string]string{"href": pageHref(pattern, page)},
 			render.Text(fmt.Sprintf("%d", page))),
 	)
 }
@@ -183,7 +193,7 @@ func prevNextItem(label, kind, pattern string, page int, enabled bool) render.HT
 	}
 	return render.Tag("li", map[string]string{"class": cls},
 		render.Tag("a", map[string]string{
-			"href":       fmt.Sprintf(pattern, page),
+			"href":       pageHref(pattern, page),
 			"rel":        kind,
 			"aria-label": label,
 		}, render.Text(label)),
@@ -197,7 +207,7 @@ func prevNextItem(label, kind, pattern string, page int, enabled bool) render.HT
 // source of truth").
 func pageItemRPC(islandEndpoint, signal, hrefPattern string, page int, current bool) render.HTML {
 	rpcURL := islandEndpoint + relativeQuery(hrefPattern, page)
-	pushState := fmt.Sprintf(hrefPattern, page)
+	pushState := pageHref(hrefPattern, page)
 	attrs := map[string]string{
 		"type":                "button",
 		"data-fui-rpc":        rpcURL,
@@ -222,7 +232,7 @@ func prevNextItemRPC(islandEndpoint, signal, label, kind, hrefPattern string, pa
 		)
 	}
 	rpcURL := islandEndpoint + relativeQuery(hrefPattern, page)
-	pushState := fmt.Sprintf(hrefPattern, page)
+	pushState := pageHref(hrefPattern, page)
 	return render.Tag("li", map[string]string{"class": cls},
 		render.Tag("button", map[string]string{
 			"type":                "button",
@@ -241,7 +251,7 @@ func prevNextItemRPC(islandEndpoint, signal, label, kind, hrefPattern string, pa
 // IslandEndpoint + the existing href pattern. If the pattern has no
 // `?`, returns "?p=<page>" as a fallback.
 func relativeQuery(hrefPattern string, page int) string {
-	rendered := fmt.Sprintf(hrefPattern, page)
+	rendered := pageHref(hrefPattern, page)
 	if i := strings.Index(rendered, "?"); i >= 0 {
 		return rendered[i:]
 	}
@@ -347,3 +357,11 @@ const baseCSS = `
   cursor: default;
 }
 `
+
+// pageHref substitutes the page number for the pattern's literal "%d".
+// It is deliberately not fmt.Sprintf: see [Config.HrefPattern] for why a
+// query-string carry makes fmt the wrong tool here. Only the first "%d"
+// is replaced, matching the "one placeholder" contract.
+func pageHref(pattern string, page int) string {
+	return strings.Replace(pattern, "%d", strconv.Itoa(page), 1)
+}
