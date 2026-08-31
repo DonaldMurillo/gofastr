@@ -128,7 +128,7 @@ func countLines(f *os.File) (int, error) {
 		return 0, err
 	}
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), maxLineBytes)
 	n := 0
 	for scanner.Scan() {
 		if len(scanner.Bytes()) == 0 {
@@ -139,10 +139,29 @@ func countLines(f *os.File) (int, error) {
 	return n, scanner.Err()
 }
 
+// maxLineBytes bounds one journal line. The readers' bufio.Scanner is
+// capped here, so the writer must be too: a line past this is a line
+// nothing can ever read back.
+const maxLineBytes = 16 * 1024 * 1024
+
 func (j *JSONL) Append(e Entry) (int, error) {
 	buf, err := json.Marshal(e)
 	if err != nil {
 		return 0, fmt.Errorf("journal: marshal entry: %w", err)
+	}
+	// Refuse what the readers cannot scan. Every reader here caps its
+	// scanner at maxLineBytes, so a single oversized line bricks the
+	// journal durably: the next OpenJSONL dies in countLines, Replay
+	// fails in Read, and Undo/ResetSession fail inside TruncateAfter --
+	// all with "token too long", and recovery means hand-editing the
+	// file. One journaled payload is enough (a long chat message, a seed
+	// row, a page tree; the tool_call envelope journals the raw args a
+	// second time), and the tool API that produces them is
+	// unauthenticated. Failing the write is recoverable; failing every
+	// future read is not.
+	if len(buf)+1 > maxLineBytes {
+		return 0, fmt.Errorf("journal: entry is %d bytes, over the %d-byte line limit every reader enforces; nothing was written",
+			len(buf)+1, maxLineBytes)
 	}
 	buf = append(buf, '\n')
 
@@ -166,7 +185,7 @@ func (j *JSONL) Read() ([]Entry, error) {
 	}
 	defer j.file.Seek(0, io.SeekEnd) //nolint:errcheck
 	scanner := bufio.NewScanner(j.file)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), maxLineBytes)
 	var entries []Entry
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -207,7 +226,7 @@ func (j *JSONL) TruncateAfter(n int) error {
 		return fmt.Errorf("journal: open tmp: %w", err)
 	}
 	scanner := bufio.NewScanner(j.file)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), maxLineBytes)
 	written := 0
 	for scanner.Scan() {
 		line := scanner.Bytes()

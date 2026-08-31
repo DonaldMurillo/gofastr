@@ -382,7 +382,7 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 		return invalid("page.tree.kind must be set (e.g. \"div\"): the tree is the root element and nothing renders without a kind").
 			withHint(`minimal page: {"path":"/x","tree":{"kind":"div","children":[{"kind":"heading","props":{"level":1,"text":"Hello"}}]}}`)
 	}
-	if err := validatePageTree(args.Page.Tree); err != nil {
+	if err := world.ValidatePageTree(args.Page.Tree); err != nil {
 		return invalid("page tree: %v", err).withHint("compose layout with page_header, section, card, stack, cluster, grid, and other design-system kinds; do not supply class or style props")
 	}
 	if _, exists := t.live.Session().World.Pages[args.Page.Path]; exists {
@@ -445,7 +445,7 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 	if r := applyPageElementPatch(target, parent, idx, args.Patch); !r.OK {
 		return r
 	}
-	if err := validatePageTree(next.Tree); err != nil {
+	if err := world.ValidatePageTree(next.Tree); err != nil {
 		return invalid("page tree: %v", err).withHint("use a typed design-system node kind instead of app-local class/style props")
 	}
 	// Re-assign IDs in case the patch introduced fresh subtrees that
@@ -457,21 +457,6 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 		New:  next,
 		Prev: current,
 	})
-}
-
-func validatePageTree(n world.Node) error {
-	for key := range n.Props {
-		normalized := strings.ToLower(strings.TrimSpace(key))
-		if normalized == "class" || normalized == "style" || strings.HasPrefix(normalized, "on") {
-			return fmt.Errorf("node kind %q uses forbidden styling or handler prop %q", n.Kind, key)
-		}
-	}
-	for _, child := range n.Children {
-		if err := validatePageTree(child); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // applyPageElementPatch mutates target/parent in-place per the op.

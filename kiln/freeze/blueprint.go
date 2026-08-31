@@ -38,7 +38,7 @@ func validateGraduation(w *world.World) error {
 	}
 	for path, page := range w.Pages {
 		if page != nil {
-			if err := validateNodeGraduation(page.Tree); err != nil {
+			if err := world.ValidatePageTree(page.Tree); err != nil {
 				return fmt.Errorf("freeze: page %q: %w", path, err)
 			}
 		}
@@ -56,21 +56,6 @@ func validateGraduation(w *world.World) error {
 			if value != "" && !strings.HasPrefix(value, "/") {
 				return fmt.Errorf("freeze: app.pwa.%s must start with /", label)
 			}
-		}
-	}
-	return nil
-}
-
-func validateNodeGraduation(n world.Node) error {
-	for key := range n.Props {
-		normalized := strings.ToLower(strings.TrimSpace(key))
-		if normalized == "class" || normalized == "style" || strings.HasPrefix(normalized, "on") {
-			return fmt.Errorf("node kind %q uses forbidden app-local styling or handler prop %q; compose a design-system kind instead", n.Kind, key)
-		}
-	}
-	for _, child := range n.Children {
-		if err := validateNodeGraduation(child); err != nil {
-			return err
 		}
 	}
 	return nil

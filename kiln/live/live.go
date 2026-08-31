@@ -184,7 +184,28 @@ func (l *Live) Reload() error {
 // rebuild constructs a new framework.App from the current world. Caller
 // must hold l.mu. If the host wired a DB, AutoMigrate runs after Apply
 // so live entity edits propagate to the schema.
-func (l *Live) rebuild() error {
+func (l *Live) rebuild() (err error) {
+	// A world edit reaches net/http's pattern parser and framework
+	// App.Mount, and both PANIC on input they cannot register: a path
+	// with no leading slash, a malformed wildcard, a screen path that
+	// collides with an entity's CRUD mount, a dynamic route whose screen
+	// cannot take params. The tool API that produces these world edits is
+	// unauthenticated, and a panic here escaped Apply entirely: the
+	// rollback below never ran, the poison stayed in the in-memory world,
+	// and every later Apply re-panicked at the same registration until
+	// the process restarted. New() had the same problem on a journal
+	// already containing one, so restarting did not help either.
+	//
+	// A rebuild failure is exactly what Apply is structured to handle, so
+	// turn the panic into one. This does not paper over a bug in our own
+	// code: the recovered value is reported verbatim as the rebuild
+	// error, so a genuine nil-deref surfaces with its message and stack
+	// origin rather than being swallowed.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("rebuild panicked: %v", r)
+		}
+	}()
 	app := l.factory()
 	if err := kilnrender.Apply(app, l.sess.World); err != nil {
 		return err
