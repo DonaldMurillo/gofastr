@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
 )
 
 func runCommand(ctx context.Context, dir, logPath string, env []string, program string, args ...string) error {
@@ -46,29 +48,11 @@ func inheritedEnvironment(overrides ...string) []string {
 	return environmentWithOverrides(os.Environ(), overrides...)
 }
 
-var candidateEnvironmentAllowlist = map[string]bool{
-	"APPDATA": true, "CC": true, "CGO_ENABLED": true, "COMSPEC": true,
-	"CXX": true, "GOARCH": true, "GOCACHE": true,
-	"GOEXPERIMENT": true, "GOMODCACHE": true, "GOOS": true, "GOPATH": true,
-	"GOROOT": true, "HOME": true, "HOMEDRIVE": true, "HOMEPATH": true,
-	"LANG": true, "LANGUAGE": true, "LC_ALL": true, "LOCALAPPDATA": true,
-	"LOGNAME": true, "NUMBER_OF_PROCESSORS": true, "OS": true, "PATH": true,
-	"PATHEXT": true, "PKG_CONFIG_PATH": true, "PROCESSOR_ARCHITECTURE": true,
-	"PROCESSOR_IDENTIFIER": true, "PROGRAMDATA": true, "PROGRAMFILES": true,
-	"PROGRAMFILES(X86)": true, "PROGRAMW6432": true, "SHELL": true,
-	"SSL_CERT_DIR": true, "SSL_CERT_FILE": true, "SYSTEMDRIVE": true,
-	"SYSTEMROOT": true, "TEMP": true, "TMP": true, "TMPDIR": true,
-	"TZ": true, "USER": true, "USERPROFILE": true, "WINDIR": true,
-}
-
 func candidateEnvironment(home string, overrides ...string) []string {
-	var allowed []string
-	for _, entry := range os.Environ() {
-		name, _, ok := strings.Cut(entry, "=")
-		if ok && candidateEnvironmentAllowlist[strings.ToUpper(name)] {
-			allowed = append(allowed, entry)
-		}
-	}
+	// The allowlist lives in evals/internal/childenv so the
+	// backend-adoption runner uses the same one; it used to be here
+	// only, and that runner handed its candidate os.Environ() whole.
+	allowed := childenv.Allowlisted()
 	homeOverrides := []string{
 		"HOME=" + home,
 		"USERPROFILE=" + home,
