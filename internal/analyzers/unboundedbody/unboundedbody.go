@@ -47,12 +47,13 @@ var sinks = map[string]int{
 }
 
 func run(pass *analysis.Pass) (any, error) {
+	cappers := cappingHelpers(pass)
 	for _, f := range pass.Files {
 		filename := pass.Fset.Position(f.Pos()).Filename
 		if strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
-		if fileHasCap(f) {
+		if fileHasCap(f, cappers) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -100,11 +101,54 @@ func isInboundRequest(pass *analysis.Pass, expr ast.Expr) bool {
 		obj.Pkg() != nil && obj.Pkg().Path() == "net/http"
 }
 
-// fileHasCap reports whether this file establishes a body cap anywhere.
+// cappingHelpers collects the package's own functions that establish a body
+// cap, so a package that factors the wrap into a named helper
+// (`limitJSONBody(w, r)`) is read the same as one that inlines
+// http.MaxBytesReader. Without this the analyzer sees only the file it is
+// looking at, and factoring out the wrap — the tidier way to write it —
+// would fail the check.
+func cappingHelpers(pass *analysis.Pass) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || fn.Body == nil {
+				continue
+			}
+			if hasCapCall(fn.Body) {
+				out[fn.Name.Name] = true
+			}
+		}
+	}
+	return out
+}
+
+// fileHasCap reports whether this file establishes a body cap anywhere,
+// either directly or by calling one of the package's capping helpers.
 // Middleware that wraps a body lives beside its handlers by convention.
-func fileHasCap(f *ast.File) bool {
+func fileHasCap(f *ast.File, cappers map[string]bool) bool {
+	if hasCapCall(f) {
+		return true
+	}
 	found := false
 	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := call.Fun.(*ast.Ident); ok && cappers[id.Name] {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// hasCapCall reports whether n mentions one of the standard capping
+// constructors.
+func hasCapCall(n ast.Node) bool {
+	found := false
+	ast.Inspect(n, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true

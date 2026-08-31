@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -256,6 +257,60 @@ func TestAmbientTxRollbackWithholdsEvents(t *testing.T) {
 		t.Fatalf("SECURITY: [event-integrity] EntityCreated delivered on the live bus for a write the ambient transaction rolled back: %v. Property: no lifecycle event is published for a write that did not commit. Attack impact: SSE subscribers and On/Subscribe handlers observe a phantom row (full record payload) that never existed. Fix: commit-gate EmitEvent — when db.TxFromContext finds an uncommitted ambient tx, enqueue the emission on a post-commit callback queue drained by the tx owner instead of firing immediately.", ev.Data)
 	case <-time.After(time.Second):
 		// Fixed behaviour: nothing published for an uncommitted write.
+	}
+}
+
+// TestAmbientTxRollbackWithholdsUpdateEvents is the UPDATE arm of the same
+// property, and it is a distinct case: a rolled-back create leaves no row,
+// so row presence alone answers "did this land?", but a rolled-back update
+// leaves the row exactly as present as a committed one. Gating on presence
+// would publish an EntityUpdated carrying values the database never held.
+func TestAmbientTxRollbackWithholdsUpdateEvents(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	bus := event.NewEventBus()
+
+	// Seed a committed row OUTSIDE the ambient tx, so the update below has
+	// something that survives the rollback.
+	created, err := ch.CreateOne(context.Background(), map[string]any{"title": "original"})
+	if err != nil {
+		t.Fatalf("seed CreateOne: %v", err)
+	}
+	id := created[ch.convertKey(ch.PrimaryKey)]
+
+	// Subscribe only now, so the seed's own event is not in the channel.
+	ch.Events = bus
+	got := make(chan event.Event, 8)
+	cancel := bus.Subscribe(event.EntityUpdated, func(_ context.Context, ev event.Event) error {
+		got <- ev
+		return nil
+	})
+	defer cancel()
+
+	tx, err := dbc.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := db.WithTx(context.Background(), tx)
+	if _, err := ch.UpdateOne(ctx, fmt.Sprint(id), map[string]any{"title": "phantom-edit"}); err != nil {
+		t.Fatalf("UpdateOne: %v", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+
+	var title string
+	if err := dbc.QueryRow("SELECT title FROM notes WHERE id = ?", id).Scan(&title); err != nil {
+		t.Fatal(err)
+	}
+	if title != "original" {
+		t.Fatalf("rollback failed: title = %q, want %q", title, "original")
+	}
+
+	select {
+	case ev := <-got:
+		t.Fatalf("SECURITY: [event-integrity] EntityUpdated delivered for an edit the ambient transaction rolled back: %v. The row survives a rolled-back update, so its presence cannot be the gate; the emitted values must be matched against what the database actually holds.", ev.Data)
+	case <-time.After(time.Second):
+		// Fixed behaviour: nothing published for an uncommitted edit.
 	}
 }
 
