@@ -373,23 +373,23 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 			return fmt.Errorf("access: persist revoke tombstone %q→%q: %w", role, p, err)
 		}
 	}
-	// A local revoke must also narrow the captured code baseline. Otherwise
-	// the next peer-driven reconcile would merge the revoked grant back in.
-	s.fanoutMu.Lock()
-	base := s.baseline[role]
-	filtered := make([]Permission, 0, len(base))
-	for _, candidate := range base {
-		revoked := slices.Contains(perms, candidate)
-		if !revoked {
-			filtered = append(filtered, candidate)
-		}
-	}
-	if len(filtered) == 0 {
-		delete(s.baseline, role)
-	} else {
-		s.baseline[role] = filtered
-	}
-	s.fanoutMu.Unlock()
+	// The captured code baseline is deliberately NOT narrowed here. The
+	// tombstone above is shared state and every reload computes
+	// (baseline ∪ DB) − tombstones, so it already keeps a code-seeded grant
+	// revoked on this replica, on its peers, and on replicas that boot
+	// later. Narrowing the local baseline as well was redundant with that —
+	// and being per-replica, it was the one piece of revoke state peers
+	// could not see, which is how the replicas came apart:
+	//
+	//   A: Grant  → INSERT grant row, then DELETE tombstone
+	//   B: Revoke → DELETE grant row, then INSERT tombstone
+	//
+	// interleaved as G1, R1, R2, G2 leaves no grant row and no tombstone.
+	// From that shared state both replicas must reach the same verdict, and
+	// with a narrowed baseline on B only, they did not: A kept the code seed
+	// and answered true while B answered false, permanently, across every
+	// later reload. Leaving the baseline alone makes the shared rows the
+	// only input, so the last writer wins and both replicas agree.
 	// DB write succeeded, remove from the live policy DIRECTLY. A local
 	// revoke is authoritative and removes the permission from memory even if
 	// it was seeded in code (never in the DB), so an admin revoke takes

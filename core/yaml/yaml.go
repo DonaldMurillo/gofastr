@@ -167,7 +167,7 @@ func (p *parser) parseMap(indent int) (*Node, error) {
 			out.Map[key] = child
 			continue
 		}
-		node, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1)
+		node, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +212,7 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			if value == "" {
 				child.Map[strings.TrimSpace(key)] = &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: line.indent + 3}
 			} else {
-				scalar, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1)
+				scalar, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1, 0)
 				if err != nil {
 					return nil, err
 				}
@@ -228,7 +228,7 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			out.List = append(out.List, child)
 			continue
 		}
-		node, err := parseScalar(item, line.line, line.indent+3)
+		node, err := parseScalar(item, line.line, line.indent+3, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +241,18 @@ func flowMapError(line, column int) error {
 	return fmt.Errorf(`yaml:%d:%d: flow mapping "{ ... }" is not supported; use block style (one "key: value" per indented line)`, line, column)
 }
 
-func parseScalar(raw string, line, column int) (*Node, error) {
+// parseScalar decodes one scalar (or an inline list, which is a scalar
+// syntactically). depth is the inline-nesting level: parseScalar and
+// parseInlineList are mutually recursive on '[', and that recursion used to
+// consult nothing — p.depth guards indentation nesting only, so an inline
+// list nested a few thousand deep exhausted the goroutine stack and killed
+// the process before the Kind check that rejects nested inline lists ever
+// ran. `gofastr generate cli --from <URL>` hands remote YAML to Parse
+// verbatim, so the input is not local-file-only.
+func parseScalar(raw string, line, column, depth int) (*Node, error) {
+	if depth >= maxNestingDepth {
+		return nil, fmt.Errorf("yaml:%d:%d: nesting depth exceeds maximum of %d", line, column, maxNestingDepth)
+	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return &Node{Kind: Scalar, Value: "", Line: line, Column: column}, nil
@@ -253,7 +264,7 @@ func parseScalar(raw string, line, column int) (*Node, error) {
 		return nil, fmt.Errorf("yaml:%d:%d: anchors, aliases, and tags are not supported", line, column)
 	}
 	if strings.HasPrefix(raw, "[") {
-		values, err := parseInlineList(raw, line, column)
+		values, err := parseInlineList(raw, line, column, depth+1)
 		if err != nil {
 			return nil, err
 		}
@@ -286,7 +297,7 @@ func parseScalar(raw string, line, column int) (*Node, error) {
 	return &Node{Kind: Scalar, Value: raw, Line: line, Column: column}, nil
 }
 
-func parseInlineList(raw string, line, column int) ([]*Node, error) {
+func parseInlineList(raw string, line, column, depth int) ([]*Node, error) {
 	if !strings.HasSuffix(raw, "]") {
 		return nil, fmt.Errorf("yaml:%d:%d: unterminated inline list", line, column)
 	}
@@ -300,7 +311,7 @@ func parseInlineList(raw string, line, column int) ([]*Node, error) {
 	}
 	out := make([]*Node, 0, len(parts))
 	for _, part := range parts {
-		node, err := parseScalar(part, line, column)
+		node, err := parseScalar(part, line, column, depth)
 		if err != nil {
 			return nil, err
 		}

@@ -22,6 +22,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"sort"
@@ -286,7 +287,16 @@ func parseDuration(s string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return n * int64(1e9), nil
+	// The seconds-to-nanoseconds multiply overflows int64 past ~292 years,
+	// and it wrapped silently: a TTL of math.MaxInt64 bound as -1s, which
+	// every consumer reads as "already expired" or "no timeout", depending
+	// on which side of zero it checks. Refuse the value instead of binding
+	// a number nobody wrote.
+	const maxSeconds = math.MaxInt64 / int64(time.Second)
+	if n > maxSeconds || n < math.MinInt64/int64(time.Second) {
+		return 0, fmt.Errorf("duration %ss overflows int64 nanoseconds (max %d seconds)", s, maxSeconds)
+	}
+	return n * int64(time.Second), nil
 }
 
 // parseGoDuration delegates to time.ParseDuration so all of Go's
