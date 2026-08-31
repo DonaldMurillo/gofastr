@@ -43,9 +43,22 @@ func Parse(r io.Reader) (map[string]string, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024), 1<<20) // up to 1MB lines
 	lineNum := 0
+	// Expansion budget. ${VAR} references resolve against keys defined
+	// earlier in the same file, so each line can multiply the one before
+	// it: k references per line over n lines is k^n bytes of output from
+	// an input where every line is far under the scanner's 1 MiB cap.
+	// Twelve lines of three references is already half a megabyte from
+	// ~200 bytes; twenty lines is the OOM. Every app boot parses .env
+	// files from the process working directory, so this decides how long
+	// startup takes. A legitimate chain of references stays under 3x its
+	// input, and a literal value can never exceed the line that carries
+	// it, so 10x total is generous headroom that a bomb cannot fit in.
+	const expansionFactor = 10
+	consumed, expanded := 0, 0
 	for scanner.Scan() {
 		lineNum++
 		raw := scanner.Text()
+		consumed += len(raw) + 1
 		trimmed := strings.TrimSpace(raw)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
@@ -76,6 +89,11 @@ func Parse(r io.Reader) (map[string]string, error) {
 			return nil, fmt.Errorf("dotenv: line %d: %w", lineNum, err)
 		}
 		out[key] = val
+		expanded += len(val)
+		if expanded > expansionFactor*consumed {
+			return nil, fmt.Errorf("dotenv: line %d: ${...} expansion exceeded %dx the input size (%d bytes of values from %d bytes read); a reference chain is multiplying",
+				lineNum, expansionFactor, expanded, consumed)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("dotenv: scanner: %w", err)

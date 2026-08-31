@@ -251,7 +251,7 @@ func (r *Router) Patch(pattern string, handler http.Handler) {
 // filesystem path, an object-store key, or a map lookup; sinks still
 // own their own allow-listing.
 func Param(r *http.Request, name string) string {
-	return sanitizePathParam(r.PathValue(name), isCatchAll(r.Pattern, name))
+	return SanitizePathParam(r.PathValue(name), isCatchAll(r.Pattern, name))
 }
 
 // isCatchAll reports whether pattern declares name as a {name...}
@@ -297,14 +297,14 @@ func Params(r *http.Request) map[string]string {
 				i += end
 				continue
 			}
-			params[name] = sanitizePathParam(r.PathValue(name), catchAll)
+			params[name] = SanitizePathParam(r.PathValue(name), catchAll)
 			i += end
 		}
 	}
 	return params
 }
 
-// sanitizePathParam truncates s at the first byte a path parameter must
+// SanitizePathParam truncates s at the first byte a path parameter must
 // never carry. See [Param] for the full contract.
 //
 // catchAll relaxes the "/" rule only: a {name...} wildcard is defined
@@ -312,7 +312,11 @@ func Params(r *http.Request) map[string]string {
 // mux resolves "." and ".." out of the request path (redirecting when
 // it must), so a surviving ".." segment is always percent-encoded
 // smuggling, never a legitimate route match.
-func sanitizePathParam(s string, catchAll bool) string {
+//
+// Exported for readers that hold a name and a catch-all flag without a
+// *http.Request. Prefer [Param], which derives the flag from the route
+// pattern; core/handler's Bind uses it for exactly that reason.
+func SanitizePathParam(s string, catchAll bool) string {
 	for i := 0; i < len(s); i++ {
 		switch c := s[i]; {
 		case c == '\n' || c == '\r' || c == 0:
