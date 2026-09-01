@@ -27,6 +27,7 @@ import (
 
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
+	"github.com/DonaldMurillo/gofastr/core/a2a"
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/featureflag"
@@ -389,6 +390,17 @@ type App struct {
 	// Set via WithMCP(). Makes the server's tools reachable at the
 	// canonical endpoint for agent-readiness.
 	mcpAutoMount bool
+	// a2aCfg, when set via WithA2A, mounts the Agent2Agent task
+	// exchange during Start. Held until then because the derived entity
+	// skills read the MCP tool registry, complete only once entities,
+	// plugins, and batteries have initialized.
+	a2aCfg *A2AConfig
+	// a2a is the mounted exchange server; nil until Start mounts it
+	// (and forever when WithA2A was never called). See App.A2A().
+	a2a *a2a.Server
+	// a2aPath is the configured exchange path (default "/a2a"), read by
+	// agentMux so the agent role forwards it the way it forwards /mcp.
+	a2aPath string
 	// oauthResource, when set, serves /.well-known/oauth-protected-resource
 	// (RFC 9728) so OAuth-token-protected APIs are discoverable. Set via
 	// WithOAuthProtectedResource().
@@ -3074,6 +3086,14 @@ func (a *App) Start(addr string) error {
 				a.Logger().Warn("entity MCP tools are registered but /mcp is not mounted: they will be unreachable; add framework.WithMCP()")
 				break
 			}
+		}
+	}
+	// Agent2Agent task exchange (WithA2A). Mounted here, after every
+	// MCP tool is registered, because the derived entity skills are
+	// built from a.MCP.ListTools().
+	if a.a2aCfg != nil {
+		if err := a.mountA2A(); err != nil {
+			return abort(err)
 		}
 	}
 	if a.mcpAutoMount {

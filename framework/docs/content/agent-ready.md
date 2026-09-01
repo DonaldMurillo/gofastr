@@ -150,7 +150,7 @@ work), and a derived `mcp` skill points agents at it.
 | `Version` | Software version; defaults `1.0.0`. |
 | `URL` | Fallback for the `supportedInterfaces[].url` when `MCPEndpoint` is unset; defaults to the resolved base URL. |
 | `MCPEndpoint` | e.g. `"/mcp"`, advertised as `supportedInterfaces[].url` (baseURL + endpoint), plus a derived `mcp` skill + a `Link: rel="service"` header. |
-| `Skills` | Declared capabilities; one derived `mcp` skill when empty + `MCPEndpoint` set. `skills` is always emitted (possibly `[]`). |
+| `A2AEndpoint` | e.g. `"/a2a"`, advertised as `supportedInterfaces[].url` INSTEAD of the MCP endpoint, with `streaming` + `pushNotifications` forced true. Requires the exchange the path implies: `framework.WithA2A` (see [the A2A task exchange](a2a.md)). |
 | `Streaming`, `PushNotifications` | Capability flags (default false). |
 | `SecuritySchemes` | OpenAPI-style schemes under `securitySchemes`; omitted when nil. |
 | `DefaultInputModes`, `DefaultOutputModes` | MIME types; default `["text/plain"]`. |
@@ -625,6 +625,7 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 | `framework.WithAgentSkills(skills)` | `/.well-known/agent-skills/index.json`. |
 | `framework.WithOAuthAuthorizationServer(cfg)` | RFC 8414 AS metadata. |
 | `framework.WithUCP(cfg)` / `framework.WithACP(cfg)` | `/.well-known/ucp` / `/.well-known/acp.json`. |
+| `framework.WithA2A(cfg)` | Mount the A2A v1.0 task exchange at `/a2a` (default) with derived entity skills; see [the A2A task exchange](a2a.md). |
 
 ## Common mistakes
 
@@ -659,12 +660,13 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 
 ## What this deliberately does not do
 
-- **No full A2A task server.** The card advertises the JSON-RPC endpoint
-  (`/mcp`) in `supportedInterfaces` and is structurally conformant, but
-  GoFastr serves MCP tool calls (`tools/list`, `tools/call`), not the
-  A2A task lifecycle (`tasks/send`, streaming, push notifications). A
-  client connecting to the advertised endpoint completes `initialize`
-  and calls tools; it is not a multi-turn A2A task agent.
+- **The card alone is not a task server.** By default the card
+  advertises the MCP endpoint (`/mcp`) in `supportedInterfaces` and is
+  structurally conformant, but GoFastr serves MCP tool calls
+  (`tools/list`, `tools/call`), not the A2A task lifecycle. To serve
+  the actual exchange behind the card — SendMessage, tasks, streaming,
+  push — add `framework.WithA2A` and point the card's `A2AEndpoint` at
+  it; see [the A2A task exchange](a2a.md).
 - **No DNS-AID.** DNS TXT records for AI discovery are infra/DNS, not
   framework code. Add them at your registrar/host.
 - **Inbound Web Bot Auth verification is opt-in and experimental.**

@@ -162,6 +162,10 @@ func (a *App) workerHealthMux() http.Handler {
 // this listener. Refusing it here would 404 every widget exactly when
 // the agent role is the MCP endpoint. Same honesty rule: an app that
 // mounted nothing there (no WithMCPApp) gets the router's 404.
+//
+// The A2A exchange path (WithA2A, default /a2a) forwards the same way,
+// so GOFASTR_ROLE=agent serves the task exchange under the same
+// middleware chain. Nothing is forwarded when WithA2A was never called.
 func (a *App) agentMux() http.Handler {
 	liveness, readiness := a.healthHandlers()
 	mux := http.NewServeMux()
@@ -170,5 +174,9 @@ func (a *App) agentMux() http.Handler {
 	mux.Handle("/mcp", a.router)
 	mux.Handle("/mcp/", a.router)
 	mux.Handle(mcp.WidgetClientScriptURL, a.router)
+	if a.a2aPath != "" {
+		mux.Handle(a.a2aPath, a.router)
+		mux.Handle(a.a2aPath+"/", a.router)
+	}
 	return mux
 }

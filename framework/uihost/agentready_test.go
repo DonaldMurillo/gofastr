@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -182,6 +183,84 @@ func TestAgentCard_JSON(t *testing.T) {
 	skills, ok := doc["skills"].([]AgentSkill)
 	if !ok || len(skills) != 1 || skills[0].ID != "mcp" {
 		t.Errorf("expected single derived mcp skill, got %v", doc["skills"])
+	}
+}
+
+// A2AEndpoint redirects the card's JSON-RPC interface at the A2A task
+// exchange and forces the streaming/push capabilities on (the exchange
+// supports both by construction; the config's false/false must not
+// survive).
+func TestAgentCard_A2AEndpoint(t *testing.T) {
+	doc := buildAgentCard(&AgentCardConfig{
+		Name:        "Acme Agent",
+		MCPEndpoint: "/mcp",
+		A2AEndpoint: "/a2a",
+		Skills:      []AgentSkill{{ID: "entity.notes", Name: "Notes records"}},
+	}, "https://acme.example")
+	ifaces, ok := doc["supportedInterfaces"].([]map[string]any)
+	if !ok || len(ifaces) != 1 {
+		t.Fatalf("supportedInterfaces missing/wrong: %v", doc["supportedInterfaces"])
+	}
+	if ifaces[0]["url"] != "https://acme.example/a2a" {
+		t.Errorf("interface url = %v, want https://acme.example/a2a (baseURL + A2AEndpoint, overriding MCPEndpoint)", ifaces[0]["url"])
+	}
+	if ifaces[0]["protocolBinding"] != "JSONRPC" || ifaces[0]["protocolVersion"] != "1.0" {
+		t.Errorf("interface binding/version = %v/%v, want JSONRPC/1.0", ifaces[0]["protocolBinding"], ifaces[0]["protocolVersion"])
+	}
+	caps, _ := doc["capabilities"].(map[string]bool)
+	if !caps["streaming"] || !caps["pushNotifications"] {
+		t.Errorf("A2AEndpoint must force streaming + pushNotifications true, got %v", caps)
+	}
+}
+
+// An empty A2AEndpoint must leave the card byte-identical: the field's
+// zero value changes nothing. Pinned by marshaling the card built with
+// and without the field set to "".
+func TestAgentCard_EmptyA2AEndpointIsByteIdentical(t *testing.T) {
+	base := AgentCardConfig{
+		Name:        "Acme Agent",
+		Description: "does things",
+		Version:     "2.0.0",
+		URL:         "https://acme.example/agent",
+		MCPEndpoint: "/mcp",
+		Streaming:   false, PushNotifications: false,
+	}
+	without := buildAgentCard(&base, "https://acme.example")
+	base.A2AEndpoint = ""
+	withEmpty := buildAgentCard(&base, "https://acme.example")
+
+	a, _ := json.Marshal(without)
+	b, _ := json.Marshal(withEmpty)
+	if !bytes.Equal(a, b) {
+		t.Fatalf("empty A2AEndpoint changed the card:\nwithout: %s\nwith:    %s", a, b)
+	}
+	// And the MCP-endpoint shape itself is unchanged: the MCP url stays
+	// the interface, the capability flags stay the config's own.
+	ifaces, _ := without["supportedInterfaces"].([]map[string]any)
+	if ifaces[0]["url"] != "https://acme.example/mcp" {
+		t.Errorf("MCP card interface url = %v, want baseURL + MCPEndpoint", ifaces[0]["url"])
+	}
+	caps, _ := without["capabilities"].(map[string]bool)
+	if caps["streaming"] || caps["pushNotifications"] {
+		t.Errorf("MCP card capabilities must stay the config's false/false, got %v", caps)
+	}
+}
+
+// A card with A2AEndpoint set but no skills gets [] (never the derived
+// "mcp" skill, which would advertise an endpoint the card does not
+// list): the default mcp skill still requires MCPEndpoint.
+func TestAgentCard_A2AEndpointAloneYieldsEmptySkills(t *testing.T) {
+	doc := buildAgentCard(&AgentCardConfig{Name: "X", A2AEndpoint: "/a2a"}, "https://acme.example")
+	skills, ok := doc["skills"].([]AgentSkill)
+	if !ok || len(skills) != 0 {
+		t.Fatalf("skills = %v, want [] when A2AEndpoint set, Skills empty, MCPEndpoint empty", doc["skills"])
+	}
+	// With MCPEndpoint also set, the derived mcp skill survives: MCP
+	// tools remain reachable even when the card's interface is A2A.
+	doc = buildAgentCard(&AgentCardConfig{Name: "X", A2AEndpoint: "/a2a", MCPEndpoint: "/mcp"}, "https://acme.example")
+	skills, _ = doc["skills"].([]AgentSkill)
+	if len(skills) != 1 || skills[0].ID != "mcp" {
+		t.Fatalf("skills = %v, want the derived mcp skill when MCPEndpoint is set", doc["skills"])
 	}
 }
 

@@ -145,7 +145,15 @@ type AgentCardConfig struct {
 	// as the card's JSON-RPC service interface and a skill pointing
 	// agents at it.
 	MCPEndpoint string
-
+	// A2AEndpoint, when set (e.g. "/a2a"), advertises the A2A task
+	// exchange (framework.WithA2A) as the card's JSON-RPC service
+	// interface INSTEAD of the MCP endpoint, and forces the card's
+	// streaming and pushNotifications capabilities on (the exchange
+	// supports both; the config's booleans are OR-ed, never lowered).
+	// Skills stay the one list: pass app.A2ASkills() (plus any extra).
+	// A card with A2AEndpoint set but no Skills and no MCPEndpoint
+	// serves "skills": [].
+	A2AEndpoint string
 	// Skills are the agent's capabilities. When empty and MCPEndpoint is
 	// set, a default "mcp" skill is emitted; hosts can declare richer
 	// skills (one per domain capability).
@@ -620,13 +628,20 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 		}}
 	}
 
+	// capabilities: the exchange (A2AEndpoint) streams and pushes by
+	// construction, so setting it ORs both flags on. An empty
+	// A2AEndpoint keeps the config's booleans verbatim.
+	streaming, push := cfg.Streaming, cfg.PushNotifications
+	if cfg.A2AEndpoint != "" {
+		streaming, push = true, true
+	}
 	doc := map[string]any{
 		"name":        name,
 		"description": cfg.Description,
 		"version":     version,
 		"capabilities": map[string]bool{
-			"streaming":         cfg.Streaming,
-			"pushNotifications": cfg.PushNotifications,
+			"streaming":         streaming,
+			"pushNotifications": push,
 		},
 		"skills":             skills, // REQUIRED (proto field 12); emit [] when empty, never omit
 		"defaultInputModes":  in,
@@ -639,10 +654,14 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 	}
 	// supportedInterfaces is REQUIRED (proto field 3) and is the ONLY place
 	// the service endpoint lives in v1.0 (no top-level url). Advertise the
-	// JSON-RPC endpoint: the MCP endpoint when configured (it genuinely
-	// speaks JSON-RPC; initialize/tools-list work), else the service URL.
+	// JSON-RPC endpoint: the A2A task exchange when configured, else the
+	// MCP endpoint (it genuinely speaks JSON-RPC; initialize/tools-list
+	// work), else the service URL.
 	ifaceURL := serviceURL
-	if cfg.MCPEndpoint != "" {
+	switch {
+	case cfg.A2AEndpoint != "":
+		ifaceURL = strings.TrimRight(baseURL, "/") + cfg.A2AEndpoint
+	case cfg.MCPEndpoint != "":
 		ifaceURL = strings.TrimRight(baseURL, "/") + cfg.MCPEndpoint
 	}
 	doc["supportedInterfaces"] = []map[string]any{{

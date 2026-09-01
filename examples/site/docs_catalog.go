@@ -163,6 +163,7 @@ var docIntents = []docIntent{
 		Docs: []docEntry{
 			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
 			{"mcp", "MCP server", "The core/mcp reference: JSON-RPC methods, registering tools, resources, templates, and prompts, per-caller gates, and cursor pagination."},
+			{"a2a", "A2A task exchange", "WithA2A mounts the Agent2Agent v1.0 exchange at /a2a: deterministic named skills, entity skills over MCP tools, tasks, streaming, and push."},
 			{"contracts", "Contracts", "gofastr verify: one pipeline of rules with IDs, reasons, and fixes, plus semantic coverage and machine-readable diagnostics."},
 			{"kiln", "Kiln overview", "Experimental: the agent-driven build-mode binary."},
 			{"acp", "ACP server", "core/acp speaks the Agent Client Protocol v1: sessions, streamed updates, permissioned tool calls."},
