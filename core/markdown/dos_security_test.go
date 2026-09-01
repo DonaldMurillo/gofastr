@@ -277,7 +277,7 @@ func TestMarkdown_DistinctBacktickRunLengthsBounded(t *testing.T) {
 // fence classifier: a line beginning with ``` is a fence and never
 // reaches the inline path.
 func TestMarkdown_GiantBacktickRunNoInt32Wrap(t *testing.T) {
-	if os.Getenv("MARKDOWN_BIGINPUT") == "" {
+	if os.Getenv("MARKDOWN_BIGINPUT") != "1" {
 		t.Skip("allocates a >2 GiB block; opt in with MARKDOWN_BIGINPUT=1")
 	}
 	runLen := 1<<31 + 2

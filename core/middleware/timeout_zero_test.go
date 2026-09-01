@@ -169,6 +169,50 @@ func TestTimeoutDeadlineRaceProbe(t *testing.T) {
 // does, and that is the part that can regress: if handlerAlreadyFinished
 // stops reporting a closed done, the deadline branch discards finished
 // responses again. Removing the `case <-done` arm fails this.
+// The tie-break must deliver only for a handler that finished INSIDE its
+// budget. A closed done alone would hand a 200 to a handler that overran by
+// any amount whenever this goroutine was descheduled past its finish — the
+// deadline would then bound nothing precisely when the scheduler is slow,
+// which is when it matters. Reviewed onto the PR that introduced the
+// tie-break; the first version checked only the channel.
+func TestHandlerBeatTheDeadlineComparesFinishTime(t *testing.T) {
+	deadline := time.Now()
+
+	t.Run("finished inside the budget is delivered", func(t *testing.T) {
+		done := make(chan struct{})
+		close(done)
+		fin := deadline.Add(-10 * time.Millisecond)
+		if !handlerBeatTheDeadline(done, &fin, deadline) {
+			t.Error("a handler that returned before the deadline must be delivered, not 504'd")
+		}
+	})
+
+	t.Run("finished after the deadline is not", func(t *testing.T) {
+		done := make(chan struct{})
+		close(done)
+		fin := deadline.Add(10 * time.Millisecond)
+		if handlerBeatTheDeadline(done, &fin, deadline) {
+			t.Error("a handler that overran its budget must still 504; delivering it makes the deadline bound nothing whenever this goroutine is descheduled")
+		}
+	})
+
+	t.Run("exactly on the deadline is delivered", func(t *testing.T) {
+		done := make(chan struct{})
+		close(done)
+		fin := deadline
+		if !handlerBeatTheDeadline(done, &fin, deadline) {
+			t.Error("finishing exactly at the deadline is not overrunning it")
+		}
+	})
+
+	t.Run("still running is never delivered", func(t *testing.T) {
+		var fin time.Time
+		if handlerBeatTheDeadline(make(chan struct{}), &fin, deadline) {
+			t.Error("an open done reported finished; the deadline would never fire")
+		}
+	})
+}
+
 func TestHandlerAlreadyFinishedReportsAClosedDone(t *testing.T) {
 	closed := make(chan struct{})
 	close(closed)

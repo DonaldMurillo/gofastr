@@ -289,6 +289,27 @@ func handlerAlreadyFinished(done <-chan struct{}) bool {
 	}
 }
 
+// handlerBeatTheDeadline reports whether the handler finished, and finished
+// INSIDE its budget.
+//
+// The second half is the whole point. A closed done proves the handler is no
+// longer running; it says nothing about when it stopped. Delivering on a
+// closed channel alone hands a 200 to a handler that overran by any amount,
+// as long as this goroutine happened to be descheduled past its finish — the
+// deadline would then bound nothing whenever the scheduler was slow, which
+// is exactly when a deadline matters.
+//
+// finishedAt is written before close(done) and read only after receiving on
+// it, so the channel orders the two without a lock.
+func handlerBeatTheDeadline(done <-chan struct{}, finishedAt *time.Time, deadline time.Time) bool {
+	select {
+	case <-done:
+		return !finishedAt.After(deadline)
+	default:
+		return false
+	}
+}
+
 func Timeout(d time.Duration) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -340,11 +361,22 @@ func Timeout(d time.Duration) Middleware {
 			// because the parent's defer recover lives in a different
 			// goroutine.
 			var childPanic any
+			// finishedAt records when the handler returned, so the deadline
+			// branch can tell "finished inside the budget, and this
+			// goroutine was late to notice" from "finished after the
+			// deadline, while this goroutine was late". A closed done says
+			// only that the handler is no longer running; it does not say
+			// when it stopped, and the two cases deserve opposite answers.
+			// Written before close(done) and read only after it, which
+			// orders the two without a lock.
+			var finishedAt time.Time
+			deadline := time.Now().Add(effective)
 			go func() {
 				defer func() {
 					if v := recover(); v != nil {
 						childPanic = v
 					}
+					finishedAt = time.Now()
 					close(done)
 				}()
 				next.ServeHTTP(tw, r.WithContext(ctx))
@@ -424,7 +456,7 @@ func Timeout(d time.Duration) Middleware {
 				// The r.Context().Done() case above needs no equivalent:
 				// the client is gone, and delivering or abandoning both
 				// write to a socket nobody is reading.
-				if handlerAlreadyFinished(done) {
+				if handlerBeatTheDeadline(done, &finishedAt, deadline) {
 					if childPanic != nil {
 						panic(childPanic)
 					}
