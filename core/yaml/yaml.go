@@ -3,6 +3,7 @@ package yaml
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -134,6 +135,18 @@ func (p *parser) parseBlock(indent int) (*Node, error) {
 
 func (p *parser) parseMap(indent int) (*Node, error) {
 	out := &Node{Kind: Map, Line: p.lines[p.pos].line, Column: indent + 1, Map: map[string]*Node{}}
+	// A duplicate key was silent last-wins: `enabled: false` followed later
+	// by `enabled: true` took the second value while a reviewer, and grep,
+	// read the first. Every mainstream parser refuses that, and this
+	// parser's inputs are the security-relevant config — blueprints,
+	// codegen configs, kiln freeze snapshots — so the ambiguity has to fail
+	// closed here rather than resolve to whichever line came last. Same
+	// class as the YAML 1.2 boolean that read `auth: yes` as a string and
+	// meant PUBLIC: ask which direction a misread moves safety.
+	//
+	// seen holds the line that first defined each key so the error can name
+	// both.
+	seen := make(map[string]int, 8)
 	for p.pos < len(p.lines) {
 		line := p.lines[p.pos]
 		if line.indent < indent {
@@ -153,6 +166,10 @@ func (p *parser) parseMap(indent int) (*Node, error) {
 		if strings.ContainsAny(key, "[]{}") {
 			return nil, fmt.Errorf("yaml:%d:%d: unsupported key syntax %q", line.line, line.indent+1, key)
 		}
+		if first, dup := seen[key]; dup {
+			return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", line.line, line.indent+1, key, first)
+		}
+		seen[key] = line.line
 		value = strings.TrimSpace(value)
 		p.pos++
 		if value == "" {
@@ -222,6 +239,24 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				more, err := p.parseMap(p.lines[p.pos].indent)
 				if err != nil {
 					return nil, err
+				}
+				// The second silent-merge path, and the one parseMap's own
+				// `seen` cannot see: a "- key: value" item builds its first
+				// key here, then the indented continuation lines are parsed
+				// as a SEPARATE map and copied in. maps.Copy overwrote a
+				// collision without a word. Keys are walked in sorted order
+				// so the reported one is deterministic — the repo's
+				// mapwriter analyzer requires that of any map iteration
+				// whose output escapes.
+				//
+				// A key repeated across SIBLING list items is untouched:
+				// those are different mappings, and repeating a key across
+				// them is ordinary YAML.
+				for _, k := range slices.Sorted(maps.Keys(more.Map)) {
+					if first, dup := child.Map[k]; dup {
+						v := more.Map[k]
+						return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", v.Line, v.Column, k, first.Line)
+					}
 				}
 				maps.Copy(child.Map, more.Map)
 			}
