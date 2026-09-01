@@ -180,14 +180,40 @@ func TestMarkdown_UnpairedBacktickTailScaling(t *testing.T) {
 	// takes.
 	const firstShotCeiling = 3 * time.Second
 
+	// Take the BEST of a few runs per size rather than one sample. A single
+	// shot on a shared runner measures whatever else the box was doing:
+	// CI produced 10.92ms at 256 KiB then 7.29ms at 512 KiB — the larger
+	// input FASTER than the smaller one — and the inflated first sample
+	// then made the next ratio read 3.7x. The minimum is the right
+	// estimator for "how fast can this go": noise only ever adds time, so
+	// the floor is the signal and everything above it is the machine.
+	const samples = 3
+	// Bails as soon as one sample is already over the ceiling: a quadratic
+	// regression spends ~41s per render here, and sampling it three times
+	// would triple the time to surface a failure the first sample already
+	// proves.
+	best := func(in string) time.Duration {
+		lo := time.Duration(1 << 62)
+		for i := 0; i < samples; i++ {
+			start := time.Now()
+			_ = RenderHTML(in)
+			d := time.Since(start)
+			if d < lo {
+				lo = d
+			}
+			if d > firstShotCeiling {
+				return d
+			}
+		}
+		return lo
+	}
+
 	sizes := []int{256 * 1024, 512 * 1024, 1024 * 1024, 2048 * 1024}
 	var prev time.Duration
 	for i, sz := range sizes {
 		in := "a" + strings.Repeat("`", sz) + strings.Repeat("x", sz)
-		start := time.Now()
-		_ = RenderHTML(in)
-		elapsed := time.Since(start)
-		t.Logf("run=%d tail=%d took %v", sz, sz, elapsed)
+		elapsed := best(in)
+		t.Logf("run=%d tail=%d best-of-%d %v", sz, sz, samples, elapsed)
 		if i == 0 && elapsed > firstShotCeiling {
 			t.Fatalf("SECURITY: [markdown] %d-byte run+tail took %v, over the %v ceiling — a linear renderer needs about a millisecond here, so this is a complexity regression, not a slow machine", sz, elapsed, firstShotCeiling)
 		}
