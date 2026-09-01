@@ -50,8 +50,15 @@ type tokenPurposeHarness struct {
 
 func newTokenPurposeHarness(t *testing.T) *tokenPurposeHarness {
 	t.Helper()
-	tokenStore := newSQLStore(t) // ONE shared namespace, as the configs document
+	return newTokenPurposeHarnessOn(t, newSQLStore(t))
+}
 
+// newTokenPurposeHarnessOn builds the same wiring on a caller-supplied
+// store, so the cross-flow cases can run against a store that does NOT
+// implement MagicLinkTokenPeeker. tokenStore is the ONE shared namespace
+// the configs document.
+func newTokenPurposeHarnessOn(t *testing.T, tokenStore MagicLinkTokenStore) *tokenPurposeHarness {
+	t.Helper()
 	store := newUserStoreWithPassword()
 	h := &tokenPurposeHarness{
 		t: t,
