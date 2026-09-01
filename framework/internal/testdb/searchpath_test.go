@@ -162,6 +162,14 @@ func TestWithSearchPathPreservesQuotedValues(t *testing.T) {
 			dsn:  "host = localhost dbname=db",
 			keep: "host = localhost",
 		},
+		{
+			// lib/pq's unquoted-value scanner consumes a backslash-escaped
+			// character, so `password=a\ b` is ONE value to the driver.
+			// Splitting at the space rejected a DSN lib/pq accepts.
+			name: "an escaped space in an unquoted value is one token",
+			dsn:  `host=localhost password=a\ b dbname=db`,
+			keep: `password=a\ b`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -211,6 +219,14 @@ func TestRewrittenKeywordValueDSNStillConnects(t *testing.T) {
 	if port == "" {
 		port = "5432"
 	}
+	// The password is interpolated into a keyword/value DSN, so it has to
+	// be single-quoted or it cannot stay one pair: u.User.Password() is ""
+	// for a trust/peer-auth DSN, and `password= dbname=…` makes `dbname=…`
+	// the password (no dbname pair survives) — a password containing a
+	// space breaks identically. Either way the failure lands on
+	// "lib/pq rejected the rewritten DSN" and blames the rewrite instead
+	// of the fixture. Quotes and backslashes are escaped per libpq.
+	pass = "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(pass) + "'"
 	// The fixture has to contain a QUOTED search_path with a space in it.
 	// Splitting on whitespace and re-joining on whitespace is lossless on
 	// its own — the damage happens only when a token is dropped, and here

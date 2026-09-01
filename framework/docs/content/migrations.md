@@ -657,8 +657,10 @@ app.View(migrate.View{
   changes (the `Down` restores the previous definition / drops a new one).
 - **ORM**: with `Columns` declared, `GET /active_users` and
   `GET /active_users/{id}` are mounted (plus the query layer); no write
-  routes. Without `Columns`, the view is migration-only. Query it with
-  raw SQL.
+  routes. The view's `/active_users/llm.md` lists exactly those read
+  routes (no write, batch, or Create/Update columns), and the
+  `/api/llm.md` index counts it as three endpoints labelled `read-only`.
+  Without `Columns`, the view is migration-only. Query it with raw SQL.
 - The view's ORM entity is `Unmanaged`: the migration system emits no
   table DDL for it (the view DDL handles its existence). `Unmanaged` is a
   general `EntityConfig` flag. Use it for any externally-created table

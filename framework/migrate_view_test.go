@@ -238,8 +238,13 @@ func TestView_LLMMDMatchesReadOnlyMount(t *testing.T) {
 		}
 
 		// Reality check: write routes really are not mounted.
-		if s := do(http.MethodPost, "/active_users").Code; s == http.StatusOK || s == http.StatusCreated {
-			t.Fatalf("write to a read-only view served (%d) — fixture broken", s)
+		//
+		// The status has to be the router's absent-route answer, not just
+		// "not a success". A mounted POST would reject this empty body with
+		// 400, which a not-2xx check accepts — so the premise of the
+		// assertion below would hold whether or not the route existed.
+		if s := do(http.MethodPost, "/active_users").Code; s != http.StatusNotFound && s != http.StatusMethodNotAllowed {
+			t.Fatalf("POST to a read-only view answered %d; want the absent-route status (404/405). Anything else means the route is mounted and merely refused this request", s)
 		}
 
 		rec := do(http.MethodGet, "/active_users/llm.md")

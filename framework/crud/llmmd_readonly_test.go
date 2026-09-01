@@ -55,13 +55,22 @@ func TestLLMMD_ReadOnlyMountMustNotAdvertiseWriteRoutes(t *testing.T) {
 		{http.MethodPatch, "/widgets/_batch"},
 		{http.MethodDelete, "/widgets/_batch"},
 	}
+	// Require the ROUTER'S ABSENT-ROUTE STATUS, not merely "not 200".
+	//
+	// This block is the premise of everything below it: the doc is allowed
+	// to omit these routes because the server does not serve them. Rejecting
+	// only 200 does not establish that. A write route that IS mounted
+	// answers 400 for the `{}` body below, or 401 before it ever reaches the
+	// handler, and neither trips a not-200 check — so the premise would hold
+	// whether or not the routes were mounted, and a change that re-mounted
+	// writes on a read-only view would leave this test green.
 	for _, w := range writeReqs {
 		req := httptest.NewRequest(w.method, w.path, strings.NewReader("{}"))
 		req = req.WithContext(handler.SetUser(req.Context(), &testUser{id: "u1"}))
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
-		if rec.Code == http.StatusOK {
-			t.Fatalf("fixture broken: %s %s unexpectedly served (%d)", w.method, w.path, rec.Code)
+		if rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("fixture broken: %s %s answered %d; a read-only mount must give the absent-route status (404/405). Anything else means the route exists and merely rejected this request, which is not the same thing", w.method, w.path, rec.Code)
 		}
 	}
 

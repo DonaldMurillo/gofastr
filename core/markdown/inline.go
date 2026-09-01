@@ -210,17 +210,20 @@ func findClosingDelim(runs *backtickRuns, s string, start int, delim byte, run i
 type backtickRuns struct {
 	// start/lens list each maximal run's start offset and full length, in
 	// document order. byLen maps a run length to the ascending starts of
-	// all runs with that length.
-	start []int32
-	lens  []int32
-	byLen map[int32][]int32
+	// all runs with that length. All three are int: Render caps no
+	// document size, so an int32 offset wraps on a block over
+	// math.MaxInt32 — a negative "open" reaches the caller and slices
+	// out of range (pinned by TestMarkdown_GiantBacktickRunNoInt32Wrap).
+	start []int
+	lens  []int
+	byLen map[int][]int
 }
 
 // buildBacktickRuns makes the index for s. Callers only build it when s
 // contains a backtick (strings.IndexByte gate), keeping backtick-free
 // blocks on the fast path.
 func buildBacktickRuns(s string) *backtickRuns {
-	b := &backtickRuns{byLen: make(map[int32][]int32)}
+	b := &backtickRuns{byLen: make(map[int][]int)}
 	for i := 0; i < len(s); {
 		if s[i] != '`' {
 			i++
@@ -230,10 +233,10 @@ func buildBacktickRuns(s string) *backtickRuns {
 		for j < len(s) && s[j] == '`' {
 			j++
 		}
-		l := int32(j - i)
-		b.start = append(b.start, int32(i))
+		l := j - i
+		b.start = append(b.start, i)
 		b.lens = append(b.lens, l)
-		b.byLen[l] = append(b.byLen[l], int32(i))
+		b.byLen[l] = append(b.byLen[l], i)
 		i = j
 	}
 	return b
@@ -246,15 +249,15 @@ func buildBacktickRuns(s string) *backtickRuns {
 // a backtick of a block this index was built for; mid-run positions use
 // the remaining suffix as the opener, the same rule a linear scan had.
 func (b *backtickRuns) findCodeEnd(i int) (end, open int) {
-	r := sort.Search(len(b.start), func(k int) bool { return b.start[k] > int32(i) }) - 1
+	r := sort.Search(len(b.start), func(k int) bool { return b.start[k] > i }) - 1
 	// Callers only query at backticks, so run r contains i.
-	open = int(b.start[r]+b.lens[r]) - i
-	starts := b.byLen[int32(open)]
-	k := sort.Search(len(starts), func(k int) bool { return starts[k] >= int32(i+open) })
+	open = b.start[r] + b.lens[r] - i
+	starts := b.byLen[open]
+	k := sort.Search(len(starts), func(k int) bool { return starts[k] >= i+open })
 	if k == len(starts) {
 		return -1, open
 	}
-	return int(starts[k]), open
+	return starts[k], open
 }
 
 // parseLink parses [text](url) starting at the '[' at position i.

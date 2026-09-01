@@ -1,8 +1,9 @@
 package crud
 
-// Issue #136 audit slice: llm.md route-reality probes. RED tests document
-// findings (the doc describes limits the server does not serve, the #266
-// class); the green probe pins the /llm-pages.md link emission for the
+// Issue #136 audit slice: llm.md route-reality probes. The limits finding
+// documented here (the doc described caps the server did not serve, the
+// #266 class) was fixed with #358 and its test is now the standing pin;
+// the green probe below pins the /llm-pages.md link emission for the
 // dead-link finding (proof completed by uihost's
 // TestUIHost_PageLLMIndexDisabledByDefault). The read-only-mount finding
 // that lived here was fixed by #358 and its test moved to
@@ -16,13 +17,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// ── FINDING: "max 100" is hardcoded, ignoring Pagination.MaxListLimit ─────
+// ── Pin: the limit row reports the cap the List route enforces ────────────
 //
-// parsePaginationValues clamps ?limit to the entity's MaxListLimit
-// (deep_security_test.go pins the clamp). An entity with MaxListLimit=3
-// serves at most 3 rows per page, but its llm.md tells every agent
-// "Items per page (default 20, max 100)". The doc describes a limit the
-// server does not serve — same reality-drift class, on the request side.
+// parsePaginationValues clamps ?limit through listLimitCap
+// (deep_security_test.go pins the clamp), so the doc has to print that
+// same cap or it advertises a limit the server refuses — the #266
+// reality-drift class, on the request side. Found as a hardcoded
+// "max 100" against MaxListLimit=3. The assertion pins the exact row:
+// the first draft only rejected `max 100`, which passes on ANY other
+// wrong cap (0, 50, 99) — an assertion that rules out one wrong answer
+// instead of the right one.
 func TestLLMMD_LimitDocMustReflectEntityMaxListLimit(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{
 		Name:  "posts",
@@ -33,8 +37,9 @@ func TestLLMMD_LimitDocMustReflectEntityMaxListLimit(t *testing.T) {
 		Pagination: &entity.PaginationConfig{MaxListLimit: 3},
 	}.WithTimestamps(false))
 	doc := EntityLLMMD(ent)
-	if strings.Contains(doc, "max 100") {
-		t.Error("AUDIT FINDING: llm.md claims \"max 100\" items per page while the entity's Pagination.MaxListLimit=3 clamps every request to 3")
+	const want = "Items per page (default 20, max 3)"
+	if !strings.Contains(doc, want) {
+		t.Errorf("llm.md limit row does not report the entity's cap; want %q in:\n%s", want, doc)
 	}
 }
 

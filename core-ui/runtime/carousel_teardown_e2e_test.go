@@ -207,11 +207,11 @@ func TestCarouselAutoRotateTeardownOnNav(t *testing.T) {
 
 	leak := toInt(c1C) - toInt(c1B)
 	if leak != 0 {
-		t.Errorf("LEAK: detached carousel's autorotate interval is still firing — %d rotate ticks against a detached subtree after SPA nav (counter %s -> %s -> %s)", leak, c1B, c1C, c1C)
+		t.Errorf("LEAK: detached carousel's autorotate interval is still firing — %d rotate ticks against a detached subtree after SPA nav (counter A-pre-nav %s -> B-post-nav %s -> C-a-beat-later %s)", leak, c1A, c1B, c1C)
 	}
 	persisted := toInt(c2C) - toInt(c2B)
 	if persisted < 2 {
-		t.Errorf("FEATURE DEATH: persisted carousel's autorotate stopped permanently after an unrelated SPA nav — %d ticks in the post-nav window (counter %s -> %s -> %s), want >= 2 (rotation must continue; the carousel is still connected and visible)", persisted, c2B, c2C, c2C)
+		t.Errorf("FEATURE DEATH: persisted carousel's autorotate stopped permanently after an unrelated SPA nav — %d ticks in the post-nav window (counter A-pre-nav %s -> B-post-nav %s -> C-a-beat-later %s), want >= 2 (rotation must continue; the carousel is still connected and visible)", persisted, c2A, c2B, c2C)
 	}
 }
 

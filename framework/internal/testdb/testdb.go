@@ -213,10 +213,14 @@ type dsnPair struct{ key, raw string }
 // "search_path=" loses its tail to the same filter. Either way the rewritten
 // DSN is malformed, and lib/pq reports that rather than the schema.
 //
-// Follows libpq's fe-connect.c: whitespace around the key and the `=` is
-// allowed; a value is either single-quoted with backslash escapes, or runs to
-// the next whitespace. A DSN this cannot parse is an error, not a guess —
-// silently reshaping a connection string is how the original bug read.
+// Follows libpq's fe-connect.c (and lib/pq's Go port): whitespace around
+// the key and the `=` is allowed; a value is either single-quoted with
+// backslash escapes, or runs to the next whitespace, with a backslash
+// escaping the next character in BOTH forms — lib/pq v1.12.3 consumes
+// `a\ b` as one unquoted value, and a tokeniser that splits at the space
+// rejects a DSN the driver accepts. A DSN this cannot parse is an error,
+// not a guess — silently reshaping a connection string is how the
+// original bug read.
 func splitKeywordValueDSN(dsn string) ([]dsnPair, error) {
 	var out []dsnPair
 	i := 0
@@ -263,7 +267,15 @@ func splitKeywordValueDSN(dsn string) ([]dsnPair, error) {
 				i++
 			}
 		} else {
+			// A trailing lone backslash stays a literal byte: lib/pq errors on
+			// it at open time ("missing character after backslash"), and
+			// keeping the raw text means the driver's own parse decides. Our
+			// job is agreeing on token boundaries, not re-validating escapes.
 			for i < len(dsn) && !isSpace(dsn[i]) {
+				if dsn[i] == '\\' && i+1 < len(dsn) {
+					i += 2 // consume the escaped character, quoted or not
+					continue
+				}
 				i++
 			}
 		}

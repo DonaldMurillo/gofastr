@@ -459,6 +459,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   already passed an allowlisted environment. Their credential denylists were
   hand-copied and had drifted; neither recognised a bare `*_TOKEN`.
 
+- **Generated llm.md describes the routes the mount serves** (#358,
+  sibling of the #266 openapi/llm.md fix further down): `App.View`
+  registers its entities read-only, but `EntityLLMMD` took only the
+  entity — read-only lives on `CrudRouteOptions`, which no entity
+  declaration carries — so every view served a doc telling agents to
+  call POST, PUT, PATCH, DELETE and the three `_batch` routes, all of
+  which answer 404/405, and the `/api/llm.md` index counted eight
+  endpoints where three are served. The doc now takes its answer from
+  the mount: a read-only mount's llm.md omits the write, batch and
+  Create/Update-column sections, the index counts three endpoints and
+  labels the row `read-only`, and the `limit` row prints the same cap
+  the List route clamps `?limit` with (a hardcoded "max 100" told
+  agents an entity with `MaxListLimit: 3` would serve 100).
+  **BREAKING for direct callers**: `crud.RegistryLLMMD` /
+  `crud.RegistryLLMMDHandler`'s mount predicate widened from
+  `func(*entity.Entity) bool` to `func(*entity.Entity) crud.MountInfo`
+  (nil still documents standard CRUD for every entity), and
+  `crud.EntityLLMMD` / `crud.LLMMDHandler` / `crud.LLMMDHandlerFor`
+  gained an optional `LLMMDOptions` — pass `LLMMDOptions{ReadOnly:
+  true}` beside a read-only mount. The framework's own route
+  registration passes both automatically; only hand-rolled mounts need
+  the option.
+
 ## [0.77.0] - 2026-08-31
 
 ### Added

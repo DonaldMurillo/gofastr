@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -220,4 +221,37 @@ func TestMarkdown_DistinctBacktickRunLengthsBounded(t *testing.T) {
 	//	with the run index                  1.1 ms   (benign text: 2.4 ms)
 	//
 	// A gate for this wants an operation counter, not a clock.
+}
+
+// TestMarkdown_GiantBacktickRunNoInt32Wrap pins that offsets into a block
+// are not narrowed to int32 on the way into the backtick-run index.
+// buildBacktickRuns stored starts and lengths as int32 while Render imposes
+// no document-size limit, so a block over math.MaxInt32 wrapped them: a
+// single backtick run of 2^31+2 made lens negative, findCodeEnd returned a
+// negative "open", and the caller sliced input[i+open:end] — a panic in the
+// render goroutine, the same crash class TestMarkdown_MalformedTableNoPanic
+// pins. Offsets stay int end to end now; this test holds that line.
+//
+// The input is a >2 GiB allocation, so the test opts in via
+// MARKDOWN_BIGINPUT=1 rather than running in every suite (the green path
+// is one linear pass plus one bulk write; measured 2.1s and a 6.2 GiB
+// peak RSS on a 48 GB M4 Pro). The leading 'x' keeps the line off the
+// fence classifier: a line beginning with ``` is a fence and never
+// reaches the inline path.
+func TestMarkdown_GiantBacktickRunNoInt32Wrap(t *testing.T) {
+	if os.Getenv("MARKDOWN_BIGINPUT") == "" {
+		t.Skip("allocates a >2 GiB block; opt in with MARKDOWN_BIGINPUT=1")
+	}
+	runLen := 1<<31 + 2
+	input := "x" + strings.Repeat("`", runLen)
+	doc := Render(input)
+	got := string(doc.HTML)
+	// The giant run has no same-length closer, so CommonMark leaves it
+	// literal text: one paragraph, escaped (backticks need no escaping).
+	if !strings.HasPrefix(got, "<p>x``") || !strings.HasSuffix(got, "```</p>\n") {
+		t.Fatalf("render mangled the giant run: prefix %q suffix %q", got[:16], got[len(got)-16:])
+	}
+	if want := len("<p>x") + runLen + len("</p>\n"); len(got) != want {
+		t.Fatalf("len(doc.HTML) = %d, want %d", len(got), want)
+	}
 }
