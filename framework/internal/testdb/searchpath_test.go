@@ -14,6 +14,8 @@ package testdb
 
 import (
 	"database/sql"
+	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -184,6 +186,82 @@ func TestWithSearchPathPreservesQuotedValues(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Everything above asserts the SHAPE of the rewritten string. That is not
+// the property that matters: the property is that lib/pq still accepts it
+// and lands in the right schema. A rewrite can look right and not connect —
+// which is exactly what the whitespace split did.
+//
+// Builds a keyword/value DSN carrying a quoted value with a space (the case
+// that broke), rewrites it, and opens a real connection with the result.
+func TestRewrittenKeywordValueDSNStillConnects(t *testing.T) {
+	base, err := ResolvePostgresOnce()
+	if err != nil {
+		t.Skipf("Postgres unavailable: %v", err)
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Skipf("TEST_POSTGRES_DSN is not a URL (%v); this test builds from one", err)
+	}
+	pass, _ := u.User.Password()
+	host := u.Hostname()
+	port := u.Port()
+	if port == "" {
+		port = "5432"
+	}
+	// The fixture has to contain a QUOTED search_path with a space in it.
+	// Splitting on whitespace and re-joining on whitespace is lossless on
+	// its own — the damage happens only when a token is dropped, and here
+	// `search_path='stale,` is dropped while `public'` is left behind as a
+	// stray token that lib/pq cannot parse. A fixture without a quoted
+	// search_path round-trips unharmed through the broken code, so this test
+	// would pass against the bug it exists to catch. (It did, first draft.)
+	//
+	// options carries the second half of the property: a quoted value with a
+	// space that must survive untouched.
+	kv := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable "+
+			"options='-c statement_timeout=30s' search_path='stale, public'",
+		host, port, u.User.Username(), pass, strings.TrimPrefix(u.Path, "/"))
+
+	admin, err := sql.Open("postgres", base)
+	if err != nil {
+		t.Fatalf("open admin: %v", err)
+	}
+	defer admin.Close()
+	const sn = "t_kv_rewrite_probe"
+	admin.Exec("DROP SCHEMA IF EXISTS " + sn + " CASCADE")
+	if _, err := admin.Exec("CREATE SCHEMA " + sn); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	defer admin.Exec("DROP SCHEMA " + sn + " CASCADE")
+
+	rewritten, err := withSearchPath(kv, sn)
+	if err != nil {
+		t.Fatalf("withSearchPath: %v", err)
+	}
+	db, err := sql.Open("postgres", rewritten)
+	if err != nil {
+		t.Fatalf("open rewritten: %v", err)
+	}
+	defer db.Close()
+
+	var got string
+	if err := db.QueryRow("SHOW search_path").Scan(&got); err != nil {
+		t.Fatalf("lib/pq rejected the rewritten DSN: %v", err)
+	}
+	if got != sn {
+		t.Errorf("connected, but search_path = %q, want %q", got, sn)
+	}
+	// The quoted value has to have survived intact, not just been carried.
+	var timeout string
+	if err := db.QueryRow("SHOW statement_timeout").Scan(&timeout); err != nil {
+		t.Fatalf("SHOW statement_timeout: %v", err)
+	}
+	if timeout != "30s" {
+		t.Errorf("the quoted options value did not survive the rewrite: statement_timeout = %q, want 30s", timeout)
 	}
 }
 
