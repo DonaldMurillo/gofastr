@@ -5,7 +5,7 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.78.0] - 2026-09-01
 
 ### Added
 - **`GOFASTR1807`: CSS that hardcodes a value the theme already declares
