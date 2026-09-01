@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -119,19 +120,80 @@ func Open(t *testing.T, dialect migrate.Dialect) *sql.DB {
 		if _, err := db.ExecContext(context.Background(), "CREATE SCHEMA "+schemaName); err != nil {
 			t.Fatalf("create schema %s: %v", schemaName, err)
 		}
-		if _, err := db.ExecContext(context.Background(), "SET search_path TO "+schemaName); err != nil {
-			t.Fatalf("set search_path: %v", err)
+		// The schema binding travels in the DSN, not as `SET search_path` on
+		// the open session. SetMaxOpenConns(1) bounds concurrency, not
+		// connection identity: database/sql discards a connection whose
+		// backend died and silently opens a replacement, and a replacement
+		// starts at the default search_path. Every statement after that
+		// point runs in "$user", public — so the test's tables are invisible
+		// and it fails as `relation "…" does not exist`, pointing at the
+		// schema rather than at the connection that was actually replaced.
+		// lib/pq forwards unrecognised DSN parameters to the server as
+		// startup options, so carrying it here applies it to every
+		// connection the pool ever opens. Proven by killing the backend with
+		// pg_terminate_backend: the session-level SET does not survive it and
+		// the DSN parameter does (TestSearchPathSurvivesConnectionReplacement).
+		scoped, err := withSearchPath(base, schemaName)
+		if err != nil {
+			t.Fatalf("scope dsn to %s: %v", schemaName, err)
 		}
+		scopedDB, err := sql.Open("postgres", scoped)
+		if err != nil {
+			t.Fatalf("open pg (scoped): %v", err)
+		}
+		scopedDB.SetMaxOpenConns(1)
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+			scopedDB.Close()
 			db.ExecContext(ctx, "DROP SCHEMA "+schemaName+" CASCADE")
 			db.Close()
 		})
-		return db
+		return scopedDB
 	}
 	t.Fatalf("unknown dialect: %s", dialect)
 	return nil
+}
+
+// withSearchPath returns dsn with search_path set to schema, so every
+// connection the pool opens from it starts already scoped.
+//
+// Both DSN spellings lib/pq accepts are handled: a URL
+// (postgres://user@host/db?sslmode=disable) and keyword/value
+// (host=… user=… dbname=…). An existing search_path is replaced rather than
+// appended — two of them would leave which one wins up to the parser.
+//
+// schema comes from NewSchemaName, which emits only [a-z0-9_], so it needs
+// no quoting here; anything else is refused rather than interpolated.
+func withSearchPath(dsn, schema string) (string, error) {
+	if schema == "" {
+		return "", errors.New("empty schema name")
+	}
+	for _, r := range schema {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
+			return "", fmt.Errorf("schema %q is not [a-z0-9_]; refusing to put it in a DSN", schema)
+		}
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return "", fmt.Errorf("parse dsn: %w", err)
+		}
+		q := u.Query()
+		q.Set("search_path", schema)
+		u.RawQuery = q.Encode()
+		return u.String(), nil
+	}
+	// Keyword/value form. Drop any existing search_path= pair, then append.
+	var kept []string
+	for _, f := range strings.Fields(dsn) {
+		if strings.HasPrefix(f, "search_path=") {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	kept = append(kept, "search_path="+schema)
+	return strings.Join(kept, " "), nil
 }
 
 // ForEachDialect runs fn against every dialect in Dialects as a t.Run
