@@ -365,3 +365,48 @@ func TestAmbientTxCommitEmitsEvents(t *testing.T) {
 		// Exactly once, as documented.
 	}
 }
+
+// TestAmbientTxQueuePublishesOnDrainOnly pins the commit-queue path the
+// framework-owned tx wrappers use (db.WithTxQueue): the emission for a
+// write joined to the tx is staged on the queue — NOT probed against the
+// live *sql.Tx, which raced the owner's own statements on the
+// transaction's single connection (#353) — and fires exactly when the
+// owner drains after commit.
+func TestAmbientTxQueuePublishesOnDrainOnly(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	got := make(chan event.Event, 8)
+	cancel := bus.Subscribe(event.EntityCreated, func(_ context.Context, ev event.Event) error {
+		got <- ev
+		return nil
+	})
+	defer cancel()
+
+	tx, err := dbc.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, queue := db.WithTxQueue(context.Background(), tx)
+	if _, err := ch.CreateOne(ctx, map[string]any{"title": "queued"}); err != nil {
+		t.Fatalf("CreateOne: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Committed but not yet drained: the emission must still be held.
+	select {
+	case ev := <-got:
+		t.Fatalf("EntityCreated published before the tx owner drained the queue: %v", ev.Data)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	queue.RunAfterCommit()
+	select {
+	case <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("EntityCreated not delivered after the queue drained")
+	}
+}
