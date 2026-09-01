@@ -184,16 +184,91 @@ func withSearchPath(dsn, schema string) (string, error) {
 		u.RawQuery = q.Encode()
 		return u.String(), nil
 	}
-	// Keyword/value form. Drop any existing search_path= pair, then append.
-	var kept []string
-	for _, f := range strings.Fields(dsn) {
-		if strings.HasPrefix(f, "search_path=") {
+	// Keyword/value form. Drop any existing search_path pair, then append.
+	pairs, err := splitKeywordValueDSN(dsn)
+	if err != nil {
+		return "", err
+	}
+	kept := make([]string, 0, len(pairs)+1)
+	for _, p := range pairs {
+		if p.key == "search_path" {
 			continue
 		}
-		kept = append(kept, f)
+		kept = append(kept, p.raw)
 	}
 	kept = append(kept, "search_path="+schema)
 	return strings.Join(kept, " "), nil
+}
+
+// dsnPair is one keyword/value entry: its key, and the original text of the
+// whole `key=value` so re-emitting a kept pair cannot change its meaning.
+type dsnPair struct{ key, raw string }
+
+// splitKeywordValueDSN tokenises a libpq keyword/value DSN.
+//
+// strings.Fields is wrong here, and quietly so. libpq values may be
+// single-quoted and contain spaces, so `search_path='stale, public'` splits
+// into `search_path='stale,` and `public'` — dropping the first leaves the
+// second behind as a stray token, and a quoted value that merely CONTAINS
+// "search_path=" loses its tail to the same filter. Either way the rewritten
+// DSN is malformed, and lib/pq reports that rather than the schema.
+//
+// Follows libpq's fe-connect.c: whitespace around the key and the `=` is
+// allowed; a value is either single-quoted with backslash escapes, or runs to
+// the next whitespace. A DSN this cannot parse is an error, not a guess —
+// silently reshaping a connection string is how the original bug read.
+func splitKeywordValueDSN(dsn string) ([]dsnPair, error) {
+	var out []dsnPair
+	i := 0
+	isSpace := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
+	for {
+		for i < len(dsn) && isSpace(dsn[i]) {
+			i++
+		}
+		if i >= len(dsn) {
+			return out, nil
+		}
+		start := i
+		for i < len(dsn) && dsn[i] != '=' && !isSpace(dsn[i]) {
+			i++
+		}
+		key := dsn[start:i]
+		if key == "" {
+			return nil, fmt.Errorf("dsn: empty key at offset %d", start)
+		}
+		for i < len(dsn) && isSpace(dsn[i]) {
+			i++
+		}
+		if i >= len(dsn) || dsn[i] != '=' {
+			return nil, fmt.Errorf("dsn: key %q has no value", key)
+		}
+		i++ // '='
+		for i < len(dsn) && isSpace(dsn[i]) {
+			i++
+		}
+		if i < len(dsn) && dsn[i] == '\'' {
+			i++ // opening quote
+			for {
+				if i >= len(dsn) {
+					return nil, fmt.Errorf("dsn: unterminated quoted value for key %q", key)
+				}
+				if dsn[i] == '\\' && i+1 < len(dsn) {
+					i += 2
+					continue
+				}
+				if dsn[i] == '\'' {
+					i++ // closing quote
+					break
+				}
+				i++
+			}
+		} else {
+			for i < len(dsn) && !isSpace(dsn[i]) {
+				i++
+			}
+		}
+		out = append(out, dsnPair{key: key, raw: dsn[start:i]})
+	}
 }
 
 // ForEachDialect runs fn against every dialect in Dialects as a t.Run

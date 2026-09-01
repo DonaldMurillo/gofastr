@@ -121,6 +121,87 @@ func TestWithSearchPathRewritesBothDSNForms(t *testing.T) {
 	}
 }
 
+// A libpq value may be single-quoted and contain spaces, so a whitespace
+// split mangles it: `search_path='stale, public'` splits into
+// `search_path='stale,` and `public'`, and dropping the first leaves the
+// second behind as a stray token. A quoted value that merely CONTAINS
+// "search_path=" loses its tail to the same filter. lib/pq then reports a
+// malformed DSN rather than the schema, so the symptom points anywhere but
+// here.
+func TestWithSearchPathPreservesQuotedValues(t *testing.T) {
+	cases := []struct {
+		name, dsn, keep string
+	}{
+		{
+			name: "quoted search_path with a space is removed whole",
+			dsn:  "host=localhost search_path='stale, public' dbname=db",
+			keep: "dbname=db",
+		},
+		{
+			name: "an unrelated quoted value with a space survives",
+			dsn:  "host=localhost password='a b c' dbname=db",
+			keep: "password='a b c'",
+		},
+		{
+			// libpq's `options` really can carry `-c search_path=…`, so this
+			// is the realistic shape, not a contrived one: a filter that
+			// matches on the substring would eat half of it.
+			name: "a quoted value containing search_path= is not filtered",
+			dsn:  "host=localhost options='-c search_path=y' dbname=db",
+			keep: "options='-c search_path=y'",
+		},
+		{
+			name: "an escaped quote inside a value does not end it",
+			dsn:  `host=localhost password='a\'b c' dbname=db`,
+			keep: `password='a\'b c'`,
+		},
+		{
+			name: "whitespace around the equals sign",
+			dsn:  "host = localhost dbname=db",
+			keep: "host = localhost",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := withSearchPath(tc.dsn, "t_new_1")
+			if err != nil {
+				t.Fatalf("withSearchPath: %v", err)
+			}
+			if !strings.Contains(got, tc.keep) {
+				t.Errorf("got %q, want it to keep %q intact", got, tc.keep)
+			}
+			if strings.Contains(got, "stale") {
+				t.Errorf("the stale search_path survived: %q", got)
+			}
+			if n := strings.Count(got, "search_path=t_new_1"); n != 1 {
+				t.Errorf("got %d copies of the new search_path, want 1: %q", n, got)
+			}
+			// A leftover fragment is the actual bug: the old value's tail
+			// surviving as a token of its own.
+			for _, frag := range []string{" public'", " y'"} {
+				if strings.Contains(got, frag) {
+					t.Errorf("a quoted value was split, leaving %q behind: %q", frag, got)
+				}
+			}
+		})
+	}
+}
+
+// A DSN the tokeniser cannot parse is an error, not a guess: silently
+// reshaping a connection string is how the whitespace-split bug read.
+func TestWithSearchPathRefusesMalformedDSNs(t *testing.T) {
+	for _, bad := range []string{
+		"postgres://%",              // url.Parse fails
+		"host=localhost dbname",     // key with no value
+		"host=localhost password='", // unterminated quote
+		"=novalue dbname=db",        // empty key
+	} {
+		if got, err := withSearchPath(bad, "t_x_1"); err == nil {
+			t.Errorf("withSearchPath(%q) returned %q, want an error", bad, got)
+		}
+	}
+}
+
 // The schema name is interpolated into a DSN, so anything outside what
 // NewSchemaName emits is refused rather than passed through.
 func TestWithSearchPathRefusesUnsafeSchemaNames(t *testing.T) {
