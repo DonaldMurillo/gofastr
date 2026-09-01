@@ -192,12 +192,12 @@ func codeBlockCSS(_ style.Theme) string {
   white-space: pre;
   -webkit-text-size-adjust: 100%;
 }
-[data-fui-comp="ui-code-block"] .tok-kw     { color: #C792EA; }
-[data-fui-comp="ui-code-block"] .tok-fn     { color: #82AAFF; }
-[data-fui-comp="ui-code-block"] .tok-str    { color: #C3E88D; }
-[data-fui-comp="ui-code-block"] .tok-num    { color: #F78C6C; }
-[data-fui-comp="ui-code-block"] .tok-com    { color: #8C93B0; font-style: italic; }
-[data-fui-comp="ui-code-block"] .tok-name   { color: #FFCB6B; }
+[data-fui-comp="ui-code-block"] .tok-kw     { color: var(--tk-kw, #C792EA); }
+[data-fui-comp="ui-code-block"] .tok-fn     { color: var(--tk-fn, #82AAFF); }
+[data-fui-comp="ui-code-block"] .tok-str    { color: var(--tk-str, #C3E88D); }
+[data-fui-comp="ui-code-block"] .tok-num    { color: var(--tk-num, #F78C6C); }
+[data-fui-comp="ui-code-block"] .tok-com    { color: var(--tk-com, #8C93B0); font-style: italic; }
+[data-fui-comp="ui-code-block"] .tok-name   { color: var(--tk-type, #FFCB6B); }
 /* Theme token palette (emitted by the framework highlighter / markdown code
    blocks). The --tk-* vars are theme slots (style.Theme.Code, dark values in
    Theme.DarkCode) whose defaults equal these fallbacks; hosts re-skin or

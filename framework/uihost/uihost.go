@@ -714,7 +714,7 @@ td[data-align="end"] {
   z-index: 9999;
   background: var(--color-text, #18181B);
   color: var(--color-background, #FAFAFA);
-  border-radius: 4px;
+  border-radius: var(--radii-sm, 4px);
   font: 0.9rem system-ui, -apple-system, sans-serif;
   text-decoration: none;
 }
@@ -734,7 +734,7 @@ td[data-align="end"] {
      app's toast now tracks its palette. */
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #FAFAFA);
-  border-radius: 8px;
+  border-radius: var(--radii-md, 8px);
   font: 0.9rem system-ui, -apple-system, sans-serif;
   box-shadow: 0 10px 25px rgba(0,0,0,0.25);
   opacity: 0;

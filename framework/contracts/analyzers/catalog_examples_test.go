@@ -156,6 +156,7 @@ var examplesNeedingMoreContext = map[string]string{
 	contracts.RuleHandrolledBattery:      "needs the hand-rolled subsystem's imports, which a snippet does not carry",
 	contracts.RuleRawSQLOverRepo:         "needs an entity declaration whose table the raw query targets",
 	contracts.RuleUnknownThemeToken:      "fires on a .css file; its example is CSS, which no Go snippet can carry", // not-a-secret: a rule id, flagged only because the constant name ends in "Token"
+	contracts.RuleHardcodedTokenValue:    "fires only inside the design-system trees (core-ui/, framework/ui/, …); a snippet at an app's root is an app surface, where GOFASTR1801 already reports any CSS at all",
 }
 
 // The other half: a rule whose bad example does NOT produce it has either

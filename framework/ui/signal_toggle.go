@@ -22,7 +22,7 @@ func signalToggleCSS(_ style.Theme) string {
 		`[data-fui-comp="fui-toggle"] .fui-toggle__thumb{position:absolute;top:2px;left:2px;width:1.125rem;height:1.125rem;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s}` +
 		`[data-fui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__track{background:var(--fui-primary, var(--color-primary, #3b82f6))}` +
 		`[data-fui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__thumb{transform:translateX(1.125rem)}` +
-		`[data-fui-comp="fui-toggle"]:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px;border-radius:4px}`
+		`[data-fui-comp="fui-toggle"]:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px;border-radius:var(--radii-sm, 4px)}`
 }
 
 // ─── SignalToggle ────────────────────────────────────────────────────

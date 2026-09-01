@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -512,6 +513,7 @@ func TestSQLiteDequeueConcurrentNoBusy(t *testing.T) {
 					errs[w] = append(errs[w], ctx.Err().Error())
 					return
 				}
+				began := time.Now()
 				job, err := q.dequeue(ctx, "", types)
 				switch {
 				case err == nil:
@@ -522,7 +524,13 @@ func TestSQLiteDequeueConcurrentNoBusy(t *testing.T) {
 				default:
 					// A failed claim may leave the row pending; retry the
 					// same way workerLoop does rather than abandoning it.
-					errs[w] = append(errs[w], err.Error())
+					// The wait rides on the error so a failure says which
+					// kind it was: a busy error after ~busy_timeout means
+					// the 5s allowance was exhausted on a slow runner,
+					// while a fast one means a writer held the lock in a
+					// way serialisation should have prevented (#363).
+					errs[w] = append(errs[w], fmt.Sprintf("%s [after %s]",
+						err, time.Since(began).Round(time.Millisecond)))
 					time.Sleep(2 * time.Millisecond)
 				}
 			}
@@ -543,8 +551,8 @@ func TestSQLiteDequeueConcurrentNoBusy(t *testing.T) {
 		}
 	}
 	if len(busy) > 0 {
-		t.Errorf("serialized-claim contract violated: %d busy/locked errors from concurrent dequeue; first: %q",
-			len(busy), busy[0])
+		t.Errorf("serialized-claim contract violated: %d busy/locked errors from concurrent dequeue: %q",
+			len(busy), busy)
 	}
 	if len(other) > 0 {
 		t.Errorf("concurrent dequeue surfaced unexpected errors; first: %q", other[0])

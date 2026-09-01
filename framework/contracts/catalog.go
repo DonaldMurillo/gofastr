@@ -132,12 +132,13 @@ const (
 
 // Rendering rules.
 const (
-	RuleBespokeCSS         = "GOFASTR1801"
-	RuleHardNavigation     = "GOFASTR1802"
-	RuleBespokeEventSource = "GOFASTR1803"
-	RuleInlineStyle        = "GOFASTR1804"
-	RuleInlineScript       = "GOFASTR1805"
-	RuleUnknownThemeToken  = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
+	RuleBespokeCSS          = "GOFASTR1801"
+	RuleHardNavigation      = "GOFASTR1802"
+	RuleBespokeEventSource  = "GOFASTR1803"
+	RuleInlineStyle         = "GOFASTR1804"
+	RuleInlineScript        = "GOFASTR1805"
+	RuleUnknownThemeToken   = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
+	RuleHardcodedTokenValue = "GOFASTR1807"
 )
 
 // Permission rules.
@@ -805,6 +806,21 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  "border-radius: var(--radius-lg);",
 			Good: "border-radius: var(--radii-lg);",
+		}},
+	}, {
+		ID: RuleHardcodedTokenValue, Slug: "rendering/hardcoded-token-value",
+		Title: "CSS hardcodes a value the theme declares as a token", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Design-system CSS sets a property to a literal that is exactly a theme token's value.",
+		Why: "The design system's promise is that one token swap re-skins every surface. A literal copy of " +
+			"a token's value silently opts out: re-theming --text-xs or --radii-sm leaves the rule behind, " +
+			"and nothing shows the drift, because the rendered pixels are identical until the day someone " +
+			"changes the token. core-ui/widget/theme carried `font-size: 0.75rem` beside a theme declaring " +
+			"--text-xs: 0.75rem for months in exactly this way.",
+		Fix: "Reference the token: `font-size: var(--text-xs)` in stylesheet strings, or the `{text.xs}` builder reference in StyleSheet/Set values. An off-scale value no token carries is a MISSING token: add it to the theme instead of hardcoding.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  `ss.Rule(".eyebrow").Set("font-size", "0.75rem").End()`,
+			Good: `ss.Rule(".eyebrow").Set("font-size", "{text.xs}").End()`,
 		}},
 	}}
 }

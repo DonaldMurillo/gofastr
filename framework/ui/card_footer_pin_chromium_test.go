@@ -63,7 +63,15 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 	defer cancelAlloc()
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
-	ctx, cancelTimeout := context.WithTimeout(ctx, 30*time.Second)
+	// 60s to match every other chromium test in this package, which is the
+	// evidence: the four siblings use 60s and none of them flakes, while
+	// this one at 30s failed CI twice. The budget has to cover a COLD
+	// Chrome start before any of the work it is meant to bound — the same
+	// shape as #342, where a 45s capture budget was spent on the launch.
+	// Raising the websocket wait to 90s moved the failure from chromedp's
+	// handshake (20s) to this deadline (30s); the launch was always the
+	// cost.
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelTimeout()
 
 	// For each card: its top edge, and the gap between the card's bottom

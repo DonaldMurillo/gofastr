@@ -127,7 +127,7 @@ func colorFieldCSS(_ style.Theme) string {
   /* Square, and at least a comfortable tap target. */
   inline-size: var(--spacing-touch-target, 44px);
   block-size: var(--spacing-touch-target, 44px);
-  padding: 2px;
+  padding: var(--spacing-xs, 2px);
   border: 1px solid var(--color-border, #e4e4e7);
   border-radius: var(--radii-sm, 4px);
   background-color: var(--color-surface, #fff);

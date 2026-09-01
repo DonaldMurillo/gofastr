@@ -3,7 +3,9 @@ package analyzers
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 
@@ -22,6 +24,7 @@ func init() {
 			contracts.RuleInlineStyle,
 			contracts.RuleInlineScript,
 			contracts.RuleUnknownThemeToken,
+			contracts.RuleHardcodedTokenValue,
 		},
 		Run: runRendering,
 	})
@@ -187,6 +190,14 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 
 		for i, line := range scan {
 			lineNo := i + 1
+
+			// GOFASTR1807 runs on the styling trees, which the byte
+			// pre-filter below would mostly skip: a Set("gap", "8px")
+			// pair line carries none of ':' '@' '<'. Its own guards are
+			// strict supersets of what the two shapes can match.
+			if ownsStyling && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
+				out = append(out, checkHardcodedTokenValues(f.Rel, lineNo, line, lines[i])...)
+			}
 
 			// Cheap pre-filter. Every pattern below needs at least one of
 			// these bytes, and the overwhelming majority of lines in a Go
@@ -546,6 +557,195 @@ func levenshtein(a, b string) int {
 		prev, curr = curr, prev
 	}
 	return prev[len(b)]
+}
+
+// propTokenCategories maps a CSS property to the theme-token categories
+// (the prefix of a token key, "text" in "text-xs") whose value can
+// legally replace that property's through var(). A category no property
+// can serve is absent on purpose: breakpoint-*, because a media query
+// cannot read a custom property — var() is invalid inside an @media
+// condition — so writing the px there is forced by CSS, not a token
+// bypass.
+//
+// The property list doubles as the false-positive guard: only these
+// names are matched, so `Value: "0.75rem"` on a theme declaration and a
+// custom property like `--text-xs:` cannot fire. Properties match
+// lowercase only: CSS is written lowercase and Go fields are
+// capitalised, and folding case is what let `Colors.Background:`
+// composite literals read as stylesheets in GOFASTR1801's first draft.
+var propTokenCategories = map[string][]string{
+	"font-size":     {"text"},
+	"border-radius": {"radii"},
+	"padding":       {"spacing"}, "padding-top": {"spacing"}, "padding-bottom": {"spacing"},
+	"padding-left": {"spacing"}, "padding-right": {"spacing"},
+	"margin": {"spacing"}, "margin-top": {"spacing"}, "margin-bottom": {"spacing"},
+	"margin-left": {"spacing"}, "margin-right": {"spacing"},
+	"gap": {"spacing"}, "row-gap": {"spacing"}, "column-gap": {"spacing"},
+	"color": {"color", "tk"}, "background": {"color", "tk"}, "background-color": {"color", "tk"},
+	"border-color": {"color", "tk"}, "outline-color": {"color", "tk"},
+	"fill": {"color", "tk"}, "stroke": {"color", "tk"},
+	"box-shadow":  {"shadow"},
+	"font-family": {"font"},
+	"transition":  {"duration", "easing"}, "transition-duration": {"duration"},
+	"transition-timing-function": {"easing"},
+	"animation":                  {"duration", "easing"}, "animation-duration": {"duration"},
+	"animation-timing-function": {"easing"},
+	"z-index":                   {"z"},
+}
+
+// tokenPropAlternation is the property list as a regex alternation,
+// sorted so the compiled pattern is byte-stable.
+var tokenPropAlternation = func() string {
+	props := make([]string, 0, len(propTokenCategories))
+	for p := range propTokenCategories {
+		props = append(props, p)
+	}
+	slices.Sort(props)
+	return strings.Join(props, "|")
+}()
+
+var (
+	// A stylesheet declaration `prop: value` in a string. The value stops
+	// where a declaration ends (`;` `}`), at the quote or backtick of the
+	// Go string the CSS lives in, or at a newline. notPropChar keeps the
+	// left edge honest: without it `font-size` matches inside the custom
+	// property `--font-size`.
+	reTokenValueCSS = regexp.MustCompile(
+		notPropChar + `(` + tokenPropAlternation + `)\s*:\s*([^;{}"'` + "`" + `\n]*)`)
+	// The StyleSheet builder shape, where property and value are separate
+	// string literals: Set("font-size", "0.75rem"), Child(sel, "gap",
+	// "8px"). The property is fully quoted on both sides so a match can
+	// never start mid-identifier.
+	//
+	// Known limit: the pair shape cannot see the CALL it sits in, so a
+	// non-builder call passing the same two literals — e.g.
+	// strings.ReplaceAll(s, "gap", "8px") in a design-system file — would
+	// match. No such call exists in tree (the repo verify run is clean),
+	// and distinguishing them needs the call's identity, which is type
+	// information: if a real false positive ever lands, the fix is a
+	// vet-lane analyzer (internal/analyzers), not more regex here. Until
+	// then a stray match costs one reviewed //gofastr:allow line.
+	reTokenValuePair = regexp.MustCompile(`"(` + tokenPropAlternation + `)"\s*,\s*"([^"]*)"`)
+)
+
+// tokenValueIndex is the theme token map inverted: value (lower case) →
+// the tokens declaring it. Built once per process from the canonical
+// theme, the same source GOFASTR1806 validates names against.
+//
+// Two exclusions, both load-bearing:
+//
+//   - dark.* keys: the dark palette re-declares the same property names,
+//     so a literal equal to a dark-only value must not become
+//     var(--color-x) — in the light scheme that reference resolves to
+//     the light value and silently changes the pixels. The base theme
+//     ships no dark entries today; the guard holds the day one lands.
+//   - bare-keyword values: `none` is shadow-none's value, but
+//     `box-shadow: none` is idiomatic CSS for "no shadow", not a token
+//     bypass. A value needs a digit, hex, quote, comma, or paren before
+//     it is evidence; keyword-only shapes never enter the index.
+var tokenValueIndex = sync.OnceValue(func() map[string][]string {
+	out := map[string][]string{}
+	for k, v := range style.ThemeToTokens(style.DefaultTheme()) {
+		if strings.HasPrefix(k, "dark.") || bareKeyword(v) {
+			continue
+		}
+		lv := strings.ToLower(v)
+		out[lv] = append(out[lv], k)
+	}
+	return out
+})
+
+// bareKeyword reports whether v is a single CSS identifier and nothing
+// else: no digit, hex marker, string quote, comma, or parenthesis
+// anywhere. Such a value cannot be distinctive evidence of a token
+// bypass.
+func bareKeyword(v string) bool {
+	if v == "" {
+		return true
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9', r == '#', r == ',', r == '(', r == '\'', r == '"':
+			return false
+		}
+	}
+	return true
+}
+
+// tokenCategory returns the category prefix of a token key ("z" of
+// "z-dropdown"), or the whole key when it carries no dash.
+func tokenCategory(key string) string {
+	if i := strings.Index(key, "-"); i >= 0 {
+		return key[:i]
+	}
+	return key
+}
+
+// checkHardcodedTokenValues reports one GOFASTR1807 per declaration on a
+// design-system line whose FULL value is exactly a theme token's value.
+// The value is judged whole: a shorthand (`padding: 8px 12px`), a
+// calc(), and a var() with its fallback restating the token (the
+// degraded-mode copy, which is correct) all differ from every token
+// value and stay quiet, as does any value no token carries — an
+// off-scale value is a MISSING token, a different finding.
+//
+// Design-system CSS lives in two shapes no AST unifies: stylesheet
+// strings and builder calls whose property and value are separate
+// literals. Both are text on a line, so both regexes run on the same
+// comment-stripped line the bespoke-CSS check reads. `!important` is
+// trimmed before comparing: it modifies the cascade, not the value.
+func checkHardcodedTokenValues(rel string, lineNo int, scan, orig string) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	report := func(prop, raw string) {
+		val := strings.TrimSpace(raw)
+		if rest, ok := strings.CutSuffix(val, "!important"); ok {
+			val = strings.TrimSpace(rest)
+		}
+		if val == "" || strings.Contains(val, "{") ||
+			strings.Contains(strings.ToLower(val), "var(") {
+			return
+		}
+		cats := propTokenCategories[prop]
+		allowed := map[string]bool{}
+		for _, c := range cats {
+			allowed[c] = true
+		}
+		var toks []string
+		for _, k := range tokenValueIndex()[strings.ToLower(val)] {
+			if allowed[tokenCategory(k)] {
+				toks = append(toks, k)
+			}
+		}
+		if len(toks) == 0 {
+			return
+		}
+		slices.Sort(toks)
+		dashed := make([]string, len(toks))
+		for i, k := range toks {
+			dashed[i] = "--" + k
+		}
+		first := toks[0]
+		ref := "{" + tokenCategory(first) + "." + strings.TrimPrefix(first, tokenCategory(first)+"-") + "}"
+		out = append(out, contracts.Diagnostic{
+			RuleID: contracts.RuleHardcodedTokenValue,
+			File:   rel,
+			Line:   lineNo,
+			Message: fmt.Sprintf("%s: %s is the declared value of %s; write var(--%s) (or the %s builder reference) so a token change reaches it",
+				prop, val, strings.Join(dashed, " / "), first, ref),
+			Snippet: strings.TrimSpace(orig),
+		})
+	}
+	if strings.Contains(scan, ":") {
+		for _, m := range reTokenValueCSS.FindAllStringSubmatch(scan, -1) {
+			report(m[1], m[2])
+		}
+	}
+	if strings.Contains(scan, `",`) {
+		for _, m := range reTokenValuePair.FindAllStringSubmatch(scan, -1) {
+			report(m[1], m[2])
+		}
+	}
+	return out
 }
 
 func hasPrefixAny(rel string, prefixes []string) bool {

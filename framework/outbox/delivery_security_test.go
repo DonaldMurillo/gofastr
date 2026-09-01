@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -94,6 +95,7 @@ func TestClaimDeliveriesConcurrentNoBusy(t *testing.T) {
 					errs[r] = append(errs[r], ctx.Err().Error())
 					return
 				}
+				began := time.Now()
 				batch, err := o.claimDeliveries(ctx)
 				switch {
 				case err == nil && len(batch) > 0:
@@ -104,7 +106,13 @@ func TestClaimDeliveriesConcurrentNoBusy(t *testing.T) {
 				case err == nil:
 					empty++
 				default:
-					errs[r] = append(errs[r], err.Error())
+					// The wait rides on the error so a failure says which
+					// kind it was: a busy error after ~busy_timeout means
+					// the 5s allowance was exhausted on a slow runner,
+					// while a fast one means a writer held the lock in a
+					// way serialisation should have prevented (#363).
+					errs[r] = append(errs[r], fmt.Sprintf("%s [after %s]",
+						err, time.Since(began).Round(time.Millisecond)))
 					time.Sleep(2 * time.Millisecond)
 				}
 			}
@@ -126,8 +134,8 @@ func TestClaimDeliveriesConcurrentNoBusy(t *testing.T) {
 		}
 	}
 	if len(busy) > 0 {
-		t.Errorf("serialized-claim contract violated: %d busy/locked errors from concurrent relays; first: %q",
-			len(busy), busy[0])
+		t.Errorf("serialized-claim contract violated: %d busy/locked errors from concurrent relays: %q",
+			len(busy), busy)
 	}
 	if len(other) > 0 {
 		t.Errorf("concurrent claim surfaced unexpected errors; first: %q", other[0])

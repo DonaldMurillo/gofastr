@@ -130,7 +130,7 @@ func adminCSS(_ style.Theme) string {
   border-radius: 999px;
   background: var(--color-surface, #17181a);
   color: var(--color-text-muted, #a8a8ad);
-  font-size: 0.875rem;
+  font-size: var(--text-sm, 0.875rem);
 }
 .admin-filter strong { color: var(--color-text, #f2f2f3); font-weight: 600; }
 .admin-filter__clear {
@@ -202,7 +202,7 @@ func adminCSS(_ style.Theme) string {
 }
 .admin-detail__label {
   padding: 0.85rem 1rem;
-  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: var(--text-xs, 0.75rem); text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--color-text-subtle, #818187);
   background: color-mix(in oklab, var(--color-surface, #17181a) 60%, var(--color-background, #0c0c0d));
   border-block-start: 1px solid var(--color-border, #2a2b2e);

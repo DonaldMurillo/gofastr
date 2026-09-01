@@ -174,7 +174,7 @@ func avatarGroupCSS(_ style.Theme) string {
   justify-content: center;
   inline-size: 2.5rem;
   block-size: 2.5rem;
-  border-radius: 9999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface-soft, #e5e5e5);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.8rem);

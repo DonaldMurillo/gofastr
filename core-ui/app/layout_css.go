@@ -139,7 +139,7 @@ func LayoutBaseCSS() string {
 .layout--has-sidebar main, .layout--has-sidebar .layout-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--spacing-xl, 24px);
   padding: clamp(24px, 3vw, 40px);
 }
 `
