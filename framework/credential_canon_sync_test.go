@@ -14,9 +14,12 @@ package framework
 // guarantee — a fifth credential header means editing three places and
 // noticing you had to.
 //
-// This reads the lists out of the source rather than restating them. A test
-// that declared its own copy of the canon would be a FOURTH list to keep in
-// sync, and would pass while the three real ones diverged.
+// This reads the lists out of the source rather than restating them, so a
+// divergence between the three is visible. It ALSO asserts the canon
+// absolutely, because cross-comparison alone cannot see a coordinated
+// omission — dropping a header from all three leaves them agreeing. The two
+// checks catch different failures and the second needs the first to stay
+// honest; see the comment above `want` below.
 
 import (
 	"go/ast"
@@ -107,6 +110,30 @@ func TestCredentialCanonsAgree(t *testing.T) {
 	t.Logf("credentialFingerprint       %v", fingerprint)
 	t.Logf("delegationCredentialHeaders %v", broker)
 	t.Logf("runToolRequest              %v", redispatch)
+
+	// Cross-comparison alone catches DIVERGENCE — one list changed — but
+	// not a coordinated omission: drop Cookie from all three and they still
+	// agree with each other. So the canon is also asserted absolutely.
+	//
+	// I argued against this at first, on the grounds that a declared copy
+	// is a fourth list that can drift. That objection is weaker than it
+	// looks: the cross-checks above still run, so the drift I feared (this
+	// test passing while the real lists disagree) cannot happen. And a
+	// legitimate fifth credential header SHOULD fail here — a deliberate,
+	// visible edit is exactly what you want when the security canon grows.
+	want := []string{"Authorization", "Cookie", "X-API-Key", "X-Gofastr-Embed"}
+	for _, c := range []struct {
+		name string
+		got  []string
+	}{
+		{"credentialFingerprint", fingerprint},
+		{"delegationCredentialHeaders", broker},
+		{"runToolRequest", redispatch},
+	} {
+		if !slices.Equal(c.got, want) {
+			t.Errorf("SECURITY: [#360] %s is %v, want %v. If a credential header was deliberately added or removed, update this list in the same change — that edit is the point, not an obstacle.", c.name, c.got, want)
+		}
+	}
 
 	if !slices.Equal(fingerprint, broker) {
 		t.Errorf("SECURITY: [#360] credentialFingerprint and delegationCredentialHeaders disagree:\n  app.go:    %v\n  broker.go: %v\nA header one recognises and the other drops is authority the caller holds that never reaches the delegation.", fingerprint, broker)

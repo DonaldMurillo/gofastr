@@ -164,6 +164,15 @@ func TestNoVarJS_SeesInsideTemplateInterpolations(t *testing.T) {
 		{"nested braces inside an interpolation", "const s = `${ {a: (() => { var x = 1; return x })()} }`;\n", 1},
 		{"clean interpolation stays clean", "const s = `a ${ let0 } b`;\nlet let0 = 1;\n", 0},
 		{"template text is still not code", "const s = `var x = 1`;\n", 0},
+		// The interpolation body goes back through the scanner rather than
+		// being copied, so its strings and comments are blanked like any
+		// others. Copying was the first attempt: it reported a violation
+		// for the string case, and a `}` inside a string ended the
+		// interpolation early so real code after it was missed.
+		{"string inside an interpolation is not code", "const s = `a ${\"var x = 1\"} b`;\n", 0},
+		{"comment inside an interpolation is not code", "const s = `${ /* var x = 1 */ 0 }`;\n", 0},
+		{"a brace inside a string does not end the interpolation", "const s = `${ \"}\" }`;\nlet ok = 1;\n", 0},
+		{"and a real var after such a brace is still caught", "const s = `${ \"}\" }`;\nvar leaked = 1;\n", 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

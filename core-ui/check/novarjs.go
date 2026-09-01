@@ -149,6 +149,58 @@ func isJSIdentChar(c byte) bool {
 // var-keyword scan doesn't false-positive on the word "var" appearing
 // in a comment or string. Preserves line breaks so reported lines
 // align with the original source.
+// templateExprEnd returns the body of a template interpolation starting at
+// i (just past the "${") and the index of its closing brace.
+//
+// Brace counting alone is not enough: a brace inside a string or a comment
+// is not a brace. Scanning those the same way the main loop does is what
+// stops `${ "}" }` from ending one character early.
+func templateExprEnd(src string, i int) (body string, end int) {
+	start := i
+	depth := 1
+	for i < len(src) {
+		c := src[i]
+		switch {
+		case c == '/' && i+1 < len(src) && src[i+1] == '/':
+			for i < len(src) && src[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < len(src) && src[i+1] == '*':
+			i += 2
+			for i+1 < len(src) && !(src[i] == '*' && src[i+1] == '/') {
+				i++
+			}
+			i += 2
+		case c == '\'' || c == '"' || c == '`':
+			q := c
+			i++
+			for i < len(src) {
+				if src[i] == '\\' {
+					i += 2
+					continue
+				}
+				if src[i] == q {
+					i++
+					break
+				}
+				i++
+			}
+		case c == '{':
+			depth++
+			i++
+		case c == '}':
+			depth--
+			if depth == 0 {
+				return src[start:i], i
+			}
+			i++
+		default:
+			i++
+		}
+	}
+	return src[start:], len(src)
+}
+
 func stripJSCommentsAndStrings(src string) string {
 	out := make([]byte, 0, len(src))
 	i := 0
@@ -207,25 +259,26 @@ func stripJSCommentsAndStrings(src string) string {
 				}
 				// A template literal's ${...} body is EXECUTABLE JS, not
 				// string content. Blanking it hid a `var` declared inside
-				// an interpolation from this lint entirely. Copy the body
-				// through so the scan sees it. Depth-tracked because an
-				// interpolation can contain braces of its own.
+				// an interpolation from this lint entirely.
+				//
+				// The body is run back through this same scanner rather
+				// than copied verbatim. Copying was the first attempt and
+				// was wrong twice over: a string inside the interpolation
+				// (`${"var x = 1"}`) was then scanned as code and reported
+				// a violation that is not there, and a `}` inside a string
+				// or comment ended the interpolation early, so real code
+				// after it went back to being treated as template text and
+				// a `var` there was missed. Recursing gets both for free,
+				// because finding the true end of the body is the same
+				// problem as blanking its contents.
 				if quote == '`' && src[i] == '$' && i+1 < len(src) && src[i+1] == '{' {
 					out = append(out, ' ', ' ')
 					i += 2
-					depth := 1
-					for i < len(src) && depth > 0 {
-						if src[i] == '{' {
-							depth++
-						} else if src[i] == '}' {
-							depth--
-							if depth == 0 {
-								out = append(out, ' ')
-								i++
-								break
-							}
-						}
-						out = append(out, src[i])
+					body, end := templateExprEnd(src, i)
+					out = append(out, stripJSCommentsAndStrings(body)...)
+					i = end
+					if i < len(src) && src[i] == '}' {
+						out = append(out, ' ')
 						i++
 					}
 					continue
