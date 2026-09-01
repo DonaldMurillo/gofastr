@@ -196,15 +196,30 @@ transaction's single connection with your own statements. Prefer
 succeeds — that removes the poll entirely:
 
 ```go
-tx, _ := dbc.Begin()
-ctx, queue := db.WithTxQueue(ctx, tx)
-if _, err := ordersCH.CreateOne(ctx, order); err != nil {
-    tx.Rollback() // held events are dropped with the queue
+tx, err := dbc.Begin()
+if err != nil {
     return err
 }
-if err := tx.Commit(); err != nil { return err }
+ctx, queue := db.WithTxQueue(ctx, tx)
+committed := false
+defer func() {
+    if !committed {
+        _ = tx.Rollback() // held events are dropped with the queue
+    }
+}()
+if _, err := ordersCH.CreateOne(ctx, order); err != nil {
+    return err
+}
+if err := tx.Commit(); err != nil {
+    return err
+}
+committed = true
 queue.RunAfterCommit() // events publish now, post-commit
 ```
+
+The deferred rollback matters: a panic between `Begin` and `Commit`
+otherwise keeps the pooled connection and any row locks until the
+finalizer. It is the same shape `App.InTx` uses internally.
 
 ### Handling validation errors
 

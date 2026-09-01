@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -490,6 +491,10 @@ const ambientTxProbeInterval = 5 * time.Millisecond
 // nobody committed is worse than a missing one.
 const ambientTxProbeTimeout = 2 * time.Minute
 
+// probeWarnOnce gates the once-per-process warning that the caller-owned
+// fallback below is probing a live transaction.
+var probeWarnOnce sync.Once
+
 // emitAfterAmbientTx holds a live-bus emission until the caller's ambient
 // transaction resolves, then publishes it only if the write actually landed.
 //
@@ -559,6 +564,18 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 		ch.Events.EmitAsync(db.WithoutTx(ctx), event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
 		return
 	}
+
+	// Reaching here means a caller-owned transaction with no commit queue,
+	// so the outcome must be learned by probing the live tx — a statement
+	// that can interleave with the caller's own on the transaction's one
+	// connection. Scream once per process rather than racing silently;
+	// the caller can remove the probe entirely by switching to
+	// db.WithTxQueue and draining after Commit.
+	probeWarnOnce.Do(func() {
+		log.Printf("crud: a CRUD write joined a caller-owned transaction (db.WithTx with no commit queue); " +
+			"its lifecycle event is confirmed by polling the live *sql.Tx, which can race the owner's statements — " +
+			"prefer db.WithTxQueue + RunAfterCommit (see hooks-and-transactions docs)")
+	})
 
 	// Snapshot the payload now: it is built from the request context's
 	// tenant/owner identity, which will not be valid to read later.

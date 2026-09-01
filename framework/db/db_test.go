@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -53,6 +55,43 @@ func TestCommitQueueUndrainedNeverRuns(t *testing.T) {
 	q.Add(func() { ran = true })
 	if ran {
 		t.Fatal("queued work ran without a drain")
+	}
+}
+
+// Adds racing the drain: whichever side of the transition each Add lands
+// on, its callback must run exactly once — queued-and-drained or run
+// immediately, never lost, never doubled. Meaningful under -race.
+func TestCommitQueueConcurrentAddsRunExactlyOnce(t *testing.T) {
+	const adders = 16
+	var q CommitQueue
+	var runs [adders]atomic.Int32
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < adders; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			q.Add(func() { runs[i].Add(1) })
+		}(i)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		q.RunAfterCommit()
+	}()
+	close(start)
+	wg.Wait()
+	// Callbacks queued before the drain ran inside RunAfterCommit; any
+	// that arrived after ran inline in their Add. Either way: exactly one
+	// run each, once all goroutines have joined.
+	q.RunAfterCommit() // second drain is a no-op; must not re-run anything
+	for i := 0; i < adders; i++ {
+		if n := runs[i].Load(); n != 1 {
+			t.Fatalf("callback %d ran %d times, want exactly 1", i, n)
+		}
 	}
 }
 
