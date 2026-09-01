@@ -55,7 +55,13 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 	defer srv.Close()
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.NoSandbox)...)
+		append(chromedp.DefaultExecAllocatorOptions[:], // A cold Chrome start on a shared runner can take longer than
+			// chromedp's 20s default wait for the DevTools websocket URL, which
+			// surfaces as "websocket url timeout reached" and looks like a test
+			// failure rather than a slow launch. The cmd/gofastr chromedp tests
+			// already raise it to 90s; these did not.
+			chromedp.WSURLReadTimeout(90*time.Second),
+			chromedp.NoSandbox)...)
 	defer cancelAlloc()
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()

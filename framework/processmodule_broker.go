@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
@@ -72,19 +73,24 @@ type Broker struct {
 
 // delegationEntry is the snapshot stashed at delegation-mint time. It carries
 // exactly what the reverse path needs to (a) re-attach the caller's identity
-// to the CRUD re-dispatch (Cookie/Authorization re-injected via crud.Redispatch
-// reading mcp.WithRequest) and (b) run the CrossOwnerRead carve-out on the
-// delegated caller (roles + policy). module binds the handle to the module
-// that minted it (F6) so an app-global handle table cannot be replayed under
-// a different module's reverse handler. parentCallID is diagnostic correlation.
+// to the CRUD re-dispatch (every field of every credential header re-injected
+// via crud.Redispatch reading mcp.WithRequest) and (b) run the
+// CrossOwnerRead carve-out on the delegated caller (roles + policy). module
+// binds the handle to the module that minted it (F6) so an app-global handle
+// table cannot be replayed under a different module's reverse handler.
+// parentCallID is diagnostic correlation.
 type delegationEntry struct {
-	cookie        string
-	authorization string
-	roles         []string
-	policy        *access.RolePolicy
-	module        string
-	parentCallID  uint64
-	expires       time.Time
+	// credentials holds every FIELD of every credential header the minting
+	// request presented, keyed by canonical header name — the four-header
+	// canon in delegationCredentialHeaders. Nothing else from the request
+	// rides along, so a delegation can re-present the caller's authority
+	// but never MORE of it (issue #360).
+	credentials  http.Header
+	roles        []string
+	policy       *access.RolePolicy
+	module       string
+	parentCallID uint64
+	expires      time.Time
 }
 
 // BrokerOption configures a [Broker].
@@ -167,6 +173,19 @@ func mustHandle(p *moduleproto.Peer, method string, h moduleproto.Handler) {
 // (including buffered-503 crash paths) so the in-memory table does not leak.
 // A nil r is the ambient (caller-less) path. MintDelegation is still legal
 // but returns an empty handle the broker treats as ambient.
+//
+// The snapshot deliberately does NOT pin which identity CLASS resolved the
+// original request (grant vs session vs API key): it re-presents the
+// credential fields verbatim and lets the re-dispatch's middleware chain
+// re-run the same verdicts on the same headers. Pinning would mean the
+// broker interpreting credentials, which the capability model reserves for
+// the auth surfaces; and under the real wiring the question is mostly moot —
+// embed.Host.Middleware (contract: installed OUTERMOST) deletes
+// Cookie/Authorization/X-API-Key from the request the moment a grant verdict
+// is final, i.e. BEFORE the supervisor mints, so a mixed request snapshots
+// as the class its middleware already chose. A grant that may not reach the
+// re-dispatched CRUD path fails closed there (embed reach refusal), it never
+// falls through to the suppressed cookie.
 func (b *Broker) MintDelegation(r *http.Request, parentCallID uint64) (string, func()) {
 	handle, err := randomHandle()
 	if err != nil {
@@ -180,8 +199,7 @@ func (b *Broker) MintDelegation(r *http.Request, parentCallID uint64) (string, f
 	}
 	entry := delegationEntry{parentCallID: parentCallID, expires: b.now().Add(b.handleTTL)}
 	if r != nil {
-		entry.cookie = r.Header.Get("Cookie")
-		entry.authorization = r.Header.Get("Authorization")
+		entry.credentials = credentialSnapshot(r)
 		entry.roles = access.GetRoles(r.Context())
 		entry.policy = access.PolicyFromContext(r.Context())
 		entry.module = delegationModuleFromCtx(r.Context())
@@ -594,18 +612,52 @@ func (b *Broker) entityPath(ent *entity.Entity) string {
 // moduleRole is the synthetic ambient role name for a module (design §5).
 func moduleRole(name string) string { return "module/" + name }
 
+// delegationCredentialHeaders is the framework's credential-header canon: the
+// four transport headers the auth surfaces resolve (Authorization bearer,
+// X-API-Key apitoken, the embed grant, Cookie sessions — the same list
+// app.go's credentialFingerprint hashes). It MUST stay in sync with
+// credentialFingerprint's list in app.go and the copy list in
+// crud/mcp.go runToolRequest: a header one of them recognizes and the others
+// drop is the issue #360 defect class — authority the caller legitimately
+// holds that never reaches the re-dispatch.
+var delegationCredentialHeaders = []string{"Authorization", "X-API-Key", fembed.GrantHeader, "Cookie"}
+
+// credentialSnapshot copies every FIELD of every credential header r carries.
+// Values, never Get: Get returns only the FIRST field, and Cookie is
+// routinely several (a proxy prepends its own before the browser's), which
+// is the exact collapse app.go's credentialFingerprint documents. Headers
+// outside the canon are deliberately excluded — the snapshot re-presents
+// the caller's credentials and nothing else, so it can never carry more
+// authority than the minting request had.
+func credentialSnapshot(r *http.Request) http.Header {
+	h := http.Header{}
+	for _, name := range delegationCredentialHeaders {
+		for _, v := range r.Header.Values(name) {
+			if v == "" {
+				continue
+			}
+			h.Add(name, v)
+		}
+	}
+	return h
+}
+
 // snapshotRequest builds a minimal *http.Request carrying the stashed caller
 // credentials so crud.Redispatch's mcp.WithRequest header re-injection
 // recovers the same identity the middleware would resolve for a live request.
+//
+// The header map is a fresh CLONE of the stash per call: re-dispatch
+// middleware mutates request headers in place (embed's grant path deletes
+// Cookie/Authorization/X-API-Key once the grant verdict is final — "the
+// grant is the only identity an embed request may have"), and a shared map
+// would let one re-dispatch's verdict erase the credentials of every later
+// reverse call on the same handle.
 func snapshotRequest(entry delegationEntry) *http.Request {
-	r := &http.Request{Header: map[string][]string{}, URL: &url.URL{Path: "/"}}
-	if entry.cookie != "" {
-		r.Header.Set("Cookie", entry.cookie)
+	header := entry.credentials.Clone()
+	if header == nil {
+		header = http.Header{}
 	}
-	if entry.authorization != "" {
-		r.Header.Set("Authorization", entry.authorization)
-	}
-	return r
+	return &http.Request{Header: header, URL: &url.URL{Path: "/"}}
 }
 
 // entityQuerySuffix expands the structured query params into the CRUD list

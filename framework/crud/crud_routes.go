@@ -13,9 +13,13 @@ import (
 // bare LLMMDHandler here checked only for a session, which let an
 // authenticated caller with no read permission fetch the schema of an entity
 // whose rows they get a 403 on.
-func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string) {
+//
+// readOnly is the mount's own CrudRouteOptions.ReadOnly: the doc must
+// describe the routes this registration actually mounts, so a read-only
+// mount's llm.md omits the write and batch endpoints entirely (#358).
+func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string, readOnly bool) {
 	path = NormalizePath(path)
-	r.Get(path+"/llm.md", LLMMDHandlerFor(ch))
+	r.Get(path+"/llm.md", LLMMDHandlerFor(ch, LLMMDOptions{ReadOnly: readOnly}))
 }
 
 // CrudRouteOptions controls which routes are registered by RegisterCrudRoutes.
@@ -109,7 +113,7 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 
 	// LLM-friendly documentation endpoint
 	if !opt.NoLLMMD {
-		registerLLMMDRoutes(r, handler, path)
+		registerLLMMDRoutes(r, handler, path, opt.ReadOnly)
 	}
 }
 

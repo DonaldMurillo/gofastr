@@ -441,7 +441,16 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 		ClientImport: clientImport,
 		Selection:    cliSelectionNote(opts),
 	}
-
+	// Selection is baked verbatim into the generated main.go header
+	// comment — the same sink --binary is control-char-guarded for above.
+	// --api-prefix and --out reach it from argv without their own checks
+	// (only/exclude/verbs values are already constrained to entity names
+	// and known verbs), so guard the composed value once, at the sink.
+	for _, r := range spec.Selection {
+		if r < 0x20 || r == 0x7f {
+			return cliSpec{}, fmt.Errorf("selection flags are baked into the generated main.go header comment and must not contain control characters: %q", spec.Selection)
+		}
+	}
 	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
 		for _, name := range names {
 			if cliEntityMatches(decl, name) {
@@ -548,6 +557,19 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 
 func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
 	ent := buildEntityModel(decl, verbs)
+	// The CLI re-emits declaration strings into Go source: ent.Struct in
+	// identifier position (run%sList, %sCommands) and ent.Table raw inside
+	// "/%s/" string literals. The blueprint path into entities/ is guarded
+	// upstream (validateBlueprint: isGoIdentifier + query.SafeIdent), but
+	// packReadEntities also reads hand-written entity files, so the guard
+	// belongs at this emitter too: refuse what would break out of the
+	// emitted code rather than munge it, mirroring validateBlueprint.
+	if !isGoIdentifier(ent.Struct) {
+		return cliEntity{}, fmt.Errorf("entity %q does not produce a valid Go identifier (%q); it is emitted as generated function names. Rename it to letters, digits and underscores starting with a letter", decl.Name, ent.Struct)
+	}
+	if strings.ContainsFunc(ent.Table, func(r rune) bool { return r == '"' || r == '\\' || r < 0x20 || r == 0x7f }) {
+		return cliEntity{}, fmt.Errorf("entity %q table %q contains a character that cannot survive the Go string literals it is emitted into. Rename the table", decl.Name, ent.Table)
+	}
 	if cliReservedCommands[ent.Command] {
 		return cliEntity{}, fmt.Errorf("entity %q: its command form %q collides with a CLI built-in. Exclude it with --exclude=%s, or rename the table", decl.Name, ent.Command, decl.Name)
 	}

@@ -248,6 +248,36 @@ The shape is fixed:
    re-register it).
 3. Call `peer.Start()`, then block on `<-peer.Done()` (clean EOF on stdin).
 
+### Cancelling an in-flight call
+
+`module.cancel` aborts one inbound request's context. `CancelParams.RequestID`
+is **the canonical decimal string of the inbound frame id** — the value the
+host's `Call` assigned to the frame it is cancelling, formatted with no
+padding or sign. Exactly one spelling is accepted: `"7"` cancels frame 7,
+while `"07"`, `" 7"` and `"notes-7"` are silently ignored, so a
+near-miss can never abort a neighbouring request.
+
+Note that this is *not* `HTTPRequestParams.RequestID`, which is a
+diagnostics-only `<module>-<counter>` label and cancels nothing. The two
+fields were documented as the same value and were not, which is why
+`module.cancel` never fired on the proxy path.
+
+Hosts get the frame id from `Peer.CallWithID`, which is `Call` plus a
+callback:
+
+```go
+raw, err := peer.CallWithID(ctx, moduleproto.MethodHTTP, params, func(frameID uint64) {
+    go watchCancel(peer, frameID, ctx) // arm the watcher for THIS frame
+})
+```
+
+The callback fires synchronously, after the pending entry is registered and
+before the frame is written, so a watcher armed inside it cannot miss a
+response. It must not block — the write is waiting on it. It is not called
+when no id was allocated (the peer is closed, the method is empty, or the
+in-flight cap is reached). Plain `Call` is unchanged and still correct
+wherever the caller has nothing to cancel.
+
 ```go
 codec, _ := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
 peer := moduleproto.NewPeer(codec, moduleproto.RoleChild)

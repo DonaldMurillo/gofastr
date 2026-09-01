@@ -157,9 +157,15 @@ type HTTPMethod string
 // request body to the allowlisted headers, base64-encoding the body, and
 // attaching the caller's delegation handle.
 type HTTPRequestParams struct {
-	// RequestID is a host-minted correlation id for THIS proxied request.
-	// It is independent of the JSON-RPC id (which lives at the envelope
-	// level) and is what module.cancel references to abort in-flight work.
+	// RequestID is a host-minted correlation id for THIS proxied request
+	// ("<module>-<counter>"), for diagnostics and child-side logging only.
+	// It is NOT what module.cancel references: cancellation targets the
+	// JSON-RPC frame id of the request (see [CancelParams.RequestID] and
+	// [Peer.CallWithID]). An earlier revision of this comment claimed the
+	// opposite ("independent of the JSON-RPC id … and is what module.cancel
+	// references"); the supervisor followed it, and module.cancel became a
+	// silent no-op on the proxy path because no serving peer can map this
+	// value back to a frame (issue #356).
 	RequestID string `json:"request_id"`
 	// RouteID is the installed route's descriptor id.
 	RouteID string `json:"route_id"`
@@ -385,9 +391,13 @@ type EventEmitParams struct {
 type EventEmitResult struct{}
 
 // CancelParams is the body of the module.cancel notification (host → module).
-// RequestID is the inbound request's host-side correlation id (the
-// HTTPRequestParams.RequestID for a module.http call). The child uses it to
-// find and cancel the in-flight handler's context.
+// RequestID is the CANONICAL DECIMAL STRING of the inbound frame id being
+// cancelled (e.g. the id [Peer.CallWithID] reported to the originator of the
+// module.http request). It is NOT [HTTPRequestParams.RequestID]: that value
+// is an application-level correlation id the serving peer cannot resolve to
+// a frame — conflating the two made module.cancel a silent no-op on the
+// proxy path (issue #356). The child parses RequestID with a strict
+// full-string decimal parse; any other shape names no frame and is a no-op.
 type CancelParams struct {
 	RequestID string `json:"request_id"`
 }

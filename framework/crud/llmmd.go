@@ -12,6 +12,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
+// LLMMDOptions controls what EntityLLMMD documents. The zero value keeps
+// the historical full-CRUD document; ReadOnly narrows it to the routes a
+// CrudRouteOptions{ReadOnly: true} mount actually serves.
+type LLMMDOptions struct {
+	// ReadOnly omits every write endpoint (POST, PUT, PATCH, DELETE and
+	// the _batch family) plus the per-field Create/Update columns: on a
+	// read-only mount those routes answer 404/405, and the doc must not
+	// advertise routes the server does not serve (#358, the #266 class
+	// one layer down: the answer lives in the mount options, not the
+	// entity declaration).
+	ReadOnly bool
+}
+
 // EntityLLMMD generates an LLM-friendly markdown document describing all
 // CRUD endpoints for a single entity. The output is designed to be
 // immediately useful as context for an LLM agent, concise, structured,
@@ -27,7 +40,15 @@ import (
 //   - Batch create / update / delete
 //   - SSE event stream
 //   - Custom endpoints declared on the entity
-func EntityLLMMD(ent *entity.Entity) string {
+//
+// Pass LLMMDOptions{ReadOnly: true} for an entity mounted with
+// CrudRouteOptions{ReadOnly: true} (App.View does): the write, batch and
+// Create/Update-column sections are omitted so the doc matches the mount.
+func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
+	var opt LLMMDOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
 	var b strings.Builder
 	name := ent.GetName()
 	table := ent.GetTable()
@@ -39,28 +60,25 @@ func EntityLLMMD(ent *entity.Entity) string {
 		resourcePath = ent.Version + resourcePath
 	}
 	fmt.Fprintf(&b, "Resource: `%s`\n\n", resourcePath)
+	if opt.ReadOnly {
+		b.WriteString("This resource is served read-only: only the list, get-by-ID and `_events` endpoints are mounted. There are no create, update, delete or batch routes.\n\n")
+	}
 
 	// --- Field reference ---
+	// Read-only mounts have no create/update endpoints, so the per-field
+	// Create/Update columns (which describe those endpoints' request
+	// bodies) are omitted rather than frozen at "—".
 	b.WriteString("## Fields\n\n")
-	b.WriteString("| Field | Type | Create | Update | Notes |\n")
-	b.WriteString("|-------|------|--------|--------|-------|\n")
+	if opt.ReadOnly {
+		b.WriteString("| Field | Type | Notes |\n")
+		b.WriteString("|-------|------|-------|\n")
+	} else {
+		b.WriteString("| Field | Type | Create | Update | Notes |\n")
+		b.WriteString("|-------|------|--------|--------|-------|\n")
+	}
 	for _, f := range fields {
 		if f.Hidden {
 			continue
-		}
-		createCol := "—"
-		updateCol := "—"
-		if f.AutoGenerate == schema.AutoNone && !f.ReadOnly {
-			if f.Required && f.Default == nil {
-				createCol = "**required**"
-			} else {
-				createCol = "optional"
-			}
-			updateCol = "optional"
-		}
-		if f.AutoGenerate != schema.AutoNone {
-			createCol = "auto"
-			updateCol = "auto"
 		}
 		notes := ""
 		if f.Unique {
@@ -83,6 +101,24 @@ func EntityLLMMD(ent *entity.Entity) string {
 				notes += ", "
 			}
 			notes += "not filterable/sortable"
+		}
+		if opt.ReadOnly {
+			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", f.Name, fieldTypeLabel(f.Type), notes)
+			continue
+		}
+		createCol := "—"
+		updateCol := "—"
+		if f.AutoGenerate == schema.AutoNone && !f.ReadOnly {
+			if f.Required && f.Default == nil {
+				createCol = "**required**"
+			} else {
+				createCol = "optional"
+			}
+			updateCol = "optional"
+		}
+		if f.AutoGenerate != schema.AutoNone {
+			createCol = "auto"
+			updateCol = "auto"
 		}
 		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", f.Name, fieldTypeLabel(f.Type), createCol, updateCol, notes)
 	}
@@ -123,7 +159,13 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("| Parameter | Type | Description |\n")
 	b.WriteString("|-----------|------|-------------|\n")
 	b.WriteString("| `page` | integer | Page number (offset mode, default 1) |\n")
-	b.WriteString("| `limit` | integer | Items per page (default 20, max 100) |\n")
+	// The cap is per entity, and hardcoding 100 here told every agent the
+	// wrong number for any entity that set Pagination.MaxListLimit — the
+	// same reality-drift as advertising unmounted routes, one column over.
+	// listLimitCap is the function the request path actually clamps with, so
+	// the doc and the clamp cannot disagree.
+	fmt.Fprintf(&b, "| `limit` | integer | Items per page (default 20, max %d) |\n",
+		listLimitCap(ent.Config.Pagination.MaxListLimit))
 	b.WriteString("| `sort` | string | Sort field (prefix with `-` for descending, e.g. `-created_at`) |\n")
 	b.WriteString("| `cursor` | string | Opaque cursor for keyset pagination. Presence switches to cursor mode. |\n")
 	b.WriteString("| `direction` | string | Cursor walk direction: `forward` (default) or `backward` |\n")
@@ -182,71 +224,77 @@ func EntityLLMMD(ent *entity.Entity) string {
 	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 	b.WriteString("**Error:** `404` if not found.\n\n")
 
-	// POST /{table}
-	fmt.Fprintf(&b, "### POST %s\n\n", resourcePath)
-	b.WriteString("Create a new record.\n\n")
-	b.WriteString("**Request body:** JSON object with writable fields.\n```json\n")
-	b.WriteString("{\n")
-	first := true
-	for _, f := range fields {
-		if f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
-			continue
+	// Write endpoints. Guarded by the mount: a CrudRouteOptions{ReadOnly:
+	// true} mount (App.View) never registers these routes, so documenting
+	// them would hand an agent seven 404/405s (#358).
+	if !opt.ReadOnly {
+
+		// POST /{table}
+		fmt.Fprintf(&b, "### POST %s\n\n", resourcePath)
+		b.WriteString("Create a new record.\n\n")
+		b.WriteString("**Request body:** JSON object with writable fields.\n```json\n")
+		b.WriteString("{\n")
+		first := true
+		for _, f := range fields {
+			if f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
+				continue
+			}
+			if !first {
+				b.WriteString(",\n")
+			}
+			first = false
+			fmt.Fprintf(&b, "  \"%s\": \"<value>\"", f.Name)
 		}
-		if !first {
-			b.WriteString(",\n")
+		b.WriteString("\n}\n```\n")
+		b.WriteString("**Response:** `201` with `{\"data\": { ... }}`.\n")
+		b.WriteString("**Error:** `400` with validation errors.\n\n")
+
+		// PUT /{table}/{id}
+		fmt.Fprintf(&b, "### PUT %s/{id}\n\n", resourcePath)
+		b.WriteString("Update an existing record.\n\n")
+		b.WriteString("**Request body:** JSON object with fields to update.\n")
+		b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
+		b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
+
+		// PATCH /{table}/{id}
+		fmt.Fprintf(&b, "### PATCH %s/{id}\n\n", resourcePath)
+		b.WriteString("Sparsely update an existing record. Only fields present in the JSON body are validated and changed.\n\n")
+		b.WriteString("**Request body:** JSON object with one or more fields to update.\n")
+		b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
+		b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
+
+		// DELETE /{table}/{id}
+		fmt.Fprintf(&b, "### DELETE %s/{id}\n\n", resourcePath)
+		b.WriteString("Delete a record.\n\n")
+		if ent.Config.Scope.SoftDelete {
+			b.WriteString("**Note:** This entity uses soft-delete: sets `deleted_at` instead of removing the row.\n\n")
 		}
-		first = false
-		fmt.Fprintf(&b, "  \"%s\": \"<value>\"", f.Name)
+		b.WriteString("**Response:** `204` No Content.\n")
+		b.WriteString("**Error:** `404` not found.\n\n")
+
+		// Batch endpoints
+		fmt.Fprintf(&b, "### POST %s/_batch\n\n", resourcePath)
+		b.WriteString("Batch create (atomic, all-or-nothing).\n\n")
+		b.WriteString("```json\n{\n  \"items\": [ { ... }, { ... } ]\n}\n```\n")
+		b.WriteString(fmt.Sprintf("Maximum %d items per batch.\n\n", MaxBatchSize))
+
+		fmt.Fprintf(&b, "### PATCH %s/_batch\n\n", resourcePath)
+		b.WriteString("Batch update (atomic). Each item must include `id` plus fields to update.\n\n")
+		b.WriteString("```json\n{\n  \"items\": [ {\"id\": \"...\", \"...\": \"...\"} ]\n}\n```\n\n")
+
+		fmt.Fprintf(&b, "### DELETE %s/_batch\n\n", resourcePath)
+		b.WriteString("Batch delete (atomic).\n\n")
+		b.WriteString("```json\n{\n  \"ids\": [ \"id1\", \"id2\" ]\n}\n```\n\n")
+
+		fmt.Fprintf(&b, "**Batch response** (200 committed, 400 rolled back):\n```json\n")
+		b.WriteString("{\n")
+		b.WriteString("  \"committed\": true,\n")
+		b.WriteString("  \"results\": [\n")
+		b.WriteString("    { \"index\": 0, \"data\": { ... } },\n")
+		b.WriteString("    { \"index\": 1, \"error\": \"validation: ...\", \"fields\": { \"name\": [\"is required\"] } }\n")
+		b.WriteString("  ]\n")
+		b.WriteString("}\n```\n\n")
 	}
-	b.WriteString("\n}\n```\n")
-	b.WriteString("**Response:** `201` with `{\"data\": { ... }}`.\n")
-	b.WriteString("**Error:** `400` with validation errors.\n\n")
-
-	// PUT /{table}/{id}
-	fmt.Fprintf(&b, "### PUT %s/{id}\n\n", resourcePath)
-	b.WriteString("Update an existing record.\n\n")
-	b.WriteString("**Request body:** JSON object with fields to update.\n")
-	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
-	b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
-
-	// PATCH /{table}/{id}
-	fmt.Fprintf(&b, "### PATCH %s/{id}\n\n", resourcePath)
-	b.WriteString("Sparsely update an existing record. Only fields present in the JSON body are validated and changed.\n\n")
-	b.WriteString("**Request body:** JSON object with one or more fields to update.\n")
-	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
-	b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
-
-	// DELETE /{table}/{id}
-	fmt.Fprintf(&b, "### DELETE %s/{id}\n\n", resourcePath)
-	b.WriteString("Delete a record.\n\n")
-	if ent.Config.Scope.SoftDelete {
-		b.WriteString("**Note:** This entity uses soft-delete: sets `deleted_at` instead of removing the row.\n\n")
-	}
-	b.WriteString("**Response:** `204` No Content.\n")
-	b.WriteString("**Error:** `404` not found.\n\n")
-
-	// Batch endpoints
-	fmt.Fprintf(&b, "### POST %s/_batch\n\n", resourcePath)
-	b.WriteString("Batch create (atomic, all-or-nothing).\n\n")
-	b.WriteString("```json\n{\n  \"items\": [ { ... }, { ... } ]\n}\n```\n")
-	b.WriteString(fmt.Sprintf("Maximum %d items per batch.\n\n", MaxBatchSize))
-
-	fmt.Fprintf(&b, "### PATCH %s/_batch\n\n", resourcePath)
-	b.WriteString("Batch update (atomic). Each item must include `id` plus fields to update.\n\n")
-	b.WriteString("```json\n{\n  \"items\": [ {\"id\": \"...\", \"...\": \"...\"} ]\n}\n```\n\n")
-
-	fmt.Fprintf(&b, "### DELETE %s/_batch\n\n", resourcePath)
-	b.WriteString("Batch delete (atomic).\n\n")
-	b.WriteString("```json\n{\n  \"ids\": [ \"id1\", \"id2\" ]\n}\n```\n\n")
-
-	fmt.Fprintf(&b, "**Batch response** (200 committed, 400 rolled back):\n```json\n")
-	b.WriteString("{\n")
-	b.WriteString("  \"committed\": true,\n")
-	b.WriteString("  \"results\": [\n")
-	b.WriteString("    { \"index\": 0, \"data\": { ... } },\n")
-	b.WriteString("    { \"index\": 1, \"error\": \"validation: ...\", \"fields\": { \"name\": [\"is required\"] } }\n")
-	b.WriteString("  ]\n")
-	b.WriteString("}\n```\n\n")
 
 	// SSE
 	fmt.Fprintf(&b, "### GET %s/_events\n\n", resourcePath)
@@ -274,19 +322,36 @@ func EntityLLMMD(ent *entity.Entity) string {
 	return b.String()
 }
 
+// MountInfo reports how an entity's auto-CRUD routes are mounted. The llm.md
+// index asks the app that performed the mounts, not the entity declaration:
+// Exposure cannot express that App.View mounts an entity read-only (#358),
+// just as it could not express DB-less (#266). The index must describe
+// routes that exist.
+type MountInfo struct {
+	// Mounted reports whether the standard auto-CRUD routes are registered
+	// for this entity at all (the app's route predicate: DB attached AND
+	// Exposure.CRUD unset-or-true).
+	Mounted bool
+	// ReadOnly reports a CrudRouteOptions{ReadOnly: true} mount: only the
+	// List, Get-by-ID and _events routes exist; write and batch routes
+	// were never registered.
+	ReadOnly bool
+}
+
 // RegistryLLMMD generates a top-level LLM-friendly markdown index that
 // lists every registered entity with a link to its detailed llm.md page.
-// crudMounted reports whether the entity's auto-CRUD routes were actually
-// registered (the app passes its route predicate: DB attached AND
-// Exposure.CRUD); nil documents standard CRUD for every entity, the
-// pre-#266 behavior. Entities without CRUD routes list only their declared
-// custom endpoints, and entities with no routes at all are omitted — the
-// index must describe routes that exist. It lists every (routed) entity;
-// callers that serve this to a request (the /api/llm.md index) MUST filter
-// per request via [registryLLMMD] so the index does not disclose entities
-// the caller cannot read.
-func RegistryLLMMD(registry entity.Registry, appName string, crudMounted func(*entity.Entity) bool) string {
-	return registryLLMMD(registry, appName, nil, crudMounted)
+// crudMount reports how the entity's auto-CRUD routes were actually
+// registered (the app passes its mount predicate: DB attached AND
+// Exposure.CRUD, plus ReadOnly for App.View mounts); nil documents standard
+// CRUD for every entity, the pre-#266 behavior. Entities without CRUD
+// routes list only their declared custom endpoints, entities with no routes
+// at all are omitted, and read-only mounts are counted and labelled as the
+// three routes they serve — the index must describe routes that exist. It
+// lists every (routed) entity; callers that serve this to a request (the
+// /api/llm.md index) MUST filter per request via [registryLLMMD] so the
+// index does not disclose entities the caller cannot read.
+func RegistryLLMMD(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo) string {
+	return registryLLMMD(registry, appName, nil, crudMount)
 }
 
 // registryLLMMD renders the index, keeping only entities for which keep
@@ -294,7 +359,7 @@ func RegistryLLMMD(registry entity.Registry, appName string, crudMounted func(*e
 // per-request keep that mirrors List's read-scope predicate (owner, tenant,
 // RBAC) so an authenticated caller with no grant for an entity gets 403 on
 // its rows AND never sees its name, base path or flags in the index.
-func registryLLMMD(registry entity.Registry, appName string, keep, crudMounted func(*entity.Entity) bool) string {
+func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.Entity) bool, crudMount func(*entity.Entity) MountInfo) string {
 	var b strings.Builder
 	title := appName
 	if title == "" {
@@ -316,12 +381,20 @@ func registryLLMMD(registry entity.Registry, appName string, keep, crudMounted f
 		if keep != nil && !keep(ent) {
 			continue
 		}
-		// crudMounted mirrors route registration: nil (direct callers)
-		// documents standard CRUD as before; false lists only declared
+		// crudMount mirrors route registration: nil (direct callers)
+		// documents standard CRUD as before; unmounted lists only declared
 		// custom endpoints; an entity with no routes at all is omitted.
-		crud := crudMounted == nil || crudMounted(ent)
+		// A read-only mount (App.View) counts and labels the three routes
+		// it serves (#358): counting 8 would advertise five that 404/405.
+		mount := MountInfo{Mounted: true}
+		if crudMount != nil {
+			mount = crudMount(ent)
+		}
 		numEndpoints := len(ent.Config.Endpoints)
-		if crud {
+		switch {
+		case mount.Mounted && mount.ReadOnly:
+			numEndpoints += 3 // List, Get-by-ID, _events — the ReadOnly mount
+		case mount.Mounted:
 			numEndpoints += 8 // standard CRUD + batch + events
 		}
 		if numEndpoints == 0 {
@@ -335,8 +408,14 @@ func registryLLMMD(registry entity.Registry, appName string, keep, crudMounted f
 			llmLink = ent.Version + "/" + table + "/llm.md"
 		}
 		desc := ""
+		if mount.ReadOnly {
+			desc = "read-only"
+		}
 		if ent.Config.Scope.SoftDelete {
-			desc = "soft-delete"
+			if desc != "" {
+				desc += ", "
+			}
+			desc += "soft-delete"
 		}
 		if ent.Config.Scope.MultiTenant {
 			if desc != "" {
@@ -344,7 +423,9 @@ func registryLLMMD(registry entity.Registry, appName string, keep, crudMounted f
 			}
 			desc += "multi-tenant"
 		}
-		if crud {
+		if mount.Mounted {
+			// Read-only mounts serve their llm.md too (RegisterCrudRoutes
+			// registers the doc route in both modes), so the link stays.
 			fmt.Fprintf(&b, "| [%s](%s) | `%s` | %d | %s |\n", ent.GetName(), llmLink, basePath, numEndpoints, desc)
 		} else {
 			// The per-entity llm.md route rides the CRUD mount; without
@@ -383,8 +464,8 @@ func registryLLMMD(registry entity.Registry, appName string, keep, crudMounted f
 // for a single entity. The schema-disclosure surface is broad (every field,
 // validator, relation), so the handler requires an authenticated context:
 // the framework's auth chain must have set a user before this fires.
-func LLMMDHandler(ent *entity.Entity) http.Handler {
-	md := EntityLLMMD(ent)
+func LLMMDHandler(ent *entity.Entity, opts ...LLMMDOptions) http.Handler {
+	md := EntityLLMMD(ent, opts...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := handler.GetUser(r.Context()); !ok {
@@ -407,8 +488,8 @@ func LLMMDHandler(ent *entity.Entity) http.Handler {
 //
 // It reuses requireScope, so owner, tenant, baseline-session and RBAC all move
 // together with the read path instead of being restated here.
-func LLMMDHandlerFor(ch *CrudHandler) http.Handler {
-	docs := LLMMDHandler(ch.Entity)
+func LLMMDHandlerFor(ch *CrudHandler, opts ...LLMMDOptions) http.Handler {
+	docs := LLMMDHandler(ch.Entity, opts...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opRead) {
@@ -428,7 +509,7 @@ func LLMMDHandlerFor(ch *CrudHandler) http.Handler {
 // instead disclosed every entity's name, base path, endpoint count and
 // soft-delete/multi-tenant flags to an authenticated caller who would get
 // 403 on the rows. The index is the disclosure, not the row.
-func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMounted func(*entity.Entity) bool) http.Handler {
+func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		ctx := r.Context()
@@ -438,7 +519,7 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMounted 
 		}
 		md := registryLLMMD(registry, appName, func(ent *entity.Entity) bool {
 			return canListEntity(ctx, ent)
-		}, crudMounted)
+		}, crudMount)
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
 		w.Write([]byte(md))

@@ -655,10 +655,14 @@ app.View(migrate.View{
   IF EXISTS` + `CREATE` on SQLite/materialized. `migrate generate` tracks
   the definition by checksum and writes a reversible migration when it
   changes (the `Down` restores the previous definition / drops a new one).
-- **ORM**: with `Columns` declared, `GET /active_users` and
-  `GET /active_users/{id}` are mounted (plus the query layer); no write
-  routes. Without `Columns`, the view is migration-only. Query it with
-  raw SQL.
+- **ORM**: with `Columns` declared, three read routes are mounted —
+  `GET /active_users`, `GET /active_users/{id}` and
+  `GET /active_users/_events` — and no write routes. The view's
+  `/active_users/llm.md` lists exactly those (no write, batch, or
+  Create/Update columns), and the `/api/llm.md` index counts the same
+  three, labelled `read-only`. The query layer is not one of them: it is
+  a Go surface, not an HTTP route, so it never appears in either count.
+  Without `Columns`, the view is migration-only. Query it with raw SQL.
 - The view's ORM entity is `Unmanaged`: the migration system emits no
   table DDL for it (the view DDL handles its existence). `Unmanaged` is a
   general `EntityConfig` flag. Use it for any externally-created table

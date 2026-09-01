@@ -552,7 +552,16 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 	switch v := val.(type) {
 	case map[string]any:
 		if len(v) == 0 {
-			sb.WriteString(pad + key + ": {}\n")
+			// core/yaml rejects flow mappings outright (parseScalar →
+			// flowMapError), so `key: {}` writes a file decodeBlueprint
+			// cannot read back. A bare `key:` line is the exact inverse:
+			// parseMap reads it as an empty map node, which is what the
+			// grouped decoders produce for an authored bare `scope:` /
+			// `pagination:` / `exposure:` / `access:` and what mapValue
+			// gives for an empty map inside properties, props, or seed
+			// rows. Trailing-at-EOF is the same case: parseMap's
+			// p.pos >= len(p.lines) branch also yields the empty map node.
+			sb.WriteString(pad + key + ":\n")
 			return nil
 		}
 		sb.WriteString(pad + key + ":\n")
@@ -584,7 +593,17 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 }
 
 func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string, path string) error {
-	if m, ok := item.(map[string]any); ok && len(m) > 0 {
+	if m, ok := item.(map[string]any); ok {
+		if len(m) == 0 {
+			// Empty-map list item, the seed-row shape of the `key: {}`
+			// defect above: `- {}` is the flow mapping parseList refuses,
+			// and the fallthrough used to print the Go value ("- map[]"),
+			// which re-parses as a STRING. parseList reads a bare `-` item
+			// as an empty map node — the exact inverse of an authored bare
+			// `-` row.
+			sb.WriteString(strings.Repeat(" ", indent) + "-\n")
+			return nil
+		}
 		var tmp strings.Builder
 		if err := writeYAMLMap(&tmp, m, indent+2, order, path); err != nil {
 			return err
@@ -595,7 +614,18 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 		return nil
 	}
 	sb.WriteString(strings.Repeat(" ", indent) + "- ")
-	writeScalarInline(sb, item)
+	// parseList cuts ANY unquoted block-list item at the first ':' into a
+	// map entry (`- postgres://u@h/db` re-parses as {postgres: "//u@h/db"}),
+	// because ':' is the item grammar's key/value delimiter. Block VALUES
+	// follow the laxer rule — parseScalar only rejects ": " — and
+	// needsQuote encodes exactly that, so it cannot carry this rule without
+	// quoting every URL-shaped block value in every real pack. Quote here,
+	// in the one context the list rule governs.
+	if s, ok := item.(string); ok && strings.Contains(s, ":") {
+		sb.WriteString(quoteYAMLStringEscaped(s))
+	} else {
+		writeScalarInline(sb, item)
+	}
 	sb.WriteString("\n")
 	return nil
 }
@@ -722,6 +752,15 @@ func quoteYAMLString(s string) string {
 	if !needsQuote(s) {
 		return s
 	}
+	return quoteYAMLStringEscaped(s)
+}
+
+// quoteYAMLStringEscaped is quoteYAMLString's always-quote form, for callers
+// that have a context-specific reason to quote beyond needsQuote's
+// value-context rules (writeYAMLListItem: a ':' anywhere in a block-list
+// item is the map-cut delimiter). Same escaping contract as
+// quoteYAMLString: exact bytes back through parseQuoted's strconv.Unquote.
+func quoteYAMLStringEscaped(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for i := 0; i < len(s); {

@@ -78,6 +78,15 @@ the `/posts/_events` stream, and `/posts/llm.md`. Route generation is **on by
 default**: `Exposure.CRUD` is a `*bool`, and nil means generate. Omitting the
 block is not "declare no surface"; it is "take the default surface".
 
+`/posts/llm.md` describes the routes the entity's mount serves, not the
+declaration's full shape. `App.View` entities and any registration built
+with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
+batch and Create/Update-column sections — those routes answer 404/405 —
+and the `limit` row reports the same cap the List route clamps `?limit`
+with (`Pagination.MaxListLimit`, never above 1000, 100 when unset). A doc
+that advertises routes or limits the server refuses sends agents into
+404s; the generators read the mount, not the declaration.
+
 MCP tools are the opposite. They are **off by default** and need
 `Exposure: &framework.ExposureConfig{MCP: true}`. The one exception is the dev
 loop: under `gofastr dev`, every CRUD-enabled entity also serves its data

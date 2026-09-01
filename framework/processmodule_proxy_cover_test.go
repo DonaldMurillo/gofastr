@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -302,6 +303,118 @@ func TestDeclaredRoutes_returnsCopy(t *testing.T) {
 	again := sup.DeclaredRoutes("demo")
 	if again[0].ID != "list" {
 		t.Error("DeclaredRoutes did not return a copy")
+	}
+}
+
+// ---- serveProxy deadline path over an in-memory peer (no child spawn) ----
+
+// proxyDeadlineTestSlot wires a supervisor whose "demo" slot is Ready with
+// an in-memory moduleproto peer pair and a 150ms per-call deadline. The
+// slot is hand-built (no supervise/heartbeat loops), so reconcile can
+// never flip its state mid-test; serveProxy runs for real.
+func proxyDeadlineTestSlot(t *testing.T) (sup *ProcessModuleSupervisor, sl *moduleSlot, host, child *moduleproto.Peer, cleanup func()) {
+	t.Helper()
+	store := newTestStore(t)
+	sup = newBareTestSupervisor(t, store, &TrustedProcessRunner{})
+	d := validToolDescriptor(t, "demo", nil)
+	d.Limits.Deadline = 150 * time.Millisecond
+	host, child, pipeClose := newModuleProtoPipe(t)
+	sl = &moduleSlot{
+		name: d.Name,
+		desc: d,
+		sup:  sup,
+		wake: make(chan struct{}, 1),
+		done: make(chan struct{}),
+	}
+	sl.mu.Lock()
+	sl.peer = host
+	sl.enabled = true
+	sl.state = StateReady
+	sl.mu.Unlock()
+	sup.mu.Lock()
+	sup.slots[d.Name] = sl
+	sup.mu.Unlock()
+	return sup, sl, host, child, pipeClose
+}
+
+// TestServeProxyDeadlineCancelReachesChild drives the real serveProxy path
+// against a moduleproto peer pair. A proxied request whose child handler
+// hangs must, when the host's per-call deadline expires: (1) receive a
+// module.cancel that aborts the child handler's context, and (2) leave the
+// peer healthy — the child's late paired response to the abandoned id must
+// be dropped, not raised as a terminal "unsolicited response" fault — so
+// the NEXT proxied request still succeeds.
+//
+// Both properties were dead in wiring (issue #356): watchCancel sent the
+// proxy's "<name>-<counter>" RequestID, which the child's frame-id-keyed
+// cancel registry can never match (module.cancel was a silent no-op on the
+// proxy path; the child burned CPU/DB until its own deadline), and the
+// late response then faulted the peer, tearing down every concurrent
+// caller with it.
+func TestServeProxyDeadlineCancelReachesChild(t *testing.T) {
+	sup, sl, host, child, cleanup := proxyDeadlineTestSlot(t)
+	defer cleanup()
+
+	var hangFirst atomic.Bool
+	hangFirst.Store(true)
+	childCancelled := make(chan struct{}, 1)
+	if err := child.Handle(moduleproto.MethodHTTP, func(ctx context.Context, _ json.RawMessage) (any, error) {
+		if !hangFirst.CompareAndSwap(true, false) {
+			// Subsequent calls: answer normally so the peer proves usable.
+			return moduleproto.HTTPResponseResult{
+				Status: http.StatusOK,
+				Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindText, Value: jsonRaw(`"ok"`)},
+			}, nil
+		}
+		select {
+		case <-ctx.Done():
+			// Nothing but module.cancel (or a child-peer Close, which this
+			// test never does before cleanup) cancels a served request's
+			// ctx: reaching here IS the cancel notification arriving.
+			childCancelled <- struct{}{}
+			return nil, ctx.Err()
+		case <-time.After(3 * time.Second):
+			// Fallback: answer late so the "response for an abandoned id"
+			// path is exercised even if cancel never arrives.
+			return moduleproto.HTTPResponseResult{
+				Status: http.StatusOK,
+				Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindText, Value: jsonRaw(`"late"`)},
+			}, nil
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// First proxied call: hangs past the 150ms descriptor deadline → 503.
+	rec := httptest.NewRecorder()
+	sup.ProxyHandler(sl.desc.Name, "r1").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/r", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("first proxied call: status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+
+	// (1) module.cancel must reach the child handler promptly — well
+	// before the handler's own 3s fallback.
+	select {
+	case <-childCancelled:
+	case <-time.After(1500 * time.Millisecond):
+		t.Fatal("child handler was not cancelled by module.cancel after the host deadline expired: per-call cancellation is a no-op on the proxy path (watchCancel sent an id the child cannot resolve)")
+	}
+
+	// (2) The child's late paired response to the abandoned id must not
+	// fault the peer. Give the response a window to land, then require
+	// the peer healthy and a fresh proxied call green.
+	select {
+	case <-host.FatalDone():
+		t.Fatalf("late response to the abandoned id faulted the peer: %v", host.FatalError())
+	case <-host.Done():
+		t.Fatalf("host read loop exited after late response: %v", host.FatalError())
+	case <-time.After(400 * time.Millisecond):
+	}
+
+	rec2 := httptest.NewRecorder()
+	sup.ProxyHandler(sl.desc.Name, "r1").ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/r", nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("peer unusable after late response to abandoned id: second proxied call status = %d, peer fatal: %v", rec2.Code, host.FatalError())
 	}
 }
 

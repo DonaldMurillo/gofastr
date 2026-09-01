@@ -12,6 +12,11 @@
 (function () {
   'use strict';
 
+  // Every carousel with a live autorotate interval. Detached elements
+  // cannot be found through the document, so teardown walks THIS set,
+  // not querySelectorAll — see the gofastr:navigate handler below.
+  const rotating = new Set();
+
   function track(carousel) {
     return carousel.querySelector('[data-fui-carousel-track]');
   }
@@ -140,25 +145,39 @@
         // user has actively hovered or focused the carousel, that
         // would yank a slide out from under their pointer.
         let userPaused = false;
+        // dead is set by teardown for carousels that left the document:
+        // start() must refuse afterwards, otherwise the document-level
+        // visibilitychange listener would re-arm the interval on a
+        // detached subtree the next time the tab regains focus.
+        let dead = false;
         function start() {
-          if (timer || userPaused) return;
+          if (dead || timer || userPaused) return;
           timer = setInterval(function () {
             if (document.visibilityState === 'hidden') return;
             step(carousel, 1);
           }, rotateMs);
         }
         function stop() { if (timer) { clearInterval(timer); timer = null; } }
-        // Expose stop so the SPA-nav teardown can clear the timer.
-        carousel._fuiCarouselStop = stop;
+        const onVis = function () {
+          if (document.visibilityState === 'hidden') stop(); else start();
+        };
+        // kill fully disarms a carousel that left the DOM: interval,
+        // document listener, and registry entry. Called by teardown.
+        function kill() {
+          dead = true;
+          stop();
+          document.removeEventListener('visibilitychange', onVis);
+          rotating.delete(carousel);
+        }
+        carousel._fuiCarouselKill = kill;
+        rotating.add(carousel);
         carousel.addEventListener('mouseenter', function () { userPaused = true; stop(); });
         carousel.addEventListener('mouseleave', function () { userPaused = false; start(); });
         carousel.addEventListener('focusin', function () { userPaused = true; stop(); });
         carousel.addEventListener('focusout', function (ev) {
           if (!carousel.contains(ev.relatedTarget)) { userPaused = false; start(); }
         });
-        document.addEventListener('visibilitychange', function () {
-          if (document.visibilityState === 'hidden') stop(); else start();
-        });
+        document.addEventListener('visibilitychange', onVis);
         start();
       }
     }
@@ -225,21 +244,49 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
+    // The MutationObserver scanner path passes each INSERTED node as
+    // root; a carousel inserted as that node itself (island swap) is
+    // not its own descendant, so test the root before scanning below it.
+    if (scope !== document && scope.matches && scope.matches('[data-fui-carousel]')) attach(scope);
     scope.querySelectorAll('[data-fui-carousel]').forEach(attach);
   }
   scan(document);
-  window.addEventListener('gofastr:navigate', function () {
-    // Tear down auto-rotate timers from the previous page before
-    // rescanning so stale setIntervals don't accumulate across SPA nav.
-    // attach() stores stop() on _fuiCarouselStop for exactly this path.
-    document.querySelectorAll('[data-fui-carousel]').forEach(function (c) {
-      if (typeof c._fuiCarouselStop === 'function') {
-        c._fuiCarouselStop();
-        delete c._fuiCarouselStop;
+  // Teardown for autorotate carousels that left the document. The DOM
+  // swap runs BEFORE gofastr:navigate dispatches (runtime.js: swapAtSlot
+  // -> finishNav), so by the time any listener runs the previous page's
+  // carousels are detached and invisible to document.querySelectorAll.
+  // Walking the registry by isConnected is the only reliable signal —
+  // and it must NOT touch carousels that are still connected: one that
+  // lives in a shared layout layer outlives the swap and must keep
+  // rotating (scan() skips it below, its fuiCarouselBound guard makes a
+  // stop-then-rescan a permanent stop).
+  function pruneDetached() {
+    rotating.forEach(function (c) {
+      if (!c.isConnected && typeof c._fuiCarouselKill === 'function') {
+        c._fuiCarouselKill();
       }
     });
+  }
+  window.addEventListener('gofastr:navigate', function () {
+    pruneDetached();
     scan(document);
   });
+  // Same prune + wire for island/RPC swaps: core's MutationObserver
+  // re-runs every loaded module's scanner over inserted subtrees, which
+  // is both the teardown trigger for replaced carousels and the only
+  // wiring path for carousels arriving outside a full SPA navigation.
+  window.__gofastr = window.__gofastr || {};
+  window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};
+  window.__gofastr._moduleScanners.carousel = function (root) {
+    pruneDetached();
+    scan(root);
+  };
   window.__gofastr = window.__gofastr || {};
   window.__gofastr.carousel = { rescan: scan };
+  // Loader contract (runtime.js loadModule): a module announces itself
+  // by setting loadedModules[name]; the MutationObserver scanner loop
+  // ONLY runs scanners whose flag is set. carousel.js never set it, so
+  // every _moduleScanners registration was dead code and
+  // loadModule('carousel') could not resolve from the cached flag.
+  (window.__gofastr.loadedModules ||= {}).carousel = true;
 })();

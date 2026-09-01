@@ -594,15 +594,28 @@ func (a *App) entityCRUDEnabled(e *entity.Entity) bool {
 	return a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
 }
 
-// EntityCRUDMounted exports [App.entityCRUDEnabled] for the surfaces that
-// advertise routes from outside this package. openapi.json and
-// /api/llm.md take it as a predicate; a host mounting
-// [sdkdocs.Config] or any other route-listing surface passes it the same
-// way. It exists because Exposure.CRUD alone is not the answer: a DB-less
-// app mounts no CRUD while every entity still reads "auto", and a surface
-// that consults the flag instead of this method documents an API the
-// server does not serve (#266).
-func (a *App) EntityCRUDMounted(e *entity.Entity) bool { return a.entityCRUDEnabled(e) }
+// entityCrudMount is THE predicate for the llm.md index (#358): like
+// entityCRUDEnabled, but it also reports read-only mounts. App.View
+// registers its entities with CrudRouteOptions{ReadOnly: true}, a fact no
+// entity declaration carries — the app that performed the mount is the
+// only party that knows, so the index asks it, the same way #266 threaded
+// the DB-less case. A read-only view is counted and labelled as the three
+// routes it serves instead of eight, five of which would 404/405.
+func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
+	if !a.entityCRUDEnabled(e) {
+		return crud.MountInfo{}
+	}
+	// Views registered with Columns become ORM entities and mount
+	// read-only (App.View); column-less views never register an entity,
+	// so they never reach this predicate. Table names are unique per
+	// booted app or route registration would already have panicked.
+	for _, v := range a.migrationViews {
+		if len(v.Columns) > 0 && v.Name == e.GetTable() {
+			return crud.MountInfo{Mounted: true, ReadOnly: true}
+		}
+	}
+	return crud.MountInfo{Mounted: true}
+}
 
 // WithRouter sets a custom router.
 func WithRouter(r *router.Router) AppOption {
@@ -2980,7 +2993,7 @@ func (a *App) Start(addr string) error {
 			// per-request-filtered crud handler, and per-entity
 			// /{table}/llm.md routes keep their own scope gate either way.
 			if a.Config.PublicOpenAPI {
-				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCRUDEnabled))
+				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCrudMount))
 				a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Cache-Control", "no-store")
 					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -2988,7 +3001,7 @@ func (a *App) Start(addr string) error {
 					w.Write(doc)
 				}))
 			} else {
-				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCRUDEnabled))
+				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCrudMount))
 			}
 			hasLLMMD = true
 		}

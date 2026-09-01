@@ -906,32 +906,38 @@ func TestWidget_InjectSignalAria_TextModeOnly(t *testing.T) {
 }
 
 // TestCarousel_TimerTeardownOnNav guards F16a: the carousel setInterval
-// must be cleared on gofastr:navigate so auto-rotate doesn't leak across
-// SPA navigation. The nav handler must call stop/clearInterval, not just
-// re-scan for new carousels.
+// must be cleared for carousels that leave the document on SPA nav so
+// auto-rotate doesn't leak. The mechanism is a module-level `rotating`
+// registry walked by pruneDetached() — the swap runs BEFORE the
+// gofastr:navigate dispatch, so carousels inside the swapped region are
+// already detached and invisible to document.querySelectorAll; the
+// registry is the only structure that still holds them.
+//
+// Source-shape pin only: the behavioural proof (detached carousel stops
+// ticking, persisted carousel keeps ticking) is
+// TestCarouselAutoRotateTeardownOnNav in carousel_teardown_e2e_test.go.
 func TestCarousel_TimerTeardownOnNav(t *testing.T) {
 	src, ok := Module("carousel")
 	if !ok {
 		t.Fatal("carousel module not embedded")
 	}
-	// Require evidence that the navigate handler calls stop() or clearInterval
-	// on the tracked active carousels. The simplest form: the nav listener
-	// iterates a tracking structure and stops each timer. We accept any of:
-	//   - "activeCarousels" Set referenced in navigate handler
-	//   - "stop(" called inside or near the navigate handler
-	//   - "_fuiCarouselStop" teardown helper
 	idx := strings.Index(src, "gofastr:navigate")
 	if idx == -1 {
 		t.Fatal("carousel missing gofastr:navigate handler")
 	}
 	// Extract 600 chars after the navigate listener registration.
 	body := src[idx:min(idx+600, len(src))]
-	teardownEvidence := strings.Contains(body, "stop(") ||
+	teardownEvidence := strings.Contains(body, "pruneDetached()") ||
+		strings.Contains(body, "stop(") ||
 		strings.Contains(body, "clearInterval") ||
-		strings.Contains(body, "activeCarousels") ||
 		strings.Contains(body, "_fuiCarouselStop")
 	if !teardownEvidence {
-		t.Error("carousel gofastr:navigate handler must stop auto-rotate timers — no teardown evidence found near the navigate listener")
+		t.Error("carousel gofastr:navigate handler must tear down auto-rotate timers for detached carousels — no teardown evidence found near the navigate listener")
+	}
+	// The registry itself: teardown is unreachable without it (the
+	// detached carousel can only be found through the Set).
+	if !strings.Contains(src, "rotating.add(carousel)") || !strings.Contains(src, "isConnected") {
+		t.Error("carousel teardown must track autorotate carousels in the module-level registry and prune by isConnected")
 	}
 }
 

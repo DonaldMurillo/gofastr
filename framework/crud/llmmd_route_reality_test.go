@@ -27,9 +27,9 @@ func TestRegistryLLMMD_RouteReality(t *testing.T) {
 			Fields: []schema.Field{{Name: "n", Type: schema.String}},
 		}.WithTimestamps(false)), // CRUD off, no endpoints: no routes at all
 	}}
-	crudMounted := func(e *entity.Entity) bool { return e.GetTable() == "posts" }
+	crudMount := func(e *entity.Entity) MountInfo { return MountInfo{Mounted: e.GetTable() == "posts"} }
 
-	md := RegistryLLMMD(reg, "MyApp", crudMounted)
+	md := RegistryLLMMD(reg, "MyApp", crudMount)
 
 	if !strings.Contains(md, "[posts](/posts/llm.md)") {
 		t.Errorf("CRUD-mounted entity should keep its linked row:\n%s", md)

@@ -29,8 +29,12 @@ const IdempotencyKeyHeader = "Idempotency-Key"
 //   - replay non-nil, ok=true: a cached response already exists for this
 //     key and fingerprint; the middleware should write replay back and
 //     skip the downstream handler.
-//   - replay nil, ok=true: the caller is the first writer for this key.
-//     It must call Finish exactly once with the captured response.
+//   - replay nil, ok=false, err=nil: the caller is the first writer for
+//     this key. It must call Finish exactly once with the captured
+//     response. (Both shipped stores return ok=false here, and the
+//     middleware's replay branch is `ok && replay != nil`, so ok=false is
+//     the contract. This line used to say ok=true, which no implementation
+//     and no caller has ever agreed with.)
 //   - ok=false, err=ErrFingerprintMismatch: same key was used previously
 //     with a different request fingerprint. The middleware responds 422.
 //   - ok=false, err=ErrInFlight: another request with the same key is

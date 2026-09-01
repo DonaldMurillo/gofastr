@@ -60,7 +60,7 @@ func PageCSS(t style.Theme) string {
 			"background", "{colors.background}",
 			"color", "{colors.text}",
 			"font-family", "{fonts.body}",
-			"font-size", "16px",
+			"font-size", "{typography.base}",
 			"line-height", "1.5",
 			"-webkit-font-smoothing", "antialiased",
 		).
@@ -127,7 +127,7 @@ func PageCSS(t style.Theme) string {
 		Set(
 			"text-transform", "uppercase",
 			"letter-spacing", "0.08em",
-			"font-size", "0.75rem",
+			"font-size", "{typography.xs}",
 			"font-weight", "700",
 			"color", "{colors.text}",
 			"margin", "0 0 {spacing.sm}",
@@ -135,7 +135,7 @@ func PageCSS(t style.Theme) string {
 		End()
 	ss.Rule(".kiln-display").Set("font-size", "3rem", "font-weight", "700").End()
 	ss.Rule(".kiln-title").Set("font-size", "2.25rem", "font-weight", "700").End()
-	ss.Rule(".kiln-h2").Set("font-size", "1.5rem", "font-weight", "700").End()
+	ss.Rule(".kiln-h2").Set("font-size", "{typography.2xl}", "font-weight", "700").End()
 
 	// Hero.
 	ss.Rule(".kiln-hero").
@@ -224,7 +224,7 @@ func PageCSS(t style.Theme) string {
 			"border", "1px solid {colors.border}",
 			"border-radius", "999px",
 			"padding", "4px 10px",
-			"font-size", "0.75rem",
+			"font-size", "{typography.xs}",
 			"font-weight", "600",
 			"color", "{colors.text-muted}",
 		).
@@ -236,7 +236,7 @@ func PageCSS(t style.Theme) string {
 	// Quote.
 	ss.Rule(".kiln-quote").
 		Set(
-			"font-size", "1.5rem",
+			"font-size", "{typography.2xl}",
 			"line-height", "1.5",
 			"color", "{colors.text}",
 			"font-weight", "500",

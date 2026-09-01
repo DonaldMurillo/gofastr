@@ -96,6 +96,12 @@
   document.addEventListener('keydown', function (ev) {
     const t = ev.target;
     if (!t || !t.matches || !t.matches('input[data-fui-tag-input]')) return;
+    // IME composition (CJK input): the Enter that confirms a conversion
+    // candidate carries isComposing=true and the field still holds the
+    // pre-conversion text. Committing there ships the raw romaji/pinyin
+    // as a tag; let the composition finish instead. Same guard as
+    // widgethelpers.js submit-on-enter and shortcut.js.
+    if (ev.isComposing) return;
     if (ev.key === 'Enter' || ev.key === ',') {
       __fuiTagInputLastEnter = performance.now();
       ev.preventDefault();

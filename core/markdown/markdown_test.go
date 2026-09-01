@@ -55,6 +55,29 @@ func TestParagraphAndInline(t *testing.T) {
 	}
 }
 
+// TestCodeSpanBacktickRuns pins multi-backtick code spans and the
+// unmatched-run rule. An opening run of N backticks closes only on a run
+// of exactly N; the span content excludes the whole opening run, and an
+// unmatched run is literal in its entirety (CommonMark 6.8: "a backtick
+// string that is not closed by a matching backtick string is literal").
+// Before this was pinned, content was sliced input[i+1:end], which only
+// fits a single-backtick opener: an input of a, two backticks, a, two
+// backticks, b rendered with an opener fragment inside the code element
+// and a stray closing-run backtick bleeding into the text after it.
+func TestCodeSpanBacktickRuns(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"``a``b", "<p><code>a</code>b</p>\n"},
+		{"a ``code with `inside` span`` b", "<p>a <code>code with `inside` span</code> b</p>\n"},
+		{"x ```y`` z", "<p>x ```y`` z</p>\n"},
+		{"a `` unclosed", "<p>a `` unclosed</p>\n"},
+	}
+	for _, c := range cases {
+		if got := string(RenderHTML(c.in)); got != c.want {
+			t.Errorf("code span mismatch for %q:\n got: %q\nwant: %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestFencedCodeEscapesHTML(t *testing.T) {
 	got := string(RenderHTML("```go\nfmt.Println(\"<hi>\")\n```\n"))
 	if !strings.Contains(got, `<pre tabindex="0"><code class="language-go">`) {

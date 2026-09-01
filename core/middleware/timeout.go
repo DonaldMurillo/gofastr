@@ -269,6 +269,47 @@ func RouteTimeoutFromContext(ctx context.Context) (RouteTimeout, bool) {
 // replaces d for this request; a negative Budget skips the deadline
 // entirely. When the deadline fires on a buffered response, a structured
 // warning names the method, path, matched pattern, and budget.
+// handlerAlreadyFinished reports whether the handler closed done before the
+// deadline branch ran.
+//
+// It exists as a named function rather than an inline select so the
+// tie-break has a test seam. The race it settles cannot be reproduced from
+// outside — a select picks randomly only when both channels are ready at the
+// instant it is evaluated, and producing that overlap needs the middleware
+// goroutine descheduled across the deadline, which nothing outside the
+// runtime can arrange. So the RACE has no deterministic test, but the
+// DECISION does, and a decision nobody can make fail is the same untested
+// guard either way.
+func handlerAlreadyFinished(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
+}
+
+// handlerBeatTheDeadline reports whether the handler finished, and finished
+// INSIDE its budget.
+//
+// The second half is the whole point. A closed done proves the handler is no
+// longer running; it says nothing about when it stopped. Delivering on a
+// closed channel alone hands a 200 to a handler that overran by any amount,
+// as long as this goroutine happened to be descheduled past its finish — the
+// deadline would then bound nothing whenever the scheduler was slow, which
+// is exactly when a deadline matters.
+//
+// finishedAt is written before close(done) and read only after receiving on
+// it, so the channel orders the two without a lock.
+func handlerBeatTheDeadline(done <-chan struct{}, finishedAt *time.Time, deadline time.Time) bool {
+	select {
+	case <-done:
+		return !finishedAt.After(deadline)
+	default:
+		return false
+	}
+}
+
 func Timeout(d time.Duration) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -280,6 +321,20 @@ func Timeout(d time.Duration) Middleware {
 					return
 				}
 				effective = rt.Budget
+			}
+			// Same rule for the constructor's own duration as for a route
+			// budget, and for the same reason: zero means no deadline, as
+			// it does in net/http. Without this, time.NewTimer(0) fires
+			// before the handler can finish and every request 504s — so
+			// `Timeout(cfg.RequestTimeout)` with the field unset turned
+			// the whole surface off rather than leaving it untimed. The
+			// framework's own wiring guards it (app.go only installs the
+			// middleware when RequestTimeout > 0), which is why nothing
+			// in-repo tripped it; a direct caller of the core API had no
+			// such cover.
+			if effective <= 0 {
+				next.ServeHTTP(w, r)
+				return
 			}
 			ctx := newTimeoutCtx(r.Context())
 			// End-of-request cleanup: release the propagation callback
@@ -306,11 +361,22 @@ func Timeout(d time.Duration) Middleware {
 			// because the parent's defer recover lives in a different
 			// goroutine.
 			var childPanic any
+			// finishedAt records when the handler returned, so the deadline
+			// branch can tell "finished inside the budget, and this
+			// goroutine was late to notice" from "finished after the
+			// deadline, while this goroutine was late". A closed done says
+			// only that the handler is no longer running; it does not say
+			// when it stopped, and the two cases deserve opposite answers.
+			// Written before close(done) and read only after it, which
+			// orders the two without a lock.
+			var finishedAt time.Time
+			deadline := time.Now().Add(effective)
 			go func() {
 				defer func() {
 					if v := recover(); v != nil {
 						childPanic = v
 					}
+					finishedAt = time.Now()
 					close(done)
 				}()
 				next.ServeHTTP(tw, r.WithContext(ctx))
@@ -378,6 +444,25 @@ func Timeout(d time.Duration) Middleware {
 				// written for parity, observed by no one.
 				abandon(r.Context().Err())
 			case <-timer.C:
+				// A select whose cases are BOTH ready picks between them
+				// uniformly at random. When the handler closes done just
+				// inside the budget but this goroutine is descheduled past
+				// the deadline, that coin flip discards a finished response
+				// and 504s a request that succeeded — visible only under
+				// load, which is where a spurious 504 costs the most.
+				// The handler winning is the answer the client should get,
+				// so re-check done before abandoning.
+				//
+				// The r.Context().Done() case above needs no equivalent:
+				// the client is gone, and delivering or abandoning both
+				// write to a socket nobody is reading.
+				if handlerBeatTheDeadline(done, &finishedAt, deadline) {
+					if childPanic != nil {
+						panic(childPanic)
+					}
+					tw.finish()
+					return
+				}
 				if abandon(context.DeadlineExceeded) {
 					// Name the route, not just the path: "why does this
 					// endpoint 504" starts from this line. Streaming

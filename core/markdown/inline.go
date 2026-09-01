@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -36,6 +37,14 @@ func renderInlineDepth(input string, depth int) string {
 	// region), so we skip the rescan. This turns the unmatched-emphasis
 	// case from O(n^2) into O(n), a CPU-DoS guard.
 	var noCloser map[int]bool
+	// runs indexes the block's maximal backtick runs so code-span closer
+	// lookups are binary searches instead of tail scans. Built only when
+	// the block contains a backtick at all; see backtickRuns for why a
+	// scan-per-lookup is not just slow but a CPU-DoS on adversarial input.
+	var runs *backtickRuns
+	if strings.IndexByte(input, '`') >= 0 {
+		runs = buildBacktickRuns(input)
+	}
 	i := 0
 	for i < len(input) {
 		ch := input[i]
@@ -44,16 +53,26 @@ func renderInlineDepth(input string, depth int) string {
 			sb.WriteString(escapeHTML(string(input[i+1])))
 			i += 2
 		case ch == '`':
-			end := findCodeEnd(input, i)
-			if end > i {
+			end, open := runs.findCodeEnd(i)
+			if end >= 0 {
 				sb.WriteString("<code>")
-				sb.WriteString(escapeHTML(input[i+1 : end]))
+				sb.WriteString(escapeHTML(input[i+open : end]))
 				sb.WriteString("</code>")
-				i = end + 1
+				i = end + open
 				continue
 			}
-			sb.WriteString("`")
-			i++
+			// Unmatched run: the WHOLE run is literal text (CommonMark:
+			// a backtick string not closed by a matching run is literal).
+			// Consume the entire run, never one byte at a time. The next
+			// position of the same run would re-run findCodeEnd for a
+			// SHORTER length over the same tail, costing run × tail on
+			// adversarial input (measured 639 ms on a 64 KiB document
+			// before this skip). The emphasis branch's noCloser memo
+			// cannot be reused here: its key is the run length, and each
+			// successive position of a backtick run scans for a different
+			// length, so a memo keyed that way never hits.
+			sb.WriteString(input[i : i+open])
+			i += open
 		case ch == '!' && i+1 < len(input) && input[i+1] == '[':
 			alt, url, end, ok := parseLink(input, i+1)
 			if ok {
@@ -85,7 +104,7 @@ func renderInlineDepth(input string, depth int) string {
 			key := int(delim)<<2 | run
 			closeIdx := -1
 			if noCloser == nil || !noCloser[key] {
-				closeIdx = findClosingDelim(input, i+run, delim, run)
+				closeIdx = findClosingDelim(runs, input, i+run, delim, run)
 				if closeIdx < 0 {
 					if noCloser == nil {
 						noCloser = make(map[int]bool, 4)
@@ -144,15 +163,24 @@ func scanRun(s string, i int, delim byte) (byte, int) {
 // findClosingDelim looks for a matching delimiter run after position start.
 // CommonMark has a more complex flanking rule; we use a simple "next run of
 // the same length" search which works for everyday docs.
-func findClosingDelim(s string, start int, delim byte, run int) int {
+func findClosingDelim(runs *backtickRuns, s string, start int, delim byte, run int) int {
 	i := start
 	for i < len(s) {
 		if s[i] == '`' {
-			end := findCodeEnd(s, i)
-			if end > i {
-				i = end + 1
+			end, open := runs.findCodeEnd(i)
+			if end >= 0 {
+				i = end + open
 				continue
 			}
+			// Unmatched code-span opener: skip the entire run so the walk
+			// does not call findCodeEnd again from every backtick of the
+			// same run — each call would rescan the tail for a shorter
+			// length, the same run × tail blowup the main loop guards
+			// against. Skipping the closing run entirely (end + open, not
+			// end + 1) also stops the walk from re-entering a matched
+			// span's closing run mid-run.
+			i += open
+			continue
 		}
 		if s[i] == delim {
 			n := 0
@@ -170,29 +198,66 @@ func findClosingDelim(s string, start int, delim byte, run int) int {
 	return -1
 }
 
-// findCodeEnd returns the index of the closing backtick run that matches the
-// opening run starting at i. -1 if unbalanced.
-func findCodeEnd(s string, i int) int {
-	open := 0
-	for i+open < len(s) && s[i+open] == '`' {
-		open++
-	}
-	j := i + open
-	for j < len(s) {
-		if s[j] != '`' {
-			j++
+// backtickRuns indexes the maximal backtick runs of one block so that
+// code-span closer lookups are binary searches instead of forward scans.
+//
+// A scan-per-lookup is not merely slow, it is a CPU-DoS ladder: after the
+// whole-run skip in the caller, every DISTINCT run length can still fail
+// once, and each failure walks the remaining input. Runs of lengths
+// 1..K fit in ~K²/2 bytes, so K failing scans over that cost O(n·√n) —
+// measured 552 ms on a 1 MB document built as runs of 1..1414 backticks.
+// With the index, a lookup is O(log n) and the shape is linear.
+type backtickRuns struct {
+	// start/lens list each maximal run's start offset and full length, in
+	// document order. byLen maps a run length to the ascending starts of
+	// all runs with that length. All three are int: Render caps no
+	// document size, so an int32 offset wraps on a block over
+	// math.MaxInt32 — a negative "open" reaches the caller and slices
+	// out of range (pinned by TestMarkdown_GiantBacktickRunNoInt32Wrap).
+	start []int
+	lens  []int
+	byLen map[int][]int
+}
+
+// buildBacktickRuns makes the index for s. Callers only build it when s
+// contains a backtick (strings.IndexByte gate), keeping backtick-free
+// blocks on the fast path.
+func buildBacktickRuns(s string) *backtickRuns {
+	b := &backtickRuns{byLen: make(map[int][]int)}
+	for i := 0; i < len(s); {
+		if s[i] != '`' {
+			i++
 			continue
 		}
-		n := 0
-		for j+n < len(s) && s[j+n] == '`' {
-			n++
+		j := i + 1
+		for j < len(s) && s[j] == '`' {
+			j++
 		}
-		if n == open {
-			return j
-		}
-		j += n
+		l := j - i
+		b.start = append(b.start, i)
+		b.lens = append(b.lens, l)
+		b.byLen[l] = append(b.byLen[l], i)
+		i = j
 	}
-	return -1
+	return b
+}
+
+// findCodeEnd returns the start index of the closing backtick run that
+// matches the opening run at i, together with that opening run's length
+// open (the matching closing run has the same length, so callers can skip
+// past both runs in full). end is -1 if no matching run exists. i must be
+// a backtick of a block this index was built for; mid-run positions use
+// the remaining suffix as the opener, the same rule a linear scan had.
+func (b *backtickRuns) findCodeEnd(i int) (end, open int) {
+	r := sort.Search(len(b.start), func(k int) bool { return b.start[k] > i }) - 1
+	// Callers only query at backticks, so run r contains i.
+	open = b.start[r] + b.lens[r] - i
+	starts := b.byLen[open]
+	k := sort.Search(len(starts), func(k int) bool { return starts[k] >= i+open })
+	if k == len(starts) {
+		return -1, open
+	}
+	return starts[k], open
 }
 
 // parseLink parses [text](url) starting at the '[' at position i.

@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -119,19 +120,167 @@ func Open(t *testing.T, dialect migrate.Dialect) *sql.DB {
 		if _, err := db.ExecContext(context.Background(), "CREATE SCHEMA "+schemaName); err != nil {
 			t.Fatalf("create schema %s: %v", schemaName, err)
 		}
-		if _, err := db.ExecContext(context.Background(), "SET search_path TO "+schemaName); err != nil {
-			t.Fatalf("set search_path: %v", err)
+		// The schema binding travels in the DSN, not as `SET search_path` on
+		// the open session. SetMaxOpenConns(1) bounds concurrency, not
+		// connection identity: database/sql discards a connection whose
+		// backend died and silently opens a replacement, and a replacement
+		// starts at the default search_path. Every statement after that
+		// point runs in "$user", public — so the test's tables are invisible
+		// and it fails as `relation "…" does not exist`, pointing at the
+		// schema rather than at the connection that was actually replaced.
+		// lib/pq forwards unrecognised DSN parameters to the server as
+		// startup options, so carrying it here applies it to every
+		// connection the pool ever opens. Proven by killing the backend with
+		// pg_terminate_backend: the session-level SET does not survive it and
+		// the DSN parameter does (TestSearchPathSurvivesConnectionReplacement).
+		scoped, err := withSearchPath(base, schemaName)
+		if err != nil {
+			t.Fatalf("scope dsn to %s: %v", schemaName, err)
 		}
+		scopedDB, err := sql.Open("postgres", scoped)
+		if err != nil {
+			t.Fatalf("open pg (scoped): %v", err)
+		}
+		scopedDB.SetMaxOpenConns(1)
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+			scopedDB.Close()
 			db.ExecContext(ctx, "DROP SCHEMA "+schemaName+" CASCADE")
 			db.Close()
 		})
-		return db
+		return scopedDB
 	}
 	t.Fatalf("unknown dialect: %s", dialect)
 	return nil
+}
+
+// withSearchPath returns dsn with search_path set to schema, so every
+// connection the pool opens from it starts already scoped.
+//
+// Both DSN spellings lib/pq accepts are handled: a URL
+// (postgres://user@host/db?sslmode=disable) and keyword/value
+// (host=… user=… dbname=…). An existing search_path is replaced rather than
+// appended — two of them would leave which one wins up to the parser.
+//
+// schema comes from NewSchemaName, which emits only [a-z0-9_], so it needs
+// no quoting here; anything else is refused rather than interpolated.
+func withSearchPath(dsn, schema string) (string, error) {
+	if schema == "" {
+		return "", errors.New("empty schema name")
+	}
+	for _, r := range schema {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
+			return "", fmt.Errorf("schema %q is not [a-z0-9_]; refusing to put it in a DSN", schema)
+		}
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return "", fmt.Errorf("parse dsn: %w", err)
+		}
+		q := u.Query()
+		q.Set("search_path", schema)
+		u.RawQuery = q.Encode()
+		return u.String(), nil
+	}
+	// Keyword/value form. Drop any existing search_path pair, then append.
+	pairs, err := splitKeywordValueDSN(dsn)
+	if err != nil {
+		return "", err
+	}
+	kept := make([]string, 0, len(pairs)+1)
+	for _, p := range pairs {
+		if p.key == "search_path" {
+			continue
+		}
+		kept = append(kept, p.raw)
+	}
+	kept = append(kept, "search_path="+schema)
+	return strings.Join(kept, " "), nil
+}
+
+// dsnPair is one keyword/value entry: its key, and the original text of the
+// whole `key=value` so re-emitting a kept pair cannot change its meaning.
+type dsnPair struct{ key, raw string }
+
+// splitKeywordValueDSN tokenises a libpq keyword/value DSN.
+//
+// strings.Fields is wrong here, and quietly so. libpq values may be
+// single-quoted and contain spaces, so `search_path='stale, public'` splits
+// into `search_path='stale,` and `public'` — dropping the first leaves the
+// second behind as a stray token, and a quoted value that merely CONTAINS
+// "search_path=" loses its tail to the same filter. Either way the rewritten
+// DSN is malformed, and lib/pq reports that rather than the schema.
+//
+// Follows libpq's fe-connect.c (and lib/pq's Go port): whitespace around
+// the key and the `=` is allowed; a value is either single-quoted with
+// backslash escapes, or runs to the next whitespace, with a backslash
+// escaping the next character in BOTH forms — lib/pq v1.12.3 consumes
+// `a\ b` as one unquoted value, and a tokeniser that splits at the space
+// rejects a DSN the driver accepts. A DSN this cannot parse is an error,
+// not a guess — silently reshaping a connection string is how the
+// original bug read.
+func splitKeywordValueDSN(dsn string) ([]dsnPair, error) {
+	var out []dsnPair
+	i := 0
+	isSpace := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
+	for {
+		for i < len(dsn) && isSpace(dsn[i]) {
+			i++
+		}
+		if i >= len(dsn) {
+			return out, nil
+		}
+		start := i
+		for i < len(dsn) && dsn[i] != '=' && !isSpace(dsn[i]) {
+			i++
+		}
+		key := dsn[start:i]
+		if key == "" {
+			return nil, fmt.Errorf("dsn: empty key at offset %d", start)
+		}
+		for i < len(dsn) && isSpace(dsn[i]) {
+			i++
+		}
+		if i >= len(dsn) || dsn[i] != '=' {
+			return nil, fmt.Errorf("dsn: key %q has no value", key)
+		}
+		i++ // '='
+		for i < len(dsn) && isSpace(dsn[i]) {
+			i++
+		}
+		if i < len(dsn) && dsn[i] == '\'' {
+			i++ // opening quote
+			for {
+				if i >= len(dsn) {
+					return nil, fmt.Errorf("dsn: unterminated quoted value for key %q", key)
+				}
+				if dsn[i] == '\\' && i+1 < len(dsn) {
+					i += 2
+					continue
+				}
+				if dsn[i] == '\'' {
+					i++ // closing quote
+					break
+				}
+				i++
+			}
+		} else {
+			// A trailing lone backslash stays a literal byte: lib/pq errors on
+			// it at open time ("missing character after backslash"), and
+			// keeping the raw text means the driver's own parse decides. Our
+			// job is agreeing on token boundaries, not re-validating escapes.
+			for i < len(dsn) && !isSpace(dsn[i]) {
+				if dsn[i] == '\\' && i+1 < len(dsn) {
+					i += 2 // consume the escaped character, quoted or not
+					continue
+				}
+				i++
+			}
+		}
+		out = append(out, dsnPair{key: key, raw: dsn[start:i]})
+	}
 }
 
 // ForEachDialect runs fn against every dialect in Dialects as a t.Run
