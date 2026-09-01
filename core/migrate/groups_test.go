@@ -36,6 +36,9 @@ func seqOrder(t *testing.T, db *sql.DB) []string {
 		}
 		out = append(out, w)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	return out
 }
 
@@ -54,6 +57,9 @@ func pkColumns(t *testing.T, db *sql.DB) []string {
 			t.Fatalf("scan: %v", err)
 		}
 		cols = append(cols, c)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
 	}
 	return cols
 }

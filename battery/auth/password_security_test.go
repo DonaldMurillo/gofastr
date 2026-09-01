@@ -167,3 +167,49 @@ func TestPassword_TimingSafeCheck(t *testing.T) {
 		t.Logf("SECURITY: [timing] CheckPassword timing ratio %.2f (valid hash: %v, invalid hash: %v). Attack: timing side-channel may leak hash validity.", ratio, wrongDuration, invalidDuration)
 	}
 }
+
+// Property: the anti-enumeration dummy burned on the unknown-user login
+// path must run the SAME algorithm as the configured DefaultHasher.
+// Setting DefaultHasher = Argon2Hasher{} before Init is the documented
+// supported switch (password.go:47-50): new rows store $argon2id$
+// hashes and CheckPassword verifies them with Argon2Hasher at the
+// operator's tuned cost. The not-found branch (core.go:204-209) instead
+// burns the package dummy, which init() hardwires to a bcrypt literal
+// (password.go:298-303) — under the documented configuration the
+// unknown-user path does bcrypt work while real users do argon2id work,
+// re-opening the user-existence timing oracle the dummy exists to erase
+// (CWE-208). password.go:279-283's own NOTE concedes realignment is an
+// undone follow-up.
+//
+// Pinned deterministically on the PHC algorithm marker (no wall-clock):
+// whatever hash the not-found branch burns must carry the same algorithm
+// prefix HashPassword produces under the active DefaultHasher.
+func TestLoginDummyHashTracksDefaultHasher(t *testing.T) {
+	orig := DefaultHasher
+	DefaultHasher = Argon2Hasher{}
+	defer func() { DefaultHasher = orig }()
+
+	configured, err := HashPassword("probe-password-1")
+	if err != nil {
+		t.Fatalf("hash probe: %v", err)
+	}
+	if !strings.HasPrefix(configured, "$argon2id$") {
+		t.Fatalf("probe hash is not argon2id: %q", configured)
+	}
+	// dummyHashFor(DefaultHasher) is exactly what loginHandler's
+	// not-found branch passes to CheckPassword (core.go:209).
+	burned := dummyHashFor(DefaultHasher)
+	if !strings.HasPrefix(burned, "$argon2id$") {
+		t.Errorf("SECURITY: [dummy-hash-algo] with DefaultHasher=Argon2Hasher the unknown-user login path burns a %q dummy while real rows hash as %q — the algorithm mismatch makes the not-found branch do bcrypt work while real users do argon2id work, re-opening the user-existence timing oracle the dummy exists to close (CWE-208). Derive the dummy from DefaultHasher", phcAlgoPrefix(burned), phcAlgoPrefix(configured))
+	}
+}
+
+// phcAlgoPrefix returns a hash's PHC algorithm marker, e.g. "$argon2id$"
+// or "$2a$".
+func phcAlgoPrefix(hash string) string {
+	end := strings.Index(hash[1:], "$")
+	if end < 0 {
+		return hash
+	}
+	return hash[:end+2]
+}

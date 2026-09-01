@@ -123,6 +123,18 @@ func FieldsToSchema(fields []schema.Field) map[string]any {
 	required := make([]string, 0)
 
 	for _, f := range fields {
+		// A Hidden field is never part of a published schema. The CRUD
+		// generators filter through VisibleFields before they get here,
+		// but a custom entity.Endpoint hands its InputSchema straight in
+		// -- and entity.Endpoint's own docs invite reusing the entity's
+		// field slice for it. That published the hidden column's name to
+		// every caller allowed to see the tool at all, and listed it as
+		// required, which is worse: it tells the caller to send a value
+		// for a column it is not supposed to know exists. Filtering here
+		// means no future caller of this function can reintroduce it.
+		if f.Hidden {
+			continue
+		}
 		properties[f.Name] = FieldToSchema(f)
 		if f.Required {
 			required = append(required, f.Name)

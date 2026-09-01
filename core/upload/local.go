@@ -71,12 +71,23 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	// from being enumerable by other local users on a shared host. See
 	// TestLocalStorage_SaveRestrictsDirectoryPermissions for the threat
 	// model (local enumeration of unrelated tenants' upload paths).
+	// Every wrap below scrubs the absolute path out of the OS error. These
+	// are os.PathError values naming the full storage path, and the CRUD
+	// handlers echo an upload failure straight into a 400 body — so an
+	// ENAMETOOLONG or EACCES here disclosed the storage layout to the
+	// caller. Get already scrubbed for exactly this reason; the write side
+	// did not, and the write side is the one an unauthenticated multipart
+	// POST can reach.
+	scrub := func(what string, err error) error {
+		return fmt.Errorf("%s: %s", what, scrubPath(err.Error(), absBase, absPath))
+	}
+
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating directories: %w", err)
+		return scrub("creating directories", err)
 	}
 	if err := fileperm.RestrictDirectoryTree(dir, s.baseDir); err != nil {
-		return fmt.Errorf("restricting directories: %w", err)
+		return scrub("restricting directories", err)
 	}
 
 	// Mode 0o600 keeps uploaded files readable only by the process
@@ -85,7 +96,7 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	// users. See TestLocalStorage_SaveRestrictsFilePermissions.
 	f, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		return fmt.Errorf("creating file: %w", err)
+		return scrub("creating file", err)
 	}
 	closeErr := func() error {
 		return f.Close()
@@ -97,15 +108,15 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 		// content. Close first so the unlink isn't racing the writer.
 		_ = closeErr()
 		_ = os.Remove(fullPath)
-		return fmt.Errorf("writing file: %w", err)
+		return scrub("writing file", err)
 	}
 	if err := closeErr(); err != nil {
 		_ = os.Remove(fullPath)
-		return fmt.Errorf("closing file: %w", err)
+		return scrub("closing file", err)
 	}
 	if err := fileperm.Restrict(fullPath, false); err != nil {
 		_ = os.Remove(fullPath)
-		return fmt.Errorf("restricting file: %w", err)
+		return scrub("restricting file", err)
 	}
 
 	return nil

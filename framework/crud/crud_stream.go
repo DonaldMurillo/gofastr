@@ -42,6 +42,18 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	if !ch.requireScope(w, r, opRead) {
 		return
 	}
+	// Same AfterList refusal List() enforces before it delegates here.
+	// Streaming never materialises the full slice AfterList runs over, so
+	// the hook cannot run at all — and an AfterList registered as a
+	// redactor would then be silently BYPASSED, putting the stored values
+	// it exists to hide straight on the wire. List() already refuses this
+	// combination, but a direct in-process caller reaches this method
+	// without passing through it, exactly as it does for the owner/tenant
+	// gate above.
+	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterList)) > 0 {
+		writeJSONError(w, http.StatusBadRequest, "streaming list does not support AfterList hooks; drop ?stream=true")
+		return
+	}
 	// Parse the URL query once and thread it through the helpers, mirroring
 	// the List() body. ServeStreamingList is called from List() (which has
 	// already enforced requireScope) but is also a public entrypoint for

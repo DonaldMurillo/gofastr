@@ -120,7 +120,7 @@ func (a *App) registerIntrospectionTools() error {
 				"type": "object",
 				"properties": map[string]any{
 					"term":  map[string]any{"type": "string", "description": "Search term (min 3 chars)"},
-					"limit": map[string]any{"type": "integer", "description": "Max hits to return (default 50, hard cap to protect narrow-context clients)"},
+					"limit": map[string]any{"type": "integer", "description": "Max hits to return (default 50, hard cap 200 to protect narrow-context clients)", "maximum": maxDocsSearchHits},
 				},
 				"required": []string{"term"},
 			},
@@ -279,6 +279,15 @@ func (a *App) toolDocsGet(_ context.Context, params map[string]any) (any, error)
 // toolDocsSearch greps every topic for a substring. The response shape
 // mirrors the SearchHit type, topic, line, heading, excerpt, but
 // keeps the payload size bounded by capping each excerpt at 240 chars.
+// maxDocsSearchHits is the hard ceiling the framework_docs_search schema
+// advertises. docs.SearchWithLimit honours any positive value and only
+// substitutes its own default for limit <= 0, so a caller asking for
+// 1e12 got every matching line in the embedded corpus -- ten thousand
+// hits against a term as ordinary as "the". The tool exists to be called
+// by agents with narrow contexts; a response that large is the failure
+// the cap is named for.
+const maxDocsSearchHits = 200
+
 func (a *App) toolDocsSearch(_ context.Context, params map[string]any) (any, error) {
 	term, _ := params["term"].(string)
 	limit := 0
@@ -289,6 +298,12 @@ func (a *App) toolDocsSearch(_ context.Context, params map[string]any) (any, err
 		limit = int(v)
 	case float64:
 		limit = int(v)
+	}
+	// Clamp rather than reject: a caller asking for more than the tool
+	// will give is not making an error. A limit of 0 falls through
+	// unchanged, since that is how SearchWithLimit spells "default".
+	if limit > maxDocsSearchHits {
+		limit = maxDocsSearchHits
 	}
 	hits, err := docs.SearchWithLimit(term, limit)
 	if err != nil {
@@ -430,6 +445,13 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 			if err := rows.Scan(&name, &checksum); err == nil {
 				ledger[name] = checksum
 			}
+		}
+		// The documented contract is "on error, every entry reads
+		// unknown". A failure part-way through Next would otherwise leave
+		// the rows already scanned in the map, so some routines report a
+		// confident ledger_state derived from a read that did not finish.
+		if rows.Err() != nil {
+			clear(ledger)
 		}
 		_ = rows.Close()
 	}

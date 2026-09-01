@@ -23,6 +23,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
+// maxChatBody caps an inbound body: a chat turn plus tool arguments. Past this, the
+// request is refused rather than buffered.
+const maxChatBody = 4 << 20
+
 //go:embed assets/host.html
 var hostHTML string
 
@@ -85,8 +89,8 @@ func (s *Server) Mount(r *router.Router) {
 	r.Get("/kiln/theme.css", http.HandlerFunc(s.serveThemeCSS))
 	r.Get("/kiln/world", http.HandlerFunc(s.serveWorld))
 	r.Get("/kiln/status", http.HandlerFunc(s.serveStatus))
-	r.Post("/kiln/chat/message", http.HandlerFunc(s.serveChatMessage))
-	r.Post("/kiln/tool/{name}", http.HandlerFunc(s.serveToolDispatch))
+	r.Post("/kiln/chat/message", sameOriginOnly(http.HandlerFunc(s.serveChatMessage)))
+	r.Post("/kiln/tool/{name}", sameOriginOnly(http.HandlerFunc(s.serveToolDispatch)))
 	r.Get("/.kiln/events", http.HandlerFunc(s.live.ServeSSE))
 	r.Get("/.kiln/reload.js", http.HandlerFunc(live.ServeReloadJS))
 }
@@ -386,6 +390,7 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveChatMessage(w http.ResponseWriter, r *http.Request) {
 	var args protocol.ChatArgs
+	r.Body = http.MaxBytesReader(w, r.Body, maxChatBody)
 	if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
@@ -400,6 +405,7 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing tool name", http.StatusBadRequest)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxChatBody)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)

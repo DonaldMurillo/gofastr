@@ -276,6 +276,38 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	return nil
 }
 
+// UnregisterTool removes a tool from the registry and reports whether it
+// was there. It exists for opt-ins that can only be withdrawn AFTER the
+// tool has already been registered: the framework's dev MCP registers its
+// mutating control tools during InitPlugins, but whether they may be
+// served at all depends on the listen address, which is not known until
+// Start. A host that calls InitPlugins itself, before Start, therefore
+// registers first and learns second — and clearing the intent flag at
+// that point changes nothing, because the tool is already in the map and
+// tools/list already names it.
+//
+// Withdrawal is not a substitute for not registering: prefer deciding
+// before RegisterTool wherever the information is available.
+func (s *Server) UnregisterTool(name string) bool {
+	s.mu.Lock()
+	tool, ok := s.tools[name]
+	if ok {
+		delete(s.tools, name)
+	}
+	s.mu.Unlock()
+	if !ok {
+		return false
+	}
+	// Same re-list notification a registration sends, carrying the same
+	// gate: a caller who could never see the tool must not be told it
+	// went away either.
+	s.notifySubscribers(sseNotification{
+		method:   "notifications/tools/list_changed",
+		itemGate: tool.Gate,
+	})
+	return true
+}
+
 // getTool returns a tool by name. The bool indicates whether it was found.
 func (s *Server) getTool(name string) (Tool, bool) {
 	s.mu.RLock()

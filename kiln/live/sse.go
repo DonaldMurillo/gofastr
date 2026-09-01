@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -96,8 +97,29 @@ func (l *Live) ServeSSE(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Kind, data)
+			// Scrub the kind before it becomes an SSE field name.
+			// Event.Kind is journal-derived, so an entry whose kind
+			// carries a CR or LF closes the "event:" line and lets the
+			// rest of the value write its own fields -- an extra data:
+			// frame, or a whole synthetic event the client dispatches as
+			// if the server had sent it. The data field is JSON-encoded
+			// and cannot do this; the kind was interpolated raw.
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", scrubSSEField(ev.Kind), data)
 			flusher.Flush()
 		}
 	}
+}
+
+// scrubSSEField strips the bytes that terminate a line or a frame in the
+// SSE wire format, so a value can never introduce a field of its own.
+// CR and LF end a field; a NUL is not meaningful in the format and has no
+// business in an event name either.
+func scrubSSEField(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\r', '\n', 0:
+			return -1
+		}
+		return r
+	}, s)
 }

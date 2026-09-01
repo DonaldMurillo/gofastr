@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"strings"
@@ -57,12 +58,15 @@ func NewHTTPHandler(s *Server, enc *auth.Encoder, rl *auth.RevocationList) *HTTP
 //	POST /mcp  → JSON-RPC request, returns immediate JSON response
 //	GET  /mcp  → SSE stream of server-initiated events / notifications
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var claims *auth.Claims
 	if h.Encoder != nil {
 		tok := r.Header.Get("Authorization")
-		if !verifyBearer(h.Encoder, h.Revocations, tok) {
+		c, ok := verifyBearer(h.Encoder, h.Revocations, tok)
+		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		claims = &c
 	}
 	sessID := sanitizeSessionID(r.Header.Get("Mcp-Session-Id"))
 	if sessID == "" {
@@ -73,7 +77,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch r.Method {
 	case http.MethodPost:
-		h.handlePOST(w, r, sessID)
+		h.handlePOST(w, r, sessID, claims)
 	case http.MethodGet:
 		h.handleGET(w, r, sessID)
 	case http.MethodDelete:
@@ -165,7 +169,7 @@ func defangSSEDirectives(ln []byte) []byte {
 	return []byte(s)
 }
 
-func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID string) {
+func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID string, claims *auth.Claims) {
 	defer r.Body.Close()
 	if !isAcceptableJSONContentType(r.Header.Get("Content-Type")) {
 		http.Error(w, "unsupported media type: expected application/json", http.StatusUnsupportedMediaType)
@@ -185,11 +189,13 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 	s := New(h.Server.Mux, h.Server.Catalog)
 	s.IdentityClass = h.Server.IdentityClass
 	s.RequiredToken = h.Server.RequiredToken
+	s.Claims = claims
 	s.WithIO(in, &out)
 	if err := s.Serve(r.Context()); err != nil && !errors.Is(err, context.Canceled) {
 		// Serve returns nil on EOF; only log unexpected errors.
 		if err != io.EOF {
-			http.Error(w, "mcp serve: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("mcpserver: serve: %v", err)
+			http.Error(w, "mcp serve failed", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -279,14 +285,20 @@ func (s *httpMCPSession) drain() [][]byte {
 	return out
 }
 
-// verifyBearer accepts the bearer scheme used by REST + ws.
-func verifyBearer(enc *auth.Encoder, rl *auth.RevocationList, header string) bool {
+// verifyBearer accepts the bearer scheme used by REST + ws and RETURNS
+// the verified claims. It used to return only a bool, so the scope the
+// token carries -- which sessions, which commands -- was verified and
+// then thrown away, and a tools/call could name any session it liked.
+func verifyBearer(enc *auth.Encoder, rl *auth.RevocationList, header string) (auth.Claims, bool) {
 	if len(header) < len("Bearer ") || header[:len("Bearer ")] != "Bearer " {
-		return false
+		return auth.Claims{}, false
 	}
 	tok := header[len("Bearer "):]
-	_, err := auth.Verify(enc, rl, tok, timeNow())
-	return err == nil
+	claims, err := auth.Verify(enc, rl, tok, timeNow())
+	if err != nil {
+		return auth.Claims{}, false
+	}
+	return claims, true
 }
 
 // timeNow is replaced in tests; production uses time.Now().

@@ -270,7 +270,7 @@ func discoverConfig(start string) (path, dir string, err error) {
 			path := filepath.Join(dir, name)
 			if _, err := os.Stat(path); err == nil {
 				return path, dir, nil
-			} else if err != nil && !os.IsNotExist(err) {
+			} else if !os.IsNotExist(err) {
 				return "", "", err
 			}
 		}

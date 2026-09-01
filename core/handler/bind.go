@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // Bind populates dst by merging values from all sources:
@@ -264,7 +266,12 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 }
 
 // bindPath binds path parameters to struct fields tagged with `path:"name"`.
-// Path parameters are read from r.PathValue (Go 1.22+).
+// Path parameters are read from r.PathValue (Go 1.22+) and sanitized the
+// same way core/router's Param sanitizes them. Bind is a second arrival
+// surface for the identical property, and it was the unsanitized one: a
+// percent-encoded newline or NUL, a decoded "/", or a ".." segment reached
+// handler input verbatim, from where it goes on into log lines, response
+// headers, SSE frames, and file or database lookups.
 func bindPath(r *http.Request, rv reflect.Value) error {
 	rt := rv.Type()
 
@@ -275,7 +282,7 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 			continue
 		}
 
-		value := r.PathValue(tag)
+		value := router.Param(r, tag)
 		if value == "" {
 			continue
 		}

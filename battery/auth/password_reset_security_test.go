@@ -170,3 +170,198 @@ func TestSessionStores_ImplementUserPurge(t *testing.T) {
 		t.Fatalf("*EntitySessionStore must implement SessionUserPurger")
 	}
 }
+
+// Property: a completed password reset invalidates every outstanding
+// recovery credential for the user. forgot-password mints a fresh token
+// per request with no per-user sweep, resetHandler redeems exactly one
+// token, and the token store has no DeleteByUser — so a token leaked
+// BEFORE the reset stays redeemable for its full TTL after the victim
+// finishes resetting, re-opening the takeover the reset was meant to
+// close (the user must race the attacker inside the residual window).
+func TestPasswordReset_KillsSiblingTokens(t *testing.T) {
+	store := newUserStoreWithPassword()
+	mgr := New(AuthConfig{
+		SessionTTL:    time.Hour,
+		SessionCookie: "session_id",
+		UserStore:     store,
+		DevMode:       true,
+	})
+	mgr.Use(NewCorePlugin())
+	sender := &stubEmailSender{}
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		EmailSender: sender,
+	}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	oldHash, _ := HashPassword("oldpw123")
+	user := &BasicUser{ID: "u-sib", Email: "s@example.com", Roles: []string{"user"}}
+	store.users["s@example.com"] = &storeEntry{user: user, hash: oldHash}
+	store.byID[user.ID] = store.users["s@example.com"]
+
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	forgot := func() string {
+		body, _ := json.Marshal(map[string]string{"email": "s@example.com"})
+		req := httptest.NewRequest(http.MethodPost, "/auth/forgot-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("forgot-password: %d", w.Code)
+		}
+		_, emailBody := sender.snapshot()
+		tok := extractTokenFromBody(emailBody)
+		if tok == "" {
+			t.Fatalf("no token in reset email body: %q", emailBody)
+		}
+		return tok
+	}
+	reset := func(tok, password string) int {
+		body, _ := json.Marshal(map[string]string{"token": tok, "password": password})
+		req := httptest.NewRequest(http.MethodPost, "/auth/reset-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// Two outstanding tokens: one leaked earlier, one the victim uses now.
+	leaked := forgot()
+	fresh := forgot()
+	if leaked == fresh {
+		t.Fatal("precondition: two forgot-password requests minted the same token")
+	}
+
+	if code := reset(fresh, "firstnewpw1"); code != http.StatusOK {
+		t.Fatalf("victim's reset failed: %d", code)
+	}
+	_, hashAfterReset, err := store.FindByEmail(context.Background(), "s@example.com")
+	if err != nil {
+		t.Fatalf("FindByEmail after reset: %v", err)
+	}
+
+	// The earlier-leaked token must be dead once the reset completed.
+	if code := reset(leaked, "secondnewpw2"); code != http.StatusUnauthorized {
+		t.Errorf("SECURITY: [reset-sibling-tokens] pre-reset token still redeems after a completed reset: got %d, want 401", code)
+	}
+	if _, hashNow, _ := store.FindByEmail(context.Background(), "s@example.com"); hashNow != hashAfterReset {
+		t.Error("SECURITY: [reset-sibling-tokens] the stale token changed the password after the reset completed")
+	}
+}
+
+// countingResetTokenStore / countingResetSender count the synchronous
+// side effects forgot-password can perform per request.
+type countingResetTokenStore struct {
+	inner     MagicLinkTokenStore
+	creations int
+}
+
+func (s *countingResetTokenStore) CreateToken(ctx context.Context, email string, ttl time.Duration) (string, error) {
+	s.creations++
+	return s.inner.CreateToken(ctx, email, ttl)
+}
+func (s *countingResetTokenStore) RedeemToken(ctx context.Context, token string) (string, error) {
+	return s.inner.RedeemToken(ctx, token)
+}
+func (s *countingResetTokenStore) Cleanup(ctx context.Context) (int, error) {
+	return s.inner.Cleanup(ctx)
+}
+
+type countingResetSender struct{ sends int }
+
+func (s *countingResetSender) Send(context.Context, string, string) error {
+	s.sends++
+	return nil
+}
+
+// Property: an anti-enumeration endpoint must perform the SAME
+// synchronous work on the known-account and unknown-account branches.
+// forgot-password always returns 200 {"sent":true} (the deferred encode
+// in password_reset.go:120-123), but only the known-email branch creates
+// a reset token and synchronously invokes the sender
+// (password_reset.go:158-171) while the unknown-email branch returns
+// after the audit event (password_reset.go:133-147) — sender latency
+// rides the response, so the uniform body is undone by a
+// branch-dependent response time: an account-existence oracle (CWE-208).
+//
+// Pinned as work parity (counted side effects), the deterministic proxy
+// for the latency claim: unequal branch work implies unequal branch
+// time. A wall-clock assertion was rejected as flaky; equal counts hold
+// for any branch-independent fix (equal inline work, or delivery moved
+// off the request path for BOTH branches).
+//
+// Surface: POST /auth/forgot-password.
+func TestForgotPasswordBranchWorkParity(t *testing.T) {
+	store := newUserStoreWithPassword()
+	mgr := New(AuthConfig{
+		SessionTTL:    time.Hour,
+		SessionCookie: "session_id",
+		UserStore:     store,
+		DevMode:       true,
+	})
+	mgr.Use(NewCorePlugin())
+	tokens := &countingResetTokenStore{inner: NewMemoryMagicLinkTokenStore()}
+	sender := &countingResetSender{}
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		EmailSender: sender,
+		TokenStore:  tokens,
+	}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	oldHash, err := HashPassword("oldpw123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := &BasicUser{ID: "u-parity", Email: "known@example.com", Roles: []string{"user"}}
+	store.users["known@example.com"] = &storeEntry{user: user, hash: oldHash}
+	store.byID[user.ID] = store.users["known@example.com"]
+
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	post := func(email string) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"email": email})
+		req := httptest.NewRequest(http.MethodPost, "/auth/forgot-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("forgot-password %s: %d %s", email, w.Code, w.Body.String())
+		}
+	}
+
+	post("known@example.com")
+	knownMints, knownSends := tokens.creations, sender.sends
+	post("nobody@example.com")
+	unknownMints := tokens.creations - knownMints
+	unknownSends := sender.sends - knownSends
+
+	// The store round-trip is the branch-dependent work that CAN be
+	// equalized, and it is the expensive half. The unknown branch mints an
+	// inert decoy so both branches pay for it.
+	if unknownMints != knownMints {
+		t.Errorf("SECURITY: [forgot-branch-parity] POST /auth/forgot-password performed %d token-store operations for a KNOWN email but %d for an UNKNOWN one — branch-dependent work is the latency oracle behind the endpoint's uniform 200 {\"sent\":true} (CWE-208): account existence becomes readable by timing responses", knownMints, unknownMints)
+	}
+
+	// Delivery is deliberately NOT equalized: an address with no account
+	// here must not receive mail from us, which rules out the usual
+	// "notify anyway" answer. The send is kept off the timed path instead
+	// — the 200 is written before delivery runs — so the asymmetry that
+	// remains is not one a client can clock.
+	if unknownSends != 0 {
+		t.Errorf("SECURITY: [forgot-branch-parity] POST /auth/forgot-password sent %d email(s) to an address with no account", unknownSends)
+	}
+	if knownSends == 0 {
+		t.Error("known email received no reset mail; the parity fix must not have disabled delivery")
+	}
+}

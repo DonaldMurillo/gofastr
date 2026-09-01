@@ -1975,6 +1975,15 @@
     }
     if (_modulePromises[name]) return _modulePromises[name];
     _modulePromises[name] = new Promise((resolve, reject) => {
+      // Module names come from DOM attributes (data-fui-prefetch,
+      // data-behavior), so they are caller input. Without a shape check
+      // a "../../../evil" token normalizes out of the runtime serve
+      // route and onto an arbitrary same-origin script, which then runs
+      // with the page's full privileges. Every emitted name is a plain
+      // identifier. Rejecting from inside the promise, with the loader's
+      // own failure message, keeps the guard within the core bundle's
+      // gzip budget -- both are bytes this file already carried.
+      if (!/^[\w-]+$/.test(name)) return reject(new Error('module failed'));
       const v = _moduleManifest[name] || '';
       const url = '/__gofastr/runtime/' + name + '.js' + (v ? '?v=' + v : '');
       const s = document.createElement('script');

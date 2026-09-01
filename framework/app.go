@@ -594,6 +594,16 @@ func (a *App) entityCRUDEnabled(e *entity.Entity) bool {
 	return a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
 }
 
+// EntityCRUDMounted exports [App.entityCRUDEnabled] for the surfaces that
+// advertise routes from outside this package. openapi.json and
+// /api/llm.md take it as a predicate; a host mounting
+// [sdkdocs.Config] or any other route-listing surface passes it the same
+// way. It exists because Exposure.CRUD alone is not the answer: a DB-less
+// app mounts no CRUD while every entity still reads "auto", and a surface
+// that consults the flag instead of this method documents an API the
+// server does not serve (#266).
+func (a *App) EntityCRUDMounted(e *entity.Entity) bool { return a.entityCRUDEnabled(e) }
+
 // WithRouter sets a custom router.
 func WithRouter(r *router.Router) AppOption {
 	return func(a *App) {

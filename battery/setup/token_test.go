@@ -74,19 +74,28 @@ func TestToken_ValidTokenSetsCookie(t *testing.T) {
 	if w.Header().Get("Location") != "/setup" {
 		t.Fatalf("expected redirect to /setup, got %q", w.Header().Get("Location"))
 	}
-	// Cookie must be set, with value matching cookieSecret (which
-	// equals the original token; the cookie survives the token's
-	// single-use invalidation).
+	// Cookie must be set with a freshly minted secret. This assertion
+	// used to require c.Value == tok, which is the replay
+	// TestSetupTokenNotReplayableAsCookie forbids: a URL token that
+	// leaked into an access log would have been a working session
+	// cookie. The cookie's value must NOT be the token.
 	var hasCookie bool
 	for _, c := range w.Result().Cookies() {
-		if c.Name == setupCookieName && c.Value == tok {
-			hasCookie = true
-			if c.HttpOnly != true {
-				t.Error("cookie must be HttpOnly")
-			}
-			if c.SameSite != http.SameSiteStrictMode {
-				t.Error("cookie must be SameSite=Strict")
-			}
+		if c.Name != setupCookieName {
+			continue
+		}
+		hasCookie = true
+		if c.Value == "" {
+			t.Error("setup cookie has an empty value")
+		}
+		if c.Value == tok {
+			t.Error("SECURITY: the setup cookie carries the URL token verbatim; a leaked URL becomes a session")
+		}
+		if !c.HttpOnly {
+			t.Error("cookie must be HttpOnly")
+		}
+		if c.SameSite != http.SameSiteStrictMode {
+			t.Error("cookie must be SameSite=Strict")
 		}
 	}
 	if !hasCookie {
@@ -113,10 +122,26 @@ func TestToken_CookieGrantsAccess(t *testing.T) {
 	r := buildTestRunner(t, false, &done)
 	h := r.Handler(func() {}, nil, nil)
 
-	// Use a request that carries the cookie.
+	// Exchange the URL token first: the cookie secret is minted THERE,
+	// not at construction, so there is no valid cookie value before it.
+	exchange := doGet(h, "/setup?token="+r.token)
+	if exchange.Code != http.StatusSeeOther {
+		t.Fatalf("token exchange returned %d, want 303", exchange.Code)
+	}
+	var issued string
+	for _, c := range exchange.Result().Cookies() {
+		if c.Name == setupCookieName {
+			issued = c.Value
+		}
+	}
+	if issued == "" {
+		t.Fatal("token exchange issued no setup cookie")
+	}
+
+	// The issued cookie grants access.
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
-	req.AddCookie(&http.Cookie{Name: setupCookieName, Value: r.token})
+	req.AddCookie(&http.Cookie{Name: setupCookieName, Value: issued})
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 with cookie, got %d", w.Code)

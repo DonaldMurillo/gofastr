@@ -209,10 +209,14 @@ func sniffContentType(f io.ReadSeeker) (string, error) {
 }
 
 // ext returns the lowercase file extension (without dot) from a filename.
+// Lowercasing is the point, not a nicety: scriptableExt matches against a
+// lowercase set, so a "payload.SVG" or "payload.HTML" walked straight past
+// the stored-XSS guard's extension leg while the identical lowercase name
+// was caught.
 func ext(filename string) string {
 	e := filepath.Ext(filename)
 	if len(e) > 0 && e[0] == '.' {
-		return e[1:]
+		e = e[1:]
 	}
-	return e
+	return strings.ToLower(e)
 }

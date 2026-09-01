@@ -25,6 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
@@ -37,6 +38,7 @@ type Blueprint struct {
 	Nav        []BlueprintNavItem
 	Seed       []BlueprintSeedEntity
 	Endpoints  []BlueprintEndpoint
+	Hooks      []BlueprintHook
 	Middleware []BlueprintNamedStub
 	Plugins    []BlueprintNamedStub
 	Helpers    []BlueprintNamedStub
@@ -195,6 +197,32 @@ type BlueprintEndpoint struct {
 	MCP         bool
 }
 
+// BlueprintHook is one entity lifecycle hook carried through
+// graduation. Like BlueprintEndpoint it declares a surface the generated
+// app must implement in owned Go: the blueprint records WHICH hook runs
+// WHERE, and Handler names the func to write.
+//
+// It exists because kiln's freeze dropped hooks entirely. A world's hooks
+// are enforced in the live preview (kiln/render registers them on the
+// framework HookRegistry), so an operator watches a before_create
+// validation reject bad rows and then ships an app that silently has no
+// such validation. kiln.md promises the opposite: "freeze emits an
+// owned-Go handler stub with a description naming the declarative
+// action".
+type BlueprintHook struct {
+	// ID is the hook's stable identifier from the kiln world; it doubles
+	// as the blueprint's name for the hook.
+	ID string
+	// Entity is the entity whose lifecycle the hook runs on.
+	Entity string
+	// When is the lifecycle point: before_create, after_update, ...
+	When string
+	// Handler is the owned-Go func name to implement.
+	Handler string
+	// Description names the declarative action the hook came from.
+	Description string
+}
+
 type BlueprintNamedStub struct {
 	Name        string
 	Description string
@@ -321,7 +349,7 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 	if err != nil {
 		return Blueprint{}, err
 	}
-	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "nav": true, "seed": true, "endpoints": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
+	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "nav": true, "seed": true, "endpoints": true, "hooks": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
 	if err := rejectUnknownKeys(m, allowed, "blueprint"); err != nil {
 		return Blueprint{}, err
 	}
@@ -368,6 +396,13 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 			return Blueprint{}, err
 		}
 		bp.Endpoints = append(bp.Endpoints, endpoints...)
+	}
+	if child := m["hooks"]; child != nil {
+		hooks, err := decodeBlueprintHooks(child)
+		if err != nil {
+			return Blueprint{}, err
+		}
+		bp.Hooks = append(bp.Hooks, hooks...)
 	}
 	if child := m["middleware"]; child != nil {
 		stubs, err := decodeNamedStubs(child, "middleware")
@@ -2004,6 +2039,32 @@ func decodeBlueprintEndpoints(node *coreyaml.Node) ([]BlueprintEndpoint, error) 
 	return out, nil
 }
 
+func decodeBlueprintHooks(node *coreyaml.Node) ([]BlueprintHook, error) {
+	list, err := expectList(node, "hooks")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BlueprintHook, 0, len(list))
+	for i, item := range list {
+		m, err := expectMap(item, fmt.Sprintf("hooks[%d]", i))
+		if err != nil {
+			return nil, err
+		}
+		allowed := map[string]bool{"id": true, "entity": true, "when": true, "handler": true, "description": true}
+		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("hooks[%d]", i)); err != nil {
+			return nil, err
+		}
+		out = append(out, BlueprintHook{
+			ID:          stringValue(m["id"]),
+			Entity:      stringValue(m["entity"]),
+			When:        stringValue(m["when"]),
+			Handler:     stringValue(m["handler"]),
+			Description: stringValue(m["description"]),
+		})
+	}
+	return out, nil
+}
+
 func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, error) {
 	list, err := expectList(node, label)
 	if err != nil {
@@ -2595,7 +2656,75 @@ func seedValueRejection(field framework.FieldDeclaration, value any) string {
 	case "json":
 		// Any value marshals; the validator accepts strings, maps, lists.
 	}
+	return seedConstraintRejection(field, value)
+}
+
+// seedConstraintRejection asks the BOOT validator itself whether the value
+// satisfies the field's constraints -- pattern, min/max, enum membership --
+// rather than re-deriving them here.
+//
+// The type checks above are deliberately coercion-tolerant: the stub
+// emitter re-encodes an int given as a string, a decimal given as a
+// number, and so on, so a shape mismatch there is not a boot failure. The
+// CONSTRAINTS are a different matter: nothing re-encodes "abc" into
+// ^[A-Z]{3}$, so a row that violates one generates cleanly, compiles, and
+// then aborts the shipped app's startup on a fresh database. That is the
+// saw-green-ships-red the docstring above promises never happens.
+//
+// It runs only when the value is already in the form the field will hold,
+// so a coercible value is not judged on a shape the generator is about to
+// change. A field declaration that cannot be converted is a separate
+// error the caller reports elsewhere.
+func seedConstraintRejection(field framework.FieldDeclaration, value any) string {
+	bootField, err := field.Field()
+	if err != nil {
+		return ""
+	}
+	if !seedValueInFinalForm(bootField, value) {
+		return ""
+	}
+	if err := schema.Validate(bootField, value); err != nil {
+		return err.Error()
+	}
 	return ""
+}
+
+// seedValueInFinalForm reports whether value's Go type already matches
+// what the generated code will store for this field, so the boot
+// validator's verdict on it is the verdict the shipped app will reach.
+func seedValueInFinalForm(f schema.Field, value any) bool {
+	switch f.Type {
+	case schema.String, schema.Text, schema.Enum, schema.UUID, schema.Relation:
+		_, ok := value.(string)
+		return ok
+	case schema.Int:
+		switch v := value.(type) {
+		case int64:
+			return true
+		case float64:
+			return v == math.Trunc(v)
+		}
+		return false
+	case schema.Float:
+		switch value.(type) {
+		case int64, float64:
+			return true
+		}
+		return false
+	case schema.Bool:
+		_, ok := value.(bool)
+		return ok
+	default:
+		// Date, Timestamp, Decimal, JSON, Image, File. Every one of these
+		// is re-encoded by the stub emitter before it reaches the shipped
+		// app -- a decimal given as a number becomes the decimal string
+		// the validator wants, a JSON value is marshalled -- so the value
+		// here is not yet in the form the field will hold, and the boot
+		// validator's verdict on it would be a verdict on a shape that is
+		// about to change. Judging them is what would produce a FALSE
+		// rejection of a working blueprint.
+		return false
+	}
 }
 
 func blueprintCRUDRoutes(entities []framework.EntityDeclaration) map[string]bool {
@@ -3173,7 +3302,9 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	// generated .env, excluded by the generated .gitignore, carries the
 	// blueprint's values so the app runs out of the box.
 	if env := renderBlueprintEnv(bp); env != "" {
-		files = append(files, generatedFile{name: ".env", content: env})
+		// 0600: this file carries the session signing secret and the
+		// database URL. See codegen.GeneratedFile.Mode.
+		files = append(files, generatedFile{name: ".env", content: env, mode: 0o600})
 	}
 	// Always ship the .gitignore: even a secret-less app writes local
 	// build artifacts (.gofastr/, the axe-coverage manifest) that must
@@ -3243,14 +3374,37 @@ const blueprintGitignore = `# Generated by gofastr.
 // then no .env is emitted at all.
 func renderBlueprintEnv(bp Blueprint) string {
 	var b strings.Builder
+	writeSecret := func(key, value string) {
+		// A value that IS a reference to this same key cannot be written
+		// back as the key's value. `kiln freeze` emits ${JWT_SECRET} into
+		// the blueprint precisely so the real secret stays out of the
+		// committed file, and rendering that into .env produced
+		// JWT_SECRET=${JWT_SECRET} -- a self-reference dotenv returns
+		// verbatim, so the app booted signing session JWTs with the
+		// literal string printed in the committed gofastr.yml. Nothing
+		// fails closed on it either: battery/auth rejects only an EMPTY
+		// secret, and the literal is non-empty.
+		//
+		// Emit the key as a commented placeholder instead. dotenv then
+		// sets nothing, a real exported value still wins (Apply never
+		// overrides the process env), and an absent one leaves the secret
+		// empty, which IS the condition auth refuses to boot on.
+		if isSelfEnvRef(key, value) {
+			b.WriteString("# " + key + " must be supplied by the environment;\n" +
+				"# the blueprint carries a ${" + key + "} reference, not a value.\n" +
+				"# " + key + "=\n")
+			return
+		}
+		b.WriteString(key + "=" + envQuote(value) + "\n")
+	}
 	if bp.App.Auth.Enabled && bp.App.Auth.JWTSecret != "" {
-		b.WriteString("JWT_SECRET=" + envQuote(bp.App.Auth.JWTSecret) + "\n")
+		writeSecret("JWT_SECRET", bp.App.Auth.JWTSecret)
 	}
 	if dsnHasSecret(bp.App.DBURL) {
-		b.WriteString("DATABASE_URL=" + envQuote(bp.App.DBURL) + "\n")
+		writeSecret("DATABASE_URL", bp.App.DBURL)
 	}
 	if bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != "" {
-		b.WriteString("ADMIN_SEED_PASSWORD=" + envQuote(bp.App.Admin.SeedPassword) + "\n") // not-a-secret: renders the blueprint's value into the generated (gitignored) .env
+		writeSecret("ADMIN_SEED_PASSWORD", bp.App.Admin.SeedPassword) // not-a-secret: renders the blueprint's value into the generated (gitignored) .env
 	}
 	if b.Len() == 0 {
 		return ""
@@ -3259,6 +3413,12 @@ func renderBlueprintEnv(bp Blueprint) string {
 		"# control (the generated .gitignore already excludes it).\n" +
 		"# Regenerating with --force rewrites this file from the blueprint.\n" +
 		b.String()
+}
+
+// isSelfEnvRef reports whether value is exactly "${key}" -- a reference
+// naming the very variable it would be assigned to.
+func isSelfEnvRef(key, value string) bool {
+	return strings.TrimSpace(value) == "${"+key+"}"
 }
 
 // envQuote renders a value for the generated .env so both readers of

@@ -104,6 +104,9 @@ func TestLiveAddsFieldColumn(t *testing.T) {
 		}
 		cols = append(cols, name)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	if !contains(cols, "body") {
 		t.Errorf("expected 'body' column after add_field, got %v", cols)
 	}

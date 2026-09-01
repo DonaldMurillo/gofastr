@@ -266,3 +266,141 @@ func TestChatTextEscapesApostrophes(t *testing.T) {
 		t.Errorf("chat message text leaked a raw apostrophe:\n%s", out)
 	}
 }
+
+// newCSRFTestServer builds a live runtime with both state-changing
+// surfaces mounted the way cmd/kiln wires them: the tool dispatcher +
+// chat endpoint (Server.Mount) and the panel RPC routes (MountPanel),
+// all on the aux router behind l.ServeHTTP.
+func newCSRFTestServer(t *testing.T) (*live.Live, *protocol.Tools) {
+	t.Helper()
+	d, cleanup, err := db.EphemeralSQLite("kiln-csrf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	factory := func() *framework.App { return framework.NewApp(framework.WithDB(d)) }
+	l, err := live.New(journal.NewMemory(), factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := protocol.New(l)
+	srv := New(l, tools)
+	srv.Mount(l.Aux())
+	MountPanel(l.Aux(), l, tools, nil)
+	return l, tools
+}
+
+// csrfPost issues a no-preflight cross-site POST: a browser on
+// https://evil.example can send this fetch() without any CORS
+// preflight (text/plain is a simple content type), and the request's
+// Host is a legitimate localhost:8765, so neither the loopback bind
+// nor Host pinning stops it.
+func csrfPost(t *testing.T, l *live.Live, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8765"+path, strings.NewReader(body))
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	return rec
+}
+
+// Property 6: state-changing loopback endpoints must reject cross-site
+// browser requests. The plan-gate's human approval is the security leg
+// CSRF defeats: a webpage the operator visits can silently POST to
+// /kiln/tool/approve_plan (or the panel's approve_plan) and approve a
+// destructive plan without the human ever seeing the card.
+//
+// This does NOT contradict the plan_gate_test.go testimonial ("the
+// transport is deliberately unauthenticated; loopback bind is the
+// boundary; agent self-approval is intended"): an Origin allow-list
+// leaves every non-browser caller untouched — the agent's $KILN_URL
+// client and curl send no Origin header at all — and the operator's
+// panel is same-origin. The one caller class it rejects is exactly the
+// class the loopback bind cannot see: a browser tab whose TCP peer is
+// the operator's own machine.
+func TestPOSTRoutesRejectCrossOrigin(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	routes := []struct{ path, body string }{
+		{"/kiln/tool/approve_plan", `{"plan_id":"p1"}`},
+		{"/kiln/tool/reject_plan", `{"plan_id":"p1","reason":"x"}`},
+		{"/kiln/tool/reset_session", `{}`},
+		{"/kiln/tool/undo", `{}`},
+		{"/kiln/chat/message", `{"role":"user","text":"pwn"}`},
+		{"/kiln/panel/approve_plan", `{"plan_id":"p1"}`},
+		{"/kiln/panel/reject_plan", `{"plan_id":"p1"}`},
+		{"/kiln/panel/reset", `{}`},
+		{"/kiln/panel/undo", `{}`},
+		{"/kiln/panel/send", `{"text":"pwn"}`},
+	}
+	for _, r := range routes {
+		rec := csrfPost(t, l, r.path, r.body)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("SECURITY: %s accepted a cross-origin POST (Origin: https://evil.example): status %d, body %.200s",
+				r.path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// The end-to-end damage pin: a proposed plan must survive a cross-site
+// approve attempt still pending. The panel is where a human eyeballs a
+// destructive intent; CSRF on the approve route makes that gate
+// decorative.
+func TestCrossOriginApproveLeavesPlanPending(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	ctx := context.Background()
+	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
+		PlanID: "p1", Steps: []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !res.OK {
+		t.Fatalf("propose_plan: %+v", res)
+	}
+
+	rec := csrfPost(t, l, "/kiln/tool/approve_plan", `{"plan_id":"p1"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("cross-origin approve_plan status = %d, want 403", rec.Code)
+	}
+
+	var approved bool
+	l.ReadSession(func(sess *journal.Session) {
+		if p, ok := sess.Plans["p1"]; ok {
+			approved = p.Approved
+		}
+	})
+	if approved {
+		t.Errorf("SECURITY: cross-origin POST approved plan p1; the human gate was bypassed (status %d, body %.200s)",
+			rec.Code, rec.Body.String())
+	}
+}
+
+// Contract guard for the fix: requests with no Origin header are the
+// agent transport (curl / $KILN_URL client), the exact caller class
+// plan_gate_test.go pins as intended. An Origin gate must leave them
+// working, including self-approval.
+func TestNoOriginApproveStillWorks(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	ctx := context.Background()
+	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
+		PlanID: "p2", Steps: []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !res.OK {
+		t.Fatalf("propose_plan: %+v", res)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8765/kiln/tool/approve_plan",
+		strings.NewReader(`{"plan_id":"p2"}`))
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("no-Origin approve_plan (agent transport) status = %d, want 200: %.200s", rec.Code, rec.Body.String())
+	}
+	var approved bool
+	l.ReadSession(func(sess *journal.Session) {
+		if p, ok := sess.Plans["p2"]; ok {
+			approved = p.Approved
+		}
+	})
+	if !approved {
+		t.Errorf("no-Origin approve_plan did not approve p2; the agent transport contract (plan_gate_test.go) is broken: %.200s", rec.Body.String())
+	}
+}

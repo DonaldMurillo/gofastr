@@ -89,6 +89,20 @@ func loadFile(path string) error {
 		if val == "" {
 			continue // empty value → don't set; lets shell env stay authoritative
 		}
+		// The file is found by walking UP from the working directory, so
+		// on a cloned repo it is attacker-authored. Delivering provider
+		// API keys from it is the documented contract; deciding how the
+		// credential store is ENCRYPTED is not. A planted
+		// GOFASTR_HARNESS_MACHINE_KEY or _PASSPHRASE means the operator's
+		// first stored credential is sealed under a key the repo author
+		// chose. Project hooks face the same untrusted-directory threat
+		// and are off by default; this loader has no such gate, so the
+		// key-derivation vars simply cannot come from the file. The real
+		// environment stays authoritative for them, as it already is for
+		// everything else here.
+		if isHarnessKeyVar(key) {
+			continue
+		}
 		// Env vars already set in the process take priority.
 		if _, present := os.LookupEnv(key); present {
 			continue
@@ -99,6 +113,17 @@ func loadFile(path string) error {
 	}
 	return scanner.Err()
 }
+
+// harnessKeyVars are the variables that decide how the credential store
+// is encrypted. They are refused from a walked secrets file.
+var harnessKeyVars = map[string]bool{
+	"GOFASTR_HARNESS_MACHINE_KEY": true,
+	"GOFASTR_HARNESS_PASSPHRASE":  true,
+}
+
+// isHarnessKeyVar reports whether key selects credential-store key
+// material rather than a provider credential.
+func isHarnessKeyVar(key string) bool { return harnessKeyVars[key] }
 
 func trimQuotes(s string) string {
 	if len(s) >= 2 {

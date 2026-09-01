@@ -206,3 +206,52 @@ func TestLogSender_DoesNotExposeLiveResetLinksInHTMLBody(t *testing.T) {
 		t.Fatalf("SECURITY: [email-log] LogSender exposed live reset link in HTML body logs: %q", logs)
 	}
 }
+
+// TestExecuteEscapesHTMLBodyVars pins the template split that makes
+// caller-controlled template DATA safe: Execute renders HTMLBody through
+// html/template (contextual escaping) and subject/text through text/template
+// (literal plain text, guarded downstream by buildMessage's CRLF refusal).
+// Supersedes the vacuous TestEmail_TemplateInjection above (a bare t.Logf
+// that can never fail); that one is flagged for central deletion.
+func TestExecuteEscapesHTMLBodyVars(t *testing.T) {
+	const attack = "<script>alert(1)</script>"
+
+	got, err := Execute(Template{
+		Subject:  "Hi {{.name}}",
+		TextBody: "Hello {{.name}}",
+		HTMLBody: "<p>{{.name}}</p>",
+	}, map[string]any{"name": attack})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if strings.Contains(got.HTMLBody, attack) {
+		t.Errorf("SECURITY: [email] HTMLBody rendered template data unescaped (script into the mail body): %q", got.HTMLBody)
+	}
+	if !strings.Contains(got.HTMLBody, "&lt;script&gt;") {
+		t.Errorf("expected html/template escaping in HTMLBody; got %q", got.HTMLBody)
+	}
+	// Subject and text stay literal: they are plain-text parts, safe only
+	// because buildMessage refuses control bytes later.
+	if got.Subject != "Hi "+attack {
+		t.Errorf("subject should render the value literally; got %q", got.Subject)
+	}
+	if got.TextBody != "Hello "+attack {
+		t.Errorf("text body should render the value literally; got %q", got.TextBody)
+	}
+
+	// A CR/LF smuggled in through template data renders literally into the
+	// subject and must still be refused by buildMessage: the composed
+	// contract that makes the text/template split safe.
+	inj, err := Execute(Template{Subject: "Hi {{.name}}"}, map[string]any{"name": "x\r\nBcc: victim@e.com"})
+	if err != nil {
+		t.Fatalf("Execute(inj): %v", err)
+	}
+	if !strings.Contains(inj.Subject, "\r\n") {
+		t.Fatalf("expected the CR/LF to survive text/template rendering; got %q", inj.Subject)
+	}
+	inj.From = "a@b.test"
+	inj.To = []string{"x@y.test"}
+	if _, err := buildMessage(inj); err == nil {
+		t.Error("SECURITY: [email] buildMessage accepted a subject whose CR/LF arrived via template data (Bcc smuggling)")
+	}
+}

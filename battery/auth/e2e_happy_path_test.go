@@ -433,8 +433,14 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 		t.Fatalf("login after reset: %d", code)
 	}
 
-	// 18. Challenge + me, end-to-end shape preserved
-	totp = GenerateTOTP(secret, uint64(time.Now().Unix())/30)
+	// 18. Challenge + me, end-to-end shape preserved.
+	//
+	// Next step, not the current one: an earlier challenge in this test
+	// already consumed the current window, and a used step is refused
+	// (RFC 6238 §5.2). +1 is inside the accepted skew and is a step the
+	// server has not seen, which is exactly what a real client holds a
+	// moment later.
+	totp = GenerateTOTP(secret, uint64(time.Now().Unix())/30+1)
 	code, _ = do(http.MethodPost, "/auth/2fa/challenge", map[string]string{"code": totp})
 	if code != http.StatusOK {
 		t.Fatalf("post-reset 2fa challenge: %d", code)

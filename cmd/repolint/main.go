@@ -187,6 +187,14 @@ func lintBytes(rel string, body []byte) []finding {
 			Message: "re-derived URL-scheme allow-list: call core-ui/urlsafe (urlsafe.OK / urlsafe.Clean) instead of growing another copy",
 		})
 	}
+	for _, line := range crudExposureRederivedLines(rel, body) {
+		out = append(out, finding{
+			File:    rel,
+			Line:    line,
+			Rule:    "crud-exposure-rederived",
+			Message: "reads Exposure.CRUD to decide whether an entity's routes exist: that flag alone misses the no-DB case, where App mounts no CRUD while every entity still reads \"auto\". Take a mounted predicate (framework.App.EntityCRUDMounted) instead — or, if this read genuinely is not an exposure decision, add the file to crudExposureClassified with a reason",
+		})
+	}
 	lines := strings.Split(string(body), "\n")
 	for i, line := range lines {
 		if isConflictMarker(line) {
@@ -573,6 +581,56 @@ func duplicateURLGuardLine(rel string, body []byte) int {
 		}
 	}
 	return 1
+}
+
+// crudExposureClassified pins the files allowed to read Exposure.CRUD
+// directly. Every entry needs a reason; "it already did" is not one.
+//
+// The flag is not the answer to "does this entity have HTTP CRUD routes" —
+// App mounts auto-CRUD only when a DB is attached, so a DB-less app
+// registers nothing while every entity still reads nil ("auto"). Surfaces
+// that advertise routes from that flag document an API the server does not
+// serve, which is #169 (openapi), #244 (startup banner) and #266
+// (openapi.json + /api/llm.md): one invariant, fixed three times, one
+// surface at a time. sdkdocs was the fourth, found by this rule's inventory.
+//
+// A new entry here is a decision, not paperwork: say why this read cannot
+// be the drift the rule exists to stop.
+var crudExposureClassified = map[string]string{
+	"framework/app.go":                "defines the predicate (entityCRUDEnabled) and ANDs a.DB != nil at every other read",
+	"framework/entity/entity.go":      "marshals the declaration; not an exposure decision",
+	"framework/entity/declaration.go": "merges the declaration; not an exposure decision",
+	"cmd/gofastr/generate.go":         "emits the declared flag back into generated source; not an exposure decision",
+	"cmd/gofastr/pack.go":             "serializes the declared flag back to YAML; not an exposure decision",
+	"framework/openapi/openapi.go":    "takes a crudMounted predicate; the bare read is its documented nil fallback for direct callers",
+	"framework/sdkdocs/sdkdocs.go":    "takes a CRUDMounted predicate; the bare read is the Exposure-only prefilter",
+	"battery/admin/entity_admin.go":   "admin mounts only with a DB attached, so nil really is auto-true here",
+	"battery/auth/verify_private.go":  "warns that an auth entity is exposed; omitting the DB check makes it warn in the SAFE direction",
+}
+
+// crudExposureRederivedLines reports lines where an unclassified file reads
+// Exposure.CRUD. See [crudExposureClassified].
+func crudExposureRederivedLines(rel string, body []byte) []int {
+	if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
+		return nil
+	}
+	if strings.Contains(rel, "/testdata/") || strings.HasPrefix(rel, "cmd/repolint/") {
+		return nil
+	}
+	if _, ok := crudExposureClassified[rel]; ok {
+		return nil
+	}
+	var out []int
+	for i, line := range strings.Split(string(body), "\n") {
+		code := line
+		if j := strings.Index(code, "//"); j >= 0 {
+			code = code[:j] // a comment naming the flag is not a read
+		}
+		if strings.Contains(code, "Exposure.CRUD") {
+			out = append(out, i+1)
+		}
+	}
+	return out
 }
 
 func mentionsExternalLintTool(line string) bool {

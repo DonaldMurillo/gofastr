@@ -153,6 +153,12 @@ type SidebarItem struct {
 	// prefix ("/customers") to highlight on sub-paths, or use
 	// CurrentPath in your screen and set Active manually.
 	MatchPath string
+
+	// Open forces a group to render expanded on first paint regardless
+	// of active-state rules — for hosts whose contract pins certain
+	// sections open by default (metacollector's My Inventory group).
+	// Leaf items ignore it.
+	Open bool
 }
 
 // SidebarConfig describes a navigation sidebar.
@@ -488,7 +494,9 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, st *sidebarNavState, d
 		// Open the group when the group itself is active OR any
 		// descendant matches the current path, so navigating to a
 		// nested route lands on a section that's already expanded.
-		open := active || hasActiveDescendant(it, st.currentPath)
+		// Open overrides both, for hosts whose contract pins certain
+		// sections expanded by default.
+		open := it.Open || active || hasActiveDescendant(it, st.currentPath)
 		if st.groupButtons {
 			// Button dialect: button[aria-expanded][aria-controls] +
 			// a container that carries `hidden` when closed, for hosts

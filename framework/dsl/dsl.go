@@ -472,6 +472,10 @@ func dslTypedValue(field schema.Field, value string) any {
 		if b, err := strconv.ParseBool(value); err == nil {
 			return b
 		}
+	default:
+		// Every other type binds as the string the caller sent. A new
+		// numeric type added to schema will land here and compare as
+		// text, so it belongs in a case above, not in this default.
 	}
 	return value
 }

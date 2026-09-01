@@ -781,15 +781,20 @@ func extractAttr(htmlStr, attrName string) string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Form action sinks: SearchInput + FilterToolbar (sibling drift of ui.Form)
+//  Form action sinks: SearchInput + FilterToolbar + SignOut (drift of ui.Form)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // TestFormActionSinksRejectUnsafeURL pins the URL-scheme allow-list on the
-// two <form action> sinks that previously put cfg.Action straight into a
-// hand-rolled render.Tag while the sibling ui.Form ran it through
-// urlsafe.CleanAnchor. Property × surface: loop the same attack shapes over
-// BOTH components. FilterToolbar runs with HideReset so the form action is
-// the only sink exercised (its reset LinkButton already had a guard).
+// <form action> sinks that write cfg.Action straight into markup instead of
+// going through the html.Form primitive's setURLAttr guard, while the
+// sibling ui.Form runs it through urlsafe.CleanAnchor. Property × surface:
+// loop the same attack shapes over EVERY component. FilterToolbar runs with
+// HideReset so the form action is the only sink exercised (its reset
+// LinkButton already had a guard). SignOut hand-rolls its <form> tag with
+// render.Escape, which is HTML-escaping and scheme-blind, so its Action
+// must be scheme-allow-listed like every other sink. A SignOut fix should
+// degrade a rejected action to its "/auth/logout" default rather than "#"
+// (a "#"-action form submits to the page itself).
 func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 	unsafe := []string{
 		"javascript:alert(1)",
@@ -809,6 +814,9 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 				Action: a, HideReset: true,
 				Sort: []ui.SortOption{{Value: "x", Label: "X"}},
 			})
+		}},
+		{"SignOut", func(a string) render.HTML {
+			return ui.SignOut(ui.SignOutConfig{Action: a})
 		}},
 	}
 	for _, s := range sinks {

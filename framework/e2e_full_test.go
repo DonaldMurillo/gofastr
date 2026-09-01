@@ -524,6 +524,9 @@ func TestE2E_Full(t *testing.T) {
 			deadline := time.Now().Add(2 * time.Second)
 			for time.Now().Before(deadline) {
 				if !scanner.Scan() {
+					if err := scanner.Err(); err != nil {
+						t.Fatalf("read event stream: %v", err)
+					}
 					break
 				}
 				line := scanner.Text()

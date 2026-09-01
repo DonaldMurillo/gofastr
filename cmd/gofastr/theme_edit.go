@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -29,6 +30,10 @@ import (
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
+
+// maxThemeEditBody caps an inbound body: one token key and its value. Past this, the
+// request is refused rather than buffered.
+const maxThemeEditBody = 64 << 10
 
 // runThemeEdit boots a local theme configurator: an in-process core-ui
 // app whose gallery screen is served by a real UIHost (same
@@ -457,6 +462,7 @@ func (s *themeEditServer) handleApply(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Key, Value string
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxThemeEditBody)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed JSON body")
 		return
@@ -483,7 +489,8 @@ func (s *themeEditServer) handleWriteback(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := s.writeBack(); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		log.Printf("theme edit: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "could not apply the edit")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

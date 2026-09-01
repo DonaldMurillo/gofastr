@@ -31,6 +31,24 @@ func init() {
 			"scheduled_at",
 			"status",
 			"claimed_at",
+			"user_id",
 		},
+	})
+	// The erase-plane mirror. A job's payload routinely carries the very
+	// data an erasure is meant to remove (the address an email job renders,
+	// the document a render job points at), and queue_jobs lives outside
+	// the entity registry, so App.EraseUserData can only reach it through a
+	// declaration like this one. Terminal rows make it acute: DBQueue's only
+	// job-row DELETE is Ack-of-claimed, and 'failed' rows are retained on
+	// purpose for Stats/ListJobs/Replay, so without this a dead-lettered job
+	// keeps the erased user's data forever and every later ExportData dump
+	// re-discloses it. Delete rather than anonymize: a job row minus its
+	// payload cannot be replayed, so there is nothing left worth retaining.
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name:   "queue_jobs",
+		Source: "queue",
+		Table:  "queue_jobs",
+		Column: "user_id",
+		Mode:   datexport.EraseDelete,
 	})
 }

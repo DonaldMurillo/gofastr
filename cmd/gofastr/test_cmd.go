@@ -79,6 +79,14 @@ func runTest(args []string) {
 		fmt.Println(colored)
 	}
 
+	if err := scanner.Err(); err != nil {
+		// Output stopped early, so the tally below counted only part of
+		// the run. Saying so beats printing a confident wrong number.
+		fmt.Println()
+		fail("test output truncated after %d passed / %d failed: %v", passed, failed, err)
+		osExit(1)
+	}
+
 	if err := cmd.Wait(); err != nil {
 		fmt.Println()
 		fail("%d test(s) passed, %d test(s) failed", passed, failed)

@@ -50,6 +50,18 @@ func (s *SQLMagicLinkTokenStore) ensureTable(ctx context.Context) error {
 	return err
 }
 
+// DeleteTokensForPayload removes every unredeemed token carrying payload.
+// Implements [MagicLinkTokenPurger].
+func (s *SQLMagicLinkTokenStore) DeleteTokensForPayload(ctx context.Context, payload string) (int, error) {
+	q := fmt.Sprintf(`DELETE FROM %s WHERE email = $1`, query.QuoteIdent(s.table))
+	res, err := s.db.ExecContext(ctx, q, payload)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // CreateToken generates a cryptographically random token, persists it with the
 // email and TTL, and returns it.
 func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, ttl time.Duration) (string, error) {

@@ -363,6 +363,15 @@ func (b *Battery) RegisterRoutes(r *router.Router) {
 	}
 }
 
+// gateMiddleware is [Battery.gate] as router middleware, for surfaces that
+// register their own routes (the nav drawer widget) and so cannot be
+// wrapped handler-by-handler.
+func (b *Battery) gateMiddleware() router.Middleware {
+	return func(next http.Handler) http.Handler {
+		return b.gate(next.ServeHTTP)
+	}
+}
+
 // gate wraps a route handler so it refuses unauthorized callers (401). The
 // framework auth chain sets the user; b.authorized decides. Used for the
 // standalone ops pages and the entity RPC/form routes.

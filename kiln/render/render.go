@@ -108,7 +108,8 @@ func applyRoutes(app *framework.App, w *world.World) error {
 			}
 			resp, err := effect.Resolve(req.Context(), rt.Action, scope)
 			if err != nil {
-				http.Error(rw, err.Error(), http.StatusInternalServerError)
+				slog.Error("kiln render", "err", err)
+				http.Error(rw, "render failed", http.StatusInternalServerError)
 				return
 			}
 			if err := resp.WriteTo(rw); err != nil {

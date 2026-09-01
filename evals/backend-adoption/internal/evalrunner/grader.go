@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
 	"io"
 	"net"
 	"net/http"
@@ -348,7 +349,12 @@ func startServer(ctx context.Context, binary, workspace, dbPath, logPath string)
 	cmd := exec.CommandContext(ctx, binary)
 	configureCommandCancellation(cmd)
 	cmd.Dir = workspace
-	cmd.Env = append(os.Environ(), "PORT="+addr, "DATABASE_PATH="+dbPath)
+	// Allowlisted, not inherited. This binary is code an unsupervised
+	// agent wrote and we are about to execute it; handing it
+	// os.Environ() gave it the operator's cloud keys, SCM tokens, and
+	// DATABASE_URL. The ui-quality twin already passed its candidate an
+	// allowlisted environment; this one did not.
+	cmd.Env = append(childenv.Allowlisted(), "PORT="+addr, "DATABASE_PATH="+dbPath)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()

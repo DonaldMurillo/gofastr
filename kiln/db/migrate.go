@@ -4,10 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // Migrate brings the live SQLite schema in sync with the registry.
@@ -142,22 +142,18 @@ func sqlType(f schema.Field) string {
 	}
 }
 
+// sqlDefault delegates to the framework's renderer rather than mirroring
+// it. The copy that used to live here had the same default arm the
+// framework deleted after a verified payload: fmt.Sprintf("'%v'", v)
+// splices the rendering raw between unescaped quotes, and
+// schema.Field.Default is `any`, so a named string type, a fmt.Stringer,
+// or a map/slice decoded from JSON all miss `case string` and take it.
+// One quote in the value closes the literal and appends arbitrary DDL to
+// ALTER TABLE ... ADD COLUMN -- reached from kiln's add_entity op over
+// HTTP. Two copies of an escaping rule is how the fix reached one of them
+// and not the other; there is one now.
+//
+// kiln's local store is SQLite, so the dialect is fixed here.
 func sqlDefault(f schema.Field) string {
-	switch v := f.Default.(type) {
-	case string:
-		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
-	case int:
-		return fmt.Sprintf("%d", v)
-	case int64:
-		return fmt.Sprintf("%d", v)
-	case float64:
-		return fmt.Sprintf("%f", v)
-	case bool:
-		if v {
-			return "1"
-		}
-		return "0"
-	default:
-		return fmt.Sprintf("'%v'", v)
-	}
+	return migrate.SQLDefault(f, migrate.DialectSQLite)
 }

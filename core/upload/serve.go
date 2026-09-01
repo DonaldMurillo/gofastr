@@ -12,20 +12,31 @@ import (
 // scriptableHead reports whether a sniffed content type is one a
 // browser will render and execute as active content. Served verbatim,
 // an uploaded HTML document becomes a stored-XSS vector.
+//
+// XML counts. An XML document may carry an xml-stylesheet processing
+// instruction naming an XSLT sheet, and the transform that sheet applies
+// can emit arbitrary HTML including <script> — so two uploads, a .xml
+// pointing at a .xsl beside it, compose into exactly the stored-XSS the
+// HTML case forbids. Neither leg looks scriptable on its own.
 func scriptableHead(ct string) bool {
 	ct = strings.ToLower(ct)
 	return strings.HasPrefix(ct, "text/html") ||
 		strings.HasPrefix(ct, "application/xhtml") ||
-		strings.HasPrefix(ct, "image/svg")
+		strings.HasPrefix(ct, "image/svg") ||
+		strings.HasPrefix(ct, "text/xml") ||
+		strings.HasPrefix(ct, "application/xml") ||
+		strings.HasPrefix(ct, "text/xsl") ||
+		strings.HasPrefix(ct, "application/xslt")
 }
 
 // scriptableExt reports whether the key's extension denotes scriptable
 // content. SVG in particular is not recognized by
 // [http.DetectContentType] (it sniffs as text/plain), so the extension
-// is the reliable "derived" signal for it.
+// is the reliable "derived" signal for it — and so is an XSLT sheet,
+// which sniffs as text/plain for the same reason.
 func scriptableExt(key string) bool {
 	switch ext(key) {
-	case "html", "htm", "xhtml", "svg":
+	case "html", "htm", "xhtml", "svg", "xml", "xsl", "xslt":
 		return true
 	}
 	return false

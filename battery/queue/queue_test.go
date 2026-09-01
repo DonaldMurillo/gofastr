@@ -400,6 +400,23 @@ func (m *mockRedis) HDel(_ context.Context, key string, fields ...string) error 
 	return nil
 }
 
+// HDelIfEqual implements [CompareAndDeleter]: the mock holds the whole hash
+// under one mutex, so read-compare-delete here is genuinely atomic — the same
+// guarantee a Lua script gives on a real server.
+func (m *mockRedis) HDelIfEqual(_ context.Context, key, field, expect string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h, ok := m.hashes[key]
+	if !ok {
+		return false, nil
+	}
+	if v, ok := h[field]; !ok || v != expect {
+		return false, nil
+	}
+	delete(h, field)
+	return true, nil
+}
+
 func (m *mockRedis) Del(_ context.Context, keys ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

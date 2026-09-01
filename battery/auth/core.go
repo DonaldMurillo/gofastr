@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -203,10 +204,12 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 
 		user, hash, err := store.FindByEmail(r.Context(), email)
 		if err != nil {
-			// Run a dummy bcrypt against the package-level dummy hash so
-			// the response time matches the existing-user path. Skipping
-			// bcrypt here leaks user existence via timing.
-			_ = CheckPassword(password, dummyBcryptHash)
+			// Verify against a dummy produced by the CONFIGURED hasher so
+			// the not-found branch spends the same algorithm and cost a
+			// real row does. Skipping the work leaks user existence by
+			// timing; doing the WRONG algorithm's work leaks it just as
+			// well, only more subtly.
+			_ = CheckPassword(password, dummyHashFor(DefaultHasher))
 			// Unknown user OR a transport error, record a failed login.
 			// UserID stays empty (anti-enumeration: the event never
 			// distinguishes "no such user" from "wrong password").
@@ -320,6 +323,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			resp["two_factor_required"] = true
 		}
 
+		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
@@ -339,11 +343,27 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 		// Revoke EVERY session-name cookie the client sent, not only the
 		// first. A jar can hold duplicates at different scopes, and logout
 		// must not leave a shadowed-but-valid session alive.
+		// A failed Delete leaves a LIVE session while the response says
+		// the user is signed out — the one outcome logout must never
+		// produce, and worst on the shared machine the user is logging
+		// out of. Clearing the cookie only hides the still-valid token
+		// from this browser; anyone holding it keeps the session.
+		//
+		// The audit row is emitted only after the delete it describes
+		// succeeds. Recording session.revoked for a session still in the
+		// store makes the ledger say a revocation happened that did not.
+		revokeFailed := false
 		for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
 			// Capture the principal before deleting so the audit row
 			// names who logged out. A Get failure (expired/invalid
 			// cookie) yields no event, nothing to revoke of record.
-			if sess, gerr := c.mgr.SessionStore().Get(r.Context(), token); gerr == nil {
+			sess, gerr := c.mgr.SessionStore().Get(r.Context(), token)
+			if err := c.mgr.SessionStore().Delete(r.Context(), token); err != nil {
+				log.Printf("auth: logout: revoke session: %v", err)
+				revokeFailed = true
+				continue
+			}
+			if gerr == nil {
 				c.mgr.emitSecurity(r.Context(), SecurityEvent{
 					Kind:   "session.revoked",
 					UserID: sess.UserID,
@@ -351,7 +371,10 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 					Meta:   map[string]string{"reason": "logout"},
 				})
 			}
-			_ = c.mgr.SessionStore().Delete(r.Context(), token)
+		}
+		if revokeFailed {
+			writeAuthError(w, http.StatusInternalServerError, "could not sign out; the session is still active")
+			return
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     cfg.SessionCookie,
@@ -424,6 +447,7 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 			}
 		}
 
+		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
@@ -533,6 +557,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			return
 		}
 
+		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{
@@ -551,6 +576,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 // SDKs and sdkdocs document. battery/auth keeps a local copy because
 // batteries may not import framework/crud.
 func writeAuthError(w http.ResponseWriter, status int, msg string) {
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]any{

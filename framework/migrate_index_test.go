@@ -36,6 +36,9 @@ func indexInfo(t *testing.T, db *sql.DB, table string, dialect Dialect) map[stri
 			}
 			out[name] = strings.Split(cols, ",")
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("iterate rows: %v", err)
+		}
 		return out
 	}
 
@@ -54,6 +57,9 @@ func indexInfo(t *testing.T, db *sql.DB, table string, dialect Dialect) map[stri
 			t.Fatalf("scan: %v", err)
 		}
 		out[name] = extractIndexCols(ddl)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
 	}
 	return out
 }

@@ -33,8 +33,8 @@ func TestToolPanicBecomesRPCError(t *testing.T) {
 		{
 			name: "nil-map write panic",
 			handler: func(_ context.Context, _ map[string]any) (any, error) {
-				var m map[string]any
-				m["x"] = 1 // panics: assignment to entry in nil map
+				m := nilStringMap() // a real handler gets its nil from elsewhere
+				m["x"] = 1          // panics: assignment to entry in nil map
 				return nil, nil
 			},
 		},
@@ -87,3 +87,9 @@ func TestToolPanicBecomesRPCError(t *testing.T) {
 		})
 	}
 }
+
+// nilStringMap returns a nil map. Handlers under test panic on a nil-map
+// write; taking the nil from a call models the real shape (a value that
+// arrived nil from somewhere) instead of a local the compiler can see
+// through, which reads as a defect rather than a fixture.
+func nilStringMap() map[string]any { return nil }

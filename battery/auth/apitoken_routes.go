@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -131,7 +132,17 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 			Prefix:    p.prefix,
 		})
 		if err != nil {
-			writeAuthError(w, http.StatusBadRequest, err.Error())
+			// A rejected spec is the caller's problem and its message is
+			// written for them. Anything else came from the store, where
+			// the text carries DSNs and driver internals — and answering
+			// a persistence fault with 400 tells the caller to fix a body
+			// that was fine.
+			if errors.Is(err, ErrInvalidTokenSpec) {
+				writeAuthError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			log.Printf("auth: issue token: %v", err)
+			writeAuthError(w, http.StatusInternalServerError, "could not create token")
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -143,6 +154,7 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 				"name":  rec.Name,
 			},
 		})
+		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"token":     plaintext, // shown exactly ONCE; never retrievable again

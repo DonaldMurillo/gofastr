@@ -60,7 +60,9 @@ The token is required (a fresh instance's setup page is an
 instance-takeover window: whoever reaches it first owns the app).
 It is **single-use**: the first successful visit exchanges it for an
 HttpOnly cookie and invalidates the URL form, so a token that leaked
-into an access log cannot be replayed. Lost the session? Restart the
+into an access log cannot be replayed. The cookie carries a freshly
+minted secret, not the URL token, so replaying the leaked value as a
+cookie does not work either. Lost the session? Restart the
 app: setup re-enters and a fresh token is printed.
 `Config.DisableToken` opts out for trusted networks; wizard POSTs are
 still origin-guarded either way.

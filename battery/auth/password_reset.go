@@ -104,6 +104,22 @@ func (p *PasswordResetPlugin) RegisterRoutes(r *router.Router, basePath string) 
 	r.Post(basePath+"/reset-password", http.HandlerFunc(p.resetHandler))
 }
 
+// burnUnknownBranchWork spends, for an address with no account, the same
+// store work the known branch spends. No mail is sent: an address that
+// never registered here must not receive anything, which rules out the
+// usual "notify anyway" answer to the timing question.
+//
+// What remains asymmetric is the send, and it is kept off the timed path
+// (see deliverResetEmail) so the client cannot clock it. The decoy is bound
+// to a payload no user id can equal, so it is inert even if someone fishes
+// it out of the store.
+func (p *PasswordResetPlugin) burnUnknownBranchWork(r *http.Request) {
+	if _, err := createPurposeToken(r.Context(), p.store, purposeReset, "\x00no-account", p.cfg.TokenTTL); err != nil {
+		slog.Warn("password-reset decoy token mint failed",
+			"plugin", "password-reset", "err", err)
+	}
+}
+
 func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Request) {
 	if p.limit != nil && !p.limit.guard(w, r) {
 		return
@@ -117,12 +133,19 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 
 	// ALWAYS return 200, even when email is empty or unknown, so the
 	// response can't be used to enumerate registered accounts.
+	// The response is written before any delivery runs (see the switch
+	// below): the client's clock must not be able to tell the branches
+	// apart, and delivery is the one asymmetry policy will not let us
+	// remove — an address with no account here gets nothing.
 	defer func() {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"sent": true})
 	}()
 
 	body.Email = CanonicalEmail(body.Email) // #270: lookups and token payloads use canonical identity
+	if !emailWithinLimit(w, body.Email) {
+		return
+	}
 	if body.Email == "" {
 		return
 	}
@@ -144,6 +167,17 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 			Remote: remoteHost(r),
 			Meta:   map[string]string{"known": "false"},
 		})
+		// The uniform 200 is only half the defence. This branch used to
+		// return here having done nothing, while the known branch minted
+		// a token and sent an email — so the two answered in visibly
+		// different times and account existence stayed readable by clock
+		// (CWE-208). Both branches now do the same work.
+		//
+		// Nothing is mailed: an address with no account here must not
+		// receive anything from us. Parity is bought with the store work
+		// instead, and the known branch's send is moved off the timed
+		// path so the remaining difference is not observable either.
+		p.burnUnknownBranchWork(r)
 		return
 	}
 
@@ -155,7 +189,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		Meta:   map[string]string{"known": "true"},
 	})
 
-	tok, err := p.store.CreateToken(r.Context(), user.GetID(), p.cfg.TokenTTL)
+	tok, err := createPurposeToken(r.Context(), p.store, purposeReset, user.GetID(), p.cfg.TokenTTL)
 	if err != nil {
 		return
 	}
@@ -240,7 +274,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, err := p.store.RedeemToken(r.Context(), body.Token)
+	userID, err := redeemPurposeToken(r.Context(), p.store, purposeReset, body.Token)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
 		return
@@ -265,6 +299,25 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// issued cookie, the whole point of a reset is to lock the attacker out.
 	// Stores that don't implement SessionUserPurger leave the window open; log
 	// that so the gap is visible rather than silent.
+	//
+	// The user's OTHER outstanding reset links go first. Revoking sessions
+	// but leaving those spendable means a link phished or read from the
+	// mailbox an hour ago still sets the password again after the victim's
+	// own reset completes, and the account returns to the attacker.
+	if n, supported, err := purgePurposeTokens(r.Context(), p.store, purposeReset, userID); err != nil {
+		slog.Warn("password-reset sibling token purge failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+	} else if !supported {
+		slog.Warn("password-reset could not drop sibling reset tokens: token store does not implement MagicLinkTokenPurger",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID))
+	} else if n > 0 {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "reset_tokens.purged",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
+		})
+	}
 	if purger, ok := p.mgr.SessionStore().(SessionUserPurger); ok {
 		if n, err := purger.DeleteByUser(r.Context(), userID); err != nil {
 			slog.Warn("password-reset session revocation failed",

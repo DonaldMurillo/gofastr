@@ -1,12 +1,16 @@
 package crud
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
@@ -15,6 +19,74 @@ import (
 // The cap exists to bound transaction duration and protect against
 // pathological payloads.
 const MaxBatchSize = 100
+
+// decodeBatchEnvelope decodes a _batch request body into v, but only after
+// checking that the top-level object carries exactly the keys the envelope
+// declares — each at most once, spelled exactly.
+//
+// encoding/json alone accepts all three smuggling shapes. A duplicated key is
+// last-one-wins, so a validator or proxy that inspects the FIRST "items"
+// array sees a different payload than the one this handler executes. Field
+// matching is case-insensitive, so "Items" binds to Items and slips past any
+// upstream check keyed on the exact name. And an unrecognised key is silently
+// dropped rather than refused. The envelope is a fixed, one-field shape; there
+// is nothing to gain by being lenient about it.
+func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return errBodyTooLarge
+		}
+		if strings.Contains(err.Error(), "request body too large") {
+			return errBodyTooLarge
+		}
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	if err := checkEnvelopeKeys(raw, allowed); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	return nil
+}
+
+// checkEnvelopeKeys walks the top-level object's keys without decoding its
+// values, so a hostile payload is rejected before anything binds.
+func checkEnvelopeKeys(raw []byte, allowed []string) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		return fmt.Errorf("invalid JSON: request body must be a JSON object")
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		kt, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		key, ok := kt.(string)
+		if !ok {
+			return fmt.Errorf("invalid JSON: malformed object key")
+		}
+		if seen[key] {
+			return fmt.Errorf("duplicate key %q in request body", key)
+		}
+		seen[key] = true
+		if !slices.Contains(allowed, key) {
+			return fmt.Errorf("unknown key %q in request body (expected %s)",
+				key, strings.Join(allowed, ", "))
+		}
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+	}
+	return nil
+}
 
 // errBatchAborted is the sentinel returned from inside inTx when a batch
 // operation hit a per-item error and needs the whole tx to roll back. The
@@ -124,7 +196,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchCreateRequest
-		if err := decodeJSONBody(r, &req); err != nil {
+		if err := decodeBatchEnvelope(r, &req, "items"); err != nil {
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return
@@ -221,7 +293,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchUpdateRequest
-		if err := decodeJSONBody(r, &req); err != nil {
+		if err := decodeBatchEnvelope(r, &req, "items"); err != nil {
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return
@@ -327,7 +399,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchDeleteRequest
-		if err := decodeJSONBody(r, &req); err != nil {
+		if err := decodeBatchEnvelope(r, &req, "ids"); err != nil {
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return

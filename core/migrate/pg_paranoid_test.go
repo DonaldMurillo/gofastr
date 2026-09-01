@@ -254,6 +254,9 @@ func TestPG_ConcurrentUpAndDownConsistent(t *testing.T) {
 		}
 		versions = append(versions, v)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	rows.Close()
 	for _, v := range versions {
 		var reg sql.NullString

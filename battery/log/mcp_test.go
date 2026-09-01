@@ -102,6 +102,15 @@ func TestMCPMutationGated(t *testing.T) {
 
 // TestMCPRecentReturnsRingEntries pins that log_recent reads the ring
 // buffer and returns entries chronologically.
+// mcpTestCaller returns a context carrying an authenticated caller. The
+// log MCP tools are gated on one: they hand out every caller's request
+// paths, remote IPs, and request IDs, so an anonymous /mcp client must
+// not reach them. The anonymous-refusal path is pinned by
+// mcp_gate_security_test.go.
+func mcpTestCaller() context.Context {
+	return handler.SetUser(context.Background(), "test-operator")
+}
+
 func TestMCPRecentReturnsRingEntries(t *testing.T) {
 	app := newMCPApp(t)
 	app.Router().Get("/p", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -114,7 +123,7 @@ func TestMCPRecentReturnsRingEntries(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	result, err := app.MCP.CallTool(context.Background(), "log_recent", map[string]any{"limit": 50})
+	result, err := app.MCP.CallTool(mcpTestCaller(), "log_recent", map[string]any{"limit": 50})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
 	}
@@ -143,7 +152,7 @@ func TestMCPFilterByMessageSubstring(t *testing.T) {
 	app.Logger().Info("worker.tock", "queue", "ingest")
 	app.Logger().Error("disk.full", "path", "/var/log")
 
-	result, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
+	result, err := app.MCP.CallTool(mcpTestCaller(), "log_filter", map[string]any{
 		"msg":   "worker",
 		"limit": 10,
 	})
@@ -181,7 +190,7 @@ func TestMCPSetLevelMutatesThreshold(t *testing.T) {
 	// Now DEBUG should be captured.
 	app.Logger().Debug("visible-at-debug")
 
-	result, err = app.MCP.CallTool(context.Background(), "log_recent", map[string]any{"limit": 50, "level": "DEBUG"})
+	result, err = app.MCP.CallTool(mcpTestCaller(), "log_recent", map[string]any{"limit": 50, "level": "DEBUG"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +221,7 @@ func TestMCPFilterReturnsNewestMatches(t *testing.T) {
 	for i := range 10 {
 		app.Logger().Info("worker.tick", "i", i)
 	}
-	result, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
+	result, err := app.MCP.CallTool(mcpTestCaller(), "log_filter", map[string]any{
 		"msg":   "worker.tick",
 		"limit": 3,
 	})
@@ -236,7 +245,7 @@ func TestMCPFilterReturnsNewestMatches(t *testing.T) {
 // filtering nothing.
 func TestMCPFilterBadTimestampErrors(t *testing.T) {
 	app := newMCPApp(t)
-	_, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
+	_, err := app.MCP.CallTool(mcpTestCaller(), "log_filter", map[string]any{
 		"since_ts": "yesterday",
 	})
 	if err == nil {
@@ -248,7 +257,7 @@ func TestMCPFilterBadTimestampErrors(t *testing.T) {
 // return an error.
 func TestMCPFilterSinceAfterUntilErrors(t *testing.T) {
 	app := newMCPApp(t)
-	_, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
+	_, err := app.MCP.CallTool(mcpTestCaller(), "log_filter", map[string]any{
 		"since_ts": "2026-05-20T12:00:00Z",
 		"until_ts": "2026-05-20T11:00:00Z",
 	})
@@ -265,7 +274,7 @@ func TestMCPLimitClampedToRingCap(t *testing.T) {
 	for i := range 10 {
 		app.Logger().Info("e", "i", i)
 	}
-	result, err := app.MCP.CallTool(context.Background(), "log_recent", map[string]any{
+	result, err := app.MCP.CallTool(mcpTestCaller(), "log_recent", map[string]any{
 		"limit": 1_000_000,
 	})
 	if err != nil {
@@ -283,7 +292,7 @@ func TestMCPLimitClampedToRingCap(t *testing.T) {
 // TestMCPMetricsReturnsSnapshot pins log_metrics' output shape.
 func TestMCPMetricsReturnsSnapshot(t *testing.T) {
 	app := newMCPApp(t)
-	result, err := app.MCP.CallTool(context.Background(), "log_metrics", map[string]any{})
+	result, err := app.MCP.CallTool(mcpTestCaller(), "log_metrics", map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}

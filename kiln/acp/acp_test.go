@@ -90,6 +90,9 @@ func startDialog(t *testing.T, srv *acpcore.Server) *dialog {
 				d.frames <- f
 			}
 		}
+		if err := sc.Err(); err != nil {
+			t.Errorf("client frame reader: %v", err) // else: silent timeout
+		}
 	}()
 	t.Cleanup(func() { clientW.Close() })
 	return d

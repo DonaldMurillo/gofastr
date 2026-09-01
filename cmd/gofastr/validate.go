@@ -66,7 +66,8 @@ func runValidate(args []string) {
 	for _, f := range lintModuleCollision(bp) {
 		warn("%s: %s", path, f.Message())
 	}
-	success("Blueprint %s is valid: %d entity(ies), %d screen(s), %d endpoint(s)", path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints))
+	success("Blueprint %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
+		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }
 
 func printValidateHelp() {

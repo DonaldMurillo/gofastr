@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
 	"io"
 	"os"
 	"os/exec"
@@ -386,21 +387,11 @@ func filteredAgentEnvironment(backend string) []string {
 	return env
 }
 
+// looksCredentialBearing delegates to the shared list. The rule used to
+// be hand-copied here and in backend-adoption's runner, and the two had
+// already drifted apart.
 func looksCredentialBearing(name string) bool {
-	if name == "SSH_AUTH_SOCK" || name == "GPG_AGENT_INFO" {
-		return true
-	}
-	for _, prefix := range []string{"AWS_", "AZURE_", "GCP_", "GOOGLE_", "GH_", "GITHUB_", "NPM_", "NUGET_", "DOCKER_", "SLACK_", "STRIPE_", "TWILIO_"} {
-		if strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-	for _, fragment := range []string{"API_KEY", "ACCESS_KEY", "AUTH_TOKEN", "CREDENTIAL", "PASSWORD", "PRIVATE_KEY", "SECRET", "SIGNING_KEY"} {
-		if strings.Contains(name, fragment) {
-			return true
-		}
-	}
-	return name == "DATABASE_URL"
+	return childenv.LooksCredentialBearing(name)
 }
 
 func backendCredentialAllowed(backend, name string) bool {

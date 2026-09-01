@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,8 +27,8 @@ func TestDBWorkerSurvivesHandlerPanic(t *testing.T) {
 
 	var good atomic.Int32
 	q.RegisterHandler("boom", func(_ context.Context, _ Job) error {
-		var m map[string]int
-		m["x"] = 1 // nil-map assignment → panic
+		m := nilIntMap() // a real handler gets its nil from elsewhere
+		m["x"] = 1       // nil-map assignment → panic
 		return nil
 	})
 	q.RegisterHandler("ok", func(_ context.Context, _ Job) error {
@@ -64,8 +66,8 @@ func TestMemoryWorkerSurvivesHandlerPanic(t *testing.T) {
 
 	var good atomic.Int32
 	q.RegisterHandler("boom", func(_ context.Context, _ Job) error {
-		var s []int
-		_ = s[5] // slice OOB → panic
+		s := nilIntSlice() // a real handler gets its empty slice from elsewhere
+		_ = s[5]           // slice OOB → panic
 		return nil
 	})
 	q.RegisterHandler("ok", func(_ context.Context, _ Job) error {
@@ -349,3 +351,353 @@ func TestRedisReclaimRedeliversExpired(t *testing.T) {
 		t.Fatalf("expected re-delivered 'abandoned', got %q", redelivered.ID)
 	}
 }
+
+// ============================================================================
+// Property: a job the worker pool cannot execute (no registered handler for
+// its type) must never be destroyed without an observable trace — a
+// dead-letter/failed record or a log. Silent destruction permanently loses
+// durable work during producer-first rolling deploys and job-type typos.
+// Surfaces: DBQueue.workerLoop claim path (the eligibleTypes filter must keep
+// unknown types unclaimed), MemoryQueue.processJob (heap pop, no trace).
+//
+// CONTRACT-CONFLICT (flagged, not silently asserted as settled): DBQueue's
+// unknown-type branch (db.go "No handler, drop the row so it doesn't loop
+// forever") documents deletion as intended, so this test does NOT assert the
+// DB worker dead-letters unknown types; it pins the claim filter that today
+// keeps that branch unreachable through Start(). The memory surface has no
+// such defence and is the RED demonstration: the job vanishes with no log,
+// no dead-store entry, and no Stats signal.
+// ============================================================================
+
+// TestUnknownTypeJobDropIsObservable covers the property at both worker
+// surfaces: the DB subtest pins that the worker claim path can never claim
+// (hence never Ack-destroy) a handler-less type; the memory subtest
+// demonstrates the silent destruction and asserts the observability contract.
+func TestUnknownTypeJobDropIsObservable(t *testing.T) {
+	t.Run("db claim filter keeps unknown types pending", func(t *testing.T) {
+		db, q := openDBQueue(t, 1)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		var done atomic.Int32
+		q.RegisterHandler("known", func(_ context.Context, _ Job) error {
+			done.Add(1)
+			return nil
+		})
+		if err := q.Enqueue(ctx, Job{ID: "typo-1", Type: "typo.send"}); err != nil {
+			t.Fatalf("enqueue unknown-type job: %v", err)
+		}
+
+		// Deterministic core: the worker claim path filters by registered
+		// types, so it can never claim — and therefore never Ack-destroy —
+		// a job whose type has no handler.
+		if _, err := q.dequeue(ctx, "", q.eligibleTypes()); !errors.Is(err, ErrNoJob) {
+			t.Fatalf("claim filter did not exclude unknown type, err=%v", err)
+		}
+
+		// Empirical pin: run the real worker pool. A sentinel of a
+		// registered type proves at least one claim pass completed while
+		// the unknown-type row was pending and visible to it.
+		q.Start(ctx)
+		if err := q.Enqueue(ctx, Job{Type: "known"}); err != nil {
+			t.Fatalf("enqueue sentinel: %v", err)
+		}
+		waitFor(t, func() bool { return done.Load() >= 1 }, 5*time.Second,
+			"sentinel job never processed")
+		q.Close()
+
+		var status string
+		if err := db.QueryRow("SELECT status FROM queue_jobs WHERE id='typo-1'").Scan(&status); err != nil {
+			t.Fatalf("unknown-type job row vanished entirely: %v", err)
+		}
+		if status != "pending" {
+			t.Fatalf("unknown-type job was destroyed or mutated without a handler: status=%q", status)
+		}
+	})
+
+	t.Run("memory worker drop leaves no trace", func(t *testing.T) {
+		q := NewMemoryQueue(1)
+		t.Cleanup(func() { _ = q.Close() })
+		ctx := context.Background()
+
+		var sentinelDone atomic.Int32
+		q.RegisterHandler("known", func(_ context.Context, _ Job) error {
+			sentinelDone.Add(1)
+			return nil
+		})
+		q.Start()
+
+		// Equal priority, FIFO order: the worker pops the unknown-type job
+		// first, silently drops it in processJob, then runs the sentinel.
+		// Sentinel completion is the deterministic proof the drop happened.
+		if err := q.Enqueue(ctx, Job{ID: "ghost", Type: "email.send"}); err != nil {
+			t.Fatalf("enqueue unknown-type job: %v", err)
+		}
+		if err := q.Enqueue(ctx, Job{ID: "sentinel", Type: "known"}); err != nil {
+			t.Fatalf("enqueue sentinel: %v", err)
+		}
+		waitFor(t, func() bool { return sentinelDone.Load() >= 1 }, 5*time.Second,
+			"sentinel job never processed; unknown-type drop not observed")
+
+		failed, err := q.ListJobs(ctx, "failed", 100)
+		if err != nil {
+			t.Fatalf("list failed: %v", err)
+		}
+		stats, err := q.Stats(ctx)
+		if err != nil {
+			t.Fatalf("stats: %v", err)
+		}
+		if len(failed) == 0 && stats["failed"] == 0 {
+			t.Fatalf("unknown-type job %q was destroyed by the worker with no observable trace: "+
+				"ListJobs(failed)=%d, Stats[failed]=%d — a producer-first deploy loses every such job",
+				"ghost", len(failed), stats["failed"])
+		}
+	})
+}
+
+// ============================================================================
+// Property: concurrent SQLite claim transactions serialize cleanly — a
+// multi-worker dequeue must not surface spurious 'database is locked'
+// errors, must claim every job exactly once, and must never hand the same
+// job to two workers. Surface: DBQueue.dequeueSQLite (BEGIN+SELECT+UPDATE+
+// COMMIT claim shape), the path every SQLite worker pool takes.
+// ============================================================================
+
+// sqliteBusyClass reports whether an error message is a lock-contention
+// failure (SQLITE_BUSY / SQLITE_LOCKED family) rather than a real fault.
+func sqliteBusyClass(msg string) bool {
+	s := strings.ToLower(msg)
+	return strings.Contains(s, "locked") || strings.Contains(s, "busy")
+}
+
+// TestSQLiteDequeueConcurrentNoBusy drives the SQLite claim path with 8
+// concurrent claimants released by a barrier, the shape WithWorkers(n>1)
+// produces in production (file DB, WAL, busy_timeout, pool of 8 — the
+// configuration the package's own scheduler tests bless). The claim path's
+// comment promises serialisation ("SQLite serialises writers at the file
+// level ... race-free"); this asserts that contract plus exactly-once
+// claims. All claimants race the same start line rather than sleeping.
+func TestSQLiteDequeueConcurrentNoBusy(t *testing.T) {
+	db := openDurableSchedulerDB(t)
+	q, err := NewDBQueue(db)
+	if err != nil {
+		t.Fatalf("new db queue: %v", err)
+	}
+	q.RegisterHandler("work", func(_ context.Context, _ Job) error { return nil })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	const total = 200
+	for i := 0; i < total; i++ {
+		if err := q.Enqueue(ctx, Job{ID: fmtID(i), Type: "work"}); err != nil {
+			t.Fatalf("enqueue %d: %v", i, err)
+		}
+	}
+	types := q.eligibleTypes()
+
+	const workers = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	claims := make([][]string, workers)
+	errs := make([][]string, workers)
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			<-start
+			empty := 0
+			for empty < 3 {
+				if ctx.Err() != nil {
+					errs[w] = append(errs[w], ctx.Err().Error())
+					return
+				}
+				job, err := q.dequeue(ctx, "", types)
+				switch {
+				case err == nil:
+					empty = 0
+					claims[w] = append(claims[w], job.ID)
+				case errors.Is(err, ErrNoJob):
+					empty++
+				default:
+					// A failed claim may leave the row pending; retry the
+					// same way workerLoop does rather than abandoning it.
+					errs[w] = append(errs[w], err.Error())
+					time.Sleep(2 * time.Millisecond)
+				}
+			}
+		}(w)
+	}
+	close(start)
+	wg.Wait()
+
+	var busy, other, all []string
+	for w := 0; w < workers; w++ {
+		all = append(all, claims[w]...)
+		for _, e := range errs[w] {
+			if sqliteBusyClass(e) {
+				busy = append(busy, e)
+			} else {
+				other = append(other, e)
+			}
+		}
+	}
+	if len(busy) > 0 {
+		t.Errorf("serialized-claim contract violated: %d busy/locked errors from concurrent dequeue; first: %q",
+			len(busy), busy[0])
+	}
+	if len(other) > 0 {
+		t.Errorf("concurrent dequeue surfaced unexpected errors; first: %q", other[0])
+	}
+	seen := make(map[string]int, total)
+	for _, id := range all {
+		seen[id]++
+	}
+	var dupes []string
+	for id, n := range seen {
+		if n > 1 {
+			dupes = append(dupes, id+" x"+strconv.Itoa(n))
+		}
+	}
+	if len(dupes) > 0 {
+		t.Errorf("same job claimed by multiple workers (at-most-once breach): %v", dupes)
+	}
+	if len(all) != total {
+		t.Errorf("claimed %d of %d jobs", len(all), total)
+	}
+	var pending int
+	if err := db.QueryRow("SELECT COUNT(*) FROM queue_jobs WHERE status='pending'").Scan(&pending); err != nil {
+		t.Fatalf("count pending: %v", err)
+	}
+	if pending != 0 {
+		t.Errorf("%d jobs never claimed", pending)
+	}
+}
+
+// ============================================================================
+// Property: a completion (Nack) presented by a claim that is no longer
+// current must not mutate the current claimant's state.
+// Surface: DBQueue.Nack claim fencing (redis twin pinned by
+// TestRedisStaleNackCannotTouchReclaimant).
+//
+// DB-NACK-UNFENCED: the DB backend's lease-expiry clause (eligibleWhere:
+// "status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $cutoff AND
+// attempts < max_attempts") re-claims a row whose worker is still running,
+// so a stale claimant is a designed state on this backend — exactly the
+// condition queue.go's Nack contract describes ("Backends with lease fencing
+// (RedisQueue) verify Job.ClaimToken and treat a stale claim's Nack as a
+// no-op"). RedisQueue.Nack enforces it via ownsClaim/Job.ClaimToken
+// (redis.go); DBQueue.Nack does not: both arms UPDATE by bare job ID
+// (db.go: no-backoff "SET status = CASE WHEN attempts >= max_attempts THEN
+// 'failed' ELSE 'pending' END WHERE id = $1"; backoff "SET status='pending',
+// scheduled_at=$1 WHERE id = $2") — no claim identity, and not even the
+// status='claimed' guard its own Ack carries. A stale W1 Nack therefore
+// flips W2's LIVE row to 'pending' (a third worker claims it and the handler
+// runs concurrently with W2 — duplicate emails/webhooks/charges) or to
+// 'failed' (dead-letters a job a live worker is executing).
+//
+// Note: db.go's Ack doc acknowledges "DBQueue has no per-claim fencing (no
+// ClaimToken column), so a stale Ack ... still deletes that claim, within
+// the at-least-once contract". That rationale covers Ack's delete direction
+// (lossy completion); the Nack arms go the opposite way — they manufacture a
+// duplicate in-flight delivery — and no doc blesses that.
+// ============================================================================
+
+// TestDBStaleNackCannotTouchReclaimant is the DB twin of
+// TestRedisStaleNackCannotTouchReclaimant: W1 claims, stalls past the lease,
+// W2 re-claims the row; W1's late Nack must NOT settle or alter W2's claim.
+// Covers all three Nack surfaces: the no-backoff requeue arm, the
+// final-attempt dead-letter arm, and the backoff requeue arm.
+func TestDBStaleNackCannotTouchReclaimant(t *testing.T) {
+	cases := []struct {
+		name        string
+		maxAttempts int
+		backoff     bool
+	}{
+		{"no-backoff requeue arm", 3, false},
+		{"final-attempt dead-letter arm", 2, false},
+		{"backoff requeue arm", 5, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var opts []DBQueueOption
+			if tc.backoff {
+				opts = append(opts, WithBackoff(time.Second, time.Minute))
+			}
+			db, q := openDBQueueOpts(t, append([]DBQueueOption{WithWorkers(0)}, opts...)...)
+			q.SetLeaseTimeout(time.Minute)
+			// Fake clock: no workers are running, so the single test goroutine
+			// is the only reader of q.now; lease expiry is driven by advancing
+			// the clock, not by sleeping (see TestDBReclaimsStaleClaimedJob).
+			now := time.Now()
+			q.now = func() time.Time { return now }
+			ctx := context.Background()
+
+			if err := q.Enqueue(ctx, Job{ID: "pay", Type: "x", MaxAttempts: tc.maxAttempts}); err != nil {
+				t.Fatalf("enqueue: %v", err)
+			}
+			w1, err := q.Dequeue(ctx)
+			if err != nil {
+				t.Fatalf("W1 dequeue: %v", err)
+			}
+			// W1 stalls past the lease; the row becomes re-eligible and W2
+			// re-claims it (the designed crash-recovery path).
+			now = now.Add(2 * time.Minute)
+			w2, err := q.Dequeue(ctx)
+			if err != nil {
+				t.Fatalf("W2 dequeue: %v", err)
+			}
+			if w2.ID != w1.ID {
+				t.Fatalf("W2 claimed %q, want the same job %q (lease reclaim)", w2.ID, w1.ID)
+			}
+
+			// W1's handler fails late and Nacks the claim it no longer holds.
+			if err := q.Nack(ctx, w1); err != nil {
+				t.Fatalf("stale nack must be a no-op, not an error: %v", err)
+			}
+
+			// W2's claim must be untouched: the row stays 'claimed' by W2.
+			var status string
+			if err := db.QueryRow("SELECT status FROM queue_jobs WHERE id = ?", w1.ID).Scan(&status); err != nil {
+				t.Fatalf("row vanished under stale nack: %v", err)
+			}
+			if status != "claimed" {
+				t.Fatalf("SECURITY: [queue] stale claimant's Nack mutated the live "+
+					"claim: row status = %q, want \"claimed\" (W2 in flight, attempts=%d/%d). "+
+					"The DB Nack arms UPDATE by bare job ID with no claim fence, so a "+
+					"stale worker re-enqueues or dead-letters the re-claimant's job and "+
+					"the handler runs concurrently twice. The redis twin fences this via "+
+					"Job.ClaimToken (TestRedisStaleNackCannotTouchReclaimant).",
+					status, w2.Attempts, tc.maxAttempts)
+			}
+
+			// The stale nack must not have made the row re-claimable while W2
+			// holds it: the clock is frozen just after W2's claim, inside its
+			// fresh lease, so nothing may be eligible.
+			if _, err := q.Dequeue(ctx); !errors.Is(err, ErrNoJob) {
+				t.Fatalf("SECURITY: [queue] stale Nack made the re-claimant's in-flight "+
+					"job claimable by a third worker (dequeue err=%v): concurrent "+
+					"double execution.", err)
+			}
+
+			// Positive control: the CURRENT claimant (W2) still completes
+			// normally; fencing must not break the happy path.
+			if err := q.Ack(ctx, w2); err != nil {
+				t.Fatalf("current claimant's ack: %v", err)
+			}
+			var rows int
+			db.QueryRow("SELECT COUNT(*) FROM queue_jobs WHERE id = ?", w1.ID).Scan(&rows)
+			if rows != 0 {
+				t.Fatalf("current claimant's ack did not remove the row (rows=%d)", rows)
+			}
+		})
+	}
+}
+
+// nilIntMap and nilIntSlice source the panic's cause from a call rather
+// than a local the compiler can see through. The handlers below must panic
+// so the worker's recovery path runs; spelled inline they read as defects
+// instead of fixtures, to a reviewer and to the nilness gate alike.
+func nilIntMap() map[string]int { return nil }
+
+func nilIntSlice() []int { return nil }

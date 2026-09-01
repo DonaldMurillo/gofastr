@@ -642,3 +642,46 @@ func TestExampleOriginsRespectsMultiLineContexts(t *testing.T) {
 		})
 	}
 }
+
+func TestLintRepoFlagsRederivedCRUDExposure(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", "module example.com/x\n\ngo 1.26.3\n")
+	writeTestFile(t, dir, "battery/docs/site.go",
+		"package docs\n\nfunc show(e *E) bool {\n\treturn e.Config.Exposure.CRUD == nil\n}\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	if !hasRule(findings, "crud-exposure-rederived") {
+		t.Fatalf("an unclassified file reading Exposure.CRUD must be flagged: %+v", findings)
+	}
+}
+
+func TestLintRepoAcceptsClassifiedCRUDExposure(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", "module example.com/x\n\ngo 1.26.3\n")
+	// framework/app.go is classified: it defines the predicate.
+	writeTestFile(t, dir, "framework/app.go",
+		"package framework\n\nfunc f(e *E) bool {\n\treturn e.Config.Exposure.CRUD == nil\n}\n")
+	// A comment naming the flag is not a read.
+	writeTestFile(t, dir, "battery/docs/site.go",
+		"package docs\n\n// Exposure.CRUD is not consulted here.\nfunc f() {}\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	if hasRule(findings, "crud-exposure-rederived") {
+		t.Fatalf("classified file and comment-only mention must not be flagged: %+v", findings)
+	}
+}
+
+func hasRule(findings []finding, rule string) bool {
+	for _, f := range findings {
+		if f.Rule == rule {
+			return true
+		}
+	}
+	return false
+}

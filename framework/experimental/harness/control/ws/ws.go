@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"slices"
@@ -114,7 +115,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, rw, err := hj.Hijack()
 	if err != nil {
-		http.Error(w, "hijack failed: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("ws: hijack failed: %v", err)
+		http.Error(w, "hijack failed", http.StatusInternalServerError)
 		return
 	}
 	if err := completeHandshake(rw, r); err != nil {
@@ -130,6 +132,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		clientID: ids.NewClientID(),
 		mux:      h.Mux,
 		session:  sess,
+		claims:   claims,
 	}
 	// Use a fresh background context for the goroutine, the
 	// handler returns immediately after Hijack, which would cancel
@@ -190,6 +193,10 @@ type Conn struct {
 	clientID ids.ClientID
 	mux      *multiplex.Mux
 	session  ids.SessionID
+	// claims is the verified token scope for this connection. Every
+	// inbound command frame is checked against it, not just the
+	// handshake: see handleText.
+	claims auth.Claims
 
 	mu sync.Mutex // guards writes
 }
@@ -268,6 +275,16 @@ func (c *Conn) handleText(ctx context.Context, payload []byte) {
 	cmd, err := control.UnmarshalCommand(f.Body)
 	if err != nil {
 		c.writeText(controlError("decode: " + err.Error()))
+		return
+	}
+	// The upgrade checked AllowsSession, but the connection then
+	// dispatched whatever verb arrived on it. A token minted for
+	// SendInput alone could send CancelTurn down the same socket and
+	// nothing looked, while rest.go enforces AllowsCommand for those
+	// exact verbs on every command route. The claims now travel with the
+	// connection so each frame is checked, not just the handshake.
+	if !c.claims.AllowsCommand(cmd.CommandKind()) {
+		c.writeText(controlError("token is not scoped for " + cmd.CommandKind()))
 		return
 	}
 	if err := c.mux.Dispatch(ctx, c, cmd); err != nil {

@@ -53,6 +53,11 @@ func setSetupCookie(w http.ResponseWriter, r *http.Request, cookieValue string) 
 
 // hasSetupCookie reports whether the request carries a valid setup cookie.
 func hasSetupCookie(r *http.Request, expected string) bool {
+	// No secret has been minted yet, so no cookie can be valid. Without
+	// this, an empty expected would authenticate an empty cookie value.
+	if expected == "" {
+		return false
+	}
 	c, err := r.Cookie(setupCookieName)
 	if err != nil {
 		return false

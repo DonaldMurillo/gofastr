@@ -155,9 +155,31 @@ func (r *Runner) CanRunHeadless(_ context.Context) (bool, error) {
 
 // RunSteps resolves all fields from env and runs every step in order.
 // An error names the step that failed.
+//
+// It refuses to run anything on an install the Complete predicate says
+// is already configured. The interactive skin has enforced that since
+// runStepSerialized was written; the headless skin did not, and
+// GOFASTR_SETUP=force reaches this path on a completed install, where a
+// bootstrap step typically INSERTs an admin-role user. A redeploy with
+// force still set and rotated env credentials silently minted a second
+// admin, or aborted boot on a duplicate email.
+//
+// A probe ERROR is "unknown", not "not done", and is refused for the
+// same reason it is there: a setup step that did not run is
+// recoverable, one that ran twice is not.
 func (r *Runner) RunSteps(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if r.cfg.Complete != nil {
+		done, err := r.cfg.Complete(ctx)
+		if err != nil {
+			return fmt.Errorf("setup: completion check failed, refusing to run steps: %w", err)
+		}
+		if done {
+			return nil
+		}
+	}
 
 	for _, step := range r.cfg.Steps {
 		values := resolveFromEnv(step.Fields)

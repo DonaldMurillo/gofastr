@@ -174,3 +174,154 @@ func approvePlan(t *testing.T, s *Session, id string, targets ...PlanTarget) {
 	}))
 	mustApply(t, s, planEntry(KindPlanApproved, PlanApprovedPayload{PlanID: id}))
 }
+
+// The remaining parity gaps, same threat model as above: a guard that
+// exists in kiln/protocol but not in applyWorldEdit means a
+// hand-authored .kiln.session.jsonl installs world state the live API
+// refuses, and `kiln freeze` then fails loudly on a world the running
+// server happily booted (the styling-prop ban is re-implemented a third
+// time in freeze's validateNodeGraduation, blueprint.go:50-62).
+
+// protocol.AddPage and UpdatePageElement refuse class/style/on* props
+// (kiln/protocol/protocol.go:462-475, validatePageTree); replay's
+// OpAddPage/OpUpdatePageElement check page actions and duplicates only,
+// so the forbidden props sail into the world IR through the log.
+func TestReplayRefusesStylingPropsInPages(t *testing.T) {
+	cases := []struct {
+		name string
+		tree world.Node
+	}{
+		{"class on root", world.Node{
+			Kind:  "div",
+			Props: map[string]any{"class": "x"},
+		}},
+		{"onclick on child", world.Node{
+			Kind: "div",
+			Children: []world.Node{{
+				Kind:  "button",
+				Props: map[string]any{"onclick": "y"},
+			}},
+		}},
+		{"style deep in tree", world.Node{
+			Kind: "div",
+			Children: []world.Node{{
+				Kind: "stack",
+				Children: []world.Node{{
+					Kind:  "card",
+					Props: map[string]any{"STYLE": "color:red"},
+				}},
+			}},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewSession()
+			applyFails(t, s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+				Path: "/p",
+				Tree: tc.tree,
+			}}), "")
+		})
+	}
+
+	// Control: props the live API accepts still apply.
+	s := NewSession()
+	mustApply(t, s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+		Path: "/ok",
+		Tree: world.Node{Kind: "heading", Props: map[string]any{"level": 1, "text": "Hello"}},
+	}}))
+}
+
+// protocol.SetScaffold refuses nav items without label+href, endpoints
+// without method+path, and unnamed middleware/plugin/helper stubs
+// (kiln/protocol/protocol.go:243-263); replay's OpSetScaffold assigns
+// the payload verbatim with no shape checks.
+func TestReplayRefusesInvalidScaffold(t *testing.T) {
+	t.Run("nav item without href", func(t *testing.T) {
+		applyFails(t, NewSession(), worldEdit(OpSetScaffold, SetScaffoldPayload{
+			Nav: []world.NavItem{{Label: "Home"}},
+		}), "")
+	})
+	t.Run("endpoint without method", func(t *testing.T) {
+		applyFails(t, NewSession(), worldEdit(OpSetScaffold, SetScaffoldPayload{
+			Nav:       []world.NavItem{{Label: "Home", Href: "/"}},
+			Endpoints: []*world.EndpointStub{{Name: "health", Path: "/healthz"}},
+		}), "")
+	})
+	t.Run("middleware stub without name", func(t *testing.T) {
+		applyFails(t, NewSession(), worldEdit(OpSetScaffold, SetScaffoldPayload{
+			Middleware: []world.NamedStub{{Description: "anonymous"}},
+		}), "")
+	})
+
+	// Control: a scaffold the live API accepts still applies.
+	mustApply(t, NewSession(), worldEdit(OpSetScaffold, SetScaffoldPayload{
+		Nav:        []world.NavItem{{Label: "Home", Href: "/"}},
+		Endpoints:  []*world.EndpointStub{{Name: "health", Method: "GET", Path: "/healthz"}},
+		Middleware: []world.NamedStub{{Name: "request_logger"}},
+	}))
+}
+
+// protocol.SetAppConfig refuses an empty name and normalizes api_prefix
+// (trim '/' then default "api", kiln/protocol/protocol.go:230-238);
+// replay's OpSetAppConfig assigns the config verbatim. The prefix is
+// load-bearing downstream: it decides where entity CRUD mounts and
+// which collision guards run, so a replayed config must leave the world
+// exactly as the live tool would have.
+func TestReplayValidatesAppConfigLikeLive(t *testing.T) {
+	t.Run("empty name is refused", func(t *testing.T) {
+		applyFails(t, NewSession(), worldEdit(OpSetAppConfig, SetAppConfigPayload{
+			Config: world.AppConfig{Name: "", APIPrefix: "api"},
+		}), "")
+	})
+	t.Run("trailing-slash prefix is normalized like live", func(t *testing.T) {
+		s := NewSession()
+		mustApply(t, s, worldEdit(OpSetAppConfig, SetAppConfigPayload{
+			Config: world.AppConfig{Name: "app", APIPrefix: "/api/"},
+		}))
+		if got := s.World.App.APIPrefix; got != "api" {
+			t.Errorf("SECURITY: [integrity] replay installed api_prefix %q verbatim; the live tool normalizes the same input to %q, so the replayed world diverges from what the API could have produced", got, "api")
+		}
+	})
+	t.Run("empty prefix gets the live default", func(t *testing.T) {
+		s := NewSession()
+		mustApply(t, s, worldEdit(OpSetAppConfig, SetAppConfigPayload{
+			Config: world.AppConfig{Name: "app"},
+		}))
+		if got := s.World.App.APIPrefix; got != "api" {
+			t.Errorf("SECURITY: [integrity] replay installed api_prefix %q; the live tool defaults the same input to %q, and the empty prefix silently switches entity CRUD to bare-root mounts (a different app)", got, "api")
+		}
+	})
+}
+
+// protocol's entity/page collision guard is conditional and name-based,
+// but the panicking sink (framework App.Mount) compares the page path
+// against prefix+'/'+table unconditionally; replay has no guard at all,
+// so a hand-authored journal boots into the Mount panic (pinned at the
+// boot seam in kiln/live). The replay guard must key the same way the
+// sink does.
+func TestReplayRefusesEntityPageCollision(t *testing.T) {
+	t.Run("page colliding with entity mount", func(t *testing.T) {
+		s := NewSession()
+		mustApply(t, s, worldEdit(OpAddEntity, AddEntityPayload{Entity: &world.Entity{
+			Name: "posts", Table: "posts", Fields: []world.Field{{Name: "title", Type: "string"}},
+		}}))
+		err := Apply(s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+			Path: "/api/posts", Tree: world.Node{Kind: "div"},
+		}}))
+		if err == nil {
+			t.Error("SECURITY: [integrity] replay accepted a page at /api/posts colliding with entity posts' CRUD mount; booting this journal panics inside App.Mount (framework/app.go:1110-1112)")
+		}
+		if _, installed := s.World.Pages["/api/posts"]; installed {
+			t.Error("SECURITY: [integrity] the colliding page was installed in the world")
+		}
+	})
+	t.Run("non-colliding page beside entity still applies", func(t *testing.T) {
+		s := NewSession()
+		mustApply(t, s, worldEdit(OpAddEntity, AddEntityPayload{Entity: &world.Entity{
+			Name: "posts", Table: "posts", Fields: []world.Field{{Name: "title", Type: "string"}},
+		}}))
+		mustApply(t, s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+			Path: "/posts", Tree: world.Node{Kind: "div"},
+		}}))
+	})
+}

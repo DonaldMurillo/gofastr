@@ -20,6 +20,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
+// maxPanelBody caps an inbound body: panel RPC bodies are a text box and two ids. Past this, the
+// request is refused rather than buffered.
+const maxPanelBody = 1 << 20
+
 // AgentStateFn returns the JSON-shaped agent state consumed by the
 // gear modal. Shape: { current: {name, display}, available: [{name,
 // display, installed}, ...], in_flight: bool }. Concretely supplied
@@ -81,11 +85,11 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		// is just an ack. Binding chat_html to the response was a
 		// footgun: on error (or even on success) the JSON ack got
 		// stringified into the log innerHTML.
-		RPC("POST", "/kiln/panel/send", http.HandlerFunc(pe.serveSend)).
-		RPC("POST", "/kiln/panel/reset", http.HandlerFunc(pe.serveReset)).
-		RPC("POST", "/kiln/panel/approve_plan", http.HandlerFunc(pe.serveApprove)).
-		RPC("POST", "/kiln/panel/reject_plan", http.HandlerFunc(pe.serveReject)).
-		RPC("POST", "/kiln/panel/undo", http.HandlerFunc(pe.serveUndo)).
+		RPC("POST", "/kiln/panel/send", sameOriginOnly(http.HandlerFunc(pe.serveSend))).
+		RPC("POST", "/kiln/panel/reset", sameOriginOnly(http.HandlerFunc(pe.serveReset))).
+		RPC("POST", "/kiln/panel/approve_plan", sameOriginOnly(http.HandlerFunc(pe.serveApprove))).
+		RPC("POST", "/kiln/panel/reject_plan", sameOriginOnly(http.HandlerFunc(pe.serveReject))).
+		RPC("POST", "/kiln/panel/undo", sameOriginOnly(http.HandlerFunc(pe.serveUndo))).
 		Build()
 
 	def.ExtraCSS = widgetCSS // appends panel content CSS after framework chrome
@@ -1025,6 +1029,7 @@ func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if strings.TrimSpace(body.Text) == "" {
 		// Don't 4xx on empty, that would surface as an RPC failure
@@ -1045,6 +1050,7 @@ func (pe *panelEnv) serveApprove(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		PlanID string `json:"plan_id"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	pe.tools.ApprovePlan(r.Context(), protocol.ApprovePlanArgs{PlanID: body.PlanID})
 	ack(w)
@@ -1055,6 +1061,7 @@ func (pe *panelEnv) serveReject(w http.ResponseWriter, r *http.Request) {
 		PlanID string `json:"plan_id"`
 		Reason string `json:"reason"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	pe.tools.RejectPlan(r.Context(), protocol.RejectPlanArgs{PlanID: body.PlanID, Reason: body.Reason})
 	ack(w)

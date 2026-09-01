@@ -623,6 +623,9 @@ func exampleFilterField(cfg entity.EntityConfig) string {
 		switch f.Type {
 		case schema.Int, schema.Float, schema.Decimal, schema.Timestamp, schema.Date:
 			return f.Name
+		default:
+			// Only ordered types make a useful range-filter example; the
+			// rest fall through to the first-column fallback below.
 		}
 		if first == "" {
 			first = f.Name

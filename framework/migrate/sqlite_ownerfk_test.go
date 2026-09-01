@@ -493,6 +493,9 @@ func TestRepairSurvivesSQLCommentsInStoredDDL(t *testing.T) {
 				}
 				cols[n] = true
 			}
+			if err := rows.Err(); err != nil {
+				t.Fatalf("iterate rows: %v", err)
+			}
 			rows.Close()
 			for _, want := range []string{"id", "user_id", "title"} {
 				if !cols[want] {
@@ -1122,6 +1125,9 @@ func assertColumnType(t *testing.T, db *sql.DB, table, column, want string) {
 			}
 			return
 		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
 	}
 	t.Errorf("column %q not found after the rebuild", column)
 }

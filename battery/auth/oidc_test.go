@@ -138,6 +138,15 @@ func buildCompact(headerJSON, payloadJSON []byte, sig []byte) string {
 	return b64u(headerJSON) + "." + b64u(payloadJSON) + "." + b64u(sig)
 }
 
+// idClaims is the claim set this fixture's id_token actually carries:
+// whatever a test assigned, else the standard set.
+func (f *fakeIdP) idClaims() map[string]any {
+	if f.claims != nil {
+		return f.claims
+	}
+	return standardIDClaims(f.issuer, f.clientID)
+}
+
 // standardIDClaims returns a valid claim set for the given issuer/client.
 func standardIDClaims(issuer, clientID string) map[string]any {
 	return map[string]any{
@@ -180,9 +189,13 @@ type fakeIdP struct {
 	transform func(idToken string) string      // post-process the minted token
 
 	// userinfo.
-	userinfo       map[string]any
-	userinfoSub    string // if set, used as userinfo "sub"
-	omitUserinfoEp bool
+	userinfo    map[string]any
+	userinfoSub string // if set, used as userinfo "sub"
+	// omitUserinfoSub models a provider that returns no sub at all.
+	// OIDC §5.3.2 makes it REQUIRED, so this is the non-compliant case a
+	// verifier must refuse — not the fixture default it used to be.
+	omitUserinfoSub bool
+	omitUserinfoEp  bool
 
 	// discovery.
 	discoveryIssuer string // overrides the doc's "issuer" field (mismatch test)
@@ -251,8 +264,17 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	mux.HandleFunc("/userinfo", func(w http.ResponseWriter, r *http.Request) {
 		ui := map[string]any{}
 		maps.Copy(ui, f.userinfo)
-		if s := f.userinfoSub; s != "" {
-			ui["sub"] = s
+		// A spec-compliant provider always returns sub, and it always
+		// equals the id_token's. Mirror whatever this fixture's claims
+		// carry so the stub models one, and let a test opt out.
+		sub := f.userinfoSub
+		if sub == "" && !f.omitUserinfoSub {
+			if v, ok := f.idClaims()["sub"].(string); ok {
+				sub = v
+			}
+		}
+		if sub != "" {
+			ui["sub"] = sub
 		}
 		writeJSON(t, w, ui)
 	})

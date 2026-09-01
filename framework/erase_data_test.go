@@ -179,6 +179,9 @@ func actorIDs(t *testing.T, db *sql.DB) []string {
 			out = append(out, "")
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	return out
 }
 

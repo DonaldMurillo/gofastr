@@ -42,7 +42,7 @@ func DiscoverConfig(projectDir string) (Discovery, error) {
 					return Discovery{}, err
 				}
 				return Discovery{Path: path, ProjectDir: dir, Config: cfg, Found: true, Discovered: true}, nil
-			} else if err != nil && !os.IsNotExist(err) {
+			} else if !os.IsNotExist(err) {
 				return Discovery{}, err
 			}
 		}

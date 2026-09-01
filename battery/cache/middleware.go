@@ -264,15 +264,40 @@ func parseVary(v string) []string {
 
 // captureVariant produces a flat list of "header:value" pairs that
 // uniquely identifies the request variant under a Vary policy.
+//
+// The value is the COMPLETE field, every value the request sent under
+// that name, not Header.Get's first one. A header may repeat, and
+// selecting on the first value alone made "X-Team: alpha" and
+// "X-Team: alpha, omega" the same variant: whichever request populated
+// the entry first decided what both of them received. Vary exists to
+// keep exactly those two apart.
 func captureVariant(r *http.Request, vary []string) []string {
 	if len(vary) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(vary))
 	for _, h := range vary {
-		out = append(out, h+":"+r.Header.Get(h))
+		out = append(out, h+":"+headerFieldValue(r, h))
 	}
 	return out
+}
+
+// headerFieldValue joins every value the request sent under name, in
+// order, with a separator no single value can contain unescaped.
+func headerFieldValue(r *http.Request, name string) string {
+	values := r.Header.Values(name)
+	if len(values) == 0 {
+		return ""
+	}
+	escaped := make([]string, len(values))
+	for i, v := range values {
+		// Escape the separator so ["a\x00b"] and ["a", "b"] cannot
+		// collapse to the same string. A raw NUL in a header value is
+		// already illegal, but the escape costs nothing and removes the
+		// question.
+		escaped[i] = strings.ReplaceAll(v, "\x00", "\\0")
+	}
+	return strings.Join(escaped, "\x00")
 }
 
 // variantMatches checks whether a request's variant headers match
@@ -284,7 +309,7 @@ func variantMatches(r *http.Request, vary []string) bool {
 			return false
 		}
 		name, want := before, after
-		if r.Header.Get(name) != want {
+		if headerFieldValue(r, name) != want {
 			return false
 		}
 	}

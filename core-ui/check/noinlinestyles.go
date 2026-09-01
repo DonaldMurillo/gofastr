@@ -57,7 +57,9 @@ var (
 	// `text-style=` (CSS, data-attributes, custom-named props) don't
 	// trigger false positives. The non-greedy quoted body keeps the
 	// match short, we just need to know IT EXISTS.
-	inlineStyleAttrRe = regexp.MustCompile(`(?s)(?:^|\s)style\s*=\s*("[^"]*"|'[^']*')`)
+	// Case-insensitive: HTML attribute names are, and a browser applies
+	// STYLE="…" exactly as it applies style="…".
+	inlineStyleAttrRe = regexp.MustCompile(`(?si)(?:^|\s)style\s*=\s*("[^"]*"|'[^']*')`)
 )
 
 // LintNoInlineStyles scans every .go file in dir (non-recursive) for

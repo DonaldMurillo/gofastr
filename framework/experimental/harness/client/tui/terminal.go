@@ -312,7 +312,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 	case control.TextDelta:
 		t.dismissSpinner()
 		t.collapseThinkingBurst()
-		t.ingestAssistantText(v.Text)
+		t.ingestAssistantText(sanitizeAgentText(v.Text))
 	case control.ThinkingDelta:
 		t.dismissSpinner()
 		t.ingestThinkingText(string(v.Block))
@@ -329,7 +329,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.appendMultiline("  ⎿ ", truncate(v.Partial, 400))
 		t.assistantOpen = false
 	case control.ToolResult:
-		summary := strings.TrimSpace(summarizeContent(v.Content))
+		summary := strings.TrimSpace(sanitizeAgentText(summarizeContent(v.Content)))
 		if summary == "" {
 			summary = "(no output)"
 		}
@@ -356,7 +356,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.thinkingOpen = false
 	case control.Error:
 		t.ensureBlankBefore()
-		t.scrollback = append(t.scrollback, "[error] "+v.Message)
+		t.scrollback = append(t.scrollback, "[error] "+sanitizeAgentText(v.Message))
 		t.assistantOpen = false
 		t.thinkingOpen = false
 	case control.CostIncremented:
@@ -372,7 +372,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 					continue
 				}
 				t.ensureBlankBefore()
-				t.scrollback = append(t.scrollback, "→ "+b.Text)
+				t.scrollback = append(t.scrollback, "→ "+sanitizeAgentText(b.Text))
 				t.assistantOpen = false
 			}
 		}
@@ -774,10 +774,13 @@ func (t *TUI) ingestThinkingText(text string) {
 	if text == "" || text == "null" {
 		return
 	}
-	// json.RawMessage of a string arrives as `"..."`, unquote.
+	// json.RawMessage of a string arrives as `"..."`, unquote. Sanitize
+	// AFTER unquoting: the escapes the model wants to smuggle arrive as
+	// \u001b inside the JSON literal and only become control bytes here.
 	if unquoted, ok := unjsonString(text); ok {
 		text = unquoted
 	}
+	text = sanitizeAgentText(text)
 	parts := strings.Split(text, "\n")
 	for i, part := range parts {
 		if i == 0 {

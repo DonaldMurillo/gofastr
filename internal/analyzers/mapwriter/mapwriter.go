@@ -44,11 +44,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok {
 				return true
 			}
-			tv, ok := pass.TypesInfo.Types[rng.X]
-			if !ok {
-				return true
-			}
-			if _, isMap := tv.Type.Underlying().(*types.Map); !isMap {
+			if !rangesInMapOrder(pass, rng.X) {
 				return true
 			}
 			// A range inside `if len(m) == 1 { ... }` over the same m
@@ -72,7 +68,7 @@ func run(pass *analysis.Pass) (any, error) {
 						"writing to output while ranging a map: iteration order is random per render; iterate slices.Sorted(maps.Keys(m)) instead")
 					return true
 				}
-				if pkg, ok := sel.X.(*ast.Ident); ok && writeFuncs[pkg.Name+"."+sel.Sel.Name] {
+				if writeFuncs[qualifiedFunc(pass, sel)] {
 					pass.Reportf(call.Pos(),
 						"writing to output while ranging a map: iteration order is random per render; iterate slices.Sorted(maps.Keys(m)) instead")
 				}
@@ -82,6 +78,49 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 	return nil, nil
+}
+
+// rangesInMapOrder reports whether ranging x visits entries in map order.
+//
+// A map does, obviously. So does maps.Keys(m) / maps.Values(m): those
+// return an iterator that walks the map itself, and the prescribed fix is
+// slices.Sorted(maps.Keys(m)) — dropping the slices.Sorted leaves the
+// remediation looking applied while changing nothing. Ranging the result
+// of slices.Sorted, or any other slice, is ordered and fine.
+func rangesInMapOrder(pass *analysis.Pass, x ast.Expr) bool {
+	if tv, ok := pass.TypesInfo.Types[x]; ok {
+		if _, isMap := tv.Type.Underlying().(*types.Map); isMap {
+			return true
+		}
+	}
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	switch qualifiedFunc(pass, sel) {
+	case "maps.Keys", "maps.Values":
+		return true
+	}
+	return false
+}
+
+// qualifiedFunc renders a selector as "pkg.Func", resolving the import
+// through the type checker. Matching on the identifier text instead lets
+// `import f "fmt"` walk past every sink in writeFuncs.
+func qualifiedFunc(pass *analysis.Pass, sel *ast.SelectorExpr) string {
+	id, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
+	if !ok {
+		return ""
+	}
+	return pkg.Imported().Name() + "." + sel.Sel.Name
 }
 
 // guardRange is the span of an `if len(m) == 1` body plus the guarded

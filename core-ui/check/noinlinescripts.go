@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -53,19 +54,25 @@ func hasCSPIgnoreDirective(raw []byte) bool {
 
 var (
 	// scriptOpenRe matches any opening <script> tag in a string literal.
-	// Spans line breaks because raw-string literals often do.
-	scriptOpenRe = regexp.MustCompile(`(?s)<script\b[^>]*>`)
+	// Spans line breaks because raw-string literals often do, and is
+	// case-insensitive because HTML tag names are: a browser executes
+	// <SCRIPT> exactly as it executes <script>.
+	scriptOpenRe = regexp.MustCompile(`(?si)<script\b[^>]*>`)
 	// scriptSrcRe matches a src= attribute on a <script> open tag.
-	scriptSrcRe = regexp.MustCompile(`(?s)<script\b[^>]*\bsrc\s*=`)
+	// The attribute name is anchored on a preceding space or the tag
+	// name, NOT on \b: a word boundary sits between the "-" and the "s"
+	// of data-src, so <script data-src="/a.js">alert(1)</script> read as
+	// an external script and passed. Same class of miss for type= below.
+	scriptSrcRe = regexp.MustCompile(`(?si)<script\b[^>]*\ssrc\s*=`)
 	// scriptInertTypeRe matches a type= attribute whose value marks the
 	// script as a non-JS "data block" (HTML spec). Browsers never execute
 	// these so CSP doesn't block them and the linter shouldn't either.
-	scriptInertTypeRe = regexp.MustCompile(`(?si)\btype\s*=\s*["']?(application/json|application/ld\+json|text/plain|importmap|module-shim/json)\b`)
+	scriptInertTypeRe = regexp.MustCompile(`(?si)\stype\s*=\s*["']?(application/json|application/ld\+json|text/plain|importmap|module-shim/json)\b`)
 	// scriptCloseRe matches a closing </script> tag. Used as a
 	// secondary signal, a string literal containing both opening
 	// (without src) AND closing tags is almost certainly an inline
 	// script body.
-	scriptCloseRe = regexp.MustCompile(`(?s)</script\s*>`)
+	scriptCloseRe = regexp.MustCompile(`(?si)</script\s*>`)
 )
 
 // LintNoInlineScripts scans every .go file in dir (non-recursive)
@@ -194,17 +201,26 @@ func scanInlineScripts(fset *token.FileSet, file *ast.File, filename string, res
 	})
 }
 
-// stripStringLiteral removes the surrounding quotes/backticks of a
-// Go string literal so the regex can scan the content.
+// stripStringLiteral turns a Go string literal into the bytes it
+// actually compiles to, so the regexes scan what the browser will see.
+//
+// Trimming the quotes is not enough for an interpreted literal: the
+// source text of "\x3cscript\x3ealert(1)\x3c/script\x3e" contains no
+// "<" at all, so every pattern here missed it while the compiled string
+// is a live inline script. strconv.Unquote resolves \x, \u, and the
+// rest; a raw literal has no escapes and only loses its backticks.
 func stripStringLiteral(s string) string {
 	if len(s) < 2 {
 		return s
 	}
 	first, last := s[0], s[len(s)-1]
-	if first == '"' && last == '"' {
+	if first == '`' && last == '`' {
 		return s[1 : len(s)-1]
 	}
-	if first == '`' && last == '`' {
+	if first == '"' && last == '"' {
+		if unquoted, err := strconv.Unquote(s); err == nil {
+			return unquoted
+		}
 		return s[1 : len(s)-1]
 	}
 	return s
@@ -213,37 +229,44 @@ func stripStringLiteral(s string) string {
 // checkInlineScriptInString applies the regex check. A literal that
 // contains an opening <script> without src=, AND a closing tag (or
 // any body content following the open tag), is flagged.
+//
+// EVERY <script> tag in the literal is classified, not just the first.
+// Examining one tag let an allowed leading tag mask what followed it:
+//
+//	<script src="/a.js"></script>
+//	<script>alert(1)</script>
+//
+// returned clean, because the first tag carried src= and the function
+// returned there. A literal that emits several tags is exactly where an
+// inline block hides.
 func checkInlineScriptInString(s string, line int, filename string, result *Result) {
-	loc := scriptOpenRe.FindStringIndex(s)
-	if loc == nil {
-		return
-	}
-	openTag := s[loc[0]:loc[1]]
-	// If the open tag carries src= (external script), it's allowed.
-	if scriptSrcRe.MatchString(openTag) {
-		return
-	}
-	// type="application/json" and other inert data blocks are not executed
-	// by the browser, CSP does not block them.
-	if scriptInertTypeRe.MatchString(openTag) {
-		return
-	}
-	// Look for either a closing </script> tag OR any non-whitespace
-	// content right after the open. A bare "<script></script>" is
-	// technically empty and harmless, but suspicious, flag anyway.
-	if scriptCloseRe.MatchString(s) {
-		result.add(filename, line,
-			"inline <script> block forbidden: framework strict-CSP (default-src 'self') blocks inline JS. "+
-				"Serve from an external URL via <script src=\"/your-script.js\"> instead.")
-		return
-	}
-	// Open tag with no close in the same literal, still suspicious
-	// (e.g. someone building the script via concatenation).
-	tail := strings.TrimSpace(s[loc[1]:])
-	if tail != "" {
-		result.add(filename, line,
-			"<script> open tag without src= forbidden: framework strict-CSP blocks inline JS. "+
-				"Use <script src=\"…\"> for external scripts.")
+	for _, loc := range scriptOpenRe.FindAllStringIndex(s, -1) {
+		openTag := s[loc[0]:loc[1]]
+		// If the open tag carries src= (external script), it's allowed.
+		if scriptSrcRe.MatchString(openTag) {
+			continue
+		}
+		// type="application/json" and other inert data blocks are not
+		// executed by the browser, CSP does not block them.
+		if scriptInertTypeRe.MatchString(openTag) {
+			continue
+		}
+		// Look for either a closing </script> tag OR any non-whitespace
+		// content right after the open. A bare "<script></script>" is
+		// technically empty and harmless, but suspicious, flag anyway.
+		if scriptCloseRe.MatchString(s[loc[1]:]) {
+			result.add(filename, line,
+				"inline <script> block forbidden: framework strict-CSP (default-src 'self') blocks inline JS. "+
+					"Serve from an external URL via <script src=\"/your-script.js\"> instead.")
+			continue
+		}
+		// Open tag with no close in the same literal, still suspicious
+		// (e.g. someone building the script via concatenation).
+		if strings.TrimSpace(s[loc[1]:]) != "" {
+			result.add(filename, line,
+				"<script> open tag without src= forbidden: framework strict-CSP blocks inline JS. "+
+					"Use <script src=\"…\"> for external scripts.")
+		}
 	}
 }
 

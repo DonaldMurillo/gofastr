@@ -408,11 +408,34 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, error) {
 	now := o.now().UTC()
 	claimUntil := now.Add(o.lease)
-	tx, err := o.db.BeginTx(ctx, nil)
+	// BEGIN IMMEDIATE, not the driver's default. database/sql issues a
+	// plain BEGIN, which SQLite reads as DEFERRED: the write lock is taken
+	// at the first WRITE, so two relays both run the SELECT, pick the same
+	// deliveries, and the second one's UPDATE meets a held lock and gets
+	// SQLITE_BUSY. The comment above has claimed the file-level lock made
+	// this race-free; nothing took that lock before the read.
+	conn, err := o.db.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			// Nowhere to return this: the claim already failed and its
+			// error is the one the caller needs. A rollback that also
+			// fails means the connection is unusable, which the pool
+			// discovers on its own — but silence here would hide a
+			// leaked write lock, so it is logged.
+			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
+				slog.Default().Warn("outbox: rolling back an abandoned claim", "err", err)
+			}
+		}
+	}()
+	tx := sqliteConnTx{conn: conn}
 
 	pick := fmt.Sprintf(`SELECT d.row_id, d.consumer, d.attempts, p.type, p.payload, p.created_at
 		FROM %s d JOIN %s p ON p.id = d.row_id
@@ -440,7 +463,9 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 		return nil, err
 	}
 	if len(pairs) == 0 {
-		return nil, tx.Commit()
+		err := tx.Commit(ctx)
+		committed = err == nil
+		return nil, err
 	}
 	// UPDATE the picked deliveries in the same tx so the claim is atomic.
 	var clauses []string
@@ -454,9 +479,10 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 	if _, err := tx.ExecContext(ctx, upd, args...); err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	committed = true
 	return out, nil
 }
 
@@ -583,4 +609,23 @@ func invokeHandler(ctx context.Context, h event.EventHandler, ev event.Event, co
 		}
 	}()
 	return h(ctx, ev)
+}
+
+// sqliteConnTx runs statements on the single connection holding an
+// explicitly-issued BEGIN IMMEDIATE. database/sql cannot ask BeginTx for an
+// immediate transaction, and the lock has to be held before the SELECT for
+// the claim to be serialised at all.
+type sqliteConnTx struct{ conn *sql.Conn }
+
+func (t sqliteConnTx) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	return t.conn.QueryContext(ctx, q, args...)
+}
+
+func (t sqliteConnTx) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return t.conn.ExecContext(ctx, q, args...)
+}
+
+func (t sqliteConnTx) Commit(ctx context.Context) error {
+	_, err := t.conn.ExecContext(ctx, "COMMIT")
+	return err
 }

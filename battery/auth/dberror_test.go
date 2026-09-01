@@ -64,7 +64,7 @@ func TestMagicLinkVerify_DBErrorDoesNotAutoCreate(t *testing.T) {
 	mgr.RegisterRoutes(r)
 
 	// Create a valid token so we get past the redeem step.
-	token, err := plugin.tokenStore.CreateToken(context.Background(), "victim@example.com", 15*time.Minute)
+	token, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "victim@example.com", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}

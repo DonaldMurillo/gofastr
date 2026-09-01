@@ -528,3 +528,145 @@ func TestRequiredMaskedSelectsOfferUnchangedAndDropRequired(t *testing.T) {
 		t.Errorf("tier = %q; a blank required masked enum must keep the stored value", tier)
 	}
 }
+
+// ----- mass-assignment whitelist ------------------------------------------
+//
+// formToJSON iterates the schema's editable field set (editableFields skips
+// Hidden / ReadOnly / AutoGenerate), never r.PostForm, so a crafted POST
+// cannot smuggle server-owned columns into the JSON body callCrud forwards.
+// Sister of the masked-column pins above — both are the form layer deciding
+// what a POST may write. The CrudHandler independently strips non-writable
+// columns (verified by sabotage: with the form whitelist disabled, evil
+// values still never reach the row), so the shapes below pin the composed
+// property while TestFormToJSONDropsNonEditableKeys bites at the form layer
+// itself.
+
+func secretsConfig() entity.EntityConfig {
+	return entity.EntityConfig{
+		Table: "secrets",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "password_hash", Type: schema.String, Hidden: true},
+			{Name: "created_by", Type: schema.String, ReadOnly: true},
+			{Name: "ref", Type: schema.String, AutoGenerate: schema.AutoUUID},
+		},
+	}.WithTimestamps(false)
+}
+
+// A POST carrying a Hidden column, a ReadOnly column, an AutoGenerate column
+// and a nonexistent column creates the row with none of them: the hidden
+// column stays NULL, the autogen column is server-produced, and the unknown
+// key never reaches the CrudHandler's strict body parse (which would reject
+// the whole create and leave no row at all).
+func TestEntitySaveIgnoresNonEditableFields(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"secrets": secretsConfig()})
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"secrets"}}, testUser{"u1"})
+
+	rr := postForm(h, "/admin/e/secrets/_create", url.Values{
+		"title":         {"Whitelisted"},
+		"password_hash": {"evil-hash"},
+		"created_by":    {"evil-actor"},
+		"ref":           {"evil-ref"},
+		"nonexistent":   {"evil-column"},
+	})
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("create should 303; got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if loc := rr.Header().Get("Location"); loc != "/admin/e/secrets" {
+		t.Fatalf("create Location = %q, want /admin/e/secrets (a non-list Location means the CrudHandler rejected the body)", loc)
+	}
+
+	var hash, actor, ref string
+	err := db.QueryRow(`SELECT COALESCE(password_hash,''), COALESCE(created_by,''), COALESCE(ref,'') FROM secrets WHERE title='Whitelisted'`).Scan(&hash, &actor, &ref)
+	if err != nil {
+		t.Fatalf("row not created: %v", err)
+	}
+	if hash != "" {
+		t.Errorf("SECURITY: [mass-assignment] posted password_hash (Hidden) persisted as %q", hash)
+	}
+	if actor != "" {
+		t.Errorf("SECURITY: [mass-assignment] posted created_by (ReadOnly) persisted as %q", actor)
+	}
+	if ref == "evil-ref" {
+		t.Errorf("SECURITY: [mass-assignment] posted ref (AutoGenerate) persisted verbatim: %q", ref)
+	}
+}
+
+// Same property on the update leg, with stored baselines the POST must not
+// touch.
+func TestEntityUpdateIgnoresNonEditableFields(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"secrets": secretsConfig()})
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"secrets"}}, testUser{"u1"})
+
+	postForm(h, "/admin/e/secrets/_create", url.Values{"title": {"Before"}})
+	id := firstID(t, db, "secrets")
+	if _, err := db.Exec(`UPDATE secrets SET password_hash='stored-hash', created_by='system', ref='stored-ref' WHERE id=?`, id); err != nil {
+		t.Fatalf("seed baselines: %v", err)
+	}
+
+	rr := postForm(h, "/admin/e/secrets/_update/"+id, url.Values{
+		"title":         {"After"},
+		"password_hash": {"evil-hash"},
+		"created_by":    {"evil-actor"},
+		"ref":           {"evil-ref"},
+		"nonexistent":   {"evil-column"},
+	})
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("update should 303; got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if loc := rr.Header().Get("Location"); loc != "/admin/e/secrets" {
+		t.Fatalf("update Location = %q, want /admin/e/secrets (a non-list Location means the CrudHandler rejected the body)", loc)
+	}
+
+	var title, hash, actor, ref string
+	err := db.QueryRow(`SELECT title, COALESCE(password_hash,''), COALESCE(created_by,''), COALESCE(ref,'') FROM secrets WHERE id=?`, id).Scan(&title, &hash, &actor, &ref)
+	if err != nil {
+		t.Fatalf("row vanished: %v", err)
+	}
+	if title != "After" {
+		t.Errorf("legitimate edit did not persist; title=%q", title)
+	}
+	if hash != "stored-hash" || actor != "system" || ref != "stored-ref" {
+		t.Errorf("SECURITY: [mass-assignment] update overwrote protected columns: hash=%q created_by=%q ref=%q", hash, actor, ref)
+	}
+}
+
+// TestFormToJSONDropsNonEditableKeys is the form-layer half of the pin: the
+// JSON body callCrud forwards carries ONLY editable keys, even when the POST
+// carries Hidden / ReadOnly / AutoGenerate / unknown keys. The end-to-end
+// shapes above cannot catch a formToJSON refactor to iterating r.PostForm
+// because the CrudHandler strips non-writable columns anyway; this one can.
+func TestFormToJSONDropsNonEditableKeys(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"secrets": secretsConfig()})
+	ent, err := app.Registry.Get("secrets")
+	if err != nil {
+		t.Fatalf("registry get: %v", err)
+	}
+
+	r, err := http.NewRequest(http.MethodPost, "/admin/e/secrets/_create", strings.NewReader(url.Values{
+		"title":         {"Unit"},
+		"password_hash": {"evil-hash"},
+		"created_by":    {"evil-actor"},
+		"ref":           {"evil-ref"},
+		"nonexistent":   {"evil-column"},
+	}.Encode()))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if err := r.ParseForm(); err != nil {
+		t.Fatalf("ParseForm: %v", err)
+	}
+	body, fieldErrs := formToJSON(ent, r, map[string]bool{})
+	if len(fieldErrs) != 0 {
+		t.Fatalf("unexpected field errors: %v", fieldErrs)
+	}
+	// Single-key map marshals deterministically; anything else in the body
+	// is a smuggled column.
+	if body != `{"title":"Unit"}` {
+		t.Errorf("SECURITY: [mass-assignment] form body = %s, want exactly {\"title\":\"Unit\"}", body)
+	}
+}

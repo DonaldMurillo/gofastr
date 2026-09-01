@@ -238,3 +238,80 @@ func TestRespond_ErrorNoStackLeak(t *testing.T) {
 		t.Errorf("expected generic 500 body, got: %s", body)
 	}
 }
+
+// TestBindPathParamsAreSanitized pins, at Bind's `path:"..."` surface, the
+// same property core/router enforces at Param()/Params() (sanitizePathParam):
+// a path-parameter value bound into handler input never carries bytes that
+// could not have arrived through normal path routing — CR/LF/NUL, a "/"
+// inside a single-segment match (only reachable %2F-encoded), or a ".."
+// segment (only reachable %2E-encoded; the mux cleans and redirects literal
+// dot segments). bindPath (Bind step 3) reads r.PathValue raw today, so these
+// cases RED until it applies the router's truncation, catch-all aware via
+// r.Pattern exactly like router.isCatchAll.
+func TestBindPathParamsAreSanitized(t *testing.T) {
+	type pathInput struct {
+		ID   string `path:"id"`
+		Rest string `path:"rest"`
+	}
+	cases := []struct {
+		name    string
+		tag     string
+		pattern string
+		raw     string
+		want    string
+	}{
+		{"clean value binds unchanged", "id", "GET /users/{id}", "42", "42"},
+		{"newline smuggle truncates", "id", "GET /users/{id}", "42\nadmin", "42"},
+		{"NUL smuggle truncates", "id", "GET /users/{id}", "42\x00admin", "42"},
+		{"decoded slash truncates single segment", "id", "GET /users/{id}", "a/b", "a"},
+		{"dot-dot segment truncates", "id", "GET /users/{id}", "../x", ""},
+		{"catch-all keeps multi-segment value", "rest", "GET /files/{rest...}", "a/b/c", "a/b/c"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var in pathInput
+			req := httptest.NewRequest(http.MethodGet, "/users/x", nil)
+			req.Pattern = tc.pattern
+			req.SetPathValue(tc.tag, tc.raw)
+
+			if err := Bind(req, &in); err != nil {
+				t.Fatalf("Bind error: %v", err)
+			}
+			got := in.ID
+			if tc.tag == "rest" {
+				got = in.Rest
+			}
+			if got != tc.want {
+				t.Errorf("SECURITY: [bind] path tag %q bound %q from raw PathValue %q, want %q. "+
+					"Attack: router.Param sanitizes this class (core/router sanitizePathParam); "+
+					"Bind's path binding is a second surface of the same property and must not "+
+					"re-open smuggled bytes into logs, headers, SSE, or file/DB lookups.",
+					tc.tag, got, tc.raw, tc.want)
+			}
+		})
+	}
+
+	// Delivery proof: the smuggled newline is not a synthetic SetPathValue.
+	// A plain net/http mux delivers %0A into PathValue without a redirect
+	// (the arrival path core/router's SECURITY comment documents), so
+	// unmodified Bind writes it straight into the handler input struct.
+	var got string
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var in pathInput
+		if err := Bind(r, &in); err != nil {
+			http.Error(w, "bind failed", http.StatusBadRequest)
+			return
+		}
+		got = in.ID
+	})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/users/42%0Aadmin", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delivery case: mux returned %d, want 200 (a redirect here would invalidate the delivery premise)", rr.Code)
+	}
+	if got != "42" {
+		t.Errorf("SECURITY: [bind] real mux delivery: GET /users/42%%0Aadmin bound id=%q, want %q. "+
+			"Attack: percent-encoded control byte reaches handler input unsanitized.", got, "42")
+	}
+}

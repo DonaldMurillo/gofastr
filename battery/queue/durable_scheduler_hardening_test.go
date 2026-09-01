@@ -78,6 +78,9 @@ func TestDurableSchedulerMigratesExistingSchedulesTableVersion(t *testing.T) {
 			found = true
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	if !found {
 		t.Fatal("existing schedules table was not upgraded with version column")
 	}
@@ -152,6 +155,9 @@ func TestDurableSchedulerRetentionPrunesOnlySafeOldOccurrences(t *testing.T) {
 			t.Fatal(err)
 		}
 		got = append(got, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
 	}
 	want := []string{"old-live", "recent-skipped"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {

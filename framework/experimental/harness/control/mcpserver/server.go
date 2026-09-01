@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/multiplex"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/resources"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/engine"
@@ -43,6 +44,18 @@ type Server struct {
 	// GOFASTR_HARNESS_TOKEN must equal RequiredToken for the
 	// connection to be accepted.
 	RequiredToken string
+
+	// Claims, when set, scopes what this connection may do: which
+	// sessions it may drive and which command verbs it may send.
+	//
+	// The HTTP transport verifies the bearer token and then hands the
+	// VERIFIED claims here. It used to verify and discard them, so a
+	// token minted for session A drove session B simply by naming B in
+	// the tools/call arguments -- the client picks that string. rest.go
+	// enforces AllowsSession and AllowsCommand on the same verbs; nil
+	// here means an unauthenticated transport (stdio) where the process
+	// boundary is the check.
+	Claims *auth.Claims
 
 	in  io.Reader
 	out io.Writer
@@ -259,6 +272,10 @@ func (s *Server) runAgentWithShellAccess(ctx context.Context, reqID json.RawMess
 		s.writeErr(reqID, -32602, err.Error())
 		return
 	}
+	if err := s.authorize("SendInput", sess); err != nil {
+		s.writeErr(reqID, -32600, err.Error())
+		return
+	}
 	eng := s.Mux.EngineFor(sess)
 	if eng == nil {
 		s.writeErr(reqID, -32602, "unknown session "+inArgs.SessionID)
@@ -342,6 +359,10 @@ func (s *Server) dispatchCommand(ctx context.Context, reqID json.RawMessage, arg
 		s.writeErr(reqID, -32602, err.Error())
 		return
 	}
+	if err := s.authorize(verb, commandSession(cmd)); err != nil {
+		s.writeErr(reqID, -32600, err.Error())
+		return
+	}
 	cli := &mcpClient{id: ids.NewClientID(), class: s.IdentityClass}
 	if err := s.Mux.Dispatch(ctx, cli, cmd); err != nil {
 		s.writeErr(reqID, -32603, err.Error())
@@ -350,6 +371,44 @@ func (s *Server) dispatchCommand(ctx context.Context, reqID json.RawMessage, arg
 	s.write(rpcResponse{ID: reqID, Result: map[string]any{
 		"content": []any{textContent("ok")},
 	}})
+}
+
+// authorize applies the connection's token scope to one command. A nil
+// Claims means the transport carries no token (stdio), where the process
+// boundary is the check.
+func (s *Server) authorize(verb string, sess ids.SessionID) error {
+	if s.Claims == nil {
+		return nil
+	}
+	if !s.Claims.AllowsCommand(verb) {
+		return fmt.Errorf("token is not scoped for %s", verb)
+	}
+	if sess != "" && !s.Claims.AllowsSession(sess) {
+		return fmt.Errorf("token is not scoped for session %s", sess)
+	}
+	return nil
+}
+
+// commandSession pulls the target session out of a decoded command.
+// Commands carry it as a field rather than through the Command
+// interface, so this is where the type switch lives; a verb with no
+// session returns "" and is authorized on its kind alone.
+func commandSession(cmd control.Command) ids.SessionID {
+	switch v := cmd.(type) {
+	case control.SendInput:
+		return v.SessionID
+	case control.CancelTurn:
+		return v.SessionID
+	case control.AnswerPermission:
+		return v.SessionID
+	case control.SetModel:
+		return v.SessionID
+	case control.EnterPlanMode:
+		return v.SessionID
+	case control.ExitPlanMode:
+		return v.SessionID
+	}
+	return ""
 }
 
 func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Command, error) {

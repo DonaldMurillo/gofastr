@@ -48,6 +48,9 @@ func TestDurableSchedulerMigratesExistingSchedulesTableTZ(t *testing.T) {
 			found = true
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
+	}
 	if !found {
 		t.Fatal("existing schedules table was not upgraded with tz column")
 	}
@@ -95,6 +98,9 @@ func scanForTZColumn(t *testing.T, db *sql.DB, table string) bool {
 		if name == "tz" {
 			return true
 		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate rows: %v", err)
 	}
 	return false
 }

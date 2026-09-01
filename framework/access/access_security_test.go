@@ -3,6 +3,8 @@ package access_test
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"sync"
@@ -120,4 +122,52 @@ func TestRBAC_ConcurrentGrantRevokeWithReads(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestCanWildcardGrantsOnlyGlobalStar pins the Can hot path's wildcard
+// posture: a permission check passes only on an exact match or the global
+// "*" (Wildcard). Partial wildcards a caller managed to grant — "posts:*",
+// "*:read" — with an empty capability registry (warn mode keeps them as
+// literals) must NOT widen into matching other permissions, both on
+// Can and on the RequirePermission middleware.
+func TestCanWildcardGrantsOnlyGlobalStar(t *testing.T) {
+	t.Parallel()
+	policy := access.NewRolePolicy() // empty registry: warn mode, literals stay unexpanded
+	for _, grant := range []access.Permission{"posts:*", "*:read"} {
+		if err := policy.Grant("editor", grant); err != nil {
+			t.Fatalf("Grant(%s): %v", grant, err)
+		}
+	}
+	ctx := access.WithRoles(access.WithPolicy(context.Background(), policy), []string{"editor"})
+
+	if access.Can(ctx, access.Permission("posts:read")) {
+		t.Fatalf("SECURITY: [rbac-wildcard] role holding %q passed Can(posts:read): partial wildcards must never match",
+			"posts:*")
+	}
+	if access.Can(ctx, access.Permission("users:read")) {
+		t.Fatalf("SECURITY: [rbac-wildcard] role holding %q passed Can(users:read): partial wildcards must never match",
+			"*:read")
+	}
+
+	// RequirePermission must agree (403, not 404/500).
+	h := access.RequirePermission(access.Permission("posts:read"))(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("SECURITY: [rbac-wildcard] RequirePermission with partial-wildcard grants returned %d, want 403",
+			rec.Code)
+	}
+
+	// The global "*" passes everything — the one deliberate wildcard.
+	star := access.NewRolePolicy()
+	if err := star.Grant("sudo", access.Wildcard); err != nil {
+		t.Fatalf("Grant(*): %v", err)
+	}
+	starCtx := access.WithRoles(access.WithPolicy(context.Background(), star), []string{"sudo"})
+	if !access.Can(starCtx, access.Permission("posts:read")) {
+		t.Fatal("global \"*\" must pass any permission check")
+	}
 }

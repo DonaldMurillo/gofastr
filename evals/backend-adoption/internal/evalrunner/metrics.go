@@ -2,6 +2,7 @@ package evalrunner
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -39,6 +40,10 @@ func WorkspaceMetrics(root string) (sourceLines, testLines, directDeps int) {
 			if strings.TrimSpace(scanner.Text()) != "" {
 				lines++
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("%s: %w", path, err)
 		}
 		_ = file.Close()
 		if strings.HasSuffix(path, "_test.go") {

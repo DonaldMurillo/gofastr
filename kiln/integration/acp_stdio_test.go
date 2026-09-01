@@ -59,6 +59,9 @@ func startACPStdio(t *testing.T, h *harness, prov agent.Provider) *acpStdioClien
 				c.frames <- f
 			}
 		}
+		if err := sc.Err(); err != nil {
+			t.Errorf("client frame reader: %v", err) // else: silent timeout
+		}
 	}()
 	t.Cleanup(func() { clientW.Close() })
 	return c

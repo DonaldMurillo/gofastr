@@ -65,6 +65,13 @@ func framedCSP(origin string, csp []string) string {
 		"; img-src " + origin + " data:" +
 		"; font-src " + origin + " data:" +
 		"; connect-src 'none'" +
+		// A frame can be granted allow-forms, and a form POSTs by
+		// NAVIGATING -- which connect-src cannot see. Without
+		// form-action, a granted frame could submit whatever it had read
+		// to any origin it liked, straight past the fetch restrictions
+		// above. 'none' costs nothing here: plugin assets are static and
+		// have no form target of their own.
+		"; form-action 'none'" +
 		"; frame-ancestors " + origin +
 		"; base-uri " + origin
 }

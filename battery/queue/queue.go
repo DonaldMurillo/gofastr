@@ -30,6 +30,19 @@ type Job struct {
 	// no-op instead of mutating the current claimant's lease. Empty for jobs
 	// that have never been claimed (and on backends without lease fencing).
 	ClaimToken string `json:"claim_token,omitempty"`
+
+	// UserID optionally names the person a job's payload is about. It is
+	// what makes the job reachable by App.EraseUserData: queue_jobs lives
+	// outside the entity registry, so the erase plane can only find a row
+	// through a declared column, and a job carrying an address, an order,
+	// or a document in its payload otherwise survives the user's erasure
+	// and is re-disclosed by every later App.ExportData dump. Set it
+	// whenever the payload is personal data; leave it empty for
+	// infrastructure work (cache warms, sweeps, index rebuilds).
+	//
+	// Only the durable DBQueue persists it — the in-memory and Redis
+	// backends hold no erasable table.
+	UserID string `json:"user_id,omitempty"`
 }
 
 // Handler processes a job. Return a non-nil error to trigger a retry.

@@ -180,8 +180,11 @@ func TestResolverFitsMiddleware(t *testing.T) {
 	resolver := access.NewCachedResolver(func(context.Context) []string {
 		return []string{"member"}
 	})
+	// The assertion is the assignment: Resolve must keep the signature
+	// Middleware takes. A runtime nil check here could never fire — a
+	// method value is never nil — so it only looked like a test.
 	var middlewareResolver func(context.Context) []string = resolver.Resolve
-	if middlewareResolver == nil {
-		t.Fatal("Resolve method is not usable as Middleware resolver")
+	if got := middlewareResolver(context.Background()); len(got) != 1 || got[0] != "member" {
+		t.Fatalf("resolver used as a Middleware resolver returned %v, want [member]", got)
 	}
 }

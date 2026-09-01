@@ -7,6 +7,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
 // FileMeta holds metadata about a stored file.
@@ -77,7 +79,7 @@ func (ms *MemoryStorage) Get(_ context.Context, key string) (io.ReadCloser, erro
 	ms.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("storage: key %q not found", key)
+		return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
 	}
 
 	return io.NopCloser(bytes.NewReader(data)), nil
@@ -92,7 +94,7 @@ func (ms *MemoryStorage) GetRange(_ context.Context, key string) (io.ReadSeekClo
 	ms.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("storage: key %q not found", key)
+		return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
 	}
 
 	return nopSeekCloser{bytes.NewReader(data)}, nil

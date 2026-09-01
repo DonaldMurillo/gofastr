@@ -60,7 +60,7 @@ func mintedSession(rec *httptest.ResponseRecorder) string {
 func TestVerifyRejectsCrossSiteTextPlain(t *testing.T) {
 	r, plugin := magicLinkCSRFRouter(t)
 
-	token, err := plugin.tokenStore.CreateToken(context.Background(), "attacker@evil.example", time.Hour)
+	token, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "attacker@evil.example", time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestVerifyRejectsCrossSiteTextPlain(t *testing.T) {
 func TestVerifyRejectsCrossSiteNoBody(t *testing.T) {
 	r, plugin := magicLinkCSRFRouter(t)
 
-	token, err := plugin.tokenStore.CreateToken(context.Background(), "attacker@evil.example", time.Hour)
+	token, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "attacker@evil.example", time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestVerifyRejectsCrossSiteNoBody(t *testing.T) {
 func TestVerifyAllowsCrossOriginJSON(t *testing.T) {
 	r, plugin := magicLinkCSRFRouter(t)
 
-	token, err := plugin.tokenStore.CreateToken(context.Background(), "alice@example.com", time.Hour)
+	token, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "alice@example.com", time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestConfirmPageFormWorksBehindCSRF(t *testing.T) {
 	r, plugin := magicLinkCSRFRouter(t)
 	guarded := CSRF()(r)
 
-	token, err := plugin.tokenStore.CreateToken(context.Background(), "alice@example.com", time.Hour)
+	token, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "alice@example.com", time.Hour)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}

@@ -123,6 +123,19 @@ func blueprintToMap(bp Blueprint) map[string]any {
 		}
 		m["endpoints"] = eps
 	}
+	if len(bp.Hooks) > 0 {
+		hooks := make([]any, len(bp.Hooks))
+		for i, h := range bp.Hooks {
+			hm := map[string]any{}
+			putStr(hm, "id", h.ID)
+			putStr(hm, "entity", h.Entity)
+			putStr(hm, "when", h.When)
+			putStr(hm, "handler", h.Handler)
+			putStr(hm, "description", h.Description)
+			hooks[i] = hm
+		}
+		m["hooks"] = hooks
+	}
 	if len(bp.Middleware) > 0 {
 		m["middleware"] = stubsToAny(bp.Middleware)
 	}
@@ -824,7 +837,11 @@ func orderedKeys(m map[string]any, order []string) []string {
 
 // ----- key orders (readability; semantics are order-independent) -------------
 var (
-	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
+	// Ordered to match blueprintToMap's emission order, which is also the
+	// order the blueprint docs present these keys in. A key the serializer
+	// emits but this list omits ships unsorted, which
+	// TestPackSerializerCoversEveryBlueprintField catches.
+	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
 	appOrder        = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
 	entityOrder     = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations"}
 	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
@@ -2887,10 +2904,17 @@ func buttonVariant(e ast.Expr) string {
 // packBlueprint reconstructs a full Blueprint from a generated app directory.
 // secretsInBlueprint reports whether the packed blueprint carries any of
 // the three values packReadDotEnv recovers from .env.
+// secretsInBlueprint decides whether pack prints its do-NOT-commit
+// warning. It defers to dsnHasSecret for the DSN rather than testing for
+// "@": the generator already uses dsnHasSecret to decide what to redact,
+// and the two disagreeing means pack stays silent about a secret the
+// generator considered worth hiding. A keyword/value DSN
+// ("host=db user=app password=hunter2") is the case that fell through --
+// it carries a password and no "@" at all.
 func secretsInBlueprint(bp Blueprint) bool {
 	return bp.App.Auth.JWTSecret != "" ||
 		bp.App.Admin.SeedPassword != "" ||
-		strings.Contains(bp.App.DBURL, "@")
+		dsnHasSecret(bp.App.DBURL)
 }
 
 func packBlueprint(dir string) (Blueprint, error) {
@@ -2967,10 +2991,36 @@ func runPack(args []string) {
 		fmt.Print(yml)
 		return
 	}
-	if err := os.WriteFile(out, []byte(yml), 0o600); err != nil {
+	// The 0600 argument to os.WriteFile only applies when the file is
+	// CREATED. Overwriting an existing 0644 file keeps 0644, and this
+	// output carries the jwt_secret, seed password, and credentialed DSN
+	// recovered from .env -- so a second `pack -o` over an earlier run's
+	// file published all three. Open, chmod the handle, then write, the
+	// same order the generated .env uses.
+	if err := writeSecretFile(out, yml); err != nil {
 		fail("pack: write %s: %v", out, err)
 		osExit(1)
 		return
 	}
 	success("Packed %s → %s (%d entities, %d screens)", dir, out, len(bp.Entities), len(bp.Screens))
+}
+
+// writeSecretFile writes content at owner-only permissions, tightening a
+// pre-existing file's mode before any content lands. Chmod goes through
+// the open handle so it cannot be redirected by a symlink swapped in
+// between the open and the mode change.
+func writeSecretFile(path, content string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }

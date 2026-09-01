@@ -336,3 +336,17 @@ func sanitiseErr(s string) string {
 	}
 	return string(b)
 }
+
+// writeCredentialHeaders marks a response whose body carries a live
+// credential: a JWT, a TOTP secret, plaintext backup codes, an API token
+// shown exactly once.
+//
+// Without no-store an intermediary may keep the body, and the browser's
+// back/forward cache retains responses to POSTs too — so "shown once"
+// becomes "shown once, and again to whoever presses Back". Pragma and
+// Expires are for HTTP/1.0 intermediaries that ignore Cache-Control.
+func writeCredentialHeaders(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+}

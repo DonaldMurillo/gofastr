@@ -103,6 +103,14 @@ srv.RegisterTool(
 on an empty name, a nil handler, or a duplicate name. The `inputSchema` is a
 JSON Schema as `map[string]any`, serialized verbatim in `tools/list`.
 
+`UnregisterTool(name)` removes a tool and reports whether it was there. It
+exists for an opt-in that can only be withdrawn *after* registration: the
+dev MCP registers its mutating control tools during `InitPlugins`, but
+whether they may be served at all depends on the listen address, which is
+not known until `Start`. Prefer deciding before `RegisterTool` wherever the
+information is available — withdrawal is not a substitute for not
+registering.
+
 A `ToolHandler` returns `any`, normalized by type:
 
 | Return | `tools/call` result |
@@ -373,7 +381,7 @@ event carrying a JSON-RPC notification (a method, optional params, no id):
 
 | Method | Payload | Raised |
 |---|---|---|
-| `notifications/tools/list_changed` | none | `RegisterTool` |
+| `notifications/tools/list_changed` | none | `RegisterTool`, `UnregisterTool` |
 | `notifications/resources/list_changed` | none | `RegisterResource`, `RegisterResourceTemplate` |
 | `notifications/prompts/list_changed` | none | `RegisterPrompt` |
 | `notifications/resources/updated` | `{"uri": "..."}` | your code, via `NotifyResourceUpdated(uri)` |

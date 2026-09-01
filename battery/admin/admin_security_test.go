@@ -6,11 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 type errBrowsableQueue struct {
@@ -156,5 +159,90 @@ func TestAdmin_QueueReplayForbidsNonAdmin(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("non-admin POST /queue/_replay = %d, want 403", rr.Code)
+	}
+}
+
+// TestAdminFormIgnoresNonEditableKeys pins the admin entity form's field
+// whitelist: formToJSON builds the CRUD body from editableFields only, so
+// posted keys for Hidden fields (write-capable at the schema layer —
+// Hidden gates responses, not writes), ReadOnly fields, and entirely
+// unknown columns never reach the create/update body. Without the
+// whitelist, crafting a form POST with api_key/revision/is_admin values
+// would mass-assign columns the screen never renders.
+func TestAdminFormIgnoresNonEditableKeys(t *testing.T) {
+	db := newDB(t)
+	cfg := entity.EntityConfig{
+		Table: "gizmos",
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+			{Name: "api_key", Type: schema.String, Hidden: true},
+			{Name: "revision", Type: schema.Int, ReadOnly: true},
+		},
+	}.WithTimestamps(false)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"gizmos": cfg})
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"gizmos"}}, testUser{"u1"})
+
+	rr := postForm(h, "/admin/e/gizmos/_create", url.Values{
+		"name":     {"legit"},
+		"api_key":  {"PWNED-SECRET"}, // Hidden field
+		"revision": {"999"},          // ReadOnly field
+		"is_admin": {"true"},         // unknown key entirely
+	})
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("create form: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var name string
+	var apiKey sql.NullString
+	var revision sql.NullInt64
+	err := db.QueryRow(`SELECT name, api_key, revision FROM gizmos`).Scan(&name, &apiKey, &revision)
+	if err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if name != "legit" {
+		t.Fatalf("editable field not persisted: name=%q", name)
+	}
+	if apiKey.Valid && apiKey.String != "" {
+		t.Fatalf("SECURITY: [admin-form-whitelist] posted Hidden field value reached the row: api_key=%q", apiKey.String)
+	}
+	if revision.Valid && revision.Int64 != 0 {
+		t.Fatalf("SECURITY: [admin-form-whitelist] posted ReadOnly field value reached the row: revision=%d", revision.Int64)
+	}
+}
+
+// ─── the admin nav drawer must not escape the admin gate ──────────────
+
+// Property: every admin-owned surface is default-deny. The package
+// contract (admin.go): "Every surface, SSR screens and RPC/form routes
+// alike, is behind the admin default-deny gate (b.gate) ... There is no
+// unauthenticated or self-service path."
+//
+// Surface: registerEntityAdmin mounts the mobile nav drawer via
+// widget.MountBuilder(b.router, interactive.SectionMenuDrawer(...)) —
+// outside b.gate. preset.Drawer never sets Definition.RequireSession,
+// and widget.Mount gates the /chrome and /state endpoints only when it
+// is set, so the drawer's chrome endpoint serves anyone and discloses
+// the back-office entity map (one nav item per exposed entity: label +
+// /admin/e/<table> href) — the inventory admin.md's "don't expose
+// /admin to the public" warning is about.
+func TestAdminNavDrawerChromeRequiresAuth(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	h := mountAdminBattery(t, app, Config{AllEntities: true})
+
+	req := httptest.NewRequest(http.MethodGet, "/core-ui/widget/admin-nav/chrome", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized && rr.Code != http.StatusForbidden {
+		body := rr.Body.String()
+		// Direct evidence of the disclosure: the drawer body names the
+		// exposed entities and links their /admin/e/<table> screens.
+		disclosesEntity := strings.Contains(body, "/admin/e/posts")
+		if len(body) > 120 {
+			body = body[:120]
+		}
+		t.Fatalf("SECURITY: [admin] anonymous GET /core-ui/widget/admin-nav/chrome returned %d, want 401/403 — the admin nav drawer is mounted without the admin gate and its chrome discloses the back-office entity map (body links /admin/e/posts: %t), violating the package contract \"There is no unauthenticated or self-service path\". Body starts: %q",
+			rr.Code, disclosesEntity, body)
 	}
 }

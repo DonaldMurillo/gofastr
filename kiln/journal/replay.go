@@ -3,6 +3,7 @@ package journal
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -137,13 +138,43 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		w.App = p.Config
+		// Same normalization the live tool applies, in the same place
+		// the live tool applies it. Replay used to install the config
+		// verbatim, so a journal could carry a nameless app or an
+		// api_prefix of "/api/" or "" — states the API refuses, and the
+		// prefix decides where entity CRUD mounts.
+		//
+		// Prev tells an authoritative set from a derived edit. set_theme
+		// re-emits the world's existing config with one field changed,
+		// and a fresh world has no name yet, so requiring a name there
+		// would refuse an edit the live API produces. A derived edit
+		// still may not BLANK a name the world already had.
+		cfg := p.Config
+		switch {
+		case p.Prev == nil:
+			if err := world.ValidateAppConfig(&cfg); err != nil {
+				return fmt.Errorf("set_app_config: %w", err)
+			}
+		default:
+			if strings.TrimSpace(cfg.Name) == "" && strings.TrimSpace(p.Prev.Name) != "" {
+				return fmt.Errorf("set_app_config: cannot clear the app name (was %q)", p.Prev.Name)
+			}
+			world.NormalizeAPIPrefix(&cfg)
+		}
+		w.App = cfg
 		return nil
 
 	case OpSetScaffold:
 		var p SetScaffoldPayload
 		if err := e.Decode(&p); err != nil {
 			return err
+		}
+		if err := world.ValidateScaffold(p.Nav, p.Endpoints, map[string][]world.NamedStub{
+			"middleware": p.Middleware,
+			"plugins":    p.Plugins,
+			"helpers":    p.Helpers,
+		}); err != nil {
+			return fmt.Errorf("set_scaffold: %w", err)
 		}
 		w.Nav = p.Nav
 		w.Endpoints = p.Endpoints
@@ -259,8 +290,18 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := world.ValidatePageActions(p.Page); err != nil {
 			return fmt.Errorf("add_page %q: %w", p.Page.Path, err)
 		}
+		if err := world.ValidatePageTree(p.Page.Tree); err != nil {
+			return fmt.Errorf("add_page %q: %w", p.Page.Path, err)
+		}
 		if _, exists := w.Pages[p.Page.Path]; exists {
 			return fmt.Errorf("add_page: %q already exists", p.Page.Path)
+		}
+		// App.Mount panics when a page path equals an entity's CRUD
+		// mount, and a panic at boot takes the process rather than
+		// refusing the edit. Refuse it here instead, where the answer is
+		// survivable and the journal stays replayable.
+		if ent := world.PageCollidesWithEntity(w, p.Page.Path); ent != "" {
+			return fmt.Errorf("add_page %q: collides with entity %q's CRUD mount", p.Page.Path, ent)
 		}
 		w.Pages[p.Page.Path] = p.Page
 		return nil
@@ -287,6 +328,11 @@ func applyWorldEdit(s *Session, e Entry) error {
 		}
 		if err := world.ValidatePageActions(p.New); err != nil {
 			return fmt.Errorf("update_page_element %q: %w", p.Path, err)
+		}
+		if p.New != nil {
+			if err := world.ValidatePageTree(p.New.Tree); err != nil {
+				return fmt.Errorf("update_page_element %q: %w", p.Path, err)
+			}
 		}
 		if _, exists := w.Pages[p.Path]; !exists {
 			return fmt.Errorf("update_page_element: page %q not found", p.Path)
@@ -336,6 +382,9 @@ func applyWorldEdit(s *Session, e Entry) error {
 		}
 		if p.Route == nil {
 			return fmt.Errorf("add_route: nil route")
+		}
+		if err := world.ValidateRoute(p.Route); err != nil {
+			return fmt.Errorf("add_route: %w", err)
 		}
 		if err := world.ValidateAction(p.Route.Action); err != nil {
 			return fmt.Errorf("add_route %s %s: %w", p.Route.Method, p.Route.Path, err)

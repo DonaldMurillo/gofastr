@@ -79,9 +79,30 @@ type TwoFAState struct {
 	Secret      string   // base32 TOTP secret (plaintext, stored encrypted at rest in production)
 	BackupCodes []string // bcrypt-hashed backup codes
 	Verified    bool     // true once the user has proven they can generate a valid code
+
+	// LastUsedStep is the TOTP time-step of the most recently accepted
+	// code. A code stays valid for the whole ±skew window, so without
+	// this one code works several times over ~90s — long enough for
+	// anyone who saw it (shoulder-surfed, phished, logged by a proxy) to
+	// spend it on a second session. Zero means nothing accepted yet.
+	LastUsedStep uint64
 }
 
 // TwoFAStore is the interface for persisting 2FA state per user.
+// TwoFACompareAndSetter is the optional TwoFAStore extension that writes
+// only while 2FA is still enabled for the user.
+//
+// Regenerating backup codes is a read-modify-write, and a /2fa/disable
+// landing between the read and the write is enough for the write to
+// resurrect the row the disable just removed. Checking before writing does
+// not help — the condition has to be part of the write. A store that
+// cannot offer that keeps the blind Set.
+type TwoFACompareAndSetter interface {
+	// CompareAndSetTwoFA stores next only if the user still has an
+	// enabled 2FA row, reporting whether the write happened.
+	CompareAndSetTwoFA(ctx context.Context, userID string, next *TwoFAState) (bool, error)
+}
+
 type TwoFAStore interface {
 	// GetTwoFA retrieves the 2FA state for a user. Returns nil if not enrolled.
 	GetTwoFA(ctx context.Context, userID string) (*TwoFAState, error)
@@ -139,6 +160,20 @@ func cloneTwoFAState(st *TwoFAState) *TwoFAState {
 		cp.BackupCodes = append([]string(nil), st.BackupCodes...)
 	}
 	return &cp
+}
+
+// CompareAndSetTwoFA writes next only while the row is still present and
+// still Enabled. Implements [TwoFACompareAndSetter].
+func (m *MemoryTwoFAStore) CompareAndSetTwoFA(_ context.Context, userID string, next *TwoFAState) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.states[userID]
+	if !ok || cur == nil || !cur.Enabled {
+		return false, nil
+	}
+	cp := *next
+	m.states[userID] = &cp
+	return true, nil
 }
 
 func (m *MemoryTwoFAStore) DeleteTwoFA(_ context.Context, userID string) error {
@@ -262,7 +297,12 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/2fa/verify", http.HandlerFunc(p.verifyHandler))
 	r.Post(basePath+"/2fa/challenge", http.HandlerFunc(p.challengeHandler))
 	r.Post(basePath+"/2fa/disable", http.HandlerFunc(p.disableHandler))
-	r.Get(basePath+"/2fa/backup-codes", http.HandlerFunc(p.backupCodesHandler))
+	// POST, not GET: this route REGENERATES the code set, invalidating the
+	// previous one. csrf.go exempts safe methods by design, so as a GET no
+	// token was ever checked — and a SameSite=Lax session, which is what
+	// OAuth and magic-link logins leave behind, rides a plain top-level
+	// cross-site link. A hidden <img> was enough to burn a user's codes.
+	r.Post(basePath+"/2fa/backup-codes", http.HandlerFunc(p.backupCodesHandler))
 }
 
 // ─── Route helpers ─────────────────────────────────────────────────────
@@ -382,6 +422,7 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	otpauthURL := buildOTPAuthURL(p.config.Issuer, email, secret)
 
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"secret": secret,
@@ -422,6 +463,12 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enrollment deliberately does NOT consume the step. This is a
+	// one-time proof inside the user's own authenticated session, and the
+	// same code must still work for the step-up challenge moments later —
+	// consuming it here would make enrolment and first login mutually
+	// exclusive within one window. The replay that matters is a second
+	// SESSION on one code, and that is the challenge path's to refuse.
 	if !ValidateTOTP(state.Secret, body.Code, p.config.Period, p.config.Skew) {
 		writeAuthError(w, http.StatusUnauthorized, "invalid code")
 		return
@@ -463,6 +510,7 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		Remote: remoteHost(r),
 	})
 
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"enabled":      true,
@@ -503,9 +551,23 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try TOTP code first.
-	if ValidateTOTP(state.Secret, body.Code, p.config.Period, p.config.Skew) {
-		p.markSessionTwoFA(r)
+	// Try TOTP code first. A code is valid across the whole ±skew window,
+	// so accepting the same step twice lets anyone who observed one code
+	// open a second session inside that window (RFC 6238 §5.2 forbids it).
+	// Recording the step BEFORE marking the session means a store failure
+	// leaves the code spent rather than replayable.
+	if step, ok := ValidateTOTPStep(state.Secret, body.Code, p.config.Period, p.config.Skew); ok && step > state.LastUsedStep {
+		state.LastUsedStep = step
+		if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "could not record the code")
+			return
+		}
+		if err := p.markSessionTwoFA(r); err != nil {
+			// The session is still pending: answering 200 here
+			// would report a step-up that did not happen.
+			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
+			return
+		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "2fa.challenge_succeeded",
 			UserID: userID,
@@ -524,7 +586,12 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if consumed {
-		p.markSessionTwoFA(r)
+		if err := p.markSessionTwoFA(r); err != nil {
+			// The session is still pending: answering 200 here
+			// would report a step-up that did not happen.
+			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
+			return
+		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "2fa.challenge_succeeded",
 			UserID: userID,
@@ -561,15 +628,24 @@ func (p *TwoFAPlugin) HasTwoFactorEnabled(ctx context.Context, userID string) (b
 // markSessionTwoFA flips the TwoFactorVerified flag on the caller's
 // session, if the session store supports SessionTwoFAMarker. No-op
 // otherwise (RequireTwoFA fails closed in that case).
-func (p *TwoFAPlugin) markSessionTwoFA(r *http.Request) {
+// markSessionTwoFA records that this session cleared its second factor.
+//
+// The error is returned, not swallowed. RequireTwoFA gates on the marker,
+// so a failed write means the session is still pending — answering the
+// challenge with 200 verified:true would tell the caller they are through
+// a door that is still shut, and every later request would bounce with no
+// explanation. A store without SessionTwoFAMarker keeps its old behaviour:
+// there is no marker to fail to write.
+func (p *TwoFAPlugin) markSessionTwoFA(r *http.Request) error {
 	cfg := p.mgr.Config()
 	cookie, err := r.Cookie(cfg.SessionCookie)
 	if err != nil {
-		return
+		return nil
 	}
 	if marker, ok := p.mgr.SessionStore().(SessionTwoFAMarker); ok {
-		_ = marker.MarkTwoFactorVerified(r.Context(), cookie.Value)
+		return marker.MarkTwoFactorVerified(r.Context(), cookie.Value)
 	}
+	return nil
 }
 
 // RequireTwoFA returns middleware that:
@@ -638,7 +714,7 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"disabled": true})
 }
 
-// GET {basePath}/2fa/backup-codes
+// POST {basePath}/2fa/backup-codes
 // Generates a fresh set of backup codes, invalidating any previous ones.
 func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := p.requireStepUpUser(w, r)
@@ -658,8 +734,27 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Generating codes takes real time, and a /2fa/disable landing in that
+	// gap deletes the row — after which a blind Set writes an Enabled
+	// state straight back, so 2FA silently re-enables itself moments after
+	// the user turned it off, holding codes only the earlier request saw.
+	//
+	// A re-read before the write does not fix this: the delete can still
+	// land between the check and the write. The condition has to travel
+	// WITH the write, which is what TwoFACompareAndSetter is for. A store
+	// without it keeps the blind write and the window it comes with.
 	state.BackupCodes = hashedCodes
-	if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
+	if cas, ok := p.store.(TwoFACompareAndSetter); ok {
+		wrote, err := cas.CompareAndSetTwoFA(r.Context(), userID, state)
+		if err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "failed to save backup codes")
+			return
+		}
+		if !wrote {
+			writeAuthError(w, http.StatusConflict, "2FA is no longer enabled")
+			return
+		}
+	} else if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "failed to save backup codes")
 		return
 	}
@@ -670,6 +765,7 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 		Remote: remoteHost(r),
 	})
 
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"backup_codes": plainCodes,
@@ -718,7 +814,19 @@ func GenerateTOTP(secret string, timeStep uint64) string {
 
 // ValidateTOTP checks whether the provided code is valid for the given
 // secret within ±skew time periods of the current time.
+//
+// A caller enforcing single use wants [ValidateTOTPStep], which names the
+// step that matched.
 func ValidateTOTP(secret, code string, period, skew uint) bool {
+	_, ok := ValidateTOTPStep(secret, code, period, skew)
+	return ok
+}
+
+// ValidateTOTPStep reports the time-step a valid code belongs to, so a
+// caller can refuse a step it has already accepted. RFC 6238 §5.2 requires
+// exactly this: "the verifier MUST NOT accept the second attempt of the
+// OTP generated for the same time window".
+func ValidateTOTPStep(secret, code string, period, skew uint) (uint64, bool) {
 	if period == 0 {
 		period = 30
 	}
@@ -735,10 +843,10 @@ func ValidateTOTP(secret, code string, period, skew uint) bool {
 		// digits matched. Mirrors framework/auth/mfa.go.
 		expected := []byte(GenerateTOTP(secret, uint64(step)))
 		if subtle.ConstantTimeCompare(expected, codeBytes) == 1 {
-			return true
+			return uint64(step), true
 		}
 	}
-	return false
+	return 0, false
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────

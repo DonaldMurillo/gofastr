@@ -176,3 +176,143 @@ func TestProcessFileField_AcceptsBinaryWithToken(t *testing.T) {
 		})
 	}
 }
+
+// deriveError is the stub deriver's failure, standing in for
+// imagefield.DeriveImage's designed reject path ("surfacing it fails the
+// upload, which is the point") when non-decodable bytes land on an Image
+// field, and for a mid-variant encode failure.
+type deriveError struct{}
+
+func (deriveError) Error() string { return "stub deriver: decoding upload failed" }
+
+// deleteLedgerStorage records every Save and Delete and reports Exists
+// truthfully, so a test can assert whether bytes written before a failure
+// were compensated by a delete.
+type deleteLedgerStorage struct {
+	saved   []string
+	deleted []string
+}
+
+func (s *deleteLedgerStorage) Save(_ context.Context, key string, _ io.Reader) error {
+	s.saved = append(s.saved, key)
+	return nil
+}
+
+func (s *deleteLedgerStorage) Delete(_ context.Context, key string) error {
+	s.deleted = append(s.deleted, key)
+	return nil
+}
+
+func (s *deleteLedgerStorage) Get(_ context.Context, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func (s *deleteLedgerStorage) Exists(_ context.Context, key string) (bool, error) {
+	for _, k := range s.deleted {
+		if k == key {
+			return false, nil
+		}
+	}
+	for _, k := range s.saved {
+		if k == key {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+var _ upload.Storage = (*deleteLedgerStorage)(nil)
+
+// failingDeriver rejects the upload after ProcessFileField has already
+// saved the primary (filefield.go:288 saves, :302-306 derives).
+type failingDeriver struct{}
+
+func (failingDeriver) DeriveImage(context.Context, upload.Storage, []byte, string) (*file.ImageDerivatives, error) {
+	return nil, deriveError{}
+}
+
+// partialDeriver saves one rendition through the store and THEN fails,
+// mirroring imagefield.DeriveImage's incremental variant loop
+// (imagefield.go:160-168 saves renditions one at a time inside ProcessTo;
+// a failure on variant k leaves variants 1..k-1 plus the primary stored).
+type partialDeriver struct{}
+
+func (partialDeriver) DeriveImage(ctx context.Context, store upload.Storage, _ []byte, primaryRef string) (*file.ImageDerivatives, error) {
+	if err := store.Save(ctx, primaryRef+"_sm.webp", bytes.NewReader([]byte("rendition"))); err != nil {
+		return nil, err
+	}
+	return nil, deriveError{}
+}
+
+// okDeriver succeeds so the success path can be pinned as the control.
+type okDeriver struct{}
+
+func (okDeriver) DeriveImage(context.Context, upload.Storage, []byte, string) (*file.ImageDerivatives, error) {
+	return &file.ImageDerivatives{}, nil
+}
+
+// Property (CHAIN8-R4): an upload ProcessFileField REJECTS must not
+// remain in storage. The primary is saved at filefield.go:288 BEFORE the
+// deriver runs at :302-306, and every error return after the save reaches
+// no compensating store.Delete, so rejected bytes persist forever,
+// referenced by no row and included in no error response. An attacker
+// repeats ~32 MiB inert non-image posts against an Image field: each
+// request fails (decode rejection is the designed path) AND stores the
+// full object — unbounded disk consumption invisible to any DB-driven
+// cleanup.
+func TestProcessFileFieldDeriveFailureOrphans(t *testing.T) {
+	// Inert binary payload (raster magic + zeros) that passes
+	// rejectUnsafeContent; rejection then comes only from the deriver.
+	payload := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x00}, 512)...)
+
+	remaining := func(s *deleteLedgerStorage) []string {
+		var out []string
+		for _, k := range s.saved {
+			deleted := false
+			for _, d := range s.deleted {
+				if d == k {
+					deleted = true
+				}
+			}
+			if !deleted {
+				out = append(out, k)
+			}
+		}
+		return out
+	}
+
+	t.Run("derive failure must not orphan the saved primary", func(t *testing.T) {
+		store := &deleteLedgerStorage{}
+		_, err := file.ProcessFileField(context.Background(), store, bytes.NewReader(payload), "photo.png", "users", "avatar", file.WithImageDeriver(failingDeriver{}))
+		if err == nil {
+			t.Fatal("control: a failing deriver must still fail the upload")
+		}
+		if orphans := remaining(store); len(orphans) > 0 {
+			t.Fatalf("SECURITY: [filefield-orphan] upload was rejected (err=%v) but its bytes persist in storage with no compensating delete: keys %v remain (saved=%v deleted=%v). Attack: repeat inert non-image posts against an Image field — every request fails AND stores the full object; unbounded storage growth invisible to row-driven cleanup (store.Save at filefield.go:288 precedes the deriver at :302-306 with no store.Delete on any later error path).", err, orphans, store.saved, store.deleted)
+		}
+	})
+
+	t.Run("mid-variant derive failure must not orphan primary and saved renditions", func(t *testing.T) {
+		store := &deleteLedgerStorage{}
+		_, err := file.ProcessFileField(context.Background(), store, bytes.NewReader(payload), "photo.png", "users", "avatar", file.WithImageDeriver(partialDeriver{}))
+		if err == nil {
+			t.Fatal("control: a deriver failing after saving a rendition must still fail the upload")
+		}
+		if orphans := remaining(store); len(orphans) > 0 {
+			t.Fatalf("SECURITY: [filefield-orphan] upload rejected mid-derivation (err=%v) but the primary AND already-saved rendition persist: keys %v remain (saved=%v deleted=%v). Attack: each rejected request leaves a full-size object plus partial renditions on disk, referenced by no row (variant loop saves incrementally, imagefield.go:160-168; no store.Delete on the error path).", err, orphans, store.saved, store.deleted)
+		}
+	})
+
+	// Control: compensation must fire only on failure — a successful
+	// process keeps exactly the stored references and deletes nothing.
+	t.Run("control success keeps stored bytes", func(t *testing.T) {
+		store := &deleteLedgerStorage{}
+		ff, err := file.ProcessFileField(context.Background(), store, bytes.NewReader(payload), "photo.png", "users", "avatar", file.WithImageDeriver(okDeriver{}))
+		if err != nil {
+			t.Fatalf("control: successful process failed: %v", err)
+		}
+		if len(store.saved) != 1 || store.saved[0] != ff.StorageRef || len(store.deleted) != 0 {
+			t.Fatalf("control: success path must keep exactly the primary (saved=%v deleted=%v storageRef=%q)", store.saved, store.deleted, ff.StorageRef)
+		}
+	})
+}

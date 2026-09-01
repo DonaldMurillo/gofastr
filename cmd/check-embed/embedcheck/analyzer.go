@@ -398,12 +398,41 @@ func (r *resolver) componentsInExpr(expr ast.Expr) []*types.Named {
 func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(token.Pos, string)) []*types.Named {
 	var out []*types.Named
 	noted := map[*types.Named]bool{}
+
+	// A Render that hands its child-building to a same-package helper says
+	// exactly what a Render building the child inline says. But the call's
+	// static type is the component.Component interface, and the interface
+	// carve-out below then reads it as a child held elsewhere. That carve-out
+	// is right for a FIELD and wrong for a call result: the child really is
+	// built here, one frame down. Walking the callee restores the shape this
+	// check was written to see, and without it a cross-package child reached
+	// through a helper produced no finding and no note at all.
+	type frame struct {
+		body   *ast.BlockStmt
+		method string // the Render method this body was reached from
+	}
+	var queue []frame
+	walked := map[*ast.BlockStmt]bool{}
 	for _, m := range []string{"Render", "RenderCtx"} {
-		decl := r.funcDeclForMethod(cur, m)
-		if decl == nil || decl.Body == nil {
+		if decl := r.funcDeclForMethod(cur, m); decl != nil && decl.Body != nil {
+			queue = append(queue, frame{decl.Body, m})
+		}
+	}
+
+	for len(queue) > 0 {
+		fr := queue[0]
+		queue = queue[1:]
+		if walked[fr.body] {
 			continue
 		}
-		ast.Inspect(decl.Body, func(n ast.Node) bool {
+		walked[fr.body] = true
+
+		ast.Inspect(fr.body, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if b := r.componentHelperBody(call); b != nil {
+					queue = append(queue, frame{b, fr.method})
+				}
+			}
 			e, ok := n.(ast.Expr)
 			if !ok {
 				return true
@@ -443,12 +472,69 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(
 				noted[named] = true
 				blockingNote(e.Pos(), fmt.Sprintf("%s.%s builds component %s from another package, "+
 					"whose Actions() body is not visible here",
-					cur.Obj().Name(), m, named.String()))
+					cur.Obj().Name(), fr.method, named.String()))
 			}
 			return true
 		})
 	}
 	return out
+}
+
+// componentHelperBody returns the body of a same-package function called by
+// call whose result is component-shaped (component.Component, a slice of
+// them, or any type carrying a Render method). Anything else — a stdlib
+// call, a method on another package's type — returns nil, so the walk stays
+// inside this package's syntax tree.
+func (r *resolver) componentHelperBody(call *ast.CallExpr) *ast.BlockStmt {
+	var name *ast.Ident
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		name = fun
+	case *ast.SelectorExpr:
+		name = fun.Sel
+	default:
+		return nil
+	}
+	obj, ok := r.info.Uses[name].(*types.Func)
+	if !ok || obj.Pkg() != r.pkg {
+		return nil
+	}
+	sig, ok := obj.Type().(*types.Signature)
+	if !ok || sig.Results().Len() == 0 {
+		return nil
+	}
+	if !componentShaped(sig.Results().At(0).Type()) {
+		return nil
+	}
+	for _, f := range r.files {
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Name == nil || fd.Body == nil {
+				continue
+			}
+			if r.info.Defs[fd.Name] == obj {
+				return fd.Body
+			}
+		}
+	}
+	return nil
+}
+
+// componentShaped reports whether t is a component, or a slice of them.
+func componentShaped(t types.Type) bool {
+	if sl, ok := t.Underlying().(*types.Slice); ok {
+		t = sl.Elem()
+	}
+	if iface, ok := t.Underlying().(*types.Interface); ok {
+		for i := 0; i < iface.NumMethods(); i++ {
+			if iface.Method(i).Name() == "Render" {
+				return true
+			}
+		}
+		return false
+	}
+	named := namedOf(t)
+	return named != nil && hasRenderMethod(named)
 }
 
 // hasRenderMethod reports whether t (or *t) declares Render, the one method

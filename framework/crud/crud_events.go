@@ -2,16 +2,22 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
 	"net/http"
 	"reflect"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
@@ -110,7 +116,15 @@ func (ch *CrudHandler) StageEvent(ctx context.Context, eventType string, record 
 //     no longer touches the bus, so there is no double delivery.
 func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record any) {
 	if ch.Events != nil {
-		ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+		// An ambient transaction (db.WithTx / App.InTx) is still open at
+		// this point: the operation joined it and the outer owner decides
+		// whether it commits. Publishing now would announce a write that
+		// may be rolled back a moment later.
+		if tx, ok := db.TxFromContext(ctx); ok {
+			ch.emitAfterAmbientTx(ctx, tx, eventType, record)
+		} else {
+			ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+		}
 	}
 	if ch.Outbox != nil {
 		ch.Outbox.Nudge()
@@ -459,4 +473,176 @@ func deepCopyReflectValue(elem reflect.Value) reflect.Value {
 	default:
 		return elem
 	}
+}
+
+// ============================================================================
+// Ambient-transaction event gating
+// ============================================================================
+
+// ambientTxProbeInterval is how often a held-back emission checks whether the
+// caller's transaction has finished. Short enough that a committed write
+// reaches SSE subscribers promptly, long enough not to spin.
+const ambientTxProbeInterval = 5 * time.Millisecond
+
+// ambientTxProbeTimeout bounds the wait. A caller that never commits or rolls
+// back would otherwise pin the goroutine for the process lifetime; past this
+// the emission is dropped and logged, because an event announcing a write
+// nobody committed is worse than a missing one.
+const ambientTxProbeTimeout = 2 * time.Minute
+
+// emitAfterAmbientTx holds a live-bus emission until the caller's ambient
+// transaction resolves, then publishes it only if the write actually landed.
+//
+// A CRUD operation joined to an ambient tx (db.WithTx / App.InTx) returns
+// BEFORE that transaction commits — inTx's ambient branch deliberately does
+// not commit, the outer owner does. Emitting on the live bus at that point
+// announced a row that might never exist: a subsequent Rollback left SSE
+// subscribers and On/Subscribe handlers holding the full record payload of a
+// phantom write. The durable outbox lane never had this problem because
+// StageEvent writes inside the tx and rolls back with it.
+//
+// database/sql exposes no commit callback, and a committed and a rolled-back
+// Tx are indistinguishable afterwards (both report sql.ErrTxDone). So the
+// outcome is read from the database instead: once the transaction is done,
+// the write is re-checked against the base connection. That is the same
+// question a subscriber would ask, which makes it the right one to gate on.
+//
+// "Re-checked" is per event kind, because row presence alone does not
+// answer it. A rolled-back CREATE leaves no row and a rolled-back DELETE
+// leaves the row, so presence decides those. A rolled-back UPDATE leaves the
+// row exactly as present as a committed one, so an update is matched on the
+// emitted VALUES as well: the row counts as landed only if the columns the
+// event announced are the columns the database now holds.
+func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, eventType string, record any) {
+	base, ok := ch.DB.(*sql.DB)
+	if !ok {
+		// The handler itself is bound to a transaction, so there is no
+		// independent connection to verify against. Nothing sensible to
+		// gate on; publish as before rather than silently dropping.
+		ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+		return
+	}
+	id, ok := ch.recordPrimaryKey(record)
+	if !ok {
+		ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+		return
+	}
+
+	// Snapshot the payload now: it is built from the request context's
+	// tenant/owner identity, which will not be valid to read later.
+	data := ch.eventData(ctx, record)
+	table := ch.Entity.GetTable()
+	pk := ch.PrimaryKey
+	bus := ch.Events
+	match := ch.comparableColumns(record)
+
+	go func() {
+		deadline := time.Now().Add(ambientTxProbeTimeout)
+		for {
+			// Any statement on a finished Tx reports sql.ErrTxDone,
+			// whether it committed or rolled back.
+			if _, err := tx.ExecContext(context.Background(), "SELECT 1"); errors.Is(err, sql.ErrTxDone) {
+				break
+			}
+			if time.Now().After(deadline) {
+				log.Printf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
+					eventType, table, id, ambientTxProbeTimeout)
+				return
+			}
+			time.Sleep(ambientTxProbeInterval)
+		}
+
+		committed, err := landed(base, eventType, table, pk, id, match)
+		if err != nil {
+			log.Printf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
+				eventType, table, id, err)
+			return
+		}
+		if !committed {
+			return // rolled back; the row never existed
+		}
+		bus.EmitAsync(context.Background(), event.Event{Type: eventType, Data: data})
+	}()
+}
+
+// landed reports whether the write the event describes is visible on the
+// base connection. A delete landed when the row is gone; a create when it is
+// there; an update when it is there AND carries the announced values (match),
+// since the row survives a rollback either way.
+func landed(base *sql.DB, eventType, table, pk string, id any, match map[string]any) (bool, error) {
+	safeTable, err := query.SafeIdent(table)
+	if err != nil {
+		return false, err
+	}
+	safePK, err := query.SafeIdent(pk)
+	if err != nil {
+		return false, err
+	}
+	where := []string{query.QuoteIdent(safePK) + " = ?"}
+	args := []any{id}
+	if eventType == event.EntityUpdated {
+		for _, col := range slices.Sorted(maps.Keys(match)) {
+			safeCol, err := query.SafeIdent(col)
+			if err != nil {
+				continue
+			}
+			where = append(where, query.QuoteIdent(safeCol)+" = ?")
+			args = append(args, match[col])
+		}
+	}
+	var n int
+	stmt := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s",
+		query.QuoteIdent(safeTable), strings.Join(where, " AND "))
+	if err := base.QueryRow(stmt, args...).Scan(&n); err != nil {
+		return false, err
+	}
+	if eventType == event.EntityDeleted {
+		return n == 0, nil
+	}
+	return n > 0, nil
+}
+
+// comparableColumns maps the scalar values an emitted record carries onto
+// their database columns, skipping the primary key, NULLs, and anything not
+// directly comparable in SQL (nested objects, arrays, byte slices). It is
+// what lets an UPDATE be distinguished from its own rollback.
+func (ch *CrudHandler) comparableColumns(record any) map[string]any {
+	m, ok := record.(map[string]any)
+	if !ok {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, f := range ch.Entity.GetFields() {
+		known[f.Name] = true
+	}
+	out := map[string]any{}
+	for key, v := range m {
+		col := ch.unconvertKeyRaw(key)
+		if col == ch.PrimaryKey || !known[col] || v == nil {
+			continue
+		}
+		switch v.(type) {
+		case string, bool,
+			int, int8, int16, int32, int64,
+			uint, uint8, uint16, uint32, uint64,
+			float32, float64, time.Time:
+			out[col] = v
+		}
+	}
+	return out
+}
+
+// recordPrimaryKey pulls the primary-key value out of an emitted record,
+// tolerating either wire casing.
+func (ch *CrudHandler) recordPrimaryKey(record any) (any, bool) {
+	m, ok := record.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	for _, key := range []string{ch.convertKey(ch.PrimaryKey), ch.PrimaryKey} {
+		if v, ok := m[key]; ok && v != nil {
+			return v, true
+		}
+	}
+	return nil, false
 }

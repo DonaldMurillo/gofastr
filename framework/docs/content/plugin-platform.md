@@ -103,6 +103,9 @@ framed policy is unchanged, and these stay regardless of the tier:
 - `connect-src 'none'` — the frame still cannot fetch, XHR, or open a
   WebSocket; data arrives over the postMessage bridge and leaves the same
   way,
+- `form-action 'none'` — a frame granted `allow-forms` submits by
+  NAVIGATING, which `connect-src` does not cover, so this closes the
+  exfiltration path that would otherwise route around it,
 - no `eval` of strings (`'unsafe-eval'` is not granted; wasm
   compilation is not string eval),
 - no host cookies, storage, or DOM access.

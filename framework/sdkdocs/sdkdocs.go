@@ -49,6 +49,14 @@ type Config struct {
 	// Required, reference pages render from it per request.
 	Registry entity.Registry
 
+	// CRUDMounted reports whether an entity's auto-CRUD routes were
+	// actually registered. Pass fwApp.EntityCRUDMounted: Exposure.CRUD
+	// alone misses the no-DB case, where App mounts nothing while every
+	// entity still reads "auto", so the site would document — and hand an
+	// SDK for — paths that answer 404 (#266). Nil keeps the historical
+	// Exposure-only check for direct callers.
+	CRUDMounted func(*entity.Entity) bool
+
 	// Artifacts holds the pregenerated dist directory from
 	// `gofastr generate sdk` (os.DirFS("gen/sdk/dist") or an embed.FS
 	// subtree). Nil mounts the docs site without downloads; pages show
@@ -174,6 +182,9 @@ func (s *site) includedEntities() []*entity.Entity {
 		}
 		if e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
 			continue // no HTTP surface to document
+		}
+		if s.cfg.CRUDMounted != nil && !s.cfg.CRUDMounted(e) {
+			continue // declared CRUD, but registration never mounted it
 		}
 		if len(s.cfg.Entities) > 0 {
 			if !nameMatches(e, s.cfg.Entities) {

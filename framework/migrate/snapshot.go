@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -291,8 +292,37 @@ func recreateTableSQL(table string, cols map[string]string) string {
 		query.MustIdent(table), strings.Join(defs, ",\n\t"))
 }
 
+// ErrDirectiveInSQL is returned when rendered SQL contains a line the
+// migration runner would read as a `-- +migrate` directive.
+var ErrDirectiveInSQL = errors.New("migrate: rendered SQL contains a line that would parse as a -- +migrate directive")
+
+// containsDirectiveLine reports whether any line of sql would be read as
+// a directive by the runner, which scans line by line for the
+// "-- +migrate" prefix with no idea whether it is inside a string
+// literal.
+//
+// A column DEFAULT is author-supplied and may be multi-line, so a value
+// like "x\n-- +migrate Down\nDROP TABLE victims;-- " renders as valid
+// SQL inside one quoted literal and ALSO as a section boundary to the
+// runner: it truncates Up mid-literal, the committed migration no longer
+// parses, and the attacker's statements sit in Down waiting for a
+// rollback. Refusing to write the file is the fix that does not require
+// teaching the runner to parse SQL string literals.
+func containsDirectiveLine(sql string) bool {
+	for line := range strings.SplitSeq(sql, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "-- +migrate") {
+			return true
+		}
+	}
+	return false
+}
+
 // RenderMigrationFile formats a versioned migration in the `-- +migrate`
 // directive layout the runner parses. down may be empty.
+//
+// Deprecated: use [RenderMigrationFileChecked], which refuses SQL that
+// would synthesize a directive. This wrapper is kept for callers that
+// render SQL they control end to end.
 func RenderMigrationFile(version uint64, name, up, down string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "-- +migrate Version %d\n", version)
@@ -306,6 +336,18 @@ func RenderMigrationFile(version uint64, name, up, down string) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// RenderMigrationFileChecked is [RenderMigrationFile] plus the guard: it
+// returns [ErrDirectiveInSQL] when a line of up or down would be read as
+// a directive by the runner.
+func RenderMigrationFileChecked(version uint64, name, up, down string) (string, error) {
+	for label, sql := range map[string]string{"up": up, "down": down} {
+		if containsDirectiveLine(sql) {
+			return "", fmt.Errorf("%w (in the %s section); a column DEFAULT or other literal spans a line starting with \"-- +migrate\"", ErrDirectiveInSQL, label)
+		}
+	}
+	return RenderMigrationFile(version, name, up, down), nil
 }
 
 // LoadSnapshot reads a snapshot JSON file. A missing file is not an error. It

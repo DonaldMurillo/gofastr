@@ -145,7 +145,8 @@ func searchPosts(index search.Backend) http.HandlerFunc {
 			Limit: 10,
 		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("blog: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
