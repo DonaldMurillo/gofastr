@@ -269,6 +269,26 @@ func RouteTimeoutFromContext(ctx context.Context) (RouteTimeout, bool) {
 // replaces d for this request; a negative Budget skips the deadline
 // entirely. When the deadline fires on a buffered response, a structured
 // warning names the method, path, matched pattern, and budget.
+// handlerAlreadyFinished reports whether the handler closed done before the
+// deadline branch ran.
+//
+// It exists as a named function rather than an inline select so the
+// tie-break has a test seam. The race it settles cannot be reproduced from
+// outside — a select picks randomly only when both channels are ready at the
+// instant it is evaluated, and producing that overlap needs the middleware
+// goroutine descheduled across the deadline, which nothing outside the
+// runtime can arrange. So the RACE has no deterministic test, but the
+// DECISION does, and a decision nobody can make fail is the same untested
+// guard either way.
+func handlerAlreadyFinished(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
+}
+
 func Timeout(d time.Duration) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -404,14 +424,12 @@ func Timeout(d time.Duration) Middleware {
 				// The r.Context().Done() case above needs no equivalent:
 				// the client is gone, and delivering or abandoning both
 				// write to a socket nobody is reading.
-				select {
-				case <-done:
+				if handlerAlreadyFinished(done) {
 					if childPanic != nil {
 						panic(childPanic)
 					}
 					tw.finish()
 					return
-				default:
 				}
 				if abandon(context.DeadlineExceeded) {
 					// Name the route, not just the path: "why does this

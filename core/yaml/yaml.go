@@ -134,6 +134,23 @@ func (p *parser) parseBlock(indent int) (*Node, error) {
 }
 
 func (p *parser) parseMap(indent int) (*Node, error) {
+	return p.parseMapSeeded(indent, nil)
+}
+
+// parseMapSeeded is parseMap with the duplicate-key tracker pre-populated.
+//
+// A "- key: value" list item builds its first key itself and then parses the
+// indented continuation lines as a separate map. Without the seed that map
+// starts blank, so for
+//
+//   - a: 1
+//     a: 2
+//     a: 3
+//
+// it catches a@3 against a@4 and reports line 3 as the first definition —
+// when `a` was first defined on line 2, in the item itself. The reported
+// line is the whole point of the error, so it has to be the real one.
+func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) {
 	out := &Node{Kind: Map, Line: p.lines[p.pos].line, Column: indent + 1, Map: map[string]*Node{}}
 	// A duplicate key was silent last-wins: `enabled: false` followed later
 	// by `enabled: true` took the second value while a reviewer, and grep,
@@ -146,7 +163,8 @@ func (p *parser) parseMap(indent int) (*Node, error) {
 	//
 	// seen holds the line that first defined each key so the error can name
 	// both.
-	seen := make(map[string]int, 8)
+	seen := make(map[string]int, 8+len(seed))
+	maps.Copy(seen, seed)
 	for p.pos < len(p.lines) {
 		line := p.lines[p.pos]
 		if line.indent < indent {
@@ -236,7 +254,14 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				child.Map[strings.TrimSpace(key)] = scalar
 			}
 			if p.pos < len(p.lines) && p.lines[p.pos].indent > indent {
-				more, err := p.parseMap(p.lines[p.pos].indent)
+				// Seed with the key this item already defined, so a repeat
+				// among the continuation lines reports the item's line as
+				// the first definition rather than the first continuation.
+				seed := make(map[string]int, len(child.Map))
+				for k, v := range child.Map {
+					seed[k] = v.Line
+				}
+				more, err := p.parseMapSeeded(p.lines[p.pos].indent, seed)
 				if err != nil {
 					return nil, err
 				}

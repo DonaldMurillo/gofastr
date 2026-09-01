@@ -77,6 +77,13 @@ func TestYAML_DuplicateKeyErrorNamesKeyAndLines(t *testing.T) {
 	}{
 		{"flat", "auth: false\nauth: true\n", `yaml:2:1: duplicate mapping key "auth" (first defined at line 1)`},
 		{"nested", "app:\n  auth:\n    enabled: false\n    enabled: true\n", `yaml:4:5: duplicate mapping key "enabled" (first defined at line 3)`},
+		// A list item defines its first key on the "- key: value" line, and
+		// the continuation lines are parsed as a separate map. Without
+		// seeding that map, the first repeat among the continuations was
+		// reported as the first definition — line 3 here, when `a` was
+		// defined on line 2. The reported line is the point of the error.
+		{"list item then two continuations", "items:\n  - a: 1\n    a: 2\n    a: 3\n", `yaml:3:5: duplicate mapping key "a" (first defined at line 2)`},
+		{"list item then one continuation", "items:\n  - a: 1\n    a: 2\n", `yaml:3:5: duplicate mapping key "a" (first defined at line 2)`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

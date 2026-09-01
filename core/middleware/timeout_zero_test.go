@@ -163,6 +163,38 @@ func TestTimeoutDeadlineRaceProbe(t *testing.T) {
 	t.Logf("iterations=%d proven misfires=%d genuine overruns=%d", iters, misfires, overruns)
 }
 
+// The tie-break itself, at the seam.
+//
+// The RACE has no deterministic test (see the probe above). The DECISION
+// does, and that is the part that can regress: if handlerAlreadyFinished
+// stops reporting a closed done, the deadline branch discards finished
+// responses again. Removing the `case <-done` arm fails this.
+func TestHandlerAlreadyFinishedReportsAClosedDone(t *testing.T) {
+	closed := make(chan struct{})
+	close(closed)
+	if !handlerAlreadyFinished(closed) {
+		t.Error("a closed done must report the handler finished; the deadline branch would 504 a completed response")
+	}
+
+	open := make(chan struct{})
+	if handlerAlreadyFinished(open) {
+		t.Error("an open done must not report the handler finished; the deadline would never fire")
+	}
+
+	// Must not block on an open channel — the deadline path has to make
+	// progress whether or not the handler is done.
+	returned := make(chan bool, 1)
+	go func() { returned <- handlerAlreadyFinished(make(chan struct{})) }()
+	select {
+	case got := <-returned:
+		if got {
+			t.Error("an open done reported finished")
+		}
+	case <-time.After(time.Second):
+		t.Error("handlerAlreadyFinished blocked on an open done")
+	}
+}
+
 // The deadline still wins when the handler really did overrun, so the fix
 // above is a tie-break and not a disarm.
 func TestTimeoutStillAbandonsAnOverrunHandler(t *testing.T) {
