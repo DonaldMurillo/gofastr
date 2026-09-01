@@ -37,6 +37,17 @@ func WithTx(ctx context.Context, tx *sql.Tx) context.Context {
 	return context.WithValue(ctx, txKey{}, tx)
 }
 
+// WithoutTx masks any ambient transaction (and its commit queue) in ctx,
+// keeping everything else — tenant, owner, request identity. Use it when
+// handing a context to a goroutine that outlives or runs beside the
+// transaction's owner: a *sql.Tx shares one connection, and a statement
+// from a second goroutine interleaves with the owner's on the wire (#353).
+// TxFromContext and CommitQueueFromContext report absent on the result.
+func WithoutTx(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, txKey{}, nil)
+	return context.WithValue(ctx, commitQueueKey{}, nil)
+}
+
 // Beginner is satisfied by *sql.DB. *sql.Tx does not satisfy it, which lets
 // inTx skip nested begin attempts.
 type Beginner interface {

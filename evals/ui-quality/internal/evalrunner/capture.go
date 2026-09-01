@@ -377,12 +377,11 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			// after cancel closes the shared tab and makes every later shot fail
 			// with context canceled. Give each screenshot its own tab instead.
 			tab, closeTab := chromedp.NewContext(browser)
-			// Named so the diagnostic below cannot drift from it. Writing
+			// Named so the diagnostic below cannot drift from them. Writing
 			// "45s" into the message and the duration separately is how a
 			// number goes stale the first time someone tunes the budget.
-			const captureBudget = 45 * time.Second
-			captureCtx, cancel := context.WithTimeout(tab, captureBudget)
-			// #342: on the FIRST shot this budget starts before the browser
+			//
+			// #342: on the FIRST shot the budget starts before the browser
 			// exists. chromedp launches Chrome lazily on the first action,
 			// and the first action here is the guard's fetch.Enable — so a
 			// slow launch is billed to a budget meant for the capture, and
@@ -390,16 +389,26 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			// startup. Later shots reuse that browser: a new tab inherits
 			// the running process, so their number is guard time only.
 			//
-			// On CI this fails at ~45.04s while a quiet local run is 3.3s
-			// and a CPU-saturated one is 7.5s, so the gap is far larger
-			// than contention explains and nobody has measured where it
-			// goes. Report the split rather than guess again: budgetUsed is
-			// how much of the budget was gone by the time the guard
-			// returned. A failure near the full budget is a launch problem;
-			// one far below it is not, and the two want opposite fixes.
-			// (Stated without the number on purpose — see the constant
-			// above. Writing it here is the drift that comment forbids,
-			// and this comment had it.)
+			// The diagnostic this block emits settled which fix applies:
+			// CI failed at ~45.04s of 45s — the whole budget gone at the
+			// guard, on the first shot — while a quiet local run is 3.3s
+			// and a CPU-saturated one 7.5s. That is a launch problem, so
+			// the first shot's allowance covers a slow launch and later
+			// shots stay tight. Attempts to instead move the launch out of
+			// the budget (chromedp.Run with no actions, warming the tab
+			// with about:blank) are recorded refuted on #342 — chromedp
+			// does not launch without a real action. 150s follows the
+			// pattern that fixed the chromium-ui flakes: chromedp's own
+			// websocket allowance is 90s (WSURLReadTimeout above), and a
+			// launch that outlives handshake plus session setup needs
+			// headroom past it, not a number tuned to a fast idle box.
+			const captureBudget = 45 * time.Second
+			const firstShotBudget = 150 * time.Second
+			budget := captureBudget
+			if shotIndex == 1 {
+				budget = firstShotBudget
+			}
+			captureCtx, cancel := context.WithTimeout(tab, budget)
 			guardStart := time.Now()
 			networkGuard, guardErr := newCandidateNetworkGuard(baseURL)
 			if guardErr == nil {
@@ -419,7 +428,7 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 					launchNote = "first shot, so this includes the browser launch"
 				}
 				issues = append(issues, fmt.Sprintf("%s %s: install network guard after %s of the %s budget (%s): %v",
-					page.Name, vp.ID, budgetUsed.Round(time.Millisecond), captureBudget, launchNote, guardErr))
+					page.Name, vp.ID, budgetUsed.Round(time.Millisecond), budget, launchNote, guardErr))
 				continue
 			}
 			emulationActions := []chromedp.Action{chromedp.EmulateReset()}

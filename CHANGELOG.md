@@ -119,6 +119,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   every such emission on Postgres was silently dropped as unconfirmable. It
   now uses the `$N` placeholders the query builders emit everywhere else.
 
+- **Immediate ambient-tx emissions no longer hand the live `*sql.Tx` to
+  bus subscribers.** The two `emitAfterAmbientTx` fallbacks that publish
+  right away (handler bound to a transaction; record with no extractable
+  primary key) passed the original context to `EmitAsync`, which hands it
+  to a goroutine per subscriber — so a subscriber following the documented
+  `db.TxFromContext` pattern got a live transaction in a goroutine running
+  beside the transaction's owner, the same one-connection statements race
+  as #353. The new `db.WithoutTx` masks the tx and its commit queue while
+  keeping tenant/owner identity, and both call sites use it (#367).
+
+- **The ui-quality eval's first screenshot no longer bills the browser
+  launch to its 45s capture budget.** chromedp launches Chrome lazily on
+  the first action, so shot one paid for the launch out of a budget meant
+  for the capture — CI died at ~45.04s with the whole budget gone at the
+  network-guard install while later shots used milliseconds (#342). The
+  first shot now gets 150s, past chromedp's own 90s websocket allowance;
+  every later shot keeps the tight 45s, and the guard diagnostic prints
+  whichever budget applied.
+
 - **crud's per-write transaction now rolls back when code inside it
   panics.** `App.InTx` has always carried a deferred rollback so a panic in
   `fn` cannot leak the pooled connection and its row locks; crud's own

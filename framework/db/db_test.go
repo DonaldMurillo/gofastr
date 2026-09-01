@@ -56,6 +56,23 @@ func TestCommitQueueUndrainedNeverRuns(t *testing.T) {
 	}
 }
 
+func TestWithoutTxMasksTxAndQueue(t *testing.T) {
+	type otherKey struct{}
+	base := context.WithValue(context.Background(), otherKey{}, "kept")
+	ctx, _ := WithTxQueue(base, nil)
+
+	masked := WithoutTx(ctx)
+	if _, ok := TxFromContext(masked); ok {
+		t.Fatal("WithoutTx left the transaction visible")
+	}
+	if _, ok := CommitQueueFromContext(masked); ok {
+		t.Fatal("WithoutTx left the commit queue visible")
+	}
+	if masked.Value(otherKey{}) != "kept" {
+		t.Fatal("WithoutTx dropped an unrelated context value")
+	}
+}
+
 func TestWithTxQueueRoundTrip(t *testing.T) {
 	ctx, q := WithTxQueue(context.Background(), nil)
 	got, ok := CommitQueueFromContext(ctx)

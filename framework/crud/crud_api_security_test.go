@@ -411,6 +411,55 @@ func TestAmbientTxQueuePublishesOnDrainOnly(t *testing.T) {
 	}
 }
 
+// TestAmbientFallbackEmitsWithoutLiveTx pins #367: the two
+// emitAfterAmbientTx fallback branches (handler bound to a tx; record
+// with no extractable primary key) publish immediately, and EmitAsync
+// hands the context to a goroutine per subscriber. That context must NOT
+// still carry the live *sql.Tx — a subscriber following the documented
+// TxFromContext pattern would otherwise run statements on the
+// transaction's single connection beside its owner, the exact race the
+// commit queue removed from the framework paths.
+func TestAmbientFallbackEmitsWithoutLiveTx(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	sawTx := make(chan bool, 8)
+	cancel := bus.Subscribe(event.EntityCreated, func(ctx context.Context, _ event.Event) error {
+		_, ok := db.TxFromContext(ctx)
+		sawTx <- ok
+		return nil
+	})
+	defer cancel()
+
+	tx, err := dbc.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	ctx := db.WithTx(context.Background(), tx)
+
+	// Branch 1: the handler itself is tx-bound, so there is no base
+	// connection to confirm against and the emission fires immediately.
+	txCh := *ch
+	txCh.DB = tx
+	txCh.EmitEvent(ctx, event.EntityCreated, map[string]any{"id": "r1", "title": "x"})
+
+	// Branch 2: no extractable primary key, same immediate publish.
+	ch.EmitEvent(ctx, event.EntityCreated, map[string]any{"title": "no id here"})
+
+	for i := 0; i < 2; i++ {
+		select {
+		case ok := <-sawTx:
+			if ok {
+				t.Fatal("SECURITY: [#367] a live *sql.Tx reached an async bus subscriber's context — statements from the subscriber goroutine interleave with the transaction owner's on one connection")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("fallback emission %d never reached the subscriber", i+1)
+		}
+	}
+}
+
 // TestInTxRollsBackWhenFnPanics pins the deferred rollback in crud's inTx:
 // a panic inside fn must not leak the transaction's pooled connection.
 // (Hook panics are recovered into errors by the hook registry, so this

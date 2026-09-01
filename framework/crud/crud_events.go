@@ -545,13 +545,18 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 	if !ok {
 		// The handler itself is bound to a transaction, so there is no
 		// independent connection to verify against. Nothing sensible to
-		// gate on; publish as before rather than silently dropping.
-		ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+		// gate on; publish as before rather than silently dropping. The
+		// tx is masked first (#367): EmitAsync hands the context to a
+		// goroutine per subscriber, and a live *sql.Tx in a goroutine
+		// running beside the transaction's owner is the same
+		// one-connection statements race the commit queue exists to
+		// avoid. eventData reads identity values, which survive the mask.
+		ch.Events.EmitAsync(db.WithoutTx(ctx), event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
 		return
 	}
 	id, ok := ch.recordPrimaryKey(record)
 	if !ok {
-		ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+		ch.Events.EmitAsync(db.WithoutTx(ctx), event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
 		return
 	}
 
