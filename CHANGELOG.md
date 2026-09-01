@@ -5,6 +5,75 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.79.0] - 2026-09-01
+
+### Added
+- **A2A v1.0 task exchange** (#289): `core/a2a` serves the protocol's
+  JSON-RPC binding behind the signed agent card — `SendMessage`,
+  `SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask`,
+  `SubscribeToTask`, the four push-notification-config operations, and
+  `GetExtendedAgentCard`. `framework.WithA2A` mounts it on the app router
+  (default `/a2a`), so session and bearer auth, owner context, recovery,
+  and request logging apply exactly as they do to `/mcp`; `RoleAgent`
+  forwards it. A GoFastr app is a deterministic agent: a skill is invoked
+  by name (`message.metadata.skill`, or a data part carrying `"skill"`),
+  never inferred from prose, and every entity with MCP tools contributes
+  a skill whose data part names an operation and arguments and dispatches
+  through the same tool the MCP surface runs, so owner scoping and the
+  tool call gate hold on both. Tasks are rows (SQLite or Postgres, owner
+  column in every predicate; a foreign task id answers `-32001` exactly
+  like a missing one), so any replica serves any request and a subscribe
+  on a replica that is not running the task polls the store instead.
+  Streaming answers `text/event-stream` with one JSON-RPC response per
+  event and closes on a terminal or interrupted state. Push notifications
+  POST a `StreamResponse` with the `A2A-Notification-Token` header, never
+  follow a redirect, refuse internal hosts at validation and again at
+  dial time (`core/netguard`), and are not retried. `AgentCardConfig.A2AEndpoint`
+  advertises the exchange as the card's JSONRPC interface and
+  `App.A2ASkills()` is the one skill list the card and the server share.
+  The wire form — PascalCase method names, camelCase fields,
+  `TASK_STATE_*` and `ROLE_*` enum spellings, the flat `Part` discriminator,
+  millisecond RFC 3339 timestamps — is pinned by tests against the
+  canonical `a2a.proto` and the A2A project's Go SDK rather than recalled;
+  the v0.x slash-form methods are wire-incompatible and deliberately
+  absent. `framework/docs/content/a2a.md` is the contract.
+- **Per-agent rate limits for verified Web Bot Auth traffic** (#290):
+  `webbotauth.RateLimitKey` and `framework.AgentRateLimitKey` key a
+  `framework/ratelimit` limiter by the verified agent's directory URL and
+  fall back to the client IP otherwise, so a signed crawler has its own
+  budget instead of sharing its egress address's, and an unverified
+  caller never gains from the rule. The key is the directory, not the
+  key id: rotating a key does not reset the window. The generators and
+  `battery/webhook` still do not sign outbound requests, for the reason
+  the ticket recorded: the draft is moving, and signing from every
+  generated artifact would turn each revision into a breaking change for
+  downstream apps.
+- **`GOFASTR1808` `rendering/fallback-drift`** (#365): design-system CSS
+  that writes `var(--spacing-md, 12px)` where the theme declares
+  `--spacing-md` as `8px`. A themed page never renders the fallback, so
+  the number is only ever read by the next author — and about 450 such
+  fallbacks had been teaching a 4/8/16/24/32 spacing ladder the theme does
+  not declare, until a review bot read one as the token's value. The rule
+  judges the length and time scales (spacing, radii, text, duration),
+  comparing rem to px by size, and leaves colour and font fallbacks
+  alone, where `currentColor`, `inherit`, and a dark-surface hex are
+  deliberate. Every design-system fallback now restates its token: 452
+  sites in 75 files, and all 24 Meridian screenshots (six surfaces, two
+  viewports, light and dark) are byte-identical before and after. The
+  catalog is now 53 rules.
+- **Browser e2e for the MCP Apps widget client** (#291): a host shim plays
+  the chat host's half of the ext-apps 2026-01-26 protocol in a real
+  browser — reads the `ui://` widget over `resources/read`, embeds it in
+  a sandboxed opaque-origin iframe, answers `ui/initialize` with a dark
+  host context, forwards the widget's `tools/call` to `/mcp`, and records
+  the `ui/message` the widget sends back carrying the tool result and the
+  applied theme. Two failure shapes nothing could see before are pinned
+  by watching initialize never arrive: the client served without its
+  `Cross-Origin-Resource-Policy` relaxation, and a one-character typo in
+  the client script URL. It runs in the `chromium-ui` CI shard. It proves
+  a spec-faithful host and this client agree on the wire; it does not
+  prove interop with Claude or ChatGPT, which no test can.
+
 ## [0.78.0] - 2026-09-01
 
 ### Added
