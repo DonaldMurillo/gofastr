@@ -7,7 +7,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **`ui.MenuItem.Action` — form-POST menu rows.** For command rows that hit
+  PRG endpoints (stop impersonating, sign out with server-side sessions)
+  where a plain `Href` would widen a state-changing endpoint to GET. The
+  row renders as a submit button inside `<form method action>` with
+  `Fields` as hidden inputs, written in sorted order. CSRF contract: the
+  framework mints nothing — but an Action with no `Fields` panics unless
+  `Unsafe: true` acknowledges the endpoint protects itself, so a forgotten
+  token fails at render time instead of shipping. Mutually exclusive with
+  `Href`, `RPC`, `Radio`, and `Children`; incoherent combos panic.
+
 ### Fixed
+
+- **A menu whose trigger is a real `<button>` opens under a real click.**
+  Chrome does not run the summary's UA activation when the click target is
+  an interactive descendant, so a `TriggerHTML` button opened nothing. The
+  disclosure module now toggles for interactive descendants of a
+  `data-fui-disclosure` summary (preventDefault stops engines that would
+  double-toggle; plain `<details>` stays native), pinned by a
+  real-pointer chromedp test. The panel's closed state is also hidden
+  explicitly in CSS: the author `display:grid` was overriding the UA
+  sheet's closed-details hiding, so the panel rendered while `open` was
+  false.
+
+- **Combobox options that are plain anchors navigate instead of dying.**
+  `pickOption`'s preventDefault swallowed server-built link options
+  (filters, sorters) that carry `href` without `data-fui-push-state`. The
+  destination now falls back to the anchor's href and rides the same
+  origin-gated SPA navigate path as push-state options.
 
 - **`App.EntityCRUDMounted` is back.** The #358 rework that introduced the
   richer internal mount predicate deleted the exported wrapper while three

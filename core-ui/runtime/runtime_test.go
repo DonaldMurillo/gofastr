@@ -743,6 +743,24 @@ func TestComboboxPickOptionHonorsPushState(t *testing.T) {
 	}
 }
 
+// TestComboboxPickOptionHonorsPlainAnchors pins the plain-anchor arm of
+// pickOption: an <a href> option with no data-fui-push-state must derive
+// its destination from href and ride the same gated navigate path —
+// pickOption's preventDefault otherwise swallows server-built link
+// options (filters, sorters) into dead rows.
+func TestComboboxPickOptionHonorsPlainAnchors(t *testing.T) {
+	src, ok := Module("combobox")
+	if !ok {
+		t.Fatal("combobox module not embedded")
+	}
+	// Module() serves the minified source, so the pin uses tokens that
+	// survive minification: the tagName check exists only in the
+	// anchor-fallback arm, and "href" only as its attribute read.
+	if !strings.Contains(src, "tagName") || !strings.Contains(src, "href") {
+		t.Error("combobox pickOption must fall back to a plain anchor option's href when data-fui-push-state is absent")
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

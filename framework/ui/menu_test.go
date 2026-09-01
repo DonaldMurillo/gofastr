@@ -595,3 +595,63 @@ func TestMenuItemIDIgnoredOnSeparator(t *testing.T) {
 		t.Errorf("separator picked up fields it must ignore:\n%s", out)
 	}
 }
+
+func TestMenuActionRowMarkup(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{
+		ID:    "acts",
+		Label: "Acts",
+		Items: []ui.MenuItem{{
+			Label: "Stop Impersonating",
+			ID:    "stop-imp",
+			Action: &ui.MenuAction{
+				Path:   "/admin/stop-impersonating",
+				Fields: map[string]string{"csrf": "tok-1"},
+			},
+		}},
+	}))
+	for _, want := range []string{
+		`<form class="ui-menu__form" method="POST" action="/admin/stop-impersonating">`,
+		`<input type="hidden" name="csrf" value="tok-1">`,
+		`<button type="submit" class="ui-menu__item" role="menuitem" tabindex="-1">`,
+		`<span class="ui-menu__label">Stop Impersonating</span></button></form>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("action row missing %q", want)
+		}
+	}
+}
+
+func TestMenuActionWithoutFieldsPanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("no-Fields Action without Unsafe must panic")
+		}
+		if msg, ok := r.(string); ok && !strings.Contains(msg, "CSRF") {
+			t.Errorf("panic should name the CSRF contract, got: %v", r)
+		}
+	}()
+	_ = ui.Menu(ui.MenuConfig{Label: "m", Items: []ui.MenuItem{{
+		Label:  "x",
+		Action: &ui.MenuAction{Path: "/go"},
+	}}})
+}
+
+func TestMenuActionUnsafeExplicit(t *testing.T) {
+	out := string(ui.Menu(ui.MenuConfig{Label: "m", Items: []ui.MenuItem{{
+		Label:  "x",
+		Action: &ui.MenuAction{Path: "/go", Unsafe: true},
+	}}}))
+	if !strings.Contains(out, `action="/go"`) || strings.Contains(out, `type="hidden"`) {
+		t.Fatal("Unsafe action should render a bare form")
+	}
+}
+
+func TestMenuActionWithHrefPanics(t *testing.T) {
+	defer func() { _ = recover() }()
+	_ = ui.Menu(ui.MenuConfig{Label: "m", Items: []ui.MenuItem{{
+		Label: "x", Href: "/a",
+		Action: &ui.MenuAction{Path: "/b", Fields: map[string]string{"t": "1"}},
+	}}})
+	t.Fatal("Action + Href must panic")
+}

@@ -101,6 +101,32 @@
     }
   };
 
+  // Interactive descendants of the summary (TriggerHTML buttons,
+  // icon-only triggers) swallow the UA's summary activation: Chrome
+  // does not toggle details.open when the click target is itself an
+  // interactive element. Toggle it here and preventDefault so the
+  // summary activation (which WOULD fire in engines that toggle for
+  // nested controls) cannot double-toggle. Scoped to
+  // data-fui-disclosure so plain details stay native. A defaultPrevented
+  // earlier listener (the caller wired the button itself) wins.
+  if (!document.__fuiDisclosureInteractive) {
+    document.__fuiDisclosureInteractive = true;
+    document.addEventListener('click', (e) => {
+      if (e.defaultPrevented) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const interactive = t.closest('button, a, input, select, textarea, [role="button"]');
+      if (!interactive) return;
+      const summary = interactive.closest('summary');
+      if (!summary) return;
+      const d = summary.closest('details[data-fui-disclosure]');
+      if (!d) return;
+      e.preventDefault();
+      d.toggleAttribute('open');
+      mirror(d);
+    });
+  }
+
   if (!document.__fuiDisclosureDispatch) {
     document.__fuiDisclosureDispatch = true;
 
