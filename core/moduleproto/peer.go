@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 	"sync/atomic"
 )
@@ -71,11 +72,14 @@ type Handler func(ctx context.Context, params json.RawMessage) (result any, err 
 //   - The Peer installs a built-in handler for [MethodCancel]. When a
 //     module.cancel notification arrives with a given request_id, the Peer
 //     cancels the context of the inbound request currently serving that id
-//     (the request_id is the inbound frame's id, encoded as a string). The
-//     child's handlers observe ctx.Done and abort.
+//     (the request_id is the inbound frame's id, encoded as a canonical
+//     decimal string — the value [Peer.CallWithID] reports on the
+//     originating side, NOT [HTTPRequestParams.RequestID]). The child's
+//     handlers observe ctx.Done and abort.
 //   - Origination-side cancellation (the host sending module.cancel when ITS
 //     Call's ctx expires) is policy, NOT codec behavior. The supervisor wires
-//     it by calling [Peer.Notify] from a goroutine that watches ctx.Done.
+//     it by calling [Peer.Notify] from a goroutine armed with the frame id
+//     [Peer.CallWithID] assigned, watching ctx.Done.
 type Peer struct {
 	codec *Codec
 	role  Role
@@ -87,8 +91,17 @@ type Peer struct {
 	// so the first Add(1) returns 1: ids begin at 1, never 0.
 	nextID atomic.Uint64
 
-	mu            sync.Mutex // guards pending, inflight, handlers, cancel
-	pending       map[uint64]chan *Frame
+	mu      sync.Mutex // guards pending, abandoned, inflight, handlers, cancels
+	pending map[uint64]chan *Frame
+	// abandoned tombstones ids whose [Peer.Call] returned without its
+	// response (ctx expiry, Close, fatal fault), so [Peer.deliverResponse]
+	// can tell a LATE paired response to an id this peer originated but
+	// stopped waiting for (drop: expected on a healthy peer, which
+	// guarantees every request a paired response) from a response naming
+	// an id this peer NEVER originated (terminal protocol fault). Bounded
+	// FIFO; see maxAbandonedIDs.
+	abandoned     map[uint64]struct{}
+	abandonedFIFO []uint64
 	inflight      int
 	serveInflight int
 	handlers      map[string]Handler
@@ -165,6 +178,7 @@ func NewPeer(codec *Codec, role Role, opts ...PeerOption) *Peer {
 		maxInflight:      DefaultMaxInflight,
 		maxServeInflight: DefaultMaxInflight,
 		pending:          make(map[uint64]chan *Frame),
+		abandoned:        make(map[uint64]struct{}),
 		handlers:         make(map[string]Handler),
 		cancels:          make(map[uint64][]*cancelSlot),
 		closeCh:          make(chan struct{}),
@@ -254,15 +268,40 @@ func (p *Peer) FatalDone() <-chan struct{} { return p.fatalCh }
 //
 // Failure modes:
 //
-//   - ctx expired: the pending entry is removed and ctx.Err() is returned.
-//     Call does NOT automatically emit module.cancel; that is supervisor
-//     policy. Origination-side cancellation is a [Peer.Notify] away.
+//   - ctx expired: the pending entry is removed and ctx.Err() is returned;
+//     the id is tombstoned as abandoned so the counterparty's eventual
+//     paired response is dropped instead of faulting the peer (see
+//     [Peer.deliverResponse]). Call does NOT automatically emit
+//     module.cancel; that is supervisor policy, one [Peer.Notify] away
+//     naming the id [Peer.CallWithID] reports.
 //   - inflight cap reached: returns [ErrInflightCap] without writing anything.
 //   - Peer closed (or read loop exited): returns [ErrClosed] (or the terminal
 //     [Peer.FatalError] if one was observed).
 //   - the child returned a JSON-RPC error: returns it as a [*Error].
 //   - codec write failed (e.g. over-cap): returns that terminal error.
 func (p *Peer) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	return p.call(ctx, method, params, nil)
+}
+
+// CallWithID originates a request exactly like [Peer.Call] and additionally
+// reports the frame id this Peer assigned to onID. onID is invoked
+// synchronously, exactly once, after the id is allocated and the pending
+// entry registered but BEFORE the request frame is written; it must not
+// block (arm a goroutine if the observer needs to wait on anything). It is
+// not invoked when no id was allocated (peer closed, empty method,
+// inflight cap).
+//
+// This is the seam origination-side cancellation needs: module.cancel names
+// the INBOUND frame id on the serving peer, so a supervisor that wants to
+// cancel its own in-flight Call must send the id reported here — the wire
+// id, not any application-level correlation id (issue #356: the proxy sent
+// its "<module>-<counter>" request id instead, which the serving peer could
+// never map back to a frame, making module.cancel a silent no-op).
+func (p *Peer) CallWithID(ctx context.Context, method string, params any, onID func(id uint64)) (json.RawMessage, error) {
+	return p.call(ctx, method, params, onID)
+}
+
+func (p *Peer) call(ctx context.Context, method string, params any, onID func(id uint64)) (json.RawMessage, error) {
 	if p.closed.Load() {
 		return nil, ErrClosed
 	}
@@ -289,12 +328,22 @@ func (p *Peer) Call(ctx context.Context, method string, params any) (json.RawMes
 	p.pending[id] = ch
 	p.mu.Unlock()
 
+	if onID != nil {
+		onID(id)
+	}
+
 	// Cleanup on all return paths.
 	defer func() {
 		p.mu.Lock()
-		// If the response was delivered, the entry is already gone; delete
-		// is a no-op then. Otherwise this Call is giving up on its id.
-		delete(p.pending, id)
+		// If the response was delivered, the entry is already gone and
+		// there is nothing to remember. Otherwise this Call is giving up
+		// on an id the counterparty still owes a paired response for:
+		// tombstone it so the eventual late response is recognized (and
+		// dropped) instead of faulting the peer as unsolicited.
+		if _, stillPending := p.pending[id]; stillPending {
+			delete(p.pending, id)
+			p.noteAbandonedLocked(id)
+		}
 		p.inflight--
 		p.mu.Unlock()
 	}()
@@ -619,19 +668,52 @@ func (p *Peer) serveNotification(f *Frame) {
 	_, _ = h(ctx, f.Params)
 }
 
+// maxAbandonedIDs bounds how many abandoned ids the peer remembers. A late
+// response trails its abandonment by at most one counterparty round-trip
+// (the serving peer guarantees every request a paired response), so a
+// window covering the last 1024 abandonments is far beyond any legitimate
+// need; a response that misses both the pending map and this window is
+// treated as the unsolicited protocol fault it almost certainly is.
+const maxAbandonedIDs = 1024
+
+// noteAbandonedLocked records id as given-up. p.mu must be held.
+func (p *Peer) noteAbandonedLocked(id uint64) {
+	if p.abandoned == nil {
+		p.abandoned = make(map[uint64]struct{})
+	}
+	p.abandoned[id] = struct{}{}
+	p.abandonedFIFO = append(p.abandonedFIFO, id)
+	for len(p.abandonedFIFO) > maxAbandonedIDs {
+		delete(p.abandoned, p.abandonedFIFO[0])
+		p.abandonedFIFO = p.abandonedFIFO[1:]
+	}
+}
+
 func (p *Peer) deliverResponse(f *Frame) {
 	id := *f.ID
 	p.mu.Lock()
 	ch, ok := p.pending[id]
 	if ok {
 		delete(p.pending, id)
+	} else if _, abandoned := p.abandoned[id]; abandoned {
+		// Consume the tombstone: an id gets exactly one paired response.
+		delete(p.abandoned, id)
+		p.mu.Unlock()
+		// A LATE response to a Call that already gave up on this id (its
+		// ctx expired; see [Peer.call]'s cleanup). Expected on a healthy
+		// peer — every request is guaranteed a paired response and the
+		// originator is free to stop waiting first — so drop it. Ids are
+		// monotonic per direction, so this can never be confused with a
+		// future Call's id.
+		return
 	}
 	p.mu.Unlock()
 	if !ok {
-		// A response with no matching pending id. Under correct per-direction
-		// correlation this is impossible on a healthy peer; treat as a
-		// terminal protocol fault. During shutdown, however, late responses
-		// for Calls that already gave up are expected; suppress in that case.
+		// A response naming an id this peer never originated. Under
+		// correct per-direction correlation this is impossible on a healthy
+		// peer; treat as a terminal protocol fault. During shutdown, late
+		// responses for Calls that already gave up are expected; suppress
+		// in that case.
 		if p.closed.Load() {
 			return
 		}
@@ -688,8 +770,11 @@ func marshalParams(v any) (json.RawMessage, error) {
 
 // builtinCancelHandler returns the handler for [MethodCancel]. The handler
 // looks up the inbound request id encoded in [CancelParams].RequestID and
-// cancels that request's context. RequestID is the string form of the inbound
-// frame id (the JSON-RPC id the host used for module.http, etc.).
+// cancels that request's context. RequestID is the CANONICAL DECIMAL STRING
+// of the inbound frame id (the JSON-RPC id the host used for module.http —
+// the value [Peer.CallWithID] reports to the originating side); it is NOT
+// [HTTPRequestParams.RequestID], which is an application-level correlation
+// id no serving peer can map back to a frame.
 func builtinCancelHandler(p *Peer) Handler {
 	return func(_ context.Context, params json.RawMessage) (any, error) {
 		var cp CancelParams
@@ -698,11 +783,12 @@ func builtinCancelHandler(p *Peer) Handler {
 				return nil, nil // notifications are unobservable; drop on malformed
 			}
 		}
-		// Parse the request_id. Under moduleproto it is the inbound frame
-		// id; the host mints it as a string but it MUST parse to a uint64
-		// matching a currently-served inbound id. Anything else is a no-op.
-		var id uint64
-		if _, err := fmt.Sscanf(cp.RequestID, "%d", &id); err != nil || id == 0 {
+		// Parse the request_id with a STRICT full-string decimal parse. The
+		// previous fmt.Sscanf("%d") prefix-matched, which failed twice:
+		// Sscanf("notes-42") rejected the whole value (module.cancel was a
+		// silent no-op on the proxy path, issue #356), while Sscanf("1-…")
+		id, err := strconv.ParseUint(cp.RequestID, 10, 64)
+		if err != nil || id == 0 {
 			return nil, nil
 		}
 		p.mu.Lock()

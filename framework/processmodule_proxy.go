@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -122,16 +123,19 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 
 	// Per-call deadline context. The cancel watcher notifies the child via
 	// module.cancel when this ctx expires so it aborts in-flight work
-	// (design §4.4 module.cancel).
+	// (design §4.4 module.cancel). The notification MUST name the frame id
+	// Call assigns — the child's cancel registry is keyed by inbound frame
+	// id and cannot resolve params.RequestID ("name-counter"). Sending the
+	// latter made module.cancel a silent no-op on this path (issue #356).
 	deadline := time.UnixMilli(params.DeadlineUnixMs)
 	callCtx, cancel := context.WithDeadline(r.Context(), deadline)
 	defer cancel()
-	go s.watchCancel(peer, requestID, callCtx)
-
 	// Issue the call. The result is FULLY BUFFERED in the response before
 	// any header commit, a child that dies mid-call returns an error
 	// here, which we surface as a buffered 503. Never a truncated 200.
-	raw, err := peer.Call(callCtx, moduleproto.MethodHTTP, params)
+	raw, err := peer.CallWithID(callCtx, moduleproto.MethodHTTP, params, func(frameID uint64) {
+		go s.watchCancel(peer, frameID, callCtx)
+	})
 	if err != nil {
 		writeProxy503(w, proxyRetryAfter)
 		return
@@ -260,10 +264,16 @@ func pathParamsFor(r *http.Request, _ string) map[string]string {
 }
 
 // watchCancel notifies the child of a per-call cancellation (design §4.4
-// module.cancel). It returns once callCtx is done or the supervisor closes.
-// The notification is best-effort: a child that has already returned is not
-// affected.
-func (s *ProcessModuleSupervisor) watchCancel(peer *moduleproto.Peer, requestID string, callCtx context.Context) {
+// module.cancel). frameID is the moduleproto frame id [moduleproto.Peer.CallWithID]
+// assigned to the aborted call; the notification carries its canonical decimal
+// string, because the child's cancel registry is keyed by inbound frame id and
+// a strict decimal parse rejects everything else. (The pre-fix code sent the
+// proxy's params.RequestID "name-counter" instead, which the child could never
+// resolve: module.cancel was a silent no-op here, issue #356.)
+//
+// It returns once callCtx is done or the supervisor closes. The notification
+// is best-effort: a child that has already returned is not affected.
+func (s *ProcessModuleSupervisor) watchCancel(peer *moduleproto.Peer, frameID uint64, callCtx context.Context) {
 	select {
 	case <-callCtx.Done():
 	case <-s.closeCh:
@@ -272,7 +282,9 @@ func (s *ProcessModuleSupervisor) watchCancel(peer *moduleproto.Peer, requestID 
 	if errors.Is(callCtx.Err(), context.Canceled) || errors.Is(callCtx.Err(), context.DeadlineExceeded) {
 		notifyCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
-		_ = peer.Notify(notifyCtx, moduleproto.MethodCancel, moduleproto.CancelParams{RequestID: requestID})
+		_ = peer.Notify(notifyCtx, moduleproto.MethodCancel, moduleproto.CancelParams{
+			RequestID: strconv.FormatUint(frameID, 10),
+		})
 	}
 }
 
