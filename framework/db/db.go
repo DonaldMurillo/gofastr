@@ -53,25 +53,36 @@ type Beginner interface {
 // answers commit-vs-rollback exactly, where the probe had to re-derive it
 // from row state.
 type CommitQueue struct {
-	mu  sync.Mutex
-	fns []func()
+	mu      sync.Mutex
+	fns     []func()
+	drained bool
 }
 
 // Add queues fn to run after the owning transaction commits. Safe for
-// concurrent use.
+// concurrent use. An Add that arrives after the queue has drained runs fn
+// immediately: the drain only ever happens once Commit has succeeded, so
+// the work's precondition already holds, and appending to a list nothing
+// will read again would lose it silently.
 func (q *CommitQueue) Add(fn func()) {
 	q.mu.Lock()
+	if q.drained {
+		q.mu.Unlock()
+		fn()
+		return
+	}
 	q.fns = append(q.fns, fn)
 	q.mu.Unlock()
 }
 
-// RunAfterCommit runs and clears the queued work. The tx owner calls it
-// exactly once, after Commit returns nil; a rollback path simply drops the
-// queue, and the queued work never runs.
+// RunAfterCommit runs and clears the queued work, in Add order. The tx
+// owner calls it exactly once, after Commit returns nil; a rollback path
+// simply drops the queue, and the queued work never runs. Calling it again
+// is a no-op.
 func (q *CommitQueue) RunAfterCommit() {
 	q.mu.Lock()
 	fns := q.fns
 	q.fns = nil
+	q.drained = true
 	q.mu.Unlock()
 	for _, fn := range fns {
 		fn()
@@ -92,8 +103,15 @@ func WithTxQueue(ctx context.Context, tx *sql.Tx) (context.Context, *CommitQueue
 
 // CommitQueueFromContext returns the commit queue attached by the ambient
 // transaction's owner. A context carrying a tx but no queue means the
-// caller wrapped its own transaction with WithTx; emissions for those fall
-// back to observing the database after the tx resolves.
+// caller wrapped its own transaction with WithTx directly; emissions for
+// those fall back to POLLING the live *sql.Tx (a "SELECT 1" every few
+// milliseconds until it reports sql.ErrTxDone) and then re-checking the
+// row on the base connection. That probe statement can interleave with
+// the owner's own statements on the transaction's single connection —
+// the race #353 removed from every framework-owned path. There is no way
+// to passively learn a foreign transaction's fate, so callers who own
+// their tx should prefer WithTxQueue and drain the queue themselves after
+// a successful Commit.
 func CommitQueueFromContext(ctx context.Context) (*CommitQueue, bool) {
 	q, ok := ctx.Value(commitQueueKey{}).(*CommitQueue)
 	return q, ok

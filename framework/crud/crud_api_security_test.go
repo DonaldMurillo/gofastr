@@ -410,3 +410,34 @@ func TestAmbientTxQueuePublishesOnDrainOnly(t *testing.T) {
 		t.Fatal("EntityCreated not delivered after the queue drained")
 	}
 }
+
+// TestInTxRollsBackWhenFnPanics pins the deferred rollback in crud's inTx:
+// a panic inside fn must not leak the transaction's pooled connection.
+// (Hook panics are recovered into errors by the hook registry, so this
+// drives inTx directly — the defer guards whatever future code panics
+// inside the closure.) App.InTx has carried the same guard, and the same
+// test, since it was written; crud's inTx did not.
+func TestInTxRollsBackWhenFnPanics(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	dbc.SetMaxOpenConns(1)
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("panic did not propagate out of inTx")
+			}
+		}()
+		_ = ch.inTx(context.Background(), func(context.Context, *CrudHandler) error {
+			panic("boom inside the transaction")
+		})
+	}()
+
+	// Before the deferred rollback, the abandoned tx held the pool's only
+	// connection forever and this query blocked until the deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var n int
+	if err := dbc.QueryRowContext(ctx, "SELECT COUNT(*) FROM notes").Scan(&n); err != nil {
+		t.Fatalf("connection still held after a panicking fn: %v", err)
+	}
+}

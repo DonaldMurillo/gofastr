@@ -119,6 +119,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   every such emission on Postgres was silently dropped as unconfirmable. It
   now uses the `$N` placeholders the query builders emit everywhere else.
 
+- **crud's per-write transaction now rolls back when code inside it
+  panics.** `App.InTx` has always carried a deferred rollback so a panic in
+  `fn` cannot leak the pooled connection and its row locks; crud's own
+  `inTx` — the wrapper every auto-CRUD write runs under — did not. A panic
+  from anything inside the write path (hook panics are recovered, but
+  nothing else is) unwound past both `Rollback` and `Commit` and pinned the
+  connection until the finalizer; with `SetMaxOpenConns(1)` that is the
+  whole pool. Found by the adversarial review of the ambient-tx fix;
+  proven by driving `inTx` with a panicking fn on a one-connection pool.
+
 - **Queue completions are fenced on the claim they were issued for.**
   `DBQueue` had no claim identity at all, and its `Nack` updated by bare job
   ID: a worker whose lease expired flipped the RE-CLAIMANT's live row to

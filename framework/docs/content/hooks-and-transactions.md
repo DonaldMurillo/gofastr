@@ -181,6 +181,31 @@ on the provided `tx` is part of the same unit. Without an ambient
 transaction (the normal HTTP path), each CRUD write opens and commits its
 own transaction as before.
 
+Lifecycle events for writes joined to the ambient transaction are held
+until it resolves and published only on commit; a rollback publishes
+nothing. Inside `App.InTx` this costs nothing extra — the transaction
+owner drains the held emissions right after a successful commit (a
+`db.CommitQueue` carried on the same context as the tx).
+
+If you open a transaction YOURSELF and wrap it with bare `db.WithTx`,
+the framework cannot see your commit, so it learns the outcome by
+polling the live `*sql.Tx` (a `SELECT 1` every few milliseconds until it
+reports done) and then re-checking the row. That poll shares the
+transaction's single connection with your own statements. Prefer
+`db.WithTxQueue`, and call `queue.RunAfterCommit()` after your `Commit`
+succeeds — that removes the poll entirely:
+
+```go
+tx, _ := dbc.Begin()
+ctx, queue := db.WithTxQueue(ctx, tx)
+if _, err := ordersCH.CreateOne(ctx, order); err != nil {
+    tx.Rollback() // held events are dropped with the queue
+    return err
+}
+if err := tx.Commit(); err != nil { return err }
+queue.RunAfterCommit() // events publish now, post-commit
+```
+
 ### Handling validation errors
 
 When an in-process `CreateOne` / `UpdateOne` / `UpsertOne` / batch call

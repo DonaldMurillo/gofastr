@@ -537,6 +537,33 @@ into `db.WithTx` / `db.TxFromContext`. The previous private
 `contextWithTx` helper would have created a cycle when the methods
 ended up in different packages.
 
+### `db.CommitQueue` + `db.WithTxQueue`
+
+```go
+// framework/db/db.go
+type CommitQueue struct{ /* mutex, fns, drained */ }
+func (q *CommitQueue) Add(fn func())
+func (q *CommitQueue) RunAfterCommit()
+
+func WithTxQueue(ctx, tx) (context.Context, *CommitQueue)
+func CommitQueueFromContext(ctx) (*CommitQueue, bool)
+```
+
+Work that must run only if the transaction commits — live-bus event
+emissions staged by CRUD writes that joined the tx. The tx OWNER
+attaches the queue (`App.InTx` and crud's `inTx` both use `WithTxQueue`
+instead of bare `WithTx`), drains it after `Commit` returns nil, and
+drops it on every other exit path.
+
+This replaced a goroutine that polled `SELECT 1` on the live `*sql.Tx`
+to learn when it resolved: that statement races the owner's own
+statements on the transaction's single connection, and the interleaved
+wire protocol crossed their results (#353 — an `INSERT … RETURNING`
+scanning `sql.ErrNoRows`). The poll survives only for a caller-owned tx
+wrapped with bare `db.WithTx`, where there is nothing else that can
+learn the tx's fate; callers who own their transaction should prefer
+`WithTxQueue` and drain after commit themselves.
+
 ---
 
 ## Conventions established along the way

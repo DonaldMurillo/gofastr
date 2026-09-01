@@ -501,11 +501,21 @@ const ambientTxProbeTimeout = 2 * time.Minute
 // phantom write. The durable outbox lane never had this problem because
 // StageEvent writes inside the tx and rolls back with it.
 //
-// database/sql exposes no commit callback, and a committed and a rolled-back
-// Tx are indistinguishable afterwards (both report sql.ErrTxDone). So the
-// outcome is read from the database instead: once the transaction is done,
-// the write is re-checked against the base connection. That is the same
-// question a subscriber would ask, which makes it the right one to gate on.
+// Two mechanisms answer "did it commit?", split by who owns the tx:
+//
+//   - Framework-owned (App.InTx, crud's inTx): the owner attached a
+//     db.CommitQueue to the context and drains it only after Commit
+//     succeeds, so the emission is enqueued and the question never
+//     arises. No statement touches the live tx and no row re-check runs.
+//   - Caller-owned (db.WithTx around the caller's own Begin): database/sql
+//     exposes no commit callback, and a committed and a rolled-back Tx are
+//     indistinguishable afterwards (both report sql.ErrTxDone). So the
+//     outcome is read from the database: once the transaction is done, the
+//     write is re-checked against the base connection. That is the same
+//     question a subscriber would ask, which makes it the right one to
+//     gate on. The done-poll this requires races the owner's statements on
+//     the tx's connection (see CommitQueueFromContext), which is why every
+//     framework path uses the queue.
 //
 // "Re-checked" is per event kind, because row presence alone does not
 // answer it. A rolled-back CREATE leaves no row and a rolled-back DELETE

@@ -117,3 +117,50 @@ func TestForeignTxCommitDeliversEvents(t *testing.T) {
 		}
 	})
 }
+
+// TestForeignTxCommitDeliversUpdateEvents is the UPDATE arm of the foreign
+// path, and the positive pin the rollback arm cannot be: an update is
+// confirmed by matching the emitted values, so landed()'s WHERE gains a
+// column and its placeholder numbering goes past $1. The rollback test
+// alone cannot tell "dropped because values did not match" from "dropped
+// because the query errored" — this can: an off-by-one drops the event
+// and this times out.
+func TestForeignTxCommitDeliversUpdateEvents(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, dbc *sql.DB, _ Dialect) {
+		_, ch, _ := notesEventApp(t, dbc)
+
+		created, err := ch.CreateOne(context.Background(), map[string]any{"body": "original"})
+		if err != nil {
+			t.Fatalf("seed CreateOne: %v", err)
+		}
+		id, _ := created["id"].(string)
+		if id == "" {
+			t.Fatalf("seed row has no string id: %v", created)
+		}
+
+		bus := ch.Events
+		gotUpd := make(chan event.Event, 8)
+		cancel := bus.Subscribe(event.EntityUpdated, func(_ context.Context, ev event.Event) error {
+			gotUpd <- ev
+			return nil
+		})
+		defer cancel()
+
+		tx, err := dbc.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := db.WithTx(context.Background(), tx)
+		if _, err := ch.UpdateOne(ctx, id, map[string]any{"body": "edited"}); err != nil {
+			t.Fatalf("UpdateOne: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-gotUpd:
+		case <-time.After(5 * time.Second):
+			t.Fatal("entity.updated not delivered after foreign tx commit — landed()'s value-match query failed or mismatched")
+		}
+	})
+}
