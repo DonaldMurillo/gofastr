@@ -281,6 +281,20 @@ func Timeout(d time.Duration) Middleware {
 				}
 				effective = rt.Budget
 			}
+			// Same rule for the constructor's own duration as for a route
+			// budget, and for the same reason: zero means no deadline, as
+			// it does in net/http. Without this, time.NewTimer(0) fires
+			// before the handler can finish and every request 504s — so
+			// `Timeout(cfg.RequestTimeout)` with the field unset turned
+			// the whole surface off rather than leaving it untimed. The
+			// framework's own wiring guards it (app.go only installs the
+			// middleware when RequestTimeout > 0), which is why nothing
+			// in-repo tripped it; a direct caller of the core API had no
+			// such cover.
+			if effective <= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ctx := newTimeoutCtx(r.Context())
 			// End-of-request cleanup: release the propagation callback
 			// and anyone still selecting on ctx.Done(). A context that
@@ -378,6 +392,27 @@ func Timeout(d time.Duration) Middleware {
 				// written for parity, observed by no one.
 				abandon(r.Context().Err())
 			case <-timer.C:
+				// A select whose cases are BOTH ready picks between them
+				// uniformly at random. When the handler closes done just
+				// inside the budget but this goroutine is descheduled past
+				// the deadline, that coin flip discards a finished response
+				// and 504s a request that succeeded — visible only under
+				// load, which is where a spurious 504 costs the most.
+				// The handler winning is the answer the client should get,
+				// so re-check done before abandoning.
+				//
+				// The r.Context().Done() case above needs no equivalent:
+				// the client is gone, and delivering or abandoning both
+				// write to a socket nobody is reading.
+				select {
+				case <-done:
+					if childPanic != nil {
+						panic(childPanic)
+					}
+					tw.finish()
+					return
+				default:
+				}
 				if abandon(context.DeadlineExceeded) {
 					// Name the route, not just the path: "why does this
 					// endpoint 504" starts from this line. Streaming
