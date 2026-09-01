@@ -141,11 +141,46 @@ func TestMarkdown_UnpairedBacktickTailBounded(t *testing.T) {
 // the assertion, independent of machine speed: doubling the input must not
 // quadruple the render time. Timing-ratio tests are coarse, so the ratio
 // threshold is generous (linear ≈ 2×, quadratic = 4×).
+//
+// The sizes moved up 32× when the code-span fix landed, and the reason is
+// worth keeping: the fix made this path about 100× faster, and the old
+// 8–64 KiB ladder then ran entirely under 200 µs, where a ratio measures
+// the scheduler rather than the algorithm. It failed CI at
+// 33 µs → 55 µs → 225 µs — "4.1× growth" that is 170 µs of noise. A test
+// can be outgrown by the code it guards.
+//
+// At 256 KiB and up the work is back above the clock's reach. Measured
+// after the fix (M4 Pro, best of 5): 256 KiB 730 µs, 1 MiB 3.30 ms,
+// 4 MiB 12.2 ms — clean 4× per 4× step.
+//
+// Verified against the real pre-fix implementation rather than a mutation.
+// That distinction cost two wrong attempts and is worth recording: undoing
+// the whole-run skip leaves the run index in place (still O(n log n), test
+// passes), and replacing the index lookup with a "linear scan" scans RUNS,
+// not tail bytes, so it stays linear too. Neither reproduces the old cost
+// model, because the fix changed findCodeEnd's shape rather than its
+// constant. Restoring core/markdown/inline.go from before the fix does:
+//
+//	run=262144 took 41.2s
+//	run=524288 took 2m47s   → 4.1× on a 2× input, FAIL
+//
+// The firstShotCeiling below exists because of those numbers: without it a
+// regression takes ~3.5 minutes to surface, since the ratio needs two
+// measurements and the second is the expensive one. The ceiling is ~2700×
+// the correct time at this size, so only a genuine complexity change trips
+// it, and it aborts in ~40s instead.
 func TestMarkdown_UnpairedBacktickTailScaling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing test")
 	}
-	sizes := []int{8 * 1024, 16 * 1024, 32 * 1024, 64 * 1024}
+	// A quadratic regression spends 41s on the FIRST size, so waiting for
+	// the ratio means waiting for the second one too. Correct is ~1 ms
+	// here; this ceiling is roughly 2700× that, far outside anything a slow
+	// or loaded runner produces and far inside the 41s a real regression
+	// takes.
+	const firstShotCeiling = 3 * time.Second
+
+	sizes := []int{256 * 1024, 512 * 1024, 1024 * 1024, 2048 * 1024}
 	var prev time.Duration
 	for i, sz := range sizes {
 		in := "a" + strings.Repeat("`", sz) + strings.Repeat("x", sz)
@@ -153,6 +188,9 @@ func TestMarkdown_UnpairedBacktickTailScaling(t *testing.T) {
 		_ = RenderHTML(in)
 		elapsed := time.Since(start)
 		t.Logf("run=%d tail=%d took %v", sz, sz, elapsed)
+		if i == 0 && elapsed > firstShotCeiling {
+			t.Fatalf("SECURITY: [markdown] %d-byte run+tail took %v, over the %v ceiling — a linear renderer needs about a millisecond here, so this is a complexity regression, not a slow machine", sz, elapsed, firstShotCeiling)
+		}
 		if i > 0 && prev > 0 {
 			ratio := float64(elapsed) / float64(prev)
 			if ratio > 3.5 {
