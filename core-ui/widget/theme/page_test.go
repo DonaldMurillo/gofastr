@@ -72,3 +72,44 @@ func head(s string, n int) string {
 	}
 	return s[:n]
 }
+
+// A font size set from a token must follow that token when it is swapped.
+//
+// The rules used to hardcode the values: `.kiln-eyebrow` said "0.75rem"
+// where the theme declares XS as exactly that, `.kiln-h2` said "1.5rem"
+// against XXL, and `body.kiln-app` said "16px" against Base. The colors in
+// the same file already went through {colors.*}, so the mechanism was
+// present and the sizes simply bypassed it — the package doc promises "a
+// single token swap re-skins the whole app", and these rules did not move.
+//
+// This asserts the PROPERTY rather than the spelling: change the token's
+// value and the emitted CSS must change with it. Asserting that
+// "var(--text-xs)" appears somewhere would pass just as well against a
+// rule that never reads it.
+func TestPageCSSFontSizesFollowTypographyTokens(t *testing.T) {
+	base := theme.PageCSS(theme.PageTheme())
+	for _, lit := range []string{`font-size: 0.75rem`, `font-size: 1.5rem`, `font-size: 16px`} {
+		if strings.Contains(base, lit) {
+			t.Errorf("emitted CSS still hardcodes %q; it maps exactly onto a declared typography token", lit)
+		}
+	}
+
+	swapped := theme.PageTheme()
+	swapped.Typography.XS = style.FontSize{Name: "xs", Value: "0.1rem"}
+	swapped.Typography.XXL = style.FontSize{Name: "2xl", Value: "9.9rem"}
+	swapped.Typography.Base = style.FontSize{Name: "base", Value: "5.5rem"}
+	got := theme.PageCSS(swapped)
+
+	for _, want := range []string{"0.1rem", "9.9rem", "5.5rem"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("swapping a typography token did not reach the emitted CSS: %q absent", want)
+		}
+	}
+	// And the old values must be gone from the declarations they came from,
+	// or the swap only added a variable nothing reads.
+	for _, gone := range []string{"--text-xs: 0.75rem", "--text-2xl: 1.5rem"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("token declaration %q survived the swap", gone)
+		}
+	}
+}
