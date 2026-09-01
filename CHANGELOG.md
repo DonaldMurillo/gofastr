@@ -5,6 +5,52 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Added
+
+- **`ui.MenuItem.Action` — form-POST menu rows.** For command rows that hit
+  PRG endpoints (stop impersonating, sign out with server-side sessions)
+  where a plain `Href` would widen a state-changing endpoint to GET. The
+  row renders as a submit button inside `<form method action>` with
+  `Fields` as hidden inputs, written in sorted order. CSRF contract: the
+  framework mints nothing — but an Action with no `Fields` panics unless
+  `Unsafe: true` acknowledges the endpoint protects itself, so a forgotten
+  token fails at render time instead of shipping. Mutually exclusive with
+  `Href`, `RPC`, `Radio`, and `Children`; incoherent combos panic.
+
+### Fixed
+
+- **A menu whose trigger is a real `<button>` opens under a real click.**
+  Chrome does not run the summary's UA activation when the click target is
+  an interactive descendant, so a `TriggerHTML` button opened nothing. The
+  disclosure module now toggles for interactive descendants of a
+  `data-fui-disclosure` summary (preventDefault stops engines that would
+  double-toggle; plain `<details>` stays native), pinned by a
+  real-pointer chromedp test. The panel's closed state is also hidden
+  explicitly in CSS: the author `display:grid` was overriding the UA
+  sheet's closed-details hiding, so the panel rendered while `open` was
+  false.
+
+- **Combobox options that are plain anchors navigate instead of dying.**
+  `pickOption`'s preventDefault swallowed server-built link options
+  (filters, sorters) that carry `href` without `data-fui-push-state`. The
+  destination now falls back to the anchor's href and rides the same
+  origin-gated SPA navigate path as push-state options.
+
+- **`App.EntityCRUDMounted` is back.** The #358 rework that introduced the
+  richer internal mount predicate deleted the exported wrapper while three
+  shipped references still told callers to use it — `sdk.md`'s
+  `CRUDMounted: fwApp.EntityCRUDMounted` example, the
+  `sdkdocs.Config.CRUDMounted` field comment, and repolint's
+  `crud-exposure-rederived` finding message — so the documented wiring did
+  not compile in v0.78.0, and hosts had no exported way to hand sdkdocs
+  the mount truth at all. Restored as a delegate to the mount predicate
+  (a read-only view counts as mounted; its read routes are what a docs
+  surface documents), with a test pinning the symbol and its answers.
+  Found while confirming an old worktree's uncommitted duplicate of the
+  original #266 fix was safe to discard.
+
 ## [0.78.0] - 2026-09-01
 
 ### Added

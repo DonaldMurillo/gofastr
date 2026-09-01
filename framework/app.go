@@ -594,6 +594,25 @@ func (a *App) entityCRUDEnabled(e *entity.Entity) bool {
 	return a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
 }
 
+// EntityCRUDMounted reports whether an entity's CRUD routes were actually
+// registered — the predicate route registration, the startup banner,
+// openapi.json and /api/llm.md agree on, exported for surfaces that
+// advertise routes from outside this package (#266). sdkdocs.Config takes
+// it as CRUDMounted; Exposure.CRUD alone is not the answer, because a
+// DB-less app mounts no CRUD while every entity still reads "auto". A
+// read-only view mount counts as mounted: its read routes exist and are
+// what such a surface documents.
+//
+// This wrapper was deleted once, in the #358 rework that introduced
+// entityCrudMount below, while framework/docs/content/sdk.md, the
+// sdkdocs.Config.CRUDMounted comment, and repolint's
+// crud-exposure-rederived message all still told callers to pass it —
+// the documented wiring did not compile for one release (v0.78.0).
+// TestEntityCRUDMountedTracksTheMount pins the symbol and its answers.
+func (a *App) EntityCRUDMounted(e *entity.Entity) bool {
+	return a.entityCrudMount(e).Mounted
+}
+
 // entityCrudMount is THE predicate for the llm.md index (#358): like
 // entityCRUDEnabled, but it also reports read-only mounts. App.View
 // registers its entities with CrudRouteOptions{ReadOnly: true}, a fact no
