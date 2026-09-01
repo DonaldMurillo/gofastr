@@ -100,8 +100,8 @@ func factBoxCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-fact-box"] {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs, 4px);
-  padding: var(--spacing-md, 16px);
+  gap: var(--spacing-xs, 2px);
+  padding: var(--spacing-md, 8px);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
@@ -110,7 +110,7 @@ func factBoxCSS(_ style.Theme) string {
   grid-column: 1 / -1;
 }
 [data-fui-comp="ui-fact-box"] .ui-fact-box__label {
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;

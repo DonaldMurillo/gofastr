@@ -90,7 +90,7 @@ func heroSplitCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-hero-split"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--spacing-2xl, 48px);
+  gap: var(--spacing-2xl, 32px);
   align-items: start;
 }
 [data-fui-comp="ui-hero-split"].ui-hero-split--copy {
@@ -108,7 +108,7 @@ func heroSplitCSS(_ style.Theme) string {
   [data-fui-comp="ui-hero-split"].ui-hero-split--copy,
   [data-fui-comp="ui-hero-split"].ui-hero-split--media {
     grid-template-columns: 1fr;
-    gap: var(--spacing-lg, 24px);
+    gap: var(--spacing-lg, 16px);
   }
 }`
 }

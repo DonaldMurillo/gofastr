@@ -95,11 +95,11 @@ var tocStyle = registry.RegisterStyle("ui-toc", tocCSS)
 func tocCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-toc"] {
   display: block;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
 }
 [data-fui-comp="ui-toc"].ui-toc--sticky {
   position: sticky;
-  inset-block-start: var(--spacing-lg, 24px);
+  inset-block-start: var(--spacing-lg, 16px);
   align-self: start;
   max-block-size: calc(100vh - 4rem);
   overflow-y: auto;
@@ -112,7 +112,7 @@ func tocCSS(_ style.Theme) string {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
-  margin-block-end: var(--spacing-sm, 8px);
+  margin-block-end: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-toc"] .ui-toc__list {
   list-style: none;
@@ -125,11 +125,11 @@ func tocCSS(_ style.Theme) string {
   margin: 0;
 }
 [data-fui-comp="ui-toc"] .ui-toc__item--h3 {
-  margin-inline-start: var(--spacing-md, 12px);
+  margin-inline-start: var(--spacing-md, 8px);
 }
 [data-fui-comp="ui-toc"] .ui-toc__link {
   display: block;
-  padding: var(--spacing-sm, 4px) var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px);
   border-radius: var(--radii-sm, 4px);
   border-inline-start: 2px solid transparent;
   color: var(--color-text-muted, #52525B);

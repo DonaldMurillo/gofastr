@@ -57,6 +57,11 @@ mux.Use(byKey.MiddlewareByKey(func(r *http.Request) string {
 A `nil` key func falls back to the client IP, so `Middleware()` is just
 `MiddlewareByKey` with the default extractor.
 
+For agent traffic verified with [Web Bot Auth](web-bot-auth.md),
+`framework.AgentRateLimitKey(trustXFF)` keys by the verified agent's
+identity and by client IP otherwise, so a signed crawler has its own
+budget instead of sharing its egress address's.
+
 ## Key functions
 
 | Symbol | What it does |

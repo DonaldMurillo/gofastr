@@ -136,19 +136,19 @@ var stepRailStyle = registry.RegisterStyle("ui-step-rail", stepRailCSS)
 func stepRailCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-step-rail"] {
   position: sticky;
-  inset-block-start: var(--ui-step-rail-top, var(--spacing-xl, 32px));
+  inset-block-start: var(--ui-step-rail-top, var(--spacing-xl, 24px));
   align-self: start;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md, 16px);
-  padding: var(--spacing-md, 16px);
+  gap: var(--spacing-md, 8px);
+  padding: var(--spacing-md, 8px);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__title {
   margin: 0;
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -165,11 +165,11 @@ func stepRailCSS(_ style.Theme) string {
   display: grid;
   grid-template-columns: 32px 1fr;
   align-items: center;
-  gap: var(--spacing-xs, 4px);
-  padding: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
+  gap: var(--spacing-xs, 2px);
+  padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
   color: var(--color-text-subtle, currentColor);
   text-decoration: none;
-  border-radius: var(--radii-sm, 6px);
+  border-radius: var(--radii-sm, 4px);
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__link:hover,
 [data-fui-comp="ui-step-rail"] .ui-step-rail__link:focus-visible {
@@ -181,7 +181,7 @@ func stepRailCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__num {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
   font-variant-numeric: tabular-nums;
 }
@@ -189,7 +189,7 @@ func stepRailCSS(_ style.Theme) string {
   color: var(--ui-step-rail-active-color, var(--color-primary, currentColor));
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__meta {
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
   line-height: 1.5;
   /* Long URLs in the meta line must wrap rather than overrun the

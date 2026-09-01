@@ -108,7 +108,7 @@ const baseCSS = `
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #6B7280);
 }
 .breadcrumbs > li {

@@ -312,7 +312,7 @@ func lineChartCSS(_ style.Theme) string {
 .ui-line-chart__area--danger  { fill: var(--color-danger, #DC2626); }
 
 [data-fui-comp="ui-line-chart"] .ui-line-chart__label {
-  font-size: var(--text-xs, 0.7rem);
+  font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-line-chart"] .ui-line-chart__legend {

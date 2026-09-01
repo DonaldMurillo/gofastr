@@ -2,8 +2,10 @@ package analyzers
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -25,6 +27,7 @@ func init() {
 			contracts.RuleInlineScript,
 			contracts.RuleUnknownThemeToken,
 			contracts.RuleHardcodedTokenValue,
+			contracts.RuleFallbackDrift,
 		},
 		Run: runRendering,
 	})
@@ -197,6 +200,11 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			// strict supersets of what the two shapes can match.
 			if ownsStyling && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
 				out = append(out, checkHardcodedTokenValues(f.Rel, lineNo, line, lines[i])...)
+			}
+			// GOFASTR1808 is the same tree, the other direction: a var()
+			// whose fallback restates the token at the wrong value.
+			if ownsStyling && strings.Contains(line, "var(") {
+				out = append(out, checkFallbackDrift(f.Rel, lineNo, line, lines[i])...)
 			}
 
 			// Cheap pre-filter. Every pattern below needs at least one of
@@ -796,6 +804,94 @@ func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 				Snippet: p.Line(f.Rel, v.Line),
 			})
 		}
+	}
+	return out
+}
+
+// driftCategories are the token categories GOFASTR1808 judges: the ones
+// whose values are lengths or times, where a fallback either restates
+// the token or teaches a scale the theme does not declare. Colour and
+// font fallbacks stay out: `currentColor`, `inherit`, `transparent`, and
+// a dark-surface hex beside a light token are degraded-mode choices an
+// author made on purpose, and the rule cannot tell those from drift.
+var driftCategories = map[string]bool{"spacing": true, "radii": true, "text": true, "duration": true}
+
+// declaredTokenValues is the theme's token table by name, light entries
+// only, for the fallback comparison.
+var declaredTokenValues = sync.OnceValue(func() map[string]string {
+	out := map[string]string{}
+	for k, v := range style.ThemeToTokens(style.DefaultTheme()) {
+		if strings.HasPrefix(k, "dark.") {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+})
+
+// reVarFallback matches a var() reference carrying a simple fallback: a
+// literal with no comma or parenthesis. A nested `var(--a, var(--b))` or a
+// calc() fallback is not a restated token value and is left alone.
+var reVarFallback = regexp.MustCompile(`var\(\s*--([A-Za-z0-9_-]+)\s*,\s*([^(),]+?)\s*\)`)
+
+// reLengthOrTime is a bare CSS length or time literal in the four units
+// the theme emits and authors write.
+var reLengthOrTime = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|ms|s)$`)
+
+// sameScaleValue reports whether two CSS literals denote the same length
+// or time. rem is compared to px at the browser's 16px root default, and
+// s to ms, so `1rem` is the right fallback for a `16px` token and `.5s`
+// for a `500ms` one. Anything the regex does not parse is compared as a
+// case-folded string.
+func sameScaleValue(a, b string) bool {
+	a, b = strings.ToLower(strings.TrimSpace(a)), strings.ToLower(strings.TrimSpace(b))
+	if a == b {
+		return true
+	}
+	ma, mb := reLengthOrTime.FindStringSubmatch(a), reLengthOrTime.FindStringSubmatch(b)
+	if ma == nil || mb == nil {
+		return false
+	}
+	na, _ := strconv.ParseFloat(ma[1], 64)
+	nb, _ := strconv.ParseFloat(mb[1], 64)
+	ua, ub := ma[2], mb[2]
+	switch ua {
+	case "rem":
+		na, ua = na*16, "px"
+	case "s":
+		na, ua = na*1000, "ms"
+	}
+	switch ub {
+	case "rem":
+		nb, ub = nb*16, "px"
+	case "s":
+		nb, ub = nb*1000, "ms"
+	}
+	return ua == ub && math.Abs(na-nb) < 1e-6
+}
+
+// checkFallbackDrift reports one GOFASTR1808 per var() reference on a
+// design-system line whose fallback restates a length- or time-scale
+// token at a value the theme does not declare.
+func checkFallbackDrift(rel string, lineNo int, scan, orig string) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	for _, m := range reVarFallback.FindAllStringSubmatch(scan, -1) {
+		name, fallback := m[1], strings.TrimSpace(m[2])
+		if !driftCategories[tokenCategory(name)] {
+			continue
+		}
+		declared, ok := declaredTokenValues()[name]
+		if !ok || sameScaleValue(fallback, declared) {
+			continue
+		}
+		out = append(out, contracts.Diagnostic{
+			RuleID: contracts.RuleFallbackDrift,
+			File:   rel,
+			Line:   lineNo,
+			Message: fmt.Sprintf("var(--%s, %s): the theme declares --%s as %s, so a themed page renders %s and the fallback teaches a value that does not exist; write var(--%s, %s)",
+				name, fallback, name, declared, declared, name, declared),
+			Snippet: strings.TrimSpace(orig),
+		})
 	}
 	return out
 }

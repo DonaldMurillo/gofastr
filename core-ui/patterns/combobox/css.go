@@ -14,8 +14,8 @@ func styleFn(_ style.Theme) string {
 }
 [data-fui-comp="combobox"] .combobox__label {
   display: block;
-  margin-block-end: var(--spacing-xs, 4px);
-  font-size: var(--text-sm, 0.85rem);
+  margin-block-end: var(--spacing-xs, 2px);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #4b5563);
 }
 [data-fui-comp="combobox"] .combobox__form {
@@ -25,13 +25,13 @@ func styleFn(_ style.Theme) string {
 [data-fui-comp="combobox"] .combobox__input {
   inline-size: 100%;
   min-height: var(--spacing-touch-target, 44px);
-  padding: 0 var(--spacing-md, 12px);
+  padding: 0 var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #d0d0d8);
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
   color: var(--color-text, #111);
   font: inherit;
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
   box-sizing: border-box;
 }
 [data-fui-comp="combobox"] .combobox__input:focus-visible {
@@ -48,7 +48,7 @@ func styleFn(_ style.Theme) string {
   list-style: none;
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border, #d0d0d8);
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   max-block-size: 18rem;
   overflow-y: auto;
@@ -66,7 +66,7 @@ func styleFn(_ style.Theme) string {
 }
 [data-fui-comp="combobox"] .combobox__listbox [role="option"] {
   display: block;
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: var(--color-text, #111);
   cursor: pointer;
   user-select: none;

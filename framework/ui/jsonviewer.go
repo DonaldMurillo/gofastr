@@ -158,7 +158,7 @@ var jsonViewerStyle = registry.RegisterStyle("ui-json-viewer", jsonViewerCSS)
 func jsonViewerCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-json-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.5;
   color: var(--color-text, #18181B);
 }
@@ -194,7 +194,7 @@ func jsonViewerCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-json-viewer"] .ui-json-viewer__list {
   margin: 0;
-  padding-inline-start: var(--spacing-lg, 24px);
+  padding-inline-start: var(--spacing-lg, 16px);
   list-style: none;
   border-inline-start: 1px dashed var(--color-border, #E4E4E7);
 }

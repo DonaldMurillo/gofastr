@@ -71,7 +71,7 @@ func authCardCSS(_ style.Theme) string {
   max-inline-size: 24rem;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md, 16px);
+  gap: var(--spacing-md, 8px);
   padding: clamp(20px, 5vw, 32px);
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border, #e4e4e7);

@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/webbotauth"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
 // ── Web Bot Auth (publish a JWKS for outbound request signing) ─────
@@ -88,6 +89,23 @@ func (a *App) handleWebBotAuthDirectory(w http.ResponseWriter, _ *http.Request) 
 // nothing about the sender", never as evidence of hostility.
 func VerifiedAgent(ctx context.Context) *webbotauth.Agent {
 	return webbotauth.AgentFromContext(ctx)
+}
+
+// AgentRateLimitKey returns a key function for ratelimit.MiddlewareByKey
+// that gives every verified Web Bot Auth agent its own budget and keys
+// everything else by client IP, honouring X-Forwarded-For only when
+// trustXFF is set (the same rule as ratelimit.ClientIP). Add the limiter
+// with app.Router().Use after WithWebBotAuth so the verifier runs first:
+//
+//	limiter := ratelimit.NewLimiter(ratelimit.Config{MaxAttempts: 600, Window: time.Minute})
+//	app.Router().Use(limiter.MiddlewareByKey(framework.AgentRateLimitKey(false)))
+//
+// See webbotauth.RateLimitKey for why identity, not IP, is the honest
+// budget for agent traffic.
+func AgentRateLimitKey(trustXFF bool) func(*http.Request) string {
+	return webbotauth.RateLimitKey(func(r *http.Request) string {
+		return ratelimit.ClientIP(r, trustXFF)
+	})
 }
 
 // ── Universal Commerce Protocol (/.well-known/ucp) ─────────────────

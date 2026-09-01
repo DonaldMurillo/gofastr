@@ -74,13 +74,15 @@ app.Start(":8080") // role from GOFASTR_ROLE: all | serve | worker | agent
 ```sh
 GOFASTR_ROLE=serve  ./myapp   # full router; no cron/queue/outbox-relay
 GOFASTR_ROLE=worker ./myapp   # cron/queue/outbox-relay; /healthz + /readyz only
-GOFASTR_ROLE=agent  ./myapp   # /mcp + /healthz + /readyz only; no entity routes
+GOFASTR_ROLE=agent  ./myapp   # /mcp + /a2a (if WithA2A) + health; no entity routes
 ./myapp                       # combined (default); today's behavior
 ```
 
 `GOFASTR_ROLE=agent` (or `framework.WithRole(framework.RoleAgent)`) is the
-agent surface split: it serves the `/mcp` mount and health endpoints and
-nothing else — no entity CRUD, no OpenAPI, no browser pages. `/mcp`
+agent surface split: it serves the `/mcp` mount, the A2A exchange
+(`/a2a`, when [WithA2A](a2a.md) is configured), and health endpoints and
+nothing else — no entity CRUD, no OpenAPI, no browser pages. `/mcp` and
+`/a2a`
 requests forward to the app router, so session/bearer auth and owner
 scoping behave exactly as on a serve process (see
 [MCP](mcp.md) and [Auth](auth.md)). Use it when agent traffic arrives

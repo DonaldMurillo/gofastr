@@ -98,6 +98,31 @@ Verification outcomes follow the draft's three-way split: **verified**,
 information, e.g. the directory was unreachable). Only `verified`
 yields an identity; `nil` from `VerifiedAgent` covers the other two.
 
+### Per-agent rate limits
+
+Keyed by IP, a verified agent behind a busy egress shares a budget with
+everyone on that address, and a spoofed `User-Agent` gets whatever the
+IP gets. `framework.AgentRateLimitKey` keys a `framework/ratelimit`
+limiter by the verified identity instead, and falls back to the client
+IP for everything else, so verification never widens what an
+unverified caller can do:
+
+```go
+agentBudget := ratelimit.NewLimiter(ratelimit.Config{
+    MaxAttempts:   600,
+    Window:        time.Minute,
+    BlockDuration: time.Minute,
+})
+app.Router().Use(agentBudget.MiddlewareByKey(framework.AgentRateLimitKey(false)))
+```
+
+The key is the agent's directory URL, not the key id, so rotating a key
+does not reset the agent's window. Add the limiter after
+`WithWebBotAuth`: the verifier is installed first, so a limiter added
+with `Use` runs inside it and sees the identity. Outside the framework,
+`webbotauth.RateLimitKey(fallback)` is the same function with your own
+fallback extractor.
+
 ### What the fetcher does on your behalf
 
 Resolving a signer's key directory is a server-side fetch to a

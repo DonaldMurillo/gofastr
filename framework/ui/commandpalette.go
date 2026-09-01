@@ -280,7 +280,7 @@ func commandPaletteCSS(_ style.Theme) string {
      scroll lock). */
   max-block-size: calc(100dvh - 2 * var(--spacing-lg, 16px));
   background: var(--color-surface, #fff);
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   box-shadow: 0 16px 48px rgba(0,0,0,0.18);
   overflow: hidden;
 }
@@ -293,9 +293,9 @@ func commandPaletteCSS(_ style.Theme) string {
   flex-direction: column;
   min-block-size: 0;
 }
-[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__form { padding: var(--spacing-md, 12px); border-bottom: 1px solid var(--color-border, #d0d0d8); flex: 0 0 auto; }
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__form { padding: var(--spacing-md, 8px); border-bottom: 1px solid var(--color-border, #d0d0d8); flex: 0 0 auto; }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__input {
-  font-size: var(--text-base, 1.05rem);
+  font-size: var(--text-base, 1rem);
   border: none;
   background: transparent;
   padding: 0;
@@ -325,8 +325,8 @@ func commandPaletteCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-top: 1px solid var(--color-border, #d0d0d8);
   background: var(--color-muted, #f7f7f8);
   flex: 0 0 auto;
@@ -341,7 +341,7 @@ func commandPaletteCSS(_ style.Theme) string {
      visual footer stays one row tall (same trick as Banner dismiss). */
   min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--spacing-touch-target, 44px);
-  margin-block: calc(-1 * var(--spacing-sm, 8px));
+  margin-block: calc(-1 * var(--spacing-sm, 4px));
   background: transparent;
   border: 0;
   color: var(--color-text-muted, #6b7280);
@@ -358,7 +358,7 @@ func commandPaletteCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__hints {
   display: inline-flex;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #6b7280);
 }
@@ -374,7 +374,7 @@ func commandPaletteCSS(_ style.Theme) string {
   border-bottom-width: 2px;
   border-radius: var(--radii-sm, 4px);
   background: var(--color-surface, #fff);
-  font-size: var(--text-xs, 0.7rem);
+  font-size: var(--text-xs, 0.75rem);
 }
 @media (max-width: 540px) {
   /* Full-screen sheet, bounded to exactly the dynamic viewport: the

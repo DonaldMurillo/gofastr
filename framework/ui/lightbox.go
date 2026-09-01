@@ -211,14 +211,14 @@ var lightboxStyle = registry.RegisterStyle("ui-lightbox", lightboxCSS)
 func lightboxCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-lightbox"] {
   display: grid;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   place-items: center;
   inline-size: min(90vw, 1200px);
 }
 [data-fui-comp="ui-lightbox"] .ui-lightbox__figure {
   margin: 0;
   display: grid;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   place-items: center;
 }
 [data-fui-comp="ui-lightbox"] .ui-lightbox__full {
@@ -243,7 +243,7 @@ func lightboxCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-lightbox"] .ui-lightbox__caption {
   margin: 0;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   text-align: center;
   color: var(--color-text-muted, #52525B);
   max-inline-size: 60ch;
@@ -252,7 +252,7 @@ func lightboxCSS(_ style.Theme) string {
 
 [data-fui-comp="ui-lightbox"] .ui-lightbox__toolbar {
   display: flex;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   align-items: center;
   justify-content: center;
 }

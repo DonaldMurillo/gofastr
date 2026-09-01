@@ -139,6 +139,7 @@ const (
 	RuleInlineScript        = "GOFASTR1805"
 	RuleUnknownThemeToken   = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
 	RuleHardcodedTokenValue = "GOFASTR1807"
+	RuleFallbackDrift       = "GOFASTR1808"
 )
 
 // Permission rules.
@@ -821,6 +822,24 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  `ss.Rule(".eyebrow").Set("font-size", "0.75rem").End()`,
 			Good: `ss.Rule(".eyebrow").Set("font-size", "{text.xs}").End()`,
+		}},
+	}, {
+		ID: RuleFallbackDrift, Slug: "rendering/fallback-drift",
+		Title: "var() fallback disagrees with the token it stands in for", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Design-system CSS writes `var(--spacing-md, 12px)` where the theme declares --spacing-md as 8px.",
+		Why: "A themed page resolves the variable, so the fallback never renders there; it only shows on a page " +
+			"with no theme CSS. But the number is what the next reader learns the token means. Issue #365 " +
+			"found about 450 such fallbacks teaching a 4/8/16/24/32 spacing ladder the theme does not " +
+			"declare (it is 2/4/8/16/24), and a review bot read one of them as the token's value and " +
+			"proposed a change that would have shrunk a real gap. The rule covers the length and time " +
+			"scales, spacing, radii, text and duration, where a fallback can only be right or wrong; colour " +
+			"and font fallbacks are left alone because `currentColor`, `inherit`, `transparent` and a " +
+			"dark-surface hex are deliberate degraded-mode choices, not restatements of the token.",
+		Fix: "Write the declared value as the fallback (`style.TokenNames()` or `gofastr docs theming` lists them); rem and px are compared by size, so `var(--spacing-lg, 1rem)` is fine for a 16px token. If the value you wanted is not the token's value, you wanted a different token.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "padding: var(--spacing-md, 12px);",
+			Good: "padding: var(--spacing-md, 8px);",
 		}},
 	}}
 }

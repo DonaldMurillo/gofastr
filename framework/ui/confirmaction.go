@@ -285,8 +285,8 @@ func confirmActionCSS(_ style.Theme) string {
   max-inline-size: 28rem;
 }
 [data-fui-comp="ui-confirm-action"] .ui-confirm-action__title {
-  margin: 0 0 var(--spacing-sm, 8px) 0;
-  font-size: var(--text-lg, 1.1rem);
+  margin: 0 0 var(--spacing-sm, 4px) 0;
+  font-size: var(--text-lg, 1.125rem);
   font-weight: 600;
   color: var(--color-text, #111);
 }
@@ -298,7 +298,7 @@ func confirmActionCSS(_ style.Theme) string {
 [data-fui-comp="ui-confirm-action"] .ui-confirm-action__actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
 }
 `
 }

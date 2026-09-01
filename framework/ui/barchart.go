@@ -505,13 +505,13 @@ func barChartCSS(_ style.Theme) string {
   opacity: 0.55;
 }
 [data-fui-comp="ui-bar-chart"] .ui-bar-chart__value {
-  font-size: var(--text-xs, 0.72rem);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   fill: var(--color-text, #18181B);
   font-variant-numeric: tabular-nums;
 }
 [data-fui-comp="ui-bar-chart"] .ui-bar-chart__label {
-  font-size: var(--text-xs, 0.7rem);
+  font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-bar-chart"] .ui-bar-chart__axis-label {

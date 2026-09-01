@@ -219,7 +219,7 @@ func paneHostCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-pane-host"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--ui-pane-host-gap, var(--spacing-lg, 24px));
+  gap: var(--ui-pane-host-gap, var(--spacing-lg, 16px));
   align-items: start;
   position: relative;
 }
@@ -245,7 +245,7 @@ func paneHostCSS(_ style.Theme) string {
   background: var(--color-surface, transparent);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
   border-radius: var(--radii-md, 8px);
-  padding: var(--spacing-md, 16px);
+  padding: var(--spacing-md, 8px);
 }
 
 /* Narrow viewport: the grid collapses to a single column. An open side

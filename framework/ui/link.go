@@ -114,7 +114,7 @@ func linkCSS(_ style.Theme) string {
   justify-content: center;
   min-block-size: var(--spacing-touch-target);
   min-inline-size: var(--spacing-touch-target);
-  padding: 0 var(--spacing-xs, 6px);
+  padding: 0 var(--spacing-xs, 2px);
 }
 
 /* Muted — quieter affordance ("see all", "view details") that doesn't

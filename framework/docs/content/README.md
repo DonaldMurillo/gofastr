@@ -100,6 +100,10 @@ results, the harness contract) are exempt. The exemption list lives in
 - [Agent host](agent-host.md): the contract for the chat-host surface:
   `RoleAgent`, authoring MCP App widgets with the document builder, and
   consuming the host's theme signals instead of shipping a palette.
+- [A2A task exchange](a2a.md): the Agent2Agent v1.0 task exchange behind
+  `WithA2A`: deterministic named skills, derived entity skills and their
+  data-part contract, the task lifecycle, streaming, push notifications,
+  and the boundary between task state and the queue.
 
 ## Building UI
 

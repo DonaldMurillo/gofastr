@@ -100,16 +100,16 @@ var colorPickerStyle = registry.RegisterStyle("ui-color-picker", colorPickerCSS)
 func colorPickerCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-color-picker"] {
   display: grid;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-color-picker"] .ui-color-picker__row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
 }
 [data-fui-comp="ui-color-picker"] .ui-color-picker__label {
   font-weight: 500;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-color-picker"] .ui-color-picker__input {

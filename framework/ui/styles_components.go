@@ -68,7 +68,7 @@ func buttonCSS(t style.Theme) string {
   border: 1px solid transparent;
   border-radius: var(--radii-md);
   font: inherit;
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
   font-weight: 600;
   /* flex: 0 0 auto sizes the button to its unwrapped label (max-content), so
      wrapping action rows move whole controls to the next line first. The
@@ -154,14 +154,14 @@ func buttonCSS(t style.Theme) string {
    font-size for hero CTAs. */
 .ui-button--small {
   min-height: auto;
-  padding: var(--spacing-sm, 4px) var(--spacing-md, 12px);
-  font-size: var(--text-xs, 0.8rem);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+  font-size: var(--text-xs, 0.75rem);
 }
 .ui-button--large {
   padding: 14px var(--spacing-xl, 24px);
   /* --text-lg, NOT --text-base: :root always emits --text-base (1rem),
      so reading it here would collapse --large into the default size. */
-  font-size: var(--text-lg, 1.05rem);
+  font-size: var(--text-lg, 1.125rem);
 }
 ` +
 		// ToggleAction renders class="ui-button ui-button--<variant>"
@@ -187,7 +187,7 @@ func codeBlockCSS(_ style.Theme) string {
   border: 1px solid var(--color-code-border, #27272A);
   border-radius: var(--radii-md, 8px);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.6;
   white-space: pre;
   -webkit-text-size-adjust: 100%;
@@ -246,7 +246,7 @@ func codeBlockCSS(_ style.Theme) string {
 [data-fui-comp="ui-code-block"] .ui-code-block__body {
   display: block;
   margin: 0;
-  padding: var(--spacing-md, 14px) var(--spacing-lg, 18px);
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #E4E4E7);
   white-space: pre;
@@ -273,7 +273,7 @@ func codeBlockCSS(_ style.Theme) string {
   width: 28px;
   text-align: right;
   color: var(--color-text-subtle, #71717A);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   user-select: none;
 }`
 }
@@ -332,7 +332,7 @@ func formFieldCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__label {
   font-weight: 500;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__required {
@@ -341,12 +341,12 @@ func formFieldCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__help {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__error {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-form-field"].is-error input,
@@ -375,7 +375,7 @@ func formFieldCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
   font: inherit;
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
 }
 [data-fui-comp="ui-form-field"] input:focus-visible,
 [data-fui-comp="ui-form-field"] textarea:focus-visible,
@@ -402,7 +402,7 @@ func formSectionCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-form-section"] .ui-form-section__description {
   margin: 0;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-form-section"] .ui-form-section__fields {
@@ -466,7 +466,7 @@ func emptyStateCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-empty-state"] .ui-empty-state__title {
   margin: 0;
-  font-size: var(--text-base, 1.05rem);
+  font-size: var(--text-base, 1rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
@@ -488,9 +488,9 @@ func calloutCSS(t style.Theme) string {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: start;
-  column-gap: var(--spacing-md, 12px);
+  column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, var(--color-surface, #FFFFFF));
@@ -514,13 +514,13 @@ func calloutCSS(t style.Theme) string {
   border-radius: 999px;
 }
 [data-fui-comp="ui-callout"] .ui-callout__title {
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 700;
   color: var(--color-text, #18181B);
   grid-column: 2;
 }
 [data-fui-comp="ui-callout"] .ui-callout__body {
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   grid-column: 2;
 }
@@ -542,7 +542,7 @@ func statCardCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-stat-card"] .ui-stat-card__label {
   margin: 0;
-  font-size: var(--text-xs, 0.8rem);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -557,7 +557,7 @@ func statCardCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-stat-card"] .ui-stat-card__trend {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 600;
 }
 [data-fui-comp="ui-stat-card"] .ui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
@@ -578,14 +578,14 @@ func avatarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-weight: 600;
-  font-size: var(--text-xs, 0.8rem);
+  font-size: var(--text-xs, 0.75rem);
   flex-shrink: 0;
   inline-size: 2.5rem;
   block-size:  2.5rem;
 }
-[data-fui-comp="ui-avatar"].ui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.7rem); }
-[data-fui-comp="ui-avatar"].ui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 0.95rem); }
-[data-fui-comp="ui-avatar"].ui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.1rem); }
+[data-fui-comp="ui-avatar"].ui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
+[data-fui-comp="ui-avatar"].ui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
+[data-fui-comp="ui-avatar"].ui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
 [data-fui-comp="ui-avatar"] .ui-avatar__img {
   width: 100%;
   height: 100%;
@@ -659,18 +659,18 @@ func notificationCSS(t style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
   background: var(--color-info, #2563EB);
   font-weight: 700;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1;
 }
 [data-fui-comp="ui-notification"] .ui-notification__text { display: grid; gap: var(--spacing-xs, 2px); }
 [data-fui-comp="ui-notification"] .ui-notification__title {
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
   font-weight: 700;
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-notification"] .ui-notification__body {
   margin: 0;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-notification"] .ui-notification__dismiss {
@@ -683,7 +683,7 @@ func notificationCSS(t style.Theme) string {
   min-inline-size: var(--spacing-touch-target);
   min-block-size: var(--spacing-touch-target);
   border-radius: var(--radii-full, 9999px);
-  font-size: var(--text-lg, 1.1rem);
+  font-size: var(--text-lg, 1.125rem);
   line-height: 1;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
@@ -782,12 +782,12 @@ func dataTableCSS(_ style.Theme) string {
 [data-fui-comp="ui-data-table"] .ui-data-table__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
 }
 [data-fui-comp="ui-data-table"] .ui-data-table__caption {
   text-align: start;
   padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
-  font-size: var(--text-xs, 0.8rem);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -810,7 +810,7 @@ func dataTableCSS(_ style.Theme) string {
   font-weight: 600;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface-soft, #F4F4F5);
-  font-size: var(--text-xs, 0.8rem);
+  font-size: var(--text-xs, 0.75rem);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -943,14 +943,14 @@ func skipLinkCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-skip-link"]:focus {
   position: fixed;
-  top: var(--spacing-sm, 0.5rem);
-  left: var(--spacing-sm, 0.5rem);
+  top: var(--spacing-sm, 4px);
+  left: var(--spacing-sm, 4px);
   width: auto;
   height: auto;
-  padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #fff);
-  border-radius: var(--radii-md, 0.375rem);
+  border-radius: var(--radii-md, 8px);
   font-weight: 600;
   font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
@@ -969,10 +969,10 @@ func themeToggleCSS(_ style.Theme) string {
 button[data-fui-comp="ui-theme-toggle"] {
   cursor: pointer;
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 0.375rem);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);
-  padding: var(--spacing-xs, 0.25rem);
+  padding: var(--spacing-xs, 2px);
   min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--spacing-touch-target, 44px);
   display: inline-flex;
@@ -1028,7 +1028,7 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggl
 [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__opt {
   border: none;
   border-radius: 999px;
-  padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
+  padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
   font-size: var(--text-sm, 0.875rem);
   font-weight: 500;
   min-inline-size: auto;
@@ -1094,20 +1094,20 @@ func backToTopCSS(_ style.Theme) string {
 
 /* ── Positions (defaults to bottom-right) ── */
 .ui-back-to-top--br {
-  right: var(--spacing-lg, 1.5rem);
-  bottom: var(--spacing-lg, 1.5rem);
+  right: var(--spacing-lg, 16px);
+  bottom: var(--spacing-lg, 16px);
 }
 .ui-back-to-top--bl {
-  left: var(--spacing-lg, 1.5rem);
-  bottom: var(--spacing-lg, 1.5rem);
+  left: var(--spacing-lg, 16px);
+  bottom: var(--spacing-lg, 16px);
 }
 .ui-back-to-top--tr {
-  right: var(--spacing-lg, 1.5rem);
-  top: var(--spacing-lg, 1.5rem);
+  right: var(--spacing-lg, 16px);
+  top: var(--spacing-lg, 16px);
 }
 .ui-back-to-top--tl {
-  left: var(--spacing-lg, 1.5rem);
-  top: var(--spacing-lg, 1.5rem);
+  left: var(--spacing-lg, 16px);
+  top: var(--spacing-lg, 16px);
 }
 
 /* ── Sizes ── */
@@ -1153,14 +1153,14 @@ func backToTopCSS(_ style.Theme) string {
   --btt-offset: 0;
 }
 .ui-back-to-top--offset-sm {
-  --btt-offset: var(--spacing-sm, 0.5rem);
+  --btt-offset: var(--spacing-sm, 4px);
 }
 /* md is the default (spacing-lg) — no override class needed */
 .ui-back-to-top--offset-lg {
-  --btt-offset: var(--spacing-xl, 2rem);
+  --btt-offset: var(--spacing-xl, 24px);
 }
 .ui-back-to-top--offset-xl {
-  --btt-offset: var(--spacing-2xl, 3rem);
+  --btt-offset: var(--spacing-2xl, 32px);
 }
 
 /* When an offset custom property is set, override position coords. */
@@ -1176,19 +1176,19 @@ func backToTopCSS(_ style.Theme) string {
 .ui-back-to-top--offset-none.ui-back-to-top--br,
 .ui-back-to-top--offset-sm.ui-back-to-top--br,
 .ui-back-to-top--offset-lg.ui-back-to-top--br,
-.ui-back-to-top--offset-xl.ui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 1.5rem)); bottom: var(--btt-bottom, var(--spacing-lg, 1.5rem)); }
+.ui-back-to-top--offset-xl.ui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
 .ui-back-to-top--offset-none.ui-back-to-top--bl,
 .ui-back-to-top--offset-sm.ui-back-to-top--bl,
 .ui-back-to-top--offset-lg.ui-back-to-top--bl,
-.ui-back-to-top--offset-xl.ui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 1.5rem)); bottom: var(--btt-bottom, var(--spacing-lg, 1.5rem)); }
+.ui-back-to-top--offset-xl.ui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
 .ui-back-to-top--offset-none.ui-back-to-top--tr,
 .ui-back-to-top--offset-sm.ui-back-to-top--tr,
 .ui-back-to-top--offset-lg.ui-back-to-top--tr,
-.ui-back-to-top--offset-xl.ui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 1.5rem)); top: var(--btt-top, var(--spacing-lg, 1.5rem)); }
+.ui-back-to-top--offset-xl.ui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
 .ui-back-to-top--offset-none.ui-back-to-top--tl,
 .ui-back-to-top--offset-sm.ui-back-to-top--tl,
 .ui-back-to-top--offset-lg.ui-back-to-top--tl,
-.ui-back-to-top--offset-xl.ui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 1.5rem)); top: var(--btt-top, var(--spacing-lg, 1.5rem)); }
+.ui-back-to-top--offset-xl.ui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
 
 /* ── Dark mode adjustments ── */
 [data-color-scheme="dark"] .ui-back-to-top--secondary {

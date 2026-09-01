@@ -202,8 +202,8 @@ func sortableListCSS(_ style.Theme) string {
 [data-fui-comp="sortablelist"] .ui-sortable-list__item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-surface, #FFFFFF);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);

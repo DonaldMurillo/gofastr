@@ -85,17 +85,17 @@ func containerCSS(_ style.Theme) string {
   inline-size: 100%;
   max-inline-size: var(--ui-container-default, 1080px);
   margin-inline: auto;
-  padding-inline: var(--spacing-md, 16px);
+  padding-inline: var(--spacing-md, 8px);
   box-sizing: border-box;
 }
 @media (min-width: 720px) {
   [data-fui-comp="ui-container"] {
-    padding-inline: var(--spacing-lg, 24px);
+    padding-inline: var(--spacing-lg, 16px);
   }
 }
 @media (min-width: 1080px) {
   [data-fui-comp="ui-container"] {
-    padding-inline: var(--spacing-xl, 32px);
+    padding-inline: var(--spacing-xl, 24px);
   }
 }
 

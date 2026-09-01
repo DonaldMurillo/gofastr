@@ -508,11 +508,11 @@ func menuCSS(_ style.Theme) string {
 [data-fui-comp="ui-menu"] > summary.ui-menu__trigger {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   cursor: pointer;
   list-style: none;
   user-select: none;
-  padding: var(--spacing-sm, 6px) var(--spacing-md, 10px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
@@ -532,7 +532,7 @@ func menuCSS(_ style.Theme) string {
   z-index: var(--z-dropdown, 100);
   min-width: 12rem;
   max-width: min(20rem, calc(100vw - 2rem));
-  padding: var(--spacing-xs, 4px);
+  padding: var(--spacing-xs, 2px);
   background: var(--color-surface, #FFF);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -559,10 +559,10 @@ func menuCSS(_ style.Theme) string {
 [data-fui-comp="ui-menu"] .ui-menu__item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 6px);
+  gap: var(--spacing-sm, 4px);
   width: 100%;
   text-align: start;
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: transparent;
   color: inherit;
   border: 0;
@@ -592,7 +592,7 @@ func menuCSS(_ style.Theme) string {
 [data-fui-comp="ui-menu"] .ui-menu__sep {
   border: 0;
   border-top: 1px solid var(--color-border, #E4E4E7);
-  margin: var(--spacing-xs, 4px) 0;
+  margin: var(--spacing-xs, 2px) 0;
 }
 /* Submenus: the nested <details> is one grid child of the parent
    panel; it positions the nested panel, which reuses every panel
@@ -607,7 +607,7 @@ func menuCSS(_ style.Theme) string {
 [data-fui-comp="ui-menu"] details.ui-menu__sub > summary.ui-menu__item::-webkit-details-marker { display: none; }
 [data-fui-comp="ui-menu"] details.ui-menu__sub > .ui-menu__panel {
   inset-inline-start: 100%;
-  top: calc(-1 * var(--spacing-xs, 4px));
+  top: calc(-1 * var(--spacing-xs, 2px));
 }
 /* The submenu caret is a pseudo-element so it stays out of the row's
    textContent (type-ahead) and accessible name, unlike the trigger's

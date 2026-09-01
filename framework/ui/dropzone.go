@@ -201,7 +201,7 @@ var dropzoneStyle = registry.RegisterStyle("ui-dropzone", dropzoneCSS)
 func dropzoneCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-dropzone"] {
   display: grid;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__label-wrap {
   display: block;
@@ -210,8 +210,8 @@ func dropzoneCSS(_ style.Theme) string {
 [data-fui-comp="ui-dropzone"] .ui-dropzone__zone {
   display: grid;
   justify-items: center;
-  gap: var(--spacing-xs, 6px);
-  padding: var(--spacing-xl, 32px) var(--spacing-lg, 24px);
+  gap: var(--spacing-xs, 2px);
+  padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);
   border: 2px dashed var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg, 12px);
   background: var(--color-surface, #FFFFFF);
@@ -258,12 +258,12 @@ func dropzoneCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__prompt {
   margin: 0;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__filename {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-primary, #4F46E5);
   font-weight: 500;
   min-block-size: 1.2em;
@@ -271,7 +271,7 @@ func dropzoneCSS(_ style.Theme) string {
 [data-fui-comp="ui-dropzone"] .ui-dropzone__previews {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__preview {
   width: 72px;
@@ -283,12 +283,12 @@ func dropzoneCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__help {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__error {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-dropzone"].is-error .ui-dropzone__zone {

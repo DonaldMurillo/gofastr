@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/webbotauth"
 )
 
 func TestWebBotAuth_ServesJWKS(t *testing.T) {
@@ -73,5 +75,25 @@ func TestACP_ServesDiscovery(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("acp doc missing %q: %s", want, body)
 		}
+	}
+}
+
+// AgentRateLimitKey: a verified agent is its own bucket, an unverified
+// caller is its IP, and the verifier installed by WithWebBotAuth runs
+// before a limiter the app adds afterwards, so the key sees the agent.
+func TestAgentRateLimitKeySplitsAgentFromIP(t *testing.T) {
+	key := AgentRateLimitKey(false)
+	r := httptest.NewRequest(http.MethodGet, "/api/feed", nil)
+	r.RemoteAddr = "198.51.100.7:9"
+	r.Header.Set("X-Forwarded-For", "10.0.0.1")
+	if got := key(r); got != "198.51.100.7" {
+		t.Fatalf("unverified key = %q, want the socket IP (XFF untrusted)", got)
+	}
+	verified := r.WithContext(webbotauth.WithAgent(r.Context(), &webbotauth.Agent{URL: "https://crawler.example/.well-known/http-message-signatures-directory"}))
+	if got := key(verified); got != "agent:https://crawler.example/.well-known/http-message-signatures-directory" {
+		t.Fatalf("verified key = %q, want the agent identity", got)
+	}
+	if got := AgentRateLimitKey(true)(r); got != "10.0.0.1" {
+		t.Fatalf("trustXFF key = %q, want the forwarded IP", got)
 	}
 }

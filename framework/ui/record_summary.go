@@ -197,8 +197,8 @@ func recordSummaryCSS(t style.Theme) string {
 	return style.NewComponentSheet("ui-record-summary", t).
 		Rule("&").Set(
 		"display", "grid",
-		"gap", "var(--spacing-lg, 24px)",
-		"padding", "clamp(var(--spacing-lg, 24px), 4vw, var(--spacing-2xl, 40px))",
+		"gap", "var(--spacing-lg, 16px)",
+		"padding", "clamp(var(--spacing-lg, 16px), 4vw, var(--spacing-2xl, 32px))",
 		"background", "var(--color-surface, #fff)",
 		"border", "1px solid var(--color-border, #e4e4e7)",
 		"border-inline-start", "4px solid var(--ui-record-summary-accent, var(--color-primary, currentColor))",
@@ -209,24 +209,24 @@ func recordSummaryCSS(t style.Theme) string {
 		Rule("&.ui-record-summary--warning").Set("--ui-record-summary-accent", "var(--color-warning, var(--color-primary, currentColor))").End().
 		Rule("&.ui-record-summary--danger").Set("--ui-record-summary-accent", "var(--color-danger, var(--color-primary, currentColor))").End().
 		Rule(".ui-record-summary__status").Set("display", "flex", "align-items", "center", "min-inline-size", "0").End().
-		Rule(".ui-record-summary__lead").Set("display", "grid", "gap", "var(--spacing-lg, 24px)", "min-inline-size", "0").End().
+		Rule(".ui-record-summary__lead").Set("display", "grid", "gap", "var(--spacing-lg, 16px)", "min-inline-size", "0").End().
 		Rule(".ui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr) minmax(15rem, 0.55fr)", "align-items", "start").End().
-		Rule(".ui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 8px)", "max-inline-size", "54rem").End().
-		Rule(".ui-record-summary__support").Set("display", "grid", "gap", "var(--spacing-md, 16px)", "min-inline-size", "0", "padding-inline-start", "var(--spacing-lg, 24px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)", "justify-items", "start").End().
+		Rule(".ui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 4px)", "max-inline-size", "54rem").End().
+		Rule(".ui-record-summary__support").Set("display", "grid", "gap", "var(--spacing-md, 8px)", "min-inline-size", "0", "padding-inline-start", "var(--spacing-lg, 16px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)", "justify-items", "start").End().
 		Rule(".ui-record-summary__aside").Set("min-inline-size", "0", "max-inline-size", "100%", "color", "var(--color-text-muted, currentColor)").End().
 		Rule(".ui-record-summary__eyebrow").Set("margin", "0", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "700", "letter-spacing", "0.08em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
 		Rule(".ui-record-summary__title").Set("margin", "0", "max-inline-size", "24ch", "font-size", "var(--ui-record-summary-title-size, var(--text-4xl, 2.25rem))", "line-height", "1.08", "letter-spacing", "-0.025em", "color", "var(--color-text, currentColor)").End().
 		Rule(".ui-record-summary__description").Set("margin", "0", "max-inline-size", "64ch", "color", "var(--color-text-muted, currentColor)", "line-height", "1.6").End().
 		Rule(".ui-record-summary__highlight").Set("min-inline-size", "0").End().
 		Rule(".ui-record-summary__metrics").Set("min-inline-size", "0").End().
-		Rule(".ui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 16px)", "padding-block-start", "var(--spacing-md, 16px)", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End().
+		Rule(".ui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 8px)", "padding-block-start", "var(--spacing-md, 8px)", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End().
 		Rule(".ui-record-summary__footer-copy").Set("min-inline-size", "0", "color", "var(--color-text-muted, currentColor)").End().
-		Rule(".ui-record-summary__actions").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "gap", "var(--spacing-sm, 8px)", "inline-size", "fit-content", "max-inline-size", "100%").End().
+		Rule(".ui-record-summary__actions").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "gap", "var(--spacing-sm, 4px)", "inline-size", "fit-content", "max-inline-size", "100%").End().
 		Rule(".ui-record-summary__actions > [data-fui-comp=\"ui-layout\"]").Set("max-inline-size", "100%").End().
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
-			s.Rule("&").Set("gap", "var(--spacing-md, 16px)", "padding", "var(--spacing-lg, 20px)").End()
-			s.Rule(".ui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr)", "gap", "var(--spacing-md, 16px)").End()
-			s.Rule(".ui-record-summary__support").Set("padding-inline-start", "0", "padding-block-start", "var(--spacing-md, 16px)", "border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
+			s.Rule("&").Set("gap", "var(--spacing-md, 8px)", "padding", "var(--spacing-lg, 16px)").End()
+			s.Rule(".ui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr)", "gap", "var(--spacing-md, 8px)").End()
+			s.Rule(".ui-record-summary__support").Set("padding-inline-start", "0", "padding-block-start", "var(--spacing-md, 8px)", "border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
 			s.Rule(".ui-record-summary__actions").Set("order", "-1", "inline-size", "100%").End()
 			s.Rule(".ui-record-summary__title").Set("font-size", "var(--ui-record-summary-title-size-mobile, var(--text-2xl, 1.5rem))", "max-inline-size", "18ch").End()
 			s.Rule(".ui-record-summary__footer").Set("align-items", "flex-start", "flex-direction", "column").End()
@@ -243,7 +243,7 @@ func metricBandCSS(t style.Theme) string {
 		Rule("&.ui-metric-band--4").Set("grid-template-columns", "repeat(4, minmax(0, 1fr))").End().
 		Rule("&.ui-metric-band--5").Set("grid-template-columns", "repeat(5, minmax(0, 1fr))").End().
 		Rule("&.ui-metric-band--6").Set("grid-template-columns", "repeat(6, minmax(0, 1fr))").End().
-		Rule(".ui-metric-band__item").Set("display", "flex", "flex-direction", "column", "gap", "var(--spacing-xs, 4px)", "min-inline-size", "0", "padding", "var(--spacing-md, 16px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)").End().
+		Rule(".ui-metric-band__item").Set("display", "flex", "flex-direction", "column", "gap", "var(--spacing-xs, 2px)", "min-inline-size", "0", "padding", "var(--spacing-md, 8px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)").End().
 		Rule(".ui-metric-band__item:first-child").Set("border-inline-start", "0").End().
 		Rule(".ui-metric-band__label").Set("order", "2", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "600", "letter-spacing", "0.04em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
 		Rule(".ui-metric-band__value").Set("order", "1", "margin", "0", "font-size", "var(--text-lg, 1.125rem)", "font-weight", "700", "font-variant-numeric", "tabular-nums", "color", "var(--color-text, currentColor)").End().

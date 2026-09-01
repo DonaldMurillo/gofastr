@@ -223,7 +223,7 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-fui-comp="fui-section-menu"] .fui-section-menu__lead {
   display: block;
   padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) 12px;
-  margin-bottom: var(--spacing-md, 12px);
+  margin-bottom: var(--spacing-md, 8px);
   color: var(--color-text, currentColor);
   font-weight: 500;
   text-decoration: none;
@@ -233,7 +233,7 @@ func sectionMenuCSS(_ style.Theme) string {
   color: var(--color-primary, currentColor);
 }
 [data-fui-comp="fui-section-menu"] .fui-section-menu__group {
-  margin-bottom: var(--spacing-md, 12px);
+  margin-bottom: var(--spacing-md, 8px);
   border: 0;
 }
 [data-fui-comp="fui-section-menu"] .fui-section-menu__group-summary {
@@ -245,7 +245,7 @@ func sectionMenuCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px) 0;
   margin-bottom: var(--spacing-sm, 4px);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   letter-spacing: 0.02em;
   color: var(--color-text-subtle, #71717A);
   user-select: none;
@@ -292,10 +292,10 @@ func sectionMenuCSS(_ style.Theme) string {
   cursor: pointer;
   padding: var(--spacing-md, 8px) 14px;
   border: 1px solid var(--color-border, rgba(0,0,0,0.12));
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface, transparent);
   color: var(--color-text, currentColor);
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 500;
 }
 
@@ -304,7 +304,7 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-fui-comp="fui-section-menu"] .fui-section-menu__drawer-head {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: var(--spacing-sm, 8px);
+  margin-bottom: var(--spacing-sm, 4px);
 }
 [data-fui-comp="fui-section-menu"] .fui-section-menu__close {
   display: inline-flex;
@@ -336,7 +336,7 @@ func sectionMenuCSS(_ style.Theme) string {
     position: sticky;
     inset-block-start: var(--fui-section-menu-top, 1rem);
     align-self: start;
-    max-height: calc(100vh - var(--fui-section-menu-top, 1rem) - var(--spacing-md, 16px));
+    max-height: calc(100vh - var(--fui-section-menu-top, 1rem) - var(--spacing-md, 8px));
     overflow-y: auto;
   }
   /* The rail shows every group expanded — collapse is a drawer behaviour. */

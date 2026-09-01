@@ -197,7 +197,7 @@ func segmentedCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-muted, #f1f1f3);
   border: 1px solid var(--color-border, #e5e7eb);
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   vertical-align: middle;
   isolation: isolate;
 }
@@ -213,8 +213,8 @@ func segmentedCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--spacing-touch-target, 40px);
-  padding: 0 var(--spacing-md, 12px);
+  min-height: var(--spacing-touch-target, 44px);
+  padding: 0 var(--spacing-md, 8px);
   border-radius: calc(var(--radii-md, 8px) - 4px);
   cursor: pointer;
   color: var(--color-text-muted, #6b7280);

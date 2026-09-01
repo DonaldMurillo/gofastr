@@ -187,7 +187,7 @@ func buildCSS() string {
   cursor: pointer;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   font-weight: 500;
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
   color: var(--color-text-muted, #6B7280);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px; /* overlap the strip's 1px border-bottom */

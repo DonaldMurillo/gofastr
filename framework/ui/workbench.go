@@ -92,7 +92,7 @@ func workbenchCSS(_ style.Theme) string {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  padding: var(--spacing-md, 16px);
+  padding: var(--spacing-md, 8px);
   box-sizing: border-box;
   background-color: var(--color-surface, #fff);
   border-inline-end: 1px solid var(--color-border, #e4e4e7);

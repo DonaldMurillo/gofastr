@@ -57,8 +57,8 @@ func TestButtonLargeUsesTextLgToken(t *testing.T) {
 	}
 	rule := css[i:]
 	rule = rule[:strings.Index(rule, "}")]
-	if !strings.Contains(rule, "font-size: var(--text-lg, 1.05rem)") {
-		t.Errorf("large button must use var(--text-lg, 1.05rem), got rule:\n%s", rule)
+	if !strings.Contains(rule, "font-size: var(--text-lg, 1.125rem)") {
+		t.Errorf("large button must use var(--text-lg, 1.125rem), got rule:\n%s", rule)
 	}
 	if strings.Contains(rule, "font-size: var(--text-base") {
 		t.Errorf("large button must not read --text-base (that IS the default size), got rule:\n%s", rule)
@@ -98,7 +98,7 @@ func TestButtonWrapIsContainerDriven(t *testing.T) {
 // fontSizeDeclRe matches every font-size: declaration, capturing the
 // value (up to the next ; or }). RE2 has no lookahead, so the value
 // is inspected in Go: a var()-led value is the sweep's token-with-
-// fallback pattern (var(--text-sm, 0.85rem)) and is NOT counted; any
+// fallback pattern (var(--text-sm, 0.875rem)) and is NOT counted; any
 // other value containing a rem/px literal IS, including literals
 // nested inside clamp()/calc() that the old narrow regex missed.
 var fontSizeDeclRe = regexp.MustCompile(`(?i)font-size\s*:\s*([^;}]*)`)

@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.78.0
+through: v0.79.0
 
 releases:
   - version: v0.3.0
@@ -918,3 +918,12 @@ releases:
         breaking: true
         guidance: "The framework's own route registration passes both automatically; only hand-rolled mounts change. Pass LLMMDOptions{ReadOnly: true} beside a read-only mount so the generated docs stop advertising write endpoints that answer 404/405."
         detect: 'crud\.(RegistryLLMMD|RegistryLLMMDHandler|EntityLLMMD|LLMMDHandler|LLMMDHandlerFor)\b'
+  - version: v0.79.0
+    title: A2A task exchange, per-agent rate limits, fallback-drift rule
+    notes:
+      - change: "new opt-in surfaces - framework.WithA2A (A2A v1.0 task exchange at /a2a, entity-derived skills, SQL task store), uihost.AgentCardConfig.A2AEndpoint, App.A2ASkills, framework.AgentRateLimitKey / webbotauth.RateLimitKey"
+        breaking: false
+        guidance: "All additive; nothing changes for an app that does not call them. WithA2A requires an authenticated caller for every method (401 otherwise) and stores tasks per owner - there is no anonymous posture to opt into."
+      - change: "gofastr verify gained GOFASTR1808 rendering/fallback-drift - a var(--token, fallback) in a design-system tree whose fallback is not the token's declared value"
+        breaking: false
+        guidance: "Fires only under paths containing core-ui/, framework/ui/, framework/uihost/, framework/sdkdocs/, framework/pluginhost/, framework/dev/, or battery/, so an app is unaffected unless it vendors those trees. Fix by writing the declared value (style.TokenNames lists them); rem and px are compared by size."

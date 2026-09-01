@@ -146,23 +146,23 @@ var sliderStyle = registry.RegisterStyle("ui-slider", sliderCSS)
 func sliderCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-slider"] {
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-slider"] .ui-slider__header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
 }
 [data-fui-comp="ui-slider"] .ui-slider__label {
   font-weight: 500;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-slider"] .ui-slider__value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-primary, #4F46E5);
   min-inline-size: 3ch;
   text-align: end;

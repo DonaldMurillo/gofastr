@@ -178,13 +178,13 @@ func globalSearchCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-global-search"].ui-global-search--sticky {
   position: sticky;
-  inset-block-start: var(--spacing-md, 12px);
+  inset-block-start: var(--spacing-md, 8px);
   z-index: 5;
   background: var(--color-background, #FFFFFF);
 }
 [data-fui-comp="ui-global-search"] .ui-global-search__hint {
   position: absolute;
-  inset-inline-end: var(--spacing-sm, 8px);
+  inset-inline-end: var(--spacing-sm, 4px);
   inset-block-start: 50%;
   transform: translateY(-50%);
   pointer-events: none;
@@ -201,7 +201,7 @@ func globalSearchCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #E4E4E7);
   color: var(--color-text-muted, #52525B);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 0.8rem);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
 }
 

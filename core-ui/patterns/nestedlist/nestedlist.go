@@ -126,15 +126,15 @@ func styleFn(_ style.Theme) string {
   list-style: none;
   padding-inline-start: 0;
   margin: 0;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.45;
 }
 .nested-list ul,
 .nested-list ol {
   /* Nested indentation: a subtle rail on the inline-start edge
      anchors the eye to the parent branch. */
-  padding-inline-start: var(--spacing-md, 12px);
-  margin-inline-start: var(--spacing-sm, 6px);
+  padding-inline-start: var(--spacing-md, 8px);
+  margin-inline-start: var(--spacing-sm, 4px);
   border-inline-start: 1px solid var(--color-border, #E5E7EB);
 }
 /* Ordered: re-enable numbering. The outer reset above killed
@@ -143,10 +143,10 @@ func styleFn(_ style.Theme) string {
 ol.nested-list,
 .nested-list ol {
   list-style: decimal;
-  padding-inline-start: var(--spacing-lg, 18px);
+  padding-inline-start: var(--spacing-lg, 16px);
 }
 .nested-list ol .nested-list__item {
-  padding-inline-start: var(--spacing-xs, 4px);
+  padding-inline-start: var(--spacing-xs, 2px);
 }
 .nested-list__item {
   padding-block: var(--spacing-xs, 2px);
@@ -160,7 +160,7 @@ ol.nested-list,
 .nested-list summary {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs, 6px);
+  gap: var(--spacing-xs, 2px);
   cursor: pointer;
   font-weight: 600;
   color: var(--color-text, #111827);

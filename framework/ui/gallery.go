@@ -272,7 +272,7 @@ func galleryCSS(_ style.Theme) string {
   padding: 0;
   --ui-gallery-cols: 3;
   --ui-gallery-min: 9.5rem;
-  --ui-gallery-gap: var(--spacing-md, 12px);
+  --ui-gallery-gap: var(--spacing-md, 8px);
 }
 [data-fui-comp="ui-gallery"] .ui-gallery__row {
   margin: 0;
@@ -299,7 +299,7 @@ func galleryCSS(_ style.Theme) string {
 [data-fui-comp="ui-gallery"] .ui-gallery__figure {
   margin: 0;
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-gallery"] .ui-gallery__thumb {
   display: block;
@@ -309,16 +309,16 @@ func galleryCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-gallery"] .ui-gallery__caption {
   margin: 0;
-  padding: var(--spacing-sm, 4px) var(--spacing-sm, 8px) var(--spacing-sm, 8px);
-  font-size: var(--text-sm, 0.85rem);
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 
 /* Gap presets. */
-[data-fui-comp="ui-gallery"].ui-gallery--gap-xs { --ui-gallery-gap: var(--spacing-xs, 4px); }
-[data-fui-comp="ui-gallery"].ui-gallery--gap-sm { --ui-gallery-gap: var(--spacing-sm, 8px); }
-[data-fui-comp="ui-gallery"].ui-gallery--gap-lg { --ui-gallery-gap: var(--spacing-lg, 24px); }
-[data-fui-comp="ui-gallery"].ui-gallery--gap-xl { --ui-gallery-gap: var(--spacing-xl, 32px); }
+[data-fui-comp="ui-gallery"].ui-gallery--gap-xs { --ui-gallery-gap: var(--spacing-xs, 2px); }
+[data-fui-comp="ui-gallery"].ui-gallery--gap-sm { --ui-gallery-gap: var(--spacing-sm, 4px); }
+[data-fui-comp="ui-gallery"].ui-gallery--gap-lg { --ui-gallery-gap: var(--spacing-lg, 16px); }
+[data-fui-comp="ui-gallery"].ui-gallery--gap-xl { --ui-gallery-gap: var(--spacing-xl, 24px); }
 
 /* Columns presets — 1..12. */
 [data-fui-comp="ui-gallery"].ui-gallery--cols-1 { --ui-gallery-cols: 1; }
@@ -384,10 +384,10 @@ func galleryCSS(_ style.Theme) string {
   inset-inline: 0;
   inset-block-end: 0;
   margin: 0;
-  padding: var(--spacing-md, 12px) var(--spacing-sm, 8px) var(--spacing-sm, 8px);
+  padding: var(--spacing-md, 8px) var(--spacing-sm, 4px) var(--spacing-sm, 4px);
   color: white;
   background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   opacity: 0;
   transition: opacity 150ms ease;
 }

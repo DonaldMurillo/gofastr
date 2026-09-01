@@ -46,7 +46,7 @@ func adminCSS(_ style.Theme) string {
   min-block-size: 100dvh;
 }
 .layout-admin .layout-body > nav {
-  padding: var(--spacing-md, 12px) var(--admin-gutter, clamp(1rem, 0.5rem + 3vw, 3rem));
+  padding: var(--spacing-md, 8px) var(--admin-gutter, clamp(1rem, 0.5rem + 3vw, 3rem));
   border-block-end: 1px solid var(--color-border, #2a2b2e);
 }
 .layout-admin .layout-content,
@@ -74,7 +74,7 @@ func adminCSS(_ style.Theme) string {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   margin-block-end: var(--spacing-lg, 16px);
 }
 .admin-toolbar [data-fui-comp="ui-search-input"] { flex: 1 1 16rem; max-inline-size: 26rem; }
@@ -112,7 +112,7 @@ func adminCSS(_ style.Theme) string {
   box-shadow: var(--shadow-md, 0 12px 32px rgba(0,0,0,0.4));
 }
 .admin-sort__opt {
-  padding: 0.5rem 0.65rem; border-radius: var(--radii-md, 6px);
+  padding: 0.5rem 0.65rem; border-radius: var(--radii-md, 8px);
   color: var(--color-text, #f2f2f3); text-decoration: none; font-size: 0.9rem;
   white-space: nowrap;
 }
@@ -124,7 +124,7 @@ func adminCSS(_ style.Theme) string {
 .admin-filter {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   padding: 0.35rem 0.35rem 0.35rem 0.75rem;
   border: 1px solid var(--color-border, #2a2b2e);
   border-radius: 999px;
@@ -175,7 +175,7 @@ func adminCSS(_ style.Theme) string {
 
 /* ── row actions: a quiet cluster, destructive action de-emphasised ─────── */
 .admin-row-actions {
-  display: inline-flex; align-items: center; gap: var(--spacing-sm, 8px);
+  display: inline-flex; align-items: center; gap: var(--spacing-sm, 4px);
   justify-content: flex-end;
 }
 .admin-row-actions .ui-button--danger {
@@ -224,16 +224,16 @@ func adminCSS(_ style.Theme) string {
 }
 
 /* ── header action clusters (detail Edit/Back, etc.) ────────────────────── */
-.admin-actions { display: inline-flex; align-items: center; gap: var(--spacing-md, 12px); flex-wrap: wrap; }
+.admin-actions { display: inline-flex; align-items: center; gap: var(--spacing-md, 8px); flex-wrap: wrap; }
 
 /* ── result count footer ────────────────────────────────────────────────── */
-.admin-listfoot { margin-block-start: var(--spacing-md, 12px); display: flex; justify-content: flex-end; }
+.admin-listfoot { margin-block-start: var(--spacing-md, 8px); display: flex; justify-content: flex-end; }
 .admin-count { color: var(--color-text-subtle, #818187); font-size: 0.8125rem; }
 
 /* ── typed cell renderers (image / file / json / prose / mono) ──────────── */
 .admin-thumb {
   inline-size: 2.5rem; block-size: 2.5rem; object-fit: cover;
-  border-radius: var(--radii-md, 6px); border: 1px solid var(--color-border, #2a2b2e);
+  border-radius: var(--radii-md, 8px); border: 1px solid var(--color-border, #2a2b2e);
   background: var(--color-surface-soft, #202123); vertical-align: middle;
 }
 .admin-thumb--lg { inline-size: 7.5rem; block-size: 7.5rem; }
@@ -278,7 +278,7 @@ body.admin-standalone {
   font: inherit;
   padding: 0.4rem 0.6rem;
   border: 1px solid var(--color-border, #2a2b2e);
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #17181a);
   color: var(--color-text, #f2f2f3);
   min-inline-size: 8rem;
@@ -293,7 +293,7 @@ body.admin-standalone {
 .admin-inline {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   flex-wrap: wrap;
 }
 `

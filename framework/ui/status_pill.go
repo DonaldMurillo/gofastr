@@ -82,12 +82,12 @@ func statusPillCSS(_ style.Theme) string {
   gap: 6px;
   padding: 3px 10px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   white-space: nowrap;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface, transparent);
   border: 1px solid var(--ui-status-pill-border, var(--color-border, rgba(0,0,0,0.1)));
-  border-radius: var(--radii-full, 999px);
+  border-radius: var(--radii-full, 9999px);
 }
 [data-fui-comp="ui-status-pill"] .ui-status-pill__dot {
   width: 6px;

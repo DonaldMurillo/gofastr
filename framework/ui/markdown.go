@@ -146,9 +146,9 @@ func markdownCSS(_ style.Theme) string {
   line-height: 1.25;
   text-wrap: balance;
 }
-[data-fui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.9rem);  font-weight: 700; letter-spacing: -0.014em; margin-block: 0 0.5em; }
-[data-fui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.45rem); font-weight: 700; letter-spacing: -0.01em;  margin-block: 2.6em 0.55em; }
-[data-fui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.18rem); font-weight: 650; margin-block: 1.9em 0.45em; }
+[data-fui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: 700; letter-spacing: -0.014em; margin-block: 0 0.5em; }
+[data-fui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: 700; letter-spacing: -0.01em;  margin-block: 2.6em 0.55em; }
+[data-fui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: 650; margin-block: 1.9em 0.45em; }
 [data-fui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: 650; margin-block: 1.5em 0.35em; }
 /* A heading straight after another heading shouldn't double the gap. */
 [data-fui-comp="ui-markdown"] h2 + h3,
@@ -198,7 +198,7 @@ func markdownCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   overflow-x: auto;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.65;
   tab-size: 2;
 }
@@ -252,8 +252,8 @@ func markdownCSS(_ style.Theme) string {
 /* Compact variant — tighter rhythm for inline previews. */
 .ui-markdown.ui-markdown--compact { line-height: 1.6; }
 .ui-markdown.ui-markdown--compact > * + * { margin-block-start: 0.7em; }
-.ui-markdown.ui-markdown--compact h2 { font-size: var(--text-lg, 1.15rem); margin-block: 1.4em 0.4em; }
-.ui-markdown.ui-markdown--compact h3 { font-size: var(--text-base, 1.02rem); margin-block: 1.1em 0.35em; }
-.ui-markdown.ui-markdown--compact h4 { font-size: var(--text-base, 0.95rem); margin-block: 0.9em 0.3em; }
+.ui-markdown.ui-markdown--compact h2 { font-size: var(--text-lg, 1.125rem); margin-block: 1.4em 0.4em; }
+.ui-markdown.ui-markdown--compact h3 { font-size: var(--text-base, 1rem); margin-block: 1.1em 0.35em; }
+.ui-markdown.ui-markdown--compact h4 { font-size: var(--text-base, 1rem); margin-block: 0.9em 0.3em; }
 .ui-markdown.ui-markdown--compact pre { margin-block-start: 0.9em; }`
 }
