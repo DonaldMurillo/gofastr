@@ -917,3 +917,4 @@ releases:
       - change: "BREAKING for direct callers of the llm.md generators - crud.RegistryLLMMD / RegistryLLMMDHandler take func(*entity.Entity) crud.MountInfo (was bool), and crud.EntityLLMMD / LLMMDHandler / LLMMDHandlerFor gained an optional LLMMDOptions"
         breaking: true
         guidance: "The framework's own route registration passes both automatically; only hand-rolled mounts change. Pass LLMMDOptions{ReadOnly: true} beside a read-only mount so the generated docs stop advertising write endpoints that answer 404/405."
+        detect: 'crud\.(RegistryLLMMD|RegistryLLMMDHandler|EntityLLMMD|LLMMDHandler|LLMMDHandlerFor)\b'
