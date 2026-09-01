@@ -65,6 +65,18 @@ direct: you call `RegisterTool` on the framework-provided `*Server` to
 expose tools; the framework owns the `/mcp` transport and lifecycle.
 Start at `core/mcp/server.go`: `Server`.
 
+### a2a
+
+The Agent2Agent (A2A) v1.0 task-exchange server: a JSON-RPC handler
+for SendMessage and friends, with named Go skills (invoked via
+`Message.metadata["skill"]` or a data part with a `"skill"` key), SSE
+streaming, push-notification webhooks behind the SSRF-guarded client,
+and a memory or SQL store where every task and config is scoped to the
+owner `Config.Owner` resolves. Direct: call `NewServer(Config{…})` and
+mount the handler behind your auth middleware; the agent card in
+`framework/uihost` advertises it. Start at `core/a2a/server.go`:
+`NewServer`.
+
 ### openapi
 
 An OpenAPI 3.1 builder plus serving handlers. A `Spec` accumulates
