@@ -201,24 +201,33 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	// chain (auth, recovery, etc.). Session/JWT middleware re-resolves the
 	// caller from transport headers, NOT from ctx, so without copying the
 	// original request's auth the caller is demoted to anonymous and
-	// owner-scoped CRUD returns 401. Copy Cookie + Authorization from the
-	// original inbound request (stashed by the MCP transport) so the same
-	// identity re-resolves. See TestMCPAuthenticatedListReturnsOwnerRows.
+	// owner-scoped CRUD returns 401. Copy every credential header the
+	// framework recognizes from the original inbound request (stashed by
+	// the MCP transport) so the same identity re-resolves. See
+	// TestMCPAuthenticatedListReturnsOwnerRows.
+	//
+	// Every FIELD, never Get()+Set(): Get returns only the FIRST field, and
+	// Cookie routinely arrives as several (a proxy prepends its own before
+	// the browser's), so Set(Get()) collapses them to the shared first
+	// field and loses the session — the same collapse Broker.MintDelegation
+	// had (issue #360).
+	//
+	// X-API-Key belongs in the list because battery/auth's apitoken resolves
+	// it like a session; without it an API-key caller was anonymous on every
+	// re-dispatch (issue #360's second layer). The embed grant stays because
+	// embed.Host.Middleware short-circuits on a missing header — dropping it
+	// would authenticate the subject without ever evaluating the reach
+	// allow-list or the grant's expiry for the path being re-dispatched to.
+	// Nothing beyond these four rides along: the re-dispatch re-presents
+	// the caller's credentials, never other headers the original carried.
 	if orig, ok := mcp.RequestFromContext(ctx); ok && orig != nil {
-		if cookie := orig.Header.Get("Cookie"); cookie != "" {
-			req.Header.Set("Cookie", cookie)
-		}
-		if authz := orig.Header.Get("Authorization"); authz != "" {
-			req.Header.Set("Authorization", authz)
-		}
-		// The embed grant is a credential like the two above, and copying it
-		// is what keeps the re-dispatched path GATED rather than merely
-		// authenticated. The grant survives on ctx either way, so the user
-		// re-resolves, but embed.Host.Middleware short-circuits on a missing
-		// header, so without this the reach allow-list and the grant's expiry
-		// are never evaluated for the path being re-dispatched to.
-		if grant := orig.Header.Get(fembed.GrantHeader); grant != "" {
-			req.Header.Set(fembed.GrantHeader, grant)
+		for _, name := range []string{"Cookie", "Authorization", "X-API-Key", fembed.GrantHeader} {
+			for _, v := range orig.Header.Values(name) {
+				if v == "" {
+					continue
+				}
+				req.Header.Add(name, v)
+			}
 		}
 	}
 	rec := httptest.NewRecorder()

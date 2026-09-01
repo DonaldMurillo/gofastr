@@ -370,7 +370,8 @@ func TestParseEntityCall_emptyParamsErrors(t *testing.T) {
 // ---- snapshotRequest / moduleRole ----
 
 func TestSnapshotRequest_carriesCredentials(t *testing.T) {
-	r := snapshotRequest(delegationEntry{cookie: "sid=x", authorization: "Bearer t"})
+	entry := delegationEntry{credentials: http.Header{"Cookie": []string{"sid=x"}, "Authorization": []string{"Bearer t"}}}
+	r := snapshotRequest(entry)
 	if r.Header.Get("Cookie") != "sid=x" {
 		t.Errorf("Cookie = %q", r.Header.Get("Cookie"))
 	}
@@ -434,15 +435,15 @@ func TestMintDelegation_ambientIsCallerless(t *testing.T) {
 	if handle == "" {
 		t.Fatal("ambient handle = empty; MintDelegation always returns a random handle")
 	}
-	// The entry is caller-less: no cookie / authorization stashed.
+	// The entry is caller-less: no credentials stashed.
 	b.mu.Lock()
 	entry, ok := b.handles[handle]
 	b.mu.Unlock()
 	if !ok {
 		t.Fatalf("ambient handle %q not stashed", handle)
 	}
-	if entry.cookie != "" || entry.authorization != "" {
-		t.Errorf("ambient entry = %+v, want no caller credentials", entry)
+	if n := len(snapshotRequest(entry).Header); n != 0 {
+		t.Errorf("ambient entry snapshot carries %d header names, want no caller credentials", n)
 	}
 }
 
@@ -459,8 +460,11 @@ func TestMintDelegation_withRequestStash(t *testing.T) {
 	b.mu.Lock()
 	entry, ok := b.handles[handle]
 	b.mu.Unlock()
-	if !ok || entry.cookie != "sid=abc" {
-		t.Errorf("stashed entry = %+v ok=%v", entry, ok)
+	if !ok {
+		t.Fatalf("stashed handle %q not found", handle)
+	}
+	if got := snapshotRequest(entry).Header.Get("Cookie"); got != "sid=abc" {
+		t.Errorf("stashed entry = %+v, want the cookie sid=abc to round-trip", entry)
 	}
 }
 
