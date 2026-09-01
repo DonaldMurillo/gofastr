@@ -8,6 +8,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`GOFASTR1807`: CSS that hardcodes a value the theme already declares
+  as a token.** Hard rule 7 names this as a tripwire — "setting a CSS
+  property where a `var(--*)` token belongs" — and nothing caught it. The
+  rule inverts the theme's token table into a value→token index and flags a
+  declaration, in either the stylesheet-string or builder `"prop", "value"`
+  shape, whose value is exactly a token's. Scoped to design-system files,
+  since `rendering/bespoke-css` already owns apps and generators.
+  Coincidence is filtered by distinctiveness: a value must carry a digit,
+  hex, quote, comma or paren, which drops `box-shadow: none` matching the
+  `shadow-none` token. Twenty-three real findings across `framework/ui`,
+  `core-ui` and `battery/admin` are fixed rather than exempted, most via
+  `var(--token, fallback)` so rendering is unchanged until a theme moves the
+  token. The catalog is now 52 rules.
 - **Six repo analyzers**, mined from this repo's own bug history and run by
   `make analyze`, the pre-commit hook, and CI's vet step. `unboundedbody`
   flags an inbound `*http.Request` body read or decoded with no size cap;
