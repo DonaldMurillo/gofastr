@@ -146,3 +146,38 @@ func findRepoRoot() (string, error) {
 		cur = parent
 	}
 }
+
+// A template literal's ${...} body is executable JS, not string content.
+// stripJSCommentsAndStrings blanked the whole backtick body, so a `var`
+// declared inside an interpolation was invisible to this lint — the linter
+// silently under-reported on real code.
+//
+// The regex-literal case is the opposite direction and is deliberately NOT
+// fixed here; see the comment on the last subtest.
+func TestNoVarJS_SeesInsideTemplateInterpolations(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want int
+	}{
+		{"var inside an interpolation", "const s = `a ${ (() => { var leaked = 1; return leaked })() } b`;\n", 1},
+		{"nested braces inside an interpolation", "const s = `${ {a: (() => { var x = 1; return x })()} }`;\n", 1},
+		{"clean interpolation stays clean", "const s = `a ${ let0 } b`;\nlet let0 = 1;\n", 0},
+		{"template text is still not code", "const s = `var x = 1`;\n", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "a.js"), []byte(c.src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			res, err := LintNoVarJS(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(res.Violations); got != c.want {
+				t.Errorf("got %d violations, want %d\nsrc: %s", got, c.want, c.src)
+			}
+		})
+	}
+}

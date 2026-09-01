@@ -205,6 +205,31 @@ func stripJSCommentsAndStrings(src string) string {
 					i++
 					break
 				}
+				// A template literal's ${...} body is EXECUTABLE JS, not
+				// string content. Blanking it hid a `var` declared inside
+				// an interpolation from this lint entirely. Copy the body
+				// through so the scan sees it. Depth-tracked because an
+				// interpolation can contain braces of its own.
+				if quote == '`' && src[i] == '$' && i+1 < len(src) && src[i+1] == '{' {
+					out = append(out, ' ', ' ')
+					i += 2
+					depth := 1
+					for i < len(src) && depth > 0 {
+						if src[i] == '{' {
+							depth++
+						} else if src[i] == '}' {
+							depth--
+							if depth == 0 {
+								out = append(out, ' ')
+								i++
+								break
+							}
+						}
+						out = append(out, src[i])
+						i++
+					}
+					continue
+				}
 				if src[i] == '\n' {
 					out = append(out, '\n')
 				} else {
