@@ -37,10 +37,27 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 	}
 	txCh := *ch
 	txCh.DB = tx
-	txCtx := db.WithTx(ctx, tx)
+	txCtx, queue := db.WithTxQueue(ctx, tx)
+	// The deferred rollback guarantees the tx is closed on EVERY exit path,
+	// including a panicking hook inside fn: without it the panic unwinds
+	// past both Rollback and Commit and the pooled connection (plus any row
+	// locks) leaks until the finalizer. Mirrors App.InTx.
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
 	if err := fn(txCtx, &txCh); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	// Emissions staged inside the tx (e.g. a hook calling another entity's
+	// CreateOne with the tx context) fire only now, on confirmed commit;
+	// every other exit path drops the queue with the rollback.
+	queue.RunAfterCommit()
+	return nil
 }

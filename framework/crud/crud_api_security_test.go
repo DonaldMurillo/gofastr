@@ -365,3 +365,128 @@ func TestAmbientTxCommitEmitsEvents(t *testing.T) {
 		// Exactly once, as documented.
 	}
 }
+
+// TestAmbientTxQueuePublishesOnDrainOnly pins the commit-queue path the
+// framework-owned tx wrappers use (db.WithTxQueue): the emission for a
+// write joined to the tx is staged on the queue — NOT probed against the
+// live *sql.Tx, which raced the owner's own statements on the
+// transaction's single connection (#353) — and fires exactly when the
+// owner drains after commit.
+func TestAmbientTxQueuePublishesOnDrainOnly(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	got := make(chan event.Event, 8)
+	cancel := bus.Subscribe(event.EntityCreated, func(_ context.Context, ev event.Event) error {
+		got <- ev
+		return nil
+	})
+	defer cancel()
+
+	tx, err := dbc.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, queue := db.WithTxQueue(context.Background(), tx)
+	if _, err := ch.CreateOne(ctx, map[string]any{"title": "queued"}); err != nil {
+		t.Fatalf("CreateOne: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Committed but not yet drained: the emission must still be held.
+	select {
+	case ev := <-got:
+		t.Fatalf("EntityCreated published before the tx owner drained the queue: %v", ev.Data)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	queue.RunAfterCommit()
+	select {
+	case <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("EntityCreated not delivered after the queue drained")
+	}
+}
+
+// TestAmbientFallbackEmitsWithoutLiveTx pins #367: the two
+// emitAfterAmbientTx fallback branches (handler bound to a tx; record
+// with no extractable primary key) publish immediately, and EmitAsync
+// hands the context to a goroutine per subscriber. That context must NOT
+// still carry the live *sql.Tx — a subscriber following the documented
+// TxFromContext pattern would otherwise run statements on the
+// transaction's single connection beside its owner, the exact race the
+// commit queue removed from the framework paths.
+func TestAmbientFallbackEmitsWithoutLiveTx(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	bus := event.NewEventBus()
+	ch.Events = bus
+
+	sawTx := make(chan bool, 8)
+	cancel := bus.Subscribe(event.EntityCreated, func(ctx context.Context, _ event.Event) error {
+		_, ok := db.TxFromContext(ctx)
+		sawTx <- ok
+		return nil
+	})
+	defer cancel()
+
+	tx, err := dbc.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	ctx := db.WithTx(context.Background(), tx)
+
+	// Branch 1: the handler itself is tx-bound, so there is no base
+	// connection to confirm against and the emission fires immediately.
+	txCh := *ch
+	txCh.DB = tx
+	txCh.EmitEvent(ctx, event.EntityCreated, map[string]any{"id": "r1", "title": "x"})
+
+	// Branch 2: no extractable primary key, same immediate publish.
+	ch.EmitEvent(ctx, event.EntityCreated, map[string]any{"title": "no id here"})
+
+	for i := 0; i < 2; i++ {
+		select {
+		case ok := <-sawTx:
+			if ok {
+				t.Fatal("SECURITY: [#367] a live *sql.Tx reached an async bus subscriber's context — statements from the subscriber goroutine interleave with the transaction owner's on one connection")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("fallback emission %d never reached the subscriber", i+1)
+		}
+	}
+}
+
+// TestInTxRollsBackWhenFnPanics pins the deferred rollback in crud's inTx:
+// a panic inside fn must not leak the transaction's pooled connection.
+// (Hook panics are recovered into errors by the hook registry, so this
+// drives inTx directly — the defer guards whatever future code panics
+// inside the closure.) App.InTx has carried the same guard, and the same
+// test, since it was written; crud's inTx did not.
+func TestInTxRollsBackWhenFnPanics(t *testing.T) {
+	ch, dbc := covNotesHandler(t)
+	dbc.SetMaxOpenConns(1)
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("panic did not propagate out of inTx")
+			}
+		}()
+		_ = ch.inTx(context.Background(), func(context.Context, *CrudHandler) error {
+			panic("boom inside the transaction")
+		})
+	}()
+
+	// Before the deferred rollback, the abandoned tx held the pool's only
+	// connection forever and this query blocked until the deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var n int
+	if err := dbc.QueryRowContext(ctx, "SELECT COUNT(*) FROM notes").Scan(&n); err != nil {
+		t.Fatalf("connection still held after a panicking fn: %v", err)
+	}
+}
