@@ -3,10 +3,13 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -199,6 +202,75 @@ func TestView_ORMReadOnly(t *testing.T) {
 		resp := ta.Post("/active_users", map[string]any{"name": "x"})
 		if resp.Status() == http.StatusOK || resp.Status() == http.StatusCreated {
 			t.Fatalf("write to a read-only view should be rejected, got %d", resp.Status())
+		}
+	})
+}
+
+// TestView_LLMMDMatchesReadOnlyMount pins #358 end to end through App.View:
+// the mount is read-only, so the served per-entity llm.md must not name the
+// seven write/batch routes (they 404/405), and the /api/llm.md index must
+// count the three routes the mount actually serves. Both docs consult the
+// mount (CrudRouteOptions.ReadOnly via RegisterCrudRoutes; App.entityCrudMount
+// for the index), not the entity declaration — the #266 precedent.
+func TestView_LLMMDMatchesReadOnlyMount(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db))
+		app.Registry.Register(entity.Define("users", entity.EntityConfig{
+			Table:  "users",
+			Fields: []schema.Field{{Name: "name", Type: schema.String}, {Name: "active", Type: schema.Bool}},
+		}.WithTimestamps(false)))
+		app.View(activeUsersView())
+
+		// Full boot: migrates the table + view and registers /api/llm.md.
+		app, cleanup := startApp(t, app)
+		defer cleanup()
+
+		do := func(method, path string) *httptest.ResponseRecorder {
+			var body io.Reader
+			if method == http.MethodPost {
+				body = strings.NewReader(`{"name":"x"}`)
+			}
+			req := httptest.NewRequest(method, path, body)
+			req = req.WithContext(handler.SetUser(req.Context(), map[string]string{"id": "u1"}))
+			rec := httptest.NewRecorder()
+			app.router.ServeHTTP(rec, req)
+			return rec
+		}
+
+		// Reality check: write routes really are not mounted.
+		if s := do(http.MethodPost, "/active_users").Code; s == http.StatusOK || s == http.StatusCreated {
+			t.Fatalf("write to a read-only view served (%d) — fixture broken", s)
+		}
+
+		rec := do(http.MethodGet, "/active_users/llm.md")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("App.View must serve the view's llm.md: %d %s", rec.Code, rec.Body.String())
+		}
+		doc := rec.Body.String()
+		for _, heading := range []string{
+			"### POST /active_users",
+			"### PUT /active_users/{id}",
+			"### PATCH /active_users/{id}",
+			"### DELETE /active_users/{id}",
+			"### POST /active_users/_batch",
+			"### PATCH /active_users/_batch",
+			"### DELETE /active_users/_batch",
+		} {
+			if strings.Contains(doc, heading) {
+				t.Errorf("App.View llm.md advertises %q, a route the read-only mount does not serve", heading)
+			}
+		}
+
+		idxRec := do(http.MethodGet, "/api/llm.md")
+		if idxRec.Code != http.StatusOK {
+			t.Fatalf("index refused an authenticated caller: %d %s", idxRec.Code, idxRec.Body.String())
+		}
+		idx := idxRec.Body.String()
+		if want := "| [active_users](/active_users/llm.md) | `/active_users` | 3 | read-only |"; !strings.Contains(idx, want) {
+			t.Errorf("index must count the view's 3 read-only routes and label it read-only:\n%s", idx)
+		}
+		if strings.Contains(idx, "`/active_users` | 8 ") {
+			t.Errorf("index counted 8 endpoints for a read-only view mount:\n%s", idx)
 		}
 	})
 }
