@@ -173,6 +173,30 @@ func TestMarkdown_UnpairedBacktickTailScaling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing test")
 	}
+	// The RATIO half of this test does not work on a shared CI runner, and
+	// three attempts is enough to call it.
+	//
+	//   attempt 1  sizes too small - 33/55/225us, measuring the scheduler
+	//   attempt 2  single sample   - 10.9ms then 7.3ms, the LARGER input
+	//              faster, one-time allocator cost sitting in the floor
+	//   attempt 3  best-of-3       - 4.7/11.3/49.6ms, a 4.4x step where
+	//              this machine shows 1.9x
+	//
+	// Each fix addressed a real defect and CI failed anyway. At 1 MiB the
+	// runner's memory behaviour dominates, and no amount of sampling
+	// removes a cost that grows with allocation pressure. A ratio
+	// reporting 4.4x for linear code is not a weak signal, it is the wrong
+	// instrument. The ceiling below is the half that works, and the margin
+	// is not close: ~1ms correct, 41s regressed, 3s ceiling. So the
+	// ceiling runs everywhere and the ladder is opt-in for local work:
+	//
+	//	MARKDOWN_SCALING_LADDER=1 go test ./core/markdown/ -run Scaling
+	//
+	// This repo already carries #342, #353 and #363 for gates encoding
+	// machine-speed assumptions. A fourth would be worse than admitting
+	// the ratio wants an operation counter, not a clock.
+	ladder := os.Getenv("MARKDOWN_SCALING_LADDER") == "1"
+
 	// A quadratic regression spends 41s on the FIRST size, so waiting for
 	// the ratio means waiting for the second one too. Correct is ~1 ms
 	// here; this ceiling is roughly 2700× that, far outside anything a slow
@@ -217,7 +241,7 @@ func TestMarkdown_UnpairedBacktickTailScaling(t *testing.T) {
 		if i == 0 && elapsed > firstShotCeiling {
 			t.Fatalf("SECURITY: [markdown] %d-byte run+tail took %v, over the %v ceiling — a linear renderer needs about a millisecond here, so this is a complexity regression, not a slow machine", sz, elapsed, firstShotCeiling)
 		}
-		if i > 0 && prev > 0 {
+		if ladder && i > 0 && prev > 0 {
 			ratio := float64(elapsed) / float64(prev)
 			if ratio > 3.5 {
 				t.Fatalf("SECURITY: [markdown] render time grew %.1fx on a 2x input — super-linear (unpaired backtick run + tail, findCodeEnd rescans the tail per run position)", ratio)
