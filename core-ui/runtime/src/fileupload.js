@@ -19,94 +19,102 @@
   'use strict';
   function wireFileUploads(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    const zones = scope.querySelectorAll('[data-fui-fileupload]');
-    for (const zone of zones) {
-      if (zone.__fuiWired) continue;
-      zone.__fuiWired = true;
-      const input = zone.querySelector('input[type="file"]');
-      if (!input) continue;
-      const filename = zone.querySelector('.ui-fileupload__filename');
-
-      const fmtBytes = (n) => {
-        if (n < 1024) return n + ' B';
-        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-        return (n / (1024 * 1024)).toFixed(2) + ' MB';
-      };
-      const render = () => {
-        if (!filename) return;
-        filename.innerHTML = '';
-        const files = input.files;
-        if (!files || files.length === 0) return;
-        filename.classList.add('is-populated');
-        // Thumbnail uses the first IMAGE in the set (not necessarily
-        // files[0] which could be a non-image like a doc submitted
-        // alongside screenshots). One FileReader per pick keeps
-        // payload small even with 50 photos.
-        const firstImage = Array.from(files).find(f => f.type && f.type.startsWith('image/'));
-        if (firstImage) {
-          const img = document.createElement('img');
-          img.className = 'ui-fileupload__thumb';
-          img.alt = '';
-          const reader = new FileReader();
-          reader.onload = (e) => { img.src = e.target.result; };
-          reader.readAsDataURL(firstImage);
-          filename.appendChild(img);
-        }
-        const list = document.createElement('ul');
-        list.className = 'ui-fileupload__list';
-        for (const f of files) {
-          const li = document.createElement('li');
-          li.textContent = f.name + ' · ' + fmtBytes(f.size);
-          list.appendChild(li);
-        }
-        filename.appendChild(list);
-      };
-      input.addEventListener('change', render);
-      // Initial render for SSR-restored states (some browsers
-      // restore input.files on back-nav).
-      render();
-
-      // Dragover state is added to the zone itself (always) AND to
-      // any owning component wrapper (ui-fileupload / ui-dropzone /
-      // …) so each component's stylesheet can style whichever it
-      // prefers. The wrapper-class lookup walks the closest matching
-      // [data-fui-comp^="ui-"] ancestor.
-      const wrapperFor = (el) => el.closest('[data-fui-comp]');
-      const onEnter = (e) => {
-        e.preventDefault();
-        zone.classList.add('is-dragover');
-        wrapperFor(zone)?.classList.add('is-dragover');
-      };
-      const onLeave = (e) => {
-        e.preventDefault();
-        // dragleave fires when moving to a child, guard via relatedTarget.
-        if (zone.contains(e.relatedTarget)) return;
-        zone.classList.remove('is-dragover');
-        wrapperFor(zone)?.classList.remove('is-dragover');
-      };
-      const onDrop = (e) => {
-        e.preventDefault();
-        zone.classList.remove('is-dragover');
-        wrapperFor(zone)?.classList.remove('is-dragover');
-        const files = e.dataTransfer && e.dataTransfer.files;
-        if (!files || files.length === 0) return;
-        if (input.disabled) return;
-        // Assign via DataTransfer so the input's `files` becomes the
-        // dropped list, input.files is read-only except through a
-        // DataTransfer object.
-        const dt = new DataTransfer();
-        for (const f of files) {
-          if (!input.multiple && dt.items.length > 0) break;
-          dt.items.add(f);
-        }
-        input.files = dt.files;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      };
-      zone.addEventListener('dragenter', onEnter);
-      zone.addEventListener('dragover', onEnter);
-      zone.addEventListener('dragleave', onLeave);
-      zone.addEventListener('drop', onDrop);
+    // The MutationObserver scanner path passes each INSERTED node as
+    // root; a zone inserted as that node itself (island / RPC innerHTML
+    // swap on an in-document element) is not its own descendant, so test
+    // the root before scanning below it.
+    if (scope !== document && scope.matches && scope.matches('[data-fui-fileupload]')) {
+      wireZone(scope);
     }
+    scope.querySelectorAll('[data-fui-fileupload]').forEach(wireZone);
+  }
+
+  function wireZone(zone) {
+    if (zone.__fuiWired) return;
+    zone.__fuiWired = true;
+    const input = zone.querySelector('input[type="file"]');
+    if (!input) return;
+    const filename = zone.querySelector('.ui-fileupload__filename');
+
+    const fmtBytes = (n) => {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(2) + ' MB';
+    };
+    const render = () => {
+      if (!filename) return;
+      filename.innerHTML = '';
+      const files = input.files;
+      if (!files || files.length === 0) return;
+      filename.classList.add('is-populated');
+      // Thumbnail uses the first IMAGE in the set (not necessarily
+      // files[0] which could be a non-image like a doc submitted
+      // alongside screenshots). One FileReader per pick keeps
+      // payload small even with 50 photos.
+      const firstImage = Array.from(files).find(f => f.type && f.type.startsWith('image/'));
+      if (firstImage) {
+        const img = document.createElement('img');
+        img.className = 'ui-fileupload__thumb';
+        img.alt = '';
+        const reader = new FileReader();
+        reader.onload = (e) => { img.src = e.target.result; };
+        reader.readAsDataURL(firstImage);
+        filename.appendChild(img);
+      }
+      const list = document.createElement('ul');
+      list.className = 'ui-fileupload__list';
+      for (const f of files) {
+        const li = document.createElement('li');
+        li.textContent = f.name + ' · ' + fmtBytes(f.size);
+        list.appendChild(li);
+      }
+      filename.appendChild(list);
+    };
+    input.addEventListener('change', render);
+    // Initial render for SSR-restored states (some browsers
+    // restore input.files on back-nav).
+    render();
+
+    // Dragover state is added to the zone itself (always) AND to
+    // any owning component wrapper (ui-fileupload / ui-dropzone /
+    // …) so each component's stylesheet can style whichever it
+    // prefers. The wrapper-class lookup walks the closest matching
+    // [data-fui-comp^="ui-"] ancestor.
+    const wrapperFor = (el) => el.closest('[data-fui-comp]');
+    const onEnter = (e) => {
+      e.preventDefault();
+      zone.classList.add('is-dragover');
+      wrapperFor(zone)?.classList.add('is-dragover');
+    };
+    const onLeave = (e) => {
+      e.preventDefault();
+      // dragleave fires when moving to a child, guard via relatedTarget.
+      if (zone.contains(e.relatedTarget)) return;
+      zone.classList.remove('is-dragover');
+      wrapperFor(zone)?.classList.remove('is-dragover');
+    };
+    const onDrop = (e) => {
+      e.preventDefault();
+      zone.classList.remove('is-dragover');
+      wrapperFor(zone)?.classList.remove('is-dragover');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || files.length === 0) return;
+      if (input.disabled) return;
+      // Assign via DataTransfer so the input's `files` becomes the
+      // dropped list, input.files is read-only except through a
+      // DataTransfer object.
+      const dt = new DataTransfer();
+      for (const f of files) {
+        if (!input.multiple && dt.items.length > 0) break;
+        dt.items.add(f);
+      }
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    zone.addEventListener('dragenter', onEnter);
+    zone.addEventListener('dragover', onEnter);
+    zone.addEventListener('dragleave', onLeave);
+    zone.addEventListener('drop', onDrop);
   }
 
   // Module-level registration:
