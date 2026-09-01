@@ -1,6 +1,9 @@
 package sessiontoken
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"strconv"
 	"strings"
 	"testing"
@@ -193,8 +196,18 @@ func TestMintTokenCarriesExactlyWhatMACCovers(t *testing.T) {
 	if want := strconv.FormatInt(now.Unix(), 10); parts[1] != want {
 		t.Fatalf("created part %q != mint time %q", parts[1], want)
 	}
-	if parts[2] != sign(key, parts[0], parts[1]) {
-		t.Fatal("MAC segment is not the signature over (id, created) — something is signed that is not carried, or vice versa")
+	// The expected MAC is recomputed from primitives, not via sign(): if
+	// sign changed its context string, delimiter, hash, or encoding, a
+	// sign-based expectation would drift with it and this assertion would
+	// pass vacuously. This pins the exact bytes on the wire.
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(macContext))
+	mac.Write([]byte{0})
+	mac.Write([]byte(parts[0]))
+	mac.Write([]byte{0})
+	mac.Write([]byte(parts[1]))
+	if want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil)); parts[2] != want {
+		t.Fatal("MAC segment is not HMAC-SHA256(macContext\\x00id\\x00created) in raw-URL base64 — the token format drifted")
 	}
 	got, ok := Verify(key, tok, now, maxAge)
 	if !ok || got != parts[0] {

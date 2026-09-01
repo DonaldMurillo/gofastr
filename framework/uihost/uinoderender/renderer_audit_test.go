@@ -64,10 +64,12 @@ func TestImageSrcQuoteIsEscapedNotRejected(t *testing.T) {
 }
 
 // rawAttrSyntax matches a raw event-handler attribute: whitespace, on…,
-// =, then a quote. Escaped output never has a raw quote after an = in
-// attribute position; the same bytes inside a TEXT node are inert and
-// never match because their quotes are entity-escaped.
-var rawAttrSyntax = regexp.MustCompile(`\son[a-zA-Z]+=("|')`)
+// =, then a quote — with optional whitespace around the =, which HTML
+// accepts (`onload = "x"` executes exactly like `onload="x"`). Escaped
+// output never has a raw quote after an = in attribute position; the
+// same bytes inside a TEXT node are inert and never match because their
+// quotes are entity-escaped.
+var rawAttrSyntax = regexp.MustCompile(`\son[a-zA-Z]+\s*=\s*("|')`)
 
 // TestNoRawEventHandlerAttributesAcrossSurfaces sweeps every free-text
 // prop surface with attribute-NAME-shaped payloads. None of the
@@ -83,6 +85,7 @@ func TestNoRawEventHandlerAttributesAcrossSurfaces(t *testing.T) {
 		`onload='alert(1)'`,
 		`" onclick="alert(1)`,
 		`tabindex="1" onfocus="alert(1)`,
+		`x" onload = "alert(1)`,
 	}
 	for _, sf := range escapeSurfaces {
 		for _, p := range payloads {

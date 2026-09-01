@@ -173,6 +173,14 @@ func TestNoVarJS_SeesInsideTemplateInterpolations(t *testing.T) {
 		{"comment inside an interpolation is not code", "const s = `${ /* var x = 1 */ 0 }`;\n", 0},
 		{"a brace inside a string does not end the interpolation", "const s = `${ \"}\" }`;\nlet ok = 1;\n", 0},
 		{"and a real var after such a brace is still caught", "const s = `${ \"}\" }`;\nvar leaked = 1;\n", 1},
+		// The two remaining templateExprEnd guards, each with the case
+		// that fails if it is removed: without the line-comment skip the
+		// `}` inside `// }` closes the interpolation and `var detected`
+		// becomes inert template text; without the escape skip the \"
+		// ends the string early and the same brace-in-string trick hides
+		// the var.
+		{"a brace in a line comment does not end the interpolation", "const s = `${ // }\nvar detected = 1\n}`;\n", 1},
+		{"an escaped quote does not end the string early", "const s = `${ \"\\\"}\"; var detected = 1 }`;\n", 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

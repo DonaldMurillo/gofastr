@@ -31,6 +31,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
 // headerStringsNear returns the string literals of the first []string
@@ -89,6 +91,16 @@ func headerStringsNear(t *testing.T, path, anchor string) []string {
 }
 
 func TestCredentialCanonsAgree(t *testing.T) {
+	// The norm below maps the selector NAME "GrantHeader" to a literal.
+	// That mapping is only honest while the constant's VALUE is that
+	// literal — if fembed.GrantHeader changed, all three lists would keep
+	// agreeing here while the runtime compared a different header. Bind
+	// the name to the value it is normalised to.
+	if fembed.GrantHeader != "X-Gofastr-Embed" {
+		t.Fatalf("fembed.GrantHeader = %q; this test normalises the selector to %q — update the mapping AND the want list together",
+			fembed.GrantHeader, "X-Gofastr-Embed")
+	}
+
 	// Selector names normalise to the header they resolve to, so the three
 	// spellings compare on meaning rather than syntax.
 	norm := func(in []string) []string {

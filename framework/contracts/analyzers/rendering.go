@@ -616,6 +616,15 @@ var (
 	// string literals: Set("font-size", "0.75rem"), Child(sel, "gap",
 	// "8px"). The property is fully quoted on both sides so a match can
 	// never start mid-identifier.
+	//
+	// Known limit: the pair shape cannot see the CALL it sits in, so a
+	// non-builder call passing the same two literals — e.g.
+	// strings.ReplaceAll(s, "gap", "8px") in a design-system file — would
+	// match. No such call exists in tree (the repo verify run is clean),
+	// and distinguishing them needs the call's identity, which is type
+	// information: if a real false positive ever lands, the fix is a
+	// vet-lane analyzer (internal/analyzers), not more regex here. Until
+	// then a stray match costs one reviewed //gofastr:allow line.
 	reTokenValuePair = regexp.MustCompile(`"(` + tokenPropAlternation + `)"\s*,\s*"([^"]*)"`)
 )
 

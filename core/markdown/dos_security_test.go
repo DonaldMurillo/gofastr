@@ -238,8 +238,12 @@ func TestMarkdown_UnpairedBacktickTailScaling(t *testing.T) {
 		in := "a" + strings.Repeat("`", sz) + strings.Repeat("x", sz)
 		elapsed := best(in)
 		t.Logf("run=%d tail=%d best-of-%d %v", sz, sz, samples, elapsed)
-		if i == 0 && elapsed > firstShotCeiling {
-			t.Fatalf("SECURITY: [markdown] %d-byte run+tail took %v, over the %v ceiling — a linear renderer needs about a millisecond here, so this is a complexity regression, not a slow machine", sz, elapsed, firstShotCeiling)
+		// EVERY size gets the ceiling, not just the first: a regression
+		// whose cost only clears the ceiling at the larger inputs would
+		// otherwise run unasserted, since the ratio ladder below is
+		// opt-in. Correct is single-digit milliseconds even at 2 MiB.
+		if elapsed > firstShotCeiling {
+			t.Fatalf("SECURITY: [markdown] %d-byte run+tail took %v, over the %v ceiling — a linear renderer needs milliseconds here, so this is a complexity regression, not a slow machine", sz, elapsed, firstShotCeiling)
 		}
 		if ladder && i > 0 && prev > 0 {
 			ratio := float64(elapsed) / float64(prev)
