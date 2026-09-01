@@ -184,23 +184,40 @@ func TestMarkdown_DistinctBacktickRunLengthsBounded(t *testing.T) {
 	// Absolute backstop: ~1 MB of adversarial runs renders in budget.
 	renderWithin(t, "distinct-length backtick runs", distinctRuns(1414), 1500*time.Millisecond)
 
-	// Machine-independent assertion: quadrupling the input (k ×4 → n ×4)
-	// must cost ≈4×, not the 8× of O(n^1.5).
-	if testing.Short() {
-		t.Skip("timing test")
-	}
-	var prev time.Duration
-	for i, k := range []int{350, 700, 1400} {
-		start := time.Now()
-		_ = RenderHTML(distinctRuns(k))
-		elapsed := time.Since(start)
-		t.Logf("k=%d n=%d took %v", k, 4*k*k, elapsed)
-		if i > 0 && prev > 0 {
-			ratio := float64(elapsed) / float64(prev)
-			if ratio > 6 {
-				t.Fatalf("SECURITY: [markdown] render time grew %.1fx on a 4x input — super-linear (distinct-length unmatched backtick runs)", ratio)
-			}
-		}
-		prev = elapsed
-	}
+	// What is NOT guarded here, stated plainly rather than pretended.
+	//
+	// The absolute backstop above is the whole gate. There is no scaling
+	// assertion for this shape, because two attempts at one were each worse
+	// than none:
+	//
+	//  1. A ratio ladder (k = 350, 700, 1400) passed here at 1.46x then
+	//     3.45x and FAILED on CI at 4.8x then 10x on identical code. What
+	//     the large step measures on a shared runner is the allocator, not
+	//     the parser. This repo already carries two tickets for flaky
+	//     blocking checks; a third is not an improvement.
+	//     (That ladder also logged "n = 4k²" while distinctRuns(k) is
+	//     ≈ k²/2 bytes — it overstated its own inputs 8x, which is why it
+	//     looked like it was exercising 7.84 MB when k=1400 is ~1 MB.)
+	//
+	//  2. Normalising against a benign render of the same length in the
+	//     same process fixes the machine-dependence but is not sensitive:
+	//     replacing the run index with a linear scan — the exact regression
+	//     it would exist to catch — moved the adversarial render from
+	//     0.47x to 1.12x of benign. Any ceiling loose enough to survive CI
+	//     is far too loose to catch that.
+	//
+	// The residual is second-order: K distinct run lengths need ≈K²/2 bytes
+	// and cost one scan each, so it is O(n^1.5) in the pre-index code, not
+	// quadratic. At the sizes a real document reaches, that is milliseconds
+	// either way — which is exactly why wall-clock cannot separate them, and
+	// also why it is not urgent.
+	//
+	// Reference numbers on an M4 Pro at n≈982 KB, for comparing a future
+	// regression against rather than guessing:
+	//
+	//	pre-fix (per-position tail rescan)  552 ms
+	//	whole-run skip only                 ~6.8x growth per 4x input
+	//	with the run index                  1.1 ms   (benign text: 2.4 ms)
+	//
+	// A gate for this wants an operation counter, not a clock.
 }
