@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -93,6 +95,16 @@ type MenuItem struct {
 	// on a plain menuitem.
 	Checked bool
 
+	// Action renders the row as a form submission instead of a link or
+	// RPC, for hosts whose command rows hit PRG endpoints (stop
+	// impersonation, sign out with server-side sessions) where a plain
+	// Href would widen a state-changing endpoint to GET. Nil (the zero
+	// value) renders nothing — Action is a pointer exactly so the
+	// unconfigured case cannot half-render. See MenuAction for the
+	// CSRF contract. Mutually exclusive with Href, RPC, Radio, and
+	// Children: incoherent combos panic at render time.
+	Action *MenuAction
+
 	// Children nests a submenu behind this row: the row renders as a
 	// <summary role="menuitem" aria-haspopup="menu"> whose activation
 	// reveals a nested role="menu" panel, reusing the same
@@ -120,6 +132,34 @@ type MenuItem struct {
 	// disabled, aria-checked, and on submenu rows aria-haspopup /
 	// aria-controls).
 	ExtraAttrs map[string]string
+}
+
+// MenuAction is MenuItem's form-POST row. The menuitem is a submit
+// button inside <form method action>; Fields supplies the hidden
+// inputs.
+//
+// CSRF contract: the framework never mints or verifies tokens — the
+// caller's form middleware owns that exactly as it would for any
+// inline form. But a state-changing POST with NO hidden inputs is
+// almost certainly a forgotten token, so the default refuses it: an
+// Action with no Fields panics unless Unsafe explicitly acknowledges
+// the endpoint carries its own protection (same-origin POST + session
+// checks, a one-shot token in the path, or a reviewed exception like
+// the port's tokenless parity surface). Unsafe is greppable debt, not
+// a recommendation.
+type MenuAction struct {
+	// Path is the form's action URL.
+	Path string
+
+	// Method defaults to POST. GET is allowed for completeness but
+	// defeats the point; prefer Href for navigations.
+	Method string
+
+	// Fields are the hidden inputs, first use: the CSRF token.
+	Fields map[string]string
+
+	// Unsafe acknowledges the no-Fields case deliberately.
+	Unsafe bool
 }
 
 // MenuConfig describes a dropdown menu: a trigger that, when
@@ -244,10 +284,48 @@ func writeMenuItem(b *strings.Builder, it MenuItem, parentPanelID string, idx in
 		if it.Radio != "" {
 			panic("ui: MenuItem with Radio cannot have Children (a radio row is a leaf command, a submenu parent is a disclosure)")
 		}
-		if it.Href != "" || it.RPC != "" {
-			panic("ui: MenuItem with Children cannot also set Href or RPC (a submenu parent is purely a disclosure)")
+		if it.Href != "" || it.RPC != "" || it.Action != nil {
+			panic("ui: MenuItem with Children cannot also set Href, RPC, or Action (a submenu parent is purely a disclosure)")
 		}
 		writeSubMenu(b, it, parentPanelID, idx)
+		return
+	}
+	if it.Action != nil {
+		if it.Href != "" || it.RPC != "" || it.Radio != "" {
+			panic("ui: MenuItem with Action cannot also set Href, RPC, or Radio (a form row is a leaf command)")
+		}
+		if len(it.Action.Fields) == 0 && !it.Action.Unsafe {
+			panic("ui: MenuAction has no Fields (no CSRF token?) — pass the token in Fields or set Unsafe: true to acknowledge the endpoint protects itself")
+		}
+		method := it.Action.Method
+		if method == "" {
+			method = "POST"
+		}
+		cls := "ui-menu__item"
+		if it.Danger {
+			cls += " ui-menu__item--danger"
+		}
+		if it.Disabled {
+			cls += " ui-menu__item--disabled"
+		}
+		if it.Class != "" {
+			cls += " " + it.Class
+		}
+		extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
+			"type", "href", "tabindex", "role", "aria-disabled", "disabled", "aria-checked"))
+		b.WriteString(`<form class="ui-menu__form" method="` + render.Escape(method) + `" action="` + render.Escape(it.Action.Path) + `">`)
+		for _, k := range slices.Sorted(maps.Keys(it.Action.Fields)) {
+			b.WriteString(`<input type="hidden" name="` + render.Escape(k) + `" value="` + render.Escape(it.Action.Fields[k]) + `">`)
+		}
+		disabledAttr := ""
+		if it.Disabled {
+			disabledAttr = ` disabled aria-disabled="true"`
+		}
+		b.WriteString(`<button type="submit" class="` + render.Escape(cls) + `" role="menuitem" tabindex="-1"` + disabledAttr + extra + `>`)
+		if it.Icon != "" {
+			b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+		}
+		b.WriteString(`<span class="ui-menu__label">` + render.Escape(it.Label) + `</span></button></form>`)
 		return
 	}
 	cls := "ui-menu__item"
@@ -464,6 +542,12 @@ func menuCSS(_ style.Theme) string {
   animation: ui-menu-in var(--duration-dropdown-enter, 120ms)
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
+/* The UA sheet hides closed-details children with display:none, but the
+   author display:grid above would override it — the panel would render
+   visibly while details.open is false, and AT/role engines prune the
+   whole menu (the trigger's own activation state lies). Hide explicitly;
+   the open state is the UA default. */
+[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
 [data-fui-comp="ui-menu"].ui-menu--bottom-start .ui-menu__panel { inset-inline-start: 0; top: calc(100% + 4px); }
 [data-fui-comp="ui-menu"].ui-menu--bottom-end   .ui-menu__panel { inset-inline-end: 0;   top: calc(100% + 4px); }
 [data-fui-comp="ui-menu"].ui-menu--top-start    .ui-menu__panel { inset-inline-start: 0; bottom: calc(100% + 4px); }

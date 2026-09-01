@@ -135,8 +135,10 @@ only when its CRUD routes were actually registered, and `Exposure.CRUD`
 alone cannot answer that: an app with no DB mounts no CRUD at all while
 every entity still reads `nil` ("auto"). Without the predicate the site
 publishes a reference page, and an SDK download, for paths that answer
-404. Leaving it nil keeps the older `Exposure`-only behaviour for callers
-that document a registry without an App.
+404. A columned view registered with `App.View` counts as mounted — it
+serves read routes, and read routes are what the site documents. Leaving
+the field nil keeps the older `Exposure`-only behaviour for callers that
+document a registry without an App.
 
 It is deliberately not a `uihost` option: the screens compose
 `framework/ui`, which uihost must never import (its always-on styles
