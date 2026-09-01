@@ -24,7 +24,13 @@ import (
 // stubProtectionGH answers `gh api .../protection --jq ...` from
 // STUB_CONTEXTS (newline-separated, already reduced the way --jq would),
 // or fails like a 403/404 when STUB_GH_FAIL is set.
+//
+// It records its argv to STUB_ARGV first. A stub that answers regardless of
+// what it was asked lets the script query the wrong repo, branch, or
+// endpoint and still pass every case below; TestBranchProtectionQueriesTheRightAPI
+// is the assertion that this fixture is measuring the real call.
 const stubProtectionGH = `#!/bin/sh
+printf '%s\n' "$*" > "$STUB_ARGV"
 if [ -n "$STUB_GH_FAIL" ]; then
   printf '%s\n' "$STUB_GH_FAIL" >&2
   exit 1
@@ -34,6 +40,13 @@ exit 0
 `
 
 func runProtectionCheck(t *testing.T, manifest []string, contexts, ghFail string) (bool, string) {
+	t.Helper()
+	ok, out, _ := runProtectionCheckArgv(t, manifest, contexts, ghFail)
+	return ok, out
+}
+
+// runProtectionCheckArgv also returns the argv the script invoked gh with.
+func runProtectionCheckArgv(t *testing.T, manifest []string, contexts, ghFail string) (bool, string, string) {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -51,15 +64,19 @@ func runProtectionCheck(t *testing.T, manifest []string, contexts, ghFail string
 		t.Fatal(err)
 	}
 
+	argvPath := filepath.Join(dir, "argv.txt")
+
 	script := filepath.Join("..", "..", "scripts", "check-branch-protection.sh")
 	cmd := exec.Command("bash", script, "owner/repo", "main", manifestPath)
 	cmd.Env = append(os.Environ(),
 		"GH_BIN="+gh,
 		"STUB_CONTEXTS="+contexts,
 		"STUB_GH_FAIL="+ghFail,
+		"STUB_ARGV="+argvPath,
 	)
 	out, err := cmd.CombinedOutput()
-	return err == nil, string(out)
+	argv, _ := os.ReadFile(argvPath)
+	return err == nil, string(out), string(argv)
 }
 
 // The three checks in the manifest fixture, in a deliberately different
@@ -69,6 +86,23 @@ var protManifest = []string{
 	"build · vet · test (blocking)",
 	"browser e2e · site (blocking)",
 	"historical upgrade fixtures (blocking)",
+}
+
+// Without this, every case above is satisfied by a stub that answers no
+// matter what it is asked: the script could read a different repo, a
+// different branch, or the required_pull_request_reviews block, and the
+// suite would stay green while comparing the manifest to nothing relevant.
+func TestBranchProtectionQueriesTheRightAPI(t *testing.T) {
+	_, _, argv := runProtectionCheckArgv(t, protManifest, strings.Join(protManifest, "\n")+"\n", "")
+	for _, want := range []string{
+		"api",
+		"repos/owner/repo/branches/main/protection",
+		"required_status_checks.contexts",
+	} {
+		if !strings.Contains(argv, want) {
+			t.Errorf("gh was not asked for %q; argv was: %s", want, argv)
+		}
+	}
 }
 
 func TestBranchProtectionMatchesManifest(t *testing.T) {
