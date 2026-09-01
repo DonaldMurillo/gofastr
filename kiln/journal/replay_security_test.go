@@ -99,6 +99,83 @@ func TestReplayEnforcesPlanSingleUse(t *testing.T) {
 	}
 }
 
+// The empty plan_id is the one way past spendPlan that costs an attacker
+// nothing to arrange, and it had no test.
+//
+// plan_proposed did not require a non-empty id, so a hand-authored journal
+// could store and approve s.Plans[""] listing a target. A destructive entry
+// that simply OMITS plan_id decodes to "", and the lookup then HITS that
+// approved plan. Only spendPlan's `planID == ""` branch stood in the way —
+// deleting it deletes the entity, verified by mutation:
+//
+//	guard present:  delete_entity "orders": no plan_id
+//	guard removed:  err = <nil>, and s.World.Entities no longer has "orders"
+//
+// So it is checked at both ends: the empty id cannot be stored, and it
+// cannot be spent.
+func TestReplayRefusesEmptyPlanID(t *testing.T) {
+	t.Run("plan_proposed refuses an empty id", func(t *testing.T) {
+		s := newSessionWithEntity(t)
+		err := Apply(s, planEntry(KindPlanProposed, PlanProposedPayload{
+			PlanID:  "",
+			Targets: []PlanTarget{{Op: "delete_entity", Name: "orders"}},
+		}))
+		if err == nil {
+			t.Fatal("SECURITY: [integrity] a plan with an empty plan_id was stored")
+		}
+		if _, ok := s.Plans[""]; ok {
+			t.Error("SECURITY: [integrity] the refused plan is still in the session")
+		}
+	})
+
+	t.Run("whitespace is not an id either", func(t *testing.T) {
+		s := newSessionWithEntity(t)
+		if err := Apply(s, planEntry(KindPlanProposed, PlanProposedPayload{
+			PlanID:  "   ",
+			Targets: []PlanTarget{{Op: "delete_entity", Name: "orders"}},
+		})); err == nil {
+			t.Error("SECURITY: [integrity] a whitespace-only plan_id was stored")
+		}
+	})
+
+	// spendPlan's own refusal, reached directly.
+	//
+	// Going through Apply cannot test it while plan_proposed refuses the
+	// empty id first: the setup never happens, so removing spendPlan's
+	// branch fails nothing. That is exactly how the deeper of the two locks
+	// stays untested — the shallower one hides it. This plants the approved
+	// empty-id plan in the session and calls spendPlan itself.
+	t.Run("spendPlan refuses an empty id even with an approved empty-id plan", func(t *testing.T) {
+		s := newSessionWithEntity(t)
+		target := PlanTarget{Op: "delete_entity", Name: "orders"}
+		s.Plans[""] = &Plan{PlanID: "", Approved: true, Targets: []PlanTarget{target}}
+
+		if err := s.spendPlan("", target); err == nil {
+			t.Error("SECURITY: [integrity] spendPlan authorized a destructive op from an empty-id plan")
+		}
+	})
+
+	// The end-to-end shape, independent of where it gets refused: a journal
+	// that tries the whole trick must not delete anything. This is the
+	// assertion that survives either lock being reworked.
+	t.Run("the empty-id trick deletes nothing", func(t *testing.T) {
+		s := newSessionWithEntity(t)
+		_ = Apply(s, planEntry(KindPlanProposed, PlanProposedPayload{
+			PlanID:  "",
+			Targets: []PlanTarget{{Op: "delete_entity", Name: "orders"}},
+		}))
+		_ = Apply(s, planEntry(KindPlanApproved, PlanApprovedPayload{PlanID: ""}))
+
+		// plan_id omitted entirely — this is what a forged journal writes.
+		if err := Apply(s, worldEdit(OpDeleteEntity, DeleteEntityPayload{Name: "orders"})); err == nil {
+			t.Error("SECURITY: [integrity] a delete with no plan_id was authorized by an empty-id plan")
+		}
+		if _, still := s.World.Entities["orders"]; !still {
+			t.Error("SECURITY: [integrity] the empty-id plan deleted the entity")
+		}
+	})
+}
+
 // The authorized path must still work, or the guard has just broken kiln.
 func TestReplayAppliesAuthorizedDelete(t *testing.T) {
 	s := newSessionWithEntity(t)

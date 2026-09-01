@@ -77,6 +77,17 @@ func Apply(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
+		// A plan with no id is not a plan, and storing one arms the only
+		// trick that gets past spendPlan's empty-id refusal: propose and
+		// approve s.Plans[""] listing a target, then emit the destructive
+		// entry with plan_id OMITTED, which decodes to "". Without
+		// spendPlan's first branch that lookup HITS an approved plan
+		// listing the target and the deletion is authorized. That branch
+		// holds today, so this is the second lock on the same door — but
+		// it removes the state that makes the door interesting.
+		if strings.TrimSpace(p.PlanID) == "" {
+			return fmt.Errorf("plan_proposed: empty plan_id")
+		}
 		s.Plans[p.PlanID] = &Plan{
 			PlanID:     p.PlanID,
 			ProposedAt: e.Timestamp,
