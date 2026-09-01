@@ -101,6 +101,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Live-bus emissions for ambient-transaction writes no longer probe the
+  live `*sql.Tx`, and their Postgres confirm query actually parses.** A CRUD
+  write joined to `App.InTx` held its `entity.created`/`updated`/`deleted`
+  emission back by polling `SELECT 1` on the caller's transaction from a
+  goroutine until it reported done. That statement raced the caller's own
+  next statement on the transaction's single connection, and the interleaved
+  wire protocol crossed their results: the caller's `INSERT … RETURNING`
+  scanned `sql.ErrNoRows` (the intermittent `TestInTx_ComposesCommit`
+  failure, #353), and a well-formed confirm query came back as `pq: syntax
+  error at end of input`. Framework-owned transactions (`App.InTx`, crud's
+  own) now attach a `db.CommitQueue` to the transaction context and drain it
+  only after `Commit` succeeds, so held-back emissions fire without touching
+  the transaction and rollback drops them exactly. Separately, the fallback
+  confirm query for caller-owned transactions (`db.WithTx` around your own
+  `Begin`) was built with `?` placeholders, which Postgres rejects outright —
+  every such emission on Postgres was silently dropped as unconfirmable. It
+  now uses the `$N` placeholders the query builders emit everywhere else.
+
 - **Queue completions are fenced on the claim they were issued for.**
   `DBQueue` had no claim identity at all, and its `Nack` updated by bare job
   ID: a worker whose lease expired flipped the RE-CLAIMANT's live row to

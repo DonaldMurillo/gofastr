@@ -37,10 +37,17 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 	}
 	txCh := *ch
 	txCh.DB = tx
-	txCtx := db.WithTx(ctx, tx)
+	txCtx, queue := db.WithTxQueue(ctx, tx)
 	if err := fn(txCtx, &txCh); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Emissions staged inside the tx (e.g. a hook calling another entity's
+	// CreateOne with the tx context) fire only now, on confirmed commit;
+	// the rollback path above drops the queue.
+	queue.RunAfterCommit()
+	return nil
 }

@@ -51,7 +51,7 @@ func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx)
 			_ = tx.Rollback()
 		}
 	}()
-	txCtx := db.WithTx(ctx, tx)
+	txCtx, queue := db.WithTxQueue(ctx, tx)
 	if err := fn(txCtx, tx); err != nil {
 		return err
 	}
@@ -59,5 +59,9 @@ func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx)
 		return err
 	}
 	committed = true
+	// Work staged for after the commit (live-bus event emissions from CRUD
+	// operations that joined this tx) runs only now, on the confirmed-commit
+	// path. Error returns above drop the queue with the rollback.
+	queue.RunAfterCommit()
 	return nil
 }

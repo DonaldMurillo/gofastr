@@ -514,6 +514,23 @@ const ambientTxProbeTimeout = 2 * time.Minute
 // emitted VALUES as well: the row counts as landed only if the columns the
 // event announced are the columns the database now holds.
 func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, eventType string, record any) {
+	if q, ok := db.CommitQueueFromContext(ctx); ok {
+		// The tx owner is framework code (App.InTx / crud's inTx): it
+		// drains this queue only after Commit succeeds and drops it on
+		// rollback, so the emission needs no probe and no row re-check.
+		// Probing is not an option on this path — a statement on the live
+		// *sql.Tx from a spawned goroutine races the owner's own
+		// statements on the transaction's single connection, and the
+		// interleaved wire protocol crossed their results (#353: an
+		// INSERT…RETURNING scanning sql.ErrNoRows, a well-formed query
+		// failing with a pq syntax error).
+		data := ch.eventData(ctx, record)
+		bus := ch.Events
+		q.Add(func() {
+			bus.EmitAsync(context.Background(), event.Event{Type: eventType, Data: data})
+		})
+		return
+	}
 	base, ok := ch.DB.(*sql.DB)
 	if !ok {
 		// The handler itself is bound to a transaction, so there is no
@@ -578,7 +595,11 @@ func landed(base *sql.DB, eventType, table, pk string, id any, match map[string]
 	if err != nil {
 		return false, err
 	}
-	where := []string{query.QuoteIdent(safePK) + " = ?"}
+	// $N placeholders, matching what core/query's builders emit for every
+	// dialect. Postgres rejects `?` outright — with it, this confirm query
+	// failed as `pq: syntax error at end of input` on every ambient-tx
+	// event, and the emission was dropped as unconfirmable.
+	where := []string{query.QuoteIdent(safePK) + " = $1"}
 	args := []any{id}
 	if eventType == event.EntityUpdated {
 		for _, col := range slices.Sorted(maps.Keys(match)) {
@@ -586,7 +607,8 @@ func landed(base *sql.DB, eventType, table, pk string, id any, match map[string]
 			if err != nil {
 				continue
 			}
-			where = append(where, query.QuoteIdent(safeCol)+" = ?")
+			where = append(where, fmt.Sprintf("%s = $%d",
+				query.QuoteIdent(safeCol), len(args)+1))
 			args = append(args, match[col])
 		}
 	}
