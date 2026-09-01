@@ -282,7 +282,7 @@ func carouselCSS(_ style.Theme) string {
   position: relative;
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   --ui-carousel-cols: 1;
 }
 [data-fui-comp="ui-carousel"].ui-carousel--cols-1 { --ui-carousel-cols: 1; }
@@ -302,7 +302,7 @@ func carouselCSS(_ style.Theme) string {
 
 [data-fui-comp="ui-carousel"] .ui-carousel__track {
   display: flex;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -314,7 +314,7 @@ func carouselCSS(_ style.Theme) string {
 [data-fui-comp="ui-carousel"] .ui-carousel__track::-webkit-scrollbar { display: none; }
 
 [data-fui-comp="ui-carousel"] .ui-carousel__slide {
-  flex: 0 0 calc((100% - (var(--ui-carousel-cols) - 1) * var(--spacing-md, 12px)) / var(--ui-carousel-cols));
+  flex: 0 0 calc((100% - (var(--ui-carousel-cols) - 1) * var(--spacing-md, 8px)) / var(--ui-carousel-cols));
   scroll-snap-align: start;
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
@@ -353,7 +353,7 @@ func carouselCSS(_ style.Theme) string {
   display: flex;
   gap: 6px;
   justify-content: center;
-  padding-block-start: var(--spacing-xs, 4px);
+  padding-block-start: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-carousel"] .ui-carousel__dot {
   /* Target area meets WCAG 2.2 target-size (24px minimum). The visible pip

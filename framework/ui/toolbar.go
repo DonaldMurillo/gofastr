@@ -99,8 +99,8 @@ func toolbarCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-toolbar"] {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-sm, 8px);
+  gap: var(--spacing-md, 8px);
+  padding: var(--spacing-sm, 4px);
   background: var(--color-surface, #FFFFFF);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -113,7 +113,7 @@ func toolbarCSS(_ style.Theme) string {
 [data-fui-comp="ui-toolbar"] .ui-toolbar__group {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 /* Visual separator between groups — a thin line. Drawn via
    :not(:last-child)::after so the LAST group has no trailing line. */
@@ -123,6 +123,6 @@ func toolbarCSS(_ style.Theme) string {
   width: 1px;
   height: 20px;
   background: var(--color-border, #E4E4E7);
-  margin-inline-start: var(--spacing-md, 12px);
+  margin-inline-start: var(--spacing-md, 8px);
 }`
 }

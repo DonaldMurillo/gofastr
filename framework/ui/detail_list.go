@@ -63,9 +63,9 @@ func detailListCSS(_ style.Theme) string {
 [data-fui-comp="ui-detail-list"] .ui-detail-list__row {
   display: grid;
   grid-template-columns: minmax(7rem, 13rem) 1fr;
-  gap: var(--spacing-lg, 24px);
+  gap: var(--spacing-lg, 16px);
   align-items: baseline;
-  padding: var(--spacing-sm, 11px) 0;
+  padding: var(--spacing-sm, 4px) 0;
   border-bottom: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
 [data-fui-comp="ui-detail-list"] .ui-detail-list__row:last-child { border-bottom: none; }

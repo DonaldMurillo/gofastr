@@ -138,17 +138,17 @@ var textAreaStyle = registry.RegisterStyle("ui-textarea", textAreaCSS)
 func textAreaCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-textarea"] {
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-textarea"] .ui-textarea__label {
   font-weight: 500;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-textarea"] .ui-textarea__input {
   font: inherit;
-  font-size: var(--text-base, 0.95rem);
-  padding: 10px var(--spacing-md, 12px);
+  font-size: var(--text-base, 1rem);
+  padding: 10px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
@@ -169,12 +169,12 @@ func textAreaCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-textarea"] .ui-textarea__help {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-textarea"] .ui-textarea__error {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-textarea"].is-error .ui-textarea__input {

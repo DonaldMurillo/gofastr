@@ -172,22 +172,22 @@ func filterChipBarCSS(_ style.Theme) string {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-sm, 8px) 0;
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-sm, 4px) 0;
 }
 [data-fui-comp="ui-filter-bar"]:empty { display: none; }
 [data-fui-comp="ui-filter-bar"] .ui-filter-bar__clear {
   display: inline-flex;
   align-items: center;
   min-height: var(--spacing-touch-target, 44px);
-  padding: 0 var(--spacing-md, 12px);
-  margin-inline-start: var(--spacing-sm, 8px);
+  padding: 0 var(--spacing-md, 8px);
+  margin-inline-start: var(--spacing-sm, 4px);
   border: 1px solid var(--color-border, #d0d0d8);
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   background: transparent;
   color: var(--color-text, #111);
   font: inherit;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
 }
 [data-fui-comp="ui-filter-bar"] .ui-filter-bar__clear:hover {

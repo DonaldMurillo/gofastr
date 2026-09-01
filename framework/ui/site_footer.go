@@ -93,8 +93,8 @@ var siteFooterStyle = registry.RegisterStyle("ui-site-footer", siteFooterCSS)
 func siteFooterCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-site-footer"] {
   display: block;
-  padding-block: var(--spacing-2xl, 48px);
-  padding-inline: var(--spacing-lg, 24px);
+  padding-block: var(--spacing-2xl, 32px);
+  padding-inline: var(--spacing-lg, 16px);
   border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
 [data-fui-comp="ui-site-footer"] .ui-site-footer__grid {
@@ -103,12 +103,12 @@ func siteFooterCSS(_ style.Theme) string {
      wanting a fixed N-column layout (5-col GoFastr-style, etc.) set
      --ui-site-footer-grid-template to override. */
   grid-template-columns: var(--ui-site-footer-grid-template, repeat(auto-fit, minmax(180px, 1fr)));
-  gap: var(--ui-site-footer-grid-gap, var(--spacing-xl, 32px));
+  gap: var(--ui-site-footer-grid-gap, var(--spacing-xl, 24px));
   /* Hosts that center the footer at a fixed measure set
      --ui-site-footer-max-width; default is the full inline space. */
   max-inline-size: var(--ui-site-footer-max-width, none);
   margin-inline: auto;
-  margin-block-end: var(--spacing-xl, 32px);
+  margin-block-end: var(--spacing-xl, 24px);
 }
 [data-fui-comp="ui-site-footer"] .ui-site-footer__lead {
   /* Default span is 1 cell. Sites that want a wider, marketing-y
@@ -117,8 +117,8 @@ func siteFooterCSS(_ style.Theme) string {
   grid-column: auto;
 }
 [data-fui-comp="ui-site-footer"] .ui-site-footer__col-title {
-  margin: 0 0 var(--spacing-sm, 8px);
-  font-size: var(--text-xs, 11px);
+  margin: 0 0 var(--spacing-sm, 4px);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -130,12 +130,12 @@ func siteFooterCSS(_ style.Theme) string {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-site-footer"] li a {
   color: currentColor;
   text-decoration: none;
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.6;
   /* Touch target: an inline anchor at 13px/1.6 is a ~17px hit area,
      under even the AA floor. Dense link clusters use the documented
@@ -153,9 +153,9 @@ func siteFooterCSS(_ style.Theme) string {
 [data-fui-comp="ui-site-footer"] .ui-site-footer__bottom {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-md, 16px);
+  gap: var(--spacing-md, 8px);
   justify-content: space-between;
-  padding-block-start: var(--spacing-lg, 24px);
+  padding-block-start: var(--spacing-lg, 16px);
   border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
   color: var(--ui-site-footer-bottom-color, var(--color-text-subtle, currentColor));
   font-size: var(--text-xs, 12px);

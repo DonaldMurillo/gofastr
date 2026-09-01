@@ -322,7 +322,7 @@ func notificationBellCSS(_ style.Theme) string {
      danger slot. */
   background: var(--color-danger, #B91C1C);
   color: var(--color-primary-fg, #FFFFFF);
-  font-size: var(--text-xs, 0.7rem);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -337,14 +337,14 @@ func notificationBellCSS(_ style.Theme) string {
 /* Popover panel — wraps the dropped notification list. */
 .ui-notification-bell__panel {
   display: grid;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   min-inline-size: 18rem;
   max-inline-size: 24rem;
-  padding: var(--spacing-md, 12px);
+  padding: var(--spacing-md, 8px);
 }
 .ui-notification-bell__title {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -352,10 +352,10 @@ func notificationBellCSS(_ style.Theme) string {
 }
 .ui-notification-bell__empty {
   margin: 0;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   text-align: center;
-  padding: var(--spacing-md, 12px) 0;
+  padding: var(--spacing-md, 8px) 0;
 }
 .ui-notification-bell__list {
   list-style: none;
@@ -372,7 +372,7 @@ func notificationBellCSS(_ style.Theme) string {
 }
 .ui-notification-bell__row-link {
   display: block;
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-radius: var(--radii-sm, 4px);
   color: var(--color-text, #18181B);
   text-decoration: none;
@@ -384,11 +384,11 @@ a.ui-notification-bell__row-link:hover {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
 }
 .ui-notification-bell__row-title {
   font-weight: 600;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
 }
 .ui-notification-bell__row-time {
   font-size: var(--text-xs, 0.75rem);
@@ -396,7 +396,7 @@ a.ui-notification-bell__row-link:hover {
 }
 .ui-notification-bell__row-body {
   margin: var(--spacing-xs, 2px) 0 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   line-height: 1.4;
 }`

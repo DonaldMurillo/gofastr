@@ -178,12 +178,12 @@ var multiSelectStyle = registry.RegisterStyle("multiselect", multiSelectCSS)
 func multiSelectCSS(_ style.Theme) string {
 	return `[data-fui-comp="multiselect"] {
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   max-inline-size: 32rem;
 }
 [data-fui-comp="multiselect"] .ui-multiselect__chips {
   display: flex;
-  gap: var(--spacing-xs, 6px);
+  gap: var(--spacing-xs, 2px);
   flex-wrap: wrap;
   min-block-size: 28px;
   align-items: center;
@@ -191,18 +191,18 @@ func multiSelectCSS(_ style.Theme) string {
 [data-fui-comp="multiselect"] .ui-multiselect__chips:empty::before {
   content: attr(data-fui-multiselect-placeholder);
   color: var(--color-text-muted, #52525B);
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   font-style: italic;
 }
 [data-fui-comp="multiselect"] .ui-multiselect__chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs, 6px);
+  gap: var(--spacing-xs, 2px);
   padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px) 10px;
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
   border-radius: 999px;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 500;
 }
 [data-fui-comp="multiselect"] .ui-multiselect__chip-remove {
@@ -217,7 +217,7 @@ func multiSelectCSS(_ style.Theme) string {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: var(--text-lg, 1.1rem);
+  font-size: var(--text-lg, 1.125rem);
   line-height: 1;
 }
 [data-fui-comp="multiselect"] .ui-multiselect__chip-remove:hover {
@@ -232,7 +232,7 @@ func multiSelectCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 0 var(--spacing-md, 12px);
+  padding: 0 var(--spacing-md, 8px);
   font-weight: 500;
   color: var(--color-text, #18181B);
   cursor: pointer;
@@ -244,8 +244,8 @@ func multiSelectCSS(_ style.Theme) string {
 }
 [data-fui-comp="multiselect"] .ui-multiselect__summary::before {
   content: "▾";
-  margin-inline-end: var(--spacing-sm, 8px);
-  font-size: var(--text-xs, 0.7rem);
+  margin-inline-end: var(--spacing-sm, 4px);
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
   transition: transform 120ms ease;
 }
@@ -262,8 +262,8 @@ func multiSelectCSS(_ style.Theme) string {
 [data-fui-comp="multiselect"] .ui-multiselect__row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   min-block-size: var(--spacing-touch-target, 44px);
   cursor: pointer;
 }

@@ -182,7 +182,7 @@ var skeletonPresetsStyle = registry.RegisterStyle("ui-skeleton-presets", func(_ 
 const skeletonPresetsCSS = `
 .ui-skeleton-card {
   display: grid;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
 }
 /* Per-preset line widths. Defined on classes (instead of via the
@@ -195,17 +195,17 @@ const skeletonPresetsCSS = `
 .ui-skeleton-avatar__name { inline-size: 60%; }
 .ui-skeleton-avatar__sub  { inline-size: 40%; }
 .ui-skeleton-card__footer {
-  margin-block-start: var(--spacing-sm, 8px);
-  padding-block-start: var(--spacing-md, 12px);
+  margin-block-start: var(--spacing-sm, 4px);
+  padding-block-start: var(--spacing-md, 8px);
   border-block-start: 1px solid var(--color-border, #E5E7EB);
 }
 .ui-skeleton-row {
   display: grid;
   grid-template-columns: 1fr auto auto;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   align-items: center;
-  padding-block: var(--spacing-sm, 8px);
-  padding-inline: var(--spacing-md, 12px);
+  padding-block: var(--spacing-sm, 4px);
+  padding-inline: var(--spacing-md, 8px);
   border-block-end: 1px solid var(--color-border, #E5E7EB);
 }
 .ui-skeleton-row__chevron {
@@ -220,11 +220,11 @@ const skeletonPresetsCSS = `
 .ui-skeleton-avatar {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   align-items: center;
 }
 .ui-skeleton-avatar__text {
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 `

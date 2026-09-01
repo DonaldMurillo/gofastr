@@ -148,20 +148,20 @@ var tagInputStyle = registry.RegisterStyle("ui-tag-input", tagInputCSS)
 func tagInputCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-tag-input"] {
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__label {
   font-weight: 500;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__zone {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs, 6px);
+  gap: var(--spacing-xs, 2px);
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: var(--spacing-sm, 4px) var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
@@ -179,7 +179,7 @@ func tagInputCSS(_ style.Theme) string {
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
   border-radius: 999px;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 500;
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__chip-remove {
@@ -206,14 +206,14 @@ func tagInputCSS(_ style.Theme) string {
   outline: 0;
   background: transparent;
   font: inherit;
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
   color: var(--color-text, #18181B);
   min-block-size: 28px;
   padding: 0;
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__help {
   margin: 0;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-tag-input"].is-disabled .ui-tag-input__zone {

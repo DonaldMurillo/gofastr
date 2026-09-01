@@ -125,9 +125,9 @@ func timelineCSS(_ style.Theme) string {
 [data-fui-comp="ui-timeline"] .ui-timeline__item {
   position: relative;
   display: grid;
-  grid-template-columns: var(--spacing-lg, 24px) 1fr;
-  gap: var(--spacing-md, 12px);
-  padding-block-end: var(--spacing-lg, 24px);
+  grid-template-columns: var(--spacing-lg, 16px) 1fr;
+  gap: var(--spacing-md, 8px);
+  padding-block-end: var(--spacing-lg, 16px);
 }
 [data-fui-comp="ui-timeline"] .ui-timeline__item:last-child {
   padding-block-end: 0;
@@ -137,8 +137,8 @@ func timelineCSS(_ style.Theme) string {
 [data-fui-comp="ui-timeline"] .ui-timeline__item::before {
   content: "";
   position: absolute;
-  left: calc(var(--spacing-lg, 24px) / 2 - 1px);
-  top: var(--spacing-md, 12px);
+  left: calc(var(--spacing-lg, 16px) / 2 - 1px);
+  top: var(--spacing-md, 8px);
   bottom: 0;
   width: 2px;
   background: var(--color-border, #E4E4E7);
@@ -153,7 +153,7 @@ func timelineCSS(_ style.Theme) string {
   border-radius: 999px;
   background: var(--color-text-muted, #52525B);
   border: 2px solid var(--color-background, #FFFFFF);
-  margin-top: var(--spacing-xs, 6px);
+  margin-top: var(--spacing-xs, 2px);
   align-self: start;
   justify-self: center;
   position: relative;
@@ -161,12 +161,12 @@ func timelineCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-timeline"] .ui-timeline__content {
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   min-width: 0;
 }
 [data-fui-comp="ui-timeline"] .ui-timeline__header {
   display: flex;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
@@ -176,12 +176,12 @@ func timelineCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-timeline"] .ui-timeline__meta {
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-timeline"] .ui-timeline__body {
   color: var(--color-text-muted, #52525B);
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.5;
 }
 

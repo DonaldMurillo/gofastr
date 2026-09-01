@@ -75,9 +75,9 @@ func disclosureCSS(_ style.Theme) string {
 [data-fui-comp="disclosure"] .ui-disclosure__summary {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   font-weight: 600;
   color: var(--color-text, #18181B);
   cursor: pointer;
@@ -89,7 +89,7 @@ func disclosureCSS(_ style.Theme) string {
 }
 [data-fui-comp="disclosure"] .ui-disclosure__summary::before {
   content: "▸";
-  font-size: var(--text-xs, 0.7rem);
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
   transition: transform 120ms ease;
 }
@@ -101,10 +101,10 @@ func disclosureCSS(_ style.Theme) string {
   outline-offset: -2px;
 }
 [data-fui-comp="disclosure"] .ui-disclosure__body {
-  padding: 0 var(--spacing-md, 12px) var(--spacing-md, 12px);
+  padding: 0 var(--spacing-md, 8px) var(--spacing-md, 8px);
   color: var(--color-text, #18181B);
   border-top: 1px solid var(--color-border, #E4E4E7);
-  padding-block-start: var(--spacing-md, 12px);
+  padding-block-start: var(--spacing-md, 8px);
 }
 [data-fui-comp="disclosure"]:not([open]) .ui-disclosure__body {
   display: none;

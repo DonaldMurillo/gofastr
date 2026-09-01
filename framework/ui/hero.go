@@ -89,14 +89,14 @@ func heroCSS(_ style.Theme) string {
 [data-fui-comp="ui-hero"].ui-hero--split {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: var(--spacing-2xl, 48px);
+  gap: var(--spacing-2xl, 32px);
   align-items: center;
 }
 [data-fui-comp="ui-hero"] .ui-hero__copy {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--spacing-lg, 24px);
+  gap: var(--spacing-lg, 16px);
   max-width: 42rem;
 }
 [data-fui-comp="ui-hero"] .ui-hero__title {
@@ -118,16 +118,16 @@ func heroCSS(_ style.Theme) string {
 [data-fui-comp="ui-hero"] .ui-hero__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-sm, 12px);
-  margin-top: var(--spacing-xs, 4px);
+  gap: var(--spacing-sm, 4px);
+  margin-top: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-hero"] .ui-hero__media img {
   inline-size: 100%;
   height: auto;
-  border-radius: var(--radii-lg, 16px);
+  border-radius: var(--radii-lg, 12px);
 }
 @media (max-width: 980px) {
-  [data-fui-comp="ui-hero"].ui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 24px); }
+  [data-fui-comp="ui-hero"].ui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 16px); }
 }
 `
 }

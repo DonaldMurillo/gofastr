@@ -89,8 +89,8 @@ func inputGroupCSS(_ style.Theme) string {
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: var(--text-base, 0.95rem);
-  padding: 10px var(--spacing-md, 12px);
+  font-size: var(--text-base, 1rem);
+  padding: 10px var(--spacing-md, 8px);
   color: var(--color-text, #18181B);
   min-block-size: var(--spacing-touch-target, 44px);
   min-width: 0;
@@ -105,10 +105,10 @@ func inputGroupCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 var(--spacing-md, 12px);
+  padding: 0 var(--spacing-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   white-space: nowrap;
   user-select: none;
   border-right: 1px solid var(--color-border, #E4E4E7);

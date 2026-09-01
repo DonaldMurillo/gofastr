@@ -28,7 +28,7 @@ func anchoredRailCSS(t style.Theme) string {
 		Rule(".ui-anchored-rail__label").
 		Set(
 			"font-family", "{fonts.mono}",
-			"font-size", "var(--text-xs, 0.6875rem)",
+			"font-size", "var(--text-xs, 0.75rem)",
 			"color", "{colors.text-subtle}",
 			"font-weight", "400",
 			"margin", "0 0 {spacing.md} 0",
@@ -58,7 +58,7 @@ func anchoredRailCSS(t style.Theme) string {
 		Rule(".ui-anchored-rail__eyebrow").
 		Set(
 			"font-family", "{fonts.mono}",
-			"font-size", "var(--text-xs, 0.6875rem)",
+			"font-size", "var(--text-xs, 0.75rem)",
 			"color", "{colors.text-subtle}",
 		).End().
 		Rule(".ui-anchored-rail__count").

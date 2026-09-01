@@ -118,7 +118,7 @@ func colorFieldCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-color-field"] {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   inline-size: 100%;
 }
 

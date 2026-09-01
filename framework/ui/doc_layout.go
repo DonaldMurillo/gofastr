@@ -163,12 +163,12 @@ func docLayoutCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-doc-layout"] {
   display: grid;
   grid-template-columns: var(--ui-doc-layout-rail, 220px) minmax(0, 1fr) var(--ui-doc-layout-rail, 220px);
-  gap: var(--ui-doc-layout-gap, var(--spacing-2xl, 48px));
+  gap: var(--ui-doc-layout-gap, var(--spacing-2xl, 32px));
   inline-size: 100%;
   min-inline-size: 0;
   max-width: var(--ui-doc-layout-max-width, 1360px);
   margin-inline: auto;
-  padding: var(--ui-doc-layout-pad, var(--spacing-xl, 32px));
+  padding: var(--ui-doc-layout-pad, var(--spacing-xl, 24px));
 }
 [data-fui-comp="ui-doc-layout"].ui-doc-layout--notoc {
   grid-template-columns: var(--ui-doc-layout-rail, 220px) minmax(0, 1fr);
@@ -193,7 +193,7 @@ func docLayoutCSS(_ style.Theme) string {
   flex-wrap: wrap;
   gap: 6px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
   margin-bottom: var(--spacing-xl, 24px);
 }
@@ -206,8 +206,8 @@ func docLayoutCSS(_ style.Theme) string {
 
 /* Prev/next pager */
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__foot {
-  margin-top: var(--spacing-2xl, 48px);
-  padding-top: var(--spacing-xl, 32px);
+  margin-top: var(--spacing-2xl, 32px);
+  padding-top: var(--spacing-xl, 24px);
   border-top: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__foot-nav {
@@ -223,7 +223,7 @@ func docLayoutCSS(_ style.Theme) string {
   padding: var(--spacing-lg, 16px);
   background: var(--color-surface, transparent);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   text-decoration: none;
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__next { text-align: right; }
@@ -233,7 +233,7 @@ func docLayoutCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__pager-dir {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__pager-ttl { color: var(--color-text, #18181B); font-weight: 500; }
@@ -246,11 +246,11 @@ func docLayoutCSS(_ style.Theme) string {
   [data-fui-comp="ui-doc-layout"] {
     display: block;
     max-width: none;
-    padding: var(--spacing-lg, 24px);
+    padding: var(--spacing-lg, 16px);
   }
   /* display:block drops the grid gap — restore separation between the
      stacked SectionMenu pill and the article below it. */
-  [data-fui-comp="ui-doc-layout"] > * + * { margin-block-start: var(--spacing-xl, 28px); }
+  [data-fui-comp="ui-doc-layout"] > * + * { margin-block-start: var(--spacing-xl, 24px); }
   [data-fui-comp="ui-doc-layout"] .ui-doc-layout__content {
     max-width: none;
     overflow-x: hidden;

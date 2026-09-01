@@ -138,8 +138,8 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
 	return `[data-fui-comp="ui-network-retry-banner"] {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
+  gap: var(--spacing-md, 8px);
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border: 1px solid var(--color-warn, #B45309);
   border-radius: var(--radii-md, 8px);
   background: var(--color-warn-soft, #FEF3C7);
@@ -157,7 +157,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   font-weight: 700;
 }
 [data-fui-comp="ui-network-retry-banner"] .ui-network-retry-banner__desc {
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   opacity: 0.9;
 }
 [data-fui-comp="ui-network-retry-banner"][data-state="checking"] .ui-network-retry-banner__retry {

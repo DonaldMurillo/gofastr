@@ -233,7 +233,7 @@ func stepWizardCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-step-wizard"] .ui-step-wizard__indicator {
   display: flex;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   list-style: none;
   margin: 0;
   padding: 0;

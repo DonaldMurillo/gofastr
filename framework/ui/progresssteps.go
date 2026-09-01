@@ -184,7 +184,7 @@ func progressStepsCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-progress-steps"] .ui-progress-steps__list {
   display: flex;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -220,7 +220,7 @@ func progressStepsCSS(_ style.Theme) string {
   display: grid;
   grid-template-rows: auto auto;
   justify-items: center;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
 }
@@ -242,12 +242,12 @@ func progressStepsCSS(_ style.Theme) string {
   border-radius: 999px;
   background: var(--color-surface, #FFFFFF);
   border: 2px solid var(--color-border, #E4E4E7);
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 600;
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-progress-steps"] .ui-progress-steps__label {
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 600;
   text-align: center;
 }
@@ -278,7 +278,7 @@ func progressStepsCSS(_ style.Theme) string {
 /* Vertical orientation. */
 .ui-progress-steps--vertical .ui-progress-steps__list {
   flex-direction: column;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
 }
 .ui-progress-steps--vertical .ui-progress-steps__item {
   flex: 0 0 auto;
@@ -288,7 +288,7 @@ func progressStepsCSS(_ style.Theme) string {
   grid-template-columns: auto 1fr;
   justify-items: start;
   align-items: center;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
 }
 .ui-progress-steps--vertical .ui-progress-steps__text {
   justify-items: start;

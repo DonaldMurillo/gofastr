@@ -118,7 +118,7 @@ func pricingCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__badge {
   align-self: flex-start;
-  font-size: var(--text-xs, 0.7rem);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -137,7 +137,7 @@ func pricingCardCSS(_ style.Theme) string {
   font-size: var(--text-xl, 1.25rem);
   margin: 0;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.9rem); line-height: 1.5; }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: 1.5; }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
@@ -146,13 +146,13 @@ func pricingCardCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 0.95rem); }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature {
   position: relative;
   padding-inline-start: 1.6rem;
   color: var(--color-text, #1B1B2A);
-  font-size: var(--text-sm, 0.92rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.45;
 }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature::before {

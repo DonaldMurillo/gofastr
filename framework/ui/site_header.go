@@ -242,10 +242,10 @@ func siteHeaderCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-site-header"] {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md, 16px);
+  gap: var(--spacing-md, 8px);
   inline-size: 100%;
   block-size: 100%;
-  padding-inline: var(--spacing-lg, 24px);
+  padding-inline: var(--spacing-lg, 16px);
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__brand {
   display: flex;
@@ -257,7 +257,7 @@ func siteHeaderCSS(_ style.Theme) string {
 [data-fui-comp="ui-site-header"] .ui-site-header__brand a {
   display: inline-flex;
   align-items: center;
-  gap: var(--ui-site-header-brand-gap, var(--spacing-sm, 8px));
+  gap: var(--ui-site-header-brand-gap, var(--spacing-sm, 4px));
   min-inline-size: 0;
 }
 /* Visual IDENTITY is consumer-owned: these are defaults, not a takeover.
@@ -273,8 +273,8 @@ func siteHeaderCSS(_ style.Theme) string {
 [data-fui-comp="ui-site-header"] .ui-site-header__links {
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg, 24px);
-  margin-inline-start: var(--spacing-xl, 32px);
+  gap: var(--spacing-lg, 16px);
+  margin-inline-start: var(--spacing-xl, 24px);
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__links a {
   color: var(--ui-site-header-nav-color, currentColor);
@@ -318,7 +318,7 @@ func siteHeaderCSS(_ style.Theme) string {
 [data-fui-comp="ui-site-header"] .ui-site-header__right {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   margin-inline-start: auto;
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile {
@@ -333,7 +333,7 @@ func siteHeaderCSS(_ style.Theme) string {
   block-size: 44px;
   background: transparent;
   border: 1px solid var(--ui-site-header-icon-border, transparent);
-  border-radius: var(--radii-sm, 6px);
+  border-radius: var(--radii-sm, 4px);
   cursor: pointer;
   list-style: none;
 }
@@ -359,9 +359,9 @@ func siteHeaderCSS(_ style.Theme) string {
   inset-inline-start: var(--ui-site-header-drawer-left, auto);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   min-inline-size: var(--ui-site-header-drawer-min-width, 200px);
-  padding: var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 4px);
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
@@ -370,10 +370,10 @@ func siteHeaderCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a {
   display: block;
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: currentColor;
   text-decoration: none;
-  border-radius: var(--radii-sm, 6px);
+  border-radius: var(--radii-sm, 4px);
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a:hover,
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a:focus-visible {
@@ -389,9 +389,9 @@ func siteHeaderCSS(_ style.Theme) string {
 [data-fui-comp="ui-site-header"] .ui-site-header__mobile-actions {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm, 10px);
-  margin-block-start: var(--spacing-md, 16px);
-  padding-block-start: var(--spacing-md, 16px);
+  gap: var(--spacing-sm, 4px);
+  margin-block-start: var(--spacing-md, 8px);
+  padding-block-start: var(--spacing-md, 8px);
   border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
 @media (max-width: 720px) {
@@ -425,8 +425,8 @@ func siteHeaderCSS(_ style.Theme) string {
   animation: ui-site-header-drawer-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links a {
-  padding: var(--spacing-sm, 10px) var(--spacing-md, 12px);
-  font-size: var(--text-base, 1.05rem);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+  font-size: var(--text-base, 1rem);
 }
 [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet details[open]::before {
   content: "";

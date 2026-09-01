@@ -181,9 +181,9 @@ func bannerCloseIcon() string {
 func bannerCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-banner"] {
   display: flex;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
   align-items: flex-start;
-  padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border: 1px solid var(--ui-banner-accent, var(--color-info, #3B82F6));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
@@ -204,12 +204,12 @@ func bannerCSS(_ style.Theme) string {
 [data-fui-comp="ui-banner"] .ui-banner__title {
   margin: 0;
   font-weight: 600;
-  font-size: var(--text-base, 0.95rem);
+  font-size: var(--text-base, 1rem);
 }
 [data-fui-comp="ui-banner"] .ui-banner__body {
   margin: 0;
   color: var(--color-text-muted, #52525B);
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.45;
 }
 [data-fui-comp="ui-banner"] .ui-banner__action {

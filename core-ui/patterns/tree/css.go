@@ -18,7 +18,7 @@ func styleFn(_ style.Theme) string {
 [data-fui-comp="tree"] .tree__row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   min-height: var(--spacing-touch-target, 44px);
   padding: var(--spacing-sm, 4px) 6px;
   border-radius: var(--radii-sm, 4px);
@@ -47,7 +47,7 @@ func styleFn(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-xs, 0.75rem);
   cursor: pointer;
-  transition: transform var(--duration-fast, 120ms) var(--easing-standard, ease);
+  transition: transform var(--duration-fast, 150ms) var(--easing-standard, ease);
 }
 [data-fui-comp="tree"] .tree__item[aria-expanded="true"] > .tree__row > .tree__toggle {
   transform: rotate(90deg);

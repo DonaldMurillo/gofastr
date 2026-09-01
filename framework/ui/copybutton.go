@@ -207,16 +207,16 @@ func copyButtonCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
   min-height: var(--spacing-touch-target, 44px);
   min-width: var(--spacing-touch-target, 44px);
-  padding: 6px var(--spacing-md, 12px);
+  padding: 6px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #d0d0d8);
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
   color: var(--color-text, #111);
   font: inherit;
-  font-size: var(--text-sm, 0.85rem);
+  font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease;
 }

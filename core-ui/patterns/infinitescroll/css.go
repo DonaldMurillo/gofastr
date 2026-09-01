@@ -23,7 +23,7 @@ func styleFn(_ style.Theme) string {
   display: block;
   block-size: 2px;
   inline-size: 40%;
-  margin: var(--spacing-md, 12px) auto;
+  margin: var(--spacing-md, 8px) auto;
   background: var(--color-primary, #4F46E5);
   border-radius: 2px;
   animation: infinitescroll-pulse 1.2s ease-in-out infinite;
@@ -38,17 +38,17 @@ func styleFn(_ style.Theme) string {
 [data-fui-comp="infinitescroll"] .infinitescroll__noscript {
   display: flex;
   justify-content: center;
-  padding: var(--spacing-md, 12px) 0;
+  padding: var(--spacing-md, 8px) 0;
 }
 [data-fui-comp="infinitescroll"] .infinitescroll__loadmore {
   min-height: var(--spacing-touch-target, 44px);
   padding: 0 var(--spacing-lg, 16px);
   border: 1px solid var(--color-border, #d0d0d8);
-  border-radius: var(--radii-md, 6px);
+  border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
   color: var(--color-text, #111);
   font: inherit;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
 }
 @keyframes infinitescroll-pulse {

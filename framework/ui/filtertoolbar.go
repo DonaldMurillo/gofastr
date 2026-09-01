@@ -390,7 +390,7 @@ func filterToolbarCSS(_ style.Theme) string {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: var(--spacing-md, 12px) var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px) var(--spacing-md, 8px);
   margin: 0;
   padding: 0;
   border: 0;
@@ -433,7 +433,7 @@ func filterToolbarCSS(_ style.Theme) string {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm, 4px);
   margin-inline-start: auto;
 }
 [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__actions .ui-button {
@@ -443,15 +443,15 @@ func filterToolbarCSS(_ style.Theme) string {
 /* Pill facet — fieldset reset + legend as a field label. */
 [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__legend {
   padding: 0;
-  margin-block-end: var(--spacing-xs, 4px);
+  margin-block-end: var(--spacing-xs, 2px);
   font-weight: 500;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill-group {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs, 6px);
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill {
   display: inline-flex;
@@ -461,12 +461,12 @@ func filterToolbarCSS(_ style.Theme) string {
      themselves, never mid-label (the "Waiting On Customer" → 3 lines bug). */
   white-space: nowrap;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 0 var(--spacing-md, 14px);
+  padding: 0 var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: 999px;
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text-muted, #52525B);
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
   user-select: none;
   transition: background var(--duration-fast, 150ms) var(--easing-standard, ease),

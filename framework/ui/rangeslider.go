@@ -156,23 +156,23 @@ var rangeSliderStyle = registry.RegisterStyle("ui-range-slider", rangeSliderCSS)
 func rangeSliderCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-range-slider"] {
   display: grid;
-  gap: var(--spacing-xs, 4px);
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-range-slider"] .ui-range-slider__header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--spacing-md, 12px);
+  gap: var(--spacing-md, 8px);
 }
 [data-fui-comp="ui-range-slider"] .ui-range-slider__label {
   font-weight: 500;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-range-slider"] .ui-range-slider__value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: var(--text-sm, 0.9rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-primary, #4F46E5);
 }
 [data-fui-comp="ui-range-slider"] .ui-range-slider__track-wrap {

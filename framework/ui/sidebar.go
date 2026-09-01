@@ -762,8 +762,8 @@ func sidebarCSS(_ style.Theme) string {
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-radius: var(--radii-sm, 4px);
   color: var(--color-text, #18181B);
   text-decoration: none;
@@ -800,13 +800,13 @@ func sidebarCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__footer {
   margin-top: auto;
-  padding-top: var(--spacing-md, 12px);
+  padding-top: var(--spacing-md, 8px);
   border-top: 1px solid var(--color-border, #E4E4E7);
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__inline {
   min-width: 64px;
   width: 64px;
-  padding-inline: var(--spacing-sm, 8px);
+  padding-inline: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__collapse {
   justify-self: center;
@@ -833,7 +833,7 @@ func sidebarCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__link {
   justify-content: center;
-  padding-inline: var(--spacing-sm, 8px);
+  padding-inline: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__icon--fallback {
   display: inline-flex;
@@ -857,7 +857,7 @@ func sidebarCSS(_ style.Theme) string {
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide .ui-sidebar__inline {
   min-width: 64px;
   width: 64px;
-  padding-inline: var(--spacing-sm, 8px);
+  padding-inline: var(--spacing-sm, 4px);
   transition: width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     min-width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     padding-inline var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
@@ -891,7 +891,7 @@ func sidebarCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__link {
   justify-content: center;
-  padding-inline: var(--spacing-sm, 8px);
+  padding-inline: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__icon--fallback {
   display: inline-flex;
