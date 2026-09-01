@@ -159,7 +159,10 @@ func TestCallWithIDReportsAssignedFrameID(t *testing.T) {
 // audit proof TestModuleCancelRequestIDIgnoresTrailingBytes, which pinned
 // the pre-fix prefix-match behaviour and instructed the fix to flip it.
 func TestModuleCancelNonCanonicalRequestIDIsNoOp(t *testing.T) {
-	for _, rid := range []string{"notes-1", "1-not-the-frame-id", " 1"} {
+	// "01" is the one that ParseUint alone lets through: it parses to
+	// 1 with no error, so only the canonical round-trip check refuses
+	// it. "+1" and " 1" the parser rejects on its own.
+	for _, rid := range []string{"notes-1", "1-not-the-frame-id", " 1", "01", "+1"} {
 		t.Run(rid, func(t *testing.T) {
 			host, child, _, _, cleanup := newPeerPair(t, 0)
 			defer cleanup()

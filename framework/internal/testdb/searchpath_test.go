@@ -226,7 +226,15 @@ func TestRewrittenKeywordValueDSNStillConnects(t *testing.T) {
 	// space breaks identically. Either way the failure lands on
 	// "lib/pq rejected the rewritten DSN" and blames the rewrite instead
 	// of the fixture. Quotes and backslashes are escaped per libpq.
-	pass = "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(pass) + "'"
+	// user and dbname need the same treatment, for the same reason: a DSN
+	// with no userinfo gives an empty username (url.Userinfo handles the
+	// nil receiver, so this does not panic — it just yields ""), and an
+	// empty or space-bearing value unquoted lets the NEXT pair be swallowed
+	// as its value. Quoting each one keeps every pair a pair.
+	q := func(v string) string {
+		return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
+	}
+	pass = q(pass)
 	// The fixture has to contain a QUOTED search_path with a space in it.
 	// Splitting on whitespace and re-joining on whitespace is lossless on
 	// its own — the damage happens only when a token is dropped, and here
@@ -240,7 +248,7 @@ func TestRewrittenKeywordValueDSNStillConnects(t *testing.T) {
 	kv := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable "+
 			"options='-c statement_timeout=30s' search_path='stale, public'",
-		host, port, u.User.Username(), pass, strings.TrimPrefix(u.Path, "/"))
+		host, port, q(u.User.Username()), pass, q(strings.TrimPrefix(u.Path, "/")))
 
 	admin, err := sql.Open("postgres", base)
 	if err != nil {

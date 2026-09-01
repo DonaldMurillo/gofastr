@@ -788,7 +788,12 @@ func builtinCancelHandler(p *Peer) Handler {
 		// Sscanf("notes-42") rejected the whole value (module.cancel was a
 		// silent no-op on the proxy path, issue #356), while Sscanf("1-…")
 		id, err := strconv.ParseUint(cp.RequestID, 10, 64)
-		if err != nil || id == 0 {
+		// ParseUint alone is not strict enough to be canonical: "01" parses
+		// to 1 with no error, so a leading zero would cancel frame 1 while
+		// not being the value CallWithID reported. Requiring the round-trip
+		// makes exactly one spelling of each id acceptable, which is the
+		// property this parse is for — one RequestID, one frame.
+		if err != nil || id == 0 || cp.RequestID != strconv.FormatUint(id, 10) {
 			return nil, nil
 		}
 		p.mu.Lock()
