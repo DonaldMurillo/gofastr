@@ -1,4 +1,4 @@
-.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: analyze check-protection build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -62,6 +62,13 @@ test:
 analyze: $(DIST_DIR)
 	go build -o $(DIST_DIR)/vettool ./cmd/vettool
 	go vet -vettool=$(DIST_DIR)/vettool ./...
+
+# Compare GitHub branch protection on main against the release manifest —
+# the third required-check list, the one no test in the tree can see. Needs
+# a gh token with repo-admin scope, which is why it is not a CI step. Run it
+# after adding or renaming any blocking check. See #348.
+check-protection:
+	bash scripts/check-branch-protection.sh
 
 # Run framework tests against Postgres via TEST_POSTGRES_DSN. Set the DSN to
 # point at a local PG you don't mind us creating per-test schemas in.

@@ -11,6 +11,11 @@
 # CI job without updating this list breaks the BUILD, not silently the gate
 # (the v0.63 PR #193 rename orphaned branch-protection contexts for exactly
 # this reason — a rename must not be able to slip past the gate).
+#
+# That pins two of the THREE lists. The third is GitHub branch protection on
+# main — what a PR must pass — and it lives in settings, so no test here can
+# see it. After adding or renaming any name below, run `make check-protection`
+# (scripts/check-branch-protection.sh) to diff this file against it. See #348.
 build · vet · test (blocking)
 vulncheck · secrets · mod-verify (blocking)
 browser e2e · site (blocking)
