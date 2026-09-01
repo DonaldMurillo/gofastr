@@ -669,3 +669,39 @@ func TestMenuUngroupedRadioSelfChecks(t *testing.T) {
 		t.Fatalf("after activating grouped B = %s, want B checked and U keeping its own check", afterB)
 	}
 }
+
+// TestMenuButtonTriggerRealClick: a TriggerHTML button inside the
+// summary must toggle the disclosure under a REAL pointer. Chrome's UA
+// activation does not run when the click target is an interactive
+// descendant, so without the disclosure module's interactive-descendant
+// toggle the menu opens dead. (The closed-panel CSS hiding is pinned
+// markup-side in framework/ui/menu_test.go: menuCSS must not defeat
+// the UA's closed-details display with its author display:grid.)
+func TestMenuButtonTriggerRealClick(t *testing.T) {
+	g := startGadgetServer(t, `[]`, `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="bm" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="bm-panel"><button type="button" aria-label="Open user menu"><span>U</span></button></summary><div class="ui-menu__panel" id="bm-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/x" role="menuitem" tabindex="-1"><span class="ui-menu__label">Row</span></a></div></details>`)
+	ctx := newSeedBrowserCtx(t)
+
+	var coords string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`summary.ui-menu__trigger > button`),
+		chromedp.Evaluate(`(() => { const r = document.querySelector('summary.ui-menu__trigger > button').getBoundingClientRect(); return r.x + r.width/2 + ',' + (r.y + r.height/2); })()`, &coords),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var x, y float64
+	if _, err := fmt.Sscanf(coords, "%f,%f", &x, &y); err != nil {
+		t.Fatalf("coords: %v (%q)", err, coords)
+	}
+	var after string
+	if err := chromedp.Run(ctx,
+		chromedp.MouseClickXY(x, y),
+		chromedp.Evaluate(`String(document.querySelector('details[data-fui-menu="bm"]').open)`, &after),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if after != "true" {
+		t.Fatal("real click on TriggerHTML button must open the disclosure")
+	}
+}
+

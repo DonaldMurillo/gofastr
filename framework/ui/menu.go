@@ -536,6 +536,13 @@ func menuCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
   display: grid;
+  /* The UA sheet hides closed-details children with display:none, but
+     this author display:grid would override it — the panel would
+     render visibly while details.open is false, and AT/role engines
+     prune the whole menu (the trigger's own activation state lies).
+     Hide explicitly; the open state is the UA default. */
+}
+[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
   gap: var(--spacing-xs, 2px);
   animation: ui-menu-in var(--duration-dropdown-enter, 120ms)
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
