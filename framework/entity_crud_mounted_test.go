@@ -49,5 +49,25 @@ func TestEntityCRUDMountedTracksTheMount(t *testing.T) {
 		if app.EntityCRUDMounted(disabled) {
 			t.Fatal("Exposure.CRUD=false entity must not report mounted")
 		}
+
+		// A columned view registers an entity and mounts READ-ONLY
+		// (App.View). Its read routes exist, and read routes are what a
+		// route-advertising surface documents — so the predicate must say
+		// mounted, not treat read-only as absent.
+		app.Registry.Register(entity.Define("users", entity.EntityConfig{
+			Table: "users",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String},
+				{Name: "active", Type: schema.Bool},
+			},
+		}.WithTimestamps(false)))
+		app.View(activeUsersView())
+		viewEnt, err := app.Registry.Get("active_users")
+		if err != nil {
+			t.Fatalf("view entity not registered: %v", err)
+		}
+		if !app.EntityCRUDMounted(viewEnt) {
+			t.Fatal("a columned view mounts read-only routes; the predicate must report it mounted")
+		}
 	})
 }
