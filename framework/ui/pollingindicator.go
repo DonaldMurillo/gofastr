@@ -93,7 +93,7 @@ const pollingIndicatorCSSText = `
 .ui-polling-indicator__dot {
   inline-size: 0.5rem;
   block-size: 0.5rem;
-  border-radius: 9999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-success, #16A34A);
   animation: ui-polling-pulse 1.6s ease-in-out infinite;
 }

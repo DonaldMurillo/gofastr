@@ -714,7 +714,7 @@ td[data-align="end"] {
   z-index: 9999;
   background: var(--color-text, #18181B);
   color: var(--color-background, #FAFAFA);
-  border-radius: 4px;
+  border-radius: var(--radii-sm, 4px);
   font: 0.9rem system-ui, -apple-system, sans-serif;
   text-decoration: none;
 }
@@ -734,7 +734,7 @@ td[data-align="end"] {
      app's toast now tracks its palette. */
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #FAFAFA);
-  border-radius: 8px;
+  border-radius: var(--radii-md, 8px);
   font: 0.9rem system-ui, -apple-system, sans-serif;
   box-shadow: 0 10px 25px rgba(0,0,0,0.25);
   opacity: 0;
@@ -863,16 +863,6 @@ func (ds *UIHost) CompileActions(componentID string, comp component.Component) s
 // any that implement InteractiveComponent. The component ID is derived from
 // ScreenComponentID.ComponentID() if implemented, otherwise from the route path.
 func (ds *UIHost) AutoCompileActions() {
-	// Two routes can derive the same action id: pathToActionID turns "/"
-	// into "-", so /admin/users and /admin-users both become
-	// "admin-users". CompileActions caches first-wins, so the second
-	// screen's registry was never stored -- its Go handlers unreachable,
-	// and a data-action click on that page resolving into the OTHER
-	// screen's registry and running its handler with this page's params.
-	// Nothing said so at boot. Refuse instead, naming both routes: an id
-	// collision is a wiring mistake with one fix (give one screen an
-	// explicit ComponentID), and it cannot be diagnosed from the symptom.
-	claimed := make(map[string]string, len(ds.App.Routes()))
 	for _, route := range ds.App.Routes() {
 		screen, ok := ds.App.Router.ScreenByPattern(route.Path)
 		if !ok {
@@ -885,15 +875,6 @@ func (ds *UIHost) AutoCompileActions() {
 			} else {
 				id = pathToActionID(route.Path)
 			}
-			if prev, taken := claimed[id]; taken && prev != route.Path {
-				panic(fmt.Sprintf(
-					"uihost: screens %q and %q both derive server-action id %q; "+
-						"one screen's Go handlers would be unreachable and its data-action clicks "+
-						"would run the other's. Give one of them an explicit ComponentID() "+
-						"(implement app.ScreenComponentID) or rename the route.",
-					prev, route.Path, id))
-			}
-			claimed[id] = route.Path
 			ds.CompileActions(id, screen.Component)
 		}
 	}
@@ -2469,7 +2450,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 
 	// Invoke the Go handler if one exists
 	if actionDef.Handler != nil {
-		ctx := component.NewComponentContextFor(r.Context(), actionName, "", body.Params)
+		ctx := component.NewComponentContext(actionName, "", body.Params)
 		actionDef.Handler(ctx)
 
 		w.Header().Set("Content-Type", "application/json")

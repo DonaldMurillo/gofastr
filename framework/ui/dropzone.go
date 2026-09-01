@@ -245,7 +245,7 @@ func dropzoneCSS(_ style.Theme) string {
 [data-fui-comp="ui-dropzone"] .ui-dropzone__input:focus-visible + .ui-dropzone__icon {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 4px;
-  border-radius: 4px;
+  border-radius: var(--radii-sm, 4px);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__icon {
   color: var(--color-primary, #4F46E5);

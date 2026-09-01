@@ -354,7 +354,7 @@ func toggleCSS(_ style.Theme) string {
 [data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__indicator {
   inline-size: 2.25rem;
   block-size:  1.25rem;
-  border-radius: 9999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface-soft, #F4F4F5);
   border-color: var(--color-border, #E4E4E7);
   position: relative;
@@ -367,7 +367,7 @@ func toggleCSS(_ style.Theme) string {
   inline-size: 1rem;
   block-size: 1rem;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: var(--color-primary-fg, #FFFFFF);
   transform: translateY(-50%);
   transition: inset-inline-start var(--duration-fast, 150ms) ease;
   box-shadow: 0 1px 2px rgba(0,0,0,0.2);

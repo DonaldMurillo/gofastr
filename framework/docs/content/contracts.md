@@ -28,7 +28,7 @@ Rules are grouped into capabilities, and each capability is also a filter:
 | `data` | writes whose result and error are both discarded |
 | `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
 | `architecture` | imports that point up the layer stack, explicitly forbidden edges |
-| `rendering` | CSS outside the design system, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body, `var(--…)` in project CSS naming a token the theme does not emit |
+| `rendering` | CSS outside the design system, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body, `var(--…)` in project CSS naming a token the theme does not emit, design-system CSS hardcoding a literal a theme token already declares |
 | `accessibility` | the static WCAG floor: missing alt text, unnamed controls and landmarks, incomplete form controls, implicit heading levels, elements missing required metadata |
 | `performance` | regexps compiled per call, N+1 queries, reflection on the request path |
 | `testing` | routes, permissions, roles, entity operations, lifecycle hooks, and event subscribers no test exercised; disabled tests; a line-coverage floor; an unreadable coverage manifest |
