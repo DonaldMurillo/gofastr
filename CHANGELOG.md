@@ -5,6 +5,23 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Fixed
+
+- **`App.EntityCRUDMounted` is back.** The #358 rework that introduced the
+  richer internal mount predicate deleted the exported wrapper while three
+  shipped references still told callers to use it — `sdk.md`'s
+  `CRUDMounted: fwApp.EntityCRUDMounted` example, the
+  `sdkdocs.Config.CRUDMounted` field comment, and repolint's
+  `crud-exposure-rederived` finding message — so the documented wiring did
+  not compile in v0.78.0, and hosts had no exported way to hand sdkdocs
+  the mount truth at all. Restored as a delegate to the mount predicate
+  (a read-only view counts as mounted; its read routes are what a docs
+  surface documents), with a test pinning the symbol and its answers.
+  Found while confirming an old worktree's uncommitted duplicate of the
+  original #266 fix was safe to discard.
+
 ## [0.78.0] - 2026-09-01
 
 ### Added
