@@ -2,6 +2,7 @@ package a2a
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,6 +48,9 @@ const pushConcurrency = 16
 // pushDeliveryTimeout bounds one push POST. A hung receiver must not
 // accumulate goroutines for the TaskTimeout duration.
 const pushDeliveryTimeout = 10 * time.Second
+
+// pushLookupTimeout bounds the registration-time DNS check of a push URL.
+const pushLookupTimeout = 3 * time.Second
 
 type pusher struct {
 	client       *http.Client
@@ -108,7 +112,12 @@ func (p *pusher) deliver(recs []*PushConfigRecord, ev StreamResponse) {
 // only on this request; the client cannot follow a redirect (see
 // PushOptions.Client), so they cannot leak to a second host.
 func (p *pusher) post(cfg PushNotificationConfig, payload []byte) error {
-	req, err := http.NewRequest(http.MethodPost, cfg.URL, bytes.NewReader(payload))
+	// The deadline rides on the request as well as on the default
+	// client's Timeout, so a caller-supplied client without one cannot
+	// turn a hung receiver into a goroutine that never returns.
+	ctx, cancel := context.WithTimeout(context.Background(), pushDeliveryTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -177,15 +186,20 @@ func validatePushURL(raw string, allowPrivate bool) error {
 	if ip := net.ParseIP(host); ip != nil {
 		return rejectInternal(ip)
 	}
-	addrs, err := net.LookupIP(host)
+	// Bounded: the hostname is client-supplied, and a name whose
+	// resolver stalls must not hold the registration request for the
+	// resolver's own timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), pushLookupTimeout)
+	defer cancel()
+	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		// DNS failure at registration is not a refusal: the receiver
 		// need not be live yet, and the dial-time guard is what stops a
 		// later resolution onto an internal address.
 		return nil
 	}
-	for _, ip := range addrs {
-		if err := rejectInternal(ip); err != nil {
+	for _, ip := range ipAddrs {
+		if err := rejectInternal(ip.IP); err != nil {
 			return err
 		}
 	}

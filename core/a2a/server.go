@@ -548,7 +548,15 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request, req *rpcRequ
 	}
 	if h != nil {
 		s.startRun(r, t, rn, h)
-		<-rn.done
+		// Wait for the run, but not past the client: a caller that hangs
+		// up must not pin this goroutine for the rest of TaskTimeout. The
+		// run itself carries on regardless (its context is cut from the
+		// request's cancellation), so the client was told nothing false.
+		select {
+		case <-rn.done:
+		case <-r.Context().Done():
+			return
+		}
 	}
 	task := t.snapshot()
 	applyHistoryLength(task, historyLengthOf(&p))
@@ -842,6 +850,7 @@ func (st *sseStream) keepAlive() error {
 	if st.w.err != nil {
 		return st.w.err
 	}
+	_ = st.rc.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
 	_, err := fmt.Fprintf(st.w, ": keep-alive\n\n")
 	if err != nil {
 		st.w.err = err

@@ -110,6 +110,20 @@ func (t *taskRun) Message() *Message {
 // Owner returns the principal that owns the task.
 func (t *taskRun) Owner() string { return t.owner }
 
+// taskID reads the id under the lock: a handler may still be calling
+// into the TaskContext from a goroutine it spawned when the runner logs.
+func (t *taskRun) taskID() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.rec.Task.ID
+}
+
+// storeOpTimeout bounds one Store call made on the run's behalf. The
+// run context is deliberately not used (a canceled run must still
+// persist its final state), so this is the only thing standing between
+// a wedged database and a goroutine that never returns.
+const storeOpTimeout = 30 * time.Second
+
 // Request returns the HTTP request that started or resumed this run.
 // Its Context is deliberately not the handler's context, so handlers
 // re-dispatching into the app with the caller's credentials do not
@@ -143,7 +157,6 @@ func (t *taskRun) Artifact(a Artifact, appendParts bool) error {
 		if a.ArtifactID == "" {
 			a.ArtifactID = t.srv.newID()
 		}
-		stored := a
 		found := false
 		for i := range task.Artifacts {
 			if task.Artifacts[i].ArtifactID != a.ArtifactID {
@@ -152,7 +165,6 @@ func (t *taskRun) Artifact(a Artifact, appendParts bool) error {
 			found = true
 			if appendParts {
 				task.Artifacts[i].Parts = append(task.Artifacts[i].Parts, a.Parts...)
-				stored = task.Artifacts[i]
 			} else {
 				task.Artifacts[i] = a
 			}
@@ -161,11 +173,16 @@ func (t *taskRun) Artifact(a Artifact, appendParts bool) error {
 		if !found {
 			task.Artifacts = append(task.Artifacts, a)
 		}
+		// The event carries what the client must apply, and for an
+		// append that is the DELTA: spec §7.2 says a receiver appends
+		// the event's parts to the artifact it already holds, so sending
+		// the merged artifact with append=true would double every part
+		// already delivered. The stored task holds the merged result.
 		ev := StreamResponse{ArtifactUpdate: &TaskArtifactUpdateEvent{
 			TaskID:    task.ID,
 			ContextID: task.ContextID,
-			Artifact:  stored,
-			Append:    appendParts,
+			Artifact:  a,
+			Append:    appendParts && found,
 		}}
 		return &ev, nil
 	})
@@ -284,7 +301,9 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	if err != nil {
 		return err
 	}
-	if err := t.srv.store.UpdateTask(context.Background(), cand); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
+	defer cancel()
+	if err := t.srv.store.UpdateTask(ctx, cand); err != nil {
 		if errors.Is(err, ErrConflict) {
 			// The store moved on without us: the task was canceled or
 			// another replica resumed it. This run's writes are done.
@@ -306,10 +325,11 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 var errHandlerPanicked = errors.New("a2a: skill handler panicked")
 
 func (s *Server) invoke(ctx context.Context, t *taskRun, h Handler) (err error) {
+	taskID := t.taskID()
 	defer func() {
 		if p := recover(); p != nil {
 			s.log.Error("a2a: skill handler panicked",
-				"taskId", t.rec.Task.ID, "panic", p, "stack", string(debug.Stack()))
+				"taskId", taskID, "panic", p, "stack", string(debug.Stack()))
 			err = errHandlerPanicked
 		}
 	}()
@@ -349,7 +369,7 @@ func (s *Server) finalize(ctx context.Context, t *taskRun, err error) {
 		} else {
 			// Not an *Error the handler chose: log the real text, tell
 			// the client only that the skill failed.
-			s.log.Error("a2a: skill handler failed", "taskId", t.rec.Task.ID, "err", err)
+			s.log.Error("a2a: skill handler failed", "taskId", t.taskID(), "err", err)
 		}
 	default:
 		final = TaskStateCompleted
@@ -364,15 +384,20 @@ func (s *Server) finalize(ctx context.Context, t *taskRun, err error) {
 // terminal state and leaves it alone.
 func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 	const attempts = 8
-	for range attempts {
-		rec, err := t.srv.store.GetTask(context.Background(), t.owner, t.rec.Task.ID)
+	taskID := t.taskID()
+	// attempt returns done=true when the loop should stop: the task was
+	// already settled, the write landed, or a non-conflict error ended
+	// it. A conflict returns false so the caller re-reads.
+	attempt := func() (done bool) {
+		ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
+		defer cancel()
+		rec, err := t.srv.store.GetTask(ctx, t.owner, taskID)
 		if err != nil {
-			t.srv.log.Error("a2a: finalize read", "taskId", t.rec.Task.ID, "err", err)
-			return
+			t.srv.log.Error("a2a: finalize read", "taskId", taskID, "err", err)
+			return true
 		}
-		cur := rec.Task.Status.State
-		if cur.Terminal() || cur.Interrupted() {
-			return
+		if cur := rec.Task.Status.State; cur.Terminal() || cur.Interrupted() {
+			return true
 		}
 		cand := rec.Clone()
 		var parts []Part
@@ -382,20 +407,25 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 		t.mu.Lock()
 		ev := t.setStatusInPlace(&cand.Task, state, parts)
 		t.mu.Unlock()
-		if err := t.srv.store.UpdateTask(context.Background(), cand); err != nil {
+		if err := t.srv.store.UpdateTask(ctx, cand); err != nil {
 			if errors.Is(err, ErrConflict) {
-				continue
+				return false
 			}
-			t.srv.log.Error("a2a: finalize write", "taskId", t.rec.Task.ID, "err", err)
-			return
+			t.srv.log.Error("a2a: finalize write", "taskId", taskID, "err", err)
+			return true
 		}
 		t.mu.Lock()
 		t.rec = cand
 		t.mu.Unlock()
 		t.srv.publish(t.owner, cand, *ev)
-		return
+		return true
 	}
-	t.srv.log.Error("a2a: finalize gave up after repeated conflicts", "taskId", t.rec.Task.ID)
+	for range attempts {
+		if attempt() {
+			return
+		}
+	}
+	t.srv.log.Error("a2a: finalize gave up after repeated conflicts", "taskId", taskID)
 }
 
 // stamp is the injectable clock entry: one place to make timestamps
