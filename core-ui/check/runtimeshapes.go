@@ -447,14 +447,21 @@ func isJSIdent(s string) bool {
 //   - literal-only selectors (no non-literal operand, no ${…});
 //   - a bare variable argument (querySelector(sel)) — provenance is
 //     not traceable line-locally, and the repo has no such site;
-//   - values wrapped in CSS.escape(…) or a module-local cssEscape(…)
-//     shim, and identifiers assigned from either (rangeslider.js's
-//     `const sel = CSS.escape(id)` pattern);
-//   - identifiers provably holding string literals: a const/let/var
-//     initialized from one string literal (dropdown.js's IS_OPEN,
-//     reveal.js's REVEAL_ATTR), and for-of loop variables iterating an
-//     array of string literals (boot.js's eventType) — a literal cannot
-//     carry `"]` from input;
+//   - values wrapped in CSS.escape(…) — including dotted references
+//     like window.CSS.escape(…), the defensive spelling for browsers
+//     where the bare global is not bound — or a module-local
+//     cssEscape(…) shim;
+//   - identifiers whose LAST assignment before the use, within the
+//     enclosing function, is from one string literal (dropdown.js's
+//     IS_OPEN, reveal.js's REVEAL_ATTR) or an escape call
+//     (rangeslider.js's `const sel = CSS.escape(id)`), and for-of
+//     loop variables iterating an array of string literals (boot.js's
+//     eventType): those provably hold a literal at the lookup point.
+//     A later reassignment from anything else (an attribute read, a
+//     concatenation, a compound append) revokes the status, and a
+//     same-named identifier in a different function never shares it —
+//     the safe set is per function scope, ordered by assignment
+//     position;
 //   - getElementById (never scanned).
 func LintSelectorInterpolation(roots ...string) (*Result, error) {
 	res := &Result{}
@@ -463,7 +470,7 @@ func LintSelectorInterpolation(roots ...string) (*Result, error) {
 		return nil, err
 	}
 	for _, f := range files {
-		safe := selectorSafeIdents(f.Code)
+		events := safeIdentEvents(f.Code)
 		for _, loc := range reSelectorCall.FindAllStringIndex(f.Code, -1) {
 			if loc[0] > 0 && isJSIdentChar(f.Code[loc[0]-1]) {
 				continue // part of a longer identifier (prefetch(, myMatches()
@@ -473,6 +480,7 @@ func LintSelectorInterpolation(roots ...string) (*Result, error) {
 			if close < 0 {
 				continue
 			}
+			safe := func(name string) bool { return safeAt(events, name, loc[0]) }
 			bad, ok := selectorUnsafeOperand(f.Code[open+1:close], safe)
 			if !ok {
 				continue
@@ -486,32 +494,106 @@ func LintSelectorInterpolation(roots ...string) (*Result, error) {
 
 var reSelectorCall = regexp.MustCompile(`(?:querySelectorAll|querySelector|closest|matches)\s*\(`)
 
-// selectorSafeIdents returns identifiers that provably cannot carry a
-// selector metacharacter: escape results, string-literal constants, and
-// for-of variables over arrays of string literals.
-var safeIdentRes = []*regexp.Regexp{
-	// const/let/var X = CSS.escape(…) / cssEscape(…)
-	regexp.MustCompile(`(?:const|let|var)\s+(\w+)\s*=\s*(?:CSS\.escape|cssEscape)\s*\(`),
-	// const/let/var X = 'literal' / "literal"
-	regexp.MustCompile(`(?:const|let|var)\s+(\w+)\s*=\s*(?:'[^']*'|"[^"]*")\s*[;,\n]`),
-	// for (const X of ['a', 'b']) — every element a string literal
-	regexp.MustCompile(`for\s*\(\s*(?:const|let|var)\s+(\w+)\s+of\s*\[((?:\s*(?:'[^']*'|"[^"]*")\s*,?)*)\]\s*\)`),
+// safeEvent is one assignment to an identifier, with the enclosing
+// function scope it happened in: an init from a string literal or an
+// escape call forms the safe set at that point; any later assignment
+// from something else (an attribute read, a concatenation, a compound
+// append) revokes it.
+type safeEvent struct {
+	name                 string
+	scopeStart, scopeEnd int
+	pos                  int
+	safe                 bool
 }
 
-func selectorSafeIdents(code string) map[string]bool {
-	safe := map[string]bool{}
-	for _, re := range safeIdentRes {
-		for _, m := range re.FindAllStringSubmatch(code, -1) {
-			safe[m[1]] = true
+var (
+	// reSafeAssign matches identifier assignments with their RHS up to
+	// the statement end. The (>?) capture rejects arrow parameters
+	// (k => …); an RHS beginning '=' is a misread == / === and is
+	// dropped in code.
+	reSafeAssign = regexp.MustCompile(`\b(\w+)\s*=(>?)\s*([^;\n]*)`)
+	// reSafeCompound marks compound appends (sel += v): a reassignment
+	// from a non-literal.
+	reSafeCompound = regexp.MustCompile(`\b(\w+)\s*(?:\+|-|\*|/|%|&&|\|\||\?\?|\*\*)=`)
+	// for (const X of ['a', 'b']) — every element a string literal.
+	reSafeForOf = regexp.MustCompile(`for\s*\(\s*(?:const|let|var)\s+(\w+)\s+of\s*\[((?:\s*(?:'[^']*'|"[^"]*")\s*,?)*)\]\s*\)`)
+	// reEscapeCall matches an escape call at the start of an operand:
+	// CSS.escape(, window.CSS.escape(, this.CSS.escape(, cssEscape(.
+	reEscapeCall = regexp.MustCompile(`^(?:(?:\w+\.)*CSS\.escape|cssEscape)\s*\(`)
+)
+
+// safeIdentEvents collects the ordered assignment events of the file,
+// each tagged with its enclosing function scope. The safe set is per
+// function (plus the file's top level as one scope), so an identifier
+// escaped in one function never launders a same-named attribute read in
+// another.
+func safeIdentEvents(code string) []safeEvent {
+	var events []safeEvent
+	record := func(name string, pos int, safe bool) {
+		s, e := enclosingFunction(code, pos)
+		events = append(events, safeEvent{name: name, scopeStart: s, scopeEnd: e, pos: pos, safe: safe})
+	}
+	for _, m := range reSafeAssign.FindAllStringSubmatchIndex(code, -1) {
+		name := code[m[2]:m[3]]
+		if jsKeywords[name] || m[4] != m[5] { // arrow parameter, not an assignment
+			continue
+		}
+		rhs := strings.TrimSpace(code[m[6]:m[7]])
+		if strings.HasPrefix(rhs, "=") { // == / === read through the '='
+			continue
+		}
+		record(name, m[2], rhsSafeForm(rhs))
+	}
+	for _, m := range reSafeCompound.FindAllStringSubmatchIndex(code, -1) {
+		if name := code[m[2]:m[3]]; !jsKeywords[name] {
+			record(name, m[0], false)
 		}
 	}
-	return safe
+	for _, m := range reSafeForOf.FindAllStringSubmatchIndex(code, -1) {
+		record(code[m[2]:m[3]], m[0], true)
+	}
+	return events
+}
+
+// rhsSafeForm reports whether an assignment RHS provably cannot carry a
+// selector metacharacter: exactly one string literal, or an escape call.
+func rhsSafeForm(rhs string) bool {
+	if rhs == "" {
+		return false
+	}
+	if isJSStringLiteral(rhs) {
+		return true
+	}
+	return reEscapeCall.MatchString(rhs)
+}
+
+// safeAt reports whether identifier name provably holds a literal or an
+// escape result at pos: among the events for name before pos whose
+// scope CONTAINS pos, the one from the innermost scope wins, and within
+// it the latest position wins. A module-level constant therefore covers
+// every function in the file, a same-named local in a sibling function
+// covers nothing outside itself, and a reassignment inside the scope
+// revokes the status from that point on. No event at all (a parameter,
+// an import) is not provable and stays unsafe.
+func safeAt(events []safeEvent, name string, pos int) bool {
+	bestScope, bestPos := -1, -1
+	res := false
+	for _, e := range events {
+		if e.name != name || e.pos >= pos || e.scopeStart > pos || e.scopeEnd <= pos {
+			continue
+		}
+		if e.scopeStart > bestScope || (e.scopeStart == bestScope && e.pos > bestPos) {
+			bestScope, bestPos = e.scopeStart, e.pos
+			res = e.safe
+		}
+	}
+	return res
 }
 
 // selectorUnsafeOperand inspects one selector argument and reports an
 // unescaped interpolated value, if the argument is a composite selector
 // expression (concatenation or template interpolation) carrying one.
-func selectorUnsafeOperand(arg string, safe map[string]bool) (string, bool) {
+func selectorUnsafeOperand(arg string, safe func(string) bool) (string, bool) {
 	ops := splitTopLevel(arg, '+')
 	hasTemplate := false
 	for _, op := range ops {
@@ -549,18 +631,18 @@ func selectorUnsafeOperand(arg string, safe map[string]bool) (string, bool) {
 
 // selectorOperandSafe reports whether one concatenation operand or
 // interpolation body cannot carry a selector metacharacter.
-func selectorOperandSafe(op string, safe map[string]bool) bool {
+func selectorOperandSafe(op string, safe func(string) bool) bool {
 	op = strings.TrimSpace(op)
 	if op == "" {
 		return true
 	}
-	if strings.HasPrefix(op, "CSS.escape(") || strings.HasPrefix(op, "cssEscape(") {
-		return true
+	if reEscapeCall.MatchString(op) {
+		return true // CSS.escape(…), window.CSS.escape(…), cssEscape(…)
 	}
 	if isJSStringLiteral(op) || isJSNumericLiteral(op) {
 		return true
 	}
-	return safe[op]
+	return isJSIdent(op) && safe(op)
 }
 
 // ── lint 2: {} registry read as plain bracket access ───────────────────
@@ -588,16 +670,35 @@ func selectorOperandSafe(op string, safe map[string]bool) bool {
 //     or an index identifier whose assignments in the file all
 //     concatenate (widgets.js's chrome-cache key name+'\0'+ctx) — a
 //     composite string can never equal a bare prototype property name;
-//   - indices bound by an enclosing for…in: enumeration keys of an
-//     in-code registry (boot.js's module-scanner loop), not attribute
-//     input;
-//   - reads whose own line or the previous non-blank line carries the
-//     guard idiom (Object.prototype.hasOwnProperty.call(REG, … /
-//     Object.hasOwn(REG, …), optionally qualified NS.REG), including
-//     the module-local `own()` helper the runtime declares as exactly
-//     that idiom (kernel.js's shared own(REG, name) spelling);
+//   - indices bound by an enclosing for…in, matched by exact
+//     brace-matched loop span (however long the body): enumeration
+//     keys of an in-code registry (boot.js's module-scanner loop), not
+//     attribute input;
+//   - guarded reads. The guard is the own-property idiom
+//     (Object.prototype.hasOwnProperty.call(REG, … / Object.hasOwn(REG,
+//     …, optionally qualified NS.REG), including the module-local
+//     `own()` helper the runtime declares as exactly that idiom), and
+//     it counts wherever it actually guards the read: on the read's
+//     own line or the previous non-blank line (the fixed spellings wrap
+//     onto two lines), in the condition of the if or ternary lexically
+//     enclosing the read, or through a boolean assigned exactly once in
+//     the enclosing function from that guard idiom and branched on
+//     (the compute-once spelling that avoids calling hasOwnProperty
+//     twice). A guard on a DIFFERENT registry does not count;
 //   - registries created with Object.create(null) (never collected:
 //     only {} initializers are).
+//
+// The pass is linear in corpus bytes: each file is prescanned once for
+// candidate bracket reads (one regex, one pass), indexed by identifier,
+// and only names that are both declared {} somewhere and bracket-read
+// in this file pay the per-read filters; the guard idioms are matched
+// with static run-once patterns whose captured receiver is compared to
+// the registry name, so no per-name regex is compiled at all. Measured
+// on a generated 150-file, ~4.7MB corpus with 8 unique registries per
+// file (1200 names): 1m30.28s before the prescan — every name swept
+// every file — against ~0.75s of CPU after (wall time varies with
+// machine load; the live core-ui/runtime tree stays well under a
+// second).
 func LintRegistryOwnProps(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -611,16 +712,21 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 	for _, f := range files {
 		helpers = append(helpers, ownHelpers(f.Blank)...)
 	}
-	readRes := map[string]*regexp.Regexp{}
+	names := map[string]bool{}
 	for _, name := range collectRegistryNames(files) {
-		readRes[name] = registryReadRe(name)
+		names[name] = true
 	}
+	guards := newGuardMatcher(helpers)
 	for _, f := range files {
 		composite := compositeIndexIdents(f.Blank)
-		for _, name := range sortedKeys(readRes) {
-			re := readRes[name]
-			for _, loc := range re.FindAllStringIndex(f.Blank, -1) {
-				open := loc[1] - 1 // the '[' the match ends on
+		spans := forInSpans(f.Blank)
+		reads := bracketReads(f.Blank)
+		for _, name := range sortedKeys(reads) {
+			if !names[name] {
+				continue
+			}
+			for _, start := range reads[name] {
+				open := strings.IndexByte(f.Blank[start:], '[') + start // the '[' the read opens
 				close := matchDelimForward(f.Blank, open)
 				if close < 0 {
 					continue
@@ -638,24 +744,40 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 				if isCompositeIndex(idx, composite) {
 					continue
 				}
-				if isForInIndex(f.Blank, loc[0], idx) {
+				if isForInIndex(spans, start, idx) {
 					continue
 				}
 				if registryAccessIsWrite(f.Blank, close) {
 					continue
 				}
-				if registryAccessIsDelete(f.Blank, loc[0]) {
+				if registryAccessIsDelete(f.Blank, start) {
 					continue
 				}
-				if registryGuardNearby(f.Blank, f.Src, name, loc[0], helpers) {
+				if registryGuardNearby(f.Blank, f.Src, name, start, guards) {
 					continue
 				}
-				res.add(f.Path, lineOf(f.Src, loc[0]),
+				res.add(f.Path, lineOf(f.Src, start),
 					fmt.Sprintf("[registry-own-prop] %s[...] reads a {} registry through the prototype chain — an attribute-borne name like \"constructor\" resolves to an Object.prototype member and passes the truthiness gate; read it as an own property (Object.prototype.hasOwnProperty.call(%s, name), the idiom computed.js uses)", name, name))
 			}
 		}
 	}
 	return res, nil
+}
+
+// reBracketRead matches every bracket access and captures the
+// identifier it is made on: REG[, NS.REG[… (the captured name is REG —
+// '.' is not a word character), and REG?.[….
+var reBracketRead = regexp.MustCompile(`\b(\w+)\s*(?:\?\.)?\s*\[`)
+
+// bracketReads indexes the bracket reads of one file by identifier, in
+// order. One pass replaces one regex sweep per registry name: a corpus
+// of F files × R names pays F passes, not F×R.
+func bracketReads(blank string) map[string][]int {
+	reads := map[string][]int{}
+	for _, m := range reBracketRead.FindAllStringSubmatchIndex(blank, -1) {
+		reads[blank[m[2]:m[3]]] = append(reads[blank[m[2]:m[3]]], m[0])
+	}
+	return reads
 }
 
 // Registry-declaration shapes, matched on the blank view so a '{}' in
@@ -688,12 +810,6 @@ func collectRegistryNames(files []jsSource) []string {
 		}
 	}
 	return sortedSet(set)
-}
-
-// registryReadRe matches REG[ and REG?.[ reads (both resolve through
-// the prototype chain). A preceding '.' is allowed: NS.REG[…].
-func registryReadRe(name string) *regexp.Regexp {
-	return regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\s*(?:\?\.)?\s*\[`)
 }
 
 func sortedSet(set map[string]bool) []string {
@@ -760,22 +876,54 @@ func isCompositeIndex(idx string, composite map[string]bool) bool {
 	return composite[idx]
 }
 
+// forInSpan is one for…in loop: the bound identifier and the exact
+// byte span of its body.
+type forInSpan struct {
+	idx        string
+	start, end int
+}
+
+var reForInHeader = regexp.MustCompile(`for\s*\(\s*(?:const|let|var)?\s*(\w+)\s+in\s`)
+
+// forInSpans collects the for…in loops of one file: enumeration keys
+// of an in-code registry, not attribute input. The span is exact —
+// the brace-matched body, or the single statement up to its ';' when
+// the loop has no braces — so a long loop body cannot outgrow the
+// binding the way a fixed byte window could.
+func forInSpans(blank string) []forInSpan {
+	var out []forInSpan
+	for _, m := range reForInHeader.FindAllStringSubmatchIndex(blank, -1) {
+		open := strings.IndexByte(blank[m[0]:m[1]], '(') + m[0]
+		close := matchDelimForward(blank, open)
+		if close < 0 {
+			continue
+		}
+		i := skipSpace(blank, close+1)
+		if i >= len(blank) {
+			continue
+		}
+		if blank[i] == '{' {
+			end := matchDelimForward(blank, i)
+			if end < 0 {
+				continue
+			}
+			out = append(out, forInSpan{idx: blank[m[2]:m[3]], start: i, end: end})
+			continue
+		}
+		out = append(out, forInSpan{idx: blank[m[2]:m[3]], start: i, end: statementEnd(blank, i)})
+	}
+	return out
+}
+
 // isForInIndex reports whether the identifier idx is the loop variable
-// of a for…in header shortly before the read at pos: enumeration keys
-// of an in-code registry, not attribute input. Lexical approximation —
-// the header must appear within the preceding 400 bytes; a same-named
-// for…in that much earlier is contrived in this corpus.
-func isForInIndex(blank string, pos int, idx string) bool {
-	if !isJSIdent(idx) {
-		return false
+// of a for…in loop whose exact span contains the read at pos.
+func isForInIndex(spans []forInSpan, pos int, idx string) bool {
+	for _, s := range spans {
+		if s.idx == idx && pos >= s.start && pos <= s.end {
+			return true
+		}
 	}
-	start := pos - 400
-	if start < 0 {
-		start = 0
-	}
-	window := blank[start:pos]
-	re := regexp.MustCompile(`for\s*\(\s*(?:const|let|var)\s+` + regexp.QuoteMeta(idx) + `\s+in\s`)
-	return re.MatchString(window)
+	return false
 }
 
 // registryAccessIsWrite reports whether the bracket access closing at
@@ -858,23 +1006,94 @@ func ownHelpers(blank string) []string {
 	return names
 }
 
-// registryGuardNearby reports whether the read's own line or the
-// previous non-blank line carries the own-property guard for name
-// (Object.prototype.hasOwnProperty.call(REG, … / Object.hasOwn(REG, … /
-// a module-local own() helper defined as that idiom, each optionally
-// qualified NS.REG — the fixed spellings wrap onto two lines, hence the
-// previous-line lookup) or a `k in REG` membership check.
-func registryGuardNearby(blank, src, name string, pos int, helpers []string) bool {
-	pats := []string{
-		`(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn)\s*\(\s*(?:\w+\s*\.\s*)*` + regexp.QuoteMeta(name) + `\s*,`,
-		`\bin\s+(?:\w+\s*\.\s*)*` + regexp.QuoteMeta(name) + `\b`,
+// guardMatcher matches the own-property guard idioms with STATIC
+// patterns, compiled once per lint run, whose captured receiver is then
+// compared against the registry name — no per-name regex compilation,
+// so a corpus of R registry names per file costs zero extra compiles.
+type guardMatcher struct {
+	call   *regexp.Regexp // hasOwnProperty.call(RECV, / Object.hasOwn(RECV,
+	in     *regexp.Regexp // k in RECV
+	init   *regexp.Regexp // BOOL = <call idiom>(RECV,
+	helper []*regexp.Regexp
+}
+
+// receiverPattern matches a receiver: dotted parts, optional spaces.
+const receiverPattern = `(?:\w+\s*\.\s*)*\w+`
+
+func newGuardMatcher(helpers []string) *guardMatcher {
+	g := &guardMatcher{
+		call: regexp.MustCompile(`(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn)\s*\(\s*(` + receiverPattern + `)\s*,`),
+		in:   regexp.MustCompile(`\bin\s+(` + receiverPattern + `)\b`),
 	}
+	callee := `(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn`
 	for _, h := range helpers {
-		pats = append(pats, h+`\s*\(\s*(?:\w+\s*\.\s*)*`+regexp.QuoteMeta(name)+`\s*,`)
+		callee += `|` + h
+		g.helper = append(g.helper, regexp.MustCompile(h+`\s*\(\s*(`+receiverPattern+`)\s*,`))
 	}
-	guards := make([]*regexp.Regexp, len(pats))
-	for i, p := range pats {
-		guards[i] = regexp.MustCompile(p)
+	g.init = regexp.MustCompile(`(\w+)\s*=\s*(?:\w+\s*\.\s*)*` + callee + `)\s*\(\s*(` + receiverPattern + `)\s*,`)
+	return g
+}
+
+// receiverIs reports whether a captured receiver text is name,
+// optionally NS-qualified (NS.name): same semantics as the old per-name
+// patterns, which required dotted parts before the name.
+func receiverIs(recv, name string) bool {
+	var b strings.Builder
+	for _, r := range recv {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	s := b.String()
+	return s == name || strings.HasSuffix(s, "."+name)
+}
+
+// guarded reports whether text carries the own-property guard for the
+// registry name: the call idiom, a module-local own() helper, or the
+// `k in REG` membership check.
+func (g *guardMatcher) guarded(text, name string) bool {
+	for _, m := range g.call.FindAllStringSubmatch(text, -1) {
+		if receiverIs(m[1], name) {
+			return true
+		}
+	}
+	for _, re := range g.helper {
+		for _, m := range re.FindAllStringSubmatch(text, -1) {
+			if receiverIs(m[1], name) {
+				return true
+			}
+		}
+	}
+	for _, m := range g.in.FindAllStringSubmatch(text, -1) {
+		if receiverIs(m[1], name) {
+			return true
+		}
+	}
+	return false
+}
+
+// reIfLine requires an if-condition on a line before a guard boolean
+// found there is credited: the boolean must be branched on, not merely
+// mentioned.
+var reIfLine = regexp.MustCompile(`\bif\s*\(`)
+
+// registryGuardNearby reports whether the read at pos is guarded. The
+// guard counts wherever it actually guards:
+//   - on the read's own line, or on the previous non-blank line (the
+//     fixed spellings wrap onto two lines) — including that line's if
+//     condition referencing a guard boolean;
+//   - in the condition of the if or ternary that lexically encloses
+//     the read;
+//   - through a boolean assigned exactly once in the enclosing
+//     function from the guard idiom (const known =
+//     hasOwnProperty.call(REG, x)) and referenced in one of those
+//     conditions: the compute-once spelling. A boolean initialized
+//     from a guard on a DIFFERENT registry is not a guard for this
+//     one, and a boolean from another function never applies.
+func registryGuardNearby(blank, src, name string, pos int, g *guardMatcher) bool {
+	if cond := enclosingCondition(blank, pos); g.guarded(cond, name) || g.guardBooleanIn(blank, pos, cond, name) {
+		return true
 	}
 	line := lineOf(src, pos)
 	lines := strings.Split(blank, "\n")
@@ -882,22 +1101,154 @@ func registryGuardNearby(blank, src, name string, pos int, helpers []string) boo
 		if n < 1 || n > len(lines) {
 			return false
 		}
-		for _, g := range guards {
-			if g.MatchString(lines[n-1]) {
-				return true
-			}
-		}
-		return false
+		return g.guarded(lines[n-1], name)
 	}
 	if check(line) {
 		return true
 	}
 	for n := line - 1; n >= 1; n-- {
 		if strings.TrimSpace(lines[n-1]) != "" {
-			return check(n)
+			if check(n) {
+				return true
+			}
+			// The previous non-blank line's if condition referencing a
+			// compute-once guard boolean (`if (!known) return null;`
+			// above the read).
+			return reIfLine.MatchString(lines[n-1]) && g.guardBooleanIn(blank, pos, lines[n-1], name)
 		}
 	}
 	return false
+}
+
+// guardBooleanIn reports whether cond (a condition text or a line)
+// references a boolean that was assigned exactly once, inside the
+// function enclosing pos, from the guard idiom on THIS registry name.
+func (g *guardMatcher) guardBooleanIn(blank string, pos int, cond, name string) bool {
+	if cond == "" {
+		return false
+	}
+	fs, fe := enclosingFunction(blank, pos)
+	region := blank[fs:fe]
+	counts := map[string]int{}
+	for _, m := range reIdentAssign.FindAllStringSubmatch(region, -1) {
+		if !jsKeywords[m[1]] {
+			counts[m[1]]++
+		}
+	}
+	for _, m := range g.init.FindAllStringSubmatch(region, -1) {
+		if jsKeywords[m[1]] || counts[m[1]] != 1 || !receiverIs(m[2], name) {
+			continue
+		}
+		if containsWord(cond, m[1]) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsWord reports whether s contains w as a whole identifier word.
+func containsWord(s, w string) bool {
+	for i := 0; i+len(w) <= len(s); i++ {
+		if s[i:i+len(w)] != w {
+			continue
+		}
+		if i > 0 && isJSIdentChar(s[i-1]) {
+			continue
+		}
+		if i+len(w) < len(s) && isJSIdentChar(s[i+len(w)]) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// enclosingCondition returns the condition text of the if or ternary
+// that lexically contains pos, or "". From pos it walks left to the
+// innermost opener at bracket depth zero: a '(' headed by `if`/`while`
+// contributes its parenthesized condition; a '{' whose header is
+// `if (...)` contributes that header's condition; a ternary '?' (not
+// `?.` or `??`) contributes everything back to the previous statement
+// or sequence boundary at depth zero.
+func enclosingCondition(blank string, pos int) string {
+	depth := 0
+	for i := pos - 1; i >= 0; i-- {
+		switch blank[i] {
+		case ')', ']', '}':
+			depth++
+		case '(', '[', '{':
+			if depth > 0 {
+				depth--
+				continue
+			}
+			if blank[i] == '(' {
+				if w := wordBefore(blank, i); w == "if" || w == "while" {
+					if close := matchDelimForward(blank, i); close > i {
+						return blank[i+1 : close]
+					}
+				}
+				return ""
+			}
+			// A block: an `if (...) {` header guards the whole body.
+			j := skipSpaceBack(blank, i-1)
+			if j >= 0 && blank[j] == ')' {
+				if k := matchDelimBack(blank, j); k > 0 && wordBefore(blank, k) == "if" {
+					return blank[k+1 : j]
+				}
+			}
+			return ""
+		case '?':
+			if depth != 0 || (i+1 < len(blank) && (blank[i+1] == '.' || blank[i+1] == '?')) ||
+				(i > 0 && blank[i-1] == '?') {
+				continue
+			}
+			return ternaryCondition(blank, i)
+		}
+	}
+	return ""
+}
+
+// ternaryCondition returns the condition text ending at the ternary '?'
+// at i: everything back to the previous statement or sequence boundary
+// at bracket depth zero.
+func ternaryCondition(blank string, i int) string {
+	depth := 0
+	for j := i - 1; j >= 0; j-- {
+		switch blank[j] {
+		case ')', ']', '}':
+			depth++
+		case '(', '[', '{':
+			if depth == 0 {
+				return blank[j+1 : i]
+			}
+			depth--
+		case ',', ';', ':', '?':
+			if depth == 0 {
+				return blank[j+1 : i]
+			}
+		}
+	}
+	return blank[:i]
+}
+
+// wordBefore returns the identifier ending just before i (spaces
+// skipped), or "" — the keyword heading an opener.
+func wordBefore(s string, i int) string {
+	i = skipSpaceBack(s, i-1)
+	end := i + 1
+	for i >= 0 && isJSIdentChar(s[i]) {
+		i--
+	}
+	return s[i+1 : end]
+}
+
+// skipSpaceBack returns the index of the last non-space byte at or
+// before i, or -1.
+func skipSpaceBack(s string, i int) int {
+	for i >= 0 && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+		i--
+	}
+	return i
 }
 
 // ── lint 3: response text mounted without r.ok ──────────────────────────
@@ -919,13 +1270,18 @@ func registryGuardNearby(blank, src, name string, pos int, helpers []string) boo
 // refresh with `if (!r.ok) throw`.
 //
 // Silent on:
-//   - chains that check .ok/.status anywhere between the fetch and the
-//     end of the chain (the convention's own spelling);
+//   - chains gated on the response: a whole-token .ok or .status read
+//     (word boundary — displaying r.statusText or r.okButton is not a
+//     check) used as a condition — negated, compared, inside an
+//     if/while condition, or feeding a ternary / && / ||;
 //   - await/multi-statement flows (const r = await fetch(…); …) — the
 //     chain ends at the statement boundary and the mount lives in
 //     later statements; those sites are pinned individually by the
 //     probe's surface list instead;
-//   - chains that never read the body or never mount.
+//   - chains that never read the body or never mount. A continuation
+//     passed by bare reference (.then(bind)) contributes the named
+//     function's same-file body to the mount and gate scans; a name
+//     not declared in the file stays silent as today.
 func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -946,10 +1302,14 @@ func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 			if !reBodyRead.MatchString(span) {
 				continue
 			}
-			if strings.Contains(span, ".ok") || strings.Contains(span, ".status") {
+			// A bare-reference continuation puts the mount in the
+			// named function's body, one declaration away: include it
+			// in the mount and gate scans.
+			scan := span + namedThenBodies(f.Blank, span)
+			if responseGateIn(scan) {
 				continue
 			}
-			if !reHTMLMount.MatchString(span) {
+			if !reHTMLMount.MatchString(scan) {
 				continue
 			}
 			res.add(f.Path, lineOf(f.Src, loc[0]),
@@ -965,6 +1325,126 @@ var (
 	reHTMLMount = regexp.MustCompile(`(?:innerHTML|outerHTML)\s*=[^=]|insertAdjacentHTML\s*\(` +
 		`|\b\w*(?:mount|swap)\w*\s*\(`)
 )
+
+var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(\w+)\s*\)`)
+
+// namedThenBodies appends the bodies of same-file functions passed to
+// .then( by bare reference inside the chain span: the fetched text is
+// handed to them by name, so their bodies are part of the chain's
+// mount and gate surface. Function declarations and const-arrow forms
+// both resolve; an unresolved name (imported, or not a function)
+// contributes nothing.
+func namedThenBodies(blank, span string) string {
+	var b strings.Builder
+	for _, m := range reThenIdent.FindAllStringSubmatch(span, -1) {
+		name := regexp.QuoteMeta(m[1])
+		decl := regexp.MustCompile(`(?:function\s+` + name + `\s*\([^)]*\)\s*\{` +
+			`|(?:const|let|var)\s+` + name + `\s*=\s*(?:async\s+)?(?:function\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>\s*\{))`)
+		loc := decl.FindStringIndex(blank)
+		if loc == nil {
+			continue
+		}
+		open := loc[1] - 1 // the '{' the declaration form ends on
+		end := matchDelimForward(blank, open)
+		if end < 0 {
+			continue
+		}
+		b.WriteString(blank[open : end+1])
+	}
+	return b.String()
+}
+
+// reResponseToken matches a .ok / .status member read as a whole token:
+// .statusText and .okButton do not match (\b after the property).
+var reResponseToken = regexp.MustCompile(`\.\s*(?:ok|status)\b`)
+
+// responseGateIn reports whether the chain text actually gates on the
+// response: a whole-token .ok/.status read used as a condition —
+// negated (!r.ok), compared on either side (r.status !== 200,
+// 200 === r.status), inside an if/while condition (if (resp.ok)), or
+// feeding a ternary / && / ||. Displaying the value (r.statusText,
+// r.okButton) or passing it to a function is not a gate.
+func responseGateIn(span string) bool {
+	for _, m := range reResponseToken.FindAllStringIndex(span, -1) {
+		if i := skipSpace(span, m[1]); i < len(span) && gateOpRight(span, i) {
+			return true
+		}
+		j := memberExprStart(span, m[0])
+		if k := skipSpaceBack(span, j-1); k >= 0 && gateOpLeft(span, k) {
+			return true
+		}
+		if insideIfCondition(span, m[0]) {
+			return true
+		}
+	}
+	return false
+}
+
+// gateOpRight reports whether a comparison, ternary, or logical
+// operator starts at i.
+func gateOpRight(s string, i int) bool {
+	for _, op := range []string{"===", "!==", "==", "!=", "<=", ">=", "&&", "||", "?", "<", ">"} {
+		if !strings.HasPrefix(s[i:], op) {
+			continue
+		}
+		// The '>' of an arrow (=>) is not a comparison.
+		if op == ">" && i > 0 && s[i-1] == '=' {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// gateOpLeft reports whether the operator ending at k (immediately
+// left of the member expression) is a negation or a comparison.
+func gateOpLeft(s string, k int) bool {
+	switch s[k] {
+	case '!':
+		return true
+	case '=':
+		return k >= 1 && strings.IndexByte("=!<>", s[k-1]) >= 0
+	case '&', '|':
+		return k >= 1 && (s[k-1] == s[k])
+	case '<', '>':
+		return !(s[k] == '>' && k >= 1 && s[k-1] == '=') // not the '>' of =>
+	default:
+		return false
+	}
+}
+
+// memberExprStart returns the index where the member expression
+// containing the '.' at dot begins.
+func memberExprStart(s string, dot int) int {
+	j := dot - 1
+	for j >= 0 && (isJSIdentChar(s[j]) || s[j] == '.') {
+		j--
+	}
+	return j + 1
+}
+
+// insideIfCondition reports whether pos sits inside the parenthesized
+// condition of an if/while.
+func insideIfCondition(s string, pos int) bool {
+	depth := 0
+	for i := pos - 1; i >= 0; i-- {
+		switch s[i] {
+		case ')', ']', '}':
+			depth++
+		case '(', '[', '{':
+			if depth > 0 {
+				depth--
+				continue
+			}
+			if s[i] != '(' {
+				return false // left the condition region via a block
+			}
+			w := wordBefore(s, i)
+			return w == "if" || w == "while"
+		}
+	}
+	return false
+}
 
 // chainEnd extends a fetch call's closing paren through its .then(…)
 // (and ?.then(…), .catch(…), .finally(…)) continuations and returns the
@@ -995,6 +1475,57 @@ func chainEnd(blank string, close int) int {
 		}
 		close = next
 	}
+}
+
+// concatPathPairs returns the adjacent (literal, value) operand pairs
+// of a top-level '+' concatenation. A template-literal operand is
+// decomposed first into its alternating literal-chunk /
+// interpolation-body operands, so `/api/${v}` is judged exactly like '/api/' + v.
+func concatPathPairs(expr string) [][2]string {
+	ops := splitTopLevel(expr, '+')
+	expanded := make([]string, 0, len(ops))
+	for _, op := range ops {
+		if t := strings.TrimSpace(op); strings.HasPrefix(t, "`") {
+			expanded = append(expanded, templateOperands(t)...)
+			continue
+		}
+		expanded = append(expanded, op)
+	}
+	pairs := make([][2]string, 0, len(expanded))
+	for i := 0; i+1 < len(expanded); i++ {
+		pairs = append(pairs, [2]string{expanded[i], expanded[i+1]})
+	}
+	return pairs
+}
+
+// templateOperands splits one template literal into its alternating
+// literal chunks (quoted, so they read as string literals downstream)
+// and interpolation bodies.
+func templateOperands(tpl string) []string {
+	end := templateEnd(tpl, 0)
+	if end >= len(tpl) {
+		end = len(tpl) - 1
+	}
+	inner := tpl[1:end] // between the backticks
+	var ops []string
+	var chunk strings.Builder
+	for j := 0; j < len(inner); j++ {
+		if inner[j] != '$' || j+1 >= len(inner) || inner[j+1] != '{' {
+			chunk.WriteByte(inner[j])
+			continue
+		}
+		body, close := templateExprEnd(inner, j+2)
+		if chunk.Len() > 0 {
+			ops = append(ops, "'"+chunk.String()+"'")
+			chunk.Reset()
+		}
+		ops = append(ops, strings.TrimSpace(body))
+		j = close
+	}
+	if chunk.Len() > 0 {
+		ops = append(ops, "'"+chunk.String()+"'")
+	}
+	return ops
 }
 
 // ── lint 4: attribute-borne URL path segment ───────────────────────────
@@ -1186,17 +1717,6 @@ func statementEnd(code string, from int) int {
 		}
 	}
 	return len(code)
-}
-
-// concatPathPairs returns the adjacent (literal, value) operand pairs
-// of a top-level '+' concatenation.
-func concatPathPairs(expr string) [][2]string {
-	ops := splitTopLevel(expr, '+')
-	pairs := make([][2]string, 0, len(ops))
-	for i := 0; i+1 < len(ops); i++ {
-		pairs = append(pairs, [2]string{ops[i], ops[i+1]})
-	}
-	return pairs
 }
 
 func pathLiteralEndsInSlash(lit string) bool {

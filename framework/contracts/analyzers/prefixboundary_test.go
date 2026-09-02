@@ -113,11 +113,18 @@ func (s scope) covers(u *url.URL) bool {
 }
 
 // The narrowed literal posture (narrowed after the first whole-repo run):
-// a literal only fires when its value names part of a slash-hierarchy
-// without the boundary ("/_gofastr/doc", the v0.80 uihost shape).
-// Namespace literals ("screen_", "color-", "v") and constants whose value
-// is bounded ("/__gofastr/runtime/") or non-hierarchical are silent; a
-// dynamic prefix with an invisible value still fires.
+// a literal or resolvable constant fires when its value names part of a
+// slash-hierarchy without the boundary ("/_gofastr/doc", the v0.80 uihost
+// shape) — and, narrowed a second time after the adversarial review, when
+// its value contains no "/" at all but the haystack is STRONGLY path-named
+// (an identifier matching path/route/url/uri/dir, or exactly rel):
+// HasPrefix(importPath, "cmd") is the original stability bug with the
+// manifest entry spelled as a literal, and "cmd" must not classify
+// cmdline/tools. Namespace literals ("screen_", "v", "btk_") stay silent
+// on haystacks that are pathish only through key or prefix naming — YAML
+// keys, token names, and versions are value spaces where every longer
+// sibling IS the intent. Bounded constants ("/__gofastr/runtime/") stay
+// silent, and a dynamic prefix with an invisible value still fires.
 func TestPrefixBoundaryNarrowedLiteralsAndConstants(t *testing.T) {
 	ds := fixture(t, map[string]string{
 		"narrow.go": `package main
@@ -126,12 +133,25 @@ import "strings"
 
 const runtimePrefix = "/__gofastr/runtime/"
 const tokenNamespace = "btk_"
+const firstSegment = "cmd"
 
-func scoped(path string, mount string) bool {
-	return strings.HasPrefix(path, "/_gofastr/doc") ||
-		strings.HasPrefix(path, runtimePrefix) ||
-		strings.HasPrefix(path, tokenNamespace) ||
-		strings.HasPrefix(path, "screen_")
+func namespaced(key string, prefix string) bool {
+	return strings.HasPrefix(key, tokenNamespace) ||
+		strings.HasPrefix(key, "screen_") ||
+		strings.HasPrefix(prefix, "v")
+}
+
+func literalShape(importPath string) bool {
+	return strings.HasPrefix(importPath, "cmd") ||
+		strings.HasPrefix(importPath, firstSegment)
+}
+
+func literalRel(rel string) bool {
+	return strings.HasPrefix(rel, "cmd")
+}
+
+func scoped(path string) bool {
+	return strings.HasPrefix(path, "/_gofastr/doc")
 }
 
 func dyn(path string, mount string) bool {
@@ -140,9 +160,77 @@ func dyn(path string, mount string) bool {
 `,
 	})
 	assertHas(t, ds, contracts.RulePrefixSegmentBoundary)
-	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 2 {
-		t.Errorf("expected the doc-scope literal and the dynamic mount to fire (got %d): namespace literals and bounded constants must stay silent", got)
+	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 5 {
+		t.Errorf("expected the slash-bearing literal, the two no-slash first-segment spellings, and the dynamic mount to fire (got %d): namespace literals on key/prefix-named haystacks and bounded constants must stay silent", got)
 	}
+}
+
+// A bounded package-level constant may live in any file of the package
+// (consts.go / scope.go is standard Go layout): same-package resolution,
+// not same-file, is the idiom. The suggested fix docPrefix+"/" would
+// match a double slash, so the silence is also the only correct advice.
+func TestPrefixBoundaryResolvesSamePackageConstantsFromOtherFiles(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"consts.go": `package main
+
+// docPrefix is the bounded document-script scope prefix (the uihost
+// shape, fixed spelling): it carries its own trailing boundary.
+const docPrefix = "/__gofastr/doc/"
+`,
+		"scope.go": `package main
+
+import "strings"
+
+// inScope: exactly the documented safe shape — the prefix resolves to
+// a constant that ends in "/". The constant lives in consts.go, same
+// package, sibling file.
+func inScope(docPath string) bool {
+	return strings.HasPrefix(docPath, docPrefix)
+}
+`,
+	})
+	assertNot(t, ds, contracts.RulePrefixSegmentBoundary,
+		"a same-package constant from a sibling file carries its own boundary — only cross-package values are dynamic")
+}
+
+// Postures pinned by the whole-repo run: the generator's screen_ file
+// namespace (the haystack reads a filename through filepath.ToSlash —
+// the callee names the transform, not the value) and isolation's
+// "file:" DSN scheme literal (the colon terminates the scheme token) are
+// legitimate idioms the strongly-path-named widening must not reach.
+func TestPrefixBoundarySparesRepoIdioms(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"gen/gen.go": `package gen
+
+import (
+	"path/filepath"
+	"strings"
+)
+
+func hasNewScreens(written []struct{ name string }) bool {
+	for _, f := range written {
+		if strings.HasPrefix(filepath.ToSlash(f.name), "screen_") {
+			return true
+		}
+	}
+	return false
+}
+`,
+		"iso/iso.go": `package iso
+
+import "strings"
+
+func sqliteDSN(dsn string) string {
+	path := dsn
+	if strings.HasPrefix(path, "file:") {
+		path = strings.TrimPrefix(path, "file:")
+	}
+	return path
+}
+`,
+	})
+	assertNot(t, ds, contracts.RulePrefixSegmentBoundary,
+		"a transformed filename's package qualifier and a ':'-terminated scheme literal are not first-segment matches")
 }
 
 // The documented silences: a literal that carries its own boundary, the

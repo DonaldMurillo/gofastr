@@ -468,16 +468,25 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 // Bug class: a reverse-proxy scheme header read with Header.Get and
 // spliced into output as a URL scheme. framework/uihost/agentready.go
 // resolveBaseURL shipped it (probe TestDiscoveryURLsIgnoreForwardedProto,
-// fixed a24928c1): the raw value reached the agent card's service URL and
-// the Link header, so one forged `X-Forwarded-Proto:
+// fixed a24928c1): the raw value reached the agent card's service URL
+// and the Link header, so one forged `X-Forwarded-Proto:
 // https://evil.example/p` painted an attacker-named origin into cacheable
 // discovery output. The fix — and framework/pluginhost/assets.go, which
 // never had the bug — is an exact "http"/"https" enum.
 //
+// The read is Get("X-Forwarded-Proto") on any receiver ending in .Header
+// AND on any bare identifier (h http.Header: the map handed to a helper
+// is the same header). The argument literal is the whole scope gate; the
+// reflection sink carries the precision, so a read that never reaches
+// output stays quiet.
+//
 // Deliberately silent on:
-//   - any function that compares the value against "http"/"https"
-//     anywhere in its body, however spelled: == / !=, strings.EqualFold,
-//     or a switch case. The enum is the contract; its position is not;
+//   - any function that compares THE VALUE — the get itself or one of
+//     its holders — against "http"/"https", however spelled: == / !=,
+//     strings.EqualFold, or a switch on the value. The enum is the
+//     contract; its position is not. A scheme comparison on any OTHER
+//     value (an outbound target.Scheme) is not a gate for this header
+//     and does not silence the rule;
 //   - Header.Set (writing the header outbound, as battery/relay does)
 //     and reads that are never reflected (a log line, a boolean);
 //   - values compared against any other literal ("", "HTTPS,http"):
@@ -493,11 +502,14 @@ func ruleForwardedProto(p *contracts.Pass, rel string, file *ast.File) []contrac
 			}
 			return true
 		})
-		if len(gets) == 0 || protoEnumChecked(fn.body) {
+		if len(gets) == 0 {
 			continue
 		}
 		for _, get := range gets {
 			holders := assignedIdents(fn.body, get)
+			if protoEnumChecked(fn.body, get, holders) {
+				continue
+			}
 			if !reflectedScheme(fn.body, get, holders) {
 				continue
 			}
@@ -510,15 +522,23 @@ func ruleForwardedProto(p *contracts.Pass, rel string, file *ast.File) []contrac
 	return out
 }
 
-// forwardedProtoGet matches `x.Header.Get("X-Forwarded-Proto")` for any
-// receiver expression ending in .Header.
+// forwardedProtoGet matches Get("X-Forwarded-Proto") on a receiver
+// expression ending in .Header (r.Header) or on any bare identifier
+// (h http.Header: the header map as a helper parameter).
 func forwardedProtoGet(n ast.Node) (*ast.CallExpr, bool) {
 	recv, method, call, ok := selectorCall(n)
 	if !ok || method != "Get" || len(call.Args) != 1 {
 		return nil, false
 	}
-	hdr, ok := recv.(*ast.SelectorExpr)
-	if !ok || hdr.Sel == nil || hdr.Sel.Name != "Header" {
+	switch r := recv.(type) {
+	case *ast.SelectorExpr:
+		if r.Sel == nil || r.Sel.Name != "Header" {
+			return nil, false
+		}
+	case *ast.Ident:
+		// h.Get("X-Forwarded-Proto"): the map passed as a parameter.
+		// The reflection sink keeps this precise.
+	default:
 		return nil, false
 	}
 	lit, ok := call.Args[0].(*ast.BasicLit)
@@ -532,12 +552,13 @@ func forwardedProtoGet(n ast.Node) (*ast.CallExpr, bool) {
 	return call, true
 }
 
-// protoEnumChecked reports whether the function body compares anything
-// against the literal "http" or "https": == / !=, strings.EqualFold, or a
-// switch case. Deliberately generous — presence of the enum anywhere in
-// the function is the documented silence condition, because the value is
-// usually checked once and then trusted.
-func protoEnumChecked(body ast.Node) bool {
+// protoEnumChecked reports whether the function body compares the header
+// value — the get call itself or one of its holders — against the
+// literal "http" or "https": == / !=, strings.EqualFold, or a switch
+// whose tag is the value. A scheme comparison on any other value does
+// not count: the gate must gate this value, not a neighbouring one.
+func protoEnumChecked(body ast.Node, call *ast.CallExpr, holders map[string]bool) bool {
+	touches := func(e ast.Expr) bool { return exprTouches(e, call, holders) }
 	checked := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if checked {
@@ -548,25 +569,40 @@ func protoEnumChecked(body ast.Node) bool {
 			if v.Op != token.EQL && v.Op != token.NEQ {
 				return true
 			}
-			if lit, ok := v.X.(*ast.BasicLit); ok && isSchemeLit(lit) {
+			if lit, ok := v.X.(*ast.BasicLit); ok && isSchemeLit(lit) && touches(v.Y) {
 				checked = true
 			}
-			if lit, ok := v.Y.(*ast.BasicLit); ok && isSchemeLit(lit) {
+			if lit, ok := v.Y.(*ast.BasicLit); ok && isSchemeLit(lit) && touches(v.X) {
 				checked = true
 			}
 		case *ast.CallExpr:
 			if sel, ok := v.Fun.(*ast.SelectorExpr); ok && sel.Sel != nil &&
 				strings.EqualFold(sel.Sel.Name, "EqualFold") {
-				for _, a := range v.Args {
-					if lit, ok := a.(*ast.BasicLit); ok && isSchemeLit(lit) {
-						checked = true
+				for i, a := range v.Args {
+					lit, ok := a.(*ast.BasicLit)
+					if !ok || !isSchemeLit(lit) {
+						continue
+					}
+					for j, b := range v.Args {
+						if j != i && touches(b) {
+							checked = true
+						}
 					}
 				}
 			}
-		case *ast.CaseClause:
-			for _, e := range v.List {
-				if lit, ok := e.(*ast.BasicLit); ok && isSchemeLit(lit) {
-					checked = true
+		case *ast.SwitchStmt:
+			if !touches(v.Tag) {
+				return true
+			}
+			for _, cl := range v.Body.List {
+				cc, ok := cl.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				for _, e := range cc.List {
+					if lit, ok := e.(*ast.BasicLit); ok && isSchemeLit(lit) {
+						checked = true
+					}
 				}
 			}
 		}
@@ -611,8 +647,10 @@ func assignedIdents(body ast.Node, call *ast.CallExpr) map[string]bool {
 
 // reflectedScheme reports whether the header value reaches output: the
 // call itself inside a concatenation, an assignment into a scheme-named
-// variable (directly or one hop through a holder), or an argument to a
-// URL builder / the Scheme field of a composite literal.
+// variable (directly or one hop through a holder), an argument to a URL
+// builder / the Scheme field of a composite literal, or an argument of
+// fmt.Sprintf/fmt.Fprintf whose format literal splices a scheme
+// position ("%s://%s") — the most common spelling of a built origin.
 func reflectedScheme(body ast.Node, call *ast.CallExpr, holders map[string]bool) bool {
 	touches := func(e ast.Expr) bool { return exprTouches(e, call, holders) }
 	reflected := false
@@ -652,6 +690,22 @@ func reflectedScheme(body ast.Node, call *ast.CallExpr, holders map[string]bool)
 					}
 				}
 			}
+			// fmt.Sprintf("%s://%s", u, host): the concatenation
+			// bug's most common spelling. Only scheme-bearing formats
+			// count — a format that merely logs the value is not a
+			// reflection. fmt.Fprintf(w, ...) included: the w first
+			// argument is never the value.
+			if fun, ok := callFunName(v); ok && (fun == "Sprintf" || fun == "Fprintf") && len(v.Args) > 1 {
+				if lit, ok := v.Args[0].(*ast.BasicLit); ok {
+					if f, ok := stringLit(lit); ok && strings.Contains(f, "://") {
+						for _, a := range v.Args[1:] {
+							if touches(a) {
+								reflected = true
+							}
+						}
+					}
+				}
+			}
 		case *ast.CompositeLit:
 			for _, e := range v.Elts {
 				kv, ok := e.(*ast.KeyValueExpr)
@@ -666,6 +720,21 @@ func reflectedScheme(body ast.Node, call *ast.CallExpr, holders map[string]bool)
 		return !reflected
 	})
 	return reflected
+}
+
+// callFunName returns the callee name of a call expression: the selector
+// method (fmt.Sprintf → Sprintf) or the bare identifier, honouring
+// import aliases. Dot-imported calls read the same either way.
+func callFunName(call *ast.CallExpr) (string, bool) {
+	switch fun := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		if fun.Sel != nil {
+			return fun.Sel.Name, true
+		}
+	case *ast.Ident:
+		return fun.Name, true
+	}
+	return "", false
 }
 
 // exprTouches reports whether e contains the call node or one of the
@@ -714,7 +783,16 @@ func exprTouches(e ast.Expr, call *ast.CallExpr, holders map[string]bool) bool {
 //
 // The rule tracks r.Body through local assignments (io.ReadAll(r.Body),
 // http.MaxBytesReader(w, r.Body, n), one more hop for ReadAll of the
-// wrapped reader) so the wrapped spellings are the same finding.
+// wrapped reader) so the wrapped spellings are the same finding, plus
+// ONE bounded level of same-file helpers: raw, err := readBody(r), where
+// readBody is declared in this file and its return expressions are
+// body-derived, taints raw exactly as io.ReadAll(r.Body) would. Taint
+// reaches a call's RESULT only through those reader wrappers and the
+// helper ferry: an arbitrary call that merely receives tainted arguments
+// (the module proxy's peer.CallWithID(ctx, params)) returns its own
+// output, not the body. Helpers in other files are not loaded by this
+// pass, and helper-calling-helper chains are not followed — one level
+// keeps the walk terminating.
 //
 // Deliberately silent on:
 //   - core/handler/**, which owns handler.Bind and its duplicate-key
@@ -732,12 +810,13 @@ func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.
 	}
 	var out []contracts.Diagnostic
 	aliases := importAliases(file)
+	helpers := sameFileBodyReaders(file, aliases)
 	for _, fn := range functionsIn(file) {
 		reqs := httpRequestParamNames(fn.node, aliases)
 		if len(reqs) == 0 {
 			continue
 		}
-		tainted := taintFromBody(fn.body, reqs)
+		tainted := taintFromBody(fn.body, reqs, helpers)
 		ast.Inspect(fn.body, func(n ast.Node) bool {
 			if call, ok := qualifiedCall(n, aliases, "encoding/json", "NewDecoder"); ok && len(call.Args) == 1 &&
 				exprFromRequestBody(call.Args[0], tainted, reqs) {
@@ -830,10 +909,13 @@ func httpRequestParamNames(fn ast.Node, aliases map[string]string) map[string]bo
 
 // taintFromBody computes which local identifiers hold bytes read from a
 // request body, to a fixpoint: body := MaxBytesReader(w, r.Body, n) then
-// raw, err := io.ReadAll(body) leaves both body and raw tainted. Only
-// plain assignments are tracked; a body ferried through a helper call is
-// invisible to a parse-only pass and stays unreported.
-func taintFromBody(body ast.Node, reqs map[string]bool) map[string]bool {
+// raw, err := io.ReadAll(body) leaves both body and raw tainted. Plain
+// assignments are tracked, plus one bounded level of same-file helpers
+// (helpers, from sameFileBodyReaders): raw, err := readBody(r) taints
+// raw when readBody's returns are body-derived. A body ferried through
+// a helper in ANOTHER file stays invisible — this pass never loads
+// another file's bodies — and stays unreported.
+func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool) map[string]bool {
 	var assigns []*ast.AssignStmt
 	ast.Inspect(body, func(n ast.Node) bool {
 		if a, ok := n.(*ast.AssignStmt); ok {
@@ -848,6 +930,10 @@ func taintFromBody(body ast.Node, reqs map[string]bool) map[string]bool {
 			touched := false
 			for _, rhs := range a.Rhs {
 				if exprFromRequestBody(rhs, tainted, reqs) {
+					touched = true
+					break
+				}
+				if call, ok := rhs.(*ast.CallExpr); ok && len(helpers) > 0 && helperCallTainted(call, tainted, reqs, helpers) {
 					touched = true
 					break
 				}
@@ -866,6 +952,80 @@ func taintFromBody(body ast.Node, reqs map[string]bool) map[string]bool {
 	return tainted
 }
 
+// sameFileBodyReaders returns the same-file FUNCTIONS (bare-name calls
+// only; a method's receiver expression cannot be matched by name) whose
+// return expressions are request-body-derived given their own
+// *http.Request parameters: readBody(r) { return io.ReadAll(r.Body) }.
+// This is the one level of interprocedural tracking — a helper whose own
+// return calls another helper is not followed further.
+func sameFileBodyReaders(file *ast.File, aliases map[string]string) map[string]bool {
+	out := map[string]bool{}
+	for _, fn := range functionsIn(file) {
+		decl, ok := fn.node.(*ast.FuncDecl)
+		if !ok || decl.Name == nil || decl.Recv != nil {
+			continue // methods are not bare-name callable
+		}
+		reqs := httpRequestParamNames(fn.node, aliases)
+		if len(reqs) == 0 {
+			continue
+		}
+		tainted := taintFromBody(fn.body, reqs, nil)
+		derived := false
+		ast.Inspect(fn.body, func(n ast.Node) bool {
+			ret, ok := n.(*ast.ReturnStmt)
+			if !ok {
+				return true
+			}
+			for _, r := range ret.Results {
+				if exprFromRequestBody(r, tainted, reqs) {
+					derived = true
+					return false
+				}
+			}
+			return true
+		})
+		if derived {
+			out[decl.Name.Name] = true
+		}
+	}
+	return out
+}
+
+// helperCallTainted reports whether call is a call to a known same-file
+// body-reading helper whose arguments actually carry this request (the
+// request itself, its body, or an already-tainted value): the ferry must
+// carry bytes, not a coincidental name.
+func helperCallTainted(call *ast.CallExpr, tainted map[string]bool, reqs map[string]bool, helpers map[string]bool) bool {
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || !helpers[id.Name] {
+		return false
+	}
+	for _, a := range call.Args {
+		if exprFromRequestBody(a, tainted, reqs) {
+			return true
+		}
+		touches := false
+		ast.Inspect(a, func(n ast.Node) bool {
+			if arg, ok := n.(*ast.Ident); ok && reqs[arg.Name] {
+				touches = true
+			}
+			return !touches
+		})
+		if touches {
+			return true
+		}
+	}
+	return false
+}
+
+// readerWrapper names the calls whose RESULT is the request body's
+// bytes: the reader constructors and readers of the wrapped spellings.
+var readerWrapper = map[string]bool{
+	"ReadAll":        true,
+	"MaxBytesReader": true,
+	"LimitReader":    true,
+}
+
 // exprFromRequestBody reports whether e is, contains, or was assigned
 // from a request body: the <req>.Body selector itself, or a tainted
 // identifier in plain identifier position.
@@ -873,17 +1033,35 @@ func exprFromRequestBody(e ast.Expr, tainted map[string]bool, reqs map[string]bo
 	switch v := e.(type) {
 	case *ast.Ident:
 		return tainted[v.Name]
+	case *ast.CallExpr:
+		// Only reader-wrapping calls propagate taint to their RESULT
+		// (io.ReadAll, MaxBytesReader, LimitReader, and aliases): the
+		// result of an arbitrary call that merely receives tainted
+		// arguments is not the body (the module proxy's
+		// peer.CallWithID(ctx, params) returns the child's response).
+		switch fn := v.Fun.(type) {
+		case *ast.SelectorExpr:
+			if fn.Sel != nil && readerWrapper[fn.Sel.Name] {
+				for _, a := range v.Args {
+					if exprFromRequestBody(a, tainted, reqs) {
+						return true
+					}
+				}
+			}
+		case *ast.Ident:
+			if readerWrapper[fn.Name] {
+				for _, a := range v.Args {
+					if exprFromRequestBody(a, tainted, reqs) {
+						return true
+					}
+				}
+			}
+		}
 	case *ast.SelectorExpr:
 		if id, ok := v.X.(*ast.Ident); ok && reqs[id.Name] && v.Sel != nil && v.Sel.Name == "Body" {
 			return true
 		}
 		return exprFromRequestBody(v.X, tainted, reqs)
-	case *ast.CallExpr:
-		for _, a := range v.Args {
-			if exprFromRequestBody(a, tainted, reqs) {
-				return true
-			}
-		}
 	case *ast.BinaryExpr:
 		return exprFromRequestBody(v.X, tainted, reqs) || exprFromRequestBody(v.Y, tainted, reqs)
 	case *ast.ParenExpr:

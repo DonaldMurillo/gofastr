@@ -113,6 +113,93 @@ func origin(r *http.Request) *url.URL {
 	}
 }
 
+// fmt.Sprintf("%s://%s", u, r.Host) splices the forged header verbatim —
+// the concatenation spelling's most common cousin, invisible to the rule
+// because "fmt.Sprintf" contains no "url". A scheme-bearing format
+// literal is a reflection sink.
+func TestForwardedProtoSprintfSpliceIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"origin.go": `package origin
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// sprintfOrigin: the pre-fix resolveBaseURL bug with the concatenation
+// spelled as fmt.Sprintf — the holder is named u, exactly like the bug.
+func sprintfOrigin(r *http.Request) string {
+	u := r.Header.Get("X-Forwarded-Proto")
+	return fmt.Sprintf("%s://%s", u, r.Host)
+}
+
+// concatOrigin: identical bug, concatenation spelling (control).
+func concatOrigin(r *http.Request) string {
+	u := r.Header.Get("X-Forwarded-Proto")
+	return u + "://" + r.Host
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleForwardedProtoEnum)
+	if got := rules(ds)[contracts.RuleForwardedProtoEnum]; got != 2 {
+		t.Errorf("expected both the Sprintf and the concatenation spelling to fire, got %d findings", got)
+	}
+}
+
+// The header map passed to a helper as h http.Header: Get on an
+// identifier receiver is the same read of the same header. The argument
+// literal is the gate (any other Get is out of scope) and the reflection
+// sink keeps the precision, so a read that never reflects stays quiet.
+func TestForwardedProtoHeaderParameterIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"header.go": `package header
+
+import "net/http"
+
+func originFromHeader(h http.Header, host string) string {
+	return h.Get("X-Forwarded-Proto") + "://" + host
+}
+
+// A read that is never reflected (a boolean) stays quiet even under the
+// widened receiver — and this one also carries the enum.
+func isSecure(h http.Header) bool {
+	return h.Get("X-Forwarded-Proto") == "https"
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleForwardedProtoEnum)
+	if got := rules(ds)[contracts.RuleForwardedProtoEnum]; got != 1 {
+		t.Errorf("expected only the reflected identifier-receiver read to fire, got %d findings", got)
+	}
+}
+
+// An enum comparison on a DIFFERENT value — an outbound URL's scheme —
+// must not silence the reflected header. Only comparisons whose other
+// side touches the get or one of its holders count.
+func TestForwardedProtoEnumOnUnrelatedValueDoesNotSilence(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"resolve.go": `package resolve
+
+import (
+	"net/http"
+	"net/url"
+)
+
+// resolve mixes an outbound URL's scheme check with the forwarded
+// header: the enum on target.Scheme belongs to a different value, and
+// the reflected u is never compared against anything.
+func resolve(r *http.Request, target *url.URL) string {
+	u := r.Header.Get("X-Forwarded-Proto")
+	if target.Scheme == "https" {
+		return u + "://" + r.Host + target.Path
+	}
+	return u + "://" + r.Host
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleForwardedProtoEnum)
+}
+
 // The documented silences: an EqualFold comparison (battery/setup's
 // spelling), a switch enum (framework/pluginhost/assets.go's spelling),
 // and writing the header outbound (battery/relay's Set), which is not a

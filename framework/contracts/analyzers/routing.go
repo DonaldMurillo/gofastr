@@ -362,34 +362,56 @@ func replaceLiteralFix(p *contracts.Pass, rel string, line int, oldText, newText
 // shape-based, not stability-based: any path-like operand matched against
 // a boundary-less prefix is the finding.
 // Deliberately silent on:
-//   - a literal prefix that already ends in "/" ("internal/"), "/" and ""
-//     themselves, and — narrowed after the first whole-repo run — any
-//     literal or resolvable constant whose value contains no "/" at all
-//     ("x_", "dark.", "color-", "v", "&"): those operate on namespace-ish
-//     value spaces (YAML keys, token names, versions) where every longer
-//     sibling IS the intent, not a confusion. The bug class is about
-//     slash-separated trees; a prefix that contains no slash, or one that
-//     ends in it, is either bounded or not about segments;
-//   - a prefix identifier that resolves to a local or file-scope constant
-//     carrying its own boundary (const prefix = "/__gofastr/runtime/"):
-//     the boundary is written down one line up;
+//   - a literal prefix that already ends in "/" ("internal/") and "/"
+//     and "" themselves: the boundary is written down — as is a value
+//     ending in ":" ("file:", a URL scheme literal: the colon
+//     terminates the scheme token, so every match has that exact
+//     scheme);
+//   - a literal or resolvable constant whose value contains no "/" at all
+//     ("x_", "dark.", "color-", "v", "&") UNLESS the haystack is strongly
+//     path-named (an identifier matching path/route/url/uri/dir, or
+//     exactly rel — the callee's package qualifier does not count: a
+//     call transforms its input, and filepath.ToSlash names the
+//     transform, not the value): key/prefix-named haystacks are
+//     namespace-ish value spaces (YAML keys, token names, versions)
+//     where every longer sibling IS the intent, but
+//     HasPrefix(importPath, "cmd") is the original bug wearing a
+//     literal — "cmd" matches cmdline/tools the moment the tree is
+//     slash-separated;
+//   - a prefix identifier that resolves to a local or package-level
+//     constant carrying its own boundary (const prefix =
+//     "/__gofastr/runtime/"): the boundary is written down one line up,
+//     in this file or any sibling file of the same package (consts.go /
+//     scope.go layout). Cross-package constants stay dynamic: their
+//     value is not visible without loading another package's files;
 //   - any prefix built by concatenation at the call (`root+"/"`,
 //     `base+sep`): the caller wrote a boundary decision down, and judging
 //     a runtime-computed one from the AST would be guessing;
-//   - a haystack whose name carries no path/route/prefix semantics
-//     (`HasPrefix(hash, "$argon2id$")`) — the shape is a PATH matched by
-//     PREFIX, and key/uri/dir naming is the net it uses to catch the
-//     ones that don't say "path" out loud;
-//   - _test.go and generated files (AppFiles already excludes both).
 func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
+	// Package-level literals are resolved across every file of the
+	// package: consts.go/scope.go layout is standard, and a bounded
+	// constant must not turn "dynamic" by living in a sibling file.
+	pkgLits := map[string]map[string]string{}
+	for _, f := range p.AppFiles() {
+		file, ok := p.AST(f.Rel)
+		if !ok {
+			continue
+		}
+		if pkgLits[file.Name.Name] == nil {
+			pkgLits[file.Name.Name] = map[string]string{}
+		}
+		for name, val := range fileScopedLits(file) {
+			pkgLits[file.Name.Name][name] = val
+		}
+	}
 	for _, f := range p.AppFiles() {
 		file, ok := p.AST(f.Rel)
 		if !ok {
 			continue
 		}
 		aliases := importAliases(file)
-		fileLits := fileScopedLits(file)
+		fileLits := pkgLits[file.Name.Name]
 		for _, fn := range functionsIn(file) {
 			localLits := bodyScopedLits(fn.body)
 			ast.Inspect(fn.body, func(n ast.Node) bool {
@@ -400,7 +422,7 @@ func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 				if !pathishExpr(call.Args[0]) {
 					return true
 				}
-				if !unboundedPrefix(call.Args[1], localLits, fileLits) {
+				if !unboundedPrefix(call.Args[1], call.Args[0], localLits, fileLits) {
 					return true
 				}
 				hay, needle := exprText(call.Args[0]), exprText(call.Args[1])
@@ -421,19 +443,24 @@ func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 // prefixes (params, fields, range variables) are always treated as
 // unbounded: their values are invisible to a parse-only pass, and the
 // stability bug lived in exactly one. Literals and resolvable constants
-// are judged by their value: no "/" at all is a namespace match, not a
-// segment match; a trailing "/" is a boundary.
-func unboundedPrefix(e ast.Expr, localLits, fileLits map[string]string) bool {
+// are judged by their value against the haystack: a value with an
+// interior slash and no trailing one is a segment candidate anywhere; a
+// value with no slash at all is a first segment, which only matters when
+// the haystack is strongly path-named (strongPathExpr) — against a
+// key/prefix-named value space a no-slash prefix is the intent, not a
+// boundary bug.
+func unboundedPrefix(e ast.Expr, haystack ast.Expr, localLits, fileLits map[string]string) bool {
+	strong := strongPathExpr(haystack)
 	switch v := e.(type) {
 	case *ast.BasicLit:
 		val, ok := stringLit(v)
-		return ok && segmentPrefixCandidate(val)
+		return ok && segmentPrefixCandidate(val, strong)
 	case *ast.Ident:
 		if val, ok := localLits[v.Name]; ok {
-			return segmentPrefixCandidate(val)
+			return segmentPrefixCandidate(val, strong)
 		}
 		if val, ok := fileLits[v.Name]; ok {
-			return segmentPrefixCandidate(val)
+			return segmentPrefixCandidate(val, strong)
 		}
 		return true
 	case *ast.BinaryExpr:
@@ -449,13 +476,27 @@ func unboundedPrefix(e ast.Expr, localLits, fileLits map[string]string) bool {
 
 // segmentPrefixCandidate reports whether a known prefix value names part
 // of a slash-separated tree without being bounded to it: it must contain
-// an interior or leading slash and not end in one.
-func segmentPrefixCandidate(val string) bool {
-	return val != "" && strings.Contains(val, "/") && !strings.HasSuffix(val, "/")
+// an interior or leading slash and not end in one — or, when the haystack
+// is strongly path-named, carry no slash at all (a first segment: "cmd"
+// matches cmdline the moment the tree is slash-separated). A value
+// ending in ":" is a URL scheme literal ("file:", isolation's DSN
+// check): the colon terminates the scheme token, so every string that
+// matches has that exact scheme — self-delimiting, like a trailing "/" —
+// and never a segment candidate.
+func segmentPrefixCandidate(val string, strongHaystack bool) bool {
+	if val == "" || strings.HasSuffix(val, "/") || strings.HasSuffix(val, ":") {
+		return false
+	}
+	if strings.Contains(val, "/") {
+		return true
+	}
+	return strongHaystack
 }
 
-// fileScopedLits maps package-level const/var names initialized from a
-// single string literal.
+// fileScopedLits maps the package-level const/var names of ONE file
+// initialized from a single string literal. Callers merge these per
+// package (see checkPrefixBoundary) so a constant resolves from sibling
+// files too.
 func fileScopedLits(file *ast.File) map[string]string {
 	lits := map[string]string{}
 	for _, decl := range file.Decls {
@@ -541,5 +582,56 @@ func pathishExpr(e ast.Expr) bool {
 		}
 		return !found
 	})
+	return found
+}
+
+// reStrongPathName names a haystack that is certainly a /-separated
+// tree: a path, a route, a URL, a URI, a directory — or Go's
+// conventional short spelling for one, exactly "rel". key and prefix do
+// not qualify: they name value spaces (YAML keys, token names,
+// versions) where a no-slash prefix is the intent, not a boundary bug.
+var reStrongPathName = regexp.MustCompile(`(?i)path|route|url|uri|dir`)
+
+// strongPathExpr reports whether the haystack is strongly path-named:
+// any identifier in it matches reStrongPathName or is exactly "rel".
+// The callee of a call is not judged — a call transforms its input, and
+// the package qualifier (filepath.ToSlash, url.PathEscape) names the
+// transform, not the value: the generator's screen_ file-namespace
+// check reads a filename through filepath.ToSlash and is a value-space
+// match, not a first segment. This is the gate for first-segment
+// (no-slash) prefixes — the original bug's literal spelling,
+// HasPrefix(importPath, "cmd") — so that widening the literal posture
+// cannot reach namespace matches.
+func strongPathExpr(e ast.Expr) bool {
+	found := false
+	var scan func(x ast.Expr)
+	scan = func(x ast.Expr) {
+		if found || x == nil {
+			return
+		}
+		if call, ok := x.(*ast.CallExpr); ok {
+			for _, a := range call.Args {
+				scan(a)
+			}
+			return
+		}
+		ast.Inspect(x, func(n ast.Node) bool {
+			if found {
+				return false
+			}
+			if c, ok := n.(*ast.CallExpr); ok {
+				for _, a := range c.Args {
+					scan(a)
+				}
+				return false
+			}
+			if id, ok := n.(*ast.Ident); ok && (id.Name == "rel" || reStrongPathName.MatchString(id.Name)) {
+				found = true
+				return false
+			}
+			return true
+		})
+	}
+	scan(e)
 	return found
 }

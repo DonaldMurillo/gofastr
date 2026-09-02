@@ -525,3 +525,319 @@ func TestLintAttributePathSegments_RepoIsClean(t *testing.T) {
 		t.Errorf("runtime JS joins attribute-borne values into URL paths ungated:\n%s", res.Error())
 	}
 }
+
+// ── review findings (7-14): named .then handlers, statusText gates,
+// template URLs, hoisted guards, long for-in bodies, window.CSS.escape,
+// revocable safe identifiers ────────────────────────────────────────────
+
+const namedThenFixture = `// .then continuations passed by bare reference (review finding 7):
+// the fetched text is handed to a named function one declaration away,
+// so nothing inside the chain span itself carries the mount token.
+function mountPanel(el, html) {
+  el.innerHTML = html;
+}
+function refresh(el, src) {
+  fetch(src).then(r => r.text()).then(function (t) { mountPanel(el, t); }).catch(() => {});
+}
+// The handler itself passed by bare reference (function declaration).
+function refresh2(el, src) {
+  fetch(src).then(r => r.text()).then(bind);
+  function bind(t) { mountPanel(el, t); }
+}
+// Bare reference to a const-arrow declaration.
+function refresh3(el, src) {
+  fetch(src).then(r => r.text()).then(panel);
+  const panel = (t) => { el.insertAdjacentHTML('beforeend', t); };
+}
+// Control: the inline spelling the lint already catches.
+function refreshInline(el, src) {
+  fetch(src).then(r => r.text()).then(t => { el.innerHTML = t; });
+}
+// Silent: a named continuation that never mounts.
+function logIt(t) { console.log(t); }
+function refreshLog(el, src) {
+  fetch(src).then(r => r.text()).then(logIt);
+}
+// Silent: a named continuation that gates before mounting.
+function mountChecked(el, t) {
+  if (!t.ok) return;
+  el.innerHTML = t.body;
+}
+function refreshChecked(el, src) {
+  fetch(src).then(r => r.json()).then(mountChecked);
+}
+`
+
+func TestLintResponseMountedAfterOK_NamedThenHandler(t *testing.T) {
+	dir := writeRuntimeFixture(t, "named.js", namedThenFixture)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 4 {
+		t.Fatalf("expected 4 findings (refresh, refresh2, refresh3, refreshInline), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+const statusTextFixture = `// .statusText displayed is not a .status check (review finding 14):
+// the gate is a whole-token .ok/.status read in a condition context,
+// not the substring ".status" anywhere in the chain.
+function load(el, src, note) {
+  fetch(src).then(function (r) {
+    note.textContent = 'HTTP ' + r.statusText;
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+// Control: no status mention at all — fires.
+function loadCtl(el, src, note) {
+  fetch(src).then(function (r) {
+    note.textContent = 'loading';
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+// .okButton is not .ok either — token boundary required.
+function loadOkButton(el, src, note) {
+  fetch(src).then(function (r) {
+    note.textContent = r.okButton;
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+// Gates that count, all silent: negated .ok, compared .status, .ok in
+// an if condition, ternary on .ok.
+function loadNeg(el, src) {
+  fetch(src).then(r => { if (!r.ok) throw new Error('x'); return r.text(); }).then(t => { el.innerHTML = t; });
+}
+function loadCmp(el, src) {
+  fetch(src).then(r => { if (r.status !== 200) throw new Error('x'); return r.text(); }).then(t => { el.innerHTML = t; });
+}
+function loadTruthy(el, src) {
+  fetch(src).then(r => { if (r.ok) return r.text(); throw new Error('x'); }).then(t => { el.innerHTML = t; });
+}
+function loadTern(el, src) {
+  fetch(src).then(r => r.ok ? r.text() : Promise.reject(new Error('x'))).then(t => { el.innerHTML = t; });
+}
+`
+
+func TestLintResponseMountedAfterOK_StatusTextIsNotAGate(t *testing.T) {
+	dir := writeRuntimeFixture(t, "statustext.js", statusTextFixture)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected exactly 3 findings (load, loadCtl, loadOkButton), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+// attrTplFixtureRaw uses ~ for JS backticks; untailed below.
+const attrTplFixtureRaw = `// Template-literal URL building (review finding 8): the same
+// attribute-borne value joined into the path after a literal chunk
+// ending in "/".
+const postTpl = (el, body) => {
+  return fetch(~/kiln/tool/${el.getAttribute('data-kiln-tool')}~, {
+    method: 'POST',
+    body,
+  }).catch(() => {});
+};
+// Template via a variable holding the attribute read.
+function loadNote(btn) {
+  const note = btn.getAttribute('data-note-id');
+  fetch(~ /api/notes/${note}~);
+}
+// Template plus a '+' operand on the same expression.
+function mixed(el) {
+  const id = el.dataset.rowId;
+  fetch(~ /rows/${id}~ + '?full=1');
+}
+// Silent: the adjacent literal chunk does not end in "/" (query form).
+function queryish(el) {
+  fetch(~ /find?q=${el.getAttribute('data-q')}~);
+}
+// Control: the '+' spelling the lint already catches.
+const postCat = (el, body) => {
+  return fetch('/kiln/tool/' + el.getAttribute('data-kiln-tool'), {
+    method: 'POST',
+    body,
+  }).catch(() => {});
+};
+`
+
+var attrTplFixture = strings.ReplaceAll(attrTplFixtureRaw, "~", "\x60")
+
+func TestLintAttributePathSegments_TemplateLiterals(t *testing.T) {
+	dir := writeRuntimeFixture(t, "tpl.js", attrTplFixture)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 4 {
+		t.Fatalf("expected exactly 4 findings (postTpl, loadNote, mixed, postCat), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[attr-path-segment]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+const registryHoistedFixture = `// Guard hoisted into a compute-once boolean (review finding 9): a
+// boolean assigned exactly once from the guard idiom, referenced in the
+// condition of the if/ternary that guards the read, counts.
+const catalog = {};
+const other = {};
+function find(name) {
+  const known = Object.prototype.hasOwnProperty.call(catalog, name);
+  if (!known) return null;
+  return catalog[name];
+}
+function findTern(name) {
+  const has = Object.prototype.hasOwnProperty.call(catalog, name);
+  return has ? catalog[name] : null;
+}
+function findInline(name) {
+  if (Object.prototype.hasOwnProperty.call(catalog, name)) {
+    return catalog[name];
+  }
+  return null;
+}
+// The repo's own fixed spelling: guard on the previous line.
+function findFixed(name) {
+  const entry = Object.prototype.hasOwnProperty.call(catalog, name)
+    ? catalog[name]
+    : undefined;
+  return entry;
+}
+// A boolean initialized from a guard on a DIFFERENT registry does not
+// guard this one, and per-function scoping keeps one function's boolean
+// from laundering another's read.
+function findMixed(name) {
+  const known = Object.prototype.hasOwnProperty.call(other, name);
+  if (!known) return null;
+  return catalog[name];
+}
+// Still fires: no guard at all.
+function findAny(name) {
+  return catalog[name];
+}
+`
+
+func TestLintRegistryOwnProps_HoistedGuardBoolean(t *testing.T) {
+	dir := writeRuntimeFixture(t, "hoisted.js", registryHoistedFixture)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (findMixed, findAny), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[registry-own-prop] catalog[") {
+			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
+		}
+	}
+}
+
+const longForInFixture = `// A for-in loop whose body far exceeds any fixed byte window (review
+// finding 10): the loop span is brace-matched, so the enumeration-key
+// read stays bound however long the body grows.
+const reg = {};
+for (const k in reg) {
+  console.log('padding step 0 with a reasonably long line of ordinary code');
+  console.log('padding step 1 with a reasonably long line of ordinary code');
+  console.log('padding step 2 with a reasonably long line of ordinary code');
+  console.log('padding step 3 with a reasonably long line of ordinary code');
+  console.log('padding step 4 with a reasonably long line of ordinary code');
+  console.log('padding step 5 with a reasonably long line of ordinary code');
+  console.log('padding step 6 with a reasonably long line of ordinary code');
+  console.log('padding step 7 with a reasonably long line of ordinary code');
+  console.log('padding step 8 with a reasonably long line of ordinary code');
+  console.log('padding step 9 with a reasonably long line of ordinary code');
+  console.log('padding step 10 with a reasonably long line of ordinary code');
+  console.log('padding step 11 with a reasonably long line of ordinary code');
+  console.log('padding step 12 with a reasonably long line of ordinary code');
+  console.log('padding step 13 with a reasonably long line of ordinary code');
+  total += reg[k];
+}
+// The same identifier OUTSIDE the loop: the binding ends at the brace.
+after += reg[k];
+`
+
+func TestLintRegistryOwnProps_LongForInBody(t *testing.T) {
+	dir := writeRuntimeFixture(t, "longforin.js", longForInFixture)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected exactly 1 finding (the read after the loop), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	if !strings.HasPrefix(res.Violations[0].Message, "[registry-own-prop] reg[") {
+		t.Errorf("unexpected message: %s", res.Violations[0].Message)
+	}
+}
+
+const selReassignFixture = `// window.CSS.escape (review finding 11): the defensive global
+// reference is the same escape.
+function viaWindow(id) {
+  return document.querySelector('#' + window.CSS.escape(id));
+}
+// Reassigned literal (review finding 13): kind is initialized from a
+// literal but REASSIGNED from an attribute before use — not provably a
+// literal at the lookup.
+let kind = 'input';
+kind = el.dataset.kind;
+document.querySelector('[data-kind="' + kind + '"]');
+// Same name, different functions: the escape in viaEsc must not launder
+// the attribute-borne sel in viaAttr.
+function viaEsc(id) {
+  const sel = CSS.escape(id);
+  return document.querySelector('[data-x="' + sel + '"]');
+}
+function viaAttr(el) {
+  const sel = el.dataset.sel;
+  return document.querySelector('[data-x="' + sel + '"]');
+}
+// Silent postures that must survive: literal constant, literal read
+// with no reassignment, for-of over an array of literals.
+const IS_OPEN2 = 'data-fui-open';
+document.querySelectorAll('[' + IS_OPEN2 + ']');
+function viaLit() {
+  const tag = 'section';
+  return document.querySelector(tag + '[data-live]');
+}
+for (const ev of ['input', 'change']) {
+  document.querySelector('[data-action-type="' + ev + '"]');
+}
+`
+
+func TestLintSelectorInterpolation_WindowEscapeAndReassignedSafeIdents(t *testing.T) {
+	dir := writeRuntimeFixture(t, "reassign.js", selReassignFixture)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (the reassigned kind, viaAttr's sel), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.Contains(v.Message, `"kind"`) && !strings.Contains(v.Message, `"sel"`) {
+			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
+		}
+	}
+}

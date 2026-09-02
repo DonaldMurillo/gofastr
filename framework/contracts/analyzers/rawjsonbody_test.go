@@ -120,6 +120,120 @@ func update(req *http.Request) error {
 	}
 }
 
+// The body ferried through a helper: io.ReadAll wrapped in a one-line
+// local function is the same stdlib decode of raw request bytes — the
+// pass parses this file, so the helper's return is visible. One bounded
+// level of same-file tracking; a helper in another file stays invisible
+// (documented silence), because the pass never loads another file's
+// bodies.
+func TestRawJSONBodyDecodeThroughSameFileHelperIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"update.go": `package cart
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+)
+
+// readBody is a one-line local helper, same file, fully visible.
+func readBody(r *http.Request) ([]byte, error) {
+	return io.ReadAll(r.Body)
+}
+
+// updateViaHelper: the battery/auth bug with io.ReadAll wrapped in the
+// local helper above. json.Unmarshal still decodes raw request bytes
+// with stdlib semantics.
+func updateViaHelper(w http.ResponseWriter, r *http.Request) {
+	raw, err := readBody(r)
+	if err != nil {
+		return
+	}
+	var cart struct {
+		SKU string ` + "`json:\"sku\"`" + `
+	}
+	json.Unmarshal(raw, &cart)
+}
+`,
+		"caller.go": `package cart
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+// updateViaCrossFile: identical shape, but the helper lives in another
+// file of the same package — invisible to a per-file pass, and the
+// documented silence.
+func updateViaCrossFile(w http.ResponseWriter, r *http.Request) {
+	raw, err := readBodyCrossFile(r)
+	if err != nil {
+		return
+	}
+	var note struct {
+		ID int ` + "`json:\"id\"`" + `
+	}
+	json.Unmarshal(raw, &note)
+}
+`,
+		"helper.go": `package cart
+
+import (
+	"io"
+	"net/http"
+)
+
+func readBodyCrossFile(r *http.Request) ([]byte, error) {
+	return io.ReadAll(r.Body)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleRawJSONBodyDecode)
+	if got := rules(ds)[contracts.RuleRawJSONBodyDecode]; got != 1 {
+		t.Errorf("expected exactly the same-file ferry to fire (got %d findings): the cross-file ferry is the documented silence", got)
+	}
+}
+
+// Posture pinned by the whole-repo run: the module proxy buffers the
+// request body into params via a same-file helper, but the bytes it
+// decodes afterwards are the child module's RESPONSE (peer.CallWithID),
+// not the request body — taint does not flow through an arbitrary call
+// that merely receives tainted arguments, only through reader wrappers
+// (ReadAll/MaxBytesReader/LimitReader) and the same-file helper ferry.
+func TestRawJSONBodyDecodeDoesNotTaintThroughArbitraryCalls(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"proxy.go": `package proxy
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+)
+
+func buildParams(r *http.Request) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(r.Body, 1<<20))
+}
+
+func serve(w http.ResponseWriter, r *http.Request) {
+	params, err := buildParams(r)
+	if err != nil {
+		return
+	}
+	raw, err := peer.Call(r.Context(), params)
+	if err != nil {
+		return
+	}
+	var res struct {
+		Status int ` + "`json:\"status\"`" + `
+	}
+	json.Unmarshal(raw, &res)
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleRawJSONBodyDecode,
+		"raw is the module's response; the body only shaped the request params")
+}
+
 // The documented silences: core/handler owns the strict binder and decodes
 // raw bytes by design; an outbound response body is not a request body; a
 // function with no *http.Request parameter never sees one; _test.go is
