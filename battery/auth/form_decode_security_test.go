@@ -122,10 +122,13 @@ func TestLoginFormDuplicateFieldsRejected(t *testing.T) {
 	}
 }
 
-// Cross-surface divergence pin: the SAME duplicated pair decodes to
-// DIFFERENT identities on the two surfaces today. Proving the divergence
-// through decodeAuthCredentials directly shows the fix target (reject at
-// decode) rather than picking one winner.
+// Cross-surface divergence pin: pre-fix, the SAME duplicated pair
+// decoded to DIFFERENT identities on the two surfaces (net/url keeps
+// the FIRST value, encoding/json the LAST), proving the identity
+// depended on Content-Type, not on the operator. Since the strict fix
+// landed (decodeAuthCredentials rejects ambiguous credential fields),
+// the pin is that NEITHER surface resolves the body at all: both
+// reject it with a 400, so no parser pick can diverge.
 func TestDecodeDuplicateResolvesDifferentlyPerSurface(t *testing.T) {
 	const victim = "alice@example.com"
 	const mallory = "mallory@example.com"
@@ -133,17 +136,19 @@ func TestDecodeDuplicateResolvesDifferentlyPerSurface(t *testing.T) {
 	formBody := "email=" + victim + "&email=" + mallory
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(formBody))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	emailForm, _, _, okForm := decodeAuthCredentials(httptest.NewRecorder(), req)
+	formW := httptest.NewRecorder()
+	_, _, _, okForm := decodeAuthCredentials(formW, req)
 
 	jsonBody := `{"email":"` + victim + `","email":"` + mallory + `"}`
 	jreq := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader([]byte(jsonBody)))
 	jreq.Header.Set("Content-Type", "application/json")
-	emailJSON, _, _, okJSON := decodeAuthCredentials(httptest.NewRecorder(), jreq)
+	jsonW := httptest.NewRecorder()
+	_, _, _, okJSON := decodeAuthCredentials(jsonW, jreq)
 
-	if !okForm || !okJSON {
-		t.Fatalf("both ambiguous bodies decode ok today: form=%v json=%v (if either now fails, the strict fix landed; update the sibling tests)", okForm, okJSON)
+	if okForm || okJSON {
+		t.Fatalf("ambiguous credential body resolved after the strict fix: form=%v json=%v — both surfaces must reject, not pick", okForm, okJSON)
 	}
-	if emailForm != emailJSON {
-		t.Errorf("SECURITY: [auth-strict-decode] one duplicated email pair resolved to %q on the form surface and %q on the JSON surface — the identity depends on Content-Type, not on the operator", emailForm, emailJSON)
+	if formW.Code != http.StatusBadRequest || jsonW.Code != http.StatusBadRequest {
+		t.Errorf("ambiguous credential body must be a 400 decode failure on both surfaces, got form=%d json=%d", formW.Code, jsonW.Code)
 	}
 }

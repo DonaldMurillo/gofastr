@@ -302,8 +302,20 @@ func boolParam(params map[string]any, name string, def bool) bool {
 // caller surfaces it back to the agent instead of silently filtering
 // nothing.
 func timeParam(params map[string]any, name string) (time.Time, bool, error) {
-	s, ok := params[name].(string)
-	if !ok || s == "" {
+	v, present := params[name]
+	if !present {
+		return time.Time{}, false, nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		// The tool schema declares this field an RFC3339 string; a
+		// present value of another JSON type (e.g. a numeric Unix
+		// timestamp) is malformed, not absent. Treating it as absent
+		// makes the agent believe it narrowed the window while the
+		// response quietly contains everything.
+		return time.Time{}, false, fmt.Errorf("%s: want RFC3339 timestamp string, got %T", name, v)
+	}
+	if s == "" {
 		return time.Time{}, false, nil
 	}
 	t, err := time.Parse(time.RFC3339Nano, s)

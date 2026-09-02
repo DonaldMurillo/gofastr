@@ -70,6 +70,14 @@ func (m *MemoryStore) AddDelivery(_ context.Context, d Delivery) error {
 
 func (m *MemoryStore) UpdateDelivery(_ context.Context, d Delivery) error {
 	m.mu.Lock()
+	if cur, ok := m.deliveries[d.ID]; ok && isTerminalStatus(cur.Status) && !isTerminalStatus(d.Status) {
+		// Fenced no-op: a stale claimant's non-terminal settle must
+		// not regress a terminal row (isTerminalStatus). No error:
+		// the write is stale, not failed — the same fenced no-op the
+		// queue's completions report for an outrun claim.
+		m.mu.Unlock()
+		return nil
+	}
 	m.deliveries[d.ID] = d
 	m.mu.Unlock()
 	return nil

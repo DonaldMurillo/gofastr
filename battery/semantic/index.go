@@ -334,7 +334,7 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 
 	candidates := vecHits
 	if q.Hybrid && i.keyword != nil {
-		kwRaw, err := i.keyword.Search(ctx, q.Text, width)
+		kwRaw, err := i.keyword.Search(ctx, boundedKeywordText(q.Text), width)
 		if err != nil {
 			return nil, fmt.Errorf("semantic: keyword search: %w", err)
 		}
@@ -368,6 +368,41 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 		candidates[j].Chunk.Vec = nil
 	}
 	return candidates, nil
+}
+
+// maxKeywordQueryTerms bounds how many whitespace-separated terms of the
+// raw query text the keyword leg of a hybrid query receives. battery/
+// search applies the same 64-term cap (maxQueryTerms) in every
+// query-text consumer so "an attacker-controlled query cannot amplify
+// cost"; this pipeline was the one consumer forwarding raw text to its
+// keyword backend, and the shipped MemoryKeyword backend scores
+// len(docs) × len(terms) per request — the /query route's 1 MiB body
+// cap alone admits ~100k tokens. Distinct terms beyond the cap add
+// negligible selectivity.
+const maxKeywordQueryTerms = 64
+
+// boundedKeywordText returns q truncated to its first
+// maxKeywordQueryTerms whitespace-separated fields. Byte-scanned, no
+// intermediate slice: the whole point is to not allocate per term on
+// hostile input.
+func boundedKeywordText(q string) string {
+	n := 0
+	inField := false
+	for i := range q {
+		switch q[i] {
+		case ' ', '\t', '\n', '\v', '\f', '\r':
+			inField = false
+		default:
+			if !inField {
+				inField = true
+				n++
+				if n > maxKeywordQueryTerms {
+					return q[:i]
+				}
+			}
+		}
+	}
+	return q
 }
 
 // hydrateKeywordHits turns chunk-ID-only keyword results into full

@@ -476,7 +476,16 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 	for jobID, raw := range entries {
 		var entry processingEntry
 		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
-			// Corrupt processing entry: drop it so it can't wedge the sweep.
+			// Corrupt processing entry: quarantine the raw bytes to the
+			// dead-letter list — the same no-silent-loss stance as
+			// Dequeue's bad-JSON path on the main list — instead of
+			// deleting them outright. This hash holds the claimed job's
+			// ONLY durable copy. Push first and HDel only if the push
+			// landed; on push failure the entry stays in the processing
+			// hash, still observable by the next sweep.
+			if perr := q.client.LPush(ctx, q.deadLetterQueue, raw); perr != nil {
+				continue
+			}
 			_ = q.client.HDel(ctx, q.processingQueue, jobID)
 			continue
 		}
