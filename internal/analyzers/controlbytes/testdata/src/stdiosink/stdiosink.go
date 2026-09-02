@@ -1,11 +1,15 @@
-// Package stdiosink pins the fmt.Fprint* arm: only writes to
-// os.Stdout/os.Stderr are sinks; any other writer (a response writer, a
-// buffer) has its own framing and stays quiet.
+// Package stdiosink pins the fmt print arms: writes to
+// os.Stdout/os.Stderr are sinks — including fmt.Print/Printf/Println,
+// which have no writer argument and write to os.Stdout unconditionally
+// — and so is the std log package's Print* (the default logger writes
+// to stderr). Any other writer (a response writer, a buffer) has its
+// own framing and stays quiet.
 package stdiosink
 
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 )
@@ -21,8 +25,8 @@ func goodStdout(r *http.Request) {
 }
 
 // otherWritersAreQuiet: an http.ResponseWriter and an io.Writer are not
-// the terminal sinks this rule means, and a print with no writer at all
-// is not one either.
+// the terminal sinks this rule means, and fmt.Sprint* build a string
+// rather than print one.
 func otherWritersAreQuiet(w http.ResponseWriter, out io.Writer, r *http.Request) {
 	fmt.Fprintf(w, "echo %s", r.URL.Path)
 	fmt.Fprint(out, r.URL.Path)
@@ -40,3 +44,29 @@ func escapeClearance(r *http.Request) {
 func escapeQuery(q string) string { return q }
 
 func quoteCtl(s string) string { return "\"" + s + "\"" }
+
+// badBarePrint: fmt.Print/Printf/Println write to os.Stdout with no
+// writer argument to inspect — they are the terminal sink outright.
+func badBarePrint(r *http.Request) {
+	fmt.Printf("serving %s\n", r.URL.Path) // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+	fmt.Println("remote", r.RemoteAddr)    // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+	fmt.Print(r.Host)                      // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+}
+
+func goodBarePrint(r *http.Request) {
+	fmt.Printf("serving %q\n", quoteCtl(r.URL.Path))
+	fmt.Println("static line")
+}
+
+// badLogPrint: log.Print/Printf/Println write to the default logger
+// (stderr); a *log.Logger receiver is the same sink.
+func badLogPrint(lg *log.Logger, r *http.Request) {
+	log.Printf("bad path %s", r.URL.Path) // want `controlbytes: request-derived value reaches std log print unscrubbed`
+	log.Println("remote", r.RemoteAddr)   // want `controlbytes: request-derived value reaches std log print unscrubbed`
+	lg.Print(r.Host)                      // want `controlbytes: request-derived value reaches std log print unscrubbed`
+}
+
+func goodLogPrint(lg *log.Logger, r *http.Request) {
+	log.Printf("bad path %q", quoteCtl(r.URL.Path))
+	lg.Print("static line")
+}

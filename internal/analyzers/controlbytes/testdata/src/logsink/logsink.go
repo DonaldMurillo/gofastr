@@ -99,7 +99,7 @@ func goodAccess(logger *slog.Logger, w http.ResponseWriter, r *http.Request, sta
 func badKv(logger *slog.Logger, r *http.Request) error {
 	key := r.Header.Get("Idempotency-Key")
 	if err := storeFinish(key); err != nil {
-		logger.Error("idempotency: Finish failed", "key", key, "error", err) // want `controlbytes: request-derived value reaches logger.Info/Warn/Error key-value unscrubbed`
+		logger.Error("idempotency: Finish failed", "key", key, "error", err) // want `controlbytes: request-derived value reaches logger.Debug/Info/Warn/Error key-value unscrubbed`
 		return err
 	}
 	return nil
@@ -119,7 +119,7 @@ func mixedKv(logger *slog.Logger, r *http.Request) {
 	// The diagnostic lands on the Warn call: r.Method taints the
 	// entry, while EscapedPath re-encodes and does not clear what is
 	// already reported once per call.
-	logger.Warn("relay: upstream unreachable", // want `controlbytes: request-derived value reaches logger.Info/Warn/Error key-value unscrubbed`
+	logger.Warn("relay: upstream unreachable", // want `controlbytes: request-derived value reaches logger.Debug/Info/Warn/Error key-value unscrubbed`
 		"method", r.Method,
 		"path", r.URL.EscapedPath(),
 		"remote", net.JoinHostPort(r.Host, "1"),
@@ -127,3 +127,34 @@ func mixedKv(logger *slog.Logger, r *http.Request) {
 }
 
 func storeFinish(key string) error { return nil }
+
+// badPackageSlog: package-level slog.* writes to the default logger
+// (stderr) — the same sink class as the receiver form (review finding
+// C2).
+func badPackageSlog(r *http.Request) {
+	slog.Info("rejected", "path", r.URL.Path)                    // want `controlbytes: request-derived value reaches slog.Debug/Info/Warn/Error key-value unscrubbed`
+	slog.Error("failed", "key", r.Header.Get("Idempotency-Key")) // want `controlbytes: request-derived value reaches slog.Debug/Info/Warn/Error key-value unscrubbed`
+}
+
+// badDebugAndLog: Debug and Log are logger methods of the same class;
+// the message of Log sits at the same offsets as its values.
+func badDebugAndLog(logger *slog.Logger, r *http.Request) {
+	logger.Debug("trace", "path", r.URL.Path)                      // want `controlbytes: request-derived value reaches logger.Debug/Info/Warn/Error key-value unscrubbed`
+	logger.Log(nil, slog.LevelError, "failed", "path", r.URL.Path) // want `controlbytes: request-derived value reaches slog.Log key-value unscrubbed`
+	slog.Log(nil, slog.LevelError, "failed", "path", r.URL.Path)   // want `controlbytes: request-derived value reaches slog.Log key-value unscrubbed`
+}
+
+// badMessage: the MESSAGE argument forges log lines exactly like a
+// value does (review finding C5). The stdio arm already checked its
+// format string; the key-value arms now agree.
+func badMessage(logger *slog.Logger, r *http.Request) {
+	logger.Error("request failed: " + r.URL.Path) // want `controlbytes: request-derived value reaches logger.Debug/Info/Warn/Error key-value unscrubbed`
+	slog.Warn("denied " + r.URL.Path)             // want `controlbytes: request-derived value reaches slog.Debug/Info/Warn/Error key-value unscrubbed`
+}
+
+func goodSlogWide(logger *slog.Logger, r *http.Request) {
+	slog.Info("rejected", "path", scrubCtl(r.URL.Path))
+	logger.Debug("trace", "path", scrubCtl(r.URL.Path))
+	logger.Log(nil, slog.LevelError, "failed: "+scrubCtl(r.URL.Path), "path", scrubCtl(r.URL.Path))
+	logger.Error("request failed: " + scrubCtl(r.URL.Path))
+}

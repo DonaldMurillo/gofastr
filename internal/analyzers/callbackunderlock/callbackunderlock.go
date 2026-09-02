@@ -34,17 +34,29 @@
 // sync.RWMutex selectors count); calls inside nested function literals
 // (a closure deferred or handed to `go` does not run in the linear
 // region, and a synchronous comparator's own lock behavior is its
-// business); and context.CancelFunc fields (moduleproto's cancel
-// slots): CancelFunc never re-enters user code — it is documented
-// safe to call concurrently and only touches context internals — so
-// holding p.mu across it cannot deadlock on a callback that re-takes
-// the lock; and the deliberately-serialized one-shot — a callback on
-// the SAME object as the mutex, called at most once outside any loop,
-// under a DEFERRED release (battery/setup's run-one-step-under-lock,
-// where the lock IS the exactly-once guarantee, and the style cache's
-// compute-under-entry-lock) — because a panic unwinds through the
-// deferred unlock and the blocked parties are the same object's own
-// callers, not a shared registry's every reader.
+// business); callees launched with `go` or deferred between Lock and
+// Unlock (`go sub(ev)`, `defer h.done()`) — the launch is
+// non-blocking and the callee runs on its own stack outside the held
+// region; printf-shaped logger fields
+// (func(format string, args ...any) — the logf/Logger fields the
+// webhook manager, static builder and process supervisor inject),
+// which are logging plumbing, not app callbacks, per the sibling
+// recovercallback analyzer's classification; and context.CancelFunc
+// fields (moduleproto's cancel slots): CancelFunc never re-enters user
+// code — it is documented safe to call concurrently and only touches
+// context internals — so holding p.mu across it cannot deadlock on a
+// callback that re-takes the lock; and the deliberately-serialized
+// one-shot — a callback on the SAME object as the mutex (the callee's
+// root identifier is the receiver the mutex hangs off; a callback on
+// any OTHER object, parameter or not, never qualifies — a blocking
+// foreign callback wedges this registry's lock regardless), called at
+// most once outside any loop, under a DEFERRED release (the style
+// cache's compute-under-entry-lock, where the lock IS the
+// exactly-once guarantee; battery/setup's runner used this shape too
+// until its step callback moved outside the lock with an in-flight
+// flag) — because a panic unwinds through the deferred unlock and the
+// blocked parties are the same object's own callers, not a shared
+// registry's every reader.
 package callbackunderlock
 
 import (
@@ -89,7 +101,6 @@ func checkBody(pass *analysis.Pass, fn *ast.FuncDecl, body *ast.BlockStmt) {
 	mapDerived := mapDerivedBindings(pass, body)
 	recv := receiverName(fn)
 	inLoop, ownBatch := callsInsideLoops(pass, body, recv)
-	params := paramObjects(pass, fn)
 
 	for i := range calls {
 		call := &calls[i]
@@ -101,7 +112,7 @@ func checkBody(pass *analysis.Pass, fn *ast.FuncDecl, body *ast.BlockStmt) {
 		if !held {
 			continue
 		}
-		if serializedOneShot(deferredRelease, inLoop, ownBatch, key, desc, call, params) {
+		if serializedOneShot(deferredRelease, inLoop, ownBatch, key, desc, call) {
 			continue
 		}
 		pass.Reportf(call.Pos(),
@@ -113,14 +124,16 @@ func checkBody(pass *analysis.Pass, fn *ast.FuncDecl, body *ast.BlockStmt) {
 // serializedOneShot recognizes the deliberately-serialized pattern this
 // rule stays out of: the callback belongs to the SAME object as the
 // mutex, is invoked at most once (not inside a loop), and the release
-// is deferred — the setup runner runs one step under the lock because
-// the lock is the exactly-once guarantee, and the style cache computes
-// under the entry lock for the same reason. A panic there unwinds
+// is deferred — the style cache computes under the entry lock because
+// the lock is the exactly-once guarantee, and battery/setup's runner
+// ran its step the same way until the step moved outside the lock
+// (claim under the lock, run outside, advance under the lock). A
+// panic there unwinds
 // through the deferred unlock; nothing is wedged. The shape this rule
 // exists for is the SHARED registry: per-item callbacks in a loop
 // (mcp's listing gates, cron's per-job gate) or any explicit lock/
 // unlock span a panicking callback can skip past.
-func serializedOneShot(deferredRelease map[string]bool, inLoop, ownBatch map[token.Pos]bool, key, desc string, call *ast.CallExpr, params map[string]bool) bool {
+func serializedOneShot(deferredRelease map[string]bool, inLoop, ownBatch map[token.Pos]bool, key, desc string, call *ast.CallExpr) bool {
 	if !deferredRelease[key] {
 		return false
 	}
@@ -140,7 +153,7 @@ func serializedOneShot(deferredRelease map[string]bool, inLoop, ownBatch map[tok
 		return false
 	}
 	calleeRoot, _, _ := strings.Cut(desc, ".")
-	return calleeRoot == lockRoot || params[calleeRoot]
+	return calleeRoot == lockRoot
 }
 
 // rootIdent is the leftmost identifier of a selector chain (r.cfg.Steps
@@ -168,30 +181,6 @@ func receiverName(fn *ast.FuncDecl) string {
 		return ""
 	}
 	return names[0].Name
-}
-
-// paramObjects collects the enclosing function's parameter names
-// (receiver included).
-func paramObjects(pass *analysis.Pass, fn *ast.FuncDecl) map[string]bool {
-	out := map[string]bool{}
-	if fn == nil {
-		return out
-	}
-	if fn.Recv != nil {
-		for _, f := range fn.Recv.List {
-			for _, n := range f.Names {
-				out[n.Name] = true
-			}
-		}
-	}
-	if fn.Type.Params != nil {
-		for _, f := range fn.Type.Params.List {
-			for _, n := range f.Names {
-				out[n.Name] = true
-			}
-		}
-	}
-	return out
 }
 
 // callsInsideLoops marks every call position lexically inside a loop,
@@ -277,6 +266,14 @@ func scanLocks(pass *analysis.Pass, body *ast.BlockStmt) ([]lockEvent, []ast.Cal
 		if !ok {
 			return true
 		}
+		if async[call.Pos()] {
+			// A `go`-launched or deferred callee does not run in the
+			// linear region: the launch is non-blocking and the
+			// callback runs on its own stack outside it (the same
+			// reason closures handed to `go` are out of scope), and a
+			// deferred release fires at function exit, not here.
+			return true
+		}
 		sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
 		if !ok {
 			calls = append(calls, *call)
@@ -298,12 +295,6 @@ func scanLocks(pass *analysis.Pass, body *ast.BlockStmt) ([]lockEvent, []ast.Cal
 			// Not sync's own method: a wrapper type redefining
 			// Lock/Unlock is out of scope.
 			calls = append(calls, *call)
-			return true
-		}
-		if async[call.Pos()] {
-			// The deferred/go release: not an event. A deferred
-			// Lock would be too, but that shape cannot guard the
-			// statements above it anyway.
 			return true
 		}
 		events = append(events, lockEvent{
@@ -350,7 +341,7 @@ func funcValueCallee(pass *analysis.Pass, call *ast.CallExpr, mapDerived map[typ
 		if !isSignature(s.Type()) {
 			return nil, "", false
 		}
-		if field, ok := s.Obj().(*types.Var); ok && (isCancelFunc(field.Type()) || isClockFunc(field.Type())) {
+		if field, ok := s.Obj().(*types.Var); ok && (isCancelFunc(field.Type()) || isClockFunc(field.Type()) || isPrintfFunc(field.Type())) {
 			return nil, "", false
 		}
 		return s.Obj(), types.ExprString(fun), true
@@ -448,6 +439,30 @@ func isClockFunc(t types.Type) bool {
 	}
 	n, ok := sig.Results().At(0).Type().(*types.Named)
 	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "time" && n.Obj().Name() == "Time"
+}
+
+// isPrintfFunc: a printf-shaped logger field —
+// func(format string, args ...any) — the same plumbing shape the
+// sibling recovercallback analyzer classifies as infrastructure. A
+// log line never blocks on app code long enough to wedge a registry.
+func isPrintfFunc(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	sig, ok := t.Underlying().(*types.Signature)
+	if !ok || !sig.Variadic() || sig.Params().Len() != 2 || sig.Results().Len() != 0 {
+		return false
+	}
+	b, ok := sig.Params().At(0).Type().Underlying().(*types.Basic)
+	if !ok || b.Info()&types.IsString == 0 {
+		return false
+	}
+	sl, ok := sig.Params().At(1).Type().Underlying().(*types.Slice)
+	if !ok {
+		return false
+	}
+	e, ok := sl.Elem().Underlying().(*types.Interface)
+	return ok && e.Empty()
 }
 
 func isCancelFunc(t types.Type) bool {
