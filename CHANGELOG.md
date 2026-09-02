@@ -119,6 +119,48 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   element closes the chain. The summary path is byte-identical to before.
   New runtime attribute `data-fui-menu-trigger`, documented in
   core-ui/ARCHITECTURE.md and runtime-contract.md.
+- **Document-lifetime scripts, and a capability boundary the SPA router
+  honours** (#372): `uihost.RegisterDocumentScript(src, scope)` puts a
+  script on the rail with a document lifetime: the tag ships only on
+  pages the scope accepts, marked `data-fui-doc`, and the route manifest
+  carries each route's set as `docScripts`. The runtime compares the
+  destination's set against the live document's tags at every
+  soft-navigation entry point (the click hijack before `preventDefault`,
+  `navigate()`, `popstate`, and the redirect leg) and performs a real
+  document load across an edge, in either direction; same-set routes
+  keep swapping at their deepest shared layer, and Back/Forward across
+  an edge loads the destination fresh. The reason is a browser fact, not
+  a policy: a script that installs capabilities into the document (the
+  WebMCP bridge registering tools on `navigator.modelContext`) is not
+  uninstalled by removing its tag, and a partial swap never runs a body
+  script. `webmcp.WithDocumentScope(pred)` is the first consumer; a
+  browser test proves `getTools()` is empty after leaving the scope and
+  populated again after Back. The core runtime budget line moved by the
+  gate's measured cost under the budget file's documented exception.
+- **`stream.StateChannel`: sequenced snapshots and events above `Hub`**
+  (#375): a reconnecting client is hydrated from one immutable
+  `SnapshotFor` read, then receives events with strictly increasing
+  sequences reconciled to every snapshot the channel sent, so a snapshot
+  captured before a mutation cannot resurrect the state that mutation
+  replaced. `FilterEvent` shapes each event per role before
+  serialization, which is where data minimization has to happen: a field
+  the source strips never crosses the transport, and hiding it in the UI
+  is not minimization. Delivery is best-effort like `Hub` (a slow
+  connection drops events; one that cannot accept its snapshot is closed
+  to reconnect). `Hub` and the WebSocket API are unchanged and pinned.
+- **Reconnect generations in the browser** (#377): the new `ws` runtime
+  module, loaded on demand with no DOM marker, provides
+  `__gofastr.createSequencedReducer` (applies only `sequence` greater
+  than the last applied) and `__gofastr.connectWebSocket`, which gives
+  every reconnect a distinct generation with idempotent
+  `onGenerationStart`, `onHydrated`, and `onGenerationEnd` hooks and a
+  bounded reason class (`closed`, `error`, `stop`), never a raw close
+  reason, payload, or credential. Transport connected, state hydrated,
+  protocol resynchronized, and application ready are distinct phases;
+  the docs say plainly that a recovered socket proves nothing about a
+  WebRTC or media protocol layered on it. `WSConfig.ConnectionID` and
+  `WebSocketConn.ConnectionID` (random when unset) correlate a client's
+  reconnects in server logs.
 - Probe tests kept from the #136 audit as regression pins: the pack
   encode/decode round-trip property over a randomized hostile corpus, the
   Levenshtein scaling benchmark, `Timeout`'s deterministic boundary and an
