@@ -28,7 +28,14 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 		{Label: "Errors", Href: s.cfg.BasePath + "/errors", Active: active == "errors"},
 	}
 	var ents []interactive.SectionItem
+	seenTable := map[string]bool{}
 	for _, e := range s.includedEntities() {
+		// Registered versions of one entity share the reference URL
+		// (the page documents every version); one menu entry per URL.
+		if seenTable[e.Config.Table] {
+			continue
+		}
+		seenTable[e.Config.Table] = true
 		ents = append(ents, interactive.SectionItem{
 			Label:  e.Config.Name,
 			Href:   s.cfg.BasePath + "/entities/" + e.Config.Table,
@@ -96,6 +103,33 @@ func (s *site) exampleOrigin() string {
 		base = "https://your-app.example.com"
 	}
 	return strings.TrimRight(base, "/") + s.cfg.APIPrefix
+}
+
+// entityBase returns the live route prefix serving one entity's CRUD
+// surface. A version-mounted entity (App.GroupEntity sets Version to the
+// group's full prefix, e.g. "/api/v1") serves at that prefix, which already
+// carries the api prefix; everything else sits under cfg.APIPrefix.
+// Documenting any other path publishes URLs that 404.
+func (s *site) entityBase(e *entity.Entity) string {
+	if e.Version != "" {
+		return strings.TrimRight(e.Version, "/") + "/" + e.Config.Table
+	}
+	return s.cfg.APIPrefix + "/" + e.Config.Table
+}
+
+// entityOrigin is exampleOrigin scoped to one entity: a version-mounted
+// entity's examples must address its group prefix, not the unversioned
+// api root.
+func (s *site) entityOrigin(e *entity.Entity) string {
+	base := s.cfg.BaseURL
+	if base == "" {
+		base = "https://your-app.example.com"
+	}
+	base = strings.TrimRight(base, "/")
+	if e.Version != "" {
+		return base + strings.TrimRight(e.Version, "/")
+	}
+	return base + s.cfg.APIPrefix
 }
 
 func text(t string) render.HTML { return render.Text(t) }
@@ -229,7 +263,6 @@ func (s *site) goModuleHint() string {
 	}
 	return "local/<app>-sdk"
 }
-
 func (s *site) goDirHint() string {
 	if m, _, _ := s.resolved(); m != nil && m.App != "" {
 		return m.App + "-sdk"
@@ -238,7 +271,7 @@ func (s *site) goDirHint() string {
 }
 
 func (s *site) quickstartTabs(e *entity.Entity) render.HTML {
-	origin := s.exampleOrigin()
+	origin := s.entityOrigin(e)
 	structName := upperFirst(casing.ToCamel(e.Config.Name))
 	prop := casing.ToCamel(e.Config.Table)
 
@@ -395,10 +428,16 @@ type entityScreen struct {
 func (sc *entityScreen) SetParams(params map[string]string) { sc.params = params }
 
 // StaticPaths exports one page per included entity (keyed by table, the
-// URL segment).
+// URL segment). Registered versions of one entity share the segment and
+// therefore the page, so the path set dedupes on the table.
 func (sc *entityScreen) StaticPaths(_ context.Context) []map[string]string {
+	seen := map[string]bool{}
 	var out []map[string]string
 	for _, e := range sc.site.includedEntities() {
+		if seen[e.Config.Table] {
+			continue
+		}
+		seen[e.Config.Table] = true
 		out = append(out, map[string]string{"name": e.Config.Table})
 	}
 	return out
@@ -421,30 +460,54 @@ func (sc *entityScreen) current() (*entity.Entity, bool) {
 
 func (sc *entityScreen) Render() render.HTML {
 	s := sc.site
-	e, ok := sc.current()
-	if !ok {
+	versions := s.lookupAll(sc.params["name"])
+	if len(versions) == 0 {
 		// The visibility policy 404s before render; this is belt and
 		// braces for direct RenderPage calls.
 		return s.page("", "Not found", heading(1, "Not found"))
 	}
-	cfg := e.Config
-	table := cfg.Table
+	primary := versions[0]
 
-	body := []render.HTML{
-		heading(1, cfg.Name),
-		para(text("Base path "), code(s.cfg.APIPrefix+"/"+table), text(". Responses are "),
+	body := []render.HTML{heading(1, primary.Config.Name)}
+	for _, e := range versions {
+		// When several versions share this page, each gets its own
+		// section so every registered version's schema is reachable;
+		// the section headings drop to h3 so the version heading owns
+		// the h2. A single unversioned entity keeps the historical
+		// layout untouched.
+		h := 2
+		if len(versions) > 1 {
+			label := e.Version
+			if label == "" {
+				label = "default"
+			}
+			body = append(body, heading(2, "API version "+label))
+			h = 3
+		}
+		body = append(body, sc.entitySection(e, h)...)
+	}
+	return s.page("entity:"+primary.Config.Table, primary.Config.Name, body...)
+}
+
+// entitySection renders one entity version's reference body: base path,
+// fields, endpoints, listing notes, examples. h is the heading level for
+// the section headings (see Render).
+func (sc *entityScreen) entitySection(e *entity.Entity, h int) []render.HTML {
+	s := sc.site
+	cfg := e.Config
+	return []render.HTML{
+		para(text("Base path "), code(s.entityBase(e)), text(". Responses are "),
 			text(map[bool]string{true: "snake_case", false: "camelCase"}[s.cfg.SnakeCase]),
 			text("; filter and sort query parameters always use the snake_case column names shown below.")),
-		heading(2, "Fields"),
+		heading(h, "Fields"),
 		sc.fieldsTable(cfg),
-		heading(2, "Endpoints"),
-		sc.endpointsTable(cfg),
-		heading(2, "Listing, filtering, sorting"),
+		heading(h, "Endpoints"),
+		sc.endpointsTable(e),
+		heading(h, "Listing, filtering, sorting"),
 		sc.listParamsNotes(cfg),
-		heading(2, "Examples"),
-		sc.exampleTabs(cfg),
+		heading(h, "Examples"),
+		sc.exampleTabs(e),
 	}
-	return s.page("entity:"+table, cfg.Name, body...)
 }
 
 // fieldsTable ports the non-Hidden walk from crud.EntityLLMMD: hidden
@@ -496,8 +559,9 @@ func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
 	})
 }
 
-func (sc *entityScreen) endpointsTable(cfg entity.EntityConfig) render.HTML {
-	base := sc.site.cfg.APIPrefix + "/" + cfg.Table
+func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
+	cfg := e.Config
+	base := sc.site.entityBase(e)
 	type op struct{ method, path, desc string }
 	ops := []op{
 		{"GET", base, "List (offset or cursor pagination)"},
@@ -570,12 +634,19 @@ func (sc *entityScreen) listParamsNotes(cfg entity.EntityConfig) render.HTML {
 	return render.Join(items...)
 }
 
-func (sc *entityScreen) exampleTabs(cfg entity.EntityConfig) render.HTML {
+func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 	s := sc.site
-	origin := s.exampleOrigin()
+	cfg := e.Config
+	origin := s.entityOrigin(e)
 	structName := upperFirst(casing.ToCamel(cfg.Name))
 	prop := casing.ToCamel(cfg.Table)
 	filterField := exampleFilterField(cfg)
+	// A versioned entity shares the page with its siblings; the tab
+	// widget name must stay unique per section.
+	tabsName := "sdk-ent-" + cfg.Table
+	if e.Version != "" {
+		tabsName += "-" + strings.ReplaceAll(strings.Trim(e.Version, "/"), "/", "-")
+	}
 
 	goCode := fmt.Sprintf(`params := url.Values{}
 params.Set(%q, "10")
@@ -600,7 +671,7 @@ await api.%s.watch((event) => console.log(event), { signal });`,
 	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \
   "%s/%s?%s_gte=10&sort=-%s"`, origin, cfg.Table, filterField, filterField)
 
-	return ui.CodeTabs(ui.CodeTabsConfig{Name: "sdk-ent-" + cfg.Table},
+	return ui.CodeTabs(ui.CodeTabsConfig{Name: tabsName},
 		ui.CodeSample{Label: "Go", Language: "go", Code: goCode},
 		ui.CodeSample{Label: "TypeScript", Language: "ts", Code: tsCode},
 		ui.CodeSample{Label: "curl", Language: "shell", Code: curlCode},

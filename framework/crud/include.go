@@ -98,7 +98,42 @@ type IncludeNode struct {
 	// the scope exists to hide.
 	ReadScopes []filter.ParsedFilter
 	Children   []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
-	childMap   map[string]*IncludeNode
+	// scopedClauses remembers the scoped-filter sets already merged into
+	// this node (or into sibling nodes spawned for it) so a repeated
+	// mention of the same relation with the SAME set is a no-op instead
+	// of a second load of the same rows.
+	scopedClauses map[string]bool
+	childMap      map[string]*IncludeNode
+}
+
+// noteScopedClause records a mention's scoped-filter set and reports
+// whether it was already seen for this relation. parsed must come from
+// parseScopedFilters; the key is its canonical field/op/value spelling so
+// whitespace variations of the same clause still dedup.
+func (n *IncludeNode) noteScopedClause(parsed []filter.ParsedFilter) bool {
+	if n == nil {
+		return false
+	}
+	var b strings.Builder
+	for i, f := range parsed {
+		if i > 0 {
+			b.WriteByte(0x01)
+		}
+		b.WriteString(f.Field)
+		b.WriteByte(0x00)
+		b.WriteString(string(f.Op))
+		b.WriteByte(0x00)
+		b.WriteString(f.Value)
+	}
+	key := b.String()
+	if n.scopedClauses == nil {
+		n.scopedClauses = map[string]bool{}
+	}
+	if n.scopedClauses[key] {
+		return true
+	}
+	n.scopedClauses[key] = true
+	return false
 }
 
 // parseIncludeTree splits comma-separated dotted include paths and resolves
@@ -180,6 +215,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 				siblingMap[seg] = node
 				*siblings = append(*siblings, node)
 			}
+			next := node
 			if filterClause != "" {
 				// Scoped filters are validated against the TARGET entity's
 				// fields, the allow-list that keeps `include=rel(col=v)`
@@ -189,10 +225,31 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 				if err != nil {
 					return nil, err
 				}
-				node.Filters = append(node.Filters, parsed...)
+				seen := node.noteScopedClause(parsed)
+				if exists && !seen {
+					// A repeated mention carrying a DISTINCT filter set.
+					// AND-appending it to the existing node (the old
+					// behavior) composes the two sets into a predicate no
+					// row can satisfy when they disagree, so the relation
+					// silently came back empty. Give the mention its own
+					// node instead: the loaders attach rows per relation
+					// name, so the two loads union. An identical repeat
+					// keeps appending to the same node, ANDing the
+					// predicate with itself, which is a no-op.
+					next = &IncludeNode{
+						Name:     seg,
+						Relation: rel,
+						Target:   target,
+						Filters:  parsed,
+						childMap: map[string]*IncludeNode{},
+					}
+					*siblings = append(*siblings, next)
+				} else {
+					node.Filters = append(node.Filters, parsed...)
+				}
 			}
-			siblings = &node.Children
-			siblingMap = node.childMap
+			siblings = &next.Children
+			siblingMap = next.childMap
 			currentEntity = target
 		}
 	}

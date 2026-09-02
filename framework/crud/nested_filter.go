@@ -283,6 +283,14 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		}
 		nf := nestedFilter{Relation: rel, Field: field, Op: spec.Op, isBool: isBool, softDelete: target.Config.Scope.SoftDelete, table: resolvedTable(target, rel)}
 		if spec.Op == filter.OpIn {
+			// Same entry cap the HTTP path enforces (SplitINValuesBounded
+			// in parseNestedFiltersValues): each value becomes one
+			// placeholder in the EXISTS clause, so an unbounded slice is
+			// the same statement-size vector the cap exists to bound.
+			if len(spec.Values) > filter.MaxINListEntries {
+				return nil, fmt.Errorf("nested filter %q.%q: in-list has %d entries (max %d)",
+					spec.Relation, field, len(spec.Values), filter.MaxINListEntries)
+			}
 			nf.Values = spec.Values
 		} else {
 			nf.Value = spec.Value

@@ -210,15 +210,31 @@ func nameMatches(e *entity.Entity, names []string) bool {
 
 // lookup resolves a reference-URL segment (entity table or name) within the
 // included set only, excluded entities are indistinguishable from
-// nonexistent ones.
+// nonexistent ones. When several registered versions share the name, the
+// first wins here; the entity page itself documents every version via
+// lookupAll.
 func (s *site) lookup(segment string) (*entity.Entity, bool) {
+	all := s.lookupAll(segment)
+	if len(all) == 0 {
+		return nil, false
+	}
+	return all[0], true
+}
+
+// lookupAll resolves a reference-URL segment to EVERY included entity that
+// matches it by table or name. Versions of one entity registered via
+// App.GroupEntity share the segment (and therefore the page); returning
+// only the first (the old behavior) left the other versions' schemas
+// undocumented and unreachable from any reference URL.
+func (s *site) lookupAll(segment string) []*entity.Entity {
 	segment = strings.ToLower(segment)
+	var out []*entity.Entity
 	for _, e := range s.includedEntities() {
 		if segment == strings.ToLower(e.Config.Table) || segment == strings.ToLower(e.Config.Name) {
-			return e, true
+			out = append(out, e)
 		}
 	}
-	return nil, false
+	return out
 }
 
 // entityVisibilityPolicy 404s reference URLs whose entity is not in the

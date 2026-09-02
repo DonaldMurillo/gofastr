@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -123,8 +124,18 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		var vals []any
 		for _, f := range ch.Entity.GetFields() {
 			if f.AutoGenerate == schema.AutoIncrement {
-				// Omit: the DB assigns it (see doCreate). Including the 0
-				// placeholder would collide every upsert on id=0 and clobber.
+				// Omit when no real pk was supplied: the DB assigns it
+				// (see doCreate), and the generated 0 placeholder would
+				// collide every upsert on id=0. A caller-SUPPLIED
+				// non-zero pk IS the conflict target: dropping it meant
+				// the INSERT carried no id, the DB assigned a fresh one,
+				// ON CONFLICT never fired, and the "update" half of the
+				// upsert silently inserted a duplicate row.
+				if !callerSuppliedIncrement(body[f.Name]) {
+					continue
+				}
+				cols = append(cols, f.Name)
+				vals = append(vals, incrementBindValue(body[f.Name]))
 				continue
 			}
 			if f.AutoGenerate != schema.AutoNone {
@@ -329,4 +340,49 @@ func isAutoField(ent *entity.Entity, col string) bool {
 		}
 	}
 	return false
+}
+
+// callerSuppliedIncrement reports whether v is a real (non-zero) value for
+// an AutoIncrement column. Absent, zero, or the empty string mean "let the
+// DB assign the next id"; anything else is a caller-supplied primary key
+// and must reach the INSERT so ON CONFLICT can target it.
+func callerSuppliedIncrement(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case int:
+		return x != 0
+	case int32:
+		return x != 0
+	case int64:
+		return x != 0
+	case float64: // JSON-decoded number
+		return x != 0
+	case json.Number:
+		return x.String() != "0"
+	case string:
+		return x != "" && x != "0"
+	default:
+		return true
+	}
+}
+
+// incrementBindValue coerces a caller-supplied AutoIncrement pk to int64 so
+// every dialect binds an integer (a JSON-decoded float64 into a Postgres
+// SERIAL column would be a type error). Non-numeric values pass through and
+// surface the driver's own error.
+func incrementBindValue(v any) any {
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int32:
+		return int64(x)
+	case float64:
+		return int64(x)
+	case json.Number:
+		if i, err := x.Int64(); err == nil {
+			return i
+		}
+	}
+	return v
 }

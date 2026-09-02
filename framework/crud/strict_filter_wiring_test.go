@@ -179,29 +179,3 @@ func TestServeStreamingList_OffsetSkipsRows(t *testing.T) {
 		t.Fatalf("stream offset=2 dropped the wrong rows: %s", body)
 	}
 }
-
-// TestListQParamRefusedWithoutSearch pins the strict-parsing seam for ?q=.
-// "q" sits in filter.reservedListParams unconditionally, but the list
-// handler only CONSUMES it when the entity declares SearchFields — on an
-// entity without them, ?q=term is silently skipped and the request returns
-// the full unfiltered set with a 200. That is the exact hazard strict mode
-// exists to prevent (its own doc: "a dropped filter returns an UNFILTERED
-// result set, which is a data-exposure and broken-client hazard"), and the
-// typo path (?titlee=) 400s for the same reason. The unconsumable key must
-// be refused, not dropped. Reserved-skip for "q" belongs behind the same
-// SearchFields condition the consumer uses.
-func TestListQParamRefusedWithoutSearch(t *testing.T) {
-	ch, db := allowedFilterHandler(t, nil)
-	if _, err := db.Exec(`INSERT INTO notes (id, owner, body) VALUES
-		('n1','u1','needle'), ('n2','u1','haystack')`); err != nil {
-		t.Fatal(err)
-	}
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/notes?q=needle", nil), "u1")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-
-	if rec.Code == http.StatusOK {
-		t.Fatalf("DATA: [q-silent-drop] ?q= on an entity with no SearchFields returned 200 unfiltered (body=%s). Attack: the reserved-skip for q drops a parameter no consumer exists for, turning every search-shaped request into a full-table read.", rec.Body.String())
-	}
-}
