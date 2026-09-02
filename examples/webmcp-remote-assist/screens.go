@@ -45,12 +45,20 @@ func videoTag(id string) render.HTML {
 	})
 }
 
-// pillPair renders two StatusPills where exactly one is visible;
-// app.js flips the hidden attribute as state changes.
-func pillPair(id string, off, on string) render.HTML {
+// pillPair renders two StatusPills where exactly one is visible: the
+// one matching the state at render time, so a reload shows the truth
+// before hydration; app.js flips the hidden attribute as state changes.
+func pillPair(id string, off, on string, state bool) render.HTML {
+	offAttrs := html.Attrs{"data-assist-live": ""}
+	onAttrs := html.Attrs{"data-assist-live": ""}
+	if state {
+		offAttrs["hidden"] = ""
+	} else {
+		onAttrs["hidden"] = ""
+	}
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
-		ui.StatusPill(ui.StatusPillConfig{ID: id + "-off", Dot: true, Label: off, ExtraAttrs: html.Attrs{"data-assist-live": ""}}),
-		ui.StatusPill(ui.StatusPillConfig{ID: id + "-on", Dot: true, Label: on, ExtraAttrs: html.Attrs{"hidden": "", "data-assist-live": ""}}),
+		ui.StatusPill(ui.StatusPillConfig{ID: id + "-off", Dot: true, Label: off, ExtraAttrs: offAttrs}),
+		ui.StatusPill(ui.StatusPillConfig{ID: id + "-on", Dot: true, Label: on, ExtraAttrs: onAttrs}),
 	)
 }
 
@@ -167,9 +175,9 @@ func (s *SupportConsoleScreen) RenderCtx(ctx context.Context) render.HTML {
 				Eyebrow: "Session " + shortID(s.id),
 				Title:   "Support console",
 				Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
-					pillPair("assist-pill-op", "operator away", "operator online"),
-					pillPair("assist-pill-media", "no video", "video live"),
-					pillPair("assist-pill-ack", "not acknowledged", "acknowledged"),
+					pillPair("assist-pill-op", "operator away", "operator online", snap.OperatorOnline),
+					pillPair("assist-pill-media", "no video", "video live", snap.MediaUp),
+					pillPair("assist-pill-ack", "not acknowledged", "acknowledged", snap.Acked),
 				),
 			}),
 			ui.Grid(ui.GridConfig{Min: "22rem"},
@@ -251,7 +259,7 @@ func (s *OperatorScreen) RenderCtx(ctx context.Context) render.HTML {
 				Eyebrow:  "Session " + shortID(s.id),
 				Title:    "Your assist session",
 				Subtitle: "Share your camera when you are ready. Support sees what you see and sends instructions here.",
-				Actions:  pillPair("assist-pill-media", "camera off", "camera live"),
+				Actions:  pillPair("assist-pill-media", "camera off", "camera live", snap.MediaUp),
 			}),
 			ui.Grid(ui.GridConfig{Min: "22rem"},
 				ui.Card(ui.CardConfig{Heading: "Your camera", HeadingLevel: 2,
@@ -276,7 +284,7 @@ func (s *OperatorScreen) RenderCtx(ctx context.Context) render.HTML {
 							ID:          "assist-ack-form",
 							Ctx:         ctx,
 						}),
-						pillPair("assist-pill-ack", "not acknowledged", "acknowledged"),
+						pillPair("assist-pill-ack", "not acknowledged", "acknowledged", snap.Acked),
 					),
 				),
 			),
@@ -312,6 +320,34 @@ func invocationText(inv string) string {
 		return "Last command: manual or page button."
 	}
 	return "Last command: agent invocation " + shortID(inv) + "."
+}
+
+// JoinScreen is the one-time link's landing page. Rendering it spends
+// nothing: link previewers and mail scanners fetch it and see a button.
+// The button's same-origin POST performs the exchange (handleJoin).
+type JoinScreen struct {
+	component.ContextOnly
+	token string
+}
+
+func (s *JoinScreen) ScreenTitle() string { return "Join assist session" }
+
+func (s *JoinScreen) SetParams(m map[string]string) { s.token = m["token"] }
+
+func (s *JoinScreen) RenderCtx(ctx context.Context) render.HTML {
+	return ui.AuthCard(ui.AuthCardConfig{
+		Title: "Join the assist session",
+		Body: ui.Stack(ui.StackConfig{Gap: ui.GapMD},
+			html.Paragraph(html.TextConfig{},
+				render.Text("Support sent you this link. Joining opens your side of the session, where you can share your camera and read instructions. The link works once.")),
+			ui.Form(ui.FormConfig{
+				Action:      "/join/" + s.token,
+				Method:      "POST",
+				SubmitLabel: "Join the session",
+				Ctx:         ctx,
+			}),
+		),
+	})
 }
 
 // SessionGoneScreen is the one recovery screen for every dead path: an

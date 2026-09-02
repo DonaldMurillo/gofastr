@@ -90,8 +90,10 @@ func statusPillCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
 }
 /* Author-origin display beats the UA's [hidden]{display:none}, so a
-   pill a script hides with el.hidden = true would stay visible. */
-[data-fui-comp="ui-status-pill"][hidden] {
+   pill a script hides with el.hidden = true would stay visible.
+   hidden="until-found" is excluded: the UA keeps that state
+   revealable (content-visibility), and display: none would break it. */
+[data-fui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
   display: none;
 }
 [data-fui-comp="ui-status-pill"] .ui-status-pill__dot {

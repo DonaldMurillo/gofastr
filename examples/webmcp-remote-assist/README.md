@@ -28,8 +28,10 @@ the port; the startup log names the real one).
    HttpOnly support cookie.
 2. **Create session** → the console opens with a one-time join link.
 3. Send the link to the operator (another browser, another machine).
-4. **Operator** opens it: the link trades for an operator cookie
-   (HttpOnly, `Path=/session`) and opens the operator page.
+4. **Operator** opens it: a confirmation page (fetching the link spends
+   nothing, so a chat preview cannot burn it) whose button trades the
+   token for an operator cookie (HttpOnly, `Path=/session`) and opens
+   the operator page.
 5. Operator clicks **Share camera** (video only — no microphone is
    ever requested). Support sees the feed peer-to-peer.
 6. Support sends instructions two ways that share one command path:
@@ -76,8 +78,9 @@ JSON.parse(await mc.executeTool(t, JSON.stringify({ session: "..." })));
   channels. Multi-replica means the session store moves to a database
   and the channel fanout to a broker; the page code does not change.
 - **Sessions are short-lived** (10 minutes) and join links are
-  single-use. Both are enforced server-side and both render the same
-  410 recovery screen, so a caller cannot probe the difference.
+  single-use: only the confirmation page's POST spends one. Both are
+  enforced server-side and both render the same 410 recovery screen,
+  so a caller cannot probe the difference.
 
 ## Deployment notes
 

@@ -222,15 +222,19 @@
       }
     };
     pcx.onconnectionstatechange = () => {
-      note('pcState', pcx.connectionState);
-      const live = pcx.connectionState === 'connected';
-      const failed = pcx.connectionState === 'failed';
+      const st = pcx.connectionState;
+      note('pcState', st);
+      const live = st === 'connected';
+      // disconnected may recover on its own; failed and closed do not.
+      // All three clear the server's mediaUp, and connected sets it
+      // again, so the flag never says "live" for a path that is not.
+      const down = st === 'failed' || st === 'disconnected' || st === 'closed';
       if (cfg.role === 'support') {
         const noteEl = byId('assist-media-note');
         if (noteEl && live) noteEl.textContent = 'Receiving the operator\u2019s camera.';
-        if (noteEl && failed) noteEl.textContent = 'The media path failed. Ask the operator to share again.';
+        if (noteEl && down) noteEl.textContent = 'The media path dropped. Ask the operator to share again if it does not come back.';
       }
-      if (live || failed) send({ kind: 'media', up: live });
+      if (live || down) send({ kind: 'media', up: live });
     };
     return pcx;
   }
@@ -302,11 +306,18 @@
   function reportBridge() {
     const el = byId('assist-bridge');
     if (!el) return;
+    let tries = 0;
     const tick = () => {
       const st = window.__gofastrWebMCP;
       if (st && st.attempted > 0) {
         el.textContent = st.registered + ' of ' + st.attempted + ' tools registered'
           + (st.supported ? '' : ' (WebMCP unsupported in this browser)');
+        return;
+      }
+      // Bounded: ten seconds, then report the absence rather than
+      // polling for the life of the document.
+      if (++tries > 40) {
+        el.textContent = 'The bridge did not report a registration attempt.';
         return;
       }
       setTimeout(tick, 250);

@@ -73,9 +73,11 @@ func TestStatusPillExtraAttrsOnRoot(t *testing.T) {
 // stylesheet has to restate it.
 func TestStatusPillHonorsHidden(t *testing.T) {
 	css := statusPillCSS(style.Theme{})
-	if !strings.Contains(css, `[data-fui-comp="ui-status-pill"][hidden] {
+	// The plain hidden state is display: none; hidden="until-found"
+	// stays out of the rule so the UA's revealable state survives.
+	if !strings.Contains(css, `[data-fui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
   display: none;
 }`) {
-		t.Fatalf("status pill CSS has no [hidden] rule:\n%s", css)
+		t.Fatalf("status pill CSS has no [hidden] rule that spares until-found:\n%s", css)
 	}
 }

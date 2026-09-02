@@ -208,34 +208,67 @@ func TestManualFormAndToolShareOneCommand(t *testing.T) {
 	}
 }
 
-// The join link is single-use: first open trades it for the operator
-// cookie, second open renders the 410 recovery page.
+// joinAs performs the confirmation page's POST for the token and
+// returns the operator cookie.
+func joinAs(t *testing.T, srv *httptest.Server, token string) *http.Cookie {
+	t.Helper()
+	resp, err := noRedirectClient.Post(srv.URL+"/join/"+token, "application/x-www-form-urlencoded", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("join POST = %d, want 303", resp.StatusCode)
+	}
+	c := firstCookie(resp, operatorCookieName)
+	if c == nil {
+		t.Fatal("join set no operator cookie")
+	}
+	return c
+}
+
+// The join link is single-use, and only its POST spends it: any number
+// of GETs (a chat unfurl, a mail scanner, the operator's own preview)
+// render the confirmation page and change nothing. The first POST
+// trades the token for the operator cookie; every request after that
+// renders the 410 recovery page.
 func TestJoinLinkIsSingleUse(t *testing.T) {
 	srv, a := newTestApp(t)
 	_, id := newSupportSession(t, srv, a)
-	join := "/join/" + a.lookup(id).joinToken
+	token := a.lookup(id).joinToken
+	join := "/join/" + token
 
-	resp, err := noRedirectClient.Get(srv.URL + join)
-	if err != nil {
-		t.Fatal(err)
+	for i := 0; i < 2; i++ {
+		resp, err := noRedirectClient.Get(srv.URL + join)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), `action="`+join+`"`) {
+			t.Fatalf("GET #%d = %d, want 200 with the confirmation form", i+1, resp.StatusCode)
+		}
+		if firstCookie(resp, operatorCookieName) != nil {
+			t.Fatalf("GET #%d minted an operator cookie", i+1)
+		}
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("first join = %d, want 303 (body %q)", resp.StatusCode, body)
+	if !a.joinOpen(token) {
+		t.Fatal("GET consumed the token")
 	}
 
-	resp2, err := noRedirectClient.Get(srv.URL + join)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp2.Body.Close()
-	page, _ := io.ReadAll(resp2.Body)
-	if resp2.StatusCode != http.StatusGone {
-		t.Fatalf("second join = %d, want 410", resp2.StatusCode)
-	}
-	if !strings.Contains(string(page), "assist session has ended") {
-		t.Fatalf("second join body is not the recovery screen")
+	joinAs(t, srv, token)
+
+	for _, method := range []string{"POST", "GET"} {
+		req, _ := http.NewRequest(method, srv.URL+join, nil)
+		resp, err := noRedirectClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusGone || !strings.Contains(string(page), "assist session has ended") {
+			t.Fatalf("%s after the exchange = %d, want 410 recovery", method, resp.StatusCode)
+		}
 	}
 }
 
@@ -247,15 +280,7 @@ func TestOperatorCookieIsSessionScoped(t *testing.T) {
 	_, idA := newSupportSession(t, srv, a)
 	_, idB := newSupportSession(t, srv, a)
 
-	resp, err := noRedirectClient.Get(srv.URL + "/join/" + a.lookup(idB).joinToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	opCookie := firstCookie(resp, operatorCookieName)
-	if opCookie == nil {
-		t.Fatal("join set no operator cookie")
-	}
+	opCookie := joinAs(t, srv, a.lookup(idB).joinToken)
 
 	// Right session: 200.
 	req, _ := http.NewRequest("GET", srv.URL+"/session/"+idB, nil)
@@ -298,12 +323,7 @@ func TestAckRequiresMatchingOperatorCookie(t *testing.T) {
 	srv, a := newTestApp(t)
 	_, idA := newSupportSession(t, srv, a)
 	_, idB := newSupportSession(t, srv, a)
-	resp, err := noRedirectClient.Get(srv.URL + "/join/" + a.lookup(idB).joinToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	opCookie := firstCookie(resp, operatorCookieName)
+	opCookie := joinAs(t, srv, a.lookup(idB).joinToken)
 	post := func(id string, c *http.Cookie) int {
 		req, _ := http.NewRequest("POST", srv.URL+"/session/"+id+"/ack", nil)
 		if c != nil {
@@ -336,20 +356,15 @@ func TestBridgeShipsOnlyOnSupportPages(t *testing.T) {
 	srv, a := newTestApp(t)
 	cookie, id := newSupportSession(t, srv, a)
 	join := "/join/" + a.lookup(id).joinToken
-
-	resp, err := noRedirectClient.Get(srv.URL + join)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	opCookie := firstCookie(resp, operatorCookieName)
-
-	for _, path := range []string{"/", "/support/login"} {
+	// Anonymous documents carry no document-scoped script at all; the
+	// join page is checked before its POST spends the token.
+	for _, path := range []string{"/", "/support/login", join} {
 		page := getPage(t, srv, path)
 		if strings.Contains(page, `src="/__gofastr/webmcp.js`) || strings.Contains(page, "data-fui-doc") {
 			t.Fatalf("%s carries a document-scoped script", path)
 		}
 	}
+	opCookie := joinAs(t, srv, a.lookup(id).joinToken)
 
 	req, _ := http.NewRequest("GET", srv.URL+"/session/"+id, nil)
 	req.AddCookie(opCookie)
@@ -487,6 +502,41 @@ func TestMicrophoneDeniedByPolicy(t *testing.T) {
 	}
 }
 
+// The status pills render the state at load: a reload of the console
+// after an acknowledgement shows "acknowledged" before any script
+// runs, with its counterpart hidden.
+func TestPillsRenderStateAtLoad(t *testing.T) {
+	srv, a := newTestApp(t)
+	cookie, id := newSupportSession(t, srv, a)
+	if _, _, err := a.applyCommand(assistCommand{Session: id, Kind: cmdInstruction, Instruction: "hold"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.applyCommand(assistCommand{Session: id, Kind: cmdAck}); err != nil {
+		t.Fatal(err)
+	}
+	page := getPage(t, srv, "/support/session/"+id, cookie)
+	on := openingTag(t, page, "assist-pill-ack-on")
+	off := openingTag(t, page, "assist-pill-ack-off")
+	if strings.Contains(on, " hidden") || !strings.Contains(off, " hidden") {
+		t.Fatalf("after ack:\n on  %s\n off %s\nwant the on-pill visible and the off-pill hidden", on, off)
+	}
+}
+
+// openingTag returns the opening tag that carries id="<id>".
+func openingTag(t *testing.T, page, id string) string {
+	t.Helper()
+	i := strings.Index(page, `id="`+id+`"`)
+	if i < 0 {
+		t.Fatalf("no element with id %q", id)
+	}
+	start := strings.LastIndex(page[:i], "<")
+	end := strings.Index(page[i:], ">")
+	if start < 0 || end < 0 {
+		t.Fatalf("malformed tag around id %q", id)
+	}
+	return page[start : i+end+1]
+}
+
 // A bad command reports why, not a generic status text.
 func TestBadRequestKeepsItsReason(t *testing.T) {
 	_, a := newTestApp(t)
@@ -515,13 +565,8 @@ func TestSessionPagesAreNoStore(t *testing.T) {
 	if cc := resp.Header.Get("Cache-Control"); resp.StatusCode != http.StatusOK || !strings.Contains(cc, "no-store") {
 		t.Fatalf("console = %d Cache-Control %q", resp.StatusCode, cc)
 	}
-	resp, err = noRedirectClient.Get(srv.URL + "/join/" + a.lookup(id).joinToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
 	req2, _ := http.NewRequest("GET", srv.URL+"/session/"+id, nil)
-	req2.AddCookie(firstCookie(resp, operatorCookieName))
+	req2.AddCookie(joinAs(t, srv, a.lookup(id).joinToken))
 	resp2, err := srv.Client().Do(req2)
 	if err != nil {
 		t.Fatal(err)

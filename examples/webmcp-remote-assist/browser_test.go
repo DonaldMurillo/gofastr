@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -25,46 +24,35 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-var (
-	browserOnce sync.Once
-	browserRoot context.Context
-	browserErr  error
-)
-
-// assistBrowserCtx boots the shared browser with the flags the flow
-// needs: WebMCP exposed, fake camera device, fake grant UI.
+// assistBrowserCtx boots a browser for the test with the flags the flow
+// needs (WebMCP exposed, fake camera device, fake grant UI) and tears
+// it down with the test: both the allocator and the browser context
+// are cancelled from t.Cleanup, so no Chrome outlives the suite.
 func assistBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	browserOnce.Do(func() {
-		opts := append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", true),
-			chromedp.Flag("disable-gpu", true),
-			chromedp.Flag("no-sandbox", true),
-			// Exposes navigator.modelContext (Chromium 146+).
-			chromedp.Flag("enable-blink-features", "WebMCP"),
-			// getUserMedia without a real camera or permission dialog.
-			chromedp.Flag("use-fake-device-for-media-stream", true),
-			chromedp.Flag("use-fake-ui-for-media-stream", true),
-			chromedp.WSURLReadTimeout(90*time.Second),
-			chromedp.WindowSize(1280, 800),
-		)
-		allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-		root, cancel := chromedp.NewContext(allocCtx)
-		if err := chromedp.Run(root); err != nil {
-			browserErr = err
-			cancel()
-			allocCancel()
-			return
-		}
-		browserRoot = root
-	})
-	if browserErr != nil {
-		t.Fatalf("browser failed to start: %v", browserErr)
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
+		// Exposes navigator.modelContext (Chromium 146+).
+		chromedp.Flag("enable-blink-features", "WebMCP"),
+		// getUserMedia without a real camera or permission dialog.
+		chromedp.Flag("use-fake-device-for-media-stream", true),
+		chromedp.Flag("use-fake-ui-for-media-stream", true),
+		chromedp.WSURLReadTimeout(90*time.Second),
+		chromedp.WindowSize(1280, 800),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	t.Cleanup(allocCancel)
+	root, cancel := chromedp.NewContext(allocCtx)
+	t.Cleanup(cancel)
+	if err := chromedp.Run(root); err != nil {
+		t.Fatalf("browser failed to start: %v", err)
 	}
-	return browserRoot
+	return root
 }
 
 func newTab(t *testing.T, browser context.Context) context.Context {
@@ -213,10 +201,14 @@ func TestRemoteAssistFlow(t *testing.T) {
 		"clear_instruction,get_app_instructions,inspect_session,send_instruction", 15*time.Second)
 	pollExpr(t, support, `window.__assist.phase`, "hydrated", 15*time.Second)
 
-	// ── 4. Operator joins: one-time link, zero tools ─────────────
+	// ── 4. Operator joins: the link opens a confirmation page (a
+	// previewer fetching it spends nothing); the button's POST is
+	// the one-time exchange. Zero tools on the operator document.
 	if err := chromedp.Run(operator, chromedp.Navigate(joinURL)); err != nil {
 		t.Fatal(err)
 	}
+	waitReady(t, operator, `form[action^="/join/"] button[type=submit]`)
+	clickSel(t, operator, `form[action^="/join/"] button[type=submit]`)
 	waitReady(t, operator, "#assist-share")
 	pollExpr(t, operator, toolNamesExpr, "", 15*time.Second)
 	pollExpr(t, operator, `window.__assist.phase`, "hydrated", 15*time.Second)
