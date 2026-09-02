@@ -106,7 +106,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   declared property types) and `Tool.OutputSchema` is preserved as
   documentation with no runtime validation. The bridge degrades safely:
   it forwards what `registerTool` accepts and the manifest keeps the
-  rest.
+  rest. The generated orientation tool carries the empty-object input
+  schema `Register` would have defaulted: it joins the manifest without
+  passing through `Register`, and Chromium's `registerTool` refuses a
+  null `inputSchema`, so the first real-browser mount found it absent
+  from `getTools()`; the package's Chromium test now registers and
+  executes it.
 - **`ui.Menu` takes a caller-owned trigger** (#369): `MenuConfig.TriggerElement`
   is the inline HTML of your own `<button>` (or `<a>`), rendered in a
   presentation wrapper beside a summary-less `<details>` that holds the
@@ -161,6 +166,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   WebRTC or media protocol layered on it. `WSConfig.ConnectionID` and
   `WebSocketConn.ConnectionID` (random when unset) correlate a client's
   reconnects in server logs.
+- **`examples/webmcp-remote-assist`: authenticated WebMCP plus WebRTC
+  remote support** (#376): one binary, one origin, two roles. A shared
+  sign-in key mints an HttpOnly support cookie; a one-time join link
+  trades for an operator cookie scoped to `/session`. The WebMCP bridge
+  ships only on signed-in support documents (`WithDocumentScope`, with
+  the manifest and script behind the same role check as the tool
+  endpoints), so leaving the console is a real navigation and the next
+  document carries no tools. The console's manual button and the
+  `send_instruction` / `clear_instruction` tools decode into one typed
+  command; `inspect_session` reads backend state so an agent verifies
+  delivery from the operator's acknowledgement, correlated with the
+  observer's invocation id, which the operator's copy of every event
+  never carries. Each session is a `stream.StateChannel`; every
+  relayed WebRTC signaling frame advances the session version too, so
+  a reconnect snapshot is never older than the events a page applied.
+  The camera is video-only and peer-to-peer: the server relays SDP and
+  ICE JSON, and the app's `Permissions-Policy` opens `camera=(self)`
+  while keeping the framework's `microphone=()`. Cross-site mutations
+  are refused the way `battery/auth` does it: `Sec-Fetch-Site` first,
+  a null `Origin` (a top-level same-origin form post) allowed. A
+  two-tab Chromium test with a fake camera covers discovery, the
+  shared command path, the acknowledgement, two server-side socket
+  drops (one with a mutation landing while the operator is offline,
+  which only the reconnect snapshot can deliver), and the hard
+  navigation out.
 - Probe tests kept from the #136 audit as regression pins: the pack
   encode/decode round-trip property over a randomized hostile corpus, the
   Levenshtein scaling benchmark, `Timeout`'s deterministic boundary and an

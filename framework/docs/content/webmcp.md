@@ -514,3 +514,14 @@ evaluating script; the bridge does not depend on it.
   emit `meta[name="csrf-token"]`, every unsafe-method tool behind
   `middleware.CSRF` 403s. Render the meta tag (the token is available
   server-side via `middleware.TokenFromContext`).
+
+## Reference example
+
+`examples/webmcp-remote-assist` composes this whole page end to end:
+role-cookie authorization beside a document-scoped mount, one typed
+command behind both the manual button and the agent tools, the
+observer's invocation ids correlated with an operator acknowledgement,
+and a browser test that drops the transport and proves the sequenced
+channel does not resurrect cleared state. It is the proof that the
+mount policies, the marker contract, and the recovery-screen guard
+pattern from [ui-wiring](ui-wiring.md) compose.
