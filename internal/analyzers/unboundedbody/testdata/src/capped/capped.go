@@ -1,7 +1,5 @@
 package capped
 
-//gofastr:allow-file(GOFASTR1407) fixture for the unboundedbody vet analyzer: the cap lives in middleware beside the handler, invisible to any parse-only rule
-
 import (
 	"encoding/json"
 	"io"

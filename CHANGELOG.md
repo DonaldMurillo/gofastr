@@ -82,17 +82,37 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   render evidence through HTML entities with newlines flattened, the CLI
   shim writes one log line per invocation, and workspace fingerprints
   hash through symlinks.
-- **Three probe-shaped bug classes are now `gofastr verify` rules**: a
-  path prefix matched by `strings.HasPrefix` without a segment boundary
-  (`cmd` matching `cmdline` — the stability gate shipped this), the raw
-  `X-Forwarded-Proto` value spliced into a URL without an `http`/`https`
-  enum check (cache-poisoning reflection), and a request body decoded
-  with `encoding/json` outside `core/handler`'s strict binder (the
-  duplicate-key parser accident). The catalog is now 56 rules. The first
-  whole-repo run found live instances of all three:
-  `framework/wellknown.go` reflected the forged scheme, six auth
-  endpoints still decoded bodies non-strictly, and the sidebar and
-  codegen pruner matched paths without boundaries — all fixed.
+
+- **The new rules' first whole-repo run found live siblings, all
+  fixed**: `framework/wellknown.go` reflected a forged
+  `X-Forwarded-Proto` into the well-known document's absolute URLs; the
+  password-reset, 2FA, magic-link, and API-token endpoints still decoded
+  bodies with stdlib duplicate-key semantics; `core/upload` contained
+  writes lexically only, so a symlinked directory escaped the storage
+  root; the relay, the admin delete log, and the uihost cookie warning
+  logged request-borne values raw; and thirty-one runtime sites read
+  `{}` registries through the prototype chain or built selectors
+  without `CSS.escape`, so an attribute-borne `constructor` read as a
+  loaded module, an existing signal slot, or an armed toast timer.
+
+### Added
+- **The probe audit's bug shapes are static rules.** Twelve type-aware
+  vet analyzers under `internal/analyzers` (`controlbytes`,
+  `callbackunderlock`, `recovercallback`, `compositekey`, `emitident`,
+  `asciifold`, `laxcoerce`, `rootwrite`, `divlimit`, `intwrap`,
+  `reflectset`, `discardederr`) run in `make analyze`, the pre-commit
+  hook, and CI's vet step. Three `gofastr verify` rules bring the
+  catalog to 56 rules: GOFASTR1006 (a path prefix matched with
+  `strings.HasPrefix` and no segment boundary), GOFASTR1406
+  (`X-Forwarded-Proto` spliced into a URL with no http/https check),
+  and GOFASTR1407 (a request body decoded with `encoding/json` outside
+  `core/handler`'s strict binder). Four browser-runtime source lints in
+  `core-ui/check` gate the shipped runtime: selector interpolation
+  without `CSS.escape`, `{}` registries read through the prototype
+  chain, fetched bodies mounted with no `.ok` check, and
+  attribute-borne values joined into request paths. Each rule fires on
+  the pre-fix site of the probe that produced it and is quiet on the
+  fix; its doc comment names both and every posture it stays silent on.
 
 ### Changed
 - **BREAKING: process-module schema and role names for names containing
@@ -191,6 +211,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   manifest prefixes on a path-segment boundary.
 - **Harness TUI, contracts and the CSP linter**: the inline-style gate
   also catches `/`-separated attributes and unquoted values.
+- **Found by the new analyzers**: `cron` evaluated the job gate and
+  `i18n` a registered plural rule while holding the scheduler or
+  translator lock; app callbacks on the ACP transport, the semantic
+  watcher, the durable scheduler, the kiln agent watcher, WebSocket
+  close hooks, cron `OnError`, and the Postgres fanout dispatcher ran
+  with no recover net; `i18n` plural counts wrapped negative for
+  out-of-range unsigned values; `battery/search` skipped a weighted
+  field present with a non-string value and the OpenAPI CLI generator
+  skipped malformed path items, operations, and security schemes (each
+  is now an error); `SidebarItem.MatchPath` and the codegen
+  empty-directory pruner matched siblings sharing a prefix
+  (`/customers-archive` for `/customers`); the contracts route-dedup
+  key and the eval runner's version memo are struct keys, the migrate
+  tracking-column DDL quotes its identifiers, and the blueprint's
+  resource-mount stub emits only Go-identifier names.
+
 
 ## [0.80.0] - 2026-09-02
 
