@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-09-02
+
 ### Security
 - **OIDC discovery endpoints are transport-validated and fetches never
   follow redirects** (hardening): every endpoint the discovery document
