@@ -82,6 +82,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   render evidence through HTML entities with newlines flattened, the CLI
   shim writes one log line per invocation, and workspace fingerprints
   hash through symlinks.
+- **Three probe-shaped bug classes are now `gofastr verify` rules**: a
+  path prefix matched by `strings.HasPrefix` without a segment boundary
+  (`cmd` matching `cmdline` — the stability gate shipped this), the raw
+  `X-Forwarded-Proto` value spliced into a URL without an `http`/`https`
+  enum check (cache-poisoning reflection), and a request body decoded
+  with `encoding/json` outside `core/handler`'s strict binder (the
+  duplicate-key parser accident). The catalog is now 56 rules. The first
+  whole-repo run found live instances of all three:
+  `framework/wellknown.go` reflected the forged scheme, six auth
+  endpoints still decoded bodies non-strictly, and the sidebar and
+  codegen pruner matched paths without boundaries — all fixed.
 
 ### Changed
 - **BREAKING: process-module schema and role names for names containing

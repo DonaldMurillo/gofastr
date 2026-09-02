@@ -269,7 +269,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req rpcRequest
-	if err := json.Unmarshal(raw, &req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil { //gofastr:allow(GOFASTR1407) A2A JSON-RPC envelope (jsonrpc/method/params/id): the whole object is the protocol unit, no field is an identity
 		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "parse request: %v", err))
 		return
 	}

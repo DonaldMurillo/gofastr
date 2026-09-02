@@ -149,7 +149,7 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxWebSendBody)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil { //gofastr:allow(GOFASTR1407) harness control-protocol envelope on a dev sidecar, not an app surface
 		http.Error(w, "bad JSON", http.StatusBadRequest)
 		return
 	}

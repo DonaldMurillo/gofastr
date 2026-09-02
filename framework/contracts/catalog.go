@@ -67,11 +67,12 @@ const (
 
 // Routing rules.
 const (
-	RuleDuplicateRoute   = "GOFASTR1001"
-	RuleColonPathParam   = "GOFASTR1002"
-	RuleUntestedRoute    = "GOFASTR1003"
-	RuleStateAsRoute     = "GOFASTR1004"
-	RuleNonUppercaseVerb = "GOFASTR1005"
+	RuleDuplicateRoute        = "GOFASTR1001"
+	RuleColonPathParam        = "GOFASTR1002"
+	RuleUntestedRoute         = "GOFASTR1003"
+	RuleStateAsRoute          = "GOFASTR1004"
+	RuleNonUppercaseVerb      = "GOFASTR1005"
+	RulePrefixSegmentBoundary = "GOFASTR1006"
 )
 
 // Testing rules.
@@ -106,11 +107,13 @@ const (
 
 // Security rules.
 const (
-	RuleSQLStringConcat = "GOFASTR1401"
-	RuleFormWithoutCSRF = "GOFASTR1402"
-	RuleHTMLConcat      = "GOFASTR1403"
-	RuleInsecureCookie  = "GOFASTR1404"
-	RuleHardcodedSecret = "GOFASTR1405"
+	RuleSQLStringConcat    = "GOFASTR1401"
+	RuleFormWithoutCSRF    = "GOFASTR1402"
+	RuleHTMLConcat         = "GOFASTR1403"
+	RuleInsecureCookie     = "GOFASTR1404"
+	RuleHardcodedSecret    = "GOFASTR1405"
+	RuleForwardedProtoEnum = "GOFASTR1406"
+	RuleRawJSONBodyDecode  = "GOFASTR1407"
 )
 
 // Performance rules.
@@ -304,6 +307,24 @@ func routingRules() []Rule {
 		Examples: []Example{{
 			Bad:  `r.Handle("post", "/orders", createOrder)`,
 			Good: `r.Handle("POST", "/orders", createOrder)`,
+		}},
+	}, {
+		ID: RulePrefixSegmentBoundary, Slug: "routing/prefix-without-segment-boundary",
+		Title:      "Path prefix matched without a segment boundary",
+		Capability: CapRouting, Severity: SeverityError,
+		Summary: "`strings.HasPrefix` compares a path-like value against a prefix with no trailing `/` and no equality check.",
+		Why: "A prefix with no boundary matches every longer sibling that starts with the same letters: " +
+			"`cmd` matches `cmdline`, `kiln` matches `kiln2`. The stability gate classified whole trees " +
+			"by accident this way (probe TestClassifyRequiresSegmentBoundary: a package the manifest never " +
+			"named inherited a sibling's tier, so the add-it-to-the-manifest gate stayed quiet), and the " +
+			"same shape matched a document-script scope past its `/`-terminated prefix in framework/uihost " +
+			"earlier in v0.80. Whatever the match decides — a tier, a scope, an exemption — it decides it " +
+			"for trees nobody named.",
+		Fix: `Compare equality for the exact match, then the boundary: rel == root || strings.HasPrefix(rel, root+"/").`,
+		Doc: "project-structure",
+		Examples: []Example{{
+			Bad:  `if strings.HasPrefix(rel, r.prefix) { tier = r.tier } // "cmd" also classifies cmdline`,
+			Good: `if rel == root || strings.HasPrefix(rel, root+"/") { tier = r.tier }`,
 		}},
 	}}
 }
@@ -627,6 +648,42 @@ func securityRules() []Rule {
 		Examples: []Example{{
 			Bad:  `apiKey := "sk-live-9f3c2a1b8e7d6c5f4a3b2c1d"`,
 			Good: `apiKey := os.Getenv("STRIPE_API_KEY")`,
+		}},
+	}, {
+		ID: RuleForwardedProtoEnum, Slug: "security/forwarded-proto-without-enum",
+		Title:      "`X-Forwarded-Proto` spliced into a URL without an http/https check",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "The `X-Forwarded-Proto` header value is used as a URL scheme, and the function never compares it against `\"http\"`/`\"https\"`.",
+		Why: "The header is plain request input: any client sets it to anything. Spliced unchecked into an " +
+			"origin, `https://evil.example/p` does not produce a wrong scheme, it produces the attacker's " +
+			"whole origin — reflected into the `Link: rel=\"service\"` header, sitemap entries, and the " +
+			"agent card's service URL, all of them cacheable (probe TestDiscoveryURLsIgnoreForwardedProto, " +
+			"fixed in framework/uihost/agentready.go). Multi-hop proxy chains send compound values like " +
+			"`https,http`, which is not a scheme at all. `Vary` narrows who receives the poisoned entry; " +
+			"it does not clean the value.",
+		Fix: `Honour the two legal values only: if v := r.Header.Get("X-Forwarded-Proto"); v == "http" || v == "https" { scheme = v } — the enum framework/pluginhost/assets.go and framework/uihost already apply.`,
+		Doc: "security",
+		Examples: []Example{{
+			Bad:  "if u := req.Header.Get(\"X-Forwarded-Proto\"); u != \"\" {\n\tscheme = u\n}\nreturn scheme + \"://\" + req.Host",
+			Good: "if u := req.Header.Get(\"X-Forwarded-Proto\"); u == \"http\" || u == \"https\" {\n\tscheme = u\n}\nreturn scheme + \"://\" + req.Host",
+		}},
+	}, {
+		ID: RuleRawJSONBodyDecode, Slug: "security/raw-json-body-decode",
+		Title:      "Request body decoded with `encoding/json` outside the strict binder",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "`json.NewDecoder(r.Body)` or `json.Unmarshal` on bytes read from `r.Body`, in a function that takes an `*http.Request`, outside `core/handler`.",
+		Why: "stdlib `encoding/json` keeps the LAST duplicate key and matches key names " +
+			"case-insensitively, while form parsing keeps the FIRST duplicate — so one smuggled body " +
+			"resolves to a different identity depending on Content-Type (probe " +
+			"TestLoginJSONStrictTopLevelKeys: `{\"email\":A,\"EMAIL\":B}` authenticated B on the JSON " +
+			"surface and A on the form surface of the same endpoint). The ambiguity itself is the " +
+			"attack; which parser wins is an accident. `core/handler.Bind` refuses ambiguous bodies, " +
+			"which is why everything else should go through it.",
+		Fix: "Decode with `handler.Bind` (core/handler), or run a strict top-level key walk before `json.Unmarshal` — `battery/auth`'s decodeJSONLimitedStrict is the model. JSON-RPC envelope transports that accept the whole object as-is annotate `//gofastr:allow(GOFASTR1407) <why>`.",
+		Doc: "security",
+		Examples: []Example{{
+			Bad:  "creds := struct {\n\tEmail    string `json:\"email\"`\n\tPassword string `json:\"password\"`\n}{}\njson.NewDecoder(req.Body).Decode(&creds)",
+			Good: "creds := Credentials{}\nhandler.Bind(req, &creds) // refuses duplicate and case-folded top-level keys",
 		}},
 	}}
 }

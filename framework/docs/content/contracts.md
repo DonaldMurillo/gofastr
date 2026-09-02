@@ -22,9 +22,9 @@ Rules are grouped into capabilities, and each capability is also a filter:
 
 | Capability | Catches |
 |---|---|
-| `routing` | duplicate routes, `:id` where ServeMux wants `{id}`, lowercase methods, in-page state modelled as navigation, routes no test mentions |
+| `routing` | duplicate routes, `:id` where ServeMux wants `{id}`, lowercase methods, in-page state modelled as navigation, routes no test mentions, path prefixes matched without a segment boundary |
 | `permissions` | per-user data exposed with no owner field, mutating routes outside any guarded group, auth configured but never mounted |
-| `security` | SQL built by concatenation, POST forms with no CSRF input, `render.HTML` on a concatenation, cookies missing HttpOnly/Secure/SameSite, committed credentials |
+| `security` | SQL built by concatenation, POST forms with no CSRF input, `render.HTML` on a concatenation, cookies missing HttpOnly/Secure/SameSite, committed credentials, `X-Forwarded-Proto` spliced into a URL without an http/https check, request bodies decoded with `encoding/json` outside `core/handler`'s strict binder |
 | `data` | writes whose result and error are both discarded |
 | `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
 | `architecture` | imports that point up the layer stack, explicitly forbidden edges |

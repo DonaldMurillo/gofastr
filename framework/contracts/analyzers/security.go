@@ -13,13 +13,15 @@ import (
 func init() {
 	contracts.Register(&contracts.Analyzer{
 		Name: "security",
-		Doc:  "Injection, CSRF, cookie attributes, and committed secrets.",
+		Doc:  "Injection, CSRF, cookie attributes, committed secrets, reflected proxy headers, and raw body decodes.",
 		Rules: []string{
 			contracts.RuleSQLStringConcat,
 			contracts.RuleFormWithoutCSRF,
 			contracts.RuleHTMLConcat,
 			contracts.RuleInsecureCookie,
 			contracts.RuleHardcodedSecret,
+			contracts.RuleForwardedProtoEnum,
+			contracts.RuleRawJSONBodyDecode,
 		},
 		Run: runSecurity,
 	})
@@ -45,6 +47,8 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		if file, parsed := p.AST(f.Rel); parsed {
 			out = append(out, ruleInsecureCookie(p, f.Rel, file, lines)...)
 			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
+			out = append(out, ruleForwardedProto(p, f.Rel, file)...)
+			out = append(out, ruleRawJSONBody(p, f.Rel, file)...)
 		}
 	}
 	return out, nil
@@ -455,6 +459,455 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 		return true
 	})
 	return out
+}
+
+// ----------------------------------------------------------------------
+// GOFASTR1406: X-Forwarded-Proto used as a scheme without an enum check.
+// ----------------------------------------------------------------------
+
+// Bug class: a reverse-proxy scheme header read with Header.Get and
+// spliced into output as a URL scheme. framework/uihost/agentready.go
+// resolveBaseURL shipped it (probe TestDiscoveryURLsIgnoreForwardedProto,
+// fixed a24928c1): the raw value reached the agent card's service URL and
+// the Link header, so one forged `X-Forwarded-Proto:
+// https://evil.example/p` painted an attacker-named origin into cacheable
+// discovery output. The fix — and framework/pluginhost/assets.go, which
+// never had the bug — is an exact "http"/"https" enum.
+//
+// Deliberately silent on:
+//   - any function that compares the value against "http"/"https"
+//     anywhere in its body, however spelled: == / !=, strings.EqualFold,
+//     or a switch case. The enum is the contract; its position is not;
+//   - Header.Set (writing the header outbound, as battery/relay does)
+//     and reads that are never reflected (a log line, a boolean);
+//   - values compared against any other literal ("", "HTTPS,http"):
+//     only the two legal schemes silence the rule;
+//   - _test.go and generated files (AppFiles already excludes both).
+func ruleForwardedProto(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	for _, fn := range functionsIn(file) {
+		var gets []*ast.CallExpr
+		ast.Inspect(fn.body, func(n ast.Node) bool {
+			if call, ok := forwardedProtoGet(n); ok {
+				gets = append(gets, call)
+			}
+			return true
+		})
+		if len(gets) == 0 || protoEnumChecked(fn.body) {
+			continue
+		}
+		for _, get := range gets {
+			holders := assignedIdents(fn.body, get)
+			if !reflectedScheme(fn.body, get, holders) {
+				continue
+			}
+			d := diag(p, contracts.RuleForwardedProtoEnum, rel, get.Pos(),
+				"X-Forwarded-Proto is request-controlled and is spliced into output as a scheme with no http/https enum check in this function: a forged value (https://evil.example/p, or https,http from a proxy chain) is reflected verbatim")
+			d.Evidence = map[string]string{"header": "X-Forwarded-Proto"}
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// forwardedProtoGet matches `x.Header.Get("X-Forwarded-Proto")` for any
+// receiver expression ending in .Header.
+func forwardedProtoGet(n ast.Node) (*ast.CallExpr, bool) {
+	recv, method, call, ok := selectorCall(n)
+	if !ok || method != "Get" || len(call.Args) != 1 {
+		return nil, false
+	}
+	hdr, ok := recv.(*ast.SelectorExpr)
+	if !ok || hdr.Sel == nil || hdr.Sel.Name != "Header" {
+		return nil, false
+	}
+	lit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok {
+		return nil, false
+	}
+	v, ok := stringLit(lit)
+	if !ok || !strings.EqualFold(v, "x-forwarded-proto") {
+		return nil, false
+	}
+	return call, true
+}
+
+// protoEnumChecked reports whether the function body compares anything
+// against the literal "http" or "https": == / !=, strings.EqualFold, or a
+// switch case. Deliberately generous — presence of the enum anywhere in
+// the function is the documented silence condition, because the value is
+// usually checked once and then trusted.
+func protoEnumChecked(body ast.Node) bool {
+	checked := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if checked {
+			return false
+		}
+		switch v := n.(type) {
+		case *ast.BinaryExpr:
+			if v.Op != token.EQL && v.Op != token.NEQ {
+				return true
+			}
+			if lit, ok := v.X.(*ast.BasicLit); ok && isSchemeLit(lit) {
+				checked = true
+			}
+			if lit, ok := v.Y.(*ast.BasicLit); ok && isSchemeLit(lit) {
+				checked = true
+			}
+		case *ast.CallExpr:
+			if sel, ok := v.Fun.(*ast.SelectorExpr); ok && sel.Sel != nil &&
+				strings.EqualFold(sel.Sel.Name, "EqualFold") {
+				for _, a := range v.Args {
+					if lit, ok := a.(*ast.BasicLit); ok && isSchemeLit(lit) {
+						checked = true
+					}
+				}
+			}
+		case *ast.CaseClause:
+			for _, e := range v.List {
+				if lit, ok := e.(*ast.BasicLit); ok && isSchemeLit(lit) {
+					checked = true
+				}
+			}
+		}
+		return !checked
+	})
+	return checked
+}
+
+func isSchemeLit(lit *ast.BasicLit) bool {
+	if lit.Kind != token.STRING {
+		return false
+	}
+	v, ok := stringLit(lit)
+	return ok && (v == "http" || v == "https")
+}
+
+// reSchemeVar is the reflection sink the probe actually exploited: a
+// variable that ends up spliced where a scheme belongs.
+var reSchemeVar = regexp.MustCompile(`(?i)scheme|proto`)
+
+// assignedIdents collects the identifiers this call's result is assigned
+// to anywhere in the function, including `if u := Get(...)` inits, so the
+// one-hop `u := Get(...); scheme = u` shape is tracked too.
+func assignedIdents(body ast.Node, call *ast.CallExpr) map[string]bool {
+	holders := map[string]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		a, ok := n.(*ast.AssignStmt)
+		if !ok || len(a.Lhs) != len(a.Rhs) {
+			return true
+		}
+		for i, rhs := range a.Rhs {
+			if rhs == call {
+				if id, ok := a.Lhs[i].(*ast.Ident); ok {
+					holders[id.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return holders
+}
+
+// reflectedScheme reports whether the header value reaches output: the
+// call itself inside a concatenation, an assignment into a scheme-named
+// variable (directly or one hop through a holder), or an argument to a
+// URL builder / the Scheme field of a composite literal.
+func reflectedScheme(body ast.Node, call *ast.CallExpr, holders map[string]bool) bool {
+	touches := func(e ast.Expr) bool { return exprTouches(e, call, holders) }
+	reflected := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if reflected {
+			return false
+		}
+		switch v := n.(type) {
+		case *ast.BinaryExpr:
+			if v.Op == token.ADD && (touches(v.X) || touches(v.Y)) {
+				reflected = true
+			}
+		case *ast.AssignStmt:
+			for i, lhs := range v.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || !reSchemeVar.MatchString(id.Name) {
+					continue
+				}
+				rhs := v.Rhs
+				if len(rhs) == i {
+					rhs = nil
+				} else if len(rhs) == len(v.Lhs) {
+					rhs = rhs[i : i+1]
+				}
+				for _, r := range rhs {
+					if touches(r) {
+						reflected = true
+					}
+				}
+			}
+		case *ast.CallExpr:
+			name := exprText(v.Fun)
+			if strings.Contains(strings.ToLower(name), "url") {
+				for _, a := range v.Args {
+					if touches(a) {
+						reflected = true
+					}
+				}
+			}
+		case *ast.CompositeLit:
+			for _, e := range v.Elts {
+				kv, ok := e.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Scheme" && touches(kv.Value) {
+					reflected = true
+				}
+			}
+		}
+		return !reflected
+	})
+	return reflected
+}
+
+// exprTouches reports whether e contains the call node or one of the
+// holder identifiers (in plain identifier position, not as a selector).
+func exprTouches(e ast.Expr, call *ast.CallExpr, holders map[string]bool) bool {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return holders[v.Name]
+	case *ast.CallExpr:
+		if v == call {
+			return true
+		}
+		for _, a := range v.Args {
+			if exprTouches(a, call, holders) {
+				return true
+			}
+		}
+	case *ast.SelectorExpr:
+		return exprTouches(v.X, call, holders)
+	case *ast.BinaryExpr:
+		return exprTouches(v.X, call, holders) || exprTouches(v.Y, call, holders)
+	case *ast.ParenExpr:
+		return exprTouches(v.X, call, holders)
+	case *ast.UnaryExpr:
+		return exprTouches(v.X, call, holders)
+	case *ast.StarExpr:
+		return exprTouches(v.X, call, holders)
+	case *ast.IndexExpr:
+		return exprTouches(v.X, call, holders)
+	}
+	return false
+}
+
+// ----------------------------------------------------------------------
+// GOFASTR1407: raw JSON decoding of a request body outside the binder.
+// ----------------------------------------------------------------------
+
+// Bug class: a request body decoded with encoding/json's default
+// semantics anywhere other than core/handler, which owns the strict
+// binder. battery/auth decoded login and register bodies with
+// json.NewDecoder (probe TestLoginJSONStrictTopLevelKeys, fixed 4b7a25d2):
+// stdlib keeps the LAST duplicate key and folds key case, while form
+// parsing keeps the FIRST, so {"email":A,"EMAIL":B} authenticated a
+// different identity depending on Content-Type. The smuggled body
+// resolves by parser accident, which is the whole attack.
+//
+// The rule tracks r.Body through local assignments (io.ReadAll(r.Body),
+// http.MaxBytesReader(w, r.Body, n), one more hop for ReadAll of the
+// wrapped reader) so the wrapped spellings are the same finding.
+//
+// Deliberately silent on:
+//   - core/handler/**, which owns handler.Bind and its duplicate-key
+//     walk — the strict binder itself decodes raw bytes by design;
+//   - decodes whose bytes never came from a request body: resp.Body of
+//     an outbound call, queue and pub-sub payloads, files, JWT segments;
+//   - functions with no *http.Request parameter, and _test.go /
+//     generated files (AppFiles already excludes both);
+//   - any site annotated //gofastr:allow(GOFASTR1407) <why>, which is
+//     how a transport that accepts a JSON-RPC envelope object as-is
+//     records that decision.
+func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
+	if rel == "core/handler" || strings.HasPrefix(rel, "core/handler/") {
+		return nil
+	}
+	var out []contracts.Diagnostic
+	aliases := importAliases(file)
+	for _, fn := range functionsIn(file) {
+		reqs := httpRequestParamNames(fn.node, aliases)
+		if len(reqs) == 0 {
+			continue
+		}
+		tainted := taintFromBody(fn.body, reqs)
+		ast.Inspect(fn.body, func(n ast.Node) bool {
+			if call, ok := qualifiedCall(n, aliases, "encoding/json", "NewDecoder"); ok && len(call.Args) == 1 &&
+				exprFromRequestBody(call.Args[0], tainted, reqs) {
+				out = append(out, rawJSONDiag(p, rel, call))
+			}
+			if call, ok := qualifiedCall(n, aliases, "encoding/json", "Unmarshal"); ok && len(call.Args) > 0 &&
+				exprFromRequestBody(call.Args[0], tainted, reqs) {
+				out = append(out, rawJSONDiag(p, rel, call))
+			}
+			return true
+		})
+	}
+	return out
+}
+
+func rawJSONDiag(p *contracts.Pass, rel string, call *ast.CallExpr) contracts.Diagnostic {
+	d := diag(p, contracts.RuleRawJSONBodyDecode, rel, call.Pos(),
+		"request body decoded with encoding/json outside core/handler: stdlib keeps the last duplicate key and matches key case-insensitively, so a smuggled body can resolve by parser accident — decode via handler.Bind or a strict top-level key walk (battery/auth decodeJSONLimitedStrict is the model)")
+	d.Evidence = map[string]string{"source": "request body"}
+	return d
+}
+
+// funcScope is one function declaration or literal with a body.
+type funcScope struct {
+	node ast.Node
+	body *ast.BlockStmt
+}
+
+// functionsIn returns every function and function literal in the file.
+// Literals are included because handlers are closures more often than
+// named methods.
+func functionsIn(file *ast.File) []*funcScope {
+	var out []*funcScope
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.FuncDecl:
+			if v.Body != nil {
+				out = append(out, &funcScope{node: v, body: v.Body})
+			}
+		case *ast.FuncLit:
+			out = append(out, &funcScope{node: v, body: v.Body})
+		}
+		return true
+	})
+	return out
+}
+
+// httpRequestParamNames returns the names of parameters typed
+// *http.Request, honouring the file's import alias for net/http.
+func httpRequestParamNames(fn ast.Node, aliases map[string]string) map[string]bool {
+	httpAlias := map[string]bool{}
+	for name, path := range aliases {
+		if path == "net/http" {
+			httpAlias[name] = true
+		}
+	}
+	if len(httpAlias) == 0 {
+		return nil
+	}
+	var ft *ast.FuncType
+	switch v := fn.(type) {
+	case *ast.FuncDecl:
+		ft = v.Type
+	case *ast.FuncLit:
+		ft = v.Type
+	default:
+		return nil
+	}
+	if ft == nil || ft.Params == nil {
+		return nil
+	}
+	names := map[string]bool{}
+	for _, param := range ft.Params.List {
+		star, ok := param.Type.(*ast.StarExpr)
+		if !ok {
+			continue
+		}
+		sel, ok := star.X.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || sel.Sel.Name != "Request" {
+			continue
+		}
+		if pkg, ok := sel.X.(*ast.Ident); ok && httpAlias[pkg.Name] {
+			for _, name := range param.Names {
+				names[name.Name] = true
+			}
+		}
+	}
+	return names
+}
+
+// taintFromBody computes which local identifiers hold bytes read from a
+// request body, to a fixpoint: body := MaxBytesReader(w, r.Body, n) then
+// raw, err := io.ReadAll(body) leaves both body and raw tainted. Only
+// plain assignments are tracked; a body ferried through a helper call is
+// invisible to a parse-only pass and stays unreported.
+func taintFromBody(body ast.Node, reqs map[string]bool) map[string]bool {
+	var assigns []*ast.AssignStmt
+	ast.Inspect(body, func(n ast.Node) bool {
+		if a, ok := n.(*ast.AssignStmt); ok {
+			assigns = append(assigns, a)
+		}
+		return true
+	})
+	tainted := map[string]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, a := range assigns {
+			touched := false
+			for _, rhs := range a.Rhs {
+				if exprFromRequestBody(rhs, tainted, reqs) {
+					touched = true
+					break
+				}
+			}
+			if !touched {
+				continue
+			}
+			for _, lhs := range a.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && !tainted[id.Name] {
+					tainted[id.Name] = true
+					changed = true
+				}
+			}
+		}
+	}
+	return tainted
+}
+
+// exprFromRequestBody reports whether e is, contains, or was assigned
+// from a request body: the <req>.Body selector itself, or a tainted
+// identifier in plain identifier position.
+func exprFromRequestBody(e ast.Expr, tainted map[string]bool, reqs map[string]bool) bool {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return tainted[v.Name]
+	case *ast.SelectorExpr:
+		if id, ok := v.X.(*ast.Ident); ok && reqs[id.Name] && v.Sel != nil && v.Sel.Name == "Body" {
+			return true
+		}
+		return exprFromRequestBody(v.X, tainted, reqs)
+	case *ast.CallExpr:
+		for _, a := range v.Args {
+			if exprFromRequestBody(a, tainted, reqs) {
+				return true
+			}
+		}
+	case *ast.BinaryExpr:
+		return exprFromRequestBody(v.X, tainted, reqs) || exprFromRequestBody(v.Y, tainted, reqs)
+	case *ast.ParenExpr:
+		return exprFromRequestBody(v.X, tainted, reqs)
+	case *ast.UnaryExpr:
+		return exprFromRequestBody(v.X, tainted, reqs)
+	case *ast.StarExpr:
+		return exprFromRequestBody(v.X, tainted, reqs)
+	case *ast.IndexExpr:
+		return exprFromRequestBody(v.X, tainted, reqs)
+	case *ast.CompositeLit:
+		for _, elt := range v.Elts {
+			if kv, ok := elt.(*ast.KeyValueExpr); ok {
+				if exprFromRequestBody(kv.Value, tainted, reqs) {
+					return true
+				}
+				continue
+			}
+			if exprFromRequestBody(elt, tainted, reqs) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ----------------------------------------------------------------------

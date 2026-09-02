@@ -55,7 +55,7 @@ func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) bool
 	}
 	body := http.MaxBytesReader(w, r.Body, maxMCPBodyBytes)
 	defer body.Close()
-	if err := json.NewDecoder(body).Decode(req); err != nil {
+	if err := json.NewDecoder(body).Decode(req); err != nil { //gofastr:allow(GOFASTR1407) MCP JSON-RPC envelope transport: content-type and size policy enforced above; no credential field resolves here
 		var maxErr *http.MaxBytesError
 		if errorAsMaxBytes(err, &maxErr) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)

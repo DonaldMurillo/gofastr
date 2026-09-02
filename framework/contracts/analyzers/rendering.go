@@ -758,7 +758,7 @@ func checkHardcodedTokenValues(rel string, lineNo int, scan, orig string) []cont
 
 func hasPrefixAny(rel string, prefixes []string) bool {
 	for _, p := range prefixes {
-		if strings.HasPrefix(rel, p) || strings.Contains(rel, "/"+p) {
+		if strings.HasPrefix(rel, p) || strings.Contains(rel, "/"+p) { //gofastr:allow(GOFASTR1006) every element of designSystemPrefixes/devOnlyPrefixes ends in "/", so the boundary is in the data
 			return true
 		}
 	}

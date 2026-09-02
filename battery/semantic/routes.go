@@ -174,7 +174,7 @@ type queryResponse struct {
 func indexHandler(idx Index) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body indexRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil { //gofastr:allow(GOFASTR1407) semantic index/query API envelope: no identity-bearing field, size-capped and content-type-gated above
 			if isBodyTooLarge(err) {
 				writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return
@@ -197,7 +197,7 @@ func indexHandler(idx Index) http.Handler {
 func queryHandler(idx Index) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var q Query
-		if err := json.NewDecoder(r.Body).Decode(&q); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&q); err != nil { //gofastr:allow(GOFASTR1407) semantic index/query API envelope: no identity-bearing field, size-capped and content-type-gated above
 			if isBodyTooLarge(err) {
 				writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return

@@ -391,7 +391,7 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveChatMessage(w http.ResponseWriter, r *http.Request) {
 	var args protocol.ChatArgs
 	r.Body = http.MaxBytesReader(w, r.Body, maxChatBody)
-	if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&args); err != nil { //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -421,7 +421,7 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 		callID = s.nextCallID()
 		var args map[string]any
 		if len(body) > 0 {
-			_ = json.Unmarshal(body, &args)
+			_ = json.Unmarshal(body, &args) //gofastr:allow(GOFASTR1407) kiln chat tool-call journaling: best-effort render of the same envelope decoded above
 		}
 		_ = s.applyEntry(journal.KindToolCall, journal.ToolCallPayload{
 			CallID: callID,

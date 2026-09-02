@@ -265,7 +265,7 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRESTBody)
-	dec := json.NewDecoder(r.Body)
+	dec := json.NewDecoder(r.Body) //gofastr:allow(GOFASTR1407) harness control-protocol envelope on a dev tool, not an app surface
 	dec.DisallowUnknownFields()
 
 	var cmd control.Command

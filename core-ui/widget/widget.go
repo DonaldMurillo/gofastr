@@ -460,7 +460,7 @@ func (b *Builder) PagesPrefix(prefixes ...string) *Builder {
 	for _, p := range prefixes {
 		target := p
 		b.def.Routes = append(b.def.Routes, func(path string) bool {
-			return strings.HasPrefix(path, target)
+			return strings.HasPrefix(path, target) //gofastr:allow(GOFASTR1006) literal-prefix semantics are the contract-tested API (TestArchContract_PrefixPageScoping): callers pass "/components/" with the boundary
 		})
 	}
 	return b

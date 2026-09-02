@@ -45,7 +45,7 @@ func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
 	if err := checkEnvelopeKeys(raw, allowed); err != nil {
 		return err
 	}
-	if err := json.Unmarshal(raw, v); err != nil {
+	if err := json.Unmarshal(raw, v); err != nil { //gofastr:allow(GOFASTR1407) checkEnvelopeKeys above already refused duplicate and case-folded top-level keys; this Unmarshal decodes a vetted body
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil

@@ -413,7 +413,7 @@ func setupServer() *framework.App {
 		var body struct {
 			Message string `json:"message"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil { //gofastr:allow(GOFASTR1407) demo echo endpoint: decodes one display message, no credential surface
 			body.Message = ""
 		}
 		w.Header().Set("Content-Type", "application/json")

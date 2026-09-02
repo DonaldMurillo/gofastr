@@ -111,7 +111,7 @@ func limitJSONBody(w http.ResponseWriter, r *http.Request) {
 // or a generic JSON error otherwise. The caller must have applied
 // limitJSONBody first.
 func decodeJSONBody(r *http.Request, v any) error {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil { //gofastr:allow(GOFASTR1407) upload options metadata: no identity-bearing field; content-type and size policy enforced by the caller
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return errBodyTooLarge
 		}

@@ -2412,7 +2412,7 @@ func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
 // returns false. Used by mutating /__gofastr/* endpoints.
 func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxMutatingBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil { //gofastr:allow(GOFASTR1407) island RPC action payloads behind session auth and the CSRF middleware: no credential resolution
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return false

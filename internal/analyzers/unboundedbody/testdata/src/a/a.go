@@ -1,5 +1,7 @@
 package a
 
+//gofastr:allow-file(GOFASTR1407) fixture for the unboundedbody vet analyzer: the raw uncapped decodes are the defect under test
+
 import (
 	ej "encoding/json"
 	"io"

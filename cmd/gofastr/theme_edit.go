@@ -463,7 +463,7 @@ func (s *themeEditServer) handleApply(w http.ResponseWriter, r *http.Request) {
 		Key, Value string
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxThemeEditBody)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { //gofastr:allow(GOFASTR1407) dev-only theme editor endpoint on the local build tool; body is editor options, not identity
 		writeJSONError(w, http.StatusBadRequest, "malformed JSON body")
 		return
 	}

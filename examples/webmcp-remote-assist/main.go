@@ -445,7 +445,7 @@ func (a *assistApp) toolCommandHandler(build func(toolInput) assistCommand) http
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 		var in toolInput
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil { //gofastr:allow(GOFASTR1407) assist tool-command input {session, instruction}: no credential resolution, size-capped
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
 			return
 		}
