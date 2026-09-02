@@ -68,6 +68,14 @@ func TagInput(cfg TagInputConfig) render.HTML {
 	// Initial tags as hidden inputs.
 	tagInputs := make([]render.HTML, 0, len(cfg.Values))
 	for _, v := range cfg.Values {
+		// MaxLength caps every rendered tag, not only ones typed later:
+		// a server-rendered value longer than the cap would submit
+		// unchanged while the same text typed by hand is refused.
+		if cfg.MaxLength > 0 {
+			if r := []rune(v); len(r) > cfg.MaxLength {
+				v = string(r[:cfg.MaxLength])
+			}
+		}
 		tagInputs = append(tagInputs, render.Tag("input", map[string]string{
 			"type":  "hidden",
 			"name":  cfg.Name,

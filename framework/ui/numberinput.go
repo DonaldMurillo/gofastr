@@ -97,8 +97,13 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 		"step":  strconv.Itoa(step),
 		"value": strconv.Itoa(cfg.Value),
 	}
-	if cfg.Min != 0 || cfg.Max != 0 {
+	// Each bound is emitted only when declared: a Min-only config must
+	// not fabricate max="0" (an empty range), and a Max-only config must
+	// not fabricate min="0" (forbidding the negatives the caller allows).
+	if cfg.Min != 0 {
 		inputAttrs["min"] = strconv.Itoa(cfg.Min)
+	}
+	if cfg.Max != 0 {
 		inputAttrs["max"] = strconv.Itoa(cfg.Max)
 	}
 	if cfg.Disabled {

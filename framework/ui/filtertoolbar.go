@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"maps"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -326,18 +327,33 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 // keyboard nav + a single submitted value for free.
 func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 	pills := make([]render.HTML, 0, len(f.Options)+1)
+	// Pill ids are slug-derived. Two options whose value and label fold
+	// to one slug ("Red Car"/"red car") would share an id, and the
+	// label[for] wiring would silently point both at the first; a
+	// deterministic ordinal suffix keeps the second distinct without
+	// changing any id that was unique already.
+	seen := map[string]int{}
+	pillID := func(o FacetOption) string {
+		id := "filter-" + slug(f.Name) + "-" + slug(o.Value+"-"+o.Label)
+		seen[id]++
+		if n := seen[id]; n > 1 {
+			return id + "-" + strconv.Itoa(n)
+		}
+		return id
+	}
 	if !hasEmptyValue(f.Options) {
 		allLabel := f.AllLabel
 		if allLabel == "" {
 			allLabel = i18nui.T(ctx, i18nui.KeyFilterAllPlain)
 		}
-		pills = append(pills, pill(f.Name, FacetOption{Label: allLabel, Value: ""}, f.Value == ""))
+		all := FacetOption{Label: allLabel, Value: ""}
+		pills = append(pills, pill(f.Name, all, f.Value == "", pillID(all)))
 	}
 	for _, o := range f.Options {
 		if o.Label == "" {
 			panic("ui: FilterToolbar FacetOption requires Label")
 		}
-		pills = append(pills, pill(f.Name, o, o.Value == f.Value))
+		pills = append(pills, pill(f.Name, o, o.Value == f.Value, pillID(o)))
 	}
 	legend := render.Tag("legend", map[string]string{"class": "ui-filter-toolbar__legend"}, render.Text(f.Label))
 	group := render.Tag("div", map[string]string{"class": "ui-filter-toolbar__pill-group"}, pills...)
@@ -348,13 +364,13 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 
 // pill renders one radio-pill: a <label> wrapping a visually-hidden
 // <input type=radio> and a nowrap text span.
-func pill(name string, o FacetOption, checked bool) render.HTML {
+func pill(name string, o FacetOption, checked bool, id string) render.HTML {
 	inputAttrs := map[string]string{
 		"type":  "radio",
 		"name":  name,
 		"value": o.Value,
 		"class": "ui-filter-toolbar__pill-input",
-		"id":    "filter-" + slug(name) + "-" + slug(o.Value+"-"+o.Label),
+		"id":    id,
 	}
 	if checked {
 		inputAttrs["checked"] = ""

@@ -584,11 +584,13 @@ func Define(name string, config EntityConfig) *Entity {
 		cursorCols = append(cursorCols, "id")
 	}
 	for _, cf := range cursorCols {
+		declared := cf == "id" // the implicit primary key needs no declaration
 		for i := range config.Fields {
 			f := config.Fields[i]
 			if f.Name != cf {
 				continue
 			}
+			declared = true
 			if f.Hidden {
 				panic(fmt.Sprintf("entity %q: cursor field %q is Hidden (the cursor token would carry its stored value back to the caller)", name, cf))
 			}
@@ -596,6 +598,13 @@ func Define(name string, config EntityConfig) *Entity {
 				panic(fmt.Sprintf("entity %q: cursor field %q is NoQuery (keyset paging orders and compares on the stored value, and the cursor token carries it verbatim)", name, cf))
 			}
 			break
+		}
+		// A cursor column that names no declared field would reach ORDER
+		// BY and the WHERE comparison as an unknown column: every keyset
+		// page then fails at query time, long after Define accepted the
+		// typo. Refuse it here, where SearchFields typos are refused.
+		if !declared {
+			panic(fmt.Sprintf("entity %q: cursor field %q is not a declared field", name, cf))
 		}
 	}
 

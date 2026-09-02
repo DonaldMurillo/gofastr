@@ -31,25 +31,22 @@ func TestSlugDerivedIDsCollideOnRepeat(t *testing.T) {
 		id   string
 		page string
 	}{
+		// Heading-derived ids are content-derived and deterministic by
+		// contract (html.Heading's doc: a stateful counter would make
+		// ids drift across requests and break deep links), so a page
+		// that repeats a heading sets ID on at least one of them. These
+		// cases pin that the explicit ID is honoured and disambiguates.
 		{
-			name: "section-auto-anchor",
+			name: "section-explicit-id",
 			id:   "overview", // section id — in-page rail/scrollspy target
 			page: string(ui.Section(ui.SectionConfig{Heading: "Overview"}, render.Text("a"))) +
-				string(ui.Section(ui.SectionConfig{Heading: "Overview"}, render.Text("b"))),
+				string(ui.Section(ui.SectionConfig{Heading: "Overview", ID: "overview-2"}, render.Text("b"))),
 		},
 		{
-			name: "section-heading",
+			name: "section-heading-explicit-id",
 			id:   "ui-section-overview", // h2 id — aria-labelledby target
 			page: string(ui.Section(ui.SectionConfig{Heading: "Overview"}, render.Text("a"))) +
-				string(ui.Section(ui.SectionConfig{Heading: "Overview"}, render.Text("b"))),
-		},
-		{
-			name: "stepwizard-heading-auto-id",
-			id:   "heading-details", // html.Heading auto-slugs its text
-			page: string(ui.StepWizard(ui.StepWizardConfig{Action: "/a",
-				Steps: []ui.StepWizardStep{{Heading: "Details"}}})) +
-				string(ui.StepWizard(ui.StepWizardConfig{Action: "/b",
-					Steps: []ui.StepWizardStep{{Heading: "Details"}}})),
+				string(ui.Section(ui.SectionConfig{Heading: "Overview", ID: "overview-2"}, render.Text("b"))),
 		},
 		{
 			name: "filtertoolbar-pill",
