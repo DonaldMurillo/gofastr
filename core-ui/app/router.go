@@ -168,8 +168,12 @@ func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 // Fixed-length routes require equal segment counts; a trailing catch-all
 // (":name*") consumes one or more remainder segments joined with "/".
 // Catch-all routes require at least one remainder segment (so "/docs"
-// does not match "/docs/{p...}"). Param values are the raw matched
-// text, no URL decoding, consistent with single-segment params.
+// does not match "/docs/{p...}"), and a param position never binds an
+// empty path segment ("/" must not match "/:slug", "/files//edit" must
+// not match "/files/:name/edit"): a route author declares the path
+// shapes they serve, and an empty key is never one of them. Param values
+// are the raw matched text, no URL decoding, consistent with single-segment
+// params.
 func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 	lastIdx := len(segments) - 1
 	catchAll := lastIdx >= 0 && isCatchAllSeg(segments[lastIdx])
@@ -181,6 +185,9 @@ func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 		params := make(map[string]string)
 		for i, seg := range segments {
 			if isParamSeg(seg) {
+				if pathParts[i] == "" {
+					return nil, false
+				}
 				if !constraintOK(seg, pathParts[i]) {
 					return nil, false
 				}
@@ -202,6 +209,9 @@ func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 	for i := range lastIdx {
 		seg := segments[i]
 		if isParamSeg(seg) {
+			if pathParts[i] == "" {
+				return nil, false
+			}
 			if !constraintOK(seg, pathParts[i]) {
 				return nil, false
 			}

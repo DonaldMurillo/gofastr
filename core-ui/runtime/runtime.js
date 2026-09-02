@@ -411,7 +411,7 @@
     _pendingLinks: new Set(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
-      if (document.querySelector('link[data-fui-style="' + name + '"]')) return;
+      if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
       const e = (window.__gofastr_catalog || {})[name];
       if (!e) return;
       this._pendingLinks.add(name);
@@ -1867,12 +1867,12 @@
     if (!target) return;
 
     const action = target.getAttribute('data-action');
-    const componentId = closestAttr(e.target, 'data-component')
+    const name = closestAttr(e.target, 'data-component')
       ?? closestAttr(e.target, 'data-widget');
 
-    if (componentId && action) {
+    if (name && action) {
       e.preventDefault();
-      window.__gofastr.trigger(componentId, action, collectParams(target));
+      window.__gofastr.trigger(name, action, collectParams(target));
     }
   });
 
@@ -1885,13 +1885,13 @@
       const action = target.getAttribute(`data-action-${eventType}`) || target.getAttribute('data-action');
       if (!action) return;
 
-      const componentId = closestAttr(e.target, 'data-component')
+      const name = closestAttr(e.target, 'data-component')
         ?? closestAttr(e.target, 'data-widget');
 
-      if (componentId) {
+      if (name) {
         e.preventDefault();
         const params = { ...collectParams(target), value: e.target.value ?? '', eventType };
-        window.__gofastr.trigger(componentId, action, params);
+        window.__gofastr.trigger(name, action, params);
       }
     });
   }
@@ -1908,18 +1908,18 @@
   // Hydration on first interaction
   const hydrated = new Set();
 
-  const hydrate = (componentId) => {
-    if (hydrated.has(componentId)) return;
+  const hydrate = (name) => {
+    if (hydrated.has(name)) return;
 
-    const el = document.querySelector(`[data-widget="${componentId}"]`)
-      ?? document.querySelector(`[data-component="${componentId}"]`);
+    const el = document.querySelector(`[data-widget="${CSS.escape(name)}"]`)
+      ?? document.querySelector(`[data-component="${CSS.escape(name)}"]`);
     if (!el) return;
     // Mark hydrated only once the element was actually found, marking
     // before the lookup made a too-early call (root not yet in the DOM)
     // permanently block that id's behavior script. Never cleared across
     // navs: the behavior script URL is keyed by id, so process-lifetime
     // dedup is correct for re-inserted same-id DOM.
-    hydrated.add(componentId);
+    hydrated.add(name);
 
     // data-behavior is the most privileged attribute the runtime reads:
     // it becomes a <script src>. Only the one shape the framework emits
@@ -2570,9 +2570,9 @@
     for (const el of scope.querySelectorAll('[data-action-mount]')) {
       const action = el.getAttribute('data-action-mount');
       if (!action) continue;
-      const componentId = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
-      if (!componentId) continue;
-      G.trigger(componentId, action, collectParams(el));
+      const name = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
+      if (!name) continue;
+      G.trigger(name, action, collectParams(el));
     }
   };
   window.addEventListener('gofastr:navigate', () => _runMountActions(document));

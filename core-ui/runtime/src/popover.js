@@ -28,7 +28,9 @@
    *                           right, left).
    */
   NS._anchorPopover = function (name, trigger, preferred) {
-    const widget = NS._widgets && NS._widgets[name];
+    const widget = NS._widgets
+      && Object.prototype.hasOwnProperty.call(NS._widgets, name)
+      && NS._widgets[name];
     if (!widget || !widget.root) return;
     const root = widget.root;
     const pref = (preferred || 'auto').toLowerCase();

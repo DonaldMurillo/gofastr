@@ -52,14 +52,21 @@ import (
 
 var (
 	// inlineStyleAttrRe matches a `style="…"` or `style='…'` attribute
-	// inside a raw HTML string literal. Anchored to start-of-string or
-	// whitespace so prefixes like `data-fui-style=`, `font-style=`,
-	// `text-style=` (CSS, data-attributes, custom-named props) don't
-	// trigger false positives. The non-greedy quoted body keeps the
-	// match short, we just need to know IT EXISTS.
+	// inside a raw HTML string literal. Anchored to start-of-string,
+	// whitespace, or `/` (the HTML5 tokenizer treats a solidus between
+	// attributes as whitespace, so `<img/src=x/style=…>` applies the
+	// style exactly like a space-separated twin) so prefixes like
+	// `data-fui-style=`, `font-style=`, `text-style=` (CSS,
+	// data-attributes, custom-named props) don't trigger false
+	// positives. The value is quoted, or an UNQUOTED run containing a
+	// `:` (a CSS declaration shape, `style=color:red`): unquoted
+	// attribute values apply in browsers too, and requiring the colon
+	// keeps JS assignments inside embedded scripts (`style =
+	// getComputedStyle(el)`) out of the gate. The non-greedy quoted
+	// body keeps the match short, we just need to know IT EXISTS.
 	// Case-insensitive: HTML attribute names are, and a browser applies
 	// STYLE="…" exactly as it applies style="…".
-	inlineStyleAttrRe = regexp.MustCompile(`(?si)(?:^|\s)style\s*=\s*("[^"]*"|'[^']*')`)
+	inlineStyleAttrRe = regexp.MustCompile(`(?si)(?:^|[\s/])style\s*=\s*("[^"]*"|'[^']*'|[^\s>]*:[^\s>]*)`)
 )
 
 // LintNoInlineStyles scans every .go file in dir (non-recursive) for

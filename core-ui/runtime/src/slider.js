@@ -9,7 +9,7 @@
     if (!input || input.type !== 'range') return;
     const id = input.id;
     if (!id) return;
-    const out = document.querySelector('output[for="' + id + '"]');
+    const out = document.querySelector('output[for="' + CSS.escape(id) + '"]');
     if (out) out.textContent = input.value;
   }
 

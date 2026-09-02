@@ -403,7 +403,7 @@
     _pendingLinks: new Set(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
-      if (document.querySelector('link[data-fui-style="' + name + '"]')) return;
+      if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
       const e = (window.__gofastr_catalog || {})[name];
       if (!e) return;
       this._pendingLinks.add(name);

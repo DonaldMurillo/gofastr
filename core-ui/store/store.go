@@ -137,9 +137,22 @@ func setScope(name string, scope Scope) {
 
 // validateName rejects names that could break out of a data-fui-* HTML
 // attribute or the signal key. Allowed: letters, digits, '.', '_', '-'.
+// The runtime kernel's prototype-pollution guard (frag/signals.js
+// isReservedSignalKey) refuses __proto__ / constructor / prototype as
+// signal names because those keys re-parent the client signal store;
+// validateName rejects the same three at declaration time — its
+// character class alone would accept them, shipping a slice whose
+// value SSR keeps stamping while EVERY client-side write to it is
+// silently refused: a permanently dead binding with no error anywhere.
+// A namespace prefix ("app.__proto__") produces a non-reserved full
+// key, so only bare names are refused.
 func validateName(name string) {
 	if name == "" {
 		panic("store: slice name must not be empty")
+	}
+	switch name {
+	case "__proto__", "constructor", "prototype":
+		panic(fmt.Sprintf("store: slice name %q is reserved — the runtime kernel refuses every client write to __proto__/constructor/prototype, so the slice would be a dead binding", name))
 	}
 	for _, r := range name {
 		switch {

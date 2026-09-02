@@ -131,12 +131,28 @@ type Effect interface {
 }
 
 // SetSignal pushes the RPC response into a named client-side signal.
-// Maps to data-fui-rpc-signal="name". Panics if name contains a double quote.
+// Maps to data-fui-rpc-signal="name". Panics if name contains a double
+// quote or is a reserved signal name.
 func SetSignal(name string) Effect {
 	if strings.ContainsRune(name, '"') {
 		panic(fmt.Sprintf("interactive: signal name must not contain '\"', got %q", name))
 	}
+	refuseReservedSignalName(name)
 	return signalEffect{name: name}
+}
+
+// refuseReservedSignalName mirrors the runtime kernel's guard
+// (frag/signals.js isReservedSignalKey): __proto__, constructor, and
+// prototype are the JS object keys that, used as a dynamic property
+// name on the signal store, re-parent its prototype chain instead of
+// creating an own data property, so the kernel refuses every write to
+// them. The emitters refuse the same names up front — an emitted
+// reserved name is a permanently dead control: the click lands in the
+// kernel's console.warn and no error surfaces anywhere else.
+func refuseReservedSignalName(name string) {
+	if name == "__proto__" || name == "constructor" || name == "prototype" {
+		panic(fmt.Sprintf("interactive: signal name %q is reserved — the runtime kernel refuses every write to __proto__/constructor/prototype, so the control would never fire", name))
+	}
 }
 
 type signalEffect struct{ name string }
@@ -321,14 +337,18 @@ func revealCSS(_ style.Theme) string {
 // Use for counters, toggles, tabs, and other local-only state.
 
 // SetLocal wraps an HTML element so clicking it sets a signal to a
-// fixed value. No RPC is fired, the update is instant.
+// fixed value. No RPC is fired, the update is instant. Panics if
+// signalName is a reserved signal name.
 func SetLocal(html render.HTML, signalName, value string) render.HTML {
+	refuseReservedSignalName(signalName)
 	return injectAttr(html, "data-fui-signal-set", signalName+":"+value)
 }
 
 // IncLocal wraps an HTML element so clicking it increments a numeric
-// signal by delta (default 1). No RPC is fired.
+// signal by delta (default 1). No RPC is fired. Panics if signalName
+// is a reserved signal name.
 func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
+	refuseReservedSignalName(signalName)
 	val := signalName
 	if delta != 1 {
 		val = fmt.Sprintf("%s:%d", signalName, delta)
@@ -337,8 +357,10 @@ func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
 }
 
 // ToggleLocal wraps an HTML element so clicking it toggles a boolean
-// signal. No RPC is fired.
+// signal. No RPC is fired. Panics if signalName is a reserved signal
+// name.
 func ToggleLocal(html render.HTML, signalName string) render.HTML {
+	refuseReservedSignalName(signalName)
 	return injectAttr(html, "data-fui-signal-toggle", signalName)
 }
 

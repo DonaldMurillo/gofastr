@@ -3,6 +3,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -99,10 +100,30 @@ type Widget struct {
 // It automatically extracts actions if the component implements InteractiveComponent.
 func NewWidget(id string, comp Component) *Widget {
 	return &Widget{
-		ID:        id,
+		ID:        SlugifyWidgetID(id),
 		Component: comp,
 		Actions:   ExtractActions(comp),
 	}
+}
+
+// SlugifyWidgetID maps a widget ID onto the [A-Za-z0-9_-] alphabet the
+// runtime's data-behavior gate honours (runtime.js matches
+// `/__gofastr/widget/[A-Za-z0-9_-]+.js` exactly and refuses anything
+// else, because a loosened value is a script-loading sink). Any rune
+// outside that alphabet becomes "-", so an ID built from a display
+// name, path segment, or other request-derived text still hydrates:
+// emitting the raw value would make the browser gate silently drop the
+// behavior script and the widget would never hydrate. Valid IDs pass
+// through unchanged.
+func SlugifyWidgetID(id string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			return r
+		default:
+			return '-'
+		}
+	}, id)
 }
 
 // Render renders the widget's component wrapped in a data-widget attribute.

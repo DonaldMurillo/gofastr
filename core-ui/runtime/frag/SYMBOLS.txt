@@ -36,11 +36,11 @@ boot	4	G
 boot	4	G
 boot	4	G
 boot	4	action
-boot	4	componentId
 boot	4	el
 boot	4	idleQueue
 boot	4	init
 boot	4	key
+boot	4	name
 boot	4	names
 boot	4	node
 boot	4	observeNode
@@ -58,8 +58,6 @@ boot	6	action
 boot	6	action
 boot	6	action
 boot	6	combo
-boot	6	componentId
-boot	6	componentId
 boot	6	el
 boot	6	enctype
 boot	6	form
@@ -67,6 +65,8 @@ boot	6	form
 boot	6	id
 boot	6	mode
 boot	6	msg
+boot	6	name
+boot	6	name
 boot	6	names
 boot	6	node
 boot	6	s
