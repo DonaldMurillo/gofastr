@@ -169,11 +169,18 @@ const InstructionsToolName = "get_app_instructions"
 // orientationTool returns the generated declaration for the
 // instructions route. prefix is the mount router's group prefix, so the
 // declared path is where the route actually serves.
+//
+// The declaration joins the manifest without passing through Register,
+// so it must carry the empty-object input schema Register would have
+// defaulted: the browser's registerTool refuses a null inputSchema,
+// and the first host to mount WithInstructions in real Chromium found
+// the orientation tool silently absent from getTools().
 func orientationTool(prefix string) Tool {
 	return Tool{
 		Name:         InstructionsToolName,
 		Title:        "App operating instructions",
 		Description:  "Returns the developer-authored operating instructions for this app's tools: the cross-tool workflow the individual tool descriptions assume. Call this before using the other tools.",
+		InputSchema:  json.RawMessage(defaultInputSchema),
 		Method:       http.MethodGet,
 		Path:         prefix + InstructionsRoute,
 		ReadOnlyHint: true,

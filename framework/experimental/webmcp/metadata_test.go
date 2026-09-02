@@ -270,6 +270,12 @@ func TestInstructionsGenerateOrientationTool(t *testing.T) {
 		ot.Method != http.MethodGet || ot.Path != InstructionsRoute {
 		t.Fatalf("orientation tool: %+v", ot)
 	}
+	// The generated declaration skips Register, so it must carry the
+	// input schema Register defaults: the browser refuses a tool whose
+	// inputSchema is null, and the manifest is what the bridge feeds it.
+	if string(ot.InputSchema) != defaultInputSchema {
+		t.Fatalf("orientation tool inputSchema = %s, want %s", ot.InputSchema, defaultInputSchema)
+	}
 
 	// The route serves them, as the tool's endpoint.
 	rec = httptest.NewRecorder()

@@ -71,7 +71,7 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 
-	h := New()
+	h := New(WithInstructions("Probe the scene before mutating it."))
 	h.Group("scene", WithDescription("Scene tools."))
 	for _, tl := range []Tool{
 		{
@@ -234,7 +234,7 @@ func TestBridgeRegistersAndExecutesTools(t *testing.T) {
 		t.Skip("modelContext absent even with --enable-blink-features=WebMCP; browser predates WebMCP (needs Chromium 146+)")
 	}
 
-	waitForTools(t, ctx, "broken,echo_upper,grouped_probe,proto_probe,search")
+	waitForTools(t, ctx, "broken,echo_upper,get_app_instructions,grouped_probe,proto_probe,search")
 
 	// The opt-in debug state is bounded and truthful: every tool
 	// attempted, every tool registered, nothing failed, no invocation
@@ -244,9 +244,18 @@ func TestBridgeRegistersAndExecutesTools(t *testing.T) {
 		`JSON.stringify(window.__gofastrWebMCP)`, &dbg)); err != nil {
 		t.Fatalf("debug state: %v", err)
 	}
-	if want := `{"supported":true,"attempted":5,"registered":5,"failed":[],"lastStatus":""}`; dbg != want {
+	if want := `{"supported":true,"attempted":6,"registered":6,"failed":[],"lastStatus":""}`; dbg != want {
 		t.Fatalf("debug state = %s, want %s", dbg, want)
 	}
+
+	// The generated orientation tool registers like any other (it
+	// skips Register, so its declaration must be browser-complete on
+	// its own) and executes against the instructions route.
+	var instr string
+	if err := evalAwait(ctx, execToolExpr(InstructionsToolName, `{}`), &instr); err != nil {
+		t.Fatalf("execute %s: %v", InstructionsToolName, err)
+	}
+	assertToolResult(t, instr, false, `{"instructions":"Probe the scene before mutating it."}`)
 
 	// POST tool: input arrives as a JSON body, session cookie and the
 	// WebMCP marker header ride along, result text is the endpoint body.
@@ -336,7 +345,7 @@ func TestBridgeReadsCSRFMetaAtDispatchTime(t *testing.T) {
 	if !has {
 		t.Skip("modelContext absent even with --enable-blink-features=WebMCP; browser predates WebMCP (needs Chromium 146+)")
 	}
-	waitForTools(t, ctx, "broken,echo_upper,grouped_probe,proto_probe,search")
+	waitForTools(t, ctx, "broken,echo_upper,get_app_instructions,grouped_probe,proto_probe,search")
 
 	// Stash the token, then remove the meta tag entirely.
 	var token string
