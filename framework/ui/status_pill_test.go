@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestStatusPillRendersLabelAndMarker(t *testing.T) {
@@ -62,5 +64,20 @@ func TestStatusPillExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("StatusPill root missing data-test:\n%s", root)
+	}
+}
+
+// A pill hidden by script (el.hidden = true, the pattern a page uses
+// to show one of a pair) must actually disappear: the component's
+// author-origin display rule outranks the UA's [hidden] rule, so the
+// stylesheet has to restate it.
+func TestStatusPillHonorsHidden(t *testing.T) {
+	css := statusPillCSS(style.Theme{})
+	// The plain hidden state is display: none; hidden="until-found"
+	// stays out of the rule so the UA's revealable state survives.
+	if !strings.Contains(css, `[data-fui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
+  display: none;
+}`) {
+		t.Fatalf("status pill CSS has no [hidden] rule that spares until-found:\n%s", css)
 	}
 }

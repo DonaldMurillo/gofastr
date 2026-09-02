@@ -155,6 +155,7 @@ kiln-*
 /real-estate
 /spa
 /static-site
+/webmcp-remote-assist
 # Same race for cmd/<name>: `go build ./cmd/repolint` from the root drops a
 # 3.5MB binary at /repolint, which is neither a *-demo nor named above. A
 # review caught one sitting untracked. Enumerate the package dir, not the
