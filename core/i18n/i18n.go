@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"math"
 	"net/http"
 	"path"
 	"sort"
@@ -714,10 +715,18 @@ func extractCount(p map[string]any) (int, bool) {
 			case int64:
 				return int(x), true
 			case uint:
-				return int(x), true
-			case uint32:
+				// Same overflow check core/schema's toInt64 carries:
+				// uint is 64 bits wide on this repo's platforms, and an
+				// out-of-int-range count converts to a negative, which
+				// then picks the wrong CLDR plural category.
+				if x > math.MaxInt {
+					return 0, false
+				}
 				return int(x), true
 			case uint64:
+				if x > math.MaxInt64 {
+					return 0, false
+				}
 				return int(x), true
 			case float32:
 				return int(x), true
